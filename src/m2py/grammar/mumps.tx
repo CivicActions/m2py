@@ -1,0 +1,36 @@
+// MUMPS Grammar for textX - Phase 1
+// =============================================================================
+// Parses routine structure: labels, lines, comments
+// Commands are captured as raw text initially
+// =============================================================================
+
+// Root element - a complete MUMPS routine
+Routine:
+    lines*=Line
+;
+
+// A line - label line (starts with letter/%) or continuation (starts with tab/dot)
+Line:
+    LabelLine | ContLine | EmptyLine
+;
+
+// Label line: label at column 1 (letter/% or numeric), then rest
+// Labels can be: NAME, %NAME, or NUMERIC
+LabelLine:
+    label=/[A-Za-z%][A-Za-z0-9]*|[0-9]+/ rest=/[^\r\n]*/ NL
+;
+
+// Continuation line: starts with tab or dot or semicolon, then rest
+ContLine:
+    /[\t.;]/ rest=/[^\r\n]*/ NL
+;
+
+// Empty line: just whitespace and newline  
+EmptyLine:
+    /[ \t]*/ NL
+;
+
+// Newline
+NL:
+    /\r?\n/
+;
