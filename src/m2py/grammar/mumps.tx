@@ -1,7 +1,7 @@
-// MUMPS Grammar for textX - Phase 1
+// MUMPS Grammar for textX - Full Implementation
 // =============================================================================
-// Parses routine structure: labels, lines, comments
-// Commands are captured as raw text initially
+// Complete MUMPS grammar with proper ASG construction
+// Whitespace-sensitive: skipws=False in metamodel
 // =============================================================================
 
 // Root element - a complete MUMPS routine
@@ -9,20 +9,30 @@ Routine:
     lines*=Line
 ;
 
-// A line - label line (starts with letter/%) or continuation (starts with tab/dot)
+// A line - label line (starts with letter/%) or continuation (starts with tab/dot) or comment
 Line:
-    LabelLine | ContLine | EmptyLine
+    LabelLine | ContLine | CommentLine | EmptyLine
 ;
 
-// Label line: label at column 1 (letter/% or numeric), then rest
+// Label line: label at column 1 (letter/% or numeric), optional formal params, then rest
 // Labels can be: NAME, %NAME, or NUMERIC
 LabelLine:
-    label=/[A-Za-z%][A-Za-z0-9]*|[0-9]+/ rest=/[^\r\n]*/ NL
+    label=LABEL_NAME formal_list=FormalList? rest=/[^\r\n]*/ NL
 ;
 
-// Continuation line: starts with tab or dot or semicolon, then rest
+// Formal parameter list: (param1, param2, ...)
+FormalList:
+    '(' params+=PARAM_NAME[/,/] ')'
+;
+
+// Continuation line: starts with tab or single space or dot, then rest
 ContLine:
-    /[\t.;]/ rest=/[^\r\n]*/ NL
+    /[\t ]/ rest=/[^\r\n]*/ NL
+;
+
+// Comment-only line: starts with semicolon at column 1
+CommentLine:
+    /;[^\r\n]*/ NL
 ;
 
 // Empty line: just whitespace and newline  
@@ -33,4 +43,18 @@ EmptyLine:
 // Newline
 NL:
     /\r?\n/
+;
+
+// =============================================================================
+// Terminal Rules
+// =============================================================================
+
+// Label name: letter or %, followed by alphanumeric, or just digits
+LABEL_NAME:
+    /[A-Za-z%][A-Za-z0-9]*|[0-9]+/
+;
+
+// Parameter name for formal list
+PARAM_NAME:
+    /[ \t]*[A-Za-z%][A-Za-z0-9]*/
 ;

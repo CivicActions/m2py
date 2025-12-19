@@ -8,7 +8,7 @@ from pathlib import Path
 
 from m2py.parser import MUMPSParser
 from m2py.asg import MRoutine, MLabel
-from m2py.analysis import extract_for_from_line
+from m2py.analysis import extract_for_from_line_textx as extract_for_from_line
 from m2py.asg.enums import ForLoopType
 
 
@@ -346,7 +346,7 @@ class TestV1GO1GotoClassification:
     
     def test_v1go1_has_goto_commands(self, mugj_file):
         """V1GO1.m should contain GOTO commands."""
-        from m2py.analysis import extract_goto_from_line
+        from m2py.analysis import extract_goto_from_line_textx as extract_goto_from_line
         
         source = mugj_file("V1GO1.m")
         lines = source.split('\n')
@@ -362,7 +362,7 @@ class TestV1GO1GotoClassification:
     
     def test_v1go1_goto_to_percent_label(self, mugj_file):
         """V1GO1.m includes GOTOs to %labels."""
-        from m2py.analysis import extract_goto_from_line
+        from m2py.analysis import extract_goto_from_line_textx as extract_goto_from_line
         
         source = mugj_file("V1GO1.m")
         lines = source.split('\n')
@@ -392,7 +392,7 @@ class TestV1GO2OffsetGotos:
     
     def test_v1go2_has_offset_gotos(self, mugj_file):
         """V1GO2.m should contain GOTO with label+offset."""
-        from m2py.analysis import extract_goto_from_line
+        from m2py.analysis import extract_goto_from_line_textx as extract_goto_from_line
         
         source = mugj_file("V1GO2.m")
         lines = source.split('\n')
@@ -430,7 +430,7 @@ class TestV1FORC2NestedForGoto:
     
     def test_v1forc2_has_goto_commands(self, mugj_file):
         """V1FORC2.m should contain GOTO commands inside FORs."""
-        from m2py.analysis import extract_goto_from_line
+        from m2py.analysis import extract_goto_from_line_textx as extract_goto_from_line
         
         source = mugj_file("V1FORC2.m")
         lines = source.split('\n')
@@ -446,7 +446,7 @@ class TestV1FORC2NestedForGoto:
     
     def test_v1forc2_for_with_goto_in_body(self, mugj_file):
         """V1FORC2.m tests FOR loops containing GOTOs."""
-        from m2py.analysis import extract_goto_from_line, extract_for_from_line
+        from m2py.analysis import extract_goto_from_line_textx as extract_goto_from_line, extract_for_from_line_textx as extract_for_from_line
         
         source = mugj_file("V1FORC2.m")
         lines = source.split('\n')
@@ -480,7 +480,7 @@ class TestV1DO1DoCommands:
     
     def test_v1do1_has_do_commands(self, mugj_file):
         """V1DO1.m should contain DO commands."""
-        from m2py.analysis import extract_do_from_line
+        from m2py.analysis import extract_do_from_line_textx as extract_do_from_line
         
         source = mugj_file("V1DO1.m")
         lines = source.split('\n')
@@ -496,7 +496,7 @@ class TestV1DO1DoCommands:
     
     def test_v1do1_do_to_percent_label(self, mugj_file):
         """V1DO1.m includes DOs to %labels."""
-        from m2py.analysis import extract_do_from_line, parse_do_statement
+        from m2py.analysis import extract_do_from_line_textx as extract_do_from_line, parse_do_statement
         
         source = mugj_file("V1DO1.m")
         lines = source.split('\n')
@@ -537,7 +537,7 @@ class TestV1DO2DoPatterns:
     
     def test_v1do2_has_do_commands(self, mugj_file):
         """V1DO2.m should contain DO commands."""
-        from m2py.analysis import extract_do_from_line
+        from m2py.analysis import extract_do_from_line_textx as extract_do_from_line
         
         source = mugj_file("V1DO2.m")
         lines = source.split('\n')
@@ -656,3 +656,52 @@ class TestVariableAnalysisIntegration:
         assert "FUNC" in result
         assert "X" in result["FUNC"].input_variables
         assert "Y" in result["FUNC"].output_variables
+
+class TestParseAllMUGJFiles:
+    """Test parsing ALL MUGJ certification files (T162)."""
+    
+    def test_parse_all_mugj_files(self, mugj_inref_dir):
+        """All MUGJ *.m files should parse without errors.
+        
+        This is the primary validation that the textX grammar can handle
+        all MUGJ certification files. Per SC-001, we need 100% parse rate.
+        """
+        parser = MUMPSParser()
+        parsed_files = []
+        failed_files = []
+        skipped_files = []
+        
+        # Get all .m files in the MUGJ inref directory
+        all_files = sorted(mugj_inref_dir.glob("*.m"))
+        
+        for filepath in all_files:
+            # Skip empty files (some MUGJ files are placeholder stubs)
+            if filepath.stat().st_size == 0:
+                skipped_files.append(filepath.name)
+                continue
+                
+            try:
+                routine = parser.parse_file(filepath)
+                assert isinstance(routine, MRoutine)
+                assert len(routine.labels) >= 1
+                parsed_files.append(filepath.name)
+            except Exception as e:
+                failed_files.append((filepath.name, str(e)))
+        
+        # Report results
+        total = len(all_files)
+        skipped = len(skipped_files)
+        success_count = len(parsed_files)
+        fail_count = len(failed_files)
+        
+        if failed_files:
+            fail_report = "\n".join(f"  - {name}: {err}" for name, err in failed_files[:10])
+            if len(failed_files) > 10:
+                fail_report += f"\n  ... and {len(failed_files) - 10} more"
+            pytest.fail(
+                f"Failed to parse {fail_count}/{total} MUGJ files (skipped {skipped} empty):\n{fail_report}"
+            )
+        
+        # Success assertion
+        assert success_count + skipped == total, f"Parsed {success_count}, skipped {skipped} of {total} files"
+        assert success_count >= 370, f"Expected at least 370 MUGJ files, got {success_count}"

@@ -1,0 +1,1297 @@
+"""Command parsing using textX grammar.
+
+Provides functions to parse MUMPS commands into ASG nodes using
+the textX command grammar.
+
+This module provides the primary parsing interface for MUMPS commands,
+converting textX parsed models into the M2PY ASG representation.
+"""
+
+from pathlib import Path
+from typing import Optional, Union, Any, List
+from functools import lru_cache
+
+from textx import metamodel_from_file
+from textx.exceptions import TextXSyntaxError
+
+from ..asg.enums import ForLoopType, ForParamType, LiteralType
+from ..asg.statements import (
+    MForStatement, MForParameter,
+    MSetStatement, MAssignment,
+    MWriteStatement, MQuitStatement, MIfStatement,
+    MNewStatement, MDoStatement, MGotoStatement
+)
+from ..asg.expressions import MLiteral, MVariable, MGlobal
+from ..asg.elements import MCall
+
+
+@lru_cache(maxsize=1)
+def _get_command_metamodel():
+    """Get the cached command grammar metamodel."""
+    grammar_dir = Path(__file__).parent.parent / "grammar"
+    return metamodel_from_file(
+        grammar_dir / "commands.tx",
+        skipws=False
+    )
+
+
+@lru_cache(maxsize=1)
+def _get_line_metamodel():
+    """Get the cached line content grammar metamodel."""
+    grammar_dir = Path(__file__).parent.parent / "grammar"
+    return metamodel_from_file(
+        grammar_dir / "line.tx",
+        skipws=False
+    )
+
+
+@lru_cache(maxsize=1)
+def _get_expression_metamodel():
+    """Get the cached expression grammar metamodel."""
+    grammar_dir = Path(__file__).parent.parent / "grammar"
+    return metamodel_from_file(
+        grammar_dir / "expressions.tx",
+        skipws=False
+    )
+
+
+def parse_line_content(line_content: str) -> Optional[Any]:
+    """Parse a MUMPS line content string into a textX model.
+    
+    This parses the content after a label or continuation prefix,
+    which consists of commands separated by spaces and optionally
+    ending with a comment.
+    
+    Args:
+        line_content: The line content (e.g., "S X=1 W X  ;comment")
+        
+    Returns:
+        The parsed textX LineContent model or None if parsing fails
+    """
+    mm = _get_line_metamodel()
+    try:
+        return mm.model_from_str(line_content)
+    except TextXSyntaxError:
+        return None
+
+
+def parse_commands_from_line(line_content: str) -> List[Any]:
+    """Parse a line content string and return list of command models.
+    
+    Args:
+        line_content: The line content string
+        
+    Returns:
+        List of textX command models (empty if parsing fails)
+    """
+    model = parse_line_content(line_content)
+    if model and model.commands:
+        return [lc.cmd for lc in model.commands]
+    return []
+
+
+def get_line_comment(line_content: str) -> Optional[str]:
+    """Extract comment from a line content string.
+    
+    Args:
+        line_content: The line content string
+        
+    Returns:
+        The comment text (without ';') or None if no comment
+    """
+    model = parse_line_content(line_content)
+    if model and model.comment:
+        return model.comment.text
+    return None
+
+
+def detect_quit_after_for(line_content: str) -> bool:
+    """Detect if there's a QUIT command after any FOR command on this line.
+    
+    In MUMPS, FOR body extends to end of line. If QUIT appears after FOR
+    on the same line, it's an exit point for the FOR loop.
+    
+    Args:
+        line_content: The line content string
+        
+    Returns:
+        True if QUIT found after FOR, False otherwise
+    """
+    commands = parse_commands_from_line(line_content)
+    if not commands:
+        return False
+    
+    found_for = False
+    for cmd in commands:
+        cls_name = cmd.__class__.__name__
+        if cls_name == "ForCommand":
+            found_for = True
+        elif found_for and cls_name == "QuitCommand":
+            return True
+    
+    return False
+
+
+def extract_for_commands(line_content: str) -> List[Any]:
+    """Extract all FOR commands from a line content string.
+    
+    Uses textX grammar to properly parse and identify FOR commands,
+    avoiding false positives from string literals or other contexts.
+    
+    Args:
+        line_content: The line content string
+        
+    Returns:
+        List of ForCommand textX models found in the line
+    """
+    cmds = parse_commands_from_line(line_content)
+    return [cmd for cmd in cmds if cmd.__class__.__name__ == "ForCommand"]
+
+
+def classify_for_from_textx(for_cmd) -> tuple:
+    """Classify a textX ForCommand into loop type and variable.
+    
+    Args:
+        for_cmd: A textX ForCommand model
+        
+    Returns:
+        Tuple of (ForLoopType, loop_var_name)
+    """
+    from ..asg.enums import ForLoopType, ForParamType
+    
+    # Argumentless FOR: no var or params
+    if not for_cmd.var or not for_cmd.params:
+        return ForLoopType.ARGUMENTLESS, ""
+    
+    loop_var = for_cmd.var
+    
+    # Analyze parameters to determine loop type
+    param_types = []
+    for param in for_cmd.params:
+        if param.step:
+            if param.end:
+                param_types.append(ForParamType.RANGE)
+            else:
+                param_types.append(ForParamType.OPEN_RANGE)
+        else:
+            param_types.append(ForParamType.VALUE)
+    
+    # Determine overall loop type
+    if not param_types:
+        return ForLoopType.ARGUMENTLESS, loop_var
+    
+    unique_types = set(param_types)
+    
+    if len(for_cmd.params) > 1 and len(unique_types) > 1:
+        return ForLoopType.MIXED, loop_var
+    
+    if ForParamType.RANGE in unique_types:
+        return ForLoopType.BOUNDED, loop_var
+    elif ForParamType.OPEN_RANGE in unique_types:
+        return ForLoopType.OPEN_ENDED, loop_var
+    else:
+        return ForLoopType.STRING_LIST, loop_var
+
+
+def parse_for_command_to_asg(for_cmd) -> MForStatement:
+    """Convert a textX ForCommand model to an MForStatement ASG node.
+    
+    Args:
+        for_cmd: A textX ForCommand model (from extract_for_commands)
+        
+    Returns:
+        MForStatement ASG node with parameters populated
+    """
+    statement = MForStatement()
+    
+    if for_cmd.var:
+        statement.loop_var = for_cmd.var
+    
+    if for_cmd.params:
+        for param in for_cmd.params:
+            fp = MForParameter()
+            
+            if param.start:
+                fp.start = _expr_to_asg_literal(_expr_to_string(param.start))
+            
+            if param.step:
+                fp.step = _expr_to_asg_literal(_expr_to_string(param.step))
+                if param.end:
+                    fp.end = _expr_to_asg_literal(_expr_to_string(param.end))
+                    fp.param_type = ForParamType.RANGE
+                else:
+                    fp.param_type = ForParamType.OPEN_RANGE
+            else:
+                fp.param_type = ForParamType.VALUE
+                # For VALUE type, the start IS the value
+                if param.start:
+                    fp.value = fp.start
+            
+            statement.parameters.append(fp)
+    
+    # Classify the loop type
+    statement.loop_type = _classify_for_params(statement.parameters)
+    
+    return statement
+
+
+def _expr_to_asg_literal(expr_str: str) -> MLiteral:
+    """Create an MLiteral from an expression string.
+    
+    For now, we capture expressions as raw text in an MLiteral.
+    A more complete implementation would parse full expressions.
+    
+    Args:
+        expr_str: Expression string like "1", '"ABC"', or "X+1"
+        
+    Returns:
+        MLiteral with the raw expression
+    """
+    literal = MLiteral()
+    literal.raw_value = expr_str
+    
+    # Determine literal type
+    if expr_str.startswith('"') and expr_str.endswith('"'):
+        literal.literal_type = LiteralType.STRING
+        literal.value = expr_str[1:-1]  # Remove quotes
+    else:
+        # Try to parse as number
+        try:
+            if '.' in expr_str or 'E' in expr_str.upper():
+                literal.value = float(expr_str)
+                literal.literal_type = LiteralType.DECIMAL
+            else:
+                literal.value = int(expr_str)
+                literal.literal_type = LiteralType.INTEGER
+        except ValueError:
+            # Not a simple literal - it's an expression
+            literal.literal_type = LiteralType.STRING
+            literal.value = expr_str
+    
+    return literal
+
+
+def parse_command(command_text: str) -> Optional[Any]:
+    """Parse a MUMPS command string into a textX model.
+    
+    Args:
+        command_text: The command string (e.g., "S X=1" or "W X")
+        
+    Returns:
+        The parsed textX model or None if parsing fails
+    """
+    mm = _get_command_metamodel()
+    try:
+        return mm.model_from_str(command_text, "Command")
+    except TextXSyntaxError:
+        return None
+
+
+def parse_expression(expr_text: str) -> Optional[Any]:
+    """Parse a MUMPS expression string into a textX model.
+    
+    Args:
+        expr_text: The expression string (e.g., "X+Y*Z")
+        
+    Returns:
+        The parsed textX model or None if parsing fails
+    """
+    mm = _get_expression_metamodel()
+    try:
+        return mm.model_from_str(expr_text, "Expr")
+    except TextXSyntaxError:
+        return None
+
+
+def convert_to_literal(textx_model) -> MLiteral:
+    """Convert a textX NumericLiteral or StringLiteral to MLiteral.
+    
+    Args:
+        textx_model: The textX literal model
+        
+    Returns:
+        An MLiteral ASG node
+    """
+    cls_name = textx_model.__class__.__name__
+    
+    if cls_name == 'NumericLiteral':
+        value_str = textx_model.value
+        # Determine if integer or float
+        if '.' in value_str or 'e' in value_str.lower():
+            return MLiteral(value=float(value_str), literal_type=LiteralType.NUMERIC)
+        else:
+            return MLiteral(value=int(value_str), literal_type=LiteralType.NUMERIC)
+    elif cls_name == 'StringLiteral':
+        # Remove quotes and handle "" escaping
+        raw = textx_model.value
+        if raw.startswith('"') and raw.endswith('"'):
+            raw = raw[1:-1]
+        value = raw.replace('""', '"')
+        return MLiteral(value=value, literal_type=LiteralType.STRING)
+    else:
+        # Fallback
+        return MLiteral(value=str(textx_model), literal_type=LiteralType.STRING)
+
+
+def convert_to_variable(textx_model):
+    """Convert a textX LocalVariable or GlobalVariable to MVariable/MGlobal.
+    
+    Args:
+        textx_model: The textX variable model
+        
+    Returns:
+        An MVariable or MGlobal ASG node
+    """
+    cls_name = textx_model.__class__.__name__
+    
+    if cls_name == 'LocalVariable':
+        return MVariable(name=textx_model.name)
+    elif cls_name == 'GlobalVariable':
+        return MGlobal(name=textx_model.name)
+    else:
+        # Fallback - try to get name attribute
+        name = getattr(textx_model, 'name', str(textx_model))
+        return MVariable(name=name)
+
+
+def parse_set_command(set_text: str) -> Optional[MSetStatement]:
+    """Parse a SET command using textX grammar.
+    
+    Args:
+        set_text: The SET command (e.g., "S X=1" or "SET A=B,C=D")
+        
+    Returns:
+        MSetStatement ASG node or None if parsing fails
+    """
+    mm = _get_command_metamodel()
+    try:
+        model = mm.model_from_str(set_text, "SetCommand")
+    except TextXSyntaxError:
+        return None
+    
+    statement = MSetStatement()
+    
+    for assign in model.assignments:
+        targets = []
+        value_str = ""
+        
+        # Handle targets (single or parenthesized list)
+        if hasattr(assign.targets, 'targets'):
+            # ParenTargets
+            for t in assign.targets.targets:
+                targets.append(convert_to_variable(t))
+        else:
+            # SingleTarget
+            targets.append(convert_to_variable(assign.targets))
+        
+        # Get value expression as string for now
+        # Full expression conversion would be more complex
+        if assign.value:
+            value_str = _expr_to_string(assign.value)
+        
+        for target in targets:
+            assignment = MAssignment(target=target, value=value_str)
+            statement.assignments.append(assignment)
+    
+    return statement
+
+
+def parse_write_command(write_text: str) -> Optional[MWriteStatement]:
+    """Parse a WRITE command using textX grammar.
+    
+    Args:
+        write_text: The WRITE command (e.g., "W X" or 'W "Hello",!')
+        
+    Returns:
+        MWriteStatement ASG node or None if parsing fails
+    """
+    mm = _get_command_metamodel()
+    try:
+        model = mm.model_from_str(write_text, "WriteCommand")
+    except TextXSyntaxError:
+        return None
+    
+    statement = MWriteStatement()
+    
+    for write_arg in model.args:
+        # WriteArg has postcond and arg attributes
+        arg_val = write_arg.arg if hasattr(write_arg, 'arg') else write_arg
+        
+        # Check if arg_val is a FormatControl variant
+        if arg_val is None:
+            continue
+            
+        cls_name = arg_val.__class__.__name__
+        
+        # FormatControl types
+        if cls_name == 'Newline':
+            statement.arguments.append({'type': 'newline'})
+        elif cls_name == 'FormFeed':
+            statement.arguments.append({'type': 'formfeed'})
+        elif cls_name == 'Tab':
+            statement.arguments.append({'type': 'tab', 'value': _expr_to_string(arg_val.expr) if arg_val.expr else ''})
+        elif cls_name == 'CharCode':
+            statement.arguments.append({'type': 'charcode', 'value': _expr_to_string(arg_val.expr) if arg_val.expr else ''})
+        else:
+            # Regular expression
+            statement.arguments.append({'type': 'expr', 'value': _expr_to_string(arg_val)})
+    
+    return statement
+
+
+def parse_quit_command(quit_text: str) -> Optional[MQuitStatement]:
+    """Parse a QUIT command using textX grammar.
+    
+    Args:
+        quit_text: The QUIT command (e.g., "Q" or "Q X+1" or "Q:cond")
+        
+    Returns:
+        MQuitStatement ASG node or None if parsing fails
+    """
+    mm = _get_command_metamodel()
+    try:
+        model = mm.model_from_str(quit_text, "QuitCommand")
+    except TextXSyntaxError:
+        return None
+    
+    statement = MQuitStatement()
+    
+    if model.postcond:
+        statement.postcondition = _expr_to_string(model.postcond.condition)
+    
+    if model.value:
+        statement.return_value = _expr_to_string(model.value)
+    
+    return statement
+
+
+def parse_if_command(if_text: str) -> Optional[MIfStatement]:
+    """Parse an IF command using textX grammar.
+    
+    Args:
+        if_text: The IF command (e.g., "I X=1" or "IF X>0")
+        
+    Returns:
+        MIfStatement ASG node or None if parsing fails
+    """
+    mm = _get_command_metamodel()
+    try:
+        model = mm.model_from_str(if_text, "IfCommand")
+    except TextXSyntaxError:
+        return None
+    
+    statement = MIfStatement()
+    
+    if model.condition:
+        # Store the condition as a string for now
+        # In the future, build full expression ASG
+        statement.condition = _expr_to_string(model.condition)
+    
+    return statement
+
+
+def parse_for_command(for_text: str) -> Optional[MForStatement]:
+    """Parse a FOR command using textX grammar.
+    
+    Args:
+        for_text: The FOR command (e.g., "F I=1:1:10")
+        
+    Returns:
+        MForStatement ASG node or None if parsing fails
+    """
+    mm = _get_command_metamodel()
+    try:
+        model = mm.model_from_str(for_text, "ForCommand")
+    except TextXSyntaxError:
+        return None
+    
+    statement = MForStatement()
+    
+    if model.var:
+        statement.loop_var = model.var
+    
+    if model.params:
+        for param in model.params:
+            fp = MForParameter()
+            
+            if param.start:
+                fp.start = _expr_to_string(param.start)
+            
+            if param.step:
+                fp.step = _expr_to_string(param.step)
+                if param.end:
+                    fp.end = _expr_to_string(param.end)
+                    fp.param_type = ForParamType.RANGE
+                else:
+                    fp.param_type = ForParamType.OPEN_RANGE
+            else:
+                # VALUE type - single value with no step/end
+                fp.param_type = ForParamType.VALUE
+                # For VALUE type, use start as the value
+                fp.value = fp.start
+            
+            statement.parameters.append(fp)
+    
+    # Classify the loop type
+    statement.loop_type = _classify_for_params(statement.parameters)
+    
+    return statement
+
+
+def parse_goto_command(goto_text: str) -> Optional[MGotoStatement]:
+    """Parse a GOTO command using textX grammar.
+    
+    Args:
+        goto_text: The GOTO command (e.g., "G LABEL" or "GOTO LABEL^ROUTINE")
+        
+    Returns:
+        MGotoStatement ASG node or None if parsing fails
+    """
+    mm = _get_command_metamodel()
+    try:
+        model = mm.model_from_str(goto_text, "GotoCommand")
+    except TextXSyntaxError:
+        return None
+    
+    statement = MGotoStatement()
+    
+    # Handle command-level postcondition (e.g., G:condition LABEL)
+    if hasattr(model, 'postcond') and model.postcond:
+        statement.postcondition = _expr_to_string(model.postcond.condition)
+    
+    if model.targets:
+        for target in model.targets:
+            call = MCall()
+            label_ref = target.label
+            
+            if label_ref:
+                call.name = label_ref.label or ""
+                if hasattr(label_ref, 'offset') and label_ref.offset:
+                    call.offset = _expr_to_string(label_ref.offset)
+                if hasattr(label_ref, 'routine') and label_ref.routine:
+                    call.routine = label_ref.routine
+            
+            # Handle target-level postcondition if present
+            if hasattr(target, 'postcond') and target.postcond:
+                call.postcondition = _expr_to_string(target.postcond.condition)
+            
+            statement.targets.append(call)
+    
+    return statement
+
+
+def parse_new_command(new_text: str) -> Optional[MNewStatement]:
+    """Parse a NEW command using textX grammar.
+    
+    Args:
+        new_text: The NEW command (e.g., "N X,Y,Z" or "NEW (X)")
+        
+    Returns:
+        MNewStatement ASG node or None if parsing fails
+    """
+    mm = _get_command_metamodel()
+    try:
+        model = mm.model_from_str(new_text, "NewCommand")
+    except TextXSyntaxError:
+        return None
+    
+    statement = MNewStatement()
+    
+    # Check for exclusive NEW
+    if hasattr(model, 'exclusive') and model.exclusive:
+        statement.exclusive = True
+        # ExclusiveNew uses 'except' attribute, not 'except_'
+        except_list = getattr(model.exclusive, 'except', None) or getattr(model.exclusive, 'except_', None)
+        if except_list:
+            statement.except_list = list(except_list)
+    elif model.vars:
+        # Extract variable names - NewVar objects have a 'name' attribute
+        statement.variables = [v.name if hasattr(v, 'name') else str(v) for v in model.vars]
+    
+    return statement
+
+
+def parse_do_command(do_text: str) -> Optional[MDoStatement]:
+    """Parse a DO command using textX grammar.
+    
+    Args:
+        do_text: The DO command (e.g., "D LABEL" or "DO LABEL^ROUTINE(args)")
+        
+    Returns:
+        MDoStatement ASG node or None if parsing fails
+    """
+    mm = _get_command_metamodel()
+    try:
+        model = mm.model_from_str(do_text, "DoCommand")
+    except TextXSyntaxError:
+        return None
+    
+    statement = MDoStatement()
+    
+    if model.targets:
+        for target in model.targets:
+            call = MCall()
+            label_ref = target.label
+            
+            if label_ref:
+                call.name = label_ref.label or ""
+                if hasattr(label_ref, 'offset') and label_ref.offset:
+                    call.offset = _expr_to_string(label_ref.offset)
+                if hasattr(label_ref, 'routine') and label_ref.routine:
+                    call.routine = label_ref.routine
+            
+            # Handle arguments if present
+            if hasattr(target, 'args') and target.args and target.args.args:
+                call.arguments = [_expr_to_string(arg) for arg in target.args.args]
+            
+            # Handle postcondition if present
+            if hasattr(target, 'postcond') and target.postcond:
+                call.postcondition = _expr_to_string(target.postcond.condition)
+            
+            statement.targets.append(call)
+    
+    return statement
+
+
+def _classify_for_params(params: list) -> ForLoopType:
+    """Classify FOR loop type from parameters."""
+    if not params:
+        return ForLoopType.ARGUMENTLESS
+    
+    types = set()
+    for p in params:
+        types.add(p.param_type)
+    
+    if len(params) > 1 and len(types) > 1:
+        return ForLoopType.MIXED
+    
+    if ForParamType.RANGE in types:
+        return ForLoopType.BOUNDED
+    elif ForParamType.OPEN_RANGE in types:
+        return ForLoopType.OPEN_ENDED
+    else:
+        return ForLoopType.STRING_LIST
+
+
+def _expr_to_string(expr) -> str:
+    """Convert a textX expression model back to string.
+    
+    This is a temporary solution - ideally we'd build full expression ASG.
+    
+    Args:
+        expr: The textX expression model
+        
+    Returns:
+        String representation of the expression
+    """
+    if expr is None:
+        return ""
+    
+    cls_name = expr.__class__.__name__
+    
+    if cls_name == 'NumericLiteral':
+        return expr.value
+    elif cls_name == 'StringLiteral':
+        return expr.value
+    elif cls_name == 'LocalVariable':
+        name = expr.name
+        if expr.subscripts:
+            subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
+            return f"{name}({subs})"
+        return name
+    elif cls_name == 'GlobalVariable':
+        name = f"^{expr.name}"
+        if expr.subscripts:
+            subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
+            return f"{name}({subs})"
+        return name
+    elif cls_name == 'IntrinsicFunction':
+        name = f"${expr.name}"
+        if expr.args:
+            args = ','.join(_expr_to_string(a) for a in expr.args.args)
+            return f"{name}({args})"
+        return name
+    elif cls_name == 'ExtrinsicFunction':
+        name = f"$${expr.label}"
+        if expr.routine:
+            name += f"^{expr.routine}"
+        if expr.args:
+            args = ','.join(_expr_to_string(a) for a in expr.args.args)
+            return f"{name}({args})"
+        return name
+    elif cls_name == 'SpecialVariable':
+        return f"${expr.name}"
+    elif cls_name == 'Indirection':
+        ind = f"@{_expr_to_string(expr.expr)}"
+        if expr.subscripts:
+            subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
+            return f"{ind}({subs})"
+        return ind
+    elif cls_name == 'ParenExpr':
+        return f"({_expr_to_string(expr.expr)})"
+    elif cls_name == 'Expr':
+        # Full expression with operators
+        parts = []
+        # Handle first unary expression
+        if hasattr(expr, 'unary_expr') and expr.unary_expr:
+            parts.append(_expr_to_string(expr.unary_expr))
+        # Handle (BinaryOp UnaryExpr)* pairs - textX stores as flat list
+        # Need to handle the actual structure
+        return _reconstruct_expr(expr)
+    elif cls_name == 'UnaryExpr':
+        op = expr.operator.op if hasattr(expr, 'operator') and expr.operator else ""
+        return f"{op}{_expr_to_string(expr.operand)}"
+    else:
+        return str(expr)
+
+
+def _reconstruct_expr(expr) -> str:
+    """Reconstruct expression string from textX Expr model."""
+    # Expr: UnaryExpr (BinaryOp UnaryExpr)*
+    # textX represents this as a flat structure we need to parse
+    
+    # For simple cases, try to access the operands directly
+    if not hasattr(expr, '__dict__'):
+        return str(expr)
+    
+    # Try different ways textX might store the expression
+    # This depends on how arpeggio/textX represents the (X Y)* pattern
+    result_parts = []
+    
+    # The Expr rule stores pairs via the repetition
+    # We need to inspect what textX actually gives us
+    
+    # Fallback: convert the textX object to string
+    # This is a hack but works for basic cases
+    try:
+        # Get all children of the expression
+        for attr in dir(expr):
+            if not attr.startswith('_'):
+                val = getattr(expr, attr)
+                if val is not None and not callable(val):
+                    if isinstance(val, list):
+                        for item in val:
+                            result_parts.append(_expr_to_string(item))
+                    elif hasattr(val, '__class__') and val.__class__.__module__.startswith('textx'):
+                        result_parts.append(_expr_to_string(val))
+        
+        if result_parts:
+            return ''.join(result_parts)
+    except Exception:
+        pass
+    
+    return str(expr)
+
+
+# =============================================================================
+# Command Extraction Functions (textX-based replacements for classifier.py)
+# =============================================================================
+
+def classify_for_loop_textx(for_content: str) -> tuple:
+    """Classify a FOR loop from its content string using textX grammar.
+    
+    This is a textX-based replacement for classifier.classify_for_loop().
+    
+    Args:
+        for_content: The content after 'FOR ' or 'F ' command
+        
+    Returns:
+        Tuple of (ForLoopType, loop_variable_name or None)
+    
+    Examples:
+        >>> classify_for_loop_textx("I=1:1:10 W I")
+        (ForLoopType.BOUNDED, "I")
+        >>> classify_for_loop_textx("I=1:1 W I")
+        (ForLoopType.OPEN_ENDED, "I")
+        >>> classify_for_loop_textx(' W "hello"')
+        (ForLoopType.ARGUMENTLESS, None)
+    """
+    from ..asg.enums import ForLoopType
+    import re
+    
+    content = for_content.strip()
+    
+    # Empty or whitespace-only content = argumentless FOR
+    if not content or content[0] in (' ', '\t') or content.startswith(';'):
+        return ForLoopType.ARGUMENTLESS, None
+    
+    # Check if it starts with a variable assignment
+    var_match = re.match(r'^([A-Za-z%][A-Za-z0-9]*|[A-Za-z%])=', content)
+    if not var_match:
+        # No variable assignment = argumentless FOR (body only)
+        return ForLoopType.ARGUMENTLESS, None
+    
+    loop_var = var_match.group(1)
+    
+    # Extract just the forparams portion (up to the first space that's followed by a command)
+    # This needs to handle cases like "I=1:1:10 W I" vs "I=1:1:10"
+    after_var = content[len(var_match.group(0)):]
+    
+    # Try to find where the forparams end - either at end of string or at a space followed by command
+    # Use the grammar to parse just the forparams portion
+    # First, try parsing with just "F var=params"
+    for_params_str = f"F {content}"
+    statement = parse_for_command(for_params_str)
+    
+    if statement and statement.loop_var:
+        return statement.loop_type, statement.loop_var
+    
+    # If full parsing failed, try parsing just the params part
+    # Find where params end - look for space followed by letter (command start)
+    # But need to skip spaces inside expressions like "I=A B" shouldn't split
+    # Simplest heuristic: split at first space that's not inside parens/quotes
+    params_end = _find_for_params_end(after_var)
+    
+    if params_end is not None:
+        params_only = after_var[:params_end]
+        statement = parse_for_command(f"F {loop_var}={params_only}")
+        if statement:
+            return statement.loop_type, statement.loop_var
+    
+    # Fallback: try parsing just the variable assignment without body
+    # At this point we know there's a var=, so let's try to classify from the params
+    statement = parse_for_command(f"F {loop_var}={after_var.split()[0] if after_var.split() else ''}")
+    if statement:
+        return statement.loop_type, statement.loop_var
+    
+    # Last resort: if we have a var but can't parse, treat as STRING_LIST
+    return ForLoopType.STRING_LIST, loop_var
+
+
+def _find_for_params_end(params_str: str) -> Optional[int]:
+    """Find where FOR params end and body begins.
+    
+    Args:
+        params_str: String after var= in FOR command
+        
+    Returns:
+        Index where body starts, or None if no body found
+    """
+    in_parens = 0
+    in_quotes = False
+    
+    for i, ch in enumerate(params_str):
+        if ch == '"' and not in_quotes:
+            in_quotes = True
+        elif ch == '"' and in_quotes:
+            in_quotes = False
+        elif ch == '(' and not in_quotes:
+            in_parens += 1
+        elif ch == ')' and not in_quotes:
+            in_parens -= 1
+        elif ch == ' ' and not in_quotes and in_parens == 0:
+            # Found space outside quotes/parens - this is where body starts
+            # But verify next char looks like a command (letter)
+            rest = params_str[i+1:].lstrip()
+            if rest and rest[0].isalpha():
+                return i
+    
+    return None
+
+
+def extract_for_from_line_textx(line_rest: str) -> Optional[tuple]:
+    """Extract FOR command info from line content using textX grammar.
+    
+    This is a textX-based replacement for classifier.extract_for_from_line().
+    
+    Args:
+        line_rest: Line content (typically after label)
+        
+    Returns:
+        Tuple of (ForLoopType, loop_var, for_content) or None if no FOR found
+    """
+    for_commands = extract_for_commands(line_rest)
+    if not for_commands:
+        return None
+    
+    # Use the first FOR command found
+    for_cmd = for_commands[0]
+    loop_type, loop_var = classify_for_from_textx(for_cmd)
+    
+    # Build the "for_content" string that matches old API
+    # This is everything after "FOR " or "F "
+    for_content = ""
+    if for_cmd.var:
+        for_content = f"{for_cmd.var}="
+        if for_cmd.params:
+            param_strs = []
+            for p in for_cmd.params:
+                ps = _expr_to_string(p.start) if p.start else ""
+                if p.step:
+                    ps += f":{_expr_to_string(p.step)}"
+                    if p.end:
+                        ps += f":{_expr_to_string(p.end)}"
+                param_strs.append(ps)
+            for_content += ",".join(param_strs)
+    
+    return (loop_type, loop_var or "", for_content)
+
+
+def extract_goto_from_line_textx(line_rest: str) -> Optional[tuple]:
+    """Extract GOTO command info from line content using textX grammar.
+    
+    This is a textX-based replacement for classifier.extract_goto_from_line().
+    
+    Args:
+        line_rest: Line content
+        
+    Returns:
+        Tuple of (label, routine, offset) or None if no GOTO found
+        - label: The target label name (e.g., "LABEL" or "00000000")
+        - routine: External routine name if ^routine syntax used, else None
+        - offset: Offset expression string if +offset used, else None
+    """
+    cmds = parse_commands_from_line(line_rest)
+    
+    for cmd in cmds:
+        if cmd.__class__.__name__ == "GotoCommand":
+            # Extract first target info
+            if cmd.targets:
+                target = cmd.targets[0]
+                label_ref = target.label
+                # LabelRef has: label (label name), offset, routine
+                label = label_ref.label if label_ref else None
+                routine = label_ref.routine if label_ref and hasattr(label_ref, 'routine') else None
+                offset = _expr_to_string(label_ref.offset) if label_ref and hasattr(label_ref, 'offset') and label_ref.offset else None
+                
+                return (label, routine, offset)
+    
+    return None
+
+
+def extract_do_from_line_textx(line_rest: str) -> Optional[tuple]:
+    """Extract DO command info from line content using textX grammar.
+    
+    This is a textX-based replacement for classifier.extract_do_from_line().
+    
+    Args:
+        line_rest: Line content
+        
+    Returns:
+        Tuple of (do_content, target_label) or None if no DO found
+    """
+    cmds = parse_commands_from_line(line_rest)
+    
+    for cmd in cmds:
+        if cmd.__class__.__name__ == "DoCommand":
+            # Check for argumentless DO
+            if not cmd.targets:
+                return ("", None)
+            
+            # Extract first target info
+            target = cmd.targets[0]
+            label_ref = target.label
+            # LabelRef has: label (label name), offset, routine
+            label = label_ref.label if label_ref else None
+            routine = label_ref.routine if label_ref and hasattr(label_ref, 'routine') else None
+            
+            # Build do_content string
+            do_content = ""
+            if label:
+                do_content = label
+                if hasattr(label_ref, 'offset') and label_ref.offset:
+                    do_content += f"+{_expr_to_string(label_ref.offset)}"
+                if routine:
+                    do_content += f"^{routine}"
+            elif routine:
+                do_content = f"^{routine}"
+            
+            return (do_content, label)
+    
+    return None
+
+
+def extract_set_from_line_textx(line_rest: str) -> Optional[tuple]:
+    """Extract SET command info from line content using textX grammar.
+    
+    Args:
+        line_rest: Line content
+        
+    Returns:
+        Tuple of (set_content, first_var) or None if no SET found
+    """
+    cmds = parse_commands_from_line(line_rest)
+    
+    for cmd in cmds:
+        if cmd.__class__.__name__ == "SetCommand":
+            first_var = None
+            if cmd.args:
+                first_assign = cmd.args[0]
+                if first_assign.targets:
+                    target = first_assign.targets
+                    if hasattr(target, 'targets'):
+                        # ParenTargets
+                        if target.targets:
+                            first_var = target.targets[0].name if hasattr(target.targets[0], 'name') else str(target.targets[0])
+                    elif hasattr(target, 'name'):
+                        first_var = target.name
+            
+            # Build set_content - simplification, just return the detected info
+            return ("", first_var)
+    
+    return None
+
+
+def extract_quit_from_line_textx(line_rest: str) -> Optional[tuple]:
+    """Extract QUIT command info from line content using textX grammar.
+    
+    Args:
+        line_rest: Line content
+        
+    Returns:
+        Tuple of (quit_content, has_value) or None if no QUIT found
+    """
+    cmds = parse_commands_from_line(line_rest)
+    
+    for cmd in cmds:
+        if cmd.__class__.__name__ == "QuitCommand":
+            has_value = cmd.value is not None
+            quit_content = _expr_to_string(cmd.value) if cmd.value else ""
+            return (quit_content, has_value)
+    
+    return None
+
+
+def extract_if_from_line_textx(line_rest: str) -> Optional[tuple]:
+    """Extract IF command info from line content using textX grammar.
+    
+    Args:
+        line_rest: Line content
+        
+    Returns:
+        Tuple of (if_content, has_condition) or None if no IF found
+    """
+    cmds = parse_commands_from_line(line_rest)
+    
+    for cmd in cmds:
+        if cmd.__class__.__name__ == "IfCommand":
+            has_condition = cmd.condition is not None
+            if_content = _expr_to_string(cmd.condition) if cmd.condition else ""
+            return (if_content, has_condition)
+    
+    return None
+
+
+def extract_new_from_line_textx(line_rest: str) -> Optional[tuple]:
+    """Extract NEW command info from line content using textX grammar.
+    
+    Args:
+        line_rest: Line content
+        
+    Returns:
+        Tuple of (new_content, first_var) or None if no NEW found
+    """
+    cmds = parse_commands_from_line(line_rest)
+    
+    for cmd in cmds:
+        if cmd.__class__.__name__ == "NewCommand":
+            first_var = None
+            if cmd.vars:
+                # NewVar objects have a 'name' attribute
+                first_var = cmd.vars[0].name if hasattr(cmd.vars[0], 'name') else str(cmd.vars[0])
+            
+            # Check for exclusive NEW
+            is_exclusive = cmd.exclusive if hasattr(cmd, 'exclusive') and cmd.exclusive else False
+            
+            # Build new_content from variable names
+            if cmd.vars:
+                var_names = [v.name if hasattr(v, 'name') else str(v) for v in cmd.vars]
+                new_content = ",".join(var_names)
+            else:
+                new_content = ""
+            return (new_content, first_var)
+    
+    return None
+
+def detect_unreachable_code(lines: list) -> list:
+    """Detect unreachable code after unconditional GOTO or QUIT using textX.
+    
+    Scans a list of MUMPS lines and identifies lines that cannot be
+    reached because they follow an unconditional GOTO or QUIT command.
+    
+    Args:
+        lines: List of MUMPS source lines
+        
+    Returns:
+        List of (line_number, reason) tuples for unreachable lines
+        Line numbers are 1-indexed
+    """
+    unreachable = []
+    after_unconditional_exit = False
+    unconditional_exit_line = 0
+    
+    for i, line in enumerate(lines, start=1):
+        line_stripped = line.strip()
+        
+        # Skip empty lines and comment lines
+        if not line_stripped or line_stripped.startswith(';'):
+            continue
+        
+        # Check if this is a label line (starts with non-space)
+        # Labels reset reachability since they can be GOTO targets
+        if line and line[0] not in ' \t':
+            after_unconditional_exit = False
+            continue
+        
+        # If we're after an unconditional exit, this code is unreachable
+        if after_unconditional_exit:
+            unreachable.append((i, f"unreachable after unconditional exit on line {unconditional_exit_line}"))
+            continue
+        
+        # Parse commands from the line
+        cmds = parse_commands_from_line(line_stripped)
+        if not cmds:
+            continue
+        
+        # Check the last command on the line
+        last_cmd = cmds[-1]
+        cmd_name = last_cmd.__class__.__name__
+        
+        # Check for unconditional GOTO
+        if cmd_name == "GotoCommand":
+            # Unconditional if no postcondition
+            if not hasattr(last_cmd, 'postcond') or not last_cmd.postcond:
+                # Also check if targets have postconditions
+                has_postcond = False
+                if hasattr(last_cmd, 'targets'):
+                    for target in last_cmd.targets:
+                        if hasattr(target, 'postcond') and target.postcond:
+                            has_postcond = True
+                            break
+                if not has_postcond:
+                    after_unconditional_exit = True
+                    unconditional_exit_line = i
+                    continue
+        
+        # Check for unconditional QUIT
+        if cmd_name == "QuitCommand":
+            # Unconditional if no postcondition
+            if not hasattr(last_cmd, 'postcond') or not last_cmd.postcond:
+                after_unconditional_exit = True
+                unconditional_exit_line = i
+                continue
+    
+    return unreachable
+
+
+# =============================================================================
+# Backward-Compatible Statement Parsers
+# =============================================================================
+# These functions accept content-only (without command word) for backward
+# compatibility with the old classifier.py API.
+
+def parse_set_statement(content: str) -> Optional[MSetStatement]:
+    """Parse SET content into MSetStatement (backward-compatible API).
+    
+    Args:
+        content: Content after 'SET ' command (e.g., "X=1")
+        
+    Returns:
+        MSetStatement ASG node or None
+    """
+    if not content or not content.strip():
+        return MSetStatement()
+    return parse_set_command(f"S {content}")
+
+
+def parse_write_statement(content: str) -> Optional[MWriteStatement]:
+    """Parse WRITE content into MWriteStatement (backward-compatible API).
+    
+    Args:
+        content: Content after 'WRITE ' command (e.g., '"Hello"')
+        
+    Returns:
+        MWriteStatement ASG node or None
+    """
+    if not content or not content.strip():
+        return MWriteStatement()
+    return parse_write_command(f"W {content}")
+
+
+def parse_quit_statement(content: str) -> Optional[MQuitStatement]:
+    """Parse QUIT content into MQuitStatement (backward-compatible API).
+    
+    Args:
+        content: Content after 'QUIT ' command (e.g., "X*2" or ":X>10")
+        
+    Returns:
+        MQuitStatement ASG node or None
+    """
+    if not content or not content.strip():
+        return MQuitStatement()
+    # Handle postcondition - content starts with ":"
+    if content.strip().startswith(':'):
+        return parse_quit_command(f"Q{content}")
+    return parse_quit_command(f"Q {content}")
+
+
+def parse_if_statement(content: str) -> Optional[MIfStatement]:
+    """Parse IF content into MIfStatement (backward-compatible API).
+    
+    Args:
+        content: Content after 'IF ' command (e.g., "X=1")
+        
+    Returns:
+        MIfStatement ASG node or None
+    """
+    if not content or not content.strip():
+        return MIfStatement()
+    return parse_if_command(f"I {content}")
+
+
+def parse_for_statement(content: str) -> Optional[MForStatement]:
+    """Parse FOR content into MForStatement (backward-compatible API).
+    
+    Args:
+        content: Content after 'FOR ' command (e.g., "I=1:1:10")
+        
+    Returns:
+        MForStatement ASG node or None
+    """
+    if not content or not content.strip():
+        stmt = MForStatement()
+        stmt.loop_type = ForLoopType.ARGUMENTLESS
+        return stmt
+    return parse_for_command(f"F {content}")
+
+
+def parse_goto_statement(content: str) -> Optional[MGotoStatement]:
+    """Parse GOTO content into MGotoStatement (backward-compatible API).
+    
+    Args:
+        content: Content after 'GOTO ' command (e.g., "LABEL")
+        
+    Returns:
+        MGotoStatement ASG node or None
+    """
+    if not content or not content.strip():
+        return MGotoStatement()
+    return parse_goto_command(f"G {content}")
+
+
+def parse_new_statement(content: str) -> Optional[MNewStatement]:
+    """Parse NEW content into MNewStatement (backward-compatible API).
+    
+    Args:
+        content: Content after 'NEW ' command (e.g., "X,Y,Z")
+        
+    Returns:
+        MNewStatement ASG node or None
+    """
+    if not content or not content.strip():
+        return MNewStatement()
+    return parse_new_command(f"N {content}")
+
+
+def parse_do_statement(content: str) -> Optional[MDoStatement]:
+    """Parse DO content into MDoStatement (backward-compatible API).
+    
+    Args:
+        content: Content after 'DO ' command (e.g., "LABEL")
+        
+    Returns:
+        MDoStatement ASG node or None
+    """
+    if not content or not content.strip():
+        return MDoStatement()
+    return parse_do_command(f"D {content}")

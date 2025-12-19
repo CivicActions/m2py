@@ -1,0 +1,143 @@
+// MUMPS Expression Grammar for textX
+// =============================================================================
+// Expressions: literals, variables, operators, functions
+// Imported by main mumps.tx grammar
+// =============================================================================
+
+// Top-level expression - MUMPS uses strict left-to-right evaluation
+// No operator precedence - everything is left-to-right
+Expr:
+    UnaryExpr (BinaryOp UnaryExpr)*
+;
+
+// Unary expression with optional prefix operator
+UnaryExpr:
+    operator=UnaryOp? operand=PrimaryExpr
+;
+
+// Binary operators - using regex to avoid issues with multi-char operators
+BinaryOp:
+    // Multi-character operators first (order matters in PEG)
+    op=/\*\*|>=|<=|'>|'<|'=|'\?|]]|>\[|\[|\]/
+    | op=/[+\-*\/#\\=<>&!_?\]]/ 
+;
+
+// Unary operators
+UnaryOp:
+    op=/[+\-']/
+;
+
+// Primary expressions (atoms)
+PrimaryExpr:
+    ParenExpr |
+    IntrinsicFunction |
+    ExtrinsicFunction |
+    SpecialVariable |
+    NakedGlobal |
+    GlobalVariable |
+    Indirection |
+    LocalVariable |
+    StringLiteral |
+    NumericLiteral
+;
+
+// Parenthesized expression
+ParenExpr:
+    '(' expr=Expr ')'
+;
+
+// =============================================================================
+// Literals
+// =============================================================================
+
+// String literal with double-quote escaping
+StringLiteral:
+    value=STRING_VALUE
+;
+
+// Numeric literal (integer or decimal, with optional sign handled by unary)
+NumericLiteral:
+    value=NUMBER
+;
+
+// =============================================================================
+// Variables
+// =============================================================================
+
+// Local variable with optional subscripts
+LocalVariable:
+    name=VARNAME subscripts=Subscripts?
+;
+
+// Global variable with optional subscripts
+GlobalVariable:
+    '^' name=VARNAME subscripts=Subscripts?
+;
+
+// Naked global reference (uses last global context)
+NakedGlobal:
+    '^' subscripts=Subscripts
+;
+
+// Subscript list
+Subscripts:
+    '(' args+=Expr[','] ')'
+;
+
+// =============================================================================
+// Functions
+// =============================================================================
+
+// Intrinsic (built-in) function
+IntrinsicFunction:
+    '$' name=FUNCNAME args=FunctionArgs?
+;
+
+// Extrinsic (user-defined) function: $$label^routine(args) or $$label(args)
+ExtrinsicFunction:
+    '$$' label=VARNAME ('^' routine=VARNAME)? args=FunctionArgs?
+;
+
+// Function arguments
+FunctionArgs:
+    '(' args+=Expr[','] ')'
+;
+
+// Special variables: $TEST, $HOROLOG, etc.
+SpecialVariable:
+    '$' name=SVARNAME
+;
+
+// Indirection: @expr
+Indirection:
+    '@' expr=PrimaryExpr subscripts=Subscripts?
+;
+
+// =============================================================================
+// Terminal Rules
+// =============================================================================
+
+// Variable/label name
+VARNAME:
+    /[%A-Za-z][A-Za-z0-9]*/
+;
+
+// Function name (uppercase by convention but not required)
+FUNCNAME:
+    /[A-Za-z][A-Za-z0-9]*/
+;
+
+// Special variable name (these are specific keywords)
+SVARNAME:
+    /DEVICE|ECODE|ESTACK|ETRAP|HOROLOG|IO|JOB|KEY|PRINCIPAL|QUIT|REFERENCE|STACK|STORAGE|SYSTEM|TEST|X|Y|ZLEVEL/
+;
+
+// Quoted string (handles "" escaping)
+STRING_VALUE:
+    /"([^"]|"")*"/
+;
+
+// Number (integer or decimal)
+NUMBER:
+    /[0-9]+(\.[0-9]+)?([Ee][+-]?[0-9]+)?/
+;

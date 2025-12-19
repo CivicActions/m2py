@@ -1,0 +1,307 @@
+// MUMPS Command Grammar for textX
+// =============================================================================
+// Commands: SET, WRITE, READ, IF, FOR, GOTO, DO, QUIT, NEW, etc.
+// Combined with expression grammar for standalone use.
+// =============================================================================
+
+// Import expression grammar
+import expressions
+
+// =============================================================================
+// Commands
+// =============================================================================
+
+// A command with optional postcondition
+Command:
+    SetCommand |
+    WriteCommand |
+    ReadCommand |
+    IfCommand |
+    ElseCommand |
+    ForCommand |
+    GotoCommand |
+    DoCommand |
+    QuitCommand |
+    NewCommand |
+    KillCommand |
+    HangCommand |
+    HaltCommand |
+    BreakCommand |
+    LockCommand |
+    MergeCommand |
+    ViewCommand |
+    XecuteCommand |
+    JobCommand |
+    OpenCommand |
+    CloseCommand |
+    UseCommand
+;
+
+// =============================================================================
+// Assignment Commands
+// =============================================================================
+
+// SET command: S|SET target=value,target=value,...
+SetCommand:
+    /[Ss][Ee][Tt]|[Ss]/ postcond=Postcondition? WS assignments+=Assignment[/,/]
+;
+
+// Single assignment: target=value or (targets)=value
+Assignment:
+    targets=SetTargets '=' value=Expr postcond=Postcondition?
+;
+
+// Set targets: single variable/global or parenthesized list
+SetTargets:
+    ParenTargets | SingleTarget
+;
+
+ParenTargets:
+    '(' targets+=SingleTarget[/,/] ')'
+;
+
+SingleTarget:
+    GlobalVariable | LocalVariable | Indirection
+;
+
+// =============================================================================
+// I/O Commands
+// =============================================================================
+
+// WRITE command: W|WRITE args
+// Format controls (!, #) can be adjacent without commas
+// Other args need comma separation
+WriteCommand:
+    /[Ww][Rr][Ii][Tt][Ee]|[Ww]/ postcond=Postcondition? WS? args*=WriteArg
+;
+
+// Write argument: format control or expression with optional postcondition
+// Comma is optional before format controls but required between expressions
+WriteArg:
+    /,/? postcond=Postcondition? arg=WriteArgValue
+;
+
+WriteArgValue:
+    FormatControl | Expr
+;
+
+// Format controls: !, #, ?n, *n (newline, form feed, column, char code)
+FormatControl:
+    Newline | FormFeed | Tab | CharCode
+;
+
+Newline: val='!';
+FormFeed: val='#';
+Tab: val=/\?/ expr=Expr;
+CharCode: val=/\*/ expr=Expr;
+
+// READ command: R|READ args
+ReadCommand:
+    /[Rr][Ee][Aa][Dd]|[Rr]/ postcond=Postcondition? WS args+=ReadArg[/,/]
+;
+
+// Read argument: target with optional timeout
+// Note: In READ, *VAR means single-char read, not format control
+ReadArg:
+    postcond=Postcondition? (format=ReadFormat | prompt=StringLiteral)? target=ReadTarget (':' timeout=Expr)?
+;
+
+// Format controls valid in READ (not * which is CharRead)
+ReadFormat:
+    Newline | FormFeed | Tab
+;
+
+ReadTarget:
+    CharRead | GlobalVariable | LocalVariable | Indirection
+;
+
+CharRead:
+    /\*/ var=LocalVariable
+;
+
+// =============================================================================
+// Control Flow - Conditional
+// =============================================================================
+
+// IF command: I|IF condition
+IfCommand:
+    /[Ii][Ff]|[Ii]/ (WS condition=Expr)?
+;
+
+// ELSE command: E|ELSE
+ElseCommand:
+    /[Ee][Ll][Ss][Ee]|[Ee]/
+;
+
+// =============================================================================
+// Control Flow - Loops
+// =============================================================================
+
+// FOR command: F|FOR var=forparams or argumentless FOR
+ForCommand:
+    /[Ff][Oo][Rr]|[Ff]/ (WS var=VARNAME '=' params+=ForParam[/,/])?
+;
+
+// FOR parameter: value, start:step, or start:step:end
+ForParam:
+    start=Expr (':' step=Expr (':' end=Expr)?)?
+;
+
+// =============================================================================
+// Control Flow - Branching
+// =============================================================================
+
+// GOTO command: G|GOTO targets
+GotoCommand:
+    /[Gg][Oo][Tt][Oo]|[Gg]/ postcond=Postcondition? WS targets+=GotoTarget[/,/]
+;
+
+// GOTO target: label, label+offset, label^routine, label+offset^routine
+GotoTarget:
+    postcond=Postcondition? label=LabelRef
+;
+
+// DO command: D|DO targets or argumentless DO
+DoCommand:
+    /[Dd][Oo]|[Dd]/ postcond=Postcondition? (WS targets+=DoTarget[/,/])?
+;
+
+// DO target: like GOTO but with optional args
+DoTarget:
+    postcond=Postcondition? label=LabelRef args=FunctionArgs?
+;
+
+// Label reference: label, label+offset, label^routine, ^routine
+LabelRef:
+    (label=VARNAME ('+' offset=Expr)?)? ('^' routine=VARNAME)?
+;
+
+// QUIT command: Q|QUIT with optional return value
+QuitCommand:
+    /[Qq][Uu][Ii][Tt]|[Qq]/ postcond=Postcondition? (WS value=Expr)?
+;
+
+// =============================================================================
+// Variable Management
+// =============================================================================
+
+// NEW command: N|NEW vars or exclusive NEW
+NewCommand:
+    /[Nn][Ee][Ww]|[Nn]/ postcond=Postcondition? WS? (exclusive=ExclusiveNew | vars+=NewVar[/,/])?
+;
+
+// Exclusive NEW: (var) means NEW all except var
+ExclusiveNew:
+    '(' except+=VARNAME[/,/] ')'
+;
+
+NewVar:
+    name=VARNAME subscripts=Subscripts?
+;
+
+// KILL command: K|KILL vars or exclusive KILL
+KillCommand:
+    /[Kk][Ii][Ll][Ll]|[Kk]/ postcond=Postcondition? WS? (exclusive=ExclusiveKill | vars+=KillTarget[/,/])?
+;
+
+ExclusiveKill:
+    '(' except+=VARNAME[/,/] ')'
+;
+
+KillTarget:
+    GlobalVariable | LocalVariable
+;
+
+// =============================================================================
+// Other Commands
+// =============================================================================
+
+// HANG command: H|HANG seconds
+HangCommand:
+    /[Hh][Aa][Nn][Gg]|[Hh]/ postcond=Postcondition? WS seconds=Expr
+;
+
+// HALT command: H|HALT (same abbreviation as HANG - context determines)
+HaltCommand:
+    /[Hh][Aa][Ll][Tt]/ postcond=Postcondition?
+;
+
+// BREAK command: B|BREAK
+BreakCommand:
+    /[Bb][Rr][Ee][Aa][Kk]|[Bb]/ postcond=Postcondition?
+;
+
+// LOCK command: L|LOCK targets
+LockCommand:
+    /[Ll][Oo][Cc][Kk]|[Ll]/ postcond=Postcondition? WS? lockop=LockOp? targets+=LockTarget[/,/]?
+;
+
+LockOp:
+    '+' | '-'
+;
+
+LockTarget:
+    postcond=Postcondition? target=VarRef (':' timeout=Expr)?
+;
+
+// Helper rule for global or local variable reference
+VarRef:
+    GlobalVariable | LocalVariable
+;
+
+// MERGE command: M|MERGE dest=source
+MergeCommand:
+    /[Mm][Ee][Rr][Gg][Ee]|[Mm]/ postcond=Postcondition? WS merges+=MergeArg[/,/]
+;
+
+MergeArg:
+    dest=VarRef '=' src=VarRef
+;
+
+// VIEW command: V|VIEW args
+ViewCommand:
+    /[Vv][Ii][Ee][Ww]|[Vv]/ postcond=Postcondition? WS? args+=Expr[/,/]?
+;
+
+// XECUTE command: X|XECUTE expr
+XecuteCommand:
+    /[Xx][Ee][Cc][Uu][Tt][Ee]|[Xx]/ postcond=Postcondition? WS args+=XecuteArg[/,/]
+;
+
+XecuteArg:
+    postcond=Postcondition? expr=Expr
+;
+
+// JOB command: JOB label
+JobCommand:
+    /[Jj][Oo][Bb]/ postcond=Postcondition? WS targets+=DoTarget[/,/]
+;
+
+// OPEN command: OPEN device
+OpenCommand:
+    /[Oo][Pp][Ee][Nn]/ postcond=Postcondition? WS args+=Expr[/,/]
+;
+
+// CLOSE command: CLOSE device
+CloseCommand:
+    /[Cc][Ll][Oo][Ss][Ee]/ postcond=Postcondition? WS args+=Expr[/,/]
+;
+
+// USE command: USE device
+UseCommand:
+    /[Uu][Ss][Ee]/ postcond=Postcondition? WS args+=Expr[/,/]
+;
+
+// =============================================================================
+// Shared Elements
+// =============================================================================
+
+// Command postcondition: :condition
+Postcondition:
+    ':' condition=Expr
+;
+
+// Whitespace (explicit since skipws=False)
+WS:
+    /[ \t]+/
+;

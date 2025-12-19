@@ -5,7 +5,7 @@ produces an Abstract Semantic Graph (ASG).
 """
 
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, List
 
 from textx import metamodel_from_file
 
@@ -13,7 +13,14 @@ from m2py.asg import MRoutine, MLabel, MScope
 from m2py.asg.enums import ForLoopType
 from m2py.asg.statements import MForStatement
 from m2py.parser.exceptions import MUMPSSyntaxError
-from m2py.analysis.classifier import classify_for_loop, extract_for_from_line, parse_for_statement
+from m2py.analysis.command_parser import (
+    parse_line_content, 
+    parse_commands_from_line,
+    extract_for_commands,
+    classify_for_from_textx,
+    parse_for_command_to_asg,
+    detect_quit_after_for,
+)
 from m2py.analysis.resolver import resolve_references as _resolve_references
 from m2py.analysis.variables import (
     analyze_variables as _analyze_variables,
@@ -180,11 +187,24 @@ class MUMPSParser:
         """
         label = MLabel(name=line.label if line.label else "")
         
-        # TODO: Parse formal parameters from line.rest if present
-        # (format: LABEL(param1,param2)\tcommands)
+        # Parse formal parameters from FormalList if present
+        if hasattr(line, 'formal_list') and line.formal_list:
+            formal_list = line.formal_list
+            if hasattr(formal_list, 'params') and formal_list.params:
+                # Strip whitespace from each parameter name
+                label.formal_list = [p.strip() for p in formal_list.params]
         
-        # Store line content for classification
+        # Store line content for backward compatibility with classifier.py
         label._line_rest = getattr(line, 'rest', '')
+        
+        # Parse line content using textX grammar (new approach)
+        # This stores the parsed commands for later ASG building
+        if label._line_rest:
+            label._parsed_content = parse_line_content(label._line_rest)
+            label._parsed_commands = parse_commands_from_line(label._line_rest)
+        else:
+            label._parsed_content = None
+            label._parsed_commands = []
         
         # Build the body scope (statements will be added in later phases)
         label.body = MScope()
@@ -197,6 +217,8 @@ class MUMPSParser:
         
         This is a convenience method that parses the source and then
         extracts and classifies all FOR loops found in the routine.
+        
+        Uses textX grammar-based parsing to extract FOR commands.
         
         Args:
             source: The MUMPS source code to parse
@@ -231,14 +253,19 @@ class MUMPSParser:
                 if not line_rest:
                     continue
                 
-                # Look for FOR patterns in this line
-                for_info = extract_for_from_line(line_rest)
+                # Use textX grammar to extract FOR commands
+                for_commands = extract_for_commands(line_rest)
                 
-                if for_info:
-                    loop_type, loop_var, for_content = for_info
+                # Detect if QUIT appears after FOR on this line
+                has_quit = detect_quit_after_for(line_rest)
+                
+                for for_cmd in for_commands:
+                    # Classify the FOR command using textX
+                    loop_type, loop_var = classify_for_from_textx(for_cmd)
                     
-                    # Build actual MForStatement ASG node
-                    statement = parse_for_statement(for_content)
+                    # Build MForStatement from textX ForCommand
+                    statement = parse_for_command_to_asg(for_cmd)
+                    statement.has_internal_quit = has_quit
                     
                     results.append(ForPatternResult(
                         label_name=current_label or "",

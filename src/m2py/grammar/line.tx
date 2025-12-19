@@ -1,0 +1,23 @@
+// MUMPS Line Content Grammar for textX
+// =============================================================================
+// Parses the content of a MUMPS line (commands and optional comment)
+// This grammar has LineContent as its root rule
+// =============================================================================
+
+// Import commands grammar
+import commands
+
+// Root rule: Line content with commands and optional comment
+LineContent:
+    /[ \t]*/ commands*=LineCommand comment=LineComment?
+;
+
+// A command followed by optional space
+LineCommand:
+    cmd=Command /[ \t]*/
+;
+
+// Comment at end of line
+LineComment:
+    ';' text=/[^\r\n]*/
+;

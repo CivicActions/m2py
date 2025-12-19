@@ -117,6 +117,44 @@ class TestMUMPSParserMUGJ:
         assert routine.labels[0].name == "V1FORA"
 
 
+class TestMUMPSParserGrammarIntegration:
+    """Test grammar-based command parsing integration."""
+
+    def test_label_has_parsed_content(self):
+        """Labels should have _parsed_content from textX grammar."""
+        parser = MUMPSParser()
+        routine = parser.parse("LABEL\tS X=1\n")
+        label = routine.labels[0]
+        assert hasattr(label, '_parsed_content')
+        assert label._parsed_content is not None
+
+    def test_label_has_parsed_commands(self):
+        """Labels should have _parsed_commands list from textX grammar."""
+        parser = MUMPSParser()
+        routine = parser.parse("LABEL\tS X=1 W X\n")
+        label = routine.labels[0]
+        assert hasattr(label, '_parsed_commands')
+        assert len(label._parsed_commands) == 2
+        assert label._parsed_commands[0].__class__.__name__ == "SetCommand"
+        assert label._parsed_commands[1].__class__.__name__ == "WriteCommand"
+
+    def test_label_without_commands(self):
+        """Label with no commands should have empty _parsed_commands."""
+        parser = MUMPSParser()
+        routine = parser.parse("LABEL\n")
+        label = routine.labels[0]
+        assert hasattr(label, '_parsed_commands')
+        assert label._parsed_commands == []
+
+    def test_for_command_parsed(self):
+        """FOR command should be parsed via textX grammar."""
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\tF I=1:1:10 W I\n")
+        label = routine.labels[0]
+        assert len(label._parsed_commands) == 2
+        assert label._parsed_commands[0].__class__.__name__ == "ForCommand"
+
+
 class TestMUMPSParserClassifyPatterns:
     """Test MUMPSParser.classify_patterns() method."""
     
