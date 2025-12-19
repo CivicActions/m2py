@@ -19,16 +19,16 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure per plan.md: src/m2py/{grammar,asg,parser,analysis,cli}/, tests/{unit,integration}/
-- [ ] T002 Add textX dependency (4.0+) to pyproject.toml
-- [ ] T003 [P] Create src/m2py/__init__.py with version and public API exports
-- [ ] T004 [P] Create src/m2py/grammar/__init__.py (empty placeholder)
-- [ ] T005 [P] Create src/m2py/asg/__init__.py with ASG element exports
-- [ ] T006 [P] Create src/m2py/parser/__init__.py with MUMPSParser export
-- [ ] T007 [P] Create src/m2py/analysis/__init__.py with analysis function exports
-- [ ] T008 [P] Create tests/unit/__init__.py (empty placeholder)
-- [ ] T009 [P] Create tests/integration/__init__.py (empty placeholder)
-- [ ] T010 Create pytest fixture for MUGJ file loading in tests/conftest.py
+- [X] T001 Create project structure per plan.md: src/m2py/{grammar,asg,parser,analysis,cli}/, tests/{unit,integration}/
+- [X] T002 Add textX dependency (4.0+) to pyproject.toml
+- [X] T003 [P] Create src/m2py/__init__.py with version and public API exports
+- [X] T004 [P] Create src/m2py/grammar/__init__.py (empty placeholder)
+- [X] T005 [P] Create src/m2py/asg/__init__.py with ASG element exports
+- [X] T006 [P] Create src/m2py/parser/__init__.py with MUMPSParser export
+- [X] T007 [P] Create src/m2py/analysis/__init__.py with analysis function exports
+- [X] T008 [P] Create tests/unit/__init__.py (empty placeholder)
+- [X] T009 [P] Create tests/integration/__init__.py (empty placeholder)
+- [X] T010 Create pytest fixture for MUGJ file loading in tests/conftest.py
 
 ---
 
