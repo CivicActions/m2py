@@ -17,7 +17,7 @@ Never use bare `python`, `pip`, or `pytest` commands.
 
 ## Key Reference Materials
 
-- `mumps-reference/` - Complete MUMPS language specification and examples
+- `mumps-reference/` - Complete MUMPS language specification and examples - start with `mumps-reference/README.md` for a table of contents
 - `textX-reference/` - Full textX library documentation
 - `tests/functional/mugj/` - MUGJ functional test suite (authoritative validation)
 - `.specify/memory/constitution.md` - Project principles and constraints

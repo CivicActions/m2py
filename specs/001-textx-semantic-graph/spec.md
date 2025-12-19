@@ -132,7 +132,7 @@ As a developer, I want the parser to correctly represent special MUMPS features 
 #### Parser Requirements
 
 - **FR-001**: System MUST parse MUMPS source code using a textX grammar definition
-- **FR-002**: System MUST handle all MUMPS commands defined in the 1995 ANSI standard (SET, WRITE, READ, IF, ELSE, FOR, DO, GOTO, QUIT, HALT, NEW, KILL, MERGE, LOCK, OPEN, CLOSE, USE, XECUTE, JOB, HANG, VIEW)
+- **FR-002**: System MUST handle all MUMPS commands defined in the 1995 ANSI standard (BREAK, SET, WRITE, READ, IF, ELSE, FOR, DO, GOTO, QUIT, HALT, NEW, KILL, MERGE, LOCK, OPEN, CLOSE, USE, XECUTE, JOB, HANG, VIEW)
 - **FR-003**: System MUST parse MUMPS intrinsic functions ($ASCII, $CHAR, $DATA, $EXTRACT, $FIND, $FNUMBER, $GET, $JUSTIFY, $LENGTH, $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE)
 - **FR-004**: System MUST parse MUMPS special variables ($DEVICE, $ECODE, $ESTACK, $ETRAP, $HOROLOG, $IO, $JOB, $KEY, $PRINCIPAL, $QUIT, $REFERENCE, $STACK, $STORAGE, $SYSTEM, $TEST, $X, $Y, $ZLEVEL)
 - **FR-005**: System MUST parse MUMPS operators (arithmetic: +, -, *, /, \, #, **; comparison: =, <, >, '=, '<, '>; logical: &, !, '; string: _, [, ], ]], ?; unary: +, -)
@@ -168,7 +168,7 @@ As a developer, I want the parser to correctly represent special MUMPS features 
 
 #### GOTO Classification Requirements
 
-- **FR-031**: System MUST classify GOTO statements as: forward-jump, backward-jump, loop-exit, cross-label-jump
+- **FR-031**: System MUST classify GOTO statements as: forward-jump, backward-jump, loop-exit, multi-loop-exit, cross-label-jump, external
 - **FR-032**: System MUST identify when GOTO can be replaced with Python `break` (single loop exit)
 - **FR-033**: System MUST identify when GOTO can be replaced with Python `continue`
 - **FR-034**: System MUST identify when GOTO requires structured transformation (backward jump → while loop)

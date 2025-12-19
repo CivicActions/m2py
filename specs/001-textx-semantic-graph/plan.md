@@ -98,9 +98,7 @@ src/
 └── m2py/
     ├── __init__.py
     ├── grammar/              # textX grammar files
-    │   ├── mumps.tx          # Main MUMPS grammar
-    │   ├── commands.tx       # Command definitions
-    │   └── expressions.tx    # Expression grammar
+    │   └── mumps.tx          # Complete MUMPS grammar (single file for simplicity)
     ├── asg/                  # ASG element definitions
     │   ├── __init__.py
     │   ├── elements.py       # Base classes (ASGElement, MRoutine, MLabel)
