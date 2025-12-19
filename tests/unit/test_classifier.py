@@ -776,3 +776,285 @@ class TestGetLoopExitingGotos:
         result = get_loop_exiting_gotos(routine)
         assert len(result) == 1
         assert result[0] is goto_stmt
+
+
+# =============================================================================
+# NEW Statement Parsing Tests (T088-T089 - Phase 6)
+# =============================================================================
+
+class TestParseNewStatement:
+    """Test parse_new_statement function (T088-T089)."""
+    
+    def test_parse_new_single_variable(self):
+        """Parse N X into MNewStatement (T088)."""
+        from m2py.analysis import parse_new_statement
+        from m2py.asg.statements import MNewStatement
+        
+        stmt = parse_new_statement("X")
+        
+        assert isinstance(stmt, MNewStatement)
+        assert stmt.variables == ["X"]
+        assert not stmt.exclusive
+    
+    def test_parse_new_multiple_variables(self):
+        """Parse N X,Y,Z into MNewStatement (T088)."""
+        from m2py.analysis import parse_new_statement
+        
+        stmt = parse_new_statement("X,Y,Z")
+        
+        assert stmt.variables == ["X", "Y", "Z"]
+        assert not stmt.exclusive
+    
+    def test_parse_new_exclusive_single(self):
+        """Parse N (X) into exclusive MNewStatement (T089)."""
+        from m2py.analysis import parse_new_statement
+        
+        stmt = parse_new_statement("(X)")
+        
+        assert stmt.exclusive
+        assert stmt.except_list == ["X"]
+        assert stmt.variables == []
+    
+    def test_parse_new_exclusive_multiple(self):
+        """Parse N (X,Y) into exclusive MNewStatement (T089)."""
+        from m2py.analysis import parse_new_statement
+        
+        stmt = parse_new_statement("(X,Y)")
+        
+        assert stmt.exclusive
+        assert stmt.except_list == ["X", "Y"]
+    
+    def test_parse_new_argumentless(self):
+        """Parse empty NEW command."""
+        from m2py.analysis import parse_new_statement
+        
+        stmt = parse_new_statement("")
+        
+        assert stmt.variables == []
+        assert not stmt.exclusive
+
+
+class TestExtractNewFromLine:
+    """Test extract_new_from_line function."""
+    
+    def test_extract_new_abbreviated(self):
+        """N abbreviation should be recognized."""
+        from m2py.analysis import extract_new_from_line
+        
+        result = extract_new_from_line("\tN X,Y")
+        assert result is not None
+        content, _ = result
+        assert "X" in content
+    
+    def test_extract_new_full(self):
+        """NEW full keyword should be recognized."""
+        from m2py.analysis import extract_new_from_line
+        
+        result = extract_new_from_line("\tNEW A,B")
+        assert result is not None
+    
+    def test_extract_new_not_intrinsic(self):
+        """$N should not be recognized as NEW."""
+        from m2py.analysis import extract_new_from_line
+        
+        result = extract_new_from_line("\tS X=$N(A)")
+        assert result is None
+
+
+# =============================================================================
+# DO Statement Parsing Tests (T090 - Phase 6)
+# =============================================================================
+
+class TestParseDoStatement:
+    """Test parse_do_statement function (T090)."""
+    
+    def test_parse_do_local_label(self):
+        """Parse D LABEL into MDoStatement (T090)."""
+        from m2py.analysis import parse_do_statement
+        from m2py.asg.statements import MDoStatement
+        
+        stmt = parse_do_statement("LABEL")
+        
+        assert isinstance(stmt, MDoStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+    
+    def test_parse_do_external(self):
+        """Parse D LABEL^ROUTINE into MDoStatement (T090)."""
+        from m2py.analysis import parse_do_statement
+        
+        stmt = parse_do_statement("LABEL^ROUTINE")
+        
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+        assert stmt.targets[0].routine == "ROUTINE"
+    
+    def test_parse_do_with_arguments(self):
+        """Parse D SUB(X,Y) into MDoStatement (T090)."""
+        from m2py.analysis import parse_do_statement
+        
+        stmt = parse_do_statement("SUB(X,Y)")
+        
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "SUB"
+        assert len(stmt.targets[0].arguments) == 2
+    
+    def test_parse_do_multiple_targets(self):
+        """Parse D A,B,C into MDoStatement (T090)."""
+        from m2py.analysis import parse_do_statement
+        
+        stmt = parse_do_statement("A,B,C")
+        
+        assert len(stmt.targets) == 3
+        assert stmt.targets[0].name == "A"
+        assert stmt.targets[1].name == "B"
+        assert stmt.targets[2].name == "C"
+    
+    def test_parse_do_percent_label(self):
+        """Parse D %LABEL into MDoStatement (T090)."""
+        from m2py.analysis import parse_do_statement
+        
+        stmt = parse_do_statement("%LABEL")
+        
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "%LABEL"
+    
+    def test_parse_do_argumentless(self):
+        """Parse empty DO (block start)."""
+        from m2py.analysis import parse_do_statement
+        
+        stmt = parse_do_statement("")
+        
+        assert len(stmt.targets) == 0
+
+
+class TestExtractDoFromLine:
+    """Test extract_do_from_line function."""
+    
+    def test_extract_do_abbreviated(self):
+        """D abbreviation should be recognized."""
+        from m2py.analysis import extract_do_from_line
+        
+        result = extract_do_from_line("\tD LABEL")
+        assert result is not None
+        content, _ = result
+        assert "LABEL" in content
+    
+    def test_extract_do_full(self):
+        """DO full keyword should be recognized."""
+        from m2py.analysis import extract_do_from_line
+        
+        result = extract_do_from_line("\tDO SUB")
+        assert result is not None
+    
+    def test_extract_do_not_intrinsic(self):
+        """$D should not be recognized as DO."""
+        from m2py.analysis import extract_do_from_line
+        
+        result = extract_do_from_line("\tS X=$D(A)")
+        assert result is None
+
+
+class TestDetectUnreachableCode:
+    """Test detect_unreachable_code function (T106)."""
+    
+    def test_no_unreachable_code(self):
+        """Normal code should have no unreachable lines."""
+        from m2py.analysis import detect_unreachable_code
+        
+        lines = [
+            "TEST\t; Start of routine",
+            "\tS X=1",
+            "\tW X",
+            "\tQ",
+        ]
+        
+        unreachable = detect_unreachable_code(lines)
+        assert len(unreachable) == 0
+    
+    def test_unreachable_after_unconditional_quit(self):
+        """Code after unconditional QUIT is unreachable."""
+        from m2py.analysis import detect_unreachable_code
+        
+        lines = [
+            "TEST\t; Start of routine",
+            "\tS X=1",
+            "\tQ",
+            "\tW X",  # This line is unreachable
+        ]
+        
+        unreachable = detect_unreachable_code(lines)
+        assert len(unreachable) == 1
+        assert unreachable[0][0] == 4  # Line 4 is unreachable
+    
+    def test_unreachable_after_unconditional_goto(self):
+        """Code after unconditional GOTO is unreachable."""
+        from m2py.analysis import detect_unreachable_code
+        
+        lines = [
+            "TEST\t; Start",
+            "\tS X=1",
+            "\tG END",
+            "\tW X",  # This line is unreachable
+            "END\tQ",  # This line IS reachable (label)
+        ]
+        
+        unreachable = detect_unreachable_code(lines)
+        assert len(unreachable) == 1
+        assert unreachable[0][0] == 4  # Line 4 is unreachable
+    
+    def test_label_resets_reachability(self):
+        """Labels can be GOTO targets so they reset reachability."""
+        from m2py.analysis import detect_unreachable_code
+        
+        lines = [
+            "A\tG B",  # Unconditional GOTO
+            "B\tS X=1",  # This is reachable via label
+            "\tQ",
+        ]
+        
+        unreachable = detect_unreachable_code(lines)
+        assert len(unreachable) == 0  # B is reachable
+    
+    def test_conditional_quit_not_unreachable(self):
+        """Code after conditional QUIT is still reachable."""
+        from m2py.analysis import detect_unreachable_code
+        
+        lines = [
+            "TEST\t; Start",
+            "\tQ:X<0",  # Conditional QUIT
+            "\tW X",  # Still reachable
+            "\tQ",
+        ]
+        
+        unreachable = detect_unreachable_code(lines)
+        assert len(unreachable) == 0
+    
+    def test_conditional_goto_not_unreachable(self):
+        """Code after conditional GOTO is still reachable."""
+        from m2py.analysis import detect_unreachable_code
+        
+        lines = [
+            "TEST\t; Start",
+            "\tG:X<0 END",  # Conditional GOTO
+            "\tW X",  # Still reachable
+            "END\tQ",
+        ]
+        
+        unreachable = detect_unreachable_code(lines)
+        assert len(unreachable) == 0
+    
+    def test_quit_with_value_unconditional(self):
+        """Q value without postcondition is still unconditional."""
+        from m2py.analysis import detect_unreachable_code
+        
+        lines = [
+            "FUNC(X)\t; Extrinsic function",
+            "\tS Y=X*2",
+            "\tQ Y",  # Unconditional quit with return value
+            "\tW Y",  # Unreachable
+        ]
+        
+        unreachable = detect_unreachable_code(lines)
+        assert len(unreachable) == 1
+        assert unreachable[0][0] == 4

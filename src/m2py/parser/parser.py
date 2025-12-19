@@ -15,6 +15,11 @@ from m2py.asg.statements import MForStatement
 from m2py.parser.exceptions import MUMPSSyntaxError
 from m2py.analysis.classifier import classify_for_loop, extract_for_from_line, parse_for_statement
 from m2py.analysis.resolver import resolve_references as _resolve_references
+from m2py.analysis.variables import (
+    analyze_variables as _analyze_variables,
+    compute_transitive_inputs as _compute_transitive_inputs,
+    ScopeVariables,
+)
 
 
 class ForPatternResult:
@@ -286,3 +291,41 @@ class MUMPSParser:
             Modifies routine's MCall and MLabel objects in place
         """
         _resolve_references(routine)
+    
+    def analyze_variables(self, routine: MRoutine, compute_transitive: bool = False) -> dict[str, ScopeVariables]:
+        """Analyze variable usage across all labels in a routine.
+        
+        This method scans each label for variable reads, writes, and NEW
+        commands to determine:
+        - input_variables: Variables read before first write (inputs)
+        - output_variables: Variables written and visible to caller (outputs)
+        - newed: Variables scoped by NEW command
+        
+        It also populates the corresponding fields on each MLabel object.
+        
+        Args:
+            routine: The MRoutine to analyze
+            compute_transitive: If True, compute transitive inputs through
+                call chains (requires resolve_references() to be called first)
+            
+        Returns:
+            Dictionary mapping label names to ScopeVariables
+            
+        Side Effects:
+            Populates MLabel.variables_read, variables_written, variables_newed,
+            input_variables, and output_variables fields
+        """
+        label_vars = _analyze_variables(routine)
+        
+        if compute_transitive:
+            # Compute transitive closure through call chains
+            transitive_inputs = _compute_transitive_inputs(routine, label_vars)
+            
+            # Update input_variables with transitive inputs
+            for label in routine.labels:
+                if label.name in transitive_inputs:
+                    label.input_variables = transitive_inputs[label.name]
+                    if label.name in label_vars:
+                        label_vars[label.name].input_variables = transitive_inputs[label.name]
+        
+        return label_vars

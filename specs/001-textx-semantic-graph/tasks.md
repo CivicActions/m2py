@@ -212,32 +212,32 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 
 ### Tests for User Story 4
 
-- [ ] T088 [P] [US4] Unit test for NEW command parsing in tests/unit/test_grammar.py
-- [ ] T089 [P] [US4] Unit test for exclusive NEW (N (X)) in tests/unit/test_grammar.py
-- [ ] T090 [P] [US4] Unit test for DO command parsing in tests/unit/test_grammar.py
-- [ ] T091 [US4] Integration test: parse V1NX1.m with NEW commands in tests/integration/test_mugj.py
-- [ ] T092 [US4] Integration test: parse V1DO1.m with subroutine calls in tests/integration/test_mugj.py
+- [X] T088 [P] [US4] Unit test for NEW command parsing in tests/unit/test_classifier.py
+- [X] T089 [P] [US4] Unit test for exclusive NEW (N (X)) in tests/unit/test_classifier.py
+- [X] T090 [P] [US4] Unit test for DO command parsing in tests/unit/test_classifier.py
+- [X] T091 [US4] Integration test: parse V1DO1.m with DO commands in tests/integration/test_mugj.py
+- [X] T092 [US4] Integration test: parse V1DO2.m with subroutine calls in tests/integration/test_mugj.py
 
 ### Grammar Extensions for User Story 4
 
-- [ ] T093 [US4] Add NEW command grammar rule (N|NEW vars or exclusive) in src/m2py/grammar/mumps.tx
-- [ ] T094 [US4] Add DO command grammar rule (D|DO targets with arguments) in src/m2py/grammar/mumps.tx
-- [ ] T095 [US4] Add argumentless DO (inline block) grammar in src/m2py/grammar/mumps.tx
-- [ ] T096 [US4] Implement MDoStatement ASG element in src/m2py/asg/statements.py
-- [ ] T097 [US4] Implement MDoBlockStatement (argumentless DO) in src/m2py/asg/statements.py
+- [X] T093 [US4] Add parse_new_statement() function in src/m2py/analysis/classifier.py
+- [X] T094 [US4] Add parse_do_statement() function in src/m2py/analysis/classifier.py
+- [X] T095 [US4] Add extract_new_from_line() helper in src/m2py/analysis/classifier.py
+- [X] T096 [US4] Add extract_do_from_line() helper in src/m2py/analysis/classifier.py
+- [X] T097 [US4] Handle argumentless DO in parse_do_statement()
 
 ### Variable Analysis for User Story 4
 
-- [ ] T098 [US4] Implement analyze_variables() collecting variable reads in src/m2py/analysis/variables.py
-- [ ] T099 [US4] Extend analyze_variables() collecting variable writes in src/m2py/analysis/variables.py
-- [ ] T100 [US4] Extend analyze_variables() respecting NEW boundaries in src/m2py/analysis/variables.py
-- [ ] T101 [US4] Compute input_variables (read before first write) in src/m2py/analysis/variables.py
-- [ ] T102 [US4] Compute output_variables (written and visible to caller) in src/m2py/analysis/variables.py
-- [ ] T103 [US4] Implement Def-Use chain analysis per FR-051 in src/m2py/analysis/variables.py
-- [ ] T104 [US4] Implement transitive closure for call chain variable propagation per FR-042 in src/m2py/analysis/variables.py
-- [ ] T105 [US4] Add MUMPSParser.analyze_variables() method in src/m2py/parser/parser.py
-- [ ] T106 [US4] Implement unreachable code detection after unconditional GOTO/QUIT per FR-053 in src/m2py/analysis/classifier.py
-- [ ] T107 [US4] Verify V1NX1 variable scope respects NEW in tests/integration/test_mugj.py
+- [X] T098 [US4] Implement analyze_variables() collecting variable reads in src/m2py/analysis/variables.py
+- [X] T099 [US4] Extend analyze_variables() collecting variable writes in src/m2py/analysis/variables.py
+- [X] T100 [US4] Extend analyze_variables() respecting NEW boundaries in src/m2py/analysis/variables.py
+- [X] T101 [US4] Compute input_variables (read before first write) in src/m2py/analysis/variables.py
+- [X] T102 [US4] Compute output_variables (written and visible to caller) in src/m2py/analysis/variables.py
+- [X] T103 [US4] Implement get_def_use_chains() per FR-051 in src/m2py/analysis/variables.py
+- [X] T104 [US4] Implement compute_transitive_inputs() for call chain variable propagation per FR-042 in src/m2py/analysis/variables.py
+- [X] T105 [US4] Add MUMPSParser.analyze_variables() method in src/m2py/parser/parser.py
+- [X] T106 [US4] Implement detect_unreachable_code() after unconditional GOTO/QUIT per FR-053 in src/m2py/analysis/classifier.py
+- [X] T107 [US4] Verify variable analysis with NEW in tests/integration/test_mugj.py
 
 **Checkpoint**: User Story 4 complete - Variable inputs/outputs computed correctly
 

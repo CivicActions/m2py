@@ -1458,3 +1458,515 @@ def get_gotos_by_type(routine: "MRoutine", goto_type: "GotoType") -> List["MGoto
                     result.append(stmt)
     return result
 
+
+# =============================================================================
+# NEW Statement Parsing (T088-T089, T093 - Phase 6)
+# =============================================================================
+
+def parse_new_statement(new_content: str) -> "MNewStatement":
+    """Parse NEW command content into an MNewStatement ASG node.
+    
+    NEW command creates new local scope for variables:
+    - N X          - NEW single variable
+    - N X,Y,Z      - NEW multiple variables
+    - N (X)        - Exclusive NEW (all except X)
+    - N (X,Y)      - Exclusive NEW (all except X and Y)
+    - N            - Argumentless NEW (rare)
+    
+    Args:
+        new_content: The content after 'NEW ' or 'N ' command.
+                    Example: "X", "X,Y,Z", "(X,Y)"
+        
+    Returns:
+        MNewStatement with variables list and exclusive flag
+        
+    Examples:
+        >>> stmt = parse_new_statement("X,Y,Z")
+        >>> stmt.variables
+        ['X', 'Y', 'Z']
+        >>> stmt.exclusive
+        False
+        
+        >>> stmt = parse_new_statement("(X)")
+        >>> stmt.exclusive
+        True
+        >>> stmt.except_list
+        ['X']
+    """
+    from ..asg.statements import MNewStatement
+    
+    stmt = MNewStatement()
+    content = new_content.strip()
+    
+    if not content:
+        # Argumentless NEW - rare but valid
+        return stmt
+    
+    # Check for exclusive NEW: (var) or (var1,var2)
+    if content.startswith('('):
+        stmt.exclusive = True
+        # Find matching close paren
+        paren_end = content.find(')')
+        if paren_end > 0:
+            inner = content[1:paren_end]
+            # Parse exception list
+            stmt.except_list = _parse_variable_list(inner)
+        return stmt
+    
+    # Regular NEW: parse variable list
+    stmt.variables = _parse_variable_list(content)
+    
+    return stmt
+
+
+def _parse_variable_list(content: str) -> List[str]:
+    """Parse comma-separated variable list.
+    
+    Args:
+        content: Comma-separated variables like "X,Y,Z"
+        
+    Returns:
+        List of variable names
+    """
+    result = []
+    current = ""
+    paren_depth = 0
+    
+    for char in content:
+        if char == '(':
+            paren_depth += 1
+            current += char
+        elif char == ')':
+            paren_depth -= 1
+            current += char
+        elif char == ',' and paren_depth == 0:
+            if current.strip():
+                result.append(current.strip())
+            current = ""
+        elif char == ' ' and paren_depth == 0 and not current.strip():
+            # Leading whitespace
+            pass
+        elif char == ' ' and paren_depth == 0:
+            # Space ends the list
+            if current.strip():
+                result.append(current.strip())
+            break
+        else:
+            current += char
+    
+    if current.strip():
+        result.append(current.strip())
+    
+    return result
+
+
+def extract_new_from_line(line_rest: str) -> Optional[Tuple[str, str]]:
+    """Extract NEW command from a line.
+    
+    Returns tuple of (new_content, remaining_content) if NEW found, None otherwise.
+    """
+    for match in re.finditer(r'(?:^|\s)(NEW|N)\s+', line_rest, re.IGNORECASE):
+        pos = match.start()
+        
+        # Check not inside string
+        quote_count = line_rest[:pos].count('"')
+        if quote_count % 2 == 1:
+            continue
+        
+        # Make sure it's not $N (intrinsic)
+        if pos > 0 and line_rest[pos-1] == '$':
+            continue
+        
+        after_new = line_rest[match.end():]
+        return after_new, ""
+    
+    return None
+
+
+# =============================================================================
+# DO Statement Parsing (T090, T094-T097 - Phase 6)
+# =============================================================================
+
+def parse_do_statement(do_content: str) -> "MDoStatement":
+    """Parse DO command content into an MDoStatement ASG node.
+    
+    DO command calls subroutines:
+    - D LABEL           - Call local label
+    - D LABEL^ROUTINE   - Call external routine
+    - D LABEL(args)     - Call with arguments
+    - D A,B,C           - Multiple targets
+    - D                 - Argumentless DO (block start)
+    
+    Args:
+        do_content: The content after 'DO ' or 'D ' command.
+                   Example: "LABEL", "A^ROUTINE", "SUB(X,Y)"
+        
+    Returns:
+        MDoStatement with targets list populated
+        
+    Examples:
+        >>> stmt = parse_do_statement("LABEL")
+        >>> len(stmt.targets)
+        1
+        >>> stmt.targets[0].name
+        'LABEL'
+    """
+    from ..asg.statements import MDoStatement, MDoBlockStatement
+    from ..asg.elements import MCall
+    
+    content = do_content.strip()
+    
+    # Check for argumentless DO (block start)
+    if not content or content.startswith('.') or content[0] in ('\n', '\r'):
+        # This is actually MDoBlockStatement but we return MDoStatement for now
+        # The parser will handle the block structure
+        return MDoStatement()
+    
+    stmt = MDoStatement()
+    
+    # Split by comma for multiple targets
+    target_strs = _split_do_targets(content)
+    
+    for target_str in target_strs:
+        target_str = target_str.strip()
+        if not target_str:
+            continue
+        
+        call = _parse_do_target(target_str)
+        if call:
+            stmt.targets.append(call)
+    
+    return stmt
+
+
+def _split_do_targets(content: str) -> List[str]:
+    """Split DO content by commas, respecting parentheses.
+    
+    Returns list of target strings.
+    """
+    result = []
+    current = ""
+    paren_depth = 0
+    in_string = False
+    
+    for char in content:
+        if char == '"':
+            in_string = not in_string
+            current += char
+        elif in_string:
+            current += char
+        elif char == '(':
+            paren_depth += 1
+            current += char
+        elif char == ')':
+            paren_depth -= 1
+            current += char
+        elif char == ',' and paren_depth == 0:
+            result.append(current)
+            current = ""
+        elif char == ' ' and paren_depth == 0 and not in_string:
+            # Space ends the target list (postcondition or next command)
+            result.append(current)
+            break
+        else:
+            current += char
+    
+    if current:
+        result.append(current)
+    
+    return result
+
+
+def _parse_do_target(target_str: str) -> Optional["MCall"]:
+    """Parse a single DO target into an MCall.
+    
+    DO targets can be:
+    - label             Local label
+    - label+offset      Label with offset
+    - label^routine     External routine
+    - ^routine          External routine entry point
+    - label(args)       Call with arguments
+    - label:condition   Postconditioned target
+    
+    Args:
+        target_str: Single target like "LABEL", "SUB(X)", "X^ROUTINE"
+        
+    Returns:
+        MCall with name, routine, offset, arguments, postcondition populated
+    """
+    from ..asg.elements import MCall
+    
+    if not target_str:
+        return None
+    
+    call = MCall()
+    content = target_str
+    
+    # Check for postcondition (: after everything else)
+    postcond_pos = _find_do_postcondition(content)
+    if postcond_pos >= 0:
+        call.postcondition = _make_literal(content[postcond_pos+1:])
+        content = content[:postcond_pos]
+    
+    # Check for arguments (...)
+    args_start = content.find('(')
+    if args_start >= 0:
+        args_end = content.rfind(')')
+        if args_end > args_start:
+            args_str = content[args_start+1:args_end]
+            call.arguments = _parse_argument_list(args_str)
+            content = content[:args_start]
+    
+    # Check for external routine (^)
+    caret_pos = content.find('^')
+    if caret_pos >= 0:
+        label_part = content[:caret_pos]
+        routine_part = content[caret_pos+1:]
+        call.routine = routine_part.strip()
+        content = label_part
+    
+    # Check for offset (+)
+    plus_pos = _find_offset_plus(content)
+    if plus_pos >= 0:
+        call.name = content[:plus_pos].strip()
+        offset_str = content[plus_pos+1:].strip()
+        call.offset = _make_literal(offset_str)
+    else:
+        call.name = content.strip()
+    
+    return call
+
+
+def _find_do_postcondition(content: str) -> int:
+    """Find the position of a postcondition colon in DO target.
+    
+    Returns -1 if no postcondition, or the index of the colon.
+    """
+    paren_depth = 0
+    
+    for i, char in enumerate(content):
+        if char == '(':
+            paren_depth += 1
+        elif char == ')':
+            paren_depth -= 1
+        elif char == ':' and paren_depth == 0:
+            # Check if this looks like a postcondition
+            # (not part of arguments or offset)
+            rest = content[i+1:]
+            if '^' not in rest and '+' not in rest.split('(')[0]:
+                return i
+    
+    return -1
+
+
+def _parse_argument_list(args_str: str) -> List:
+    """Parse comma-separated argument list.
+    
+    Args:
+        args_str: Arguments inside parentheses, like "X,Y,1+2"
+        
+    Returns:
+        List of MLiteral objects (for now - will be MExpr in full implementation)
+    """
+    result = []
+    current = ""
+    paren_depth = 0
+    in_string = False
+    
+    for char in args_str:
+        if char == '"':
+            in_string = not in_string
+            current += char
+        elif in_string:
+            current += char
+        elif char == '(':
+            paren_depth += 1
+            current += char
+        elif char == ')':
+            paren_depth -= 1
+            current += char
+        elif char == ',' and paren_depth == 0:
+            if current.strip():
+                result.append(_make_literal(current.strip()))
+            current = ""
+        else:
+            current += char
+    
+    if current.strip():
+        result.append(_make_literal(current.strip()))
+    
+    return result
+
+
+def extract_do_from_line(line_rest: str) -> Optional[Tuple[str, str]]:
+    """Extract DO command from a line.
+    
+    Returns tuple of (do_content, remaining_content) if DO found, None otherwise.
+    """
+    for match in re.finditer(r'(?:^|\s)(DO|D)\s+', line_rest, re.IGNORECASE):
+        pos = match.start()
+        
+        # Check not inside string
+        quote_count = line_rest[:pos].count('"')
+        if quote_count % 2 == 1:
+            continue
+        
+        # Make sure it's not $D (intrinsic)
+        if pos > 0 and line_rest[pos-1] == '$':
+            continue
+        
+        after_do = line_rest[match.end():]
+        return after_do, ""
+    
+    return None
+
+
+# =============================================================================
+# Unreachable Code Detection
+# =============================================================================
+
+
+def detect_unreachable_code(lines: List[str]) -> List[Tuple[int, str]]:
+    """Detect unreachable code after unconditional GOTO or QUIT.
+    
+    Scans a list of MUMPS lines and identifies lines that cannot be
+    reached because they follow an unconditional GOTO or QUIT command.
+    
+    According to FR-053, unreachable code should be flagged during analysis.
+    
+    Args:
+        lines: List of MUMPS source lines
+        
+    Returns:
+        List of (line_number, reason) tuples for unreachable lines
+        Line numbers are 1-indexed
+    """
+    unreachable = []
+    after_unconditional_exit = False
+    unconditional_exit_line = 0
+    
+    for i, line in enumerate(lines, start=1):
+        line_stripped = line.strip()
+        
+        # Skip empty lines and comment lines
+        if not line_stripped or line_stripped.startswith(';'):
+            continue
+        
+        # Check if this is a label line (starts with non-space)
+        # Labels reset reachability since they can be GOTO targets
+        if line and line[0] not in ' \t':
+            after_unconditional_exit = False
+            continue
+        
+        # If we're after an unconditional exit, this code is unreachable
+        if after_unconditional_exit:
+            unreachable.append((i, f"unreachable after unconditional exit on line {unconditional_exit_line}"))
+            continue
+        
+        # Check for unconditional GOTO (G/GOTO without postcondition)
+        if _is_unconditional_goto(line_stripped):
+            after_unconditional_exit = True
+            unconditional_exit_line = i
+            continue
+        
+        # Check for unconditional QUIT (Q/QUIT without postcondition)
+        if _is_unconditional_quit(line_stripped):
+            after_unconditional_exit = True
+            unconditional_exit_line = i
+            continue
+    
+    return unreachable
+
+
+def _is_unconditional_goto(line: str) -> bool:
+    """Check if a line contains an unconditional GOTO command.
+    
+    An unconditional GOTO is one without a postcondition (:condition).
+    It must be the last command on the line for subsequent code to be unreachable.
+    
+    Args:
+        line: The line content (stripped)
+        
+    Returns:
+        True if line ends with an unconditional GOTO
+    """
+    line_upper = line.upper()
+    
+    # Match GOTO/G at end of meaningful content
+    # Pattern: GOTO target or G target (with optional spaces)
+    # Not followed by more commands
+    
+    # Find GOTO/G commands
+    matches = list(re.finditer(r'\b(GOTO|G)\s+(\S+)', line_upper))
+    if not matches:
+        return False
+    
+    # Get the last GOTO match
+    last_match = matches[-1]
+    target = last_match.group(2)
+    
+    # Check if there's a postcondition (target:condition)
+    if ':' in target:
+        # Split to check - could be label:condition or just target with :
+        parts = target.split(':')
+        if len(parts) > 1 and parts[1]:
+            # Has postcondition, not unconditional
+            return False
+    
+    # Check if this GOTO is the last thing on the line (ignoring comments)
+    after_goto = line[last_match.end():].strip()
+    
+    # Remove trailing comment
+    if ';' in after_goto:
+        after_goto = after_goto[:after_goto.index(';')].strip()
+    
+    # If nothing after GOTO target, it's unconditional
+    return not after_goto
+
+
+def _is_unconditional_quit(line: str) -> bool:
+    """Check if a line contains an unconditional QUIT command.
+    
+    An unconditional QUIT is one without a postcondition (:condition).
+    It must be the last command on the line for subsequent code to be unreachable.
+    
+    Args:
+        line: The line content (stripped)
+        
+    Returns:
+        True if line ends with an unconditional QUIT
+    """
+    line_upper = line.upper()
+    
+    # Match QUIT/Q patterns
+    # Q (bare quit), Q value (with return value)
+    # But not Q:condition (conditional quit)
+    
+    # Find QUIT/Q commands
+    matches = list(re.finditer(r'\b(QUIT|Q)(?:\s+(\S+)|\s*$)', line_upper))
+    if not matches:
+        return False
+    
+    # Get the last QUIT match
+    last_match = matches[-1]
+    
+    # Check the original line (not uppercased) for postcondition
+    original_segment = line[last_match.start():last_match.end()]
+    
+    # Look for postcondition pattern: Q:cond or QUIT:cond
+    quit_prefix = line[last_match.start():].lstrip()
+    
+    if quit_prefix.upper().startswith('QUIT:') or quit_prefix.upper().startswith('Q:'):
+        # Has postcondition
+        return False
+    
+    # Check if this QUIT is the last thing on the line (ignoring comments)
+    after_quit = line[last_match.end():].strip()
+    
+    # Remove trailing comment
+    if ';' in after_quit:
+        after_quit = after_quit[:after_quit.index(';')].strip()
+    
+    # If nothing after QUIT, it's unconditional
+    return not after_quit
+

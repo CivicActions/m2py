@@ -461,3 +461,198 @@ class TestV1FORC2NestedForGoto:
         
         # V1FORC2 specifically tests FOR...GOTO patterns
         assert len(for_and_goto_lines) > 0, "V1FORC2 should have lines with FOR and GOTO"
+
+
+# =============================================================================
+# NEW and DO Integration Tests (T091-T092 - Phase 6)
+# =============================================================================
+
+class TestV1DO1DoCommands:
+    """Test DO command parsing in V1DO1.m (T092)."""
+    
+    def test_v1do1_parses_successfully(self, mugj_file):
+        """V1DO1.m should parse without errors."""
+        parser = MUMPSParser()
+        routine = parser.parse_file("tests/functional/mugj/inref/V1DO1.m")
+        
+        assert routine is not None
+        assert routine.name == "V1DO1"
+    
+    def test_v1do1_has_do_commands(self, mugj_file):
+        """V1DO1.m should contain DO commands."""
+        from m2py.analysis import extract_do_from_line
+        
+        source = mugj_file("V1DO1.m")
+        lines = source.split('\n')
+        
+        do_count = 0
+        for line in lines:
+            result = extract_do_from_line(line)
+            if result:
+                do_count += 1
+        
+        # V1DO1 has many DO patterns
+        assert do_count > 0, "V1DO1 should contain DO commands"
+    
+    def test_v1do1_do_to_percent_label(self, mugj_file):
+        """V1DO1.m includes DOs to %labels."""
+        from m2py.analysis import extract_do_from_line, parse_do_statement
+        
+        source = mugj_file("V1DO1.m")
+        lines = source.split('\n')
+        
+        percent_dos = []
+        for line in lines:
+            result = extract_do_from_line(line)
+            if result:
+                content, _ = result
+                stmt = parse_do_statement(content)
+                for target in stmt.targets:
+                    if target.name.startswith('%'):
+                        percent_dos.append(target.name)
+        
+        # V1DO1 has DOs to % labels
+        assert len(percent_dos) > 0, "V1DO1 should have DO to % labels"
+    
+    def test_v1do1_has_multiple_labels(self, mugj_file):
+        """V1DO1.m should have multiple target labels."""
+        parser = MUMPSParser()
+        routine = parser.parse_file("tests/functional/mugj/inref/V1DO1.m")
+        
+        # Should have V1DO1, START, A, A1, SET, END, etc.
+        label_names = [label.name for label in routine.labels]
+        assert len(label_names) >= 3, "V1DO1 should have multiple labels"
+
+
+class TestV1DO2DoPatterns:
+    """Test more complex DO patterns in V1DO2.m."""
+    
+    def test_v1do2_parses_successfully(self, mugj_file):
+        """V1DO2.m should parse without errors."""
+        parser = MUMPSParser()
+        routine = parser.parse_file("tests/functional/mugj/inref/V1DO2.m")
+        
+        assert routine is not None
+        assert routine.name == "V1DO2"
+    
+    def test_v1do2_has_do_commands(self, mugj_file):
+        """V1DO2.m should contain DO commands."""
+        from m2py.analysis import extract_do_from_line
+        
+        source = mugj_file("V1DO2.m")
+        lines = source.split('\n')
+        
+        do_count = 0
+        for line in lines:
+            result = extract_do_from_line(line)
+            if result:
+                do_count += 1
+        
+        assert do_count > 0, "V1DO2 should contain DO commands"
+
+
+class TestVariableAnalysisIntegration:
+    """Integration tests for variable analysis (T107)."""
+    
+    def test_analyze_variables_on_parsed_routine(self):
+        """Variable analysis should work on parsed routines."""
+        from m2py.asg.elements import MRoutine, MLabel, MScope
+        from m2py.asg.statements import MSetStatement, MNewStatement, MAssignment
+        from m2py.asg.expressions import MVariable, MLiteral
+        from m2py.analysis import analyze_variables
+        
+        # Build a simple routine with NEW command
+        # Simulates: TEST  N X S X=1 S Y=X Q
+        
+        # NEW X statement
+        new_stmt = MNewStatement(variables=["X"])
+        
+        # S X=1
+        x_target = MVariable(name="X", subscripts=[])
+        val_1 = MLiteral(value=1)
+        assign1 = MAssignment(target=x_target, value=val_1)
+        set_x = MSetStatement(assignments=[assign1])
+        
+        # S Y=X (Y = X means read X, write Y)
+        y_target = MVariable(name="Y", subscripts=[])
+        x_read = MVariable(name="X", subscripts=[])
+        assign2 = MAssignment(target=y_target, value=x_read)
+        set_y = MSetStatement(assignments=[assign2])
+        
+        # Build scope and label
+        scope = MScope(statements=[new_stmt, set_x, set_y])
+        label = MLabel(name="TEST", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        # Analyze variables
+        result = analyze_variables(routine)
+        
+        assert "TEST" in result
+        scope_vars = result["TEST"]
+        
+        # X is NEWed
+        assert "X" in scope_vars.newed
+        
+        # X and Y are written
+        assert "X" in scope_vars.writes
+        assert "Y" in scope_vars.writes
+        
+        # X is NOT an input (it's NEWed first)
+        assert "X" not in scope_vars.input_variables
+        
+        # Y is an output (written, not NEWed)
+        assert "Y" in scope_vars.output_variables
+        
+        # X is NOT an output (it's NEWed, so invisible to caller)
+        assert "X" not in scope_vars.output_variables
+    
+    def test_analyze_variables_populates_label_fields(self):
+        """analyze_variables() should populate MLabel fields."""
+        from m2py.asg.elements import MRoutine, MLabel, MScope
+        from m2py.asg.statements import MSetStatement, MAssignment
+        from m2py.asg.expressions import MVariable, MLiteral
+        from m2py.analysis import analyze_variables
+        
+        # Build: S RESULT=INPUT*2
+        result_var = MVariable(name="RESULT", subscripts=[])
+        input_var = MVariable(name="INPUT", subscripts=[])
+        assign = MAssignment(target=result_var, value=input_var)
+        set_stmt = MSetStatement(assignments=[assign])
+        
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="CALC", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        # Analyze
+        analyze_variables(routine)
+        
+        # Check MLabel fields were populated
+        assert "INPUT" in label.variables_read
+        assert "RESULT" in label.variables_written
+        assert "INPUT" in label.input_variables
+        assert "RESULT" in label.output_variables
+    
+    def test_parser_analyze_variables_method(self):
+        """MUMPSParser.analyze_variables() should work."""
+        from m2py.asg.elements import MRoutine, MLabel, MScope
+        from m2py.asg.statements import MSetStatement, MAssignment
+        from m2py.asg.expressions import MVariable, MLiteral
+        
+        parser = MUMPSParser()
+        
+        # Build a simple routine
+        result_var = MVariable(name="Y", subscripts=[])
+        input_var = MVariable(name="X", subscripts=[])
+        assign = MAssignment(target=result_var, value=input_var)
+        set_stmt = MSetStatement(assignments=[assign])
+        
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="FUNC", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        # Call parser method
+        result = parser.analyze_variables(routine)
+        
+        assert "FUNC" in result
+        assert "X" in result["FUNC"].input_variables
+        assert "Y" in result["FUNC"].output_variables
