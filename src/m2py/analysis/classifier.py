@@ -1010,3 +1010,451 @@ def extract_if_from_line(line_rest: str) -> Optional[Tuple[str, str]]:
         return after_if, ""
     
     return None
+
+
+# =============================================================================
+# GOTO Statement Parsing (T065-T067 - Phase 5)
+# =============================================================================
+
+def parse_goto_statement(goto_content: str) -> "MGotoStatement":
+    """Parse GOTO command content into an MGotoStatement ASG node.
+    
+    Args:
+        goto_content: The content after 'GOTO ' or 'G ' command.
+                     Example: "LABEL", "LABEL^ROUTINE", "A,B,C", "LABEL+2"
+        
+    Returns:
+        MGotoStatement with targets list populated
+        
+    Examples:
+        >>> stmt = parse_goto_statement("LABEL")
+        >>> len(stmt.targets)
+        1
+        >>> stmt.targets[0].name
+        'LABEL'
+        
+        >>> stmt = parse_goto_statement("LABEL^ROUTINE")
+        >>> stmt.targets[0].routine
+        'ROUTINE'
+    """
+    from ..asg.statements import MGotoStatement
+    from ..asg.elements import MCall
+    
+    stmt = MGotoStatement()
+    content = goto_content.strip()
+    
+    if not content:
+        return stmt
+    
+    # Split by comma for multiple targets
+    target_strs = _split_goto_targets(content)
+    
+    for target_str in target_strs:
+        target_str = target_str.strip()
+        if not target_str:
+            continue
+        
+        call = _parse_goto_target(target_str)
+        if call:
+            stmt.targets.append(call)
+    
+    return stmt
+
+
+def _split_goto_targets(content: str) -> List[str]:
+    """Split GOTO content by commas, respecting parentheses.
+    
+    Returns list of target strings.
+    """
+    result = []
+    current = ""
+    paren_depth = 0
+    in_string = False
+    
+    for char in content:
+        if char == '"':
+            in_string = not in_string
+            current += char
+        elif in_string:
+            current += char
+        elif char == '(':
+            paren_depth += 1
+            current += char
+        elif char == ')':
+            paren_depth -= 1
+            current += char
+        elif char == ',' and paren_depth == 0:
+            result.append(current)
+            current = ""
+        elif char == ' ' and paren_depth == 0 and not in_string:
+            # Space ends the target list
+            result.append(current)
+            break
+        else:
+            current += char
+    
+    if current:
+        result.append(current)
+    
+    return result
+
+
+def _parse_goto_target(target_str: str) -> Optional["MCall"]:
+    """Parse a single GOTO target into an MCall.
+    
+    GOTO targets can be:
+    - label             Local label
+    - label+offset      Label with offset
+    - label^routine     External routine
+    - ^routine          External routine entry point
+    - label:condition   Postconditioned target
+    
+    Args:
+        target_str: Single target like "LABEL", "A+2", "X^ROUTINE"
+        
+    Returns:
+        MCall with name, routine, offset, postcondition populated
+    """
+    from ..asg.elements import MCall
+    
+    if not target_str:
+        return None
+    
+    call = MCall()
+    content = target_str
+    
+    # Check for postcondition (: after label, not inside offset expression)
+    # Need to find colon that's NOT part of an offset expression
+    postcond_pos = _find_postcondition_colon(content)
+    if postcond_pos >= 0:
+        call.postcondition = _make_literal(content[postcond_pos+1:])
+        content = content[:postcond_pos]
+    
+    # Check for external routine (^)
+    caret_pos = content.find('^')
+    if caret_pos >= 0:
+        # External routine
+        label_part = content[:caret_pos]
+        routine_part = content[caret_pos+1:]
+        call.routine = routine_part.strip()
+        content = label_part
+    
+    # Check for offset (+)
+    plus_pos = _find_offset_plus(content)
+    if plus_pos >= 0:
+        call.name = content[:plus_pos].strip()
+        offset_str = content[plus_pos+1:].strip()
+        call.offset = _make_literal(offset_str)
+    else:
+        call.name = content.strip()
+    
+    return call
+
+
+def _find_postcondition_colon(content: str) -> int:
+    """Find the position of a postcondition colon.
+    
+    Returns -1 if no postcondition, or the index of the colon.
+    The colon must come after the label/routine (not part of offset).
+    """
+    # Postcondition colon appears at the end, after label+offset^routine
+    # Pattern: target:condition
+    # We need to find colon that's NOT inside parentheses
+    paren_depth = 0
+    
+    for i, char in enumerate(content):
+        if char == '(':
+            paren_depth += 1
+        elif char == ')':
+            paren_depth -= 1
+        elif char == ':' and paren_depth == 0:
+            # Check if this looks like a postcondition
+            # Postcondition comes AFTER the target, so no ^ or + after it
+            rest = content[i+1:]
+            # If there's no ^ or + in rest (outside parens), it's a postcondition
+            if '^' not in rest and '+' not in rest.split('(')[0]:
+                return i
+    
+    return -1
+
+
+def _find_offset_plus(content: str) -> int:
+    """Find the position of an offset + sign.
+    
+    Returns -1 if no offset, or the index of the +.
+    """
+    # Offset + comes between label and offset expression
+    # Must be outside parentheses
+    paren_depth = 0
+    
+    for i, char in enumerate(content):
+        if char == '(':
+            paren_depth += 1
+        elif char == ')':
+            paren_depth -= 1
+        elif char == '+' and paren_depth == 0:
+            return i
+    
+    return -1
+
+
+def extract_goto_from_line(line_rest: str) -> Optional[Tuple[str, Optional[str], Optional[str]]]:
+    """Extract GOTO command from a line.
+    
+    Args:
+        line_rest: The rest of the line content
+        
+    Returns:
+        Tuple of (target_name, routine, offset) if GOTO found, None otherwise.
+        Only returns the first target for simple extraction.
+    """
+    for match in re.finditer(r'(?:^|\s)(GOTO|G)\s+', line_rest, re.IGNORECASE):
+        pos = match.start()
+        
+        # Check not inside string
+        quote_count = line_rest[:pos].count('"')
+        if quote_count % 2 == 1:
+            continue
+        
+        after_goto = line_rest[match.end():]
+        
+        # Parse the first target
+        stmt = parse_goto_statement(after_goto)
+        if stmt.targets:
+            target = stmt.targets[0]
+            offset_str = target.offset.raw_value if target.offset else None
+            return target.name, target.routine, offset_str
+        
+        return None
+    
+    return None
+
+
+# =============================================================================
+# GOTO Classification (T080-T087 - Phase 5)
+# =============================================================================
+
+def classify_gotos(routine: "MRoutine") -> None:
+    """Classify all GOTO statements in a routine.
+    
+    This function analyzes each MGotoStatement in the routine and:
+    1. Sets the goto_type based on target and context
+    2. Populates exits_loops with enclosing FOR loops exited
+    
+    Must be called AFTER resolve_references() so MCall.target is populated.
+    
+    Args:
+        routine: The MRoutine to classify GOTOs in
+        
+    Side Effects:
+        - Sets MGotoStatement.goto_type for each GOTO
+        - Sets MGotoStatement.exits_loops for loop exits
+    """
+    from ..asg.statements import MGotoStatement, MForStatement
+    from ..asg.enums import GotoType
+    
+    # Build a position map for labels (for forward/backward detection)
+    label_positions = {}
+    for i, label in enumerate(routine.labels):
+        label_positions[label.name] = i
+    
+    # Process each label's statements
+    for label_idx, label in enumerate(routine.labels):
+        _classify_gotos_in_scope(
+            label.body,
+            label_idx,
+            label,
+            label_positions,
+            routine,
+            enclosing_fors=[]
+        )
+
+
+def _classify_gotos_in_scope(
+    scope: "MScope",
+    current_label_idx: int,
+    current_label: "MLabel",
+    label_positions: dict,
+    routine: "MRoutine",
+    enclosing_fors: List["MForStatement"]
+) -> None:
+    """Classify GOTOs within a scope, tracking enclosing FORs.
+    
+    Args:
+        scope: The scope to scan for GOTOs
+        current_label_idx: Index of current label in routine
+        current_label: The MLabel containing this scope
+        label_positions: Label name -> position mapping
+        routine: The containing routine
+        enclosing_fors: Stack of enclosing FOR loops (innermost last)
+    """
+    from ..asg.statements import MGotoStatement, MForStatement
+    from ..asg.enums import GotoType
+    
+    for stmt in scope.statements:
+        if isinstance(stmt, MGotoStatement):
+            _classify_single_goto(
+                stmt,
+                current_label_idx,
+                current_label,
+                label_positions,
+                routine,
+                enclosing_fors
+            )
+        elif isinstance(stmt, MForStatement):
+            # Recurse into FOR body with this FOR added to enclosing stack
+            if stmt.body:
+                _classify_gotos_in_scope(
+                    stmt.body,
+                    current_label_idx,
+                    current_label,
+                    label_positions,
+                    routine,
+                    enclosing_fors + [stmt]
+                )
+        # Recurse into other nested scopes
+        elif hasattr(stmt, 'then_scope') and stmt.then_scope:
+            _classify_gotos_in_scope(
+                stmt.then_scope,
+                current_label_idx,
+                current_label,
+                label_positions,
+                routine,
+                enclosing_fors
+            )
+        elif hasattr(stmt, 'else_scope') and stmt.else_scope:
+            _classify_gotos_in_scope(
+                stmt.else_scope,
+                current_label_idx,
+                current_label,
+                label_positions,
+                routine,
+                enclosing_fors
+            )
+        elif hasattr(stmt, 'body') and stmt.body:
+            _classify_gotos_in_scope(
+                stmt.body,
+                current_label_idx,
+                current_label,
+                label_positions,
+                routine,
+                enclosing_fors
+            )
+
+
+def _classify_single_goto(
+    stmt: "MGotoStatement",
+    current_label_idx: int,
+    current_label: "MLabel",
+    label_positions: dict,
+    routine: "MRoutine",
+    enclosing_fors: List["MForStatement"]
+) -> None:
+    """Classify a single GOTO statement.
+    
+    Sets stmt.goto_type and stmt.exits_loops based on:
+    - Target resolution status
+    - Target location relative to source
+    - Enclosing control structures
+    
+    Args:
+        stmt: The MGotoStatement to classify
+        current_label_idx: Index of current label
+        current_label: The containing MLabel
+        label_positions: Label name -> position mapping
+        routine: The containing routine
+        enclosing_fors: Stack of enclosing FOR loops
+    """
+    from ..asg.enums import GotoType
+    
+    # Check each target (usually just one, but GOTO can have multiple)
+    for call in stmt.targets:
+        # External call (^routine)
+        if call.routine is not None:
+            stmt.goto_type = GotoType.EXTERNAL
+            continue
+        
+        # Unresolved reference
+        if not call.is_resolved or call.target is None:
+            stmt.goto_type = GotoType.UNRESOLVED
+            continue
+        
+        target_label = call.target
+        target_label_idx = label_positions.get(target_label.name, -1)
+        
+        # Same label = forward or backward within label
+        if target_label.name == current_label.name:
+            # Within same label - need line numbers to determine direction
+            # For now, use a heuristic: if target line < source line = backward
+            # If no line info, assume forward
+            source_line = stmt.line_number or 0
+            # For targets within same label, we'd need to track statement order
+            # Simplify: treat as FORWARD for now
+            stmt.goto_type = GotoType.FORWARD_JUMP
+        else:
+            # Different label = cross-label jump
+            if target_label_idx < current_label_idx:
+                # Jumping backward to earlier label
+                stmt.goto_type = GotoType.BACKWARD_JUMP
+            else:
+                # Jumping forward to later label
+                stmt.goto_type = GotoType.FORWARD_JUMP
+        
+        # If inside FOR loops, this is a loop exit
+        if enclosing_fors:
+            if len(enclosing_fors) == 1:
+                stmt.goto_type = GotoType.LOOP_EXIT
+                stmt.exits_loops = list(enclosing_fors)
+            else:
+                stmt.goto_type = GotoType.MULTI_LOOP_EXIT
+                stmt.exits_loops = list(enclosing_fors)
+        
+        # If jumping to different label while inside FOR, it's a cross-label exit
+        if enclosing_fors and target_label.name != current_label.name:
+            if len(enclosing_fors) > 1:
+                stmt.goto_type = GotoType.MULTI_LOOP_EXIT
+            else:
+                stmt.goto_type = GotoType.LOOP_EXIT
+            stmt.exits_loops = list(enclosing_fors)
+
+
+def get_loop_exiting_gotos(routine: "MRoutine") -> List["MGotoStatement"]:
+    """Get all GOTOs that exit FOR loops.
+    
+    Args:
+        routine: The MRoutine to scan
+        
+    Returns:
+        List of MGotoStatement objects that have exits_loops populated
+    """
+    from ..asg.statements import MGotoStatement
+    
+    result = []
+    for label in routine.labels:
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                if stmt.exits_loops:
+                    result.append(stmt)
+    return result
+
+
+def get_gotos_by_type(routine: "MRoutine", goto_type: "GotoType") -> List["MGotoStatement"]:
+    """Get all GOTOs of a specific type.
+    
+    Args:
+        routine: The MRoutine to scan
+        goto_type: The GotoType to filter by
+        
+    Returns:
+        List of MGotoStatement objects with matching goto_type
+    """
+    from ..asg.statements import MGotoStatement
+    
+    result = []
+    for label in routine.labels:
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                if stmt.goto_type == goto_type:
+                    result.append(stmt)
+    return result
+

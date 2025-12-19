@@ -327,3 +327,137 @@ class TestQuitExitPointDetection:
         ]
         
         assert len(bounded_with_quit) > 0, "V1FORC1 should have bounded FOR with Q"
+
+
+# =============================================================================
+# GOTO Integration Tests (T068-T070 - Phase 5)
+# =============================================================================
+
+class TestV1GO1GotoClassification:
+    """Test GOTO parsing in V1GO1.m - simple GOTOs (T068)."""
+    
+    def test_v1go1_parses_successfully(self, mugj_file):
+        """V1GO1.m should parse without errors."""
+        parser = MUMPSParser()
+        routine = parser.parse_file("tests/functional/mugj/inref/V1GO1.m")
+        
+        assert routine is not None
+        assert routine.name == "V1GO1"
+    
+    def test_v1go1_has_goto_commands(self, mugj_file):
+        """V1GO1.m should contain GOTO commands."""
+        from m2py.analysis import extract_goto_from_line
+        
+        source = mugj_file("V1GO1.m")
+        lines = source.split('\n')
+        
+        goto_count = 0
+        for line in lines:
+            result = extract_goto_from_line(line)
+            if result:
+                goto_count += 1
+        
+        # V1GO1 has many GOTO patterns
+        assert goto_count > 0, "V1GO1 should contain GOTO commands"
+    
+    def test_v1go1_goto_to_percent_label(self, mugj_file):
+        """V1GO1.m includes GOTOs to %labels."""
+        from m2py.analysis import extract_goto_from_line
+        
+        source = mugj_file("V1GO1.m")
+        lines = source.split('\n')
+        
+        percent_gotos = []
+        for line in lines:
+            result = extract_goto_from_line(line)
+            if result:
+                name, routine, offset = result
+                if name.startswith('%'):
+                    percent_gotos.append(name)
+        
+        # V1GO1 has GOTOs to % labels
+        assert len(percent_gotos) > 0, "V1GO1 should have GOTO to % labels"
+
+
+class TestV1GO2OffsetGotos:
+    """Test GOTO parsing in V1GO2.m - offset GOTOs (T069)."""
+    
+    def test_v1go2_parses_successfully(self, mugj_file):
+        """V1GO2.m should parse without errors."""
+        parser = MUMPSParser()
+        routine = parser.parse_file("tests/functional/mugj/inref/V1GO2.m")
+        
+        assert routine is not None
+        assert routine.name == "V1GO2"
+    
+    def test_v1go2_has_offset_gotos(self, mugj_file):
+        """V1GO2.m should contain GOTO with label+offset."""
+        from m2py.analysis import extract_goto_from_line
+        
+        source = mugj_file("V1GO2.m")
+        lines = source.split('\n')
+        
+        offset_gotos = []
+        for line in lines:
+            result = extract_goto_from_line(line)
+            if result:
+                name, routine, offset = result
+                if offset is not None:
+                    offset_gotos.append((name, offset))
+        
+        # V1GO2 has label+offset patterns
+        assert len(offset_gotos) > 0, "V1GO2 should have GOTO label+offset patterns"
+
+
+class TestV1FORC2NestedForGoto:
+    """Test FOR+GOTO interaction in V1FORC2.m (T070)."""
+    
+    def test_v1forc2_parses_successfully(self, mugj_file):
+        """V1FORC2.m should parse without errors."""
+        parser = MUMPSParser()
+        routine = parser.parse_file("tests/functional/mugj/inref/V1FORC2.m")
+        
+        assert routine is not None
+        assert routine.name == "V1FORC2"
+    
+    def test_v1forc2_has_for_loops(self, mugj_file):
+        """V1FORC2.m should have FOR loops."""
+        parser = MUMPSParser()
+        source = mugj_file("V1FORC2.m")
+        results = parser.classify_patterns(source)
+        
+        assert len(results) > 0, "V1FORC2 should have FOR loops"
+    
+    def test_v1forc2_has_goto_commands(self, mugj_file):
+        """V1FORC2.m should contain GOTO commands inside FORs."""
+        from m2py.analysis import extract_goto_from_line
+        
+        source = mugj_file("V1FORC2.m")
+        lines = source.split('\n')
+        
+        goto_count = 0
+        for line in lines:
+            result = extract_goto_from_line(line)
+            if result:
+                goto_count += 1
+        
+        # V1FORC2 has nested FOR+GOTO patterns
+        assert goto_count > 0, "V1FORC2 should contain GOTO commands"
+    
+    def test_v1forc2_for_with_goto_in_body(self, mugj_file):
+        """V1FORC2.m tests FOR loops containing GOTOs."""
+        from m2py.analysis import extract_goto_from_line, extract_for_from_line
+        
+        source = mugj_file("V1FORC2.m")
+        lines = source.split('\n')
+        
+        # Find lines with both FOR and GOTO
+        for_and_goto_lines = []
+        for line in lines:
+            has_for = extract_for_from_line(line) is not None
+            has_goto = extract_goto_from_line(line) is not None
+            if has_for and has_goto:
+                for_and_goto_lines.append(line.strip())
+        
+        # V1FORC2 specifically tests FOR...GOTO patterns
+        assert len(for_and_goto_lines) > 0, "V1FORC2 should have lines with FOR and GOTO"

@@ -434,3 +434,345 @@ class TestParseIfStatement:
         
         assert hasattr(stmt, '_body_content')
         assert stmt._body_content == "W Y"
+
+# =============================================================================
+# GOTO Statement Parsing Tests (T065-T067 - Phase 5)
+# =============================================================================
+
+class TestParseGotoStatement:
+    """Test parse_goto_statement function (T065-T067)."""
+    
+    def test_parse_goto_local_label(self):
+        """Parse G LABEL into MGotoStatement with local target (T065)."""
+        from m2py.analysis import parse_goto_statement
+        from m2py.asg.statements import MGotoStatement
+        
+        stmt = parse_goto_statement("LABEL")
+        
+        assert isinstance(stmt, MGotoStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+        assert stmt.targets[0].routine is None
+        assert stmt.targets[0].offset is None
+    
+    def test_parse_goto_percent_label(self):
+        """Parse G %LABEL into MGotoStatement (T065)."""
+        from m2py.analysis import parse_goto_statement
+        
+        stmt = parse_goto_statement("%LABEL")
+        
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "%LABEL"
+    
+    def test_parse_goto_label_offset(self):
+        """Parse G LABEL+2 into MGotoStatement with offset (T066)."""
+        from m2py.analysis import parse_goto_statement
+        
+        stmt = parse_goto_statement("LABEL+2")
+        
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+        assert stmt.targets[0].offset is not None
+        assert stmt.targets[0].offset.raw_value == "2"
+    
+    def test_parse_goto_label_expression_offset(self):
+        """Parse G LABEL+$D(A) into MGotoStatement with expression offset (T066)."""
+        from m2py.analysis import parse_goto_statement
+        
+        stmt = parse_goto_statement("LABEL+$D(A)")
+        
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+        assert stmt.targets[0].offset is not None
+        # Complex expression preserved
+        assert "$D(A)" in stmt.targets[0].offset.raw_value
+    
+    def test_parse_goto_external_routine(self):
+        """Parse G LABEL^ROUTINE into MGotoStatement with external target (T067)."""
+        from m2py.analysis import parse_goto_statement
+        
+        stmt = parse_goto_statement("LABEL^ROUTINE")
+        
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+        assert stmt.targets[0].routine == "ROUTINE"
+    
+    def test_parse_goto_external_only_routine(self):
+        """Parse G ^ROUTINE into MGotoStatement (entry point) (T067)."""
+        from m2py.analysis import parse_goto_statement
+        
+        stmt = parse_goto_statement("^ROUTINE")
+        
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == ""
+        assert stmt.targets[0].routine == "ROUTINE"
+    
+    def test_parse_goto_multiple_targets(self):
+        """Parse G A,B,C into MGotoStatement with multiple targets."""
+        from m2py.analysis import parse_goto_statement
+        
+        stmt = parse_goto_statement("A,B,C")
+        
+        assert len(stmt.targets) == 3
+        assert stmt.targets[0].name == "A"
+        assert stmt.targets[1].name == "B"
+        assert stmt.targets[2].name == "C"
+    
+    def test_parse_goto_postconditioned(self):
+        """Parse G:X>0 LABEL into MGotoStatement with postcondition."""
+        from m2py.analysis import parse_goto_statement
+        
+        # The postcondition is on the target, not the command
+        stmt = parse_goto_statement("LABEL:X>0")
+        
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+        assert stmt.targets[0].postcondition is not None
+
+
+class TestExtractGotoFromLine:
+    """Test extract_goto_from_line function."""
+    
+    def test_extract_goto_abbreviated(self):
+        """G abbreviation should be recognized."""
+        from m2py.analysis import extract_goto_from_line
+        
+        result = extract_goto_from_line("\tG LABEL")
+        assert result is not None
+        name, routine, offset = result
+        assert name == "LABEL"
+        assert routine is None
+    
+    def test_extract_goto_full(self):
+        """GOTO full keyword should be recognized."""
+        from m2py.analysis import extract_goto_from_line
+        
+        result = extract_goto_from_line("\tGOTO LABEL")
+        assert result is not None
+        name, routine, offset = result
+        assert name == "LABEL"
+    
+    def test_extract_no_goto(self):
+        """Line without GOTO should return None."""
+        from m2py.analysis import extract_goto_from_line
+        
+        result = extract_goto_from_line("\tS X=1 W X")
+        assert result is None
+
+
+# =============================================================================
+# GOTO Classification Tests (T080-T087 - Phase 5)
+# =============================================================================
+
+class TestClassifyGotos:
+    """Test classify_gotos function (T080-T085)."""
+    
+    def _create_routine_with_goto(self, target_label_name: str, 
+                                   source_label_name: str = "MAIN",
+                                   routine_name: str = None,
+                                   enclosing_for: bool = False) -> "MRoutine":
+        """Create a routine with a GOTO for testing."""
+        from m2py.asg.elements import MRoutine, MLabel, MScope, MCall
+        from m2py.asg.statements import MGotoStatement, MForStatement
+        
+        routine = MRoutine(name="TEST")
+        
+        # Source label with GOTO
+        source_label = MLabel(name=source_label_name)
+        source_label.body = MScope()
+        
+        # Create GOTO statement
+        goto_stmt = MGotoStatement()
+        call = MCall(name=target_label_name, routine=routine_name)
+        goto_stmt.targets.append(call)
+        
+        if enclosing_for:
+            # Put GOTO inside a FOR loop
+            for_stmt = MForStatement()
+            for_stmt.body = MScope()
+            for_stmt.body.add_statement(goto_stmt)
+            source_label.body.add_statement(for_stmt)
+        else:
+            source_label.body.add_statement(goto_stmt)
+        
+        routine.add_label(source_label)
+        
+        # Target label
+        target_label = MLabel(name="TARGET")
+        target_label.body = MScope()
+        routine.add_label(target_label)
+        
+        return routine
+    
+    def test_classify_external_goto(self):
+        """GOTO ^ROUTINE should be classified as EXTERNAL (T085)."""
+        from m2py.analysis import resolve_references, classify_gotos
+        from m2py.asg.enums import GotoType
+        
+        routine = self._create_routine_with_goto("LABEL", routine_name="OTHER")
+        resolve_references(routine)
+        classify_gotos(routine)
+        
+        # Find the GOTO statement
+        goto_stmt = list(routine.labels[0].body.walk_statements())[0]
+        assert goto_stmt.goto_type == GotoType.EXTERNAL
+    
+    def test_classify_forward_jump(self):
+        """GOTO to later label should be FORWARD_JUMP (T080)."""
+        from m2py.analysis import resolve_references, classify_gotos
+        from m2py.asg.enums import GotoType
+        
+        routine = self._create_routine_with_goto("TARGET")
+        resolve_references(routine)
+        classify_gotos(routine)
+        
+        goto_stmt = list(routine.labels[0].body.walk_statements())[0]
+        # TARGET comes after MAIN, so forward jump
+        assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
+    
+    def test_classify_backward_jump(self):
+        """GOTO to earlier label should be BACKWARD_JUMP (T081)."""
+        from m2py.analysis import resolve_references, classify_gotos
+        from m2py.asg.elements import MRoutine, MLabel, MScope, MCall
+        from m2py.asg.statements import MGotoStatement
+        from m2py.asg.enums import GotoType
+        
+        routine = MRoutine(name="TEST")
+        
+        # First label
+        first = MLabel(name="FIRST")
+        first.body = MScope()
+        routine.add_label(first)
+        
+        # Second label with GOTO FIRST (backward)
+        second = MLabel(name="SECOND")
+        second.body = MScope()
+        goto_stmt = MGotoStatement()
+        call = MCall(name="FIRST")
+        goto_stmt.targets.append(call)
+        second.body.add_statement(goto_stmt)
+        routine.add_label(second)
+        
+        resolve_references(routine)
+        classify_gotos(routine)
+        
+        # Should be backward jump
+        assert goto_stmt.goto_type == GotoType.BACKWARD_JUMP
+    
+    def test_classify_loop_exit(self):
+        """GOTO inside single FOR should be LOOP_EXIT (T082)."""
+        from m2py.analysis import resolve_references, classify_gotos
+        from m2py.asg.enums import GotoType
+        
+        routine = self._create_routine_with_goto("TARGET", enclosing_for=True)
+        resolve_references(routine)
+        classify_gotos(routine)
+        
+        # Find the GOTO inside the FOR
+        for_stmt = routine.labels[0].body.statements[0]
+        goto_stmt = for_stmt.body.statements[0]
+        
+        assert goto_stmt.goto_type == GotoType.LOOP_EXIT
+        assert len(goto_stmt.exits_loops) == 1
+    
+    def test_classify_multi_loop_exit(self):
+        """GOTO inside nested FORs should be MULTI_LOOP_EXIT (T083)."""
+        from m2py.analysis import resolve_references, classify_gotos
+        from m2py.asg.elements import MRoutine, MLabel, MScope, MCall
+        from m2py.asg.statements import MGotoStatement, MForStatement
+        from m2py.asg.enums import GotoType
+        
+        routine = MRoutine(name="TEST")
+        
+        # Source label with nested FOR
+        source = MLabel(name="MAIN")
+        source.body = MScope()
+        
+        # Outer FOR
+        outer_for = MForStatement()
+        outer_for.body = MScope()
+        
+        # Inner FOR with GOTO
+        inner_for = MForStatement()
+        inner_for.body = MScope()
+        
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        inner_for.body.add_statement(goto_stmt)
+        outer_for.body.add_statement(inner_for)
+        
+        source.body.add_statement(outer_for)
+        routine.add_label(source)
+        
+        # Target label
+        target = MLabel(name="TARGET")
+        target.body = MScope()
+        routine.add_label(target)
+        
+        resolve_references(routine)
+        classify_gotos(routine)
+        
+        assert goto_stmt.goto_type == GotoType.MULTI_LOOP_EXIT
+        assert len(goto_stmt.exits_loops) == 2
+    
+    def test_classify_unresolved(self):
+        """GOTO to missing label should be UNRESOLVED (T080)."""
+        from m2py.analysis import resolve_references, classify_gotos
+        from m2py.asg.elements import MRoutine, MLabel, MScope, MCall
+        from m2py.asg.statements import MGotoStatement
+        from m2py.asg.enums import GotoType
+        
+        routine = MRoutine(name="TEST")
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+        
+        goto_stmt = MGotoStatement()
+        call = MCall(name="MISSING")
+        goto_stmt.targets.append(call)
+        label.body.add_statement(goto_stmt)
+        
+        routine.add_label(label)
+        
+        resolve_references(routine)
+        classify_gotos(routine)
+        
+        assert goto_stmt.goto_type == GotoType.UNRESOLVED
+
+
+class TestGetLoopExitingGotos:
+    """Test get_loop_exiting_gotos function (T086)."""
+    
+    def test_returns_gotos_with_exits_loops(self):
+        """Should return GOTOs that exit FOR loops."""
+        from m2py.analysis import resolve_references, classify_gotos, get_loop_exiting_gotos
+        from m2py.asg.elements import MRoutine, MLabel, MScope, MCall
+        from m2py.asg.statements import MGotoStatement, MForStatement
+        
+        routine = MRoutine(name="TEST")
+        
+        # Label with FOR containing GOTO
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+        
+        for_stmt = MForStatement()
+        for_stmt.body = MScope()
+        
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        for_stmt.body.add_statement(goto_stmt)
+        
+        label.body.add_statement(for_stmt)
+        routine.add_label(label)
+        
+        target = MLabel(name="TARGET")
+        target.body = MScope()
+        routine.add_label(target)
+        
+        resolve_references(routine)
+        classify_gotos(routine)
+        
+        result = get_loop_exiting_gotos(routine)
+        assert len(result) == 1
+        assert result[0] is goto_stmt

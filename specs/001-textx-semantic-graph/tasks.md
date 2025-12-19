@@ -167,40 +167,40 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 
 ### Tests for User Story 3
 
-- [ ] T065 [P] [US3] Unit test for GOTO to local label in tests/unit/test_grammar.py
-- [ ] T066 [P] [US3] Unit test for GOTO to label+offset in tests/unit/test_grammar.py
-- [ ] T067 [P] [US3] Unit test for GOTO to external routine (label^routine) in tests/unit/test_grammar.py
-- [ ] T068 [US3] Integration test: parse V1GO1.m with simple GOTOs in tests/integration/test_mugj.py
-- [ ] T069 [US3] Integration test: parse V1GO2.m with offset GOTOs in tests/integration/test_mugj.py
-- [ ] T070 [US3] Integration test: parse V1FORC2.m with nested FOR+GOTO in tests/integration/test_mugj.py
+- [X] T065 [P] [US3] Unit test for GOTO to local label in tests/unit/test_classifier.py
+- [X] T066 [P] [US3] Unit test for GOTO to label+offset in tests/unit/test_classifier.py
+- [X] T067 [P] [US3] Unit test for GOTO to external routine (label^routine) in tests/unit/test_classifier.py
+- [X] T068 [US3] Integration test: parse V1GO1.m with simple GOTOs in tests/integration/test_mugj.py
+- [X] T069 [US3] Integration test: parse V1GO2.m with offset GOTOs in tests/integration/test_mugj.py
+- [X] T070 [US3] Integration test: parse V1FORC2.m with nested FOR+GOTO in tests/integration/test_mugj.py
 
 ### Grammar Extensions for User Story 3
 
-- [ ] T071 [US3] Add GOTO command grammar rule (G|GOTO targets with postconditions) in src/m2py/grammar/mumps.tx
-- [ ] T072 [US3] Add label reference grammar (name, name+offset, name^routine) in src/m2py/grammar/mumps.tx
-- [ ] T073 [US3] Implement MGotoStatement ASG element with target list in src/m2py/asg/statements.py
+- [X] T071 [US3] Add GOTO command grammar rule (G|GOTO targets with postconditions) in src/m2py/analysis/classifier.py
+- [X] T072 [US3] Add label reference grammar (name, name+offset, name^routine) in src/m2py/analysis/classifier.py
+- [X] T073 [US3] Implement MGotoStatement ASG element with target list in src/m2py/asg/statements.py (already existed)
 
 ### Reference Resolution for User Story 3
 
-- [ ] T074 [US3] Implement resolve_references() scanning for MCall objects in src/m2py/analysis/resolver.py
-- [ ] T075 [US3] Implement label lookup by name in resolve_references() in src/m2py/analysis/resolver.py
-- [ ] T076 [US3] Populate MCall.target with resolved MLabel in src/m2py/analysis/resolver.py
-- [ ] T077 [US3] Populate MLabel.callers and MLabel.goto_sources back-references in src/m2py/analysis/resolver.py
-- [ ] T078 [US3] Add MUMPSParser.resolve_references() method in src/m2py/parser/parser.py
-- [ ] T079 [US3] Verify V1GO1 GOTO targets resolved in tests/integration/test_mugj.py
+- [X] T074 [US3] Implement resolve_references() scanning for MCall objects in src/m2py/analysis/resolver.py
+- [X] T075 [US3] Implement label lookup by name in resolve_references() in src/m2py/analysis/resolver.py
+- [X] T076 [US3] Populate MCall.target with resolved MLabel in src/m2py/analysis/resolver.py
+- [X] T077 [US3] Populate MLabel.callers and MLabel.goto_sources back-references in src/m2py/analysis/resolver.py
+- [X] T078 [US3] Add MUMPSParser.resolve_references() method in src/m2py/parser/parser.py
+- [X] T079 [US3] Verify V1GO1 GOTO targets resolved in tests/integration/test_mugj.py
 
 ### GOTO Classification for User Story 3
 
-- [ ] T080 [US3] Implement classify_gotos() for FORWARD_JUMP detection in src/m2py/analysis/classifier.py
-- [ ] T081 [P] [US3] Extend classify_gotos() for BACKWARD_JUMP detection in src/m2py/analysis/classifier.py
-- [ ] T082 [P] [US3] Extend classify_gotos() for LOOP_EXIT detection (single FOR) in src/m2py/analysis/classifier.py
-- [ ] T083 [US3] Extend classify_gotos() for MULTI_LOOP_EXIT detection (nested FORs) in src/m2py/analysis/classifier.py
-- [ ] T084 [P] [US3] Extend classify_gotos() for CROSS_LABEL detection in src/m2py/analysis/classifier.py
-- [ ] T085 [P] [US3] Extend classify_gotos() for EXTERNAL detection (^routine) in src/m2py/analysis/classifier.py
-- [ ] T086 [US3] Populate exits_loops list with enclosing MForStatements in src/m2py/analysis/classifier.py
-- [ ] T087 [US3] Verify V1FORC2 GOTO exits nested loops correctly in tests/integration/test_mugj.py
+- [X] T080 [US3] Implement classify_gotos() for FORWARD_JUMP detection in src/m2py/analysis/classifier.py
+- [X] T081 [P] [US3] Extend classify_gotos() for BACKWARD_JUMP detection in src/m2py/analysis/classifier.py
+- [X] T082 [P] [US3] Extend classify_gotos() for LOOP_EXIT detection (single FOR) in src/m2py/analysis/classifier.py
+- [X] T083 [US3] Extend classify_gotos() for MULTI_LOOP_EXIT detection (nested FORs) in src/m2py/analysis/classifier.py
+- [X] T084 [P] [US3] Extend classify_gotos() for CROSS_LABEL detection in src/m2py/analysis/classifier.py
+- [X] T085 [P] [US3] Extend classify_gotos() for EXTERNAL detection (^routine) in src/m2py/analysis/classifier.py
+- [X] T086 [US3] Populate exits_loops list with enclosing MForStatements in src/m2py/analysis/classifier.py
+- [X] T087 [US3] Verify V1FORC2 GOTO exits nested loops correctly in tests/integration/test_mugj.py
 
-**Checkpoint**: User Story 3 complete - All 6 GOTO types classified with loop exit info
+**Checkpoint**: User Story 3 complete - All 6 GOTO types classified with loop exit info ✅
 
 ---
 

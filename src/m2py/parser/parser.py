@@ -14,6 +14,7 @@ from m2py.asg.enums import ForLoopType
 from m2py.asg.statements import MForStatement
 from m2py.parser.exceptions import MUMPSSyntaxError
 from m2py.analysis.classifier import classify_for_loop, extract_for_from_line, parse_for_statement
+from m2py.analysis.resolver import resolve_references as _resolve_references
 
 
 class ForPatternResult:
@@ -264,3 +265,24 @@ class MUMPSParser:
         
         source = filepath.read_text(encoding="utf-8")
         return self.classify_patterns(source, filename=str(filepath))
+    
+    def resolve_references(self, routine: MRoutine) -> None:
+        """Resolve all MCall references in a routine to their targets.
+        
+        This method connects GOTO and DO targets to their actual label
+        definitions. It populates:
+        - MCall.target with the resolved MLabel
+        - MCall.is_resolved = True for successful resolutions
+        - MLabel.callers with back-references from DO calls
+        - MLabel.goto_sources with back-references from GOTO jumps
+        
+        External calls (label^routine) are marked but not resolved
+        since they reference other routines.
+        
+        Args:
+            routine: The MRoutine to resolve references in
+            
+        Side Effects:
+            Modifies routine's MCall and MLabel objects in place
+        """
+        _resolve_references(routine)
