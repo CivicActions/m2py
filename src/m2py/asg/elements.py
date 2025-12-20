@@ -38,6 +38,61 @@ class ASGElement(ABC):
     # textX integration - position in source text
     _tx_position: Optional[int] = field(default=None, repr=False)
     _tx_position_end: Optional[int] = field(default=None, repr=False)
+    
+    def to_dict(self, include_position: bool = False, max_depth: int = 10) -> dict:
+        """Serialize this ASG element to a dictionary.
+        
+        Args:
+            include_position: Include source position information
+            max_depth: Maximum recursion depth to prevent infinite loops
+            
+        Returns:
+            Dictionary representation of this element
+        """
+        if max_depth <= 0:
+            return {"_type": self.__class__.__name__, "_truncated": True}
+        
+        result = {"_type": self.__class__.__name__}
+        
+        if include_position:
+            if self.source_file:
+                result["source_file"] = self.source_file
+            if self.line_number is not None:
+                result["line"] = self.line_number
+            if self.column is not None:
+                result["column"] = self.column
+        
+        # Serialize dataclass fields (excluding private/internal ones)
+        for field_name in self.__dataclass_fields__:
+            if field_name.startswith("_") or field_name == "parent":
+                continue
+            if field_name in ("source_file", "line_number", "column", "end_line", "end_column"):
+                continue  # Handled above
+                
+            value = getattr(self, field_name)
+            result[field_name] = self._serialize_value(value, include_position, max_depth - 1)
+        
+        return result
+    
+    def _serialize_value(self, value, include_position: bool, max_depth: int):
+        """Recursively serialize a value for to_dict()."""
+        if value is None:
+            return None
+        elif isinstance(value, ASGElement):
+            return value.to_dict(include_position, max_depth)
+        elif isinstance(value, set):
+            return [self._serialize_value(v, include_position, max_depth) for v in sorted(value, key=str)]
+        elif isinstance(value, list):
+            return [self._serialize_value(v, include_position, max_depth) for v in value]
+        elif isinstance(value, dict):
+            return {k: self._serialize_value(v, include_position, max_depth) for k, v in value.items()}
+        elif hasattr(value, 'name') and hasattr(value, 'value'):  # Enum
+            return value.name
+        elif hasattr(value, '__dataclass_fields__'):  # Non-ASG dataclass
+            return {f: self._serialize_value(getattr(value, f), include_position, max_depth) 
+                    for f in value.__dataclass_fields__ if not f.startswith("_")}
+        else:
+            return value
 
 
 @dataclass

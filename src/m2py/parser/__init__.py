@@ -1,6 +1,6 @@
 """MUMPS parser implementation using textX."""
 
-from m2py.parser.parser import MUMPSParser, ForPatternResult
+from m2py.parser.parser import MUMPSParser, ForPatternResult, dump_asg_json
 from m2py.parser.exceptions import MUMPSSyntaxError, MUMPSSemanticError
 
 __all__ = [
@@ -8,4 +8,5 @@ __all__ = [
     "ForPatternResult",
     "MUMPSSyntaxError",
     "MUMPSSemanticError",
+    "dump_asg_json",
 ]

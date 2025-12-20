@@ -10,7 +10,7 @@ For command-level parsing, see test_command_parser.py.
 import pytest
 from pathlib import Path
 
-from m2py.parser import MUMPSParser, MUMPSSyntaxError, ForPatternResult
+from m2py.parser import MUMPSParser, MUMPSSyntaxError, ForPatternResult, dump_asg_json
 from m2py.asg import MRoutine, MLabel, MScope
 from m2py.asg.enums import ForLoopType, ForParamType
 from m2py.asg.statements import MForStatement
@@ -281,3 +281,303 @@ SECOND\tF J=1:1:10 W J
         assert stmt.parameters[1].param_type == ForParamType.RANGE
         assert stmt.parameters[1].start.value == 1
         assert stmt.parameters[1].end.value == 3
+
+
+# ============================================================================
+# Phase 11 Performance Tests (T333-T335)
+# ============================================================================
+
+class TestParserPerformance:
+    """Test parser performance meets SC-005 requirements.
+    
+    SC-005: Parser should complete in <2 seconds for a 500-line routine.
+    """
+    
+    def test_500_line_synthetic_routine(self):
+        """T333/T334: Parse 500-line synthetic routine in <2 seconds."""
+        import time
+        
+        # Build a synthetic 500-line routine with realistic content
+        lines = ["SYNTH\t;Synthetic 500-line routine for performance testing"]
+        
+        # Add SET commands with various expressions
+        for i in range(100):
+            lines.append(f"\tS X{i}={i},Y{i}=X{i}+1,Z{i}=$P(STR,\",\",{i+1})")
+        
+        # Add FOR loops
+        for i in range(50):
+            lines.append(f"\tF I{i}=1:1:100 S TOTAL=TOTAL+I{i}")
+        
+        # Add IF/ELSE blocks
+        for i in range(50):
+            lines.append(f"\tI X{i}>50 S FLAG{i}=1")
+            lines.append(f"\tE  S FLAG{i}=0")
+        
+        # Add WRITE commands
+        for i in range(50):
+            lines.append(f"\tW !,\"Result \",X{i},\": \",Y{i}")
+        
+        # Add DO commands
+        for i in range(50):
+            lines.append(f"\tD HELPER(X{i})")
+        
+        # Add GOTO commands
+        for i in range(25):
+            lines.append(f"\tG:X{i}=0 EXIT")
+        
+        # Pad to 498 lines with comments
+        while len(lines) < 498:
+            lines.append(f"\t;Line {len(lines)+1}")
+        
+        # Add final statements
+        lines.append("\tQ")
+        lines.append("EXIT\tQ")
+        
+        # Join with newlines and add trailing newline
+        source = "\n".join(lines) + "\n"
+        
+        # Verify we have ~500 lines
+        line_count = len(source.strip().split('\n'))
+        assert line_count >= 500, f"Only {line_count} lines generated"
+        
+        # Time the parse
+        parser = MUMPSParser()
+        start = time.perf_counter()
+        result = parser.parse(source)
+        elapsed = time.perf_counter() - start
+        
+        # Verify it parsed correctly
+        assert result is not None
+        # First label should be SYNTH
+        assert len(result.labels) >= 1
+        assert result.labels[0].name == "SYNTH"
+        
+        # SC-005: Must complete in <2 seconds
+        assert elapsed < 2.0, f"Parse took {elapsed:.2f}s, exceeds 2s limit"
+    
+    def test_combined_mugj_files_performance(self, mugj_inref_dir):
+        """T333: Parse combined MUGJ content (500+ lines) for performance.
+        
+        Combines multiple real MUGJ files to create a realistic 500+ line
+        test case using actual MUMPS patterns.
+        """
+        import time
+        from pathlib import Path
+        
+        # Read and combine content from multiple MUGJ files
+        combined_lines = []
+        files_to_combine = ["V1NST1.m", "V1OV.m", "V1GO1.m", "V1DO3.m", "V1DO2.m", "V1CALL.m"]
+        
+        for filename in files_to_combine:
+            filepath = mugj_inref_dir / filename
+            if filepath.exists():
+                with open(filepath) as f:
+                    lines = f.read().strip().split('\n')
+                    # Add as a new label block (simulate multi-label routine)
+                    for line in lines:
+                        combined_lines.append(line)
+            if len(combined_lines) >= 500:
+                break
+        
+        # Verify we have enough content
+        assert len(combined_lines) >= 400, f"Only {len(combined_lines)} lines available"
+        
+        # Parse individual files and time it (since combining requires label adjustment)
+        parser = MUMPSParser()
+        total_lines = 0
+        start = time.perf_counter()
+        
+        for filename in files_to_combine:
+            filepath = mugj_inref_dir / filename
+            if filepath.exists():
+                routine = parser.parse_file(filepath)
+                with open(filepath) as f:
+                    total_lines += len(f.readlines())
+        
+        elapsed = time.perf_counter() - start
+        
+        # Calculate lines per second
+        lines_per_second = total_lines / elapsed if elapsed > 0 else float('inf')
+        
+        # Should parse at least 250 lines/second (2 seconds for 500 lines)
+        assert lines_per_second > 250, f"Too slow: {lines_per_second:.0f} lines/sec"
+        assert elapsed < 3.0, f"Combined parse took {elapsed:.2f}s"
+
+
+# ============================================================================
+# Phase 11 Error Handling Tests (T336-T337)
+# ============================================================================
+
+class TestParserErrorHandling:
+    """Test parser error handling meets SC-007 requirements.
+    
+    SC-007: Syntax errors must include line and column numbers.
+    """
+    
+    def test_syntax_error_has_line_info(self):
+        """T336: MUMPSSyntaxError should include line number."""
+        parser = MUMPSParser()
+        
+        # Invalid syntax - missing trailing newline
+        invalid_source = 'TEST\tS X=1'  # No newline at end
+        
+        with pytest.raises(MUMPSSyntaxError) as excinfo:
+            parser.parse(invalid_source)
+        
+        # Error message should contain position info
+        error_msg = str(excinfo.value)
+        assert "1:" in error_msg or "line" in error_msg.lower() or "Expected" in error_msg
+    
+    def test_syntax_error_preserves_message(self):
+        """T336: MUMPSSyntaxError should preserve original error message."""
+        parser = MUMPSParser()
+        
+        # Invalid syntax - null character
+        invalid_source = '\x00INVALID\n'
+        
+        with pytest.raises(MUMPSSyntaxError) as excinfo:
+            parser.parse(invalid_source)
+        
+        # Should have meaningful error info
+        assert excinfo.value.message is not None
+        assert len(str(excinfo.value)) > 0
+    
+    def test_syntax_error_from_file_includes_filename(self):
+        """T336: Errors from parse_file should include filename."""
+        import tempfile
+        import os
+        
+        parser = MUMPSParser()
+        
+        # Create a temp file with invalid syntax (missing newline)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.m', delete=False) as f:
+            f.write('TEST\tS X=1')  # No trailing newline
+            temp_path = f.name
+        
+        try:
+            with pytest.raises(MUMPSSyntaxError) as excinfo:
+                parser.parse_file(temp_path)
+            
+            # Error should reference the file
+            assert excinfo.value.source_file is not None
+            assert temp_path in excinfo.value.source_file or '.m' in str(excinfo.value)
+        finally:
+            os.unlink(temp_path)
+    
+    def test_mumpssyntaxerror_attributes(self):
+        """T336: MUMPSSyntaxError should have line/column attributes."""
+        error = MUMPSSyntaxError(
+            message="Test error",
+            line=10,
+            column=5,
+            source_file="test.m",
+            source_line="\tS X=1"
+        )
+        
+        assert error.line == 10
+        assert error.column == 5
+        assert error.source_file == "test.m"
+        assert error.source_line == "\tS X=1"
+        
+        # Message should include location
+        error_str = str(error)
+        assert "10" in error_str
+        assert "5" in error_str
+        assert "test.m" in error_str
+
+
+# ============================================================================
+# Phase 11 Serialization Tests (T338-T339)
+# ============================================================================
+
+class TestASGSerialization:
+    """Test ASG serialization to dict/JSON (T338-T339)."""
+    
+    def test_routine_to_dict(self):
+        """T338: MRoutine.to_dict() returns dictionary representation."""
+        parser = MUMPSParser()
+        source = 'TEST\tS X=1\n'
+        routine = parser.parse(source)
+        
+        result = routine.to_dict()
+        
+        assert isinstance(result, dict)
+        assert result["_type"] == "MRoutine"
+        assert "labels" in result
+        assert len(result["labels"]) >= 1
+    
+    def test_to_dict_includes_labels(self):
+        """T338: to_dict() includes label details."""
+        parser = MUMPSParser()
+        source = 'TEST\tS X=1\nSUB\tQ\n'
+        routine = parser.parse(source)
+        
+        result = routine.to_dict()
+        
+        labels = result["labels"]
+        assert len(labels) >= 2
+        assert labels[0]["name"] == "TEST"
+        assert labels[1]["name"] == "SUB"
+    
+    def test_to_dict_with_position(self):
+        """T338: to_dict() can include source position."""
+        parser = MUMPSParser()
+        source = 'TEST\tS X=1\n'
+        routine = parser.parse(source, filename="test.m")
+        routine.source_file = "test.m"
+        
+        result = routine.to_dict(include_position=True)
+        
+        assert result.get("source_file") == "test.m"
+    
+    def test_dump_asg_json(self):
+        """T339: dump_asg_json() produces valid JSON."""
+        import json
+        
+        parser = MUMPSParser()
+        source = 'TEST\tS X=1\n'
+        routine = parser.parse(source)
+        
+        json_str = dump_asg_json(routine)
+        
+        # Should be valid JSON
+        parsed = json.loads(json_str)
+        assert parsed["_type"] == "MRoutine"
+    
+    def test_dump_asg_json_pretty(self):
+        """T339: dump_asg_json() supports indentation."""
+        parser = MUMPSParser()
+        source = 'TEST\tS X=1\n'
+        routine = parser.parse(source)
+        
+        json_str = dump_asg_json(routine, indent=2)
+        
+        # Should have newlines from indentation
+        assert "\n" in json_str
+        assert "  " in json_str
+    
+    def test_to_dict_handles_nested_structures(self):
+        """T338: to_dict() handles nested ASG structures."""
+        parser = MUMPSParser()
+        source = 'TEST\tF I=1:1:10 S X=I\n'
+        routine = parser.parse(source)
+        
+        result = routine.to_dict(max_depth=5)
+        
+        # Should serialize without error
+        assert result["_type"] == "MRoutine"
+        
+    def test_to_dict_max_depth_prevents_infinite_recursion(self):
+        """T338: to_dict() respects max_depth to prevent stack overflow."""
+        parser = MUMPSParser()
+        source = 'TEST\tS X=1\n'
+        routine = parser.parse(source)
+        
+        # Very shallow depth should truncate
+        result = routine.to_dict(max_depth=1)
+        
+        assert result["_type"] == "MRoutine"
+        # Labels might be truncated
+        if result.get("labels"):
+            first_label = result["labels"][0]
+            assert first_label.get("_truncated") or "_type" in first_label

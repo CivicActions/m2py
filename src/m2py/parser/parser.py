@@ -4,6 +4,7 @@ Provides the MUMPSParser class that parses MUMPS source code and
 produces an Abstract Semantic Graph (ASG).
 """
 
+import json
 from pathlib import Path
 from typing import Optional, Union, List
 
@@ -28,6 +29,20 @@ from m2py.analysis.variables import (
     compute_transitive_inputs as _compute_transitive_inputs,
     ScopeVariables,
 )
+
+
+def dump_asg_json(routine: MRoutine, include_position: bool = False, indent: int = 2) -> str:
+    """Serialize an ASG to JSON for debugging.
+    
+    Args:
+        routine: The MRoutine to serialize
+        include_position: Include source position information
+        indent: JSON indentation level (None for compact)
+        
+    Returns:
+        JSON string representation of the ASG
+    """
+    return json.dumps(routine.to_dict(include_position=include_position), indent=indent)
 
 
 class ForPatternResult:

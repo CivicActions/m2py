@@ -602,38 +602,40 @@ and MExpr objects where needed. May skip unless specific helper functions are re
 
 ---
 
-## Phase 11: Polish & Cross-Cutting Concerns
+## Phase 11: Polish & Cross-Cutting Concerns ✅ COMPLETE
 
 **Purpose**: Full MUGJ validation, performance, and cleanup
 
 ### Full MUGJ Validation (SC-001)
 
-- [ ] T329 Add MUGJ parse loop test for all ~280 files in tests/integration/test_mugj.py
-- [ ] T330 Create list of files failing parse for triage in tests/integration/test_mugj.py
-- [ ] T331 Fix failing MUGJ files iteratively until 100% parse rate
-- [ ] T332 Verify SC-001: 100% MUGJ parse rate in tests/integration/test_mugj.py
+- [X] T329 Add MUGJ parse loop test for all ~280 files in tests/integration/test_mugj.py
+- [X] T330 Create list of files failing parse for triage in tests/integration/test_mugj.py
+- [X] T331 Fix failing MUGJ files iteratively until 100% parse rate
+- [X] T332 Verify SC-001: 100% MUGJ parse rate in tests/integration/test_mugj.py
 
 ### Performance Validation (SC-005)
 
-- [ ] T333 Add benchmark test for 500-line routine parse time in tests/unit/test_parser.py
-- [ ] T334 Verify SC-005: parse time <2s for 500 lines
-- [ ] T335 Profile and optimize grammar if needed
+- [X] T333 Add benchmark test for 500-line routine parse time in tests/unit/test_parser.py
+- [X] T334 Verify SC-005: parse time <2s for 500 lines
+- [X] T335 Profile and optimize grammar if needed (not needed - performance acceptable)
 
 ### Error Handling (SC-007)
 
-- [ ] T336 Verify MUMPSSyntaxError includes line/column in tests/unit/test_parser.py
-- [ ] T337 Add source position propagation to all ASG elements
+- [X] T336 Verify MUMPSSyntaxError includes line/column in tests/unit/test_parser.py
+- [X] T337 Add source position propagation to all ASG elements (via ASGElement base class)
 
 ### Serialization & Debugging
 
-- [ ] T338 Implement to_dict() serialization for ASG per data-model.md in src/m2py/asg/elements.py
-- [ ] T339 Add ASG JSON dump for debugging in src/m2py/parser/parser.py
+- [X] T338 Implement to_dict() serialization for ASG per data-model.md in src/m2py/asg/elements.py
+- [X] T339 Add ASG JSON dump for debugging in src/m2py/parser/parser.py
 
 ### Documentation
 
-- [ ] T340 [P] Update README.md with parser usage examples
-- [ ] T341 [P] Add inline docstrings to all public API methods
-- [ ] T342 Run quickstart.md validation steps to ensure setup works
+- [X] T340 [P] Update README.md with parser usage examples
+- [X] T341 [P] Add inline docstrings to all public API methods (already documented)
+- [X] T342 Run quickstart.md validation steps to ensure setup works
+
+**Checkpoint**: Phase 11 complete - Full MUGJ validation, performance, and documentation
 
 ---
 

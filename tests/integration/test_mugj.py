@@ -658,7 +658,10 @@ class TestVariableAnalysisIntegration:
         assert "Y" in result["FUNC"].output_variables
 
 class TestParseAllMUGJFiles:
-    """Test parsing ALL MUGJ certification files (T162)."""
+    """Test parsing ALL MUGJ certification files (T162, T329-T332).
+    
+    Validates SC-001: Parser must parse 100% of MUGJ certification files.
+    """
     
     def test_parse_all_mugj_files(self, mugj_inref_dir):
         """All MUGJ *.m files should parse without errors.
@@ -705,6 +708,50 @@ class TestParseAllMUGJFiles:
         # Success assertion
         assert success_count + skipped == total, f"Parsed {success_count}, skipped {skipped} of {total} files"
         assert success_count >= 370, f"Expected at least 370 MUGJ files, got {success_count}"
+    
+    def test_sc001_100_percent_parse_rate(self, mugj_inref_dir):
+        """T332: Verify SC-001 - 100% MUGJ parse rate achieved.
+        
+        This explicitly tests the success criterion SC-001:
+        'Parser must successfully parse 100% of the MUGJ certification suite'
+        """
+        parser = MUMPSParser()
+        all_files = sorted(mugj_inref_dir.glob("*.m"))
+        
+        # Separate empty files (stubs) from real files
+        real_files = [f for f in all_files if f.stat().st_size > 0]
+        
+        # Track failures for reporting
+        failures = []
+        for filepath in real_files:
+            try:
+                routine = parser.parse_file(filepath)
+                assert isinstance(routine, MRoutine)
+            except Exception as e:
+                failures.append((filepath.name, str(e)[:100]))
+        
+        # Calculate parse rate
+        total_real = len(real_files)
+        success = total_real - len(failures)
+        parse_rate = (success / total_real * 100) if total_real > 0 else 0
+        
+        # SC-001 requires 100%
+        assert parse_rate == 100.0, (
+            f"SC-001 FAILED: Parse rate {parse_rate:.1f}% ({success}/{total_real})\n"
+            f"Failures: {failures[:5]}"
+        )
+    
+    def test_mugj_file_count(self, mugj_inref_dir):
+        """T329: Verify expected MUGJ file count.
+        
+        Ensures we're testing the full certification suite.
+        """
+        all_files = list(mugj_inref_dir.glob("*.m"))
+        real_files = [f for f in all_files if f.stat().st_size > 0]
+        
+        # MUGJ suite should have ~375 real files
+        assert len(real_files) >= 370, f"Expected 370+ MUGJ files, found {len(real_files)}"
+        assert len(all_files) >= 375, f"Expected 375+ total MUGJ files, found {len(all_files)}"
 
 
 # ============================================================================
