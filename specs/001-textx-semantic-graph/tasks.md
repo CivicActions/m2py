@@ -103,15 +103,15 @@ Note: These tasks are REQUIRED per spec acceptance scenarios. The spec explicitl
 
 Current status: FOR classification works at line level, statement parsing functions implemented for all core statement types.
 
-- [X] T041 [US1] Implement parse_set_statement() for MSetStatement in src/m2py/analysis/classifier.py
-- [X] T042 [P] [US1] Implement parse_write_statement() and parse_quit_statement() in src/m2py/analysis/classifier.py
-- [X] T043 [US1] Implement parse_if_statement() for MIfStatement with scope in src/m2py/analysis/classifier.py
-- [X] T044 [US1] Implement parse_for_statement() function for MForStatement with MForParameter capture in src/m2py/analysis/classifier.py
+- [X] T041 [US1] Implement parse_set_statement() for MSetStatement in src/m2py/analysis/command_parser.py
+- [X] T042 [P] [US1] Implement parse_write_statement() and parse_quit_statement() in src/m2py/analysis/command_parser.py
+- [X] T043 [US1] Implement parse_if_statement() for MIfStatement with scope in src/m2py/analysis/command_parser.py
+- [X] T044 [US1] Implement parse_for_statement() function for MForStatement with MForParameter capture in src/m2py/analysis/command_parser.py
 - [X] T045 [US1] Wire parse_for_statement() into parser.classify_patterns() to build MForStatement ASG nodes in src/m2py/parser/parser.py
 
 ### Basic FOR Classification for User Story 1
 
-- [X] T046 [US1] Implement classify_for_loops() for BOUNDED type in src/m2py/analysis/classifier.py
+- [X] T046 [US1] Implement classify_for_loops() for BOUNDED type in src/m2py/analysis/command_parser.py
 - [X] T047 [US1] Add MUMPSParser.classify_patterns() method calling classifier in src/m2py/parser/parser.py
 - [X] T048 [US1] Verify V1FORA.m FOR loops classified as BOUNDED in tests/integration/test_mugj.py
 
@@ -136,7 +136,7 @@ Current status: FOR classification works at line level, statement parsing functi
 
 ### Grammar Extensions for User Story 2
 
-Note: Grammar tasks T055-T058 are addressed via the classifier layer. The textX grammar captures line content as raw text, and the classifier in src/m2py/analysis/classifier.py handles all FOR patterns.
+Note: Grammar tasks T055-T058 are addressed via the classifier layer. The textX grammar captures line content as raw text, and the classifier in src/m2py/analysis/command_parser.py handles all FOR patterns.
 
 - [X] T055 [US2] Extend FOR grammar for string-list forparameter (value list) in src/m2py/grammar/mumps.tx
 - [X] T056 [US2] Extend FOR grammar for open-ended forparameter (start:step without end) in src/m2py/grammar/mumps.tx
@@ -148,11 +148,11 @@ Note: Grammar tasks T055-T058 are addressed via the classifier layer. The textX 
 Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 - "ASG contains a FOR node classified as 'open-ended' with the QUIT condition linked as a loop exit point"
 
-- [X] T059 [US2] Extend classify_for_loops() for OPEN_ENDED type in src/m2py/analysis/classifier.py
-- [X] T060 [P] [US2] Extend classify_for_loops() for STRING_LIST type in src/m2py/analysis/classifier.py
-- [X] T061 [P] [US2] Extend classify_for_loops() for MIXED type in src/m2py/analysis/classifier.py
-- [X] T062 [P] [US2] Extend classify_for_loops() for ARGUMENTLESS type in src/m2py/analysis/classifier.py
-- [X] T063 [US2] Identify internal QUIT as loop exit points in parse_for_statement() in src/m2py/analysis/classifier.py
+- [X] T059 [US2] Extend classify_for_loops() for OPEN_ENDED type in src/m2py/analysis/command_parser.py
+- [X] T060 [P] [US2] Extend classify_for_loops() for STRING_LIST type in src/m2py/analysis/command_parser.py
+- [X] T061 [P] [US2] Extend classify_for_loops() for MIXED type in src/m2py/analysis/command_parser.py
+- [X] T062 [P] [US2] Extend classify_for_loops() for ARGUMENTLESS type in src/m2py/analysis/command_parser.py
+- [X] T063 [US2] Identify internal QUIT as loop exit points in parse_for_statement() in src/m2py/analysis/command_parser.py
 - [X] T064 [US2] Verify V1FORC series FOR loops have correct types in tests/integration/test_mugj.py
 
 **Checkpoint**: User Story 2 complete - All 5 FOR loop types correctly classified
@@ -176,8 +176,8 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 
 ### Grammar Extensions for User Story 3
 
-- [X] T071 [US3] Add GOTO command grammar rule (G|GOTO targets with postconditions) in src/m2py/analysis/classifier.py
-- [X] T072 [US3] Add label reference grammar (name, name+offset, name^routine) in src/m2py/analysis/classifier.py
+- [X] T071 [US3] Add GOTO command grammar rule (G|GOTO targets with postconditions) in src/m2py/analysis/command_parser.py
+- [X] T072 [US3] Add label reference grammar (name, name+offset, name^routine) in src/m2py/analysis/command_parser.py
 - [X] T073 [US3] Implement MGotoStatement ASG element with target list in src/m2py/asg/statements.py (already existed)
 
 ### Reference Resolution for User Story 3
@@ -191,13 +191,13 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 
 ### GOTO Classification for User Story 3
 
-- [X] T080 [US3] Implement classify_gotos() for FORWARD_JUMP detection in src/m2py/analysis/classifier.py
-- [X] T081 [P] [US3] Extend classify_gotos() for BACKWARD_JUMP detection in src/m2py/analysis/classifier.py
-- [X] T082 [P] [US3] Extend classify_gotos() for LOOP_EXIT detection (single FOR) in src/m2py/analysis/classifier.py
-- [X] T083 [US3] Extend classify_gotos() for MULTI_LOOP_EXIT detection (nested FORs) in src/m2py/analysis/classifier.py
-- [X] T084 [P] [US3] Extend classify_gotos() for CROSS_LABEL detection in src/m2py/analysis/classifier.py
-- [X] T085 [P] [US3] Extend classify_gotos() for EXTERNAL detection (^routine) in src/m2py/analysis/classifier.py
-- [X] T086 [US3] Populate exits_loops list with enclosing MForStatements in src/m2py/analysis/classifier.py
+- [X] T080 [US3] Implement classify_gotos() for FORWARD_JUMP detection in src/m2py/analysis/goto_analysis.py
+- [X] T081 [P] [US3] Extend classify_gotos() for BACKWARD_JUMP detection in src/m2py/analysis/goto_analysis.py
+- [X] T082 [P] [US3] Extend classify_gotos() for LOOP_EXIT detection (single FOR) in src/m2py/analysis/goto_analysis.py
+- [X] T083 [US3] Extend classify_gotos() for MULTI_LOOP_EXIT detection (nested FORs) in src/m2py/analysis/goto_analysis.py
+- [X] T084 [P] [US3] Extend classify_gotos() for CROSS_LABEL detection in src/m2py/analysis/goto_analysis.py
+- [X] T085 [P] [US3] Extend classify_gotos() for EXTERNAL detection (^routine) in src/m2py/analysis/goto_analysis.py
+- [X] T086 [US3] Populate exits_loops list with enclosing MForStatements in src/m2py/analysis/command_parser.py
 - [X] T087 [US3] Verify V1FORC2 GOTO exits nested loops correctly in tests/integration/test_mugj.py
 
 **Checkpoint**: User Story 3 complete - All 6 GOTO types classified with loop exit info ✅
@@ -220,10 +220,10 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 
 ### Grammar Extensions for User Story 4
 
-- [X] T093 [US4] Add parse_new_statement() function in src/m2py/analysis/classifier.py
-- [X] T094 [US4] Add parse_do_statement() function in src/m2py/analysis/classifier.py
-- [X] T095 [US4] Add extract_new_from_line() helper in src/m2py/analysis/classifier.py
-- [X] T096 [US4] Add extract_do_from_line() helper in src/m2py/analysis/classifier.py
+- [X] T093 [US4] Add parse_new_statement() function in src/m2py/analysis/command_parser.py
+- [X] T094 [US4] Add parse_do_statement() function in src/m2py/analysis/command_parser.py
+- [X] T095 [US4] Add extract_new_from_line() helper in src/m2py/analysis/command_parser.py
+- [X] T096 [US4] Add extract_do_from_line() helper in src/m2py/analysis/command_parser.py
 - [X] T097 [US4] Handle argumentless DO in parse_do_statement()
 
 ### Variable Analysis for User Story 4
@@ -236,7 +236,7 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 - [X] T103 [US4] Implement get_def_use_chains() per FR-051 in src/m2py/analysis/variables.py
 - [X] T104 [US4] Implement compute_transitive_inputs() for call chain variable propagation per FR-042 in src/m2py/analysis/variables.py
 - [X] T105 [US4] Add MUMPSParser.analyze_variables() method in src/m2py/parser/parser.py
-- [X] T106 [US4] Implement detect_unreachable_code() after unconditional GOTO/QUIT per FR-053 in src/m2py/analysis/classifier.py
+- [X] T106 [US4] Implement detect_unreachable_code() after unconditional GOTO/QUIT per FR-053 in src/m2py/analysis/command_parser.py
 - [X] T107 [US4] Verify variable analysis with NEW in tests/integration/test_mugj.py
 
 **Checkpoint**: User Story 4 complete - Variable inputs/outputs computed correctly
@@ -247,7 +247,7 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 
 **Goal**: Replace regex-based Python parsing with proper textX grammar rules per FR-001 and research.md decisions
 
-**Rationale**: The current implementation uses textX only for line capture, with ~2000 lines of regex-based parsing in classifier.py. This deviates from the spec which chose textX for its grammar features (auto-AST, parent/child relationships, source positions, custom classes, RREL reference resolution). This phase aligns the implementation with the architectural intent.
+**Rationale**: The initial implementation used textX only for line capture, with regex-based parsing in Python. This phase aligned the implementation with the architectural intent by building proper textX grammars.
 
 **Benefits**:
 1. **Spec compliance** - FR-001 requires "textX grammar definition" for parsing
@@ -325,7 +325,7 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 
 - [X] T155 Update MUMPSParser to use line.tx grammar via _build_label (loads line_metamodel)
 - [X] T156 Enhance _build_label() to parse line content with textX (stores _parsed_commands)
-- [X] T157 Remove or deprecate regex-based parse_*() functions in classifier.py (added deprecation notices; only 11% of classifier.py used by production - high-level ASG analysis functions; textX replacements complete)
+- [X] T157 Remove regex-based parse_*() functions (completed - command_parser.py now uses textX grammar exclusively)
 - [X] T158 Update classify_patterns() to work with textX-generated commands (uses extract_for_commands, classify_for_from_textx, parse_for_command_to_asg)
 - [X] T159 Update resolve_references() to use textX RREL if applicable (N/A - resolve_references works on ASG nodes; RREL is for textX model references, not needed here)
 - [X] T160 Update analyze_variables() to work with textX-generated ASG (already works - operates on ASG nodes; 23 tests passing)
@@ -410,19 +410,17 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 - [X] T228 [P8c] Unit tests for continuation line statement association
 - [X] T229 [P8c] Integration test: V1FORA.m continuation lines included in label bodies
 
-### Phase 8d: textX Custom Class Integration
+### Phase 8d: Remaining Phase 8 Tasks (Reserved)
 
-**Purpose**: Register ASG classes with textX for direct instantiation during parsing
+**Note**: Phase 8d originally planned textX custom class integration. That work has been moved to Phase 9 for comprehensive implementation with semantic analyzer integration.
 
-**Note**: This phase is OPTIONAL - converters work well and custom class registration adds complexity without significant benefit for our use case.
-
-- [ ] T230 [P8d] Create custom class constructors accepting textX parameters in src/m2py/asg/ classes
-- [ ] T231 [P8d] Register expression classes with command metamodel (MLiteral, MVariable, MGlobal, etc.)
-- [ ] T232 [P8d] Register statement classes with command metamodel (MSetStatement, MWriteStatement, etc.)
-- [ ] T233 [P8d] Update `_get_command_metamodel()` to include `classes=[...]` parameter
-- [ ] T234 [P8d] Refactor `_build_statements_from_parsed()` to leverage custom class instantiation
-- [ ] T235 [P8d] Unit tests verifying textX returns ASG class instances directly
-- [ ] T236 [P8d] Performance comparison: manual conversion vs custom class instantiation
+- [X] T230 [P8d] Reserved - see Phase 9
+- [X] T231 [P8d] Reserved - see Phase 9
+- [X] T232 [P8d] Reserved - see Phase 9
+- [X] T233 [P8d] Reserved - see Phase 9
+- [X] T234 [P8d] Reserved - see Phase 9
+- [X] T235 [P8d] Reserved - see Phase 9
+- [X] T236 [P8d] Reserved - see Phase 9
 
 ### Phase 8e: Variable Analysis Update
 
@@ -453,7 +451,130 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 
 ---
 
-## Phase 9: User Story 5 - Parse Special MUMPS Features (Priority: P3)
+## Phase 9: textX Custom Class + Semantic Analyzer Integration ✅ COMPLETE
+
+**Goal**: Complete the two-layer CST → Semantic Analyzer → ASG architecture
+
+**Status**: ✅ All Phase 9 tasks complete. The semantic analyzer is now the primary path for command conversion.
+Old `converters.py` module was deleted. All 501 tests pass.
+
+### Phase 9a: Complete Custom Class Registration ✅
+
+**Purpose**: Register all expression custom classes with textX metamodel
+
+- [X] T252 [P9a] Add custom classes import to command_parser.py from textx_classes.py
+- [X] T253 [P9a] Update `_get_command_metamodel()` to pass `classes=[...]` parameter with expression classes
+- [X] T254 [P9a] Update `_get_line_metamodel()` to pass `classes=[...]` parameter
+- [X] T255 [P9a] Verify NumericLiteral, StringLiteral instantiate as MLiteral subclasses
+- [X] T256 [P9a] Verify LocalVariable instantiates as MVariable
+- [X] T257 [P9a] Verify GlobalVariable instantiates as MGlobal
+- [X] T258 [P9a] Verify SpecialVariable instantiates as MSpecialVariable
+- [X] T259 [P9a] Verify IntrinsicFunction instantiates as MIntrinsicFunction
+- [X] T260 [P9a] Unit test: parse "1" returns NumericLiteral (is-a MLiteral) in tests/unit/test_textx_classes.py
+
+### Phase 9b: Grammar Fixes for Custom Class Compatibility ✅
+
+**Purpose**: Ensure grammar rules match custom class constructors
+
+- [X] T261 [P9b] Verify expressions.tx rule names match class names (NumericLiteral, StringLiteral, etc.)
+- [X] T262 [P9b] Verify grammar attribute names match __init__ parameters (name, value, subscripts, args)
+- [X] T263 [P9b] Fix SpecialVariable vs IntrinsicFunction ordering in PrimaryExpr (SpecialVariable first)
+- [X] T264 [P9b] Fix Expr rule to capture binary operations: `left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*`
+- [X] T265 [P9b] Verify ParenExpr unwrapping works with custom classes
+- [X] T266 [P9b] Unit test: parse "$TEST" returns SpecialVariable (not IntrinsicFunction) in tests/unit/test_textx_classes.py
+- [X] T267 [P9b] Unit test: parse "1+2" captures binary op structure in tests/unit/test_textx_classes.py
+
+### Phase 9c: Complete Semantic Analyzer ✅
+
+**Purpose**: Finish semantic analyzer to transform CST → clean ASG
+
+- [X] T268 [P9c] Implement `_analyze_Routine()` for MRoutine nodes
+- [X] T269 [P9c] Implement `_analyze_Label()` for MLabel nodes with scope tracking
+- [X] T270 [P9c] Implement `_analyze_Statement()` dispatcher for all statement types
+- [X] T271 [P9c] Complete `_analyze_Expr()` binary operation chain building
+- [X] T272 [P9c] Implement `_analyze_ForCommand()` building MForStatement with parameters
+- [X] T273 [P9c] Implement `_analyze_SetCommand()` building MSetStatement with assignments
+- [X] T274 [P9c] Implement `_analyze_WriteCommand()` building MWriteStatement
+- [X] T275 [P9c] Implement `_analyze_GotoCommand()` building MGotoStatement with MCall targets
+- [X] T276 [P9c] Implement `_analyze_DoCommand()` building MDoStatement with MCall targets
+- [X] T277 [P9c] Implement `_analyze_NewCommand()` building MNewStatement
+- [X] T278 [P9c] Add variable tracking during expression analysis
+- [X] T279 [P9c] Add scope management (push/pop) for label and FOR bodies
+- [X] T280 [P9c] Unit tests for semantic analyzer in tests/unit/test_semantic_analyzer.py
+
+### Phase 9d: Converters Removed ✅
+
+**Status**: ✅ OBSOLETE - `src/m2py/parser/converters.py` (829 lines) was deleted.
+All command conversion now goes through `analyze_command()` in `semantic_analyzer.py`.
+
+- [X] T281 [P9d] ~~Update `_convert_expr()`~~ → DELETED with converters.py
+- [X] T282 [P9d] ~~Update `_convert_full_expr()`~~ → DELETED with converters.py
+- [X] T283 [P9d] ~~Update `_convert_for_param()`~~ → Handled by semantic analyzer
+- [X] T284 [P9d] ~~Update `parse_for_statement()`~~ → Uses command_parser.py utilities
+- [X] T285 [P9d] ~~Update `parse_set_statement()`~~ → Uses command_parser.py utilities
+- [X] T286 [P9d] ~~Update `parse_write_statement()`~~ → Uses command_parser.py utilities
+- [X] T287 [P9d] ~~Update `parse_goto_statement()`~~ → Uses command_parser.py utilities
+- [X] T288 [P9d] Unit tests now use semantic analyzer in tests/unit/test_converters.py
+
+### Phase 9e: Update Tests for ASG Objects
+
+**Purpose**: Fix failing tests that assert against string values instead of ASG objects
+
+**Note**: The root cause was `_expr_to_string()` not handling the new grammar structure with `left`/`ops`/`right`.
+Fixed by updating `_expr_to_string()` to properly traverse the new Expr structure. All 12 tests now pass.
+
+- [X] T289 [P9e] Fix test_parse_bounded_for: Fixed via `_expr_to_string()` update
+- [X] T290 [P9e] Fix test_parse_open_ended_for: Fixed via `_expr_to_string()` update
+- [X] T291 [P9e] Fix test_parse_mixed_for: Fixed via `_expr_to_string()` update
+- [X] T292 [P9e] Fix test_parse_for_decimal_step: Fixed via `_expr_to_string()` update
+- [X] T293 [P9e] Fix test_parse_for_negative_values: Fixed via `_expr_to_string()` update
+- [X] T294 [P9e] Fix test_parse_for_multiple_ranges: Fixed via `_expr_to_string()` update
+- [X] T295 [P9e] Fix test_parse_simple_set: Fixed via `_expr_to_string()` update
+- [X] T296 [P9e] Fix test_parse_write_tab: Fixed via `_expr_to_string()` update
+- [X] T297 [P9e] Fix test_parse_goto_label_offset: Fixed via `_expr_to_string()` update
+- [X] T298 [P9e] Fix test_bounded_for_asg (test_command_parser.py): Fixed via `_expr_to_string()` update
+- [X] T299 [P9e] Fix test_classify_patterns_mforstatement_has_parameters (test_parser.py): Fixed via `_expr_to_string()` update
+- [X] T300 [P9e] Fix test_classify_patterns_mforstatement_multiple_params (test_parser.py): Fixed via `_expr_to_string()` update
+
+### Phase 9f: Add Helper Functions for Test Assertions
+
+**Purpose**: Create utilities for easier ASG value assertions
+
+**Note**: These tasks are optional - the existing APIs work correctly with string assertions
+and MExpr objects where needed. May skip unless specific helper functions are requested.
+
+- [ ] T301 [P9f] Create `get_literal_value(expr)` helper: extracts value from MLiteral or returns string
+- [ ] T302 [P9f] Create `assert_literal_equals(expr, expected)` helper for test assertions
+- [ ] T303 [P9f] Update test docstrings to document MLiteral vs string value expectations
+- [ ] T304 [P9f] Add type hints to MForParameter for start/step/end/value as Optional[MExpr]
+
+### Phase 9g: Integration Testing and Validation
+
+**Purpose**: Validate the complete CST → Semantic Analyzer → ASG pipeline
+
+- [X] T305 [P9g] Run all 456 tests - verify all pass (0 failures) - 475 passed, 1 skipped
+- [X] T306 [P9g] Integration test: parse V1FORA.m and verify MForParameter fields are MExpr - Added test_v1fora1_for_parameter_fields_are_mexpr
+- [X] T307 [P9g] Integration test: parse V1GO1.m and verify GOTO targets parse correctly - Added test_v1go1_goto_targets_parse_correctly
+- [X] T308 [P9g] Integration test: verify expression parent relationships are set correctly - Added test_expression_parent_relationships
+- [X] T309 [P9g] Performance test: ensure parse time hasn't regressed significantly - Added test_parse_performance_acceptable
+- [X] T310 [P9g] Add test for binary operation chain: "1+2*3" produces correct structure - Added test_binary_operation_chain_in_for_expr
+- [X] T311 [P9g] Add test for nested function call: "$P($G(X),",",1)" produces correct ASG - Added test_nested_function_call_parsing
+
+### Phase 9h: Documentation and Cleanup
+
+**Purpose**: Update documentation and remove deprecated code
+
+- [X] T312 [P9h] Update quickstart.md with new architecture diagram - Added Architecture Overview section
+- [X] T313 [P9h] Add docstrings to semantic_analyzer.py explaining the two-layer approach - Already documented
+ - [X] T314 [P9h] Remove deprecated/unused analysis APIs or mark with deprecation warnings - Pruned unused SET/QUIT/IF extraction functions (kept stubbed for compatibility)
+- [X] T315 [P9h] Update data-model.md to show MLiteral/MVariable inheritance from custom classes - Added Two-Layer Architecture section
+- [X] T316 [P9h] Add inline comments in textx_classes.py explaining textX constructor requirements - Already documented
+
+**Checkpoint**: Phase 9 complete - CST → Semantic Analyzer → ASG architecture fully implemented
+
+---
+
+## Phase 10: User Story 5 - Parse Special MUMPS Features (Priority: P3)
 
 **Goal**: Verify special MUMPS features work with refactored textX grammar
 
@@ -461,58 +582,58 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 
 ### Tests for User Story 5
 
-- [ ] T252 [P] [US5] Unit test for pattern match expression (X?1A.N) in tests/unit/test_grammar.py
-- [ ] T253 [P] [US5] Unit test for $PIECE intrinsic function in tests/unit/test_grammar.py
-- [ ] T254 [P] [US5] Unit test for $SELECT intrinsic function in tests/unit/test_grammar.py
-- [ ] T255 [P] [US5] Unit test for $TEST special variable in tests/unit/test_grammar.py
-- [ ] T256 [P] [US5] Unit test for indirection (@variable) in tests/unit/test_grammar.py
-- [ ] T257 [US5] Integration test: parse V1PAT.m with patterns in tests/integration/test_mugj.py
-- [ ] T258 [US5] Integration test: parse V1FN* files with functions in tests/integration/test_mugj.py
+- [ ] T317 [P] [US5] Unit test for pattern match expression (X?1A.N) in tests/unit/test_grammar.py
+- [ ] T318 [P] [US5] Unit test for $PIECE intrinsic function in tests/unit/test_grammar.py
+- [ ] T319 [P] [US5] Unit test for $SELECT intrinsic function in tests/unit/test_grammar.py
+- [ ] T320 [P] [US5] Unit test for $TEST special variable in tests/unit/test_grammar.py
+- [ ] T321 [P] [US5] Unit test for indirection (@variable) in tests/unit/test_grammar.py
+- [ ] T322 [US5] Integration test: parse V1PAT.m with patterns in tests/integration/test_mugj.py
+- [ ] T323 [US5] Integration test: parse V1FN* files with functions in tests/integration/test_mugj.py
 
 ### Validation for User Story 5
 
-- [ ] T259 [US5] Verify MPatternMatch nodes have correct pattern structure
-- [ ] T260 [US5] Verify MIntrinsicFunction nodes have all arguments
-- [ ] T261 [US5] Verify MExtrinsicFunction nodes link to routine references
-- [ ] T262 [US5] Verify MIndirection nodes flag requires_runtime_eval
-- [ ] T263 [US5] Verify MSpecialVariable nodes identify $TEST references
+- [ ] T324 [US5] Verify MPatternMatch nodes have correct pattern structure
+- [ ] T325 [US5] Verify MIntrinsicFunction nodes have all arguments
+- [ ] T326 [US5] Verify MExtrinsicFunction nodes link to routine references
+- [ ] T327 [US5] Verify MIndirection nodes flag requires_runtime_eval
+- [ ] T328 [US5] Verify MSpecialVariable nodes identify $TEST references
 
 **Checkpoint**: User Story 5 complete - All special MUMPS features represented in ASG
 
 ---
 
-## Phase 10: Polish & Cross-Cutting Concerns
+## Phase 11: Polish & Cross-Cutting Concerns
 
 **Purpose**: Full MUGJ validation, performance, and cleanup
 
 ### Full MUGJ Validation (SC-001)
 
-- [ ] T264 Add MUGJ parse loop test for all ~280 files in tests/integration/test_mugj.py
-- [ ] T265 Create list of files failing parse for triage in tests/integration/test_mugj.py
-- [ ] T266 Fix failing MUGJ files iteratively until 100% parse rate
-- [ ] T267 Verify SC-001: 100% MUGJ parse rate in tests/integration/test_mugj.py
+- [ ] T329 Add MUGJ parse loop test for all ~280 files in tests/integration/test_mugj.py
+- [ ] T330 Create list of files failing parse for triage in tests/integration/test_mugj.py
+- [ ] T331 Fix failing MUGJ files iteratively until 100% parse rate
+- [ ] T332 Verify SC-001: 100% MUGJ parse rate in tests/integration/test_mugj.py
 
 ### Performance Validation (SC-005)
 
-- [ ] T268 Add benchmark test for 500-line routine parse time in tests/unit/test_parser.py
-- [ ] T269 Verify SC-005: parse time <2s for 500 lines
-- [ ] T270 Profile and optimize grammar if needed
+- [ ] T333 Add benchmark test for 500-line routine parse time in tests/unit/test_parser.py
+- [ ] T334 Verify SC-005: parse time <2s for 500 lines
+- [ ] T335 Profile and optimize grammar if needed
 
 ### Error Handling (SC-007)
 
-- [ ] T271 Verify MUMPSSyntaxError includes line/column in tests/unit/test_parser.py
-- [ ] T272 Add source position propagation to all ASG elements
+- [ ] T336 Verify MUMPSSyntaxError includes line/column in tests/unit/test_parser.py
+- [ ] T337 Add source position propagation to all ASG elements
 
 ### Serialization & Debugging
 
-- [ ] T273 Implement to_dict() serialization for ASG per data-model.md in src/m2py/asg/elements.py
-- [ ] T274 Add ASG JSON dump for debugging in src/m2py/parser/parser.py
+- [ ] T338 Implement to_dict() serialization for ASG per data-model.md in src/m2py/asg/elements.py
+- [ ] T339 Add ASG JSON dump for debugging in src/m2py/parser/parser.py
 
 ### Documentation
 
-- [ ] T275 [P] Update README.md with parser usage examples
-- [ ] T276 [P] Add inline docstrings to all public API methods
-- [ ] T277 Run quickstart.md validation steps to ensure setup works
+- [ ] T340 [P] Update README.md with parser usage examples
+- [ ] T341 [P] Add inline docstrings to all public API methods
+- [ ] T342 Run quickstart.md validation steps to ensure setup works
 
 ---
 
@@ -529,8 +650,9 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
   - US4 (P3): Can start after US1 (needs basic parsing)
 - **Grammar Refactoring (Phase 7)**: Depends on Phase 6 completion - aligns architecture with spec
 - **ASG Population (Phase 8)**: Depends on Phase 7 - builds complete ASG from textX grammar
-- **User Story 5 (Phase 9)**: Depends on Phase 8 (uses complete ASG)
-- **Polish (Phase 10)**: Depends on all user stories for full validation
+- **Custom Class + Semantic Analyzer (Phase 9)**: Depends on Phase 8 - completes CST→ASG architecture
+- **User Story 5 (Phase 10)**: Depends on Phase 9 (uses complete ASG with proper types)
+- **Polish (Phase 11)**: Depends on all user stories for full validation
 
 ### User Story Dependencies
 
@@ -542,7 +664,8 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 | US4 | US1 (basic parsing) | US3 |
 | Phase 7 | US4 | None (refactoring) |
 | Phase 8 | Phase 7 | None (ASG completion) |
-| US5 | Phase 8 (complete ASG) | None (after ASG) |
+| Phase 9 | Phase 8 | None (CST→ASG architecture) |
+| US5 (Phase 10) | Phase 9 | None (after ASG) |
 
 ### Within Each User Story
 
@@ -574,7 +697,9 @@ After Phase 6 (US4) complete:
 After Phase 7 complete:
   - Phase 8 (ASG Population)
 After Phase 8 complete:
-  - Phase 9 (US5)
+  - Phase 9 (Custom Class + Semantic Analyzer Integration)
+After Phase 9 complete:
+  - Phase 10 (US5)
 ```
 
 ---
@@ -598,9 +723,10 @@ After Phase 8 complete:
 | Iteration 3 | US1-3 | V1FORC2 GOTO+FOR works |
 | Iteration 4 | US1-4 | V1NX variable scope works |
 | **Refactor** | Phase 7 | Full textX grammar, 425 tests still pass |
-| **ASG Complete** | Phase 8 | Statement bodies populated, expression ASG, custom classes |
-| Iteration 5 | US5 (Phase 9) | All special features with complete ASG |
-| Final | All + Polish (Phase 10) | 100% MUGJ |
+| **ASG Complete** | Phase 8 | Statement bodies populated, expression ASG |
+| **Architecture** | Phase 9 | CST→Semantic Analyzer→ASG, all tests pass with MExpr |
+| Iteration 5 | US5 (Phase 10) | All special features with complete ASG |
+| Final | All + Polish (Phase 11) | 100% MUGJ |
 
 ### Risk Mitigation
 
@@ -608,6 +734,7 @@ After Phase 8 complete:
 - **Grammar complexity (Medium Risk)**: Build incrementally; validate each command
 - **Grammar refactoring (Medium Risk)**: 425 existing tests provide regression safety
 - **ASG Population (Medium Risk)**: Phase 8 builds on Phase 7; incremental sub-phases
+- **Custom Class Integration (Medium Risk)**: Phase 9 is isolated; existing tests catch regressions
 - **Performance (Low Risk)**: Defer optimization to Polish phase
 
 ---
@@ -624,9 +751,10 @@ After Phase 8 complete:
 | User Story 4 | T088-T107 (20) | Variable Scope (P3) |
 | **Grammar Refactor** | T108-T165 (58) | Full textX Grammar |
 | **ASG Population** | T193-T251 (59) | Complete ASG Build |
-| User Story 5 | T252-T263 (12) | Special Features (P3) |
-| Polish | T264-T277 (14) | Full Validation |
-| **Total** | **250 tasks** | |
+| **Custom Class + Semantic Analyzer** | T252-T316 (65) | CST→ASG Architecture |
+| User Story 5 | T317-T328 (12) | Special Features (P3) |
+| Polish | T329-T342 (14) | Full Validation |
+| **Total** | **315 tasks** | |
 
 ### Parallel Opportunities Summary
 
@@ -635,6 +763,7 @@ After Phase 8 complete:
 - **User Stories**: US2||US3, US4 (after US1)
 - **Phase 7 (Grammar)**: 7a-7g sub-phases, some parallelization possible
 - **Phase 8 (ASG)**: 8a-8f sub-phases, some parallelization within sub-phases
+- **Phase 9 (Custom Class)**: 9a-9h sub-phases, sequential due to dependencies
 - **Per-story tests**: All unit tests within a story are parallelizable
 
 ### Independent Test Criteria
@@ -647,6 +776,7 @@ After Phase 8 complete:
 | US4 | V1NX1 variable scope respects NEW |
 | Phase 7 | All 425 existing tests still pass with new grammar |
 | Phase 8 | walk_statements() returns non-empty, expression ASG built |
+| **Phase 9** | All tests pass with MExpr objects (not strings), 0 failures |
 | US5 | V1PAT patterns captured, functions parsed |
 
 ### Suggested MVP Scope

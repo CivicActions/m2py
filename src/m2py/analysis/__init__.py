@@ -63,6 +63,13 @@ from m2py.analysis.command_parser import (
     extract_new_from_line_textx,
 )
 
+# Semantic analysis
+from m2py.analysis.semantic_analyzer import (
+    analyze_command,
+    analyze_expression,
+    SemanticAnalyzer,
+)
+
 # Reference resolution
 from m2py.analysis.resolver import (
     resolve_references,
@@ -129,6 +136,10 @@ __all__ = [
     "parse_write_command",
     "parse_quit_command",
     "parse_if_command",
+    # Semantic analysis
+    "analyze_command",
+    "analyze_expression",
+    "SemanticAnalyzer",
     # Reference resolution
     "resolve_references",
     "get_unresolved_calls",

@@ -97,44 +97,70 @@ specs/001-textx-semantic-graph/
 src/
 └── m2py/
     ├── __init__.py
-    ├── grammar/              # textX grammar files
-    │   └── mumps.tx          # Complete MUMPS grammar (single file for simplicity)
-    ├── asg/                  # ASG element definitions
+    ├── grammar/                  # textX grammar files
+    │   ├── mumps.tx              # Main routine/label structure grammar
+    │   ├── line.tx               # Line content parsing grammar
+    │   ├── commands.tx           # Command-specific grammar rules
+    │   └── expressions.tx        # Expression grammar
+    ├── asg/                      # ASG element definitions
     │   ├── __init__.py
-    │   ├── elements.py       # Base classes (ASGElement, MRoutine, MLabel)
-    │   ├── statements.py     # Statement types (MSetStatement, MForStatement, etc.)
-    │   ├── expressions.py    # Expression types (MLiteral, MVariable, etc.)
-    │   └── enums.py          # Enumerations (ForLoopType, GotoType, etc.)
-    ├── parser/               # Parser implementation
+    │   ├── elements.py           # Base classes (ASGElement, MRoutine, MLabel)
+    │   ├── statements.py         # Statement types (MSetStatement, MForStatement, etc.)
+    │   ├── expressions.py        # Expression types (MLiteral, MVariable, etc.)
+    │   └── enums.py              # Enumerations (ForLoopType, GotoType, etc.)
+    ├── parser/                   # Parser implementation
     │   ├── __init__.py
-    │   ├── parser.py         # MUMPSParser class
-    │   └── exceptions.py     # MUMPSSyntaxError
-    ├── analysis/             # ASG analysis passes
+    │   ├── parser.py             # MUMPSParser class
+    │   ├── exceptions.py         # MUMPSSyntaxError, MUMPSSemanticError
+    │   └── textx_classes.py      # Custom classes for textX instantiation
+    ├── analysis/                 # ASG analysis passes
     │   ├── __init__.py
-    │   ├── resolver.py       # Reference resolution pass
-    │   ├── classifier.py     # Pattern classification pass
-    │   └── variables.py      # Variable scope analysis pass
-    └── cli/                  # Command-line interface (future)
+    │   ├── command_parser.py     # Command parsing via textX grammar
+    │   ├── semantic_analyzer.py  # CST → ASG transformation
+    │   ├── resolver.py           # Reference resolution pass
+    │   ├── goto_analysis.py      # GOTO classification and analysis
+    │   └── variables.py          # Variable scope analysis pass
+    └── cli/                      # Command-line interface (future)
         └── __init__.py
 
 tests/
 ├── unit/
-│   ├── test_grammar.py       # Grammar rule tests
-│   ├── test_asg.py           # ASG element tests
-│   ├── test_resolver.py      # Resolution pass tests
-│   ├── test_classifier.py    # Classification pass tests
-│   └── test_variables.py     # Variable analysis tests
+│   ├── test_grammar.py           # Grammar rule tests (basic)
+│   ├── test_command_grammar.py   # Command-specific grammar tests
+│   ├── test_expression_grammar.py # Expression grammar tests
+│   ├── test_parser.py            # Parser initialization and basic parsing
+│   ├── test_textx_classes.py     # textX custom class integration tests
+│   ├── test_semantic_analyzer.py # CST → ASG conversion tests
+│   ├── test_command_analysis.py  # Command analysis tests
+│   ├── test_classifier.py        # FOR loop classification tests
+│   ├── test_command_parser.py    # Command parsing tests
+│   ├── test_resolver.py          # Resolution pass tests
+│   └── test_variables.py         # Variable analysis tests
 ├── integration/
-│   └── test_mugj.py          # MUGJ test file parsing
+│   └── test_mugj.py              # MUGJ test file parsing
 └── functional/
-    └── mugj/                 # MUGJ validation suite (existing)
+    └── mugj/                     # MUGJ validation suite (existing)
 ```
 
-**Structure Decision**: Single project with standard Python layout. Grammar, ASG, parser, and analysis are separate modules for clear separation of concerns per Constitution Principle III.
+**Structure Decision**: Single project with standard Python layout. Grammar files are split for maintainability. Analysis is separated into command parsing (textX → raw structures), semantic analysis (CST → ASG), reference resolution, GOTO classification, and variable analysis for clear separation of concerns per Constitution Principle III.
 
 ---
 
 ## Architecture
+
+### Two-Layer Design: CST → Semantic Analyzer → ASG
+
+The parser uses a clean two-layer architecture:
+
+1. **Parsing Layer (textX + Custom Classes)**: Produces a Concrete Syntax Tree (CST) where textX grammar rules directly instantiate ASG-compatible classes (NumericLiteral → MLiteral, LocalVariable → MVariable, etc.)
+
+2. **Semantic Layer (Semantic Analyzer)**: Transforms the CST into a proper ASG by unwrapping textX wrappers, setting parent relationships, tracking variables, and resolving references.
+
+This approach provides:
+- **Clean separation**: Grammar concerns vs semantic concerns
+- **Type safety**: Custom classes inherit from ASG dataclasses  
+- **Proper parents**: Semantic analyzer sets correct `_asg_parent` references
+- **Variable tracking**: Analyzer builds symbol tables during traversal
 
 ### Component Diagram
 
@@ -144,15 +170,17 @@ tests/
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐   │
-│  │ textX        │    │ ASG Builder  │    │ Analysis Passes  │   │
-│  │ Metamodel    │───▶│              │───▶│                  │   │
-│  │              │    │ (Pass 1)     │    │ (Passes 2-4)     │   │
-│  └──────────────┘    └──────────────┘    └──────────────────┘   │
-│         │                   │                    │               │
-│         ▼                   ▼                    ▼               │
+│  │ textX        │    │ Semantic     │    │ Analysis Passes  │   │
+│  │ + Custom     │───▶│ Analyzer     │───▶│                  │   │
+│  │ Classes      │    │              │    │ (Resolution,     │   │
+│  │              │    │              │    │  Classification, │   │
+│  └──────────────┘    └──────────────┘    │  Variables)      │   │
+│         │                   │            └──────────────────┘   │
+│         ▼                   ▼                    │               │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐   │
-│  │ mumps.tx     │    │ Raw AST      │    │ Annotated ASG    │   │
-│  │ Grammar      │    │ (textX)      │    │                  │   │
+│  │ CST          │    │ Clean ASG    │    │ Annotated ASG    │   │
+│  │ (ASG types   │    │ (parents set,│    │ (types, refs,    │   │
+│  │ w/ wrappers) │    │  unwrapped)  │    │  variables)      │   │
 │  └──────────────┘    └──────────────┘    └──────────────────┘   │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -163,15 +191,21 @@ tests/
 ```
 MUMPS Source Code
        │
-       ▼ (textX parse)
-   Raw AST (textX objects)
+       ▼ (textX parse with custom classes)
+   CST (Concrete Syntax Tree)
+   ├── Grammar wrapper objects (Expr, UnaryExpr, etc.)
+   │   containing ASG-typed leaves:
+   │   ├── NumericLiteral (is-a MLiteral)
+   │   ├── LocalVariable (is-a MVariable)
+   │   └── IntrinsicFunction (is-a MIntrinsicFunction)
        │
-       ▼ (structure building with custom classes)
-   Unlinked ASG
+       ▼ (semantic analyzer)
+   Clean ASG (unwrapped, parents set)
    ├── MRoutine
    │   └── labels: [MLabel, ...]
    │       └── body: MScope
    │           └── statements: [MStatement, ...]
+   │               └── All expressions are MExpr subclasses
        │
        ▼ (reference resolution)
    Linked ASG
@@ -189,13 +223,29 @@ MUMPS Source Code
    ├── MLabel.output_variables = {Z}
 ```
 
+### Custom Classes (textx_classes.py)
+
+Custom classes inherit from ASG dataclasses and adapt to textX's constructor convention:
+
+| Grammar Rule | Custom Class | Inherits From |
+|-------------|--------------|---------------|
+| NumericLiteral | NumericLiteral | MLiteral |
+| StringLiteral | StringLiteral | MLiteral |
+| LocalVariable | LocalVariable | MVariable |
+| GlobalVariable | GlobalVariable | MGlobal |
+| NakedGlobal | NakedGlobal | MNakedGlobal |
+| SpecialVariable | SpecialVariable | MSpecialVariable |
+| IntrinsicFunction | IntrinsicFunction | MIntrinsicFunction |
+| ExtrinsicFunction | ExtrinsicFunction | MExtrinsicFunction |
+| Indirection | Indirection | MIndirection |
+
 ### Multi-Pass Processing
 
 | Pass | Name | Input | Output | Key Operations |
 |------|------|-------|--------|----------------|
-| 1 | Parse | Source | Raw AST | textX grammar match |
-| 2 | Structure | AST | Unlinked ASG | Custom class instantiation |
-| 3 | Resolve | Unlinked ASG | Linked ASG | Label lookup, back-refs |
+| 1 | Parse | Source | CST | textX grammar match with custom classes |
+| 2 | Semantic | CST | Clean ASG | Unwrap wrappers, set parents, track vars |
+| 3 | Resolve | Clean ASG | Linked ASG | Label lookup, back-refs |
 | 4 | Classify | Linked ASG | Classified ASG | FOR/GOTO typing |
 | 5 | Analyze | Classified ASG | Complete ASG | Variable flow analysis |
 
@@ -237,7 +287,7 @@ MUMPS Source Code
 **Goal**: Classify all FOR loop types.
 
 **Deliverables**:
-- `classifier.py` with classify_for_loops()
+- `command_parser.py` with `classify_for_loop()`
 - ForLoopType enum applied
 - Loop exit points identified
 
@@ -250,7 +300,7 @@ MUMPS Source Code
 **Goal**: Classify all GOTO types with respect to enclosing structures.
 
 **Deliverables**:
-- `classifier.py` extended with classify_gotos()
+- `goto_analysis.py` with `classify_gotos()`
 - GotoType enum applied
 - Nested loop exits identified
 

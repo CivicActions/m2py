@@ -1,6 +1,15 @@
-"""Unit tests for FOR loop classification.
+"""Unit tests for FOR loop and GOTO classification.
 
-Tests the classifier's ability to identify FOR loop types from line content.
+Tests command_parser.py and goto_analysis.py functions for:
+- FOR loop type classification (BOUNDED, OPEN_ENDED, STRING_LIST, etc.)
+- FOR loop extraction and parsing
+- GOTO classification (FORWARD_JUMP, BACKWARD_JUMP, LOOP_EXIT, etc.)
+- Statement parsing (backward-compatible content-only API)
+- Unreachable code detection
+
+Note: Tests for parse_*_command functions (command-prefixed API) are in
+test_command_parser.py. These tests use the content-only parse_*_statement
+wrappers.
 """
 
 import pytest
@@ -125,8 +134,8 @@ class TestExtractForFromLine:
 class TestParseForStatement:
     """Test parse_for_statement function - builds MForStatement ASG nodes.
     
-    NOTE: The textX-based parser returns strings for start/step/end/value
-    rather than MLiteral objects. Tests check against string values.
+    MForParameter fields (start, step, end, value) are MLiteral objects.
+    Use .value to access the parsed value.
     """
     
     def test_parse_bounded_for(self):
@@ -140,9 +149,9 @@ class TestParseForStatement:
         
         param = stmt.parameters[0]
         assert param.param_type == ForParamType.RANGE
-        assert param.start == "1"
-        assert param.step == "1"
-        assert param.end == "10"
+        assert param.start.value == 1
+        assert param.step.value == 1
+        assert param.end.value == 10
     
     def test_parse_open_ended_for(self):
         """Parse FOR I=1:1 into MForStatement with OPEN_RANGE."""
@@ -154,8 +163,8 @@ class TestParseForStatement:
         
         param = stmt.parameters[0]
         assert param.param_type == ForParamType.OPEN_RANGE
-        assert param.start == "1"
-        assert param.step == "1"
+        assert param.start.value == 1
+        assert param.step.value == 1
         assert param.end is None
     
     def test_parse_string_list_for(self):
@@ -167,10 +176,10 @@ class TestParseForStatement:
         assert len(stmt.parameters) == 3
         
         assert stmt.parameters[0].param_type == ForParamType.VALUE
-        # textX parser returns quoted strings, check contains the value
-        assert "A" in str(stmt.parameters[0].value)
-        assert "B" in str(stmt.parameters[1].value)
-        assert "C" in str(stmt.parameters[2].value)
+        # MLiteral.value contains the parsed string value
+        assert stmt.parameters[0].value.value == "A"
+        assert stmt.parameters[1].value.value == "B"
+        assert stmt.parameters[2].value.value == "C"
     
     def test_parse_mixed_for(self):
         """Parse FOR I="A",1:1:3 into MForStatement with MIXED type."""
@@ -181,11 +190,11 @@ class TestParseForStatement:
         assert len(stmt.parameters) == 2
         
         assert stmt.parameters[0].param_type == ForParamType.VALUE
-        assert "A" in str(stmt.parameters[0].value)
+        assert stmt.parameters[0].value.value == "A"
         
         assert stmt.parameters[1].param_type == ForParamType.RANGE
-        assert stmt.parameters[1].start == "1"
-        assert stmt.parameters[1].end == "3"
+        assert stmt.parameters[1].start.value == 1
+        assert stmt.parameters[1].end.value == 3
     
     def test_parse_argumentless_for(self):
         """Parse argumentless FOR into MForStatement."""
@@ -209,10 +218,10 @@ class TestParseForStatement:
         
         assert stmt.loop_type == ForLoopType.BOUNDED
         param = stmt.parameters[0]
-        # textX returns strings; check the string values
-        assert param.start in ["0.1", ".1"]
-        assert param.step in ["0.1", ".1"]
-        assert param.end in ["1.0", "1"]
+        # MLiteral.value contains parsed float
+        assert param.start.value == 0.1
+        assert param.step.value == 0.1
+        assert param.end.value == 1.0
     
     def test_parse_for_negative_values(self):
         """Parse FOR with negative values."""
@@ -220,9 +229,9 @@ class TestParseForStatement:
         
         assert stmt.loop_type == ForLoopType.BOUNDED
         param = stmt.parameters[0]
-        assert param.start == "10"
-        assert param.step == "-1"
-        assert param.end == "0"
+        assert param.start.value == 10
+        assert param.step.value == -1
+        assert param.end.value == 0
     
     def test_parse_for_multiple_ranges(self):
         """Parse FOR with multiple range forparameters."""
@@ -231,10 +240,10 @@ class TestParseForStatement:
         assert stmt.loop_type == ForLoopType.BOUNDED  # All RANGE = BOUNDED
         assert len(stmt.parameters) == 2
         
-        assert stmt.parameters[0].start == "1"
-        assert stmt.parameters[0].end == "3"
-        assert stmt.parameters[1].start == "5"
-        assert stmt.parameters[1].end == "7"
+        assert stmt.parameters[0].start.value == 1
+        assert stmt.parameters[0].end.value == 3
+        assert stmt.parameters[1].start.value == 5
+        assert stmt.parameters[1].end.value == 7
 
 
 class TestQuitDetection:

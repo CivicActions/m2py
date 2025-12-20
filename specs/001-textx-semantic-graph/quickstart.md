@@ -56,33 +56,42 @@ cat tests/functional/mugj/inref/V1FORC2.m
 m2py/
 ├── src/m2py/
 │   ├── __init__.py
-│   ├── grammar/           # textX grammar files
-│   │   ├── mumps.tx       # Main grammar
-│   │   └── expressions.tx # Expression subgrammar
-│   ├── asg/               # ASG element definitions
+│   ├── grammar/                  # textX grammar files
+│   │   ├── mumps.tx              # Main routine/label structure grammar
+│   │   ├── line.tx               # Line content parsing grammar
+│   │   ├── commands.tx           # Command-specific grammar rules
+│   │   └── expressions.tx        # Expression grammar
+│   ├── asg/                      # ASG element definitions
 │   │   ├── __init__.py
-│   │   ├── elements.py    # Core ASG classes
-│   │   ├── statements.py  # Statement types
-│   │   └── expressions.py # Expression types
-│   ├── parser/            # Parser implementation
+│   │   ├── elements.py           # Base classes (ASGElement, MRoutine, MLabel)
+│   │   ├── statements.py         # Statement types
+│   │   ├── expressions.py        # Expression types
+│   │   └── enums.py              # Enumerations (ForLoopType, GotoType, etc.)
+│   ├── parser/                   # Parser implementation
 │   │   ├── __init__.py
-│   │   └── parser.py      # MUMPSParser class
-│   ├── analysis/          # ASG analysis passes
+│   │   ├── parser.py             # MUMPSParser class
+│   │   ├── exceptions.py         # MUMPSSyntaxError, MUMPSSemanticError
+│   │   └── textx_classes.py      # Custom classes for textX instantiation
+│   ├── analysis/                 # ASG analysis passes
 │   │   ├── __init__.py
-│   │   ├── resolver.py    # Reference resolution
-│   │   ├── classifier.py  # Pattern classification
-│   │   └── variables.py   # Variable scope analysis
-│   └── cli/               # Command-line interface
+│   │   ├── command_parser.py     # Command parsing via textX grammar
+│   │   ├── semantic_analyzer.py  # CST → ASG transformation
+│   │   ├── resolver.py           # Reference resolution
+│   │   ├── goto_analysis.py      # GOTO classification and analysis
+│   │   └── variables.py          # Variable scope analysis
+│   └── cli/                      # Command-line interface (future)
 │       └── __init__.py
 ├── tests/
-│   ├── unit/              # Unit tests
+│   ├── unit/                     # Unit tests
 │   │   ├── test_grammar.py
-│   │   ├── test_asg.py
-│   │   └── test_analysis.py
-│   ├── integration/       # Integration tests
+│   │   ├── test_command_grammar.py
+│   │   ├── test_expression_grammar.py
+│   │   ├── test_semantic_analyzer.py
+│   │   └── ...
+│   ├── integration/              # Integration tests
 │   │   └── test_mugj.py
 │   └── functional/
-│       └── mugj/          # MUGJ validation suite
+│       └── mugj/                 # MUGJ validation suite
 ├── specs/
 │   └── 001-textx-semantic-graph/
 │       ├── spec.md
@@ -300,6 +309,42 @@ def test_parse_mugj_file(parser, filename):
 ---
 
 ## Key Reference Materials
+
+### Architecture Overview
+
+The M2PY parser uses a **two-layer architecture**:
+
+```
+MUMPS Source → textX Grammar → CST → Semantic Analyzer → ASG → Analysis Passes → Python Code
+                    ↓            ↓           ↓              ↓
+              Grammar rules   Custom      Semantic       Domain
+              (mumps.tx)      Classes     Analysis      Objects
+```
+
+**Layer 1: textX Custom Classes (CST)**
+- Located in: `src/m2py/parser/textx_classes.py`
+- Classes like `NumericLiteral`, `LocalVariable`, `IntrinsicFunction` are constructed by textX
+- Follow textX constructor rules (parent/position as first args)
+- **Inherit from ASG classes** for seamless integration
+
+**Layer 2: Semantic Analyzer**  
+- Located in: `src/m2py/analysis/semantic_analyzer.py`
+- Transforms CST into clean ASG with proper parent relationships
+- Unwraps textX wrapper objects (Expr, UnaryExpr)
+- Tracks variables and builds symbol tables
+- Entry points: `analyze_command()`, `analyze_expression()`
+
+**Why Two Layers?**
+1. textX requires specific constructor signatures for custom classes
+2. ASG objects need rich relationships (parent references, resolved targets)
+3. Separating concerns allows grammar evolution without breaking analysis
+4. Semantic analyzer normalizes/validates during transformation
+
+**Key Functions:**
+- `analyze_command(textx_cmd) → MStatement`: Converts any textX command to ASG statement
+- `analyze_expression(textx_expr) → MExpr`: Converts textX expression to ASG expression
+- `parse_for_command_to_asg(for_cmd) → MForStatement`: Converts textX ForCommand model to ASG
+- `parse_commands_from_line(line) → List[Command]`: Parses line content into command list
 
 ### MUMPS Syntax
 

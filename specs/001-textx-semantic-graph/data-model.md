@@ -17,6 +17,52 @@ The Abstract Semantic Graph (ASG) represents the semantic meaning of MUMPS progr
 
 ---
 
+## Two-Layer Architecture
+
+The M2PY parser uses a **two-layer approach** for textX integration:
+
+### Layer 1: textX Custom Classes (CST Layer)
+
+Located in `src/m2py/parser/textx_classes.py`, these classes:
+- Are instantiated directly by textX during parsing
+- Have names matching grammar rules (e.g., `NumericLiteral`, `LocalVariable`)
+- Accept textX's constructor convention: `parent` as first parameter
+- **Inherit from ASG classes** for seamless integration
+
+```python
+# textX creates: NumericLiteral(parent=<textx parent>, value="42")
+class NumericLiteral(MLiteral):
+    def __init__(self, parent=None, value: str = ""):
+        # textX passes parent, we parse the value
+        parsed = int(value)
+        object.__setattr__(self, 'value', parsed)
+        object.__setattr__(self, 'literal_type', LiteralType.INTEGER)
+```
+
+### Layer 2: ASG Domain Objects
+
+Located in `src/m2py/asg/`, these are the primary domain classes:
+- `MLiteral`, `MVariable`, `MGlobal` - Expressions
+- `MForStatement`, `MGotoStatement` - Statements  
+- `MRoutine`, `MLabel`, `MScope` - Structure
+
+**Relationship**: textX custom classes **inherit from** ASG classes:
+```
+NumericLiteral(MLiteral)     # textX creates NumericLiteral → IS-A MLiteral
+StringLiteral(MLiteral)
+LocalVariable(MVariable)     # textX creates LocalVariable → IS-A MVariable
+GlobalVariable(MGlobal)
+```
+
+This design means:
+1. **Isinstance checks work**: `isinstance(node, MLiteral)` returns True for NumericLiteral
+2. **Uniform API**: All code works with ASG types regardless of creation path
+3. **Two creation paths**:
+   - textX parsing → NumericLiteral/LocalVariable/etc (via custom classes)
+   - Direct construction → MLiteral/MVariable/etc (for tests, analysis)
+
+---
+
 ## Entity Hierarchy
 
 ```

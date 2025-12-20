@@ -6,8 +6,9 @@
 
 // Top-level expression - MUMPS uses strict left-to-right evaluation
 // No operator precedence - everything is left-to-right
+// Named attributes allow semantic analysis to access all parts
 Expr:
-    UnaryExpr (BinaryOp UnaryExpr)*
+    left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*
 ;
 
 // Unary expression with optional prefix operator
@@ -28,11 +29,12 @@ UnaryOp:
 ;
 
 // Primary expressions (atoms)
+// Note: SpecialVariable MUST come before IntrinsicFunction to match $TEST correctly
 PrimaryExpr:
     ParenExpr |
-    IntrinsicFunction |
     ExtrinsicFunction |
     SpecialVariable |
+    IntrinsicFunction |
     NakedGlobal |
     GlobalVariable |
     Indirection |

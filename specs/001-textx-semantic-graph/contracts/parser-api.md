@@ -196,6 +196,55 @@ class MUMPSSyntaxError(Exception):
 
 ---
 
+## Semantic Analyzer Functions
+
+The semantic analyzer transforms textX parsed commands into clean ASG objects.
+Located in `m2py.analysis.semantic_analyzer`.
+
+### analyze_command
+
+```python
+def analyze_command(textx_cmd: Any, parent: Any = None) -> Optional[MStatement]:
+    """
+    Analyze a textX command and return an ASG statement.
+    
+    This is the primary entry point for command-to-ASG conversion.
+    
+    Args:
+        textx_cmd: A textX command model (SetCommand, WriteCommand, etc.)
+        parent: Optional parent ASG node for back-references.
+    
+    Returns:
+        MStatement: The corresponding ASG statement, or None if unrecognized.
+    
+    Example:
+        >>> from m2py.analysis.command_parser import parse_commands_from_line
+        >>> from m2py.analysis.semantic_analyzer import analyze_command
+        >>> cmds = parse_commands_from_line("S X=1")
+        >>> stmt = analyze_command(cmds[0])
+        >>> isinstance(stmt, MSetStatement)
+        True
+    """
+```
+
+### analyze_expression
+
+```python
+def analyze_expression(textx_expr: Any, parent: Any = None) -> MExpr:
+    """
+    Analyze a textX expression and return an ASG expression.
+    
+    Args:
+        textx_expr: A textX expression model.
+        parent: Optional parent ASG node.
+    
+    Returns:
+        MExpr: The corresponding ASG expression.
+    """
+```
+
+---
+
 ## Usage Example
 
 ```python

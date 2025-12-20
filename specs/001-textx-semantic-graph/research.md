@@ -297,3 +297,81 @@ def test_parse_v1fora(parser, mugj_files):
 | Scope model | Explicit scope containers | Matches Python nested functions |
 
 All NEEDS CLARIFICATION items from Technical Context have been resolved.
+
+---
+
+## 9. CST → Semantic Analyzer Architecture (Phase 9)
+
+### 9.1 Problem Statement
+
+The initial implementation used textX grammar with manual converter functions to transform textX objects into ASG objects. This worked but had limitations:
+
+1. **Wrapper proliferation**: textX grammars create wrapper objects (Expr, UnaryExpr, BinaryOp) that needed manual unwrapping
+2. **String-based values**: Tests checked `param.start == "1"` against string values, not proper MLiteral objects
+3. **Duplicate conversion**: Converters reimplemented logic that textX custom classes could handle
+4. **Parent relationships**: Manual parent setting was error-prone
+
+### 9.2 Solution: Two-Layer Architecture
+
+**Decision**: Use textX custom classes for direct ASG instantiation, followed by semantic analyzer for enrichment.
+
+**Layer 1: textX Custom Classes (textx_classes.py)**
+
+Custom classes inherit from ASG dataclasses and adapt to textX's constructor:
+
+```python
+class NumericLiteral(MLiteral):
+    def __init__(self, parent=None, value: str = ""):
+        # Parse and set dataclass fields
+        object.__setattr__(self, 'value', int(value) if '.' not in value else float(value))
+        object.__setattr__(self, 'literal_type', LiteralType.INTEGER)
+```
+
+Classes provided:
+- NumericLiteral, StringLiteral → MLiteral
+- LocalVariable → MVariable
+- GlobalVariable → MGlobal
+- NakedGlobal → MNakedGlobal
+- SpecialVariable → MSpecialVariable
+- IntrinsicFunction → MIntrinsicFunction
+- ExtrinsicFunction → MExtrinsicFunction
+- Indirection → MIndirection
+
+**Layer 2: Semantic Analyzer (semantic_analyzer.py)**
+
+Transforms CST into proper ASG:
+
+1. **Unwrap expressions**: Removes Expr/UnaryExpr wrappers, producing clean MExpr trees
+2. **Set parent relationships**: Uses `_asg_parent` attribute for proper tree structure
+3. **Track variables**: Builds symbol tables during traversal
+4. **Build binary ops**: Constructs MBinaryOp chains from grammar's flat structure
+
+### 9.3 Grammar Changes Required
+
+The expression grammar was updated to capture binary operations properly:
+
+**Before**: `Expr: UnaryExpr (BinaryOp UnaryExpr)*;` (ops not captured)
+
+**After**: `Expr: left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*;` (named attributes)
+
+Also fixed rule ordering in PrimaryExpr:
+- SpecialVariable now comes BEFORE IntrinsicFunction (fixes `$TEST` parsing)
+
+### 9.4 Benefits
+
+1. **Type safety**: `param.start` is `MLiteral` not `str`
+2. **Clean ASG**: No textX wrapper objects in final ASG
+3. **Proper parents**: `_asg_parent` set correctly for all nodes
+4. **Simpler analysis**: Later passes work with pure ASG, not mixed textX/ASG objects
+
+### 9.5 Migration Strategy
+
+Phase 9 implemented this architecture (now complete):
+- 9a: ✅ Custom class registration with textX metamodel
+- 9b: ✅ Grammar fixes for custom class compatibility
+- 9c: ✅ Semantic analyzer with all command analysis methods
+- 9d: ✅ Converters removed - semantic analyzer is the single path
+- 9e: ✅ All 501 MUGJ tests pass
+
+**Key outcome**: The old `converters.py` module was deleted. The parser now uses 
+`analyze_command()` from `semantic_analyzer.py` to transform textX commands into ASG statements.

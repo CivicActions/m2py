@@ -1,6 +1,9 @@
-"""Unit tests for textX expression grammar.
+"""Tests for the expression grammar (expressions.tx).
 
-Tests the expression grammar in isolation before integration.
+Low-level tests that verify the textX expression grammar directly.
+Tests literals, variables, operators, functions, and special constructs.
+
+For semantic analysis of expressions, see test_semantic_analyzer.py.
 """
 
 import pytest

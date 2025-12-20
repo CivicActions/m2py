@@ -1,4 +1,10 @@
-"""Unit tests for the command grammar (commands.tx)."""
+"""Tests for the command grammar (commands.tx).
+
+Low-level tests that verify the textX command grammar directly.
+Tests parse individual commands without semantic analysis.
+
+For semantic analysis tests, see test_command_analysis.py.
+"""
 
 import pytest
 from pathlib import Path

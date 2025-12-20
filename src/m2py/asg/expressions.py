@@ -54,6 +54,7 @@ class MLiteral(MExpr):
     
     value: Any = None
     literal_type: LiteralType = LiteralType.STRING
+    raw_value: Optional[str] = None  # Original text representation
 
 
 # =============================================================================

@@ -1,4 +1,12 @@
-"""Tests for grammar-based command parsing."""
+"""Tests for command_parser.py functions.
+
+Tests the parse_*_command functions that use textX grammar to parse
+MUMPS commands into ASG nodes. Also tests line parsing, expression
+parsing, and FOR command classification.
+
+For semantic analysis (analyze_command), see test_command_analysis.py.
+For backward-compatible content-only API, see test_classifier.py.
+"""
 
 import pytest
 from m2py.analysis.command_parser import (

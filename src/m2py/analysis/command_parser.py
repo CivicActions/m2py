@@ -27,30 +27,36 @@ from ..asg.elements import MCall
 
 @lru_cache(maxsize=1)
 def _get_command_metamodel():
-    """Get the cached command grammar metamodel."""
+    """Get the cached command grammar metamodel with custom classes."""
+    from ..parser.textx_classes import get_expression_classes
     grammar_dir = Path(__file__).parent.parent / "grammar"
     return metamodel_from_file(
         grammar_dir / "commands.tx",
+        classes=get_expression_classes(),
         skipws=False
     )
 
 
 @lru_cache(maxsize=1)
 def _get_line_metamodel():
-    """Get the cached line content grammar metamodel."""
+    """Get the cached line content grammar metamodel with custom classes."""
+    from ..parser.textx_classes import get_expression_classes
     grammar_dir = Path(__file__).parent.parent / "grammar"
     return metamodel_from_file(
         grammar_dir / "line.tx",
+        classes=get_expression_classes(),
         skipws=False
     )
 
 
 @lru_cache(maxsize=1)
 def _get_expression_metamodel():
-    """Get the cached expression grammar metamodel."""
+    """Get the cached expression grammar metamodel with custom classes."""
+    from ..parser.textx_classes import get_expression_classes
     grammar_dir = Path(__file__).parent.parent / "grammar"
     return metamodel_from_file(
         grammar_dir / "expressions.tx",
+        classes=get_expression_classes(),
         skipws=False
     )
 
@@ -318,9 +324,9 @@ def convert_to_literal(textx_model) -> MLiteral:
         value_str = textx_model.value
         # Determine if integer or float
         if '.' in value_str or 'e' in value_str.lower():
-            return MLiteral(value=float(value_str), literal_type=LiteralType.NUMERIC)
+            return MLiteral(value=float(value_str), literal_type=LiteralType.DECIMAL)
         else:
-            return MLiteral(value=int(value_str), literal_type=LiteralType.NUMERIC)
+            return MLiteral(value=int(value_str), literal_type=LiteralType.INTEGER)
     elif cls_name == 'StringLiteral':
         # Remove quotes and handle "" escaping
         raw = textx_model.value
@@ -497,7 +503,7 @@ def parse_for_command(for_text: str) -> Optional[MForStatement]:
         for_text: The FOR command (e.g., "F I=1:1:10")
         
     Returns:
-        MForStatement ASG node or None if parsing fails
+        MForStatement ASG node with MLiteral fields, or None if parsing fails
     """
     mm = _get_command_metamodel()
     try:
@@ -515,12 +521,12 @@ def parse_for_command(for_text: str) -> Optional[MForStatement]:
             fp = MForParameter()
             
             if param.start:
-                fp.start = _expr_to_string(param.start)
+                fp.start = _expr_to_asg_literal(_expr_to_string(param.start))
             
             if param.step:
-                fp.step = _expr_to_string(param.step)
+                fp.step = _expr_to_asg_literal(_expr_to_string(param.step))
                 if param.end:
-                    fp.end = _expr_to_string(param.end)
+                    fp.end = _expr_to_asg_literal(_expr_to_string(param.end))
                     fp.param_type = ForParamType.RANGE
                 else:
                     fp.param_type = ForParamType.OPEN_RANGE
@@ -674,9 +680,12 @@ def _classify_for_params(params: list) -> ForLoopType:
 
 
 def _expr_to_string(expr) -> str:
-    """Convert a textX expression model back to string.
+    """Convert a textX expression model to a string representation.
     
-    This is a temporary solution - ideally we'd build full expression ASG.
+    This function extracts the string form of an expression from textX models.
+    It is used as an intermediate step before creating MLiteral ASG nodes via
+    _expr_to_asg_literal(). For complex expressions (variables, binary ops),
+    the string is captured and wrapped in an MLiteral.
     
     Args:
         expr: The textX expression model
@@ -690,33 +699,54 @@ def _expr_to_string(expr) -> str:
     cls_name = expr.__class__.__name__
     
     if cls_name == 'NumericLiteral':
-        return expr.value
+        # Custom class may have value as int/float, ensure it's a string
+        return str(expr.value)
     elif cls_name == 'StringLiteral':
-        return expr.value
+        # Custom class may have already removed quotes
+        val = expr.value
+        # If it's already a string without quotes, wrap it for MUMPS syntax
+        if isinstance(val, str) and not (val.startswith('"') and val.endswith('"')):
+            return f'"{val}"'
+        return str(val)
     elif cls_name == 'LocalVariable':
         name = expr.name
         if expr.subscripts:
-            subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
+            # Custom classes store subscripts as list, not .args attribute
+            if hasattr(expr.subscripts, 'args'):
+                subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
+            else:
+                subs = ','.join(_expr_to_string(s) for s in expr.subscripts)
             return f"{name}({subs})"
         return name
     elif cls_name == 'GlobalVariable':
         name = f"^{expr.name}"
         if expr.subscripts:
-            subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
+            # Custom classes store subscripts as list, not .args attribute
+            if hasattr(expr.subscripts, 'args'):
+                subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
+            else:
+                subs = ','.join(_expr_to_string(s) for s in expr.subscripts)
             return f"{name}({subs})"
         return name
     elif cls_name == 'IntrinsicFunction':
         name = f"${expr.name}"
-        if expr.args:
-            args = ','.join(_expr_to_string(a) for a in expr.args.args)
+        if expr.arguments:
+            # Custom classes use .arguments, not .args.args
+            args = ','.join(_expr_to_string(a) for a in expr.arguments)
             return f"{name}({args})"
         return name
     elif cls_name == 'ExtrinsicFunction':
-        name = f"$${expr.label}"
-        if expr.routine:
-            name += f"^{expr.routine}"
-        if expr.args:
-            args = ','.join(_expr_to_string(a) for a in expr.args.args)
+        # Custom class uses target.name and target.routine
+        if hasattr(expr, 'target'):
+            name = f"$${expr.target.name}"
+            if expr.target.routine:
+                name += f"^{expr.target.routine}"
+        else:
+            name = f"$${expr.label}"
+            if hasattr(expr, 'routine') and expr.routine:
+                name += f"^{expr.routine}"
+        if expr.arguments:
+            args = ','.join(_expr_to_string(a) for a in expr.arguments)
             return f"{name}({args})"
         return name
     elif cls_name == 'SpecialVariable':
@@ -730,14 +760,21 @@ def _expr_to_string(expr) -> str:
     elif cls_name == 'ParenExpr':
         return f"({_expr_to_string(expr.expr)})"
     elif cls_name == 'Expr':
-        # Full expression with operators
-        parts = []
-        # Handle first unary expression
-        if hasattr(expr, 'unary_expr') and expr.unary_expr:
-            parts.append(_expr_to_string(expr.unary_expr))
-        # Handle (BinaryOp UnaryExpr)* pairs - textX stores as flat list
-        # Need to handle the actual structure
-        return _reconstruct_expr(expr)
+        # Full expression with operators - new grammar uses left/ops/right
+        if hasattr(expr, 'left') and expr.left:
+            result = _expr_to_string(expr.left)
+            # Handle binary operations
+            if hasattr(expr, 'ops') and expr.ops and hasattr(expr, 'right') and expr.right:
+                for i, op in enumerate(expr.ops):
+                    op_str = op.op if hasattr(op, 'op') else str(op)
+                    result += op_str
+                    if i < len(expr.right):
+                        result += _expr_to_string(expr.right[i])
+            return result
+        # Fallback for old grammar structure
+        elif hasattr(expr, 'unary_expr') and expr.unary_expr:
+            return _reconstruct_expr(expr)
+        return str(expr)
     elif cls_name == 'UnaryExpr':
         op = expr.operator.op if hasattr(expr, 'operator') and expr.operator else ""
         return f"{op}{_expr_to_string(expr.operand)}"
@@ -746,7 +783,7 @@ def _expr_to_string(expr) -> str:
 
 
 def _reconstruct_expr(expr) -> str:
-    """Reconstruct expression string from textX Expr model."""
+    """Reconstruct expression string from textX Expr model (old grammar)."""
     # Expr: UnaryExpr (BinaryOp UnaryExpr)*
     # textX represents this as a flat structure we need to parse
     
@@ -784,13 +821,11 @@ def _reconstruct_expr(expr) -> str:
 
 
 # =============================================================================
-# Command Extraction Functions (textX-based replacements for classifier.py)
+# Command Extraction Functions
 # =============================================================================
 
 def classify_for_loop_textx(for_content: str) -> tuple:
     """Classify a FOR loop from its content string using textX grammar.
-    
-    This is a textX-based replacement for classifier.classify_for_loop().
     
     Args:
         for_content: The content after 'FOR ' or 'F ' command
@@ -1008,26 +1043,22 @@ def extract_set_from_line_textx(line_rest: str) -> Optional[tuple]:
         line_rest: Line content
         
     Returns:
-        Tuple of (set_content, first_var) or None if no SET found
+        Tuple of (set_content, first_target) or None if no SET found
     """
     cmds = parse_commands_from_line(line_rest)
     
     for cmd in cmds:
         if cmd.__class__.__name__ == "SetCommand":
-            first_var = None
-            if cmd.args:
-                first_assign = cmd.args[0]
-                if first_assign.targets:
-                    target = first_assign.targets
-                    if hasattr(target, 'targets'):
-                        # ParenTargets
-                        if target.targets:
-                            first_var = target.targets[0].name if hasattr(target.targets[0], 'name') else str(target.targets[0])
-                    elif hasattr(target, 'name'):
-                        first_var = target.name
-            
-            # Build set_content - simplification, just return the detected info
-            return ("", first_var)
+            first_target = None
+            if cmd.assignments:
+                assign = cmd.assignments[0]
+                if hasattr(assign, 'targets') and assign.targets:
+                    targets = assign.targets
+                    if hasattr(targets, 'targets'):  # ParenTargets
+                        first_target = targets.targets[0].name if hasattr(targets.targets[0], 'name') else None
+                    else:
+                        first_target = targets.name if hasattr(targets, 'name') else None
+            return ("", first_target)
     
     return None
 
@@ -1039,15 +1070,15 @@ def extract_quit_from_line_textx(line_rest: str) -> Optional[tuple]:
         line_rest: Line content
         
     Returns:
-        Tuple of (quit_content, has_value) or None if no QUIT found
+        Tuple of (has_value, is_conditional) or None if no QUIT found
     """
     cmds = parse_commands_from_line(line_rest)
     
     for cmd in cmds:
         if cmd.__class__.__name__ == "QuitCommand":
-            has_value = cmd.value is not None
-            quit_content = _expr_to_string(cmd.value) if cmd.value else ""
-            return (quit_content, has_value)
+            has_value = hasattr(cmd, 'value') and cmd.value is not None
+            is_conditional = hasattr(cmd, 'postcond') and cmd.postcond is not None
+            return (has_value, is_conditional)
     
     return None
 
@@ -1059,15 +1090,14 @@ def extract_if_from_line_textx(line_rest: str) -> Optional[tuple]:
         line_rest: Line content
         
     Returns:
-        Tuple of (if_content, has_condition) or None if no IF found
+        Tuple of (condition_str,) or None if no IF found
     """
     cmds = parse_commands_from_line(line_rest)
     
     for cmd in cmds:
         if cmd.__class__.__name__ == "IfCommand":
-            has_condition = cmd.condition is not None
-            if_content = _expr_to_string(cmd.condition) if cmd.condition else ""
-            return (if_content, has_condition)
+            condition_str = _expr_to_string(cmd.condition) if hasattr(cmd, 'condition') and cmd.condition else ""
+            return (condition_str,)
     
     return None
 
@@ -1175,10 +1205,9 @@ def detect_unreachable_code(lines: list) -> list:
 
 
 # =============================================================================
-# Backward-Compatible Statement Parsers
+# Statement Parsing (Content-Only API)
 # =============================================================================
-# These functions accept content-only (without command word) for backward
-# compatibility with the old classifier.py API.
+# These functions accept content-only (without command word).
 
 def parse_set_statement(content: str) -> Optional[MSetStatement]:
     """Parse SET content into MSetStatement (backward-compatible API).

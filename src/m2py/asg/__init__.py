@@ -37,5 +37,3 @@ __all__ = [
     "MBinaryOp", "MUnaryOp", "MIntrinsicFunction", "MExtrinsicFunction",
     "MPatternMatch", "MIndirection", "MSpecialVariable",
 ]
-
-__all__ = []

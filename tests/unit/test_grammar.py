@@ -1,6 +1,11 @@
-"""Unit tests for MUMPS grammar rules.
+"""Unit tests for MUMPS grammar acceptance.
 
-Tests individual grammar rules for command parsing.
+Tests that various MUMPS syntax constructs parse successfully through
+MUMPSParser.parse(). These tests verify grammar coverage - that the
+parser accepts valid MUMPS syntax without error.
+
+For detailed ASG structure verification, see test_command_analysis.py.
+For MUMPSParser API tests, see test_parser.py.
 """
 
 import pytest

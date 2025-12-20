@@ -1,6 +1,10 @@
-"""Unit tests for MUMPS parser.
+"""Tests for MUMPSParser class.
 
-Tests parser initialization, basic parsing, and error handling.
+Tests parser initialization, parse(), parse_file(), and classify_patterns().
+Verifies routine/label structure parsing and error handling.
+
+For grammar acceptance tests, see test_grammar.py.
+For command-level parsing, see test_command_parser.py.
 """
 
 import pytest

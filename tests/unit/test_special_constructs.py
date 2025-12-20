@@ -1,4 +1,9 @@
-"""Unit tests for special MUMPS constructs in the expression grammar."""
+"""Tests for special MUMPS constructs in the expression grammar.
+
+Tests intrinsic functions ($SELECT, $PIECE, etc.), pattern matching,
+indirection (@), extrinsic functions ($$), special variables ($T, $H),
+and complex expression combinations.
+"""
 
 import pytest
 from pathlib import Path

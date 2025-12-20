@@ -130,7 +130,7 @@ IfCommand:
 
 // ELSE command: E|ELSE
 ElseCommand:
-    /[Ee][Ll][Ss][Ee]|[Ee]/
+    /[Ee][Ll][Ss][Ee]|[Ee]/ postcond=Postcondition?
 ;
 
 // =============================================================================

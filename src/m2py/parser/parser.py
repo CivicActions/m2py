@@ -13,7 +13,7 @@ from m2py.asg import MRoutine, MLabel, MScope
 from m2py.asg.enums import ForLoopType
 from m2py.asg.statements import MForStatement
 from m2py.parser.exceptions import MUMPSSyntaxError
-from m2py.parser.converters import textx_cmds_to_statements
+from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.analysis.command_parser import (
     parse_line_content, 
     parse_commands_from_line,
@@ -218,7 +218,7 @@ class MUMPSParser:
         
         # Convert to ASG statements and add to label body
         if commands:
-            statements = textx_cmds_to_statements(commands)
+            statements = [s for s in (analyze_command(cmd) for cmd in commands) if s is not None]
             for stmt in statements:
                 stmt.scope = label.body
                 # Store the nesting level for later analysis
@@ -244,7 +244,7 @@ class MUMPSParser:
                 # Strip whitespace from each parameter name
                 label.formal_list = [p.strip() for p in formal_list.params]
         
-        # Store line content for backward compatibility with classifier.py
+        # Store line content for pattern classification methods
         label._line_rest = getattr(line, 'rest', '')
         
         # Parse line content using textX grammar (new approach)
@@ -262,7 +262,7 @@ class MUMPSParser:
         
         # Convert parsed commands to ASG statements and populate body
         if label._parsed_commands:
-            statements = textx_cmds_to_statements(label._parsed_commands)
+            statements = [s for s in (analyze_command(cmd) for cmd in label._parsed_commands) if s is not None]
             for stmt in statements:
                 stmt.scope = label.body
                 label.body.statements.append(stmt)
