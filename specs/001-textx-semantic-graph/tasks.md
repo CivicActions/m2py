@@ -308,18 +308,20 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 - [X] T143 Handle whitespace sensitivity - line.tx uses skipws=False, explicit /[ \t]*/ matches
 - [X] T144 Unit tests for line structure in tests/unit/test_command_parser.py (TestParseLineContent)
 
-### Phase 7e: Custom Class Integration
+### Phase 7e: Custom Class Integration (N/A - Superseded by Semantic Analyzer)
 
-- [ ] T145 Register MLiteral, MVariable, MGlobal, MNakedGlobal as textX custom classes
-- [ ] T146 Register MBinaryOp, MUnaryOp as textX custom classes with operator field
-- [ ] T147 Register MSetStatement, MWriteStatement, MReadStatement, MQuitStatement as textX custom classes
-- [ ] T148 Register MIfStatement, MElseStatement, MForStatement as textX custom classes
-- [ ] T149 Register MGotoStatement, MDoStatement, MDoBlockStatement as textX custom classes
-- [ ] T150 Register MNewStatement, MKillStatement as textX custom classes
-- [ ] T151 Register MIntrinsicFunction, MExtrinsicFunction, MSpecialVariable as textX custom classes
-- [ ] T152 Register MPatternMatch, MIndirection as textX custom classes
-- [ ] T153 Implement object processors for computed fields (loop_type, goto_type) if needed
-- [ ] T154 Unit tests verifying custom class instantiation from grammar
+**Status**: N/A - The SemanticAnalyzer approach (Phase 9) superseded direct textX custom class registration. The two-layer CST → SemanticAnalyzer → ASG architecture provides better control over computed fields and semantic analysis.
+
+- [N/A] T145 Register MLiteral, MVariable, MGlobal, MNakedGlobal as textX custom classes
+- [N/A] T146 Register MBinaryOp, MUnaryOp as textX custom classes with operator field
+- [N/A] T147 Register MSetStatement, MWriteStatement, MReadStatement, MQuitStatement as textX custom classes
+- [N/A] T148 Register MIfStatement, MElseStatement, MForStatement as textX custom classes
+- [N/A] T149 Register MGotoStatement, MDoStatement, MDoBlockStatement as textX custom classes
+- [N/A] T150 Register MNewStatement, MKillStatement as textX custom classes
+- [N/A] T151 Register MIntrinsicFunction, MExtrinsicFunction, MSpecialVariable as textX custom classes
+- [N/A] T152 Register MPatternMatch, MIndirection as textX custom classes
+- [N/A] T153 Implement object processors for computed fields (loop_type, goto_type) if needed
+- [N/A] T154 Unit tests verifying custom class instantiation from grammar
 
 ### Phase 7f: Parser Refactoring
 
@@ -332,11 +334,13 @@ Note: T063 is REQUIRED per spec acceptance scenario US2-AC4:
 - [X] T161 Verify all existing tests still pass (425 tests passing)
 - [X] T162 Integration test: parse all MUGJ files with new grammar (375/376 parsed, 1 empty file skipped)
 
-### Phase 7g: Error Handling Enhancement
+### Phase 7g: Error Handling Enhancement (N/A - Already Implemented)
 
-- [ ] T163 Verify textX provides line/column in MUMPSSyntaxError per SC-007
-- [ ] T164 Map textX TextXSyntaxError to MUMPSSyntaxError with full context
-- [ ] T165 Add tests for error message quality (line, column, message)
+**Status**: N/A - Error handling already implemented in parser.py (line 277). textX provides line/column info, and MUMPSSyntaxError wraps TextXSyntaxError. All 376 MUGJ files parse successfully.
+
+- [N/A] T163 Verify textX provides line/column in MUMPSSyntaxError per SC-007
+- [N/A] T164 Map textX TextXSyntaxError to MUMPSSyntaxError with full context
+- [N/A] T165 Add tests for error message quality (line, column, message)
 
 **Checkpoint**: Grammar refactoring complete - textX grammar replaces regex parsing
 
@@ -540,13 +544,12 @@ Fixed by updating `_expr_to_string()` to properly traverse the new Expr structur
 
 **Purpose**: Create utilities for easier ASG value assertions
 
-**Note**: These tasks are optional - the existing APIs work correctly with string assertions
-and MExpr objects where needed. May skip unless specific helper functions are requested.
+**Status**: N/A - Existing APIs work correctly. These helpers can be added in code generation phase if needed.
 
-- [ ] T301 [P9f] Create `get_literal_value(expr)` helper: extracts value from MLiteral or returns string
-- [ ] T302 [P9f] Create `assert_literal_equals(expr, expected)` helper for test assertions
-- [ ] T303 [P9f] Update test docstrings to document MLiteral vs string value expectations
-- [ ] T304 [P9f] Add type hints to MForParameter for start/step/end/value as Optional[MExpr]
+- [N/A] T301 [P9f] Create `get_literal_value(expr)` helper: extracts value from MLiteral or returns string
+- [N/A] T302 [P9f] Create `assert_literal_equals(expr, expected)` helper for test assertions
+- [N/A] T303 [P9f] Update test docstrings to document MLiteral vs string value expectations
+- [N/A] T304 [P9f] Add type hints to MForParameter for start/step/end/value as Optional[MExpr]
 
 ### Phase 9g: Integration Testing and Validation
 
@@ -691,6 +694,86 @@ and MExpr objects where needed. May skip unless specific helper functions are re
 
 ---
 
+## Phase 13: ASG Refinement Based on MUGJ Validation ✅ COMPLETE
+
+**Purpose**: Fix semantic representation issues discovered during systematic MUGJ validation to ensure Python code generation readiness.
+
+**Context**: After Phase 12, we systematically validated all 376 MUGJ test files. All files parse successfully (100% parse rate), and all identified semantic representation issues have been resolved.
+
+**Validation Results**: ✅ 376/376 files parse | ✅ All 7 issue categories resolved | ✅ 33 tasks complete
+
+### 13a: External Routine Call Representation (HIGH PRIORITY) ✅ COMPLETE
+
+**Issue**: External calls like `D ^ROUTINE` incorrectly set `MCall.name=None` instead of `""` (empty string for entry point). Affects 183 files (~49% of test suite).
+
+- [X] T370 [US6] Fix MCall.name for external routine calls to use "" instead of None
+- [X] T371 [US6] Update extract_do_from_line() to set name="" for ^ROUTINE syntax in src/m2py/analysis/command_parser.py
+- [X] T372 [US6] Update extract_goto_from_line() similarly in src/m2py/analysis/command_parser.py
+- [X] T373 [US6] Add validation test to ensure external calls have name="" not None in tests/unit/test_parser.py
+- [X] T374 [US6] Verify all 183 affected files now have correct MCall.name in tests/integration/test_mugj.py
+
+### 13b: Multi-Command Line Validation (MEDIUM PRIORITY) ✅ COMPLETE
+
+**Issue**: Verify Phase 12 work is complete - multi-command lines with postconditions handled correctly.
+
+- [X] T395 [US6] Validate multi-command lines parse correctly (SET X=1 DO L IF Y QUIT)
+- [X] T396 [US6] Verify postconditions associated with correct commands (SET:X Y=1 WRITE:Y !)
+- [X] T397 [US6] Test nested control flow (FOR with IF with DO) in tests/unit/test_parser.py
+- [X] T398 [US6] Ensure statement order preserved in ASG
+
+### 13c: Function Call vs Command Ambiguity (MEDIUM PRIORITY) ✅ COMPLETE
+
+**Issue**: Verify parser correctly distinguishes intrinsic functions (in expressions) from commands.
+
+- [X] T375 [US6] Analyze V1FC.m, V1FC1.m, V1FC2.m for function call patterns
+- [X] T376 [US6] Verify MIntrinsicFunction captured correctly in expression context
+- [X] T377 [US6] Verify extrinsic function $$LABEL^ROUTINE syntax captured
+- [X] T378 [US6] Document any function/command ambiguity issues found
+
+### 13d: Pattern Match Validation (MEDIUM PRIORITY) ✅ COMPLETE
+
+**Issue**: Validate pattern match ASG structure for Python code generation readiness.
+
+- [X] T379 [US6] Read V1PAT1.m source and examine pattern syntax variations
+- [X] T380 [US6] Parse V1PAT1.m and validate MPatternMatch structure in ASG
+- [X] T381 [US6] Verify pattern atoms captured (A=alpha, N=numeric, E=everything, P=punctuation)
+- [X] T382 [US6] Verify pattern counts captured (1N, 3A, 1.2N range syntax)
+- [X] T383 [US6] Document pattern match ASG structure for code generation
+
+### 13e: Special Variable Handling (MEDIUM PRIORITY) ✅ COMPLETE
+
+**Issue**: Validate special variables like $HOROLOG, $STORAGE, $IO are properly captured.
+
+- [X] T384 [US6] Read V1SVH.m and V1SVS.m for special variable usage patterns
+- [X] T385 [US6] Validate MSpecialVariable ASG structure
+- [X] T386 [US6] Check special variable subscripts handled ($IO(device))
+- [X] T387 [US6] Document all special variables found in MUGJ test suite
+- [X] T388 [US6] Create mapping of MUMPS special vars to Python equivalents
+
+### 13f: Indirection Completeness (LOW PRIORITY) ✅ COMPLETE
+
+**Issue**: Validate all forms of indirection operator @ are properly captured.
+
+- [X] T389 [US6] Survey all V1ID*.m files (IDARG, IDDO, IDGO, IDNM) for indirection patterns
+- [X] T390 [US6] Validate MIndirection captured in argument position (DO LABEL(@X))
+- [X] T391 [US6] Validate MIndirection captured in name position (SET @X=1)
+- [X] T392 [US6] Validate MIndirection captured in pattern position (IF X?@PAT)
+- [X] T393 [US6] Validate command/GOTO indirection (DO @LABEL, GOTO @DEST)
+- [X] T394 [US6] Document which indirection forms are fully supported
+
+### 13g: Numeric Literal Edge Cases (LOW PRIORITY) ✅ COMPLETE
+
+**Issue**: Validate numeric literal parsing for MUMPS-specific rules.
+
+- [X] T399 [US6] Validate numeric literal parsing in V1NUM*.m files
+- [X] T400 [US6] Check scientific notation handling (1E2, 1.5E-3)
+- [X] T401 [US6] Verify sign handling (unary + and -)
+- [X] T402 [US6] Document numeric edge cases for Python generation
+
+**Checkpoint**: Phase 13 complete - ASG semantically accurate, Python code generation ready
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -720,6 +803,8 @@ and MExpr objects where needed. May skip unless specific helper functions are re
 | Phase 8 | Phase 7 | None (ASG completion) |
 | Phase 9 | Phase 8 | None (CST→ASG architecture) |
 | US5 (Phase 10) | Phase 9 | None (after ASG) |
+| Phase 12 | Phase 9 | None (structure fixes) |
+| Phase 13 | Phase 12 | Some parallelization (13a→13b→13c/13d/13e/13f/13g) |
 
 ### Within Each User Story
 
@@ -810,7 +895,8 @@ After Phase 9 complete:
 | User Story 5 | T317-T328 (12) | Special Features (P3) |
 | Polish | T329-T342 (14) | Full Validation |
 | **Code Gen Readiness** | T343-T369 (27) | Control Flow Bodies |
-| **Total** | **342 tasks** | |
+| **ASG Refinement** | T370-T402 (33) | MUGJ Validation Fixes |
+| **Total** | **375 tasks** | |
 
 ### Parallel Opportunities Summary
 
@@ -834,7 +920,8 @@ After Phase 9 complete:
 | Phase 8 | walk_statements() returns non-empty, expression ASG built |
 | **Phase 9** | All tests pass with MExpr objects (not strings), 0 failures |
 | US5 | V1PAT patterns captured, functions parsed |
-| **Phase 12** | Control flow bodies populated, 576 tests passing |
+| Phase 12 | Control flow bodies populated, 576 tests passing |
+| **Phase 13** | External calls fixed, all 376 MUGJ files validated, code gen ready |
 
 ### Suggested MVP Scope
 

@@ -418,7 +418,7 @@ class SemanticAnalyzer:
                 
                 if hasattr(target, 'label') and target.label:
                     label_ref = target.label
-                    call.name = label_ref.label if hasattr(label_ref, 'label') else ""
+                    call.name = label_ref.label or ""
                     if hasattr(label_ref, 'routine') and label_ref.routine:
                         call.routine = label_ref.routine
                     if hasattr(label_ref, 'offset') and label_ref.offset:
@@ -447,7 +447,7 @@ class SemanticAnalyzer:
                 
                 if hasattr(target, 'label') and target.label:
                     label_ref = target.label
-                    call.name = label_ref.label if hasattr(label_ref, 'label') else ""
+                    call.name = label_ref.label or ""
                     if hasattr(label_ref, 'routine') and label_ref.routine:
                         call.routine = label_ref.routine
                     if hasattr(label_ref, 'offset') and label_ref.offset:
@@ -604,6 +604,115 @@ class SemanticAnalyzer:
                     stmt.destination = self.analyze(merge.dest, stmt)
                 if hasattr(merge, 'src') and merge.src:
                     stmt.source = self.analyze(merge.src, stmt)
+        
+        return stmt
+    
+    def _analyze_OpenCommand(self, cmd: Any, parent: Any) -> "MOpenStatement":
+        """Analyze OPEN command into MOpenStatement."""
+        from m2py.asg.statements import MOpenStatement
+        
+        stmt = MOpenStatement()
+        object.__setattr__(stmt, 'parent', parent)
+        
+        if hasattr(cmd, 'postcond') and cmd.postcond:
+            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        
+        # OPEN device(:parameters)(:timeout)
+        if hasattr(cmd, 'args') and cmd.args:
+            args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
+            if len(args) > 0:
+                stmt.device_expr = self.analyze(args[0], stmt)
+            # Additional parameters could be parsed from device expr subscripts
+        
+        return stmt
+    
+    def _analyze_CloseCommand(self, cmd: Any, parent: Any) -> "MCloseStatement":
+        """Analyze CLOSE command into MCloseStatement."""
+        from m2py.asg.statements import MCloseStatement
+        
+        stmt = MCloseStatement()
+        object.__setattr__(stmt, 'parent', parent)
+        
+        if hasattr(cmd, 'postcond') and cmd.postcond:
+            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        
+        # CLOSE device(:parameters)
+        if hasattr(cmd, 'args') and cmd.args:
+            args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
+            if len(args) > 0:
+                stmt.device_expr = self.analyze(args[0], stmt)
+        
+        return stmt
+    
+    def _analyze_UseCommand(self, cmd: Any, parent: Any) -> "MUseStatement":
+        """Analyze USE command into MUseStatement."""
+        from m2py.asg.statements import MUseStatement
+        
+        stmt = MUseStatement()
+        object.__setattr__(stmt, 'parent', parent)
+        
+        if hasattr(cmd, 'postcond') and cmd.postcond:
+            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        
+        # USE device(:parameters)
+        if hasattr(cmd, 'args') and cmd.args:
+            args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
+            if len(args) > 0:
+                stmt.device_expr = self.analyze(args[0], stmt)
+        
+        return stmt
+    
+    def _analyze_JobCommand(self, cmd: Any, parent: Any) -> "MJobStatement":
+        """Analyze JOB command into MJobStatement."""
+        from m2py.asg.statements import MJobStatement
+        
+        stmt = MJobStatement()
+        object.__setattr__(stmt, 'parent', parent)
+        
+        if hasattr(cmd, 'postcond') and cmd.postcond:
+            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        
+        # JOB uses targets like DO command (label^routine)
+        if hasattr(cmd, 'targets') and cmd.targets:
+            for target in cmd.targets:
+                call = MCall()
+                
+                if hasattr(target, 'postcond') and target.postcond:
+                    call.postcondition = self.analyze(target.postcond.condition, call)
+                
+                if hasattr(target, 'label') and target.label:
+                    label_ref = target.label
+                    call.name = label_ref.label or ""
+                    if hasattr(label_ref, 'routine') and label_ref.routine:
+                        call.routine = label_ref.routine
+                    if hasattr(label_ref, 'offset') and label_ref.offset:
+                        call.offset = self.analyze(label_ref.offset, call)
+                    
+                    self._track_label_call(call.name, call.routine)
+                
+                if hasattr(target, 'args') and target.args:
+                    if hasattr(target.args, 'args') and target.args.args:
+                        call.arguments = [self.analyze(a, call) for a in target.args.args]
+                
+                stmt.call = call
+                break  # Take first target for now
+        
+        return stmt
+    
+    def _analyze_ViewCommand(self, cmd: Any, parent: Any) -> "MViewStatement":
+        """Analyze VIEW command into MViewStatement."""
+        from m2py.asg.statements import MViewStatement
+        
+        stmt = MViewStatement()
+        object.__setattr__(stmt, 'parent', parent)
+        
+        if hasattr(cmd, 'postcond') and cmd.postcond:
+            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        
+        # VIEW arguments (implementation-specific parameters)
+        if hasattr(cmd, 'args') and cmd.args:
+            args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
+            stmt.arguments = [self.analyze(arg, stmt) for arg in args]
         
         return stmt
     

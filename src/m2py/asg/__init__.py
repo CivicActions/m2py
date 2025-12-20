@@ -11,7 +11,8 @@ from m2py.asg.statements import (
     MIfStatement, MElseStatement, MForStatement, MForParameter, MDoStatement,
     MQuitStatement, MNewStatement, MKillStatement, MHangStatement,
     MHaltStatement, MBreakStatement, MXecuteStatement, MLockStatement, MMergeStatement,
-    MViewStatement, MDoBlockStatement, MGotoStatement
+    MViewStatement, MDoBlockStatement, MGotoStatement,
+    MOpenStatement, MCloseStatement, MUseStatement, MJobStatement
 )
 from m2py.asg.expressions import (
     MExpr, MLiteral, MVariable, MGlobal, MNakedGlobal,
@@ -32,6 +33,7 @@ __all__ = [
     "MQuitStatement", "MNewStatement", "MKillStatement", "MHangStatement",
     "MHaltStatement", "MBreakStatement", "MXecuteStatement", "MLockStatement",
     "MMergeStatement", "MViewStatement", "MDoBlockStatement", "MGotoStatement",
+    "MOpenStatement", "MCloseStatement", "MUseStatement", "MJobStatement",
     # Expressions
     "MExpr", "MLiteral", "MVariable", "MGlobal", "MNakedGlobal",
     "MBinaryOp", "MUnaryOp", "MIntrinsicFunction", "MExtrinsicFunction",

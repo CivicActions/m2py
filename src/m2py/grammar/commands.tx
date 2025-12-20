@@ -274,22 +274,22 @@ XecuteArg:
 
 // JOB command: JOB label
 JobCommand:
-    /[Jj][Oo][Bb]/ postcond=Postcondition? WS targets+=DoTarget[/,/]
+    /[Jj]([Oo][Bb])?/ postcond=Postcondition? WS targets+=DoTarget[/,/]
 ;
 
 // OPEN command: OPEN device
 OpenCommand:
-    /[Oo][Pp][Ee][Nn]/ postcond=Postcondition? WS args+=Expr[/,/]
+    /[Oo]([Pp][Ee][Nn])?/ postcond=Postcondition? WS args+=Expr[/,/]
 ;
 
 // CLOSE command: CLOSE device
 CloseCommand:
-    /[Cc][Ll][Oo][Ss][Ee]/ postcond=Postcondition? WS args+=Expr[/,/]
+    /[Cc]([Ll][Oo][Ss][Ee])?/ postcond=Postcondition? WS args+=Expr[/,/]
 ;
 
 // USE command: USE device
 UseCommand:
-    /[Uu][Ss][Ee]/ postcond=Postcondition? WS args+=Expr[/,/]
+    /[Uu]([Ss][Ee])?/ postcond=Postcondition? WS args+=Expr[/,/]
 ;
 
 // =============================================================================

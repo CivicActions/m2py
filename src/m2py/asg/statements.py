@@ -349,3 +349,57 @@ class MViewStatement(MStatement):
     
     keyword: Optional["MExpr"] = None
     arguments: List["MExpr"] = field(default_factory=list)
+
+
+# =============================================================================
+# I/O Statements
+# =============================================================================
+
+@dataclass
+class MOpenStatement(MStatement):
+    """OPEN command - open device for I/O.
+    
+    Opens a device for input/output:
+    O device, OPEN device:parameters
+    """
+    
+    device_expr: Optional["MExpr"] = None
+    parameters: List["MExpr"] = field(default_factory=list)
+    timeout: Optional["MExpr"] = None
+
+
+@dataclass
+class MCloseStatement(MStatement):
+    """CLOSE command - close device.
+    
+    Closes a device:
+    C device, CLOSE device:parameters
+    """
+    
+    device_expr: Optional["MExpr"] = None
+    parameters: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MUseStatement(MStatement):
+    """USE command - select current device.
+    
+    Makes device current I/O device:
+    U device, USE device:parameters
+    """
+    
+    device_expr: Optional["MExpr"] = None
+    parameters: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MJobStatement(MStatement):
+    """JOB command - start concurrent job.
+    
+    Starts a new process executing a routine:
+    J label, JOB label^routine:parameters
+    """
+    
+    call: Optional["MCall"] = None
+    parameters: List["MExpr"] = field(default_factory=list)
+    timeout: Optional["MExpr"] = None
