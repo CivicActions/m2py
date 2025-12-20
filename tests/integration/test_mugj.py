@@ -915,3 +915,114 @@ class TestPhase9gTextXSemanticIntegration:
         # Should be able to parse at least 100 FOR statements per second
         # This is a very conservative threshold
         assert ops_per_second > 100, f"Performance too slow: {ops_per_second:.1f} ops/sec"
+
+
+class TestV1PATPatternMatching:
+    """Test parsing V1PAT*.m - Pattern matching operator files (T322).
+    
+    Pattern matching uses the ? operator with pattern codes like:
+    - N (numeric), A (alpha), L (lowercase), U (uppercase)
+    - C (control), P (punctuation), E (any)
+    """
+    
+    @pytest.fixture
+    def parser(self):
+        """Create a fresh parser instance."""
+        return MUMPSParser()
+    
+    def test_v1pat_driver_parses(self, parser):
+        """V1PAT.m driver file should parse successfully."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1PAT.m")
+        assert isinstance(routine, MRoutine)
+        assert routine.name == "V1PAT"
+    
+    def test_v1pat1_parses(self, parser):
+        """V1PAT1.m should parse with pattern match operators."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1PAT1.m")
+        assert isinstance(routine, MRoutine)
+        assert routine.name == "V1PAT1"
+        # Should have labels for pattern code tests (696-702, END, EXAMINER)
+        label_names = [label.name for label in routine.labels]
+        assert "V1PAT1" in label_names
+        assert "END" in label_names
+        assert "EXAMINER" in label_names
+    
+    def test_v1pat2_parses(self, parser):
+        """V1PAT2.m should parse successfully."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1PAT2.m")
+        assert isinstance(routine, MRoutine)
+        assert routine.name == "V1PAT2"
+    
+    def test_all_v1pat_files_parse(self, mugj_inref_dir):
+        """All V1PAT*.m files should parse successfully."""
+        parser = MUMPSParser()
+        parsed_count = 0
+        
+        for filepath in sorted(mugj_inref_dir.glob("V1PAT*.m")):
+            routine = parser.parse_file(filepath)
+            assert isinstance(routine, MRoutine), f"Failed to parse {filepath.name}"
+            parsed_count += 1
+        
+        assert parsed_count >= 3, "Expected at least 3 V1PAT files"
+
+
+class TestV1FNIntrinsicFunctions:
+    """Test parsing V1FN*.m - Intrinsic function files (T323).
+    
+    Tests parsing of intrinsic functions like $PIECE, $LENGTH, $FIND,
+    $EXTRACT, $SELECT, and their abbreviated forms.
+    """
+    
+    @pytest.fixture
+    def parser(self):
+        """Create a fresh parser instance."""
+        return MUMPSParser()
+    
+    def test_v1fn_driver_parses(self, parser):
+        """V1FN.m driver file should parse successfully."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1FN.m")
+        assert isinstance(routine, MRoutine)
+        assert routine.name == "V1FN"
+    
+    def test_v1fnp1_piece_function(self, parser):
+        """V1FNP1.m ($PIECE function tests) should parse."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1FNP1.m")
+        assert isinstance(routine, MRoutine)
+        assert routine.name == "V1FNP1"
+    
+    def test_v1fnp2_piece_function(self, parser):
+        """V1FNP2.m ($PIECE function tests) should parse."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1FNP2.m")
+        assert isinstance(routine, MRoutine)
+        assert routine.name == "V1FNP2"
+    
+    def test_v1fnl_length_function(self, parser):
+        """V1FNL.m ($LENGTH function tests) should parse."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1FNL.m")
+        assert isinstance(routine, MRoutine)
+        assert routine.name == "V1FNL"
+    
+    def test_v1fnf1_find_function(self, parser):
+        """V1FNF1.m ($FIND function tests) should parse."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1FNF1.m")
+        assert isinstance(routine, MRoutine)
+        assert routine.name == "V1FNF1"
+    
+    def test_v1fne1_extract_function(self, parser):
+        """V1FNE1.m ($EXTRACT function tests) should parse."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1FNE1.m")
+        assert isinstance(routine, MRoutine)
+        assert routine.name == "V1FNE1"
+    
+    def test_all_v1fn_files_parse(self, mugj_inref_dir):
+        """All V1FN*.m files should parse successfully."""
+        parser = MUMPSParser()
+        parsed_count = 0
+        
+        for filepath in sorted(mugj_inref_dir.glob("V1FN*.m")):
+            routine = parser.parse_file(filepath)
+            assert isinstance(routine, MRoutine), f"Failed to parse {filepath.name}"
+            parsed_count += 1
+        
+        # V1FN.m, V1FNE1.m, V1FNE2.m, V1FNF1.m, V1FNF2.m, V1FNF3.m, V1FNL.m, V1FNP1.m, V1FNP2.m
+        assert parsed_count >= 9, f"Expected at least 9 V1FN files, found {parsed_count}"

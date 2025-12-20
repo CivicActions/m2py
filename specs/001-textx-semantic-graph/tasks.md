@@ -574,7 +574,7 @@ and MExpr objects where needed. May skip unless specific helper functions are re
 
 ---
 
-## Phase 10: User Story 5 - Parse Special MUMPS Features (Priority: P3)
+## Phase 10: User Story 5 - Parse Special MUMPS Features (Priority: P3) ✅ COMPLETE
 
 **Goal**: Verify special MUMPS features work with refactored textX grammar
 
@@ -582,21 +582,21 @@ and MExpr objects where needed. May skip unless specific helper functions are re
 
 ### Tests for User Story 5
 
-- [ ] T317 [P] [US5] Unit test for pattern match expression (X?1A.N) in tests/unit/test_grammar.py
-- [ ] T318 [P] [US5] Unit test for $PIECE intrinsic function in tests/unit/test_grammar.py
-- [ ] T319 [P] [US5] Unit test for $SELECT intrinsic function in tests/unit/test_grammar.py
-- [ ] T320 [P] [US5] Unit test for $TEST special variable in tests/unit/test_grammar.py
-- [ ] T321 [P] [US5] Unit test for indirection (@variable) in tests/unit/test_grammar.py
-- [ ] T322 [US5] Integration test: parse V1PAT.m with patterns in tests/integration/test_mugj.py
-- [ ] T323 [US5] Integration test: parse V1FN* files with functions in tests/integration/test_mugj.py
+- [X] T317 [P] [US5] Unit test for pattern match expression (X?1A.N) in tests/unit/test_grammar.py
+- [X] T318 [P] [US5] Unit test for $PIECE intrinsic function in tests/unit/test_grammar.py
+- [X] T319 [P] [US5] Unit test for $SELECT intrinsic function in tests/unit/test_grammar.py
+- [X] T320 [P] [US5] Unit test for $TEST special variable in tests/unit/test_grammar.py
+- [X] T321 [P] [US5] Unit test for indirection (@variable) in tests/unit/test_grammar.py
+- [X] T322 [US5] Integration test: parse V1PAT.m with patterns in tests/integration/test_mugj.py
+- [X] T323 [US5] Integration test: parse V1FN* files with functions in tests/integration/test_mugj.py
 
 ### Validation for User Story 5
 
-- [ ] T324 [US5] Verify MPatternMatch nodes have correct pattern structure
-- [ ] T325 [US5] Verify MIntrinsicFunction nodes have all arguments
-- [ ] T326 [US5] Verify MExtrinsicFunction nodes link to routine references
-- [ ] T327 [US5] Verify MIndirection nodes flag requires_runtime_eval
-- [ ] T328 [US5] Verify MSpecialVariable nodes identify $TEST references
+- [X] T324 [US5] Verify MPatternMatch nodes have correct pattern structure (parsed as MBinaryOp with '?' operator)
+- [X] T325 [US5] Verify MIntrinsicFunction nodes have all arguments
+- [X] T326 [US5] Verify MExtrinsicFunction nodes link to routine references
+- [X] T327 [US5] Verify MIndirection nodes flag requires_runtime_eval
+- [X] T328 [US5] Verify MSpecialVariable nodes identify $TEST references
 
 **Checkpoint**: User Story 5 complete - All special MUMPS features represented in ASG
 

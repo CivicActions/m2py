@@ -290,3 +290,168 @@ class TestArgumentlessForGrammar:
         routine = parser.parse(source)
         
         assert isinstance(routine, MRoutine)
+
+
+# ============================================================================
+# Phase 10 Tests (T317-T321): Special MUMPS Features Grammar Acceptance
+# ============================================================================
+
+class TestPatternMatchGrammar:
+    """Test pattern match expression parsing (T317)."""
+    
+    def test_pattern_match_simple(self):
+        """Pattern match X?1A.N should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tI X?1A.N W "match"\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        assert len(routine.labels) == 1
+    
+    def test_pattern_match_negated(self):
+        """Negated pattern match X'?1N should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tI X\'?1N W "not numeric"\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_pattern_match_complex(self):
+        """Complex pattern X?1A.ANP should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tI NAME?1U.L W "valid"\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+
+
+class TestIntrinsicFunctionGrammar:
+    """Test intrinsic function parsing (T318-T319)."""
+    
+    def test_piece_function(self):
+        """$PIECE function should parse (T318)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=$PIECE(STR,"^",1)\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_piece_function_abbreviated(self):
+        """$P abbreviation should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=$P(STR,",",2)\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_select_function(self):
+        """$SELECT function should parse (T319)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=$SELECT(A=1:B,1:C)\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_select_function_abbreviated(self):
+        """$S abbreviation should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=$S(X>0:"positive",1:"other")\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_length_function(self):
+        """$LENGTH function should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS LEN=$LENGTH(STR)\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_nested_functions(self):
+        """Nested function calls should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=$LENGTH($PIECE(STR,"^",1))\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+
+
+class TestSpecialVariableGrammar:
+    """Test special variable parsing (T320)."""
+    
+    def test_test_variable(self):
+        """$TEST special variable should parse (T320)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tI $TEST W "true"\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_test_abbreviated(self):
+        """$T abbreviation should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tI $T W "true"\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_horolog_variable(self):
+        """$HOROLOG should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS TIME=$HOROLOG\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_job_variable(self):
+        """$JOB should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS PID=$JOB\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+
+
+class TestIndirectionGrammar:
+    """Test indirection parsing (T321)."""
+    
+    def test_simple_indirection(self):
+        """@variable indirection should parse (T321)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS @VAR=1\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_subscripted_indirection(self):
+        """@variable(subscripts) should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS @VAR@(1,2)=3\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_name_indirection(self):
+        """@"varname" string indirection should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS @"X"=1\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_do_indirection(self):
+        """D @ROUTINE indirection should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tD @ROUTINE\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_goto_indirection(self):
+        """G @LABEL indirection should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tG @TARGET\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
