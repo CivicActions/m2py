@@ -13,6 +13,7 @@ from m2py.asg import MRoutine, MLabel, MScope
 from m2py.asg.enums import ForLoopType
 from m2py.asg.statements import MForStatement
 from m2py.parser.exceptions import MUMPSSyntaxError
+from m2py.parser.converters import textx_cmds_to_statements
 from m2py.analysis.command_parser import (
     parse_line_content, 
     parse_commands_from_line,
@@ -166,16 +167,65 @@ class MUMPSParser:
         """
         routine = MRoutine(source_file=filename)
         
+        # Track current label for continuation line association
+        current_label: Optional[MLabel] = None
+        
         # Build labels from parsed lines
         if hasattr(model, 'lines') and model.lines:
             for line in model.lines:
-                # LabelLine has a label attribute
-                if hasattr(line, 'label') and line.label:
+                cls_name = line.__class__.__name__
+                
+                # LabelLine has a label attribute - creates new label
+                if cls_name == 'LabelLine' and hasattr(line, 'label') and line.label:
                     label = self._build_label(line)
                     routine.add_label(label)
+                    current_label = label
+                
+                # ContLine - continuation line for current label
+                elif cls_name == 'ContLine' and current_label is not None:
+                    self._add_continuation_to_label(line, current_label)
         
         return routine
     
+    def _add_continuation_to_label(self, cont_line, label: MLabel) -> None:
+        """Add continuation line commands to a label's body.
+        
+        Continuation lines (starting with tab or space) belong to the
+        preceding label. Their commands are added to that label's body.
+        
+        Dotted lines (`. command`) indicate block scope nesting. For now,
+        we add them to the label body with a marker. Full DO block handling
+        would require tracking the preceding argumentless DO.
+        
+        Args:
+            cont_line: The textX ContLine model
+            label: The MLabel to add statements to
+        """
+        rest = getattr(cont_line, 'rest', '')
+        if not rest or not rest.strip():
+            return
+        
+        # Handle dotted block continuation (`. S X=1`)
+        # Strip the leading dot(s) and space(s)
+        stripped_rest = rest.strip()
+        dot_level = 0
+        while stripped_rest.startswith('.'):
+            dot_level += 1
+            stripped_rest = stripped_rest[1:].lstrip()
+        
+        # Parse the continuation line content
+        commands = parse_commands_from_line(stripped_rest)
+        
+        # Convert to ASG statements and add to label body
+        if commands:
+            statements = textx_cmds_to_statements(commands)
+            for stmt in statements:
+                stmt.scope = label.body
+                # Store the nesting level for later analysis
+                if dot_level > 0:
+                    stmt._dot_level = dot_level
+                label.body.statements.append(stmt)
+
     def _build_label(self, line) -> MLabel:
         """Convert textX LabelLine to MLabel ASG.
         
@@ -206,9 +256,16 @@ class MUMPSParser:
             label._parsed_content = None
             label._parsed_commands = []
         
-        # Build the body scope (statements will be added in later phases)
+        # Build the body scope
         label.body = MScope()
         label.body.parent = label
+        
+        # Convert parsed commands to ASG statements and populate body
+        if label._parsed_commands:
+            statements = textx_cmds_to_statements(label._parsed_commands)
+            for stmt in statements:
+                stmt.scope = label.body
+                label.body.statements.append(stmt)
         
         return label
     
