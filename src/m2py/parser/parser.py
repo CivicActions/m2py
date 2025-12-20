@@ -12,7 +12,10 @@ from textx import metamodel_from_file
 
 from m2py.asg import MRoutine, MLabel, MScope
 from m2py.asg.enums import ForLoopType
-from m2py.asg.statements import MForStatement
+from m2py.asg.statements import (
+    MForStatement, MIfStatement, MElseStatement, MDoStatement,
+    MStatement,
+)
 from m2py.parser.exceptions import MUMPSSyntaxError
 from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.analysis.command_parser import (
@@ -29,6 +32,142 @@ from m2py.analysis.variables import (
     compute_transitive_inputs as _compute_transitive_inputs,
     ScopeVariables,
 )
+
+
+def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MStatement]:
+    """Structure a flat list of statements into proper control flow nesting.
+    
+    In MUMPS, commands following FOR/IF/ELSE on the same line are the body
+    of that control flow statement. This function reorganizes a flat list
+    of statements to properly nest them.
+    
+    For example: [FOR, SET, WRITE] becomes [FOR(body=[SET, WRITE])]
+    
+    Handles nested control flow recursively:
+    [FOR, FOR, SET] becomes [FOR(body=[FOR(body=[SET])])]
+    
+    Args:
+        statements: Flat list of parsed statements
+        
+    Returns:
+        List with proper control flow nesting
+    """
+    if not statements:
+        return []
+    
+    result = []
+    i = 0
+    
+    while i < len(statements):
+        stmt = statements[i]
+        
+        # Check if this is a control flow statement that captures remaining line
+        if isinstance(stmt, MForStatement):
+            # FOR captures all remaining statements as its body (recursively)
+            remaining = statements[i + 1:]
+            if remaining:
+                # Recursively structure the remaining statements
+                stmt.body.statements = _structure_commands_with_bodies(remaining)
+                for child in stmt.body.statements:
+                    child.scope = stmt.body
+            result.append(stmt)
+            break  # FOR consumed all remaining statements
+            
+        elif isinstance(stmt, MIfStatement):
+            # IF captures all remaining statements as its then_scope (recursively)
+            remaining = statements[i + 1:]
+            if remaining:
+                stmt.then_scope.statements = _structure_commands_with_bodies(remaining)
+                for child in stmt.then_scope.statements:
+                    child.scope = stmt.then_scope
+            result.append(stmt)
+            break  # IF consumed all remaining statements
+            
+        elif isinstance(stmt, MElseStatement):
+            # ELSE captures all remaining statements as its body (recursively)
+            remaining = statements[i + 1:]
+            if remaining:
+                stmt.body.statements = _structure_commands_with_bodies(remaining)
+                for child in stmt.body.statements:
+                    child.scope = stmt.body
+            result.append(stmt)
+            break  # ELSE consumed all remaining statements
+            
+        else:
+            # Regular statement, add to result and continue
+            result.append(stmt)
+            i += 1
+    
+    return result
+
+
+def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
+    """Collect dot-indented lines into argumentless DO block bodies.
+    
+    In MUMPS, an argumentless DO starts a block, and following lines
+    with dot prefixes belong to that block:
+    
+    D
+    . S X=1  ; dot_level=1, belongs to DO
+    . W X    ; dot_level=1, belongs to DO
+    S Y=2    ; dot_level=0, outside DO
+    
+    This function processes statements that have _dot_level markers
+    and restructures them so dot-indented lines are inside the DO body.
+    
+    Args:
+        statements: List of statements with _dot_level markers
+        
+    Returns:
+        List with DO blocks properly nested
+    """
+    if not statements:
+        return []
+    
+    result = []
+    i = 0
+    
+    while i < len(statements):
+        stmt = statements[i]
+        
+        # Check if this is an argumentless DO (block start)
+        if isinstance(stmt, MDoStatement) and not stmt.targets:
+            # Find all following statements with dot_level > 0
+            block_stmts = []
+            j = i + 1
+            
+            while j < len(statements):
+                next_stmt = statements[j]
+                dot_level = getattr(next_stmt, '_dot_level', 0)
+                
+                if dot_level > 0:
+                    # This statement belongs to the DO block
+                    # Decrement dot level (in case of nested DO blocks)
+                    if dot_level == 1:
+                        delattr(next_stmt, '_dot_level')
+                    else:
+                        next_stmt._dot_level = dot_level - 1
+                    block_stmts.append(next_stmt)
+                    j += 1
+                else:
+                    # Not part of DO block
+                    break
+            
+            # Add collected statements to DO body
+            if block_stmts:
+                # Recursively process for nested DO blocks
+                stmt.body.statements = _structure_do_blocks(block_stmts)
+                for child in stmt.body.statements:
+                    child.scope = stmt.body
+            
+            result.append(stmt)
+            i = j  # Skip past the block statements
+            
+        else:
+            result.append(stmt)
+            i += 1
+    
+    return result
 
 
 def dump_asg_json(routine: MRoutine, include_position: bool = False, indent: int = 2) -> str:
@@ -200,6 +339,13 @@ class MUMPSParser:
                 elif cls_name == 'ContLine' and current_label is not None:
                     self._add_continuation_to_label(line, current_label)
         
+        # Post-process: structure DO blocks with dot-indented lines
+        for label in routine.labels:
+            if label.body.statements:
+                label.body.statements = _structure_do_blocks(label.body.statements)
+                for stmt in label.body.statements:
+                    stmt.scope = label.body
+        
         return routine
     
     def _add_continuation_to_label(self, cont_line, label: MLabel) -> None:
@@ -208,9 +354,9 @@ class MUMPSParser:
         Continuation lines (starting with tab or space) belong to the
         preceding label. Their commands are added to that label's body.
         
-        Dotted lines (`. command`) indicate block scope nesting. For now,
-        we add them to the label body with a marker. Full DO block handling
-        would require tracking the preceding argumentless DO.
+        Dotted lines (`. command`) indicate block scope nesting.
+        The _dot_level marker is set here and later processed by
+        _structure_do_blocks to properly nest into DO bodies.
         
         Args:
             cont_line: The textX ContLine model
@@ -233,8 +379,10 @@ class MUMPSParser:
         
         # Convert to ASG statements and add to label body
         if commands:
-            statements = [s for s in (analyze_command(cmd) for cmd in commands) if s is not None]
-            for stmt in statements:
+            flat_statements = [s for s in (analyze_command(cmd) for cmd in commands) if s is not None]
+            # Structure with proper control flow nesting
+            structured_statements = _structure_commands_with_bodies(flat_statements)
+            for stmt in structured_statements:
                 stmt.scope = label.body
                 # Store the nesting level for later analysis
                 if dot_level > 0:
@@ -277,8 +425,10 @@ class MUMPSParser:
         
         # Convert parsed commands to ASG statements and populate body
         if label._parsed_commands:
-            statements = [s for s in (analyze_command(cmd) for cmd in label._parsed_commands) if s is not None]
-            for stmt in statements:
+            flat_statements = [s for s in (analyze_command(cmd) for cmd in label._parsed_commands) if s is not None]
+            # Structure with proper control flow nesting
+            structured_statements = _structure_commands_with_bodies(flat_statements)
+            for stmt in structured_statements:
                 stmt.scope = label.body
                 label.body.statements.append(stmt)
         

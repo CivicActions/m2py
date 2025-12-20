@@ -189,13 +189,20 @@ class MGotoStatement(MStatement):
 
 @dataclass
 class MDoStatement(MStatement):
-    """DO command - call subroutine.
+    """DO command - call subroutine or inline block.
     
-    Calls one or more labels:
+    When targets are present, calls one or more labels:
     DO label, D label^routine, D label(args)
+    
+    When targets are empty (argumentless DO), creates a block scope
+    for following dot-indented lines:
+    DO
+    . command1
+    . command2
     """
     
     targets: List["MCall"] = field(default_factory=list)
+    body: MScope = field(default_factory=MScope)  # For argumentless DO block
 
 
 @dataclass

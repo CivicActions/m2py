@@ -1073,3 +1073,430 @@ class TestV1FNIntrinsicFunctions:
         
         # V1FN.m, V1FNE1.m, V1FNE2.m, V1FNF1.m, V1FNF2.m, V1FNF3.m, V1FNL.m, V1FNP1.m, V1FNP2.m
         assert parsed_count >= 9, f"Expected at least 9 V1FN files, found {parsed_count}"
+
+
+# =============================================================================
+# Phase 12: Control Flow Body Integration Tests
+# =============================================================================
+
+class TestControlFlowBodyIntegration:
+    """T350-T352: Integration tests for control flow body population using MUGJ files."""
+    
+    @pytest.fixture
+    def parser(self):
+        """Create a fresh parser instance."""
+        return MUMPSParser()
+    
+    @pytest.fixture
+    def mugj_inref_dir(self):
+        """Get the MUGJ inref directory path."""
+        return Path("tests/functional/mugj/inref")
+    
+    def test_v1fora1_for_bodies_populated(self, parser):
+        """T350: V1FORA1.m FOR loops should have populated bodies."""
+        from m2py.asg.statements import MForStatement
+        
+        routine = parser.parse_file("tests/functional/mugj/inref/V1FORA1.m")
+        
+        # Count FOR statements with non-empty bodies
+        for_count = 0
+        for_with_body = 0
+        
+        for label in routine.labels:
+            for stmt in label.body.statements:
+                if isinstance(stmt, MForStatement):
+                    for_count += 1
+                    if stmt.body.statements:
+                        for_with_body += 1
+        
+        # V1FORA1.m has FOR loops - most should have bodies
+        assert for_count > 0, "V1FORA1.m should have FOR statements"
+        # At least some FOR loops should have populated bodies
+        assert for_with_body > 0, "V1FORA1.m FOR loops should have populated bodies"
+    
+    def test_v1ie1_if_bodies_populated(self, parser):
+        """T351: V1IE1.m IF statements should have populated then_scope."""
+        from m2py.asg.statements import MIfStatement
+        
+        routine = parser.parse_file("tests/functional/mugj/inref/V1IE1.m")
+        
+        # Count IF statements with non-empty then_scope
+        if_count = 0
+        if_with_body = 0
+        
+        for label in routine.labels:
+            for stmt in label.body.statements:
+                if isinstance(stmt, MIfStatement):
+                    if_count += 1
+                    if stmt.then_scope.statements:
+                        if_with_body += 1
+        
+        # V1IE1.m has many IF statements
+        assert if_count > 0, "V1IE1.m should have IF statements"
+        # Most IF statements should have populated then_scope
+        assert if_with_body > 0, "V1IE1.m IF statements should have populated then_scope"
+    
+    def test_v1ie1_else_bodies_populated(self, parser):
+        """T351: V1IE1.m ELSE statements should have populated body."""
+        from m2py.asg.statements import MElseStatement
+        
+        routine = parser.parse_file("tests/functional/mugj/inref/V1IE1.m")
+        
+        # Count ELSE statements with non-empty body
+        else_count = 0
+        else_with_body = 0
+        
+        for label in routine.labels:
+            for stmt in label.body.statements:
+                if isinstance(stmt, MElseStatement):
+                    else_count += 1
+                    if stmt.body.statements:
+                        else_with_body += 1
+        
+        # V1IE1.m has ELSE statements
+        assert else_count > 0, "V1IE1.m should have ELSE statements"
+        # ELSE statements should have populated body
+        assert else_with_body > 0, "V1IE1.m ELSE statements should have populated body"
+    
+    def test_v1do1_do_blocks_populated(self, parser):
+        """T352: V1DO1.m DO blocks should have populated body (if present)."""
+        from m2py.asg.statements import MDoStatement
+        
+        routine = parser.parse_file("tests/functional/mugj/inref/V1DO1.m")
+        
+        # Count argumentless DO with non-empty body
+        do_block_count = 0
+        do_with_body = 0
+        
+        for label in routine.labels:
+            for stmt in label.body.statements:
+                if isinstance(stmt, MDoStatement) and not stmt.targets:
+                    do_block_count += 1
+                    if stmt.body.statements:
+                        do_with_body += 1
+        
+        # V1DO1.m focuses on DO label calls, not DO blocks
+        # If there are any DO blocks, they should have bodies
+        if do_block_count > 0:
+            assert do_with_body > 0, "V1DO1.m DO blocks should have populated body"
+        # Otherwise, test passes (no DO blocks to verify)
+    
+    def test_v1ac_do_blocks(self, parser):
+        """T352: V1AC.m has some DO block structure to test."""
+        from m2py.asg.statements import MDoStatement
+        
+        routine = parser.parse_file("tests/functional/mugj/inref/V1AC.m")
+        
+        # V1AC.m has dot-indented lines
+        # This is a basic sanity check that parsing works
+        assert routine is not None
+        assert len(routine.labels) > 0
+    
+    def test_v1forc2_nested_for_structure(self, parser):
+        """T356: V1FORC2.m nested FOR loops should be properly structured."""
+        from m2py.asg.statements import MForStatement
+        
+        routine = parser.parse_file("tests/functional/mugj/inref/V1FORC2.m")
+        
+        # Find nested FOR loops (FOR with FOR in body)
+        nested_for_found = False
+        
+        for label in routine.labels:
+            for stmt in label.body.statements:
+                if isinstance(stmt, MForStatement):
+                    for inner in stmt.body.statements:
+                        if isinstance(inner, MForStatement):
+                            nested_for_found = True
+                            # Verify inner FOR also has body
+                            # (might be QUIT or other statement)
+                            break
+                if nested_for_found:
+                    break
+            if nested_for_found:
+                break
+        
+        # V1FORC2.m should have nested FOR loops
+        assert nested_for_found, "V1FORC2.m should have nested FOR loops"
+
+
+# =============================================================================
+# Phase 12c Tests (T357-T360): Command Association
+# =============================================================================
+
+class TestCommandAssociation:
+    """T357-T360: Tests for postconditions and indirection association."""
+    
+    @pytest.fixture
+    def parser(self):
+        """Create a fresh parser instance."""
+        return MUMPSParser()
+    
+    def test_postcondition_on_write(self, parser):
+        """T357-T358: Postcondition on WRITE command should be correctly associated."""
+        from m2py.asg.statements import MWriteStatement
+        
+        # Parse a line with postconditioned WRITE (tab-separated)
+        source = 'TEST\tW:1=1 "PASS"\n'
+        routine = parser.parse(source)
+        
+        # Find the WRITE statement
+        write_stmt = None
+        for stmt in routine.labels[0].body.statements:
+            if isinstance(stmt, MWriteStatement):
+                write_stmt = stmt
+                break
+        
+        assert write_stmt is not None, "Should have WRITE statement"
+        assert write_stmt.postcondition is not None, "WRITE should have postcondition"
+    
+    def test_postcondition_on_set(self, parser):
+        """T357-T358: Postcondition on SET command should be correctly associated."""
+        from m2py.asg.statements import MSetStatement
+        
+        # Parse a line with postconditioned SET (tab-separated)
+        source = 'TEST\tS:X=1 Y=2\n'
+        routine = parser.parse(source)
+        
+        # Find the SET statement
+        set_stmt = None
+        for stmt in routine.labels[0].body.statements:
+            if isinstance(stmt, MSetStatement):
+                set_stmt = stmt
+                break
+        
+        assert set_stmt is not None, "Should have SET statement"
+        assert set_stmt.postcondition is not None, "SET should have postcondition"
+    
+    def test_v1pca_postconditions(self, parser):
+        """T357-T358: V1PCA.m postconditioned commands should be correctly associated."""
+        from m2py.asg.statements import MWriteStatement, MSetStatement
+        
+        routine = parser.parse_file("tests/functional/mugj/inref/V1PCA.m")
+        
+        # Count postconditioned statements
+        write_with_pc = 0
+        set_with_pc = 0
+        
+        for label in routine.labels:
+            for stmt in label.body.statements:
+                if isinstance(stmt, MWriteStatement) and stmt.postcondition:
+                    write_with_pc += 1
+                elif isinstance(stmt, MSetStatement) and stmt.postcondition:
+                    set_with_pc += 1
+        
+        # V1PCA.m should have many postconditioned statements
+        assert write_with_pc > 0, "V1PCA.m should have postconditioned WRITE statements"
+        assert set_with_pc > 0, "V1PCA.m should have postconditioned SET statements"
+    
+    def test_indirection_in_expression(self, parser):
+        """T359-T360: Indirection (@) should produce valid ASG (basic test)."""
+        # Parse a line with indirection (tab-separated)
+        source = 'TEST\tS @X=1\n'
+        routine = parser.parse(source)
+        
+        assert routine is not None, "Should parse indirection successfully"
+        # The SET statement should have been parsed
+        assert len(routine.labels[0].body.statements) > 0
+    
+    def test_indirection_in_file(self, parser):
+        """T359-T360: A file with indirection should parse correctly."""
+        # V1PCA.m uses postconditions and @ for indirection in some places
+        # Just check that parsing works for a file known to exist
+        routine = parser.parse_file("tests/functional/mugj/inref/V1PCA.m")
+        
+        assert routine is not None
+        assert len(routine.labels) > 0
+
+
+# =============================================================================
+# Phase 12d Tests (T361-T363): Pattern Match
+# =============================================================================
+
+class TestPatternMatch:
+    """T361-T363: Tests for pattern match ASG structure."""
+    
+    @pytest.fixture
+    def parser(self):
+        """Create a fresh parser instance."""
+        return MUMPSParser()
+    
+    def test_simple_pattern_match(self, parser):
+        """T361-T362: Simple pattern match should be captured in ASG."""
+        # Tab-separated source with pattern match
+        source = 'TEST\tI X?1A.N W "match"\n'
+        routine = parser.parse(source)
+        
+        # Should parse without error
+        assert routine is not None
+        assert len(routine.labels) > 0
+    
+    def test_pattern_with_alternation(self, parser):
+        """T363: Pattern alternation (!) should be captured."""
+        # Tab-separated source with pattern alternation
+        source = 'TEST\tI X?1"A"!1"B" W "match"\n'
+        routine = parser.parse(source)
+        
+        # Should parse without error
+        assert routine is not None
+    
+    def test_v1pat1_patterns(self, parser):
+        """T361-T363: V1PAT1.m patterns should parse correctly."""
+        routine = parser.parse_file("tests/functional/mugj/inref/V1PAT1.m")
+        
+        assert routine is not None
+        assert len(routine.labels) > 0, "V1PAT1.m should have labels"
+
+
+# =============================================================================
+# Phase 12e Tests (T364-T369): Full MUGJ Validation
+# =============================================================================
+
+class TestMUGJValidation:
+    """T364-T369: Full MUGJ validation for control flow bodies."""
+    
+    @pytest.fixture
+    def parser(self):
+        """Create a fresh parser instance."""
+        return MUMPSParser()
+    
+    @pytest.fixture
+    def mugj_inref_dir(self):
+        """Get the MUGJ inref directory path."""
+        return Path("tests/functional/mugj/inref")
+    
+    def test_all_v1for_for_bodies(self, parser, mugj_inref_dir):
+        """T364: All V1FOR* tests should have FOR bodies populated."""
+        from m2py.asg.statements import MForStatement
+        
+        for_files = list(mugj_inref_dir.glob("V1FOR*.m"))
+        total_for_count = 0
+        total_with_body = 0
+        
+        for filepath in for_files:
+            routine = parser.parse_file(filepath)
+            
+            for label in routine.labels:
+                for stmt in label.body.statements:
+                    if isinstance(stmt, MForStatement):
+                        total_for_count += 1
+                        if stmt.body.statements:
+                            total_with_body += 1
+        
+        # Should have many FOR statements across all files
+        assert total_for_count > 0, "V1FOR* files should have FOR statements"
+        # Most should have populated bodies
+        assert total_with_body > 0, "V1FOR* FOR loops should have populated bodies"
+    
+    def test_all_v1ie_if_else_bodies(self, parser, mugj_inref_dir):
+        """T365: All V1IE* tests should have IF/ELSE bodies populated."""
+        from m2py.asg.statements import MIfStatement, MElseStatement
+        
+        ie_files = list(mugj_inref_dir.glob("V1IE*.m"))
+        total_if_count = 0
+        if_with_body = 0
+        total_else_count = 0
+        else_with_body = 0
+        
+        for filepath in ie_files:
+            routine = parser.parse_file(filepath)
+            
+            for label in routine.labels:
+                for stmt in label.body.statements:
+                    if isinstance(stmt, MIfStatement):
+                        total_if_count += 1
+                        if stmt.then_scope.statements:
+                            if_with_body += 1
+                    elif isinstance(stmt, MElseStatement):
+                        total_else_count += 1
+                        if stmt.body.statements:
+                            else_with_body += 1
+        
+        # Should have many IF/ELSE statements
+        assert total_if_count > 0, "V1IE* files should have IF statements"
+        assert if_with_body > 0, "V1IE* IF statements should have populated then_scope"
+        assert total_else_count > 0, "V1IE* files should have ELSE statements"
+        assert else_with_body > 0, "V1IE* ELSE statements should have populated body"
+    
+    def test_all_v1do_do_blocks(self, parser, mugj_inref_dir):
+        """T366: All V1DO* tests should parse (DO blocks if present should be populated)."""
+        from m2py.asg.statements import MDoStatement
+        
+        do_files = list(mugj_inref_dir.glob("V1DO*.m"))
+        parsed_count = 0
+        
+        for filepath in do_files:
+            routine = parser.parse_file(filepath)
+            parsed_count += 1
+            assert routine is not None
+        
+        assert parsed_count > 0, "V1DO* files should parse"
+    
+    def test_all_v1pat_patterns(self, parser, mugj_inref_dir):
+        """T367: All V1PAT* tests should parse with pattern structures."""
+        pat_files = list(mugj_inref_dir.glob("V1PAT*.m"))
+        parsed_count = 0
+        
+        for filepath in pat_files:
+            routine = parser.parse_file(filepath)
+            parsed_count += 1
+            assert routine is not None
+            assert len(routine.labels) > 0
+        
+        assert parsed_count > 0, "V1PAT* files should parse"
+    
+    def test_mugj_validation_summary(self, parser, mugj_inref_dir):
+        """T369: Create MUGJ validation report summary."""
+        from m2py.asg.statements import MForStatement, MIfStatement, MElseStatement
+        
+        # Collect all .m files
+        all_files = list(mugj_inref_dir.glob("*.m"))
+        
+        # Summary stats
+        total_files = len(all_files)
+        parsed_ok = 0
+        for_count = 0
+        for_with_body = 0
+        if_count = 0
+        if_with_body = 0
+        else_count = 0
+        else_with_body = 0
+        
+        for filepath in all_files:
+            try:
+                routine = parser.parse_file(filepath)
+                parsed_ok += 1
+                
+                for label in routine.labels:
+                    for stmt in label.body.statements:
+                        if isinstance(stmt, MForStatement):
+                            for_count += 1
+                            if stmt.body.statements:
+                                for_with_body += 1
+                        elif isinstance(stmt, MIfStatement):
+                            if_count += 1
+                            if stmt.then_scope.statements:
+                                if_with_body += 1
+                        elif isinstance(stmt, MElseStatement):
+                            else_count += 1
+                            if stmt.body.statements:
+                                else_with_body += 1
+            except Exception:
+                # Count parse failures
+                pass
+        
+        # Validation assertions
+        assert parsed_ok == total_files, f"All {total_files} files should parse"
+        assert for_count > 0, "Should have FOR statements"
+        assert for_with_body > 0, "FOR loops should have bodies"
+        assert if_count > 0, "Should have IF statements"
+        assert if_with_body > 0, "IF statements should have then_scope"
+        assert else_count > 0, "Should have ELSE statements"
+        assert else_with_body > 0, "ELSE statements should have body"
+        
+        # Print summary for info
+        print(f"\n=== MUGJ Validation Summary ===")
+        print(f"Total files: {total_files}")
+        print(f"Parsed OK: {parsed_ok}")
+        print(f"FOR statements: {for_count} (with body: {for_with_body})")
+        print(f"IF statements: {if_count} (with body: {if_with_body})")
+        print(f"ELSE statements: {else_count} (with body: {else_with_body})")

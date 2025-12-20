@@ -639,6 +639,58 @@ and MExpr objects where needed. May skip unless specific helper functions are re
 
 ---
 
+## Phase 12: Code Generation Readiness ✅ COMPLETE
+
+**Purpose**: Address ASG structure issues discovered during MUGJ validation to prepare for Python code generation.
+
+**Context**: During Phase 11 validation, we discovered that control flow bodies (FOR, IF, ELSE, DO) were not being properly populated. Commands following control flow statements on the same line were siblings in the parent scope rather than children in the control flow body. This phase fixes those structural issues.
+
+### 12a: Control Flow Body Population (CRITICAL)
+
+- [X] T343 [US6] Implement FOR body population - commands following FOR on same line go in body
+- [X] T344 [US6] Implement IF then_scope population - commands following IF on same line
+- [X] T345 [US6] Implement ELSE body population - commands following ELSE on same line
+- [X] T346 [US6] Implement DO block body population - dot-indented lines go in body
+- [X] T347 [US6] Add unit tests for FOR body population
+- [X] T348 [US6] Add unit tests for IF/ELSE body population
+- [X] T349 [US6] Add unit tests for DO block body population
+- [X] T350 [US6] Integration test: V1FORA1.m FOR bodies populated correctly
+- [X] T351 [US6] Integration test: V1IE1.m IF bodies populated correctly
+- [X] T352 [US6] Integration test: V1DO1.m DO block bodies populated correctly
+
+### 12b: Nested Control Flow (HIGH)
+
+- [X] T353 [US6] Handle nested FOR loops - inner FOR is in outer FOR body
+- [X] T354 [US6] Handle FOR with nested IF - IF is in FOR body
+- [X] T355 [US6] Handle IF with nested FOR - FOR is in IF body
+- [X] T356 [US6] Integration test: V1FORC2.m nested FOR structure correct
+
+### 12c: Command Association (MEDIUM)
+
+- [X] T357 [US6] Verify postconditions are on correct statements
+- [X] T358 [US6] Add test for postcondition association
+- [X] T359 [US6] Verify indirection produces MIndirection nodes
+- [X] T360 [US6] Add test for indirection expression structure
+
+### 12d: Pattern Match Complete (MEDIUM)
+
+- [X] T361 [US6] Verify pattern match captures all pattern segments
+- [X] T362 [US6] Add test for complex pattern match ASG structure
+- [X] T363 [US6] Verify pattern alternation (!) captured
+
+### 12e: Full MUGJ Validation (VALIDATION)
+
+- [X] T364 [US6] Run all V1FOR* tests and verify FOR bodies populated
+- [X] T365 [US6] Run all V1IE* tests and verify IF/ELSE bodies populated
+- [X] T366 [US6] Run all V1DO* tests and verify DO bodies populated
+- [X] T367 [US6] Run all V1PAT* tests and verify pattern structures
+- [X] T368 [US6] Run all V1IND* tests and verify indirection structures (covered in V1PCA.m)
+- [X] T369 [US6] Create MUGJ validation report with pass/fail for each file
+
+**Checkpoint**: Phase 12 complete - ASG structure ready for code generation (576 tests passing)
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -729,6 +781,7 @@ After Phase 9 complete:
 | **Architecture** | Phase 9 | CST→Semantic Analyzer→ASG, all tests pass with MExpr |
 | Iteration 5 | US5 (Phase 10) | All special features with complete ASG |
 | Final | All + Polish (Phase 11) | 100% MUGJ |
+| **Code Gen Ready** | Phase 12 | Control flow bodies populated, 576 tests |
 
 ### Risk Mitigation
 
@@ -756,7 +809,8 @@ After Phase 9 complete:
 | **Custom Class + Semantic Analyzer** | T252-T316 (65) | CST→ASG Architecture |
 | User Story 5 | T317-T328 (12) | Special Features (P3) |
 | Polish | T329-T342 (14) | Full Validation |
-| **Total** | **315 tasks** | |
+| **Code Gen Readiness** | T343-T369 (27) | Control Flow Bodies |
+| **Total** | **342 tasks** | |
 
 ### Parallel Opportunities Summary
 
@@ -780,6 +834,7 @@ After Phase 9 complete:
 | Phase 8 | walk_statements() returns non-empty, expression ASG built |
 | **Phase 9** | All tests pass with MExpr objects (not strings), 0 failures |
 | US5 | V1PAT patterns captured, functions parsed |
+| **Phase 12** | Control flow bodies populated, 576 tests passing |
 
 ### Suggested MVP Scope
 

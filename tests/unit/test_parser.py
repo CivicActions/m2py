@@ -581,3 +581,190 @@ class TestASGSerialization:
         if result.get("labels"):
             first_label = result["labels"][0]
             assert first_label.get("_truncated") or "_type" in first_label
+
+
+# =============================================================================
+# Phase 12: Control Flow Body Population Tests
+# =============================================================================
+
+class TestControlFlowBodyPopulation:
+    """T347-T352: Tests for control flow body population.
+    
+    These tests verify that FOR, IF, ELSE, and DO block bodies
+    are properly populated with following commands.
+    """
+    
+    def test_for_body_single_command(self):
+        """T347: FOR captures single following command in body."""
+        from m2py.asg.statements import MForStatement, MSetStatement
+        
+        parser = MUMPSParser()
+        source = 'TEST\tF I=1:1:3 S X=I\n'
+        routine = parser.parse(source)
+        
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        assert len(for_stmt.body.statements) == 1
+        assert isinstance(for_stmt.body.statements[0], MSetStatement)
+    
+    def test_for_body_multiple_commands(self):
+        """T347: FOR captures multiple following commands in body."""
+        from m2py.asg.statements import MForStatement, MSetStatement, MWriteStatement
+        
+        parser = MUMPSParser()
+        source = 'TEST\tF I=1:1:3 S X=I W X\n'
+        routine = parser.parse(source)
+        
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        assert len(for_stmt.body.statements) == 2
+        assert isinstance(for_stmt.body.statements[0], MSetStatement)
+        assert isinstance(for_stmt.body.statements[1], MWriteStatement)
+    
+    def test_for_nested_for(self):
+        """T353: Nested FOR loops are properly structured."""
+        from m2py.asg.statements import MForStatement, MSetStatement
+        
+        parser = MUMPSParser()
+        source = 'TEST\tF I=1:1:3 F J=1:1:3 S X=I*J\n'
+        routine = parser.parse(source)
+        
+        outer_for = routine.labels[0].body.statements[0]
+        assert isinstance(outer_for, MForStatement)
+        assert outer_for.loop_var == "I"
+        assert len(outer_for.body.statements) == 1
+        
+        inner_for = outer_for.body.statements[0]
+        assert isinstance(inner_for, MForStatement)
+        assert inner_for.loop_var == "J"
+        assert len(inner_for.body.statements) == 1
+        assert isinstance(inner_for.body.statements[0], MSetStatement)
+    
+    def test_if_body_single_command(self):
+        """T348: IF captures single following command in then_scope."""
+        from m2py.asg.statements import MIfStatement, MSetStatement
+        
+        parser = MUMPSParser()
+        source = 'TEST\tI X=1 S Y=2\n'
+        routine = parser.parse(source)
+        
+        if_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(if_stmt, MIfStatement)
+        assert len(if_stmt.then_scope.statements) == 1
+        assert isinstance(if_stmt.then_scope.statements[0], MSetStatement)
+    
+    def test_if_body_multiple_commands(self):
+        """T348: IF captures multiple following commands in then_scope."""
+        from m2py.asg.statements import MIfStatement, MSetStatement, MWriteStatement
+        
+        parser = MUMPSParser()
+        source = 'TEST\tI X=1 S Y=2 W Y\n'
+        routine = parser.parse(source)
+        
+        if_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(if_stmt, MIfStatement)
+        assert len(if_stmt.then_scope.statements) == 2
+        assert isinstance(if_stmt.then_scope.statements[0], MSetStatement)
+        assert isinstance(if_stmt.then_scope.statements[1], MWriteStatement)
+    
+    def test_else_body_commands(self):
+        """T348: ELSE captures following commands in body."""
+        from m2py.asg.statements import MElseStatement, MSetStatement, MWriteStatement
+        
+        parser = MUMPSParser()
+        source = 'TEST\tE  S Y=3 W Y\n'
+        routine = parser.parse(source)
+        
+        else_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(else_stmt, MElseStatement)
+        assert len(else_stmt.body.statements) == 2
+        assert isinstance(else_stmt.body.statements[0], MSetStatement)
+        assert isinstance(else_stmt.body.statements[1], MWriteStatement)
+    
+    def test_for_with_nested_if(self):
+        """T354: FOR with nested IF is properly structured."""
+        from m2py.asg.statements import MForStatement, MIfStatement, MSetStatement
+        
+        parser = MUMPSParser()
+        source = 'TEST\tF I=1:1:10 I I#2 S X=I\n'
+        routine = parser.parse(source)
+        
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        assert len(for_stmt.body.statements) == 1
+        
+        if_stmt = for_stmt.body.statements[0]
+        assert isinstance(if_stmt, MIfStatement)
+        assert len(if_stmt.then_scope.statements) == 1
+        assert isinstance(if_stmt.then_scope.statements[0], MSetStatement)
+    
+    def test_if_with_nested_for(self):
+        """T355: IF with nested FOR is properly structured."""
+        from m2py.asg.statements import MIfStatement, MForStatement, MSetStatement
+        
+        parser = MUMPSParser()
+        source = 'TEST\tI X>0 F I=1:1:X S A(I)=I\n'
+        routine = parser.parse(source)
+        
+        if_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(if_stmt, MIfStatement)
+        assert len(if_stmt.then_scope.statements) == 1
+        
+        for_stmt = if_stmt.then_scope.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        assert len(for_stmt.body.statements) == 1
+        assert isinstance(for_stmt.body.statements[0], MSetStatement)
+    
+    def test_do_block_simple(self):
+        """T349: Argumentless DO collects dot-indented lines in body."""
+        from m2py.asg.statements import MDoStatement, MSetStatement, MWriteStatement
+        
+        parser = MUMPSParser()
+        source = '''TEST\tD
+ . S X=1
+ . W X
+ S Y=2
+'''
+        routine = parser.parse(source)
+        
+        # Should have 2 statements: DO block and SET
+        assert len(routine.labels[0].body.statements) == 2
+        
+        do_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(do_stmt, MDoStatement)
+        assert len(do_stmt.targets) == 0  # Argumentless DO
+        assert len(do_stmt.body.statements) == 2
+        assert isinstance(do_stmt.body.statements[0], MSetStatement)
+        assert isinstance(do_stmt.body.statements[1], MWriteStatement)
+        
+        # SET Y=2 should be outside DO block
+        assert isinstance(routine.labels[0].body.statements[1], MSetStatement)
+    
+    def test_do_block_nested(self):
+        """T349: Nested DO blocks are properly structured."""
+        from m2py.asg.statements import MDoStatement, MSetStatement
+        
+        parser = MUMPSParser()
+        source = '''TEST\tD
+ . S X=1
+ . D
+ . . S Y=2
+ . . S Z=3
+ . S A=4
+ S B=5
+'''
+        routine = parser.parse(source)
+        
+        # Should have 2 statements: outer DO block and SET B=5
+        assert len(routine.labels[0].body.statements) == 2
+        
+        outer_do = routine.labels[0].body.statements[0]
+        assert isinstance(outer_do, MDoStatement)
+        # Outer DO has: S X=1, nested DO, S A=4
+        assert len(outer_do.body.statements) == 3
+        
+        inner_do = outer_do.body.statements[1]
+        assert isinstance(inner_do, MDoStatement)
+        # Inner DO has: S Y=2, S Z=3
+        assert len(inner_do.body.statements) == 2
+
