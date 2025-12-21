@@ -149,8 +149,11 @@ CharRead:
 
 // IF command: I|IF conditions (comma-separated = AND)
 // Per MUMPS spec: "IF with n arguments is equivalent to n IFs"
+// IMPORTANT: Uses single space (not WS) to distinguish:
+//   - "I 1 S X=1" = IF with condition 1, then SET (one space after I)
+//   - "I  S X=1"  = argumentless IF, then SET (two spaces = command separator)
 IfCommand:
-    /[Ii][Ff]|[Ii]/ (WS conditions+=Expr[/,/])?
+    /[Ii][Ff]|[Ii]/ (/[ \t]/ conditions+=Expr[/,/])?
 ;
 
 // ELSE command: E|ELSE

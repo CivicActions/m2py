@@ -240,6 +240,56 @@ class TestParseIfCommand:
         assert len(stmt.conditions) == 0
 
 
+class TestArgumentlessIfFollowedByCommand:
+    """Test argumentless IF followed by another command (BUG-011 regression).
+    
+    In MUMPS, 'I  S X=1' (with TWO spaces after I) means:
+    - Argumentless IF (checks $TEST)
+    - Followed by SET command
+    
+    Single space 'I S' means IF with condition S (variable).
+    """
+
+    def test_argumentless_if_then_set(self):
+        """I  S X=1 parses as argumentless IF + SET (not IF with condition S)."""
+        cmds = parse_commands_from_line("I  S X=1")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "IfCommand"
+        assert len(cmds[0].conditions) == 0  # argumentless
+        assert cmds[1].__class__.__name__ == "SetCommand"
+
+    def test_argumentless_if_then_quit(self):
+        """I  Q parses as argumentless IF + QUIT."""
+        cmds = parse_commands_from_line("I  Q")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "IfCommand"
+        assert len(cmds[0].conditions) == 0
+        assert cmds[1].__class__.__name__ == "QuitCommand"
+
+    def test_argumentless_if_then_write(self):
+        """I  W 1 parses as argumentless IF + WRITE."""
+        cmds = parse_commands_from_line("I  W 1")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "IfCommand"
+        assert len(cmds[0].conditions) == 0
+        assert cmds[1].__class__.__name__ == "WriteCommand"
+
+    def test_if_with_condition_single_space(self):
+        """I S (single space) parses as IF with condition S."""
+        cmds = parse_commands_from_line("I S")
+        assert len(cmds) == 1
+        assert cmds[0].__class__.__name__ == "IfCommand"
+        assert len(cmds[0].conditions) == 1  # has condition
+
+    def test_if_with_condition_then_set(self):
+        """I 1 S X=1 parses as IF with condition 1, then SET."""
+        cmds = parse_commands_from_line("I 1 S X=1")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "IfCommand"
+        assert len(cmds[0].conditions) == 1
+        assert cmds[1].__class__.__name__ == "SetCommand"
+
+
 class TestParseForCommand:
     """Test FOR command parsing to ASG."""
 

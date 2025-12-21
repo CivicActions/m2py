@@ -1604,3 +1604,71 @@ IndirectExpr:
 4. **XECUTE with indirection** - Already flagged as `requires_runtime_eval`
 5. **Implicit fall-through** - V1IDGO.m has no QUIT at end, relies on fall-through between labels
 
+---
+
+## Phase 28: MUGJ Validation Checklist - V1IDGO1 to V1IDNM3
+
+**Purpose**: Validate indirection-heavy GOTO and name-level indirection tests (Checklist 14/54).
+
+**Validation Date**: 2025-12-21
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1IDGO1.m | 11 | 44 | ✅ Complete | Complex GOTO indirection/postconditions captured |
+| V1IDGOA.m | 30 | 106 | ✅ Complete | Indirect GOTO targets and offsets retained |
+| V1IDGOB.m | 28 | 109 | ✅ Complete | Nested indirect GOTOs with postconditions captured |
+| V1IDNM.m | 4 | 6 | ✅ Complete | Driver DO calls preserved |
+| V1IDNM1.m | 12 | 64 | ✅ Complete | FOR loops with indirect loop vars/params captured |
+| V1IDNM2.m | 15 | 89 | ✅ Complete | SET/KILL with name-level indirection captured |
+| V1IDNM3.m | 14 | 77 | ✅ Complete | $DATA/$NEXT with multi-level indirection preserved |
+
+### Findings
+
+- All commands and expressions in this batch are present in the ASG; no dropped statements or labels observed.
+- Indirection metadata (`label_is_indirect`, `routine_is_indirect`, `indirection_levels`) is populated for indirect DO/GOTO targets, matching the runtime patterns needed for code generation.
+- $DATA/$NEXT intrinsic calls with indirect arguments (V1IDNM3) are represented in the statement expressions, preserving nested indirection structure for later evaluation.
+
+---
+
+## Phase 29: MUGJ Validation Checklist - V1IE to V1JST
+
+**Purpose**: Validate IF/$TEST label drivers and I/O driver routines (Checklist 15/54).
+
+**Validation Date**: 2025-12-21
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1IE.m | 3 | 4 | ✅ Complete | Driver writes and dispatches to child routines |
+| V1IE1.m | 12 | 85 | ⚠️ Issues | Argumentless IF commands parsed as `MViewStatement`, losing $TEST-dependent control flow |
+| V1IE2.m | 8 | 94 | ⚠️ Issues | Argumentless IF commands parsed as `MViewStatement`, $TEST logic dropped |
+| V1IO.m | 2 | 66 | ✅ Complete | I/O control driver captured |
+| V1IO1.m | 10 | 50 | ✅ Complete | Examiner label resolved for postconditional tests |
+| V1IO2.m | 16 | 68 | ✅ Complete | FOR list at label 554 retained; examiner calls intact |
+| V1JST.m | 4 | 7 | ✅ Complete | Driver DO calls captured |
+
+### BUG-011: Argumentless IF parsed incorrectly (FIXED)
+
+**Severity**: High  
+**Files Affected**: V1IE1.m (label 526), V1IE2.m (label 527)
+
+**Description**: When IF command was followed by two spaces (command separator) and another command like SET, the parser incorrectly treated the following command keyword as an IF condition. For example, `I  S X=1` was parsed as IF with condition `S` (LocalVariable), causing the SET to become a ViewCommand.
+
+**Root Cause**: The IfCommand grammar rule used `WS` (`/[ \t]+/`) which consumed both spaces, then tried to parse `S` as a condition expression.
+
+**Fix Applied**: Changed IfCommand to use single-space `/[ \t]/` before conditions. This correctly distinguishes:
+- `I S` (single space) = IF with condition S (variable)
+- `I  S X=1` (double space) = argumentless IF + SET command
+
+**Tasks**:
+- [x] T517 [BUG] Fixed grammar in `src/m2py/grammar/commands.tx` - IfCommand now uses `/[ \t]/` instead of `WS`
+- [x] T518 [BUG] Added `TestArgumentlessIfFollowedByCommand` test class in `tests/unit/test_command_parser.py` (5 tests)
+- [x] T519 [BUG] V1IE1.m and V1IE2.m labels 526/527 now parse correctly - verified with validate_asg.py
+
+**Verification**:
+- All 638 tests pass
+- V1IE1.m label 526: Correctly parses as MIfStatement with nested IF/SET
+- V1IE2.m label 527: Correctly parses as MIfStatement chain
