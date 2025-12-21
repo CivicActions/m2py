@@ -385,6 +385,11 @@ class MUMPSParser:
             raise FileNotFoundError(f"MUMPS source file not found: {filepath}")
         
         source = filepath.read_text(encoding="utf-8")
+        
+        # Ensure source ends with newline for proper parsing of last line
+        if source and not source.endswith('\n'):
+            source += '\n'
+            
         routine_name = filepath.stem  # Use filename without extension as routine name
         
         routine = self.parse(source, filename=str(filepath))
@@ -411,6 +416,10 @@ class MUMPSParser:
         # Track current label for continuation line association
         current_label: Optional[MLabel] = None
         
+        # Synthetic preamble label for lines before first named label
+        # Created lazily if needed
+        preamble_label: Optional[MLabel] = None
+        
         # Build labels from parsed lines
         if hasattr(model, 'lines') and model.lines:
             for line in model.lines:
@@ -423,8 +432,18 @@ class MUMPSParser:
                     current_label = label
                 
                 # ContLine - continuation line for current label
-                elif cls_name == 'ContLine' and current_label is not None:
-                    self._add_continuation_to_label(line, current_label)
+                elif cls_name == 'ContLine':
+                    if current_label is not None:
+                        self._add_continuation_to_label(line, current_label)
+                    else:
+                        # Labelless line before first label - create synthetic preamble
+                        rest = getattr(line, 'rest', '')
+                        if rest and rest.strip():
+                            if preamble_label is None:
+                                preamble_label = MLabel(name='', body=MScope())
+                                routine.add_label(preamble_label)
+                                current_label = preamble_label
+                            self._add_continuation_to_label(line, preamble_label)
         
         # Post-process: structure DO blocks with dot-indented lines
         for label in routine.labels:

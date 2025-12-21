@@ -1634,7 +1634,7 @@ IndirectExpr:
 
 ## Phase 29: MUGJ Validation Checklist - V1IE to V1JST
 
-**Purpose**: Validate IF/$TEST label drivers and I/O driver routines (Checklist 15/54).
+**Purpose**: Validate IF/ELSE/$TEST and I/O control tests (Checklist 15/54).
 
 **Validation Date**: 2025-12-21
 
@@ -1642,33 +1642,170 @@ IndirectExpr:
 
 | File | Labels | Statements | Status | Notes |
 |------|--------|------------|--------|-------|
-| V1IE.m | 3 | 4 | ✅ Complete | Driver writes and dispatches to child routines |
-| V1IE1.m | 12 | 85 | ⚠️ Issues | Argumentless IF commands parsed as `MViewStatement`, losing $TEST-dependent control flow |
-| V1IE2.m | 8 | 94 | ⚠️ Issues | Argumentless IF commands parsed as `MViewStatement`, $TEST logic dropped |
-| V1IO.m | 2 | 66 | ✅ Complete | I/O control driver captured |
-| V1IO1.m | 10 | 50 | ✅ Complete | Examiner label resolved for postconditional tests |
-| V1IO2.m | 16 | 68 | ✅ Complete | FOR list at label 554 retained; examiner calls intact |
-| V1JST.m | 4 | 7 | ✅ Complete | Driver DO calls captured |
+| V1IE.m | 3 | 4 | ✅ Complete | Simple driver with external DO calls |
+| V1IE1.m | 12 | 85 | ✅ Complete | IF/ELSE/$TEST tests; all captured correctly |
+| V1IE2.m | 8 | 94 | ✅ Complete | Argumentless IF, $TEST usage captured |
+| V1IO.m | 2 | 70 | ✅ Complete | READ/GOTO now captured after T517/T518 fixes |
+| V1IO1.m | 10 | 50 | ✅ Complete | I/O tests with SET/WRITE/DO |
+| V1IO2.m | 16 | 68 | ✅ Complete | FOR with string-list parameters captured |
+| V1JST.m | 4 | 7 | ✅ Complete | Simple driver with external DO calls |
 
-### BUG-011: Argumentless IF parsed incorrectly (FIXED)
+### Issues Fixed
 
-**Severity**: High  
-**Files Affected**: V1IE1.m (label 526), V1IE2.m (label 527)
+#### Issue T517: READ command grammar fails with adjacent format controls ✅ FIXED
 
-**Description**: When IF command was followed by two spaces (command separator) and another command like SET, the parser incorrectly treated the following command keyword as an IF condition. For example, `I  S X=1` was parsed as IF with condition `S` (LocalVariable), causing the SET to become a ViewCommand.
+**Fix Applied**: Modified `ReadCommand` grammar to use `args*=ReadArg` with optional comma `/,/?` in each `ReadArg`, matching the pattern used by `WriteCommand`. Added `ReadArgValue` wrapper to properly dispatch to `ReadFormat`, `StringLiteral`, or `ReadTargetWithTimeout`.
 
-**Root Cause**: The IfCommand grammar rule used `WS` (`/[ \t]+/`) which consumed both spaces, then tried to parse `S` as a condition expression.
+#### Issue T518: OPEN command grammar fails with empty params and timeout (`::`) ✅ FIXED
 
-**Fix Applied**: Changed IfCommand to use single-space `/[ \t]/` before conditions. This correctly distinguishes:
-- `I S` (single space) = IF with condition S (variable)
-- `I  S X=1` (double space) = argumentless IF + SET command
+**Fix Applied**: Extended `OpenArg` grammar to add a `':' ':' timeout=Expr` alternative that matches the double-colon syntax for "empty params with timeout".
 
-**Tasks**:
-- [x] T517 [BUG] Fixed grammar in `src/m2py/grammar/commands.tx` - IfCommand now uses `/[ \t]/` instead of `WS`
-- [x] T518 [BUG] Added `TestArgumentlessIfFollowedByCommand` test class in `tests/unit/test_command_parser.py` (5 tests)
-- [x] T519 [BUG] V1IE1.m and V1IE2.m labels 526/527 now parse correctly - verified with validate_asg.py
+### Tasks Completed
 
-**Verification**:
-- All 638 tests pass
-- V1IE1.m label 526: Correctly parses as MIfStatement with nested IF/SET
-- V1IE2.m label 527: Correctly parses as MIfStatement chain
+- [X] T517 [BUG] Fix READ command grammar to allow adjacent format controls without commas (R !!,"text")
+- [X] T518 [BUG] Fix OPEN command grammar to allow empty params with timeout (OPEN X::10)
+
+### Detailed File Validations
+
+#### V1IE.m (IF/ELSE driver)
+- 3 labels: V1IE, V1IE1, V1IE2
+- Simple structure: WRITE and DO calls to external routines
+- All statements captured correctly
+
+#### V1IE1.m (IF/ELSE/$TEST tests - Part 1)
+- 12 labels testing IF conditions, ELSE behavior, $TEST special variable
+- Complex line: `I 1 S VCOMP=VCOMP_" " S:0 VCOMP=VCOMP_" " I  S VCOMP=VCOMP_"//"_$TEST`
+  - Multiple SET with postconditions on same line
+  - Argumentless IF (`I `)
+  - $TEST special variable references
+- All IF/ELSE pairs properly nested in ASG
+- Label call resolution working (EXAMINER called 12 times, all resolved)
+
+#### V1IE2.m (IF/ELSE/$TEST tests - Part 2)
+- 8 labels with complex $TEST evaluations
+- Features: argumentless IF, IF with comma-separated conditions
+- Line 73: `K A I $D(A),A S VCOMP=...` - KILL followed by IF with $DATA
+- All control flow structures preserved correctly
+
+#### V1IO.m (I/O Control driver) - **HAS ISSUES**
+- 2 labels: V1IO, END
+- **Line 8 missing**: READ with format controls (`R !!,"WHEN..."`)
+- **Line 10 missing**: READ + GOTO combination
+- Lines with simple OPEN, USE, CLOSE correctly captured
+- I/O statements (MOpenStatement, MUseStatement, MCloseStatement) present
+
+#### V1IO1.m (I/O Control tests - Part 1)
+- 10 labels testing $JOB, $IO, $X, $Y after I/O operations
+- All SET/WRITE/DO statements captured
+- No I/O commands in this file (tests results set by V1IO.m)
+
+#### V1IO2.m (I/O Control tests - Part 2)
+- 16 labels testing I/O effects
+- **Notable**: Label 554 has FOR with 17-element string list parameter
+  - `F I=532,533,534,5380,5381,5390,5391,5400,5401,5411,5412,5413,551,5521,5520,5522,553 S ...`
+  - Correctly captured as MForStatement with 17 parameters
+
+#### V1JST.m ($JUSTIFY/$SELECT/$TEXT driver)
+- 4 labels: V1JST, V1JST1, V1JST2, V1JST3
+- Simple driver structure calling external routines
+- All statements captured correctly
+
+### Observations for Code Generation
+
+1. **Argumentless IF (`I ` or `IF `)** - Uses prior $TEST value; code generation must track $TEST state
+2. **$TEST special variable** - Must be maintained across IF/ELSE executions
+3. **I/O commands** - OPEN/USE/CLOSE need Python equivalents (file handles or context managers)
+4. **$X, $Y, $IO, $JOB** - Special variables tracking cursor position and device; need runtime support
+5. **READ with timeout** - `R VAR:timeout` - Needs timed input implementation
+
+---
+
+## Phase 30: MUGJ Validation Checklist - V1JST1 to V1MAX
+
+**Purpose**: Validate $JUSTIFY/$SELECT/$TEXT functions and label/variable naming tests (Checklist 16/54).
+
+**Validation Date**: 2025-12-21
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1JST1.m | 21 | 98 | ✅ Complete | $JUSTIFY(expr,int) tests with FOR loop |
+| V1JST2.m | 17 | 92 | ✅ Complete | $JUSTIFY(num,int,int) 3-arg tests |
+| V1JST3.m | 22 | 90 | ✅ Complete | $SELECT and $TEXT tests; Z1,Z2,Z4 comment labels |
+| V1LL1.m | 20 | 85 | ✅ Complete | Labelless first line now captured in preamble label |
+| V1LL2.m | 28 | 104 | ✅ Complete | All label formats captured correctly |
+| V1LVN.m | 11 | 104 | ✅ Complete | Local variable naming tests (subscripted) |
+| V1MAX.m | 3 | 5 | ✅ Complete | Simple driver calling external V1MAX1/V1MAX2 |
+
+### Issues Fixed
+
+#### Issue T519: Labelless first line not captured in V1LL1.m ✅ FIXED
+
+**Problem**: V1LL1.m has a labelless first line:
+```mumps
+	S VCOMP="LABEL LESS";;;
+V1LL1	;YS-TS,V1LL,VALIDATION VERSION 7.1;31-AUG-1987;LINE LABELS -1-
+```
+
+The first line starts with whitespace (no label) and contains `S VCOMP="LABEL LESS"`. This statement was **not captured** in the ASG.
+
+**Fix Applied**: Modified `_build_routine()` in `src/m2py/parser/parser.py` to create a synthetic "preamble" label with an empty name (`''`) for any `ContLine` that appears before the first named label. The preamble label is inserted at the beginning of the routine's labels list.
+
+### Tasks
+
+- [X] T519 [BUG] Support labelless first lines in MUMPS files (V1LL1.m line 1 now captured)
+
+### Detailed File Validations
+
+#### V1JST1.m ($JUSTIFY 2-arg tests)
+- 21 labels testing `$JUSTIFY(expr1, intexpr2)` - right-padding strings
+- I-555 through I-571: Various expr1 types (string, number, binary ops, globals)
+- One FOR loop at label 566: `F I=1:1:255 S VCORR=VCORR_" "`
+- All $J intrinsic function calls captured correctly
+- EXAMINER subroutine resolved with 22 callers
+
+#### V1JST2.m ($JUSTIFY 3-arg tests)
+- 17 labels testing `$JUSTIFY(numexpr1, intexpr2, intexpr3)` - decimal formatting
+- I-572 through I-585: Rounding, sign handling, decimal places
+- Uses naked global references in I-585: `^V1A(2,2)`, `^(2,2,2)`, etc.
+- All naked global usage preserved in ASG expressions
+
+#### V1JST3.m ($SELECT and $TEXT tests)
+- 22 labels including utility labels Z1, Z2, Z4 for $TEXT testing
+- $SELECT tests (I-586 through I-592): Short-circuit evaluation, $TEST interaction
+- $TEXT tests (I-593 through I-600): Line reference, +intexpr, indirection
+- IF/ELSE pairs captured correctly for $TEST validation
+- Comment-only labels (Z1, Z2, Z4) correctly captured with 0 statements
+
+#### V1LL1.m (Line Labels test - Part 1)
+- 20 labels: 1 preamble (empty name) + 19 named labels
+- Labels like `%`, `%A`, `%ABZWQ`, `%01`, `%000000`, `%234EFGH` all captured
+- Preamble label contains `S VCOMP="LABEL LESS"` from line 1
+- Test I-609 "the first line is labelless" now correctly captured
+
+#### V1LL2.m (Line Labels test - Part 2)
+- 28 labels including single-letter (A), pure numeric (3, 00, 123), mixed (A1B2C3)
+- All variations of valid MUMPS labels captured correctly
+- EXAMINER subroutine resolved with 21 callers
+
+#### V1LVN.m (Local Variable Names)
+- 11 labels testing local variable naming rules
+- Tests `%`, `%ABCDEF`, `%1234` and regular names with subscripts
+- I-618: 8 levels of subscript depth `ABCDEFGH(1,2,3,4,5,6,7,8)` - captured correctly
+- All subscripted variable assignments preserved in MSetStatement
+
+#### V1MAX.m (Maximum Range Driver)
+- 3 labels: V1MAX (empty), V1MAX1, V1MAX2
+- Simple driver that calls external routines `^V1MAX1` and `^V1MAX2`
+- External routine calls marked as `is_resolved=False` (expected)
+
+### Observations for Code Generation
+
+1. **$JUSTIFY intrinsic** - Needs right-padding and decimal rounding implementation
+2. **$SELECT intrinsic** - Short-circuit evaluation (only evaluate until true found)
+3. **$TEXT intrinsic** - Requires runtime access to source file text (or precompiled text table)
+4. **Preamble labels** - Empty-name label for labelless first lines; code gen should execute before main entry
+5. **% prefix labels/variables** - Valid in MUMPS, need escaping or renaming for Python
+6. **Naked global references** - Must track last-used global context at runtime
+

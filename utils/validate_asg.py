@@ -135,6 +135,12 @@ def display_asg(routine: Any) -> None:
                 if hasattr(stmt, 'arguments') and stmt.arguments:
                     print(f"      arguments: {len(stmt.arguments)} item(s)")
                 
+                if hasattr(stmt, 'device_expr') and stmt.device_expr:
+                    print(f"      device_expr: {format_asg_node(stmt.device_expr, 3, max_depth=2)}")
+                
+                if hasattr(stmt, 'timeout') and stmt.timeout:
+                    print(f"      timeout: {format_asg_node(stmt.timeout, 3, max_depth=2)}")
+                
                 if hasattr(stmt, 'loop_var') and stmt.loop_var:
                     print(f"      loop_var: {stmt.loop_var}")
                 

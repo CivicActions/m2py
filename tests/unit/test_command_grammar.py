@@ -143,9 +143,10 @@ class TestReadCommand:
         assert len(model.args) == 3
 
     def test_read_with_timeout(self, command_metamodel):
-        """R X:30"""
+        """R X:30 - timeout is now inside arg.arg (ReadTargetWithTimeout)"""
         model = command_metamodel.model_from_str("R X:30", "ReadCommand")
-        assert model.args[0].timeout is not None
+        # New structure: ReadArg.arg = ReadTargetWithTimeout
+        assert model.args[0].arg.timeout is not None
 
     def test_read_single_char(self, command_metamodel):
         """R *X (single character read)"""

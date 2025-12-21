@@ -90,3 +90,65 @@ def test_io_commands_with_postconditions():
     for stmt in label.body.statements:
         assert stmt.postcondition is not None
 
+
+def test_open_command_with_timeout():
+    """Test OPEN command with timeout (single colon syntax)."""
+    parser = MUMPSParser()
+    routine = parser.parse("TEST\n O X:5\n")
+    
+    label = routine.labels[0]
+    stmt = label.body.statements[0]
+    
+    assert isinstance(stmt, MOpenStatement)
+    assert stmt.device_expr is not None
+    assert stmt.device_expr.name == "X"
+    assert stmt.timeout is not None
+    assert stmt.timeout.value == 5
+    assert stmt.parameters == []
+
+
+def test_open_command_with_double_colon_timeout():
+    """Test OPEN command with double colon timeout (::timeout syntax)."""
+    parser = MUMPSParser()
+    routine = parser.parse("TEST\n O X::10\n")
+    
+    label = routine.labels[0]
+    stmt = label.body.statements[0]
+    
+    assert isinstance(stmt, MOpenStatement)
+    assert stmt.device_expr is not None
+    assert stmt.device_expr.name == "X"
+    assert stmt.timeout is not None
+    assert stmt.timeout.value == 10
+    assert stmt.parameters == []
+
+
+def test_open_command_with_params():
+    """Test OPEN command with parameters."""
+    parser = MUMPSParser()
+    routine = parser.parse('TEST\n O X:("ABC")\n')
+    
+    label = routine.labels[0]
+    stmt = label.body.statements[0]
+    
+    assert isinstance(stmt, MOpenStatement)
+    assert stmt.device_expr is not None
+    assert stmt.device_expr.name == "X"
+    assert stmt.timeout is None
+    assert len(stmt.parameters) == 1
+
+
+def test_open_command_with_params_and_timeout():
+    """Test OPEN command with parameters and timeout."""
+    parser = MUMPSParser()
+    routine = parser.parse('TEST\n O X:("A":0:2048):5\n')
+    
+    label = routine.labels[0]
+    stmt = label.body.statements[0]
+    
+    assert isinstance(stmt, MOpenStatement)
+    assert stmt.device_expr is not None
+    assert stmt.device_expr.name == "X"
+    assert stmt.timeout is not None
+    assert stmt.timeout.value == 5
+    assert len(stmt.parameters) == 3

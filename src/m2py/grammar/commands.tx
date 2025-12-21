@@ -107,8 +107,10 @@ Tab: val=/\?/ expr=Expr;
 CharCode: val=/\*/ expr=Expr;
 
 // READ command: R|READ args
+// Format controls (!, #) can be adjacent without commas (like WRITE)
+// Other args need comma separation
 ReadCommand:
-    /[Rr][Ee][Aa][Dd]|[Rr]/ postcond=Postcondition? WS args+=ReadArg[/,/]
+    /[Rr][Ee][Aa][Dd]|[Rr]/ postcond=Postcondition? WS? args*=ReadArg
 ;
 
 // Read argument: can be format control, prompt, or variable target
@@ -118,16 +120,22 @@ ReadCommand:
 //   VAR or VAR:timeout - variable read (input from device)
 //   *VAR or *VAR:timeout - single char read
 //   "prompt",VAR:timeout - prompt followed by read
-//   !,?10,"prompt",VAR - multiple format/prompt before variable
+//   !!?10,"prompt",VAR - multiple format/prompt before variable (! adjacent)
 ReadArg:
-    postcond=Postcondition? (
-        // Format-only argument (no target)
-        format=ReadFormat |
-        // Prompt-only argument (no target)  
-        prompt=StringLiteral |
-        // Target with optional timeout (no format/prompt prefix in this arg)
-        target=ReadTarget (':' timeout=Expr)?
-    )
+    /,/? postcond=Postcondition? arg=ReadArgValue
+;
+
+ReadArgValue:
+    // Format controls (can be adjacent without comma)
+    ReadFormat |
+    // Prompt string
+    StringLiteral |
+    // Target with optional timeout
+    ReadTargetWithTimeout
+;
+
+ReadTargetWithTimeout:
+    target=ReadTarget (':' timeout=Expr)?
 ;
 
 // Format controls valid in READ (not * which is CharRead)
@@ -425,11 +433,19 @@ OpenCommand:
 ;
 
 // Open argument: device with optional parameters and timeout
+// Supports:
+//   X - device only
+//   X:timeout - device with timeout
+//   X:(params) - device with parameters
+//   X:(params):timeout - device with parameters and timeout
+//   X::timeout - device with empty params and timeout (double colon)
 OpenArg:
     device=Expr (
         ':' (
-            // Parenthesized parameters: :(param:param:...)
+            // Parenthesized parameters: :(param:param:...):
             '(' params+=Expr[':'] ')' (':' timeout=Expr)? |
+            // Empty params with timeout: ::timeout (double colon)
+            ':' timeout=Expr |
             // Simple timeout: :timeout
             timeout=Expr
         )

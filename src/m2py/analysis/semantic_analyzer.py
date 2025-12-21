@@ -378,6 +378,11 @@ class SemanticAnalyzer:
         - Format controls: !, #, ?n (output to device)
         - Prompts: "string" (output to device)
         - Targets: VAR or VAR:timeout (input from device)
+        
+        New grammar structure:
+        ReadArg: /,/? postcond=Postcondition? arg=ReadArgValue
+        ReadArgValue: ReadFormat | StringLiteral | ReadTargetWithTimeout
+        ReadTargetWithTimeout: target=ReadTarget (':' timeout=Expr)?
         """
         stmt = MReadStatement()
         object.__setattr__(stmt, 'parent', parent)
@@ -387,21 +392,40 @@ class SemanticAnalyzer:
         
         if hasattr(cmd, 'args') and cmd.args:
             for arg in cmd.args:
-                # Handle format controls (!, #, ?n)
-                if hasattr(arg, 'format') and arg.format:
-                    # Keep format control as-is (textX object)
+                # New grammar: arg contains arg=ReadArgValue
+                arg_value = getattr(arg, 'arg', arg)
+                
+                # Check what type of ReadArgValue this is
+                arg_cls = arg_value.__class__.__name__
+                
+                # Handle ReadTargetWithTimeout (has target attribute)
+                if hasattr(arg_value, 'target') and arg_value.target:
+                    target = self.analyze(arg_value.target, stmt)
+                    stmt.arguments.append(target)
+                    # Track variable being set
+                    if hasattr(arg_value.target, 'name'):
+                        self._track_variable(arg_value.target.name, arg_value.target, is_set=True)
+                    elif hasattr(arg_value.target, 'var') and hasattr(arg_value.target.var, 'name'):
+                        # CharRead: *VAR
+                        self._track_variable(arg_value.target.var.name, arg_value.target.var, is_set=True)
+                # Handle format controls (Newline, FormFeed, Tab)
+                elif arg_cls in ('Newline', 'FormFeed', 'Tab'):
+                    stmt.arguments.append(arg_value)
+                # Handle StringLiteral (prompt)
+                elif arg_cls == 'StringLiteral' or isinstance(arg_value, MLiteral):
+                    prompt_expr = self.analyze(arg_value, stmt)
+                    stmt.arguments.append(prompt_expr)
+                # Legacy: direct format/prompt/target attributes (old grammar)
+                elif hasattr(arg, 'format') and arg.format:
                     stmt.arguments.append(arg.format)
-                # Handle prompts ("string")
                 elif hasattr(arg, 'prompt') and arg.prompt:
                     prompt_expr = self.analyze(arg.prompt, stmt)
                     stmt.arguments.append(prompt_expr)
-                # Handle targets (VAR or VAR:timeout)
-                elif hasattr(arg, 'target') and arg.target:
-                    target = self.analyze(arg.target, stmt)
-                    stmt.arguments.append(target)
-                    # Track variable being set
-                    if hasattr(arg.target, 'name'):
-                        self._track_variable(arg.target.name, arg.target, is_set=True)
+                else:
+                    # Unknown - try to analyze it
+                    analyzed = self.analyze(arg_value, stmt)
+                    if analyzed:
+                        stmt.arguments.append(analyzed)
         
         return stmt
     
@@ -883,11 +907,24 @@ class SemanticAnalyzer:
             stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
         
         # OPEN device(:parameters)(:timeout)
+        # cmd.args is a list of OpenArg objects
         if hasattr(cmd, 'args') and cmd.args:
             args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
             if len(args) > 0:
-                stmt.device_expr = self.analyze(args[0], stmt)
-            # Additional parameters could be parsed from device expr subscripts
+                open_arg = args[0]
+                
+                # Handle OpenArg object
+                if hasattr(open_arg, 'device'):
+                    stmt.device_expr = self.analyze(open_arg.device, stmt)
+                    
+                    if hasattr(open_arg, 'params') and open_arg.params:
+                        stmt.parameters = [self.analyze(p, stmt) for p in open_arg.params]
+                        
+                    if hasattr(open_arg, 'timeout') and open_arg.timeout:
+                        stmt.timeout = self.analyze(open_arg.timeout, stmt)
+                else:
+                    # Fallback if it's just an expression (shouldn't happen with current grammar)
+                    stmt.device_expr = self.analyze(open_arg, stmt)
         
         return stmt
     
