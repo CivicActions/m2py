@@ -1192,6 +1192,41 @@ class TestControlFlowBodyIntegration:
         assert routine is not None
         assert len(routine.labels) > 0
     
+    def test_v1ac_do_block_nested_in_if(self, parser):
+        """T431: V1AC.m argumentless DO inside IF should capture dot-block body.
+        
+        Source structure:
+            if unix do
+            .   set xstr="..."
+            .   xecute xstr
+        
+        The SET and XECUTE should be in the DO body, not at label level.
+        """
+        from m2py.asg.statements import MDoStatement, MIfStatement, MSetStatement, MXecuteStatement
+        
+        routine = parser.parse_file("tests/functional/mugj/inref/V1AC.m")
+        v1ac = routine.labels[0]
+        
+        # V1AC should have exactly 3 top-level statements (NEW, SET, IF)
+        assert len(v1ac.body.statements) == 3, \
+            f"V1AC should have 3 top-level statements, got {len(v1ac.body.statements)}"
+        
+        # Third statement should be IF
+        if_stmt = v1ac.body.statements[2]
+        assert isinstance(if_stmt, MIfStatement), "Third statement should be IF"
+        
+        # IF should have 1 statement in then_scope (the DO)
+        assert len(if_stmt.then_scope.statements) == 1
+        do_stmt = if_stmt.then_scope.statements[0]
+        assert isinstance(do_stmt, MDoStatement), "IF body should contain DO"
+        assert not do_stmt.targets, "DO should be argumentless"
+        
+        # DO should have 2 statements in body (SET xstr and XECUTE xstr)
+        assert len(do_stmt.body.statements) == 2, \
+            f"DO body should have 2 statements, got {len(do_stmt.body.statements)}"
+        assert isinstance(do_stmt.body.statements[0], MSetStatement)
+        assert isinstance(do_stmt.body.statements[1], MXecuteStatement)
+    
     def test_v1forc2_nested_for_structure(self, parser):
         """T356: V1FORC2.m nested FOR loops should be properly structured."""
         from m2py.asg.statements import MForStatement

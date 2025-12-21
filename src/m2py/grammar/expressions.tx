@@ -19,7 +19,8 @@ UnaryExpr:
 // Binary operators - using regex to avoid issues with multi-char operators
 BinaryOp:
     // Multi-character operators first (order matters in PEG)
-    op=/\*\*|>=|<=|'>|'<|'=|'\?|]]|>\[|\[|\]/
+    // Note: '[ is "not contains", '] is "not follows", '> '< '= '? are also negated forms
+    op=/\*\*|>=|<=|'>|'<|'=|'\?|'\[|'\]|]]|\[|\]/
     | op=/[+\-*\/#\\=<>&!_?\]]/ 
 ;
 
@@ -139,7 +140,8 @@ STRING_VALUE:
     /"([^"]|"")*"/
 ;
 
-// Number (integer or decimal)
+// Number (integer or decimal, allowing leading decimal like .5)
+// MUMPS allows: 5, 5.5, .5, 5E3, .5E3, 5.5E-3
 NUMBER:
-    /[0-9]+(\.[0-9]+)?([Ee][+-]?[0-9]+)?/
+    /([0-9]+\.?[0-9]*|\.[0-9]+)([Ee][+-]?[0-9]+)?/
 ;

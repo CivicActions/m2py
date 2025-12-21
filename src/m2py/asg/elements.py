@@ -203,6 +203,7 @@ class MCall(ASGElement):
     routine: Optional[str] = None  # For ^routine external calls
     arguments: List[Any] = field(default_factory=list)  # MExpr arguments
     postcondition: Optional[Any] = None  # MExpr condition
+    indirection: Optional[Any] = None  # MExpr for DO @expr indirection
     
     # Resolution (populated in resolution pass)
     target: Optional[MLabel] = field(default=None, repr=False)

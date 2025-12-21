@@ -774,159 +774,250 @@ Fixed by updating `_expr_to_string()` to properly traverse the new Expr structur
 
 ---
 
-## Dependencies & Execution Order
+## Phase 14: MUGJ Validation Round 2 - Command Grammar Fixes ✅ COMPLETE
 
-### Phase Dependencies
+**Purpose**: Fix command parsing issues discovered during systematic MUGJ file-by-file validation (Checklist 1: INSTRUCT.m - V0.m).
 
-- **Setup (Phase 1)**: No dependencies - can start immediately
-- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Stories (Phase 3-6)**: All depend on Foundational phase completion
-  - US1 (P1): Can start immediately after Foundation
-  - US2 (P2): Can start after US1 (builds on FOR grammar)
-  - US3 (P2): Can start in parallel with US2 (independent GOTO feature)
-  - US4 (P3): Can start after US1 (needs basic parsing)
-- **Grammar Refactoring (Phase 7)**: Depends on Phase 6 completion - aligns architecture with spec
-- **ASG Population (Phase 8)**: Depends on Phase 7 - builds complete ASG from textX grammar
-- **Custom Class + Semantic Analyzer (Phase 9)**: Depends on Phase 8 - completes CST→ASG architecture
-- **User Story 5 (Phase 10)**: Depends on Phase 9 (uses complete ASG with proper types)
-- **Polish (Phase 11)**: Depends on all user stories for full validation
+**Context**: Phase 13 validated 376/376 files parse, but detailed file-by-file review revealed commands being silently dropped when grammar doesn't match. Parsing "succeeds" but statements are missing from ASG.
 
-### User Story Dependencies
+**Discovery Date**: 2025-12-20 (Checklist 1 of 54)
+**Completion Date**: 2025-12-20
 
-| Story | Depends On | Can Parallel With |
-|-------|------------|-------------------|
-| US1 | Foundation | None (MVP first) |
-| US2 | US1 (FOR grammar base) | US3 |
-| US3 | US1 (basic parsing) | US2 |
-| US4 | US1 (basic parsing) | US3 |
-| Phase 7 | US4 | None (refactoring) |
-| Phase 8 | Phase 7 | None (ASG completion) |
-| Phase 9 | Phase 8 | None (CST→ASG architecture) |
-| US5 (Phase 10) | Phase 9 | None (after ASG) |
-| Phase 12 | Phase 9 | None (structure fixes) |
-| Phase 13 | Phase 12 | Some parallelization (13a→13b→13c/13d/13e/13f/13g) |
+### 14a: READ Command Format Control ✅ COMPLETE
 
-### Within Each User Story
+**Issue**: READ command grammar fails when format controls (`!`, `?n`, `#`) or prompts appear without a following target variable.
 
-1. Tests written FIRST (should fail before implementation)
-2. Grammar rules before ASG wiring
-3. ASG wiring before analysis passes
-4. Integration test verification at end
+**Root Cause**: `ReadArg` grammar required `target=ReadTarget` but MUMPS allows format-only arguments.
 
-### Parallel Opportunities
+**Solution**: Restructured `ReadArg` in `src/m2py/grammar/commands.tx` to allow format-only, prompt-only, or target with optional timeout as separate alternatives.
 
-**Phase 1 (Setup)**:
-```
-T003, T004, T005, T006, T007, T008, T009 can run in parallel
-```
+- [X] T403 [US6] Fix ReadArg grammar to make target optional - format/prompt can stand alone
+- [X] T404 [US6] Fix Tab handling in ReadFormat - Tab correctly uses `?` + Expr
+- [X] T405 [US6] Add unit tests for READ format control variations in tests/unit/test_grammar.py (TestReadFormatControlGrammar class, 6 tests)
+- [X] T406 [US6] Verify MAIN.m line 4 parses correctly with READ and QUIT statements
 
-**Phase 2 (Foundation)**:
-```
-After T011 (base): T012, T013, T014, T015 can run in parallel
-After T016 (statements base): T017, T018, T019 can run in parallel
-```
+### 14b: OPEN Command Device Parameters ✅ COMPLETE
 
-**User Stories**:
-```
-After US1 complete:
-  - US2 and US3 can run in parallel
-  - US4 can run in parallel with US3
-After Phase 6 (US4) complete:
-  - Phase 7 (Grammar Refactoring)
-After Phase 7 complete:
-  - Phase 8 (ASG Population)
-After Phase 8 complete:
-  - Phase 9 (Custom Class + Semantic Analyzer Integration)
-After Phase 9 complete:
-  - Phase 10 (US5)
-```
+**Issue**: OPEN command grammar fails when device parameters are present.
 
----
+**Root Cause**: OpenCommand grammar only accepted simple expression, not timeout or parameter syntax.
 
-## Implementation Strategy
+**Solution**: Added `OpenArg` rule with support for `:timeout`, `:(params)`, and `:(params):timeout` syntax in `src/m2py/grammar/commands.tx`.
 
-### MVP First (User Story 1 Only)
+- [X] T407 [US6] Extend OpenCommand grammar to support `:timeout` syntax
+- [X] T408 [US6] Extend OpenCommand grammar to support `:(param:param:...)` syntax
+- [X] T409 [US6] Add unit tests for OPEN device parameters in tests/unit/test_grammar.py (TestOpenDeviceParametersGrammar class, 5 tests)
+- [X] T410 [US6] Verify RESTORE.m OPEN statement captured in ASG
 
-1. Complete Phase 1: Setup (~10 tasks)
-2. Complete Phase 2: Foundational (~17 tasks)
-3. Complete Phase 3: User Story 1 (~21 tasks)
-4. **STOP and VALIDATE**: V1FORA.m parses with bounded FOR classification
-5. Deploy/demo if ready
+### 14c: Continuation Line Association ✅ COMPLETE
 
-### Incremental Delivery
+**Issue**: Continuation lines 5-7 in MAIN.m weren't being parsed due to expression grammar issues.
 
-| Increment | Stories | Validation |
-|-----------|---------|------------|
-| MVP | US1 | V1FORA.m parses |
-| Iteration 2 | US1 + US2 | V1FORC series passes |
-| Iteration 3 | US1-3 | V1FORC2 GOTO+FOR works |
-| Iteration 4 | US1-4 | V1NX variable scope works |
-| **Refactor** | Phase 7 | Full textX grammar, 425 tests still pass |
-| **ASG Complete** | Phase 8 | Statement bodies populated, expression ASG |
-| **Architecture** | Phase 9 | CST→Semantic Analyzer→ASG, all tests pass with MExpr |
-| Iteration 5 | US5 (Phase 10) | All special features with complete ASG |
-| Final | All + Polish (Phase 11) | 100% MUGJ |
-| **Code Gen Ready** | Phase 12 | Control flow bodies populated, 576 tests |
+**Root Cause**: Two issues discovered during debugging:
+1. `'[` (not-contains) operator missing from BinaryOp regex in `src/m2py/grammar/expressions.tx`
+2. DO with indirection (`D @VAR` or `D @(expr)`) not supported in DoTarget grammar
 
-### Risk Mitigation
+**Solution**: 
+- Added `'\[` to BinaryOp regex pattern
+- Added `DoIndirect` rule for DO command indirection support
 
-- **GOTO in nested FOR (High Risk)**: Address in US3 early; V1FORC2 is the key test
-- **Grammar complexity (Medium Risk)**: Build incrementally; validate each command
-- **Grammar refactoring (Medium Risk)**: 425 existing tests provide regression safety
-- **ASG Population (Medium Risk)**: Phase 8 builds on Phase 7; incremental sub-phases
-- **Custom Class Integration (Medium Risk)**: Phase 9 is isolated; existing tests catch regressions
-- **Performance (Low Risk)**: Defer optimization to Polish phase
+- [X] T411 [US6] Debug continuation line parsing for MAIN.m - traced textX parse output
+- [X] T412 [US6] Fixed 'not contains' operator `'[` in expressions.tx
+- [X] T413 [US6] Added DoIndirect rule for DO @VAR and DO @(expr) in commands.tx
+
+### 14d: Validation Script Attribute Errors ✅ COMPLETE
+
+**Issue**: utils/validate_asg.py had attribute name mismatches.
+
+- [X] T414 [US6] Fix validate_asg.py formal_params → formal_list
+- [X] T415 [US6] Fix validate_asg.py MCall.label → MCall.name
+
+**Checkpoint**: Phase 14 complete - 602 tests passing, MAIN.m and RESTORE.m fully parse
+
+### 14d: Validation Script Attribute Errors (FIXED)
+
+**Issue**: utils/validate_asg.py had attribute name mismatches causing crashes:
+- `formal_params` should be `formal_list`
+- `label` attribute on MCall should be `name`
+
+**Status**: ✅ Fixed during this validation session
+
+- [X] T414 [US6] Fix validate_asg.py formal_params → formal_list
+- [X] T415 [US6] Fix validate_asg.py MCall.label → MCall.name
+
+**Checkpoint**: Phase 14 addresses command parsing gaps for code generation readiness
 
 ---
 
-## Summary
+## Phase 15: MUGJ Validation Checklist - INSTRUCT to V0 ✅ COMPLETE
 
-| Phase | Tasks | Story |
-|-------|-------|-------|
-| Setup | T001-T010 (10) | Infrastructure |
-| Foundational | T011-T027 (17) | Core ASG + Parser |
-| User Story 1 | T028-T048 (21) | Simple MUMPS (P1 MVP) |
-| User Story 2 | T049-T064 (16) | Complex FOR (P2) |
-| User Story 3 | T065-T087 (23) | GOTO Classification (P2) |
-| User Story 4 | T088-T107 (20) | Variable Scope (P3) |
-| **Grammar Refactor** | T108-T165 (58) | Full textX Grammar |
-| **ASG Population** | T193-T251 (59) | Complete ASG Build |
-| **Custom Class + Semantic Analyzer** | T252-T316 (65) | CST→ASG Architecture |
-| User Story 5 | T317-T328 (12) | Special Features (P3) |
-| Polish | T329-T342 (14) | Full Validation |
-| **Code Gen Readiness** | T343-T369 (27) | Control Flow Bodies |
-| **ASG Refinement** | T370-T402 (33) | MUGJ Validation Fixes |
-| **Total** | **375 tasks** | |
+**Purpose**: Capture remaining ASG correctness gaps found while validating INSTRUCT.m, MAIN.m, OVERVIEW.m, PROC.m, RESTORE.m, V.m, and V0.m for code generation readiness.
 
-### Parallel Opportunities Summary
+**Completion Date**: 2025-12-20
 
-- **Phase 1**: 7 tasks parallelizable
-- **Phase 2**: 11 tasks parallelizable (after dependencies)
-- **User Stories**: US2||US3, US4 (after US1)
-- **Phase 7 (Grammar)**: 7a-7g sub-phases, some parallelization possible
-- **Phase 8 (ASG)**: 8a-8f sub-phases, some parallelization within sub-phases
-- **Phase 9 (Custom Class)**: 9a-9h sub-phases, sequential due to dependencies
-- **Per-story tests**: All unit tests within a story are parallelizable
+### 15a: Commands After IF Are Silently Dropped (CRITICAL) ✅ FIXED
 
-### Independent Test Criteria
+**Issue**: Commands following IF on the same line are completely missing from ASG, not just misplaced. This loses control flow logic entirely.
 
-| Story | Test Criteria |
-|-------|---------------|
-| US1 | V1FORA.m parses, FOR classified BOUNDED |
-| US2 | V1FORC series passes, all 5 FOR types classified |
-| US3 | V1FORC2 GOTOs resolved, exits nested loops |
-| US4 | V1NX1 variable scope respects NEW |
-| Phase 7 | All 425 existing tests still pass with new grammar |
-| Phase 8 | walk_statements() returns non-empty, expression ASG built |
-| **Phase 9** | All tests pass with MExpr objects (not strings), 0 failures |
-| US5 | V1PAT patterns captured, functions parsed |
-| Phase 12 | Control flow bodies populated, 576 tests passing |
-| **Phase 13** | External calls fixed, all 376 MUGJ files validated, code gen ready |
+**Evidence**:
+- INSTRUCT.m line 31: `I IO="PRINTER" W #` → MIf captured, but `W #` **dropped**
+- RESTORE.m line 8: `I %TP="" G DONE` → MIf captured, but `G DONE` **dropped**
+- RESTORE.m line 18: `I %TP="END ROUTINES" Q` → MIf captured, but `Q` **dropped**
 
-### Suggested MVP Scope
+**Root Cause Analysis**: Investigation revealed the ASG WAS actually capturing IF body contents correctly. The issue was the validate_asg.py display tool wasn't showing nested then_scope contents.
 
-**User Story 1 only** (48 tasks through Phase 3)
-- Validates core architecture
-- Proves textX grammar approach
-- Demonstrates ASG structure
-- Provides foundation for remaining stories
+**Resolution**: Updated validate_asg.py to recursively display nested control flow bodies.
+
+- [X] T416 [US6] Verified IF same-line command capture already working correctly
+- [X] T417 [US6] Updated validate_asg.py to show nested then_scope contents
+- [X] T418 [US6] Verified INSTRUCT.m line 31 `W #` captured in IF body
+- [X] T419 [US6] Verified RESTORE.m line 8 `G DONE` captured in IF body
+- [X] T420 [US6] Verified RESTORE.m line 18 `Q` captured in IF body
+
+### 15b: Commands After KILL Are Dropped ✅ FIXED
+
+**Issue**: Line 26 in RESTORE.m is `K  Q` (KILL then QUIT), but ASG only shows MKill.
+
+**Root Cause**: KILL grammar `WS?` consumed all whitespace, treating `Q` as kill target instead of QUIT command.
+
+**Resolution**: Fixed KillCommand grammar in commands.tx to require single space before arguments: `' ' (exclusive=ExclusiveKill | vars+=KillTarget[/,/])?`
+
+- [X] T421 [US6] Fixed multi-command line parsing when KILL is first command
+- [X] T422 [US6] Verified RESTORE.m DONE label has MKill (no targets) and MQuit
+
+### 15c: DO Indirection Target Empty ✅ FIXED
+
+**Issue**: MAIN.m line 6 `D @($P($T(tab+ans),";",2))` shows as `MDo → CALL() body=0stmts` with empty target.
+
+**Root Cause**: `_analyze_DoCommand` in semantic_analyzer.py only checked `target.label`, not `target.indirect`.
+
+**Resolution**: 
+1. Added handling for `target.indirect` in `_analyze_DoCommand`
+2. Added `indirection` field to MCall dataclass
+
+- [X] T423 [US6] Fixed DO indirection - now captures MIndirection as call.indirection
+- [X] T424 [US6] Added test coverage for `D @(expr)` producing proper MCall with indirection
+
+### 15d: Kill-All Semantics ✅ FIXED
+
+**Issue**: RESTORE.m line 26 `K  Q` - the `K` with no arguments should kill all locals, but shows `MKill → LocalVar(Q)`.
+
+**Resolution**: Same fix as 15b - grammar now correctly separates KILL (no args) from QUIT command.
+
+- [X] T425 [US6] Verified KILL without arguments produces MKillStatement with empty targets list
+
+**Checkpoint**: Phase 15 complete - INSTRUCT.m, MAIN.m, OVERVIEW.m, PROC.m, RESTORE.m, V.m, V0.m all validated
+
+### Phase 15e: READ Command Full Argument Capture ✅ FIXED
+
+**Purpose**: Address additional issues found during re-validation of INSTRUCT.m to V0.m.
+
+- [X] T426 [MAIN.m] Fix `READ` command parsing to capture prompts and format controls (e.g., `R !,?10,"Prompt",ans,!`).
+
+**Root Cause**: `_analyze_ReadCommand` in semantic_analyzer.py only captured `target` arguments, skipping format controls and prompts.
+
+**Resolution**: Updated `_analyze_ReadCommand` to also capture:
+- Format controls (!, #, ?n) via `arg.format`
+- Prompts ("string") via `arg.prompt`
+
+- [X] T427 [RESTORE.m] Validate `XECUTE` and `Z-commands` - XECUTE correctly captures code as string literals. Z-commands (ZREMOVE, ZINSERT, ZSAVE) are implementation-specific and only appear inside XECUTE strings, which is correct behavior for static transpilation.
+
+**Checkpoint**: Phase 15e complete - READ arguments fully captured (602 tests passing)
+
+---
+
+### Phase 15f: Leading Decimal Number Fix ✅ FIXED
+
+**Purpose**: Fix parsing of MUMPS numbers that start with a decimal point (e.g., `.5`, `.00E3`).
+
+- [X] T428 [V1AC2.m] Fix NUMBER regex in expressions.tx to allow leading decimal point.
+
+**Issue Found During Validation**: V1AC2.m label 13 only had 1 statement instead of 3. The continuation line `S ITEM="I-13  ",VCOMP=$A(.00E3),VCORR=48 D EXAMINER` was failing to parse.
+
+**Root Cause**: NUMBER regex `/[0-9]+(\.[0-9]+)?([Ee][+-]?[0-9]+)?/` required at least one digit before the decimal point.
+
+**Resolution**: Updated NUMBER regex to `/([0-9]+\.?[0-9]*|\.[0-9]+)([Ee][+-]?[0-9]+)?/` which allows:
+- Standard integers and decimals: `5`, `5.`, `5.5`, `5.5E3`
+- Leading decimal without integer part: `.5`, `.00`, `.00E3`
+
+**Checkpoint**: Phase 15f complete - Leading decimal numbers parse correctly (602 tests passing)
+
+---
+
+## Phase 16: MUGJ Validation Checklist - V000006 to V1AC2 ✅ COMPLETE
+
+**Purpose**: Capture ASG correctness gaps found while validating V000006.m through V1AC2.m (Checklist 2/54).
+
+**Findings**:
+- ~~Argumentless DO blocks are not associated with their dot-indented bodies; V1AC.m `if unix do` loses the inline SET/XECUTE block (statements become top-level instead of inside the DO scope).~~ **FIXED**
+- WRITE format controls (`!`, `#`, etc.) remain as textX `Newline`/`Form` tokens rather than ASG expressions. This is cosmetic - the tokens contain usable `val` attributes for code generation.
+
+- [X] T429 Fix argumentless DO block handling so dot-indented bodies attach to the DO inside nested control flow. Fixed `_structure_do_blocks()` to search for argumentless DO in nested scopes (then_scope, else_scope, body). V1AC.m now correctly has SET/XECUTE in the DO body inside the IF.
+- [N/A] T430 WRITE format controls: NOT A BLOCKER. The textX `Newline`/`FormFeed`/`Tab` objects contain `val` attribute with the format character, usable for code generation. Converting to ASG types would be cosmetic consistency only.
+- [X] T431 Add regression coverage for V1AC.m in `tests/integration/test_mugj.py` to assert DO block scoping is correct.
+
+---
+
+## Phase 17: MUGJ Validation Checklist - V1BOA to V1BOA6
+
+**Purpose**: Capture ASG correctness gaps found while validating V1BOA.m through V1BOA6.m (Checklist 3/54).
+
+**Findings**:
+- DO calls were unresolved in validation output because `utils/validate_asg.py` only invoked `parse_file` and skipped `resolve_references()`, leaving `MCall.target`/`call_type` unset and `MLabel.callers` empty (blocks call-chain based variable analysis for codegen).
+
+- [X] T432 [VALIDATION] Run reference resolution inside `utils/validate_asg.py` (call `parser.resolve_references` after `parse_file`) so local DO/GOTO targets populate `MCall.target`, `call_type`, and `MLabel.callers` in validation dumps.
+- [X] T433 [VALIDATION] Add regression check that V1BOA1 EXAMINER DO calls report `is_resolved=True` and `call_type=LABEL_CALL` (unit test `tests/unit/test_resolver_call_types.py`).
+
+---
+
+## Phase 18: MUGJ Validation Checklist - V1BOB to V1BOB5A
+
+**Purpose**: Capture ASG correctness gaps found while validating V1BOB.m through V1BOB5A.m (Checklist 4/54).
+
+**Findings**:
+- V1BOB10.m tested the `']` (not follows) operator which was missing from the expression grammar, causing lines containing this operator to fail parsing silently. This resulted in only 23 statements captured instead of 125.
+
+- [X] T434 [BUG FIX] Add missing `']` (not follows) operator to BinaryOp grammar in `src/m2py/grammar/expressions.tx`. Changed pattern from `'\[|]]|>\[|\[|\]` to `'\[|'\]|]]|\[|\]` to include the `'\]` operator.
+- [X] T435 [VALIDATION] Verify V1BOB10.m parses correctly with 125 statements after grammar fix (was 23 before fix).
+
+---
+
+## Phase 19: MUGJ Validation Checklist - V1BOC1 to V1CALL1
+
+**Purpose**: Capture ASG correctness gaps found while validating V1BOC1.m through V1CALL1.m (Checklist 6/54).
+
+**Findings**:
+- V1BOC1.m, V1BOC2.m, V1BOC3.m, V1BR1.m, V1CALL.m parse correctly with expected labels/statements
+- V1BR.m line 37 completely missing from ASG due to IF multi-condition parsing failure
+- V1CALL1.m has SET after QUIT parsed as VIEW due to command boundary ambiguity
+
+### 19a: IF Command Grammar - Multiple Conditions (CRITICAL)
+
+**Issue**: IF command grammar doesn't support comma-separated conditions.
+
+**Root Cause**: `IfCommand` grammar only accepts single `condition=Expr`, but MUMPS allows comma-separated conditions acting as AND.
+
+**Evidence**: V1BR.m line 37 (`F I=1:1:3 F J=1:1:3 S V=... I I=2,J=2 S V=... B  S V=...`) fails to parse entirely. Label 170 shows only 5 statements instead of FOR loops + IF + SET + BREAK + SET.
+
+**Reference**: mumps-reference/1977__a108035.md states "IF with n arguments is equivalent in execution to n IFs, each with one argument."
+
+- [ ] T436 [BUG FIX] Change IfCommand grammar from `condition=Expr` to `conditions+=Expr[/,/]` in `src/m2py/grammar/commands.tx`
+- [ ] T437 [BUG FIX] Update `_analyze_IfCommand` in `src/m2py/analysis/semantic_analyzer.py` to handle list of conditions
+- [ ] T438 [VALIDATION] Verify V1BR.m line 37 parses with FOR, IF, SET, BREAK, SET commands
+- [ ] T439 [TEST] Add unit test for IF with multiple comma-separated conditions
+
+### 19b: QUIT Value vs Next Command Ambiguity (CRITICAL)
+
+**Issue**: `Q S X=1` fails because QUIT tries to parse `S X=1` as return value.
+
+**Root Cause**: QuitCommand grammar `(WS value=Expr)?` greedily matches any expression after whitespace, but MUMPS uses context to distinguish `Q X` (QUIT with value X) from `Q  S X=1` (QUIT then SET).
+
+**Evidence**: 
+- `parse_commands_from_line('Q S X=1')` returns 0 commands
+- `parse_commands_from_line('S VCOMP=VCOMP_"1 " Q  S VCOMP=VCOMP_"QUIT ERROR"')` returns `[SetCommand, QuitCommand, ViewCommand]` - third is WRONG
+
+- [ ] T440 [BUG FIX] Add negative lookahead in QuitCommand to prevent matching command keywords as return value
+- [ ] T441 [VALIDATION] Verify V1CALL1.m line 3 parses as SET, QUIT, SET (not SET, QUIT, VIEW)
+- [ ] T442 [TEST] Add unit test for QUIT followed by SET on same line
+
+**Checkpoint**: Phase 19 requires grammar fixes for IF multi-conditions and QUIT command boundaries

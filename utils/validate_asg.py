@@ -123,7 +123,7 @@ def display_asg(routine: Any) -> None:
                 if hasattr(stmt, 'targets') and stmt.targets:
                     print(f"      targets: {len(stmt.targets)} item(s)")
                     for j, target in enumerate(stmt.targets):
-                        target_repr = format_asg_node(target, 3, max_depth=2)
+                        target_repr = format_asg_node(target, 3, max_depth=5)
                         print(f"        [{j}] {target_repr}")
                 
                 if hasattr(stmt, 'value') and stmt.value:
@@ -144,8 +144,191 @@ def display_asg(routine: Any) -> None:
                 if hasattr(stmt, 'body') and stmt.body:
                     if hasattr(stmt.body, 'statements'):
                         print(f"      body: {len(stmt.body.statements)} statement(s)")
+                        for k, sub_stmt in enumerate(stmt.body.statements):
+                            print(f"        [{k}] {sub_stmt.__class__.__name__}")
+                            if hasattr(sub_stmt, 'body') and sub_stmt.body and hasattr(sub_stmt.body, 'statements'):
+                                print(f"          body: {len(sub_stmt.body.statements)} statement(s)")
+
+                if hasattr(stmt, 'then_scope') and stmt.then_scope:
+                    if hasattr(stmt.then_scope, 'statements') and stmt.then_scope.statements:
+                        print(f"      then_scope: {len(stmt.then_scope.statements)} statement(s)")
+                        for k, sub_stmt in enumerate(stmt.then_scope.statements):
+                            print(f"        [{k}] {sub_stmt.__class__.__name__}")
+                            if hasattr(sub_stmt, 'body') and sub_stmt.body and hasattr(sub_stmt.body, 'statements'):
+                                print(f"          body: {len(sub_stmt.body.statements)} statement(s)")
+
         else:
             print("  No statements")
+    
+    print()
+
+
+def format_compact_expr(node: Any, depth: int = 0) -> str:
+    """Format an expression compactly for single-line display."""
+    if depth > 4:
+        return "..."
+    
+    if node is None:
+        return "∅"
+    
+    if isinstance(node, str):
+        return f'"{node}"' if len(node) < 20 else f'"{node[:17]}..."'
+    
+    if isinstance(node, (int, float, bool)):
+        return str(node)
+    
+    if isinstance(node, list):
+        if not node:
+            return "[]"
+        items = [format_compact_expr(x, depth + 1) for x in node[:3]]
+        suffix = f"...+{len(node)-3}" if len(node) > 3 else ""
+        return f"[{', '.join(items)}{suffix}]"
+    
+    # Handle enums
+    if hasattr(node, '__class__') and hasattr(node.__class__, '__name__'):
+        class_name = node.__class__.__name__
+        if class_name.endswith('Type') or class_name.endswith('Operator'):
+            return node.name
+    
+    # Handle ASG nodes
+    if hasattr(node, '__dataclass_fields__'):
+        class_name = node.__class__.__name__
+        
+        # Special compact formats for common types
+        if class_name == 'MLiteral':
+            return f'L({node.value})'
+        if class_name == 'MVariable':
+            return f'V({node.name})'
+        if class_name == 'MGlobal':
+            subs = f"({','.join(format_compact_expr(s, depth+1) for s in node.subscripts[:2])})" if node.subscripts else ""
+            return f'^{node.name}{subs}'
+        if class_name == 'MNakedGlobal':
+            subs = f"({','.join(format_compact_expr(s, depth+1) for s in node.subscripts[:2])})" if node.subscripts else ""
+            return f'^{subs}'
+        if class_name == 'MBinaryOp':
+            left = format_compact_expr(node.left, depth + 1)
+            right = format_compact_expr(node.right, depth + 1)
+            op = node.operator.name if hasattr(node.operator, 'name') else str(node.operator)
+            return f'({left} {op} {right})'
+        if class_name == 'MUnaryOp':
+            operand = format_compact_expr(node.operand, depth + 1)
+            op = node.operator.name if hasattr(node.operator, 'name') else str(node.operator)
+            return f'({op}{operand})'
+        if class_name == 'MIntrinsicFunction':
+            args = ','.join(format_compact_expr(a, depth+1) for a in (node.arguments or [])[:2])
+            return f'${node.name}({args})'
+        if class_name == 'MExtrinsicFunction':
+            return f'$${"^" + node.routine if node.routine else ""}{node.name or ""}'
+        if class_name == 'MSpecialVariable':
+            return f'${node.name}'
+        if class_name == 'MIndirection':
+            return f'@{format_compact_expr(node.target, depth+1)}'
+        if class_name == 'MPatternMatch':
+            return f'?{node.pattern}'
+        if class_name == 'MCall':
+            target = f'^{node.routine}' if node.routine else ""
+            target += node.name or ""
+            return f'CALL({target})'
+        if class_name == 'MSetTarget':
+            if node.targets:
+                targets = ','.join(format_compact_expr(t, depth+1) for t in node.targets[:2])
+                return f'({targets})'
+            return format_compact_expr(node.variable, depth+1)
+        
+        # Generic format for other node types
+        return f'{class_name[:8]}(...)'
+    
+    return str(node)[:20]
+
+
+def format_compact_stmt(stmt: Any) -> str:
+    """Format a statement in one line with key semantic details."""
+    class_name = stmt.__class__.__name__
+    parts = [class_name.replace('Statement', '')]
+    
+    # Add postcondition if present
+    if hasattr(stmt, 'postcondition') and stmt.postcondition:
+        parts[0] += f':{format_compact_expr(stmt.postcondition)}'
+    
+    # Add key details based on statement type
+    if hasattr(stmt, 'targets') and stmt.targets:
+        targets = []
+        for t in stmt.targets[:3]:
+            t_str = format_compact_expr(t)
+            # Also show indirection if present
+            if hasattr(t, 'indirection') and t.indirection:
+                t_str = f"@{format_compact_expr(t.indirection)}"
+            targets.append(t_str)
+        if len(stmt.targets) > 3:
+            targets.append(f"...+{len(stmt.targets)-3}")
+        parts.append(f"→ {', '.join(targets)}")
+    
+    if hasattr(stmt, 'value') and stmt.value:
+        parts.append(f"= {format_compact_expr(stmt.value)}")
+    
+    if hasattr(stmt, 'condition') and stmt.condition:
+        parts.append(f"IF {format_compact_expr(stmt.condition)}")
+    
+    if hasattr(stmt, 'loop_var') and stmt.loop_var:
+        parts.append(f"loop={stmt.loop_var}")
+    
+    if hasattr(stmt, 'parameters') and stmt.parameters:
+        params = len(stmt.parameters)
+        parts.append(f"({params} params)")
+    
+    if hasattr(stmt, 'arguments') and stmt.arguments:
+        args = [format_compact_expr(a) for a in stmt.arguments[:2]]
+        parts.append(f"args=[{', '.join(args)}]")
+    
+    if hasattr(stmt, 'call') and stmt.call:
+        parts.append(format_compact_expr(stmt.call))
+    
+    if hasattr(stmt, 'body') and stmt.body and hasattr(stmt.body, 'statements'):
+        parts.append(f"body={len(stmt.body.statements)}stmts")
+    
+    # Show then_scope for IF statements
+    if hasattr(stmt, 'then_scope') and stmt.then_scope and hasattr(stmt.then_scope, 'statements'):
+        parts.append(f"then={len(stmt.then_scope.statements)}stmts")
+    
+    # Show else_scope for IF statements
+    if hasattr(stmt, 'else_scope') and stmt.else_scope and hasattr(stmt.else_scope, 'statements'):
+        parts.append(f"else={len(stmt.else_scope.statements)}stmts")
+    
+    return " ".join(parts)
+
+
+def display_statements_recursive(statements, indent: int = 1) -> None:
+    """Display statements with recursive nesting for control flow bodies."""
+    for i, stmt in enumerate(statements, 1):
+        compact = format_compact_stmt(stmt)
+        print(f"{'  ' * indent}{i:2}. {compact}")
+        
+        # Recursively show IF then_scope
+        if hasattr(stmt, 'then_scope') and stmt.then_scope and hasattr(stmt.then_scope, 'statements') and stmt.then_scope.statements:
+            print(f"{'  ' * (indent + 1)}┌─ then:")
+            display_statements_recursive(stmt.then_scope.statements, indent + 2)
+        
+        # Recursively show FOR/ELSE body
+        if hasattr(stmt, 'body') and stmt.body and hasattr(stmt.body, 'statements') and stmt.body.statements:
+            print(f"{'  ' * (indent + 1)}┌─ body:")
+            display_statements_recursive(stmt.body.statements, indent + 2)
+
+
+def display_compact_asg(routine: Any) -> None:
+    """Display compact ASG - one line per statement with key details."""
+    print("=" * 80)
+    print(f"COMPACT ASG: {routine.name}")
+    print("=" * 80)
+    
+    for label in routine.labels:
+        print(f"\n▸ {label.name or '(anonymous)'}" + (":" if label.formal_list else ""))
+        if label.formal_list:
+            print(f"  params: ({', '.join(label.formal_list)})")
+        
+        if label.body and label.body.statements:
+            display_statements_recursive(label.body.statements, indent=1)
+        else:
+            print("  (no statements)")
     
     print()
 
@@ -218,15 +401,18 @@ def analyze_completeness(routine: Any, source_lines: list[str]) -> dict:
 def main():
     """Main validation function."""
     parser = argparse.ArgumentParser(
-        description='Validate MUMPS ASG structure for Phase 13',
+        description='Validate MUMPS ASG structure for Phase 14 preparation',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Validate a single file
+  # Validate a single file with full detail
   uv run python utils/validate_asg.py tests/functional/mugj/inref/RESTORE.m
   
   # Validate multiple files
   uv run python utils/validate_asg.py tests/functional/mugj/inref/V1*.m
+  
+  # Compact mode - concise ASG output for validation review
+  uv run python utils/validate_asg.py tests/functional/mugj/inref/V1BOA.m
   
   # Show only summary
   uv run python utils/validate_asg.py --summary tests/functional/mugj/inref/RESTORE.m
@@ -234,6 +420,7 @@ Examples:
     )
     parser.add_argument('files', nargs='+', help='MUMPS files to validate')
     parser.add_argument('--summary', action='store_true', help='Show only summary, not full ASG')
+    parser.add_argument('--compact', action='store_true', help='Compact ASG output - one line per statement with key details')
     parser.add_argument('--no-checklist', action='store_true', help='Skip validation checklist')
     
     args = parser.parse_args()
@@ -265,8 +452,12 @@ Examples:
         # Parse and display ASG
         try:
             routine = parser_obj.parse_file(str(filepath))
+            # Run reference resolution so DO/GOTO calls show resolved targets
+            parser_obj.resolve_references(routine)
             
-            if not args.summary:
+            if args.compact:
+                display_compact_asg(routine)
+            elif not args.summary:
                 display_asg(routine)
             
             # Analyze completeness

@@ -13,7 +13,7 @@ uv add <package>                 # Add dependencies
 uv sync                          # Sync environment
 ```
 
-Never use bare `python`, `pip`, or `pytest` commands.
+Never use bare `python`, `pip`, or `pytest` commands. Avoid creating /tmp files - either run with `uv run python -c`, or create a permanent helper script in `/utils`.
 
 ## Key Reference Materials
 

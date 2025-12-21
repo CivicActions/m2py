@@ -60,6 +60,7 @@ def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MState
     
     while i < len(statements):
         stmt = statements[i]
+        # print(f"DEBUG: Processing {type(stmt).__name__} at index {i}")
         
         # Check if this is a control flow statement that captures remaining line
         if isinstance(stmt, MForStatement):
@@ -101,6 +102,54 @@ def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MState
     return result
 
 
+def _find_last_argumentless_do(stmt: MStatement) -> Optional[MDoStatement]:
+    """Find the last argumentless DO in a statement's nested scopes.
+    
+    Recursively searches through then_scope, else_scope, and body
+    to find the trailing argumentless DO that should capture dot-lines.
+    
+    Args:
+        stmt: Statement to search
+        
+    Returns:
+        The last argumentless DO found, or None
+    """
+    # Check nested scopes in order: then_scope, else_scope, body
+    # Return the DO from the deepest/last position
+    
+    if isinstance(stmt, MIfStatement) and stmt.then_scope and stmt.then_scope.statements:
+        last = stmt.then_scope.statements[-1]
+        # Recursively search in the last statement
+        nested = _find_last_argumentless_do(last)
+        if nested:
+            return nested
+        # Check if last statement itself is argumentless DO
+        if isinstance(last, MDoStatement) and not last.targets:
+            return last
+    
+    if isinstance(stmt, MElseStatement) and stmt.body and stmt.body.statements:
+        last = stmt.body.statements[-1]
+        nested = _find_last_argumentless_do(last)
+        if nested:
+            return nested
+        if isinstance(last, MDoStatement) and not last.targets:
+            return last
+    
+    if isinstance(stmt, MForStatement) and stmt.body and stmt.body.statements:
+        last = stmt.body.statements[-1]
+        nested = _find_last_argumentless_do(last)
+        if nested:
+            return nested
+        if isinstance(last, MDoStatement) and not last.targets:
+            return last
+    
+    # Direct check for argumentless DO
+    if isinstance(stmt, MDoStatement) and not stmt.targets:
+        return stmt
+    
+    return None
+
+
 def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
     """Collect dot-indented lines into argumentless DO block bodies.
     
@@ -111,6 +160,11 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
     . S X=1  ; dot_level=1, belongs to DO
     . W X    ; dot_level=1, belongs to DO
     S Y=2    ; dot_level=0, outside DO
+    
+    Also handles DO inside control flow:
+    
+    I cond D
+    . S X=1  ; belongs to the DO inside IF
     
     This function processes statements that have _dot_level markers
     and restructures them so dot-indented lines are inside the DO body.
@@ -130,7 +184,7 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
     while i < len(statements):
         stmt = statements[i]
         
-        # Check if this is an argumentless DO (block start)
+        # Check if this is an argumentless DO (block start) at this level
         if isinstance(stmt, MDoStatement) and not stmt.targets:
             # Find all following statements with dot_level > 0
             block_stmts = []
@@ -164,8 +218,41 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
             i = j  # Skip past the block statements
             
         else:
-            result.append(stmt)
-            i += 1
+            # Check if there are following dot-level statements that need
+            # to be attached to an argumentless DO nested inside this statement
+            j = i + 1
+            block_stmts = []
+            
+            while j < len(statements):
+                next_stmt = statements[j]
+                dot_level = getattr(next_stmt, '_dot_level', 0)
+                if dot_level > 0:
+                    if dot_level == 1:
+                        delattr(next_stmt, '_dot_level')
+                    else:
+                        next_stmt._dot_level = dot_level - 1
+                    block_stmts.append(next_stmt)
+                    j += 1
+                else:
+                    break
+            
+            if block_stmts:
+                # Find the argumentless DO inside this statement's nested scopes
+                target_do = _find_last_argumentless_do(stmt)
+                if target_do:
+                    # Attach the dot-statements to this DO's body
+                    target_do.body.statements = _structure_do_blocks(block_stmts)
+                    for child in target_do.body.statements:
+                        child.scope = target_do.body
+                    result.append(stmt)
+                    i = j  # Skip past the block statements
+                else:
+                    # No DO found - this is an error case, but keep statements
+                    result.append(stmt)
+                    i += 1
+            else:
+                result.append(stmt)
+                i += 1
     
     return result
 

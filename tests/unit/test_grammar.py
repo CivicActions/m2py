@@ -455,3 +455,190 @@ class TestIndirectionGrammar:
         routine = parser.parse(source)
         
         assert isinstance(routine, MRoutine)
+
+
+class TestReadFormatControlGrammar:
+    """Test READ command with format controls (T405)."""
+    
+    def test_read_variable_only(self):
+        """R variable should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tR ans\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MReadStatement'
+    
+    def test_read_newline_only(self):
+        """R ! (newline only) should parse (T403)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tR !\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MReadStatement'
+    
+    def test_read_tab_only(self):
+        """R ?10 (column position only) should parse (T404)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tR ?10\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MReadStatement'
+    
+    def test_read_format_then_variable(self):
+        """R !,?10,ans should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tR !,?10,ans\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MReadStatement'
+    
+    def test_read_prompt_and_variable(self):
+        """R "Prompt: ",ans should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tR "Prompt: ",ans\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+    
+    def test_read_complex_format(self):
+        """R !,?10,"Prompt: ",ans,! should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tR !,?10,"Prompt: ",ans,!\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MReadStatement'
+
+
+class TestOpenDeviceParametersGrammar:
+    """Test OPEN command with device parameters (T409)."""
+    
+    def test_open_simple(self):
+        """O device should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tO DEV\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MOpenStatement'
+    
+    def test_open_with_timeout(self):
+        """O device:timeout should parse (T407)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tO DEV:10\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MOpenStatement'
+    
+    def test_open_with_params(self):
+        """O device:(params) should parse (T408)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tO DEV:(1)\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MOpenStatement'
+    
+    def test_open_with_multiple_params(self):
+        """O device:(param:param:param) should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tO DEV:("AVL4":0:2048)\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MOpenStatement'
+    
+    def test_open_with_params_and_timeout(self):
+        """O device:(params):timeout should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tO DEV:("RW"):30\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+
+
+class TestNotContainsOperatorGrammar:
+    """Test 'not contains' operator '[ (T403 related)."""
+    
+    def test_not_contains_variables(self):
+        """X'[Y should parse as not-contains binary op."""
+        parser = MUMPSParser()
+        source = 'LABEL\tI X\'[Y\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MIfStatement'
+    
+    def test_not_contains_string(self):
+        """'"12345678"'[ans should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tI "12345678"\'[ans\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+
+
+class TestDoIndirectionGrammar:
+    """Test DO with various indirection forms (T411-T413)."""
+    
+    def test_do_indirect_variable(self):
+        """D @VAR should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tD @ROUTINE\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MDoStatement'
+    
+    def test_do_indirect_expression(self):
+        """D @(expr) should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tD @(X)\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MDoStatement'
+    
+    def test_do_indirect_complex_expression(self):
+        """D @($P($T(X),";",2)) should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tD @($P($T(X),";",2))\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == 'MDoStatement'

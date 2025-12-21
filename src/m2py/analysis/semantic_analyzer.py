@@ -316,7 +316,13 @@ class SemanticAnalyzer:
         return stmt
     
     def _analyze_ReadCommand(self, cmd: Any, parent: Any) -> MReadStatement:
-        """Analyze READ command into MReadStatement."""
+        """Analyze READ command into MReadStatement.
+        
+        READ arguments can be:
+        - Format controls: !, #, ?n (output to device)
+        - Prompts: "string" (output to device)
+        - Targets: VAR or VAR:timeout (input from device)
+        """
         stmt = MReadStatement()
         object.__setattr__(stmt, 'parent', parent)
         
@@ -325,7 +331,16 @@ class SemanticAnalyzer:
         
         if hasattr(cmd, 'args') and cmd.args:
             for arg in cmd.args:
-                if hasattr(arg, 'target') and arg.target:
+                # Handle format controls (!, #, ?n)
+                if hasattr(arg, 'format') and arg.format:
+                    # Keep format control as-is (textX object)
+                    stmt.arguments.append(arg.format)
+                # Handle prompts ("string")
+                elif hasattr(arg, 'prompt') and arg.prompt:
+                    prompt_expr = self.analyze(arg.prompt, stmt)
+                    stmt.arguments.append(prompt_expr)
+                # Handle targets (VAR or VAR:timeout)
+                elif hasattr(arg, 'target') and arg.target:
                     target = self.analyze(arg.target, stmt)
                     stmt.arguments.append(target)
                     # Track variable being set
@@ -445,7 +460,17 @@ class SemanticAnalyzer:
                 if hasattr(target, 'postcond') and target.postcond:
                     call.postcondition = self.analyze(target.postcond.condition, call)
                 
-                if hasattr(target, 'label') and target.label:
+                # Handle indirection: D @VAR or D @(expr)
+                if hasattr(target, 'indirect') and target.indirect:
+                    indirect = target.indirect
+                    # DoIndirect has 'var' (simple variable) or 'expr' (parenthesized expression)
+                    if hasattr(indirect, 'var') and indirect.var:
+                        call.indirection = self.analyze(indirect.var, call)
+                    elif hasattr(indirect, 'expr') and indirect.expr:
+                        call.indirection = self.analyze(indirect.expr, call)
+                    call.name = ""  # Indirection target - no static name
+                
+                elif hasattr(target, 'label') and target.label:
                     label_ref = target.label
                     call.name = label_ref.label or ""
                     if hasattr(label_ref, 'routine') and label_ref.routine:
