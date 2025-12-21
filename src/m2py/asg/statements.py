@@ -10,14 +10,14 @@ Defines all statement types for the MUMPS ASG:
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 from m2py.asg.elements import ASGElement, MScope
 from m2py.asg.enums import ForLoopType, ForParamType, GotoType
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MCall
-    from m2py.asg.expressions import MExpr
+    from m2py.asg.expressions import MExpr, MVariable
 
 
 # =============================================================================
@@ -156,9 +156,12 @@ class MForStatement(MStatement):
     
     Iterates over values, ranges, or indefinitely:
     F I=1:1:10 commands..., F I="A","B","C" commands..., F commands...
+    
+    The loop_var can be a simple variable name (str) or a subscripted
+    variable (MVariable) for cases like F J(1,2,3)=1:1:10
     """
     
-    loop_var: Optional[str] = None
+    loop_var: Optional[Union[str, "MVariable"]] = None
     parameters: List[MForParameter] = field(default_factory=list)
     body: MScope = field(default_factory=MScope)
     
@@ -262,12 +265,19 @@ class MKillStatement(MStatement):
     """KILL command - delete variables.
     
     Removes variables and their descendants:
-    K X, KILL ^GLOBAL, K (X,Y) exclusive
+    - K X, KILL ^GLOBAL - selective kill (targets list)
+    - K (X,Y) - exclusive kill (keep only X,Y and descendants)
+    - K (X,Y,Z),(X,W) - multiple exclusive groups (keep intersection: only X)
+    - K (X,W),Z - mixed: exclusive kill, then also kill Z
+    
+    When multiple exclusive groups are present, keep only variables that
+    appear in ALL groups (intersection semantics).
     """
     
-    targets: List[Any] = field(default_factory=list)  # MVariable, MGlobal
-    exclusive: bool = False
-    except_list: List[str] = field(default_factory=list)
+    targets: List[Any] = field(default_factory=list)  # MVariable, MGlobal - selective kill targets
+    exclusive: bool = False  # True if any exclusive groups present
+    except_list: List[str] = field(default_factory=list)  # Computed: intersection of all exclusive groups
+    except_groups: List[List[str]] = field(default_factory=list)  # Raw exclusive groups before intersection
 
 
 @dataclass

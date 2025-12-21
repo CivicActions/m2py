@@ -182,23 +182,36 @@ class SemanticAnalyzer:
     def _analyze_UnaryExpr(self, unary: Any, parent: Any) -> MExpr:
         """Unwrap UnaryExpr to get the underlying expression.
         
-        UnaryExpr: operator=UnaryOp? operand=PrimaryExpr
+        UnaryExpr: operators*=UnaryOp operand=PrimaryExpr
         
-        If there's no operator, just return the operand.
-        If there's an operator, create an MUnaryOp.
+        If there are no operators, just return the operand.
+        If there are operators, create nested MUnaryOp nodes (innermost first).
+        Example: --X becomes MUnaryOp('-', MUnaryOp('-', X))
         """
         operand = self.analyze(unary.operand, parent)
         
-        if hasattr(unary, 'operator') and unary.operator:
-            # Create MUnaryOp
-            op = MUnaryOp()
-            op_str = unary.operator.op if hasattr(unary.operator, 'op') else str(unary.operator)
-            object.__setattr__(op, 'operator', op_str)
-            object.__setattr__(op, 'operand', operand)
-            object.__setattr__(op, 'parent', parent)
-            # Update operand's parent
-            object.__setattr__(operand, 'parent', op)
-            return op
+        # Handle chained unary operators (new grammar uses 'operators' list)
+        operators = []
+        if hasattr(unary, 'operators') and unary.operators:
+            operators = list(unary.operators)
+        elif hasattr(unary, 'operator') and unary.operator:
+            # Backwards compatibility for old grammar
+            operators = [unary.operator]
+        
+        if operators:
+            # Apply operators from right to left (innermost first)
+            # E.g., --X means -(-(X)), so we apply inner - first
+            result = operand
+            for op_obj in reversed(operators):
+                op = MUnaryOp()
+                op_str = op_obj.op if hasattr(op_obj, 'op') else str(op_obj)
+                object.__setattr__(op, 'operator', op_str)
+                object.__setattr__(op, 'operand', result)
+                object.__setattr__(op, 'parent', parent)
+                # Update child's parent
+                object.__setattr__(result, 'parent', op)
+                result = op
+            return result
         
         return operand
     
@@ -230,18 +243,34 @@ class SemanticAnalyzer:
                         # Use explicit binary operator
                         op = ops[i]
                         op_str = op.op if hasattr(op, 'op') else str(op)
-                    elif (hasattr(right_expr, 'operator') and right_expr.operator and 
-                          hasattr(right_expr.operator, 'op') and 
-                          right_expr.operator.op in ('+', '-')):
-                        # No explicit binary op but right_expr has unary +/-
-                        # Treat the unary as the binary operator (textX parsing quirk)
-                        op_str = right_expr.operator.op
-                        # Clear the unary operator so it's not applied twice
-                        object.__setattr__(right_expr, 'operator', None)
                     else:
-                        # No operator available - this shouldn't happen for valid expressions
-                        # Just skip this operand (it may be part of pattern syntax)
-                        continue
+                        # No explicit binary op - check if right_expr has leading unary +/-
+                        # that should be treated as the binary operator (textX parsing quirk)
+                        # Handle both new 'operators' list and old 'operator' single value
+                        leading_ops = []
+                        if hasattr(right_expr, 'operators') and right_expr.operators:
+                            leading_ops = list(right_expr.operators)
+                        elif hasattr(right_expr, 'operator') and right_expr.operator:
+                            leading_ops = [right_expr.operator]
+                        
+                        if leading_ops:
+                            first_op = leading_ops[0]
+                            op_char = first_op.op if hasattr(first_op, 'op') else str(first_op)
+                            if op_char in ('+', '-'):
+                                # Use first unary as binary operator
+                                op_str = op_char
+                                # Remove the first operator from the list
+                                if hasattr(right_expr, 'operators'):
+                                    object.__setattr__(right_expr, 'operators', leading_ops[1:])
+                                else:
+                                    object.__setattr__(right_expr, 'operator', None)
+                            else:
+                                # Not +/-, skip
+                                continue
+                        else:
+                            # No operator available - this shouldn't happen for valid expressions
+                            # Just skip this operand (it may be part of pattern syntax)
+                            continue
                     
                     object.__setattr__(binary, 'operator', op_str)
                     object.__setattr__(binary, 'left', result)
@@ -411,7 +440,12 @@ class SemanticAnalyzer:
         object.__setattr__(stmt, 'parent', parent)
         
         if hasattr(cmd, 'var') and cmd.var:
-            stmt.loop_var = cmd.var
+            # For simple variables, use the string name; for subscripted, use the full object
+            if hasattr(cmd.var, 'subscripts') and cmd.var.subscripts:
+                # Convert subscripts to proper ASG expressions
+                stmt.loop_var = self._convert_loop_var_subscripts(cmd.var)
+            else:
+                stmt.loop_var = cmd.var.name if hasattr(cmd.var, 'name') else cmd.var
             self._track_variable(cmd.var, cmd, is_set=True)
         
         if hasattr(cmd, 'params') and cmd.params:
@@ -438,6 +472,38 @@ class SemanticAnalyzer:
         stmt.loop_type = self._classify_for_params(stmt.parameters)
         
         return stmt
+    
+    def _convert_loop_var_subscripts(self, var: Any) -> Any:
+        """Convert a loop variable's subscripts to proper ASG expressions.
+        
+        Args:
+            var: A LocalVariable or GlobalVariable with subscripts
+            
+        Returns:
+            A new variable with subscripts converted to ASG expressions
+        """
+        converted_subscripts = []
+        for sub in var.subscripts:
+            if sub is None:
+                continue
+            # Already an MExpr - keep it
+            if isinstance(sub, MExpr):
+                converted_subscripts.append(sub)
+            else:
+                # Convert via analyze
+                converted_subscripts.append(self.analyze(sub, var))
+        
+        # Create new variable with converted subscripts
+        if isinstance(var, MGlobal):
+            new_var = MGlobal()
+            new_var.name = var.name
+            new_var.subscripts = converted_subscripts
+            return new_var
+        else:
+            new_var = MVariable()
+            new_var.name = var.name
+            new_var.subscripts = converted_subscripts
+            return new_var
     
     def _classify_for_params(self, params: List[MForParameter]) -> ForLoopType:
         """Classify FOR loop type from parameters."""
@@ -564,19 +630,63 @@ class SemanticAnalyzer:
         return stmt
     
     def _analyze_KillCommand(self, cmd: Any, parent: Any) -> MKillStatement:
-        """Analyze KILL command into MKillStatement."""
+        """Analyze KILL command into MKillStatement.
+        
+        Handles:
+        - K (no args) - kill all locals
+        - K X,Y - selective kill of X and Y
+        - K (X,Y) - exclusive kill (keep only X,Y)
+        - K (X,Y,Z),(X,W) - multiple exclusive groups (keep intersection)
+        - K (X,W),Z - mixed: exclusive then selective
+        """
         stmt = MKillStatement()
         object.__setattr__(stmt, 'parent', parent)
         
         if hasattr(cmd, 'postcond') and cmd.postcond:
             stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
         
-        if hasattr(cmd, 'exclusive') and cmd.exclusive:
+        # New grammar structure: args is a list of KillArgument
+        if hasattr(cmd, 'args') and cmd.args:
+            exclusive_groups = []
+            selective_targets = []
+            
+            for arg in cmd.args:
+                # Check if this is an exclusive group (has 'exclusive' flag and 'except' list)
+                if hasattr(arg, 'exclusive') and arg.exclusive:
+                    # This is an exclusive group: (X,Y,Z)
+                    except_list = getattr(arg, 'except', None) or getattr(arg, 'except_', None)
+                    if except_list:
+                        exclusive_groups.append(list(except_list))
+                elif hasattr(arg, 'target') and arg.target:
+                    # This is a selective target
+                    selective_targets.append(self.analyze(arg.target, stmt))
+            
+            # Process exclusive groups
+            if exclusive_groups:
+                stmt.exclusive = True
+                stmt.except_groups = exclusive_groups
+                
+                # Compute intersection of all exclusive groups
+                if len(exclusive_groups) == 1:
+                    stmt.except_list = exclusive_groups[0]
+                else:
+                    # Intersection: keep only vars that appear in ALL groups
+                    result = set(exclusive_groups[0])
+                    for group in exclusive_groups[1:]:
+                        result &= set(group)
+                    stmt.except_list = sorted(list(result))
+            
+            # Add selective targets (these are killed AFTER exclusive processing)
+            stmt.targets = selective_targets
+        
+        # Legacy support: old grammar structure with 'exclusive' attribute
+        elif hasattr(cmd, 'exclusive') and cmd.exclusive:
             stmt.exclusive = True
             exc = cmd.exclusive
             except_list = getattr(exc, 'except', None) or getattr(exc, 'except_', None)
             if except_list:
                 stmt.except_list = list(except_list)
+                stmt.except_groups = [list(except_list)]
         elif hasattr(cmd, 'vars') and cmd.vars:
             for v in cmd.vars:
                 stmt.targets.append(self.analyze(v, stmt))

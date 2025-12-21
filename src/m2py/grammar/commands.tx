@@ -43,7 +43,18 @@ Command:
 
 // SET command: S|SET target=value,target=value,...
 SetCommand:
-    /[Ss][Ee][Tt]|[Ss]/ postcond=Postcondition? WS assignments+=Assignment[/,/]
+    /[Ss][Ee][Tt]|[Ss]/ postcond=Postcondition? WS assignments+=SetArgument[/,/]
+;
+
+// SET argument: can be a regular assignment, or argument-level indirection
+// Argument-level indirection (@VAR) contains the complete "target=value" text
+SetArgument:
+    Assignment | SetIndirection
+;
+
+// Argument-level indirection in SET: @VAR where VAR contains "target=value"
+SetIndirection:
+    indirect=Indirection
 ;
 
 // Single assignment: target=value or (targets)=value
@@ -152,8 +163,9 @@ ElseCommand:
 // =============================================================================
 
 // FOR command: F|FOR var=forparams or argumentless FOR
+// Note: var can be a subscripted variable like J(1,2,3)
 ForCommand:
-    /[Ff][Oo][Rr]|[Ff]/ (WS var=VARNAME '=' params+=ForParam[/,/])?
+    /[Ff][Oo][Rr]|[Ff]/ (WS var=LocalVariable '=' params+=ForParam[/,/])?
 ;
 
 // FOR parameter: value, start:step, or start:step:end
@@ -171,8 +183,9 @@ GotoCommand:
 ;
 
 // GOTO target: label, label+offset, label^routine, label+offset^routine
+// Postcondition comes AFTER the label: G ABC:X=1
 GotoTarget:
-    postcond=Postcondition? label=LabelRef
+    label=LabelRef postcond=Postcondition?
 ;
 
 // DO command: D|DO targets or argumentless DO
@@ -181,13 +194,14 @@ DoCommand:
 ;
 
 // DO target: label reference, indirection, or label with args
+// Postcondition comes AFTER the label/indirection: D ABC:X=1
 DoTarget:
-    postcond=Postcondition? (
+    (
         // Indirection: @expr or @(expr)
         indirect=DoIndirect |
         // Regular label reference
         label=LabelRef args=FunctionArgs?
-    )
+    ) postcond=Postcondition?
 ;
 
 // DO indirection: @VAR or @(expr)
@@ -200,11 +214,13 @@ DoIndirect:
     ) args=FunctionArgs?
 ;
 
-// Label reference: label, label+offset, label^routine, ^routine
+// Label reference: label, label+offset, label^routine, label+^routine, ^routine
 // NOTE: MUMPS labels can be numeric (1, 012, 0) or alphanumeric (%ABC, LABEL1)
 // Uses OffsetExpr instead of Expr to prevent consuming ^routine as a global variable
+// The offset is optional when immediately followed by ^routine (means offset 0):
+//   G LABEL+^ROUTINE is equivalent to G LABEL+0^ROUTINE
 LabelRef:
-    (label=LABELNAME ('+' offset=OffsetExpr)?)? ('^' routine=VARNAME)?
+    (label=LABELNAME ('+' offset=OffsetExpr?)?)? ('^' routine=VARNAME)?
 ;
 
 // Label name - can be:
@@ -279,19 +295,24 @@ NewVar:
     name=VARNAME subscripts=Subscripts?
 ;
 
-// KILL command: K|KILL vars or exclusive KILL
+// KILL command: K|KILL killarglist
+// killarglist = comma-separated killarguments
+// killargument = glvn (selective) | (L lname) (exclusive)
+// Multiple exclusive groups: keep only vars in ALL groups (intersection)
+// Mixed: K (X,W),Z means exclusive kill keeping X,W, then also kill Z
 // Note: K with no space before next command means kill all.
 // K<space>VAR means kill VAR. K<space><space>CMD means kill all then CMD.
 KillCommand:
-    /[Kk][Ii][Ll][Ll]|[Kk]/ postcond=Postcondition? (' ' (exclusive=ExclusiveKill | vars+=KillTarget[/,/]))?
+    /[Kk][Ii][Ll][Ll]|[Kk]/ postcond=Postcondition? (' ' args+=KillArgument[/,/])?
 ;
 
-ExclusiveKill:
-    '(' except+=VARNAME[/,/] ')'
+KillArgument:
+    exclusive?='(' except+=VARNAME[/,/] ')' | target=KillTarget
 ;
 
+// KILL target can be a global, local variable, or indirection (@expr)
 KillTarget:
-    GlobalVariable | LocalVariable
+    GlobalVariable | Indirection | LocalVariable
 ;
 
 // =============================================================================

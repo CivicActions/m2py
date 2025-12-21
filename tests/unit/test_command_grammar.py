@@ -190,13 +190,13 @@ class TestForCommand:
     def test_simple_for(self, command_metamodel):
         """F I=1:1:10"""
         model = command_metamodel.model_from_str("F I=1:1:10", "ForCommand")
-        assert model.var == "I"
+        assert model.var.name == "I"
         assert len(model.params) == 1
 
     def test_for_step_only(self, command_metamodel):
         """F I=1:1 (infinite loop with step)"""
         model = command_metamodel.model_from_str("F I=1:1", "ForCommand")
-        assert model.var == "I"
+        assert model.var.name == "I"
 
     def test_for_values(self, command_metamodel):
         """F I=1,2,3"""
@@ -207,6 +207,19 @@ class TestForCommand:
         """F (infinite loop)"""
         model = command_metamodel.model_from_str("F", "ForCommand")
         assert model.var is None
+    
+    def test_subscripted_for_var(self, command_metamodel):
+        """F J(1,2,3)=1:1:3 - subscripted loop variable (BUG-003)"""
+        model = command_metamodel.model_from_str("F J(1,2,3)=1:1:3", "ForCommand")
+        assert model.var.name == "J"
+        assert len(model.var.subscripts.args) == 3
+        assert len(model.params) == 1
+    
+    def test_single_subscripted_for_var(self, command_metamodel):
+        """F ARR(I)=1:1:10 - single subscript on loop variable"""
+        model = command_metamodel.model_from_str("F ARR(I)=1:1:10", "ForCommand")
+        assert model.var.name == "ARR"
+        assert len(model.var.subscripts.args) == 1
 
 
 class TestGotoCommand:
@@ -233,6 +246,20 @@ class TestGotoCommand:
         """G:X LABEL"""
         model = command_metamodel.model_from_str("G:X LABEL", "GotoCommand")
         assert model.postcond is not None
+    
+    def test_goto_arg_postcondition(self, command_metamodel):
+        """G ABC:X=1 - postcondition on target argument (BUG-004)"""
+        model = command_metamodel.model_from_str("G ABC:X=1", "GotoCommand")
+        assert model.postcond is None  # Command postcond is None
+        assert model.targets[0].postcond is not None  # Target postcond is set
+        assert model.targets[0].label.label == "ABC"
+    
+    def test_goto_multiple_arg_postconditions(self, command_metamodel):
+        """G ABC:X=1,DEF:Y=2 - multiple targets with postconditions"""
+        model = command_metamodel.model_from_str("G ABC:X=1,DEF:Y=2", "GotoCommand")
+        assert len(model.targets) == 2
+        assert model.targets[0].postcond is not None
+        assert model.targets[1].postcond is not None
 
 
 class TestDoCommand:
@@ -259,6 +286,13 @@ class TestDoCommand:
         """D (block start)"""
         model = command_metamodel.model_from_str("D", "DoCommand")
         assert model.targets is None or len(model.targets) == 0
+    
+    def test_do_arg_postcondition(self, command_metamodel):
+        """D LABEL:X=1 - postcondition on target argument (BUG-004)"""
+        model = command_metamodel.model_from_str("D LABEL:X=1", "DoCommand")
+        assert model.postcond is None  # Command postcond is None
+        assert model.targets[0].postcond is not None  # Target postcond is set
+        assert model.targets[0].label.label == "LABEL"
 
 
 class TestQuitCommand:
@@ -301,17 +335,40 @@ class TestNewKillCommands:
     def test_simple_kill(self, command_metamodel):
         """K X"""
         model = command_metamodel.model_from_str("K X", "KillCommand")
-        assert len(model.vars) == 1
+        assert len(model.args) == 1
+        assert model.args[0].target is not None
+        assert not model.args[0].exclusive  # False when not exclusive
 
     def test_kill_global(self, command_metamodel):
         """K ^GLOBAL"""
         model = command_metamodel.model_from_str("K ^GLOBAL", "KillCommand")
-        assert len(model.vars) == 1
+        assert len(model.args) == 1
+        assert model.args[0].target is not None
 
     def test_exclusive_kill(self, command_metamodel):
         """K (X,Y)"""
         model = command_metamodel.model_from_str("K (X,Y)", "KillCommand")
-        assert model.exclusive is not None
+        assert len(model.args) == 1
+        assert model.args[0].exclusive  # True-ish when exclusive
+        # textX uses 'except' attribute name from grammar
+        assert len(getattr(model.args[0], 'except')) == 2
+
+    def test_multiple_exclusive_groups(self, command_metamodel):
+        """K (X,Y,Z),(X,W) - multiple exclusive groups (intersection)"""
+        model = command_metamodel.model_from_str("K (X,Y,Z),(X,W)", "KillCommand")
+        assert len(model.args) == 2
+        assert model.args[0].exclusive
+        assert model.args[1].exclusive
+        assert getattr(model.args[0], 'except') == ["X", "Y", "Z"]
+        assert getattr(model.args[1], 'except') == ["X", "W"]
+
+    def test_mixed_exclusive_selective(self, command_metamodel):
+        """K (X,W),Z - mixed exclusive and selective"""
+        model = command_metamodel.model_from_str("K (X,W),Z", "KillCommand")
+        assert len(model.args) == 2
+        assert model.args[0].exclusive
+        assert getattr(model.args[0], 'except') == ["X", "W"]
+        assert model.args[1].target is not None
 
 
 class TestOtherCommands:

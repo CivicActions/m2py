@@ -281,7 +281,8 @@ class TestExtractForCommands:
         fors = extract_for_commands("F I=1:1:10 W I")
         assert len(fors) == 1
         assert fors[0].__class__.__name__ == "ForCommand"
-        assert fors[0].var == "I"
+        # fors[0].var is now a LocalVariable object
+        assert fors[0].var.name == "I"
 
     def test_no_for(self):
         """No FOR returns empty list."""

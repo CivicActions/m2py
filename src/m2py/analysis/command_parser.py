@@ -161,7 +161,8 @@ def classify_for_from_textx(for_cmd) -> tuple:
         for_cmd: A textX ForCommand model
         
     Returns:
-        Tuple of (ForLoopType, loop_var_name)
+        Tuple of (ForLoopType, loop_var) where loop_var is a string (simple var)
+        or LocalVariable (subscripted var) or ""
     """
     from ..asg.enums import ForLoopType, ForParamType
     
@@ -169,7 +170,11 @@ def classify_for_from_textx(for_cmd) -> tuple:
     if not for_cmd.var or not for_cmd.params:
         return ForLoopType.ARGUMENTLESS, ""
     
-    loop_var = for_cmd.var
+    # For simple variables, return the string name; for subscripted, return the object
+    if for_cmd.var.subscripts:
+        loop_var = for_cmd.var
+    else:
+        loop_var = for_cmd.var.name
     
     # Analyze parameters to determine loop type
     param_types = []
@@ -199,6 +204,81 @@ def classify_for_from_textx(for_cmd) -> tuple:
         return ForLoopType.STRING_LIST, loop_var
 
 
+def _convert_subscripts_to_asg(subscripts: List[Any]) -> List[Any]:
+    """Convert a list of subscript expressions to proper ASG nodes.
+    
+    Subscripts may contain raw textX Expr wrapper nodes when they have
+    complex expressions (e.g., A+B, $A(X)). This function converts them
+    to proper ASG expression nodes.
+    
+    Args:
+        subscripts: List of expression objects (may be textX or ASG nodes)
+        
+    Returns:
+        List of ASG expression nodes
+    """
+    from .semantic_analyzer import analyze_expression
+    from ..asg.expressions import MExpr
+    
+    result = []
+    for sub in subscripts:
+        if sub is None:
+            continue
+        # Already an ASG expression - keep it
+        if isinstance(sub, MExpr):
+            result.append(sub)
+        # textX wrapper - need to convert
+        elif hasattr(sub, '__class__') and 'textx' in sub.__class__.__module__.lower():
+            result.append(analyze_expression(sub))
+        # Has 'left' attribute (Expr wrapper from textX)
+        elif hasattr(sub, 'left'):
+            result.append(analyze_expression(sub))
+        # Has 'operand' attribute (UnaryExpr wrapper from textX)
+        elif hasattr(sub, 'operand'):
+            result.append(analyze_expression(sub))
+        else:
+            result.append(sub)
+    return result
+
+
+def _convert_loop_var_to_asg(loop_var: Any) -> Any:
+    """Convert a loop variable to proper ASG form with converted subscripts.
+    
+    For simple variables (string name), returns the name unchanged.
+    For subscripted variables, returns a copy with subscripts converted to ASG.
+    
+    Args:
+        loop_var: Either a string name or a LocalVariable/GlobalVariable
+        
+    Returns:
+        String name or variable with ASG subscripts
+    """
+    from ..asg.expressions import MVariable, MGlobal
+    
+    # Simple string name - return as-is
+    if isinstance(loop_var, str):
+        return loop_var
+    
+    # Variable with subscripts - convert subscripts
+    if hasattr(loop_var, 'subscripts') and loop_var.subscripts:
+        converted_subscripts = _convert_subscripts_to_asg(loop_var.subscripts)
+        
+        # Create a new variable with converted subscripts
+        if isinstance(loop_var, MGlobal):
+            new_var = MGlobal()
+            new_var.name = loop_var.name
+            new_var.subscripts = converted_subscripts
+            return new_var
+        else:
+            new_var = MVariable()
+            new_var.name = loop_var.name
+            new_var.subscripts = converted_subscripts
+            return new_var
+    
+    # No subscripts - return as-is
+    return loop_var
+
+
 def parse_for_command_to_asg(for_cmd) -> MForStatement:
     """Convert a textX ForCommand model to an MForStatement ASG node.
     
@@ -211,7 +291,13 @@ def parse_for_command_to_asg(for_cmd) -> MForStatement:
     statement = MForStatement()
     
     if for_cmd.var:
-        statement.loop_var = for_cmd.var
+        # for_cmd.var is now a LocalVariable object
+        # For simple variables, use the string name for backwards compatibility
+        # For subscripted variables, convert to proper ASG with clean subscripts
+        if for_cmd.var.subscripts:
+            statement.loop_var = _convert_loop_var_to_asg(for_cmd.var)
+        else:
+            statement.loop_var = for_cmd.var.name
     
     if for_cmd.params:
         for param in for_cmd.params:
@@ -516,7 +602,11 @@ def parse_for_command(for_text: str) -> Optional[MForStatement]:
     statement = MForStatement()
     
     if model.var:
-        statement.loop_var = model.var
+        # For simple variables, use the string name; for subscripted, use the full object
+        if model.var.subscripts:
+            statement.loop_var = model.var
+        else:
+            statement.loop_var = model.var.name
     
     if model.params:
         for param in model.params:
@@ -777,26 +867,48 @@ def _expr_to_string(expr) -> str:
                         op_str = op.op if hasattr(op, 'op') else str(op)
                         result += op_str
                         result += _expr_to_string(right_expr)
-                    elif (hasattr(right_expr, 'operator') and right_expr.operator and
-                          hasattr(right_expr.operator, 'op') and
-                          right_expr.operator.op in ('+', '-')):
-                        # No explicit binary op but right_expr has unary +/-
-                        # Treat it as the binary operator
-                        op_str = right_expr.operator.op
-                        result += op_str
-                        result += _expr_to_string(right_expr.operand)
                     else:
-                        # No operator - just append the right operand directly
-                        # This handles pattern match syntax like "1N"
-                        result += _expr_to_string(right_expr)
+                        # No explicit binary op - check for leading unary +/-
+                        # Handle both new 'operators' list and old 'operator' single value
+                        leading_ops = []
+                        if hasattr(right_expr, 'operators') and right_expr.operators:
+                            leading_ops = list(right_expr.operators)
+                        elif hasattr(right_expr, 'operator') and right_expr.operator:
+                            leading_ops = [right_expr.operator]
+                        
+                        if leading_ops:
+                            first_op = leading_ops[0]
+                            op_char = first_op.op if hasattr(first_op, 'op') else str(first_op)
+                            if op_char in ('+', '-'):
+                                # Treat it as the binary operator
+                                result += op_char
+                                # Remaining unary ops (if any)
+                                for remaining_op in leading_ops[1:]:
+                                    result += remaining_op.op if hasattr(remaining_op, 'op') else str(remaining_op)
+                                result += _expr_to_string(right_expr.operand)
+                            else:
+                                # No +/- found, just append with any unary ops
+                                for uop in leading_ops:
+                                    result += uop.op if hasattr(uop, 'op') else str(uop)
+                                result += _expr_to_string(right_expr.operand)
+                        else:
+                            # No operator - just append the right operand directly
+                            # This handles pattern match syntax like "1N"
+                            result += _expr_to_string(right_expr)
             return result
         # Fallback for old grammar structure
         elif hasattr(expr, 'unary_expr') and expr.unary_expr:
             return _reconstruct_expr(expr)
         return str(expr)
     elif cls_name == 'UnaryExpr' or cls_name == 'OffsetUnaryExpr':
-        op = expr.operator.op if hasattr(expr, 'operator') and expr.operator else ""
-        return f"{op}{_expr_to_string(expr.operand)}"
+        # Handle chained unary operators (new grammar uses 'operators' list)
+        ops_str = ""
+        if hasattr(expr, 'operators') and expr.operators:
+            for op_obj in expr.operators:
+                ops_str += op_obj.op if hasattr(op_obj, 'op') else str(op_obj)
+        elif hasattr(expr, 'operator') and expr.operator:
+            ops_str = expr.operator.op if hasattr(expr.operator, 'op') else str(expr.operator)
+        return f"{ops_str}{_expr_to_string(expr.operand)}"
     elif cls_name == 'OffsetParenExpr':
         return f"({_expr_to_string(expr.expr)})"
     else:
@@ -968,7 +1080,9 @@ def extract_for_from_line_textx(line_rest: str) -> Optional[tuple]:
     # This is everything after "FOR " or "F "
     for_content = ""
     if for_cmd.var:
-        for_content = f"{for_cmd.var}="
+        # Convert LocalVariable to string representation
+        var_str = _expr_to_string(for_cmd.var)
+        for_content = f"{var_str}="
         if for_cmd.params:
             param_strs = []
             for p in for_cmd.params:

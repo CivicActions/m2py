@@ -190,6 +190,78 @@ class TestUnaryOperators:
         """Parse unary minus."""
         model = expr_metamodel.model_from_str('-X', 'Expr')
         assert model is not None
+    
+    def test_double_negative(self, expr_metamodel):
+        """Parse double unary minus (BUG-002 fix)."""
+        model = expr_metamodel.model_from_str('--X', 'Expr')
+        assert model is not None
+        # Verify we got two unary operators
+        assert hasattr(model, 'left')
+        assert hasattr(model.left, 'operators')
+        assert len(model.left.operators) == 2
+    
+    def test_triple_negative(self, expr_metamodel):
+        """Parse triple unary minus."""
+        model = expr_metamodel.model_from_str('---X', 'Expr')
+        assert model is not None
+        assert len(model.left.operators) == 3
+    
+    def test_double_not(self, expr_metamodel):
+        """Parse double logical NOT (BUG-002 fix)."""
+        model = expr_metamodel.model_from_str("''X", 'Expr')
+        assert model is not None
+        assert len(model.left.operators) == 2
+    
+    def test_mixed_unary_plus_minus(self, expr_metamodel):
+        """Parse mixed unary +- operators."""
+        model = expr_metamodel.model_from_str('+-X', 'Expr')
+        assert model is not None
+        assert len(model.left.operators) == 2
+    
+    def test_not_then_minus(self, expr_metamodel):
+        """Parse NOT followed by minus."""
+        model = expr_metamodel.model_from_str("'-X", 'Expr')
+        assert model is not None
+        assert len(model.left.operators) == 2
+
+
+class TestChainedUnarySemantics:
+    """Test that chained unary operators produce correct ASG structure."""
+    
+    def test_double_negative_asg(self, expr_metamodel):
+        """Verify --X produces nested MUnaryOp nodes."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+        
+        model = expr_metamodel.model_from_str('--X', 'Expr')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+        
+        # Should be MUnaryOp('-', MUnaryOp('-', Variable))
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == '-'
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == '-'
+        # The innermost operand is a LocalVariable (textX class)
+        # It has a name attribute we can check
+        assert result.operand.operand.name == 'X'
+    
+    def test_double_not_asg(self, expr_metamodel):
+        """Verify ''X produces nested MUnaryOp nodes."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+        
+        model = expr_metamodel.model_from_str("''X", 'Expr')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+        
+        # Should be MUnaryOp("'", MUnaryOp("'", Variable))
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == "'"
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == "'"
+        # The innermost operand is a LocalVariable (textX class)
+        assert result.operand.operand.name == 'X'
 
 
 class TestIntrinsicFunctions:

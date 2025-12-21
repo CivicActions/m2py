@@ -11,9 +11,9 @@ Expr:
     left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*
 ;
 
-// Unary expression with optional prefix operator
+// Unary expression with optional prefix operators (can be chained: --X, ''X, +-X)
 UnaryExpr:
-    operator=UnaryOp? operand=PrimaryExpr
+    operators*=UnaryOp operand=PrimaryExpr
 ;
 
 // Binary operators - using regex to avoid issues with multi-char operators
@@ -55,20 +55,30 @@ OffsetExpr:
     left=OffsetUnaryExpr (ops+=BinaryOp right+=OffsetUnaryExpr)*
 ;
 
+// Offset unary expression with optional prefix operators (can be chained)
 OffsetUnaryExpr:
-    operator=UnaryOp? operand=OffsetPrimaryExpr
+    operators*=UnaryOp operand=OffsetPrimaryExpr
 ;
 
-// Primary expressions for offset - excludes GlobalVariable and NakedGlobal
+// Primary expressions for offset - includes subscripted globals only
+// (bare ^NAME is excluded because it could be a routine reference,
+// but ^NAME(...) is clearly a global variable in an expression)
 OffsetPrimaryExpr:
     OffsetParenExpr |
     ExtrinsicFunction |
     SpecialVariable |
     IntrinsicFunction |
+    SubscriptedGlobal |
     Indirection |
     LocalVariable |
     StringLiteral |
     NumericLiteral
+;
+
+// Global variable WITH subscripts - used in offset expressions
+// where bare ^NAME could be confused with routine reference
+SubscriptedGlobal:
+    '^' name=VARNAME subscripts=Subscripts
 ;
 
 // Parenthesized offset expression
@@ -128,9 +138,10 @@ IntrinsicFunction:
     '$' name=FUNCNAME args=FunctionArgs?
 ;
 
-// Extrinsic (user-defined) function: $$label^routine(args) or $$label(args)
+// Extrinsic (user-defined) function: $$label^routine(args) or $$label(args) or $$^routine(args)
+// The label is optional when a routine is specified: $$^routine means call entry point of routine
 ExtrinsicFunction:
-    '$$' label=VARNAME ('^' routine=VARNAME)? args=FunctionArgs?
+    '$$' label=VARNAME? ('^' routine=VARNAME)? args=FunctionArgs?
 ;
 
 // Function arguments

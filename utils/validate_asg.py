@@ -146,15 +146,21 @@ def display_asg(routine: Any) -> None:
                         print(f"      body: {len(stmt.body.statements)} statement(s)")
                         for k, sub_stmt in enumerate(stmt.body.statements):
                             print(f"        [{k}] {sub_stmt.__class__.__name__}")
-                            if hasattr(sub_stmt, 'body') and sub_stmt.body and hasattr(sub_stmt.body, 'statements'):
+                            # Show nested body scopes (e.g., FOR inside FOR)
+                            if hasattr(sub_stmt, 'body') and sub_stmt.body and hasattr(sub_stmt.body, 'statements') and sub_stmt.body.statements:
                                 print(f"          body: {len(sub_stmt.body.statements)} statement(s)")
+                            # Show nested then_scope for IF inside FOR body  
+                            if hasattr(sub_stmt, 'then_scope') and sub_stmt.then_scope and hasattr(sub_stmt.then_scope, 'statements') and sub_stmt.then_scope.statements:
+                                print(f"          then_scope: {len(sub_stmt.then_scope.statements)} statement(s)")
+                                for m, nested in enumerate(sub_stmt.then_scope.statements):
+                                    print(f"            [{m}] {nested.__class__.__name__}")
 
                 if hasattr(stmt, 'then_scope') and stmt.then_scope:
                     if hasattr(stmt.then_scope, 'statements') and stmt.then_scope.statements:
                         print(f"      then_scope: {len(stmt.then_scope.statements)} statement(s)")
                         for k, sub_stmt in enumerate(stmt.then_scope.statements):
                             print(f"        [{k}] {sub_stmt.__class__.__name__}")
-                            if hasattr(sub_stmt, 'body') and sub_stmt.body and hasattr(sub_stmt.body, 'statements'):
+                            if hasattr(sub_stmt, 'body') and sub_stmt.body and hasattr(sub_stmt.body, 'statements') and sub_stmt.body.statements:
                                 print(f"          body: {len(sub_stmt.body.statements)} statement(s)")
 
         else:
