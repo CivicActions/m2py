@@ -1809,3 +1809,78 @@ The first line starts with whitespace (no label) and contains `S VCOMP="LABEL LE
 5. **% prefix labels/variables** - Valid in MUMPS, need escaping or renaming for Python
 6. **Naked global references** - Must track last-used global context at runtime
 
+---
+
+## Phase 31: MUGJ Validation Checklist - V1MAX1 to V1NR
+
+**Purpose**: Validate maximum range and LOCK/OPEN/NAKED reference driver files (Checklist 17/54).
+
+**Validation Date**: 2025-12-21 (Re-validated)
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1MAX1.m | 9 | 69 | ✅ Complete | Large literal/string range tests, FOR loops, complex expressions |
+| V1MAX2.m | 7 | 43 | ✅ Complete | Deep subscript (15 levels) and 9-digit subscript tests |
+| V1MJA.m | 3 | 11 | ✅ Complete | Driver with postconditioned WRITE and external DO calls |
+| V1MJA1.m | 16 | 133 | ✅ Complete | LOCK variations including indirection `L @A` now captured |
+| V1MJA2.m | 14 | 107 | ✅ Complete | OPEN/CLOSE/USE statements, IF/ELSE, pattern matching |
+| V1MJB.m | 20 | 127 | ✅ Complete | Extensive LOCK variations with timeouts and targets |
+| V1NR.m | 3 | 4 | ✅ Complete | Naked reference driver, external routine calls |
+
+### Re-Validation Findings (2025-12-21)
+
+Previous issues (T520-T522) have been resolved. Current validation confirms:
+
+1. ✅ **LOCK command variations** - All standard forms work correctly:
+   - Simple lock: `L ^V1A(1,2)`
+   - Parenthesized list with timeout: `L (^V1A,^V1B):1`
+   - Postconditioned lock: `L:1=0.1 ^V1A(2,2)`
+   - Lock with timeout: `L ^V1A(2):1`
+   - Lock on local variables: `L A(1,1)`
+   - Argumentless unlock: `L`
+   - Lock operators: `+` and `-`
+
+2. ⚠️ **NEW ISSUE - LOCK with indirection not captured**:
+   - File: V1MJA1.m, line 55, label 635
+   - Source: `S A="^V1A" L @A K ^V1F`
+   - The `L @A` (LOCK with name indirection) is silently skipped
+   - Root cause: `LockTarget` grammar rule uses `VarRef` which is `GlobalVariable | LocalVariable`
+   - Indirection `@expr` is not part of `VarRef`, so the parse fails and command is dropped
+
+3. ✅ **I/O commands** - OPEN, CLOSE, USE, READ all captured correctly with:
+   - Device expressions
+   - Timeouts
+   - Postconditions
+   - Argument lists
+
+4. ✅ **Special variables** - `$Y`, `$JOB`, `$IO`, `$TEST`, `$D` all captured in expressions
+
+5. ✅ **Pattern matching** - Expressions like `$JOB?1N.N` properly captured as pattern match operations
+
+### Tasks
+
+- [x] T520 [BUG] Handle `K  L  Q` tails as Kill + unlock-only Lock (no targets) + Quit in command parsing.
+  - **Root cause**: LockCommand grammar used `WS?` which was greedy and consumed the next command keyword as a lock target.
+  - **Fix**: Changed LockCommand grammar to require single space before targets like KillCommand: `(' ' lockop=LockOp? (locklist=LockList | targets+=LockTarget[/,/]))?`
+  - **Result**: Now correctly parses "double-space = argumentless command" pattern. 642 tests pass.
+- [x] T521 [BUG] Preserve multi-command lines with K/LOCK/K in V1MJA1 (label 632/635).
+  - **Fixed by T520**: Grammar fix allows proper command separation.
+- [x] T522 [BUG] Fix empty labels 632/634/635 in V1MJB.
+  - **Fixed by T520**: Grammar fix plus semantic analyzer update to handle parenthesized lock lists (`locklist`).
+  - **Added**: `_analyze_LockCommand` now processes `cmd.locklist` for parenthesized lock targets like `L (^A,^B):1`.
+- [x] T523 [US5] Add indirection support to LOCK command grammar
+  - **File**: V1MJA1.m, label 635, line 55: `L @A`
+  - **Root cause**: `LockTarget` used `VarRef` which doesn't include `Indirection`
+  - **Fix**: Extended grammar to support indirection in lock targets:
+    - Added `LockListItem` rule: `indirect=IndirectChain | target=VarRef`
+    - Updated `LockTarget` rule: `postcond? (indirect | target) (':' timeout)?`
+    - Added `_analyze_lock_item()` and `_analyze_lock_target()` helper methods
+    - Reused existing `_analyze_indirect_chain()` for consistent handling
+  - **Result**: Lock indirection now captured with semantic structure:
+    - `is_indirect: True` flag for code generation
+    - `indirection`: The expression to dereference at runtime
+    - `indirection_levels`: Supports nested indirection (@@A)
+  - **Impact**: V1MJA1 label 635 now has 10 statements (was 7), all commands captured
+

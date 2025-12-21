@@ -395,6 +395,68 @@ class TestOtherCommands:
         model = command_metamodel.model_from_str("L ^GLOBAL", "LockCommand")
         assert len(model.targets) == 1
 
+    def test_lock_indirection(self, command_metamodel):
+        """L @A - single indirection"""
+        model = command_metamodel.model_from_str("L @A", "LockCommand")
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        assert target.indirect is not None
+        # IndirectChain has var attribute for simple variable
+        assert target.indirect.var.name == "A"
+        assert target.indirect.nested is None
+
+    def test_lock_double_indirection(self, command_metamodel):
+        """L @@A - double indirection"""
+        model = command_metamodel.model_from_str("L @@A", "LockCommand")
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        assert target.indirect is not None
+        # Nested indirection
+        assert target.indirect.nested is not None
+        assert target.indirect.nested.var.name == "A"
+
+    def test_lock_indirection_with_timeout(self, command_metamodel):
+        """L @A:1 - indirection with timeout"""
+        model = command_metamodel.model_from_str("L @A:1", "LockCommand")
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        assert target.indirect is not None
+        assert target.timeout is not None
+
+    def test_lock_paren_with_indirection(self, command_metamodel):
+        """L (@A,^B):1 - parenthesized list with indirection"""
+        model = command_metamodel.model_from_str("L (@A,^B):1", "LockCommand")
+        # Parenthesized list uses locklist instead of targets
+        assert model.locklist is not None
+        assert len(model.locklist.targets) == 2
+        # First item is indirection
+        first_item = model.locklist.targets[0]
+        assert first_item.indirect is not None
+        assert first_item.indirect.var.name == "A"
+        # Second item is global
+        second_item = model.locklist.targets[1]
+        assert second_item.target is not None
+
+    def test_lock_postcond_indirection(self, command_metamodel):
+        """L:X=1 @A - postcondition with indirection"""
+        model = command_metamodel.model_from_str("L:X=1 @A", "LockCommand")
+        assert model.postcond is not None
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        assert target.indirect is not None
+
+    def test_lock_increment(self, command_metamodel):
+        """L +^A - lock increment"""
+        model = command_metamodel.model_from_str("L +^A", "LockCommand")
+        assert model.lockop == "+"
+        assert len(model.targets) == 1
+
+    def test_lock_decrement(self, command_metamodel):
+        """L -^A - lock decrement"""
+        model = command_metamodel.model_from_str("L -^A", "LockCommand")
+        assert model.lockop == "-"
+        assert len(model.targets) == 1
+
     def test_merge(self, command_metamodel):
         """M ^DEST=^SRC"""
         model = command_metamodel.model_from_str("M ^DEST=^SRC", "MergeCommand")
@@ -439,3 +501,181 @@ class TestPostconditions:
         """Q:DONE 1"""
         model = command_metamodel.model_from_str("Q:DONE 1", "QuitCommand")
         assert model.postcond is not None
+
+
+class TestIndirection:
+    """Tests for indirection (@) parsing across all commands.
+    
+    All commands use the same Indirection rule from expressions.tx,
+    which handles:
+    - Single indirection: @VAR
+    - Nested indirection: @@VAR (parsed as @(@VAR))
+    - Expression indirection: @(expr)
+    - Subscripted indirection: @VAR(sub1,sub2)
+    
+    DO, GOTO, and LOCK use IndirectChain for additional features
+    like @label^routine patterns.
+    """
+
+    # --- KILL indirection ---
+    def test_kill_indirection(self, command_metamodel):
+        """K @A - kill indirection"""
+        model = command_metamodel.model_from_str("K @A", "KillCommand")
+        assert len(model.args) == 1
+        arg = model.args[0]
+        assert arg.target is not None
+        # target is an Indirection
+        assert arg.target.__class__.__name__ == "Indirection"
+
+    def test_kill_double_indirection(self, command_metamodel):
+        """K @@A - nested indirection"""
+        model = command_metamodel.model_from_str("K @@A", "KillCommand")
+        assert len(model.args) == 1
+        target = model.args[0].target
+        assert target.__class__.__name__ == "Indirection"
+        # Nested: expr is also Indirection (textX uses 'expr', not 'expression')
+        assert target.expr.__class__.__name__ == "Indirection"
+
+    def test_kill_multiple_indirection(self, command_metamodel):
+        """K @A,@B - multiple indirection targets"""
+        model = command_metamodel.model_from_str("K @A,@B", "KillCommand")
+        assert len(model.args) == 2
+        assert model.args[0].target.__class__.__name__ == "Indirection"
+        assert model.args[1].target.__class__.__name__ == "Indirection"
+
+    # --- SET indirection ---
+    def test_set_target_indirection(self, command_metamodel):
+        """S @A=1 - indirection as target"""
+        model = command_metamodel.model_from_str("S @A=1", "SetCommand")
+        assert len(model.assignments) == 1
+        target = model.assignments[0].targets
+        assert target.__class__.__name__ == "Indirection"
+
+    def test_set_value_indirection(self, command_metamodel):
+        """S X=@A - indirection as value"""
+        model = command_metamodel.model_from_str("S X=@A", "SetCommand")
+        assert len(model.assignments) == 1
+        # Value is an expression containing Indirection
+        assert model.assignments[0].value is not None
+
+    def test_set_both_indirection(self, command_metamodel):
+        """S @B=@A - indirection on both sides"""
+        model = command_metamodel.model_from_str("S @B=@A", "SetCommand")
+        assert len(model.assignments) == 1
+        target = model.assignments[0].targets
+        assert target.__class__.__name__ == "Indirection"
+
+    def test_set_double_indirection(self, command_metamodel):
+        """S @@A=1 - nested indirection as target"""
+        model = command_metamodel.model_from_str("S @@A=1", "SetCommand")
+        target = model.assignments[0].targets
+        assert target.__class__.__name__ == "Indirection"
+        # textX uses 'expr' attribute
+        assert target.expr.__class__.__name__ == "Indirection"
+
+    def test_set_argument_indirection(self, command_metamodel):
+        """S @A - argument-level indirection (var contains 'X=1')"""
+        model = command_metamodel.model_from_str("S @A", "SetCommand")
+        assert len(model.assignments) == 1
+        # This uses SetIndirection
+        arg = model.assignments[0]
+        assert hasattr(arg, 'indirect') and arg.indirect is not None
+
+    # --- WRITE indirection (via Expr wrapper) ---
+    def test_write_indirection(self, command_metamodel):
+        """W @A - indirection as value (wrapped in Expr)"""
+        model = command_metamodel.model_from_str("W @A", "WriteCommand")
+        assert len(model.args) == 1
+        arg = model.args[0].arg
+        # WRITE uses Expr which wraps Indirection
+        # Need to unwrap: arg.left.operand is the Indirection
+        assert arg.__class__.__name__ == "Expr"
+        assert arg.left.operand.__class__.__name__ == "Indirection"
+
+    def test_write_double_indirection(self, command_metamodel):
+        """W @@C - nested indirection"""
+        model = command_metamodel.model_from_str("W @@C", "WriteCommand")
+        arg = model.args[0].arg
+        # Unwrap Expr to get Indirection
+        inner = arg.left.operand
+        assert inner.__class__.__name__ == "Indirection"
+        assert inner.expr.__class__.__name__ == "Indirection"
+
+    # --- READ indirection ---
+    def test_read_indirection(self, command_metamodel):
+        """R @A - indirection as target"""
+        model = command_metamodel.model_from_str("R @A", "ReadCommand")
+        assert len(model.args) == 1
+        target = model.args[0].arg.target
+        assert target.__class__.__name__ == "Indirection"
+
+    def test_read_multiple_indirection(self, command_metamodel):
+        """R @A,@B - multiple indirection targets"""
+        model = command_metamodel.model_from_str("R @A,@B", "ReadCommand")
+        assert len(model.args) == 2
+        assert model.args[0].arg.target.__class__.__name__ == "Indirection"
+        assert model.args[1].arg.target.__class__.__name__ == "Indirection"
+
+    # --- HANG indirection (via Expr wrapper) ---
+    def test_hang_indirection(self, command_metamodel):
+        """H @A - indirection as duration (wrapped in Expr)"""
+        model = command_metamodel.model_from_str("H @A", "HangCommand")
+        # HangCommand seconds is Expr which wraps Indirection
+        assert model.seconds.__class__.__name__ == "Expr"
+        assert model.seconds.left.operand.__class__.__name__ == "Indirection"
+
+    # --- FOR indirection ---
+    def test_for_indirection_var(self, command_metamodel):
+        """F @A=1:1:10 - indirection as loop variable"""
+        model = command_metamodel.model_from_str("F @A=1:1:10", "ForCommand")
+        assert model.indirect is not None
+        assert model.var is None
+        assert model.indirect.__class__.__name__ == "Indirection"
+
+    def test_for_double_indirection_var(self, command_metamodel):
+        """F @@A=1:1:10 - double indirection as loop variable"""
+        model = command_metamodel.model_from_str("F @@A=1:1:10", "ForCommand")
+        assert model.indirect is not None
+        # textX uses 'expr' attribute for nested
+        assert model.indirect.expr.__class__.__name__ == "Indirection"
+
+    def test_for_indirection_params(self, command_metamodel):
+        """F I=@A:@B:@C - indirection in parameters"""
+        model = command_metamodel.model_from_str("F I=@A:@B:@C", "ForCommand")
+        assert model.var is not None
+        assert len(model.params) == 1
+        # Parameters are Expr wrappers - need to unwrap
+        param = model.params[0]
+        assert param.start.left.operand.__class__.__name__ == "Indirection"
+        assert param.step.left.operand.__class__.__name__ == "Indirection"
+        assert param.end.left.operand.__class__.__name__ == "Indirection"
+
+    # --- DO indirection (uses IndirectChain) ---
+    def test_do_indirection(self, command_metamodel):
+        """D @A - simple DO indirection"""
+        model = command_metamodel.model_from_str("D @A", "DoCommand")
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        assert target.indirect is not None
+
+    def test_do_double_indirection(self, command_metamodel):
+        """D @@A - nested DO indirection via IndirectChain"""
+        model = command_metamodel.model_from_str("D @@A", "DoCommand")
+        target = model.targets[0]
+        # DoIndirect has labelIndirect which is IndirectChain
+        assert target.indirect.labelIndirect.nested is not None
+
+    # --- GOTO indirection (uses IndirectChain) ---
+    def test_goto_indirection(self, command_metamodel):
+        """G @A - simple GOTO indirection"""
+        model = command_metamodel.model_from_str("G @A", "GotoCommand")
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        assert target.indirect is not None
+
+    def test_goto_double_indirection(self, command_metamodel):
+        """G @@A - nested GOTO indirection via IndirectChain"""
+        model = command_metamodel.model_from_str("G @@A", "GotoCommand")
+        target = model.targets[0]
+        # GotoIndirect has labelIndirect which is IndirectChain
+        assert target.indirect.labelIndirect.nested is not None

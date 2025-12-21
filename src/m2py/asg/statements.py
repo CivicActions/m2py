@@ -157,11 +157,12 @@ class MForStatement(MStatement):
     Iterates over values, ranges, or indefinitely:
     F I=1:1:10 commands..., F I="A","B","C" commands..., F commands...
     
-    The loop_var can be a simple variable name (str) or a subscripted
-    variable (MVariable) for cases like F J(1,2,3)=1:1:10
+    The loop_var can be a simple variable name (str), a subscripted
+    variable (MVariable), or an MIndirection for cases like F @A=1:1:10
     """
     
-    loop_var: Optional[Union[str, "MVariable"]] = None
+    loop_var: Optional[Union[str, "MVariable", "MExpr"]] = None
+    loop_var_indirect: bool = False  # True if loop_var is indirection
     parameters: List[MForParameter] = field(default_factory=list)
     body: MScope = field(default_factory=MScope)
     

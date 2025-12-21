@@ -443,26 +443,17 @@ class TestParserErrorHandling:
         assert len(str(excinfo.value)) > 0
     
     def test_syntax_error_from_file_includes_filename(self):
-        """T336: Errors from parse_file should include filename."""
-        import tempfile
-        import os
-        
+        """T336: Errors from parse should include filename when provided."""
         parser = MUMPSParser()
         
-        # Create a temp file with invalid syntax (missing newline)
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.m', delete=False) as f:
-            f.write('TEST\tS X=1')  # No trailing newline
-            temp_path = f.name
+        # Missing trailing newline causes syntax error
+        # Note: parse_file auto-adds newlines, so we test parse() directly
+        with pytest.raises(MUMPSSyntaxError) as excinfo:
+            parser.parse('TEST\tS X=1', filename='/path/to/test.m')  # No trailing newline
         
-        try:
-            with pytest.raises(MUMPSSyntaxError) as excinfo:
-                parser.parse_file(temp_path)
-            
-            # Error should reference the file
-            assert excinfo.value.source_file is not None
-            assert temp_path in excinfo.value.source_file or '.m' in str(excinfo.value)
-        finally:
-            os.unlink(temp_path)
+        # Error should reference the file
+        assert excinfo.value.source_file is not None
+        assert 'test.m' in excinfo.value.source_file or 'test.m' in str(excinfo.value)
     
     def test_mumpssyntaxerror_attributes(self):
         """T336: MUMPSSyntaxError should have line/column attributes."""

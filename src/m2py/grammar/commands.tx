@@ -175,8 +175,9 @@ ElseCommand:
 
 // FOR command: F|FOR var=forparams or argumentless FOR
 // Note: var can be a subscripted variable like J(1,2,3)
+// Also supports indirection: FOR @A=1:1:10
 ForCommand:
-    /[Ff][Oo][Rr]|[Ff]/ (WS var=LocalVariable '=' params+=ForParam[/,/])?
+    /[Ff][Oo][Rr]|[Ff]/ (WS (indirect=Indirection | var=LocalVariable) '=' params+=ForParam[/,/])?
 ;
 
 // FOR parameter: value, start:step, or start:step:end
@@ -377,16 +378,32 @@ BreakCommand:
 ;
 
 // LOCK command: L|LOCK targets
+// Note: Like KillCommand, requires single space before targets to distinguish
+// "L target" (lock target) from "L  CMD" (unlock all, then next command)
+// Also supports parenthesized list: L (^A,^B):timeout
+// Supports indirection: L @A, L @A:1, L (@A,^B):1
 LockCommand:
-    /[Ll][Oo][Cc][Kk]|[Ll]/ postcond=Postcondition? WS? lockop=LockOp? targets+=LockTarget[/,/]?
+    /[Ll][Oo][Cc][Kk]|[Ll]/ postcond=Postcondition? (' ' lockop=LockOp? (locklist=LockList | targets+=LockTarget[/,/]))?
 ;
 
 LockOp:
     '+' | '-'
 ;
 
+// Parenthesized lock list: (targets):timeout
+// Supports indirection within the list: L (@A,^B,@C):1
+LockList:
+    '(' targets+=LockListItem[/,/] ')' (':' timeout=Expr)?
+;
+
+// Lock list item: either indirection or variable reference
+LockListItem:
+    indirect=IndirectChain | target=VarRef
+;
+
+// Lock target: variable or indirection with optional postcondition and timeout
 LockTarget:
-    postcond=Postcondition? target=VarRef (':' timeout=Expr)?
+    postcond=Postcondition? (indirect=IndirectChain | target=VarRef) (':' timeout=Expr)?
 ;
 
 // Helper rule for global or local variable reference

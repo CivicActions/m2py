@@ -463,7 +463,12 @@ class SemanticAnalyzer:
         stmt = MForStatement()
         object.__setattr__(stmt, 'parent', parent)
         
-        if hasattr(cmd, 'var') and cmd.var:
+        # Handle indirection in loop variable: FOR @A=1:1:10
+        if hasattr(cmd, 'indirect') and cmd.indirect:
+            # Indirection in loop variable
+            stmt.loop_var = self.analyze(cmd.indirect, stmt)
+            stmt.loop_var_indirect = True
+        elif hasattr(cmd, 'var') and cmd.var:
             # For simple variables, use the string name; for subscripted, use the full object
             if hasattr(cmd.var, 'subscripts') and cmd.var.subscripts:
                 # Convert subscripts to proper ASG expressions
@@ -858,7 +863,18 @@ class SemanticAnalyzer:
         return stmt
     
     def _analyze_LockCommand(self, cmd: Any, parent: Any) -> MLockStatement:
-        """Analyze LOCK command into MLockStatement."""
+        """Analyze LOCK command into MLockStatement.
+        
+        Handles:
+        - L (no args) - unlock all
+        - L ^A - lock single target
+        - L ^A:1 - lock with timeout
+        - L ^A,^B - lock multiple targets
+        - L (^A,^B):1 - parenthesized list with shared timeout
+        - L @A - lock with indirection (name resolved at runtime)
+        - L @A:1 - indirection with timeout
+        - L +^A / L -^A - incremental lock/unlock
+        """
         stmt = MLockStatement()
         object.__setattr__(stmt, 'parent', parent)
         
@@ -868,14 +884,77 @@ class SemanticAnalyzer:
         if hasattr(cmd, 'lockop') and cmd.lockop:
             stmt.lock_type = str(cmd.lockop)
         
+        # Handle parenthesized lock list: L (^A,^B):timeout or L (@A,^B):timeout
+        if hasattr(cmd, 'locklist') and cmd.locklist:
+            locklist = cmd.locklist
+            if hasattr(locklist, 'targets') and locklist.targets:
+                for item in locklist.targets:
+                    lock_info = self._analyze_lock_item(item, stmt)
+                    stmt.targets.append(lock_info)
+            if hasattr(locklist, 'timeout') and locklist.timeout:
+                stmt.timeout = self.analyze(locklist.timeout, stmt)
+        
+        # Handle regular target list: L ^A:1,^B:2 or L @A:1,^B:2
         if hasattr(cmd, 'targets') and cmd.targets:
             for target in cmd.targets:
-                lock_info = {}
-                if hasattr(target, 'target') and target.target:
-                    lock_info['target'] = self.analyze(target.target, stmt)
-                if hasattr(target, 'timeout') and target.timeout:
-                    lock_info['timeout'] = self.analyze(target.timeout, stmt)
+                lock_info = self._analyze_lock_target(target, stmt)
                 stmt.targets.append(lock_info)
+        
+        return stmt
+    
+    def _analyze_lock_item(self, item: Any, parent: Any) -> dict:
+        """Analyze a single item in a parenthesized lock list.
+        
+        LockListItem can be:
+        - indirect=IndirectChain (e.g., @A, @@A, @(expr))
+        - target=VarRef (e.g., ^A, X, ^A(1,2))
+        """
+        lock_info = {}
+        
+        # Handle indirection: @A, @@A, @(expr)
+        if hasattr(item, 'indirect') and item.indirect:
+            indirection_expr, levels = self._analyze_indirect_chain(item.indirect, parent)
+            lock_info['indirection'] = indirection_expr
+            lock_info['indirection_levels'] = levels
+            lock_info['is_indirect'] = True
+        # Handle direct variable reference
+        elif hasattr(item, 'target') and item.target:
+            lock_info['target'] = self.analyze(item.target, parent)
+        else:
+            # Fallback: try to analyze the item directly (might be a VarRef)
+            lock_info['target'] = self.analyze(item, parent)
+        
+        return lock_info
+    
+    def _analyze_lock_target(self, target: Any, parent: Any) -> dict:
+        """Analyze a LockTarget: postcond? (indirect | target) (':' timeout)?
+        
+        Handles:
+        - L ^A:1 - variable with timeout
+        - L @A:1 - indirection with timeout
+        - L:cond ^A - postconditioned lock target
+        """
+        lock_info = {}
+        
+        # Handle postcondition on target
+        if hasattr(target, 'postcond') and target.postcond:
+            lock_info['postcondition'] = self.analyze(target.postcond.condition, parent)
+        
+        # Handle indirection: L @A, L @@A, L @(expr)
+        if hasattr(target, 'indirect') and target.indirect:
+            indirection_expr, levels = self._analyze_indirect_chain(target.indirect, parent)
+            lock_info['indirection'] = indirection_expr
+            lock_info['indirection_levels'] = levels
+            lock_info['is_indirect'] = True
+        # Handle direct variable reference
+        elif hasattr(target, 'target') and target.target:
+            lock_info['target'] = self.analyze(target.target, parent)
+        
+        # Handle timeout
+        if hasattr(target, 'timeout') and target.timeout:
+            lock_info['timeout'] = self.analyze(target.timeout, parent)
+        
+        return lock_info
         
         return stmt
     
