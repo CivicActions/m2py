@@ -183,9 +183,23 @@ GotoCommand:
 ;
 
 // GOTO target: label, label+offset, label^routine, label+offset^routine
+// Or indirection: @expr, @@expr, @expr+offset, @expr^routine
 // Postcondition comes AFTER the label: G ABC:X=1
 GotoTarget:
-    label=LabelRef postcond=Postcondition?
+    (
+        // Indirection: @expr, @@expr, @expr+offset, @expr^routine, etc.
+        indirect=GotoIndirect |
+        // Regular label reference
+        label=LabelRef
+    ) postcond=Postcondition?
+;
+
+// GOTO indirection: Enhanced to support full label reference structure
+// Patterns: @VAR, @@VAR, @(expr), @VAR+offset, @VAR^routine, @VAR+offset^routine
+GotoIndirect:
+    labelIndirect=IndirectChain
+    ('+' offset=OffsetExpr?)?
+    ('^' (routineIndirect=IndirectChain | routine=VARNAME))?
 ;
 
 // DO command: D|DO targets or argumentless DO
@@ -197,21 +211,36 @@ DoCommand:
 // Postcondition comes AFTER the label/indirection: D ABC:X=1
 DoTarget:
     (
-        // Indirection: @expr or @(expr)
+        // Indirection: @expr, @@expr, @expr+offset, @expr^routine, etc.
         indirect=DoIndirect |
         // Regular label reference
         label=LabelRef args=FunctionArgs?
     ) postcond=Postcondition?
 ;
 
-// DO indirection: @VAR or @(expr)
+// DO indirection: Enhanced to support full label reference structure
+// Patterns: @VAR, @@VAR, @(expr), @VAR+offset, @VAR^routine, @VAR+offset^routine
+// The indirection can be nested (@@, @@@) and can have offset and routine components
 DoIndirect:
+    labelIndirect=IndirectChain
+    ('+' offset=OffsetExpr?)?
+    ('^' (routineIndirect=IndirectChain | routine=VARNAME))?
+    args=FunctionArgs?
+;
+
+// Indirection chain: handles nested indirection like @@VAR or @@@VAR
+// Each @ adds a level of indirection (runtime dereference)
+IndirectChain:
     '@' (
+        // Nested indirection: @@VAR, @@@VAR, etc.
+        nested=IndirectChain |
         // Parenthesized expression: @(expr)
         '(' expr=Expr ')' |
-        // Simple variable: @VAR
+        // Global variable: @^VAR or @^VAR(subscripts)
+        global=GlobalVariable |
+        // Simple variable: @VAR or @VAR(subscripts)
         var=LocalVariable
-    ) args=FunctionArgs?
+    )
 ;
 
 // Label reference: label, label+offset, label^routine, label+^routine, ^routine
@@ -219,8 +248,10 @@ DoIndirect:
 // Uses OffsetExpr instead of Expr to prevent consuming ^routine as a global variable
 // The offset is optional when immediately followed by ^routine (means offset 0):
 //   G LABEL+^ROUTINE is equivalent to G LABEL+0^ROUTINE
+// Routine can be either a literal name or an indirect expression: LABEL^ROUTINE or LABEL^@VAR
 LabelRef:
-    (label=LABELNAME ('+' offset=OffsetExpr?)?)? ('^' routine=VARNAME)?
+    (label=LABELNAME ('+' offset=OffsetExpr?)?)? 
+    ('^' (routineIndirect=IndirectChain | routine=VARNAME))?
 ;
 
 // Label name - can be:

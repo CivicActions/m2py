@@ -537,11 +537,42 @@ class SemanticAnalyzer:
                 if hasattr(target, 'postcond') and target.postcond:
                     call.postcondition = self.analyze(target.postcond.condition, call)
                 
-                if hasattr(target, 'label') and target.label:
+                # Handle indirection: G @VAR, G @@VAR, G @VAR+offset, G @VAR^@routine
+                if hasattr(target, 'indirect') and target.indirect:
+                    indirect = target.indirect
+                    call.name = ""  # Indirection target - no static name
+                    call.label_is_indirect = True
+                    
+                    # Process the IndirectChain for the label part
+                    if hasattr(indirect, 'labelIndirect') and indirect.labelIndirect:
+                        indirection_expr, levels = self._analyze_indirect_chain(indirect.labelIndirect, call)
+                        call.indirection = indirection_expr
+                        call.indirection_levels = levels
+                    
+                    # Process offset if present: @VAR+offset
+                    if hasattr(indirect, 'offset') and indirect.offset:
+                        call.offset = self.analyze(indirect.offset, call)
+                    
+                    # Process routine part: ^routine or ^@routine
+                    if hasattr(indirect, 'routine') and indirect.routine:
+                        call.routine = indirect.routine
+                    elif hasattr(indirect, 'routineIndirect') and indirect.routineIndirect:
+                        routine_expr, _ = self._analyze_indirect_chain(indirect.routineIndirect, call)
+                        call.routine_indirection = routine_expr
+                        call.routine_is_indirect = True
+                
+                elif hasattr(target, 'label') and target.label:
                     label_ref = target.label
                     call.name = label_ref.label or ""
+                    
+                    # Handle routine: either literal name or indirect (@VAR, @@VAR)
                     if hasattr(label_ref, 'routine') and label_ref.routine:
                         call.routine = label_ref.routine
+                    elif hasattr(label_ref, 'routineIndirect') and label_ref.routineIndirect:
+                        routine_expr, _ = self._analyze_indirect_chain(label_ref.routineIndirect, call)
+                        call.routine_indirection = routine_expr
+                        call.routine_is_indirect = True
+                    
                     if hasattr(label_ref, 'offset') and label_ref.offset:
                         call.offset = self.analyze(label_ref.offset, call)
                     
@@ -566,21 +597,47 @@ class SemanticAnalyzer:
                 if hasattr(target, 'postcond') and target.postcond:
                     call.postcondition = self.analyze(target.postcond.condition, call)
                 
-                # Handle indirection: D @VAR or D @(expr)
+                # Handle indirection: D @VAR, D @@VAR, D @VAR+offset, D @VAR^@routine
                 if hasattr(target, 'indirect') and target.indirect:
                     indirect = target.indirect
-                    # DoIndirect has 'var' (simple variable) or 'expr' (parenthesized expression)
-                    if hasattr(indirect, 'var') and indirect.var:
-                        call.indirection = self.analyze(indirect.var, call)
-                    elif hasattr(indirect, 'expr') and indirect.expr:
-                        call.indirection = self.analyze(indirect.expr, call)
                     call.name = ""  # Indirection target - no static name
+                    call.label_is_indirect = True
+                    
+                    # Process the IndirectChain for the label part
+                    if hasattr(indirect, 'labelIndirect') and indirect.labelIndirect:
+                        indirection_expr, levels = self._analyze_indirect_chain(indirect.labelIndirect, call)
+                        call.indirection = indirection_expr
+                        call.indirection_levels = levels
+                    
+                    # Process offset if present: @VAR+offset
+                    if hasattr(indirect, 'offset') and indirect.offset:
+                        call.offset = self.analyze(indirect.offset, call)
+                    
+                    # Process routine part: ^routine or ^@routine
+                    if hasattr(indirect, 'routine') and indirect.routine:
+                        call.routine = indirect.routine
+                    elif hasattr(indirect, 'routineIndirect') and indirect.routineIndirect:
+                        routine_expr, _ = self._analyze_indirect_chain(indirect.routineIndirect, call)
+                        call.routine_indirection = routine_expr
+                        call.routine_is_indirect = True
+                    
+                    # Process arguments if present
+                    if hasattr(indirect, 'args') and indirect.args:
+                        if hasattr(indirect.args, 'args') and indirect.args.args:
+                            call.arguments = [self.analyze(a, call) for a in indirect.args.args]
                 
                 elif hasattr(target, 'label') and target.label:
                     label_ref = target.label
                     call.name = label_ref.label or ""
+                    
+                    # Handle routine: either literal name or indirect (@VAR, @@VAR)
                     if hasattr(label_ref, 'routine') and label_ref.routine:
                         call.routine = label_ref.routine
+                    elif hasattr(label_ref, 'routineIndirect') and label_ref.routineIndirect:
+                        routine_expr, _ = self._analyze_indirect_chain(label_ref.routineIndirect, call)
+                        call.routine_indirection = routine_expr
+                        call.routine_is_indirect = True
+                    
                     if hasattr(label_ref, 'offset') and label_ref.offset:
                         call.offset = self.analyze(label_ref.offset, call)
                     
@@ -593,6 +650,39 @@ class SemanticAnalyzer:
                 stmt.targets.append(call)
         
         return stmt
+    
+    def _analyze_indirect_chain(self, chain: Any, parent: Any) -> tuple:
+        """Analyze an IndirectChain and return (expression, indirection_levels).
+        
+        IndirectChain can be nested: @@VAR means @(@VAR)
+        Returns the innermost expression and count of @ levels.
+        """
+        levels = 1
+        current = chain
+        
+        # Walk through nested indirection to count levels
+        while hasattr(current, 'nested') and current.nested:
+            levels += 1
+            current = current.nested
+        
+        # Now 'current' is the innermost IndirectChain - get its expression
+        # Note: 'global' is a Python keyword, so we use getattr
+        if hasattr(current, 'var') and current.var:
+            expr = self.analyze(current.var, parent)
+        elif hasattr(current, 'global') and getattr(current, 'global', None):
+            expr = self.analyze(getattr(current, 'global'), parent)
+        elif hasattr(current, 'expr') and current.expr:
+            expr = self.analyze(current.expr, parent)
+        else:
+            expr = None
+        
+        # If there were nested levels, wrap in MIndirection objects
+        # to represent the structure: @@A becomes Indirection(Indirection(var=A))
+        for _ in range(levels - 1):
+            inner = MIndirection(expression=expr, indirection_type="nested")
+            expr = inner
+        
+        return expr, levels
     
     def _analyze_QuitCommand(self, cmd: Any, parent: Any) -> MQuitStatement:
         """Analyze QUIT command into MQuitStatement."""

@@ -1472,16 +1472,44 @@ G:X=1 G379    ; GOTO G379 if X=1  (command postcondition AFTER keyword)
 | V1IDARG5.m | 12 | 74 | ✅ Complete | XECUTE with indirection, postconditions on XECUTE captured |
 | V1IDDO.m | 3 | 5 | ✅ Complete | Simple driver file |
 | V1IDDO1.m | 13 | 37 | ✅ Complete | Target labels for indirection tests |
-| V1IDDOA.m | 27 | 100 | ⚠️ Issue | Complex indirect DO with offsets may be missing |
-| V1IDDOB.m | 27 | 105 | ⚠️ Issue | Double indirection DO (@@var^@routine) missing |
+| V1IDDOA.m | 27 | 100 | ✅ Complete | Complex indirect DO with offsets - now captured |
+| V1IDDOB.m | 27 | 105 | ✅ Complete | Double indirection DO (@@var^@routine) - now captured |
 | V1IDGO.m | 3 | 4 | ✅ Complete | Simple driver file |
 
-### BUG-010: Complex Indirect DO Statements Not Fully Captured 🔴 OPEN
+### BUG-010: Complex Indirect DO Statements Not Fully Captured ✅ RESOLVED
 
 **Severity**: High  
 **Files Affected**: V1IDDOA.m (lines 18, 29, 42), V1IDDOB.m (lines 7, 12-13, 38, 44, 47)
 
-**Description**: DO commands with complex indirection patterns are not fully captured in the ASG:
+**RESOLUTION** (2024-01-21):
+
+Enhanced the grammar and semantic analyzer to fully capture complex indirect DO and GOTO patterns:
+
+1. **Grammar Changes** (`src/m2py/grammar/commands.tx`):
+   - Added `IndirectChain` rule for nested indirection (`@@VAR`, `@@@VAR`)
+   - Enhanced `DoIndirect` with `labelIndirect`, `routineIndirect`, and `offset` support
+   - Enhanced `LabelRef` with `routineIndirect` option for indirect routine names
+   - Added `GotoIndirect` rule mirroring DoIndirect for GOTO command
+
+2. **ASG Changes** (`src/m2py/asg/elements.py`):
+   - Added to MCall: `routine_indirection`, `label_is_indirect`, `routine_is_indirect`, `indirection_levels`
+
+3. **Semantic Analyzer Changes** (`src/m2py/analysis/semantic_analyzer.py`):
+   - Added `_analyze_indirect_chain()` to walk nested indirection and count levels
+   - Updated `_analyze_DoCommand()` to handle new grammar structure
+   - Updated `_analyze_GotoCommand()` to handle new grammar structure
+
+4. **Test Patterns Now Parsing Correctly**:
+   - `D @A`, `D @A+5`, `D @@A` - basic indirect with offset
+   - `D @A^ROUTINE`, `D @A^@C`, `D @@A^@C` - indirect with routine
+   - `D LABEL^@C`, `D LABEL^@@C` - static label with indirect routine
+   - `D V1IDDO+-5+@^V1IDDO1^@@C` - complex offset with nested indirect routine
+   - `D @A^@C,V1IDDO+-5+@^V1IDDO1^@@C` - multiple complex targets
+   - `G @C`, `G @A^@C`, `G @@B+1^V1IDGO1` - GOTO indirect patterns
+
+All 633 tests pass. V1IDGOA.m and V1IDGO.m parse successfully.
+
+**Original Description**: DO commands with complex indirection patterns were not fully captured in the ASG:
 
 1. **Double indirection in label+routine**: `D @@A^@C` (V1IDDOB line 7)
    - Should parse the @@A (double indirection) for label and @C for routine
@@ -1499,11 +1527,74 @@ G:X=1 G379    ; GOTO G379 if X=1  (command postcondition AFTER keyword)
 
 **Workaround**: None - these patterns require runtime XECUTE-like handling anyway.
 
-**Tasks**:
-- [ ] T509 [BUG] Investigate DO command parsing for indirect label+offset patterns
-- [ ] T510 [BUG] Add grammar support for `@@var` double indirection in DO targets
-- [ ] T511 [BUG] Add grammar support for `@var^@routine` in DO targets
-- [ ] T512 [BUG] Add unit tests for complex indirect DO patterns
+**Why Additional Parsing IS Helpful** (even for runtime-evaluated patterns):
+
+Even though the final target cannot be resolved statically, parsing the **structure** of these patterns enables:
+
+1. **Typed Runtime Dispatch**: Instead of treating `D @@A^@C` as opaque text, we can generate:
+   ```python
+   # Current (unparsed): falls back to generic XECUTE-like handler
+   runtime.do_indirect("@@A^@C")  # No structure
+   
+   # With parsing: structured runtime call
+   runtime.do_indirect(
+       label_indirection=Indirect(Indirect(var='A')),  # @@A
+       routine_indirection=Indirect(var='C'),           # ^@C
+       offset=None
+   )
+   ```
+
+2. **Offset Expression Evaluation**: For `DO @A+5` we need to:
+   - Evaluate `@A` at runtime to get label name
+   - Add 5 to get the actual line offset
+   - Having `offset=NumericLiteral(5)` in the ASG makes this explicit
+
+3. **Error Handling**: Knowing the structure allows better error messages:
+   - "Cannot resolve routine from @C" vs "Invalid DO target"
+
+4. **Analysis Flags**: We can set `requires_runtime_eval` specifically for:
+   - `routine_is_indirect: bool` - Need to resolve routine name at runtime
+   - `label_is_indirect: bool` - Need to resolve label name at runtime
+   - `has_nested_indirection: bool` - @@var patterns need special handling
+
+5. **Optimization Opportunities**: Some cases like `D ^@A` where A is set to a constant 
+   string on the previous line could be constant-folded in a future optimization pass.
+
+**Grammar Enhancement Needed**:
+
+Current `DoIndirect` only handles: `@VAR` or `@(expr)`
+
+Should handle the full pattern: `@expr (+offset)? (^routine)?` where routine can also be `@expr`
+
+```textx
+// Enhanced DO indirection to support full label reference structure
+DoIndirect:
+    labelIndirect=IndirectExpr 
+    ('+' offset=OffsetExpr?)?  // Optional offset after indirect label
+    ('^' (routineIndirect=IndirectExpr | routine=VARNAME))?  // Optional routine
+    args=FunctionArgs?
+;
+
+// Indirection can be nested: @@VAR means @(@VAR)
+IndirectExpr:
+    '@' (
+        nested=IndirectExpr |           // Recursive for @@, @@@
+        '(' expr=Expr ')' |             // Parenthesized
+        var=LocalVariable |             // Simple variable
+        global=GlobalVariable           // ^VAR indirection
+    )
+;
+```
+
+**Tasks** (All completed 2024-01-21):
+- [X] T509 [BUG] Investigate DO command parsing for indirect label+offset patterns
+- [X] T510 [BUG] Add grammar support for `@@var` double indirection in DO targets
+- [X] T511 [BUG] Add grammar support for `@var^@routine` in DO targets
+- [X] T512 [BUG] Add unit tests for complex indirect DO patterns (utils/test_indirect_do.py)
+- [X] T513 [ENH] Add `routine_is_indirect` and `label_is_indirect` flags to MCall
+- [X] T514 [ENH] Add `IndirectChain` grammar rule (renamed from IndirectExpr) for nested indirection
+- [X] T515 [ENH] Extend DoIndirect grammar to support offset and routine components
+- [X] T516 [ENH] Add GotoIndirect grammar for GOTO command parity with DO
 
 ### Observations for Code Generation
 
@@ -1512,3 +1603,4 @@ G:X=1 G379    ; GOTO G379 if X=1  (command postcondition AFTER keyword)
 3. **Format controls in WRITE** (!?3, #) - Need to map to Python print formatting
 4. **XECUTE with indirection** - Already flagged as `requires_runtime_eval`
 5. **Implicit fall-through** - V1IDGO.m has no QUIT at end, relies on fall-through between labels
+

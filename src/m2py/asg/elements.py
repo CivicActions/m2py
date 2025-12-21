@@ -196,6 +196,9 @@ class MCall(ASGElement):
     
     Represents a call or jump target that may or may not be resolved
     to an actual MLabel. Tracks resolution status and call type.
+    
+    For indirect calls (D @VAR, D @@VAR^@ROUTINE), the indirection
+    fields capture the structure for runtime evaluation.
     """
     
     name: str = ""
@@ -203,9 +206,16 @@ class MCall(ASGElement):
     routine: Optional[str] = None  # For ^routine external calls
     arguments: List[Any] = field(default_factory=list)  # MExpr arguments
     postcondition: Optional[Any] = None  # MExpr condition
-    indirection: Optional[Any] = None  # MExpr for DO @expr indirection
+    indirection: Optional[Any] = None  # MExpr for DO @expr indirection (label part)
+    routine_indirection: Optional[Any] = None  # MExpr for ^@expr (routine part)
+    
+    # Indirection analysis flags
+    label_is_indirect: bool = False  # True if label comes from indirection
+    routine_is_indirect: bool = False  # True if routine comes from indirection
+    indirection_levels: int = 0  # Number of @ levels (1 for @A, 2 for @@A, etc.)
     
     # Resolution (populated in resolution pass)
     target: Optional[MLabel] = field(default=None, repr=False)
     call_type: Optional["CallType"] = None
     is_resolved: bool = False
+
