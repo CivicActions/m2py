@@ -229,13 +229,15 @@ class TestParseIfCommand:
         """I X=1 creates MIfStatement"""
         stmt = parse_if_command("I X=1")
         assert stmt is not None
-        # The condition is stored in 'condition' attribute
+        # The condition is stored in both 'condition' and 'conditions'
         assert stmt.condition is not None
+        assert len(stmt.conditions) == 1
 
     def test_argumentless_if(self):
         """I (uses $TEST) parses"""
         stmt = parse_if_command("I")
         assert stmt is not None
+        assert len(stmt.conditions) == 0
 
 
 class TestParseForCommand:

@@ -159,17 +159,19 @@ class TestIfElseCommands:
     def test_simple_if(self, command_metamodel):
         """I X=1"""
         model = command_metamodel.model_from_str("I X=1", "IfCommand")
-        assert model.condition is not None
+        assert model.conditions is not None
+        assert len(model.conditions) == 1
 
     def test_if_full_keyword(self, command_metamodel):
         """IF X=1"""
         model = command_metamodel.model_from_str("IF X=1", "IfCommand")
-        assert model.condition is not None
+        assert model.conditions is not None
+        assert len(model.conditions) == 1
 
     def test_argumentless_if(self, command_metamodel):
         """I (uses $TEST)"""
         model = command_metamodel.model_from_str("I", "IfCommand")
-        assert model.condition is None
+        assert len(model.conditions) == 0
 
     def test_simple_else(self, command_metamodel):
         """E"""

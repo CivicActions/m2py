@@ -136,9 +136,10 @@ CharRead:
 // Control Flow - Conditional
 // =============================================================================
 
-// IF command: I|IF condition
+// IF command: I|IF conditions (comma-separated = AND)
+// Per MUMPS spec: "IF with n arguments is equivalent to n IFs"
 IfCommand:
-    /[Ii][Ff]|[Ii]/ (WS condition=Expr)?
+    /[Ii][Ff]|[Ii]/ (WS conditions+=Expr[/,/])?
 ;
 
 // ELSE command: E|ELSE
@@ -200,13 +201,64 @@ DoIndirect:
 ;
 
 // Label reference: label, label+offset, label^routine, ^routine
+// NOTE: MUMPS labels can be numeric (1, 012, 0) or alphanumeric (%ABC, LABEL1)
+// Uses OffsetExpr instead of Expr to prevent consuming ^routine as a global variable
 LabelRef:
-    (label=VARNAME ('+' offset=Expr)?)? ('^' routine=VARNAME)?
+    (label=LABELNAME ('+' offset=OffsetExpr)?)? ('^' routine=VARNAME)?
+;
+
+// Label name - can be:
+// - Purely numeric (1, 012, 0) 
+// - Start with % followed by alphanumeric (%ABC, %0000000)
+// - Start with letter followed by alphanumeric (LABEL, A1B2)
+LABELNAME:
+    /[0-9]+|[%A-Za-z][A-Za-z0-9]*/
 ;
 
 // QUIT command: Q|QUIT with optional return value
+// NOTE: Must not consume command keywords as return value
+// Using negative lookahead to prevent "Q S X" from treating "S" as value
+// Key: Command keyword followed by space+arg pattern indicates next command
 QuitCommand:
-    /[Qq][Uu][Ii][Tt]|[Qq]/ postcond=Postcondition? (WS value=Expr)?
+    /[Qq][Uu][Ii][Tt]|[Qq]/ postcond=Postcondition? (WS !CommandWithArg value=Expr)?
+;
+
+// Pattern: Command keyword followed by space + likely argument pattern
+// This distinguishes "Q S X=1" (QUIT then SET) from "Q X" (QUIT with value)
+// Note: SET requires "=" in arguments, others require space before args
+CommandWithArg:
+    // SET: S VAR= or S (...)
+    /[Ss][Ee][Tt][ \t]|[Ss][ \t]+[A-Za-z%^(]/ |
+    /[Ss][ \t]*=/ |  // S= is impossible as return value (assignment)
+    // WRITE: W followed by space (W X is WRITE X)
+    /[Ww][Rr][Ii][Tt][Ee][ \t]|[Ww][ \t]+[^=]/ |
+    // READ: R followed by space  
+    /[Rr][Ee][Aa][Dd][ \t]|[Rr][ \t]+[^=]/ |
+    // IF: I followed by space or end (argumentless IF)
+    /[Ii][Ff][ \t]|[Ii][Ff]$|[Ii][ \t]+[^=]|[Ii]$/ |
+    // ELSE: E followed by space or end
+    /[Ee][Ll][Ss][Ee]|[Ee][ \t]|[Ee]$/ |
+    // FOR: F followed by space
+    /[Ff][Oo][Rr][ \t]|[Ff][ \t]/ |
+    // GOTO: G followed by space
+    /[Gg][Oo][Tt][Oo][ \t]|[Gg][ \t]+[A-Za-z%^]/ |
+    // DO: D followed by space
+    /[Dd][Oo][ \t]|[Dd][ \t]+[A-Za-z%^@]/ |
+    // QUIT: Q followed by space or end
+    /[Qq][Uu][Ii][Tt]|[Qq][ \t]|[Qq]$/ |
+    // NEW: N followed by space
+    /[Nn][Ee][Ww][ \t]|[Nn][ \t]+[A-Za-z%(]/ |
+    // KILL: K followed by space  
+    /[Kk][Ii][Ll][Ll][ \t]|[Kk][ \t]/ |
+    // BREAK: B followed by space or end
+    /[Bb][Rr][Ee][Aa][Kk]|[Bb][ \t]|[Bb]$/ |
+    // Other commands (less common after QUIT)
+    /[Hh][Aa][Nn][Gg][ \t]/ |
+    /[Hh][Aa][Ll][Tt]/ |
+    /[Ll][Oo][Cc][Kk][ \t]|[Ll][ \t]/ |
+    /[Mm][Ee][Rr][Gg][Ee][ \t]|[Mm][ \t]+[A-Za-z%^]/ |
+    /[Vv][Ii][Ee][Ww][ \t]|[Vv][ \t]+[^=]/ |
+    /[Xx][Ee][Cc][Uu][Tt][Ee][ \t]|[Xx][ \t]+[^=]/
 ;
 
 // =============================================================================

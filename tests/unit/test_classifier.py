@@ -458,13 +458,15 @@ class TestParseIfStatement:
         stmt = parse_if_statement("X=1")
         
         assert isinstance(stmt, MIfStatement)
+        # Single condition is in both condition and conditions
         assert stmt.condition is not None
+        assert len(stmt.conditions) == 1
     
     def test_parse_if_argumentless(self):
         """Parse IF with no arguments (uses $TEST)."""
         stmt = parse_if_statement("")
         
-        assert stmt.condition is None
+        assert len(stmt.conditions) == 0
     
     def test_parse_if_complex_condition(self):
         """Parse IF with complex condition."""
@@ -472,6 +474,7 @@ class TestParseIfStatement:
         
         # Parser captures at least part of the condition
         assert stmt.condition is not None
+        assert len(stmt.conditions) == 1
     
     def test_parse_if_has_body_content(self):
         """IF statement should have a then_scope."""

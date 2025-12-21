@@ -475,7 +475,7 @@ def parse_if_command(if_text: str) -> Optional[MIfStatement]:
     """Parse an IF command using textX grammar.
     
     Args:
-        if_text: The IF command (e.g., "I X=1" or "IF X>0")
+        if_text: The IF command (e.g., "I X=1" or "IF X>0" or "I A=1,B=2")
         
     Returns:
         MIfStatement ASG node or None if parsing fails
@@ -488,10 +488,12 @@ def parse_if_command(if_text: str) -> Optional[MIfStatement]:
     
     statement = MIfStatement()
     
-    if model.condition:
-        # Store the condition as a string for now
-        # In the future, build full expression ASG
-        statement.condition = _expr_to_string(model.condition)
+    # Handle new grammar: conditions is a list
+    if hasattr(model, 'conditions') and model.conditions:
+        statement.conditions = [_expr_to_string(c) for c in model.conditions]
+        # For backwards compatibility, also set single condition if only one
+        if len(statement.conditions) == 1:
+            statement.condition = statement.conditions[0]
     
     return statement
 
@@ -759,25 +761,44 @@ def _expr_to_string(expr) -> str:
         return ind
     elif cls_name == 'ParenExpr':
         return f"({_expr_to_string(expr.expr)})"
-    elif cls_name == 'Expr':
+    elif cls_name == 'Expr' or cls_name == 'OffsetExpr':
         # Full expression with operators - new grammar uses left/ops/right
+        # Note: textX can misparse "1-2-3" as ops=['-'], right=[2, -3]
+        # where the second '-' becomes a unary operator on '3'.
+        # We handle this by treating unary +/- on subsequent operands as binary ops.
         if hasattr(expr, 'left') and expr.left:
             result = _expr_to_string(expr.left)
-            # Handle binary operations
-            if hasattr(expr, 'ops') and expr.ops and hasattr(expr, 'right') and expr.right:
-                for i, op in enumerate(expr.ops):
-                    op_str = op.op if hasattr(op, 'op') else str(op)
-                    result += op_str
-                    if i < len(expr.right):
-                        result += _expr_to_string(expr.right[i])
+            if hasattr(expr, 'right') and expr.right:
+                ops = list(expr.ops) if hasattr(expr, 'ops') and expr.ops else []
+                for i, right_expr in enumerate(expr.right):
+                    if i < len(ops):
+                        # Explicit binary operator
+                        op = ops[i]
+                        op_str = op.op if hasattr(op, 'op') else str(op)
+                        result += op_str
+                        result += _expr_to_string(right_expr)
+                    elif (hasattr(right_expr, 'operator') and right_expr.operator and
+                          hasattr(right_expr.operator, 'op') and
+                          right_expr.operator.op in ('+', '-')):
+                        # No explicit binary op but right_expr has unary +/-
+                        # Treat it as the binary operator
+                        op_str = right_expr.operator.op
+                        result += op_str
+                        result += _expr_to_string(right_expr.operand)
+                    else:
+                        # No operator - just append the right operand directly
+                        # This handles pattern match syntax like "1N"
+                        result += _expr_to_string(right_expr)
             return result
         # Fallback for old grammar structure
         elif hasattr(expr, 'unary_expr') and expr.unary_expr:
             return _reconstruct_expr(expr)
         return str(expr)
-    elif cls_name == 'UnaryExpr':
+    elif cls_name == 'UnaryExpr' or cls_name == 'OffsetUnaryExpr':
         op = expr.operator.op if hasattr(expr, 'operator') and expr.operator else ""
         return f"{op}{_expr_to_string(expr.operand)}"
+    elif cls_name == 'OffsetParenExpr':
+        return f"({_expr_to_string(expr.expr)})"
     else:
         return str(expr)
 

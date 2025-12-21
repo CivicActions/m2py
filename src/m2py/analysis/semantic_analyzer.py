@@ -207,26 +207,47 @@ class SemanticAnalyzer:
         
         Expr: left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*
         
-        Note: This requires the grammar to be updated to capture ops/right.
-        For now, handle the current grammar structure.
-        """
-        # Current grammar: Expr: UnaryExpr (BinaryOp UnaryExpr)*
-        # This doesn't capture the binary part, so we just get UnaryExpr
+        Note: textX's PEG parser can misparse expressions like "1-2-3" when
+        operators like +/- can also be unary. It parses as:
+        - left=1, ops=['-'], right=[2, -3] (where -3 has unary -)
+        Instead of: left=1, ops=['-', '-'], right=[2, 3]
         
-        # If grammar is updated to have named parts:
+        This handler compensates by treating unary +/- on subsequent operands
+        as the binary operator, but ONLY when there are more right operands than
+        ops (indicating the ambiguous case).
+        """
         if hasattr(expr, 'left'):
             result = self.analyze(expr.left, parent)
             
-            if hasattr(expr, 'ops') and expr.ops:
-                for i, op in enumerate(expr.ops):
+            if hasattr(expr, 'right') and expr.right:
+                ops = list(expr.ops) if hasattr(expr, 'ops') and expr.ops else []
+                
+                for i, right_expr in enumerate(expr.right):
                     binary = MBinaryOp()
-                    op_str = op.op if hasattr(op, 'op') else str(op)
+                    
+                    # Get the binary operator
+                    if i < len(ops):
+                        # Use explicit binary operator
+                        op = ops[i]
+                        op_str = op.op if hasattr(op, 'op') else str(op)
+                    elif (hasattr(right_expr, 'operator') and right_expr.operator and 
+                          hasattr(right_expr.operator, 'op') and 
+                          right_expr.operator.op in ('+', '-')):
+                        # No explicit binary op but right_expr has unary +/-
+                        # Treat the unary as the binary operator (textX parsing quirk)
+                        op_str = right_expr.operator.op
+                        # Clear the unary operator so it's not applied twice
+                        object.__setattr__(right_expr, 'operator', None)
+                    else:
+                        # No operator available - this shouldn't happen for valid expressions
+                        # Just skip this operand (it may be part of pattern syntax)
+                        continue
+                    
                     object.__setattr__(binary, 'operator', op_str)
                     object.__setattr__(binary, 'left', result)
                     
-                    if hasattr(expr, 'right') and len(expr.right) > i:
-                        right = self.analyze(expr.right[i], binary)
-                        object.__setattr__(binary, 'right', right)
+                    right = self.analyze(right_expr, binary)
+                    object.__setattr__(binary, 'right', right)
                     
                     object.__setattr__(binary, 'parent', parent)
                     object.__setattr__(result, 'parent', binary)
@@ -236,6 +257,12 @@ class SemanticAnalyzer:
         
         # Fallback for current grammar (Expr IS UnaryExpr due to match rule)
         return self._analyze_generic(expr, parent)
+    
+    # OffsetExpr has the same structure as Expr, just excludes GlobalVariable
+    _analyze_OffsetExpr = _analyze_Expr
+    
+    # OffsetUnaryExpr has the same structure as UnaryExpr
+    _analyze_OffsetUnaryExpr = _analyze_UnaryExpr
     
     def _analyze_generic(self, model: Any, parent: Any) -> Any:
         """Generic handler for unknown textX types.
@@ -350,12 +377,25 @@ class SemanticAnalyzer:
         return stmt
     
     def _analyze_IfCommand(self, cmd: Any, parent: Any) -> MIfStatement:
-        """Analyze IF command into MIfStatement."""
+        """Analyze IF command into MIfStatement.
+        
+        MUMPS allows comma-separated conditions which act as AND:
+        IF cond1,cond2 is equivalent to IF cond1 IF cond2
+        """
         stmt = MIfStatement()
         object.__setattr__(stmt, 'parent', parent)
         
-        if hasattr(cmd, 'condition') and cmd.condition:
+        # Handle new grammar: conditions+=Expr[/,/]
+        if hasattr(cmd, 'conditions') and cmd.conditions:
+            analyzed_conditions = [self.analyze(c, stmt) for c in cmd.conditions]
+            stmt.conditions = analyzed_conditions
+            # For backwards compatibility, also set single condition if only one
+            if len(analyzed_conditions) == 1:
+                stmt.condition = analyzed_conditions[0]
+        # Handle old grammar for backwards compatibility: condition=Expr
+        elif hasattr(cmd, 'condition') and cmd.condition:
             stmt.condition = self.analyze(cmd.condition, stmt)
+            stmt.conditions = [stmt.condition]
         
         return stmt
     

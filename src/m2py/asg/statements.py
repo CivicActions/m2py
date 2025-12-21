@@ -104,9 +104,16 @@ class MIfStatement(MStatement):
     Conditionally executes following commands:
     IF condition commands...
     I X=1 DO SOMETHING
+    
+    MUMPS allows comma-separated conditions which act as AND:
+    IF cond1,cond2,cond3 is equivalent to IF cond1 IF cond2 IF cond3
+    
+    When there's a single condition, use `condition`.
+    When there are multiple conditions, use `conditions` list.
     """
     
-    condition: Optional["MExpr"] = None  # None = uses $TEST
+    condition: Optional["MExpr"] = None  # Single condition (legacy support)
+    conditions: List["MExpr"] = field(default_factory=list)  # Multiple conditions (comma-separated)
     then_scope: MScope = field(default_factory=MScope)
 
 

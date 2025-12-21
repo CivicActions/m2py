@@ -19,8 +19,9 @@ UnaryExpr:
 // Binary operators - using regex to avoid issues with multi-char operators
 BinaryOp:
     // Multi-character operators first (order matters in PEG)
-    // Note: '[ is "not contains", '] is "not follows", '> '< '= '? are also negated forms
-    op=/\*\*|>=|<=|'>|'<|'=|'\?|'\[|'\]|]]|\[|\]/
+    // '& is NAND, '! is NOR, '> '< '= are negated comparisons
+    // '[ is "not contains", '] is "not follows", '? is "not pattern match"
+    op=/\*\*|>=|<=|'>|'<|'=|'\?|'\[|'\]|'&|'!|]]|\[|\]/
     | op=/[+\-*\/#\\=<>&!_?\]]/ 
 ;
 
@@ -42,6 +43,37 @@ PrimaryExpr:
     LocalVariable |
     StringLiteral |
     NumericLiteral
+;
+
+// =============================================================================
+// Offset Expression (for label+offset in DO/GOTO/JOB commands)
+// =============================================================================
+// This is a restricted expression that does NOT match GlobalVariable or NakedGlobal
+// because in "LABEL+5+^V1CALL1", the "^V1CALL1" is the routine name, not a global.
+
+OffsetExpr:
+    left=OffsetUnaryExpr (ops+=BinaryOp right+=OffsetUnaryExpr)*
+;
+
+OffsetUnaryExpr:
+    operator=UnaryOp? operand=OffsetPrimaryExpr
+;
+
+// Primary expressions for offset - excludes GlobalVariable and NakedGlobal
+OffsetPrimaryExpr:
+    OffsetParenExpr |
+    ExtrinsicFunction |
+    SpecialVariable |
+    IntrinsicFunction |
+    Indirection |
+    LocalVariable |
+    StringLiteral |
+    NumericLiteral
+;
+
+// Parenthesized offset expression
+OffsetParenExpr:
+    '(' expr=OffsetExpr ')'
 ;
 
 // Parenthesized expression
