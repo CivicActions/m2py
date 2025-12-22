@@ -7,8 +7,34 @@
 // Top-level expression - MUMPS uses strict left-to-right evaluation
 // No operator precedence - everything is left-to-right
 // Named attributes allow semantic analysis to access all parts
+//
+// Pattern match operators (? and '?) are special: they take a PatternSpec
+// on the right side, not a regular expression. Pattern specs have unique
+// syntax like .N, 1A, ."string" that are not valid expressions.
 Expr:
-    left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*
+    left=UnaryExpr (tail+=ExprTail)*
+;
+
+// Expression tail can be either:
+// 1. Pattern match: ?PatternSpec or '?PatternSpec (followed by optional more operators)
+// 2. Regular binary operation: op right
+ExprTail:
+    PatternMatchTail | BinaryOpTail
+;
+
+// Pattern match tail: ? or '? followed by pattern specification
+PatternMatchTail:
+    op=PatternMatchOp pattern=PatternSpec
+;
+
+// Pattern match operators
+PatternMatchOp:
+    op=/'\?|\?/
+;
+
+// Regular binary operation tail
+BinaryOpTail:
+    op=BinaryOp right=UnaryExpr
 ;
 
 // Unary expression with optional prefix operators (can be chained: --X, ''X, +-X)
@@ -17,12 +43,75 @@ UnaryExpr:
 ;
 
 // Binary operators - using regex to avoid issues with multi-char operators
+// NOTE: ? and '? are handled separately as PatternMatchOp
 BinaryOp:
     // Multi-character operators first (order matters in PEG)
     // '& is NAND, '! is NOR, '> '< '= are negated comparisons
-    // '[ is "not contains", '] is "not follows", '? is "not pattern match"
-    op=/\*\*|>=|<=|'>|'<|'=|'\?|'\[|'\]|'&|'!|]]|\[|\]/
-    | op=/[+\-*\/#\\=<>&!_?\]]/ 
+    // '[ is "not contains", '] is "not follows"
+    op=/\*\*|>=|<=|'>|'<|'=|'\[|'\]|'&|'!|]]|\[|\]/
+    | op=/[+\-*\/#\\=<>&!_\]]/ 
+;
+
+// =============================================================================
+// Pattern Match Specification
+// =============================================================================
+// Patterns consist of concatenated pattern atoms
+// Example: 1N.A."hello".E matches: 1 numeric, any alphas, "hello", any chars
+
+PatternSpec:
+    atoms+=PatternAtom+
+;
+
+// Pattern atom: repcount followed by patcode, string literal, or alternation
+// Examples: 1N, .A, 3.5P, ."hello", (1N,1A)
+PatternAtom:
+    repcount=RepCount (
+        patcode=PatCode | 
+        strlit=PATTERN_STRING |
+        '(' alternation+=PatternAtom[','] ')'
+    )
+;
+
+// Repeat count for pattern atoms:
+// . = any number (0 or more) - indefinite multiplier
+// n = exactly n
+// n. = at least n (n or more)
+// .n = at most n (0 to n)
+// n.m = between n and m (inclusive)
+RepCount:
+    // Exact form must be tried last - it matches any integer
+    // Range forms all contain '.' so try them first
+    RangeRepCount | ExactRepCount
+;
+
+// Range forms: must have the dot
+RangeRepCount:
+    min=REPINT? '.' max=REPINT?
+;
+
+// Exact count: just an integer
+ExactRepCount:
+    exact=REPINT
+;
+
+// Integer for repeat counts
+REPINT:
+    /[0-9]+/
+;
+// Pattern codes: A=alpha, C=control, E=any, L=lower, N=numeric, P=punctuation, U=upper
+// Combinations allowed: AN, ACULPN, etc.
+PatCode:
+    codes=/[AaCcEeLlNnPpUu]+/
+;
+
+// String literal in pattern - same as regular string but captured separately
+PATTERN_STRING:
+    /"([^"]|"")*"/
+;
+
+// Integer for repeat counts
+INT:
+    /[0-9]+/
 ;
 
 // Unary operators
@@ -50,9 +139,23 @@ PrimaryExpr:
 // =============================================================================
 // This is a restricted expression that does NOT match GlobalVariable or NakedGlobal
 // because in "LABEL+5+^V1CALL1", the "^V1CALL1" is the routine name, not a global.
+// Pattern match is unlikely in offset expressions, but we support it for consistency.
 
 OffsetExpr:
-    left=OffsetUnaryExpr (ops+=BinaryOp right+=OffsetUnaryExpr)*
+    left=OffsetUnaryExpr (tail+=OffsetExprTail)*
+;
+
+// Offset expression tail - same structure as ExprTail
+OffsetExprTail:
+    OffsetPatternMatchTail | OffsetBinaryOpTail
+;
+
+OffsetPatternMatchTail:
+    op=PatternMatchOp pattern=PatternSpec
+;
+
+OffsetBinaryOpTail:
+    op=BinaryOp right=OffsetUnaryExpr
 ;
 
 // Offset unary expression with optional prefix operators (can be chained)

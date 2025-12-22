@@ -1962,3 +1962,123 @@ Previous issues (T520-T522) have been resolved. Current validation confirms:
 6. **Unary operators on strings** - V1NUM4 tests numeric interpretation (`+"123ABC"` → 123); captured as MUnaryOp with StringLiteral operand
 7. **$Y special variable** - Used in EXAMINER postconditions (`W:$Y>55 #`); properly captured as SpecialVariable
 
+---
+
+## Phase 34: MUGJ Validation Checklist - V1OV to V1PC1
+
+**Purpose**: Validate overlay GOTO, pattern matching, and post-conditional drivers (Checklist 20/54).
+**Validation Date**: 2025-12-21
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1OV.m | 23 | 101 | ✅ Complete | All GOTO targets resolved; offsets captured |
+| V1OV1.m | 20 | 68 | ✅ Complete | EXAMINER backrefs resolved; offset GOTOs captured |
+| V1PAT.m | 3 | 5 | ✅ Complete | Driver only (WRITE + DO) |
+| V1PAT1.m | 10 | 72 | ✅ Complete | Pattern atom and count loops captured; MPatternMatch with subject/pattern |
+| V1PAT2.m | 12 | 75 | ✅ Complete | Complex patterns with multipliers, indirection, negation |
+| V1PC.m | 3 | 4 | ✅ Complete | Driver only (WRITE + DO) |
+| V1PC1.m | 39 | 122 | ⚠️ Minor | Postconditioned GOTOs good; $TEXT function arg parsing issue |
+
+### Findings
+
+1. **Pattern Match Parsing (V1PAT1, V1PAT2)**: `MPatternMatch` correctly captures:
+   - `subject`: The expression being matched
+   - `pattern`: The pattern string (e.g., "1C", "5N", ".A.P")
+   - `pattern_indirect`: For `?@X` indirect patterns
+   - `operator`: `?` or `'?` (not match)
+
+2. **V1OV GOTO Offsets**: All label+offset references (`G XYZ+0^V1OV1`) captured correctly with:
+   - `MCall.offset` as `NumericLiteral` or `MBinaryOp`
+   - Complex offset expressions (e.g., `G 691+A/9-11/19^V1OV`) preserved as expression trees
+
+3. **V1PC1 $TEXT Function Issue**: Line `G:$T(V1PC1+300)="" ...` parses `$T(V1PC1+300)` incorrectly:
+   - Expected: `$TEXT` with label reference argument `V1PC1+300`
+   - Actual: `$T` with `LocalVariable(name='V1PC1')` - the `+300` offset is dropped
+   - The `$TEXT` function expects a `labelref` argument (label+offset^routine), not an expression
+
+4. **V1OV Multi-target GOTOs**: Lines like `G ^V1OV1,^V1OV1` correctly capture multiple MCall targets
+
+5. **V1PC1 Postconditioned GOTOs**: Both command-level (`G:cond target`) and target-level (`G target:cond`) postconditions captured
+
+### Tasks
+
+- [ ] T527 [BUG] Fix $TEXT function argument parsing to handle `label+offset` as a labelref, not expression
+  - Repro: `$T(V1PC1+300)` should parse as label=V1PC1, offset=300, not as LocalVariable(V1PC1)
+  - Need to recognize `$T` / `$TEXT` and parse argument as labelref
+
+- [X] T528 [RESOLVED] V1PAT2 pattern parsing issues - previously noted bugs now passing (75 statements captured)
+
+### Observations for Code Generation
+
+1. **MPatternMatch** semantics:
+   - Returns 1 (true) or 0 (false) in MUMPS
+   - Pattern codes: C (control), N (numeric), P (punctuation), A (alpha), L (lower), U (upper), E (everything)
+   - Multipliers: `0`, `1-9`, `.` (zero or more), `n.m` (range)
+   - Python will need a pattern matcher implementation or regex translation
+
+2. **Label+Offset References**:
+   - `G label+n^routine` jumps to n lines after label
+   - Python code gen must compute actual target or use a label registry
+
+3. **$TEXT Function**:
+   - Returns source text of line at label+offset
+   - Rarely used in production code but important for meta-programming
+   - May need stub implementation returning empty string
+
+4. **GOTO Lists with Postconditions**:
+   - `G target1:cond1,target2:cond2` - each target has own postcondition
+   - Python: `if cond1: goto target1; elif cond2: goto target2`
+
+---
+
+## Phase 35: MUGJ Validation Checklist - V1PCA to V1PRGD2
+
+**Purpose**: Validate postcondition-heavy drivers and preliminary GOTO/DO/QUIT behavior (Checklist 21/54).
+**Validation Date**: 2025-12-21
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1PCA.m | 29 | 152 | ⚠️ Issues | GOTO target postconditions/offsets dropped |
+| V1PCB.m | 26 | 143 | ⚠️ Issues | DO target postconditions/offsets dropped |
+| V1PO.m | 8 | 62 | ⚠️ Needs spot-check | Operator-precedence expressions not yet inspected in ASG |
+| V1PRFOR.m | 5 | 35 | ✅ | FOR params captured; classification not reviewed here |
+| V1PRGD.m | 11 | 77 | ⚠️ Minor | Statements after QUIT not marked unreachable |
+| V1PRGD1.m | 2 | 12 | ⚠️ Minor | Statements after QUIT not marked unreachable |
+| V1PRGD2.m | 1 | 2 | ⚠️ Minor | Implicit QUIT missing (label ends with fallthrough) |
+
+### Findings
+
+1. **GOTO target postconditions and offsets lost (V1PCA)**
+   - Examples: [tests/functional/mugj/inref/V1PCA.m#L44-L48], [tests/functional/mugj/inref/V1PCA.m#L50-L66]
+   - MCalls created from GOTO lists do not retain target-level postconditions (`:expr`) or label offsets (`+n`). External targets (label^routine) are flattened into names without per-target metadata, preventing correct branching order.
+2. **DO target postconditions and offsets lost (V1PCB)**
+   - Examples: [tests/functional/mugj/inref/V1PCB.m#L11-L20], [tests/functional/mugj/inref/V1PCB.m#L22-L35], [tests/functional/mugj/inref/V1PCB.m#L39-L71]
+   - DO lists collapse into a single MDoStatement without preserving per-target postconditions or offsets (`+n`). Offset DO calls (`BYTE+2`, `OS+2^V1PC1`, etc.) are emitted as plain CALL(BYTE) / CALL(^V1PC1OS) with no offset data.
+3. **Unreachable code after QUIT not flagged (V1PRGD/V1PRGD1)**
+   - Examples: [tests/functional/mugj/inref/V1PRGD.m#L34-L37], [tests/functional/mugj/inref/V1PRGD1.m#L3-L6]
+   - Statements following explicit QUIT remain in bodies with no `is_unreachable` tagging, making downstream control-flow analysis/codegen harder.
+4. **Implicit QUIT missing for fallthrough labels (V1PRGD2)**
+   - Example: [tests/functional/mugj/inref/V1PRGD2.m#L1-L4]
+   - Routine ends with SET/WRITE and comment; ASG stops without a terminating MQuitStatement, so callers cannot tell the label exits.
+
+### Tasks
+
+- [X] T529 [FALSE POSITIVE] GOTO target postconditions and offsets ARE captured correctly.
+  - **Verified**: `MCall.offset` and `MCall.postcondition` are populated for GOTO targets.
+  - The validate_asg.py compact display just wasn't showing these fields.
+  - Test: V1PCA label 838 shows BUG+2 with postcondition MBinaryOp and TABLE+1 with postcondition IntrinsicFunction.
+- [X] T530 [FALSE POSITIVE] DO target postconditions and offsets ARE captured correctly.
+  - **Verified**: `MCall.offset` and `MCall.postcondition` are populated for DO targets.
+  - Test: V1PCB label 843 shows BYTE+2:$D(A) and BYTE+1:'$D(A) with proper offsets and postconditions.
+- [ ] T531 [BUG] Mark statements after unconditional QUIT as unreachable.
+  - During semantic analysis, flag statements after QUIT/QUIT-return as `is_unreachable=True` for accurate CFG/codegen.
+  - The `detect_unreachable_code()` function exists but is never called/integrated into the ASG.
+  - Need to add post-processing pass to mark statements in label bodies.
+- [ ] T532 [ENHANCEMENT] Add `has_explicit_exit` flag to MLabel.
+  - Instead of synthesizing implicit QUIT, track whether label ends with explicit exit (QUIT/GOTO/HALT).
+  - This is informational for code generation; MUMPS semantics already imply fallthrough returns.
+

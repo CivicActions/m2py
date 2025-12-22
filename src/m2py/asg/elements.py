@@ -152,6 +152,35 @@ class MLabel(ASGElement):
     variables_newed: set = field(default_factory=set, repr=False)
     input_variables: set = field(default_factory=set, repr=False)
     output_variables: set = field(default_factory=set, repr=False)
+    
+    @property
+    def has_explicit_exit(self) -> bool:
+        """Check if label ends with an explicit exit (QUIT, GOTO, or HALT).
+        
+        Returns True if the last non-unreachable statement in the label body
+        is an unconditional exit statement. Labels without explicit exits
+        implicitly return when they fall through to the end.
+        """
+        from m2py.asg.statements import MQuitStatement, MGotoStatement, MHaltStatement
+        
+        if not self.body or not self.body.statements:
+            return False
+        
+        # Find the last non-unreachable statement
+        last_stmt = None
+        for stmt in reversed(self.body.statements):
+            if not getattr(stmt, 'is_unreachable', False):
+                last_stmt = stmt
+                break
+        
+        if last_stmt is None:
+            return False
+        
+        # Check if it's an unconditional exit
+        if isinstance(last_stmt, (MQuitStatement, MGotoStatement, MHaltStatement)):
+            return last_stmt.postcondition is None
+        
+        return False
 
 
 @dataclass

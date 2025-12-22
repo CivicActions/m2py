@@ -152,28 +152,28 @@ class TestTextXCustomClasses:
     def test_binary_expression(self, expression_metamodel):
         """Test binary expression captures operators and operands.
         
-        After grammar fix: Expr: left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*
-        Binary operations are now properly captured.
+        After grammar update: Expr: left=UnaryExpr (tail+=ExprTail)*
+        Where ExprTail is PatternMatchTail or BinaryOpTail.
+        Binary operations are now properly captured via BinaryOpTail.
         """
         model = expression_metamodel.model_from_str("X+1")
         
-        # Model is Expr with left, ops, right
+        # Model is Expr with left and tail
         assert hasattr(model, 'left')
-        assert hasattr(model, 'ops')
-        assert hasattr(model, 'right')
+        assert hasattr(model, 'tail')
         
         # Left operand
         left = self._unwrap_unary(model.left)
         assert isinstance(left, LocalVariable)
         assert left.name == "X"
         
-        # Operator
-        assert len(model.ops) == 1
-        assert model.ops[0].op == '+'
+        # Tail contains BinaryOpTail items
+        assert len(model.tail) == 1
+        tail_item = model.tail[0]
+        assert tail_item.op.op == '+'
         
-        # Right operand
-        assert len(model.right) == 1
-        right = self._unwrap_unary(model.right[0])
+        # Right operand is in tail_item.right
+        right = self._unwrap_unary(tail_item.right)
         assert isinstance(right, NumericLiteral)
         assert right.value == 1
     

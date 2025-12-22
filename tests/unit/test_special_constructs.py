@@ -119,17 +119,15 @@ class TestPatternMatch:
     """Tests for pattern match operator."""
 
     def test_pattern_operator_in_expr(self, expression_metamodel):
-        """Pattern match operator ? is recognized"""
-        # X?1A.N - this parses as X ? 1A.N where 1A.N is an expression
-        # The pattern itself would be interpreted as: 1 * A . N
-        # This is a limitation - full pattern parsing would need special handling
-        # For now, just verify the ? operator works
-        model = expression_metamodel.model_from_str('X?1', 'Expr')
+        """Pattern match operator ? is recognized with proper pattern syntax"""
+        # X?1N - matches exactly 1 numeric character
+        # Pattern atoms require repcount + patcode/string
+        model = expression_metamodel.model_from_str('X?1N', 'Expr')
         assert model is not None
 
     def test_negated_pattern(self, expression_metamodel):
         """Negated pattern '?"""
-        model = expression_metamodel.model_from_str("X'?1", 'Expr')
+        model = expression_metamodel.model_from_str("X'?1A", 'Expr')
         assert model is not None
 
 

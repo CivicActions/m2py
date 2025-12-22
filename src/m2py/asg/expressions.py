@@ -170,11 +170,13 @@ class MPatternMatch(MExpr):
     
     Represents pattern matching using the ? operator:
     X?1A.N, X?@pattern (indirect pattern)
+    Also supports negated pattern match: X'?1A.N
     """
     
     subject: Optional["MExpr"] = None
     pattern: str = ""  # Raw pattern string for direct patterns
     pattern_indirect: Optional["MExpr"] = None  # For indirect patterns ?@X
+    operator: str = "?"  # Either "?" or "'?" for negated match
 
 
 @dataclass

@@ -36,6 +36,7 @@ from m2py.asg.expressions import (
     MBinaryOp,
     MUnaryOp,
     MFormatControl,
+    MPatternMatch,
 )
 from m2py.asg.statements import (
     MStatement,
@@ -219,20 +220,59 @@ class SemanticAnalyzer:
     def _analyze_Expr(self, expr: Any, parent: Any) -> MExpr:
         """Unwrap Expr and build binary operation tree if needed.
         
+        New grammar: Expr: left=UnaryExpr (tail+=ExprTail)*
+        Where ExprTail is either:
+        - PatternMatchTail: op=PatternMatchOp pattern=PatternSpec
+        - BinaryOpTail: op=BinaryOp right=UnaryExpr
+        
+        Old grammar (still supported for backwards compatibility):
         Expr: left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*
         
         Note: textX's PEG parser can misparse expressions like "1-2-3" when
-        operators like +/- can also be unary. It parses as:
-        - left=1, ops=['-'], right=[2, -3] (where -3 has unary -)
-        Instead of: left=1, ops=['-', '-'], right=[2, 3]
-        
-        This handler compensates by treating unary +/- on subsequent operands
-        as the binary operator, but ONLY when there are more right operands than
-        ops (indicating the ambiguous case).
+        operators like +/- can also be unary. The handler compensates by 
+        treating unary +/- on subsequent operands as binary operators.
         """
         if hasattr(expr, 'left'):
             result = self.analyze(expr.left, parent)
             
+            # NEW GRAMMAR: Handle tail-based structure (ExprTail list)
+            if hasattr(expr, 'tail') and expr.tail:
+                for tail_item in expr.tail:
+                    tail_type = type(tail_item).__name__
+                    
+                    if tail_type == 'PatternMatchTail' or (hasattr(tail_item, 'pattern') and tail_item.pattern):
+                        # Pattern match: create MPatternMatch node
+                        op = tail_item.op
+                        op_str = op.op if hasattr(op, 'op') else str(op)
+                        
+                        pattern_match = MPatternMatch()
+                        object.__setattr__(pattern_match, 'operator', op_str)
+                        object.__setattr__(pattern_match, 'subject', result)
+                        # Store the raw pattern textX object for later processing
+                        object.__setattr__(pattern_match, 'pattern', self._pattern_to_string(tail_item.pattern))
+                        object.__setattr__(pattern_match, 'parent', parent)
+                        object.__setattr__(result, 'parent', pattern_match)
+                        result = pattern_match
+                        
+                    elif tail_type == 'BinaryOpTail' or (hasattr(tail_item, 'right') and tail_item.right):
+                        # Regular binary operation
+                        op = tail_item.op
+                        op_str = op.op if hasattr(op, 'op') else str(op)
+                        
+                        binary = MBinaryOp()
+                        object.__setattr__(binary, 'operator', op_str)
+                        object.__setattr__(binary, 'left', result)
+                        
+                        right = self.analyze(tail_item.right, binary)
+                        object.__setattr__(binary, 'right', right)
+                        
+                        object.__setattr__(binary, 'parent', parent)
+                        object.__setattr__(result, 'parent', binary)
+                        result = binary
+                
+                return result
+            
+            # OLD GRAMMAR: Handle ops/right-based structure (for backwards compatibility)
             if hasattr(expr, 'right') and expr.right:
                 ops = list(expr.ops) if hasattr(expr, 'ops') and expr.ops else []
                 
@@ -287,6 +327,54 @@ class SemanticAnalyzer:
         
         # Fallback for current grammar (Expr IS UnaryExpr due to match rule)
         return self._analyze_generic(expr, parent)
+    
+    def _pattern_to_string(self, pattern_spec: Any) -> str:
+        """Convert a textX PatternSpec to a pattern string.
+        
+        PatternSpec has atoms, each with repcount and (patcode or strlit or alternation).
+        """
+        if pattern_spec is None:
+            return ""
+        
+        parts = []
+        if hasattr(pattern_spec, 'atoms') and pattern_spec.atoms:
+            for atom in pattern_spec.atoms:
+                part = self._pattern_atom_to_string(atom)
+                parts.append(part)
+        
+        return "".join(parts)
+    
+    def _pattern_atom_to_string(self, atom: Any) -> str:
+        """Convert a single pattern atom to string."""
+        result = ""
+        
+        # Add repcount
+        if hasattr(atom, 'repcount') and atom.repcount:
+            rc = atom.repcount
+            # Check class name to distinguish range from exact
+            rc_type = type(rc).__name__
+            if rc_type == 'RangeRepCount':
+                # Range form: min.max, .max, min., or just .
+                min_val = str(rc.min) if hasattr(rc, 'min') and rc.min else ""
+                max_val = str(rc.max) if hasattr(rc, 'max') and rc.max else ""
+                result += f"{min_val}.{max_val}"
+            elif rc_type == 'ExactRepCount':
+                # Exact form: just the number
+                result += str(rc.exact)
+            elif hasattr(rc, 'exact') and rc.exact is not None:
+                # Fallback: check for exact attribute
+                result += str(rc.exact)
+        
+        # Add patcode or strlit or alternation
+        if hasattr(atom, 'patcode') and atom.patcode:
+            result += atom.patcode.codes if hasattr(atom.patcode, 'codes') else str(atom.patcode)
+        elif hasattr(atom, 'strlit') and atom.strlit:
+            result += atom.strlit
+        elif hasattr(atom, 'alternation') and atom.alternation:
+            alt_parts = [self._pattern_atom_to_string(a) for a in atom.alternation]
+            result += "(" + ",".join(alt_parts) + ")"
+        
+        return result
     
     # OffsetExpr has the same structure as Expr, just excludes GlobalVariable
     _analyze_OffsetExpr = _analyze_Expr
@@ -1232,16 +1320,19 @@ def unwrap_expression(textx_expr: Any) -> Any:
     
     # Expr with left attribute (new grammar)
     if hasattr(textx_expr, 'left'):
-        # If no binary ops, just unwrap the left
-        if not hasattr(textx_expr, 'ops') or not textx_expr.ops:
+        # If no binary ops (tail or ops/right), just unwrap the left
+        has_tail = hasattr(textx_expr, 'tail') and textx_expr.tail
+        has_ops = hasattr(textx_expr, 'ops') and textx_expr.ops
+        if not has_tail and not has_ops:
             return unwrap_expression(textx_expr.left)
-        # Has binary ops - needs full analysis
+        # Has binary ops or pattern match - needs full analysis
         return textx_expr
     
     # UnaryExpr without operator
     if hasattr(textx_expr, 'operand'):
         op = getattr(textx_expr, 'operator', None)
-        if op is None:
+        ops = getattr(textx_expr, 'operators', None)
+        if op is None and (ops is None or not ops):
             return unwrap_expression(textx_expr.operand)
     
     # ParenExpr

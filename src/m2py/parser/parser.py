@@ -257,6 +257,49 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
     return result
 
 
+def _mark_unreachable_statements(statements: List[MStatement]) -> None:
+    """Mark statements after unconditional QUIT/GOTO as unreachable.
+    
+    In MUMPS, statements on subsequent lines after an unconditional
+    QUIT or GOTO cannot be reached. This function sets is_unreachable=True
+    on those statements for downstream analysis.
+    
+    Note: This operates on the same physical line as well as subsequent lines.
+    Within a single line, code after QUIT is also unreachable, but the parser
+    already captures those as separate statements.
+    
+    Args:
+        statements: List of statements to analyze (modified in place)
+    """
+    from m2py.asg.statements import MQuitStatement, MGotoStatement, MHaltStatement
+    
+    unreachable = False
+    
+    for stmt in statements:
+        if unreachable:
+            stmt.is_unreachable = True
+        
+        # Check if this statement is an unconditional exit
+        if isinstance(stmt, (MQuitStatement, MGotoStatement, MHaltStatement)):
+            # Unconditional = no postcondition
+            if stmt.postcondition is None:
+                unreachable = True
+        
+        # Recursively check nested scopes (FOR body, IF then_scope, etc.)
+        # But don't propagate unreachable flag INTO nested scopes - each scope
+        # has its own control flow
+        if isinstance(stmt, MForStatement) and stmt.body and stmt.body.statements:
+            _mark_unreachable_statements(stmt.body.statements)
+        if isinstance(stmt, MIfStatement) and stmt.then_scope and stmt.then_scope.statements:
+            _mark_unreachable_statements(stmt.then_scope.statements)
+        if isinstance(stmt, MElseStatement) and stmt.body and stmt.body.statements:
+            _mark_unreachable_statements(stmt.body.statements)
+        if hasattr(stmt, 'body') and stmt.body and hasattr(stmt.body, 'statements') and stmt.body.statements:
+            # Catch MDoBlockStatement and others
+            if not isinstance(stmt, (MForStatement, MIfStatement, MElseStatement)):
+                _mark_unreachable_statements(stmt.body.statements)
+
+
 def dump_asg_json(routine: MRoutine, include_position: bool = False, indent: int = 2) -> str:
     """Serialize an ASG to JSON for debugging.
     
@@ -451,6 +494,11 @@ class MUMPSParser:
                 label.body.statements = _structure_do_blocks(label.body.statements)
                 for stmt in label.body.statements:
                     stmt.scope = label.body
+        
+        # Post-process: mark unreachable statements after unconditional QUIT/GOTO
+        for label in routine.labels:
+            if label.body.statements:
+                _mark_unreachable_statements(label.body.statements)
         
         return routine
     
