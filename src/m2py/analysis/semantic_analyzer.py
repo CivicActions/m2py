@@ -41,7 +41,7 @@ from m2py.asg.expressions import (
 from m2py.asg.statements import (
     MStatement,
     MSetStatement, MAssignment,
-    MWriteStatement, MReadStatement,
+    MWriteStatement, MReadStatement, MReadTarget,
     MIfStatement, MElseStatement,
     MForStatement, MForParameter,
     MGotoStatement, MDoStatement,
@@ -503,11 +503,14 @@ class SemanticAnalyzer:
         - Format controls: !, #, ?n (output to device)
         - Prompts: "string" (output to device)
         - Targets: VAR or VAR:timeout (input from device)
+        - CharRead: *VAR or *VAR:timeout (single character read)
         
-        New grammar structure:
+        Grammar structure:
         ReadArg: /,/? postcond=Postcondition? arg=ReadArgValue
         ReadArgValue: ReadFormat | StringLiteral | ReadTargetWithTimeout
         ReadTargetWithTimeout: target=ReadTarget (':' timeout=Expr)?
+        ReadTarget: CharRead | GlobalVariable | LocalVariable | Indirection
+        CharRead: /\\*/ var=LocalVariable
         """
         stmt = MReadStatement()
         object.__setattr__(stmt, 'parent', parent)
@@ -525,14 +528,37 @@ class SemanticAnalyzer:
                 
                 # Handle ReadTargetWithTimeout (has target attribute)
                 if hasattr(arg_value, 'target') and arg_value.target:
-                    target = self.analyze(arg_value.target, stmt)
-                    stmt.arguments.append(target)
+                    target_node = arg_value.target
+                    target_cls = target_node.__class__.__name__
+                    
+                    # Check for CharRead (*VAR)
+                    is_char_read = target_cls == 'CharRead'
+                    
+                    # Get the actual variable (unwrap CharRead if needed)
+                    if is_char_read:
+                        actual_var = self.analyze(target_node.var, stmt)
+                        var_name = target_node.var.name if hasattr(target_node.var, 'name') else None
+                    else:
+                        actual_var = self.analyze(target_node, stmt)
+                        var_name = target_node.name if hasattr(target_node, 'name') else None
+                    
+                    # Get timeout if present
+                    timeout_expr = None
+                    if hasattr(arg_value, 'timeout') and arg_value.timeout:
+                        timeout_expr = self.analyze(arg_value.timeout, stmt)
+                    
+                    # Create MReadTarget with all information
+                    read_target = MReadTarget(
+                        variable=actual_var,
+                        is_char_read=is_char_read,
+                        timeout=timeout_expr
+                    )
+                    stmt.arguments.append(read_target)
+                    
                     # Track variable being set
-                    if hasattr(arg_value.target, 'name'):
-                        self._track_variable(arg_value.target.name, arg_value.target, is_set=True)
-                    elif hasattr(arg_value.target, 'var') and hasattr(arg_value.target.var, 'name'):
-                        # CharRead: *VAR
-                        self._track_variable(arg_value.target.var.name, arg_value.target.var, is_set=True)
+                    if var_name:
+                        self._track_variable(var_name, target_node, is_set=True)
+                        
                 # Handle format controls (Newline, FormFeed, Tab, CharCode)
                 elif arg_cls in ('Newline', 'FormFeed', 'Tab', 'CharCode'):
                     fc = self.analyze(arg_value, stmt)

@@ -527,7 +527,7 @@ class TestReadFormatControlGrammar:
 
     def test_read_format_controls_as_asg_nodes(self):
         """READ format controls should be MFormatControl ASG nodes (T533)."""
-        from m2py.asg import MFormatControl, FormatControlType
+        from m2py.asg import MFormatControl, FormatControlType, MReadTarget
         parser = MUMPSParser()
         source = 'LABEL\tR !!,"Prompt",ans\n'
         routine = parser.parse(source)
@@ -548,8 +548,108 @@ class TestReadFormatControlGrammar:
         # Third should be StringLiteral (prompt)
         assert read_stmt.arguments[2].__class__.__name__ == 'StringLiteral'
         
-        # Fourth should be LocalVariable (target)
-        assert read_stmt.arguments[3].__class__.__name__ == 'LocalVariable'
+        # Fourth should be MReadTarget wrapping the LocalVariable (target)
+        assert isinstance(read_stmt.arguments[3], MReadTarget)
+        assert read_stmt.arguments[3].variable.__class__.__name__ == 'LocalVariable'
+        assert read_stmt.arguments[3].variable.name == 'ans'
+        assert read_stmt.arguments[3].is_char_read == False
+        assert read_stmt.arguments[3].timeout is None
+
+    def test_read_with_timeout(self):
+        """READ with timeout should preserve timeout in MReadTarget (T535)."""
+        from m2py.asg import MReadTarget
+        parser = MUMPSParser()
+        source = 'LABEL\tR X:10\n'
+        routine = parser.parse(source)
+        
+        label = routine.labels[0]
+        read_stmt = label.body.statements[0]
+        assert read_stmt.__class__.__name__ == 'MReadStatement'
+        assert len(read_stmt.arguments) == 1
+        
+        # Should be MReadTarget with timeout
+        target = read_stmt.arguments[0]
+        assert isinstance(target, MReadTarget)
+        assert target.variable.name == 'X'
+        assert target.is_char_read == False
+        assert target.timeout is not None
+        assert target.timeout.value == 10
+
+    def test_read_char_read(self):
+        """READ *VAR should set is_char_read=True in MReadTarget (T536)."""
+        from m2py.asg import MReadTarget
+        parser = MUMPSParser()
+        source = 'LABEL\tR *X\n'
+        routine = parser.parse(source)
+        
+        label = routine.labels[0]
+        read_stmt = label.body.statements[0]
+        assert read_stmt.__class__.__name__ == 'MReadStatement'
+        assert len(read_stmt.arguments) == 1
+        
+        # Should be MReadTarget with is_char_read=True
+        target = read_stmt.arguments[0]
+        assert isinstance(target, MReadTarget)
+        assert target.variable.name == 'X'
+        assert target.is_char_read == True
+        assert target.timeout is None
+
+    def test_read_char_read_with_timeout(self):
+        """READ *VAR:timeout should preserve both flags (T535/T536)."""
+        from m2py.asg import MReadTarget
+        parser = MUMPSParser()
+        source = 'LABEL\tR *X:0\n'
+        routine = parser.parse(source)
+        
+        label = routine.labels[0]
+        read_stmt = label.body.statements[0]
+        assert read_stmt.__class__.__name__ == 'MReadStatement'
+        assert len(read_stmt.arguments) == 1
+        
+        # Should be MReadTarget with is_char_read=True AND timeout
+        target = read_stmt.arguments[0]
+        assert isinstance(target, MReadTarget)
+        assert target.variable.name == 'X'
+        assert target.is_char_read == True
+        assert target.timeout is not None
+        assert target.timeout.value == 0
+
+    def test_read_negative_timeout(self):
+        """READ X:-1 should preserve negative timeout (V1READB1 tests)."""
+        from m2py.asg import MReadTarget
+        parser = MUMPSParser()
+        source = 'LABEL\tR X:-1\n'
+        routine = parser.parse(source)
+        
+        label = routine.labels[0]
+        read_stmt = label.body.statements[0]
+        assert read_stmt.__class__.__name__ == 'MReadStatement'
+        
+        target = read_stmt.arguments[0]
+        assert isinstance(target, MReadTarget)
+        assert target.timeout is not None
+        # Negative number is MUnaryOp('-', NumericLiteral(1))
+        assert target.timeout.__class__.__name__ == 'MUnaryOp'
+        assert target.timeout.operator == '-'
+        assert target.timeout.operand.value == 1
+
+    def test_read_multiple_char_reads(self):
+        """READ *A,*B,*C should handle multiple char reads (V1READA2 test 758)."""
+        from m2py.asg import MReadTarget
+        parser = MUMPSParser()
+        source = 'LABEL\tR *A,*B,*C\n'
+        routine = parser.parse(source)
+        
+        label = routine.labels[0]
+        read_stmt = label.body.statements[0]
+        assert read_stmt.__class__.__name__ == 'MReadStatement'
+        assert len(read_stmt.arguments) == 3
+        
+        for i, name in enumerate(['A', 'B', 'C']):
+            target = read_stmt.arguments[i]
+            assert isinstance(target, MReadTarget)
+            assert target.variable.name == name
+            assert target.is_char_read == True
 
 
 class TestOpenDeviceParametersGrammar:

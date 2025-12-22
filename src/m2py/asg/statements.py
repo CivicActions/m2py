@@ -83,14 +83,39 @@ class MWriteStatement(MStatement):
 
 
 @dataclass
+class MReadTarget:
+    """Target variable for READ command with optional timeout.
+    
+    Represents a variable being read into, with optional modifiers:
+    - is_char_read: True for *VAR syntax (single character read)
+    - timeout: Optional timeout expression (VAR:timeout syntax)
+    
+    Examples:
+    - R X -> MReadTarget(variable=MVariable('X'))
+    - R *X -> MReadTarget(variable=MVariable('X'), is_char_read=True)
+    - R X:10 -> MReadTarget(variable=MVariable('X'), timeout=MLiteral(10))
+    - R *X:0 -> MReadTarget(variable=MVariable('X'), is_char_read=True, timeout=MLiteral(0))
+    """
+    
+    variable: "MExpr" = None  # The variable to read into (MVariable or MGlobal)
+    is_char_read: bool = False  # True for *VAR (single character read)
+    timeout: Optional["MExpr"] = None  # Optional timeout expression
+
+
+@dataclass
 class MReadStatement(MStatement):
     """READ command - input.
     
     Reads data from the current device:
-    R X, R "Prompt: ",X, R X:timeout
+    R X, R "Prompt: ",X, R X:timeout, R *X
+    
+    Arguments can be:
+    - MReadTarget: Variable to read into (with optional timeout/char-read flag)
+    - MLiteral (StringLiteral): Prompt text to display
+    - MFormatControl: Format controls (!, #, ?n)
     """
     
-    arguments: List[Any] = field(default_factory=list)  # MExpr, prompts, timeouts
+    arguments: List[Any] = field(default_factory=list)  # MReadTarget, MLiteral, MFormatControl
 
 
 # =============================================================================

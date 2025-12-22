@@ -2123,3 +2123,42 @@ Previous issues (T520-T522) have been resolved. Current validation confirms:
 - [X] T534 [FALSE POSITIVE] Unreachable code after unconditional GOTO IS already detected.
   - **Verified**: V1PRGD3.m statements [4] and [5] after unconditional GOTO are already marked `is_unreachable=True`.
   - The existing unreachable code detection in `detect_unreachable_code()` handles both QUIT and GOTO transfers correctly.
+
+---
+
+## Phase 37: MUGJ Validation Checklist - V1READA2 to V1SEQ1
+
+**Purpose**: Validate READ timeout/indirection behaviors and execution-sequence routines (Checklist 23/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1READA2.m | 7 | 62 | ⚠️ Issues | `*lvn` reads parsed as plain variables; char-read intent lost |
+| V1READB.m | 3 | 4 | ✅ | Driver DOs to ^V1READB1/^V1READB2 captured |
+| V1READB1.m | 6 | 71 | ⚠️ Issues | READ timeouts (`:0`, `:-1`, `:100`, `:10`) dropped; char-read semantics not captured |
+| V1READB2.m | 12 | 81 | ⚠️ Issues | READ timeouts (`:100`) discarded; read-level indirection kept as raw targets |
+| V1RN.m | 8 | 52 | ✅ | Routine-name DO lists captured (single and multi-target DO) |
+| V1SEQ.m | 29 | 134 | ✅ | Execution sequence flows (DO/GOTO/XECUTE) captured and resolved |
+| V1SEQ1.m | 10 | 22 | ✅ | Helper labels and cross-routine DO/GOTO captured |
+
+### Findings
+
+1. **READ timeouts are dropped (V1READB1, V1READB2)**
+    - `ReadTargetWithTimeout` nodes append only the target; the `timeout` expression is ignored so `$TEST` behavior for time-limited reads is lost. Seen in [tests/functional/mugj/inref/V1READB1.m#L9-L39](tests/functional/mugj/inref/V1READB1.m#L9-L39) and [tests/functional/mugj/inref/V1READB2.m#L46-L56](tests/functional/mugj/inref/V1READB2.m#L46-L56).
+    - Root cause: `_analyze_ReadCommand` appends the analyzed `target` but never stores `timeout` from `ReadTargetWithTimeout` ([src/m2py/analysis/semantic_analyzer.py#L526-L536](src/m2py/analysis/semantic_analyzer.py#L526-L536)).
+
+2. **Char READ (`*lvn`) semantics lost (V1READA2, V1READB1)**
+    - `*` arguments are emitted as plain `MVariable` entries in `MReadStatement.arguments`, so codegen cannot distinguish char-by-char reads from line reads (affects tests 757-758, 760/763/765). Examples in [tests/functional/mugj/inref/V1READA2.m#L11-L44](tests/functional/mugj/inref/V1READA2.m#L11-L44) and [tests/functional/mugj/inref/V1READB1.m#L9-L30](tests/functional/mugj/inref/V1READB1.m#L9-L30).
+    - Root cause: `_analyze_ReadCommand` unwraps `CharRead` into `LocalVariable` with no flag or distinct ASG node ([src/m2py/analysis/semantic_analyzer.py#L526-L536](src/m2py/analysis/semantic_analyzer.py#L526-L536)).
+
+### Tasks
+
+- [x] T535 [BUG] Preserve READ timeouts from `ReadTargetWithTimeout`.
+   - Store the analyzed `timeout` expression alongside the target (new field on `MReadArgument`/`MReadTarget` or structured tuple) so `$TEST` and blocking behavior are preserved for `:0`, `:-1`, `:10`, `:100` cases.
+   - Update semantic analyzer and any ASG classes needed; add regression tests covering V1READB1 and V1READB2 timeout scenarios.
+
+- [x] T536 [BUG] Represent char-read (`*lvn`) distinctly in ASG.
+   - Introduce an ASG wrapper or flag so char reads are not flattened into normal variable targets.
+   - Ensure semantic analyzer preserves the distinction and add tests for single-character reads in V1READA2/V1READB1.

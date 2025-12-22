@@ -7,7 +7,7 @@ This module exports all ASG node types used to represent parsed MUMPS programs.
 from m2py.asg.elements import ASGElement, MRoutine, MLabel, MScope, MCall
 from m2py.asg.enums import ForLoopType, ForParamType, GotoType, CallType, LiteralType, FormatControlType
 from m2py.asg.statements import (
-    MStatement, MAssignment, MSetStatement, MWriteStatement, MReadStatement,
+    MStatement, MAssignment, MSetStatement, MWriteStatement, MReadStatement, MReadTarget,
     MIfStatement, MElseStatement, MForStatement, MForParameter, MDoStatement,
     MQuitStatement, MNewStatement, MKillStatement, MHangStatement,
     MHaltStatement, MBreakStatement, MXecuteStatement, MLockStatement, MMergeStatement,
@@ -28,7 +28,7 @@ __all__ = [
     # Enums
     "ForLoopType", "ForParamType", "GotoType", "CallType", "LiteralType", "FormatControlType",
     # Statements
-    "MStatement", "MAssignment", "MSetStatement", "MWriteStatement", "MReadStatement",
+    "MStatement", "MAssignment", "MSetStatement", "MWriteStatement", "MReadStatement", "MReadTarget",
     "MIfStatement", "MElseStatement", "MForStatement", "MForParameter", "MDoStatement",
     "MQuitStatement", "MNewStatement", "MKillStatement", "MHangStatement",
     "MHaltStatement", "MBreakStatement", "MXecuteStatement", "MLockStatement",
