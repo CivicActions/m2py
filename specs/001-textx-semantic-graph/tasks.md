@@ -2082,3 +2082,44 @@ Previous issues (T520-T522) have been resolved. Current validation confirms:
   - Instead of synthesizing implicit QUIT, track whether label ends with explicit exit (QUIT/GOTO/HALT).
   - This is informational for code generation; MUMPS semantics already imply fallthrough returns.
 
+---
+
+## Phase 36: MUGJ Validation Checklist - V1PRGD3 to V1READA1
+
+**Purpose**: Validate preliminary GOTO/DO/QUIT label tests and READ command drivers (Checklist 22/54).
+**Validation Date**: 2025-12-21
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1PRGD3.m | 3 | 9 | ⚠️ Minor | Statements after unconditional GOTO remain reachable (extends unreachable-code issue)
+| V1PRIE.m | 4 | 36 | ✅ | IF/ELSE chains captured; nested ELSE blocks preserved
+| V1PRSET.m | 7 | 36 | ✅ | SET/KILL/WRITE sequences captured; format controls normalized
+| V1RANDA.m | 24 | 66 | ✅ | $RANDOM loop tests captured; DO EXT/FIND targets resolved
+| V1RANDB.m | 14 | 70 | ✅ | $RANDOM gap/frequency tests captured; nested DO/QUIT preserved
+| V1READA.m | 3 | 5 | ✅ | Driver DO calls to ^V1READA1/^V1READA2 resolved
+| V1READA1.m | 11 | 72 | ⚠️ Issues | READ arguments still contain raw textX format nodes (Newl/Tab) instead of ASG expressions
+
+### Findings
+
+1. **READ arguments not normalized to ASG (V1READA1 labels 749-756)**
+    - `MReadStatement.arguments` contain `textx:commands.Newl`/`Tab` objects rather than `MFormatControl`/expression nodes.
+    - Root cause: `_analyze_ReadCommand` passes textX command nodes through without routing to `_build_expression_asg` or format-control handlers.
+    - Impact: Codegen cannot interpret READ format controls, timeouts, or prompts consistently.
+
+2. **Unreachable code after unconditional GOTO not flagged (V1PRGD3 line 4)**
+    - Line `S VCOMP=VCOMP_3 G B` is followed by additional SET/QUIT statements that remain marked reachable.
+    - Existing unreachable detection (T531) covers QUIT-only; needs extension to unconditional transfers like GOTO.
+
+### Tasks
+
+- [X] T533 [BUG] Normalize READ arguments to ASG format controls/expressions.
+  - **Root Cause**: `_analyze_ReadCommand` checked for format control class names (`Newline`, `FormFeed`, `Tab`) but appended raw textX nodes directly instead of calling `self.analyze()` to convert them to `MFormatControl` ASG nodes.
+  - **Fix Applied**: Changed line 537-538 in `semantic_analyzer.py` to call `self.analyze(arg_value, stmt)` for format controls, routing through `_analyze_Newline`/`_analyze_FormFeed`/`_analyze_Tab`/`_analyze_CharCode` handlers.
+  - **Test Added**: `test_read_format_controls_as_asg_nodes` in `tests/unit/test_grammar.py` verifies READ format controls are proper `MFormatControl` ASG nodes.
+  - **Result**: 709 tests passing.
+
+- [X] T534 [FALSE POSITIVE] Unreachable code after unconditional GOTO IS already detected.
+  - **Verified**: V1PRGD3.m statements [4] and [5] after unconditional GOTO are already marked `is_unreachable=True`.
+  - The existing unreachable code detection in `detect_unreachable_code()` handles both QUIT and GOTO transfers correctly.

@@ -533,9 +533,10 @@ class SemanticAnalyzer:
                     elif hasattr(arg_value.target, 'var') and hasattr(arg_value.target.var, 'name'):
                         # CharRead: *VAR
                         self._track_variable(arg_value.target.var.name, arg_value.target.var, is_set=True)
-                # Handle format controls (Newline, FormFeed, Tab)
-                elif arg_cls in ('Newline', 'FormFeed', 'Tab'):
-                    stmt.arguments.append(arg_value)
+                # Handle format controls (Newline, FormFeed, Tab, CharCode)
+                elif arg_cls in ('Newline', 'FormFeed', 'Tab', 'CharCode'):
+                    fc = self.analyze(arg_value, stmt)
+                    stmt.arguments.append(fc)
                 # Handle StringLiteral (prompt)
                 elif arg_cls == 'StringLiteral' or isinstance(arg_value, MLiteral):
                     prompt_expr = self.analyze(arg_value, stmt)

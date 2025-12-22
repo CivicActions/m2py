@@ -525,6 +525,32 @@ class TestReadFormatControlGrammar:
         assert len(label.body.statements) == 1
         assert label.body.statements[0].__class__.__name__ == 'MReadStatement'
 
+    def test_read_format_controls_as_asg_nodes(self):
+        """READ format controls should be MFormatControl ASG nodes (T533)."""
+        from m2py.asg import MFormatControl, FormatControlType
+        parser = MUMPSParser()
+        source = 'LABEL\tR !!,"Prompt",ans\n'
+        routine = parser.parse(source)
+        
+        label = routine.labels[0]
+        read_stmt = label.body.statements[0]
+        assert read_stmt.__class__.__name__ == 'MReadStatement'
+        
+        # Should have 4 arguments: !, !, "Prompt", ans
+        assert len(read_stmt.arguments) == 4
+        
+        # First two should be MFormatControl NEWLINE nodes
+        assert isinstance(read_stmt.arguments[0], MFormatControl)
+        assert read_stmt.arguments[0].control_type == FormatControlType.NEWLINE
+        assert isinstance(read_stmt.arguments[1], MFormatControl)
+        assert read_stmt.arguments[1].control_type == FormatControlType.NEWLINE
+        
+        # Third should be StringLiteral (prompt)
+        assert read_stmt.arguments[2].__class__.__name__ == 'StringLiteral'
+        
+        # Fourth should be LocalVariable (target)
+        assert read_stmt.arguments[3].__class__.__name__ == 'LocalVariable'
+
 
 class TestOpenDeviceParametersGrammar:
     """Test OPEN command with device parameters (T409)."""
