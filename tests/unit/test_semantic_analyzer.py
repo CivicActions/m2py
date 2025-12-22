@@ -360,6 +360,47 @@ class TestSpecialVariableASG:
         assert isinstance(result, MSpecialVariable)
         assert result.name == "JOB"
 
+    def test_abbreviated_horolog(self):
+        """$H creates MSpecialVariable with name 'H' (T538 fix)."""
+        from m2py.asg import MSpecialVariable
+        
+        expr = parse_expression('$H')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "H"
+
+    def test_abbreviated_storage(self):
+        """$S creates MSpecialVariable with name 'S' (T538 fix)."""
+        from m2py.asg import MSpecialVariable
+        
+        expr = parse_expression('$S')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "S"
+
+    def test_abbreviated_test(self):
+        """$T creates MSpecialVariable with name 'T' (T538 fix)."""
+        from m2py.asg import MSpecialVariable
+        
+        expr = parse_expression('$T')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "T"
+
+    def test_abbreviated_job(self):
+        """$J creates MSpecialVariable with name 'J' (T538 fix)."""
+        from m2py.asg import MSpecialVariable
+        
+        expr = parse_expression('$J')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "J"
+
+
 class TestFormatControlASG:
     """Test MFormatControl ASG nodes for Write format controls (T524)."""
     

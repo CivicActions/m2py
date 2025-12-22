@@ -131,6 +131,66 @@ class TestSetStatementAnalysis:
         assert isinstance(target2, MNakedGlobal)
         assert len(target2.subscripts) == 1
 
+    def test_set_parenthesized_multi_target_expansion(self):
+        """SET (A,B,C)=1 expands into 3 separate MAssignment objects (T537 fix).
+        
+        Per data-model.md, MAssignment.target should be a single expression,
+        not a list. Multi-assignment with parenthesized targets should expand
+        into separate assignments with the same value.
+        """
+        stmt = analyze_first_command("S (A,B,C)=1")
+        
+        assert isinstance(stmt, MSetStatement)
+        # Should have 3 assignments, one for each target
+        assert len(stmt.assignments) == 3
+        
+        # Each assignment has a single target (not a list)
+        for i, name in enumerate(["A", "B", "C"]):
+            assign = stmt.assignments[i]
+            assert isinstance(assign.target, MVariable), \
+                f"Assignment {i} target should be MVariable, got {type(assign.target)}"
+            assert assign.target.name == name
+            # Value should be a literal 1
+            assert isinstance(assign.value, MLiteral)
+            assert assign.value.value == 1
+
+    def test_set_parenthesized_with_globals(self):
+        """SET (A,^B,C)=X expands to 3 assignments with mixed types (T537 fix)."""
+        stmt = analyze_first_command("S (A,^B,C)=X")
+        
+        assert isinstance(stmt, MSetStatement)
+        assert len(stmt.assignments) == 3
+        
+        # First target is local variable
+        assert isinstance(stmt.assignments[0].target, MVariable)
+        assert stmt.assignments[0].target.name == "A"
+        
+        # Second target is global variable
+        assert isinstance(stmt.assignments[1].target, MGlobal)
+        assert stmt.assignments[1].target.name == "B"
+        
+        # Third target is local variable
+        assert isinstance(stmt.assignments[2].target, MVariable)
+        assert stmt.assignments[2].target.name == "C"
+
+    def test_set_parenthesized_mixed_with_regular(self):
+        """SET (A,B)=1,C=2 produces 3 assignments total (T537 fix)."""
+        stmt = analyze_first_command("S (A,B)=1,C=2")
+        
+        assert isinstance(stmt, MSetStatement)
+        # (A,B)=1 expands to 2 assignments, plus C=2 is 1 more = 3 total
+        assert len(stmt.assignments) == 3
+        
+        # First two targets from multi-assignment have value 1
+        assert stmt.assignments[0].target.name == "A"
+        assert stmt.assignments[0].value.value == 1
+        assert stmt.assignments[1].target.name == "B"
+        assert stmt.assignments[1].value.value == 1
+        
+        # Third target is regular assignment with value 2
+        assert stmt.assignments[2].target.name == "C"
+        assert stmt.assignments[2].value.value == 2
+
 
 class TestWriteStatementAnalysis:
     """Tests for WRITE command analysis."""

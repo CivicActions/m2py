@@ -2162,3 +2162,65 @@ Previous issues (T520-T522) have been resolved. Current validation confirms:
 - [x] T536 [BUG] Represent char-read (`*lvn`) distinctly in ASG.
    - Introduce an ASG wrapper or flag so char reads are not flattened into normal variable targets.
    - Ensure semantic analyzer preserves the distinction and add tests for single-character reads in V1READA2/V1READB1.
+
+---
+
+## Phase 38: MUGJ Validation Checklist - V1SET to V1UO2A
+
+**Purpose**: Validate SET command variations, special variables ($HOROLOG, $STORAGE), and unary operator tests (Checklist 24/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1SET.m | 10 | 120 | ⚠️ Issues | Multi-assignment `(A,B,C)=1` stored as list target, not expanded |
+| V1SVH.m | 7 | 37 | ✅ | Pattern match and $HOROLOG captured correctly |
+| V1SVS.m | 6 | 51 | ✅ | $STORAGE tests and argumentless KILL captured |
+| V1UO.m | 11 | 20 | ✅ | Simple driver pattern with external routine calls |
+| V1UO1A.m | 6 | 65 | ⚠️ Issues | $H abbreviation misclassified as IntrinsicFunction |
+| V1UO1B.m | 6 | 111 | ✅ | Unary plus tests captured |
+| V1UO2A.m | 6 | 65 | ⚠️ Issues | $T abbreviation misclassified as IntrinsicFunction |
+
+### Findings
+
+1. **Multi-assignment SET stores target as list instead of expanding (V1SET labels 785, 786)**
+   - `S (A,B,C,D,E,F,^V1,^V1A)=1` creates a single `MAssignment` with `target` as a list of 8 variables.
+   - Per data-model.md, each `MAssignment` should have a single target; the semantic analyzer should expand this into 8 separate assignments with the same value.
+   - Impact: Code generation must handle list targets specially or risk incorrect semantics.
+   - Root cause: `_analyze_SetCommand` in `semantic_analyzer.py` lines 467-468 stores `ParenTargets.targets` as a list in `MAssignment.target` instead of expanding.
+
+2. **Special variable abbreviations misclassified as IntrinsicFunction**
+   - `$H` (abbreviation of `$HOROLOG`) → `IntrinsicFunction` ❌ (should be `SpecialVariable`)
+   - `$S` (abbreviation of `$STORAGE` or `$SELECT`) → `IntrinsicFunction` ❌
+   - `$T` (abbreviation of `$TEST`) → `IntrinsicFunction` ❌
+   - Full names work correctly: `$HOROLOG`, `$TEST`, `$Y` → `SpecialVariable` ✅
+   - Root cause: The parser or textX grammar doesn't recognize single-letter abbreviations as special variables.
+   - Impact: Code generation may call non-existent functions instead of accessing special variable values.
+
+3. **Naked globals correctly tracked**
+   - `^(2)` (naked global) → `NakedGlobal` with `requires_runtime_tracking=True` ✅
+   - Subscripts captured correctly.
+
+4. **Pattern match correctly captured**
+   - `$HOROLOG?1N.N` → `MPatternMatch` with `subject=SpecialVariable(HOROLOG)`, `pattern="1N.N"` ✅
+
+### Tasks
+
+- [x] T537 [BUG] Expand multi-assignment SET `(A,B,C)=value` into separate MAssignment objects. ✅
+   - Modified `_analyze_SetCommand` in `semantic_analyzer.py` to iterate over `ParenTargets.targets` and create one `MAssignment` per target, all with the same value expression.
+   - Added tests: `test_set_parenthesized_multi_target_expansion`, `test_set_parenthesized_with_globals`, `test_set_parenthesized_mixed_with_regular`.
+   - Location: [src/m2py/analysis/semantic_analyzer.py#L466-L497](src/m2py/analysis/semantic_analyzer.py#L466-L497)
+
+- [x] T538 [BUG] Recognize abbreviated special variables ($H, $S, $T, $J, $I, etc.) as SpecialVariable. ✅
+   - Updated `SVARNAME` regex in `expressions.tx` to include abbreviations: D, H, I, J, K, P, Q, R, S, T, X, Y, EC, ES, ET, ST, SY, ZL.
+   - Reordered grammar: `IntrinsicFunction` (with required args) → `SpecialVariable` → `IntrinsicFunctionNoArgs` (catch-all for $ZVersion etc.).
+   - Added `IntrinsicFunctionNoArgs` textX class for unknown $ items like `$ZVersion`.
+   - Added tests: `test_abbreviated_horolog`, `test_abbreviated_storage`, `test_abbreviated_test`, `test_abbreviated_job`, `test_abbreviated_io`, `test_abbreviated_device`, `test_select_function_still_works`.
+   - Location: [src/m2py/grammar/expressions.tx#L281-L286](src/m2py/grammar/expressions.tx#L281-L286)
+
+### Code Generation Considerations (Documented)
+
+1. **Naked globals require runtime context tracking** - The ASG correctly identifies them but code generation needs to track the "last referenced global" across statements.
+
+2. **MUMPS numeric coercion rules** - Unary operators `+` and `-` follow specific string-to-number rules that must be replicated in Python runtime.

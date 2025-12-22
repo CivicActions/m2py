@@ -458,26 +458,36 @@ class SemanticAnalyzer:
         
         if hasattr(cmd, 'assignments') and cmd.assignments:
             for assign in cmd.assignments:
-                asg_assign = MAssignment()
-                
                 # Handle targets
                 if hasattr(assign, 'targets') and assign.targets:
                     targets = assign.targets
                     if targets.__class__.__name__ == 'ParenTargets':
-                        asg_assign.target = [self.analyze(t, asg_assign) for t in targets.targets]
-                        # Track variables being set
+                        # Multi-assignment: S (A,B,C)=value
+                        # Expand into separate MAssignment objects, one per target
+                        analyzed_value = None
+                        if hasattr(assign, 'value') and assign.value:
+                            # Analyze value once (will be shared by all assignments)
+                            analyzed_value = self.analyze(assign.value, stmt)
+                        
                         for t in targets.targets:
+                            asg_assign = MAssignment()
+                            asg_assign.target = self.analyze(t, asg_assign)
+                            asg_assign.value = analyzed_value
+                            # Track variables being set
                             if hasattr(t, 'name'):
                                 self._track_variable(t.name, t, is_set=True)
+                            stmt.assignments.append(asg_assign)
                     else:
+                        # Single target assignment
+                        asg_assign = MAssignment()
                         asg_assign.target = self.analyze(targets, asg_assign)
                         if hasattr(targets, 'name'):
                             self._track_variable(targets.name, targets, is_set=True)
-                
-                if hasattr(assign, 'value') and assign.value:
-                    asg_assign.value = self.analyze(assign.value, asg_assign)
-                
-                stmt.assignments.append(asg_assign)
+                        
+                        if hasattr(assign, 'value') and assign.value:
+                            asg_assign.value = self.analyze(assign.value, asg_assign)
+                        
+                        stmt.assignments.append(asg_assign)
         
         return stmt
     

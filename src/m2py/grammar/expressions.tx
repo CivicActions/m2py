@@ -120,12 +120,17 @@ UnaryOp:
 ;
 
 // Primary expressions (atoms)
-// Note: SpecialVariable MUST come before IntrinsicFunction to match $TEST correctly
+// Ordering for $ prefixed items:
+// 1. IntrinsicFunction (with args) - catches $S(args) as function
+// 2. SpecialVariable - catches $S as special variable (STORAGE)  
+// 3. IntrinsicFunctionNoArgs - catch-all for unknown $ZVersion etc.
+// (T538 fix for abbreviated special variables)
 PrimaryExpr:
     ParenExpr |
     ExtrinsicFunction |
-    SpecialVariable |
     IntrinsicFunction |
+    SpecialVariable |
+    IntrinsicFunctionNoArgs |
     NakedGlobal |
     GlobalVariable |
     Indirection |
@@ -166,11 +171,13 @@ OffsetUnaryExpr:
 // Primary expressions for offset - includes subscripted globals only
 // (bare ^NAME is excluded because it could be a routine reference,
 // but ^NAME(...) is clearly a global variable in an expression)
+// Ordering for $ items same as PrimaryExpr (T538 fix)
 OffsetPrimaryExpr:
     OffsetParenExpr |
     ExtrinsicFunction |
-    SpecialVariable |
     IntrinsicFunction |
+    SpecialVariable |
+    IntrinsicFunctionNoArgs |
     SubscriptedGlobal |
     Indirection |
     LocalVariable |
@@ -236,9 +243,18 @@ Subscripts:
 // Functions
 // =============================================================================
 
-// Intrinsic (built-in) function
+// Intrinsic (built-in) function WITH arguments - parentheses are REQUIRED
+// This must come before SpecialVariable and IntrinsicFunctionNoArgs in PrimaryExpr
+// to correctly parse $S(1:2) as $SELECT function, not $STORAGE variable
 IntrinsicFunction:
-    '$' name=FUNCNAME args=FunctionArgs?
+    '$' name=FUNCNAME args=FunctionArgs
+;
+
+// Intrinsic function WITHOUT arguments - catch-all for unknown $ items
+// like implementation-specific $ZVersion, $ZJob, etc.
+// This comes AFTER SpecialVariable to ensure known special vars are matched first
+IntrinsicFunctionNoArgs:
+    '$' name=FUNCNAME
 ;
 
 // Extrinsic (user-defined) function: $$label^routine(args) or $$label(args) or $$^routine(args)
@@ -277,8 +293,13 @@ FUNCNAME:
 ;
 
 // Special variable name (these are specific keywords)
+// Includes both full names and valid abbreviations
+// Order matters: longer matches first to prevent partial matching
+// Full names: DEVICE, ECODE, ESTACK, ETRAP, HOROLOG, IO, JOB, KEY, PRINCIPAL, QUIT, REFERENCE, STACK, STORAGE, SYSTEM, TEST, X, Y, ZLEVEL
+// Abbreviations: D (DEVICE), EC (ECODE), ES (ESTACK), ET (ETRAP), H (HOROLOG), I (IO), J (JOB), K (KEY), P (PRINCIPAL), Q (QUIT), R (REFERENCE), S (STORAGE), ST (STACK), SY (SYSTEM), T (TEST), ZL (ZLEVEL)
+// Note: X and Y are single-letter and need no abbreviation
 SVARNAME:
-    /DEVICE|ECODE|ESTACK|ETRAP|HOROLOG|IO|JOB|KEY|PRINCIPAL|QUIT|REFERENCE|STACK|STORAGE|SYSTEM|TEST|X|Y|ZLEVEL/
+    /DEVICE|ECODE|ESTACK|ETRAP|HOROLOG|IO|JOB|KEY|PRINCIPAL|QUIT|REFERENCE|STACK|STORAGE|SYSTEM|TEST|ZLEVEL|EC|ES|ET|ST|SY|ZL|D|H|I|J|K|P|Q|R|S|T|X|Y/
 ;
 
 // Quoted string (handles "" escaping)

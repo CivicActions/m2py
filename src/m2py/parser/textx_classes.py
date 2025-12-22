@@ -195,12 +195,27 @@ class SpecialVariable(MSpecialVariable):
 class IntrinsicFunction(MIntrinsicFunction):
     """textX custom class for IntrinsicFunction grammar rule.
     
-    Grammar: IntrinsicFunction: '$' name=FUNCNAME args=FunctionArgs?;
+    Grammar: IntrinsicFunction: '$' name=FUNCNAME args=FunctionArgs;
+    Note: This version requires args (T538 fix).
     """
     
     def __init__(self, parent=None, name: str = "", args=None):
         object.__setattr__(self, 'name', name)
         object.__setattr__(self, 'arguments', _unwrap_function_args(args))
+        object.__setattr__(self, 'result_type', None)
+
+
+class IntrinsicFunctionNoArgs(MIntrinsicFunction):
+    """textX custom class for IntrinsicFunctionNoArgs grammar rule.
+    
+    Grammar: IntrinsicFunctionNoArgs: '$' name=FUNCNAME;
+    This is a catch-all for unknown $ items like $ZVersion (T538 fix).
+    Maps to MIntrinsicFunction with empty arguments list.
+    """
+    
+    def __init__(self, parent=None, name: str = ""):
+        object.__setattr__(self, 'name', name)
+        object.__setattr__(self, 'arguments', [])
         object.__setattr__(self, 'result_type', None)
 
 
@@ -250,6 +265,7 @@ EXPRESSION_CLASSES = [
     NakedGlobal,
     SpecialVariable,
     IntrinsicFunction,
+    IntrinsicFunctionNoArgs,
     ExtrinsicFunction,
     Indirection,
 ]

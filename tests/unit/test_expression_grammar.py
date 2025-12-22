@@ -306,6 +306,76 @@ class TestSpecialVariables:
         model = expr_metamodel.model_from_str('$X', 'Expr')
         assert model is not None
 
+    def test_abbreviated_horolog(self, expr_metamodel):
+        """Parse $H as abbreviated $HOROLOG (T538 fix)."""
+        model = expr_metamodel.model_from_str('$H', 'Expr')
+        assert model is not None
+        # Navigate: Expr -> left (UnaryExpr) -> operand (PrimaryExpr) 
+        # PrimaryExpr should be SpecialVariable
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SpecialVariable', \
+            f"Expected SpecialVariable, got {operand.__class__.__name__}"
+        assert operand.name == 'H'
+
+    def test_abbreviated_storage(self, expr_metamodel):
+        """Parse $S as abbreviated $STORAGE (T538 fix)."""
+        model = expr_metamodel.model_from_str('$S', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SpecialVariable', \
+            f"Expected SpecialVariable, got {operand.__class__.__name__}"
+        assert operand.name == 'S'
+
+    def test_abbreviated_test(self, expr_metamodel):
+        """Parse $T as abbreviated $TEST (T538 fix)."""
+        model = expr_metamodel.model_from_str('$T', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SpecialVariable', \
+            f"Expected SpecialVariable, got {operand.__class__.__name__}"
+        assert operand.name == 'T'
+
+    def test_abbreviated_job(self, expr_metamodel):
+        """Parse $J as abbreviated $JOB (T538 fix)."""
+        model = expr_metamodel.model_from_str('$J', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SpecialVariable', \
+            f"Expected SpecialVariable, got {operand.__class__.__name__}"
+        assert operand.name == 'J'
+
+    def test_abbreviated_io(self, expr_metamodel):
+        """Parse $I as abbreviated $IO (T538 fix)."""
+        model = expr_metamodel.model_from_str('$I', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SpecialVariable', \
+            f"Expected SpecialVariable, got {operand.__class__.__name__}"
+        assert operand.name == 'I'
+
+    def test_abbreviated_device(self, expr_metamodel):
+        """Parse $D as abbreviated $DEVICE (T538 fix)."""
+        model = expr_metamodel.model_from_str('$D', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SpecialVariable', \
+            f"Expected SpecialVariable, got {operand.__class__.__name__}"
+        assert operand.name == 'D'
+
+    def test_select_function_still_works(self, expr_metamodel):
+        """Parse $SELECT(args) as function, not special variable (T538 fix).
+        
+        $S alone is $STORAGE special variable, but $SELECT(args) is $SELECT function.
+        We use full name $SELECT here because IntrinsicFunction uses FNAME.
+        """
+        model = expr_metamodel.model_from_str('$SELECT(X,Y)', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        # Should be IntrinsicFunction since it has arguments
+        assert operand.__class__.__name__ == 'IntrinsicFunction', \
+            f"Expected IntrinsicFunction, got {operand.__class__.__name__}"
+        assert operand.name == 'SELECT'
+
 
 class TestIndirection:
     """Test indirection parsing."""
