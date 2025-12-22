@@ -73,8 +73,9 @@ ParenTargets:
 
 // NakedGlobal MUST come before GlobalVariable since both start with ^
 // NakedGlobal is ^(...) while GlobalVariable is ^name(...)
+// IntrinsicFunction supports left-hand $PIECE: $P(var,"^")="value"
 SingleTarget:
-    NakedGlobal | GlobalVariable | LocalVariable | Indirection
+    NakedGlobal | GlobalVariable | LocalVariable | Indirection | IntrinsicFunction
 ;
 
 // =============================================================================
@@ -287,39 +288,47 @@ QuitCommand:
 // Pattern: Command keyword followed by space + likely argument pattern
 // This distinguishes "Q S X=1" (QUIT then SET) from "Q X" (QUIT with value)
 // Note: SET requires "=" in arguments, others require space before args
+// CRITICAL: Also detect command keywords followed by : (postcondition)
 CommandWithArg:
     // SET: S VAR= or S (...)
-    /[Ss][Ee][Tt][ \t]|[Ss][ \t]+[A-Za-z%^(]/ |
+    /[Ss][Ee][Tt][ \t:]|[Ss][ \t]+[A-Za-z%^(]/ |
     /[Ss][ \t]*=/ |  // S= is impossible as return value (assignment)
-    // WRITE: W followed by space (W X is WRITE X)
-    /[Ww][Rr][Ii][Tt][Ee][ \t]|[Ww][ \t]+[^=]/ |
-    // READ: R followed by space  
-    /[Rr][Ee][Aa][Dd][ \t]|[Rr][ \t]+[^=]/ |
-    // IF: I followed by space or end (argumentless IF)
-    /[Ii][Ff][ \t]|[Ii][Ff]$|[Ii][ \t]+[^=]|[Ii]$/ |
-    // ELSE: E followed by space or end
-    /[Ee][Ll][Ss][Ee]|[Ee][ \t]|[Ee]$/ |
-    // FOR: F followed by space
-    /[Ff][Oo][Rr][ \t]|[Ff][ \t]/ |
-    // GOTO: G followed by space
-    /[Gg][Oo][Tt][Oo][ \t]|[Gg][ \t]+[A-Za-z%^]/ |
-    // DO: D followed by space
-    /[Dd][Oo][ \t]|[Dd][ \t]+[A-Za-z%^@]/ |
-    // QUIT: Q followed by space or end
-    /[Qq][Uu][Ii][Tt]|[Qq][ \t]|[Qq]$/ |
-    // NEW: N followed by space
-    /[Nn][Ee][Ww][ \t]|[Nn][ \t]+[A-Za-z%(]/ |
-    // KILL: K followed by space  
-    /[Kk][Ii][Ll][Ll][ \t]|[Kk][ \t]/ |
-    // BREAK: B followed by space or end
-    /[Bb][Rr][Ee][Aa][Kk]|[Bb][ \t]|[Bb]$/ |
-    // Other commands (less common after QUIT)
-    /[Hh][Aa][Nn][Gg][ \t]/ |
+    /[Ss]:/ |  // SET with postcondition
+    // WRITE: W followed by space or postcondition
+    /[Ww][Rr][Ii][Tt][Ee][ \t:]|[Ww][ \t]+[^=]/ |
+    /[Ww]:/ |  // WRITE with postcondition
+    // READ: R followed by space or postcondition
+    /[Rr][Ee][Aa][Dd][ \t:]|[Rr][ \t]+[^=]/ |
+    /[Rr]:/ |  // READ with postcondition
+    // IF: I followed by space, end, or postcondition
+    /[Ii][Ff][ \t:]|[Ii][Ff]$|[Ii][ \t]+[^=]|[Ii]$|[Ii]:/ |
+    // ELSE: E followed by space, end, or postcondition (rare but valid)
+    /[Ee][Ll][Ss][Ee]|[Ee][ \t]|[Ee]$|[Ee]:/ |
+    // FOR: F followed by space or postcondition
+    /[Ff][Oo][Rr][ \t:]|[Ff][ \t]|[Ff]:/ |
+    // GOTO: G followed by space or postcondition
+    /[Gg][Oo][Tt][Oo][ \t:]|[Gg][ \t]+[A-Za-z%^]/ |
+    /[Gg]:/ |  // GOTO with postcondition
+    // DO: D followed by space or postcondition
+    /[Dd][Oo][ \t:]|[Dd][ \t]+[A-Za-z%^@]/ |
+    /[Dd]:/ |  // DO with postcondition
+    // QUIT: Q followed by space, end, or postcondition
+    /[Qq][Uu][Ii][Tt]|[Qq][ \t]|[Qq]$|[Qq]:/ |
+    // NEW: N followed by space or postcondition
+    /[Nn][Ee][Ww][ \t:]|[Nn][ \t]+[A-Za-z%(]/ |
+    /[Nn]:/ |  // NEW with postcondition
+    // KILL: K followed by space or postcondition
+    /[Kk][Ii][Ll][Ll][ \t:]|[Kk][ \t]/ |
+    /[Kk]:/ |  // KILL with postcondition
+    // BREAK: B followed by space, end, or postcondition
+    /[Bb][Rr][Ee][Aa][Kk]|[Bb][ \t]|[Bb]$|[Bb]:/ |
+    // Other commands (less common after QUIT) - also check postcondition
+    /[Hh][Aa][Nn][Gg][ \t:]/ |
     /[Hh][Aa][Ll][Tt]/ |
-    /[Ll][Oo][Cc][Kk][ \t]|[Ll][ \t]/ |
-    /[Mm][Ee][Rr][Gg][Ee][ \t]|[Mm][ \t]+[A-Za-z%^]/ |
-    /[Vv][Ii][Ee][Ww][ \t]|[Vv][ \t]+[^=]/ |
-    /[Xx][Ee][Cc][Uu][Tt][Ee][ \t]|[Xx][ \t]+[^=]/
+    /[Ll][Oo][Cc][Kk][ \t:]|[Ll][ \t]|[Ll]:/ |
+    /[Mm][Ee][Rr][Gg][Ee][ \t:]|[Mm][ \t]+[A-Za-z%^]|[Mm]:/ |
+    /[Vv][Ii][Ee][Ww][ \t:]|[Vv][ \t]+[^=]|[Vv]:/ |
+    /[Xx][Ee][Cc][Uu][Tt][Ee][ \t:]|[Xx][ \t]+[^=]|[Xx]:/
 ;
 
 // =============================================================================
@@ -355,9 +364,11 @@ KillArgument:
     exclusive?='(' except+=VARNAME[/,/] ')' | target=KillTarget
 ;
 
-// KILL target can be a global, local variable, or indirection (@expr)
+// KILL target can be a naked global, global, local variable, or indirection (@expr)
+// NakedGlobal MUST come before GlobalVariable since both start with ^
+// NakedGlobal is ^(...) while GlobalVariable is ^name(...)
 KillTarget:
-    GlobalVariable | Indirection | LocalVariable
+    NakedGlobal | GlobalVariable | Indirection | LocalVariable
 ;
 
 // =============================================================================

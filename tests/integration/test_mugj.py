@@ -1535,3 +1535,117 @@ class TestMUGJValidation:
         print(f"FOR statements: {for_count} (with body: {for_with_body})")
         print(f"IF statements: {if_count} (with body: {if_with_body})")
         print(f"ELSE statements: {else_count} (with body: {else_with_body})")
+
+    def test_vv2cs_multi_for_with_postconditions(self, parser, mugj_inref_dir):
+        """T563: VV2CS.m II-5 must parse multiple FOR loops with command postconditions.
+        
+        This tests the grammar fix for CommandWithArg - ensuring that commands
+        with postconditions (like D:1) are recognized after QUIT with postcondition.
+        
+        Line pattern: F I=6:1:8 Q:I=10 D:1 A:I>0 ;
+                      F I=9:1:15 QUIT:I=11 DO A ;
+        
+        Both FOR loops should be captured, with postconditions on QUIT and DO.
+        """
+        from m2py.asg.statements import MForStatement, MQuitStatement, MDoStatement
+        
+        vv2cs_path = mugj_inref_dir / "VV2CS.m"
+        assert vv2cs_path.exists(), "VV2CS.m should exist in MUGJ test suite"
+        
+        routine = parser.parse_file(vv2cs_path)
+        
+        # Find label 5 (II-5 test)
+        label5 = None
+        for label in routine.labels:
+            if label.name == "5":
+                label5 = label
+                break
+        
+        assert label5 is not None, "Label '5' should exist in VV2CS.m"
+        
+        # Count FOR statements in label 5
+        for_stmts = [s for s in label5.body.statements if isinstance(s, MForStatement)]
+        assert len(for_stmts) >= 2, f"Label 5 should have at least 2 FOR statements, got {len(for_stmts)}"
+        
+        # First FOR: I=6:1:8
+        for1 = for_stmts[0]
+        assert for1.loop_var == "I", "First FOR loop variable should be I"
+        assert len(for1.parameters) >= 1, "First FOR should have at least one parameter"
+        # start is a NumericLiteral, check its value attribute
+        assert for1.parameters[0].start.value == 6, "First FOR start should be 6"
+        
+        # First FOR should have body with QUIT and DO with postconditions
+        assert len(for1.body.statements) >= 2, "First FOR should have QUIT and DO in body"
+        quit_stmt = for1.body.statements[0]
+        assert isinstance(quit_stmt, MQuitStatement), "First body stmt should be QUIT"
+        assert quit_stmt.postcondition is not None, "QUIT should have postcondition (Q:I=10)"
+        
+        do_stmt = for1.body.statements[1]
+        assert isinstance(do_stmt, MDoStatement), "Second body stmt should be DO"
+        assert do_stmt.postcondition is not None, "DO should have postcondition (D:1)"
+        
+        # Second FOR: I=9:1:15
+        for2 = for_stmts[1]
+        assert for2.loop_var == "I", "Second FOR loop variable should be I"
+        assert len(for2.parameters) >= 1, "Second FOR should have at least one parameter"
+        assert for2.parameters[0].start.value == 9, "Second FOR start should be 9"
+        
+        # Second FOR should have QUIT with postcondition
+        assert len(for2.body.statements) >= 2, "Second FOR should have QUIT and DO in body"
+        quit_stmt2 = for2.body.statements[0]
+        assert isinstance(quit_stmt2, MQuitStatement), "First body stmt should be QUIT"
+        assert quit_stmt2.postcondition is not None, "QUIT should have postcondition (QUIT:I=11)"
+
+    def test_vv2fn1_naked_global_kill(self, parser, mugj_inref_dir):
+        """T566: VV2FN1.m label 70 must parse KILL with naked globals.
+        
+        Tests the grammar fix for KillTarget to include NakedGlobal.
+        
+        Line: K ^VV S ^VV(1)=0,^(1,2)=0 K ^(2) S VCOMP=$D(^VV(1)) S VCORR="1" D EXAMINER
+        
+        Should have 6 commands: K, S, K, S, S, D on that line alone.
+        """
+        from m2py.asg.statements import MKillStatement, MSetStatement, MDoStatement
+        
+        vv2fn1_path = mugj_inref_dir / "VV2FN1.m"
+        assert vv2fn1_path.exists(), "VV2FN1.m should exist in MUGJ test suite"
+        
+        routine = parser.parse_file(vv2fn1_path)
+        
+        # Find label 70
+        label70 = None
+        for label in routine.labels:
+            if label.name == "70":
+                label70 = label
+                break
+        
+        assert label70 is not None, "Label '70' should exist in VV2FN1.m"
+        
+        # Label 70 has 3 lines:
+        # - W !,"II-70  Effect of global variable descendant KILL"
+        # - S ITEM="II-70  ",VCOMP=""
+        # - K ^VV S ^VV(1)=0,^(1,2)=0 K ^(2) S VCOMP=$D(^VV(1)) S VCORR="1" D EXAMINER
+        # Total statements should be >= 8 (1 WRITE + 1 SET + 6 from the K/S/K/S/S/D line)
+        assert len(label70.body.statements) >= 8, \
+            f"Label 70 should have at least 8 statements, got {len(label70.body.statements)}"
+        
+        # Check KILL statements exist
+        kill_stmts = [s for s in label70.body.statements if isinstance(s, MKillStatement)]
+        assert len(kill_stmts) >= 2, f"Label 70 should have at least 2 KILL statements, got {len(kill_stmts)}"
+        
+        # First KILL should target ^VV (GlobalVariable)
+        first_kill = kill_stmts[0]
+        assert len(first_kill.targets) >= 1, "First KILL should have targets"
+        first_target = first_kill.targets[0]
+        # GlobalVariable has name attribute
+        assert hasattr(first_target, 'name'), "First KILL target should be GlobalVariable with name"
+        assert first_target.name == "VV", "First KILL should target ^VV"
+        
+        # Second KILL should target ^(2) (NakedGlobal)
+        second_kill = kill_stmts[1]
+        assert len(second_kill.targets) >= 1, "Second KILL should have targets"
+        second_target = second_kill.targets[0]
+        # NakedGlobal has subscripts but no name
+        from m2py.parser.textx_classes import NakedGlobal
+        assert isinstance(second_target, NakedGlobal), \
+            f"Second KILL target should be NakedGlobal, got {type(second_target).__name__}"

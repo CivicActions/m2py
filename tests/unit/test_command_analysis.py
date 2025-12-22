@@ -191,6 +191,53 @@ class TestSetStatementAnalysis:
         assert stmt.assignments[2].target.name == "C"
         assert stmt.assignments[2].value.value == 2
 
+    def test_set_left_hand_piece_simple(self):
+        """SET $P(X,"^")="D" - left-hand $PIECE as assignment target (T567 fix).
+        
+        MUMPS allows $PIECE on the left side of an assignment to modify
+        a specific piece of a string variable.
+        """
+        stmt = analyze_first_command('S $P(X,"^")="D"')
+        
+        assert isinstance(stmt, MSetStatement)
+        assert len(stmt.assignments) == 1
+        
+        # Target should be MIntrinsicFunction for $PIECE
+        target = stmt.assignments[0].target
+        assert isinstance(target, MIntrinsicFunction)
+        assert target.name.upper() in ("P", "PIECE")
+        
+        # Value should be the string "D"
+        value = stmt.assignments[0].value
+        assert isinstance(value, MLiteral)
+        assert value.value == "D"
+
+    def test_set_left_hand_piece_with_positions(self):
+        """SET $P(X,"^",2,3)="D" - left-hand $PIECE with position args (T567 fix)."""
+        stmt = analyze_first_command('S $P(X,"^",2,3)="D"')
+        
+        assert isinstance(stmt, MSetStatement)
+        target = stmt.assignments[0].target
+        assert isinstance(target, MIntrinsicFunction)
+        assert target.name.upper() in ("P", "PIECE")
+        # Should have 4 arguments: var, delimiter, start, end
+        assert len(target.arguments) == 4
+
+    def test_set_left_hand_piece_mixed_with_regular(self):
+        """SET X="A^B",$P(X,"^")="D" - mixed regular and left-hand $PIECE (T567 fix)."""
+        stmt = analyze_first_command('S X="A^B",$P(X,"^")="D"')
+        
+        assert isinstance(stmt, MSetStatement)
+        assert len(stmt.assignments) == 2
+        
+        # First assignment is regular variable
+        assert isinstance(stmt.assignments[0].target, MVariable)
+        assert stmt.assignments[0].target.name == "X"
+        
+        # Second assignment is left-hand $PIECE
+        assert isinstance(stmt.assignments[1].target, MIntrinsicFunction)
+        assert stmt.assignments[1].target.name.upper() in ("P", "PIECE")
+
 
 class TestWriteStatementAnalysis:
     """Tests for WRITE command analysis."""

@@ -2533,3 +2533,215 @@ All files show **perfect ASG capture**:
 **Test Results:**
 - 693 unit tests pass (added 35 new tests)
 - 81 MUGJ integration tests pass
+
+---
+
+## Phase 44: MUGJ Validation Checklist - VV1DOC18 to VV1DOC23
+
+**Purpose**: Validate Part-I documentation emitters VV1DOC18–VV1DOC23 (Checklist 30/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VV1DOC18.m | 2 | 4 | ✅ | IF IO="PRINTER" guard, WRITE, bounded FOR over $TEXT, QUIT postcondition captured |
+| VV1DOC19.m | 2 | 4 | ✅ | Same documentation emitter pattern; A=$TEXT(TEX+I) SET captured |
+| VV1DOC2.m | 2 | 4 | ✅ | Same pattern; QUIT postcondition `A=""` present in ASG |
+| VV1DOC20.m | 2 | 4 | ✅ | Same pattern; FOR body SET/QUIT/WRITE captured |
+| VV1DOC21.m | 2 | 4 | ✅ | Same pattern; TEX label contains only comments (no statements) |
+| VV1DOC22.m | 2 | 4 | ✅ | Same pattern; bounded FOR parameter start=1 step=1 |
+| VV1DOC23.m | 2 | 4 | ✅ | Same pattern; WRITE arguments include line break and $PIECE expression |
+
+### Findings
+
+- QUIT postconditions (`Q:A=""`) inside the FOR bodies are correctly captured as `MQuitStatement.postcondition` binary comparisons.
+- FOR loops are classified as bounded with start=1, step=1; body statements include the SET of `A=$TEXT(TEX+I)` and the trailing WRITE arguments (`!` and `$PIECE`).
+- TEX labels intentionally contain only comment lines; ASG omits them, which is expected for $TEXT-driven emitters. $TEXT runtime access remains a codegen/runtime concern, not an ASG issue.
+
+### Tasks
+
+- [x] T557 [Validation] VV1DOC18–VV1DOC23 ASG verified; no parser changes required.
+
+---
+
+## Phase 45: MUGJ Validation Checklist - VV1DOC24 to VV1DOC29
+
+**Purpose**: Validate Part-I documentation emitters VV1DOC24–VV1DOC29 (Checklist 31/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VV1DOC24.m | 2 | 4 | ✅ | IF IO="PRINTER" guard, WRITE, bounded FOR over $TEXT, QUIT postcondition captured |
+| VV1DOC25.m | 2 | 4 | ✅ | Same documentation emitter pattern; A=$TEXT(TEX+I) SET captured |
+| VV1DOC26.m | 2 | 4 | ✅ | Same pattern; QUIT postcondition `A=""` present in ASG |
+| VV1DOC27.m | 2 | 4 | ✅ | Same pattern; FOR body SET/QUIT/WRITE captured |
+| VV1DOC28.m | 2 | 4 | ✅ | Same pattern; TEX label contains only comments (no statements) |
+| VV1DOC29.m | 2 | 4 | ✅ | Same pattern; bounded FOR parameter start=1 step=1 |
+
+### Findings
+
+- All files follow identical structure to VV1DOC18-23 series
+- QUIT postconditions (`Q:A=""`) inside the FOR bodies are correctly captured as `MQuitStatement.postcondition` binary comparisons
+- FOR loops are classified as bounded with start=1, step=1; body statements include the SET of `A=$TEXT(TEX+I)` and the trailing WRITE arguments
+- TEX labels intentionally contain only comment lines documenting test cases; ASG omits them (expected behavior)
+- These files document binary operator validation tests (string identity, not-identical, contains, etc.)
+
+### Tasks
+
+- [x] T558 [Validation] VV1DOC24–VV1DOC29 ASG verified; no parser changes required.
+
+---
+
+## Phase 46: MUGJ Validation Checklist - VV1DOC30 to VV1DOC36
+
+**Purpose**: Validate Part-I documentation emitters VV1DOC30–VV1DOC36 (Checklist 32/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VV1DOC30.m | 2 | 4 | ✅ | IF IO="PRINTER" guard, WRITE, bounded FOR over $TEXT, QUIT postcondition captured |
+| VV1DOC31.m | 2 | 4 | ✅ | Same documentation emitter pattern; A=$TEXT(TEX+I) SET captured |
+| VV1DOC32.m | 2 | 4 | ✅ | Same pattern; QUIT postcondition `A=""` present in ASG |
+| VV1DOC33.m | 2 | 4 | ✅ | Same pattern; FOR body SET/QUIT/WRITE captured |
+| VV1DOC34.m | 2 | 4 | ✅ | Same pattern; TEX label contains only comments (no statements) |
+| VV1DOC35.m | 2 | 4 | ✅ | Same pattern; bounded FOR parameter start=1 step=1 |
+| VV1DOC36.m | 2 | 4 | ✅ | Same pattern; WRITE arguments include line break and $PIECE expression |
+
+### Findings
+
+- All files follow identical structure to VV1DOC18-29 series
+- QUIT postconditions (`Q:A=""`) inside the FOR bodies are correctly captured as `MQuitStatement.postcondition` binary comparisons
+- FOR loops are classified as bounded with start=1, step=1; body statements include the SET of `A=$TEXT(TEX+I)` and the trailing WRITE arguments
+- TEX labels intentionally contain only comment lines; ASG omits them (expected behavior)
+- Special format characters (`#`, `!`) in WRITE arguments are captured correctly
+- Intrinsic functions `$TEXT()` and `$PIECE()` are properly identified as `MIntrinsicFunction` nodes
+- These files document binary operator validation tests:
+  - VV1DOC30: String identity operator (`=`) with numeric/string literals
+  - VV1DOC31: Continuation of string identity tests, plus not-identical operator (`'=`)
+  - VV1DOC32: String not-identical (`'=`) and contains operator (`[`)
+  - VV1DOC33: Contains operator (`[`) and not-contains operator (`'[`)
+  - VV1DOC34: Not-contains (`'[`) and follows operator (`]`)
+  - VV1DOC35: Follows operator (`]`) and not-follows operator (`']`)
+  - VV1DOC36: Not-follows operator (`']`) continuation
+
+### Python Code Generation Readiness
+
+✅ **All aspects ready:**
+- Expression trees properly structured (not just strings)
+- Intrinsic functions like `$TEXT()` and `$PIECE()` clearly identified with full argument lists
+- Variable references tracked (I, A, IO)
+- Control structures translatable to Python if/for/break patterns
+- Special format characters (`#` for form feed, `!` for newline) captured in WRITE arguments
+- Postconditions properly modeled as conditional expressions
+
+### Tasks
+
+- [x] T559 [Validation] VV1DOC30–VV1DOC36 ASG verified; no parser changes required.
+
+---
+
+## Phase 47: MUGJ Validation Checklist - VV2 to VV2DOC1
+
+**Purpose**: Validate Part-II drivers and command-space/documentation helpers (Checklist 39/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VV2.m | 23 | 49 | ✅ | Part-II driver; writes headers, K ^VREPORT then DO ^VV2* routines; external DO targets unresolved by design |
+| VV2CS.m | 12 | 68 | ⚠️ | Command-space tests; second FOR (`F I=9:1:15 ...`) not emitted; DO postconditions dropped |
+| VV2DOC.m | 15 | 17 | ✅ | DOC driver; CRT/PRINTER routes via MGoto START; VV2DOC10 body carries WRITE/IF/KILL |
+
+### Findings
+
+1. **~~Missing second FOR in VV2CS II-5~~**: ✅ FIXED - Both `MForStatement` nodes now captured. Root cause: `CommandWithArg` lookahead didn't recognize commands with postconditions (e.g., `D:1`).
+2. **~~DO postconditions dropped~~**: ✅ FIXED - Command postconditions and argument postconditions now captured correctly.
+
+### Root Cause & Fix
+
+The `CommandWithArg` negative lookahead in [commands.tx](../../src/m2py/grammar/commands.tx) was designed to distinguish `Q X` (QUIT with return value) from `Q S X=1` (QUIT followed by SET). However, it only recognized commands followed by space or keyword prefixes, not commands with postconditions (`:` suffix like `D:1`).
+
+**Fix**: Extended each command pattern in `CommandWithArg` to include postcondition detection:
+- Before: `/[Dd][Oo][ \t]|[Dd][ \t]+[A-Za-z%^@]/`
+- After:  `/[Dd][Oo][ \t:]|[Dd][ \t]+[A-Za-z%^@]/ | /[Dd]:/`
+
+### Tasks
+
+- [x] T560 [Validation] VV2/VV2DOC drivers validated; no parser changes required.
+- [x] T561 [Bug] Emit multiple FOR statements on a single line so VV2CS II-5 retains the second loop (`F I=9:1:15 ...`). **FIXED** via CommandWithArg grammar update.
+- [x] T562 [Bug] Capture DO postconditions for `DO:1 A:I>0` (both command-level and argument-level) in VV2CS II-5. **FIXED** via CommandWithArg grammar update.
+- [x] T563 [Test] Added `test_vv2cs_multi_for_with_postconditions` to validate the fix ([tests/integration/test_mugj.py](../../tests/integration/test_mugj.py)).
+
+---
+
+## Phase 48: MUGJ Validation Checklist - VV2FN1 to VV2LCF1
+
+**Purpose**: Validate Part-II extended function and lower-case command/function coverage (Checklist 41/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VV2FN1.m | 17 | 83 | ⚠️ | Missing `K ^VV` and `K ^(2)` commands in label 70; only WRITE/SET/WRITE captured |
+| VV2FN2.m | 17 | 80 | ✅ | $LENGTH/$TEXT cases captured; T95 label intentionally comment-only |
+| VV2LCC1.m | 19 | 89 | ✅ | Lower-case DO/GOTO/HANG variants captured; goto sources resolved |
+| VV2LCC2.m | 13 | 98 | ✅ | Lower-case IF/ELSE/SET/KILL/XECUTE captured with postconditions |
+| VV2LCF1.m | 21 | 99 | ✅ | Lower-case intrinsic functions ($ASCII/$NEXT/$ORDER) captured; KILL ABC array cases modeled |
+
+### Findings
+
+- VV2FN1 label 70 line `K ^VV S ^VV(1)=0,^(1,2)=0 K ^(2) ...` was dropping both KILL commands. Root cause: `KillTarget` rule in commands.tx didn't include `NakedGlobal`. After fix, all 6 commands on that line (K, S, K, S, S, D) parse correctly.
+- Remaining files structurally match source; postconditions and intrinsic functions captured; empty TEX/T95 labels (comment-only) are acceptable for $TEXT use.
+
+### Root Cause & Fix
+
+The `KillTarget` rule in [commands.tx](../../src/m2py/grammar/commands.tx) only listed `GlobalVariable | Indirection | LocalVariable`. Naked globals (`^(subscripts)`) were not recognized.
+
+**Fix**: Added `NakedGlobal` before `GlobalVariable` in the `KillTarget` rule (order matters since both start with `^`):
+```
+KillTarget:
+    NakedGlobal | GlobalVariable | Indirection | LocalVariable
+;
+```
+
+### Tasks
+
+- [x] T564 [Validation] VV2FN1–VV2LCF1 ASG reviewed; noted missing KILL handling in VV2FN1.
+- [x] T565 [Bug] Fix KILL parsing for global + naked-global forms (`K ^NAME`, `K ^(subscripts)`) when interleaved with SET on the same line (VV2FN1 label 70). **FIXED** via KillTarget grammar update in commands.tx.
+- [x] T566 [Test] Add regression covering VV2FN1 label 70 to assert both KILL statements are emitted. Added `test_vv2fn1_naked_global_kill` in tests/integration/test_mugj.py.
+
+---
+
+## Phase 49: MUGJ Validation Checklist - VV2LCF2 to VV2PAT2
+
+**Purpose**: Validate Part-II lower-case intrinsic/special variables, left-hand `$PIECE`, $NEXT/$ORDER, and pattern matching files (Checklist 42/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VV2LCF2.m | 21 | 93 | ✅ | Lower-case intrinsic and special variables captured; EXAMINER calls resolved |
+| VV2LHP1.m | 16 | 114 | ✅ | Left-hand $PIECE lines now parsed correctly with SET/DO statements |
+| VV2LHP2.m | 15 | 110 | ✅ | Left-hand $PIECE and trailing DO EXAMINER now captured correctly |
+| VV2NO.m | 7 | 101 | ✅ | $NEXT/$ORDER sequences captured including nested FOR/QUIT exits |
+| VV2NR.m | 7 | 48 | ✅ | Naked reference effects preserved across KILL/$DATA cases |
+| VV2PAT1.m | 10 | 59 | ✅ | Pattern operator combinations captured; FOR on II-154 present |
+| VV2PAT2.m | 10 | 71 | ✅ | Indirection and lower-case pattern codes captured with loop counts |
+
+### Findings
+
+- ~~SET + DO are not built for left-hand `$PIECE` assignment lines on a single line in [tests/functional/mugj/inref/VV2LHP1.m](tests/functional/mugj/inref/VV2LHP1.m#L6-L71); ASG emits only the header WRITE for labels 96–108. `$P(...)=` targets should surface as `MSetStatement` (with `MSetTarget`) followed by the `MDoStatement` to EXAMINER.~~ **FIXED:** Added `IntrinsicFunction` to `SingleTarget` in commands.tx grammar.
+- ~~[tests/functional/mugj/inref/VV2LHP2.m](tests/functional/mugj/inref/VV2LHP2.m#L60-L63) label 118 omits the trailing `DO EXAMINER`; statements stop at the SET.~~ **FIXED:** Same grammar fix resolved this issue.
+
+### Tasks
+
+- [x] T567 [Bug] Emit `MSetStatement` and `MDoStatement` for left-hand `$PIECE` assignment lines so VV2LHP1 labels 96–108 are fully represented (commands.tx + parser conversion). **FIXED:** Added `IntrinsicFunction` to `SingleTarget` rule in commands.tx. VV2LHP1 now captures 114 statements (up from 46). Added 3 unit tests in test_command_analysis.py.
+- [x] T568 [Bug] Ensure trailing `DO EXAMINER` is retained after multi-assignment lines in VV2LHP2 label 118 (textX line parsing → statement build). **FIXED:** Same grammar change resolved this issue. VV2LHP2 now captures 110 statements (up from 67).
