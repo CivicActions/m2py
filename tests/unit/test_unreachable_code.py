@@ -400,3 +400,39 @@ class TestMUGJUnreachableCodeExamples:
         # Main label should not have explicit exit
         main_label = routine.labels[0]
         assert main_label.has_explicit_exit is False
+
+    def test_vabc_implicit_quit_no_synthetic_statement(self):
+        """VABC.m ends without QUIT - ASG should NOT add synthetic MQuitStatement.
+        
+        The ASG must accurately represent the source code. Labels without explicit
+        QUIT use MLabel.has_explicit_exit=False to signal implicit return behavior.
+        Python code generation handles this via Python's implicit return semantics.
+        """
+        parser = MUMPSParser()
+        routine = parser.parse_file('tests/functional/mugj/inref/VABC.m')
+        parser.resolve_references(routine)
+
+        main_label = routine.labels[0]
+        
+        # ASG should contain only the SET statement (no synthetic QUIT)
+        assert len(main_label.body.statements) == 1
+        assert main_label.body.statements[0].__class__.__name__ == 'MSetStatement'
+        
+        # has_explicit_exit correctly identifies no explicit exit
+        assert main_label.has_explicit_exit is False
+        
+    def test_va_explicit_quit_captured(self):
+        """VA.m ends with explicit QUIT - ASG captures it correctly."""
+        parser = MUMPSParser()
+        routine = parser.parse_file('tests/functional/mugj/inref/VA.m')
+        parser.resolve_references(routine)
+
+        main_label = routine.labels[0]
+        
+        # ASG should contain SET and QUIT
+        assert len(main_label.body.statements) == 2
+        assert main_label.body.statements[0].__class__.__name__ == 'MSetStatement'
+        assert main_label.body.statements[1].__class__.__name__ == 'MQuitStatement'
+        
+        # has_explicit_exit correctly identifies explicit exit
+        assert main_label.has_explicit_exit is True

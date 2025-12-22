@@ -51,7 +51,8 @@ from m2py.asg.statements import (
     MMergeStatement,
 )
 from m2py.asg.elements import MRoutine, MLabel, MScope, MCall
-from m2py.asg.enums import LiteralType, ForLoopType, ForParamType, FormatControlType
+from m2py.asg.enums import LiteralType, ForLoopType, ForParamType, FormatControlType, IndirectionType
+from m2py.analysis.pattern_compiler import compile_pattern_to_regex, PatternCompileError
 
 
 # =============================================================================
@@ -178,8 +179,31 @@ class SemanticAnalyzer:
         
         elif isinstance(expr, MIndirection):
             object.__setattr__(expr, 'expression', self.analyze(expr.expression, expr))
+            # Classify indirection type based on context
+            self._classify_indirection(expr, parent)
         
         return expr
+    
+    def _classify_indirection(self, indirection: MIndirection, parent: Any) -> None:
+        """Classify indirection type and attempt static resolution.
+        
+        Context-based classification:
+        - In pattern match context: PATTERN
+        - In subscript context: SUBSCRIPT
+        - In DO/GOTO context: ARGUMENT (handled separately in call analysis)
+        - Otherwise: NAME (variable indirection)
+        
+        Static resolution is attempted for constant string expressions.
+        """
+        # Default to NAME unless we can determine otherwise
+        if indirection.indirection_type == IndirectionType.UNKNOWN:
+            object.__setattr__(indirection, 'indirection_type', IndirectionType.NAME)
+        
+        # Try static resolution for constant string expressions
+        inner_expr = indirection.expression
+        if isinstance(inner_expr, MLiteral) and inner_expr.literal_type == LiteralType.STRING:
+            object.__setattr__(indirection, 'can_resolve_statically', True)
+            object.__setattr__(indirection, 'resolved_value', inner_expr.value)
     
     def _analyze_UnaryExpr(self, unary: Any, parent: Any) -> MExpr:
         """Unwrap UnaryExpr to get the underlying expression.
@@ -249,7 +273,17 @@ class SemanticAnalyzer:
                         object.__setattr__(pattern_match, 'operator', op_str)
                         object.__setattr__(pattern_match, 'subject', result)
                         # Store the raw pattern textX object for later processing
-                        object.__setattr__(pattern_match, 'pattern', self._pattern_to_string(tail_item.pattern))
+                        pattern_str = self._pattern_to_string(tail_item.pattern)
+                        object.__setattr__(pattern_match, 'pattern', pattern_str)
+                        
+                        # Pre-compile pattern to regex for code generation
+                        if pattern_str and not pattern_str.startswith('@'):
+                            try:
+                                compiled = compile_pattern_to_regex(pattern_str)
+                                object.__setattr__(pattern_match, 'compiled_regex', compiled)
+                            except PatternCompileError:
+                                pass  # Leave compiled_regex as None for complex patterns
+                        
                         object.__setattr__(pattern_match, 'parent', parent)
                         object.__setattr__(result, 'parent', pattern_match)
                         result = pattern_match
@@ -870,7 +904,7 @@ class SemanticAnalyzer:
         # If there were nested levels, wrap in MIndirection objects
         # to represent the structure: @@A becomes Indirection(Indirection(var=A))
         for _ in range(levels - 1):
-            inner = MIndirection(expression=expr, indirection_type="nested")
+            inner = MIndirection(expression=expr, indirection_type=IndirectionType.NAME)
             expr = inner
         
         return expr, levels
@@ -1021,6 +1055,20 @@ class SemanticAnalyzer:
                     stmt.code_expressions.append(self.analyze(arg.expr, stmt))
                 else:
                     stmt.code_expressions.append(self.analyze(arg, stmt))
+        
+        # Check if all code expressions are constant string literals
+        all_constant = True
+        constant_values = []
+        for expr in stmt.code_expressions:
+            if isinstance(expr, MLiteral) and expr.literal_type == LiteralType.STRING:
+                constant_values.append(expr.value)
+            else:
+                all_constant = False
+                break
+        
+        if all_constant and constant_values:
+            object.__setattr__(stmt, 'is_constant', True)
+            object.__setattr__(stmt, 'constant_values', constant_values)
         
         return stmt
     

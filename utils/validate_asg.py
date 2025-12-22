@@ -151,7 +151,11 @@ def display_asg(routine: Any) -> None:
                     if hasattr(stmt.body, 'statements'):
                         print(f"      body: {len(stmt.body.statements)} statement(s)")
                         for k, sub_stmt in enumerate(stmt.body.statements):
-                            print(f"        [{k}] {sub_stmt.__class__.__name__}")
+                            sub_name = sub_stmt.__class__.__name__
+                            # Show postcondition on nested statements
+                            if hasattr(sub_stmt, 'postcondition') and sub_stmt.postcondition:
+                                sub_name += f":{format_compact_expr(sub_stmt.postcondition)}"
+                            print(f"        [{k}] {sub_name}")
                             # Show nested body scopes (e.g., FOR inside FOR)
                             if hasattr(sub_stmt, 'body') and sub_stmt.body and hasattr(sub_stmt.body, 'statements') and sub_stmt.body.statements:
                                 print(f"          body: {len(sub_stmt.body.statements)} statement(s)")
@@ -209,8 +213,13 @@ def format_compact_expr(node: Any, depth: int = 0) -> str:
         # Special compact formats for common types
         if class_name == 'MLiteral':
             return f'L({node.value})'
-        if class_name == 'MVariable':
-            return f'V({node.name})'
+        if class_name == 'StringLiteral':
+            return f'"{node.value}"' if len(str(node.value)) < 15 else f'"{str(node.value)[:12]}..."'
+        if class_name == 'NumericLiteral':
+            return str(node.value)
+        if class_name in ('MVariable', 'LocalVariable'):
+            subs = f"({','.join(format_compact_expr(s, depth+1) for s in node.subscripts[:2])})" if node.subscripts else ""
+            return f'{node.name}{subs}'
         if class_name == 'MGlobal':
             subs = f"({','.join(format_compact_expr(s, depth+1) for s in node.subscripts[:2])})" if node.subscripts else ""
             return f'^{node.name}{subs}'

@@ -439,6 +439,10 @@ class MUMPSParser:
         routine.name = routine_name
         routine.source_file = str(filepath)
         
+        # Store original source lines for $TEXT function support
+        # Lines are stored 0-indexed, but $TEXT uses 1-indexed line references
+        routine.source_lines = source.splitlines()
+        
         return routine
     
     def _build_routine(self, model, filename: Optional[str]) -> MRoutine:
@@ -463,14 +467,19 @@ class MUMPSParser:
         # Created lazily if needed
         preamble_label: Optional[MLabel] = None
         
+        # Track line number for $TEXT support (1-indexed)
+        line_number = 0
+        
         # Build labels from parsed lines
         if hasattr(model, 'lines') and model.lines:
             for line in model.lines:
+                line_number += 1
                 cls_name = line.__class__.__name__
                 
                 # LabelLine has a label attribute - creates new label
                 if cls_name == 'LabelLine' and hasattr(line, 'label') and line.label:
                     label = self._build_label(line)
+                    label.line_number = line_number  # Track source line for $TEXT
                     routine.add_label(label)
                     current_label = label
                 
@@ -484,6 +493,7 @@ class MUMPSParser:
                         if rest and rest.strip():
                             if preamble_label is None:
                                 preamble_label = MLabel(name='', body=MScope())
+                                preamble_label.line_number = line_number
                                 routine.add_label(preamble_label)
                                 current_label = preamble_label
                             self._add_continuation_to_label(line, preamble_label)

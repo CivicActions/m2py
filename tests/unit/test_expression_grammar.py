@@ -263,6 +263,115 @@ class TestChainedUnarySemantics:
         # The innermost operand is a LocalVariable (textX class)
         assert result.operand.operand.name == 'X'
 
+    def test_triple_negative_asg(self, expr_metamodel):
+        """Verify ---X produces 3 nested MUnaryOp nodes (from V1UO4B)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+        
+        model = expr_metamodel.model_from_str('---2', 'Expr')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+        
+        # Should be MUnaryOp('-', MUnaryOp('-', MUnaryOp('-', Literal)))
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == '-'
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == '-'
+        assert isinstance(result.operand.operand, MUnaryOp)
+        assert result.operand.operand.operator == '-'
+        # Innermost is the numeric literal
+        assert result.operand.operand.operand.value == '2'
+
+    def test_triple_not_asg(self, expr_metamodel):
+        """Verify '''0 produces 3 nested MUnaryOp nodes (from V1UO4B)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+        
+        model = expr_metamodel.model_from_str("'''0", 'Expr')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+        
+        # Should be MUnaryOp("'", MUnaryOp("'", MUnaryOp("'", Literal)))
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == "'"
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == "'"
+        assert isinstance(result.operand.operand, MUnaryOp)
+        assert result.operand.operand.operator == "'"
+        assert result.operand.operand.operand.value == '0'
+
+    def test_mixed_negate_not_asg(self, expr_metamodel):
+        """Verify -'0 produces MUnaryOp('-', MUnaryOp("'", Literal)) (from V1UO4A)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+        
+        model = expr_metamodel.model_from_str("-'0", 'Expr')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+        
+        # Outer is negate, inner is not
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == '-'
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == "'"
+        assert result.operand.operand.value == '0'
+
+    def test_mixed_not_negate_asg(self, expr_metamodel):
+        """Verify '-0 produces MUnaryOp("'", MUnaryOp('-', Literal)) (from V1UO4A)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+        
+        model = expr_metamodel.model_from_str("'-0", 'Expr')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+        
+        # Outer is not, inner is negate
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == "'"
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == '-'
+        assert result.operand.operand.value == '0'
+
+    def test_mixed_positive_not_asg(self, expr_metamodel):
+        """Verify +'0 produces MUnaryOp('+', MUnaryOp("'", Literal)) (from V1UO4A)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+        
+        model = expr_metamodel.model_from_str("+'0", 'Expr')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+        
+        # Outer is positive, inner is not
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == '+'
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == "'"
+        assert result.operand.operand.value == '0'
+
+    def test_complex_chain_asg(self, expr_metamodel):
+        """Verify -'+'-'+'-4.5 produces 9 nested MUnaryOp nodes (from V1UO4B)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+        
+        model = expr_metamodel.model_from_str("-'+'-'+'-4.5", 'Expr')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+        
+        # Count depth and collect operators
+        depth = 0
+        node = result
+        ops = []
+        while isinstance(node, MUnaryOp):
+            ops.append(node.operator)
+            depth += 1
+            node = node.operand
+        
+        # Should have 9 operators: -, ', +, ', -, ', +, ', -
+        assert depth == 9
+        assert ops == ['-', "'", '+', "'", '-', "'", '+', "'", '-']
+        # Innermost should be 4.5
+        assert node.value == '4.5'
+
 
 class TestIntrinsicFunctions:
     """Test intrinsic function parsing."""

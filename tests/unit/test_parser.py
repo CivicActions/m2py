@@ -104,6 +104,54 @@ class TestMUMPSParserParseFile:
         
         assert routine.name == "TESTRTN"
         assert routine.source_file == str(test_file)
+    
+    def test_parse_file_stores_source_lines(self, tmp_path):
+        """parse_file should store source lines for $TEXT support."""
+        test_file = tmp_path / "SRCLINES.m"
+        source = "LABEL\tS X=1\n\tW X\n\tQ\n"
+        test_file.write_text(source)
+        
+        parser = MUMPSParser()
+        routine = parser.parse_file(test_file)
+        
+        assert routine.source_lines == ["LABEL\tS X=1", "\tW X", "\tQ"]
+    
+    def test_get_text_line_returns_source(self, tmp_path):
+        """get_text_line should return 1-indexed source line."""
+        test_file = tmp_path / "TEXTTEST.m"
+        source = "LABEL\tS X=1\n\tW X\n\tQ\n"
+        test_file.write_text(source)
+        
+        parser = MUMPSParser()
+        routine = parser.parse_file(test_file)
+        
+        # 1-indexed access
+        assert routine.get_text_line(1) == "LABEL\tS X=1"
+        assert routine.get_text_line(2) == "\tW X"
+        assert routine.get_text_line(3) == "\tQ"
+        # Out of bounds returns empty
+        assert routine.get_text_line(0) == ""
+        assert routine.get_text_line(4) == ""
+        assert routine.get_text_line(-1) == ""
+    
+    def test_get_text_at_label_returns_line(self, tmp_path):
+        """get_text_at_label should return source at label+offset."""
+        test_file = tmp_path / "LABELTEXT.m"
+        source = "MAIN\tS X=1\n\tW X\n\tQ\nSUB\tS Y=2\n\tQ\n"
+        test_file.write_text(source)
+        
+        parser = MUMPSParser()
+        routine = parser.parse_file(test_file)
+        
+        # MAIN is at line 1
+        assert routine.get_text_at_label("MAIN", 0) == "MAIN\tS X=1"
+        assert routine.get_text_at_label("MAIN", 1) == "\tW X"
+        assert routine.get_text_at_label("MAIN", 2) == "\tQ"
+        # SUB is at line 4
+        assert routine.get_text_at_label("SUB", 0) == "SUB\tS Y=2"
+        assert routine.get_text_at_label("SUB", 1) == "\tQ"
+        # Unknown label returns empty
+        assert routine.get_text_at_label("UNKNOWN", 0) == ""
 
 
 class TestMUMPSParserMUGJ:

@@ -105,3 +105,20 @@ class FormatControlType(Enum):
     FORMFEED = auto()
     TAB = auto()
     CHARCODE = auto()
+
+
+class IndirectionType(Enum):
+    """Classification of indirection (@) usage patterns.
+    
+    Used to determine code generation strategy for indirect references:
+    - NAME: Name indirection - @X where X contains a variable name
+    - SUBSCRIPT: Subscript indirection - Y(@X) where X provides subscripts
+    - ARGUMENT: Argument indirection - DO @X, GOTO @X where X contains label/routine
+    - PATTERN: Pattern indirection - Y?@X where X contains pattern to match
+    - UNKNOWN: Cannot determine type statically
+    """
+    NAME = auto()
+    SUBSCRIPT = auto()
+    ARGUMENT = auto()
+    PATTERN = auto()
+    UNKNOWN = auto()

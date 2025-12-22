@@ -367,6 +367,10 @@ class MXecuteStatement(MStatement):
     
     # Always requires runtime support
     requires_runtime_eval: bool = True
+    
+    # Static analysis flags for optimization
+    is_constant: bool = False  # True if all expressions are string literals
+    constant_values: List[str] = field(default_factory=list)  # Values if constant
 
 
 @dataclass

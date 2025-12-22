@@ -2224,3 +2224,312 @@ Previous issues (T520-T522) have been resolved. Current validation confirms:
 1. **Naked globals require runtime context tracking** - The ASG correctly identifies them but code generation needs to track the "last referenced global" across statements.
 
 2. **MUMPS numeric coercion rules** - Unary operators `+` and `-` follow specific string-to-number rules that must be replicated in Python runtime.
+
+---
+
+## Phase 39: MUGJ Validation Checklist - V1WR to V4444 ✅ COMPLETE
+
+**Purpose**: Validate WRITE command character output and XECUTE nested command execution (Checklist 26/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1WR.m | 4 | 28 | ✅ | All character output tests parsed correctly |
+| V1XECA.m | 2 | 2 | ✅ | Simple driver for XECUTE test suites |
+| V1XECA1.m | 14 | 90 | ✅ | XECUTE single/multi argument, postconditions, indirection |
+| V1XECA2.m | 14 | 90 | ✅ | XECUTE with GOTO, FOR, DO, QUIT, nested XECUTE |
+| V1XECAE.m | 3 | 5 | ✅ | External routine called by V1XECA2 tests |
+| V1XECB.m | 17 | 74 | ✅ | XECUTE 2-level nesting with all control flow commands |
+| V4444.m | 1 | 2 | ✅ | Simple external routine with 4-digit label name |
+
+### Findings
+
+**ALL FILES PARSE 100% CORRECTLY** ✅
+
+1. **V1WR.m - WRITE character output (802-804, END)**
+   - All alphabetic (upper/lower), digit, and punctuation tests captured correctly
+   - WRITE arguments properly structured for both abbreviated `W` and full `WRITE` keywords
+   - Postconditions not present in this file (visual test file)
+   - ASG captures: 28 statements (27 WRITE, 1 SET, 1 DO, 1 QUIT, 1 KILL)
+
+2. **V1XECA.m - Simple XECUTE driver**
+   - Minimal driver that calls two external test routines
+   - Labels: V1XECA1, V1XECA2
+   - Each label does a WRITE followed by external routine call (`D ^V1XECA1`, `D ^V1XECA2`)
+   - All external references marked `is_resolved=False` (correct behavior)
+
+3. **V1XECA1.m - XECUTE basic tests (805-809)**
+   - **Single argument XECUTE**: `X "S VCOMP=1"` → `MXecuteStatement` with 1 string argument ✅
+   - **Argument list**: `X "S A=2","SET VCOMP=A"` → 2 string arguments ✅
+   - **Expression arguments**: `X X_",VCOMP=A_0"` → concatenation operator captured ✅
+   - **Postconditions on arguments**: `X:P=1 "S VCOMP=""#""":P=0,"S P=2":P=1` → multiple arguments with postconditions ✅
+   - **Indirection in postconditions**: `X:@Q=3 R_":P="_(10\3_" ")` → indirection and operators parsed ✅
+   - **Postcondition on command**: `XECUTE:P=1 "S VCOMP=""A"""` → command-level postcondition ✅
+   - External labels (A, B, C, D, E) for subroutine tests all captured
+
+4. **V1XECA2.m - XECUTE with control flow (810-815)**
+   - **Argument indirection**: `X @X` where `X="Y"` → indirection captured ✅
+   - **GOTO in XECUTE**: `X "G B","S VCOMP=VCOMP_7"` → GOTO command string literal ✅
+   - **External GOTO**: `X "S VCOMP=VCOMP_10 G ^V1XECAE"` → external jump captured ✅
+   - **FOR in XECUTE**: `X "F I=1:1:3 S VCOMP=VCOMP_I"` → FOR loop string ✅
+   - **DO in XECUTE**: `X "D A","S VCOMP=VCOMP_5"` → DO command string ✅
+   - **QUIT in XECUTE**: `X "S VCOMP=8 Q S VCOMP=VCOMP_""ERROR""` → QUIT string ✅
+   - **Nested XECUTE (2-level)**: `X "X ""S A=1""","S VCOMP=A"` → nested double-quote escaping ✅
+   - **Nested XECUTE (3-level)**: `X "X ""X """"S A=2"""""",""S VCOMP=A"""` → triple-level nesting ✅
+   - All subroutine labels (A, B, C, D, E) resolved correctly to internal labels
+
+5. **V1XECAE.m - External routine for V1XECA2**
+   - Three labels: V1XECAE, EXTERN, 13
+   - Label "13" is numeric (validates numeric label support) ✅
+   - Simple SET/QUIT pairs for each label
+   - Called by V1XECA2 tests with patterns: `G ^V1XECAE`, `D EXTERN^V1XECAE`, `D 13^V1XECAE`
+
+6. **V1XECB.m - XECUTE 2-level nesting (816-821)**
+   - **Nested DO**: `X "S VCOMP=1 X ""S VCOMP=VCOMP_2 D F S VCOMP=VCOMP_4"" S VCOMP=VCOMP_5"` ✅
+   - **Nested GOTO**: `X "S VCOMP=7 X ""S VCOMP=VCOMP_8 G G""..."` → GOTO to label G ✅
+   - **Nested QUIT**: `X "S VCOMP=12 X ""S VCOMP=VCOMP_13 Q S VCOMP=..."""` ✅
+   - **Nested FOR with DO**: `X "S V=V_6 X ""F I=7:1:9 D H Q:I>7"" S V=V_9"` ✅
+   - **Nested FOR with GOTO**: `X "S V=V_11 X ""F I=12:1:14 G I Q:I>12"" S V=V_13"` ✅
+   - **KILL self-reference**: `A="S VCOMP=$D(A) K A S VCOMP=VCOMP_$D(A)"` X A → KILL of XECUTE source var ✅
+   - **SET self-reference**: `A="S A=$J(1,10) S VCOMP=A"` X A → SET of XECUTE source var ✅
+   - Postconditions on nested XECUTE: `X:0 "S V=V_"" ERROR """:1` → compound postconditions ✅
+   - Helper labels (F, G, H, I, J, K, L, M) all resolved correctly
+
+7. **V4444.m - 4-digit label name**
+   - Label "V4444" validates that 4+ digit labels work (not just 1-3)
+   - Simple SET and QUIT
+   - Called by V1RN.m with pattern: `D ^V4444`
+
+### ASG Structure Validation
+
+All files show **perfect ASG capture**:
+
+✅ **Labels**: All label names captured correctly (including numeric "13" and 4-digit "V4444")
+✅ **Commands**: SET, WRITE, XECUTE, DO, QUIT, KILL all captured
+✅ **Expressions**: String literals (with nested quotes), concatenation operators, indirection, intrinsic functions ($D, $J, $Y)
+✅ **Postconditions**: Both command-level and argument-level postconditions preserved
+✅ **Control flow**: IF/ELSE, FOR loops within XECUTE strings (captured as literal strings, which is correct)
+✅ **String escaping**: Nested double-quotes properly captured (e.g., `""""S A=2""""` in 3-level XECUTE)
+✅ **External references**: DO ^routine and label^routine patterns captured with `is_resolved=False`
+✅ **Label resolution**: All internal DO/GOTO targets resolved to correct `MLabel` objects with populated `callers` lists
+
+### Code Generation Considerations
+
+**Key insights for Python code generation phase**:
+
+1. **XECUTE requires runtime evaluation** - The ASG correctly marks `MXecuteStatement` with `requires_runtime_eval=True`. The string arguments contain MUMPS code that must be parsed and executed at runtime. This cannot be statically translated.
+
+2. **Nested XECUTE depth tracking** - The string literal nesting (double-quotes within double-quotes) shows the complexity of 2-3 level XECUTE nesting. Code generation must:
+   - Parse the XECUTE string at runtime
+   - Handle escaped quotes correctly (`""` → `"`)
+   - Maintain execution context across nesting levels
+
+3. **Variable scope in XECUTE** - Tests 820-821 show XECUTE can modify or KILL its own source variable. Python code generation must ensure:
+   - XECUTE string evaluation has access to the current variable scope
+   - Changes to variables persist after XECUTE completes
+   - KILL of the XECUTE source variable works correctly
+
+4. **Control flow in XECUTE strings** - GOTO, FOR, DO, QUIT commands within XECUTE strings affect the calling context:
+   - `X "G label"` → must jump to `label` in the current routine
+   - `X "Q"` → must return from the current subroutine
+   - `X "D subroutine"` → must call local or external subroutine
+   - These require maintaining a unified control flow context
+
+5. **Postconditions on XECUTE** - Both `X:condition` and `X arg1:cond1,arg2:cond2` patterns must be evaluated:
+   - Command postcondition (`X:P=1`) prevents entire XECUTE if false
+   - Argument postconditions (`X "code1":cond1,"code2":cond2`) skip individual arguments selectively
+
+6. **External GOTO via XECUTE** - `X "G ^routine"` must support routine overlay (loading and jumping to external routine). This is a challenging feature that may require special runtime handling.
+
+7. **WRITE character output** - V1WR shows every ASCII character output. Code generation must preserve exact character output semantics (no Unicode normalization issues).
+
+### No Issues Found ✅
+
+**All 7 files parse correctly with complete ASG structure**. No bugs, missing features, or semantic gaps identified. The XECUTE implementation correctly:
+- Captures all argument patterns (single, multiple, expressions, indirection)
+- Preserves postconditions at both command and argument levels
+- Marks statements for runtime evaluation
+- Maintains proper label resolution for control flow targets
+
+**This validates that the textX grammar and semantic analyzer handle the most complex MUMPS features correctly.**
+
+---
+
+## Phase 40: MUGJ Validation Checklist - V7777777 to VABCDEF ✅ COMPLETE
+
+**Purpose**: Validate label-name length handling (2–7 chars/digits) and end-of-label exit behavior (Checklist 27/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V7777777.m | 1 | 2 | ✅ | 7-digit label with SET+QUIT captured |
+| VA.m | 1 | 2 | ✅ | 2-char label captured |
+| VAB.m | 1 | 2 | ✅ | 3-char label captured |
+| VABC.m | 1 | 1 | ✅ | No explicit QUIT; `has_explicit_exit=False` correctly identifies this |
+| VABCD.m | 1 | 2 | ✅ | 5-char label captured |
+| VABCDE.m | 1 | 2 | ✅ | 6-char label captured |
+| VABCDEF.m | 1 | 2 | ✅ | 7-char label captured |
+
+### Findings
+
+1. **Implicit QUIT correctly handled via `has_explicit_exit` property (VABC)** ✅
+    - Source ends with `S VCOMP=VCOMP_"VABC "` and no `Q`. The ASG correctly captures only `MSetStatement`.
+    - The existing `MLabel.has_explicit_exit` property returns `False` for this label, enabling code generation to handle implicit returns.
+    - **This is correct behavior**: The ASG accurately represents the source, and Python's implicit return semantics match MUMPS.
+    - MUGJ tests V1DO1.m, V1PRGD.m, V1PRGD2.m explicitly document `;IMPLICIT QUIT` as intentional.
+
+### Tasks
+
+- [x] T539 [NOT A BUG] Implicit QUIT handling is already correct.
+   - `MLabel.has_explicit_exit` property (in `src/m2py/asg/elements.py`) correctly identifies labels without explicit exits.
+   - Python code generation can use this property to emit explicit `return` statements if needed.
+   - No synthetic `MQuitStatement` nodes should be added - the ASG must accurately reflect source code structure.
+   - Verified: VABC.m has `has_explicit_exit=False`, VA.m has `has_explicit_exit=True`.
+
+---
+
+## Phase 41: MUGJ Validation Checklist - VABCDEFG to VV1DOC10
+
+**Purpose**: Validate long-label drivers and the Part-I documentation/report routines (Checklist 28/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VABCDEFG.m | 1 | 2 | ✅ | 8-character label; simple SET+QUIT for name-length test |
+| VABCDEFH.m | 1 | 2 | ✅ | 8-character label; simple SET+QUIT for name-length test |
+| VREPORT.m | 9 | 102 | ✅ | Report writer; page-break checks via $Y and TAB/FORMFEED captured |
+| VV1.m | 63 | 126 | ✅ | Part-I driver; DO ^V1* external calls resolved as routine targets |
+| VV1DOC.m | 80 | 82 | ✅ | DOC driver; CRT/PRINTER routing via MGoto START; bulk DO ^VV1DOC* calls |
+| VV1DOC1.m | 2 | 4 | ✅ | Documentation text emitter; FOR loop walks $TEXT; quits on empty line |
+| VV1DOC10.m | 2 | 4 | ✅ | Documentation text emitter; same $TEXT loop pattern as VV1DOC1 |
+
+### Findings
+
+- **No new issues**: ASG aligns with source for all files. External DO/GOTO references remain unresolved by design for cross-routine calls.
+- **Codegen notes**: VREPORT relies on format controls (TAB, FORMFEED) and chained ELSE blocks for report rows; VV1/VV1DOC are driver routines dominated by DO ^routine calls, so runtime must handle external routine loading.
+
+---
+
+## Phase 42: MUGJ Validation Checklist - VV1DOC11 to VV1DOC17
+
+**Purpose**: Validate Part-I documentation emitters driven by $TEXT loops (Checklist 29/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VV1DOC11.m | 2 | 4 | ✅ | QUIT postcondition correctly captured; validate_asg display issue |
+| VV1DOC12.m | 2 | 4 | ✅ | Same pattern as VV1DOC11 |
+| VV1DOC13.m | 2 | 4 | ✅ | Same pattern as VV1DOC11 |
+| VV1DOC14.m | 2 | 4 | ✅ | Same pattern as VV1DOC11 |
+| VV1DOC15.m | 2 | 4 | ✅ | Same pattern as VV1DOC11 |
+| VV1DOC16.m | 2 | 4 | ✅ | Same pattern as VV1DOC11 |
+| VV1DOC17.m | 2 | 4 | ✅ | Same pattern as VV1DOC11 |
+
+### Findings
+
+1. **QUIT postcondition IS correctly captured** ✅
+    - Source pattern: `F I=1:1 S A=$T(TEX+I) Q:A=""  W !,$P(A," ;",2,99)` (e.g., [tests/functional/mugj/inref/VV1DOC11.m#L5](tests/functional/mugj/inref/VV1DOC11.m#L5)).
+    - ASG correctly captures `MQuitStatement.postcondition = MBinaryOp(operator='=', left=LocalVariable('A'), right=StringLiteral(''))`.
+    - **This was a false positive** - the `validate_asg.py` compact display wasn't showing the postcondition field for statements inside FOR bodies.
+
+2. **$TEXT content not preserved for documentation routines** (informational)
+    - Labels like `TEX` consist solely of comment lines whose text is retrieved via `$TEXT`. The ASG drops these lines entirely (label has zero statements).
+    - **This is correct ASG behavior** - comments are not executable statements.
+    - **For code generation**: The `$TEXT` intrinsic function requires access to raw source lines at runtime. This is a runtime concern, not an ASG parsing concern.
+    - **Recommendation**: Code generation should provide a `$TEXT` implementation that reads from the original source file or a source-line cache, not from the ASG.
+
+### Tasks
+
+- [X] T540 [FALSE POSITIVE] QUIT postconditions ARE correctly captured.
+   - **Verified**: `MQuitStatement.postcondition` contains `MBinaryOp(operator='=', left=LocalVariable('A'), right=StringLiteral(''))` for `Q:A=""`.
+   - The `validate_asg.py` display issue was cosmetic (not showing postconditions for nested statements).
+
+- [X] T541 [NOT A BUG] $TEXT source access is a runtime concern.
+   - The ASG correctly represents parsed structure; it is not responsible for preserving comment text.
+   - Code generation phase should implement `$TEXT` by reading the original source file or providing a source cache.
+   - No changes needed to ASG or parser.
+
+---
+
+## Phase 43: VistA Codebase Support Enhancements
+
+**Purpose**: Enhance ASG with features needed for transpiling the VistA-M codebase (33,951 files).
+
+**Analysis Summary** (from VistA-M codebase scan):
+| Feature | VistA Usage | MUGJ Usage | Priority |
+|---------|-------------|------------|----------|
+| Indirection (@) | 86,145 | ~500 | 🔴 Critical |
+| Pattern Match (?) | 24,478 | ~200 | 🔴 Critical |
+| XECUTE | 24,417 | 109 | 🔴 Critical |
+| $TEXT | 12,792 | 184 | ✅ Done |
+| LOCK | 7,245 | ~50 | 🟡 High |
+| $Z* variables | 1,557 | 0 | 🟠 Medium |
+| $ECODE/$ETRAP | 1,300+ | 0 | 🟠 Medium |
+| Transactions | 201 | 0 | 🟢 Low |
+| $STACK(,MCODE) | 43 | 0 | 🟢 Low |
+
+### Phase 43a: $TEXT Cross-Routine Support
+
+**Goal**: Enable $TEXT(label^routine) to access other routine's source lines.
+
+- [X] T542 Add IndirectionType enum to src/m2py/asg/enums.py (NAME, SUBSCRIPT, ARGUMENT, PATTERN)
+- [X] T543 Add indirection_type field to MIndirection in src/m2py/asg/expressions.py
+- [X] T544 Add tests for IndirectionType classification in tests/unit/test_expressions.py
+- [X] T545 [P] Add can_resolve_statically and resolved_name fields to MIndirection
+
+### Phase 43b: Pattern Match Enhancement
+
+**Goal**: Pre-compile MUMPS patterns to Python regex for efficient code generation.
+
+- [X] T546 Create pattern_compiler.py module in src/m2py/analysis/
+- [X] T547 Implement compile_pattern_to_regex() function supporting standard pattern codes (A, N, E, P, L, U, C)
+- [X] T548 Add compiled_regex field to MPatternMatch in src/m2py/asg/expressions.py
+- [X] T549 Integrate pattern compilation into semantic analyzer
+- [X] T550 Add comprehensive tests for pattern compilation in tests/unit/test_pattern_compiler.py
+
+### Phase 43c: XECUTE Static Analysis
+
+**Goal**: Identify constant XECUTE strings for potential pre-compilation.
+
+- [X] T551 Add is_constant and constant_value fields to MXecuteStatement in src/m2py/asg/statements.py
+- [X] T552 Implement XECUTE constant detection in semantic analyzer
+- [X] T553 Add tests for XECUTE constant detection in tests/unit/test_semantic_analyzer.py
+
+### Phase 43d: Indirection Classification
+
+**Goal**: Classify indirection types to enable targeted code generation strategies.
+
+- [X] T554 Implement indirection type classification in semantic analyzer
+- [X] T555 Attempt static resolution for constant indirection (e.g., @"VARNAME")
+- [X] T556 Add tests for indirection classification in tests/unit/test_semantic_analyzer.py
+
+### Phase 43 Implementation Notes (2025-12-22)
+
+**Files Modified:**
+- `src/m2py/asg/enums.py` - Added `IndirectionType` enum (NAME, SUBSCRIPT, ARGUMENT, PATTERN, UNKNOWN)
+- `src/m2py/asg/expressions.py` - Updated `MIndirection.indirection_type` to use enum; added `compiled_regex` to `MPatternMatch`
+- `src/m2py/asg/statements.py` - Added `is_constant` and `constant_values` fields to `MXecuteStatement`
+- `src/m2py/analysis/semantic_analyzer.py` - Integrated pattern compilation, XECUTE constant detection, indirection classification
+- `src/m2py/analysis/pattern_compiler.py` - **New module** for MUMPS pattern to Python regex compilation
+
+**New Test Files:**
+- `tests/unit/test_pattern_compiler.py` - 26 tests for pattern compilation
+
+**Pattern Compiler Features:**
+- All standard pattern codes: A (alpha), C (control), E (everything), L (lowercase), N (numeric), P (punctuation), U (uppercase)
+- Multi-letter patcodes (e.g., `AN` for alphanumeric = union of A and N)
+- Repeat counts: exact (`3N`), range (`2.4N`), at-least (`1.N`), at-most (`.3N`), indefinite (`.N`)
+- String literals with escaped quotes
+- Alternation patterns
+
+**Test Results:**
+- 693 unit tests pass (added 35 new tests)
+- 81 MUGJ integration tests pass

@@ -505,3 +505,141 @@ class TestFormatControlASG:
         # Fourth is formfeed
         assert isinstance(result.arguments[3], MFormatControl)
         assert result.arguments[3].control_type == FormatControlType.FORMFEED
+
+
+class TestXecuteConstantDetection:
+    """Tests for XECUTE constant detection (T552-553)."""
+    
+    def test_xecute_constant_string(self):
+        """X "S X=1" should be detected as constant."""
+        from m2py.asg.statements import MXecuteStatement
+        from m2py.analysis.command_parser import parse_command
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        
+        cmd = parse_command('X "S X=1"')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(cmd, None)
+        
+        assert isinstance(result, MXecuteStatement)
+        assert result.is_constant is True
+        assert result.constant_values == ["S X=1"]
+    
+    def test_xecute_multiple_constants(self):
+        """X "S X=1","S Y=2" should detect both as constant."""
+        from m2py.asg.statements import MXecuteStatement
+        from m2py.analysis.command_parser import parse_command
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        
+        cmd = parse_command('X "S X=1","S Y=2"')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(cmd, None)
+        
+        assert isinstance(result, MXecuteStatement)
+        assert result.is_constant is True
+        assert result.constant_values == ["S X=1", "S Y=2"]
+    
+    def test_xecute_variable_expression(self):
+        """X CODE should not be detected as constant."""
+        from m2py.asg.statements import MXecuteStatement
+        from m2py.analysis.command_parser import parse_command
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        
+        cmd = parse_command('X CODE')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(cmd, None)
+        
+        assert isinstance(result, MXecuteStatement)
+        assert result.is_constant is False
+        assert result.constant_values == []
+    
+    def test_xecute_mixed_args(self):
+        """X "S X=1",CODE should not be detected as constant."""
+        from m2py.asg.statements import MXecuteStatement
+        from m2py.analysis.command_parser import parse_command
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        
+        cmd = parse_command('X "S X=1",CODE')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(cmd, None)
+        
+        assert isinstance(result, MXecuteStatement)
+        assert result.is_constant is False
+
+
+class TestPatternMatchCompilation:
+    """Tests for pattern match regex compilation (T549-550)."""
+    
+    def test_pattern_match_compiled_regex(self):
+        """X?1A.N should have compiled_regex set."""
+        from m2py.asg.expressions import MPatternMatch
+        from m2py.analysis.command_parser import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        
+        expr = parse_expression('X?1A.N')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MPatternMatch)
+        assert result.pattern == "1A.N"
+        assert result.compiled_regex is not None
+        # Verify the regex is valid
+        import re
+        re.compile(result.compiled_regex)
+    
+    def test_pattern_match_alphanumeric(self):
+        """X?1A.AN should compile to alphanumeric pattern."""
+        from m2py.asg.expressions import MPatternMatch
+        from m2py.analysis.command_parser import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        import re
+        
+        expr = parse_expression('X?.AN')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MPatternMatch)
+        assert result.compiled_regex is not None
+        # Verify it matches alphanumeric strings
+        assert re.fullmatch(result.compiled_regex, "Test123")
+        assert re.fullmatch(result.compiled_regex, "")
+
+
+class TestIndirectionClassification:
+    """Tests for indirection type classification (T554-556)."""
+    
+    def test_indirection_default_type(self):
+        """@X should have IndirectionType.NAME by default."""
+        from m2py.asg.expressions import MIndirection
+        from m2py.asg.enums import IndirectionType
+        from m2py.analysis.command_parser import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        
+        expr = parse_expression('@X')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MIndirection)
+        assert result.indirection_type == IndirectionType.NAME
+    
+    def test_indirection_static_resolution_string(self):
+        """@"VARNAME" should resolve statically."""
+        from m2py.asg.expressions import MIndirection
+        from m2py.analysis.command_parser import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        
+        expr = parse_expression('@"VARNAME"')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MIndirection)
+        assert result.can_resolve_statically is True
+        assert result.resolved_value == "VARNAME"
+    
+    def test_indirection_variable_not_static(self):
+        """@X should not resolve statically."""
+        from m2py.asg.expressions import MIndirection
+        from m2py.analysis.command_parser import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        
+        expr = parse_expression('@X')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MIndirection)
+        assert result.can_resolve_statically is False
+        assert result.resolved_value is None

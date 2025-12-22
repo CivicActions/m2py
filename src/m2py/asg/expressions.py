@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, List, Optional
 
 from m2py.asg.elements import ASGElement
-from m2py.asg.enums import LiteralType, FormatControlType
+from m2py.asg.enums import LiteralType, FormatControlType, IndirectionType
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MCall
@@ -177,6 +177,9 @@ class MPatternMatch(MExpr):
     pattern: str = ""  # Raw pattern string for direct patterns
     pattern_indirect: Optional["MExpr"] = None  # For indirect patterns ?@X
     operator: str = "?"  # Either "?" or "'?" for negated match
+    
+    # Pre-compiled regex for code generation (None if indirect pattern)
+    compiled_regex: Optional[str] = None
 
 
 @dataclass
@@ -187,12 +190,13 @@ class MIndirection(MExpr):
     - Name indirection: @X (where X contains a variable name)
     - Subscript indirection: Y(@X) (X provides subscript)
     - Argument indirection: DO @X (X contains label/routine)
+    - Pattern indirection: Y?@X (X contains pattern)
     """
     
     expression: Optional["MExpr"] = None
-    indirection_type: str = ""  # "name", "subscript", "argument"
+    indirection_type: IndirectionType = IndirectionType.UNKNOWN
     
-    # Analysis flags
+    # Analysis flags for static resolution
     can_resolve_statically: bool = False
     resolved_value: Optional[str] = None
 

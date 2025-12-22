@@ -68,6 +68,8 @@ class ASGElement(ABC):
                 continue
             if field_name in ("source_file", "line_number", "column", "end_line", "end_column"):
                 continue  # Handled above
+            if field_name == "source_lines":
+                continue  # Exclude bulky source_lines from serialization
                 
             value = getattr(self, field_name)
             result[field_name] = self._serialize_value(value, include_position, max_depth - 1)
@@ -189,10 +191,18 @@ class MRoutine(ASGElement):
     
     The top-level container for a MUMPS program, containing all labels
     and their statements. Tracks analysis flags for transpilation hints.
+    
+    The source_lines field stores the original source code lines for
+    $TEXT function support during code generation. $TEXT returns the
+    actual source line text at runtime, so the code generator needs
+    access to the original source.
     """
     
     name: str = ""
     labels: List[MLabel] = field(default_factory=list)
+    
+    # Original source lines for $TEXT support (1-indexed access via source_lines[line_num-1])
+    source_lines: List[str] = field(default_factory=list, repr=False)
     
     # Analysis annotations
     has_unstructured_goto: bool = False
@@ -217,6 +227,38 @@ class MRoutine(ASGElement):
         """Add a label to this routine, setting its parent reference."""
         label.parent = self
         self.labels.append(label)
+    
+    def get_text_line(self, line_number: int) -> str:
+        """Get a source line by 1-indexed line number.
+        
+        Used to support $TEXT(+n) function which returns the nth line.
+        
+        Args:
+            line_number: 1-indexed line number
+            
+        Returns:
+            The source line text, or empty string if out of range.
+        """
+        if line_number < 1 or line_number > len(self.source_lines):
+            return ""
+        return self.source_lines[line_number - 1]
+    
+    def get_text_at_label(self, label_name: str, offset: int = 0) -> str:
+        """Get source line by label+offset reference.
+        
+        Used to support $TEXT(label+offset) function.
+        
+        Args:
+            label_name: The label name to find
+            offset: Line offset from the label (0 = label line itself)
+            
+        Returns:
+            The source line text, or empty string if not found.
+        """
+        label = self.get_label(label_name)
+        if label is None or label.line_number is None:
+            return ""
+        return self.get_text_line(label.line_number + offset)
 
 
 @dataclass
