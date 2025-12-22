@@ -21,7 +21,7 @@ from ..asg.statements import (
     MWriteStatement, MQuitStatement, MIfStatement,
     MNewStatement, MDoStatement, MGotoStatement
 )
-from ..asg.expressions import MLiteral, MVariable, MGlobal
+from ..asg.expressions import MLiteral, MVariable, MGlobal, MNakedGlobal
 from ..asg.elements import MCall
 
 
@@ -426,13 +426,13 @@ def convert_to_literal(textx_model) -> MLiteral:
 
 
 def convert_to_variable(textx_model):
-    """Convert a textX LocalVariable or GlobalVariable to MVariable/MGlobal.
+    """Convert a textX LocalVariable, GlobalVariable, or NakedGlobal to ASG.
     
     Args:
         textx_model: The textX variable model
         
     Returns:
-        An MVariable or MGlobal ASG node
+        An MVariable, MGlobal, or MNakedGlobal ASG node
     """
     cls_name = textx_model.__class__.__name__
     
@@ -440,6 +440,10 @@ def convert_to_variable(textx_model):
         return MVariable(name=textx_model.name)
     elif cls_name == 'GlobalVariable':
         return MGlobal(name=textx_model.name)
+    elif cls_name == 'NakedGlobal':
+        # NakedGlobal inherits from MNakedGlobal, so we can return it directly
+        # The textX custom class already has subscripts populated
+        return textx_model
     else:
         # Fallback - try to get name attribute
         name = getattr(textx_model, 'name', str(textx_model))

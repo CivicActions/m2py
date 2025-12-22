@@ -67,6 +67,36 @@ class TestSetCommand:
         targets = model.assignments[0].targets
         assert len(targets.targets) == 3
 
+    def test_set_naked_global_target(self, command_metamodel):
+        """S ^(1)=value - naked global as SET target (T526 fix)."""
+        model = command_metamodel.model_from_str("S ^(1)=100", "SetCommand")
+        target = model.assignments[0].targets
+        assert target.__class__.__name__ == "NakedGlobal"
+        # subscripts is a Subscripts wrapper at grammar level; check args inside
+        assert len(target.subscripts.args) == 1
+
+    def test_set_naked_global_multiple_subscripts(self, command_metamodel):
+        """S ^(1,2,3)=value - naked global with multiple subscripts (T526 fix)."""
+        model = command_metamodel.model_from_str("S ^(1,2,3)=100", "SetCommand")
+        target = model.assignments[0].targets
+        assert target.__class__.__name__ == "NakedGlobal"
+        # subscripts is a Subscripts wrapper at grammar level; check args inside
+        assert len(target.subscripts.args) == 3
+
+    def test_set_mixed_global_naked_global(self, command_metamodel):
+        """S ^V1(1)=1,^(2)=2 - mix of global and naked global (T526 fix)."""
+        model = command_metamodel.model_from_str("S ^V1(1)=1,^(2)=2", "SetCommand")
+        assert len(model.assignments) == 2
+        
+        # First is GlobalVariable
+        target1 = model.assignments[0].targets
+        assert target1.__class__.__name__ == "GlobalVariable"
+        assert target1.name == "V1"
+        
+        # Second is NakedGlobal
+        target2 = model.assignments[1].targets
+        assert target2.__class__.__name__ == "NakedGlobal"
+
 
 class TestWriteCommand:
     """Tests for WRITE command parsing."""

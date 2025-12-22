@@ -246,6 +246,11 @@ def format_compact_expr(node: Any, depth: int = 0) -> str:
                 targets = ','.join(format_compact_expr(t, depth+1) for t in node.targets[:2])
                 return f'({targets})'
             return format_compact_expr(node.variable, depth+1)
+        if class_name == 'MFormatControl':
+            ctrl_type = node.control_type.name if hasattr(node, 'control_type') and node.control_type else '?'
+            if node.expression:
+                return f'{ctrl_type}({format_compact_expr(node.expression, depth+1)})'
+            return ctrl_type
         
         # Generic format for other node types
         return f'{class_name[:8]}(...)'

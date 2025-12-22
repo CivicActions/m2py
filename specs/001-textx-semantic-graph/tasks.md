@@ -1884,3 +1884,81 @@ Previous issues (T520-T522) have been resolved. Current validation confirms:
     - `indirection_levels`: Supports nested indirection (@@A)
   - **Impact**: V1MJA1 label 635 now has 10 statements (was 7), all commands captured
 
+---
+
+## Phase 32: MUGJ Validation Checklist - V1NR1 to V1NUM
+
+**Purpose**: Validate nesting/label/naked-reference tests (Checklist 18/54) ahead of codegen.
+
+**Validation Date**: 2025-12-21
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1NR1.m | 6 | 63 | ✅ Complete | Naked reference sequencing; EXAMINER backref resolved |
+| V1NR2.m | 7 | 52 | ✅ Complete | Naked reference with KILL variations and data checks |
+| V1NST1.m | 68 | 198 | ✅ Complete | Deep FOR/DO nesting (14 levels), external DO/GOTO links |
+| V1NST2.m | 47 | 129 | ✅ Complete | Indirection-heavy DO chain; name/argument indirection captured |
+| V1NST3.m | 52 | 136 | ✅ Complete | Mixed GOTO nesting across routines; FOR/QUIT exits captured |
+| V1NSTE.m | 46 | 98 | ✅ Complete | External GOTO/DO ladder, nested FOR with postconditioned QUIT |
+| V1NUM.m | 5 | 9 | ✅ Complete | Numeric literal driver calling ^V1NUM* routines |
+
+### Observations for Code Generation
+
+1. DO indirection (V1NST2 label 657) is captured as `MDo` with `indirection`; runtime will need to execute the comma-separated target list contained in the dereferenced string.
+2. Deep nested FOR/QUIT structures (V1NST1/V1NST3) are represented as nested `MForStatement` bodies with postconditioned `MQuit`—codegen should preserve early-exit semantics.
+3. External GOTO/DO chains (V1NSTE/V1NST3) resolve to `MCall` with `routine` set, confirming cross-routine linkage is available for future call graph analysis.
+
+---
+
+## Phase 33: MUGJ Validation Checklist - V1NUM1 to V1NX2
+
+**Purpose**: Validate numeric literal edge cases and $NEXT traversal routines (Checklist 19/54).
+
+**Validation Date**: 2025-12-21
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| V1NUM1.m | 6 | 102 | ✅ Complete | Numeric literal tests - leading zeros; format controls as MFormatControl |
+| V1NUM2.m | 5 | 80 | ✅ Complete | Numeric literal tests - trailing zeros, multiple minus signs |
+| V1NUM3.m | 4 | 85 | ✅ Complete | Numeric literal tests - scientific notation |
+| V1NUM4.m | 4 | 109 | ✅ Complete | String-to-numeric head extraction with unary +/- |
+| V1NX.m | 3 | 4 | ✅ Complete | $NEXT driver - external routine calls |
+| V1NX1.m | 8 | 73 | ✅ Complete | $NEXT tests; naked global SET targets fixed (T526) |
+| V1NX2.m | 16 | 62 | ✅ Complete | $NEXT with GOTO patterns; label targets resolved |
+
+### Tasks
+
+- [x] T524 [BUG] Convert Write formatting tokens (Newl, Form, Tab, Backspace, etc.) to ASG expressions during `_analyze_WriteCommand` / `_build_expression_asg`.
+   - **Fix Applied**: Added `MFormatControl` ASG class and `FormatControlType` enum in `src/m2py/asg/`. Added handler methods `_analyze_Newline`, `_analyze_FormFeed`, `_analyze_Tab`, `_analyze_CharCode` in `semantic_analyzer.py`.
+   - **Result**: All format controls (!, #, ?n, *n) now converted to proper `MFormatControl` ASG objects with `FormatControlType` classification. 669 tests passing.
+- [x] T525 [BUG] Normalize postconditioned Write control arguments (e.g., `W:$Y>55 #`) into concrete ASG literals instead of textX control nodes.
+   - **Fix Applied**: Same fix as T524 - the analyze dispatch now routes all FormatControl textX types to dedicated handlers that create `MFormatControl` ASG nodes.
+   - **Result**: Postconditioned writes like `W:$Y>55 #` now produce `MFormatControl(control_type=FORMFEED)` with proper postcondition expression.
+
+### Outstanding Issues
+
+- [X] T526 [BUG] Naked globals (`^(...)`) fail to parse as SET targets - grammar issue
+   - **Root Cause**: `SingleTarget` rule in `commands.tx` allows `GlobalVariable | LocalVariable | Indirection` but does NOT include `NakedGlobal`. When parser encounters `S ^(1)=1`, it fails to match and silently drops the entire SET statement.
+   - **Affected Files**: V1NX1.m line 37: `S ^V1(1)=1,^V1(200)=200,^(30,30)=3030,^(3,3)=33` - only first 2 assignments parsed
+   - **Fix Applied**: 
+     1. Added `NakedGlobal` to `SingleTarget` rule in `src/m2py/grammar/commands.tx` (placed before GlobalVariable due to ambiguous `^` prefix)
+     2. Added `NakedGlobal` handling in `convert_to_variable()` in `src/m2py/analysis/command_parser.py`
+     3. Added 6 unit tests for grammar and analysis levels
+   - **Result**: SET statements with naked global targets now parse correctly with all assignments captured
+
+### Observations for Code Generation
+
+1. **MFormatControl** - New ASG type representing I/O format controls:
+   - `control_type`: `FormatControlType.NEWLINE` (!), `FORMFEED` (#), `TAB` (?n), `CHARCODE` (*n)
+   - `expression`: For TAB and CHARCODE, contains the column/character code expression
+2. **$NEXT function** - V1NX1/V1NX2 test traversal with $NEXT($N) intrinsic; properly captured as MIntrinsicFunction
+3. **Naked global references in expressions** - Used extensively in V1NX1/V1NX2 for testing; properly captured as MNakedGlobal in expressions like `$N(^(1))`
+4. **Naked global references as SET targets** - ⚠️ **BUG**: Not currently parsed - see T526
+5. **Numeric literal canonicalization** - V1NUM1-4 test leading/trailing zero removal and scientific notation; literal values captured with original precision
+6. **Unary operators on strings** - V1NUM4 tests numeric interpretation (`+"123ABC"` → 123); captured as MUnaryOp with StringLiteral operand
+7. **$Y special variable** - Used in EXAMINER postconditions (`W:$Y>55 #`); properly captured as SpecialVariable
+

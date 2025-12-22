@@ -71,8 +71,10 @@ ParenTargets:
     '(' targets+=SingleTarget[/,/] ')'
 ;
 
+// NakedGlobal MUST come before GlobalVariable since both start with ^
+// NakedGlobal is ^(...) while GlobalVariable is ^name(...)
 SingleTarget:
-    GlobalVariable | LocalVariable | Indirection
+    NakedGlobal | GlobalVariable | LocalVariable | Indirection
 ;
 
 // =============================================================================

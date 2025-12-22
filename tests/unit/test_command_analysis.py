@@ -32,6 +32,7 @@ from m2py.asg.expressions import (
     MLiteral,
     MVariable,
     MGlobal,
+    MNakedGlobal,
     MIntrinsicFunction,
     MBinaryOp,
 )
@@ -92,6 +93,43 @@ class TestSetStatementAnalysis:
         assert isinstance(value, MLiteral)
         assert value.literal_type == LiteralType.STRING
         assert value.value == "hello"
+    
+    def test_set_naked_global_target(self):
+        """SET ^(1)=value produces MNakedGlobal target (T526 fix)."""
+        stmt = analyze_first_command("S ^(1)=100")
+        
+        assert isinstance(stmt, MSetStatement)
+        assert len(stmt.assignments) == 1
+        
+        target = stmt.assignments[0].target
+        assert isinstance(target, MNakedGlobal)
+        assert len(target.subscripts) == 1
+    
+    def test_set_naked_global_multiple_subscripts(self):
+        """SET ^(1,2)=value produces MNakedGlobal with 2 subscripts (T526 fix)."""
+        stmt = analyze_first_command("S ^(1,2)=100")
+        
+        assert isinstance(stmt, MSetStatement)
+        target = stmt.assignments[0].target
+        assert isinstance(target, MNakedGlobal)
+        assert len(target.subscripts) == 2
+    
+    def test_set_mixed_global_and_naked_global(self):
+        """SET ^V1(1)=1,^(2)=2 produces GlobalVariable then NakedGlobal (T526 fix)."""
+        stmt = analyze_first_command("S ^V1(1)=1,^(2)=2")
+        
+        assert isinstance(stmt, MSetStatement)
+        assert len(stmt.assignments) == 2
+        
+        # First target is GlobalVariable
+        target1 = stmt.assignments[0].target
+        assert isinstance(target1, MGlobal)
+        assert target1.name == "V1"
+        
+        # Second target is NakedGlobal
+        target2 = stmt.assignments[1].target
+        assert isinstance(target2, MNakedGlobal)
+        assert len(target2.subscripts) == 1
 
 
 class TestWriteStatementAnalysis:

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, List, Optional
 
 from m2py.asg.elements import ASGElement
-from m2py.asg.enums import LiteralType
+from m2py.asg.enums import LiteralType, FormatControlType
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MCall
@@ -193,6 +193,24 @@ class MIndirection(MExpr):
     # Analysis flags
     can_resolve_statically: bool = False
     resolved_value: Optional[str] = None
+
+
+@dataclass
+class MFormatControl(MExpr):
+    """Format control expression for WRITE/READ commands.
+    
+    Represents I/O format controls:
+    - ! (newline) - Output line feed
+    - # (formfeed) - Output form feed/page break  
+    - ?n (tab) - Tab to column n
+    - *n (charcode) - Output character with ASCII code n
+    
+    For tab (?n) and charcode (*n), the expression field contains
+    the column number or character code respectively.
+    """
+    
+    control_type: "FormatControlType" = None  # Type of format control
+    expression: Optional["MExpr"] = None  # Column/charcode expr for ?n/*n
 
 
 @dataclass

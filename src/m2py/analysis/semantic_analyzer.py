@@ -35,6 +35,7 @@ from m2py.asg.expressions import (
     MIndirection,
     MBinaryOp,
     MUnaryOp,
+    MFormatControl,
 )
 from m2py.asg.statements import (
     MStatement,
@@ -49,7 +50,7 @@ from m2py.asg.statements import (
     MMergeStatement,
 )
 from m2py.asg.elements import MRoutine, MLabel, MScope, MCall
-from m2py.asg.enums import LiteralType, ForLoopType, ForParamType
+from m2py.asg.enums import LiteralType, ForLoopType, ForParamType, FormatControlType
 
 
 # =============================================================================
@@ -318,6 +319,42 @@ class SemanticAnalyzer:
                 pass
         
         return model
+    
+    # =========================================================================
+    # Format Control Analysis (textX FormatControl → MFormatControl)
+    # =========================================================================
+    
+    def _analyze_Newline(self, node: Any, parent: Any) -> MFormatControl:
+        """Analyze ! (newline) format control."""
+        fc = MFormatControl()
+        object.__setattr__(fc, 'parent', parent)
+        object.__setattr__(fc, 'control_type', FormatControlType.NEWLINE)
+        return fc
+    
+    def _analyze_FormFeed(self, node: Any, parent: Any) -> MFormatControl:
+        """Analyze # (formfeed) format control."""
+        fc = MFormatControl()
+        object.__setattr__(fc, 'parent', parent)
+        object.__setattr__(fc, 'control_type', FormatControlType.FORMFEED)
+        return fc
+    
+    def _analyze_Tab(self, node: Any, parent: Any) -> MFormatControl:
+        """Analyze ?n (tab to column) format control."""
+        fc = MFormatControl()
+        object.__setattr__(fc, 'parent', parent)
+        object.__setattr__(fc, 'control_type', FormatControlType.TAB)
+        if hasattr(node, 'expr') and node.expr:
+            object.__setattr__(fc, 'expression', self.analyze(node.expr, fc))
+        return fc
+    
+    def _analyze_CharCode(self, node: Any, parent: Any) -> MFormatControl:
+        """Analyze *n (output character code) format control."""
+        fc = MFormatControl()
+        object.__setattr__(fc, 'parent', parent)
+        object.__setattr__(fc, 'control_type', FormatControlType.CHARCODE)
+        if hasattr(node, 'expr') and node.expr:
+            object.__setattr__(fc, 'expression', self.analyze(node.expr, fc))
+        return fc
     
     # =========================================================================
     # Command Analysis Methods (textX Command → ASG Statement)

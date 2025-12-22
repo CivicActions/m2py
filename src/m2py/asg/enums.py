@@ -90,3 +90,18 @@ class LiteralType(Enum):
     STRING = auto()
     INTEGER = auto()
     DECIMAL = auto()
+
+
+class FormatControlType(Enum):
+    """Type of I/O format control in WRITE/READ commands.
+    
+    Format controls modify device output:
+    - NEWLINE: ! - Output newline (line feed)
+    - FORMFEED: # - Output form feed (page break)
+    - TAB: ?n - Tab to column n
+    - CHARCODE: *n - Output character with ASCII code n
+    """
+    NEWLINE = auto()
+    FORMFEED = auto()
+    TAB = auto()
+    CHARCODE = auto()
