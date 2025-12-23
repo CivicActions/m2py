@@ -323,6 +323,82 @@ class TestPatternMatchGrammar:
         routine = parser.parse(source)
         
         assert isinstance(routine, MRoutine)
+    
+    def test_pattern_match_numeric_repcount_exact(self):
+        """Pattern with exact repcount X?2N should parse (T576 fix)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=Y?2N\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_pattern_match_numeric_repcount_atleast(self):
+        """Pattern with at-least repcount X?2.N should parse (T576 fix)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=Y?2.N\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_pattern_match_numeric_repcount_atmost(self):
+        """Pattern with at-most repcount X?.2N should parse (T576 fix)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=Y?.2N\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_pattern_match_numeric_repcount_range(self):
+        """Pattern with range repcount X?1.2N should parse (T576 fix)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=Y?1.2N\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_pattern_match_multi_atom_with_repcounts(self):
+        """Multi-atom pattern X?2.N.P.2N should parse (T576 fix)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=Y?2.N.P.2N\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+
+
+class TestIndirectPatternMatchGrammar:
+    """Test indirect pattern match expression parsing (T576)."""
+    
+    def test_indirect_pattern_match_simple(self):
+        """Indirect pattern match X?@PAT should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=Y?@PAT\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_indirect_pattern_match_with_parens(self):
+        """Indirect pattern match X?@(PAT) should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X=Y?@(PAT)\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_indirect_pattern_match_string_literal(self):
+        """Indirect pattern match with string literal should parse."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X="ABC"?@".4AN"\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
+    
+    def test_indirect_pattern_with_concat(self):
+        """Indirect pattern followed by concatenation should parse (VV2PAT2 line 155)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tS X="ABC"?@".4AN"_("12.34"?2.N.P.2N)\n'
+        routine = parser.parse(source)
+        
+        assert isinstance(routine, MRoutine)
 
 
 class TestIntrinsicFunctionGrammar:

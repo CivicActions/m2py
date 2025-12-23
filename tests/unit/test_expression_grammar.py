@@ -472,18 +472,98 @@ class TestSpecialVariables:
         assert operand.name == 'D'
 
     def test_select_function_still_works(self, expr_metamodel):
-        """Parse $SELECT(args) as function, not special variable (T538 fix).
+        """Parse $SELECT(cond:val) as SelectFunction, not special variable (T538 fix).
         
-        $S alone is $STORAGE special variable, but $SELECT(args) is $SELECT function.
-        We use full name $SELECT here because IntrinsicFunction uses FNAME.
+        $S alone is $STORAGE special variable, but $S(cond:val) is $SELECT function.
+        $SELECT uses special syntax with condition:value pairs.
         """
-        model = expr_metamodel.model_from_str('$SELECT(X,Y)', 'Expr')
+        model = expr_metamodel.model_from_str('$SELECT(1:1)', 'Expr')
         assert model is not None
         operand = model.left.operand
-        # Should be IntrinsicFunction since it has arguments
-        assert operand.__class__.__name__ == 'IntrinsicFunction', \
-            f"Expected IntrinsicFunction, got {operand.__class__.__name__}"
-        assert operand.name == 'SELECT'
+        # Should be SelectFunction since it has condition:value arguments
+        assert operand.__class__.__name__ == 'SelectFunction', \
+            f"Expected SelectFunction, got {operand.__class__.__name__}"
+        assert operand.name in ('SELECT', 'S')
+
+
+class TestSelectFunction:
+    """Test $SELECT function parsing - uses special condition:value syntax.
+    
+    $SELECT is unique in MUMPS because it uses colon (:) as a separator
+    between conditions and values rather than as an operator.
+    Syntax: $S[ELECT](tvexpr:expr, tvexpr:expr, ...)
+    """
+
+    def test_select_simple(self, expr_metamodel):
+        """Parse $SELECT(1:1) - simplest form."""
+        model = expr_metamodel.model_from_str('$SELECT(1:1)', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SelectFunction'
+        assert operand.name.upper() in ('SELECT', 'S')
+
+    def test_select_abbreviated(self, expr_metamodel):
+        """Parse $s(1:1) - abbreviated form."""
+        model = expr_metamodel.model_from_str('$s(1:1)', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SelectFunction'
+
+    def test_select_multiple_pairs(self, expr_metamodel):
+        """Parse $SELECT with multiple condition:value pairs."""
+        model = expr_metamodel.model_from_str('$SELECT(A=1:X,B=2:Y,1:Z)', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SelectFunction'
+        # Check we have 3 pairs
+        assert len(operand.args.args) == 3
+
+    def test_select_with_expressions(self, expr_metamodel):
+        """Parse $SELECT with complex expressions."""
+        model = expr_metamodel.model_from_str('$s(ABC="abc":"abc",1:1)', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'SelectFunction'
+
+    def test_select_chained(self, expr_metamodel):
+        """Parse expression with multiple $SELECT concatenated."""
+        model = expr_metamodel.model_from_str('$select(ABC="ABC":"abc",1:1)_$Select(ABC=1:"EFG",1:2)', 'Expr')
+        assert model is not None
+
+    def test_select_uppercase(self, expr_metamodel):
+        """Parse $SELECT (uppercase)."""
+        model = expr_metamodel.model_from_str('$SELECT(1:1)', 'Expr')
+        assert model is not None
+
+    def test_select_lowercase(self, expr_metamodel):
+        """Parse $select (lowercase)."""
+        model = expr_metamodel.model_from_str('$select(1:1)', 'Expr')
+        assert model is not None
+
+    def test_select_mixedcase(self, expr_metamodel):
+        """Parse $Select (mixed case)."""
+        model = expr_metamodel.model_from_str('$Select(1:1)', 'Expr')
+        assert model is not None
+
+    def test_select_abbrev_se(self, expr_metamodel):
+        """Parse $se (2 char abbreviation)."""
+        model = expr_metamodel.model_from_str('$se(1:1)', 'Expr')
+        assert model is not None
+
+    def test_select_abbrev_sel(self, expr_metamodel):
+        """Parse $sel (3 char abbreviation)."""
+        model = expr_metamodel.model_from_str('$sel(1:1)', 'Expr')
+        assert model is not None
+
+    def test_select_abbrev_sele(self, expr_metamodel):
+        """Parse $sele (4 char abbreviation)."""
+        model = expr_metamodel.model_from_str('$sele(1:1)', 'Expr')
+        assert model is not None
+
+    def test_select_abbrev_selec(self, expr_metamodel):
+        """Parse $selec (5 char abbreviation)."""
+        model = expr_metamodel.model_from_str('$selec(1:1)', 'Expr')
+        assert model is not None
 
 
 class TestIndirection:

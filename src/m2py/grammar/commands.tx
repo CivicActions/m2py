@@ -290,8 +290,8 @@ QuitCommand:
 // Note: SET requires "=" in arguments, others require space before args
 // CRITICAL: Also detect command keywords followed by : (postcondition)
 CommandWithArg:
-    // SET: S VAR= or S (...)
-    /[Ss][Ee][Tt][ \t:]|[Ss][ \t]+[A-Za-z%^(]/ |
+    // SET: S VAR= or S (...) or S $PIECE (left-hand intrinsic functions)
+    /[Ss][Ee][Tt][ \t:]|[Ss][ \t]+[A-Za-z%^($]/ |
     /[Ss][ \t]*=/ |  // S= is impossible as return value (assignment)
     /[Ss]:/ |  // SET with postcondition
     // WRITE: W followed by space or postcondition

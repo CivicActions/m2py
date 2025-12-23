@@ -219,6 +219,29 @@ class IntrinsicFunctionNoArgs(MIntrinsicFunction):
         object.__setattr__(self, 'result_type', None)
 
 
+class SelectFunction(MIntrinsicFunction):
+    """textX custom class for SelectFunction grammar rule.
+    
+    Grammar: SelectFunction: '$' name=SELECTNAME args=SelectFunctionArgs;
+    
+    $SELECT uses special syntax with condition:value pairs.
+    We map this to MIntrinsicFunction with the condition:value pairs
+    stored as a list of tuples in the arguments.
+    """
+    
+    def __init__(self, parent=None, name: str = "", args=None):
+        object.__setattr__(self, 'name', name.upper())  # Normalize to uppercase
+        # args is a SelectFunctionArgs with args=[SelectArg, ...]
+        # Each SelectArg has .condition and .value attributes
+        arguments = []
+        if args and hasattr(args, 'args'):
+            for select_arg in args.args:
+                # Store as tuple (condition, value) for code generation
+                arguments.append((select_arg.condition, select_arg.value))
+        object.__setattr__(self, 'arguments', arguments)
+        object.__setattr__(self, 'result_type', None)
+
+
 class ExtrinsicFunction(MExtrinsicFunction):
     """textX custom class for ExtrinsicFunction grammar rule.
     
@@ -264,6 +287,7 @@ EXPRESSION_CLASSES = [
     GlobalVariable,
     NakedGlobal,
     SpecialVariable,
+    SelectFunction,
     IntrinsicFunction,
     IntrinsicFunctionNoArgs,
     ExtrinsicFunction,

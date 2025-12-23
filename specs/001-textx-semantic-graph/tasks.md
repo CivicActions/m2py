@@ -2745,3 +2745,105 @@ KillTarget:
 
 - [x] T567 [Bug] Emit `MSetStatement` and `MDoStatement` for left-hand `$PIECE` assignment lines so VV2LHP1 labels 96–108 are fully represented (commands.tx + parser conversion). **FIXED:** Added `IntrinsicFunction` to `SingleTarget` rule in commands.tx. VV2LHP1 now captures 114 statements (up from 46). Added 3 unit tests in test_command_analysis.py.
 - [x] T568 [Bug] Ensure trailing `DO EXAMINER` is retained after multi-assignment lines in VV2LHP2 label 118 (textX line parsing → statement build). **FIXED:** Same grammar change resolved this issue. VV2LHP2 now captures 110 statements (up from 67).
+
+## Phase 50: MUGJ Validation Checklist - VV2LCF2 to VV2PAT2 (Re-validation) ✅ COMPLETE
+
+**Purpose**: Address issues found during detailed re-validation of VV2LCF2 and VV2LHP2.
+
+### Findings
+
+- **VV2LCF2.m**: Labels 53 and 54 were missing the last line containing `$select` / `$s`. ✅ FIXED
+- **VV2LHP2.m**: Label 119 was missing a statement. ✅ FIXED
+
+### Root Cause: $SELECT Function Parsing
+
+The `$SELECT` function uses special `condition:value` pair syntax that wasn't supported by the `FunctionArgs` grammar rule. The `:` in `$SELECT` is a separator between condition and value, NOT an operator.
+
+**Syntax**: `$S[ELECT](tvexpr:expr, tvexpr:expr, ...)`
+
+### Tasks
+
+- [x] T569 [Bug] Fix `$select` / `$s` parsing in `VV2LCF2.m`. **FIXED:** Added `SelectFunction`, `SelectFunctionArgs`, and `SelectArg` grammar rules to `expressions.tx`. Updated `PrimaryExpr` and `OffsetPrimaryExpr` to include `SelectFunction` before `IntrinsicFunction`. Added `SelectFunction` class to `textx_classes.py`. Labels 53 and 54 now have 5 statements each (was 4).
+- [x] T570 [Bug] `$TEST` / `$T` parsing. **RESOLVED:** No separate issue - `$TEST` is a special variable (not a function), already parsed correctly. The missing statements were due to `$SELECT` on the same lines.
+- [x] T571 [Bug] `FOR` loop parsing in `VV2LHP2.m` Label 119. **RESOLVED:** Same root cause as T569. Label 119 now has 13 statements (was 12).
+- [x] T572 [Test] Added `TestSelectFunction` class with 12 test cases to `test_expression_grammar.py` covering all abbreviation forms and complex expressions.
+
+---
+
+## Phase 51: MUGJ Validation Checklist 42 - VV2LCF2 to VV2PAT2 (Final Re-validation) ✅ COMPLETE
+
+**Purpose**: Final re-validation of 7 files in Checklist 42/54 with detailed ASG review.
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VV2LCF2.m | 21 | 97 | ⚠️ | Mixed-case `$TEst` fails; label 67 missing statements |
+| VV2LHP1.m | 16 | 114 | ✅ | Left-hand $PIECE (`$P(glvn,expr)=value`); naked global references in SET targets |
+| VV2LHP2.m | 15 | 110 | ✅ | Left-hand $PIECE with postconditions, indirection, control characters |
+| VV2NO.m | 7 | 101 | ✅ | $NEXT and $ORDER functions; FOR loops with QUIT conditions |
+| VV2NR.m | 7 | 48 | ✅ | Naked global references; effect on KILL, $DATA; interpretation sequence |
+| VV2PAT1.m | 10 | 59 | ✅ | Pattern match operator (`?`); repcount patterns (.0A, 1.N, etc.); multi-patatom |
+| VV2PAT2.m | 10 | 73 | ⚠️ | Indirect pattern (`?@`) NOT parsed - known limitation |
+
+### ASG Correctness Validation
+
+✅ **All Files Parse Successfully**: 100% parse rate (376/376 MUGJ files)
+
+✅ **Labels Captured Correctly**: All 21 labels in VV2LCF2, 16 in VV2LHP1, 15 in VV2LHP2, etc.
+
+✅ **Commands Captured**:
+- SET, WRITE, KILL, DO, IF, FOR, QUIT all correctly represented
+- Postconditions on commands (`W:$Y>55 #`) captured
+- Multiple commands on one line properly separated
+
+✅ **Expressions Captured**:
+- Pattern matches (`X?1.3N`) captured as `MPatternMatch` with pattern string, subject, and compiled_regex
+- Left-hand $PIECE (`$P(X,"^")="D"`) captured with target as `IntrinsicFunction`
+- Naked globals (`^(subscripts)`) captured as `NakedGlobal` with `requires_runtime_tracking=True`
+- $NEXT/$ORDER captured as `IntrinsicFunction` with function name preserved
+
+✅ **Special Variables**: `$JOB`, `$HOROLOG`, `$TEST`, etc. captured as `SpecialVariable` (uppercase versions)
+
+### Known Issues / Limitations
+
+1. **Indirect Pattern Match (`?@`) NOT SUPPORTED**: Lines using `?@(pattern)` syntax (VV2PAT2 lines 7, 12-13) fail to parse entirely. The SET command is silently dropped. This affects:
+   - VV2PAT2 label 155: `S VCOMP="ABC123#$!"?@(".4AN2.N1.99999999PN")...` - MISSING
+   - VV2PAT2 label 156: `S VCOMP="MUMPS"?@(...)` - MISSING
+   - **Impact**: Pattern match tests with indirect patterns will fail at runtime
+
+2. **Lowercase Special Variables Misclassified**: When special variables use lowercase names (`$x`, `$y`, `$io`, `$job`, `$horolog`, `$storage`, `$test`), they are captured as `IntrinsicFunctionNoArgs` instead of `SpecialVariable`. Uppercase versions (`$X`, `$JOB`, etc.) are correctly captured as `SpecialVariable`.
+   - **Impact**: Code generation must normalize function names and treat these as special variables
+   - **Files Affected**: VV2LCF2 uses lowercase special variables in tests 57-68
+
+3. **Mixed-Case Special Variables FAIL TO PARSE**: Special variables with mixed case like `$Test`, `$TEst`, `$HoroloG` cause the entire line to fail parsing. Only fully uppercase (`$TEST`) or fully lowercase (`$test`) are recognized.
+   - **Impact**: VV2LCF2 label 67 line `S VCOMP=VCOMP_$TEST_$test_$TEst` fails completely
+   - VV2LCF2 label 67 shows 3 statements but should have 7+ (missing SET/IF/SET/IF sequence)
+   - VV2LCF2 label 68 also affected by `$T_$t` patterns
+
+4. **~~FOR + QUIT postcondition + Left-hand $PIECE fails to parse~~** ✅ FIXED: Added `$` to CommandWithArg SET pattern (`[Ss][ \t]+[A-Za-z%^($]`) in commands.tx. The issue was the negative lookahead `!CommandWithArg` in QuitCommand didn't recognize SET with left-hand $PIECE because `$` wasn't in the character class. Now correctly parses VV2LHP2 line 73.
+
+### Python Code Generation Readiness
+
+✅ **Ready for Code Generation**:
+- Expression trees properly structured (not strings)
+- Operator precedence captured through expression tree nesting
+- Label references resolved with `is_resolved=True`
+- FOR loops have classified types and body scopes
+- Control flow translatable to Python
+
+⚠️ **Requires Runtime Support**:
+- Naked globals need runtime tracking of last global reference
+- Left-hand $PIECE needs special runtime implementation
+- Pattern matches need MUMPS-compatible regex conversion
+
+### Tasks
+
+- [x] T573 [Validation] Re-validate VV2LCF2 to VV2PAT2 with detailed ASG inspection
+- [x] T574 [Documentation] Document indirect pattern match (`?@`) as known parser limitation
+- [ ] T575 [Bug] Fix lowercase special variable classification (`$x` should be `SpecialVariable` not `IntrinsicFunctionNoArgs`)
+- [ ] T576 [Enhancement] Add indirect pattern match (`?@(expr)`) support to expression grammar
+- [ ] T577 [Bug] Fix mixed-case special variable parsing (`$Test`, `$TEst`, `$HoroloG` fail to parse entirely)
+- [x] T578 [Bug] FOR + QUIT postcondition + SET (left-hand $P) fails to parse entire line - FIXED by adding `$` to CommandWithArg SET pattern in commands.tx
+
