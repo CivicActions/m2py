@@ -138,7 +138,7 @@ ReadArgValue:
 ;
 
 ReadTargetWithTimeout:
-    target=ReadTarget (':' timeout=Expr)?
+    target=ReadTarget ('#' fixed_length=Expr)? (':' timeout=Expr)?
 ;
 
 // Format controls valid in READ (not * which is CharRead)
@@ -146,6 +146,8 @@ ReadFormat:
     Newline | FormFeed | Tab
 ;
 
+// ReadTarget: variable to read into
+// FixedLengthRead is handled at ReadTargetWithTimeout level with #length syntax
 ReadTarget:
     CharRead | GlobalVariable | LocalVariable | Indirection
 ;

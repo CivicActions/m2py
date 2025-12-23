@@ -84,22 +84,26 @@ class MWriteStatement(MStatement):
 
 @dataclass
 class MReadTarget:
-    """Target variable for READ command with optional timeout.
+    """Target variable for READ command with optional timeout and fixed length.
     
     Represents a variable being read into, with optional modifiers:
     - is_char_read: True for *VAR syntax (single character read)
     - timeout: Optional timeout expression (VAR:timeout syntax)
+    - fixed_length: Optional fixed-length expression (VAR#length syntax)
     
     Examples:
     - R X -> MReadTarget(variable=MVariable('X'))
     - R *X -> MReadTarget(variable=MVariable('X'), is_char_read=True)
     - R X:10 -> MReadTarget(variable=MVariable('X'), timeout=MLiteral(10))
     - R *X:0 -> MReadTarget(variable=MVariable('X'), is_char_read=True, timeout=MLiteral(0))
+    - R X#5 -> MReadTarget(variable=MVariable('X'), fixed_length=MLiteral(5))
+    - R X#5:10 -> MReadTarget(variable=MVariable('X'), fixed_length=MLiteral(5), timeout=MLiteral(10))
     """
     
     variable: "MExpr" = None  # The variable to read into (MVariable or MGlobal)
     is_char_read: bool = False  # True for *VAR (single character read)
     timeout: Optional["MExpr"] = None  # Optional timeout expression
+    fixed_length: Optional["MExpr"] = None  # Optional fixed-length expression (VAR#length)
 
 
 @dataclass
@@ -197,6 +201,8 @@ class MForStatement(MStatement):
     has_internal_goto: bool = False
     goto_exits_loop: bool = False
     exit_points: List["MStatement"] = field(default_factory=list, repr=False)
+    is_infinite: bool = False  # True for step=0 or ARGUMENTLESS loops
+    loop_var_modified_in_body: bool = False  # True if loop variable is SET inside body
 
 
 # =============================================================================
@@ -291,6 +297,7 @@ class MKillStatement(MStatement):
     """KILL command - delete variables.
     
     Removes variables and their descendants:
+    - K (no args) - kill ALL local variables (is_kill_all=True)
     - K X, KILL ^GLOBAL - selective kill (targets list)
     - K (X,Y) - exclusive kill (keep only X,Y and descendants)
     - K (X,Y,Z),(X,W) - multiple exclusive groups (keep intersection: only X)
@@ -304,6 +311,11 @@ class MKillStatement(MStatement):
     exclusive: bool = False  # True if any exclusive groups present
     except_list: List[str] = field(default_factory=list)  # Computed: intersection of all exclusive groups
     except_groups: List[List[str]] = field(default_factory=list)  # Raw exclusive groups before intersection
+    
+    @property
+    def is_kill_all(self) -> bool:
+        """Return True if this is a KILL with no arguments (kills all locals)."""
+        return not self.targets and not self.exclusive
 
 
 @dataclass

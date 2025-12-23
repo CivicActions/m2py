@@ -142,17 +142,35 @@ def _classify_single_goto(
     """
     # Check each target (usually just one, but GOTO can have multiple)
     for call in stmt.targets:
-        # External call (^routine)
+        # External call (^routine) - but check if it's same routine first
         if call.routine is not None:
-            stmt.goto_type = GotoType.EXTERNAL
-            continue
+            # Check if this is the same routine (G label^SAMEROUTINE pattern)
+            if call.routine.upper() != routine.name.upper():
+                stmt.goto_type = GotoType.EXTERNAL
+                continue
+            # Same routine explicit reference - treat as resolved if label exists
+            if call.name in label_positions:
+                # Continue to classify as regular GOTO within routine
+                pass
+            else:
+                stmt.goto_type = GotoType.UNRESOLVED
+                continue
         
-        # Unresolved reference
-        if not call.is_resolved or call.target is None:
+        # Unresolved reference (no routine and not resolved)
+        if call.routine is None and (not call.is_resolved or call.target is None):
             stmt.goto_type = GotoType.UNRESOLVED
             continue
         
-        target_label = call.target
+        # Get target label - either from resolved target or by name lookup
+        if call.target:
+            target_label = call.target
+        else:
+            # Same-routine explicit call - look up label by name
+            target_label = routine.get_label(call.name)
+            if not target_label:
+                stmt.goto_type = GotoType.UNRESOLVED
+                continue
+        
         target_label_idx = label_positions.get(target_label.name, -1)
         
         # Same label = forward or backward within label
@@ -181,6 +199,13 @@ def _classify_single_goto(
             else:
                 stmt.goto_type = GotoType.MULTI_LOOP_EXIT
                 stmt.exits_loops = list(enclosing_fors)
+            
+            # Set has_internal_goto on all enclosing FORs
+            for for_stmt in enclosing_fors:
+                for_stmt.has_internal_goto = True
+                # Add this GOTO to the FOR's exit_points (bidirectional link)
+                if stmt not in for_stmt.exit_points:
+                    for_stmt.exit_points.append(stmt)
         
         # If jumping to different label while inside FOR, it's a cross-label exit
         if enclosing_fors and target_label.name != current_label.name:

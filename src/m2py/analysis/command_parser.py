@@ -324,6 +324,21 @@ def parse_for_command_to_asg(for_cmd) -> MForStatement:
     # Classify the loop type
     statement.loop_type = _classify_for_params(statement.parameters)
     
+    # Detect infinite loops: ARGUMENTLESS or step=0
+    if statement.loop_type == ForLoopType.ARGUMENTLESS:
+        statement.is_infinite = True
+    else:
+        # Check for step=0 in any parameter
+        for fp in statement.parameters:
+            if fp.step is not None:
+                # Check if step is numeric literal 0
+                # Handle both MLiteral and NumericLiteral (textX) types
+                step = fp.step
+                step_value = getattr(step, 'value', None)
+                if step_value == 0 or step_value == "0":
+                    statement.is_infinite = True
+                    break
+    
     return statement
 
 

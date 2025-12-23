@@ -480,6 +480,10 @@ Examples:
             routine = parser_obj.parse_file(str(filepath))
             # Run reference resolution so DO/GOTO calls show resolved targets
             parser_obj.resolve_references(routine)
+            # Run GOTO classification to populate goto_type, exits_loops, and FOR analysis fields
+            parser_obj.classify_gotos(routine)
+            # Run FOR loop analysis to detect loop variable modification
+            parser_obj.analyze_for_loops(routine)
             
             if args.compact:
                 display_compact_asg(routine)

@@ -426,6 +426,32 @@ class TestKillStatementAnalysis:
         
         assert isinstance(stmt, MKillStatement)
         assert len(stmt.targets) == 1
+        assert stmt.is_kill_all is False
+    
+    def test_kill_all_no_args(self):
+        """K (no args) produces MKillStatement with is_kill_all=True."""
+        stmt = analyze_first_command("K")
+        
+        assert isinstance(stmt, MKillStatement)
+        assert len(stmt.targets) == 0
+        assert stmt.exclusive is False
+        assert stmt.is_kill_all is True
+    
+    def test_kill_multiple_targets(self):
+        """K X,Y,Z produces MKillStatement with 3 targets."""
+        stmt = analyze_first_command("K X,Y,Z")
+        
+        assert isinstance(stmt, MKillStatement)
+        assert len(stmt.targets) == 3
+        assert stmt.is_kill_all is False
+    
+    def test_kill_exclusive_not_kill_all(self):
+        """K (X,Y) - exclusive kill is NOT kill-all."""
+        stmt = analyze_first_command("K (X,Y)")
+        
+        assert isinstance(stmt, MKillStatement)
+        assert stmt.exclusive is True
+        assert stmt.is_kill_all is False
 
 
 class TestOtherStatementAnalysis:

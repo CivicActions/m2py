@@ -263,6 +263,54 @@ class TestIntrinsicFunctionASG:
         assert isinstance(inner, MIntrinsicFunction)
         assert inner.name in ("P", "PIECE")
 
+    def test_binary_expression_in_function_arg(self):
+        """$T(TEX+I) has a binary expression argument - regression test for T582.
+        
+        This tests that binary expressions inside function arguments are correctly
+        preserved and not dropped during unwrapping. Previously, _unwrap_expr()
+        checked for '.ops' attribute but the grammar uses '.tail' for BinaryOpTail.
+        """
+        expr = parse_expression('$T(TEX+I)')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "T"
+        assert len(result.arguments) == 1
+        
+        # The argument should be an MBinaryOp, not just LocalVariable
+        arg = result.arguments[0]
+        assert isinstance(arg, MBinaryOp), f"Expected MBinaryOp, got {type(arg).__name__}"
+        assert arg.operator == "+"
+        
+        # Left should be TEX, right should be I
+        assert isinstance(arg.left, MVariable)
+        assert arg.left.name == "TEX"
+        assert isinstance(arg.right, MVariable)
+        assert arg.right.name == "I"
+
+    def test_complex_expression_in_function_arg(self):
+        """$P(A," ;",2,99) preserves all arguments including string literals."""
+        expr = parse_expression('$P(A," ;",2,99)')
+        result = analyze_expression(expr)
+        
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "P"
+        assert len(result.arguments) == 4
+        
+        # First arg is variable A
+        assert isinstance(result.arguments[0], MVariable)
+        assert result.arguments[0].name == "A"
+        
+        # Second arg is string literal " ;"
+        assert isinstance(result.arguments[1], MLiteral)
+        assert result.arguments[1].value == " ;"
+        
+        # Third and fourth args are numeric literals
+        assert isinstance(result.arguments[2], MLiteral)
+        assert result.arguments[2].value == 2
+        assert isinstance(result.arguments[3], MLiteral)
+        assert result.arguments[3].value == 99
+
 
 class TestExtrinsicFunctionASG:
     """Test MExtrinsicFunction ASG node structure (T326)."""
@@ -643,3 +691,113 @@ class TestIndirectionClassification:
         assert isinstance(result, MIndirection)
         assert result.can_resolve_statically is False
         assert result.resolved_value is None
+
+
+class TestReadFixedLength:
+    """Tests for READ command with fixed-length syntax (T586-T588)."""
+    
+    def test_read_fixed_length_basic(self):
+        """R X#5 should produce MReadTarget with fixed_length."""
+        from m2py.asg.statements import MReadStatement, MReadTarget
+        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        
+        cmds = parse_commands_from_line('R X#5')
+        assert len(cmds) == 1
+        
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+        
+        assert isinstance(stmt, MReadStatement)
+        assert len(stmt.arguments) == 1
+        
+        read_target = stmt.arguments[0]
+        assert isinstance(read_target, MReadTarget)
+        assert read_target.variable.name == 'X'
+        assert read_target.fixed_length is not None
+        assert read_target.fixed_length.value == 5
+        assert read_target.timeout is None
+    
+    def test_read_fixed_length_with_timeout(self):
+        """R X#5:10 should have both fixed_length and timeout."""
+        from m2py.asg.statements import MReadStatement, MReadTarget
+        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        
+        cmds = parse_commands_from_line('R X#5:10')
+        assert len(cmds) == 1
+        
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+        
+        assert isinstance(stmt, MReadStatement)
+        assert len(stmt.arguments) == 1
+        
+        read_target = stmt.arguments[0]
+        assert isinstance(read_target, MReadTarget)
+        assert read_target.variable.name == 'X'
+        assert read_target.fixed_length is not None
+        assert read_target.fixed_length.value == 5
+        assert read_target.timeout is not None
+        assert read_target.timeout.value == 10
+    
+    def test_read_fixed_length_negative(self):
+        """R X#-1 should parse (runtime error, not parse error)."""
+        from m2py.asg.statements import MReadStatement, MReadTarget
+        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        
+        cmds = parse_commands_from_line('R X#-1')
+        assert len(cmds) == 1
+        
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+        
+        assert isinstance(stmt, MReadStatement)
+        assert len(stmt.arguments) == 1
+        
+        read_target = stmt.arguments[0]
+        assert read_target.fixed_length is not None
+        # Negative value captured in expression tree
+    
+    def test_read_fixed_length_variable(self):
+        """R X#N should have variable as fixed_length."""
+        from m2py.asg.statements import MReadStatement, MReadTarget
+        from m2py.asg.expressions import MVariable
+        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        
+        cmds = parse_commands_from_line('R X#N')
+        assert len(cmds) == 1
+        
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+        
+        assert isinstance(stmt, MReadStatement)
+        read_target = stmt.arguments[0]
+        assert isinstance(read_target, MReadTarget)
+        assert read_target.fixed_length is not None
+        # Length is a variable reference
+        assert isinstance(read_target.fixed_length, MVariable)
+        assert read_target.fixed_length.name == 'N'
+    
+    def test_kill_followed_by_read_fixed_length(self):
+        """K A R A#-1 should parse both KILL and READ correctly."""
+        from m2py.asg.statements import MKillStatement, MReadStatement, MReadTarget
+        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        
+        cmds = parse_commands_from_line('K A R A#-1')
+        assert len(cmds) == 2
+        
+        analyzer = SemanticAnalyzer()
+        kill_stmt = analyzer.analyze(cmds[0], None)
+        read_stmt = analyzer.analyze(cmds[1], None)
+        
+        assert isinstance(kill_stmt, MKillStatement)
+        assert isinstance(read_stmt, MReadStatement)
+        
+        read_target = read_stmt.arguments[0]
+        assert isinstance(read_target, MReadTarget)
+        assert read_target.variable.name == 'A'
+        assert read_target.fixed_length is not None

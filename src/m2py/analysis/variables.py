@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 from ..asg.elements import MRoutine, MLabel, MScope
 from ..asg.statements import (
-    MStatement, MSetStatement, MNewStatement, 
+    MStatement, MSetStatement, MNewStatement, MKillStatement,
     MForStatement, MIfStatement, MDoStatement,
     MWriteStatement, MQuitStatement,
 )
@@ -153,6 +153,22 @@ def _extract_statement_variables(stmt: MStatement) -> Tuple[Set[str], Set[str], 
             # Store exception list but don't add to news
             # (would need runtime knowledge of all variables)
             pass
+    
+    elif isinstance(stmt, MKillStatement):
+        # KILL removes variables
+        # - K (no args) kills ALL locals - can't enumerate statically
+        # - K X,Y kills specific variables
+        # - K (X,Y) is exclusive kill (keep only X,Y) - can't enumerate others
+        if not stmt.is_kill_all and not stmt.exclusive:
+            # Selective kill: mark specific variables as "killed" (undefined after this)
+            for target in stmt.targets:
+                if hasattr(target, 'name'):
+                    name = target.name
+                    # For variable analysis, treat KILL as making variable undefined
+                    # This is similar to NEW in that subsequent reads see empty/undefined
+                    # We track it as a "write" to empty (variable becomes undefined)
+                    if name and not name.startswith('^'):
+                        writes.add(name)
     
     elif isinstance(stmt, MForStatement):
         # FOR I=... writes the loop variable

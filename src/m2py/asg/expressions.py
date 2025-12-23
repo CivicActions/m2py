@@ -191,10 +191,18 @@ class MIndirection(MExpr):
     - Subscript indirection: Y(@X) (X provides subscript)
     - Argument indirection: DO @X (X contains label/routine)
     - Pattern indirection: Y?@X (X contains pattern)
+    - Variable name indirection: @X@(1,2) (X evaluates to variable name, append subscripts)
     """
     
     expression: Optional["MExpr"] = None
     indirection_type: IndirectionType = IndirectionType.UNKNOWN
+    
+    # Direct subscripts for @X(1,2) form
+    subscripts: Optional[list] = None
+    
+    # Name indirection subscripts for @X@(1,2) form
+    # Each entry is a list of subscript expressions
+    name_indirection_subscripts: Optional[list] = None
     
     # Analysis flags for static resolution
     can_resolve_statically: bool = False

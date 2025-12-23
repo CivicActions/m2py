@@ -2847,3 +2847,355 @@ The `$SELECT` function uses special `condition:value` pair syntax that wasn't su
 - [ ] T577 [Bug] Fix mixed-case special variable parsing (`$Test`, `$TEst`, `$HoroloG` fail to parse entirely)
 - [x] T578 [Bug] FOR + QUIT postcondition + SET (left-hand $P) fails to parse entire line - FIXED by adding `$` to CommandWithArg SET pattern in commands.tx
 
+---
+
+## Phase 52: MUGJ Validation Checklist 43 - VV2PAT3 to VV2VNIC
+
+**Purpose**: Validate pattern-operator edge cases, READ with counts/timeouts, string subscripts, and variable-name indirection (Checklist 43/54).
+**Validation Date**: 2025-12-22 (Round 2 re-validation)
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VV2PAT3.m | 8 | 88 | ✅ | Pattern code tables (n/u/l/a/e) captured; 16 FOR loops, 16 DO EXAMINER calls resolved |
+| VV2READ.m | 11 | 60 | ⚠️ | **READ count syntax (`X#3`) NOT PARSED** - only 2 of 8 READ commands captured |
+| VV2SS1.m | 9 | 70 | ✅ | FOR with postconditioned QUIT; $ORDER iteration; long subscripts captured |
+| VV2SS2.m | 8 | 57 | ✅ | Naked globals; scientific notation subscripts; 31-subscript limits captured |
+| VV2VNIA.m | 13 | 96 | ✅ | All name indirection patterns `@X@(subs)` correctly captured |
+| VV2VNIB.m | 10 | 103 | ✅ | Complex DO/GOTO with name indirection postconditions captured |
+| VV2VNIC.m | 6 | 63 | ✅ | Name indirection in expressions, KILL, multi-assign, XECUTE captured |
+
+### Critical Issue Found: READ Count Syntax Not Parsed
+
+**VV2READ.m Analysis**: The file tests READ with count syntax per MUMPS spec 8.2.17:
+- `R X#3` - read up to 3 characters
+- `R X#10:60` - read up to 10 chars with 60 second timeout
+
+**Test Results**:
+```
+'read X#3': 0 commands parsed
+'r X#10': 0 commands parsed
+'R X#10:60': 0 commands parsed
+'R @A': 1 command parsed (indirection works)
+```
+
+**Root Cause**: The `ReadTarget` rule in `commands.tx` only accepts:
+- `CharRead | GlobalVariable | LocalVariable | Indirection`
+
+It does NOT handle the readcount syntax `glvn # intexpr` where `#` specifies max characters.
+
+**Impact**: 6 of 8 READ commands in VV2READ.m are silently dropped:
+- Labels 140, 141, 143, 144, 145, 146 show 5 statements each, but should have 6 (missing READ)
+- Only labels 142 and 147 (using `@A` indirection) correctly capture the READ
+
+**MUMPS Spec Reference** (1995__a108040.md):
+> When the form of the argument is `glvn # intexpr [ timeout ]`, let n be the value of intexpr. The input message is a string whose length is at most n characters.
+
+### Previous Findings (Resolved)
+
+The name indirection grammar fix from the previous validation remains in place and working correctly.
+
+### Tasks
+
+- [x] T579 [Bug] Fix statement emission for VV2VNIA labels 122–126/129 where SET sequences with nested variable-name indirection and trailing `D EXAMINER` are dropped. **RESOLVED** - Grammar now supports `@X@(subs)` patterns.
+- [x] T580 [Bug] Restore XECUTE + trailing `D EXAMINER` in VV2VNIB label 135. **RESOLVED** - Same grammar fix applied.
+- [ ] T581 [Bug] Add READ count syntax (`glvn#intexpr`) support to ReadTarget grammar rule in `src/m2py/grammar/commands.tx`. Must handle:
+  - `R X#3` - variable with count
+  - `R X#10:60` - variable with count and timeout
+  - `R @A` where `A="X#10"` - indirection containing count (may require runtime)
+  - Update `ReadTargetWithTimeout` to include optional `#count` before timeout
+
+---
+
+## Phase 53: MUGJ Validation Checklist 44 - VVE to VVEDOC2
+
+**Purpose**: Validate Part-III instruction drivers and documentation files (Checklist 44/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VVE.m | 2 | 6 | ✅ | FOR with $T(TEX+I), $P; D ^VVE1/VVE2; K ^VREPORT; TEX label (comments only) |
+| VVE1.m | 2 | 2 | ✅ | Same FOR pattern as VVE.m; TEX label for documentation text |
+| VVE2.m | 2 | 3 | ✅ | FOR pattern + W ! (newline); TEX label for validation sequence docs |
+| VVEDIV.m | 6 | 47 | ✅ | Division-by-zero tests: 1/0, 0/0, 4/$L(""); numeric labels (1,2,3,4) |
+| VVEDOC.m | 13 | 15 | ✅ | Driver routine; S IO="CRT" G START pattern; D ^VVEDOC1-8; IF/KILL |
+| VVEDOC1.m | 2 | 4 | ✅ | IF IO="PRINTER" W #; FOR $T pattern; documentation driver |
+| VVEDOC2.m | 2 | 4 | ✅ | Same pattern as VVEDOC1; Part-III content documentation |
+
+### Bug Fix Applied
+
+**T582 [Bug Fix] Binary expressions in function arguments were being dropped**
+
+**Root Cause**: The `_unwrap_expr()` function in `textx_classes.py` checked for `.ops` attribute to detect binary operations, but the actual textX grammar uses `.tail` (containing `BinaryOpTail` list).
+
+**Symptom**: `$T(TEX+I)` was incorrectly parsed as `$T(TEX)` - the `+I` offset was lost.
+
+**Fix Applied**: Updated `_unwrap_expr()` to check for both `.tail` and `.ops` attributes, and also fixed the unary operator detection to check for `operators` (plural) list in addition to `operator` (singular).
+
+**Files Modified**: `src/m2py/parser/textx_classes.py` lines 36-73
+
+**Verification**: 
+- `$T(TEX+I)` now correctly produces `MBinaryOp(TEX + I)` as argument
+- `$P(A," ;",2,99)` correctly captures all 4 arguments
+- All 727 unit tests pass
+
+### Detailed Analysis
+
+#### VVE.m, VVE1.m, VVE2.m
+These files use a common pattern for displaying documentation text from embedded comments:
+```mumps
+F I=1:1 S A=$T(TEX+I) Q:A=""  W !,$P(A," ;",2,99)
+```
+
+This pattern:
+1. Open-ended FOR loop (`I=1:1` with no end)
+2. Uses `$TEXT(label+offset)` to get source line text
+3. Postconditioned QUIT when empty line found
+4. Extracts text after ` ;` using $PIECE
+
+**ASG correctly captures**:
+- FOR with open-ended MForParameter (start=1, step=1, end=None)
+- SET with MBinaryOp as $T argument (TEX + I)
+- QUIT with MBinaryOp postcondition (A = "")
+- WRITE with FormatControl (!) and $P intrinsic
+
+#### VVEDIV.m
+Tests division by zero error conditions. Numeric labels (1,2,3,4) for test entry points.
+
+**Key expressions captured**:
+- `W 1/0` → MBinaryOp(1 / 0)
+- `W 0/0` → MBinaryOp(0 / 0)  
+- `W 4/$L("")` → MBinaryOp(4 / $L(""))
+- `S A=2345979/0000E2+3` → Complex expression with scientific notation
+
+#### VVEDOC.m
+Driver routine with branching entry points and external routine calls.
+
+**Control flow captured**:
+- `S IO="CRT" G START` → SET followed by resolved GOTO
+- `D ^VVEDOCn` → DO external routine (8 calls)
+- `I IO="PRINTER" W #` → IF with condition and form-feed output
+- `K IO,I,A` → KILL with 3 local variables
+
+**GOTO resolution verified**: Both CRT and PRINTER labels correctly resolve GOTO START.
+
+### Python Code Generation Readiness
+
+All files in this batch are **ready for code generation**:
+
+1. **FOR with $TEXT**: The `$TEXT(label+offset)` pattern requires runtime support for source introspection. The ASG correctly captures the structure - code generation needs to implement `$TEXT` to return source lines.
+
+2. **Expression trees**: Binary operations are properly structured with operator, left, and right - no string parsing needed.
+
+3. **External routine calls**: `D ^ROUTINE` correctly captured as MCall with routine name. Resolution deferred (external).
+
+4. **GOTO resolution**: Local label jumps correctly resolved with back-references.
+
+### Tasks
+
+- [x] T582 [Bug Fix] Update `_unwrap_expr()` in textx_classes.py to check for `.tail` attribute (not just `.ops`) for binary operation detection
+- [x] T583 [Test] Add regression tests for binary expressions in function arguments (`test_binary_expression_in_function_arg`, `test_complex_expression_in_function_arg`) in `tests/unit/test_semantic_analyzer.py`
+
+---
+
+## Phase 54: MUGJ Validation Checklist 46 - VVEFORB to VVELINB
+
+**Purpose**: Validate FOR edge cases, KILL semantics, and line-reference error handling (Checklist 46/54).  
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VVEFORB.m | 7 | 66 | ✅ | FOR with KILL postcondition; XECUTE loop body; double QUIT captured |
+| VVEFORC.m | 7 | 67 | ✅ | Negative step FOR patterns; DO KILL helper; XECUTE classification ok |
+| VVEFORD.m | 7 | 61 | ✅ | Open-ended FOR forms; KILL postcondition in loop body captured |
+| VVEKILL.m | 6 | 65 | ✅ | Plain `K` now has `is_kill_all=True` property |
+| VVELIMN.m | 5 | 58 | ✅ | Plain `K` now has `is_kill_all=True` property |
+| VVELIMS.m | 5 | 70 | ✅ | Plain `K` now has `is_kill_all=True` property |
+| VVELINA.m | 7 | 59 | ✅ | DO/GOTO offsets are correctly captured; bounds checking is runtime concern per MUMPS spec |
+| VVELINB.m | 6 | 59 | ✅ | Indirect DO/GOTO captured as unresolved; external label spellings remain unresolved |
+
+### Findings
+
+**T584 Analysis (Out-of-range offsets)**: After reviewing the MUMPS spec, line reference errors are **runtime errors**, not parse-time errors. The VVE test files are specifically designed to trigger these runtime errors. Since we cannot know routine size during static analysis (especially for external routines like `D LINE+999^VVELINA`), the ASG correctly captures the offset as-is with `CallType.OFFSET_CALL`. **No fix needed** - this is working as intended.
+**T585 Analysis (Kill-all semantics)**: Plain `K` (no arguments) was represented as `MKillStatement` with empty `targets` and `exclusive=False`, which technically distinguishes it but was not explicit. Also, variable analysis did not handle `MKillStatement` at all. **Fix applied**: 1) Added `is_kill_all` computed property to `MKillStatement` that returns `True` when `targets` is empty and `exclusive=False`. 2) Added `MKillStatement` handling in `_extract_statement_variables()` in `variables.py`. 3) Added unit tests for `is_kill_all` property.
+
+### Tasks
+
+- [x] T584 [Not a Bug] Investigated - out-of-range line offsets are runtime errors per MUMPS spec, not static analysis concerns. No fix needed.
+- [x] T585 [Enhancement] Added `is_kill_all` property to `MKillStatement` and updated variable analysis to handle KILL statements. Added unit tests.
+
+---
+
+## Phase 55: MUGJ Validation Checklist 47 - VVELINN to VVERAND
+
+**Purpose**: Validate line reference error handling (internal/external), naked global semantics, pattern match validation, and $RANDOM error conditions (Checklist 47/54).  
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VVELINN.m | 7 | 61 | ✅ | Internal line refs with negative offsets; `DO LR+-1`, `G @B+A` |
+| VVELINXA.m | 7 | 59 | ✅ | External line refs with large offsets; indirect labels with decimal offset |
+| VVELINXB.m | 6 | 59 | ✅ | External calls to nonexistent labels; subscripted indirection |
+| VVELINXN.m | 7 | 61 | ✅ | External calls with negative offsets; `G @B+A^VVELINN` |
+| VVENAK.m | 6 | 66 | ✅ | Naked global `^(2)` with `requires_runtime_tracking=True`; `$D`, `$O` with naked |
+| VVEPAT.m | 6 | 57 | ✅ | Pattern match `?` operator; MPatternMatch correctly captures subject/pattern/regex |
+| VVERAND.m | 6 | 47 | ✅ | `$RANDOM`/`$R` intrinsic with various invalid arguments |
+
+### Findings
+
+All 7 files parse correctly and produce complete, accurate ASG representations. These VVE* files are specifically designed to trigger **runtime errors** (negative line offsets, undefined naked indicator, invalid pattern repcounts, $RANDOM arguments < 1), which correctly cannot be detected at parse time.
+
+**Key semantic structures validated**:
+
+1. **Line offset calls**: `DO LR+-1` correctly produces MCall with `offset=MUnaryOp('-', 1)` and `call_type=OFFSET_CALL`. Internal labels are resolved; external remain unresolved.
+
+2. **Indirect calls with offset**: `G @B+A` produces MCall with `indirection=LocalVariable('B')`, `offset=LocalVariable('A')`, and `call_type=INDIRECT_CALL`. Complex subscripted indirection like `@B(2,1)+A` also works.
+
+3. **Naked globals**: `^(2)` produces NakedGlobal with `subscripts=[2]` and `requires_runtime_tracking=True`. The naked indicator state is a runtime concern.
+
+4. **Pattern matches**: `123?2.1N` produces MPatternMatch with `subject=123`, `pattern='2.1N'`, and `compiled_regex='[0-9]{2,1}'`. Invalid repcounts (upper < lower) are runtime errors.
+
+5. **Intrinsic functions**: `$RANDOM(0)`, `$R(-1)`, `$R(A)` all correctly captured with proper argument expressions. Argument validation is runtime.
+
+### Python Code Generation Notes
+
+- **Line offsets**: Code gen needs runtime line-number resolution from labels. Consider a `_get_line_by_offset(label, offset)` helper.
+- **Naked globals**: Need to track "naked indicator" state variable that stores last non-naked global reference.
+- **Pattern validation**: Invalid pattern repcounts should raise runtime error. The `compiled_regex` field provides Python regex equivalent.
+- **$RANDOM**: Python's `random.randint(0, arg-1)` with argument validation for < 1.
+
+### Tasks
+
+No new tasks - all semantic structures are correctly captured.
+
+---
+
+## Phase 56: MUGJ Validation Checklist 48 - VVEREAD to VVINST10
+
+**Purpose**: Validate READ command error handling, $SELECT error conditions, $TEXT error conditions, undefined variable errors, and instruction documentation files (Checklist 48/54).  
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VVEREAD.m | 6 | 57 | ✅ | Fixed-length READ syntax now supported |
+| VVESEL.m | 6 | 48 | ✅ | $SELECT with all-false conditions; correctly captured |
+| VVESTAT.m | 9 | 60 | ✅ | Validation report utility; complex FOR, IF/ELSE, DO calls |
+| VVETEXT.m | 6 | 48 | ✅ | $TEXT with negative line offsets; indirection @A+B |
+| VVEUNDF.m | 6 | 57 | ✅ | Undefined variable errors; subscripted undefined |
+| VVINST1.m | 2 | 4 | ✅ | Instruction file 1; mostly comments |
+| VVINST10.m | 2 | 4 | ✅ | Instruction file 10; mostly comments |
+
+### Issues Found and Resolved
+
+#### Issue #1: READ Command Missing Fixed-Length Syntax (`#length`) ✅ FIXED
+
+**Description**: The READ command grammar doesn't support the fixed-length syntax `READ var#length` or `READ var#length:timeout`.
+
+**Affected Files**: VVEREAD.m (and potentially any MUMPS code using fixed-length reads)
+
+**Missing Statements**: 4 statements in VVEREAD.m fail to parse:
+- Line 16: `K A READ A#-1` → KILL captured, READ with `A#-1` not parsed (0 commands)
+- Line 29: `S A=99 R A#-999999999` → SET captured, READ with `A#-999999999` not parsed
+- Line 42: `S A=123,B=0 R A#B` → SET captured, READ with `A#B` not parsed
+- Line 55: `K B S A=-3 R B#A:10` → KILL+SET captured, READ with `B#A:10` not parsed
+
+**Root Cause**: `ReadTarget` rule in `commands.tx` only supports:
+```textx
+ReadTarget:
+    CharRead | GlobalVariable | LocalVariable | Indirection
+;
+```
+
+Missing support for fixed-length read: `var#intexpr` and `var#intexpr:timeout`
+
+**MUMPS Spec Reference**: ANSI/MDC X11.1 Section I-3.6.14 (READ command):
+> "When the form of the argument is lvn # intexpr [timeout], let n be the value of intexpr."
+
+**Required Grammar Change**: Add `FixedLengthRead` rule:
+```textx
+ReadTarget:
+    CharRead | FixedLengthRead | GlobalVariable | LocalVariable | Indirection
+;
+
+FixedLengthRead:
+    var=(GlobalVariable | LocalVariable | Indirection) '#' length=Expr
+;
+```
+
+**Impact**: Low - only affects error-handling tests. Most production code doesn't use fixed-length reads.
+
+### Key Semantic Structures Validated
+
+1. **$SELECT with all-false conditions**: `$SELECT(0:"text")` correctly produces `SelectFunction` with `arguments=[(0, "text")]`. Runtime should raise error when no condition is true.
+
+2. **$TEXT with negative offsets**: `$TEXT(+-1)`, `$T(+-999999999)`, `$T(TEXT+2-3)` all correctly capture the offset expression tree. `$T(@A+B)` captures indirection correctly.
+
+3. **Undefined variable subscript**: `B(A)` where A is undefined produces correct `LocalVariable` with subscript. Runtime error detection is correct.
+
+4. **Complex FOR with 12 value parameters**: `F %I=31,%Y#4=0+28,31,30,31,30,31,31,30,31,30,31` correctly produces 12 `MForParameter` objects with proper expression trees for month-day calculations.
+
+5. **$PIECE and $EXTRACT**: String manipulation functions correctly captured with all arguments.
+
+6. **IF/ELSE chains**: Proper scope nesting with condition expressions.
+
+7. **DO call resolution**: All internal labels (`%DATE`, `%TIME`, `DISPF`, `DISPL`, `TOTAL`, `SET`, `DISP1`) correctly resolved with back-references.
+
+### Python Code Generation Notes
+
+- **Fixed-length READ**: Needs runtime support for `input()[:length]` with proper timeout handling.
+- **$SELECT all-false**: Should raise `MUMPSError` at runtime, not parse time.
+- **$TEXT negative offset**: Should raise `MUMPSError` at runtime.
+- **Undefined variables**: Python will raise `KeyError` or similar, may need wrapper.
+
+### Tasks
+
+- [X] T586 [US1] Add `FixedLengthRead` grammar rule to support `READ var#length` syntax
+- [X] T587 [US1] Update `_analyze_ReadCommand` in semantic_analyzer.py to handle fixed-length reads
+- [X] T588 [US1] Add unit test for fixed-length READ parsing
+- [X] T589 [US1] Re-validate VVEREAD.m after grammar fix
+
+**Checkpoint**: Phase 56 complete - READ#length grammar support added. All 7 files now fully validated.
+
+---
+
+## Phase 57: MUGJ Validation Checklist 52 - VVINST9 to VVOVER14
+
+**Purpose**: Validate instruction and overview documentation emitters (Checklist 52/54).
+**Validation Date**: 2025-12-22
+
+### Validation Summary
+
+| File | Labels | Statements | Status | Notes |
+|------|--------|------------|--------|-------|
+| VVINST9.m | 2 | 4 | ✅ | IF IO="PRINTER" guard; standalone WRITE; bounded FOR with SET/QUIT postcondition/WRITE; QUIT terminator |
+| VVOVER1.m | 2 | 3 | ✅ | Documentation emitter pattern (WRITE guarded by IF, bounded FOR over $TEXT, QUIT) |
+| VVOVER10.m | 2 | 3 | ✅ | Same pattern; $TEXT(TEX+I) offset and $PIECE arguments captured |
+| VVOVER11.m | 2 | 3 | ✅ | Same pattern; FOR body SET/QUIT/WRITE captured |
+| VVOVER12.m | 2 | 3 | ✅ | Same pattern; intrinsic functions preserved |
+| VVOVER13.m | 2 | 3 | ✅ | Same pattern; TEX label comment-only (no statements) |
+| VVOVER14.m | 2 | 3 | ✅ | Same pattern; QUIT postcondition modeled |
+
+### Findings
+
+- All seven routines share the documentation emitter structure: optional printer IF/WRITE header, standalone newline WRITE (VVINST9), bounded FOR `I=1:1` with SET `$TEXT(TEX+I)`, QUIT postcondition `A=""`, trailing WRITE with `$PIECE` extraction, and final QUIT.
+- FOR loops classified as bounded with start=1 and step=1; loop bodies include SET, postconditioned QUIT, and WRITE statements.
+- TEX labels contain only comments for $TEXT retrieval; absence of statements is expected.
+- No additional parser or analysis changes required; ASG already captures intrinsic functions (`$TEXT`, `$PIECE`) and format controls (`#`, `!`).
+
+### Python Code Generation Readiness
+
+- Control flow (IF guard, bounded FOR, QUIT) maps directly to Python; WRITE commands include format controls for form feed/newline.
+- `$TEXT` offsets and `$PIECE` argument lists are fully preserved for runtime implementations; label resolution complete.
+
+### Tasks
+
+- [x] T590 [Validation] VVINST9–VVOVER14 ASG verified; no parser changes required.

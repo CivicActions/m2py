@@ -303,9 +303,19 @@ SpecialVariable:
     '$' name=SVARNAME
 ;
 
-// Indirection: @expr
+// Indirection: @expr with optional subscripts and name indirection
+// @expr - simple indirection
+// @expr(subscripts) - indirection with direct subscripts (indirection of subscripted variable)
+// @expr@(subscripts) - name indirection: evaluate expr to get variable name, append subscripts
+// @expr@(subs1)@(subs2) - chained name indirection
 Indirection:
-    '@' expr=PrimaryExpr subscripts=Subscripts?
+    '@' expr=PrimaryExpr subscripts=Subscripts? name_subscripts+=NameIndirectionSubscripts*
+;
+
+// Name indirection subscript suffix: @(subscripts)
+// Used in variable name indirection like @X@(1,2) where X evaluates to a variable name
+NameIndirectionSubscripts:
+    '@' subscripts=Subscripts
 ;
 
 // =============================================================================

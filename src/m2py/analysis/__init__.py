@@ -14,6 +14,11 @@ from m2py.analysis.goto_analysis import (
     get_gotos_by_type,
 )
 
+# FOR loop analysis (high-level ASG functions)
+from m2py.analysis.for_analysis import (
+    analyze_for_loops,
+)
+
 # textX-based command parsing functions
 from m2py.analysis.command_parser import (
     # Line and command parsing
@@ -91,6 +96,8 @@ __all__ = [
     "classify_gotos",
     "get_loop_exiting_gotos",
     "get_gotos_by_type",
+    # FOR loop analysis
+    "analyze_for_loops",
     # Line/command parsing
     "parse_line_content",
     "parse_commands_from_line",

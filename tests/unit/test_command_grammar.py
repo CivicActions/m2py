@@ -183,6 +183,42 @@ class TestReadCommand:
         model = command_metamodel.model_from_str("R *X", "ReadCommand")
         assert len(model.args) == 1
 
+    def test_read_fixed_length(self, command_metamodel):
+        """R X#5 (fixed-length read - read exactly 5 characters)"""
+        model = command_metamodel.model_from_str("R X#5", "ReadCommand")
+        assert len(model.args) == 1
+        # fixed_length should be in the ReadTargetWithTimeout
+        assert model.args[0].arg.fixed_length is not None
+        # Note: fixed_length is an Expr wrapper at grammar level
+
+    def test_read_fixed_length_with_timeout(self, command_metamodel):
+        """R X#5:10 (fixed-length read with timeout)"""
+        model = command_metamodel.model_from_str("R X#5:10", "ReadCommand")
+        assert len(model.args) == 1
+        assert model.args[0].arg.fixed_length is not None
+        assert model.args[0].arg.timeout is not None
+        # Both are Expr wrappers at grammar level
+
+    def test_read_fixed_length_negative(self, command_metamodel):
+        """R X#-1 (fixed-length read with negative value - runtime error)"""
+        model = command_metamodel.model_from_str("R X#-1", "ReadCommand")
+        assert len(model.args) == 1
+        assert model.args[0].arg.fixed_length is not None
+        # Negative values should still parse, runtime will handle error
+
+    def test_read_fixed_length_variable(self, command_metamodel):
+        """R X#N (fixed-length with variable as length)"""
+        model = command_metamodel.model_from_str("R X#N", "ReadCommand")
+        assert len(model.args) == 1
+        assert model.args[0].arg.fixed_length is not None
+        # Length is an Expr wrapper containing variable reference
+
+    def test_read_fixed_length_expression(self, command_metamodel):
+        """R X#A+B (fixed-length with expression as length)"""
+        model = command_metamodel.model_from_str("R X#A+B", "ReadCommand")
+        assert len(model.args) == 1
+        assert model.args[0].arg.fixed_length is not None
+
 
 class TestIfElseCommands:
     """Tests for IF and ELSE commands."""

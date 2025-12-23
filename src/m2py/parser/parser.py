@@ -27,6 +27,8 @@ from m2py.analysis.command_parser import (
     detect_quit_after_for,
 )
 from m2py.analysis.resolver import resolve_references as _resolve_references
+from m2py.analysis.goto_analysis import classify_gotos as _classify_gotos
+from m2py.analysis.for_analysis import analyze_for_loops as _analyze_for_loops
 from m2py.analysis.variables import (
     analyze_variables as _analyze_variables,
     compute_transitive_inputs as _compute_transitive_inputs,
@@ -704,6 +706,43 @@ class MUMPSParser:
             Modifies routine's MCall and MLabel objects in place
         """
         _resolve_references(routine)
+    
+    def classify_gotos(self, routine: MRoutine) -> None:
+        """Classify all GOTO statements in a routine.
+        
+        This method analyzes each MGotoStatement and:
+        1. Sets goto_type based on target and context
+        2. Populates exits_loops with enclosing FOR loops exited
+        3. Sets has_internal_goto=True on enclosing FOR loops
+        4. Populates exit_points on FOR loops (bidirectional link)
+        
+        Must be called AFTER resolve_references() so MCall.target is populated.
+        
+        Args:
+            routine: The MRoutine to classify GOTOs in
+            
+        Side Effects:
+            - Sets MGotoStatement.goto_type for each GOTO
+            - Sets MGotoStatement.exits_loops for loop exits
+            - Sets MForStatement.has_internal_goto for loops with GOTOs
+            - Populates MForStatement.exit_points bidirectionally
+        """
+        _classify_gotos(routine)
+    
+    def analyze_for_loops(self, routine: MRoutine) -> None:
+        """Analyze all FOR loops in a routine.
+        
+        This method scans each MForStatement and:
+        1. Detects if loop variable is modified inside the body
+        2. Sets loop_var_modified_in_body accordingly
+        
+        Args:
+            routine: The MRoutine to analyze
+            
+        Side Effects:
+            - Sets MForStatement.loop_var_modified_in_body for each FOR
+        """
+        _analyze_for_loops(routine)
     
     def analyze_variables(self, routine: MRoutine, compute_transitive: bool = False) -> dict[str, ScopeVariables]:
         """Analyze variable usage across all labels in a routine.

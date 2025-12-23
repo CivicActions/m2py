@@ -591,11 +591,17 @@ class SemanticAnalyzer:
                     if hasattr(arg_value, 'timeout') and arg_value.timeout:
                         timeout_expr = self.analyze(arg_value.timeout, stmt)
                     
+                    # Get fixed_length if present (VAR#length syntax)
+                    fixed_length_expr = None
+                    if hasattr(arg_value, 'fixed_length') and arg_value.fixed_length:
+                        fixed_length_expr = self.analyze(arg_value.fixed_length, stmt)
+                    
                     # Create MReadTarget with all information
                     read_target = MReadTarget(
                         variable=actual_var,
                         is_char_read=is_char_read,
-                        timeout=timeout_expr
+                        timeout=timeout_expr,
+                        fixed_length=fixed_length_expr
                     )
                     stmt.arguments.append(read_target)
                     
@@ -695,6 +701,20 @@ class SemanticAnalyzer:
         
         # Classify loop type
         stmt.loop_type = self._classify_for_params(stmt.parameters)
+        
+        # Detect infinite loops: ARGUMENTLESS or step=0
+        if stmt.loop_type == ForLoopType.ARGUMENTLESS:
+            stmt.is_infinite = True
+        else:
+            # Check for step=0 in any parameter
+            for fp in stmt.parameters:
+                if fp.step is not None:
+                    # Check if step is numeric literal 0
+                    # Handle both MLiteral and NumericLiteral (textX) types
+                    step_value = getattr(fp.step, 'value', None)
+                    if step_value == 0 or step_value == "0":
+                        stmt.is_infinite = True
+                        break
         
         return stmt
     

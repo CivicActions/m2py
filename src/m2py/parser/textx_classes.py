@@ -37,8 +37,8 @@ def _unwrap_expr(expr):
     """Unwrap textX expression structure to get to the underlying ASG node.
     
     The textX grammar creates wrapper objects:
-    - Expr: Contains left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*
-    - UnaryExpr: Contains operator + operand
+    - Expr: Contains left=UnaryExpr tail+=BinaryOpTail (where BinaryOpTail has op and right)
+    - UnaryExpr: Contains operators + operand
     
     For simple expressions, we want just the operand (our custom class).
     For expressions with operators, we keep the structure for now.
@@ -52,19 +52,23 @@ def _unwrap_expr(expr):
     
     # Expr with left attribute (new grammar)
     if hasattr(expr, 'left'):
-        # If no binary ops, just unwrap the left
-        if not hasattr(expr, 'ops') or not expr.ops:
+        # If no binary ops (check for 'tail' attribute which holds BinaryOpTail list), just unwrap the left
+        has_tail = hasattr(expr, 'tail') and expr.tail
+        has_ops = hasattr(expr, 'ops') and expr.ops  # Also check old 'ops' for compatibility
+        if not has_tail and not has_ops:
             return _unwrap_expr(expr.left)
         # Has binary ops - keep for now (semantic analyzer will handle)
         return expr
     
     # UnaryExpr without operator -> unwrap to operand
-    if hasattr(expr, 'operand') and (not hasattr(expr, 'operator') or expr.operator is None):
-        return _unwrap_expr(expr.operand)
-    
-    # UnaryExpr with operator -> keep it (unary operation)
-    if hasattr(expr, 'operator') and expr.operator is not None:
-        # Could create MUnaryOp here, but that requires more work
+    # Check for 'operators' list (not 'operator') based on actual grammar
+    if hasattr(expr, 'operand'):
+        operators = getattr(expr, 'operators', None)
+        operator = getattr(expr, 'operator', None)
+        has_operator = (operators and len(operators) > 0) or (operator is not None)
+        if not has_operator:
+            return _unwrap_expr(expr.operand)
+        # Has operator(s) -> keep it (unary operation)
         return expr
     
     return expr
@@ -264,13 +268,32 @@ class ExtrinsicFunction(MExtrinsicFunction):
 class Indirection(MIndirection):
     """textX custom class for Indirection grammar rule.
     
-    Grammar: Indirection: '@' expr=PrimaryExpr subscripts=Subscripts?;
+    Grammar: Indirection: '@' expr=PrimaryExpr subscripts=Subscripts? name_subscripts+=NameIndirectionSubscripts*;
+    
+    Supports:
+    - @X - simple indirection  
+    - @X(1,2) - indirection with direct subscripts
+    - @X@(1,2) - name indirection: evaluate X, use as variable name, append subscripts
+    - @X@(1)@(2) - chained name indirection subscripts
     """
     
-    def __init__(self, parent=None, expr=None, subscripts=None):
+    def __init__(self, parent=None, expr=None, subscripts=None, name_subscripts=None):
         object.__setattr__(self, 'expression', _unwrap_expr(expr))
-        # Note: MIndirection doesn't have a subscripts field in ASG
-        # But we should probably add it for completeness
+        # Handle direct subscripts for @X(1,2) form
+        if subscripts is not None:
+            object.__setattr__(self, 'subscripts', _unwrap_subscripts(subscripts))
+        else:
+            object.__setattr__(self, 'subscripts', None)
+        # Handle name indirection subscripts for @X@(1,2) form
+        if name_subscripts:
+            # Each name_subscripts item has a 'subscripts' attribute
+            name_ind_subs = []
+            for ns in name_subscripts:
+                if hasattr(ns, 'subscripts') and ns.subscripts:
+                    name_ind_subs.append(_unwrap_subscripts(ns.subscripts))
+            object.__setattr__(self, 'name_indirection_subscripts', name_ind_subs if name_ind_subs else None)
+        else:
+            object.__setattr__(self, 'name_indirection_subscripts', None)
         object.__setattr__(self, 'requires_runtime_eval', True)
         object.__setattr__(self, 'result_type', None)
 
