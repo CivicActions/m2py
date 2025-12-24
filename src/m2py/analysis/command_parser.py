@@ -915,9 +915,6 @@ def _expr_to_string(expr) -> str:
                             # This handles pattern match syntax like "1N"
                             result += _expr_to_string(right_expr)
             return result
-        # Fallback for old grammar structure
-        elif hasattr(expr, 'unary_expr') and expr.unary_expr:
-            return _reconstruct_expr(expr)
         return str(expr)
     elif cls_name == 'UnaryExpr' or cls_name == 'OffsetUnaryExpr':
         # Handle chained unary operators (new grammar uses 'operators' list)
@@ -932,44 +929,6 @@ def _expr_to_string(expr) -> str:
         return f"({_expr_to_string(expr.expr)})"
     else:
         return str(expr)
-
-
-def _reconstruct_expr(expr) -> str:
-    """Reconstruct expression string from textX Expr model (old grammar)."""
-    # Expr: UnaryExpr (BinaryOp UnaryExpr)*
-    # textX represents this as a flat structure we need to parse
-    
-    # For simple cases, try to access the operands directly
-    if not hasattr(expr, '__dict__'):
-        return str(expr)
-    
-    # Try different ways textX might store the expression
-    # This depends on how arpeggio/textX represents the (X Y)* pattern
-    result_parts = []
-    
-    # The Expr rule stores pairs via the repetition
-    # We need to inspect what textX actually gives us
-    
-    # Fallback: convert the textX object to string
-    # This is a hack but works for basic cases
-    try:
-        # Get all children of the expression
-        for attr in dir(expr):
-            if not attr.startswith('_'):
-                val = getattr(expr, attr)
-                if val is not None and not callable(val):
-                    if isinstance(val, list):
-                        for item in val:
-                            result_parts.append(_expr_to_string(item))
-                    elif hasattr(val, '__class__') and val.__class__.__module__.startswith('textx'):
-                        result_parts.append(_expr_to_string(val))
-        
-        if result_parts:
-            return ''.join(result_parts)
-    except Exception:
-        pass
-    
-    return str(expr)
 
 
 # =============================================================================

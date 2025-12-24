@@ -3651,3 +3651,557 @@ def CALC():
   - Actual: ~330ms for 575-line routine (well under target)
 
 **Checkpoint**: Phase 59 complete - Variable analysis meets performance requirements
+
+---
+
+## Phase 60: Code Quality Analysis & Cleanup
+
+**Purpose**: Systematically analyze codebase for duplicates, unused code, DRY violations, inconsistencies, and test coverage gaps. Each analysis task should create sub-tasks for any improvements identified.
+
+**Approach**: 
+- Each analysis task records findings in a dedicated section below
+- Improvement tasks are added as they are discovered (prefix CQ-xxx)
+- Focus on code reduction and quality improvements, not new features
+- Use test coverage to identify both gaps AND dead code
+
+---
+
+### Phase 60a: Test Coverage Analysis
+
+**Purpose**: Use pytest-cov to identify coverage gaps and unused code
+
+- [X] T685 [P60a] Run full test coverage: `uv run pytest --cov=m2py --cov-report=html --cov-report=term-missing`
+  - **Overall coverage: 81%** (895 tests passed, 2 skipped)
+  - HTML report saved to htmlcov_phase60/
+  - Files below 80% coverage requiring analysis:
+    - command_parser.py: 71% (170 uncovered statements)
+    - for_analysis.py: 72% (13 uncovered statements)
+    - exceptions.py: 67% (11 uncovered statements - MUMPSSemanticError unused)
+    - semantic_analyzer.py: 78% (134 uncovered statements)
+    - resolver.py: 78% (11 uncovered statements)
+  - Created CQ-001 through CQ-008 for findings
+
+- [X] T686 [P60a] Analyze coverage for src/m2py/parser/parser.py
+  - Coverage: 88% (27 uncovered statements)
+  - Uncovered: error handling paths, encoding fallback edge cases
+  - Finding: Code is valid - represents edge cases that are hard to test
+  - No CQ tasks - coverage is acceptable
+
+- [X] T687 [P60a] Analyze coverage for src/m2py/parser/textx_classes.py
+  - Coverage: 92% (7 uncovered statements)
+  - Uncovered: edge cases in _unwrap_expr for rare expression patterns
+  - Finding: Code is valid - represents rare parsing scenarios
+  - No CQ tasks - coverage is good
+
+- [X] T688 [P60a] Analyze coverage for src/m2py/parser/exceptions.py
+  - Coverage: 67% (11 uncovered statements)
+  - Uncovered: MUMPSSemanticError class (lines 79-91) - NEVER RAISED
+  - Uncovered: column indicator in MUMPSSyntaxError (lines 52-55) - rarely used
+  - Finding: MUMPSSemanticError is dead code → CQ-001
+
+- [X] T689 [P60a] Analyze coverage for src/m2py/analysis/command_parser.py
+  - Coverage: 71% (170 uncovered statements)
+  - Major uncovered blocks:
+    - Lines 851-916: Old grammar handling paths
+    - Lines 937-972: _reconstruct_expr() function → CQ-002
+    - Lines 1202-1256: Edge cases in command parsing
+  - Finding: _reconstruct_expr is dead code, old grammar paths never hit
+
+- [X] T690 [P60a] Analyze coverage for src/m2py/analysis/semantic_analyzer.py
+  - Coverage: 78% (134 uncovered statements)
+  - Major uncovered blocks:
+    - Lines 311-358: Old grammar backwards compatibility → CQ-003
+    - Lines 621-630: Legacy format/prompt handling → CQ-003
+    - Lines 1193-1206, 1315-1375: Edge case command handling
+  - Finding: Old grammar paths are dead code
+
+- [X] T691 [P60a] Analyze coverage for src/m2py/analysis/resolver.py
+  - Coverage: 78% (11 uncovered statements)
+  - Uncovered: error handling paths (lines 135-137, 184-187, 209-212)
+  - Finding: Valid code for edge cases, not dead code
+  - No CQ tasks - coverage is acceptable for error handlers
+
+- [X] T692 [P60a] Analyze coverage for src/m2py/analysis/goto_analysis.py
+  - Coverage: 80% (14 uncovered statements)
+  - Uncovered: rare GOTO classification scenarios
+  - Finding: Valid code for edge cases
+  - No CQ tasks - coverage is acceptable
+
+- [X] T693 [P60a] Analyze coverage for src/m2py/analysis/for_analysis.py
+  - Coverage: 72% (13 uncovered statements)
+  - Uncovered: _check_var_in_indirection and some nested scope handling
+  - Finding: Valid code for complex patterns, no overlap with command_parser.py
+  - No CQ tasks - coverage is acceptable
+
+- [X] T694 [P60a] Analyze coverage for src/m2py/analysis/variables.py
+  - Coverage: 84% (59 uncovered statements)
+  - Uncovered: RoutineAnalysisCache methods, some edge cases
+  - Finding: Valid code - incremental analysis cache added recently
+  - No CQ tasks - coverage is good
+
+- [X] T695 [P60a] Analyze coverage for src/m2py/analysis/pattern_compiler.py
+  - Coverage: 82% (24 uncovered statements)
+  - Uncovered: rare pattern compilation edge cases
+  - Finding: Valid code for complex pattern matching
+  - No CQ tasks - coverage is acceptable
+
+- [X] T696 [P60a] Analyze coverage for src/m2py/asg/*.py (elements, expressions, statements, enums)
+  - elements.py: 94% (6 uncovered)
+  - expressions.py: 97% (1 uncovered)
+  - statements.py: 98% (2 uncovered)
+  - enums.py: 100%
+  - Finding: Excellent coverage, minimal uncovered code
+  - No CQ tasks - ASG module is well-tested
+
+**Checkpoint**: Coverage analysis complete - dead code and test gaps identified
+
+---
+
+### Phase 60b: Source File Individual Analysis
+
+**Purpose**: Read each source file for DRY violations, unused code, inconsistencies
+
+#### Parser Module
+
+- [X] T697 [P60b] Analyze src/m2py/parser/parser.py (846 lines)
+  - Well-structured, single responsibility (file→ASG orchestration)
+  - No dead methods found
+  - Some debug comments could be cleaned up (e.g., line 62)
+  - No CQ tasks - code is clean
+
+- [X] T698 [P60b] Analyze src/m2py/parser/textx_classes.py (332 lines)
+  - Custom classes properly inherit from ASG classes
+  - _unwrap_expr() has some complex logic but is necessary
+  - No unused classes found (all used by grammar)
+  - No CQ tasks - design is correct
+
+- [X] T699 [P60b] Analyze src/m2py/parser/exceptions.py (91 lines)
+  - MUMPSSemanticError is NEVER RAISED → CQ-001 (already logged)
+  - MUMPSSyntaxError is used and well-designed
+  - No other issues
+
+#### Analysis Module
+
+- [X] T700 [P60b] Analyze src/m2py/analysis/command_parser.py (1479 lines)
+  - Largest file - well-organized with clear sections
+  - _reconstruct_expr() is dead code → CQ-002 (already logged)
+  - Some extract_*_from_line_textx functions (lines 1193-1259) appear unused
+  - Created CQ-009: Review extract_*_from_line_textx function usage
+
+- [X] T701 [P60b] Analyze src/m2py/analysis/semantic_analyzer.py (1447 lines)
+  - Second largest file - complex but necessary
+  - Old grammar handling code is dead → CQ-003 (already logged)
+  - analyze_command() is the main entry point, well-designed
+  - Some _analyze_*Command methods have similar patterns but variation is justified
+
+- [X] T702 [P60b] Analyze src/m2py/analysis/resolver.py (214 lines)
+  - Clean, focused module
+  - No duplicate logic found
+  - No CQ tasks
+
+- [X] T703 [P60b] Analyze src/m2py/analysis/goto_analysis.py (253 lines)
+  - Clean separation from resolver.py (resolver links refs, goto_analysis classifies)
+  - No duplicate logic found
+  - No CQ tasks
+
+- [X] T704 [P60b] Analyze src/m2py/analysis/for_analysis.py (141 lines)
+  - Operates on ASG (post-parsing), not on text
+  - Complementary to command_parser.py FOR handling
+  - No overlap or duplication
+  - No CQ tasks
+
+- [X] T705 [P60b] Analyze src/m2py/analysis/variables.py (975 lines)
+  - Complex but necessary for variable scoping
+  - RoutineAnalysisCache is recent addition, well-designed
+  - No obvious duplication
+  - No CQ tasks
+
+- [X] T706 [P60b] Analyze src/m2py/analysis/pattern_compiler.py (351 lines)
+  - Focused on MUMPS pattern → regex conversion
+  - Clean, well-documented
+  - No CQ tasks
+
+#### ASG Module
+
+- [X] T707 [P60b] Analyze src/m2py/asg/elements.py (295 lines)
+  - MRoutine, MLabel, MScope, MCall classes
+  - Well-designed with proper back-reference support
+  - No unused classes
+  - No CQ tasks
+
+- [X] T708 [P60b] Analyze src/m2py/asg/expressions.py (274 lines)
+  - All expression types used (MLiteral, MVariable, MBinaryOp, etc.)
+  - MPatternMatch.compiled_regex is useful for code generation
+  - No unused expression classes
+  - No CQ tasks
+
+- [X] T709 [P60b] Analyze src/m2py/asg/statements.py (464 lines)
+  - All statement classes used by semantic_analyzer.py
+  - Some have similar patterns (postcondition handling) but justified
+  - is_kill_all property recently added, good design
+  - No CQ tasks
+
+- [X] T710 [P60b] Analyze src/m2py/asg/enums.py (163 lines)
+  - All enum values used:
+    - ForLoopType: all 5 types used in classification
+    - GotoType: all types used in goto_analysis
+    - CallType: all types used in resolver
+    - PassingMode: used in variable analysis
+    - ScopeStrategy: used in function signature computation
+  - No unused enum values
+  - No CQ tasks
+
+#### Grammar Files
+
+- [X] T711 [P60b] Analyze src/m2py/grammar/mumps.tx (60 lines)
+  - Root grammar for routine structure
+  - Clean, minimal - captures labels and line content
+  - No unused rules
+  - No CQ tasks
+
+- [X] T712 [P60b] Analyze src/m2py/grammar/line.tx (23 lines)
+  - Imports commands.tx, provides LineContent root
+  - No overlap with mumps.tx - they're separate parse contexts
+  - No CQ tasks
+
+- [X] T713 [P60b] Analyze src/m2py/grammar/commands.tx (509 lines)
+  - Comprehensive command grammar
+  - All command rules used by semantic_analyzer.py
+  - No CQ tasks
+
+- [X] T714 [P60b] Analyze src/m2py/grammar/expressions.tx (355 lines)
+  - Expression grammar imported by commands.tx
+  - All rules used
+  - No CQ tasks
+
+#### Init/Export Files
+
+- [X] T715 [P60b] Analyze all __init__.py files for unused exports
+  - src/m2py/__init__.py: Exports MUMPSSemanticError (unused) → CQ-007
+  - src/m2py/parser/__init__.py: Same issue
+  - src/m2py/analysis/__init__.py: All exports used
+  - src/m2py/asg/__init__.py: All exports used
+
+**Checkpoint**: Individual source file analysis complete
+
+---
+
+### Phase 60c: Cross-File Duplicate Analysis
+
+**Purpose**: Compare files likely to have duplicate code
+
+- [X] T716 [P60c] Compare command_parser.py vs semantic_analyzer.py
+  - command_parser.py: Text parsing → textX models
+  - semantic_analyzer.py: textX models → ASG nodes
+  - These are COMPLEMENTARY, not duplicative
+  - command_parser does: parse_line_content, parse_for_command_to_asg
+  - semantic_analyzer does: analyze_command (textX cmd → ASG)
+  - No consolidation needed - they serve different pipeline stages
+
+- [X] T717 [P60c] Compare for_analysis.py vs command_parser.py FOR handling
+  - command_parser.py: Parses FOR syntax, classifies loop type
+  - for_analysis.py: Post-parsing ASG analysis (var modification, internal QUIT)
+  - COMPLEMENTARY, not duplicative - different pipeline stages
+  - No consolidation needed
+
+- [X] T718 [P60c] Compare resolver.py vs goto_analysis.py
+  - resolver.py: Links MCall.target to MLabel, populates back-refs
+  - goto_analysis.py: Classifies resolved GOTOs (forward/backward/loop-exit)
+  - COMPLEMENTARY - resolver runs first, then goto_analysis
+  - No consolidation needed
+
+- [X] T719 [P60c] Compare textx_classes.py vs asg/*.py
+  - textX custom classes inherit from ASG classes (correct design)
+  - NumericLiteral(MLiteral), LocalVariable(MVariable), etc.
+  - _unwrap_expr() is unique to textX layer
+  - No duplicate method implementations found
+  - Design is intentional - two-layer architecture
+
+- [X] T720 [P60c] Search for duplicate regex patterns across all files
+  - Only one regex compilation found in command_parser.py line 1006
+  - Pattern: `r'^([A-Za-z%][A-Za-z0-9]*|[A-Za-z%])='`
+  - No duplicate patterns found
+  - No CQ tasks
+
+- [X] T721 [P60c] Search for duplicate string literals across all files
+  - Command names: Each command handler uses its own name - not duplicated
+  - Error messages: Unique per error type
+  - No significant duplication found
+  - No CQ tasks
+
+**Checkpoint**: Cross-file duplicate analysis complete
+
+---
+
+### Phase 60d: Test File Analysis
+
+**Purpose**: Analyze test files for quality issues
+
+#### Individual Test File Analysis
+
+- [X] T722 [P60d] Analyze tests/unit/test_grammar.py (913 lines, 85 tests)
+  - Purpose: Grammar acceptance tests via MUMPSParser.parse()
+  - Well-organized by command type
+  - Clear docstrings explain scope
+  - No duplicates with other files
+
+- [X] T723 [P60d] Analyze tests/unit/test_command_grammar.py (793 lines, 107 tests)
+  - Purpose: Low-level textX command grammar tests
+  - Tests grammar rules directly without semantic analysis
+  - No overlap with test_grammar.py (different layers)
+  - No CQ tasks
+
+- [X] T724 [P60d] Analyze tests/unit/test_expression_grammar.py (681 lines, 83 tests)
+  - Purpose: Expression grammar tests
+  - Complements test_command_grammar.py
+  - No duplication
+  - No CQ tasks
+
+- [X] T725 [P60d] Analyze tests/unit/test_parser.py (854 lines, 56 tests)
+  - Purpose: MUMPSParser class API tests
+  - Tests parse(), parse_file(), classify_patterns()
+  - Clear separation from grammar tests
+  - No CQ tasks
+
+- [X] T726 [P60d] Analyze tests/unit/test_textx_classes.py (232 lines, 14 tests)
+  - Purpose: Custom textX class tests
+  - Tests _unwrap_expr(), expression classes
+  - No overlap with grammar tests
+  - No CQ tasks
+
+- [X] T727 [P60d] Analyze tests/unit/test_semantic_analyzer.py (802 lines, 56 tests)
+  - Purpose: SemanticAnalyzer and analyze_expression tests
+  - Complements test_command_analysis.py
+  - No duplication
+  - No CQ tasks
+
+- [X] T728 [P60d] Analyze tests/unit/test_command_analysis.py (542 lines, 44 tests)
+  - Purpose: analyze_command() tests
+  - Tests textX→ASG transformation
+  - Clear docstring explains relationship to test_command_grammar.py
+  - No CQ tasks
+
+- [X] T729 [P60d] Analyze tests/unit/test_command_parser.py (464 lines, 53 tests)
+  - Purpose: command_parser.py function tests
+  - Tests parse_line_content, parse_commands_from_line
+  - No overlap with test_command_analysis.py
+  - No CQ tasks
+
+- [X] T730 [P60d] Analyze tests/unit/test_classifier.py (1111 lines, 92 tests)
+  - Purpose: FOR loop classification tests
+  - Tests ForLoopType classification
+  - Includes extract function tests
+  - No CQ tasks
+
+- [X] T731 [P60d] Analyze tests/unit/test_resolver.py and test_resolver_call_types.py
+  - test_resolver.py (217 lines): Synthetic test data
+  - test_resolver_call_types.py (38 lines): MUGJ regression tests
+  - Potential merge candidate → CQ-006 (already logged)
+  - Could consolidate into single file
+
+- [X] T732 [P60d] Analyze tests/unit/test_goto_for_analysis.py (449 lines, 17 tests)
+  - Purpose: GOTO + FOR interaction tests
+  - Tests classify_gotos, GotoType values
+  - No overlap with test_classifier.py (different focus)
+  - No CQ tasks
+
+- [X] T733 [P60d] Analyze tests/unit/test_variables.py (1213 lines, 61 tests)
+  - Purpose: Variable analysis tests
+  - Tests analyze_variables, ScopeVariables, FunctionSignature
+  - Comprehensive coverage
+  - No CQ tasks
+
+- [X] T734 [P60d] Analyze tests/unit/test_pattern_compiler.py (231 lines, 26 tests)
+  - Purpose: Pattern→regex compilation tests
+  - Tests compile_pattern_to_regex
+  - No CQ tasks
+
+- [X] T735 [P60d] Analyze remaining unit test files:
+  - test_external_calls.py (78 lines): External routine call tests
+  - test_if_comma_conditions.py (86 lines): IF comma-separated condition tests
+  - test_io_commands.py (154 lines): READ/WRITE/OPEN/CLOSE tests
+  - test_quit_then_command.py (112 lines): QUIT followed by command tests
+  - test_setup.py (72 lines): Project setup verification tests
+  - test_special_constructs.py (249 lines): Indirection, pattern, etc.
+  - test_unreachable_code.py (438 lines): Unreachable code detection tests
+  - All have clear purposes, no duplication
+  - No CQ tasks
+
+- [X] T736 [P60d] Analyze tests/integration/test_mugj.py
+  - Purpose: MUGJ test file validation
+  - Tests parsing of real MUMPS files
+  - Well-organized
+  - No CQ tasks
+
+#### Cross-Test File Analysis
+
+- [X] T737 [P60d] Compare all test files for duplicate test fixtures
+  - conftest.py provides shared fixtures (mugj_dir, mugj_inref_dir)
+  - test_command_grammar.py has module-scoped command_metamodel fixture
+  - No duplicate fixtures across files
+  - No CQ tasks
+
+- [X] T738 [P60d] Compare all test files for duplicate helper functions
+  - analyze_first_command() in test_command_analysis.py is unique
+  - _create_test_routine() in test_resolver.py is unique
+  - No duplicate helpers found
+  - No CQ tasks
+
+- [X] T739 [P60d] Analyze test file naming and organization
+  - Consistent naming: test_*.py
+  - Clear separation by layer/component
+  - Each file has docstring explaining scope and relationships
+  - Organization is good
+  - No CQ tasks
+
+**Checkpoint**: Test file analysis complete
+
+---
+
+### Phase 60e: Utils Folder Analysis
+
+**Purpose**: Analyze utils folder for cleanup opportunities
+
+- [X] T740 [P60e] Analyze each file in utils/:
+
+  **Debug Scripts (DELETE - CQ-004):**
+  - debug_line31.py (59 lines): One-off debugging for VV2CS.m line 31 parsing issue
+  - debug_line31b.py (36 lines): Continuation of above debugging
+
+  **One-off Investigation Scripts (REVIEW - CQ-005):**
+  - check_indirect_do.py (80 lines): Test script for indirect DO parsing
+  - check_indirect_pattern.py (43 lines): Test script for indirect pattern match
+  - check_issues.py (111 lines): Check ASG issues during validation (ad-hoc)
+  - check_vv2cs.py (54 lines): Debug VV2CS.m label 5 parsing (one-off)
+
+  **Useful Validation Scripts (KEEP):**
+  - validate_asg.py (550 lines): Deep MUGJ validation with ASG display - valuable tool
+  - batch_validate_mugj.py (116 lines): Batch validation for MUGJ files - useful
+  - batch_validate_categories.py (215 lines): Category-based MUGJ validation
+  - validate_all_remaining.py (193 lines): Complete validation of all MUGJ files
+  - validate_external_calls.py (94 lines): Validate external call handling
+  - verify_real_io.py (83 lines): Verify I/O command handling
+
+  **VistA Analysis Scripts (KEEP):**
+  - analyze_vista_deep.py (399 lines): Deep analysis for VistA-M validation
+  - evaluate_vista.py (578 lines): Parser evaluation against VistA-M codebase
+
+  **Other Utilities (KEEP):**
+  - generate_validation_checklists.py (251 lines): Generate validation checklists
+  - profile_variable_analysis.py (197 lines): Performance profiling utility
+  - find_io_in_version2.py (42 lines): Find I/O commands in version 2 files
+
+- [X] T741 [P60e] Check for duplicate utility code across utils files
+  - validate_asg.py and batch_validate_mugj.py have related but different purposes
+  - No significant duplicates found
+  - No CQ tasks
+
+- [X] T742 [P60e] Determine which utils are one-off debugging vs permanent tools
+  - debug_line31.py, debug_line31b.py: TEMPORARY - should be removed (CQ-004)
+  - check_*.py files: ONE-OFF INVESTIGATIONS - consider removal (CQ-005)
+  - All other files: PERMANENT TOOLS - keep
+
+**Checkpoint**: Utils analysis complete
+
+---
+
+### Phase 60f: Documentation & Configuration Consistency
+
+**Purpose**: Check for consistency in docs and config
+
+- [X] T743 [P60f] Review pyproject.toml for unused dependencies
+  - Dependencies: textX>=4.0 (required - used extensively)
+  - Dev dependencies: pytest>=7.0, pytest-cov>=4.0 (required - test framework)
+  - All dependencies are actively used
+  - No CQ tasks needed
+
+- [X] T744 [P60f] Review spec files for outdated information
+  - plan.md line 114: References MUMPSSemanticError (unused) → CQ-008
+  - quickstart.md line 73: References MUMPSSemanticError (unused) → CQ-008
+  - spec.md: Accurate to current implementation
+  - data-model.md: Accurate to current ASG structure
+  - No other discrepancies found
+
+- [X] T745 [P60f] Review contracts/parser-api.md against actual API
+  - parse() method: Documented, exists ✓
+  - parse_file() method: Documented, exists ✓
+  - resolve_references() method: Documented, exists ✓
+  - classify_patterns() method: Documented, exists ✓
+  - analyze_variables() method: Documented, exists ✓
+  - All documented methods exist in implementation
+  - No undocumented public methods
+  - No CQ tasks needed
+
+**Checkpoint**: Documentation consistency check complete
+
+---
+
+### Phase 60g: Improvement Task Execution
+
+**Purpose**: Execute improvement tasks identified in previous phases
+
+Note: This section will be populated with CQ-xxx tasks discovered during analysis.
+
+#### Identified Improvements (add CQ-xxx tasks here as discovered)
+
+##### Dead Code Removal
+
+- [X] CQ-001 [REMOVE] Delete `MUMPSSemanticError` class from exceptions.py
+  - DONE: Removed class definition (lines 58-91)
+  - DONE: Removed from exports in parser/__init__.py and m2py/__init__.py
+  - Saved ~35 lines of dead code
+
+- [X] CQ-002 [REMOVE] Delete `_reconstruct_expr()` function from command_parser.py
+  - DONE: Removed function (lines 937-972)
+  - DONE: Removed fallback call from _expr_to_string (lines 918-921)
+  - Saved ~40 lines of dead code
+
+- [X] CQ-003 [REMOVE] Delete old grammar backwards compatibility code in semantic_analyzer.py
+  - DONE: Removed "OLD GRAMMAR" handling for ops/right structure (lines 311-358)
+  - Saved ~50 lines of dead code
+
+##### Utils Cleanup
+
+- [X] CQ-004 [CLEANUP] Remove debug_line31.py and debug_line31b.py from utils/
+  - DONE: Removed debug_line31.py (59 lines)
+  - DONE: Removed debug_line31b.py (36 lines)
+  - Saved ~95 lines of debug scripts
+
+- [X] CQ-005 [CLEANUP] Review check_*.py utils for removal candidates
+  - DONE: Removed check_indirect_do.py (80 lines)
+  - DONE: Removed check_indirect_pattern.py (43 lines)
+  - DONE: Removed check_issues.py (111 lines)
+  - DONE: Removed check_vv2cs.py (54 lines)
+  - Saved ~288 lines of one-off scripts
+
+##### Test Organization
+
+- [ ] CQ-006 [MERGE] Consider merging test_resolver.py and test_resolver_call_types.py
+  - test_resolver.py: 217 lines, uses synthetic test data
+  - test_resolver_call_types.py: 38 lines, uses MUGJ files
+  - DECISION: Keep separate - they test different approaches (synthetic vs real data)
+  - No action needed
+
+##### Documentation Consistency
+
+- [X] CQ-007 [CLEANUP] Update __all__ exports to remove MUMPSSemanticError
+  - DONE as part of CQ-001
+
+- [X] CQ-008 [CLEANUP] Review spec documentation for accuracy
+  - DONE: Updated plan.md line 114
+  - DONE: Updated quickstart.md line 73
+
+##### Potential Dead Code (Needs Verification)
+
+- [X] CQ-009 [REVIEW] Review extract_*_from_line_textx function usage
+  - VERIFIED: Functions ARE used - exported in __init__.py and imported in tests
+  - Used by: tests/integration/test_mugj.py, and exposed in public API
+  - No action needed - these are valid public API functions
+
+**Checkpoint**: Phase 60 complete - Codebase analyzed and cleaned up
+
+**Summary of improvements:**
+- Dead code removed: ~125 lines from source files
+- Debug/one-off scripts removed: ~383 lines from utils/
+- Documentation updated to match current implementation
+- Tests still pass: 895 passed, 2 skipped

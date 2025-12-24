@@ -53,39 +53,3 @@ class MUMPSSyntaxError(Exception):
                 full_message += f"\n  {' ' * (column - 1)}^"
         
         super().__init__(full_message)
-
-
-class MUMPSSemanticError(Exception):
-    """Exception raised during semantic analysis.
-    
-    Used for errors like unresolved references, invalid control flow, etc.
-    """
-    
-    def __init__(
-        self,
-        message: str,
-        element_type: Optional[str] = None,
-        line: Optional[int] = None,
-        column: Optional[int] = None,
-    ):
-        """Initialize a semantic error.
-        
-        Args:
-            message: Description of the semantic error
-            element_type: The ASG element type where error occurred
-            line: Line number where error occurred (1-based)
-            column: Column number where error occurred (1-based)
-        """
-        self.message = message
-        self.element_type = element_type
-        self.line = line
-        self.column = column
-        
-        parts = []
-        if element_type:
-            parts.append(f"[{element_type}]")
-        if line is not None:
-            parts.append(f"line {line}")
-        
-        prefix = " ".join(parts) + ": " if parts else ""
-        super().__init__(f"{prefix}{message}")

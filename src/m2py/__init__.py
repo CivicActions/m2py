@@ -17,7 +17,7 @@ Usage:
 __version__ = "0.1.0"
 
 # Parser API
-from m2py.parser import MUMPSParser, MUMPSSyntaxError, MUMPSSemanticError
+from m2py.parser import MUMPSParser, MUMPSSyntaxError
 
 # Core ASG types
 from m2py.asg import (
@@ -43,7 +43,6 @@ __all__ = [
     # Parser
     "MUMPSParser",
     "MUMPSSyntaxError",
-    "MUMPSSemanticError",
     # Core ASG
     "MRoutine", "MLabel", "MScope", "MCall",
     "MStatement", "MForStatement", "MGotoStatement", "MDoStatement",

@@ -306,57 +306,6 @@ class SemanticAnalyzer:
                 
                 return result
             
-            # OLD GRAMMAR: Handle ops/right-based structure (for backwards compatibility)
-            if hasattr(expr, 'right') and expr.right:
-                ops = list(expr.ops) if hasattr(expr, 'ops') and expr.ops else []
-                
-                for i, right_expr in enumerate(expr.right):
-                    binary = MBinaryOp()
-                    
-                    # Get the binary operator
-                    if i < len(ops):
-                        # Use explicit binary operator
-                        op = ops[i]
-                        op_str = op.op if hasattr(op, 'op') else str(op)
-                    else:
-                        # No explicit binary op - check if right_expr has leading unary +/-
-                        # that should be treated as the binary operator (textX parsing quirk)
-                        # Handle both new 'operators' list and old 'operator' single value
-                        leading_ops = []
-                        if hasattr(right_expr, 'operators') and right_expr.operators:
-                            leading_ops = list(right_expr.operators)
-                        elif hasattr(right_expr, 'operator') and right_expr.operator:
-                            leading_ops = [right_expr.operator]
-                        
-                        if leading_ops:
-                            first_op = leading_ops[0]
-                            op_char = first_op.op if hasattr(first_op, 'op') else str(first_op)
-                            if op_char in ('+', '-'):
-                                # Use first unary as binary operator
-                                op_str = op_char
-                                # Remove the first operator from the list
-                                if hasattr(right_expr, 'operators'):
-                                    object.__setattr__(right_expr, 'operators', leading_ops[1:])
-                                else:
-                                    object.__setattr__(right_expr, 'operator', None)
-                            else:
-                                # Not +/-, skip
-                                continue
-                        else:
-                            # No operator available - this shouldn't happen for valid expressions
-                            # Just skip this operand (it may be part of pattern syntax)
-                            continue
-                    
-                    object.__setattr__(binary, 'operator', op_str)
-                    object.__setattr__(binary, 'left', result)
-                    
-                    right = self.analyze(right_expr, binary)
-                    object.__setattr__(binary, 'right', right)
-                    
-                    object.__setattr__(binary, 'parent', parent)
-                    object.__setattr__(result, 'parent', binary)
-                    result = binary
-            
             return result
         
         # Fallback for current grammar (Expr IS UnaryExpr due to match rule)

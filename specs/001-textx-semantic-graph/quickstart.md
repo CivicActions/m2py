@@ -70,7 +70,7 @@ m2py/
 │   ├── parser/                   # Parser implementation
 │   │   ├── __init__.py
 │   │   ├── parser.py             # MUMPSParser class
-│   │   ├── exceptions.py         # MUMPSSyntaxError, MUMPSSemanticError
+│   │   ├── exceptions.py         # MUMPSSyntaxError
 │   │   └── textx_classes.py      # Custom classes for textX instantiation
 │   ├── analysis/                 # ASG analysis passes
 │   │   ├── __init__.py
