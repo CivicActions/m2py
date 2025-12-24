@@ -462,3 +462,85 @@ class TestDetectQuitAfterFor:
         """Postconditioned QUIT still detected."""
         result = detect_quit_after_for("F I=1:1:10 W I Q:I>5")
         assert result is True
+
+
+# =============================================================================
+# Extract Function Error Path Tests
+# =============================================================================
+
+class TestExtractFunctionErrorPaths:
+    """Test error paths in extract_*_from_line_textx functions."""
+    
+    def test_extract_for_no_for_command(self):
+        """extract_for_from_line_textx returns None when no FOR present."""
+        from m2py.analysis.command_parser import extract_for_from_line_textx
+        
+        result = extract_for_from_line_textx("S X=1")
+        assert result is None
+
+    def test_extract_for_empty_string(self):
+        """extract_for_from_line_textx handles empty string."""
+        from m2py.analysis.command_parser import extract_for_from_line_textx
+        
+        result = extract_for_from_line_textx("")
+        assert result is None
+
+    def test_extract_goto_no_goto_command(self):
+        """extract_goto_from_line_textx returns None when no GOTO present."""
+        from m2py.analysis.command_parser import extract_goto_from_line_textx
+        
+        result = extract_goto_from_line_textx("W !,X")
+        assert result is None
+
+    def test_extract_goto_empty_string(self):
+        """extract_goto_from_line_textx handles empty string."""
+        from m2py.analysis.command_parser import extract_goto_from_line_textx
+        
+        result = extract_goto_from_line_textx("")
+        assert result is None
+
+    def test_extract_set_no_set_command(self):
+        """extract_set_from_line_textx returns None when no SET present."""
+        from m2py.analysis.command_parser import extract_set_from_line_textx
+        
+        result = extract_set_from_line_textx("W !,X")
+        assert result is None
+
+    def test_extract_quit_no_quit_command(self):
+        """extract_quit_from_line_textx returns None when no QUIT present."""
+        from m2py.analysis.command_parser import extract_quit_from_line_textx
+        
+        result = extract_quit_from_line_textx("S X=1")
+        assert result is None
+
+    def test_extract_if_no_if_command(self):
+        """extract_if_from_line_textx returns None when no IF present."""
+        from m2py.analysis.command_parser import extract_if_from_line_textx
+        
+        result = extract_if_from_line_textx("S X=1")
+        assert result is None
+
+    def test_extract_new_no_new_command(self):
+        """extract_new_from_line_textx returns None when no NEW present."""
+        from m2py.analysis.command_parser import extract_new_from_line_textx
+        
+        result = extract_new_from_line_textx("S X=1")
+        assert result is None
+
+    def test_extract_for_with_incomplete_syntax(self):
+        """extract_for_from_line_textx handles incomplete FOR gracefully."""
+        from m2py.analysis.command_parser import extract_for_from_line_textx
+        
+        # Incomplete FOR syntax - should not crash
+        result = extract_for_from_line_textx("F")
+        # May return None or a valid result - key is no exception
+
+    def test_extract_goto_with_valid_syntax(self):
+        """extract_goto_from_line_textx extracts correct info."""
+        from m2py.analysis.command_parser import extract_goto_from_line_textx
+        
+        result = extract_goto_from_line_textx("G LABEL^ROUTINE")
+        assert result is not None
+        label, routine, offset = result
+        assert label == "LABEL"
+        assert routine == "ROUTINE"

@@ -17,7 +17,7 @@ from m2py.asg.statements import (
 from m2py.asg.expressions import (
     MExpr, MLiteral, MVariable, MGlobal, MNakedGlobal,
     MBinaryOp, MUnaryOp, MIntrinsicFunction, MExtrinsicFunction,
-    MPatternMatch, MIndirection, MSpecialVariable, MFormatControl
+    MPatternMatch, MIndirection, MSpecialVariable, MFormatControl, MActualParameter
 )
 
 __all__ = [
@@ -38,4 +38,5 @@ __all__ = [
     "MExpr", "MLiteral", "MVariable", "MGlobal", "MNakedGlobal",
     "MBinaryOp", "MUnaryOp", "MIntrinsicFunction", "MExtrinsicFunction",
     "MPatternMatch", "MIndirection", "MSpecialVariable", "MFormatControl",
+    "MActualParameter",
 ]

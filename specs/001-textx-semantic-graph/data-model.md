@@ -208,7 +208,7 @@ class MScope(ASGElement):
     """A container for statements (label body, IF body, FOR body)."""
     
     statements: List['MStatement'] = field(default_factory=list)
-    parent_scope: Optional['MScope'] = field(default=None, repr=False)
+    parent: Optional['ASGElement'] = field(default=None, repr=False)  # MLabel, MIfStatement, MForStatement, etc.
     
     def add_statement(self, stmt: 'MStatement') -> None:
         stmt.parent = self
@@ -225,6 +225,10 @@ class MScope(ASGElement):
                 yield from stmt.then_scope.walk_statements()
             if hasattr(stmt, 'else_scope') and stmt.else_scope:
                 yield from stmt.else_scope.walk_statements()
+```
+
+> **Note**: The `parent` field points to the containing ASGElement (MLabel, MIfStatement, MForStatement, etc.),
+> not a parent MScope. For scoping analysis, use `stmt.scope` on statements.
 ```
 
 ---

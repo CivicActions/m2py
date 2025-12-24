@@ -1212,3 +1212,193 @@ class TestPerformance:
         
         # Informational: print timing
         print(f"\n  Performance: {len(lines)} lines analyzed in {elapsed*1000:.1f}ms")
+
+
+# =============================================================================
+# RoutineAnalysisCache Incremental Analysis Tests
+# =============================================================================
+
+class TestRoutineAnalysisCacheIncremental:
+    """Test RoutineAnalysisCache incremental analysis paths.
+    
+    These tests cover the incremental reanalysis paths in ensure_analyzed()
+    that were added for performance optimization.
+    """
+
+    def test_cache_incremental_reanalysis(self):
+        """Test incremental reanalysis when label is invalidated.
+        
+        This tests the incremental path in ensure_analyzed() where only
+        stale labels are reanalyzed.
+        """
+        from m2py.analysis.variables import RoutineAnalysisCache
+        
+        # Create routine with multiple labels
+        var_x = MVariable(name="X", subscripts=[])
+        var_y = MVariable(name="Y", subscripts=[])
+        
+        set_x = MSetStatement(assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))])
+        set_y = MSetStatement(assignments=[MAssignment(target=var_y, value=MLiteral(value="2"))])
+        
+        scope_a = MScope(statements=[set_x])
+        scope_b = MScope(statements=[set_y])
+        scope_c = MScope(statements=[])
+        
+        label_a = MLabel(name="A", body=scope_a)
+        label_b = MLabel(name="B", body=scope_b)
+        label_c = MLabel(name="C", body=scope_c)
+        
+        routine = MRoutine(name="TEST", labels=[label_a, label_b, label_c])
+        
+        cache = RoutineAnalysisCache(routine)
+        cache.ensure_analyzed(compute_transitive=True)
+        
+        assert cache._fully_analyzed
+        initial_a_writes = cache.label_vars["A"].writes.copy()
+        
+        # Invalidate only one label
+        cache.invalidate_label("A")
+        assert not cache._fully_analyzed
+        assert "A" not in cache._valid_labels
+        assert "B" in cache._valid_labels
+        assert "C" in cache._valid_labels
+        
+        # Re-analyze - should only recompute label A
+        cache.ensure_analyzed(compute_transitive=True)
+        assert cache._fully_analyzed
+        assert cache.label_vars["A"].writes == initial_a_writes
+
+    def test_cache_invalidate_all_triggers_full_reanalysis(self):
+        """Test that invalidate_all clears everything."""
+        from m2py.analysis.variables import RoutineAnalysisCache
+        
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))])
+        scope = MScope(statements=[set_stmt])
+        
+        label_a = MLabel(name="A", body=scope)
+        label_b = MLabel(name="B", body=MScope(statements=[]))
+        
+        routine = MRoutine(name="TEST", labels=[label_a, label_b])
+        
+        cache = RoutineAnalysisCache(routine)
+        cache.ensure_analyzed(compute_transitive=False)
+        
+        assert len(cache._valid_labels) == 2
+        
+        cache.invalidate_all()
+        assert len(cache._valid_labels) == 0
+        assert not cache._fully_analyzed
+        
+        # Re-analyze
+        cache.ensure_analyzed(compute_transitive=False)
+        assert cache._fully_analyzed
+        assert len(cache._valid_labels) == 2
+
+    def test_cache_full_reanalysis_when_many_labels_stale(self):
+        """Test that full reanalysis triggers when >50% labels are stale.
+        
+        This tests the optimization path in ensure_analyzed() that does
+        full reanalysis instead of incremental when too many labels changed.
+        """
+        from m2py.analysis.variables import RoutineAnalysisCache
+        
+        # Create routine with 4 labels
+        labels = []
+        for name in ["A", "B", "C", "D"]:
+            scope = MScope(statements=[])
+            labels.append(MLabel(name=name, body=scope))
+        
+        routine = MRoutine(name="TEST", labels=labels)
+        
+        cache = RoutineAnalysisCache(routine)
+        cache.ensure_analyzed(compute_transitive=False)
+        
+        # Invalidate 3 out of 4 labels (>50%)
+        cache.invalidate_label("A")
+        cache.invalidate_label("B")
+        cache.invalidate_label("C")
+        
+        assert len(cache._valid_labels) == 1  # Only D is valid
+        
+        # Re-analyze - should trigger full reanalysis path
+        cache.ensure_analyzed(compute_transitive=False)
+        assert cache._fully_analyzed
+        assert len(cache._valid_labels) == 4
+
+    def test_cache_call_graph_building(self):
+        """Test that call graph is built correctly for affected label tracking."""
+        from m2py.analysis.variables import RoutineAnalysisCache
+        
+        # Create routine where A calls B
+        call_b = MCall(name="B")
+        do_stmt = MDoStatement(targets=[call_b])
+        scope_a = MScope(statements=[do_stmt])
+        
+        scope_b = MScope(statements=[])
+        
+        label_a = MLabel(name="A", body=scope_a)
+        label_b = MLabel(name="B", body=scope_b)
+        
+        routine = MRoutine(name="TEST", labels=[label_a, label_b])
+        
+        cache = RoutineAnalysisCache(routine)
+        cache.ensure_analyzed(compute_transitive=True)
+        
+        # Verify call graph was built
+        assert "A" in cache._call_graph
+        assert "B" in cache._call_graph["A"]
+        
+        # Verify reverse call graph
+        assert "B" in cache._reverse_call_graph
+        assert "A" in cache._reverse_call_graph["B"]
+
+    def test_cache_affected_labels_transitive(self):
+        """Test that affected labels includes transitive callers."""
+        from m2py.analysis.variables import RoutineAnalysisCache
+        
+        # Create call chain: A -> B -> C
+        call_b = MCall(name="B")
+        call_c = MCall(name="C")
+        
+        do_b = MDoStatement(targets=[call_b])
+        do_c = MDoStatement(targets=[call_c])
+        
+        scope_a = MScope(statements=[do_b])
+        scope_b = MScope(statements=[do_c])
+        scope_c = MScope(statements=[])
+        
+        label_a = MLabel(name="A", body=scope_a)
+        label_b = MLabel(name="B", body=scope_b)
+        label_c = MLabel(name="C", body=scope_c)
+        
+        routine = MRoutine(name="TEST", labels=[label_a, label_b, label_c])
+        
+        cache = RoutineAnalysisCache(routine)
+        cache.ensure_analyzed(compute_transitive=True)
+        
+        # Get affected labels if C changes
+        affected = cache._get_affected_labels({"C"})
+        
+        # Should include C and all transitive callers (B, A)
+        assert "C" in affected
+        assert "B" in affected
+        assert "A" in affected
+
+    def test_cache_signatures_property(self):
+        """Test the signatures property accessor."""
+        from m2py.analysis.variables import RoutineAnalysisCache
+        
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))])
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="A", body=scope)
+        
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        cache = RoutineAnalysisCache(routine)
+        
+        # Accessing signatures should trigger analysis
+        sigs = cache.signatures
+        assert "A" in sigs
+        assert cache._fully_analyzed

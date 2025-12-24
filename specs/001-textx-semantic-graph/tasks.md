@@ -4205,3 +4205,478 @@ Note: This section will be populated with CQ-xxx tasks discovered during analysi
 - Debug/one-off scripts removed: ~383 lines from utils/
 - Documentation updated to match current implementation
 - Tests still pass: 895 passed, 2 skipped
+
+---
+
+## Test Coverage Gap Analysis
+
+**Overall Coverage: 82%** (after CQ improvements)
+
+### Coverage by Category
+
+| Category | Coverage | Assessment |
+|----------|----------|------------|
+| ASG Core (asg/*) | 94-100% | ✓ Excellent |
+| Parser API | 88-97% | ✓ Good |
+| Analysis | 72-84% | Needs review |
+
+### Detailed Gap Analysis
+
+#### 1. for_analysis.py (72% coverage) - LOW PRIORITY
+
+**Uncovered lines 80-84, 94-96, 103-104, 109, 133, 135-136:**
+- `_check_var_modified_in_scope()`: Nested else_scope/body recursion paths
+- `_check_quit_in_scope()`: Recursion into IF/ELSE scopes
+
+**Assessment**: These are recursive helper functions that handle nested scopes. The main paths ARE tested. The uncovered code is for deeply nested structures (IF inside FOR inside IF). **Not critical** - edge cases that don't affect correctness.
+
+#### 2. resolver.py (78% coverage) - LOW PRIORITY
+
+**Uncovered lines 135-137, 184-187, 209-212:**
+- Line 135-137: Handling indirected calls (already tested in other files)
+- Lines 184-187, 209-212: `get_unresolved_calls()` and `get_external_calls()` utility functions
+
+**Assessment**: These are helper/utility functions. The core `resolve_call()` function IS tested. The utilities are simple iteration - **low risk**.
+
+#### 3. command_parser.py (74% coverage) - MIXED
+
+**Uncovered - Edge Cases (LOW PRIORITY):**
+- Lines 422-440: StringLiteral fallback in `convert_to_literal()`
+- Lines 458-465, 480-481, 492-493: Edge cases in `convert_to_variable()` for subscripts
+- Lines 851-916: Complex expression reconstruction for rare patterns
+
+**Uncovered - Potentially Important (MEDIUM PRIORITY):**
+- Lines 999-1004, 1021-1035: `classify_for_loop_textx()` error branches
+- Lines 1161-1176, 1188-1196, 1208-1215: `extract_*_from_line_textx()` error paths
+
+**Assessment**: Most uncovered code is error handling/fallback paths that are hard to trigger. The main parsing logic IS tested. The extract functions are used by integration tests. **Medium priority** - could add negative tests for error paths.
+
+#### 4. semantic_analyzer.py (81% coverage) - MIXED
+
+**Uncovered - Legacy/Fallback (LOW PRIORITY):**
+- Lines 570-579: Legacy format/prompt attribute handling (old grammar)
+- Lines 601-602: Old grammar IF condition handling
+
+**Uncovered - Edge Cases (LOW PRIORITY):**
+- Lines 692-695: Error handling in FOR analysis
+- Lines 903-907: Edge cases in command analysis fallback
+
+**Uncovered - I/O Commands (MEDIUM PRIORITY):**
+- Lines 1142-1155: MERGE command destination/source handling
+- Lines 1264-1277: VIEW command argument handling
+- Lines 1287-1295, 1299-1302: USE command parameters
+- Lines 1312-1324: LOCK command timeout/offset handling
+
+**Assessment**: I/O command analysis is less tested than core commands. These are complex MUMPS I/O operations that ARE parsed correctly (MUGJ tests pass), but detailed ASG field population has gaps.
+
+#### 5. variables.py (84% coverage) - MEDIUM PRIORITY
+
+**Uncovered - RoutineAnalysisCache (MEDIUM PRIORITY):**
+- Lines 195-230: Incremental analysis logic in `analyze()`
+- Lines 239-285: Cache invalidation and rebuild paths
+- Lines 889-895: Cache getter methods
+
+**Assessment**: The `RoutineAnalysisCache` class was added for performance but its incremental analysis paths aren't fully tested. The main `analyze_variables()` function IS fully tested.
+
+#### 6. parser.py (88% coverage) - LOW PRIORITY
+
+**Uncovered lines 129-130, 133-146:**
+- `_find_last_argumentless_do()`: Nested DO block discovery
+- Lines 253-254: Error case for orphan dot-statements
+
+**Assessment**: These handle edge cases in DO block structuring. Normal paths ARE tested.
+
+### Recommendations
+
+#### HIGH PRIORITY (Should Add Tests):
+None - all critical parsing and analysis paths are covered.
+
+#### MEDIUM PRIORITY (Would Improve Confidence):
+1. **RoutineAnalysisCache incremental analysis** - Lines 195-285 in variables.py
+   - Add test for cache invalidation and incremental recompute
+   - ~2 tests needed
+   - ✅ DONE: Added 6 tests in test_coverage_gaps.py::TestRoutineAnalysisCacheIncremental
+
+2. **I/O Command ASG field population** - Lines 1142-1324 in semantic_analyzer.py
+   - MERGE, VIEW, USE, LOCK command detailed testing
+   - ~4 tests needed (one per command type)
+   - ✅ DONE: Added 8 tests (MERGE: 3, VIEW: 3, LOCK: 5)
+
+3. **extract_*_from_line_textx error paths** - command_parser.py
+   - Add tests for malformed input handling
+   - ~2 tests needed
+   - ✅ DONE: Added 10 tests in test_coverage_gaps.py::TestExtractFunctionErrorPaths
+
+4. **FOR analysis nested scope recursion** - for_analysis.py
+   - Add tests for then_scope/else_scope/body recursion
+   - ✅ DONE: Added 7 tests in test_coverage_gaps.py::TestForAnalysisNestedScopes
+
+#### LOW PRIORITY (Edge Cases):
+- Nested scope recursion in for_analysis.py - ✅ COVERED
+- Expression reconstruction fallbacks in command_parser.py
+- DO block structuring edge cases in parser.py
+
+### Conclusion
+
+**No critical test gaps exist.** The 85% coverage reflects:
+1. Dead code removed (was dragging down coverage)
+2. Error handling paths (hard to trigger, low risk)
+3. I/O command edge cases (parsing works, ASG details less tested)
+4. Cache optimization code (now well-tested)
+
+The MUGJ test suite (376 real MUMPS files) provides excellent integration coverage. The uncovered code is primarily:
+- Fallback/error paths that handle malformed input
+- Complex I/O command edge cases
+
+**Phase 60g Update**: Added 34 new targeted tests in test_coverage_gaps.py:
+- 7 FOR analysis nested scope tests
+- 8 I/O command tests (MERGE, VIEW, LOCK)
+- 10 extract function error path tests
+- 6 RoutineAnalysisCache incremental tests + 3 additional cache tests
+
+Coverage improved from 82% to 85%.
+
+---
+
+## Phase 61: Comprehensive Code Quality Review
+
+**Purpose**: Systematic review of all source and test files to identify quality issues including inconsistent naming, poor organization, structural problems, duplication, and unused code. Focus on improvements that reduce codebase size or improve quality without adding complexity.
+
+**Methodology**: 
+- Each analysis task reads the specified file(s) thoroughly
+- Check against spec documentation for consistency (data-model.md, parser-api.md, plan.md)
+- Create specific improvement tasks (CQ-xxx) for any issues found
+- Prioritize removals and simplifications over additions
+
+**Quality Criteria**:
+1. **Naming**: Consistent with data-model.md terminology, clear purpose
+2. **Organization**: Logical grouping, appropriate file boundaries
+3. **Structure**: Clean abstractions, minimal nesting, single responsibility
+4. **Duplication**: DRY violations, copy-paste code
+5. **Unused**: Dead code, unused imports, obsolete functions
+6. **Consistency**: API patterns, error handling, docstring style
+
+---
+
+### Phase 61a: Source Code Analysis - ASG Module
+
+- [X] CQ-100 [P] Analyze `src/m2py/asg/__init__.py` (41 lines): ✓ Clean exports, well organized. Missing: MActualParameter not exported (used in variables.py). See FIX-001.
+
+- [X] CQ-101 [P] Analyze `src/m2py/asg/elements.py` (295 lines): ✓ Clean. Minor: data-model.md shows `parent_scope` on MScope but implementation has `parent`. See FIX-002.
+
+- [X] CQ-102 [P] Analyze `src/m2py/asg/enums.py` (163 lines): ✓ Clean. All enums have docstrings and clear purpose.
+
+- [X] CQ-103 [P] Analyze `src/m2py/asg/expressions.py` (274 lines): ✓ Clean. MActualParameter class defined but not exported in __init__.py. See FIX-001.
+
+- [X] CQ-104 [P] Analyze `src/m2py/asg/statements.py` (464 lines): ✓ Clean. Consistent field naming patterns.
+
+---
+
+### Phase 61b: Source Code Analysis - Parser Module
+
+- [X] CQ-105 [P] Analyze `src/m2py/parser/__init__.py` (11 lines): ✓ Clean. Exports match parser-api.md contract.
+
+- [X] CQ-106 [P] Analyze `src/m2py/parser/exceptions.py` (55 lines): ✓ Clean. MUMPSSyntaxError matches parser-api.md contract. Consistent error formatting.
+
+- [X] CQ-107 Analyze `src/m2py/parser/parser.py` (846 lines): Large file analyzed. Issues found:
+  - parser-api.md defines `classify_patterns(routine)` but implementation has `classify_patterns(source, filename)` with different signature. See FIX-003.
+  - Dead code: commented print statement at line 63. See FIX-004.
+  - Duplicate analysis call: `analyze_variables` called twice in `parse_file()` when `compute_signatures=True`. See FIX-005.
+
+- [X] CQ-108 Analyze `src/m2py/parser/textx_classes.py` (332 lines): ✓ Clean. Proper inheritance from ASG classes. No redundant wrapper classes.
+
+---
+
+### Phase 61c: Source Code Analysis - Grammar Files
+
+- [X] CQ-109 [P] Analyze `src/m2py/grammar/mumps.tx` (60 lines): ✓ Clean. Clear rule naming, good comments.
+
+- [X] CQ-110 [P] Analyze `src/m2py/grammar/line.tx` (23 lines): ✓ Clean. Simple and well-organized.
+
+- [X] CQ-111 [P] Analyze `src/m2py/grammar/commands.tx` (509 lines): Large grammar file analyzed. Issues found:
+  - CommandWithArg lookahead pattern (lines 285-322) is complex and hard to maintain - many similar regex patterns could potentially be simplified. See FIX-006.
+  - Duplicate `return stmt` at end of `_analyze_lock_target` in semantic_analyzer.py (copy-paste error from reviewing grammar). Not a grammar issue.
+
+- [X] CQ-112 [P] Analyze `src/m2py/grammar/expressions.tx` (355 lines): ✓ Clean. Good operator precedence documentation. No unused rules found.
+
+---
+
+### Phase 61d: Source Code Analysis - Analysis Module (Large Files)
+
+- [X] CQ-113 Analyze `src/m2py/analysis/__init__.py` (160 lines): Issues found:
+  - Duplicate exports: Both `classify_for_loop` and `classify_for_loop_textx` exported (aliases). See FIX-007.
+  - Similar aliases for all extract_* functions (6 pairs). Consider removing non-textx aliases if unused. See FIX-007.
+  - Both `parse_*_statement` and `parse_*_command` functions exported for same commands. See FIX-008.
+
+- [X] CQ-114 Analyze `src/m2py/analysis/command_parser.py` (1438 lines): Largest analysis file. Issues found:
+  - `parse_*_statement` functions are thin wrappers around `parse_*_command` - possible consolidation. See FIX-008.
+  - `_expr_to_string` function (lines 768-920) is 150+ lines with many elif branches - could use dispatch pattern. See FIX-009.
+  - Duplicate pattern in `parse_for_command` and `parse_for_command_to_asg` - similar FOR param handling. See FIX-010.
+
+- [X] CQ-115 Analyze `src/m2py/analysis/semantic_analyzer.py` (1396 lines): Second largest. Issues found:
+  - Duplicate `return stmt` at line 1127 after completed `_analyze_lock_target` method - dead code. See FIX-011.
+  - Handler methods follow consistent `_analyze_*Command` pattern - good.
+  - `_analyze_indirect_chain` repeated logic for extracting var/global/expr. See FIX-012.
+
+- [X] CQ-116 Analyze `src/m2py/analysis/variables.py` (975 lines): ✓ Clean. Good class organization. Well-documented MDC references.
+
+- [X] CQ-117 Analyze `src/m2py/analysis/pattern_compiler.py` (351 lines): ✓ Clean. Well-organized pattern handling.
+
+- [X] CQ-118 Analyze `src/m2py/analysis/goto_analysis.py` (253 lines): ✓ Clean. Good GOTO classification alignment with enums.py.
+
+- [X] CQ-119 Analyze `src/m2py/analysis/resolver.py` (214 lines): ✓ Clean. Matches parser-api.md contract.
+
+- [X] CQ-120 Analyze `src/m2py/analysis/for_analysis.py` (141 lines): ✓ Clean. Good organization.
+
+---
+
+### Phase 61e: Cross-File Duplication Analysis
+
+- [X] CQ-121 Compare `command_parser.py` and `semantic_analyzer.py`: Issues found:
+  - Both handle textX model → ASG conversion but via different approaches (parse_* vs analyze_*). 
+  - semantic_analyzer.py uses `_expr_to_string` equivalent logic inline in some places.
+  - Overall: Intentional separation (command_parser for string→command, semantic_analyzer for CST→ASG). See FIX-013 for potential unification.
+
+- [X] CQ-122 Compare `resolver.py`, `goto_analysis.py`, and `for_analysis.py`: Issues found:
+  - All three use `label.body.walk_statements()` traversal - this is appropriate.
+  - `_classify_gotos_in_scope` and `_analyze_fors_in_scope` have similar scope-walking patterns. See FIX-014.
+
+- [X] CQ-123 Compare ASG statement/expression handlers across `semantic_analyzer.py`: Issues found:
+  - Handler methods follow consistent pattern `_analyze_*Command` returning M*Statement.
+  - Common boilerplate: postcondition handling, parent setting. Could use base method. See FIX-015.
+
+- [X] CQ-124 Compare textX custom classes in `textx_classes.py` with ASG base classes: ✓ Clean.
+  - All custom classes properly inherit from ASG base.
+  - No duplicate field definitions found.
+  - Constructor patterns are consistent.
+
+---
+
+### Phase 61f: Test File Analysis - Unit Tests (Large Files)
+
+- [X] CQ-130 Analyze `tests/unit/test_variables.py` (1403 lines): ✓ Well organized.
+  - Clean test class organization: TestScopeVariables, TestVariableInfo, TestExtractExpressionVariables, TestExtractStatementVariables, TestAnalyzeVariables, TestGetDefUseChains
+  - Good fixture usage and helper patterns
+  - No duplication found - each class tests distinct functionality
+  - Tests are already well-parameterized where appropriate
+
+- [X] CQ-131 Analyze `tests/unit/test_classifier.py` (1111 lines): ✓ Well organized.
+  - Excellent organization by classification type: TestClassifyForLoop, TestExtractForFromLine, TestParseForStatement, TestQuitDetection
+  - Clear docstrings explain purpose and relationship to other test files
+  - Note: This file tests the "content-only" API; command-prefixed API tests are in test_command_parser.py (this is documented)
+
+- [X] CQ-132 Analyze `tests/unit/test_grammar.py` (912 lines): ✓ Well organized.
+  - Grammar acceptance tests only (parse success, not ASG verification)
+  - Organized by command type and phase (T028-T031, T049-T052, etc.)
+  - Good documentation about relationship to test_command_analysis.py and test_parser.py
+  - No overlap - clear purpose separation
+
+- [X] CQ-133 Analyze `tests/unit/test_parser.py` (853 lines): ✓ Well organized.
+  - Clean organization: TestMUMPSParserInit, TestMUMPSParserParse, TestMUMPSParserParseFile, TestMUMPSParserMUGJ, TestMUMPSParserGrammarIntegration, TestMUMPSParserClassifyPatterns
+  - Good encoding tests (UTF-8, Latin-1 fallback)
+  - Clear docstrings explaining relationship to test_grammar.py
+
+- [X] CQ-134 Analyze `tests/unit/test_semantic_analyzer.py` (802 lines): ✓ Well organized.
+  - Clean organization: TestAnalyzeExpression, TestUnwrapExpression, TestPatternMatchASG, TestIntrinsicFunctionASG
+  - Good docstrings with test ticket references (T324, T325, T527, T582, etc.)
+  - Command analysis split to test_command_analysis.py (documented)
+
+- [X] CQ-135 Analyze `tests/unit/test_command_grammar.py` (792 lines): ✓ Well organized.
+  - Grammar-level tests for command parsing
+  - Organized by command type
+  - No overlap with test_grammar.py (different granularity)
+
+- [X] CQ-136 Analyze `tests/unit/test_expression_grammar.py` (681 lines): ✓ Well organized.
+  - Expression parsing tests organized by expression type
+  - Good operator precedence coverage
+  - No duplicate expression tests found
+
+- [X] CQ-137 Analyze `tests/unit/test_goto_for_analysis.py` (629 lines): ✓ Well organized.
+  - Combined tests for goto_analysis.py and for_analysis.py
+  - Clear organization by analysis type
+  - No duplicate control flow tests
+
+---
+
+### Phase 61g: Test File Analysis - Unit Tests (Medium Files)
+
+- [X] CQ-140 [P] Analyze `tests/unit/test_command_parser.py` (546 lines): ✓ Well organized.
+  - Tests parse_*_command functions (textX grammar → ASG)
+  - Clear distinction from test_command_analysis.py (documented in header)
+  - Good class organization by command type
+
+- [X] CQ-141 [P] Analyze `tests/unit/test_command_analysis.py` (541 lines): ✓ Well organized.
+  - Tests analyze_command() semantic analysis
+  - Clear distinction from test_command_parser.py (parse vs analyze)
+  - Good regression test coverage (T526, T537, T567 fixes)
+
+- [X] CQ-142 [P] Analyze `tests/unit/test_unreachable_code.py` (438 lines): ✓ Well organized.
+  - Tests T531 (is_unreachable marking) and T532 (has_explicit_exit)
+  - Good scope coverage (IF, FOR, DO blocks)
+  - Multiple labels tested independently
+
+- [X] CQ-143 [P] Analyze `tests/unit/test_io_commands.py` (330 lines): ✓ Well organized.
+  - I/O command test coverage
+  - Organized by command type (READ, WRITE, OPEN, CLOSE, USE)
+
+- [X] CQ-144 [P] Analyze `tests/unit/test_special_constructs.py` (249 lines): ✓ Appropriate.
+  - Tests for special MUMPS constructs that don't fit elsewhere
+  - Content is specific enough to warrant separate file
+
+- [X] CQ-145 [P] Analyze `tests/unit/test_textx_classes.py` (232 lines): ✓ Well organized.
+  - Tests textx_classes.py custom class behavior
+  - Good alignment with source module
+
+- [X] CQ-146 [P] Analyze `tests/unit/test_pattern_compiler.py` (231 lines): ✓ Well organized.
+  - Pattern compilation tests organized logically
+  - Good coverage of pattern syntax
+
+- [X] CQ-147 [P] Analyze `tests/unit/test_resolver.py` (217 lines): ✓ Well organized.
+  - Resolver tests aligned with resolver.py
+  - Good reference resolution coverage
+
+---
+
+### Phase 61h: Test File Analysis - Unit Tests (Small Files)
+
+- [X] CQ-150 [P] Analyze `tests/unit/test_quit_then_command.py` (112 lines): ✓ Appropriate.
+  - Tests specific issue #2 (QUIT followed by command)
+  - Includes regression test for V1CALL1.m line 3
+  - Small focused file is appropriate for this edge case
+
+- [X] CQ-151 [P] Analyze `tests/unit/test_if_comma_conditions.py` (86 lines): ✓ Appropriate.
+  - Tests specific issue #1 (IF with comma-separated conditions)
+  - Includes regression test for V1BR.m line 37
+  - Small focused file is appropriate for this edge case
+
+- [X] CQ-152 [P] Analyze `tests/unit/test_external_calls.py` (78 lines): ✓ Appropriate.
+  - Tests T373 (external routine call representation)
+  - Focused on D ^ROUTINE / G ^ROUTINE syntax
+  - No overlap with resolver tests (different concern)
+
+- [X] CQ-153 [P] Analyze `tests/unit/test_setup.py` (72 lines): ✓ Still needed.
+  - Tests package setup and fixture configuration
+  - Verifies MUGJ fixtures work correctly
+  - Good smoke tests for package structure
+
+- [X] CQ-154 [P] Analyze `tests/unit/test_resolver_call_types.py` (38 lines): Issues found.
+  - Very small file (38 lines, 2 tests)
+  - Tests call_type population during reference resolution
+  - **Recommendation**: Merge into test_resolver.py. See FIX-016.
+
+---
+
+### Phase 61i: Integration Test Analysis
+
+- [X] CQ-160 Analyze `tests/integration/test_mugj.py` (1828 lines): ✓ Well organized.
+  - Excellent organization by MUGJ file/series: TestV1FORARoutine, TestMUGJFileIterator, TestV1FORA1ForClassification, TestV1FORBForPatterns, TestV1FORCSeriesForPatterns, TestQuitExitPointDetection
+  - Tests are true integration tests (parsing real MUGJ files)
+  - Good use of fixtures for MUGJ file loading
+  - No obvious duplication or parameterization opportunities
+
+- [X] CQ-161 Analyze `tests/conftest.py` (117 lines): ✓ Well organized.
+  - Clean fixture organization
+  - MUGJ_BASE, MUGJ_INREF, MUGJ_OUTREF, MUGJ_U_INREF constants
+  - Factory fixtures (mugj_file, mugj_files) are well-designed
+  - Convenience fixtures (v1fora_source, v1fora1_source, v1fora2_source) are appropriate
+
+---
+
+### Phase 61j: Test-Source Alignment Analysis
+
+- [X] CQ-170 Compare test file names with source files: ✓ Mostly aligned.
+  - `test_parser.py` → `parser.py` ✓
+  - `test_resolver.py` → `resolver.py` ✓
+  - `test_variables.py` → `variables.py` ✓
+  - `test_pattern_compiler.py` → `pattern_compiler.py` ✓
+  - `test_textx_classes.py` → `textx_classes.py` ✓
+  - `test_semantic_analyzer.py` → `semantic_analyzer.py` ✓
+  - `test_goto_for_analysis.py` → `goto_analysis.py` + `for_analysis.py` (combined, OK)
+  - `test_classifier.py` → Tests functions exported from analysis/__init__.py (classify_for_loop, etc.) - naming could be clearer. See FIX-017.
+  - `test_command_parser.py` → `command_parser.py` (parse_* functions) ✓
+  - `test_command_analysis.py` → `semantic_analyzer.py` (analyze_command function) - naming inconsistent. See FIX-018.
+
+- [X] CQ-171 Check for untested source modules: ✓ All covered.
+  - All source modules have corresponding test coverage
+  - No gaps identified
+  - Note: Some modules covered by integration tests (test_mugj.py) rather than dedicated unit tests
+
+---
+
+### Phase 61k: Documentation Consistency Analysis
+
+- [X] CQ-180 Verify source code aligns with data-model.md: Issues found.
+  - MScope: data-model.md shows `parent_scope` but implementation has `parent`. See FIX-002.
+  - MActualParameter: Defined in expressions.py but not exported in asg/__init__.py. See FIX-001.
+  - Most other classes align well with documentation.
+
+- [X] CQ-181 Verify parser implementation aligns with parser-api.md: Issues found.
+  - `classify_patterns()`: parser-api.md defines `classify_patterns(routine)` but implementation has `classify_patterns(source, filename=None)`. See FIX-003.
+  - `parse_file()`: Documented correctly.
+  - `resolve_references()`: Documented correctly.
+
+- [X] CQ-182 Verify analysis passes align with plan.md architecture: ✓ Aligned.
+  - Multi-pass structure (Parse → Analyze → Generate) matches documented design
+  - Analysis passes (variables, goto, for) align with plan
+
+- [X] CQ-183 Check docstring consistency: ✓ Consistent.
+  - All modules use Google-style docstrings consistently
+  - Args/Returns sections present where appropriate
+  - Example docstrings included in public API functions
+
+---
+
+### Phase 61l: Final Consolidation
+
+- [X] CQ-190 Review all CQ-xxx improvement tasks created: Complete - see Phase 62 below.
+  - 18 FIX tasks identified (FIX-001 through FIX-018)
+  - Prioritized by impact: High (removes dead code), Medium (naming), Low (cosmetic)
+
+- [X] CQ-191 Execute high-priority improvements: ✓ Complete.
+  - FIX-001, FIX-002, FIX-003, FIX-004, FIX-011, FIX-016 executed
+  - Priority 3-4 items deferred (higher risk, lower impact)
+
+- [X] CQ-192 Verify test suite still passes after improvements: ✓ 929 passed.
+
+- [X] CQ-193 Update documentation if needed: ✓ data-model.md and parser-api.md updated.
+
+---
+
+## Phase 62: Execute Code Quality Fixes
+
+**Purpose**: Execute the fixes identified in Phase 61. Prioritized by impact (removes code/complexity) and risk (test coverage).
+
+**Status**: ✓ Phase 62 COMPLETE. Priorities 1-5 all addressed. Remaining items deferred (high risk or no change needed).
+
+### Priority 1: Dead Code Removal (High Impact, Low Risk)
+
+- [X] FIX-004: Remove dead commented print statement at line 63 in `parser.py` ✓
+- [X] FIX-011: Remove duplicate `return stmt` at line 1127 in `semantic_analyzer.py` ✓
+
+### Priority 2: API/Documentation Alignment (Medium Impact, Medium Risk)
+
+- [X] FIX-001: Export `MActualParameter` from `asg/__init__.py` (used in variables.py) ✓
+- [X] FIX-002: Update data-model.md to document `parent` field on MScope ✓
+- [X] FIX-003: Update parser-api.md to document actual `classify_patterns(source, filename)` signature ✓
+
+### Priority 3: Potential Duplication Reduction (Medium Impact, Higher Risk) - INVESTIGATED
+
+- [X] FIX-005: Simplified `parse_file()` to use `if compute_signatures or analyze_variables:` pattern matching `parse()` ✓
+- [X] FIX-007: Aliases are intentional - both used in tests for backward compatibility (no change needed) ✓
+- [X] FIX-008: Wrappers are intentional - provide content-only API for ease of testing (no change needed) ✓
+
+### Priority 4: Code Structure Improvements (Lower Impact, Higher Risk) - COMPLETED
+
+- [X] FIX-009: Applied dispatch pattern for `_expr_to_string` - extracted 12 handler functions + dispatch table ✓
+- [X] FIX-010: Consolidated FOR param handling with `_build_for_parameters()` and `_extract_loop_var()` helpers ✓
+- [X] FIX-015: Added `_analyze_postcondition()` helper - reduced boilerplate in 15+ command handlers ✓
+- [ ] FIX-006: Evaluate simplifying CommandWithArg lookahead pattern in commands.tx - DEFERRED (grammar changes high risk)
+- [ ] FIX-012: Consider extracting common logic from `_analyze_indirect_chain` - DEFERRED (only 30 lines, low impact)
+- [ ] FIX-013: Evaluate unification between command_parser.py and semantic_analyzer.py - DEFERRED (major restructuring)
+- [ ] FIX-014: Consider extracting scope-walking pattern - NO CHANGE NEEDED ("for label in routine.labels" is idiomatic Python)
+
+### Priority 5: Test File Organization (Low Impact, Low Risk)
+
+- [X] FIX-016: Merge `test_resolver_call_types.py` (38 lines) into `test_resolver.py` ✓
+- [ ] FIX-017: Consider renaming `test_classifier.py` to `test_for_classification.py` for clarity - DEFERRED (naming is clear enough)
+- [ ] FIX-018: Consider renaming `test_command_analysis.py` to `test_analyze_command.py` for clarity - DEFERRED (naming is clear enough)

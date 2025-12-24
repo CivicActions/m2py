@@ -113,28 +113,49 @@ def resolve_references(self, routine: MRoutine) -> None:
 #### classify_patterns
 
 ```python
-def classify_patterns(self, routine: MRoutine) -> None:
+def classify_patterns(self, source: str, filename: Optional[str] = None) -> list[ForPatternResult]:
     """
-    Classify control flow patterns in the ASG (mutation).
+    Parse source and classify FOR loop patterns.
     
-    This pass sets loop types, GOTO types, and identifies
-    exit points.
+    This is a convenience method that parses the source and then
+    extracts and classifies all FOR loops found in the routine.
+    Uses textX grammar-based parsing to extract FOR commands.
     
     Args:
-        routine: Root of ASG to process (must be resolved first).
+        source: The MUMPS source code to parse.
+        filename: Optional filename for error reporting.
     
-    Pre-conditions:
-        - resolve_references() has been called
+    Returns:
+        List of ForPatternResult objects describing each FOR loop found.
+        Each ForPatternResult contains:
+        - loop_type: ForLoopType enum value
+        - loop_var: Loop variable name (or None for argumentless)
+        - label_name: Name of the containing label
+        - line_number: Source line number
+        - statement: MForStatement ASG node
     
-    Side Effects:
-        - Sets MForStatement.loop_type
-        - Sets MForStatement.has_internal_quit/goto
-        - Sets MGotoStatement.goto_type
-        - Sets MGotoStatement.exits_loops
+    Example:
+        >>> parser = MUMPSParser()
+        >>> results = parser.classify_patterns("TEST\\tF I=1:1:10 W I\\n")
+        >>> results[0].loop_type
+        ForLoopType.BOUNDED
+    """
+```
+
+#### classify_patterns_from_file
+
+```python
+def classify_patterns_from_file(self, filepath: Union[str, Path]) -> list[ForPatternResult]:
+    """
+    Parse file and classify FOR loop patterns.
     
-    Post-conditions:
-        - All MForStatement have non-null loop_type
-        - All MGotoStatement have non-null goto_type
+    Convenience method combining parse_file() and classify_patterns().
+    
+    Args:
+        filepath: Path to MUMPS source file.
+    
+    Returns:
+        List of ForPatternResult objects describing each FOR loop found.
     """
 ```
 

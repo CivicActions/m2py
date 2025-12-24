@@ -435,9 +435,7 @@ class SemanticAnalyzer:
         """Analyze SET command into MSetStatement."""
         stmt = MSetStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'assignments') and cmd.assignments:
             for assign in cmd.assignments:
@@ -478,9 +476,7 @@ class SemanticAnalyzer:
         """Analyze WRITE command into MWriteStatement."""
         stmt = MWriteStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'args') and cmd.args:
             for arg in cmd.args:
@@ -507,9 +503,7 @@ class SemanticAnalyzer:
         """
         stmt = MReadStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'args') and cmd.args:
             for arg in cmd.args:
@@ -720,9 +714,7 @@ class SemanticAnalyzer:
         """Analyze GOTO command into MGotoStatement."""
         stmt = MGotoStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'targets') and cmd.targets:
             for target in cmd.targets:
@@ -780,9 +772,7 @@ class SemanticAnalyzer:
         """Analyze DO command into MDoStatement."""
         stmt = MDoStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'targets') and cmd.targets:
             for target in cmd.targets:
@@ -882,9 +872,7 @@ class SemanticAnalyzer:
         """Analyze QUIT command into MQuitStatement."""
         stmt = MQuitStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'value') and cmd.value:
             stmt.return_value = self.analyze(cmd.value, stmt)
@@ -895,9 +883,7 @@ class SemanticAnalyzer:
         """Analyze NEW command into MNewStatement."""
         stmt = MNewStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'exclusive') and cmd.exclusive:
             stmt.exclusive = True
@@ -925,9 +911,7 @@ class SemanticAnalyzer:
         """
         stmt = MKillStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         # New grammar structure: args is a list of KillArgument
         if hasattr(cmd, 'args') and cmd.args:
@@ -981,9 +965,7 @@ class SemanticAnalyzer:
         """Analyze HANG command into MHangStatement."""
         stmt = MHangStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'seconds') and cmd.seconds:
             stmt.duration = self.analyze(cmd.seconds, stmt)
@@ -994,9 +976,7 @@ class SemanticAnalyzer:
         """Analyze HALT command into MHaltStatement."""
         stmt = MHaltStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         return stmt
     
@@ -1004,9 +984,7 @@ class SemanticAnalyzer:
         """Analyze BREAK command into MBreakStatement."""
         stmt = MBreakStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         return stmt
     
@@ -1014,9 +992,7 @@ class SemanticAnalyzer:
         """Analyze XECUTE command into MXecuteStatement."""
         stmt = MXecuteStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'args') and cmd.args:
             for arg in cmd.args:
@@ -1056,9 +1032,7 @@ class SemanticAnalyzer:
         """
         stmt = MLockStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'lockop') and cmd.lockop:
             stmt.lock_type = str(cmd.lockop)
@@ -1134,16 +1108,12 @@ class SemanticAnalyzer:
             lock_info['timeout'] = self.analyze(target.timeout, parent)
         
         return lock_info
-        
-        return stmt
     
     def _analyze_MergeCommand(self, cmd: Any, parent: Any) -> MMergeStatement:
         """Analyze MERGE command into MMergeStatement."""
         stmt = MMergeStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         if hasattr(cmd, 'merges') and cmd.merges:
             for merge in cmd.merges:
@@ -1160,9 +1130,7 @@ class SemanticAnalyzer:
         
         stmt = MOpenStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         # OPEN device(:parameters)(:timeout)
         # cmd.args is a list of OpenArg objects
@@ -1192,9 +1160,7 @@ class SemanticAnalyzer:
         
         stmt = MCloseStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         # CLOSE device(:parameters)
         if hasattr(cmd, 'args') and cmd.args:
@@ -1210,9 +1176,7 @@ class SemanticAnalyzer:
         
         stmt = MUseStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         # USE device(:parameters)
         if hasattr(cmd, 'args') and cmd.args:
@@ -1228,9 +1192,7 @@ class SemanticAnalyzer:
         
         stmt = MJobStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         # JOB uses targets like DO command (label^routine)
         if hasattr(cmd, 'targets') and cmd.targets:
@@ -1265,9 +1227,7 @@ class SemanticAnalyzer:
         
         stmt = MViewStatement()
         object.__setattr__(stmt, 'parent', parent)
-        
-        if hasattr(cmd, 'postcond') and cmd.postcond:
-            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
+        self._analyze_postcondition(cmd, stmt)
         
         # VIEW arguments (implementation-specific parameters)
         if hasattr(cmd, 'args') and cmd.args:
@@ -1333,6 +1293,18 @@ class SemanticAnalyzer:
         if self.current_scope:
             call_target = f"{label}^{routine}" if routine else label
             self.current_scope.labels_called.add(call_target)
+    
+    def _analyze_postcondition(self, cmd: Any, stmt: Any) -> None:
+        """Analyze postcondition from command and set on statement if present.
+        
+        This is a helper to reduce boilerplate in command handlers.
+        
+        Args:
+            cmd: The textX command model
+            stmt: The ASG statement to set postcondition on
+        """
+        if hasattr(cmd, 'postcond') and cmd.postcond:
+            stmt.postcondition = self.analyze(cmd.postcond.condition, stmt)
 
 
 # =============================================================================

@@ -62,7 +62,6 @@ def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MState
     
     while i < len(statements):
         stmt = statements[i]
-        # print(f"DEBUG: Processing {type(stmt).__name__} at index {i}")
         
         # Check if this is a control flow statement that captures remaining line
         if isinstance(stmt, MForStatement):
@@ -474,10 +473,9 @@ class MUMPSParser:
         routine.source_file = str(filepath)
         
         # Run optional analysis passes after name/source_file are set
-        if analyze_variables and not compute_signatures:
+        if compute_signatures or analyze_variables:
             self.analyze_variables(routine, compute_transitive=True)
         if compute_signatures:
-            self.analyze_variables(routine, compute_transitive=True)
             from ..analysis.variables import compute_all_signatures
             compute_all_signatures(routine)
         

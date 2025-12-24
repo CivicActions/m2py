@@ -279,6 +279,66 @@ def _convert_loop_var_to_asg(loop_var: Any) -> Any:
     return loop_var
 
 
+def _build_for_parameters(params: list) -> list:
+    """Build MForParameter list from parsed FOR command parameters.
+    
+    This is a shared helper for parse_for_command() and parse_for_command_to_asg().
+    
+    Args:
+        params: List of textX ForParam models
+        
+    Returns:
+        List of MForParameter ASG nodes
+    """
+    parameters = []
+    
+    for param in params:
+        fp = MForParameter()
+        
+        if param.start:
+            fp.start = _expr_to_asg_literal(_expr_to_string(param.start))
+        
+        if param.step:
+            fp.step = _expr_to_asg_literal(_expr_to_string(param.step))
+            if param.end:
+                fp.end = _expr_to_asg_literal(_expr_to_string(param.end))
+                fp.param_type = ForParamType.RANGE
+            else:
+                fp.param_type = ForParamType.OPEN_RANGE
+        else:
+            fp.param_type = ForParamType.VALUE
+            # For VALUE type, the start IS the value
+            if param.start:
+                fp.value = fp.start
+        
+        parameters.append(fp)
+    
+    return parameters
+
+
+def _extract_loop_var(for_var) -> Any:
+    """Extract loop variable from parsed FOR command.
+    
+    For simple variables, returns the string name.
+    For subscripted variables, returns the full ASG object.
+    
+    Args:
+        for_var: A textX LocalVariable model (or None)
+        
+    Returns:
+        String name, subscripted variable object, or None
+    """
+    if not for_var:
+        return None
+    
+    # For simple variables, use the string name for backwards compatibility
+    # For subscripted variables, convert to proper ASG with clean subscripts
+    if for_var.subscripts:
+        return _convert_loop_var_to_asg(for_var)
+    else:
+        return for_var.name
+
+
 def parse_for_command_to_asg(for_cmd) -> MForStatement:
     """Convert a textX ForCommand model to an MForStatement ASG node.
     
@@ -290,36 +350,12 @@ def parse_for_command_to_asg(for_cmd) -> MForStatement:
     """
     statement = MForStatement()
     
-    if for_cmd.var:
-        # for_cmd.var is now a LocalVariable object
-        # For simple variables, use the string name for backwards compatibility
-        # For subscripted variables, convert to proper ASG with clean subscripts
-        if for_cmd.var.subscripts:
-            statement.loop_var = _convert_loop_var_to_asg(for_cmd.var)
-        else:
-            statement.loop_var = for_cmd.var.name
+    # Extract loop variable using shared helper
+    statement.loop_var = _extract_loop_var(for_cmd.var)
     
+    # Build parameters using shared helper
     if for_cmd.params:
-        for param in for_cmd.params:
-            fp = MForParameter()
-            
-            if param.start:
-                fp.start = _expr_to_asg_literal(_expr_to_string(param.start))
-            
-            if param.step:
-                fp.step = _expr_to_asg_literal(_expr_to_string(param.step))
-                if param.end:
-                    fp.end = _expr_to_asg_literal(_expr_to_string(param.end))
-                    fp.param_type = ForParamType.RANGE
-                else:
-                    fp.param_type = ForParamType.OPEN_RANGE
-            else:
-                fp.param_type = ForParamType.VALUE
-                # For VALUE type, the start IS the value
-                if param.start:
-                    fp.value = fp.start
-            
-            statement.parameters.append(fp)
+        statement.parameters = _build_for_parameters(for_cmd.params)
     
     # Classify the loop type
     statement.loop_type = _classify_for_params(statement.parameters)
@@ -620,34 +656,12 @@ def parse_for_command(for_text: str) -> Optional[MForStatement]:
     
     statement = MForStatement()
     
-    if model.var:
-        # For simple variables, use the string name; for subscripted, use the full object
-        if model.var.subscripts:
-            statement.loop_var = model.var
-        else:
-            statement.loop_var = model.var.name
+    # Extract loop variable using shared helper
+    statement.loop_var = _extract_loop_var(model.var)
     
+    # Build parameters using shared helper
     if model.params:
-        for param in model.params:
-            fp = MForParameter()
-            
-            if param.start:
-                fp.start = _expr_to_asg_literal(_expr_to_string(param.start))
-            
-            if param.step:
-                fp.step = _expr_to_asg_literal(_expr_to_string(param.step))
-                if param.end:
-                    fp.end = _expr_to_asg_literal(_expr_to_string(param.end))
-                    fp.param_type = ForParamType.RANGE
-                else:
-                    fp.param_type = ForParamType.OPEN_RANGE
-            else:
-                # VALUE type - single value with no step/end
-                fp.param_type = ForParamType.VALUE
-                # For VALUE type, use start as the value
-                fp.value = fp.start
-            
-            statement.parameters.append(fp)
+        statement.parameters = _build_for_parameters(model.params)
     
     # Classify the loop type
     statement.loop_type = _classify_for_params(statement.parameters)
@@ -790,6 +804,172 @@ def _classify_for_params(params: list) -> ForLoopType:
         return ForLoopType.STRING_LIST
 
 
+# =============================================================================
+# Expression to String Conversion (dispatch pattern)
+# =============================================================================
+
+def _format_subscripts(subscripts) -> str:
+    """Format subscripts for variable or function arguments."""
+    if hasattr(subscripts, 'args'):
+        return ','.join(_expr_to_string(s) for s in subscripts.args)
+    return ','.join(_expr_to_string(s) for s in subscripts)
+
+
+def _expr_numeric_literal(expr) -> str:
+    """Handle NumericLiteral."""
+    return str(expr.value)
+
+
+def _expr_string_literal(expr) -> str:
+    """Handle StringLiteral."""
+    val = expr.value
+    if isinstance(val, str) and not (val.startswith('"') and val.endswith('"')):
+        return f'"{val}"'
+    return str(val)
+
+
+def _expr_local_variable(expr) -> str:
+    """Handle LocalVariable."""
+    name = expr.name
+    if expr.subscripts:
+        subs = _format_subscripts(expr.subscripts)
+        return f"{name}({subs})"
+    return name
+
+
+def _expr_global_variable(expr) -> str:
+    """Handle GlobalVariable."""
+    name = f"^{expr.name}"
+    if expr.subscripts:
+        subs = _format_subscripts(expr.subscripts)
+        return f"{name}({subs})"
+    return name
+
+
+def _expr_intrinsic_function(expr) -> str:
+    """Handle IntrinsicFunction."""
+    name = f"${expr.name}"
+    if expr.arguments:
+        args = ','.join(_expr_to_string(a) for a in expr.arguments)
+        return f"{name}({args})"
+    return name
+
+
+def _expr_extrinsic_function(expr) -> str:
+    """Handle ExtrinsicFunction."""
+    if hasattr(expr, 'target'):
+        name = f"$${expr.target.name}"
+        if expr.target.routine:
+            name += f"^{expr.target.routine}"
+    else:
+        name = f"$${expr.label}"
+        if hasattr(expr, 'routine') and expr.routine:
+            name += f"^{expr.routine}"
+    if expr.arguments:
+        args = ','.join(_expr_to_string(a) for a in expr.arguments)
+        return f"{name}({args})"
+    return name
+
+
+def _expr_special_variable(expr) -> str:
+    """Handle SpecialVariable."""
+    return f"${expr.name}"
+
+
+def _expr_indirection(expr) -> str:
+    """Handle Indirection."""
+    ind = f"@{_expr_to_string(expr.expr)}"
+    if expr.subscripts:
+        subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
+        return f"{ind}({subs})"
+    return ind
+
+
+def _expr_paren(expr) -> str:
+    """Handle ParenExpr and OffsetParenExpr."""
+    return f"({_expr_to_string(expr.expr)})"
+
+
+def _expr_binary(expr) -> str:
+    """Handle Expr and OffsetExpr (binary expressions with operators).
+    
+    Note: textX can misparse "1-2-3" as ops=['-'], right=[2, -3]
+    where the second '-' becomes a unary operator on '3'.
+    We handle this by treating unary +/- on subsequent operands as binary ops.
+    """
+    if not (hasattr(expr, 'left') and expr.left):
+        return str(expr)
+    
+    result = _expr_to_string(expr.left)
+    
+    if not (hasattr(expr, 'right') and expr.right):
+        return result
+    
+    ops = list(expr.ops) if hasattr(expr, 'ops') and expr.ops else []
+    
+    for i, right_expr in enumerate(expr.right):
+        if i < len(ops):
+            # Explicit binary operator
+            op = ops[i]
+            op_str = op.op if hasattr(op, 'op') else str(op)
+            result += op_str
+            result += _expr_to_string(right_expr)
+        else:
+            # No explicit binary op - check for leading unary +/-
+            leading_ops = []
+            if hasattr(right_expr, 'operators') and right_expr.operators:
+                leading_ops = list(right_expr.operators)
+            elif hasattr(right_expr, 'operator') and right_expr.operator:
+                leading_ops = [right_expr.operator]
+            
+            if leading_ops:
+                first_op = leading_ops[0]
+                op_char = first_op.op if hasattr(first_op, 'op') else str(first_op)
+                if op_char in ('+', '-'):
+                    result += op_char
+                    for remaining_op in leading_ops[1:]:
+                        result += remaining_op.op if hasattr(remaining_op, 'op') else str(remaining_op)
+                    result += _expr_to_string(right_expr.operand)
+                else:
+                    for uop in leading_ops:
+                        result += uop.op if hasattr(uop, 'op') else str(uop)
+                    result += _expr_to_string(right_expr.operand)
+            else:
+                result += _expr_to_string(right_expr)
+    
+    return result
+
+
+def _expr_unary(expr) -> str:
+    """Handle UnaryExpr and OffsetUnaryExpr."""
+    ops_str = ""
+    if hasattr(expr, 'operators') and expr.operators:
+        for op_obj in expr.operators:
+            ops_str += op_obj.op if hasattr(op_obj, 'op') else str(op_obj)
+    elif hasattr(expr, 'operator') and expr.operator:
+        ops_str = expr.operator.op if hasattr(expr.operator, 'op') else str(expr.operator)
+    return f"{ops_str}{_expr_to_string(expr.operand)}"
+
+
+# Dispatch table for expression types
+_EXPR_HANDLERS = {
+    'NumericLiteral': _expr_numeric_literal,
+    'StringLiteral': _expr_string_literal,
+    'LocalVariable': _expr_local_variable,
+    'GlobalVariable': _expr_global_variable,
+    'IntrinsicFunction': _expr_intrinsic_function,
+    'ExtrinsicFunction': _expr_extrinsic_function,
+    'SpecialVariable': _expr_special_variable,
+    'Indirection': _expr_indirection,
+    'ParenExpr': _expr_paren,
+    'OffsetParenExpr': _expr_paren,
+    'Expr': _expr_binary,
+    'OffsetExpr': _expr_binary,
+    'UnaryExpr': _expr_unary,
+    'OffsetUnaryExpr': _expr_unary,
+}
+
+
 def _expr_to_string(expr) -> str:
     """Convert a textX expression model to a string representation.
     
@@ -808,127 +988,11 @@ def _expr_to_string(expr) -> str:
         return ""
     
     cls_name = expr.__class__.__name__
+    handler = _EXPR_HANDLERS.get(cls_name)
     
-    if cls_name == 'NumericLiteral':
-        # Custom class may have value as int/float, ensure it's a string
-        return str(expr.value)
-    elif cls_name == 'StringLiteral':
-        # Custom class may have already removed quotes
-        val = expr.value
-        # If it's already a string without quotes, wrap it for MUMPS syntax
-        if isinstance(val, str) and not (val.startswith('"') and val.endswith('"')):
-            return f'"{val}"'
-        return str(val)
-    elif cls_name == 'LocalVariable':
-        name = expr.name
-        if expr.subscripts:
-            # Custom classes store subscripts as list, not .args attribute
-            if hasattr(expr.subscripts, 'args'):
-                subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
-            else:
-                subs = ','.join(_expr_to_string(s) for s in expr.subscripts)
-            return f"{name}({subs})"
-        return name
-    elif cls_name == 'GlobalVariable':
-        name = f"^{expr.name}"
-        if expr.subscripts:
-            # Custom classes store subscripts as list, not .args attribute
-            if hasattr(expr.subscripts, 'args'):
-                subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
-            else:
-                subs = ','.join(_expr_to_string(s) for s in expr.subscripts)
-            return f"{name}({subs})"
-        return name
-    elif cls_name == 'IntrinsicFunction':
-        name = f"${expr.name}"
-        if expr.arguments:
-            # Custom classes use .arguments, not .args.args
-            args = ','.join(_expr_to_string(a) for a in expr.arguments)
-            return f"{name}({args})"
-        return name
-    elif cls_name == 'ExtrinsicFunction':
-        # Custom class uses target.name and target.routine
-        if hasattr(expr, 'target'):
-            name = f"$${expr.target.name}"
-            if expr.target.routine:
-                name += f"^{expr.target.routine}"
-        else:
-            name = f"$${expr.label}"
-            if hasattr(expr, 'routine') and expr.routine:
-                name += f"^{expr.routine}"
-        if expr.arguments:
-            args = ','.join(_expr_to_string(a) for a in expr.arguments)
-            return f"{name}({args})"
-        return name
-    elif cls_name == 'SpecialVariable':
-        return f"${expr.name}"
-    elif cls_name == 'Indirection':
-        ind = f"@{_expr_to_string(expr.expr)}"
-        if expr.subscripts:
-            subs = ','.join(_expr_to_string(s) for s in expr.subscripts.args)
-            return f"{ind}({subs})"
-        return ind
-    elif cls_name == 'ParenExpr':
-        return f"({_expr_to_string(expr.expr)})"
-    elif cls_name == 'Expr' or cls_name == 'OffsetExpr':
-        # Full expression with operators - new grammar uses left/ops/right
-        # Note: textX can misparse "1-2-3" as ops=['-'], right=[2, -3]
-        # where the second '-' becomes a unary operator on '3'.
-        # We handle this by treating unary +/- on subsequent operands as binary ops.
-        if hasattr(expr, 'left') and expr.left:
-            result = _expr_to_string(expr.left)
-            if hasattr(expr, 'right') and expr.right:
-                ops = list(expr.ops) if hasattr(expr, 'ops') and expr.ops else []
-                for i, right_expr in enumerate(expr.right):
-                    if i < len(ops):
-                        # Explicit binary operator
-                        op = ops[i]
-                        op_str = op.op if hasattr(op, 'op') else str(op)
-                        result += op_str
-                        result += _expr_to_string(right_expr)
-                    else:
-                        # No explicit binary op - check for leading unary +/-
-                        # Handle both new 'operators' list and old 'operator' single value
-                        leading_ops = []
-                        if hasattr(right_expr, 'operators') and right_expr.operators:
-                            leading_ops = list(right_expr.operators)
-                        elif hasattr(right_expr, 'operator') and right_expr.operator:
-                            leading_ops = [right_expr.operator]
-                        
-                        if leading_ops:
-                            first_op = leading_ops[0]
-                            op_char = first_op.op if hasattr(first_op, 'op') else str(first_op)
-                            if op_char in ('+', '-'):
-                                # Treat it as the binary operator
-                                result += op_char
-                                # Remaining unary ops (if any)
-                                for remaining_op in leading_ops[1:]:
-                                    result += remaining_op.op if hasattr(remaining_op, 'op') else str(remaining_op)
-                                result += _expr_to_string(right_expr.operand)
-                            else:
-                                # No +/- found, just append with any unary ops
-                                for uop in leading_ops:
-                                    result += uop.op if hasattr(uop, 'op') else str(uop)
-                                result += _expr_to_string(right_expr.operand)
-                        else:
-                            # No operator - just append the right operand directly
-                            # This handles pattern match syntax like "1N"
-                            result += _expr_to_string(right_expr)
-            return result
-        return str(expr)
-    elif cls_name == 'UnaryExpr' or cls_name == 'OffsetUnaryExpr':
-        # Handle chained unary operators (new grammar uses 'operators' list)
-        ops_str = ""
-        if hasattr(expr, 'operators') and expr.operators:
-            for op_obj in expr.operators:
-                ops_str += op_obj.op if hasattr(op_obj, 'op') else str(op_obj)
-        elif hasattr(expr, 'operator') and expr.operator:
-            ops_str = expr.operator.op if hasattr(expr.operator, 'op') else str(expr.operator)
-        return f"{ops_str}{_expr_to_string(expr.operand)}"
-    elif cls_name == 'OffsetParenExpr':
-        return f"({_expr_to_string(expr.expr)})"
-    else:
-        return str(expr)
+    if handler:
+        return handler(expr)
+    return str(expr)
 
 
 # =============================================================================

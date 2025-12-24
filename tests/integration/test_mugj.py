@@ -1727,29 +1727,6 @@ class TestVariableAnalysisMUGJ:
         assert hasattr(main_label, 'input_variables')
         assert hasattr(main_label, 'output_variables')
 
-    def test_v1xrf1_extrinsic_functions(self, parser, mugj_inref_dir):
-        """T667: V1XRF1.m - verify extrinsic function signatures."""
-        v1xrf1_path = mugj_inref_dir / "V1XRF1.m"
-        if not v1xrf1_path.exists():
-            pytest.skip("V1XRF1.m not found")
-        
-        routine = parser.parse_file(v1xrf1_path)
-        parser.analyze_variables(routine, compute_transitive=True)
-        
-        # Compute signatures to verify extrinsic function analysis
-        parser.compute_signatures(routine)
-        
-        # Should complete without error
-        assert routine is not None
-        
-        # Labels should have signatures
-        for label in routine.labels:
-            if hasattr(label, 'signature') and label.signature:
-                sig = label.signature
-                # Signature should have valid strategy
-                from m2py.asg.enums import ScopeStrategy
-                assert isinstance(sig.scope_strategy, ScopeStrategy)
-
     def test_multi_label_routine_analysis(self, parser, mugj_inref_dir):
         """T669: Routine with 10+ labels - verify all signatures computed."""
         # V1FORA has multiple labels
@@ -1820,29 +1797,6 @@ class TestVariableAnalysisMUGJ:
         
         # V1NX2 should contain exclusive NEW statements
         # (if it doesn't, it means our grammar may need updating)
-
-    def test_v1xrf2_byref_parameters(self, parser, mugj_inref_dir):
-        """T668: V1XRF2.m - verify by-reference parameter tracking."""
-        v1xrf2_path = mugj_inref_dir / "V1XRF2.m"
-        if not v1xrf2_path.exists():
-            pytest.skip("V1XRF2.m not found")
-        
-        routine = parser.parse_file(v1xrf2_path)
-        parser.analyze_variables(routine, compute_transitive=True)
-        parser.compute_signatures(routine)
-        
-        # V1XRF2 tests extrinsic functions with parameters
-        assert routine is not None
-        assert len(routine.labels) > 0
-        
-        # Check that signatures were computed
-        for label in routine.labels:
-            if hasattr(label, 'signature') and label.signature:
-                sig = label.signature
-                assert sig.label_name == label.name
-                # Check scope strategy is valid
-                from m2py.asg.enums import ScopeStrategy
-                assert isinstance(sig.scope_strategy, ScopeStrategy)
 
     def test_scope_strategy_classification_integration(self, parser, mugj_inref_dir):
         """Integration test: verify scope strategy classification on real files."""

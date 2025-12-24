@@ -447,3 +447,183 @@ TARGET ; target label
         
         # Labels 340, G3401, G3402 have GOTOs inside FOR
         assert len(fors_with_gotos) >= 3, f"Expected >=3 FORs with GOTOs, got {len(fors_with_gotos)}"
+
+
+# =============================================================================
+# FOR Analysis Nested Scope Recursion Tests
+# =============================================================================
+
+class TestForAnalysisNestedScopes:
+    """Test nested scope recursion in for_analysis.py.
+    
+    Tests _check_var_modified_in_scope() and _check_quit_in_scope()
+    recursion into nested scopes (then_scope, else_scope, body).
+    """
+
+    def test_for_with_if_modifying_loop_var_in_then(self):
+        """FOR with IF that modifies loop var in then_scope.
+        
+        Tests _check_var_modified_in_scope() recursion into then_scope.
+        """
+        from m2py.parser import MUMPSParser
+        
+        parser = MUMPSParser()
+        source = """TEST
+ F I=1:1:10 I I>5 S I=10 Q
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+        
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+        
+        assert for_stmt is not None
+        assert for_stmt.loop_var_modified_in_body is True
+
+    def test_for_with_quit_in_if_then_scope(self):
+        """FOR with QUIT inside IF then_scope should detect internal QUIT.
+        
+        Tests _check_quit_in_scope() recursion into then_scope.
+        """
+        from m2py.parser import MUMPSParser
+        
+        parser = MUMPSParser()
+        source = """TEST
+ F I=1:1:100 I I>50 Q
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+        
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+        
+        assert for_stmt is not None
+        assert for_stmt.has_internal_quit is True
+
+    def test_for_with_nested_for_quit_not_detected(self):
+        """QUIT in nested FOR should NOT count as internal QUIT of outer FOR.
+        
+        Tests that _check_quit_in_scope() doesn't recurse into nested FOR bodies.
+        """
+        from m2py.parser import MUMPSParser
+        
+        parser = MUMPSParser()
+        source = """TEST
+ F I=1:1:10 D
+ . F J=1:1:5 Q:J>3
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+        
+        label = routine.labels[0]
+        outer_for = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                outer_for = stmt
+                break
+        
+        assert outer_for is not None
+        assert outer_for.has_internal_quit is False
+
+    def test_for_with_else_modifying_var(self):
+        """Test loop var modification detected in ELSE branch.
+        
+        Tests else_scope recursion path.
+        """
+        from m2py.parser import MUMPSParser
+        
+        parser = MUMPSParser()
+        source = """TEST
+ F I=1:1:10 I I>5 W I E  S I=I+10
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+        
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+        
+        assert for_stmt is not None
+        assert for_stmt.loop_var_modified_in_body is True
+
+    def test_for_with_do_body_modifying_var(self):
+        """Test loop var modification detected in argumentless DO body.
+        
+        Tests body recursion path for statements with body attribute.
+        """
+        from m2py.parser import MUMPSParser
+        
+        parser = MUMPSParser()
+        source = """TEST
+ F I=1:1:10 D
+ . S I=I+1
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+        
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+        
+        assert for_stmt is not None
+        assert for_stmt.loop_var_modified_in_body is True
+
+    def test_for_with_quit_in_do_body_not_detected(self):
+        """QUIT in DO body should NOT be detected (separate scope).
+        
+        Per MUMPS semantics, a QUIT in a DO block exits that DO, not the FOR.
+        """
+        from m2py.parser import MUMPSParser
+        
+        parser = MUMPSParser()
+        source = """TEST
+ F I=1:1:10 D
+ . Q:I>5
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+        
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+        
+        assert for_stmt is not None
+        assert for_stmt.has_internal_quit is False
+
+    def test_for_with_direct_quit_in_body(self):
+        """FOR with direct QUIT (not in nested structure) should be detected."""
+        from m2py.parser import MUMPSParser
+        
+        parser = MUMPSParser()
+        source = """TEST
+ F I=1:1:10 Q:I>5 W I
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+        
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+        
+        assert for_stmt is not None
+        assert for_stmt.has_internal_quit is True
