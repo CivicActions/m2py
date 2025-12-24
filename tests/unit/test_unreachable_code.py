@@ -3,15 +3,9 @@
 Tests for T531 (is_unreachable marking) and T532 (has_explicit_exit property).
 """
 
-import pytest
-
 from m2py.parser import MUMPSParser
 from m2py.asg.statements import (
-    MSetStatement,
-    MWriteStatement,
     MQuitStatement,
-    MGotoStatement,
-    MHaltStatement,
     MIfStatement,
     MForStatement,
     MDoStatement,
@@ -24,12 +18,12 @@ class TestUnreachableCodeDetection:
     def test_statements_after_quit_are_unreachable(self):
         """Statements after unconditional QUIT should be marked unreachable."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  Q
  S Y=2
  W "never"
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -47,12 +41,12 @@ class TestUnreachableCodeDetection:
     def test_statements_after_goto_are_unreachable(self):
         """Statements after unconditional GOTO should be marked unreachable."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  G OTHER
  S Y=2
 OTHER Q
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -66,11 +60,11 @@ OTHER Q
     def test_statements_after_halt_are_unreachable(self):
         """Statements after unconditional HALT should be marked unreachable."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  HALT
  S Y=2
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -84,11 +78,11 @@ OTHER Q
     def test_conditional_quit_does_not_make_following_unreachable(self):
         """Statements after conditional QUIT should NOT be marked unreachable."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  Q:X=1
  S Y=2
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -103,12 +97,12 @@ OTHER Q
     def test_conditional_goto_does_not_make_following_unreachable(self):
         """Statements after conditional GOTO should NOT be marked unreachable."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  G:X=1 OTHER
  S Y=2
 OTHER Q
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -123,12 +117,12 @@ OTHER Q
     def test_unreachable_in_if_then_scope(self):
         """Unreachable code detection works inside IF then_scope."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  I X=1 D
  . S A=1
  . Q
  . S B=2
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -148,12 +142,12 @@ OTHER Q
     def test_unreachable_in_for_body(self):
         """Unreachable code detection works inside FOR body."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  F I=1:1:10 D
  . S X=I
  . Q
  . S Y=I
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -173,13 +167,13 @@ OTHER Q
     def test_unreachable_in_do_block_body(self):
         """Unreachable code detection works inside DO block body."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  D
  . S X=1
  . Q
  . S Y=2
  S Z=3
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -199,14 +193,14 @@ OTHER Q
     def test_multiple_labels_independent_unreachable_tracking(self):
         """Each label tracks unreachable code independently."""
         parser = MUMPSParser()
-        source = '''FIRST
+        source = """FIRST
  Q
  S X=1
 SECOND
  S Y=2
  Q
  S Z=3
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -224,8 +218,8 @@ SECOND
     def test_no_statements_no_unreachable(self):
         """Empty label body has no unreachable code."""
         parser = MUMPSParser()
-        source = '''TEST
-'''
+        source = """TEST
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -238,10 +232,10 @@ class TestHasExplicitExit:
     def test_label_ending_with_quit_has_explicit_exit(self):
         """Label ending with QUIT has has_explicit_exit=True."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  Q
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -250,11 +244,11 @@ class TestHasExplicitExit:
     def test_label_ending_with_goto_has_explicit_exit(self):
         """Label ending with GOTO has has_explicit_exit=True."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  G OTHER
 OTHER Q
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -263,10 +257,10 @@ OTHER Q
     def test_label_ending_with_halt_has_explicit_exit(self):
         """Label ending with HALT has has_explicit_exit=True."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  HALT
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -275,10 +269,10 @@ OTHER Q
     def test_label_ending_with_set_has_no_explicit_exit(self):
         """Label ending with SET has has_explicit_exit=False."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  S Y=2
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -287,10 +281,10 @@ OTHER Q
     def test_label_ending_with_write_has_no_explicit_exit(self):
         """Label ending with WRITE has has_explicit_exit=False."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  W "hello"
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -299,10 +293,10 @@ OTHER Q
     def test_label_with_conditional_quit_at_end_has_no_explicit_exit(self):
         """Label ending with conditional QUIT has has_explicit_exit=False."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  Q:X=1
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -312,12 +306,12 @@ OTHER Q
     def test_label_with_unreachable_code_after_quit(self):
         """Label with unreachable code after QUIT still has has_explicit_exit=True."""
         parser = MUMPSParser()
-        source = '''TEST
+        source = """TEST
  S X=1
  Q
  S Y=2
  W "never"
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -327,8 +321,8 @@ OTHER Q
     def test_empty_label_has_no_explicit_exit(self):
         """Empty label has has_explicit_exit=False."""
         parser = MUMPSParser()
-        source = '''TEST
-'''
+        source = """TEST
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -337,8 +331,8 @@ OTHER Q
     def test_label_only_comments_has_no_explicit_exit(self):
         """Label with only comments has has_explicit_exit=False."""
         parser = MUMPSParser()
-        source = '''TEST ; just a label with inline comment
-'''
+        source = """TEST ; just a label with inline comment
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -347,14 +341,14 @@ OTHER Q
     def test_multiple_labels_independent_exit_status(self):
         """Each label has its own has_explicit_exit status."""
         parser = MUMPSParser()
-        source = '''FIRST
+        source = """FIRST
  S X=1
  Q
 SECOND
  S Y=2
 THIRD
  G FIRST
-'''
+"""
         routine = parser.parse(source)
         parser.resolve_references(routine)
 
@@ -369,13 +363,13 @@ class TestMUGJUnreachableCodeExamples:
     def test_v1prgd_label2_unreachable_pattern(self):
         """V1PRGD label 2 has code after QUIT that should be unreachable."""
         parser = MUMPSParser()
-        routine = parser.parse_file('tests/functional/mugj/inref/V1PRGD.m')
+        routine = parser.parse_file("tests/functional/mugj/inref/V1PRGD.m")
         parser.resolve_references(routine)
 
         # Find label "2"
         label_2 = None
         for label in routine.labels:
-            if label.name == '2':
+            if label.name == "2":
                 label_2 = label
                 break
 
@@ -389,12 +383,14 @@ class TestMUGJUnreachableCodeExamples:
                 found_quit = True
                 continue
             if found_quit:
-                assert stmt.is_unreachable is True, f"{stmt.__class__.__name__} should be unreachable"
+                assert stmt.is_unreachable is True, (
+                    f"{stmt.__class__.__name__} should be unreachable"
+                )
 
     def test_v1prgd2_implicit_quit_pattern(self):
         """V1PRGD2 main label ends without QUIT (implicit QUIT)."""
         parser = MUMPSParser()
-        routine = parser.parse_file('tests/functional/mugj/inref/V1PRGD2.m')
+        routine = parser.parse_file("tests/functional/mugj/inref/V1PRGD2.m")
         parser.resolve_references(routine)
 
         # Main label should not have explicit exit
@@ -403,36 +399,36 @@ class TestMUGJUnreachableCodeExamples:
 
     def test_vabc_implicit_quit_no_synthetic_statement(self):
         """VABC.m ends without QUIT - ASG should NOT add synthetic MQuitStatement.
-        
+
         The ASG must accurately represent the source code. Labels without explicit
         QUIT use MLabel.has_explicit_exit=False to signal implicit return behavior.
         Python code generation handles this via Python's implicit return semantics.
         """
         parser = MUMPSParser()
-        routine = parser.parse_file('tests/functional/mugj/inref/VABC.m')
+        routine = parser.parse_file("tests/functional/mugj/inref/VABC.m")
         parser.resolve_references(routine)
 
         main_label = routine.labels[0]
-        
+
         # ASG should contain only the SET statement (no synthetic QUIT)
         assert len(main_label.body.statements) == 1
-        assert main_label.body.statements[0].__class__.__name__ == 'MSetStatement'
-        
+        assert main_label.body.statements[0].__class__.__name__ == "MSetStatement"
+
         # has_explicit_exit correctly identifies no explicit exit
         assert main_label.has_explicit_exit is False
-        
+
     def test_va_explicit_quit_captured(self):
         """VA.m ends with explicit QUIT - ASG captures it correctly."""
         parser = MUMPSParser()
-        routine = parser.parse_file('tests/functional/mugj/inref/VA.m')
+        routine = parser.parse_file("tests/functional/mugj/inref/VA.m")
         parser.resolve_references(routine)
 
         main_label = routine.labels[0]
-        
+
         # ASG should contain SET and QUIT
         assert len(main_label.body.statements) == 2
-        assert main_label.body.statements[0].__class__.__name__ == 'MSetStatement'
-        assert main_label.body.statements[1].__class__.__name__ == 'MQuitStatement'
-        
+        assert main_label.body.statements[0].__class__.__name__ == "MSetStatement"
+        assert main_label.body.statements[1].__class__.__name__ == "MQuitStatement"
+
         # has_explicit_exit correctly identifies explicit exit
         assert main_label.has_explicit_exit is True

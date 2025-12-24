@@ -4680,3 +4680,65 @@ Coverage improved from 82% to 85%.
 - [X] FIX-016: Merge `test_resolver_call_types.py` (38 lines) into `test_resolver.py` ✓
 - [ ] FIX-017: Consider renaming `test_classifier.py` to `test_for_classification.py` for clarity - DEFERRED (naming is clear enough)
 - [ ] FIX-018: Consider renaming `test_command_analysis.py` to `test_analyze_command.py` for clarity - DEFERRED (naming is clear enough)
+
+---
+
+## Phase 63: Ruff Linter & Formatter Issues
+
+**Discovered via**: `uv run ruff check src/` and `uv run ruff format --check src/`
+
+**Status**: ✅ COMPLETE - All 929 tests pass
+
+### RUFF-1: Unused Imports (F401) - Auto-fixable
+
+Run: `uv run ruff check src/ --fix` to auto-fix these 20 issues.
+
+- [X] RUFF-1a: `command_parser.py:11` - Remove unused `typing.Union` ✓
+- [X] RUFF-1b: `command_parser.py:24` - Remove unused `MNakedGlobal` ✓
+- [X] RUFF-1c: `for_analysis.py:12-13` - Remove unused `List`, `Set`, `Optional`, `MLabel` ✓
+- [X] RUFF-1d: `resolver.py:13` - Remove unused `typing.Optional` ✓
+- [X] RUFF-1e: `semantic_analyzer.py:23-53` - Remove unused `Union`, `MNakedGlobal`, `MSpecialVariable`, `MRoutine`, `MLabel`, `MScope` ✓
+- [X] RUFF-1f: `variables.py:46-48` - Remove unused `Enum`, `auto`, `MScope` ✓
+- [X] RUFF-1g: `variables.py:719` - Remove unused `MIndirection` ✓
+- [X] RUFF-1h: `asg/elements.py:16` - Remove unused `MForStatement`, `MDoBlockStatement` ✓
+- [X] RUFF-1i: `parser/parser.py:843` - Fixed: Now imports `FunctionSignature` for use in type annotation ✓
+
+### RUFF-2: Undefined Names (F821) - Requires Manual Fix
+
+These are actual bugs where classes are referenced but not imported:
+
+- [X] RUFF-2a: `semantic_analyzer.py:1127` - `MOpenStatement` undefined - added to top-level imports ✓
+- [X] RUFF-2b: `semantic_analyzer.py:1157` - `MCloseStatement` undefined - added to top-level imports ✓
+- [X] RUFF-2c: `semantic_analyzer.py:1173` - `MUseStatement` undefined - added to top-level imports ✓
+- [X] RUFF-2d: `semantic_analyzer.py:1189` - `MJobStatement` undefined - added to top-level imports ✓
+- [X] RUFF-2e: `semantic_analyzer.py:1224` - `MViewStatement` undefined - added to top-level imports ✓
+- [X] RUFF-2f: `parser/parser.py:823` - `FunctionSignature` undefined - added import to top-level ✓
+
+### RUFF-3: Unused Local Variables (F841) - Review Required
+
+These assigned-but-unused variables may indicate incomplete implementations:
+
+- [X] RUFF-3a: `command_parser.py:1301` - `is_exclusive` removed (was dead code) ✓
+- [X] RUFF-3b: `goto_analysis.py:181` - `source_line` renamed to `_source_line` (reserved for future use) ✓
+- [X] RUFF-3c: `pattern_compiler.py:181` - `start` removed (was unused) ✓
+- [X] RUFF-3d: `variables.py:658` - `callee_outputs` removed (was unused in transitive inputs calc) ✓
+- [X] RUFF-3e: `variables.py:962` - `callee_outputs` removed (was unused in transitive outputs calc) ✓
+
+### RUFF-4: Code Formatting - Auto-fixable
+
+Run: `uv run ruff format src/` to auto-fix formatting in 16 files.
+
+- [X] RUFF-4: Formatted 49 files across src/, tests/, utils/ ✓
+
+### RUFF-5: Additional Test/Util Fixes
+
+- [X] RUFF-5a: `test_grammar.py` - Fixed 5x E712 (use `is True`/`is False` instead of `==`) ✓
+- [X] RUFF-5b: `test_classifier.py:623` - Removed return type annotation for locally-imported class ✓
+- [X] RUFF-5c: `test_command_parser.py:534` - Prefixed unused `result` with underscore ✓
+- [X] RUFF-5d: `test_parser.py:483` - Removed unused `routine` variable ✓
+- [X] RUFF-5e: `test_mugj.py:1792` - Prefixed unused `has_exclusive_new` with underscore ✓
+- [X] RUFF-5f: `batch_validate_categories.py:82-83` - Renamed `l` to `line` (E741 ambiguous name) ✓
+- [X] RUFF-5g: `profile_variable_analysis.py:182` - Renamed `l` to `lines` (E741 ambiguous name) ✓
+- [X] RUFF-5h: `validate_asg.py:420` - Renamed `l` to `line` (E741 ambiguous name) ✓
+
+**Checkpoint**: Phase 63 complete - All ruff linter and formatter issues resolved

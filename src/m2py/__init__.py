@@ -5,10 +5,10 @@ Graph (ASG) for MUMPS routines.
 
 Usage:
     from m2py import MUMPSParser
-    
+
     parser = MUMPSParser()
     routine = parser.parse_file("MYROUTINE.m")
-    
+
     # Analyze the routine
     parser.resolve_references(routine)
     parser.analyze_variables(routine)
@@ -21,12 +21,27 @@ from m2py.parser import MUMPSParser, MUMPSSyntaxError
 
 # Core ASG types
 from m2py.asg import (
-    MRoutine, MLabel, MScope, MCall,
-    MStatement, MForStatement, MGotoStatement, MDoStatement,
-    MSetStatement, MWriteStatement, MQuitStatement, MIfStatement,
-    MNewStatement, MKillStatement,
-    MExpr, MLiteral, MVariable, MGlobal,
-    ForLoopType, ForParamType, GotoType,
+    MRoutine,
+    MLabel,
+    MScope,
+    MCall,
+    MStatement,
+    MForStatement,
+    MGotoStatement,
+    MDoStatement,
+    MSetStatement,
+    MWriteStatement,
+    MQuitStatement,
+    MIfStatement,
+    MNewStatement,
+    MKillStatement,
+    MExpr,
+    MLiteral,
+    MVariable,
+    MGlobal,
+    ForLoopType,
+    ForParamType,
+    GotoType,
 )
 
 # Analysis functions
@@ -44,12 +59,27 @@ __all__ = [
     "MUMPSParser",
     "MUMPSSyntaxError",
     # Core ASG
-    "MRoutine", "MLabel", "MScope", "MCall",
-    "MStatement", "MForStatement", "MGotoStatement", "MDoStatement",
-    "MSetStatement", "MWriteStatement", "MQuitStatement", "MIfStatement",
-    "MNewStatement", "MKillStatement",
-    "MExpr", "MLiteral", "MVariable", "MGlobal",
-    "ForLoopType", "ForParamType", "GotoType",
+    "MRoutine",
+    "MLabel",
+    "MScope",
+    "MCall",
+    "MStatement",
+    "MForStatement",
+    "MGotoStatement",
+    "MDoStatement",
+    "MSetStatement",
+    "MWriteStatement",
+    "MQuitStatement",
+    "MIfStatement",
+    "MNewStatement",
+    "MKillStatement",
+    "MExpr",
+    "MLiteral",
+    "MVariable",
+    "MGlobal",
+    "ForLoopType",
+    "ForParamType",
+    "GotoType",
     # Analysis
     "analyze_command",
     "analyze_expression",

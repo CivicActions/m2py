@@ -13,7 +13,7 @@ from enum import Enum, auto
 
 class ForLoopType(Enum):
     """Classification of FOR loop control flow patterns.
-    
+
     Used to determine how a FOR loop can be transpiled to Python:
     - BOUNDED: Standard for loop with known bounds (F I=1:1:10)
     - OPEN_ENDED: Potentially infinite loop (F I=1:1)
@@ -21,6 +21,7 @@ class ForLoopType(Enum):
     - MIXED: Combination of patterns (F I="A",1:1:3)
     - ARGUMENTLESS: Infinite loop until QUIT (F)
     """
+
     BOUNDED = auto()
     OPEN_ENDED = auto()
     STRING_LIST = auto()
@@ -30,12 +31,13 @@ class ForLoopType(Enum):
 
 class ForParamType(Enum):
     """Type of individual FOR parameter within a FOR command.
-    
+
     A FOR command can have multiple parameters, each of which can be:
     - VALUE: Single expression (F I=7)
     - RANGE: Bounded range with start:step:end (F I=1:1:10)
     - OPEN_RANGE: Unbounded range with start:step (F I=1:1)
     """
+
     VALUE = auto()
     RANGE = auto()
     OPEN_RANGE = auto()
@@ -43,7 +45,7 @@ class ForParamType(Enum):
 
 class GotoType(Enum):
     """Classification of GOTO statement behavior.
-    
+
     Used to determine the control flow impact of a GOTO:
     - FORWARD_JUMP: Jump ahead within same label
     - BACKWARD_JUMP: Jump back within same label (creates loop)
@@ -53,6 +55,7 @@ class GotoType(Enum):
     - EXTERNAL: Jumps to external routine (^routine)
     - UNRESOLVED: Target cannot be statically determined
     """
+
     FORWARD_JUMP = auto()
     BACKWARD_JUMP = auto()
     LOOP_EXIT = auto()
@@ -64,7 +67,7 @@ class GotoType(Enum):
 
 class CallType(Enum):
     """Type of subroutine call or reference.
-    
+
     Classifies how a DO, GOTO, or extrinsic call is structured:
     - LABEL_CALL: Simple label reference (DO label)
     - OFFSET_CALL: Label with offset (DO label+offset)
@@ -72,6 +75,7 @@ class CallType(Enum):
     - INDIRECT_CALL: Indirected call (DO @expr)
     - UNRESOLVED: Cannot determine statically
     """
+
     LABEL_CALL = auto()
     OFFSET_CALL = auto()
     ROUTINE_CALL = auto()
@@ -81,12 +85,13 @@ class CallType(Enum):
 
 class LiteralType(Enum):
     """Type of literal value.
-    
+
     Classifies the syntactic form of a literal:
     - STRING: Quoted string literal ("hello")
     - INTEGER: Integer numeric literal (42)
     - DECIMAL: Decimal numeric literal (3.14)
     """
+
     STRING = auto()
     INTEGER = auto()
     DECIMAL = auto()
@@ -94,13 +99,14 @@ class LiteralType(Enum):
 
 class FormatControlType(Enum):
     """Type of I/O format control in WRITE/READ commands.
-    
+
     Format controls modify device output:
     - NEWLINE: ! - Output newline (line feed)
     - FORMFEED: # - Output form feed (page break)
     - TAB: ?n - Tab to column n
     - CHARCODE: *n - Output character with ASCII code n
     """
+
     NEWLINE = auto()
     FORMFEED = auto()
     TAB = auto()
@@ -109,7 +115,7 @@ class FormatControlType(Enum):
 
 class IndirectionType(Enum):
     """Classification of indirection (@) usage patterns.
-    
+
     Used to determine code generation strategy for indirect references:
     - NAME: Name indirection - @X where X contains a variable name
     - SUBSCRIPT: Subscript indirection - Y(@X) where X provides subscripts
@@ -117,6 +123,7 @@ class IndirectionType(Enum):
     - PATTERN: Pattern indirection - Y?@X where X contains pattern to match
     - UNKNOWN: Cannot determine type statically
     """
+
     NAME = auto()
     SUBSCRIPT = auto()
     ARGUMENT = auto()
@@ -126,18 +133,19 @@ class IndirectionType(Enum):
 
 class PassingMode(Enum):
     """Classification of parameter passing mode for function arguments.
-    
+
     Used for variable analysis to track how arguments are passed:
     - BY_VALUE: Expression is evaluated and passed (D SUB(X+1) or D SUB(X))
     - BY_REFERENCE: Variable reference passed with . prefix (D SUB(.X))
       Creates aliasing - modifications to formal param affect caller's actual
     - OMITTED: Parameter position is empty (D SUB(,Y) - first arg omitted)
-    
+
     Per MUMPS spec MDC 8.1.7:
     - Call-by-reference format: .actualname
     - Call-by-value format: expr
     - Omitted-parameter format: empty position in actuallist
     """
+
     BY_VALUE = auto()
     BY_REFERENCE = auto()
     OMITTED = auto()
@@ -145,7 +153,7 @@ class PassingMode(Enum):
 
 class ScopeStrategy(Enum):
     """Classification of label for code generation strategy.
-    
+
     Determines how a label should be transpiled to Python based on
     variable analysis and return value analysis:
     - PURE_FUNCTION: No side effects, can be clean Python function
@@ -157,6 +165,7 @@ class ScopeStrategy(Enum):
     - REQUIRES_RUNTIME: Static analysis insufficient (indirection, XECUTE)
       Must use runtime.get_local()/set_local() pattern
     """
+
     PURE_FUNCTION = auto()
     FUNCTION_WITH_OUTPUTS = auto()
     SUBROUTINE = auto()

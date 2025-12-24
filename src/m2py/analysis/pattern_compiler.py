@@ -32,67 +32,68 @@ from typing import List, Optional, Tuple
 
 # Pattern code to regex character class mapping
 PATCODE_MAP = {
-    'A': r'[A-Za-z]',
-    'C': r'[\x00-\x1f\x7f]',
-    'E': r'.',  # Any character (need DOTALL for newlines)
-    'L': r'[a-z]',
-    'N': r'[0-9]',
-    'P': r'[ !"#$%&\'()*+,\-./:;<=>?@\[\\\]^_`{|}~]',
-    'U': r'[A-Z]',
+    "A": r"[A-Za-z]",
+    "C": r"[\x00-\x1f\x7f]",
+    "E": r".",  # Any character (need DOTALL for newlines)
+    "L": r"[a-z]",
+    "N": r"[0-9]",
+    "P": r'[ !"#$%&\'()*+,\-./:;<=>?@\[\\\]^_`{|}~]',
+    "U": r"[A-Z]",
 }
 
 # Character ranges for combining multiple patcodes
 # These are the raw ranges without the [] brackets
 PATCODE_RANGES = {
-    'A': r'A-Za-z',
-    'C': r'\x00-\x1f\x7f',
-    'E': None,  # Special case - matches everything
-    'L': r'a-z',
-    'N': r'0-9',
-    'P': r' !"#$%&\'()*+,\-./:;<=>?@\[\\\]^_`{|}~',
-    'U': r'A-Z',
+    "A": r"A-Za-z",
+    "C": r"\x00-\x1f\x7f",
+    "E": None,  # Special case - matches everything
+    "L": r"a-z",
+    "N": r"0-9",
+    "P": r' !"#$%&\'()*+,\-./:;<=>?@\[\\\]^_`{|}~',
+    "U": r"A-Z",
 }
 
 
 def _combine_patcodes(patcodes: List[str]) -> str:
     """Combine multiple patcodes into a single character class.
-    
+
     MUMPS patcodes can be combined (e.g., AN = alphanumeric).
     The combined class matches any character from any of the codes.
     """
     # If E (everything) is included, just return .
-    if 'E' in patcodes:
-        return r'.'
-    
+    if "E" in patcodes:
+        return r"."
+
     # Combine ranges
     ranges = []
     for code in patcodes:
         if code in PATCODE_RANGES and PATCODE_RANGES[code]:
             ranges.append(PATCODE_RANGES[code])
-    
+
     if not ranges:
-        return r'.'  # Fallback
-    
+        return r"."  # Fallback
+
     return f"[{''.join(ranges)}]"
 
 
 class PatternCompileError(Exception):
     """Error during pattern compilation."""
+
     pass
 
 
 def compile_pattern_to_regex(pattern: str) -> str:
     """Convert a MUMPS pattern to a Python regex pattern.
-    
+
     Args:
         pattern: MUMPS pattern string (e.g., "1A.N", '3N"-"4N')
-        
+
     Returns:
         Python regex pattern string for use with re.fullmatch()
-        
+
     Raises:
         PatternCompileError: If the pattern is invalid or unsupported
-        
+
     Examples:
         >>> compile_pattern_to_regex("1A.N")
         '[A-Za-z][0-9]*'
@@ -102,44 +103,44 @@ def compile_pattern_to_regex(pattern: str) -> str:
         '.*'
     """
     if not pattern:
-        return ''
-    
+        return ""
+
     result = []
     pos = 0
-    
+
     while pos < len(pattern):
         # Try to parse a pattern atom
         atom_regex, new_pos = _parse_pattern_atom(pattern, pos)
         result.append(atom_regex)
         pos = new_pos
-    
-    return ''.join(result)
+
+    return "".join(result)
 
 
 def _parse_pattern_atom(pattern: str, pos: int) -> Tuple[str, int]:
     """Parse a single pattern atom and return its regex equivalent.
-    
+
     Returns:
         Tuple of (regex_string, new_position)
     """
     start_pos = pos
-    
+
     # Parse the repeat count
     min_count, max_count, pos = _parse_repeat_count(pattern, pos)
-    
+
     if pos >= len(pattern):
         raise PatternCompileError(
             f"Pattern ends unexpectedly after repeat count at position {start_pos}"
         )
-    
+
     # Parse what follows: patcode, string literal, or alternation
     char = pattern[pos]
-    
+
     if char == '"':
         # String literal
         literal, pos = _parse_string_literal(pattern, pos)
         base_regex = re.escape(literal)
-    elif char == '(':
+    elif char == "(":
         # Alternation
         alt_regex, pos = _parse_alternation(pattern, pos)
         base_regex = alt_regex
@@ -150,7 +151,7 @@ def _parse_pattern_atom(pattern: str, pos: int) -> Tuple[str, int]:
         while pos < len(pattern) and pattern[pos].upper() in PATCODE_MAP:
             patcodes.append(pattern[pos].upper())
             pos += 1
-        
+
         if len(patcodes) == 1:
             base_regex = PATCODE_MAP[patcodes[0]]
         else:
@@ -160,16 +161,18 @@ def _parse_pattern_atom(pattern: str, pos: int) -> Tuple[str, int]:
         raise PatternCompileError(
             f"Unexpected character '{char}' at position {pos} in pattern"
         )
-    
+
     # Apply repeat count as regex quantifier
     quantified = _apply_quantifier(base_regex, min_count, max_count)
-    
+
     return quantified, pos
 
 
-def _parse_repeat_count(pattern: str, pos: int) -> Tuple[Optional[int], Optional[int], int]:
+def _parse_repeat_count(
+    pattern: str, pos: int
+) -> Tuple[Optional[int], Optional[int], int]:
     """Parse the repeat count portion of a pattern atom.
-    
+
     Returns:
         Tuple of (min_count, max_count, new_position)
         - (None, None) means exactly 1
@@ -178,24 +181,23 @@ def _parse_repeat_count(pattern: str, pos: int) -> Tuple[Optional[int], Optional
         - (n, m) means n to m
         - (n, n) means exactly n
     """
-    start = pos
-    
+
     # Collect first number if present
     first_num = ""
     while pos < len(pattern) and pattern[pos].isdigit():
         first_num += pattern[pos]
         pos += 1
-    
+
     # Check for dot (range indicator)
-    if pos < len(pattern) and pattern[pos] == '.':
+    if pos < len(pattern) and pattern[pos] == ".":
         pos += 1  # consume the dot
-        
+
         # Collect second number if present
         second_num = ""
         while pos < len(pattern) and pattern[pos].isdigit():
             second_num += pattern[pos]
             pos += 1
-        
+
         # Interpret the range
         if first_num and second_num:
             # n.m - range from n to m
@@ -220,16 +222,16 @@ def _parse_repeat_count(pattern: str, pos: int) -> Tuple[Optional[int], Optional
 
 def _parse_string_literal(pattern: str, pos: int) -> Tuple[str, int]:
     """Parse a quoted string literal from the pattern.
-    
+
     Returns:
         Tuple of (literal_value, new_position)
     """
     if pattern[pos] != '"':
         raise PatternCompileError(f"Expected '\"' at position {pos}")
-    
+
     pos += 1  # consume opening quote
     result = []
-    
+
     while pos < len(pattern):
         if pattern[pos] == '"':
             # Check for escaped quote ("")
@@ -239,40 +241,40 @@ def _parse_string_literal(pattern: str, pos: int) -> Tuple[str, int]:
             else:
                 # End of string
                 pos += 1
-                return ''.join(result), pos
+                return "".join(result), pos
         else:
             result.append(pattern[pos])
             pos += 1
-    
+
     raise PatternCompileError("Unterminated string literal in pattern")
 
 
 def _parse_alternation(pattern: str, pos: int) -> Tuple[str, int]:
     """Parse an alternation (alt1,alt2,...) from the pattern.
-    
+
     Returns:
         Tuple of (regex_alternation, new_position)
     """
-    if pattern[pos] != '(':
+    if pattern[pos] != "(":
         raise PatternCompileError(f"Expected '(' at position {pos}")
-    
+
     pos += 1  # consume opening paren
     alternatives = []
     current_alt = []
-    
+
     paren_depth = 0
     while pos < len(pattern):
         char = pattern[pos]
-        
-        if char == '(':
+
+        if char == "(":
             paren_depth += 1
             current_alt.append(char)
             pos += 1
-        elif char == ')':
+        elif char == ")":
             if paren_depth == 0:
                 # End of alternation
                 if current_alt:
-                    alt_pattern = ''.join(current_alt)
+                    alt_pattern = "".join(current_alt)
                     alternatives.append(compile_pattern_to_regex(alt_pattern))
                 pos += 1
                 break
@@ -280,9 +282,9 @@ def _parse_alternation(pattern: str, pos: int) -> Tuple[str, int]:
                 paren_depth -= 1
                 current_alt.append(char)
                 pos += 1
-        elif char == ',' and paren_depth == 0:
+        elif char == "," and paren_depth == 0:
             # Separator between alternatives
-            alt_pattern = ''.join(current_alt)
+            alt_pattern = "".join(current_alt)
             alternatives.append(compile_pattern_to_regex(alt_pattern))
             current_alt = []
             pos += 1
@@ -294,7 +296,12 @@ def _parse_alternation(pattern: str, pos: int) -> Tuple[str, int]:
                 current_alt.append(pattern[pos])
                 pos += 1
                 # Handle escaped quotes
-                if pos > 0 and pos < len(pattern) and pattern[pos-1] == '"' and pattern[pos] == '"':
+                if (
+                    pos > 0
+                    and pos < len(pattern)
+                    and pattern[pos - 1] == '"'
+                    and pattern[pos] == '"'
+                ):
                     current_alt.append(pattern[pos])
                     pos += 1
             if pos < len(pattern):
@@ -305,23 +312,25 @@ def _parse_alternation(pattern: str, pos: int) -> Tuple[str, int]:
             pos += 1
     else:
         raise PatternCompileError("Unterminated alternation in pattern")
-    
+
     if not alternatives:
-        return '', pos
+        return "", pos
     elif len(alternatives) == 1:
         return alternatives[0], pos
     else:
         return f"(?:{'|'.join(alternatives)})", pos
 
 
-def _apply_quantifier(base_regex: str, min_count: Optional[int], max_count: Optional[int]) -> str:
+def _apply_quantifier(
+    base_regex: str, min_count: Optional[int], max_count: Optional[int]
+) -> str:
     """Apply a repeat count as a regex quantifier.
-    
+
     Args:
         base_regex: The base regex pattern to quantify
         min_count: Minimum repetitions (None means unbounded below)
         max_count: Maximum repetitions (None means unbounded above)
-        
+
     Returns:
         The quantified regex pattern
     """

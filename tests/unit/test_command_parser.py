@@ -8,7 +8,6 @@ For semantic analysis (analyze_command), see test_command_analysis.py.
 For backward-compatible content-only API, see test_classifier.py.
 """
 
-import pytest
 from m2py.analysis.command_parser import (
     parse_command,
     parse_expression,
@@ -67,7 +66,7 @@ class TestParseLineContent:
         """Parse empty line - returns empty LineContent or empty string."""
         model = parse_line_content("")
         # Empty input may return empty string or LineContent with no commands
-        if model is not None and hasattr(model, 'commands'):
+        if model is not None and hasattr(model, "commands"):
             assert len(model.commands) == 0
             assert model.comment is None
         else:
@@ -85,7 +84,7 @@ class TestParseLineContent:
 
     def test_complex_line(self):
         """Parse complex line with multiple commands and comment."""
-        model = parse_line_content('S X=1 F I=1:1:10 W I,! Q  ;loop')
+        model = parse_line_content("S X=1 F I=1:1:10 W I,! Q  ;loop")
         assert model is not None
         assert len(model.commands) == 4
         assert model.comment is not None
@@ -203,7 +202,7 @@ class TestParseWriteCommand:
         """W ! parses newline"""
         stmt = parse_write_command("W !")
         assert stmt is not None
-        assert stmt.arguments[0]['type'] == 'newline'
+        assert stmt.arguments[0]["type"] == "newline"
 
 
 class TestParseQuitCommand:
@@ -242,11 +241,11 @@ class TestParseIfCommand:
 
 class TestArgumentlessIfFollowedByCommand:
     """Test argumentless IF followed by another command (BUG-011 regression).
-    
+
     In MUMPS, 'I  S X=1' (with TWO spaces after I) means:
     - Argumentless IF (checks $TEST)
     - Followed by SET command
-    
+
     Single space 'I S' means IF with condition S (variable).
     """
 
@@ -404,11 +403,11 @@ class TestParseForCommandToAsg:
         fors = extract_for_commands("F I=1:2:10")
         assert len(fors) == 1
         stmt = parse_for_command_to_asg(fors[0])
-        
+
         assert stmt.loop_var == "I"
         assert stmt.loop_type == ForLoopType.BOUNDED
         assert len(stmt.parameters) == 1
-        
+
         param = stmt.parameters[0]
         assert param.param_type == ForParamType.RANGE
         assert param.start.value == 1
@@ -420,7 +419,7 @@ class TestParseForCommandToAsg:
         fors = extract_for_commands('F I="A","B","C"')
         assert len(fors) == 1
         stmt = parse_for_command_to_asg(fors[0])
-        
+
         assert len(stmt.parameters) == 3
         for p in stmt.parameters:
             assert p.param_type == ForParamType.VALUE
@@ -430,7 +429,7 @@ class TestParseForCommandToAsg:
         fors = extract_for_commands("F I=1:1")
         assert len(fors) == 1
         stmt = parse_for_command_to_asg(fors[0])
-        
+
         assert stmt.loop_type == ForLoopType.OPEN_ENDED
         assert stmt.parameters[0].param_type == ForParamType.OPEN_RANGE
 
@@ -468,77 +467,78 @@ class TestDetectQuitAfterFor:
 # Extract Function Error Path Tests
 # =============================================================================
 
+
 class TestExtractFunctionErrorPaths:
     """Test error paths in extract_*_from_line_textx functions."""
-    
+
     def test_extract_for_no_for_command(self):
         """extract_for_from_line_textx returns None when no FOR present."""
         from m2py.analysis.command_parser import extract_for_from_line_textx
-        
+
         result = extract_for_from_line_textx("S X=1")
         assert result is None
 
     def test_extract_for_empty_string(self):
         """extract_for_from_line_textx handles empty string."""
         from m2py.analysis.command_parser import extract_for_from_line_textx
-        
+
         result = extract_for_from_line_textx("")
         assert result is None
 
     def test_extract_goto_no_goto_command(self):
         """extract_goto_from_line_textx returns None when no GOTO present."""
         from m2py.analysis.command_parser import extract_goto_from_line_textx
-        
+
         result = extract_goto_from_line_textx("W !,X")
         assert result is None
 
     def test_extract_goto_empty_string(self):
         """extract_goto_from_line_textx handles empty string."""
         from m2py.analysis.command_parser import extract_goto_from_line_textx
-        
+
         result = extract_goto_from_line_textx("")
         assert result is None
 
     def test_extract_set_no_set_command(self):
         """extract_set_from_line_textx returns None when no SET present."""
         from m2py.analysis.command_parser import extract_set_from_line_textx
-        
+
         result = extract_set_from_line_textx("W !,X")
         assert result is None
 
     def test_extract_quit_no_quit_command(self):
         """extract_quit_from_line_textx returns None when no QUIT present."""
         from m2py.analysis.command_parser import extract_quit_from_line_textx
-        
+
         result = extract_quit_from_line_textx("S X=1")
         assert result is None
 
     def test_extract_if_no_if_command(self):
         """extract_if_from_line_textx returns None when no IF present."""
         from m2py.analysis.command_parser import extract_if_from_line_textx
-        
+
         result = extract_if_from_line_textx("S X=1")
         assert result is None
 
     def test_extract_new_no_new_command(self):
         """extract_new_from_line_textx returns None when no NEW present."""
         from m2py.analysis.command_parser import extract_new_from_line_textx
-        
+
         result = extract_new_from_line_textx("S X=1")
         assert result is None
 
     def test_extract_for_with_incomplete_syntax(self):
         """extract_for_from_line_textx handles incomplete FOR gracefully."""
         from m2py.analysis.command_parser import extract_for_from_line_textx
-        
+
         # Incomplete FOR syntax - should not crash
-        result = extract_for_from_line_textx("F")
+        _result = extract_for_from_line_textx("F")  # Result intentionally unused
         # May return None or a valid result - key is no exception
 
     def test_extract_goto_with_valid_syntax(self):
         """extract_goto_from_line_textx extracts correct info."""
         from m2py.analysis.command_parser import extract_goto_from_line_textx
-        
+
         result = extract_goto_from_line_textx("G LABEL^ROUTINE")
         assert result is not None
         label, routine, offset = result

@@ -15,10 +15,7 @@ from textx import metamodel_from_file
 def command_metamodel():
     """Load the command grammar metamodel."""
     grammar_dir = Path(__file__).parent.parent.parent / "src" / "m2py" / "grammar"
-    return metamodel_from_file(
-        grammar_dir / "commands.tx",
-        skipws=False
-    )
+    return metamodel_from_file(grammar_dir / "commands.tx", skipws=False)
 
 
 class TestSetCommand:
@@ -87,12 +84,12 @@ class TestSetCommand:
         """S ^V1(1)=1,^(2)=2 - mix of global and naked global (T526 fix)."""
         model = command_metamodel.model_from_str("S ^V1(1)=1,^(2)=2", "SetCommand")
         assert len(model.assignments) == 2
-        
+
         # First is GlobalVariable
         target1 = model.assignments[0].targets
         assert target1.__class__.__name__ == "GlobalVariable"
         assert target1.name == "V1"
-        
+
         # Second is NakedGlobal
         target2 = model.assignments[1].targets
         assert target2.__class__.__name__ == "NakedGlobal"
@@ -274,14 +271,14 @@ class TestForCommand:
         """F (infinite loop)"""
         model = command_metamodel.model_from_str("F", "ForCommand")
         assert model.var is None
-    
+
     def test_subscripted_for_var(self, command_metamodel):
         """F J(1,2,3)=1:1:3 - subscripted loop variable (BUG-003)"""
         model = command_metamodel.model_from_str("F J(1,2,3)=1:1:3", "ForCommand")
         assert model.var.name == "J"
         assert len(model.var.subscripts.args) == 3
         assert len(model.params) == 1
-    
+
     def test_single_subscripted_for_var(self, command_metamodel):
         """F ARR(I)=1:1:10 - single subscript on loop variable"""
         model = command_metamodel.model_from_str("F ARR(I)=1:1:10", "ForCommand")
@@ -313,14 +310,14 @@ class TestGotoCommand:
         """G:X LABEL"""
         model = command_metamodel.model_from_str("G:X LABEL", "GotoCommand")
         assert model.postcond is not None
-    
+
     def test_goto_arg_postcondition(self, command_metamodel):
         """G ABC:X=1 - postcondition on target argument (BUG-004)"""
         model = command_metamodel.model_from_str("G ABC:X=1", "GotoCommand")
         assert model.postcond is None  # Command postcond is None
         assert model.targets[0].postcond is not None  # Target postcond is set
         assert model.targets[0].label.label == "ABC"
-    
+
     def test_goto_multiple_arg_postconditions(self, command_metamodel):
         """G ABC:X=1,DEF:Y=2 - multiple targets with postconditions"""
         model = command_metamodel.model_from_str("G ABC:X=1,DEF:Y=2", "GotoCommand")
@@ -353,7 +350,7 @@ class TestDoCommand:
         """D (block start)"""
         model = command_metamodel.model_from_str("D", "DoCommand")
         assert model.targets is None or len(model.targets) == 0
-    
+
     def test_do_arg_postcondition(self, command_metamodel):
         """D LABEL:X=1 - postcondition on target argument (BUG-004)"""
         model = command_metamodel.model_from_str("D LABEL:X=1", "DoCommand")
@@ -463,7 +460,7 @@ class TestNewKillCommands:
         assert len(model.args) == 1
         assert model.args[0].exclusive  # True-ish when exclusive
         # textX uses 'except' attribute name from grammar
-        assert len(getattr(model.args[0], 'except')) == 2
+        assert len(getattr(model.args[0], "except")) == 2
 
     def test_multiple_exclusive_groups(self, command_metamodel):
         """K (X,Y,Z),(X,W) - multiple exclusive groups (intersection)"""
@@ -471,15 +468,15 @@ class TestNewKillCommands:
         assert len(model.args) == 2
         assert model.args[0].exclusive
         assert model.args[1].exclusive
-        assert getattr(model.args[0], 'except') == ["X", "Y", "Z"]
-        assert getattr(model.args[1], 'except') == ["X", "W"]
+        assert getattr(model.args[0], "except") == ["X", "Y", "Z"]
+        assert getattr(model.args[1], "except") == ["X", "W"]
 
     def test_mixed_exclusive_selective(self, command_metamodel):
         """K (X,W),Z - mixed exclusive and selective"""
         model = command_metamodel.model_from_str("K (X,W),Z", "KillCommand")
         assert len(model.args) == 2
         assert model.args[0].exclusive
-        assert getattr(model.args[0], 'except') == ["X", "W"]
+        assert getattr(model.args[0], "except") == ["X", "W"]
         assert model.args[1].target is not None
 
 
@@ -616,14 +613,14 @@ class TestPostconditions:
 
 class TestIndirection:
     """Tests for indirection (@) parsing across all commands.
-    
+
     All commands use the same Indirection rule from expressions.tx,
     which handles:
     - Single indirection: @VAR
     - Nested indirection: @@VAR (parsed as @(@VAR))
     - Expression indirection: @(expr)
     - Subscripted indirection: @VAR(sub1,sub2)
-    
+
     DO, GOTO, and LOCK use IndirectChain for additional features
     like @label^routine patterns.
     """
@@ -690,7 +687,7 @@ class TestIndirection:
         assert len(model.assignments) == 1
         # This uses SetIndirection
         arg = model.assignments[0]
-        assert hasattr(arg, 'indirect') and arg.indirect is not None
+        assert hasattr(arg, "indirect") and arg.indirect is not None
 
     # --- WRITE indirection (via Expr wrapper) ---
     def test_write_indirection(self, command_metamodel):

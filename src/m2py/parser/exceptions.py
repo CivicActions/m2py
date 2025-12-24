@@ -8,10 +8,10 @@ from typing import Optional
 
 class MUMPSSyntaxError(Exception):
     """Exception raised when parsing encounters invalid MUMPS syntax.
-    
+
     Provides detailed location information for error reporting.
     """
-    
+
     def __init__(
         self,
         message: str,
@@ -21,7 +21,7 @@ class MUMPSSyntaxError(Exception):
         source_line: Optional[str] = None,
     ):
         """Initialize a syntax error with location information.
-        
+
         Args:
             message: Description of the syntax error
             line: Line number where error occurred (1-based)
@@ -34,7 +34,7 @@ class MUMPSSyntaxError(Exception):
         self.column = column
         self.source_file = source_file
         self.source_line = source_line
-        
+
         # Build full error message
         parts = []
         if source_file:
@@ -43,13 +43,13 @@ class MUMPSSyntaxError(Exception):
             parts.append(f"line {line}")
         if column is not None:
             parts.append(f"column {column}")
-        
+
         location = ":".join(parts) if parts else "unknown location"
         full_message = f"{location}: {message}"
-        
+
         if source_line:
             full_message += f"\n  {source_line}"
             if column is not None and column > 0:
                 full_message += f"\n  {' ' * (column - 1)}^"
-        
+
         super().__init__(full_message)

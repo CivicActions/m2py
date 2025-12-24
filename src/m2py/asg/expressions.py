@@ -28,12 +28,12 @@ if TYPE_CHECKING:
 @dataclass
 class MExpr(ASGElement):
     """Base class for all expressions.
-    
+
     Expressions are the fundamental building blocks that produce values
     in MUMPS. They can be literals, variable references, operations,
     function calls, or special forms like pattern matching.
     """
-    
+
     # Type annotation (may be computed during analysis)
     result_type: Optional[str] = None  # "string", "number", "unknown"
 
@@ -42,16 +42,17 @@ class MExpr(ASGElement):
 # Literals
 # =============================================================================
 
+
 @dataclass
 class MLiteral(MExpr):
     """Literal value expression.
-    
+
     Represents a constant value in the source code:
     - String literals: "hello"
     - Integer literals: 42
     - Decimal literals: 3.14
     """
-    
+
     value: Any = None
     literal_type: LiteralType = LiteralType.STRING
     raw_value: Optional[str] = None  # Original text representation
@@ -61,14 +62,15 @@ class MLiteral(MExpr):
 # Variable References
 # =============================================================================
 
+
 @dataclass
 class MVariable(MExpr):
     """Local variable reference.
-    
+
     Represents a reference to a local variable, optionally with subscripts
     for array access: X, NAME, DATA(1,2,3)
     """
-    
+
     name: str = ""
     subscripts: List["MExpr"] = field(default_factory=list)
 
@@ -76,11 +78,11 @@ class MVariable(MExpr):
 @dataclass
 class MGlobal(MExpr):
     """Global variable reference.
-    
+
     Represents a reference to a global (persistent) variable:
     ^GLOBAL, ^DATA(1,2,3)
     """
-    
+
     name: str = ""
     subscripts: List["MExpr"] = field(default_factory=list)
 
@@ -88,12 +90,12 @@ class MGlobal(MExpr):
 @dataclass
 class MNakedGlobal(MExpr):
     """Naked global reference.
-    
+
     Represents a reference using the naked indicator ^(subscripts),
     which uses the last global context. This is a MUMPS optimization
     that requires runtime tracking.
     """
-    
+
     subscripts: List["MExpr"] = field(default_factory=list)
     requires_runtime_tracking: bool = True
 
@@ -102,10 +104,11 @@ class MNakedGlobal(MExpr):
 # Operations
 # =============================================================================
 
+
 @dataclass
 class MBinaryOp(MExpr):
     """Binary operation expression.
-    
+
     Represents operations with two operands:
     - Arithmetic: +, -, *, /, \\ (integer divide), # (modulo), ** (power)
     - Comparison: =, <, >, ], ]] (sorts after), [ (contains)
@@ -113,7 +116,7 @@ class MBinaryOp(MExpr):
     - String: _ (concatenation)
     - Pattern: ? (pattern match)
     """
-    
+
     operator: str = ""
     left: Optional["MExpr"] = None
     right: Optional["MExpr"] = None
@@ -122,12 +125,12 @@ class MBinaryOp(MExpr):
 @dataclass
 class MUnaryOp(MExpr):
     """Unary operation expression.
-    
+
     Represents operations with a single operand:
     - Numeric: + (positive), - (negative)
     - Logical: ' (NOT)
     """
-    
+
     operator: str = ""
     operand: Optional["MExpr"] = None
 
@@ -136,14 +139,15 @@ class MUnaryOp(MExpr):
 # Functions
 # =============================================================================
 
+
 @dataclass
 class MIntrinsicFunction(MExpr):
     """Intrinsic (built-in) function call.
-    
+
     Represents calls to MUMPS built-in functions:
     $LENGTH(str), $PIECE(str,delim,pos), $ORDER(arr), etc.
     """
-    
+
     name: str = ""  # Function name without $
     arguments: List["MExpr"] = field(default_factory=list)
 
@@ -151,11 +155,11 @@ class MIntrinsicFunction(MExpr):
 @dataclass
 class MExtrinsicFunction(MExpr):
     """Extrinsic (user-defined) function call.
-    
+
     Represents calls to user-defined functions:
     $$FUNC, $$FUNC^ROUTINE, $$FUNC(args)
     """
-    
+
     target: Optional["MCall"] = None
     arguments: List["MExpr"] = field(default_factory=list)
 
@@ -164,20 +168,21 @@ class MExtrinsicFunction(MExpr):
 # Special Expressions
 # =============================================================================
 
+
 @dataclass
 class MPatternMatch(MExpr):
     """Pattern match expression.
-    
+
     Represents pattern matching using the ? operator:
     X?1A.N, X?@pattern (indirect pattern)
     Also supports negated pattern match: X'?1A.N
     """
-    
+
     subject: Optional["MExpr"] = None
     pattern: str = ""  # Raw pattern string for direct patterns
     pattern_indirect: Optional["MExpr"] = None  # For indirect patterns ?@X
     operator: str = "?"  # Either "?" or "'?" for negated match
-    
+
     # Pre-compiled regex for code generation (None if indirect pattern)
     compiled_regex: Optional[str] = None
 
@@ -185,7 +190,7 @@ class MPatternMatch(MExpr):
 @dataclass
 class MIndirection(MExpr):
     """Indirection expression.
-    
+
     Represents indirect references using @:
     - Name indirection: @X (where X contains a variable name)
     - Subscript indirection: Y(@X) (X provides subscript)
@@ -193,17 +198,17 @@ class MIndirection(MExpr):
     - Pattern indirection: Y?@X (X contains pattern)
     - Variable name indirection: @X@(1,2) (X evaluates to variable name, append subscripts)
     """
-    
+
     expression: Optional["MExpr"] = None
     indirection_type: IndirectionType = IndirectionType.UNKNOWN
-    
+
     # Direct subscripts for @X(1,2) form
     subscripts: Optional[list] = None
-    
+
     # Name indirection subscripts for @X@(1,2) form
     # Each entry is a list of subscript expressions
     name_indirection_subscripts: Optional[list] = None
-    
+
     # Analysis flags for static resolution
     can_resolve_statically: bool = False
     resolved_value: Optional[str] = None
@@ -212,17 +217,17 @@ class MIndirection(MExpr):
 @dataclass
 class MFormatControl(MExpr):
     """Format control expression for WRITE/READ commands.
-    
+
     Represents I/O format controls:
     - ! (newline) - Output line feed
-    - # (formfeed) - Output form feed/page break  
+    - # (formfeed) - Output form feed/page break
     - ?n (tab) - Tab to column n
     - *n (charcode) - Output character with ASCII code n
-    
+
     For tab (?n) and charcode (*n), the expression field contains
     the column number or character code respectively.
     """
-    
+
     control_type: "FormatControlType" = None  # Type of format control
     expression: Optional["MExpr"] = None  # Column/charcode expr for ?n/*n
 
@@ -230,11 +235,11 @@ class MFormatControl(MExpr):
 @dataclass
 class MSpecialVariable(MExpr):
     """Special variable reference.
-    
+
     Represents intrinsic special variables (ISVs):
     $TEST, $HOROLOG, $IO, $JOB, $PIECE, etc.
     """
-    
+
     name: str = ""  # Variable name without $
 
 
@@ -242,32 +247,35 @@ class MSpecialVariable(MExpr):
 # Parameter Passing Support
 # =============================================================================
 
+
 @dataclass
 class MActualParameter(ASGElement):
     """Represents an actual parameter in a call (DO, extrinsic function).
-    
+
     Tracks the passing mode per MUMPS spec (MDC 8.1.7):
     - BY_VALUE: Expression evaluated and passed (D SUB(X+1))
     - BY_REFERENCE: Variable reference with . prefix (D SUB(.X))
     - OMITTED: Empty parameter position (D SUB(,Y))
-    
+
     For BY_REFERENCE, the variable_name field contains the actual variable
     name that will be aliased to the formal parameter.
-    
+
     Example:
         D CALC(A+1, .X, , Y)
         -> [BY_VALUE(A+1), BY_REFERENCE(X), OMITTED, BY_VALUE(Y)]
     """
-    
+
     passing_mode: PassingMode = PassingMode.BY_VALUE
-    expression: Optional[MExpr] = None  # The expression (for BY_VALUE) or variable (for BY_REFERENCE)
+    expression: Optional[MExpr] = (
+        None  # The expression (for BY_VALUE) or variable (for BY_REFERENCE)
+    )
     variable_name: Optional[str] = None  # For BY_REFERENCE: the actual variable name
-    
+
     @property
     def is_byref(self) -> bool:
         """Check if this parameter is passed by reference."""
         return self.passing_mode == PassingMode.BY_REFERENCE
-    
+
     @property
     def is_omitted(self) -> bool:
         """Check if this parameter position is omitted."""
