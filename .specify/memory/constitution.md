@@ -38,7 +38,7 @@ The primary goal is 100% correct translation of MUMPS logic to Python. Idiomatic
 
 - Generated code MUST produce identical output to original MUMPS execution
 - MUMPS edge cases MUST be handled according to ANSI MUMPS standards
-- When uncertain, consult `mumps-reference/` before making assumptions
+- When uncertain, consult the MUMPS specification at https://71.174.62.16/Demo/AnnoStd
 - Mark uncertain translations explicitly for later review
 
 ### II. Test-Driven Validation

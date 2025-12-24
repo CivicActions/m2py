@@ -3,7 +3,7 @@
 MUMPS allows comma-separated conditions in IF which act as AND:
     IF cond1,cond2  is equivalent to  IF cond1 IF cond2
 
-Reference: mumps-reference/1977__a108035.md
+Reference: https://71.174.62.16/Demo/AnnoStd (MDC 8.1.35 IF Command)
 "IF with n arguments is equivalent in execution to n IFs, each
 with one argument, with the respective arguments in the same order."
 """

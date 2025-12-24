@@ -31,7 +31,7 @@ HEADER_TEMPLATE = """# MUGJ Validation Checklist - {group_name}
    - All labels, commands, expressions captured correctly
    - Postconditions, control flow, function calls properly represented
 
-4. Cross-reference with `mumps-reference/` documentation as needed
+4. Cross-reference with MUMPS specification at https://71.174.62.16/Demo/AnnoStd as needed
 
 5. Evaluate ASG from Python code generation perspective:
    - Does it capture the right semantic detail level?

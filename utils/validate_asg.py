@@ -505,7 +505,7 @@ TASK 2: Evaluate Python Code Generation Readiness
   □ Are there ambiguities that need clarification?
   □ Missing semantic information that affects correctness?
 
-CROSS-REFERENCE: Check mumps-reference/ documentation as needed
+CROSS-REFERENCE: Check MUMPS specification at https://71.174.62.16/Demo/AnnoStd as needed
   - Operator precedence and behavior
   - Intrinsic function semantics
   - Special variable meanings
