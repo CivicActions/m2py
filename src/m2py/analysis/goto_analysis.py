@@ -10,9 +10,11 @@ and do not perform any text parsing.
 """
 
 from typing import List
-from ..asg.elements import MRoutine, MLabel, MScope
-from ..asg.statements import MGotoStatement, MForStatement
+
+from ..asg.elements import MLabel, MRoutine, MScope
 from ..asg.enums import GotoType
+from ..asg.statements import MForStatement, MGotoStatement
+from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
 
 def classify_gotos(routine: MRoutine) -> None:
@@ -82,34 +84,38 @@ def _classify_gotos_in_scope(
                     routine,
                     enclosing_fors + [stmt],
                 )
-        # Recurse into other nested scopes
-        elif hasattr(stmt, "then_scope") and stmt.then_scope:
-            _classify_gotos_in_scope(
-                stmt.then_scope,
-                current_label_idx,
-                current_label,
-                label_positions,
-                routine,
-                enclosing_fors,
-            )
-        elif hasattr(stmt, "else_scope") and stmt.else_scope:
-            _classify_gotos_in_scope(
-                stmt.else_scope,
-                current_label_idx,
-                current_label,
-                label_positions,
-                routine,
-                enclosing_fors,
-            )
-        elif hasattr(stmt, "body") and stmt.body:
-            _classify_gotos_in_scope(
-                stmt.body,
-                current_label_idx,
-                current_label,
-                label_positions,
-                routine,
-                enclosing_fors,
-            )
+        # Recurse into other nested scopes using type-safe helpers
+        else:
+            then_scope = get_then_scope(stmt)
+            if then_scope is not None:
+                _classify_gotos_in_scope(
+                    then_scope,
+                    current_label_idx,
+                    current_label,
+                    label_positions,
+                    routine,
+                    enclosing_fors,
+                )
+            else_scope = get_else_scope(stmt)
+            if else_scope is not None:
+                _classify_gotos_in_scope(
+                    else_scope,
+                    current_label_idx,
+                    current_label,
+                    label_positions,
+                    routine,
+                    enclosing_fors,
+                )
+            body = get_body_scope(stmt)
+            if body is not None:
+                _classify_gotos_in_scope(
+                    body,
+                    current_label_idx,
+                    current_label,
+                    label_positions,
+                    routine,
+                    enclosing_fors,
+                )
 
 
 def _classify_single_goto(

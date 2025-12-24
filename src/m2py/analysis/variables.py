@@ -44,17 +44,19 @@ function signatures.
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
-from ..asg.elements import MRoutine, MLabel, MCall
+
+from ..asg.elements import MCall, MLabel, MRoutine
+from ..asg.expressions import MVariable
 from ..asg.statements import (
-    MStatement,
-    MSetStatement,
-    MNewStatement,
-    MKillStatement,
+    MDoStatement,
     MForStatement,
     MIfStatement,
-    MDoStatement,
-    MWriteStatement,
+    MKillStatement,
+    MNewStatement,
     MQuitStatement,
+    MSetStatement,
+    MStatement,
+    MWriteStatement,
     MXecuteStatement,
 )
 from ..asg.enums import PassingMode, ScopeStrategy
@@ -478,7 +480,7 @@ def _extract_statement_variables(
             # loop_var may be a string or an MVariable
             if isinstance(stmt.loop_var, str):
                 writes.add(stmt.loop_var)
-            elif hasattr(stmt.loop_var, "name") and isinstance(stmt.loop_var.name, str):
+            elif isinstance(stmt.loop_var, MVariable):
                 name = stmt.loop_var.name
                 if not name.startswith("^") and not name.startswith("$"):
                     writes.add(name)
@@ -591,18 +593,23 @@ def _extract_expression_variables(expr) -> Set[str]:
 
     # Check for nested expressions in lists
     # Note: FunctionArgs is an object with an 'args' list attribute, not a list itself
-    if hasattr(expr, "args") and expr.args:
-        args = expr.args
-        # Handle FunctionArgs object which has an inner 'args' list
-        if hasattr(args, "args"):
-            args = args.args
-        if isinstance(args, list):
-            for arg in args:
-                vars_found.update(_extract_expression_variables(arg))
+    # Use isinstance checks for type-safe access
+    if isinstance(expr, (MIntrinsicFunction, MExtrinsicFunction)):
+        args = getattr(expr, "args", None)
+        if args is not None:
+            # Handle FunctionArgs object which has an inner 'args' list
+            if hasattr(args, "args"):
+                args = args.args
+            if isinstance(args, list):
+                for arg in args:
+                    vars_found.update(_extract_expression_variables(arg))
 
-    if hasattr(expr, "arguments") and expr.arguments:
-        for arg in expr.arguments:
-            vars_found.update(_extract_expression_variables(arg))
+    # Check for arguments attribute on MCall-like objects
+    if hasattr(expr, "arguments"):
+        arguments = getattr(expr, "arguments", None)
+        if isinstance(arguments, list):
+            for arg in arguments:
+                vars_found.update(_extract_expression_variables(arg))
 
     return vars_found
 

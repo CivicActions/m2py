@@ -534,13 +534,14 @@ def parse_set_command(set_text: str) -> Optional[MSetStatement]:
             # SingleTarget
             targets.append(convert_to_variable(assign.targets))
 
-        # Get value expression as string for now
-        # Full expression conversion would be more complex
+        # Get value expression and convert to ASG node
+        value_expr = None
         if assign.value:
             value_str = _expr_to_string(assign.value)
+            value_expr = _expr_to_asg_literal(value_str)
 
         for target in targets:
-            assignment = MAssignment(target=target, value=value_str)
+            assignment = MAssignment(target=target, value=value_expr)
             statement.assignments.append(assignment)
 
     return statement
@@ -619,10 +620,12 @@ def parse_quit_command(quit_text: str) -> Optional[MQuitStatement]:
     statement = MQuitStatement()
 
     if model.postcond:
-        statement.postcondition = _expr_to_string(model.postcond.condition)
+        statement.postcondition = _expr_to_asg_literal(
+            _expr_to_string(model.postcond.condition)
+        )
 
     if model.value:
-        statement.return_value = _expr_to_string(model.value)
+        statement.return_value = _expr_to_asg_literal(_expr_to_string(model.value))
 
     return statement
 
@@ -646,7 +649,9 @@ def parse_if_command(if_text: str) -> Optional[MIfStatement]:
 
     # Handle new grammar: conditions is a list
     if hasattr(model, "conditions") and model.conditions:
-        statement.conditions = [_expr_to_string(c) for c in model.conditions]
+        statement.conditions = [
+            _expr_to_asg_literal(_expr_to_string(c)) for c in model.conditions
+        ]
         # For backwards compatibility, also set single condition if only one
         if len(statement.conditions) == 1:
             statement.condition = statement.conditions[0]
@@ -703,7 +708,9 @@ def parse_goto_command(goto_text: str) -> Optional[MGotoStatement]:
 
     # Handle command-level postcondition (e.g., G:condition LABEL)
     if hasattr(model, "postcond") and model.postcond:
-        statement.postcondition = _expr_to_string(model.postcond.condition)
+        statement.postcondition = _expr_to_asg_literal(
+            _expr_to_string(model.postcond.condition)
+        )
 
     if model.targets:
         for target in model.targets:

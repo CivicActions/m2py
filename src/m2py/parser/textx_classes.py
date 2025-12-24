@@ -256,7 +256,9 @@ class ExtrinsicFunction(MExtrinsicFunction):
     Grammar: ExtrinsicFunction: '$$' label=VARNAME ('^' routine=VARNAME)? args=FunctionArgs?;
     """
 
-    def __init__(self, parent=None, label: str = "", routine: str = None, args=None):
+    def __init__(
+        self, parent=None, label: str = "", routine: Optional[str] = None, args=None
+    ):
         from m2py.asg.elements import MCall
 
         # Create an MCall target

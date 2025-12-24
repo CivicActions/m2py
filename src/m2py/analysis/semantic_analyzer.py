@@ -630,15 +630,20 @@ class SemanticAnalyzer:
 
         # Handle new grammar: conditions+=Expr[/,/]
         if hasattr(cmd, "conditions") and cmd.conditions:
-            analyzed_conditions = [self.analyze(c, stmt) for c in cmd.conditions]
-            stmt.conditions = analyzed_conditions
+            analyzed_conditions = [
+                self.analyze(c, stmt) for c in cmd.conditions if c is not None
+            ]
+            # Filter out any None results
+            stmt.conditions = [c for c in analyzed_conditions if c is not None]
             # For backwards compatibility, also set single condition if only one
-            if len(analyzed_conditions) == 1:
-                stmt.condition = analyzed_conditions[0]
+            if len(stmt.conditions) == 1:
+                stmt.condition = stmt.conditions[0]
         # Handle old grammar for backwards compatibility: condition=Expr
         elif hasattr(cmd, "condition") and cmd.condition:
-            stmt.condition = self.analyze(cmd.condition, stmt)
-            stmt.conditions = [stmt.condition]
+            analyzed = self.analyze(cmd.condition, stmt)
+            if analyzed is not None:
+                stmt.condition = analyzed
+                stmt.conditions = [analyzed]
 
         return stmt
 

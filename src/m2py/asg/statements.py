@@ -39,6 +39,9 @@ class MStatement(ASGElement):
     # Analysis flags
     is_unreachable: bool = False
 
+    # Parser internal: dot nesting level (used during DO block structuring)
+    _dot_level: int = field(default=0, repr=False)
+
 
 # =============================================================================
 # Assignment Statements
@@ -103,7 +106,9 @@ class MReadTarget:
     - R X#5:10 -> MReadTarget(variable=MVariable('X'), fixed_length=MLiteral(5), timeout=MLiteral(10))
     """
 
-    variable: "MExpr" = None  # The variable to read into (MVariable or MGlobal)
+    variable: Optional["MExpr"] = (
+        None  # The variable to read into (MVariable or MGlobal)
+    )
     is_char_read: bool = False  # True for *VAR (single character read)
     timeout: Optional["MExpr"] = None  # Optional timeout expression
     fixed_length: Optional["MExpr"] = (

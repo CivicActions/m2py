@@ -323,7 +323,7 @@ class TestQuitDetection:
 class TestParseSetStatement:
     """Test parse_set_statement function (T041).
 
-    NOTE: The textX-based parser returns strings for values, not MLiteral objects.
+    NOTE: The textX-based parser returns MLiteral objects for values.
     """
 
     def test_parse_simple_set(self):
@@ -333,8 +333,8 @@ class TestParseSetStatement:
         assert isinstance(stmt, MSetStatement)
         assert len(stmt.assignments) == 1
         assert stmt.assignments[0].target.name == "X"
-        # New API returns string values
-        assert stmt.assignments[0].value == "1"
+        # New API returns MLiteral values
+        assert stmt.assignments[0].value.raw_value == "1"
 
     def test_parse_set_string(self):
         """Parse SET X="Hello" into MSetStatement."""
@@ -342,8 +342,8 @@ class TestParseSetStatement:
 
         assert len(stmt.assignments) == 1
         assert stmt.assignments[0].target.name == "X"
-        # New API returns raw string including quotes
-        assert "Hello" in str(stmt.assignments[0].value)
+        # New API returns MLiteral with raw_value
+        assert "Hello" in str(stmt.assignments[0].value.raw_value)
 
     def test_parse_set_multiple_assignments(self):
         """Parse SET A=1,B=2,C=3 into MSetStatement."""
@@ -367,7 +367,7 @@ class TestParseSetStatement:
 
         assert len(stmt.assignments) == 1
         assert stmt.assignments[0].target.name == "X"
-        # Value is stored as literal (expression string for now)
+        # Value is stored as MLiteral (expression string for now)
         assert stmt.assignments[0].value is not None
 
 

@@ -6,38 +6,40 @@ produces an Abstract Semantic Graph (ASG).
 
 import json
 from pathlib import Path
-from typing import Optional, Union, List
+from typing import List, Optional, Union
 
 from textx import metamodel_from_file
 
-from m2py.asg import MRoutine, MLabel, MScope
-from m2py.asg.enums import ForLoopType
-from m2py.asg.statements import (
-    MForStatement,
-    MIfStatement,
-    MElseStatement,
-    MDoStatement,
-    MStatement,
-)
-from m2py.parser.exceptions import MUMPSSyntaxError
-from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.analysis.command_parser import (
-    parse_line_content,
-    parse_commands_from_line,
-    extract_for_commands,
     classify_for_from_textx,
-    parse_for_command_to_asg,
     detect_quit_after_for,
+    extract_for_commands,
+    parse_commands_from_line,
+    parse_for_command_to_asg,
+    parse_line_content,
 )
-from m2py.analysis.resolver import resolve_references as _resolve_references
-from m2py.analysis.goto_analysis import classify_gotos as _classify_gotos
 from m2py.analysis.for_analysis import analyze_for_loops as _analyze_for_loops
+from m2py.analysis.goto_analysis import classify_gotos as _classify_gotos
+from m2py.analysis.resolver import resolve_references as _resolve_references
+from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.analysis.variables import (
+    FunctionSignature,
+    ScopeVariables,
     analyze_variables as _analyze_variables,
     compute_transitive_inputs as _compute_transitive_inputs,
-    ScopeVariables,
-    FunctionSignature,
 )
+from m2py.asg import MLabel, MRoutine, MScope
+from m2py.asg.enums import ForLoopType
+from m2py.asg.statements import (
+    MDoBlockStatement,
+    MDoStatement,
+    MElseStatement,
+    MForStatement,
+    MIfStatement,
+    MStatement,
+)
+from m2py.asg.type_helpers import get_body_scope
+from m2py.parser.exceptions import MUMPSSyntaxError
 
 
 def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MStatement]:
@@ -307,15 +309,18 @@ def _mark_unreachable_statements(statements: List[MStatement]) -> None:
             _mark_unreachable_statements(stmt.then_scope.statements)
         if isinstance(stmt, MElseStatement) and stmt.body and stmt.body.statements:
             _mark_unreachable_statements(stmt.body.statements)
+        if isinstance(stmt, MDoBlockStatement) and stmt.body and stmt.body.statements:
+            _mark_unreachable_statements(stmt.body.statements)
+        # Generic catch using type helper
+        body = get_body_scope(stmt)
         if (
-            hasattr(stmt, "body")
-            and stmt.body
-            and hasattr(stmt.body, "statements")
-            and stmt.body.statements
+            body is not None
+            and body.statements
+            and not isinstance(
+                stmt, (MForStatement, MIfStatement, MElseStatement, MDoBlockStatement)
+            )
         ):
-            # Catch MDoBlockStatement and others
-            if not isinstance(stmt, (MForStatement, MIfStatement, MElseStatement)):
-                _mark_unreachable_statements(stmt.body.statements)
+            _mark_unreachable_statements(body.statements)
 
 
 def dump_asg_json(

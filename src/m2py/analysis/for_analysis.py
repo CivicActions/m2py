@@ -10,9 +10,11 @@ and do not perform any text parsing.
 """
 
 from typing import Union
+
 from ..asg.elements import MRoutine, MScope
-from ..asg.statements import MForStatement, MSetStatement, MQuitStatement
 from ..asg.expressions import MVariable
+from ..asg.statements import MForStatement, MQuitStatement, MSetStatement
+from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
 
 def analyze_for_loops(routine: MRoutine) -> None:
@@ -46,19 +48,33 @@ def _analyze_fors_in_scope(scope: MScope) -> None:
             # Analyze this FOR's body for loop var modification and internal QUIT
             if stmt.body:
                 if stmt.loop_var:
-                    stmt.loop_var_modified_in_body = _check_var_modified_in_scope(
-                        stmt.loop_var, stmt.body
-                    )
+                    # Extract name for type-safe modification check
+                    if isinstance(stmt.loop_var, str):
+                        stmt.loop_var_modified_in_body = _check_var_modified_in_scope(
+                            stmt.loop_var, stmt.body
+                        )
+                    elif isinstance(stmt.loop_var, MVariable):
+                        stmt.loop_var_modified_in_body = _check_var_modified_in_scope(
+                            stmt.loop_var, stmt.body
+                        )
+                    else:
+                        # MExpr case - assume modified for safety
+                        stmt.loop_var_modified_in_body = True
                 stmt.has_internal_quit = _check_quit_in_scope(stmt.body)
                 # Recurse into nested structures within FOR body
                 _analyze_fors_in_scope(stmt.body)
-        # Recurse into other nested scopes
-        elif hasattr(stmt, "then_scope") and stmt.then_scope:
-            _analyze_fors_in_scope(stmt.then_scope)
-        elif hasattr(stmt, "else_scope") and stmt.else_scope:
-            _analyze_fors_in_scope(stmt.else_scope)
-        elif hasattr(stmt, "body") and stmt.body:
-            _analyze_fors_in_scope(stmt.body)
+        # Recurse into other nested scopes using type-safe helpers
+        then_scope = get_then_scope(stmt)
+        if then_scope is not None:
+            _analyze_fors_in_scope(then_scope)
+        else:
+            else_scope = get_else_scope(stmt)
+            if else_scope is not None:
+                _analyze_fors_in_scope(else_scope)
+            else:
+                body = get_body_scope(stmt)
+                if body is not None and not isinstance(stmt, MForStatement):
+                    _analyze_fors_in_scope(body)
 
 
 def _check_var_modified_in_scope(
@@ -94,17 +110,20 @@ def _check_var_modified_in_scope(
                     if target == var_name:
                         return True
 
-        # Recurse into nested scopes
-        if hasattr(stmt, "then_scope") and stmt.then_scope:
-            if _check_var_modified_in_scope(loop_var, stmt.then_scope):
+        # Recurse into nested scopes using type-safe helpers
+        then_scope = get_then_scope(stmt)
+        if then_scope is not None:
+            if _check_var_modified_in_scope(loop_var, then_scope):
                 return True
-        if hasattr(stmt, "else_scope") and stmt.else_scope:
-            if _check_var_modified_in_scope(loop_var, stmt.else_scope):
+        else_scope = get_else_scope(stmt)
+        if else_scope is not None:
+            if _check_var_modified_in_scope(loop_var, else_scope):
                 return True
-        if hasattr(stmt, "body") and stmt.body:
+        body = get_body_scope(stmt)
+        if body is not None:
             # Note: For nested FOR loops, we still check - the outer loop var
             # might be modified in an inner loop's body
-            if _check_var_modified_in_scope(loop_var, stmt.body):
+            if _check_var_modified_in_scope(loop_var, body):
                 return True
 
     return False
@@ -127,11 +146,13 @@ def _check_quit_in_scope(scope: MScope) -> bool:
             return True
 
         # Check in IF/ELSE scopes - QUIT there would still exit the FOR
-        if hasattr(stmt, "then_scope") and stmt.then_scope:
-            if _check_quit_in_scope(stmt.then_scope):
+        then_scope = get_then_scope(stmt)
+        if then_scope is not None:
+            if _check_quit_in_scope(then_scope):
                 return True
-        if hasattr(stmt, "else_scope") and stmt.else_scope:
-            if _check_quit_in_scope(stmt.else_scope):
+        else_scope = get_else_scope(stmt)
+        if else_scope is not None:
+            if _check_quit_in_scope(else_scope):
                 return True
 
         # Do NOT recurse into nested FOR bodies - their QUIT exits THEM, not us

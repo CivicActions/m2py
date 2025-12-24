@@ -39,7 +39,9 @@ class ASGElement(ABC):
     _tx_position: Optional[int] = field(default=None, repr=False)
     _tx_position_end: Optional[int] = field(default=None, repr=False)
 
-    def to_dict(self, include_position: bool = False, max_depth: int = 10) -> dict:
+    def to_dict(
+        self, include_position: bool = False, max_depth: int = 10
+    ) -> dict[str, Any]:
         """Serialize this ASG element to a dictionary.
 
         Args:
@@ -52,7 +54,7 @@ class ASGElement(ABC):
         if max_depth <= 0:
             return {"_type": self.__class__.__name__, "_truncated": True}
 
-        result = {"_type": self.__class__.__name__}
+        result: dict[str, Any] = {"_type": self.__class__.__name__}
 
         if include_position:
             if self.source_file:
@@ -84,7 +86,9 @@ class ASGElement(ABC):
 
         return result
 
-    def _serialize_value(self, value, include_position: bool, max_depth: int):
+    def _serialize_value(
+        self, value: Any, include_position: bool, max_depth: int
+    ) -> Any:
         """Recursively serialize a value for to_dict()."""
         if value is None:
             return None
@@ -139,15 +143,20 @@ class MScope(ASGElement):
         Walks through all statements in this scope and recurses into
         any nested scopes (IF bodies, FOR bodies, etc.).
         """
+        from m2py.asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
+
         for stmt in self.statements:
             yield stmt
-            # Recurse into nested scopes
-            if hasattr(stmt, "body") and isinstance(stmt.body, MScope):
-                yield from stmt.body.walk_statements()
-            if hasattr(stmt, "then_scope") and isinstance(stmt.then_scope, MScope):
-                yield from stmt.then_scope.walk_statements()
-            if hasattr(stmt, "else_scope") and stmt.else_scope is not None:
-                yield from stmt.else_scope.walk_statements()
+            # Recurse into nested scopes using type-safe helpers
+            body = get_body_scope(stmt)
+            if body is not None:
+                yield from body.walk_statements()
+            then_scope = get_then_scope(stmt)
+            if then_scope is not None:
+                yield from then_scope.walk_statements()
+            else_scope = get_else_scope(stmt)
+            if else_scope is not None:
+                yield from else_scope.walk_statements()
 
 
 @dataclass
@@ -176,6 +185,11 @@ class MLabel(ASGElement):
 
     # Function signature (populated by compute_signatures)
     signature: Optional[Any] = field(default=None, repr=False)  # FunctionSignature
+
+    # Parser internal: stores unparsed line content and parsed results
+    _line_rest: Optional[str] = field(default=None, repr=False)
+    _parsed_content: Optional[Any] = field(default=None, repr=False)
+    _parsed_commands: Optional[List[Any]] = field(default=None, repr=False)
 
     @property
     def has_explicit_exit(self) -> bool:

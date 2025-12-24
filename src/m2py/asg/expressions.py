@@ -228,7 +228,7 @@ class MFormatControl(MExpr):
     the column number or character code respectively.
     """
 
-    control_type: "FormatControlType" = None  # Type of format control
+    control_type: Optional["FormatControlType"] = None  # Type of format control
     expression: Optional["MExpr"] = None  # Column/charcode expr for ?n/*n
 
 

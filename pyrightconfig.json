@@ -1,0 +1,9 @@
+{
+  "include": ["src"],
+  "exclude": ["tests", "utils", "VistA-M", "mumps-reference", "textX-reference", "proleap-research", "docs", "specs"],
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.10",
+  "reportMissingTypeStubs": false,
+  "reportMissingImports": false,
+  "reportMissingModuleSource": false
+}

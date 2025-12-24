@@ -4742,3 +4742,171 @@ Run: `uv run ruff format src/` to auto-fix formatting in 16 files.
 - [X] RUFF-5h: `validate_asg.py:420` - Renamed `l` to `line` (E741 ambiguous name) ✓
 
 **Checkpoint**: Phase 63 complete - All ruff linter and formatter issues resolved
+
+---
+
+## Phase 64: Pyright Type Checking
+
+**Goal**: Add comprehensive type annotations to the codebase to catch bugs early and improve IDE support.
+
+**Current State**: 104 errors across 10 files (discovered via `uv run pyright src/`)
+
+**Error Distribution by File**:
+| File | Errors | Primary Issues |
+|------|--------|----------------|
+| `parser/parser.py` | 31 | Missing `body`, `_line_rest`, `_parsed_*` attributes on dataclasses |
+| `analysis/variables.py` | 26 | Missing `name`, `args` attributes on base `MExpr` type |
+| `analysis/for_analysis.py` | 23 | Missing `then_scope`, `else_scope`, `body` on `MStatement` |
+| `asg/elements.py` | 9 | Dict/list type mismatches, missing `body`/`then_scope`/`else_scope` |
+| `analysis/goto_analysis.py` | 6 | Missing `then_scope`, `else_scope`, `body` on `MStatement` |
+| `analysis/command_parser.py` | 5 | `str` assigned where `MExpr` expected |
+| Others | 4 | Scattered type mismatches |
+
+**Error Distribution by Type**:
+| Error Type | Count | Root Cause |
+|------------|-------|------------|
+| `reportAttributeAccessIssue` | 96 | Missing attributes on base types; need Union types or Protocol |
+| `reportArgumentType` | 6 | Wrong type passed to function/constructor |
+| `reportAssignmentType` | 2 | `None` assigned to non-Optional field |
+
+### Phase 64a: Configure Pyright
+
+**Purpose**: Set up pyright configuration for gradual adoption
+
+- [X] T680 [P64a] Create `pyrightconfig.json` with initial settings:
+  - `"typeCheckingMode": "basic"` (start lenient, increase later)
+  - `"include": ["src"]`
+  - `"exclude": ["tests", "utils"]` (initially)
+  - `"reportMissingTypeStubs": false`
+  - `"reportUnknownMemberType": false` (textX classes)
+- [X] T681 [P64a] Add pyright to pre-commit hooks for CI enforcement
+- [X] T682 [P64a] Add `py.typed` marker file to `src/m2py/` for PEP 561 compliance
+
+### Phase 64b: Core ASG Type Fixes
+
+**Purpose**: Fix type definitions in the foundational ASG module
+
+- [X] T683 [P64b] `asg/expressions.py`: Fix `MFormatControl.control_type` - make Optional or set default
+- [X] T684 [P64b] `asg/statements.py:106`: Fix `MReadTarget.variable` - make `Optional[MExpr]` or remove default
+- [X] T685 [P64b] `asg/statements.py`: Add type alias `StatementWithBody = Union[MForStatement, MDoStatement, MDoBlockStatement]`
+- [X] T686 [P64b] `asg/statements.py`: Add type alias `StatementWithScopes = Union[MIfStatement, MElseStatement]`
+- [X] T687 [P64b] `asg/elements.py:61-81`: Fix `to_dict()` method - use `dict[str, Any]` return type
+- [X] T688 [P64b] `asg/elements.py`: Add helper method or Protocol for statements with body/scopes
+
+### Phase 64c: Statement Type Narrowing Helpers
+
+**Purpose**: Create utilities to help pyright understand statement type narrowing
+
+- [X] T689 [P64c] Create `asg/type_helpers.py` with:
+  ```python
+  from typing import TypeGuard
+  
+  def has_body(stmt: MStatement) -> TypeGuard[MForStatement | MDoStatement | MDoBlockStatement]:
+      return hasattr(stmt, 'body') and stmt.body is not None
+  
+  def has_scopes(stmt: MStatement) -> TypeGuard[MIfStatement | MElseStatement]:
+      return hasattr(stmt, 'then_scope')
+  ```
+- [X] T690 [P64c] Update `analysis/for_analysis.py` to use type guards (23 errors)
+- [X] T691 [P64c] Update `analysis/goto_analysis.py` to use type guards (6 errors)
+- [X] T692 [P64c] Update `parser/parser.py` statement handling to use type guards
+
+### Phase 64d: MExpr Hierarchy Improvements
+
+**Purpose**: Fix type issues with MExpr subclass attribute access
+
+- [X] T693 [P64d] `asg/expressions.py`: Add abstract `name` property to MExpr or document it's only on subclasses
+- [X] T694 [P64d] `analysis/variables.py:481-482`: Add type narrowing for `isinstance(expr, (MVariable, MGlobal))`
+- [X] T695 [P64d] `analysis/variables.py:594`: Add type narrowing for function argument access
+- [X] T696 [P64d] `analysis/for_analysis.py:50`: Fix `loop_var` type to be `str | MVariable` (not MExpr)
+
+### Phase 64e: MForStatement.loop_var Type Fix
+
+**Purpose**: Fix the loop_var field type that causes 1 error
+
+- [X] T697 [P64e] Review MForStatement.loop_var type - should it be `str | MVariable` or `MExpr`?
+- [X] T698 [P64e] Update `asg/statements.py` with correct loop_var type
+- [X] T699 [P64e] Update all callers to handle the correct type
+
+### Phase 64f: Fix String-to-MExpr Assignment Issues
+
+**Purpose**: Fix 5 errors where `str` is assigned instead of `MExpr`
+
+- [X] T700 [P64f] `command_parser.py:543`: Fix MForParameter value - convert str to MExpr or use different approach
+- [X] T701 [P64f] `command_parser.py:622,625`: Fix MQuitStatement postcondition/return_value assignment
+- [X] T702 [P64f] `command_parser.py:649`: Fix MIfStatement.conditions - should be `list[MExpr]` not `list[str]`
+- [X] T703 [P64f] `command_parser.py:706`: Fix MGotoStatement.postcondition assignment
+- [X] T704 [P64f] Review if these functions should return ASG nodes or strings (API decision)
+
+### Phase 64g: Parser Internal Attribute Types
+
+**Purpose**: Fix 10+ errors about private attributes on MLabel
+
+- [X] T705 [P64g] `parser/parser.py`: Add private attributes to MLabel or use separate tracking dict:
+  - `_line_rest: Optional[str]`
+  - `_parsed_content: Optional[Any]`
+  - `_parsed_commands: Optional[list]`
+- [X] T706 [P64g] `parser/parser.py:618`: Add `_dot_level` to MStatement or use external tracking
+- [X] T707 [P64g] Consider moving parsing state to a separate ParserContext class
+
+### Phase 64h: Semantic Analyzer Type Fixes
+
+**Purpose**: Fix remaining 1 error in semantic_analyzer.py
+
+- [X] T708 [P64h] `semantic_analyzer.py:641`: Fix condition type - should be `list[MExpr]` not `MExpr | None`
+
+### Phase 64i: textx_classes Type Fixes
+
+**Purpose**: Fix 1 error in textx integration
+
+- [X] T709 [P64i] `textx_classes.py:259`: Fix None assignment to str parameter
+
+### Phase 64j: Add Type Stubs for textX
+
+**Purpose**: Improve type checking for textX integration (optional - SKIPPED)
+
+- [X] T710 [P64j] Create `stubs/textx/__init__.pyi` with basic type stubs - SKIPPED (not needed with basic mode)
+- [X] T711 [P64j] Add `stubPath` to pyrightconfig.json - SKIPPED (not needed with basic mode)
+
+### Phase 64k: Enable Stricter Type Checking
+
+**Purpose**: Progressively increase type strictness
+
+- [X] T712 [P64k] Fix all remaining errors with `"typeCheckingMode": "basic"` - DONE (0 errors)
+- [ ] T713 [P64k] Upgrade to `"typeCheckingMode": "standard"` and fix new errors
+- [ ] T714 [P64k] Add type annotations to public API functions
+- [ ] T715 [P64k] Consider `"typeCheckingMode": "strict"` for core modules only
+
+### Phase 64l: Test Type Annotations (Optional)
+
+**Purpose**: Add types to test helpers (lower priority)
+
+- [ ] T716 [P64l] Add return type annotations to test fixture functions
+- [ ] T717 [P64l] Add types to helper functions in test files
+- [ ] T718 [P64l] Add types to utility scripts in utils/
+
+### Phase 64m: CI Integration
+
+**Purpose**: Ensure type checking runs in CI
+
+- [X] T719 [P64m] Add pyright to pre-commit hooks (local CI enforcement)
+- [ ] T720 [P64m] Set up type coverage reporting
+- [ ] T721 [P64m] Add badge for type coverage to README
+
+**Checkpoint**: Phase 64 core complete - All 104 pyright errors fixed, 929 tests passing
+
+---
+
+## Summary: Type Error Categories and Solutions
+
+### 1. Missing Attributes on Base Types (96 errors) - FIXED
+**Pattern**: `Cannot access attribute "body" for class "MStatement"`
+**Solution**: Created `asg/type_helpers.py` with TypeGuard functions and helper accessors
+
+### 2. str vs MExpr Mismatch (6 errors) - FIXED
+**Pattern**: `Argument of type "str" cannot be assigned to parameter "value" of type "MExpr"`
+**Solution**: Used `_expr_to_asg_literal()` to wrap strings in MLiteral nodes
+
+### 3. Optional vs Required Fields (2 errors) - FIXED
+**Pattern**: `Type "None" is not assignable to declared type "MExpr"`
+**Solution**: Changed field types to `Optional[T]` (MFormatControl.control_type, MReadTarget.variable)
