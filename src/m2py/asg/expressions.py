@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, List, Optional
 
 from m2py.asg.elements import ASGElement
-from m2py.asg.enums import LiteralType, FormatControlType, IndirectionType
+from m2py.asg.enums import LiteralType, FormatControlType, IndirectionType, PassingMode
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MCall
@@ -236,3 +236,39 @@ class MSpecialVariable(MExpr):
     """
     
     name: str = ""  # Variable name without $
+
+
+# =============================================================================
+# Parameter Passing Support
+# =============================================================================
+
+@dataclass
+class MActualParameter(ASGElement):
+    """Represents an actual parameter in a call (DO, extrinsic function).
+    
+    Tracks the passing mode per MUMPS spec (MDC 8.1.7):
+    - BY_VALUE: Expression evaluated and passed (D SUB(X+1))
+    - BY_REFERENCE: Variable reference with . prefix (D SUB(.X))
+    - OMITTED: Empty parameter position (D SUB(,Y))
+    
+    For BY_REFERENCE, the variable_name field contains the actual variable
+    name that will be aliased to the formal parameter.
+    
+    Example:
+        D CALC(A+1, .X, , Y)
+        -> [BY_VALUE(A+1), BY_REFERENCE(X), OMITTED, BY_VALUE(Y)]
+    """
+    
+    passing_mode: PassingMode = PassingMode.BY_VALUE
+    expression: Optional[MExpr] = None  # The expression (for BY_VALUE) or variable (for BY_REFERENCE)
+    variable_name: Optional[str] = None  # For BY_REFERENCE: the actual variable name
+    
+    @property
+    def is_byref(self) -> bool:
+        """Check if this parameter is passed by reference."""
+        return self.passing_mode == PassingMode.BY_REFERENCE
+    
+    @property
+    def is_omitted(self) -> bool:
+        """Check if this parameter position is omitted."""
+        return self.passing_mode == PassingMode.OMITTED

@@ -365,3 +365,850 @@ class TestComputeTransitiveInputs:
         result = compute_transitive_inputs(routine, label_vars)
         # A should now have X as transitive input from B
         assert "X" in result["A"]
+
+# =============================================================================
+# Phase 58 Tests: Enhanced Variable Scoping
+# =============================================================================
+
+class TestFormalParameters:
+    """Tests for formal parameter handling (Phase 58a)."""
+
+    def test_formal_params_not_in_inputs(self):
+        """T594: Formal params should not appear in input_variables."""
+        # Create a label with formal parameters that are read
+        # SET Z=X+Y  where X, Y are formal params
+        var_x = MVariable(name="X", subscripts=[])
+        var_y = MVariable(name="Y", subscripts=[])
+        var_z = MVariable(name="Z", subscripts=[])
+        
+        add_expr = MBinaryOp(left=var_x, operator="+", right=var_y)
+        assignment = MAssignment(target=var_z, value=add_expr)
+        set_stmt = MSetStatement(assignments=[assignment])
+        scope = MScope(statements=[set_stmt])
+        
+        # Label has formal_list ["X", "Y"]
+        label = MLabel(name="CALC", formal_list=["X", "Y"], body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        result = analyze_variables(routine)
+        
+        # X and Y are formal params - they should NOT be in input_variables
+        assert "X" not in result["CALC"].input_variables
+        assert "Y" not in result["CALC"].input_variables
+        # But X and Y should be tracked as reads
+        assert "X" in result["CALC"].reads
+        assert "Y" in result["CALC"].reads
+        # Z is written
+        assert "Z" in result["CALC"].output_variables
+
+    def test_formal_params_in_formal_params_set(self):
+        """Formal params should be in formal_params set."""
+        scope = MScope(statements=[])
+        label = MLabel(name="CALC", formal_list=["A", "B", "C"], body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        result = analyze_variables(routine)
+        
+        assert result["CALC"].formal_params == {"A", "B", "C"}
+
+
+class TestFunctionSignature:
+    """Tests for FunctionSignature computation (Phase 58e)."""
+
+    def test_signature_dataclass(self):
+        """Test FunctionSignature has correct fields."""
+        from m2py.analysis.variables import FunctionSignature
+        from m2py.asg.enums import ScopeStrategy
+        
+        sig = FunctionSignature(
+            label_name="CALC",
+            formal_params=["X", "Y"],
+            required_inputs={"Z"},
+            has_value_quit=True,
+        )
+        
+        assert sig.label_name == "CALC"
+        assert sig.formal_params == ["X", "Y"]
+        assert sig.required_inputs == {"Z"}
+        assert sig.has_value_quit is True
+        assert sig.scope_strategy == ScopeStrategy.SUBROUTINE  # default
+
+    def test_compute_function_signature(self):
+        """T624: Test signature computation for simple label."""
+        from m2py.analysis.variables import compute_function_signature
+        
+        # Create CALC(X,Y) S Z=X+Y Q Z
+        var_x = MVariable(name="X", subscripts=[])
+        var_y = MVariable(name="Y", subscripts=[])
+        var_z = MVariable(name="Z", subscripts=[])
+        
+        add_expr = MBinaryOp(left=var_x, operator="+", right=var_y)
+        assignment = MAssignment(target=var_z, value=add_expr)
+        set_stmt = MSetStatement(assignments=[assignment])
+        quit_stmt = MQuitStatement(return_value=var_z)
+        
+        scope = MScope(statements=[set_stmt, quit_stmt])
+        label = MLabel(name="CALC", formal_list=["X", "Y"], body=scope)
+        
+        # First analyze variables
+        routine = MRoutine(name="TEST", labels=[label])
+        label_vars = analyze_variables(routine)
+        
+        # Now compute signature
+        sig = compute_function_signature(label, label_vars["CALC"])
+        
+        assert sig.label_name == "CALC"
+        assert sig.formal_params == ["X", "Y"]
+        assert sig.has_value_quit is True
+        # Z is written but not in formal_params, so it's a side effect output
+        assert "Z" in sig.side_effect_outputs
+
+
+class TestScopeStrategy:
+    """Tests for scope strategy classification (Phase 58i)."""
+
+    def test_pure_function_classification(self):
+        """T651: Pure function - has return, no side effects."""
+        from m2py.analysis.variables import classify_scope_strategy, FunctionSignature
+        from m2py.asg.enums import ScopeStrategy
+        
+        sig = FunctionSignature(
+            label_name="PURE",
+            formal_params=["X"],
+            has_value_quit=True,
+            has_void_quit=False,
+            side_effect_outputs=set(),
+            byref_outputs=set(),
+            requires_runtime_scope=False,
+        )
+        
+        strategy = classify_scope_strategy(sig)
+        assert strategy == ScopeStrategy.PURE_FUNCTION
+
+    def test_subroutine_classification(self):
+        """T652: Subroutine - no return value, may have side effects."""
+        from m2py.analysis.variables import classify_scope_strategy, FunctionSignature
+        from m2py.asg.enums import ScopeStrategy
+        
+        sig = FunctionSignature(
+            label_name="SUB",
+            formal_params=[],
+            has_value_quit=False,
+            has_void_quit=True,
+            side_effect_outputs={"X", "Y"},
+            requires_runtime_scope=False,
+        )
+        
+        strategy = classify_scope_strategy(sig)
+        assert strategy == ScopeStrategy.SUBROUTINE
+
+    def test_requires_runtime_classification(self):
+        """T653: Runtime required - has indirection/XECUTE."""
+        from m2py.analysis.variables import classify_scope_strategy, FunctionSignature
+        from m2py.asg.enums import ScopeStrategy
+        
+        sig = FunctionSignature(
+            label_name="DYN",
+            requires_runtime_scope=True,
+        )
+        
+        strategy = classify_scope_strategy(sig)
+        assert strategy == ScopeStrategy.REQUIRES_RUNTIME
+
+    def test_function_with_outputs_classification(self):
+        """Function with return AND by-ref outputs."""
+        from m2py.analysis.variables import classify_scope_strategy, FunctionSignature
+        from m2py.asg.enums import ScopeStrategy
+        
+        sig = FunctionSignature(
+            label_name="FUNC",
+            has_value_quit=True,
+            byref_outputs={"X"},
+            requires_runtime_scope=False,
+        )
+        
+        strategy = classify_scope_strategy(sig)
+        assert strategy == ScopeStrategy.FUNCTION_WITH_OUTPUTS
+
+
+class TestQuitAnalysis:
+    """Tests for QUIT value analysis (Phase 58f)."""
+
+    def test_quit_with_value_detected(self):
+        """T632: QUIT with value is detected."""
+        from m2py.analysis.variables import analyze_quit_statements
+        
+        # Q X+Y
+        var_x = MVariable(name="X", subscripts=[])
+        var_y = MVariable(name="Y", subscripts=[])
+        expr = MBinaryOp(left=var_x, operator="+", right=var_y)
+        quit_stmt = MQuitStatement(return_value=expr)
+        
+        scope = MScope(statements=[quit_stmt])
+        label = MLabel(name="TEST", body=scope)
+        
+        has_value, has_void, return_expr = analyze_quit_statements(label)
+        
+        assert has_value is True
+        assert has_void is False
+        assert return_expr is not None
+
+    def test_quit_without_value_detected(self):
+        """QUIT without value is detected."""
+        from m2py.analysis.variables import analyze_quit_statements
+        
+        quit_stmt = MQuitStatement(return_value=None)
+        scope = MScope(statements=[quit_stmt])
+        label = MLabel(name="TEST", body=scope)
+        
+        has_value, has_void, return_expr = analyze_quit_statements(label)
+        
+        assert has_value is False
+        assert has_void is True
+        assert return_expr is None
+
+    def test_mixed_quits_detected(self):
+        """T633: Mixed QUIT with and without value."""
+        from m2py.analysis.variables import analyze_quit_statements
+        
+        var_x = MVariable(name="X", subscripts=[])
+        quit_with_value = MQuitStatement(return_value=var_x)
+        quit_without = MQuitStatement(return_value=None)
+        
+        scope = MScope(statements=[quit_with_value, quit_without])
+        label = MLabel(name="TEST", body=scope)
+        
+        has_value, has_void, return_expr = analyze_quit_statements(label)
+        
+        assert has_value is True
+        assert has_void is True
+
+
+class TestParameterBinding:
+    """Tests for parameter binding (Phase 58c)."""
+
+    def test_parameter_binding_dataclass(self):
+        """Test ParameterBinding has correct fields."""
+        from m2py.analysis.variables import ParameterBinding
+        from m2py.asg.enums import PassingMode
+        
+        binding = ParameterBinding(
+            formal_name="X",
+            actual_expr=MLiteral(value=42),
+            passing_mode=PassingMode.BY_VALUE,
+        )
+        
+        assert binding.formal_name == "X"
+        assert binding.passing_mode == PassingMode.BY_VALUE
+        assert binding.caller_var_name is None
+
+    def test_byref_binding(self):
+        """Test call-by-reference binding tracks caller variable."""
+        from m2py.analysis.variables import ParameterBinding
+        from m2py.asg.enums import PassingMode
+        
+        var_a = MVariable(name="A", subscripts=[])
+        binding = ParameterBinding(
+            formal_name="X",
+            actual_expr=var_a,
+            passing_mode=PassingMode.BY_REFERENCE,
+            caller_var_name="A",
+        )
+        
+        assert binding.formal_name == "X"
+        assert binding.passing_mode == PassingMode.BY_REFERENCE
+        assert binding.caller_var_name == "A"
+
+
+class TestEdgeCases:
+    """Tests for edge cases (Phase 58j)."""
+
+    def test_global_variable_excluded(self):
+        """T660: Global ^VAR excluded from local variable analysis."""
+        # The extraction returns global names with ^, but they should be excluded
+        # from input_variables/output_variables (the high-level analysis)
+        var_x = MVariable(name="X", subscripts=[])  # local
+        global_var = MVariable(name="^G", subscripts=[])  # global
+        
+        # Check expression extraction
+        result = _extract_expression_variables(var_x)
+        assert "X" in result
+        
+        # Globals are excluded from expression extraction (the check is in there)
+        result = _extract_expression_variables(global_var)
+        assert "^G" not in result
+
+    def test_subscripted_variable_tracks_both(self):
+        """T662: Subscripted X(I) tracks both X and I."""
+        # X(I) - subscripted variable
+        subscript = MVariable(name="I", subscripts=[])
+        var_x = MVariable(name="X", subscripts=[subscript])
+        
+        result = _extract_expression_variables(var_x)
+        
+        assert "X" in result
+        assert "I" in result
+
+    def test_new_creates_scope_boundary(self):
+        """NEW command creates scope boundary."""
+        from m2py.asg.statements import MNewStatement
+        
+        # NEW A (uses variables list, not targets)
+        new_stmt = MNewStatement(variables=["A"])
+        
+        reads, writes, news = _extract_statement_variables(new_stmt)
+        
+        assert "A" in news
+        assert "A" not in reads
+        assert "A" not in writes
+
+    def test_special_variables_excluded(self):
+        """T661: Special variables ($HOROLOG etc) excluded from local analysis."""
+        from m2py.asg.expressions import MSpecialVariable
+        
+        # $HOROLOG is a special variable
+        special = MSpecialVariable(name="HOROLOG")
+        result = _extract_expression_variables(special)
+        assert result == set()
+        
+        # Variables starting with $ are excluded
+        var_with_dollar = MVariable(name="$X", subscripts=[])
+        result = _extract_expression_variables(var_with_dollar)
+        assert "$X" not in result
+
+    def test_exclusive_new_not_enumerable(self):
+        """T654: NEW (X) exclusive - can't enumerate all variables statically."""
+        from m2py.asg.statements import MNewStatement
+        
+        # NEW (X) means NEW all EXCEPT X
+        # Statically we can only know the exceptions, not what gets newed.
+        # The current implementation doesn't add to news for exclusive NEW
+        # since we can't enumerate all variables that exist at runtime.
+        exclusive_new = MNewStatement(variables=["X"], exclusive=True)
+        
+        reads, writes, news = _extract_statement_variables(exclusive_new)
+        
+        # For exclusive NEW, we can't enumerate what gets newed
+        # In the current implementation, variables list (the exceptions) may
+        # still be present, but the key insight is that X is NOT newed.
+        # This is a limitation of static analysis.
+        # The test validates we at least don't crash and reads/writes are empty.
+        assert reads == set()
+        assert writes == set()
+
+    def test_argumentless_do_block_scope(self):
+        """T655: Argumentless DO creates block scope for indented code."""
+        # D  (argumentless DO) - body is separate scope
+        # This test verifies we handle empty targets gracefully
+        do_stmt = MDoStatement(targets=[])
+        
+        reads, writes, news = _extract_statement_variables(do_stmt)
+        
+        # No variables in argumentless DO
+        assert reads == set()
+        assert writes == set()
+        assert news == set()
+
+    def test_kill_affects_variables(self):
+        """T656: KILL effects on variable visibility."""
+        from m2py.asg.statements import MKillStatement
+        
+        # KILL X,Y - makes variables undefined
+        kill_target_x = MVariable(name="X", subscripts=[])
+        kill_target_y = MVariable(name="Y", subscripts=[])
+        kill_stmt = MKillStatement(targets=[kill_target_x, kill_target_y])
+        
+        reads, writes, news = _extract_statement_variables(kill_stmt)
+        
+        # KILL writes (sets to undefined) the variables
+        assert "X" in writes
+        assert "Y" in writes
+        assert reads == set()
+
+    def test_nested_new_different_levels(self):
+        """T657: Nested NEW at different scope levels."""
+        # If we NEW A at outer scope, then NEW B in inner scope,
+        # both A and B are local to their respective scopes
+        new_outer = MNewStatement(variables=["A"])
+        new_inner = MNewStatement(variables=["B"])
+        
+        reads1, writes1, news1 = _extract_statement_variables(new_outer)
+        reads2, writes2, news2 = _extract_statement_variables(new_inner)
+        
+        assert "A" in news1
+        assert "B" in news2
+        assert "A" not in news2
+        assert "B" not in news1
+
+    def test_variable_used_before_and_after_new(self):
+        """T658: Variable used before and after NEW.
+        
+        S Y=X N X S X=1 - In true MUMPS semantics, first X read comes from
+        caller scope (input), then NEW creates local X, then S X=1 writes local.
+        
+        Current static analysis limitation: We track that X was read and X was
+        newed, but the conservative approach excludes X from input_variables
+        because we can't easily distinguish the timeline. This is a known
+        limitation - the analysis errs on the side of caution.
+        """
+        var_y = MVariable(name="Y", subscripts=[])
+        var_x1 = MVariable(name="X", subscripts=[])
+        assign1 = MAssignment(target=var_y, value=var_x1)
+        set1 = MSetStatement(assignments=[assign1])
+        
+        new_stmt = MNewStatement(variables=["X"])
+        
+        var_x2 = MVariable(name="X", subscripts=[])
+        assign2 = MAssignment(target=var_x2, value=MLiteral(value=1))
+        set2 = MSetStatement(assignments=[assign2])
+        
+        scope = MScope(statements=[set1, new_stmt, set2])
+        label = MLabel(name="TEST", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        result = analyze_variables(routine)
+        
+        # X is read (before NEW semantically, but we track reads regardless)
+        assert "X" in result["TEST"].reads
+        # X is also NEWed
+        assert "X" in result["TEST"].newed
+        # Y is written and not NEWed - it's an output
+        assert "Y" in result["TEST"].output_variables
+        # Note: Due to static analysis limitation, X may or may not be in
+        # input_variables depending on order tracking. We verify reads/newed.
+        # The conservative approach excludes NEWed vars from inputs.
+
+    def test_same_variable_name_multiple_labels(self):
+        """T659: Same variable name in multiple labels - no conflict."""
+        # Two labels both use X - they're independent
+        var_x1 = MVariable(name="X", subscripts=[])
+        assign1 = MAssignment(target=var_x1, value=MLiteral(value=1))
+        set1 = MSetStatement(assignments=[assign1])
+        scope1 = MScope(statements=[set1])
+        label1 = MLabel(name="LABEL1", body=scope1)
+        
+        var_x2 = MVariable(name="X", subscripts=[])
+        var_y = MVariable(name="Y", subscripts=[])
+        assign2 = MAssignment(target=var_y, value=var_x2)
+        set2 = MSetStatement(assignments=[assign2])
+        scope2 = MScope(statements=[set2])
+        label2 = MLabel(name="LABEL2", body=scope2)
+        
+        routine = MRoutine(name="TEST", labels=[label1, label2])
+        
+        result = analyze_variables(routine)
+        
+        # Each label has its own analysis
+        assert "X" in result["LABEL1"].writes
+        assert "X" in result["LABEL2"].reads
+        # LABEL1 doesn't read X, LABEL2 doesn't write X
+        assert "X" not in result["LABEL1"].input_variables
+        assert "X" in result["LABEL2"].input_variables
+
+
+class TestPassingModeAnalysis:
+    """Tests for call-by-reference analysis (Phase 58b)."""
+
+    def test_byvalue_argument(self):
+        """T602: BY_VALUE for expression arguments."""
+        from m2py.asg.expressions import MActualParameter
+        from m2py.asg.enums import PassingMode
+        
+        # D CALC(X+1) - X+1 is by value
+        var_x = MVariable(name="X", subscripts=[])
+        expr = MBinaryOp(left=var_x, operator="+", right=MLiteral(value=1))
+        param = MActualParameter(
+            passing_mode=PassingMode.BY_VALUE,
+            expression=expr,
+            variable_name=None
+        )
+        
+        assert param.passing_mode == PassingMode.BY_VALUE
+        assert not param.is_byref
+        assert not param.is_omitted
+
+    def test_byref_argument(self):
+        """T601: BY_REFERENCE for .variable arguments."""
+        from m2py.asg.expressions import MActualParameter
+        from m2py.asg.enums import PassingMode
+        
+        # D CALC(.X) - .X is by reference
+        var_x = MVariable(name="X", subscripts=[])
+        param = MActualParameter(
+            passing_mode=PassingMode.BY_REFERENCE,
+            expression=var_x,
+            variable_name="X"
+        )
+        
+        assert param.passing_mode == PassingMode.BY_REFERENCE
+        assert param.is_byref
+        # variable_name holds the caller's variable name for BY_REFERENCE
+        assert param.variable_name == "X"
+        assert not param.is_omitted
+
+    def test_omitted_argument(self):
+        """T603: OMITTED for empty argument position."""
+        from m2py.asg.expressions import MActualParameter
+        from m2py.asg.enums import PassingMode
+        
+        # D CALC(,Y) - first arg is omitted
+        param = MActualParameter(
+            passing_mode=PassingMode.OMITTED,
+            expression=None,
+            variable_name=None
+        )
+        
+        assert param.passing_mode == PassingMode.OMITTED
+        assert param.is_omitted
+        assert not param.is_byref
+
+
+class TestParameterBindingAdvanced:
+    """Advanced tests for parameter binding (Phase 58c-d)."""
+
+    def test_bind_parameters_value(self):
+        """T610: D CALC(A,B) calling CALC(X,Y) - bindings X←A, Y←B."""
+        from m2py.analysis.variables import bind_parameters
+        from m2py.asg.enums import PassingMode
+        
+        # Create the target label CALC(X,Y)
+        target_label = MLabel(name="CALC", formal_list=["X", "Y"], body=MScope())
+        
+        # Create call with two arguments A, B
+        var_a = MVariable(name="A", subscripts=[])
+        var_b = MVariable(name="B", subscripts=[])
+        call = MCall(name="CALC", routine=None, arguments=[var_a, var_b])
+        
+        bindings = bind_parameters(call, target_label)
+        
+        assert len(bindings) == 2
+        assert bindings[0].formal_name == "X"
+        assert bindings[0].passing_mode == PassingMode.BY_VALUE
+        assert bindings[1].formal_name == "Y"
+        assert bindings[1].passing_mode == PassingMode.BY_VALUE
+
+    def test_bind_parameters_partial(self):
+        """T611: D CALC(A) calling CALC(X,Y) - X←A, Y←omitted."""
+        from m2py.analysis.variables import bind_parameters
+        from m2py.asg.enums import PassingMode
+        
+        # Create the target label CALC(X,Y)
+        target_label = MLabel(name="CALC", formal_list=["X", "Y"], body=MScope())
+        
+        # Create call with one argument A
+        var_a = MVariable(name="A", subscripts=[])
+        call = MCall(name="CALC", routine=None, arguments=[var_a])
+        
+        bindings = bind_parameters(call, target_label)
+        
+        assert len(bindings) == 2
+        assert bindings[0].formal_name == "X"
+        assert bindings[0].passing_mode == PassingMode.BY_VALUE
+        assert bindings[1].formal_name == "Y"
+        assert bindings[1].passing_mode == PassingMode.OMITTED
+
+    def test_byref_creates_alias(self):
+        """T617: .X passed to formal A - X aliased."""
+        from m2py.analysis.variables import bind_parameters
+        from m2py.asg.expressions import MActualParameter
+        from m2py.asg.enums import PassingMode
+        
+        # Create target label SUB(A)
+        target_label = MLabel(name="SUB", formal_list=["A"], body=MScope())
+        
+        # Create call with .X (by reference)
+        var_x = MVariable(name="X", subscripts=[])
+        byref_param = MActualParameter(
+            passing_mode=PassingMode.BY_REFERENCE,
+            expression=var_x,
+            variable_name="X"
+        )
+        call = MCall(name="SUB", routine=None, arguments=[byref_param])
+        
+        bindings = bind_parameters(call, target_label)
+        
+        assert len(bindings) == 1
+        assert bindings[0].formal_name == "A"
+        assert bindings[0].passing_mode == PassingMode.BY_REFERENCE
+        assert bindings[0].caller_var_name == "X"
+
+
+class TestSignatureComputation:
+    """Advanced tests for function signature computation (Phase 58e-f)."""
+
+    def test_label_no_formal_reads_external(self):
+        """T625: Label with no formal params reading external vars."""
+        from m2py.analysis.variables import compute_function_signature
+        
+        # Label reads X without having it as formal param
+        var_x = MVariable(name="X", subscripts=[])
+        var_y = MVariable(name="Y", subscripts=[])
+        assign = MAssignment(target=var_y, value=var_x)
+        set_stmt = MSetStatement(assignments=[assign])
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="NOFORMALS", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        label_vars = analyze_variables(routine)
+        sig = compute_function_signature(label, label_vars["NOFORMALS"])
+        
+        # X should be a required input since not in formal params
+        assert "X" in sig.required_inputs
+        assert sig.formal_params == []
+
+    def test_label_with_indirection_requires_runtime(self):
+        """T626: Label with indirection - requires runtime scope."""
+        from m2py.analysis.variables import compute_function_signature, check_requires_runtime_scope
+        from m2py.asg.statements import MXecuteStatement
+        
+        # XECUTE defeats static analysis
+        # MXecuteStatement uses code_expressions, not arguments
+        xecute_stmt = MXecuteStatement(code_expressions=[MLiteral(value="S X=1")])
+        scope = MScope(statements=[xecute_stmt])
+        label = MLabel(name="DYN", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        # Check the function directly
+        assert check_requires_runtime_scope(label) is True
+        
+        label_vars = analyze_variables(routine)
+        sig = compute_function_signature(label, label_vars["DYN"])
+        
+        assert sig.requires_runtime_scope is True
+
+    def test_extrinsic_function_signature(self):
+        """T634: $$FUNC() extrinsic requires return value."""
+        from m2py.analysis.variables import compute_function_signature, analyze_quit_statements
+        from m2py.asg.enums import ScopeStrategy
+        
+        # $$FUNC returns X+Y
+        var_x = MVariable(name="X", subscripts=[])
+        var_y = MVariable(name="Y", subscripts=[])
+        result = MBinaryOp(left=var_x, operator="+", right=var_y)
+        quit_stmt = MQuitStatement(return_value=result)
+        scope = MScope(statements=[quit_stmt])
+        label = MLabel(name="FUNC", formal_list=["X", "Y"], body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        label_vars = analyze_variables(routine)
+        sig = compute_function_signature(label, label_vars["FUNC"])
+        
+        assert sig.has_value_quit is True
+        assert sig.has_void_quit is False
+        assert sig.return_value is not None
+        # With formal params and return, pure function or function with outputs
+        assert sig.scope_strategy in (ScopeStrategy.PURE_FUNCTION, ScopeStrategy.FUNCTION_WITH_OUTPUTS)
+
+
+class TestTransitivePropagation:
+    """Tests for transitive input/output propagation (Phase 58g)."""
+
+    def test_a_calls_b_calls_c(self):
+        """T640: A calls B calls C - transitive input propagation."""
+        from m2py.analysis.variables import compute_transitive_inputs
+        
+        # C reads VAR
+        var_c = MVariable(name="VAR", subscripts=[])
+        write_c = MWriteStatement(arguments=[var_c])
+        scope_c = MScope(statements=[write_c])
+        label_c = MLabel(name="C", body=scope_c)
+        
+        # B calls C
+        call_c = MCall(name="C", routine=None, arguments=[])
+        do_c = MDoStatement(targets=[call_c])
+        scope_b = MScope(statements=[do_c])
+        label_b = MLabel(name="B", body=scope_b)
+        
+        # A calls B
+        call_b = MCall(name="B", routine=None, arguments=[])
+        do_b = MDoStatement(targets=[call_b])
+        scope_a = MScope(statements=[do_b])
+        label_a = MLabel(name="A", body=scope_a)
+        
+        routine = MRoutine(name="TEST", labels=[label_a, label_b, label_c])
+        label_vars = analyze_variables(routine)
+        
+        transitive = compute_transitive_inputs(routine, label_vars)
+        
+        # C needs VAR, B calls C so B needs VAR, A calls B so A needs VAR
+        assert "VAR" in transitive["C"]
+        assert "VAR" in transitive["B"]
+        assert "VAR" in transitive["A"]
+
+    def test_byref_propagates_output(self):
+        """T641: A calls B with by-ref, B modifies - A's outputs include it."""
+        from m2py.analysis.variables import compute_transitive_outputs, compute_all_signatures
+        from m2py.asg.expressions import MActualParameter
+        from m2py.asg.enums import PassingMode
+        
+        # B(X) sets X=1
+        formal_x = MVariable(name="X", subscripts=[])
+        assign = MAssignment(target=formal_x, value=MLiteral(value=1))
+        set_stmt = MSetStatement(assignments=[assign])
+        scope_b = MScope(statements=[set_stmt])
+        label_b = MLabel(name="B", formal_list=["X"], body=scope_b)
+        
+        # A calls B(.VAR) - VAR passed by reference
+        byref_param = MActualParameter(
+            passing_mode=PassingMode.BY_REFERENCE,
+            expression=MVariable(name="VAR", subscripts=[]),
+            variable_name="VAR"
+        )
+        call_b = MCall(name="B", routine=None, arguments=[byref_param])
+        call_b.target = label_b  # Link call to target
+        do_b = MDoStatement(targets=[call_b])
+        scope_a = MScope(statements=[do_b])
+        label_a = MLabel(name="A", body=scope_a)
+        
+        routine = MRoutine(name="TEST", labels=[label_a, label_b])
+        routine._labels_by_name = {"A": label_a, "B": label_b}
+        
+        label_vars = analyze_variables(routine)
+        signatures = compute_all_signatures(routine)
+        
+        transitive_outputs = compute_transitive_outputs(routine, label_vars, signatures)
+        
+        # B writes to formal X, which is aliased to A's VAR
+        # So VAR should be in A's transitive outputs
+        assert "VAR" in transitive_outputs["A"]
+
+
+class TestFormalParamsShadowing:
+    """Tests for formal parameter shadowing (Phase 58a)."""
+
+    def test_read_caller_var_before_formal_shadows(self):
+        """T595: Reading caller's variable before formal param shadows it.
+        
+        Per MUMPS semantics, formal params perform implicit NEW at entry.
+        If a label reads a variable with same name as formal param before
+        any writes, it reads the *local* NEW'd copy (undefined), not caller's.
+        """
+        # Label CALC(X) that immediately reads X
+        # Since X is formal param, it's NEWed implicitly, so X starts undefined
+        var_x = MVariable(name="X", subscripts=[])
+        var_result = MVariable(name="RESULT", subscripts=[])
+        # S RESULT=X (reads X which is formal, so local copy not caller's)
+        assign = MAssignment(target=var_result, value=var_x)
+        set_stmt = MSetStatement(assignments=[assign])
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="CALC", formal_list=["X"], body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        result = analyze_variables(routine)
+        
+        # X is a formal param, so it should NOT be in input_variables
+        # (it's provided via the call, not read from caller's scope)
+        assert "X" not in result["CALC"].input_variables
+        # X IS in reads (we do read it)
+        assert "X" in result["CALC"].reads
+        # X is treated as implicitly NEWed
+        assert "X" in result["CALC"].formal_params
+
+
+class TestRoutineAnalysisCache:
+    """Tests for RoutineAnalysisCache (Phase 59 - T683)."""
+
+    def test_cache_basic_usage(self):
+        """Test basic cache usage pattern."""
+        from m2py.analysis.variables import RoutineAnalysisCache
+        
+        # Create a routine with two labels
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))])
+        scope_a = MScope(statements=[set_stmt])
+        label_a = MLabel(name="A", body=scope_a)
+        
+        scope_b = MScope(statements=[])
+        label_b = MLabel(name="B", body=scope_b)
+        
+        routine = MRoutine(name="TEST", labels=[label_a, label_b])
+        
+        cache = RoutineAnalysisCache(routine)
+        cache.ensure_analyzed(compute_transitive=False)
+        
+        # Check that results are accessible
+        assert "A" in cache.label_vars
+        assert "B" in cache.label_vars
+        assert "X" in cache.label_vars["A"].writes
+
+    def test_cache_invalidate_label(self):
+        """Test invalidating a specific label."""
+        from m2py.analysis.variables import RoutineAnalysisCache
+        
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))])
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="A", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+        
+        cache = RoutineAnalysisCache(routine)
+        cache.ensure_analyzed(compute_transitive=False)
+        
+        # Invalidate and re-analyze
+        cache.invalidate_label("A")
+        assert not cache._fully_analyzed
+        
+        cache.ensure_analyzed(compute_transitive=False)
+        assert cache._fully_analyzed
+
+
+class TestPerformance:
+    """Performance tests for variable analysis (Phase 59 - T684)."""
+
+    def test_analysis_performance_500_lines(self, tmp_path):
+        """T684: 500-line routine analyzes in <2 seconds per SC-005.
+        
+        This test generates a synthetic 500+ line MUMPS routine and
+        verifies that full analysis completes within 2 seconds.
+        """
+        import time
+        from m2py.parser.parser import MUMPSParser
+        
+        # Generate a 550-line MUMPS routine with realistic complexity
+        lines = ["TEST ; Performance test routine"]
+        
+        # Generate 25 labels, each with ~22 lines (25 * 22 = 550)
+        for i in range(25):
+            lines.append(f"LABEL{i}(P{i})")
+            # Mix of SET, NEW, WRITE, IF statements
+            for j in range(6):
+                lines.append(f" N VAR{j}")
+            for j in range(6):
+                lines.append(f" S VAR{j}=P{i}+{j}")
+            for j in range(6):
+                lines.append(f" W VAR{j},!")
+            for j in range(3):
+                lines.append(f" I VAR{j}>0 D")
+                lines.append(f" . S RESULT=VAR{j}*2")
+            lines.append(f" Q P{i}")
+        
+        # Add some cross-label calls
+        lines.append("MAIN")
+        for i in range(20):
+            lines.append(f" D LABEL{i}({i})")
+        lines.append(" Q")
+        
+        source = "\n".join(lines)
+        assert len(lines) > 500, f"Generated {len(lines)} lines, need 500+"
+        
+        # Write to temp file
+        test_file = tmp_path / "PERF.m"
+        test_file.write_text(source)
+        
+        # Time parsing + full analysis
+        parser = MUMPSParser()
+        
+        start = time.perf_counter()
+        routine = parser.parse_file(test_file)
+        parser.analyze_variables(routine, compute_transitive=True)
+        parser.compute_signatures(routine)
+        elapsed = time.perf_counter() - start
+        
+        # Verify analysis completed
+        assert len(routine.labels) >= 20
+        
+        # SC-005 requirement: <2 seconds
+        assert elapsed < 2.0, f"Analysis took {elapsed:.2f}s, exceeds 2s limit"
+        
+        # Informational: print timing
+        print(f"\n  Performance: {len(lines)} lines analyzed in {elapsed*1000:.1f}ms")

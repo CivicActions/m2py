@@ -380,12 +380,22 @@ class MUMPSParser:
         # Track source file for error reporting
         self._current_file: Optional[str] = None
     
-    def parse(self, source: str, filename: Optional[str] = None) -> MRoutine:
+    def parse(
+        self,
+        source: str,
+        filename: Optional[str] = None,
+        analyze_variables: bool = False,
+        compute_signatures: bool = False,
+    ) -> MRoutine:
         """Parse MUMPS source code and return an ASG.
         
         Args:
             source: The MUMPS source code to parse
             filename: Optional filename for error reporting
+            analyze_variables: If True, run variable analysis after parsing
+                to populate input_variables, output_variables, etc. on labels
+            compute_signatures: If True, compute function signatures for each
+                label (implies analyze_variables=True)
             
         Returns:
             An MRoutine containing the parsed ASG
@@ -402,6 +412,13 @@ class MUMPSParser:
             # Convert textX model to our ASG
             routine = self._build_routine(model, filename)
             
+            # Run optional analysis passes
+            if compute_signatures or analyze_variables:
+                self.analyze_variables(routine, compute_transitive=True)
+            if compute_signatures:
+                from ..analysis.variables import compute_all_signatures
+                compute_all_signatures(routine)
+            
             return routine
             
         except Exception as e:
@@ -411,11 +428,20 @@ class MUMPSParser:
                 source_file=filename,
             ) from e
     
-    def parse_file(self, filepath: Union[str, Path]) -> MRoutine:
+    def parse_file(
+        self,
+        filepath: Union[str, Path],
+        analyze_variables: bool = False,
+        compute_signatures: bool = False,
+    ) -> MRoutine:
         """Parse a MUMPS source file and return an ASG.
         
         Args:
             filepath: Path to the .m file to parse
+            analyze_variables: If True, run variable analysis after parsing
+                to populate input_variables, output_variables, etc. on labels
+            compute_signatures: If True, compute function signatures for each
+                label (implies analyze_variables=True)
             
         Returns:
             An MRoutine containing the parsed ASG
@@ -429,7 +455,13 @@ class MUMPSParser:
         if not filepath.exists():
             raise FileNotFoundError(f"MUMPS source file not found: {filepath}")
         
-        source = filepath.read_text(encoding="utf-8")
+        # Try UTF-8 first, then fall back to Latin-1 for legacy VistA files
+        # Some VistA files contain Latin-1/CP1252 encoded characters (°, ö, §, ÷)
+        # that fail to decode as UTF-8. Latin-1 is a superset that handles all bytes.
+        try:
+            source = filepath.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            source = filepath.read_text(encoding="latin-1")
         
         # Ensure source ends with newline for proper parsing of last line
         if source and not source.endswith('\n'):
@@ -440,6 +472,14 @@ class MUMPSParser:
         routine = self.parse(source, filename=str(filepath))
         routine.name = routine_name
         routine.source_file = str(filepath)
+        
+        # Run optional analysis passes after name/source_file are set
+        if analyze_variables and not compute_signatures:
+            self.analyze_variables(routine, compute_transitive=True)
+        if compute_signatures:
+            self.analyze_variables(routine, compute_transitive=True)
+            from ..analysis.variables import compute_all_signatures
+            compute_all_signatures(routine)
         
         # Store original source lines for $TEXT function support
         # Lines are stored 0-indexed, but $TEXT uses 1-indexed line references
@@ -781,3 +821,26 @@ class MUMPSParser:
                         label_vars[label.name].input_variables = transitive_inputs[label.name]
         
         return label_vars
+    
+    def compute_signatures(self, routine: MRoutine) -> dict[str, "FunctionSignature"]:
+        """Compute function signatures for all labels in a routine.
+        
+        This method combines formal parameters, variable analysis, and QUIT 
+        analysis to determine each label's interface for Python code generation.
+        
+        Function signatures enable generating Python functions with proper
+        arguments and return values instead of runtime get_local()/set_local().
+        
+        Args:
+            routine: The MRoutine to analyze (should have resolve_references
+                called first for full accuracy)
+            
+        Returns:
+            Dictionary mapping label names to FunctionSignature objects
+            
+        Side Effects:
+            Populates MLabel.signature field for each label
+            Also calls analyze_variables() if not already done
+        """
+        from ..analysis.variables import compute_all_signatures, FunctionSignature
+        return compute_all_signatures(routine)

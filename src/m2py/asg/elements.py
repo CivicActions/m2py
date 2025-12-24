@@ -155,6 +155,9 @@ class MLabel(ASGElement):
     input_variables: set = field(default_factory=set, repr=False)
     output_variables: set = field(default_factory=set, repr=False)
     
+    # Function signature (populated by compute_signatures)
+    signature: Optional[Any] = field(default=None, repr=False)  # FunctionSignature
+    
     @property
     def has_explicit_exit(self) -> bool:
         """Check if label ends with an explicit exit (QUIT, GOTO, or HALT).

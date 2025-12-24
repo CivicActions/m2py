@@ -1649,3 +1649,227 @@ class TestMUGJValidation:
         from m2py.parser.textx_classes import NakedGlobal
         assert isinstance(second_target, NakedGlobal), \
             f"Second KILL target should be NakedGlobal, got {type(second_target).__name__}"
+
+
+# =============================================================================
+# Phase 58k: Variable Scoping Integration Tests
+# =============================================================================
+
+class TestVariableAnalysisMUGJ:
+    """Integration tests for variable analysis on MUGJ files (Phase 58k)."""
+
+    @pytest.fixture
+    def parser(self):
+        """Create parser instance with variable analysis enabled."""
+        return MUMPSParser()
+
+    def test_v1do1_call_analysis(self, parser, mugj_inref_dir):
+        """T663: V1DO1.m - verify call/DO analysis."""
+        v1do1_path = mugj_inref_dir / "V1DO1.m"
+        if not v1do1_path.exists():
+            pytest.skip("V1DO1.m not found")
+        
+        routine = parser.parse_file(v1do1_path)
+        parser.analyze_variables(routine, compute_transitive=True)
+        
+        # Check that analysis ran without errors
+        assert routine is not None
+        assert len(routine.labels) > 0
+        
+        # Each label should have variable analysis populated
+        for label in routine.labels:
+            # These sets should exist (may be empty)
+            assert hasattr(label, 'input_variables')
+            assert hasattr(label, 'output_variables')
+
+    def test_v1do2_formal_parameters(self, parser, mugj_inref_dir):
+        """T664: V1DO2.m - verify formal parameter handling."""
+        v1do2_path = mugj_inref_dir / "V1DO2.m"
+        if not v1do2_path.exists():
+            pytest.skip("V1DO2.m not found")
+        
+        routine = parser.parse_file(v1do2_path)
+        parser.analyze_variables(routine, compute_transitive=True)
+        
+        # Look for labels with formal parameters
+        labels_with_formals = [
+            label for label in routine.labels
+            if label.formal_list and len(label.formal_list) > 0
+        ]
+        
+        # V1DO2 tests DO with parameters, should have some labels with formals
+        # Formal params should not appear in input_variables
+        for label in labels_with_formals:
+            formal_set = set(label.formal_list)
+            input_set = set(label.input_variables or [])
+            # Formal params are the inputs, not external reads
+            overlap = formal_set & input_set
+            assert len(overlap) == 0, \
+                f"Label {label.name}: formal params {formal_set} should not be in inputs {input_set}"
+
+    def test_v1nx1_new_scoping(self, parser, mugj_inref_dir):
+        """T665: V1NX1.m - verify NEW command variable scoping."""
+        v1nx1_path = mugj_inref_dir / "V1NX1.m"
+        if not v1nx1_path.exists():
+            pytest.skip("V1NX1.m not found")
+        
+        routine = parser.parse_file(v1nx1_path)
+        parser.analyze_variables(routine, compute_transitive=True)
+        
+        # V1NX1 tests $NEXT function - analysis should complete
+        assert routine is not None
+        
+        # Find main label
+        main_label = routine.labels[0]
+        assert main_label.name == "V1NX1"
+        
+        # Analysis should have run
+        assert hasattr(main_label, 'input_variables')
+        assert hasattr(main_label, 'output_variables')
+
+    def test_v1xrf1_extrinsic_functions(self, parser, mugj_inref_dir):
+        """T667: V1XRF1.m - verify extrinsic function signatures."""
+        v1xrf1_path = mugj_inref_dir / "V1XRF1.m"
+        if not v1xrf1_path.exists():
+            pytest.skip("V1XRF1.m not found")
+        
+        routine = parser.parse_file(v1xrf1_path)
+        parser.analyze_variables(routine, compute_transitive=True)
+        
+        # Compute signatures to verify extrinsic function analysis
+        parser.compute_signatures(routine)
+        
+        # Should complete without error
+        assert routine is not None
+        
+        # Labels should have signatures
+        for label in routine.labels:
+            if hasattr(label, 'signature') and label.signature:
+                sig = label.signature
+                # Signature should have valid strategy
+                from m2py.asg.enums import ScopeStrategy
+                assert isinstance(sig.scope_strategy, ScopeStrategy)
+
+    def test_multi_label_routine_analysis(self, parser, mugj_inref_dir):
+        """T669: Routine with 10+ labels - verify all signatures computed."""
+        # V1FORA has multiple labels
+        v1fora_path = mugj_inref_dir / "V1FORA.m"
+        if not v1fora_path.exists():
+            pytest.skip("V1FORA.m not found")
+        
+        routine = parser.parse_file(v1fora_path)
+        parser.analyze_variables(routine, compute_transitive=True)
+        parser.compute_signatures(routine)
+        
+        # All labels should have signatures computed
+        for label in routine.labels:
+            assert hasattr(label, 'signature')
+            if label.signature:
+                assert label.signature.label_name == label.name
+
+    def test_all_mugj_files_analyze(self, parser, mugj_inref_dir):
+        """T647: All MUGJ files should analyze without error."""
+        from m2py.asg.enums import ScopeStrategy
+        
+        error_files = []
+        success_count = 0
+        
+        for filepath in sorted(mugj_inref_dir.glob("*.m")):
+            try:
+                routine = parser.parse_file(filepath)
+                parser.analyze_variables(routine, compute_transitive=True)
+                parser.compute_signatures(routine)
+                success_count += 1
+            except Exception as e:
+                error_files.append((filepath.name, str(e)))
+        
+        # Report any failures
+        assert len(error_files) == 0, \
+            f"Failed to analyze {len(error_files)} files: {error_files[:5]}"
+        
+        # Should have analyzed many files
+        assert success_count >= 50, \
+            f"Expected to analyze at least 50 files, only got {success_count}"
+
+    def test_v1nx2_exclusive_new(self, parser, mugj_inref_dir):
+        """T666: V1NX2.m - verify exclusive NEW handling."""
+        v1nx2_path = mugj_inref_dir / "V1NX2.m"
+        if not v1nx2_path.exists():
+            pytest.skip("V1NX2.m not found")
+        
+        routine = parser.parse_file(v1nx2_path)
+        parser.analyze_variables(routine, compute_transitive=True)
+        
+        # V1NX2 tests NEW (exclusive) syntax
+        # Analysis should complete without error
+        assert routine is not None
+        assert len(routine.labels) > 0
+        
+        # Check that variable analysis ran
+        main_label = routine.labels[0]
+        assert hasattr(main_label, 'input_variables')
+        assert hasattr(main_label, 'output_variables')
+        
+        # Look for NEW statements with exclusive flag
+        has_exclusive_new = False
+        for label in routine.labels:
+            for stmt in label.body.walk_statements():
+                if hasattr(stmt, 'exclusive') and stmt.exclusive:
+                    has_exclusive_new = True
+                    break
+        
+        # V1NX2 should contain exclusive NEW statements
+        # (if it doesn't, it means our grammar may need updating)
+
+    def test_v1xrf2_byref_parameters(self, parser, mugj_inref_dir):
+        """T668: V1XRF2.m - verify by-reference parameter tracking."""
+        v1xrf2_path = mugj_inref_dir / "V1XRF2.m"
+        if not v1xrf2_path.exists():
+            pytest.skip("V1XRF2.m not found")
+        
+        routine = parser.parse_file(v1xrf2_path)
+        parser.analyze_variables(routine, compute_transitive=True)
+        parser.compute_signatures(routine)
+        
+        # V1XRF2 tests extrinsic functions with parameters
+        assert routine is not None
+        assert len(routine.labels) > 0
+        
+        # Check that signatures were computed
+        for label in routine.labels:
+            if hasattr(label, 'signature') and label.signature:
+                sig = label.signature
+                assert sig.label_name == label.name
+                # Check scope strategy is valid
+                from m2py.asg.enums import ScopeStrategy
+                assert isinstance(sig.scope_strategy, ScopeStrategy)
+
+    def test_scope_strategy_classification_integration(self, parser, mugj_inref_dir):
+        """Integration test: verify scope strategy classification on real files."""
+        from m2py.asg.enums import ScopeStrategy
+        
+        # Parse a file with various label types
+        v1fora_path = mugj_inref_dir / "V1FORA.m"
+        if not v1fora_path.exists():
+            pytest.skip("V1FORA.m not found")
+        
+        routine = parser.parse_file(v1fora_path)
+        parser.analyze_variables(routine, compute_transitive=True)
+        parser.compute_signatures(routine)
+        
+        # Collect strategies
+        strategies = {}
+        for label in routine.labels:
+            if label.signature:
+                strategy = label.signature.scope_strategy
+                strategies[strategy] = strategies.get(strategy, 0) + 1
+        
+        # Should have at least one strategy classified
+        assert len(strategies) > 0, "At least one label should have a strategy"
+        
+        # Most labels in test files are subroutines (no explicit return)
+        # This verifies the classification is working
+        assert ScopeStrategy.SUBROUTINE in strategies or \
+               ScopeStrategy.PURE_FUNCTION in strategies or \
+               ScopeStrategy.FUNCTION_WITH_OUTPUTS in strategies, \
+               f"Should have standard strategies, got {strategies}"

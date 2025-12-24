@@ -122,3 +122,42 @@ class IndirectionType(Enum):
     ARGUMENT = auto()
     PATTERN = auto()
     UNKNOWN = auto()
+
+
+class PassingMode(Enum):
+    """Classification of parameter passing mode for function arguments.
+    
+    Used for variable analysis to track how arguments are passed:
+    - BY_VALUE: Expression is evaluated and passed (D SUB(X+1) or D SUB(X))
+    - BY_REFERENCE: Variable reference passed with . prefix (D SUB(.X))
+      Creates aliasing - modifications to formal param affect caller's actual
+    - OMITTED: Parameter position is empty (D SUB(,Y) - first arg omitted)
+    
+    Per MUMPS spec MDC 8.1.7:
+    - Call-by-reference format: .actualname
+    - Call-by-value format: expr
+    - Omitted-parameter format: empty position in actuallist
+    """
+    BY_VALUE = auto()
+    BY_REFERENCE = auto()
+    OMITTED = auto()
+
+
+class ScopeStrategy(Enum):
+    """Classification of label for code generation strategy.
+    
+    Determines how a label should be transpiled to Python based on
+    variable analysis and return value analysis:
+    - PURE_FUNCTION: No side effects, can be clean Python function
+      with args from formal_list and return from QUIT value
+    - FUNCTION_WITH_OUTPUTS: Has return value AND modifies by-ref params
+      Returns tuple of (return_value, modified_refs)
+    - SUBROUTINE: No return value, may have side effects
+      Python function returning None
+    - REQUIRES_RUNTIME: Static analysis insufficient (indirection, XECUTE)
+      Must use runtime.get_local()/set_local() pattern
+    """
+    PURE_FUNCTION = auto()
+    FUNCTION_WITH_OUTPUTS = auto()
+    SUBROUTINE = auto()
+    REQUIRES_RUNTIME = auto()

@@ -153,6 +153,50 @@ class TestMUMPSParserParseFile:
         # Unknown label returns empty
         assert routine.get_text_at_label("UNKNOWN", 0) == ""
 
+    def test_parse_file_utf8_encoding(self, tmp_path):
+        """parse_file should handle UTF-8 encoded files correctly."""
+        test_file = tmp_path / "UTF8TEST.m"
+        # UTF-8 content with some special chars
+        source = "LABEL\tS X=\"Hello World\"\n\tQ\n"
+        test_file.write_text(source, encoding="utf-8")
+        
+        parser = MUMPSParser()
+        routine = parser.parse_file(test_file)
+        
+        assert routine.name == "UTF8TEST"
+        assert len(routine.labels) >= 1
+
+    def test_parse_file_latin1_fallback(self, tmp_path):
+        """parse_file should fall back to Latin-1 for non-UTF-8 files."""
+        test_file = tmp_path / "LATIN1TEST.m"
+        # Latin-1 content with characters that are invalid in UTF-8
+        # 0xba = º (masculine ordinal), 0xf6 = ö (o with diaeresis)
+        # These bytes appear in VistA files like TIULC.m
+        source_bytes = b"LABEL\tS X=\"Test\xba\xf6\"\n\tQ\n"
+        test_file.write_bytes(source_bytes)
+        
+        parser = MUMPSParser()
+        routine = parser.parse_file(test_file)
+        
+        assert routine.name == "LATIN1TEST"
+        assert len(routine.labels) >= 1
+        # Verify the content was read correctly as Latin-1
+        assert "º" in routine.source_lines[0] or "ö" in routine.source_lines[0]
+
+    def test_parse_file_latin1_preserves_content(self, tmp_path):
+        """parse_file Latin-1 fallback should preserve source content."""
+        test_file = tmp_path / "PRESERVE.m"
+        # Latin-1 characters from VistA files: § (0xa7), ÷ (0xf7)
+        source_bytes = b"MAIN\n\t; Comment with \xa7 and \xf7 chars\n\tQ\n"
+        test_file.write_bytes(source_bytes)
+        
+        parser = MUMPSParser()
+        routine = parser.parse_file(test_file)
+        
+        # Verify source_lines preserves the content correctly
+        assert len(routine.source_lines) == 3
+        assert "§" in routine.source_lines[1] or "÷" in routine.source_lines[1]
+
 
 class TestMUMPSParserMUGJ:
     """Test parsing MUGJ files."""

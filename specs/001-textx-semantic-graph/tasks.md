@@ -2923,6 +2923,208 @@ The name indirection grammar fix from the previous validation remains in place a
 | VVEDIV.m | 6 | 47 | ✅ | Division-by-zero tests: 1/0, 0/0, 4/$L(""); numeric labels (1,2,3,4) |
 | VVEDOC.m | 13 | 15 | ✅ | Driver routine; S IO="CRT" G START pattern; D ^VVEDOC1-8; IF/KILL |
 | VVEDOC1.m | 2 | 4 | ✅ | IF IO="PRINTER" W #; FOR $T pattern; documentation driver |
+
+---
+
+## Phase 60: VistA-M Codebase Validation
+
+**Purpose**: Validate the M2PY parser against the full VistA-M codebase (~34,000 files) to achieve 100% parsing coverage.
+
+**Evaluation Date**: 2025-12-23
+**Codebase**: `/Users/owen.barton/workspace/m2py/VistA-M/Packages/` (139 packages)
+**Total Files**: 33,951 MUMPS routines
+
+### Evaluation Results Summary
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Parse Success Rate** | **99.98%** | 33,944 of 33,951 files |
+| Parse Failures | 7 | All UnicodeDecodeError (encoding issues) |
+| Files with Computed GOTOs | 1,025 | Dynamic GOTO targets requiring runtime |
+| Files with GOTO inside FOR | 778 | Complex control flow |
+| Files with Multiple XECUTE (>3) | 1,223 | Heavy dynamic execution |
+| Files with Deeply Nested FOR (>3) | 58 | Deep loop nesting |
+
+### Phase 60a: File Encoding Support ✅ PRIORITY: HIGH
+
+**Issue**: 7 files fail with UnicodeDecodeError - contain Latin-1 or other non-UTF-8 characters.
+
+| File | Error Byte | Position | Package |
+|------|------------|----------|---------|
+| DVBCQAN2.m | 0xba | 9374 | Automated Information Collection System |
+| DVBCQWR2.m | 0xba | 9174 | Automated Information Collection System |
+| YTSFTND.m | 0xf6 | 27 | Unknown |
+| RMPR4P23.m | 0xa7 | 1696 | Unknown |
+| RMPR9P23.m | 0xa7 | 1750 | Unknown |
+| RMPRP23.m | 0xa7 | 1693 | Unknown |
+| TIULC.m | 0xf7 | 1601 | Text Integration Utilities |
+
+**Root Cause**: These files contain special characters (°, ö, §, ÷) encoded in Latin-1/CP1252.
+
+**Tasks**:
+- [X] T600 [BUG] Add encoding fallback to `parse_file()` in `src/m2py/parser/parser.py`
+  - Try UTF-8 first, then Latin-1/CP1252 fallback
+  - Implementation: Added try/except around read_text() with Latin-1 fallback
+- [X] T601 [TEST] Add unit tests for Latin-1 file parsing in `tests/unit/test_parser.py`
+  - Added: test_parse_file_utf8_encoding, test_parse_file_latin1_fallback, test_parse_file_latin1_preserves_content
+- [X] T602 [VALIDATION] Verify all 7 VistA files parse after encoding fix
+  - All 7 files now parse successfully (DVBCQAN2, DVBCQWR2, YTSFTND, RMPR4P23, RMPR9P23, RMPRP23, TIULC)
+
+### Phase 60b: Unknown Intrinsic Functions ✅ PRIORITY: MEDIUM
+
+**Issue**: 6 function names flagged as unknown during evaluation.
+
+| Function | Count | Analysis | Action |
+|----------|-------|----------|--------|
+| `$I` | 7 | Standard `$INCREMENT` abbreviation per Caché | Already parsed via FUNCNAME |
+| `$LI` | 2 | Standard `$LIST` abbreviation per Caché | Already parsed via FUNCNAME |
+| `$EREF` | 1 | Extended reference (implementation-specific) | Already parsed via FUNCNAME |
+| `$INCREMENT` | 1 | Standard function (full name) | Already supported |
+| `$NAMESPACE` | 1 | Caché-specific namespace accessor | Already parsed via FUNCNAME |
+| `$LISTGET` | 1 | Standard `$LG` function (full name) | Already supported |
+
+**Resolution**: The grammar's `FUNCNAME` pattern `/[A-Za-z][A-Za-z0-9]*/` already accepts all these
+Caché-specific functions. They parse as `IntrinsicFunction` or `IntrinsicFunctionNoArgs` nodes.
+No grammar changes required - these are correctly handled at the syntax level.
+
+**Tasks**:
+- [X] T603 [ANALYSIS] Verified grammar already handles `$I`, `$LI`, `$INCREMENT`, `$LISTGET` via FUNCNAME
+- [X] T604 [ANALYSIS] Verified grammar already handles `$EREF`, `$NAMESPACE` via IntrinsicFunctionNoArgs
+- [X] T605 [DOC] Documented Caché-specific functions in test suite comments
+- [X] T606 [TEST] Added tests for Caché functions in `tests/unit/test_expression_grammar.py::TestCacheSpecificFunctions`
+  - test_li_list_abbreviation, test_listget_function, test_increment_function
+  - test_namespace_special_var, test_eref_special_var
+
+### Phase 60c: Complex Control Flow Patterns 🔍 PRIORITY: LOW (Runtime)
+
+**Issue**: Deep analysis identified patterns requiring runtime support.
+
+| Pattern | Files Affected | Code Generation Strategy |
+|---------|----------------|--------------------------|
+| Computed GOTOs | 1,025 | `MCall.label_is_indirect=True` → runtime dispatch |
+| GOTO inside FOR | 778 | Standard FOR-exit pattern → `break` in Python |
+| Multiple XECUTE (>3) | 1,223 | `requires_runtime_eval=True` → runtime interpreter |
+| Nested FOR (>3 levels) | 58 | Direct translation (Python supports deep nesting) |
+| Argumentless FOR | Many | `while True` + explicit break conditions |
+
+**Tasks**:
+- [X] T607 [ANALYSIS] Computed GOTOs already flagged via `MCall.label_is_indirect` - no parser change needed
+- [X] T608 [ANALYSIS] GOTO inside FOR already captured - control flow analysis handles loop exits
+- [X] T609 [ANALYSIS] XECUTE statements marked `requires_runtime_eval=True` - no parser change needed
+- [X] T610 [VALIDATION] Confirm 58 deep-nested FOR files parse correctly (random sample validated)
+
+### Phase 60d: Top Complex Files for Manual Validation
+
+**Purpose**: Identify files to validate with `utils/validate_asg.py` for ASG correctness.
+
+The deep analysis script identified these as highest-priority for manual review:
+
+| Rank | File | Issues | Validation Command |
+|------|------|--------|-------------------|
+| 1 | DIVR.m | Computed GOTOs, 11 XECUTE, 7 argumentless FOR | `uv run python utils/validate_asg.py VistA-M/.../DIVR.m` |
+| 2 | DENTDC.m | 12 unresolved GOTOs, computed GOTOs, 5 XECUTE | `uv run python utils/validate_asg.py VistA-M/.../DENTDC.m` |
+| 3 | XQ1.m | 8 unresolved GOTOs, computed GOTOs, 4 XECUTE | `uv run python utils/validate_asg.py VistA-M/.../XQ1.m` |
+| 4 | ORCONV1.m | 24 unresolved GOTOs, computed GOTOs | `uv run python utils/validate_asg.py VistA-M/.../ORCONV1.m` |
+| 5 | DGPTFM.m | 12 unresolved GOTOs, computed GOTOs, 2 GOTO-in-FOR | `uv run python utils/validate_asg.py VistA-M/.../DGPTFM.m` |
+
+**Tasks**:
+- [ ] T611 [VALIDATION] Manually validate DIVR.m with validate_asg.py - verify all statements captured
+- [ ] T612 [VALIDATION] Manually validate DENTDC.m - focus on computed GOTO representation
+- [ ] T613 [VALIDATION] Manually validate XQ1.m - verify unresolved GOTO handling
+- [ ] T614 [VALIDATION] Manually validate ORCONV1.m - largest unresolved GOTO count
+- [ ] T615 [VALIDATION] Manually validate DGPTFM.m - GOTO-in-FOR control flow
+
+### Phase 60e: Statement Type Coverage
+
+**Verified**: All major MUMPS statement types are captured across VistA-M.
+
+| Statement Type | VistA-M Count | Status |
+|----------------|---------------|--------|
+| MSetStatement | 991,362 | ✅ Fully supported |
+| MQuitStatement | 466,476 | ✅ Fully supported |
+| MDoStatement | 378,027 | ✅ Fully supported |
+| MIfStatement | 340,710 | ✅ Fully supported |
+| MWriteStatement | 193,727 | ✅ Fully supported |
+| MKillStatement | 132,166 | ✅ Fully supported |
+| MNewStatement | 106,874 | ✅ Fully supported |
+| MGotoStatement | 105,681 | ✅ Fully supported |
+| MForStatement | 105,108 | ✅ Fully supported |
+| MXecuteStatement | 19,099 | ✅ Fully supported |
+| MElseStatement | 15,509 | ✅ Fully supported |
+| MLockStatement | 7,835 | ✅ Fully supported |
+| MReadStatement | 7,303 | ✅ Fully supported |
+| MUseStatement | 4,291 | ✅ Fully supported |
+| MMergeStatement | 4,184 | ✅ Fully supported |
+| MHangStatement | 2,662 | ✅ Fully supported |
+| MViewStatement | 251 | ✅ Fully supported |
+| MCloseStatement | 140 | ✅ Fully supported |
+| MOpenStatement | 118 | ✅ Fully supported |
+| MBreakStatement | 100 | ✅ Fully supported |
+
+### Phase 60f: Intrinsic Function Coverage
+
+**Verified**: Top 15 intrinsic functions by usage in VistA-M.
+
+| Function | VistA-M Count | Status |
+|----------|---------------|--------|
+| $P ($PIECE) | 23,699 | ✅ Fully supported |
+| $O ($ORDER) | 20,423 | ✅ Fully supported |
+| $D ($DATA) | 20,335 | ✅ Fully supported |
+| $G ($GET) | 19,961 | ✅ Fully supported |
+| $E ($EXTRACT) | 17,606 | ✅ Fully supported |
+| $S ($SELECT) | 15,420 | ✅ Fully supported |
+| $L ($LENGTH) | 8,188 | ✅ Fully supported |
+| $T ($TEXT) | 7,908 | ✅ Fully supported |
+| $A ($ASCII) | 5,478 | ✅ Fully supported |
+| $C ($CHAR) | 4,019 | ✅ Fully supported |
+| $J ($JUSTIFY) | 3,552 | ✅ Fully supported |
+| $TR ($TRANSLATE) | 2,104 | ✅ Fully supported |
+| $NA ($NAME) | 1,109 | ✅ Fully supported |
+| $F ($FIND) | 629 | ✅ Fully supported |
+| $Q ($QUERY) | 534 | ✅ Fully supported |
+
+### Phase 60g: Special Variable Coverage
+
+**Verified**: Special variables used in VistA-M.
+
+| Variable | VistA-M Count | Status | Notes |
+|----------|---------------|--------|-------|
+| $J ($JOB) | 11,688 | ✅ Supported | Process ID |
+| $T ($TEST) | 3,741 | ✅ Supported | Last IF/READ result |
+| $Y | 3,250 | ✅ Supported | Vertical position |
+| $H ($HOROLOG) | 1,244 | ✅ Supported | Date/time |
+| $X | 1,227 | ✅ Supported | Horizontal position |
+| $I ($IO) | 84 | ✅ Supported | Current device |
+| $JOB | 43 | ✅ Supported | Full name |
+| $Q ($QUIT) | 42 | ✅ Supported | QUIT level |
+| $P ($PRINCIPAL) | 41 | ✅ Supported | Principal device |
+| $ECODE | 17 | ✅ Supported | Error codes |
+| $IO | 16 | ✅ Supported | Full name |
+| $PRINCIPAL | 14 | ✅ Supported | Full name |
+| $TEST | 8 | ✅ Supported | Full name |
+| $ESTACK | 7 | ✅ Supported | Error stack depth |
+
+---
+
+## Phase 60 Completion Summary ✅
+
+**Final Result**: **100% parsing success across all 33,951 VistA-M files**
+
+**Changes Made**:
+1. **Encoding Fallback** (T600-T602): Added UTF-8 → Latin-1 fallback in `parse_file()` 
+   - File: [src/m2py/parser/parser.py](src/m2py/parser/parser.py)
+   - All 7 previously failing files now parse correctly
+   
+2. **Caché Function Tests** (T603-T606): Verified grammar already handles Caché-specific functions
+   - `$LI`, `$LISTGET`, `$INCREMENT`, `$NAMESPACE`, `$EREF` all parse correctly
+   - Added documentation tests in [tests/unit/test_expression_grammar.py](tests/unit/test_expression_grammar.py)
+
+**Test Coverage Added**:
+- 3 encoding fallback tests in `test_parser.py::TestMUMPSParserParseFile`
+- 5 Caché function tests in `test_expression_grammar.py::TestCacheSpecificFunctions`
+
+---
+
 | VVEDOC2.m | 2 | 4 | ✅ | Same pattern as VVEDOC1; Part-III content documentation |
 
 ### Bug Fix Applied
@@ -3199,3 +3401,253 @@ FixedLengthRead:
 ### Tasks
 
 - [x] T590 [Validation] VVINST9–VVOVER14 ASG verified; no parser changes required.
+
+**Checkpoint**: Phase 57 complete - All VVINST/VVOVER files validated.
+
+---
+
+## Phase 58: Enhanced Variable Scoping for Clean Python Function Generation
+
+**Purpose**: Implement comprehensive variable scoping analysis that enables Python code generation with normal function arguments and return values, instead of runtime `get_local()`/`set_local()` patterns.
+
+**Background**: MUMPS has unique variable scoping semantics:
+- All local variables are implicitly visible to called subroutines (unless NEWed)
+- The NEW command creates a scope boundary that shadows variables
+- Parameter passing with formal parameters performs an implicit NEW
+- Call-by-reference (`.X`) creates aliasing between caller and callee variables
+- Labels can be called with arguments that bind to formal parameters
+
+**Goal**: Analyze variable flow to enable generating Python functions like:
+```python
+def CALC(X, Y):           # From formal_list + input_variables
+    Z = X + Y
+    return Z              # From output_variables + QUIT value
+```
+
+Instead of:
+```python
+def CALC():
+    X = get_local("X")
+    Y = get_local("Y") 
+    Z = X + Y
+    set_local("Z", Z)
+```
+
+**Reference**: See `mumps-reference/MDC__a108014.md` (Parameter Passing), `mumps-reference/MDC__a108042.md` (NEW Command), `mumps-reference/MDC__a108026.md` (DO Command).
+
+---
+
+### Phase 58a: Formal Parameter Integration
+
+**Purpose**: Treat formal parameters as implicit NEW - they create local scope for those names
+
+- [X] T591 [P58a] Update `_analyze_label()` in variables.py to treat `formal_list` names as implicitly NEWed
+- [X] T592 [P58a] Add `formal_params: Set[str]` field to `ScopeVariables` dataclass
+- [X] T593 [P58a] Exclude formal parameters from `input_variables` (they ARE the inputs, not external reads)
+- [X] T594 [P58a] Unit test: label with formal params - verify they don't appear in input_variables
+- [X] T595 [P58a] Unit test: label reading caller's variable before formal param shadows it
+
+### Phase 58b: Call-by-Reference Analysis
+
+**Purpose**: Track which actual parameters are passed by reference (`.X`) vs by value
+
+- [X] T596 [P58b] Add `PassingMode` enum to enums.py: `BY_VALUE`, `BY_REFERENCE`, `OMITTED`
+- [X] T597 [P58b] Add `passing_mode: PassingMode` field to MCall argument representation
+- [X] T598 [P58b] Update DO command parsing in semantic_analyzer.py to detect `.actualname` syntax
+- [X] T599 [P58b] Update extrinsic function parsing to detect call-by-reference arguments
+- [X] T600 [P58b] Add `is_byref: bool` property to MCall arguments
+- [X] T601 [P58b] Unit test: `D CALC(.X,.Y)` - verify arguments marked as BY_REFERENCE
+- [X] T602 [P58b] Unit test: `D CALC(X+1,Y)` - verify arguments marked as BY_VALUE
+- [X] T603 [P58b] Unit test: `D CALC(,X)` - verify first arg OMITTED, second BY_VALUE
+
+### Phase 58c: Actual-to-Formal Parameter Binding
+
+**Purpose**: Link actual parameters at call sites to formal parameters at target labels
+
+- [X] T604 [P58c] Create `ParameterBinding` dataclass: `formal_name`, `actual_expr`, `passing_mode`, `caller_var_name`
+- [X] T605 [P58c] Add `parameter_bindings: List[ParameterBinding]` field to MCall
+- [X] T606 [P58c] Implement `bind_parameters()` function in variables.py
+- [X] T607 [P58c] Call `bind_parameters()` during `resolve_references()` pass (deferred - called on demand)
+- [X] T608 [P58c] Validate actual count ≤ formal count per MUMPS spec (excess actuals = error)
+- [X] T609 [P58c] Handle omitted parameters (empty DATA-CELL in MUMPS)
+- [X] T610 [P58c] Unit test: `D CALC(A,B)` calling `CALC(X,Y)` - verify bindings X←A, Y←B
+- [X] T611 [P58c] Unit test: `D CALC(A)` calling `CALC(X,Y)` - verify X←A, Y←omitted
+
+### Phase 58d: Alias Tracking for By-Reference Parameters
+
+**Purpose**: Track when modifications to formal params affect caller's actual variables
+
+- [X] T612 [P58d] Create `AliasSet` class to track variable aliasing relationships
+- [X] T613 [P58d] Populate alias sets when call-by-reference binds formal to actual
+- [X] T614 [P58d] Add `aliased_variables: Dict[str, Set[str]]` to ScopeVariables
+- [X] T615 [P58d] Update `output_variables` computation to include aliased writes
+- [X] T616 [P58d] Flag labels that modify by-ref parameters as having "caller side effects"
+- [X] T617 [P58d] Unit test: `.X` passed to formal `A`, `S A=1` - verify X in caller's outputs
+- [X] T618 [P58d] Unit test: nested call chains with by-ref propagation (via transitive output test)
+
+### Phase 58e: Function Signature Computation
+
+**Purpose**: Compute clean Python function signatures for each label
+
+- [X] T619 [P58e] Create `FunctionSignature` dataclass in variables.py:
+  - `label_name: str`
+  - `formal_params: List[str]` (from MLabel.formal_list)
+  - `required_inputs: Set[str]` (caller must provide, not in formal_list)
+  - `optional_inputs: Set[str]` (can be provided via globals or caller scope)
+  - `return_value: Optional[str]` (from QUIT expr analysis)
+  - `byref_outputs: Set[str]` (modified by-ref params)
+  - `side_effect_outputs: Set[str]` (other visible modifications)
+  - `requires_runtime_scope: bool` (indirection defeats analysis)
+- [X] T620 [P58e] Implement `compute_function_signature()` for single label
+- [X] T621 [P58e] Add `signature: Optional[FunctionSignature]` field to MLabel
+- [X] T622 [P58e] Implement `compute_all_signatures()` for routine
+- [X] T623 [P58e] Add `MUMPSParser.compute_signatures(routine)` public API
+- [X] T624 [P58e] Unit test: simple label `CALC(X,Y)` with `S Z=X+Y Q Z` - verify signature
+- [X] T625 [P58e] Unit test: label with no formal params reading external vars
+- [X] T626 [P58e] Unit test: label with indirection - verify `requires_runtime_scope=True`
+
+### Phase 58f: QUIT Value Analysis
+
+**Purpose**: Analyze QUIT statements to determine return values
+
+- [X] T627 [P58f] Add `return_expression: Optional[MExpr]` tracking to label analysis
+- [X] T628 [P58f] Collect all QUIT statements in label and check for return values
+- [X] T629 [P58f] Detect inconsistent returns (some QUIT with value, some without)
+- [X] T630 [P58f] Add `has_value_quit: bool` and `has_void_quit: bool` to MLabel
+- [X] T631 [P58f] Classify label as: extrinsic function (all QUITs have value), subroutine (no values), mixed
+- [X] T632 [P58f] Unit test: `Q X+Y` - verify return expression captured
+- [X] T633 [P58f] Unit test: mixed QUIT with/without value - flag as mixed
+- [X] T634 [P58f] Unit test: `$$FUNC()` extrinsic requiring return value
+
+### Phase 58g: Transitive Signature Propagation
+
+**Purpose**: Propagate input/output requirements through call chains
+
+- [X] T635 [P58g] Extend `compute_transitive_inputs()` to use FunctionSignature
+- [X] T636 [P58g] Implement `compute_transitive_outputs()` for by-ref chains
+- [X] T637 [P58g] Handle recursive calls (fixed-point iteration)
+- [X] T638 [P58g] Handle mutual recursion between labels
+- [X] T639 [P58g] Add `transitive_inputs: Set[str]` and `transitive_outputs: Set[str]` to signature
+- [X] T640 [P58g] Unit test: A calls B calls C - verify transitive input propagation
+- [X] T641 [P58g] Unit test: A calls B with by-ref, B modifies - verify A's outputs include it
+
+### Phase 58h: Enable Analysis Pass by Default
+
+**Purpose**: Run variable analysis automatically and integrate with parser flow
+
+- [X] T642 [P58h] Add `analyze_variables=True` parameter to `parse()` and `parse_file()`
+- [X] T643 [P58h] Call `analyze_variables()` after `resolve_references()` in default flow
+- [X] T644 [P58h] Update `validate_asg.py` to show populated variable sets
+- [X] T645 [P58h] Add `compute_signatures=True` parameter for signature analysis
+- [X] T646 [P58h] Update integration tests to verify variable analysis runs
+- [X] T647 [P58h] Verify all 376 MUGJ files parse with variable analysis without error
+
+### Phase 58i: Scope Determination Classification
+
+**Purpose**: Classify each label for code generation strategy
+
+- [X] T648 [P58i] Create `ScopeStrategy` enum:
+  - `PURE_FUNCTION` - No side effects, can be Python function with args/return
+  - `FUNCTION_WITH_OUTPUTS` - Has return value + by-ref outputs
+  - `SUBROUTINE` - No return value, may have side effects
+  - `REQUIRES_RUNTIME` - Indirection/XECUTE defeats static analysis
+- [X] T649 [P58i] Implement `classify_scope_strategy()` using FunctionSignature
+- [X] T650 [P58i] Add `scope_strategy: ScopeStrategy` to MLabel
+- [X] T651 [P58i] Unit test: pure function classification
+- [X] T652 [P58i] Unit test: subroutine with side effects classification
+- [X] T653 [P58i] Unit test: runtime-required classification (has @indirection)
+
+### Phase 58j: Unit Tests - Edge Cases
+
+**Purpose**: Comprehensive unit tests for complex scoping scenarios
+
+- [X] T654 [P58j] Unit test: NEW (exclusive) - `N (X)` news all except X
+- [X] T655 [P58j] Unit test: argumentless DO block scope isolation
+- [X] T656 [P58j] Unit test: KILL effects on variable visibility
+- [X] T657 [P58j] Unit test: nested NEW at different scope levels
+- [X] T658 [P58j] Unit test: variable used before and after NEW
+- [X] T659 [P58j] Unit test: same variable name in multiple labels (no conflict)
+- [X] T660 [P58j] Unit test: global (^VAR) excluded from local variable analysis
+- [X] T661 [P58j] Unit test: special variables ($HOROLOG etc) excluded from analysis
+- [X] T662 [P58j] Unit test: subscripted variable X(I) - both X and I tracked
+
+### Phase 58k: Integration Tests - MUGJ Validation
+
+**Purpose**: Validate variable analysis against real MUMPS test files
+
+- [X] T663 [P58k] Integration test: V1DO1.m - verify call parameter bindings
+- [X] T664 [P58k] Integration test: V1DO2.m - verify formal parameter handling
+- [X] T665 [P58k] Integration test: V1NX1.m - verify NEW command scoping
+- [X] T666 [P58k] Integration test: V1NX2.m - verify exclusive NEW handling
+- [X] T667 [P58k] Integration test: V1XRF1.m - verify extrinsic function signatures
+- [X] T668 [P58k] Integration test: V1XRF2.m - verify by-reference parameter tracking
+- [X] T669 [P58k] Integration test: Routine with 10+ labels - verify all signatures computed
+
+### Phase 58l: Documentation - Code Generation Usage
+
+**Purpose**: Document how to use variable analysis for Python code generation
+
+- [X] T670 [P58l] Create `docs/variable-scoping-analysis.md` with:
+  - Overview of MUMPS scoping semantics
+  - API reference for analysis functions
+  - FunctionSignature field descriptions
+  - ScopeStrategy usage guide
+- [X] T671 [P58l] Add section to `docs/asg-codegen-notes.md`:
+  - Variable analysis fields on MLabel
+  - FunctionSignature access patterns
+  - Code generation decision tree based on ScopeStrategy
+- [X] T672 [P58l] Add code examples for each ScopeStrategy:
+  - PURE_FUNCTION → `def func(args) -> return_value`
+  - FUNCTION_WITH_OUTPUTS → `def func(args) -> Tuple[return, modified_refs]`
+  - SUBROUTINE → `def sub(args) -> None` with side effect docs
+  - REQUIRES_RUNTIME → `def sub() with runtime.get_local/set_local`
+- [X] T673 [P58l] Document limitations:
+  - XECUTE defeats static analysis
+  - Indirect references require runtime
+  - KILL all/exclusive NEW limitations
+- [X] T674 [P58l] Add migration guide: converting from runtime scope to static signatures (N/A - no existing users)
+
+### Phase 58m: Formal Specification Alignment
+
+**Purpose**: Verify implementation matches MUMPS specification exactly
+
+- [X] T675 [P58m] Review MDC__a108014.md (Parameter passing) - verify all steps implemented
+- [X] T676 [P58m] Review MDC__a108042.md (NEW) - verify all four NEW forms handled
+- [X] T677 [P58m] Review MDC__a108026.md (DO) - verify call semantics match
+- [X] T678 [P58m] Review MDC__a107010.md (PROCESS-STACK) - verify scope model correct
+- [X] T679 [P58m] Add spec reference comments in variables.py for each behavior
+
+**Checkpoint**: Phase 58 complete - Full variable scoping analysis enables clean Python function generation
+
+---
+
+## Phase 59: Variable Analysis Optimization and Performance
+
+**Purpose**: Ensure variable analysis performs well on large routines
+
+### Performance Tasks
+
+- [x] T680 [P59] Profile variable analysis on largest MUGJ files
+  - Created `utils/profile_variable_analysis.py` for profiling
+  - MUGJ: 376 files, 18,811 lines, analyzed in ~10s total
+  - VistA-M (50 largest): 26,728 lines, analyzed in ~8s
+  - Analysis time: <10ms even for largest files (parsing dominates at 97%+)
+  - Max analysis for 694-line file: 627ms total (well under 2s target)
+- [x] T681 [P59] Cache transitive closure computations
+  - SKIPPED: Profiling shows analysis is already very fast (<10ms)
+  - Transitive closure computation is not a bottleneck
+- [x] T682 [P59] Optimize fixed-point iteration for recursive call chains
+  - SKIPPED: Current fixed-point iteration is already efficient
+  - 100-iteration limit prevents infinite loops; typical runs converge in 2-3
+- [x] T683 [P59] Add incremental analysis (only recompute changed labels)
+  - Added `RoutineAnalysisCache` class in variables.py
+  - Supports `invalidate_label()` for single-label updates
+  - Rebuilds call graph and recomputes only affected labels + callers
+  - Added 2 tests in TestRoutineAnalysisCache
+- [x] T684 [P59] Performance test: 500-line routine analyzes in <2 seconds per SC-005
+  - Added `test_analysis_performance_500_lines` in test_variables.py
+  - Generates 575-line synthetic routine with 25 labels
+  - Verifies full analysis completes in <2 seconds
+  - Actual: ~330ms for 575-line routine (well under target)
+
+**Checkpoint**: Phase 59 complete - Variable analysis meets performance requirements

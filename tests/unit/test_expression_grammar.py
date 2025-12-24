@@ -397,6 +397,60 @@ class TestIntrinsicFunctions:
         assert model is not None
 
 
+class TestCacheSpecificFunctions:
+    """Test Caché/IRIS-specific function parsing.
+    
+    These are implementation-specific functions found in VistA codebase.
+    The grammar accepts them via the generic FUNCNAME pattern.
+    """
+    
+    def test_li_list_abbreviation(self, expr_metamodel):
+        """Parse $LI as Caché $LIST abbreviation."""
+        model = expr_metamodel.model_from_str('$LI(X,1)', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'IntrinsicFunction'
+        assert operand.name == 'LI'
+        assert len(operand.args.args) == 2
+    
+    def test_listget_function(self, expr_metamodel):
+        """Parse $LISTGET Caché function."""
+        model = expr_metamodel.model_from_str('$LISTGET(X,2,0)', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'IntrinsicFunction'
+        assert operand.name == 'LISTGET'
+        assert len(operand.args.args) == 3
+    
+    def test_increment_function(self, expr_metamodel):
+        """Parse $INCREMENT Caché atomic increment function."""
+        model = expr_metamodel.model_from_str('$INCREMENT(^CTR)', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == 'IntrinsicFunction'
+        assert operand.name == 'INCREMENT'
+        assert len(operand.args.args) == 1
+    
+    def test_namespace_special_var(self, expr_metamodel):
+        """Parse $NAMESPACE Caché special variable."""
+        model = expr_metamodel.model_from_str('$NAMESPACE', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        # NAMESPACE is not a standard MUMPS special variable,
+        # so it parses as IntrinsicFunctionNoArgs
+        assert operand.__class__.__name__ == 'IntrinsicFunctionNoArgs'
+        assert operand.name == 'NAMESPACE'
+    
+    def test_eref_special_var(self, expr_metamodel):
+        """Parse $EREF Caché external reference variable."""
+        model = expr_metamodel.model_from_str('$EREF', 'Expr')
+        assert model is not None
+        operand = model.left.operand
+        # EREF is a Caché-specific variable, parses as IntrinsicFunctionNoArgs
+        assert operand.__class__.__name__ == 'IntrinsicFunctionNoArgs'
+        assert operand.name == 'EREF'
+
+
 class TestSpecialVariables:
     """Test special variable parsing."""
     

@@ -351,6 +351,23 @@ def display_compact_asg(routine: Any) -> None:
         if label.formal_list:
             print(f"  params: ({', '.join(label.formal_list)})")
         
+        # Show variable analysis results if populated
+        if label.input_variables or label.output_variables:
+            if label.input_variables:
+                print(f"  inputs: {{{', '.join(sorted(label.input_variables))}}}")
+            if label.output_variables:
+                print(f"  outputs: {{{', '.join(sorted(label.output_variables))}}}")
+        
+        # Show function signature if computed
+        if hasattr(label, 'signature') and label.signature:
+            sig = label.signature
+            strategy = sig.scope_strategy.name if sig.scope_strategy else 'UNKNOWN'
+            print(f"  strategy: {strategy}")
+            if sig.has_value_quit:
+                print(f"  returns: value")
+            if sig.requires_runtime_scope:
+                print(f"  ⚠️ requires runtime scope")
+        
         if label.body and label.body.statements:
             display_statements_recursive(label.body.statements, indent=1)
         else:
@@ -484,6 +501,10 @@ Examples:
             parser_obj.classify_gotos(routine)
             # Run FOR loop analysis to detect loop variable modification
             parser_obj.analyze_for_loops(routine)
+            # Run variable analysis to populate input/output variables
+            parser_obj.analyze_variables(routine, compute_transitive=True)
+            # Compute function signatures for code generation
+            parser_obj.compute_signatures(routine)
             
             if args.compact:
                 display_compact_asg(routine)
