@@ -194,6 +194,28 @@ The grammar is split into multiple files for maintainability:
 
 This allows focused testing and easier evolution of individual parts.
 
+### Why Two-Phase Parsing?
+
+The parser uses a deliberate two-phase approach:
+
+1. **Phase 1 (Structure Parsing)**: `MUMPSParser` uses `mumps.tx` with `classes=[]`
+   to parse the overall routine structure—labels, line boundaries, and continuations.
+   No custom classes are registered at this phase because we only need the raw
+   structure, not command semantics.
+
+2. **Phase 2 (Command Parsing)**: `command_parser.py` uses `line.tx`/`commands.tx`
+   with the full set of custom classes to parse individual line content into
+   typed ASG nodes (commands, expressions, etc.).
+
+This separation provides several benefits:
+- **Isolation**: Structure parsing errors are separated from command parsing errors
+- **Flexibility**: Line content can be re-parsed or analyzed independently
+- **Testing**: Each phase can be tested in isolation
+- **Performance**: Structure parsing is lightweight; full parsing happens only where needed
+
+> **Note**: If you see `classes=[]` in `MUMPSParser.__init__`, this is intentional—
+> it's part of the two-phase architecture, not incomplete implementation.
+
 ## Key Data Structures
 
 ### MRoutine

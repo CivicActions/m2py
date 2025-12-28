@@ -529,6 +529,24 @@ class TestParserErrorHandling:
             "1:" in error_msg or "line" in error_msg.lower() or "Expected" in error_msg
         )
 
+    def test_syntax_error_extracts_line_column_from_textx(self):
+        """Phase 69: MUMPSSyntaxError should extract line/column from textX exceptions."""
+        parser = MUMPSParser()
+
+        # Invalid syntax - missing trailing newline triggers TextXSyntaxError
+        invalid_source = "TEST\tS X=1"  # No newline at end
+
+        with pytest.raises(MUMPSSyntaxError) as excinfo:
+            parser.parse(invalid_source)
+
+        # Line and column should be populated from the textX exception
+        error = excinfo.value
+        assert error.line is not None, "line should be extracted from TextXSyntaxError"
+        assert error.line >= 1, "line should be a valid line number"
+        # Column may be None for some errors, but if present should be valid
+        if error.column is not None:
+            assert error.column >= 0, "column should be a valid column number"
+
     def test_syntax_error_preserves_message(self):
         """T336: MUMPSSyntaxError should preserve original error message."""
         parser = MUMPSParser()

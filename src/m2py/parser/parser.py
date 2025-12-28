@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 from textx import metamodel_from_file
+from textx.exceptions import TextXSyntaxError
 
 from m2py.analysis.command_parser import (
     classify_for_from_textx,
@@ -395,9 +396,13 @@ class MUMPSParser:
         # Create the textX metamodel
         # IMPORTANT: skipws=False because MUMPS is whitespace-sensitive
         # (tabs separate labels from commands, spaces separate arguments)
+        #
+        # NOTE: classes=[] is intentional. This parser uses a two-phase approach:
+        # - Phase 1 (here): mumps.tx parses routine structure (labels, lines)
+        # - Phase 2: command_parser.py parses line content with custom classes
+        # See docs/architecture.md "Why Two-Phase Parsing?" for details.
         self._metamodel = metamodel_from_file(
             str(grammar_file),
-            # Custom classes will be registered here as ASG types are implemented
             classes=[],
             skipws=False,  # Don't auto-skip whitespace
         )
@@ -447,8 +452,16 @@ class MUMPSParser:
 
             return routine
 
+        except TextXSyntaxError as e:
+            # Extract line/column from textX exception for better error reporting
+            raise MUMPSSyntaxError(
+                message=str(e),
+                line=e.line,
+                column=e.col,
+                source_file=filename,
+            ) from e
         except Exception as e:
-            # Convert textX exceptions to our exception type
+            # Convert other exceptions to our exception type
             raise MUMPSSyntaxError(
                 message=str(e),
                 source_file=filename,
@@ -516,8 +529,10 @@ class MUMPSParser:
     def _build_routine(self, model, filename: Optional[str]) -> MRoutine:
         """Convert textX parse model to MRoutine ASG.
 
-        This is a placeholder that will be expanded as we implement
-        more ASG element mappings.
+        Transforms the raw textX parse tree into an Abstract Semantic Graph,
+        processing LabelLines (named entry points), ContLines (continuation
+        lines), and creating a synthetic preamble label for any lines that
+        appear before the first named label.
 
         Args:
             model: The textX parse model
@@ -644,8 +659,8 @@ class MUMPSParser:
         # Store line content for pattern classification methods
         label._line_rest = getattr(line, "rest", "")
 
-        # Parse line content using textX grammar (new approach)
-        # This stores the parsed commands for later ASG building
+        # Parse line content using textX command grammar.
+        # Parsed commands are stored for later ASG building.
         if label._line_rest:
             label._parsed_content = parse_line_content(label._line_rest)
             label._parsed_commands = parse_commands_from_line(label._line_rest)

@@ -114,13 +114,18 @@ BinaryOp:
 | `'=` `'<` `'>` | Negated comparisons | NOT equals, etc. |
 | `[` | Contains | String contains |
 | `]` | Follows | String collation |
-| `]]` | Sorts after | |
+| `]]` | Sorts after | MUMPS 1995 ANSI standard¹ |
 | `&` | AND | Logical |
 | `!` | OR | Logical |
 | `'&` `'!` | NAND, NOR | |
 | `_` | Concatenate | String |
 | `?` | Pattern match | See below |
 | `'?` | Not pattern match | |
+
+> ¹ The `]]` "sorts after" operator was added in the MUMPS 1995 ANSI standard.
+> It is distinct from `]` (follows) and returns true if the left operand sorts
+> after the right operand in subscript collation order. See
+> [mumps-reference/1995__a902027.md](../mumps-reference/1995__a902027.md) for the specification.
 
 ### Pattern Match Syntax
 

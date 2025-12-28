@@ -5756,3 +5756,68 @@ Requires grammar extension for `.VAR` syntax.
   - Add assertions in existing MUGJ tests for new field population
 
 **Checkpoint**: Phase 68 complete - All ASG implementation gaps resolved
+
+## Phase 69: Grammar and Parser Consistency Review
+
+### Findings from Review
+
+This phase documents findings from a consistency, correctness, and completion review of the grammar (.tx) and parser (.py) files.
+
+#### Issue 1: Outdated Comment in parser.py `__init__`
+**File:** [src/m2py/parser/parser.py#L395-L402](src/m2py/parser/parser.py#L395-L402)  
+**Status:** Minor - Comment Cleanup  
+**Finding:** The comment `# Custom classes will be registered here as ASG types are implemented` is outdated.  
+**Analysis:** The architecture intentionally uses a two-phase approach:
+1. `mumps.tx` parses routine structure (labels, lines) without custom classes
+2. `parse_commands_from_line()` in `command_parser.py` uses custom classes for command/expression parsing
+
+This is correct behavior, not a bug. The comment is simply outdated and misleading.  
+**Solution:** Update comment to describe the current two-phase parsing architecture.
+
+#### Issue 2: textX Line/Column Info Not Extracted in Error Handling
+**File:** [src/m2py/parser/parser.py#L450-L456](src/m2py/parser/parser.py#L450-L456)  
+**Status:** Improvement - Error Reporting  
+**Finding:** When catching textX exceptions, line/column info from `TextXSyntaxError` is not extracted.  
+**Analysis:** Verified that `TextXSyntaxError` has `line` and `col` attributes, but the current code only uses `str(e)`. The structured `MUMPSSyntaxError.line` and `.column` attributes remain `None`.  
+**Solution:** Extract line/column from textX exceptions when available and pass to `MUMPSSyntaxError`.
+
+#### Issue 3: Outdated "Placeholder" Comment in `_build_routine`
+**File:** [src/m2py/parser/parser.py#L516-L520](src/m2py/parser/parser.py#L516-L520)  
+**Status:** Minor - Comment Cleanup  
+**Finding:** Comment says "This is a placeholder that will be expanded..."  
+**Analysis:** The method is fully implemented and handles LabelLine, ContLine, and preamble labels. The "placeholder" phrasing implies incomplete work.  
+**Solution:** Reframe to describe current behavior without "placeholder" terminology.
+
+#### Issue 4: Change-Centric Wording in textx_classes.py
+**File:** [src/m2py/parser/textx_classes.py#L285](src/m2py/parser/textx_classes.py#L285), [#L298](src/m2py/parser/textx_classes.py#L298)  
+**Status:** Minor - Comment Cleanup  
+**Finding:** Comments reference "T538 fix" which is change-centric rather than describing current behavior.  
+**Analysis:** T538 references appear in docstrings for `IntrinsicFunction` and `IntrinsicFunctionNoArgs`. These should state the current grammar rule requirements.  
+**Solution:** Reframe comments to state current behavior (e.g., "IntrinsicFunction requires parenthesized arguments" rather than "T538 fix").
+
+#### Issue 5: "New Approach" Wording in _build_label
+**File:** [src/m2py/parser/parser.py#L648-L649](src/m2py/parser/parser.py#L648-L649)  
+**Status:** Minor - Comment Cleanup  
+**Finding:** Comment says "Parse line content using textX grammar (new approach)"  
+**Analysis:** Implies a transition rather than describing current behavior.  
+**Solution:** Remove "new approach" phrasing.
+
+#### Non-Issue: `]]` Operator in BinaryOp Regex
+**File:** [src/m2py/grammar/expressions.tx#L50-L55](src/m2py/grammar/expressions.tx#L50-L55)  
+**Status:** Correct - No Change Needed  
+**Finding:** Initially appeared that `]]` might be incorrectly included as a binary operator.  
+**Analysis:** Per MUMPS 1995 ANSI standard (see [mumps-reference/1995__a902027.md](mumps-reference/1995__a902027.md)), `]]` is the "sorts after" operator added in the 1995 standard. The grammar is correct.
+
+#### Non-Issue: Empty `classes=[]` in MUMPSParser
+**File:** [src/m2py/parser/parser.py#L398-L402](src/m2py/parser/parser.py#L398-L402)  
+**Status:** Correct - No Change Needed  
+**Finding:** Custom classes are not registered with the main metamodel.  
+**Analysis:** This is intentional. The two-phase architecture uses `mumps.tx` for structure parsing only; command parsing with custom classes happens in `command_parser.py`. All 56 parser tests pass, confirming the architecture works correctly.
+
+### Tasks
+
+- [X] **1.1** Update comment in `MUMPSParser.__init__` to describe two-phase parsing architecture
+- [X] **1.2** Extract line/column from textX exceptions in error handler
+- [X] **1.3** Update `_build_routine` docstring to remove "placeholder" phrasing
+- [X] **1.4** Reframe "T538 fix" comments in textx_classes.py to describe current behavior
+- [X] **1.5** Remove "new approach" phrasing from `_build_label` comment

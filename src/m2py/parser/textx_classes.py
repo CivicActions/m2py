@@ -282,7 +282,9 @@ class IntrinsicFunction(MIntrinsicFunction):
     """textX custom class for IntrinsicFunction grammar rule.
 
     Grammar: IntrinsicFunction: '$' name=FUNCNAME args=FunctionArgs;
-    Note: This version requires args (T538 fix).
+    This rule matches intrinsic function calls with parenthesized arguments
+    (e.g., $P(X,"^",1)). Argumentless function references are matched by
+    IntrinsicFunctionNoArgs instead.
     """
 
     def __init__(self, parent=None, name: str = "", args=None):
@@ -295,8 +297,9 @@ class IntrinsicFunctionNoArgs(MIntrinsicFunction):
     """textX custom class for IntrinsicFunctionNoArgs grammar rule.
 
     Grammar: IntrinsicFunctionNoArgs: '$' name=FUNCNAME;
-    This is a catch-all for unknown $ items like $ZVersion (T538 fix).
-    Maps to MIntrinsicFunction with empty arguments list.
+    This rule matches intrinsic functions without arguments (e.g., $H, $J)
+    and implementation-specific variables like $ZVersion. Maps to
+    MIntrinsicFunction with an empty arguments list.
     """
 
     def __init__(self, parent=None, name: str = ""):
