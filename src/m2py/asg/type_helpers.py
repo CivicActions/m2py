@@ -58,23 +58,6 @@ def has_then_scope(stmt: "MStatement") -> TypeGuard[StatementWithThenScope]:
     return hasattr(stmt, "then_scope")
 
 
-def has_else_scope(stmt: "MStatement") -> bool:
-    """Check if statement has an else_scope attribute that is not None.
-
-    Note: Currently no ASG statement type defines an else_scope attribute.
-    In MUMPS, IF and ELSE are independent commands - ELSE checks $TEST rather
-    than being structurally linked to IF. MElseStatement uses `body`, not `else_scope`.
-    This helper is provided for future extensibility.
-
-    Args:
-        stmt: The statement to check
-
-    Returns:
-        True if stmt has an else_scope that is not None (currently always False)
-    """
-    return hasattr(stmt, "else_scope") and getattr(stmt, "else_scope", None) is not None
-
-
 def get_body_scope(stmt: "MStatement") -> "MScope | None":
     """Get the body scope of a statement if it has one.
 

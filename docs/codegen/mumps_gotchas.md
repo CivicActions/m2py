@@ -300,8 +300,9 @@ S ^(4,5)=3     ; Actually ^A(1,4,5)
 - Must track "naked indicator" at runtime
 
 **ASG Representation:**
-- `MNakedGlobal.subscripts`: The new subscripts
-- `MNakedGlobal.requires_runtime_tracking`: Always True
+- `MNakedGlobal.subscripts`: The new subscripts to apply
+
+**Runtime Requirement:** Code generation must track the "naked indicator" (last global name and subscripts) at runtime. The `MNakedGlobal` type itself signals this requirement.
 
 ---
 
@@ -559,11 +560,12 @@ I X'?1A.A S Y=2     ; True if X is NOT 1+ letters
 
 **ASG Representation:**
 - `MPatternMatch.subject`: Expression being tested
-- `MPatternMatch.pattern`: Pattern string
-- `MPatternMatch.negated`: True for `'?` (not match)
-- `MPatternMatch.compiled_regex`: Python regex equivalent
+- `MPatternMatch.pattern`: Raw pattern string (e.g., `"1N.A"`)
+- `MPatternMatch.operator`: Either `"?"` or `"'?"` for negated match
+- `MPatternMatch.compiled_regex`: Pre-built Python regex string
+- `MPatternMatch.pattern_indirect`: For indirect patterns (`?@VAR`)
 
-**Known Limitation:** Indirect pattern match (`?@PATTERN`) is not supported.
+**Indirect Pattern Match:** Supported via `pattern_indirect` field - pattern in variable evaluated at runtime.
 
 ---
 

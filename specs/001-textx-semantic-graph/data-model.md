@@ -451,10 +451,14 @@ class MGlobal(MExpr):
 
 @dataclass
 class MNakedGlobal(MExpr):
-    """Naked global reference ^(subs) - uses last global context."""
+    """Naked global reference ^(subs) - uses last global context.
+    
+    Note: Runtime tracking of the last global reference is implicit in the type.
+    The presence of MNakedGlobal in the ASG indicates code generation must
+    track and substitute the appropriate global reference at runtime.
+    """
     
     subscripts: List['MExpr'] = field(default_factory=list)
-    requires_runtime_tracking: bool = True
 ```
 
 ### Operations

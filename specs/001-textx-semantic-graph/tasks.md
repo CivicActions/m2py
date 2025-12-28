@@ -6356,3 +6356,125 @@ Commit `59c117e` ("test: verify V1PAT2 pattern parsing and GOTO/DO postcondition
 - `docs/asg/statements.md` - Clarified `conditions` vs `condition` usage for MIfStatement
 
 **Checkpoint**: Phase 76 complete - Grammar/code consistency restored, dead code removed, bugs fixed
+
+---
+
+## Phase 77: Grammar and ASG Consistency Audit
+
+**Objective**: Validate consistency between textX grammar files (.tx) and ASG Python implementation files (.py), identifying unused code, incorrect documentation, and design decisions that need clarification.
+
+### Validation Summary
+
+#### Finding 1: `MNakedGlobal.requires_runtime_tracking` - UNUSED FIELD
+**Status:** Remove unused field
+**Files:** 
+- `src/m2py/asg/expressions.py` - defines `requires_runtime_tracking: bool = True`
+- `src/m2py/parser/textx_classes.py` - sets it in NakedGlobal constructor
+
+**Analysis:** This field is set to `True` but never read anywhere in the codebase. The semantic intent (naked globals require runtime state) is correct, but the field provides no value since no code acts on it. The concept is already implicit in the `MNakedGlobal` type itself.
+
+**Decision:** Remove the unused field. The existence of `MNakedGlobal` already signals runtime tracking is needed.
+
+#### Finding 2: `has_else_scope` TypeGuard Function - UNUSED
+**Status:** Remove unused function  
+**File:** `src/m2py/asg/type_helpers.py`
+
+**Analysis:** The function `has_else_scope()` is defined but never called anywhere in the codebase. In contrast, `get_else_scope()` is actively used in walk_statements and analysis code. The `has_` functions are TypeGuards for type narrowing, but `has_else_scope` is never used because:
+1. No ASG statement type defines an `else_scope` attribute
+2. Code always uses `get_else_scope()` which safely returns None
+
+**Decision:** Remove `has_else_scope()`. Keep `get_else_scope()` as it's used by walk_statements traversal code.
+
+#### Finding 3: Documentation Error - `MPatternMatch.negated` vs `operator`
+**Status:** Fix documentation
+**File:** `docs/codegen/mumps_gotchas.md` line 563
+
+**Analysis:** The doc says `MPatternMatch.negated: True for '? (not match)` but the actual ASG field is `operator: str` which holds `"?"` or `"'?"`. The `negated` field does not exist.
+
+**Verified:** `src/m2py/asg/expressions.py` defines `operator: str = "?"` with comment "Either '?' or ''?' for negated match".
+
+**Decision:** Update docs to use `operator` field name.
+
+#### Finding 4: Pattern Structure Flattening - BY DESIGN (No Change)
+**Status:** No change needed - intentional design
+**Context:** Grammar defines structured `PatternSpec` with atoms, but ASG uses `pattern: str`
+
+**Analysis:** The grammar (`expressions.tx`) defines a rich pattern structure:
+- `PatternSpec` → list of `PatternAtom`
+- `PatternAtom` → `RepCount` + (`PatCode` | `strlit` | alternation)
+- `RepCount` → `RangeRepCount` | `ExactRepCount`
+
+The ASG (`MPatternMatch`) flattens this to `pattern: str` + `compiled_regex: Optional[str]`.
+
+**Rationale:** This is intentional and correct:
+1. Pattern string is sufficient for regex compilation (done via `pattern_compiler.py`)
+2. The `compiled_regex` field provides the Python equivalent for code generation
+3. Preserving the full AST structure would add complexity without benefit
+4. No downstream code needs to inspect pattern atoms individually
+
+**Decision:** Document this as intentional design. No structural change needed.
+
+#### Finding 5: `MXecuteStatement` Optimization Fields - ACTIVELY USED
+**Status:** No change - correctly implemented
+**Fields:** `is_constant`, `constant_values`, `requires_runtime_eval`
+
+**Verified:** 
+- Set in `semantic_analyzer.py` lines 1133-1143
+- Tested in `test_semantic_analyzer.py` lines 603-645
+
+**Decision:** No change. These fields enable optimization for constant XECUTE strings.
+
+#### Finding 6: `MIndirection` Static Resolution Fields - ACTIVELY USED  
+**Status:** No change - correctly implemented
+**Fields:** `can_resolve_statically`, `resolved_value`
+
+**Verified:**
+- Set in `semantic_analyzer.py` lines 297-298
+- Tested in `test_semantic_analyzer.py` lines 711-725
+
+**Decision:** No change. These fields enable optimization for simple indirection like `@"VARNAME"`.
+
+#### Finding 7: `get_else_scope` Returns None - BY DESIGN (Add Clarification)
+**Status:** Add documentation clarification
+**File:** `src/m2py/asg/type_helpers.py`
+
+**Analysis:** The function `get_else_scope()` always returns `None` because no ASG statement type defines an `else_scope` attribute. This is correct per MUMPS semantics where ELSE is a separate command checking `$TEST`, not structurally linked to IF.
+
+The function exists for:
+1. Completeness in the traversal API (`get_body_scope`, `get_then_scope`, `get_else_scope`)
+2. Future extensibility if a structured IF-ELSE construct is added
+3. Safe use in generic scope walking code
+
+**Decision:** Keep function but ensure docstring clearly explains it currently always returns None.
+
+#### Finding 8: Grammar/ASG Type Mapping - CONSISTENT (No Change)
+**Status:** Verified consistent
+
+Verified mappings:
+- `ForParam` (grammar) → `MForParameter` (ASG) with derived `param_type`
+- `ReadTargetWithTimeout` (grammar) → `MReadTarget` (ASG) - flattened structure
+- `DoTarget`/`GotoTarget` (grammar) → `MCall` (ASG) - unified call representation
+
+**Decision:** No change. The semantic analyzer correctly transforms grammar structures to ASG.
+
+### Tasks
+
+- [X] **77.1** Remove `requires_runtime_tracking` field from `MNakedGlobal`
+  - File: `src/m2py/asg/expressions.py`
+  - File: `src/m2py/parser/textx_classes.py` (remove the setattr line)
+
+- [X] **77.2** Remove unused `has_else_scope` function
+  - File: `src/m2py/asg/type_helpers.py`
+  - Update: `docs/asg/type_helpers.md` (remove has_else_scope section)
+
+- [X] **77.3** Fix `MPatternMatch` documentation
+  - File: `docs/codegen/mumps_gotchas.md`
+  - Change `MPatternMatch.negated` to `MPatternMatch.operator` with description "Either '?' or ''?' for negated match"
+
+- [X] **77.4** Add design note about pattern flattening
+  - File: `src/m2py/asg/expressions.py` 
+  - Add comment to `MPatternMatch.pattern` explaining the flattening is intentional
+
+- [X] **77.5** Run tests to verify no regressions
+
+**Checkpoint**: Phase 77 complete - Dead code removed (requires_runtime_tracking, has_else_scope), documentation corrected (MPatternMatch.operator), design decisions documented. All 1002 tests pass.

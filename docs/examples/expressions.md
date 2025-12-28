@@ -58,10 +58,11 @@ Uses last global reference's name.
 **ASG Structure:**
 ```
 MNakedGlobal(
-    subscripts=[MLiteral(value=2)],
-    requires_runtime_tracking=True
+    subscripts=[MLiteral(value=2)]
 )
 ```
+
+**Note:** Code generation must track the "naked indicator" (last global name and subscripts) at runtime.
 
 ---
 

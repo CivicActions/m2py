@@ -93,11 +93,14 @@ class MNakedGlobal(MExpr):
 
     Represents a reference using the naked indicator ^(subscripts),
     which uses the last global context. This is a MUMPS optimization
-    that requires runtime tracking.
+    that requires runtime tracking of the "naked indicator" (the last
+    referenced global name and subscripts).
+
+    Code generation must track the naked indicator at runtime since
+    the global name comes from the previous global reference.
     """
 
     subscripts: List["MExpr"] = field(default_factory=list)
-    requires_runtime_tracking: bool = True
 
 
 # =============================================================================
@@ -180,10 +183,20 @@ class MPatternMatch(MExpr):
     Represents pattern matching using the ? operator:
     X?1A.N, X?@pattern (indirect pattern)
     Also supports negated pattern match: X'?1A.N
+
+    Design Note: The grammar (expressions.tx) parses patterns into a structured
+    PatternSpec with atoms, repeat counts, and pattern codes. However, the ASG
+    intentionally flattens this to a simple pattern string because:
+    1. The string is sufficient for regex compilation (via pattern_compiler.py)
+    2. The compiled_regex field provides the Python equivalent for code generation
+    3. No downstream code needs to inspect pattern atoms individually
+    4. Preserving the full AST structure would add complexity without benefit
     """
 
     subject: Optional["MExpr"] = None
-    pattern: str = ""  # Raw pattern string for direct patterns
+    # Raw pattern string - intentionally flattened from structured PatternSpec
+    # See docstring above for design rationale
+    pattern: str = ""
     pattern_indirect: Optional["MExpr"] = None  # For indirect patterns ?@X
     operator: str = "?"  # Either "?" or "'?" for negated match
 

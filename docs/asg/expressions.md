@@ -88,9 +88,8 @@ Naked global reference using last global context:
 | Field | Type | Description |
 |-------|------|-------------|
 | `subscripts` | `List[MExpr]` | New subscripts |
-| `requires_runtime_tracking` | `bool` | Always True |
 
-**Code Generation**: Requires runtime tracking of last global reference.
+**Code Generation**: Requires runtime tracking of the "naked indicator" (last global name and subscripts). The `MNakedGlobal` type itself signals this requirement.
 
 ---
 

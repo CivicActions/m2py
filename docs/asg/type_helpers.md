@@ -54,19 +54,6 @@ for stmt in scope.walk_statements():
 
 **Applies to**: `MIfStatement`
 
-### has_else_scope
-
-Checks for an `else_scope` attribute that is set. Currently no ASG statement type defines an `else_scope` attribute - in MUMPS, ELSE is a separate command that checks `$TEST` rather than being structurally linked to IF. `MElseStatement` uses `body`, not `else_scope`. This helper is provided for future extensibility and currently always returns False.
-
-```python
-from m2py.asg.type_helpers import has_else_scope
-
-# Currently returns False - no statement defines else_scope
-for stmt in scope.walk_statements():
-    if has_else_scope(stmt):
-        ...
-```
-
 ---
 
 ## Accessor Functions

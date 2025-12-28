@@ -260,7 +260,6 @@ class NakedGlobal(MNakedGlobal):
 
     def __init__(self, parent=None, subscripts=None):
         object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
-        object.__setattr__(self, "requires_runtime_tracking", True)
         object.__setattr__(self, "result_type", None)
 
 
