@@ -45,7 +45,6 @@ ASGElement (abstract base)
 
 MScope (statement container)
 ├── statements: List[MStatement]
-├── parent_scope: MScope
 └── walk_statements() iterator
 ```
 

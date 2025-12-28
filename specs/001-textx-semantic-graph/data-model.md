@@ -76,8 +76,7 @@ ASGElement (abstract base)
 │   └── callers: List[MCall]    # Back-references
 │
 ├── MScope                      # Statement container
-│   ├── statements: List[MStatement]
-│   └── parent_scope: MScope?
+│   └── statements: List[MStatement]
 │
 ├── MStatement (abstract)       # Command base
 │   ├── MSetStatement
@@ -588,8 +587,7 @@ Raw Parse → Structure Pass → Resolution Pass → Classification Pass
 
 1. After resolution pass, all local MCall targets must be resolved or marked UNRESOLVED
 2. Every MStatement has a non-null scope reference
-3. MScope.parent_scope forms a tree (no cycles)
-4. MLabel.callers is inverse of MCall.target (back-reference integrity)
+3. MLabel.callers is inverse of MCall.target (back-reference integrity)
 5. MForStatement.loop_type is non-null after classification pass
 6. MGotoStatement.goto_type is non-null after classification pass
 

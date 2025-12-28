@@ -443,13 +443,21 @@ class MUMPSParser:
             # Convert textX model to our ASG
             routine = self._build_routine(model, filename)
 
+            # Populate source_lines for $TEXT function support
+            routine.source_lines = source.splitlines()
+
             # Run optional analysis passes
+            # resolve_references must be called before analyze_variables with
+            # compute_transitive=True, because transitive closure needs resolved
+            # call targets to build the call graph
+            label_vars = None
             if compute_signatures or analyze_variables:
-                self.analyze_variables(routine, compute_transitive=True)
+                self.resolve_references(routine)
+                label_vars = self.analyze_variables(routine, compute_transitive=True)
             if compute_signatures:
                 from ..analysis.variables import compute_all_signatures
 
-                compute_all_signatures(routine)
+                compute_all_signatures(routine, label_vars)
 
             return routine
 
@@ -514,12 +522,17 @@ class MUMPSParser:
         routine.source_file = str(filepath)
 
         # Run optional analysis passes after name/source_file are set
+        # resolve_references must be called before analyze_variables with
+        # compute_transitive=True, because transitive closure needs resolved
+        # call targets to build the call graph
+        label_vars = None
         if compute_signatures or analyze_variables:
-            self.analyze_variables(routine, compute_transitive=True)
+            self.resolve_references(routine)
+            label_vars = self.analyze_variables(routine, compute_transitive=True)
         if compute_signatures:
             from ..analysis.variables import compute_all_signatures
 
-            compute_all_signatures(routine)
+            compute_all_signatures(routine, label_vars)
 
         # Store original source lines for $TEXT function support
         # Lines are stored 0-indexed, but $TEXT uses 1-indexed line references

@@ -6046,3 +6046,84 @@ This is actually a cleaner design since `MDoStatement.targets` being empty clear
   - Test that `MCall.arguments` contains `MActualParameter` objects
 
 **Checkpoint**: Phase 73 complete - ASG type annotations and documentation accurately reflect implementation
+
+---
+
+## Phase 74: Parser and ASG Consistency Review
+
+### Findings from Review
+
+This phase addresses consistency and correctness issues in the parser and ASG modules discovered during a comprehensive code review.
+
+#### Finding 1: `parse()` Does Not Populate `source_lines` for $TEXT Support
+**Files:** [src/m2py/parser/parser.py#L414-L469](src/m2py/parser/parser.py#L414-L469), [src/m2py/asg/elements.py#L235-L301](src/m2py/asg/elements.py#L235-L301)  
+**Status:** Fix Needed - Feature Gap  
+**Finding:** `MRoutine.source_lines` is documented for $TEXT function support, but only `parse_file()` (line 526) populates it. The `parse()` method leaves `source_lines` as an empty list, causing `get_text_line()` and `get_text_at_label()` to return empty strings.  
+**Analysis:** Routines parsed from strings via `parse()` cannot serve $TEXT queries. This is a gap if code generators need $TEXT support for string-parsed sources. The fix is simple - populate `source_lines` in `parse()` as well.  
+**Solution:** Add `routine.source_lines = source.splitlines()` to `parse()` after `_build_routine()`.
+
+#### Finding 2: `compute_transitive=True` Without Prior `resolve_references()` is Ineffective
+**Files:** [src/m2py/parser/parser.py#L447-L452](src/m2py/parser/parser.py#L447-L452), [src/m2py/parser/parser.py#L517-L522](src/m2py/parser/parser.py#L517-L522), [src/m2py/analysis/variables.py#L654-L700](src/m2py/analysis/variables.py#L654-L700)  
+**Status:** Fix Needed - Missing Analysis Step  
+**Finding:** When `parse()` or `parse_file()` are called with `analyze_variables=True` or `compute_signatures=True`, they call `analyze_variables(routine, compute_transitive=True)`. However, `compute_transitive_inputs()` relies on `MCall.target` being resolved to find callees, but `resolve_references()` is never called first. The transitive closure only works on label names from `stmt.targets[].name`, not on resolved call graph.  
+**Analysis:** Tested with:
+```python
+parser.parse(source, compute_signatures=True)  # MAIN calls SUB
+# MAIN.input_variables = set()  # Wrong - should include SUB's inputs
+parser.resolve_references(r)
+parser.analyze_variables(r, compute_transitive=True)
+# MAIN.input_variables = {'X'}  # Correct after explicit resolve
+```
+The docstring for `analyze_variables()` correctly notes "requires resolve_references() to be called first" but the `parse()` and `parse_file()` entry points don't enforce this.  
+**Solution:** Call `self.resolve_references(routine)` before `self.analyze_variables(routine, compute_transitive=True)` in both `parse()` and `parse_file()` when flags are set.
+
+#### Finding 3: `MScope.parent_scope` Field Is Never Populated
+**Files:** [src/m2py/asg/elements.py#L136](src/m2py/asg/elements.py#L136), [src/m2py/parser/parser.py](src/m2py/parser/parser.py)  
+**Status:** Documentation Cleanup - Remove Unused Field  
+**Finding:** `MScope` has a `parent_scope: Optional[MScope]` field that is never assigned anywhere in the codebase. The `add_statement()` method sets `stmt.parent` (inherited from ASGElement) but not `parent_scope`. The `SemanticScope` class in `semantic_analyzer.py` has its own `parent_scope` that IS used for analysis scope tracking, but that's a separate class.  
+**Analysis:** 
+- `MScope.parent_scope` was documented in data-model.md but never implemented
+- Tasks.md FIX-002 marked as done said "Update data-model.md to document `parent` field on MScope" but didn't remove `parent_scope`
+- The data-model.md at line 80 still shows `parent_scope: MScope?`
+- The invariant at line 591 says "MScope.parent_scope forms a tree (no cycles)" for a field that's always None
+
+The field is vestigial - either implement it or remove it. Since `parent` (from ASGElement) serves the parent tracking purpose and the semantic analyzer uses its own `SemanticScope.parent_scope`, removing the unused `MScope.parent_scope` is cleaner.  
+**Solution:** Remove `parent_scope` field from `MScope` and update data-model.md accordingly.
+
+#### Finding 4: Duplicate Analysis Passes in `parse_file()` - NOT AN ISSUE
+**Files:** [src/m2py/parser/parser.py#L512](src/m2py/parser/parser.py#L512), [src/m2py/parser/parser.py#L517-L522](src/m2py/parser/parser.py#L517-L522)  
+**Status:** ✓ NOT AN ISSUE - Verified Correct  
+**Finding:** Initial review suggested `parse_file()` might duplicate analysis by calling `parse()` with flags and then running analysis again.  
+**Analysis:** Verified the code - `parse_file()` calls `self.parse(source, filename=str(filepath))` **without** passing `analyze_variables` or `compute_signatures` flags. The analysis only runs once in `parse_file()`. This is correct behavior.  
+**Solution:** No change needed.
+
+### Tasks
+
+- [X] **1.1** Populate `source_lines` in `parse()` for $TEXT support
+  - File: `src/m2py/parser/parser.py`
+  - Add `routine.source_lines = source.splitlines()` after `_build_routine()` call
+  - Add test verifying `get_text_line()` works with string-parsed routines
+
+- [X] **1.2** Call `resolve_references()` before `analyze_variables(compute_transitive=True)`
+  - File: `src/m2py/parser/parser.py`
+  - In `parse()`: Add `self.resolve_references(routine)` before `self.analyze_variables(...)`
+  - In `parse_file()`: Same fix
+  - Fixed: Pass `label_vars` to `compute_all_signatures()` to preserve transitive inputs
+  - Add test verifying transitive inputs are computed correctly via `parse(compute_signatures=True)`
+
+- [X] **1.3** Remove unused `MScope.parent_scope` field
+  - File: `src/m2py/asg/elements.py`
+  - Remove `parent_scope: Optional["MScope"] = field(default=None, repr=False)` from `MScope`
+  - Update docstring to remove "parent scope tracking" reference
+
+- [X] **1.4** Update data-model.md to remove `parent_scope` from MScope
+  - File: `specs/001-textx-semantic-graph/data-model.md`
+  - Remove `parent_scope: MScope?` from MScope entity diagram (line 80)
+  - Remove invariant "MScope.parent_scope forms a tree (no cycles)" (line 591)
+  - Document that parent tracking uses `parent` field inherited from ASGElement
+
+- [X] **1.5** Update docs/asg/ to reflect MScope changes
+  - Updated `docs/asg/structural_elements.md` to remove `parent_scope` from fields table
+  - Updated `docs/asg/index.md` to remove `parent_scope` from MScope diagram
+
+**Checkpoint**: Phase 74 complete - Parser entry points correctly call all required analysis passes and unused ASG fields are removed

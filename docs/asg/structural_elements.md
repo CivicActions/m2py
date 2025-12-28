@@ -152,7 +152,6 @@ A container for statements with support for recursive walking.
 | Field | Type | Description |
 |-------|------|-------------|
 | `statements` | `List[MStatement]` | Ordered statements |
-| `parent_scope` | `Optional[MScope]` | Enclosing scope |
 
 ### Methods
 
@@ -184,7 +183,8 @@ Label body scope
 ### Code Generation Implications
 
 - `walk_statements()` provides a flat iteration over all statements
-- Use `parent_scope` to track enclosing context (for NEW scoping, loop detection)
+- Use `stmt.parent` to navigate up the ASG tree for enclosing context
+- Use `stmt.scope` to access the containing MScope
 
 ### Example
 

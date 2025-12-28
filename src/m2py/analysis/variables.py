@@ -862,7 +862,9 @@ def classify_scope_strategy(sig: FunctionSignature) -> ScopeStrategy:
     return ScopeStrategy.SUBROUTINE
 
 
-def compute_all_signatures(routine: MRoutine) -> Dict[str, FunctionSignature]:
+def compute_all_signatures(
+    routine: MRoutine, label_vars: Optional[Dict[str, ScopeVariables]] = None
+) -> Dict[str, FunctionSignature]:
     """Compute function signatures for all labels in a routine.
 
     This is the main entry point for signature computation. It:
@@ -873,12 +875,16 @@ def compute_all_signatures(routine: MRoutine) -> Dict[str, FunctionSignature]:
 
     Args:
         routine: The MRoutine to analyze
+        label_vars: Optional pre-computed label variables (from analyze_variables).
+            If not provided, analyze_variables will be called. Pass this to
+            preserve transitive input computation done by a previous analysis.
 
     Returns:
         Dictionary mapping label names to FunctionSignatures
     """
-    # First, ensure variable analysis is done
-    label_vars = analyze_variables(routine)
+    # Use provided label_vars or compute if not available
+    if label_vars is None:
+        label_vars = analyze_variables(routine)
 
     # Compute signatures
     signatures = {}

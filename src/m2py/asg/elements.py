@@ -128,12 +128,12 @@ class ASGElement(ABC):
 class MScope(ASGElement):
     """A container for statements (label body, IF body, FOR body).
 
-    Provides recursive statement walking and parent scope tracking
-    for proper scoping resolution.
+    Provides recursive statement walking. Parent references are tracked
+    via the inherited `parent` field from ASGElement, and statement scope
+    via the `scope` field on each statement.
     """
 
     statements: List["MStatement"] = field(default_factory=list)
-    parent_scope: Optional["MScope"] = field(default=None, repr=False)
 
     def add_statement(self, stmt: "MStatement") -> None:
         """Add a statement to this scope, setting its parent references."""
