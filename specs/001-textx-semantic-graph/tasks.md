@@ -5871,3 +5871,30 @@ This phase addresses additional findings from a consistency and correctness revi
 - [X] **2.3** Update DoIndirect comment in commands.tx to remove "Enhanced to" phrasing
 - [X] **2.4** Update PrimaryExpr comment in expressions.tx to remove "(T538 fix...)" reference
 - [X] **2.5** Update OffsetPrimaryExpr comment in expressions.tx to remove "(T538 fix)" reference
+
+---
+
+## Phase 71: Parser File Encoding Consistency
+
+### Findings from Review
+
+This phase addresses an encoding inconsistency discovered during a grammar and parser consistency review.
+
+#### Issue 1: `classify_patterns_from_file` Lacks Latin-1 Fallback
+**File:** [src/m2py/parser/parser.py#L781](src/m2py/parser/parser.py#L781)  
+**Status:** Bug Fix Needed  
+**Finding:** `classify_patterns_from_file` uses only UTF-8 encoding, while `parse_file` (lines 499-505) has a UTF-8-to-Latin-1 fallback for legacy VistA files.  
+**Analysis:** Some VistA MUMPS files contain Latin-1/CP1252 encoded characters (°, ö, §, ÷) that fail to decode as UTF-8. `parse_file` correctly handles this with a try/except fallback, but `classify_patterns_from_file` does not have this fallback and will raise `UnicodeDecodeError` on these files.  
+**Solution:** Apply the same encoding fallback pattern from `parse_file` to `classify_patterns_from_file`.
+
+### Tasks
+
+- [X] **3.1** Add UTF-8 to Latin-1 encoding fallback to `classify_patterns_from_file`
+  - File: `src/m2py/parser/parser.py`
+  - Match the pattern used in `parse_file` (lines 499-505)
+
+- [X] **3.2** Add test for Latin-1 encoded file handling in classify_patterns_from_file
+  - File: `tests/unit/test_parser.py`
+  - Create test that verifies both methods handle Latin-1 files consistently
+
+**Checkpoint**: Phase 71 complete - Parser file encoding is consistent across all file-loading methods

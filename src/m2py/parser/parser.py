@@ -778,7 +778,12 @@ class MUMPSParser:
         if not filepath.exists():
             raise FileNotFoundError(f"MUMPS source file not found: {filepath}")
 
-        source = filepath.read_text(encoding="utf-8")
+        # Try UTF-8 first, then fall back to Latin-1 for legacy VistA files
+        # (matches the encoding fallback pattern in parse_file)
+        try:
+            source = filepath.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            source = filepath.read_text(encoding="latin-1")
         return self.classify_patterns(source, filename=str(filepath))
 
     def resolve_references(self, routine: MRoutine) -> None:

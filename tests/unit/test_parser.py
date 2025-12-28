@@ -196,6 +196,24 @@ class TestMUMPSParserParseFile:
         assert len(routine.source_lines) == 3
         assert "§" in routine.source_lines[1] or "÷" in routine.source_lines[1]
 
+    def test_classify_patterns_from_file_latin1_fallback(self, tmp_path):
+        """classify_patterns_from_file should fall back to Latin-1 for non-UTF-8 files."""
+        test_file = tmp_path / "LATIN1FOR.m"
+        # Latin-1 content with FOR loop and characters that are invalid in UTF-8
+        # 0xba = º (masculine ordinal) - appears in VistA files
+        source_bytes = b'LABEL\tF I=1:1:10 W "Test\xba",I\n\tQ\n'
+        test_file.write_bytes(source_bytes)
+
+        parser = MUMPSParser()
+        # Should not raise UnicodeDecodeError
+        results = parser.classify_patterns_from_file(test_file)
+
+        # Should find the bounded FOR loop
+        assert len(results) == 1
+        assert results[0].loop_type == ForLoopType.BOUNDED
+        assert results[0].loop_var == "I"
+        assert results[0].label_name == "LABEL"
+
 
 class TestMUMPSParserMUGJ:
     """Test parsing MUGJ files."""

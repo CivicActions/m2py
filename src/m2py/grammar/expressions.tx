@@ -51,6 +51,7 @@ BinaryOp:
     // Multi-character operators first (order matters in PEG)
     // '& is NAND, '! is NOR, '> '< '= are negated comparisons
     // '[ is "not contains", '] is "not follows"
+    // ]] is "sorts after" (distinct from ] "follows") per MUMPS 1995 spec 7.2.2.1
     op=/\*\*|>=|<=|'>|'<|'=|'\[|'\]|'&|'!|]]|\[|\]/
     | op=/[+\-*\/#\\=<>&!_\]]/ 
 ;
@@ -66,6 +67,9 @@ PatternSpec:
 ;
 
 // Pattern atom: repcount followed by patcode, string literal, or alternation
+// Per MUMPS 1995 spec 7.2.3: "Each pattern atom consists of a repeat count
+// repcount, followed by either a pattern code patcode or a string literal strlit."
+// Repcount is REQUIRED - bare patcodes like "N" are invalid; use ".N" or "1N".
 // Examples: 1N, .A, 3.5P, ."hello", (1N,1A)
 PatternAtom:
     repcount=RepCount (
