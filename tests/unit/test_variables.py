@@ -463,6 +463,114 @@ class TestFunctionSignature:
         # Z is written but not in formal_params, so it's a side effect output
         assert "Z" in sig.side_effect_outputs
 
+    def test_byref_outputs_formal_param_written(self):
+        """T6702: Formal params that are written appear in byref_outputs.
+
+        SWAP(X,Y)
+            N T
+            S T=X,X=Y,Y=T
+            Q
+
+        Both X and Y are written, so byref_outputs should be {"X", "Y"}.
+        """
+        from m2py.analysis.variables import compute_function_signature
+
+        # Create SWAP(X,Y) N T S T=X,X=Y,Y=T Q
+        var_x = MVariable(name="X", subscripts=[])
+        var_y = MVariable(name="Y", subscripts=[])
+        var_t = MVariable(name="T", subscripts=[])
+
+        new_stmt = MNewStatement(variables=["T"])
+        # S T=X
+        assign1 = MAssignment(target=var_t, value=var_x)
+        # S X=Y
+        assign2 = MAssignment(target=var_x, value=var_y)
+        # S Y=T
+        assign3 = MAssignment(target=var_y, value=var_t)
+        set_stmt = MSetStatement(assignments=[assign1, assign2, assign3])
+        quit_stmt = MQuitStatement()
+
+        scope = MScope(statements=[new_stmt, set_stmt, quit_stmt])
+        label = MLabel(name="SWAP", formal_list=["X", "Y"], body=scope)
+
+        routine = MRoutine(name="TEST", labels=[label])
+        label_vars = analyze_variables(routine)
+        sig = compute_function_signature(label, label_vars["SWAP"])
+
+        assert sig.label_name == "SWAP"
+        assert sig.formal_params == ["X", "Y"]
+        assert sig.byref_outputs == {"X", "Y"}
+
+    def test_byref_outputs_formal_param_read_only(self):
+        """T6703: Formal params that are only read are NOT in byref_outputs.
+
+        ADD(A,B)
+            N R
+            S R=A+B
+            Q R
+
+        A and B are only read, not written. byref_outputs should be empty.
+        """
+        from m2py.analysis.variables import compute_function_signature
+
+        var_a = MVariable(name="A", subscripts=[])
+        var_b = MVariable(name="B", subscripts=[])
+        var_r = MVariable(name="R", subscripts=[])
+
+        new_stmt = MNewStatement(variables=["R"])
+        add_expr = MBinaryOp(left=var_a, operator="+", right=var_b)
+        assign = MAssignment(target=var_r, value=add_expr)
+        set_stmt = MSetStatement(assignments=[assign])
+        quit_stmt = MQuitStatement(return_value=var_r)
+
+        scope = MScope(statements=[new_stmt, set_stmt, quit_stmt])
+        label = MLabel(name="ADD", formal_list=["A", "B"], body=scope)
+
+        routine = MRoutine(name="TEST", labels=[label])
+        label_vars = analyze_variables(routine)
+        sig = compute_function_signature(label, label_vars["ADD"])
+
+        assert sig.label_name == "ADD"
+        assert sig.formal_params == ["A", "B"]
+        assert sig.byref_outputs == set()  # No formal params are written
+        assert sig.has_value_quit is True
+
+    def test_byref_outputs_formal_param_conditionally_written(self):
+        """T6704: Formal param conditionally written still appears in byref_outputs.
+
+        MAYBE(X)
+            I X<0 S X=0
+            Q
+
+        X is conditionally written. Conservative analysis marks it as byref output.
+        """
+        from m2py.analysis.variables import compute_function_signature
+        from m2py.asg.enums import LiteralType
+
+        var_x = MVariable(name="X", subscripts=[])
+        lit_0 = MLiteral(value=0, literal_type=LiteralType.INTEGER)
+
+        # I X<0 S X=0
+        cond = MBinaryOp(left=var_x, operator="<", right=lit_0)
+        assign = MAssignment(target=var_x, value=lit_0)
+        set_stmt = MSetStatement(assignments=[assign])
+        then_scope = MScope(statements=[set_stmt])
+        if_stmt = MIfStatement(conditions=[cond], then_scope=then_scope)
+
+        quit_stmt = MQuitStatement()
+
+        scope = MScope(statements=[if_stmt, quit_stmt])
+        label = MLabel(name="MAYBE", formal_list=["X"], body=scope)
+
+        routine = MRoutine(name="TEST", labels=[label])
+        label_vars = analyze_variables(routine)
+        sig = compute_function_signature(label, label_vars["MAYBE"])
+
+        assert sig.label_name == "MAYBE"
+        assert sig.formal_params == ["X"]
+        # Conservatively, X is in byref_outputs because it's written in some path
+        assert sig.byref_outputs == {"X"}
+
 
 class TestScopeStrategy:
     """Tests for scope strategy classification (Phase 58i)."""
@@ -529,6 +637,66 @@ class TestScopeStrategy:
 
         strategy = classify_scope_strategy(sig)
         assert strategy == ScopeStrategy.FUNCTION_WITH_OUTPUTS
+
+    def test_pure_function_computed_from_source(self):
+        """T6741: Pure function classification from parsed source.
+
+        ADD(A,B)
+            N R
+            S R=A+B
+            Q R
+
+        A and B are only read, not written. R is NEWed and returned.
+        Should classify as PURE_FUNCTION.
+        """
+        from m2py.parser import MUMPSParser
+        from m2py.analysis.variables import compute_all_signatures
+        from m2py.asg.enums import ScopeStrategy
+
+        parser = MUMPSParser()
+        source = """ADD(A,B)
+ N R
+ S R=A+B
+ Q R
+"""
+        routine = parser.parse(source)
+        parser.resolve_references(routine)
+        signatures = compute_all_signatures(routine)
+
+        sig = signatures["ADD"]
+        assert sig.formal_params == ["A", "B"]
+        assert sig.byref_outputs == set()  # A, B only read, not written
+        assert sig.has_value_quit is True
+        assert sig.scope_strategy == ScopeStrategy.PURE_FUNCTION
+
+    def test_function_with_outputs_computed_from_source(self):
+        """T6742: Function with outputs classification from parsed source.
+
+        CALC(A,B)
+            S A=A+B
+            Q A
+
+        A is written (potential by-ref output) and returned.
+        Should classify as FUNCTION_WITH_OUTPUTS.
+        """
+        from m2py.parser import MUMPSParser
+        from m2py.analysis.variables import compute_all_signatures
+        from m2py.asg.enums import ScopeStrategy
+
+        parser = MUMPSParser()
+        source = """CALC(A,B)
+ S A=A+B
+ Q A
+"""
+        routine = parser.parse(source)
+        parser.resolve_references(routine)
+        signatures = compute_all_signatures(routine)
+
+        sig = signatures["CALC"]
+        assert sig.formal_params == ["A", "B"]
+        assert sig.byref_outputs == {"A"}  # A is written
+        assert sig.has_value_quit is True
+        assert sig.scope_strategy == ScopeStrategy.FUNCTION_WITH_OUTPUTS
 
 
 class TestQuitAnalysis:
@@ -1072,6 +1240,143 @@ class TestTransitivePropagation:
         # B writes to formal X, which is aliased to A's VAR
         # So VAR should be in A's transitive outputs
         assert "VAR" in transitive_outputs["A"]
+
+    def test_nested_byref_chain_propagates(self):
+        """T6711: Nested call chain A → B → C with by-ref propagates outputs.
+
+        OUTER calls MIDDLE(.X)
+        MIDDLE(A) calls INNER(.A)
+        INNER(B) sets B=B*2
+
+        OUTER's transitive_outputs should include X via MIDDLE→INNER chain.
+
+        Note: byref_outputs only captures direct writes within a label.
+        MIDDLE doesn't write to A directly (only passes it by-ref to INNER),
+        so A won't be in MIDDLE's byref_outputs. However, compute_transitive_outputs
+        propagates the modification through the call chain.
+        """
+        from m2py.analysis.variables import (
+            compute_transitive_outputs,
+            compute_all_signatures,
+        )
+        from m2py.asg.expressions import MActualParameter
+        from m2py.asg.enums import PassingMode, LiteralType
+
+        # INNER(B) S B=B*2 Q
+        formal_b = MVariable(name="B", subscripts=[])
+        lit_2 = MLiteral(value=2, literal_type=LiteralType.INTEGER)
+        multiply = MBinaryOp(left=formal_b, operator="*", right=lit_2)
+        assign_b = MAssignment(target=formal_b, value=multiply)
+        set_inner = MSetStatement(assignments=[assign_b])
+        quit_inner = MQuitStatement()
+        scope_inner = MScope(statements=[set_inner, quit_inner])
+        label_inner = MLabel(name="INNER", formal_list=["B"], body=scope_inner)
+
+        # MIDDLE(A) D INNER(.A) Q
+        formal_a = MVariable(name="A", subscripts=[])
+        byref_a = MActualParameter(
+            passing_mode=PassingMode.BY_REFERENCE,
+            expression=formal_a,
+            variable_name="A",
+        )
+        call_inner = MCall(name="INNER", routine=None, arguments=[byref_a])
+        call_inner.target = label_inner
+        do_inner = MDoStatement(targets=[call_inner])
+        quit_middle = MQuitStatement()
+        scope_middle = MScope(statements=[do_inner, quit_middle])
+        label_middle = MLabel(name="MIDDLE", formal_list=["A"], body=scope_middle)
+
+        # OUTER D MIDDLE(.X) Q
+        var_x = MVariable(name="X", subscripts=[])
+        byref_x = MActualParameter(
+            passing_mode=PassingMode.BY_REFERENCE,
+            expression=var_x,
+            variable_name="X",
+        )
+        call_middle = MCall(name="MIDDLE", routine=None, arguments=[byref_x])
+        call_middle.target = label_middle
+        do_middle = MDoStatement(targets=[call_middle])
+        quit_outer = MQuitStatement()
+        scope_outer = MScope(statements=[do_middle, quit_outer])
+        label_outer = MLabel(name="OUTER", body=scope_outer)
+
+        routine = MRoutine(name="TEST", labels=[label_outer, label_middle, label_inner])
+        routine._labels_by_name = {
+            "OUTER": label_outer,
+            "MIDDLE": label_middle,
+            "INNER": label_inner,
+        }
+
+        label_vars = analyze_variables(routine)
+        signatures = compute_all_signatures(routine)
+
+        # Verify byref_outputs are populated correctly for direct writes
+        # INNER writes to B, so B is in byref_outputs
+        assert "B" in signatures["INNER"].byref_outputs
+        # MIDDLE does NOT write to A directly - it only passes A by-ref
+        # So A is NOT in MIDDLE's byref_outputs (this is correct!)
+        assert "A" not in signatures["MIDDLE"].byref_outputs
+
+        transitive_outputs = compute_transitive_outputs(routine, label_vars, signatures)
+
+        # INNER writes B, which is aliased to MIDDLE's A
+        # So A should be in MIDDLE's transitive outputs
+        assert "A" in transitive_outputs["MIDDLE"]
+        # MIDDLE modifies A (transitively), which is aliased to OUTER's X
+        # So X should be in OUTER's transitive outputs
+        assert "X" in transitive_outputs["OUTER"]
+
+    def test_byref_param_not_modified_not_in_outputs(self):
+        """T6712: By-ref param NOT modified → NOT in transitive outputs.
+
+        CALLER calls READER(.X)
+        READER(A) W A Q  ; Only reads A, doesn't write
+
+        CALLER's transitive_outputs should NOT include X.
+        """
+        from m2py.analysis.variables import (
+            compute_transitive_outputs,
+            compute_all_signatures,
+        )
+        from m2py.asg.expressions import MActualParameter
+        from m2py.asg.enums import PassingMode
+
+        # READER(A) W A Q - only reads A
+        formal_a = MVariable(name="A", subscripts=[])
+        write_stmt = MWriteStatement(arguments=[formal_a])
+        quit_reader = MQuitStatement()
+        scope_reader = MScope(statements=[write_stmt, quit_reader])
+        label_reader = MLabel(name="READER", formal_list=["A"], body=scope_reader)
+
+        # CALLER D READER(.X) Q
+        var_x = MVariable(name="X", subscripts=[])
+        byref_x = MActualParameter(
+            passing_mode=PassingMode.BY_REFERENCE,
+            expression=var_x,
+            variable_name="X",
+        )
+        call_reader = MCall(name="READER", routine=None, arguments=[byref_x])
+        call_reader.target = label_reader
+        do_reader = MDoStatement(targets=[call_reader])
+        quit_caller = MQuitStatement()
+        scope_caller = MScope(statements=[do_reader, quit_caller])
+        label_caller = MLabel(name="CALLER", body=scope_caller)
+
+        routine = MRoutine(name="TEST", labels=[label_caller, label_reader])
+        routine._labels_by_name = {"CALLER": label_caller, "READER": label_reader}
+
+        label_vars = analyze_variables(routine)
+        signatures = compute_all_signatures(routine)
+
+        # Verify READER doesn't have A in byref_outputs (only reads, no writes)
+        assert "A" not in signatures["READER"].byref_outputs
+        assert "A" in label_vars["READER"].reads
+        assert "A" not in label_vars["READER"].writes
+
+        transitive_outputs = compute_transitive_outputs(routine, label_vars, signatures)
+
+        # READER doesn't modify A, so X should NOT be in CALLER's outputs
+        assert "X" not in transitive_outputs["CALLER"]
 
 
 class TestFormalParamsShadowing:

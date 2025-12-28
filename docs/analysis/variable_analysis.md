@@ -265,3 +265,54 @@ MODIFY(R)
 ```
 
 The analyzer tracks `PassingMode.BY_REFERENCE` to identify `byref_outputs`.
+
+### byref_outputs Computation
+
+The `byref_outputs` field is populated by `compute_function_signature()`:
+
+1. Scan the label's `formal_params` list
+2. Check if each formal parameter is in `scope_vars.writes`
+3. If written, add to `byref_outputs`
+
+```python
+# In compute_function_signature():
+for formal_param in sig.formal_params:
+    if formal_param in scope_vars.writes:
+        sig.byref_outputs.add(formal_param)
+```
+
+This enables precise detection of which formal parameters are modified:
+
+```mumps
+SWAP(X,Y)     ; Both X and Y written → byref_outputs = {X, Y}
+       N T
+       S T=X,X=Y,Y=T
+       Q
+
+ADD(A,B)      ; A and B only read → byref_outputs = {}
+       N R
+       S R=A+B
+       Q R
+```
+
+### Transitive Output Propagation
+
+For nested call chains with by-ref parameters:
+
+```mumps
+OUTER  D MIDDLE(.X)
+       Q
+MIDDLE(A)
+       D INNER(.A)
+       Q
+INNER(B)
+       S B=B*2       ; B written → in INNER's byref_outputs
+       Q
+```
+
+The `compute_transitive_outputs()` function propagates modifications:
+- INNER writes B → B in INNER's `byref_outputs`
+- MIDDLE passes A to INNER by-ref → A in MIDDLE's `transitive_outputs`
+- OUTER passes X to MIDDLE by-ref → X in OUTER's `transitive_outputs`
+
+This enables detecting all variables modified through call chains.

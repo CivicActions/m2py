@@ -75,8 +75,44 @@ This affects code generation because Python `for` loops don't allow modifying th
 ### Pass-by-Reference Detection
 
 The analyzer detects when a loop variable is passed by reference to a subroutine,
-e.g., `D BLANK(.I)`. When the loop variable is passed by-ref, the analyzer
-conservatively assumes it may be modified (since the callee could modify the variable).
+e.g., `D BLANK(.I)`. 
+
+**Signature-Aware Detection** (when signatures are provided):
+When function signatures are available from `analyze_variables`, the detection is precise:
+only flags modification if the callee actually writes to the formal parameter
+(i.e., the formal param is in callee's `byref_outputs`).
+
+**Conservative Detection** (without signatures):
+Without signatures (external calls or `analyze_variables` not run), falls back to
+conservative behavior: any by-ref parameter is assumed to be potentially modified.
+
+```mumps
+; Signature-aware by-ref detection
+LOOP   F I=1:1:10 D READER(.I)
+       Q
+READER(A)
+       W A        ; Only reads A, doesn't write
+       Q
+; With signatures: loop_var_modified_in_body = False (callee doesn't modify)
+; Without signatures: loop_var_modified_in_body = True (conservative)
+
+LOOP   F I=1:1:10 D INCR(.I)
+       Q
+INCR(A)
+       S A=A+1    ; Writes to A → in byref_outputs
+       Q
+; With signatures: loop_var_modified_in_body = True (callee modifies)
+; Without signatures: loop_var_modified_in_body = True (conservative)
+```
+
+**Usage with signatures**:
+```python
+from m2py.analysis.variables import compute_all_signatures
+from m2py.analysis.for_analysis import analyze_for_loops
+
+signatures = compute_all_signatures(routine)
+analyze_for_loops(routine, signatures)  # Precise detection
+```
 
 ```mumps
 ; Pass-by-reference detection
@@ -111,8 +147,8 @@ F I=1:1:10 K I   ; KILL loop var → True
 F I=1:1:10 K     ; KILL all → True
 F I=1:1:10 K X   ; KILL other var → False
 
-; Pass-by-reference detection
-F I=1:1:30 D BLANK(.I)  ; Loop var passed by-ref → True
+; Pass-by-reference detection (with signatures)
+F I=1:1:30 D BLANK(.I)  ; Depends on callee - True if callee modifies
 F I=1:1:10 D WORK(.X)   ; Other var passed by-ref → False
 F I=1:1:10 D WORK(I)    ; Loop var passed by-val → False
 ```

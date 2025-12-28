@@ -196,6 +196,34 @@ Many ASG fields are populated by analysis passes:
 | `MLabel.output_variables` | variables | Modified outputs |
 | `MLabel.signature` | variables | FunctionSignature |
 
+### FunctionSignature
+
+The `FunctionSignature` dataclass provides clean interface information for Python code generation:
+
+```python
+@dataclass
+class FunctionSignature:
+    label_name: str
+    formal_params: List[str]
+    required_inputs: Set[str]        # Non-formal inputs from caller scope
+    optional_inputs: Set[str]
+    return_value: Optional[Any]      # From QUIT analysis
+    byref_outputs: Set[str]          # Formal params that are written
+    side_effect_outputs: Set[str]    # Non-NEWed variable writes
+    scope_strategy: ScopeStrategy    # PURE_FUNCTION, SUBROUTINE, etc.
+    transitive_inputs: Set[str]      # Inputs after call chain analysis
+    transitive_outputs: Set[str]     # Outputs after call chain analysis
+```
+
+**Key fields**:
+- `byref_outputs`: Populated by checking which formal params are in `scope_vars.writes`. 
+  When a formal param is written, callers passing that arg by-reference will have 
+  their variable modified.
+- `transitive_outputs`: Computed by `compute_transitive_outputs()` to track which 
+  caller variables are modified through call chains with by-ref parameters.
+
+See [variable_analysis.md](../analysis/variable_analysis.md) for computation details.
+
 ## Documentation Index
 
 | Document | Description |

@@ -5331,12 +5331,295 @@ Requires grammar extension for `.VAR` syntax.
   - Exported `PassingMode` enum from `m2py.asg`
   - Added `test_extrinsic_with_byref_args` unit test in test_semantic_analyzer.py
 
-### Phase 66c: Optional Interprocedural Analysis (Future/Low Priority)
+---
 
-Full analysis of whether callee actually modifies the by-ref parameter.
-Requires computing transitive byref_outputs. Deferred until needed.
+## Phase 67: Complete Interprocedural By-Reference Analysis
 
-- [ ] T6620 [P66c] (Future) Integrate with FunctionSignature.byref_outputs
-  - Only set loop_var_modified if callee's signature shows it modifies the param
-  - Requires variable analysis to be complete before FOR analysis
-  - May require reordering analysis passes
+**Purpose**: Enable precise by-ref tracking across call chains for optimal Python code generation.
+
+**Background**: The infrastructure for interprocedural by-ref analysis is 95% complete:
+- `FunctionSignature.byref_outputs` field exists but is never populated
+- `ParameterBinding` dataclass correctly tracks `PassingMode` and `caller_var_name`  
+- `bind_parameters()` creates bindings from MCall + MLabel
+- `compute_transitive_outputs()` is fully implemented but gets empty `byref_outputs`
+
+**Value for Python Code Generation**:
+1. **Pure function detection**: If no `byref_outputs` and no `side_effect_outputs`, generate clean `def f() -> T`
+2. **Minimal return values**: Only return by-ref params that are actually modified
+3. **Accurate function signatures**: Know exactly which args are read-only vs modified
+4. **FOR loop optimization**: Only set `loop_var_modified_in_body=True` when callee actually modifies it
+5. **Documentation generation**: Accurate docstrings describing parameter behavior
+
+**Dependencies**: None - existing infrastructure is sufficient
+
+**Status**: Complete
+
+---
+
+### Phase 67a: Populate byref_outputs in Function Signatures
+
+**Purpose**: Detect which formal parameters are written to within a label
+
+- [X] T6701 [P67a] Add byref_outputs population to `compute_function_signature()`
+  - File: `src/m2py/analysis/variables.py`
+  - In `compute_function_signature()`, after getting `scope_vars`:
+    ```python
+    # Detect formal params that are written (potential by-ref outputs)
+    for formal_param in label.formal_list or []:
+        if formal_param in scope_vars.writes:
+            sig.byref_outputs.add(formal_param)
+    ```
+  - ~5 lines of code
+
+- [X] T6702 [P67a] Unit test: formal param written → in byref_outputs
+  - File: `tests/unit/test_variables.py`
+  - Test case:
+    ```mumps
+    SWAP(X,Y)
+        N T
+        S T=X,X=Y,Y=T
+        Q
+    ```
+  - Verify: `signature.byref_outputs == {"X", "Y"}`
+
+- [X] T6703 [P67a] Unit test: formal param only read → NOT in byref_outputs
+  - File: `tests/unit/test_variables.py`
+  - Test case:
+    ```mumps
+    ADD(A,B)
+        N R
+        S R=A+B
+        Q R
+    ```
+  - Verify: `signature.byref_outputs == set()` (A, B only read, not written)
+
+- [X] T6704 [P67a] Unit test: formal param conditionally written
+  - File: `tests/unit/test_variables.py`
+  - Test case:
+    ```mumps
+    MAYBE(X)
+        I X<0 S X=0
+        Q
+    ```
+  - Verify: `signature.byref_outputs == {"X"}` (conservative - written in any path)
+
+---
+
+### Phase 67b: Verify Transitive Output Propagation
+
+**Purpose**: Ensure `compute_transitive_outputs()` works correctly with populated byref_outputs
+
+- [X] T6710 [P67b] Unit test: direct by-ref modification propagates
+  - File: `tests/unit/test_variables.py`
+  - Test case:
+    ```mumps
+    MAIN   D WORKER(.X)
+           Q
+    WORKER(A)
+           S A=A+1
+           Q
+    ```
+  - Verify: After transitive analysis, MAIN's `transitive_outputs` includes `X`
+
+- [X] T6711 [P67b] Unit test: nested call chain with by-ref
+  - File: `tests/unit/test_variables.py`
+  - Test case:
+    ```mumps
+    OUTER  D MIDDLE(.X)
+           Q
+    MIDDLE(A)
+           D INNER(.A)
+           Q
+    INNER(B)
+           S B=B*2
+           Q
+    ```
+  - Verify: OUTER's `transitive_outputs` includes `X` (via MIDDLE→INNER chain)
+
+- [X] T6712 [P67b] Unit test: by-ref param NOT modified → NOT in transitive outputs
+  - File: `tests/unit/test_variables.py`
+  - Test case:
+    ```mumps
+    CALLER D READER(.X)
+           Q
+    READER(A)
+           W A   ; Only reads A, doesn't write
+           Q
+    ```
+  - Verify: CALLER's `transitive_outputs` does NOT include `X`
+
+- [X] T6713 [P67b] Integration test with real MUGJ file
+  - File: `tests/integration/test_mugj.py`
+  - Find or create MUGJ test with by-ref call chain
+  - Verify transitive analysis produces expected results
+
+---
+
+### Phase 67c: Reorder Analysis Passes
+
+**Purpose**: Run variable analysis before FOR analysis so signatures are available
+
+- [X] T6720 [P67c] Update analysis order in `MUMPSParser.parse()`
+  - File: `src/m2py/parser/parser.py`
+  - Current order: `resolve → classify_gotos → analyze_for_loops → analyze_variables`
+  - New order: `resolve → analyze_variables → classify_gotos → analyze_for_loops`
+  - Rationale: FOR analysis needs callee signatures to check byref_outputs
+
+- [X] T6721 [P67c] Update analysis order in `MUMPSParser.parse_file()`
+  - File: `src/m2py/parser/parser.py`
+  - Same reordering as parse()
+
+- [X] T6722 [P67c] Verify no circular dependencies
+  - Confirm: variable analysis doesn't depend on GOTO/FOR analysis
+  - Confirm: GOTO analysis doesn't depend on FOR analysis
+  - Run full test suite to verify
+
+- [X] T6723 [P67c] Update `docs/analysis/index.md` with new order
+  - Document: `parse → resolve → analyze_variables → classify_gotos → analyze_for_loops`
+  - Explain: Why this order enables signature-aware FOR analysis
+
+---
+
+### Phase 67d: Use Signatures in FOR Loop Analysis
+
+**Purpose**: Replace conservative by-ref check with signature-aware check
+
+- [X] T6730 [P67d] Create `_get_callee_signature()` helper in for_analysis.py
+  - File: `src/m2py/analysis/for_analysis.py`
+  - Helper to look up callee's FunctionSignature from routine
+  - Handle unresolved calls (return None)
+
+- [X] T6731 [P67d] Update `_check_var_passed_byref_in_scope()` to use signatures
+  - File: `src/m2py/analysis/for_analysis.py`
+  - Current: Returns True if var passed by-ref to ANY call (conservative)
+  - New: Only return True if callee's `byref_outputs` includes the formal param
+  - Fallback: If signature unavailable (external call), use conservative approach
+
+- [X] T6732 [P67d] Unit test: by-ref to callee that doesn't modify → False
+  - File: `tests/unit/test_goto_for_analysis.py`
+  - Test case:
+    ```mumps
+    LOOP   F I=1:1:10 D READER(.I)
+           Q
+    READER(A)
+           W A
+           Q
+    ```
+  - Current (conservative): `loop_var_modified_in_body=True`
+  - New (signature-aware): `loop_var_modified_in_body=False`
+
+- [X] T6733 [P67d] Unit test: by-ref to callee that modifies → True
+  - File: `tests/unit/test_goto_for_analysis.py`
+  - Test case:
+    ```mumps
+    LOOP   F I=1:1:10 D INCR(.I)
+           Q
+    INCR(A)
+           S A=A+1
+           Q
+    ```
+  - Verify: `loop_var_modified_in_body=True` (correct detection)
+
+- [X] T6734 [P67d] Unit test: by-ref to external routine → conservative True
+  - File: `tests/unit/test_goto_for_analysis.py`
+  - Test case:
+    ```mumps
+    LOOP   F I=1:1:10 D UNKNOWN^EXTERNAL(.I)
+           Q
+    ```
+  - Verify: `loop_var_modified_in_body=True` (fallback to conservative)
+
+---
+
+### Phase 67e: Update ScopeStrategy Classification
+
+**Purpose**: Leverage populated byref_outputs for better function classification
+
+- [X] T6740 [P67e] Verify classify_scope_strategy() uses byref_outputs correctly
+  - File: `src/m2py/analysis/variables.py`
+  - Already checks `sig.byref_outputs` - now it will have real data
+  - FUNCTION_WITH_OUTPUTS: has return + byref_outputs
+  - PURE_FUNCTION: has return, no byref_outputs, no side_effect_outputs
+
+- [X] T6741 [P67e] Unit test: pure function classification
+  - File: `tests/unit/test_variables.py`
+  - Test case:
+    ```mumps
+    ADD(A,B)
+        N R
+        S R=A+B
+        Q R
+    ```
+  - Verify: `scope_strategy == ScopeStrategy.PURE_FUNCTION`
+
+- [X] T6742 [P67e] Unit test: function with outputs classification
+  - File: `tests/unit/test_variables.py`
+  - Test case:
+    ```mumps
+    CALC(A,B)
+        S A=A+B
+        Q A
+    ```
+  - Verify: `scope_strategy == ScopeStrategy.FUNCTION_WITH_OUTPUTS`
+  - Verify: `byref_outputs == {"A"}`
+
+---
+
+### Phase 67f: Documentation Updates
+
+**Purpose**: Update all documentation to reflect new analysis capabilities
+
+- [X] T6750 [P67f] Update `docs/analysis/variable_analysis.md`
+  - Document how `byref_outputs` is computed
+  - Add examples showing formal params written → in byref_outputs
+  - Document transitive_outputs propagation through by-ref chains
+
+- [X] T6751 [P67f] Update `docs/analysis/for_analysis.md`
+  - Document signature-aware by-ref detection
+  - Explain fallback to conservative approach for external calls
+  - Update examples showing precise vs conservative detection
+
+- [X] T6752 [P67f] Update `docs/analysis/index.md`
+  - Update analysis pass order diagram
+  - Explain why variable analysis must precede FOR analysis
+  - Document dependencies between analysis passes
+
+- [X] T6753 [P67f] Update `docs/codegen/variable_scoping.md`
+  - Document how `byref_outputs` enables better Python generation
+  - Add examples: minimal return values, pure function detection
+  - Update decision tree to show byref_outputs usage
+
+- [X] T6754 [P67f] Update `docs/asg/index.md` FunctionSignature section
+  - Document `byref_outputs` field (now populated)
+  - Document `transitive_outputs` field behavior
+  - Add cross-reference to variable_analysis.md
+
+- [X] T6755 [P67f] Update docstrings in `src/m2py/analysis/variables.py`
+  - `compute_function_signature()`: Document byref_outputs computation
+  - `compute_transitive_outputs()`: Document integration with byref_outputs
+  - `FunctionSignature`: Update field descriptions
+
+---
+
+### Phase 67g: Final Validation
+
+**Purpose**: Ensure all changes work together correctly
+
+- [X] T6760 [P67g] Run full test suite and verify no regressions
+  - `uv run pytest` - all tests must pass
+  - Check for any test failures related to analysis ordering
+
+- [X] T6761 [P67g] Run pyright and verify no new type errors
+  - `uv run pyright src/`
+  - Fix any type issues introduced by changes
+
+- [X] T6762 [P67g] Validate with VistA sample files
+  - Run `utils/validate_asg.py` on several VistA files
+  - Verify byref_outputs is populated correctly
+  - Verify transitive_outputs shows expected propagation
+
+- [X] T6763 [P67g] Performance check
+  - Run `utils/profile_variable_analysis.py` on large files
+  - Ensure no significant performance regression from analysis reordering
+
+**Checkpoint**: Phase 67 complete - Full interprocedural by-ref analysis enabled

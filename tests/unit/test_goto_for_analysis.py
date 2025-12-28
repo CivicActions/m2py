@@ -862,3 +862,150 @@ PTNEXT(N) ; Set N to 0 to signal end
         assert for_stmt is not None
         # NEXT is passed by-ref - it CAN be modified to signal loop exit
         assert for_stmt.loop_var_modified_in_body is True
+
+
+class TestSignatureAwareByRefDetection:
+    """Tests for signature-aware by-ref detection in FOR analysis (Phase 67d)."""
+
+    def test_byref_to_callee_that_reads_only(self):
+        """T6732: By-ref to callee that doesn't modify → loop_var_modified = False.
+
+        LOOP   F I=1:1:10 D READER(.I)
+               Q
+        READER(A)
+               W A   ; Only reads A, doesn't write
+               Q
+
+        With signatures, we know READER doesn't modify A, so I is not modified.
+        """
+        from m2py.parser import MUMPSParser
+        from m2py.analysis.variables import compute_all_signatures
+
+        parser = MUMPSParser()
+        source = """LOOP F I=1:1:10 D READER(.I)
+ Q
+READER(A) ; Reads A but doesn't write it
+ W A
+ Q
+"""
+        routine = parser.parse(source)
+        parser.resolve_references(routine)
+        signatures = compute_all_signatures(routine)
+
+        # With signatures, READER's byref_outputs should be empty (A not written)
+        assert "A" not in signatures["READER"].byref_outputs
+
+        # Now analyze with signatures
+        analyze_for_loops(routine, signatures)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        # Signature-aware: callee doesn't modify A, so I not modified
+        assert for_stmt.loop_var_modified_in_body is False
+
+    def test_byref_to_callee_that_modifies(self):
+        """T6733: By-ref to callee that modifies → loop_var_modified = True.
+
+        LOOP   F I=1:1:10 D INCR(.I)
+               Q
+        INCR(A)
+               S A=A+1
+               Q
+
+        With signatures, we know INCR modifies A, so I is modified.
+        """
+        from m2py.parser import MUMPSParser
+        from m2py.analysis.variables import compute_all_signatures
+
+        parser = MUMPSParser()
+        source = """LOOP F I=1:1:10 D INCR(.I)
+ Q
+INCR(A)
+ S A=A+1
+ Q
+"""
+        routine = parser.parse(source)
+        parser.resolve_references(routine)
+        signatures = compute_all_signatures(routine)
+
+        # With signatures, INCR's byref_outputs should include A
+        assert "A" in signatures["INCR"].byref_outputs
+
+        # Now analyze with signatures
+        analyze_for_loops(routine, signatures)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        # Signature-aware: callee modifies A, so I is modified
+        assert for_stmt.loop_var_modified_in_body is True
+
+    def test_byref_to_external_routine_conservative(self):
+        """T6734: By-ref to external routine → conservative True.
+
+        LOOP   F I=1:1:10 D UNKNOWN^EXTERNAL(.I)
+               Q
+
+        External calls have no signature - fall back to conservative.
+        """
+        from m2py.parser import MUMPSParser
+        from m2py.analysis.variables import compute_all_signatures
+
+        parser = MUMPSParser()
+        source = """LOOP F I=1:1:10 D UNKNOWN^EXTERNAL(.I)
+ Q
+"""
+        routine = parser.parse(source)
+        parser.resolve_references(routine)
+        signatures = compute_all_signatures(routine)
+
+        # Now analyze with signatures (but external call has none)
+        analyze_for_loops(routine, signatures)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        # Conservative: external call signature unknown, assume modified
+        assert for_stmt.loop_var_modified_in_body is True
+
+    def test_without_signatures_conservative(self):
+        """Without signatures, by-ref is conservative (same as before Phase 67d)."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        source = """LOOP F I=1:1:10 D READER(.I)
+ Q
+READER(A)
+ W A
+ Q
+"""
+        routine = parser.parse(source)
+        # No signatures - conservative behavior
+        analyze_for_loops(routine)  # No signatures passed
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        # Without signatures, falls back to conservative: by-ref = modified
+        assert for_stmt.loop_var_modified_in_body is True

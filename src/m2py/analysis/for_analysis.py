@@ -9,9 +9,9 @@ These functions operate on ASG nodes (MRoutine, MForStatement)
 and do not perform any text parsing.
 """
 
-from typing import Union
+from typing import TYPE_CHECKING, Dict, Optional, Union
 
-from ..asg.elements import MRoutine, MScope
+from ..asg.elements import MCall, MRoutine, MScope
 from ..asg.enums import PassingMode
 from ..asg.expressions import MActualParameter, MVariable
 from ..asg.statements import (
@@ -24,8 +24,13 @@ from ..asg.statements import (
 )
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
+if TYPE_CHECKING:
+    from .variables import FunctionSignature
 
-def analyze_for_loops(routine: MRoutine) -> None:
+
+def analyze_for_loops(
+    routine: MRoutine, signatures: Optional[Dict[str, "FunctionSignature"]] = None
+) -> None:
     """Analyze all FOR loops in a routine.
 
     This function scans each MForStatement and:
@@ -34,22 +39,33 @@ def analyze_for_loops(routine: MRoutine) -> None:
     3. Detects if QUIT is present in the body
     4. Sets has_internal_quit accordingly
 
+    When signatures are provided (from analyze_variables), the by-ref check
+    uses callee signatures for precise detection. Otherwise falls back to
+    conservative (any by-ref = potentially modified).
+
     Args:
         routine: The MRoutine to analyze
+        signatures: Optional dict of label signatures for precise by-ref detection
 
     Side Effects:
         - Sets MForStatement.loop_var_modified_in_body for each FOR
         - Sets MForStatement.has_internal_quit for each FOR
     """
     for label in routine.labels:
-        _analyze_fors_in_scope(label.body)
+        _analyze_fors_in_scope(label.body, routine, signatures)
 
 
-def _analyze_fors_in_scope(scope: MScope) -> None:
+def _analyze_fors_in_scope(
+    scope: MScope,
+    routine: MRoutine,
+    signatures: Optional[Dict[str, "FunctionSignature"]] = None,
+) -> None:
     """Recursively analyze FOR loops in a scope.
 
     Args:
         scope: The scope to scan for FOR statements
+        routine: The routine being analyzed (for signature lookup)
+        signatures: Optional dict of label signatures for precise by-ref detection
     """
     for stmt in scope.statements:
         if isinstance(stmt, MForStatement):
@@ -74,28 +90,29 @@ def _analyze_fors_in_scope(scope: MScope) -> None:
                         modified_in_body = _check_var_modified_in_scope(
                             loop_var_for_check, stmt.body
                         )
-                        # Check for pass-by-reference in DO calls (conservative)
+                        # Check for pass-by-reference in DO calls
+                        # Use signatures for precise check if available
                         passed_byref = _check_var_passed_byref_in_scope(
-                            loop_var_name, stmt.body
+                            loop_var_name, stmt.body, routine, signatures
                         )
                         stmt.loop_var_modified_in_body = (
                             modified_in_body or passed_byref
                         )
                 stmt.has_internal_quit = _check_quit_in_scope(stmt.body)
                 # Recurse into nested structures within FOR body
-                _analyze_fors_in_scope(stmt.body)
+                _analyze_fors_in_scope(stmt.body, routine, signatures)
         # Recurse into other nested scopes using type-safe helpers
         then_scope = get_then_scope(stmt)
         if then_scope is not None:
-            _analyze_fors_in_scope(then_scope)
+            _analyze_fors_in_scope(then_scope, routine, signatures)
         else:
             else_scope = get_else_scope(stmt)
             if else_scope is not None:
-                _analyze_fors_in_scope(else_scope)
+                _analyze_fors_in_scope(else_scope, routine, signatures)
             else:
                 body = get_body_scope(stmt)
                 if body is not None and not isinstance(stmt, MForStatement):
-                    _analyze_fors_in_scope(body)
+                    _analyze_fors_in_scope(body, routine, signatures)
 
 
 def _check_var_modified_in_scope(
@@ -180,42 +197,104 @@ def _check_var_modified_in_scope(
     return False
 
 
-def _check_var_passed_byref_in_scope(var_name: str, scope: MScope) -> bool:
+def _get_callee_signature(
+    call: MCall,
+    routine: MRoutine,
+    signatures: Optional[Dict[str, "FunctionSignature"]],
+) -> Optional["FunctionSignature"]:
+    """Get the FunctionSignature for a callee, if available.
+
+    Args:
+        call: The MCall to look up
+        routine: The routine being analyzed
+        signatures: Dict of label signatures, if computed
+
+    Returns:
+        FunctionSignature if available, None otherwise
+    """
+    if not signatures:
+        return None
+
+    # External calls (label^routine) - signature not available
+    if call.routine:
+        return None
+
+    # Get callee name
+    callee_name = call.name
+    if not callee_name:
+        return None
+
+    return signatures.get(callee_name)
+
+
+def _check_var_passed_byref_in_scope(
+    var_name: str,
+    scope: MScope,
+    routine: MRoutine,
+    signatures: Optional[Dict[str, "FunctionSignature"]] = None,
+) -> bool:
     """Check if a variable is passed by reference in a DO call within a scope.
 
-    This is a conservative check - if the loop variable is passed by reference
-    to any subroutine, we assume it may be modified (even though the callee
-    may not actually modify it).
+    When signatures are available, this function uses precise detection:
+    only returns True if the callee actually modifies the formal parameter
+    (i.e., the formal param is in callee's byref_outputs).
+
+    When signatures are not available (external calls, or analyze_variables
+    wasn't run), falls back to conservative: any by-ref = potentially modified.
 
     Args:
         var_name: The variable name to check
         scope: The scope to check
+        routine: The routine being analyzed (for signature lookup)
+        signatures: Optional dict of label signatures for precise detection
 
     Returns:
-        True if the variable is passed by reference in any DO call
+        True if the variable is passed by reference AND potentially modified
     """
     for stmt in scope.statements:
         # Check DO statements for by-ref parameters
         if isinstance(stmt, MDoStatement):
             for call in stmt.targets:
-                for arg in call.arguments:
+                for i, arg in enumerate(call.arguments):
                     if isinstance(arg, MActualParameter):
                         if arg.passing_mode == PassingMode.BY_REFERENCE:
                             if arg.variable_name == var_name:
-                                return True
+                                # Found by-ref parameter - check if callee modifies it
+                                callee_sig = _get_callee_signature(
+                                    call, routine, signatures
+                                )
+                                if callee_sig is None:
+                                    # No signature (external call or not computed)
+                                    # Fall back to conservative: assume modified
+                                    return True
+
+                                # Get the formal parameter name for this position
+                                if i < len(callee_sig.formal_params):
+                                    formal_name = callee_sig.formal_params[i]
+                                    # Check if callee modifies this formal param
+                                    if formal_name in callee_sig.byref_outputs:
+                                        return True
+                                    # Callee doesn't modify it - don't flag as modified
+                                else:
+                                    # More args than formals - conservative
+                                    return True
 
         # Recurse into nested scopes
         then_scope = get_then_scope(stmt)
         if then_scope is not None:
-            if _check_var_passed_byref_in_scope(var_name, then_scope):
+            if _check_var_passed_byref_in_scope(
+                var_name, then_scope, routine, signatures
+            ):
                 return True
         else_scope = get_else_scope(stmt)
         if else_scope is not None:
-            if _check_var_passed_byref_in_scope(var_name, else_scope):
+            if _check_var_passed_byref_in_scope(
+                var_name, else_scope, routine, signatures
+            ):
                 return True
         body = get_body_scope(stmt)
         if body is not None:
-            if _check_var_passed_byref_in_scope(var_name, body):
+            if _check_var_passed_byref_in_scope(var_name, body, routine, signatures):
                 return True
 
     return False

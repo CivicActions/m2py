@@ -35,10 +35,17 @@ class FunctionSignature:
     required_inputs: Set[str]     # Non-formal inputs
     optional_inputs: Set[str]     # May come from caller
     return_value: Optional[Any]   # From QUIT analysis
-    byref_outputs: Set[str]       # Modified by-ref params
+    byref_outputs: Set[str]       # Formal params written (modified by-ref)
     side_effect_outputs: Set[str] # Non-NEWed writes
     scope_strategy: ScopeStrategy # Code gen approach
+    transitive_inputs: Set[str]   # Inputs including callee needs
+    transitive_outputs: Set[str]  # Outputs including callee effects
 ```
+
+**byref_outputs Population**: During `compute_function_signature()`, each formal 
+parameter is checked against `scope_vars.writes`. If a formal param is written 
+within the label body, it is added to `byref_outputs`. This enables precise 
+detection of which parameters actually modify caller variables when passed by reference.
 
 ### ScopeStrategy Classification
 
@@ -206,21 +213,31 @@ def inner():
 
 ## Decision Tree
 
+The `scope_strategy` classification uses `byref_outputs` to determine optimal code generation:
+
 ```python
 sig = label.signature
 
 if sig.scope_strategy == ScopeStrategy.PURE_FUNCTION:
+    # No byref_outputs, no side_effect_outputs, has return value
     # def name(formal_params) -> T:
     #     return value
     pass
 
 elif sig.scope_strategy == ScopeStrategy.FUNCTION_WITH_OUTPUTS:
-    # def name(formal_params, required_inputs) -> Tuple[return, outputs]:
-    #     return value, output1, output2
+    # Has return value AND (byref_outputs OR side_effect_outputs)
+    # By-ref outputs require returning modified values for caller to update
+    # def name(formal_params, required_inputs) -> Tuple[return, *outputs]:
+    #     return value, modified_arg1, modified_arg2
     pass
 
 elif sig.scope_strategy == ScopeStrategy.SUBROUTINE:
-    if sig.side_effect_outputs:
+    if sig.byref_outputs:
+        # No return value but modifies by-ref params
+        # def name(formal_params) -> Tuple[...]:
+        #     return modified_arg1, modified_arg2
+        pass
+    elif sig.side_effect_outputs:
         # def name(formal_params) -> Dict[str, Any]:
         #     return {"output1": val1, ...}
         pass
@@ -233,6 +250,38 @@ elif sig.scope_strategy == ScopeStrategy.REQUIRES_RUNTIME:
     #     x = runtime.get_local("X")
     #     runtime.set_local("Y", value)
     pass
+```
+
+### By-Reference Handling Examples
+
+**Minimal return values**: Only return by-ref params that are actually modified:
+
+```mumps
+; READER only reads A, doesn't modify
+READER(A)
+    W A
+    Q
+
+; byref_outputs = {} → caller can pass by-ref but no return needed
+```
+
+**Accurate modification tracking**:
+
+```mumps
+; SWAP modifies both parameters
+SWAP(X,Y)
+    N T
+    S T=X,X=Y,Y=T
+    Q
+
+; byref_outputs = {"X", "Y"} → both must be returned
+```
+
+```python
+def swap(x, y):
+    return y, x  # Return both modified params
+
+# Caller: x, y = swap(x, y)
 ```
 
 ## Special Cases

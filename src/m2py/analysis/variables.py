@@ -781,12 +781,22 @@ def compute_function_signature(
     Combines formal parameters, variable analysis, and QUIT analysis
     to determine the label's interface for Python code generation.
 
+    This function detects by-ref outputs by checking which formal parameters
+    are written to within the label's scope. Per MUMPS spec (MDC 8.1.14),
+    when a caller passes a variable by reference (.actualname), any writes
+    to the formal parameter in the callee modify the caller's variable.
+
     Args:
         label: The MLabel to compute signature for
         scope_vars: Pre-computed ScopeVariables for the label
 
     Returns:
         FunctionSignature describing the label's interface
+
+    Example:
+        For SWAP(X,Y) with body "N T S T=X,X=Y,Y=T Q", both X and Y are
+        written (scope_vars.writes contains X and Y), so byref_outputs = {X, Y}.
+        A caller using D SWAP(.A,.B) will have A and B modified.
     """
     sig = FunctionSignature()
     sig.label_name = label.name
@@ -799,6 +809,13 @@ def compute_function_signature(
 
     # Side effect outputs: output_variables (visible to caller)
     sig.side_effect_outputs = set(scope_vars.output_variables)
+
+    # Detect formal params that are written (potential by-ref outputs)
+    # If a formal parameter is written within the label, and the caller
+    # passes a variable by reference, that caller variable gets modified
+    for formal_param in sig.formal_params:
+        if formal_param in scope_vars.writes:
+            sig.byref_outputs.add(formal_param)
 
     # Analyze QUIT statements
     has_value, has_void, return_expr = analyze_quit_statements(label)
@@ -995,11 +1012,18 @@ def compute_transitive_outputs(
                 # For each by-ref parameter, if callee modifies formal,
                 # add caller's actual to outputs
                 callee_vars = label_vars.get(callee_name, ScopeVariables())
+                callee_trans = transitive_outputs.get(callee_name, set())
 
                 for binding in bindings:
                     if binding.passing_mode == PassingMode.BY_REFERENCE:
-                        # If callee writes to this formal, caller's var is affected
-                        if binding.formal_name in callee_vars.writes:
+                        # If callee writes to this formal (directly or transitively),
+                        # caller's var is affected. Check both direct writes and
+                        # transitive outputs (for nested call chains).
+                        formal_is_modified = (
+                            binding.formal_name in callee_vars.writes
+                            or binding.formal_name in callee_trans
+                        )
+                        if formal_is_modified:
                             if (
                                 binding.caller_var_name
                                 and binding.caller_var_name not in current

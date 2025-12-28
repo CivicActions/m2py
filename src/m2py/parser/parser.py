@@ -807,20 +807,28 @@ class MUMPSParser:
         """
         _classify_gotos(routine)
 
-    def analyze_for_loops(self, routine: MRoutine) -> None:
+    def analyze_for_loops(
+        self, routine: MRoutine, signatures: dict[str, FunctionSignature] | None = None
+    ) -> None:
         """Analyze all FOR loops in a routine.
 
         This method scans each MForStatement and:
         1. Detects if loop variable is modified inside the body
         2. Sets loop_var_modified_in_body accordingly
 
+        When signatures are provided (from analyze_variables/compute_signatures),
+        the by-ref detection is precise: only flags modification if the callee
+        actually writes to the formal parameter. Without signatures, falls back
+        to conservative detection (any by-ref = potentially modified).
+
         Args:
             routine: The MRoutine to analyze
+            signatures: Optional function signatures for precise by-ref detection
 
         Side Effects:
             - Sets MForStatement.loop_var_modified_in_body for each FOR
         """
-        _analyze_for_loops(routine)
+        _analyze_for_loops(routine, signatures)
 
     def analyze_variables(
         self, routine: MRoutine, compute_transitive: bool = False
