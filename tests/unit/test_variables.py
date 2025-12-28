@@ -167,10 +167,21 @@ class TestExtractStatementVariables:
     def test_extract_from_if_statement(self):
         """Test extracting variables from IF statement condition."""
         cond = MVariable(name="X", subscripts=[])
-        stmt = MIfStatement(condition=cond, then_scope=None)
+        stmt = MIfStatement(conditions=[cond], condition=cond, then_scope=None)
 
         reads, writes, newed = _extract_statement_variables(stmt)
         assert reads == {"X"}
+        assert writes == set()
+        assert newed == set()
+
+    def test_extract_from_if_statement_multi_condition(self):
+        """Test extracting variables from multi-condition IF statement (I A,B)."""
+        cond_a = MVariable(name="A", subscripts=[])
+        cond_b = MVariable(name="B", subscripts=[])
+        stmt = MIfStatement(conditions=[cond_a, cond_b], then_scope=None)
+
+        reads, writes, newed = _extract_statement_variables(stmt)
+        assert reads == {"A", "B"}
         assert writes == set()
         assert newed == set()
 

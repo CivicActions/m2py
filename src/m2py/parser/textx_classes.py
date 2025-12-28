@@ -51,16 +51,13 @@ def _unwrap_expr(expr):
     if isinstance(expr, MExpr):
         return expr
 
-    # Expr with left attribute (new grammar)
+    # Expr with left attribute (grammar: left=UnaryExpr (tail+=ExprTail)*)
     if hasattr(expr, "left"):
-        # If no binary ops (check for 'tail' attribute which holds BinaryOpTail list), just unwrap the left
+        # If no binary ops/pattern matches (tail is empty), just unwrap the left
         has_tail = hasattr(expr, "tail") and expr.tail
-        has_ops = (
-            hasattr(expr, "ops") and expr.ops
-        )  # Also check old 'ops' for compatibility
-        if not has_tail and not has_ops:
+        if not has_tail:
             return _unwrap_expr(expr.left)
-        # Has binary ops - keep for now (semantic analyzer will handle)
+        # Complex expression with binary ops or pattern match - handled by semantic analyzer
         return expr
 
     # UnaryExpr without operator -> unwrap to operand

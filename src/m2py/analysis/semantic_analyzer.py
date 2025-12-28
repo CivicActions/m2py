@@ -668,12 +668,6 @@ class SemanticAnalyzer:
                 elif arg_cls == "StringLiteral" or isinstance(arg_value, MLiteral):
                     prompt_expr = self.analyze(arg_value, stmt)
                     stmt.arguments.append(prompt_expr)
-                # Legacy: direct format/prompt/target attributes (old grammar)
-                elif hasattr(arg, "format") and arg.format:
-                    stmt.arguments.append(arg.format)
-                elif hasattr(arg, "prompt") and arg.prompt:
-                    prompt_expr = self.analyze(arg.prompt, stmt)
-                    stmt.arguments.append(prompt_expr)
                 else:
                     # Unknown - try to analyze it
                     analyzed = self.analyze(arg_value, stmt)
@@ -691,22 +685,16 @@ class SemanticAnalyzer:
         stmt = MIfStatement()
         object.__setattr__(stmt, "parent", parent)
 
-        # Handle new grammar: conditions+=Expr[/,/]
+        # Grammar: conditions+=Expr[/,/] (comma-separated AND conditions)
         if hasattr(cmd, "conditions") and cmd.conditions:
             analyzed_conditions = [
                 self.analyze(c, stmt) for c in cmd.conditions if c is not None
             ]
             # Filter out any None results
             stmt.conditions = [c for c in analyzed_conditions if c is not None]
-            # For backwards compatibility, also set single condition if only one
+            # Convenience: also set single condition if only one
             if len(stmt.conditions) == 1:
                 stmt.condition = stmt.conditions[0]
-        # Handle old grammar for backwards compatibility: condition=Expr
-        elif hasattr(cmd, "condition") and cmd.condition:
-            analyzed = self.analyze(cmd.condition, stmt)
-            if analyzed is not None:
-                stmt.condition = analyzed
-                stmt.conditions = [analyzed]
 
         return stmt
 

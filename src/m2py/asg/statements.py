@@ -162,7 +162,9 @@ class MIfStatement(MStatement):
     When there are multiple conditions, use `conditions` list.
     """
 
-    condition: Optional["MExpr"] = None  # Single condition (legacy support)
+    condition: Optional["MExpr"] = (
+        None  # Convenience: first condition (set when len(conditions) == 1)
+    )
     conditions: List["MExpr"] = field(
         default_factory=list
     )  # Multiple conditions (comma-separated)

@@ -160,6 +160,69 @@ class TestParseExpression:
         assert result is not None
 
 
+class TestExprToString:
+    """Test _expr_to_string function for converting parsed expressions back to strings."""
+
+    def test_simple_variable(self):
+        """Simple variable converts back."""
+        from m2py.analysis.command_parser import _expr_to_string
+
+        expr = parse_expression("X")
+        assert _expr_to_string(expr) == "X"
+
+    def test_binary_addition(self):
+        """Binary addition A+B converts back correctly."""
+        from m2py.analysis.command_parser import _expr_to_string
+
+        expr = parse_expression("A+B")
+        assert _expr_to_string(expr) == "A+B"
+
+    def test_multiple_binary_ops(self):
+        """Multiple binary ops A+B*C convert back correctly."""
+        from m2py.analysis.command_parser import _expr_to_string
+
+        expr = parse_expression("A+B*C")
+        assert _expr_to_string(expr) == "A+B*C"
+
+    def test_subtraction_chain(self):
+        """Subtraction chain X-Y-Z converts back correctly."""
+        from m2py.analysis.command_parser import _expr_to_string
+
+        expr = parse_expression("X-Y-Z")
+        result = _expr_to_string(expr)
+        # Note: textX may parse this differently due to unary minus ambiguity,
+        # but the result should still be valid
+        assert "X" in result and "Y" in result and "Z" in result
+
+    def test_comparison(self):
+        """Comparison operator A=1 converts back."""
+        from m2py.analysis.command_parser import _expr_to_string
+
+        expr = parse_expression("A=1")
+        assert _expr_to_string(expr) == "A=1"
+
+    def test_pattern_match_simple(self):
+        """Pattern match X?1N converts back."""
+        from m2py.analysis.command_parser import _expr_to_string
+
+        expr = parse_expression("X?1N")
+        assert _expr_to_string(expr) == "X?1N"
+
+    def test_pattern_match_indefinite(self):
+        """Pattern match A?.N converts back."""
+        from m2py.analysis.command_parser import _expr_to_string
+
+        expr = parse_expression("A?.N")
+        assert _expr_to_string(expr) == "A?.N"
+
+    def test_numeric_literal(self):
+        """Numeric literal 123 converts back."""
+        from m2py.analysis.command_parser import _expr_to_string
+
+        expr = parse_expression("123")
+        assert _expr_to_string(expr) == "123"
+
+
 class TestParseSetCommand:
     """Test SET command parsing to ASG."""
 

@@ -153,9 +153,11 @@ I X=1,Y=2 W "both"    ; comma = AND
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `condition` | `Optional[MExpr]` | Single condition |
-| `conditions` | `List[MExpr]` | Multiple comma-separated conditions |
+| `conditions` | `List[MExpr]` | All conditions (comma-separated AND) |
+| `condition` | `Optional[MExpr]` | Convenience: first condition (set when `len(conditions) == 1`) |
 | `then_scope` | `MScope` | Commands to execute if true |
+
+**Important**: Always use `conditions` (plural) for iteration. The `condition` field is a convenience accessor set only when there's exactly one condition.
 
 **Note**: IF sets `$TEST` special variable, which affects subsequent ELSE.
 

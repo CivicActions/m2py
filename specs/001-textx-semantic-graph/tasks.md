@@ -6207,3 +6207,152 @@ This phase addresses findings from a comprehensive review of the `.tx` grammar f
   - All 903 unit tests pass
 
 **Checkpoint**: Phase 75 complete - Dead code removed, comments clarified, documentation updated for special cases
+
+---
+
+## Phase 76: Grammar/Code Consistency and Dead Code Cleanup
+
+### Overview
+
+This phase addresses findings from a comprehensive review of grammar files (`.tx`) and parser/analysis modules (`.py`) to identify:
+- Dead code from obsolete grammar structures
+- Unused fallback code paths
+- Bug in variable analysis for multi-condition IF statements
+- Naming/comment inconsistencies
+
+### Findings from Review
+
+### Validation: Git Archaeology (2025-01-xx)
+
+Before implementing fixes, the "dead code" findings were validated via git history to confirm they represent forgotten updates (should be removed/fixed) rather than implementation gaps (should be wired up).
+
+**Grammar Evolution Timeline:**
+- Commit `b0b0f9f` (T264): Grammar changed from unnamed to `left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*`
+- Commit `59c117e` (V1PAT2): Grammar restructured to `left=UnaryExpr (tail+=ExprTail)*` to support pattern matching
+  - `semantic_analyzer.py` was updated in same commit to use `expr.tail`
+  - `command_parser.py` and `textx_classes.py` were **not updated** (bug)
+
+**Validation Results:**
+
+| Finding | Verdict | Evidence |
+|---------|---------|----------|
+| 1. `_expr_binary` uses `ops`/`right` | **BUG** | Commit 59c117e updated grammar and semantic_analyzer but forgot command_parser |
+| 2. `_unwrap_expr` checks `ops` | **DEAD CODE** | Same commit changed grammar; this file was not updated |
+| 3. Variable analysis uses singular `condition` | **BUG** | ASG produces `conditions` (plural) for all IF statements |
+| 4. IF `condition` fallback in semantic_analyzer | **DEAD CODE** | Grammar only produces `conditions`; verified via grep |
+| 5. Read `format`/`prompt` fallback | **DEAD CODE** | Grammar restructured per T403; attributes don't exist |
+| 6. `MIfStatement.condition` comment | **MISLEADING** | Field is a convenience accessor, not legacy |
+| 7. `_unwrap_expr` "for now" comment | **MISLEADING** | This is permanent architecture, not temporary |
+
+**Conclusion:** All findings validated. Items 1 and 3 are bugs requiring fixes; items 2, 4, 5 are dead code for removal; items 6, 7 are comment updates.
+
+---
+
+#### Finding 1: `_expr_binary` Uses Obsolete Grammar Structure (BUG)
+**File:** [src/m2py/analysis/command_parser.py#L919-L969](src/m2py/analysis/command_parser.py#L919-L969)
+**Status:** Fix Bug - Update to Current Grammar
+**Root Cause:** Commit `59c117e` changed grammar from `ops+=BinaryOp right+=UnaryExpr` to `tail+=ExprTail` to support pattern matching (`?` operator). The `semantic_analyzer.py` was updated in that commit, but `command_parser.py` was overlooked.
+**Finding:** The `_expr_binary()` function checks for `expr.right` and `expr.ops` attributes, but the current grammar (`expressions.tx`) uses `expr.tail` containing `BinaryOpTail` objects (each with `op` and `right`).
+**Impact:** For complex expressions like `A+B` or `C*D`, the function returns only the left operand (e.g., `A` instead of `A+B`). This affects `parse_for_command_to_asg()` and related string conversion functions used in `classify_patterns()`.
+**Verified:** `_expr_to_string(param.start)` returns `"A"` instead of `"A+B"` for `F I=A+B:1:10`.
+**Solution:** Rewrite `_expr_binary()` to iterate over `expr.tail` list, extracting `tail_item.op` and `tail_item.right` from each `BinaryOpTail` or `PatternMatchTail`.
+
+#### Finding 2: `_unwrap_expr` Has Dead Code for Obsolete `ops` Attribute
+**File:** [src/m2py/parser/textx_classes.py#L57-L62](src/m2py/parser/textx_classes.py#L57-L62)
+**Status:** Remove Dead Code
+**Root Cause:** Same as Finding 1 - commit `59c117e` changed grammar but this file was not updated.
+**Finding:** The function checks `hasattr(expr, "ops") and expr.ops` as a fallback, but the current grammar never produces an `ops` attribute. The grammar uses `tail` (list of `ExprTail`).
+**Analysis:** The `ops` check is vestigial from an earlier grammar iteration. It never triggers because the grammar doesn't produce `ops`.
+**Solution:** Remove the `has_ops` check; rely solely on `has_tail`.
+
+#### Finding 3: Variable Analysis Misses Multi-Condition IF Variables (BUG)
+**File:** [src/m2py/analysis/variables.py#L498-L501](src/m2py/analysis/variables.py#L498-L501)
+**Status:** Fix Bug
+**Finding:** The `_extract_statement_variables()` function only checks `stmt.condition` for `MIfStatement`, but for multi-condition IF statements (e.g., `I A,B S X=1`), `condition` is `None` - only `conditions` (plural) is populated.
+**Impact:** Variable reads from multi-condition IF statements are not tracked, leading to incorrect input variable analysis.
+**Verified:** `I A,B S X=1` → `stmt.condition` is `None`, `stmt.conditions` is `[A, B]`.
+**Solution:** Change to iterate over `stmt.conditions` instead of checking `stmt.condition`.
+
+#### Finding 4: Dead Code in `_analyze_IfCommand` for Old Grammar
+**File:** [src/m2py/analysis/semantic_analyzer.py#L704-L709](src/m2py/analysis/semantic_analyzer.py#L704-L709)
+**Status:** Remove Dead Code
+**Finding:** The `elif hasattr(cmd, "condition")` branch handles a singular `condition=Expr` grammar attribute, but the current grammar only produces `conditions+=Expr[/,/]` (plural). This fallback is never triggered.
+**Analysis:** The grammar was updated to use `conditions` (plural) to support comma-separated AND conditions. The singular fallback is dead code.
+**Solution:** Remove the `elif` branch for singular `condition`.
+
+#### Finding 5: Dead Code in `_analyze_ReadCommand` for Old Grammar
+**File:** [src/m2py/analysis/semantic_analyzer.py#L672-L677](src/m2py/analysis/semantic_analyzer.py#L672-L677)
+**Status:** Remove Dead Code
+**Finding:** The "Legacy: direct format/prompt/target attributes (old grammar)" block checks for `arg.format` and `arg.prompt` attributes. The current grammar (`commands.tx`) doesn't produce these attributes - it uses `ReadArgValue` with `ReadFormat`, `StringLiteral`, or `ReadTargetWithTimeout`.
+**Analysis:** Confirmed via grep: no `format=` or `prompt=` in `commands.tx`. The attributes are never produced.
+**Solution:** Remove the legacy `elif` branches.
+
+#### Finding 6: `MIfStatement.condition` Comment Is Inaccurate
+**File:** [src/m2py/asg/statements.py#L165](src/m2py/asg/statements.py#L165)
+**Status:** Update Comment
+**Finding:** The comment `# Single condition (legacy support)` is misleading. The field is actively set as a convenience for single-condition IF statements (when `len(conditions) == 1`). It's not legacy - it's a convenience accessor.
+**Analysis:** Tests use both `.condition` (for single-condition cases) and `.conditions` (for multi-condition). The current behavior is intentional.
+**Solution:** Change comment to `# Convenience: set when len(conditions) == 1`.
+
+#### Finding 7: `_unwrap_expr` Comment Suggests Temporary ("for now")
+**File:** [src/m2py/parser/textx_classes.py#L63](src/m2py/parser/textx_classes.py#L63)
+**Status:** Update Comment
+**Finding:** The comment `# Has binary ops - keep for now (semantic analyzer will handle)` suggests a temporary workaround. This is actually the intended architecture: textX custom classes handle simple expressions, and the semantic analyzer handles complex expressions with binary operations.
+**Solution:** Change to `# Complex expression with binary ops - handled by semantic analyzer`.
+
+### Tasks
+
+- [X] **76.1** Fix `_expr_binary` to use current grammar structure
+  - File: `src/m2py/analysis/command_parser.py`
+  - Rewrite to iterate over `expr.tail` and handle `BinaryOpTail` (has `op.op` and `right`) and `PatternMatchTail` (has `op.op` and `pattern` or `indirect_expr`)
+  - Add test for `_expr_to_string("A+B*C")` returning `"A+B*C"`
+
+- [X] **76.2** Remove dead `ops` check in `_unwrap_expr`
+  - File: `src/m2py/parser/textx_classes.py`
+  - Remove lines checking `hasattr(expr, "ops") and expr.ops`
+
+- [X] **76.3** Fix variable analysis for multi-condition IF
+  - File: `src/m2py/analysis/variables.py`
+  - Change `if stmt.condition:` to `for cond in stmt.conditions:`
+  - Add test: parse `I A,B S X=1` and verify A and B are in input_variables
+
+- [X] **76.4** Remove dead singular `condition` fallback in `_analyze_IfCommand`
+  - File: `src/m2py/analysis/semantic_analyzer.py`
+  - Remove the `elif hasattr(cmd, "condition")` branch
+
+- [X] **76.5** Remove dead legacy Read attributes fallback
+  - File: `src/m2py/analysis/semantic_analyzer.py`
+  - Remove the `elif hasattr(arg, "format")` and `elif hasattr(arg, "prompt")` branches
+
+- [X] **76.6** Update `MIfStatement.condition` comment
+  - File: `src/m2py/asg/statements.py`
+  - Change `# Single condition (legacy support)` to `# Convenience: first condition (set when len(conditions) == 1)`
+
+- [X] **76.7** Update `_unwrap_expr` comment
+  - File: `src/m2py/parser/textx_classes.py`
+  - Change `# Has binary ops - keep for now (semantic analyzer will handle)` to `# Complex expression with binary ops - deferred to semantic analyzer`
+
+- [X] **76.8** Run tests to verify no regressions
+  - All 1002 tests pass (added 9 new tests: 8 for _expr_to_string, 1 for multi-condition IF)
+  - New tests: `TestExprToString` in test_command_parser.py, `test_extract_from_if_statement_multi_condition` in test_variables.py
+
+### Implementation Notes (2025-12-28)
+
+**Root Cause Analysis:**
+Commit `59c117e` ("test: verify V1PAT2 pattern parsing and GOTO/DO postcondition capture") changed the expression grammar from `ops+=BinaryOp right+=UnaryExpr` to `tail+=ExprTail` to support pattern matching. The semantic analyzer was correctly updated, but `command_parser.py` and `textx_classes.py` were overlooked.
+
+**Files Modified:**
+- `src/m2py/analysis/command_parser.py` - Rewrote `_expr_binary()` to use `expr.tail`, added `_pattern_spec_to_string()` helper
+- `src/m2py/parser/textx_classes.py` - Removed dead `has_ops` check, updated comment
+- `src/m2py/analysis/variables.py` - Fixed IF analysis to iterate `stmt.conditions`
+- `src/m2py/analysis/semantic_analyzer.py` - Removed dead code for singular condition and legacy Read attributes
+- `src/m2py/asg/statements.py` - Updated comment on `condition` field
+
+**Test Changes:**
+- `tests/unit/test_command_parser.py` - Added `TestExprToString` class with 8 tests
+- `tests/unit/test_variables.py` - Fixed existing test, added multi-condition test
+
+**Documentation Updates:**
+- `docs/asg/statements.md` - Clarified `conditions` vs `condition` usage for MIfStatement
+
+**Checkpoint**: Phase 76 complete - Grammar/code consistency restored, dead code removed, bugs fixed

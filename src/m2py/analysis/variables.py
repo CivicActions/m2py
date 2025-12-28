@@ -496,9 +496,9 @@ def _extract_statement_variables(
                 reads.update(_extract_expression_variables(param.value))
 
     elif isinstance(stmt, MIfStatement):
-        # IF condition reads variables in condition
-        if stmt.condition:
-            reads.update(_extract_expression_variables(stmt.condition))
+        # IF condition reads variables in all conditions (comma-separated AND)
+        for cond in stmt.conditions:
+            reads.update(_extract_expression_variables(cond))
 
     elif isinstance(stmt, MDoStatement):
         # DO label(args) - args are reads

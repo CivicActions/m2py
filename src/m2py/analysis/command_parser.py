@@ -919,55 +919,108 @@ def _expr_paren(expr) -> str:
 def _expr_binary(expr) -> str:
     """Handle Expr and OffsetExpr (binary expressions with operators).
 
-    Note: textX can misparse "1-2-3" as ops=['-'], right=[2, -3]
-    where the second '-' becomes a unary operator on '3'.
-    We handle this by treating unary +/- on subsequent operands as binary ops.
+    Current grammar (V1PAT2+): Expr: left=UnaryExpr (tail+=ExprTail)*
+    Where ExprTail is either:
+    - BinaryOpTail: op=BinaryOp right=UnaryExpr
+    - PatternMatchTail: op=PatternMatchOp pattern=PatternSpec
+
+    Note: textX can misparse "1-2-3" as only one tail when
+    operators like +/- can also be unary. The ambiguous parse
+    is handled by the semantic analyzer for ASG construction,
+    but here we just format the tail elements as parsed.
     """
     if not (hasattr(expr, "left") and expr.left):
         return str(expr)
 
     result = _expr_to_string(expr.left)
 
-    if not (hasattr(expr, "right") and expr.right):
-        return result
+    # Handle current grammar: tail list of BinaryOpTail/PatternMatchTail
+    if hasattr(expr, "tail") and expr.tail:
+        for tail_item in expr.tail:
+            tail_type = type(tail_item).__name__
 
-    ops = list(expr.ops) if hasattr(expr, "ops") and expr.ops else []
+            if tail_type == "PatternMatchTail" or (
+                hasattr(tail_item, "pattern") and tail_item.pattern
+            ):
+                # Pattern match: ?pattern or '?pattern
+                op = tail_item.op
+                op_str = op.op if hasattr(op, "op") else str(op)
+                result += op_str
+                result += _pattern_spec_to_string(tail_item.pattern)
 
-    for i, right_expr in enumerate(expr.right):
-        if i < len(ops):
-            # Explicit binary operator
-            op = ops[i]
-            op_str = op.op if hasattr(op, "op") else str(op)
-            result += op_str
-            result += _expr_to_string(right_expr)
-        else:
-            # No explicit binary op - check for leading unary +/-
-            leading_ops = []
-            if hasattr(right_expr, "operators") and right_expr.operators:
-                leading_ops = list(right_expr.operators)
-            elif hasattr(right_expr, "operator") and right_expr.operator:
-                leading_ops = [right_expr.operator]
-
-            if leading_ops:
-                first_op = leading_ops[0]
-                op_char = first_op.op if hasattr(first_op, "op") else str(first_op)
-                if op_char in ("+", "-"):
-                    result += op_char
-                    for remaining_op in leading_ops[1:]:
-                        result += (
-                            remaining_op.op
-                            if hasattr(remaining_op, "op")
-                            else str(remaining_op)
-                        )
-                    result += _expr_to_string(right_expr.operand)
-                else:
-                    for uop in leading_ops:
-                        result += uop.op if hasattr(uop, "op") else str(uop)
-                    result += _expr_to_string(right_expr.operand)
-            else:
-                result += _expr_to_string(right_expr)
+            elif tail_type == "BinaryOpTail" or (
+                hasattr(tail_item, "right") and tail_item.right
+            ):
+                # Regular binary operation: op right
+                op = tail_item.op
+                op_str = op.op if hasattr(op, "op") else str(op)
+                result += op_str
+                result += _expr_to_string(tail_item.right)
 
     return result
+
+
+def _pattern_spec_to_string(pattern_spec) -> str:
+    """Convert a textX PatternSpec to its string representation.
+
+    PatternSpec has atoms, each with repcount and (patcode or strlit or alternation).
+    """
+    if pattern_spec is None:
+        return ""
+
+    parts = []
+    for atom in pattern_spec.atoms:
+        atom_str = ""
+
+        # Handle repcount
+        repcount = atom.repcount
+        if hasattr(repcount, "exact") and repcount.exact is not None:
+            # Exact count: just the number
+            atom_str += repcount.exact
+        else:
+            # Range form: min.max, min., .max, or .
+            min_val = getattr(repcount, "min", None) or ""
+            max_val = getattr(repcount, "max", None) or ""
+            atom_str += f"{min_val}.{max_val}"
+
+        # Handle patcode, strlit, or alternation
+        if hasattr(atom, "patcode") and atom.patcode:
+            atom_str += atom.patcode.codes
+        elif hasattr(atom, "strlit") and atom.strlit:
+            atom_str += atom.strlit
+        elif hasattr(atom, "alternation") and atom.alternation:
+            # Alternation: (alt1,alt2,...)
+            alt_parts = [_pattern_spec_to_string_atom(a) for a in atom.alternation]
+            atom_str += f"({','.join(alt_parts)})"
+
+        parts.append(atom_str)
+
+    return "".join(parts)
+
+
+def _pattern_spec_to_string_atom(atom) -> str:
+    """Convert a single pattern atom to string (for alternations)."""
+    atom_str = ""
+
+    # Handle repcount
+    repcount = atom.repcount
+    if hasattr(repcount, "exact") and repcount.exact is not None:
+        atom_str += repcount.exact
+    else:
+        min_val = getattr(repcount, "min", None) or ""
+        max_val = getattr(repcount, "max", None) or ""
+        atom_str += f"{min_val}.{max_val}"
+
+    # Handle patcode, strlit, or alternation
+    if hasattr(atom, "patcode") and atom.patcode:
+        atom_str += atom.patcode.codes
+    elif hasattr(atom, "strlit") and atom.strlit:
+        atom_str += atom.strlit
+    elif hasattr(atom, "alternation") and atom.alternation:
+        alt_parts = [_pattern_spec_to_string_atom(a) for a in atom.alternation]
+        atom_str += f"({','.join(alt_parts)})"
+
+    return atom_str
 
 
 def _expr_unary(expr) -> str:
