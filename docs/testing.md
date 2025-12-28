@@ -13,14 +13,14 @@ uv run pytest
 ### Specific Test Files
 
 ```bash
-uv run pytest tests/functional/mugj/
+uv run pytest tests/integration/
 uv run pytest tests/unit/
 ```
 
 ### Verbose Output
 
 ```bash
-uv run pytest -v tests/functional/mugj/test_mugj_parse.py
+uv run pytest -v tests/integration/test_mugj.py
 ```
 
 ### Coverage Report

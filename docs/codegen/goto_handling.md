@@ -16,7 +16,8 @@ After `classify_gotos()`, each MGotoStatement has a `goto_type`:
 | `BACKWARD_JUMP` | To earlier code | Loop |
 | `LOOP_EXIT` | Out of one FOR | `break` |
 | `MULTI_LOOP_EXIT` | Out of nested FORs | Exception |
-| `EXTERNAL` | To other routine | Function call |
+| `CROSS_LABEL` | To different label | Function call + return |
+| `EXTERNAL` | To other routine | Module import + call |
 | `UNRESOLVED` | Dynamic target | Runtime dispatch |
 
 ## Forward Jump
@@ -248,7 +249,7 @@ while True:
 
 ## Detection: has_unstructured_goto
 
-The routine-level flag indicates complex GOTO patterns:
+The routine-level flag indicates complex GOTO patterns that cannot be easily translated to structured Python:
 
 ```python
 if routine.has_unstructured_goto:
@@ -256,6 +257,16 @@ if routine.has_unstructured_goto:
 else:
     return generate_structured(routine)
 ```
+
+**Patterns that set `has_unstructured_goto=True`:**
+- `BACKWARD_JUMP`: Cross-label backward jump creates implicit loops
+- `UNRESOLVED`: Target unknown at compile time, needs runtime dispatch
+- Cross-label `FORWARD_JUMP` not inside a FOR loop: Can't use simple break
+
+**Patterns that remain structured (`has_unstructured_goto=False`):**
+- `LOOP_EXIT` / `MULTI_LOOP_EXIT`: Translates to break or exception
+- `FORWARD_JUMP` within same label: Translates to if/else
+- `EXTERNAL`: Translates to function call to another module
 
 ## Analysis Fields Used
 

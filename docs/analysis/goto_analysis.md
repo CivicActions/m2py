@@ -175,9 +175,19 @@ except LoopExit:
 
 ## Routine-Level Flag
 
-The analysis also sets `MRoutine.has_unstructured_goto` when any GOTO cannot be cleanly mapped to structured control flow:
+`classify_gotos()` automatically sets `MRoutine.has_unstructured_goto` based on GOTO patterns in the routine:
 
 ```python
+# After classify_gotos(), check the flag:
 if routine.has_unstructured_goto:
     # Use state machine or other unstructured approach
+    pass
+else:
+    # Can use structured Python (if/else, break, function calls)
+    pass
 ```
+
+**Patterns that set the flag to True:**
+- `BACKWARD_JUMP`: Creates implicit loops across labels
+- `UNRESOLVED`: Target unknown, needs runtime dispatch
+- Cross-label `FORWARD_JUMP` not inside a FOR loop

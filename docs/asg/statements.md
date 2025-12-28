@@ -355,14 +355,18 @@ K X           ; Kill single
 K X,Y,^GLOBAL ; Kill multiple
 K             ; Kill all locals
 K (X,Y)       ; Kill all EXCEPT X,Y
+K (X,Y,Z),(X,W) ; Multiple exclusive groups - keep intersection
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `targets` | `List[MVariable\|MGlobal]` | Variables to kill |
 | `exclusive` | `bool` | True for exclusive form |
-| `except_list` | `List[str]` | Variables to keep |
-| `is_kill_all` | `bool` | True if kills all locals |
+| `except_list` | `List[str]` | Computed intersection of all exclusive groups |
+| `except_groups` | `List[List[str]]` | Raw exclusive groups before intersection |
+| `is_kill_all` | `bool` (property) | True if kills all locals |
+
+**Multiple Exclusive Groups**: When multiple exclusive groups are present (e.g., `K (X,Y,Z),(X,W)`), only variables appearing in ALL groups are kept (intersection). The `except_groups` field stores the raw groups `[['X','Y','Z'],['X','W']]`, while `except_list` stores the computed intersection `['X']`.
 
 ### MMergeStatement
 

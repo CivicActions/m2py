@@ -15,7 +15,7 @@ MRoutine (top-level)
 │   │   └── statements: List[MStatement]
 │   │       ├── MSetStatement
 │   │       │   └── assignments: List[MAssignment]
-│   │       │       ├── target: MVariable | MGlobal
+│   │       │       ├── target: MVariable | MGlobal | MIndirection
 │   │       │       └── value: MExpr
 │   │       ├── MIfStatement
 │   │       │   ├── condition: MExpr
@@ -25,7 +25,8 @@ MRoutine (top-level)
 │   │       │   ├── parameters: List[MForParameter]
 │   │       │   └── body: MScope
 │   │       ├── MDoStatement
-│   │       │   └── targets: List[MCall]
+│   │       │   ├── targets: List[MCall]
+│   │       │   └── body: MScope  (for argumentless DO)
 │   │       └── ... (20+ statement types)
 │   ├── callers: List[MCall]  (back-refs)
 │   └── goto_sources: List[MGotoStatement]  (back-refs)
@@ -38,7 +39,7 @@ MRoutine (top-level)
 
 ```
 ASGElement (abstract base)
-├── source_file, line_number, column
+├── source_file, line_number, column, end_line, end_column
 ├── parent: ASGElement
 └── to_dict() method
 
@@ -72,7 +73,13 @@ MCall (reference to label)
 ├── name: str
 ├── offset: MExpr (optional)
 ├── routine: str (optional, for ^routine)
-├── arguments: List[MExpr]
+├── arguments: List[MActualParameter]
+├── postcondition: MExpr (optional)
+├── indirection: MExpr (optional, for @expr)
+├── routine_indirection: MExpr (optional, for ^@expr)
+├── label_is_indirect: bool
+├── routine_is_indirect: bool
+├── indirection_levels: int
 ├── target: MLabel (resolved)
 ├── call_type: CallType
 └── is_resolved: bool
@@ -91,7 +98,7 @@ Control Flow:
 ├── MElseStatement   (body)
 ├── MForStatement    (loop_var, parameters, body, loop_type, ...)
 ├── MGotoStatement   (targets, goto_type, exits_loops)
-└── MQuitStatement   (return_value, exits_for)
+└── MQuitStatement   (return_value, exits_for, exits_do_block)
 
 Subroutines:
 ├── MDoStatement     (targets, body)
@@ -100,7 +107,7 @@ Subroutines:
 Data:
 ├── MSetStatement    (assignments)
 ├── MWriteStatement  (arguments)
-├── MReadStatement   (targets)
+├── MReadStatement   (arguments)
 └── MMergeStatement  (destination, source)
 
 Variables:
@@ -210,7 +217,10 @@ class FunctionSignature:
     return_value: Optional[Any]      # From QUIT analysis
     byref_outputs: Set[str]          # Formal params that are written
     side_effect_outputs: Set[str]    # Non-NEWed variable writes
+    requires_runtime_scope: bool     # True if indirection/XECUTE defeats static analysis
     scope_strategy: ScopeStrategy    # PURE_FUNCTION, SUBROUTINE, etc.
+    has_value_quit: bool             # True if any QUIT has a return value
+    has_void_quit: bool              # True if any QUIT has no return value
     transitive_inputs: Set[str]      # Inputs after call chain analysis
     transitive_outputs: Set[str]     # Outputs after call chain analysis
 ```

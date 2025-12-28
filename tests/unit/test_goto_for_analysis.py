@@ -191,6 +191,142 @@ class TestClassifyGotos:
         assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
 
 
+class TestHasUnstructuredGoto:
+    """Test has_unstructured_goto flag on MRoutine."""
+
+    def _create_test_routine(self) -> MRoutine:
+        """Create a test routine with labels."""
+        routine = MRoutine(name="TEST")
+
+        main_label = MLabel(name="MAIN")
+        main_label.body = MScope()
+        main_label.body.parent = main_label
+
+        target_label = MLabel(name="TARGET")
+        target_label.body = MScope()
+        target_label.body.parent = target_label
+
+        routine.add_label(main_label)
+        routine.add_label(target_label)
+
+        return routine
+
+    def test_no_gotos_is_structured(self):
+        """Routine without GOTOs should have has_unstructured_goto=False."""
+        routine = self._create_test_routine()
+
+        # Add a simple SET statement, no GOTO
+        set_stmt = MSetStatement()
+        set_stmt.assignments = [
+            MAssignment(target=MVariable(name="X"), value=MLiteral(value=1))
+        ]
+        routine.labels[0].body.add_statement(set_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        assert routine.has_unstructured_goto is False
+
+    def test_loop_exit_goto_is_structured(self):
+        """GOTO that just exits a FOR loop is structured (can use break)."""
+        routine = self._create_test_routine()
+
+        # Create FOR loop with GOTO TARGET inside
+        for_stmt = MForStatement()
+        for_stmt.loop_var = "I"
+        for_stmt.loop_type = ForLoopType.BOUNDED
+        for_stmt.body = MScope()
+
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        for_stmt.body.add_statement(goto_stmt)
+
+        routine.labels[0].body.add_statement(for_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # LOOP_EXIT can be translated to break, so it's structured
+        assert goto_stmt.goto_type == GotoType.LOOP_EXIT
+        assert routine.has_unstructured_goto is False
+
+    def test_cross_label_forward_is_unstructured(self):
+        """GOTO to different label (not in FOR) is unstructured."""
+        routine = self._create_test_routine()
+
+        # Add GOTO TARGET to MAIN label (not in a FOR loop)
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        routine.labels[0].body.add_statement(goto_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Cross-label jump needs restructuring
+        assert routine.has_unstructured_goto is True
+
+    def test_backward_jump_is_unstructured(self):
+        """GOTO to earlier label is unstructured (creates implicit loop)."""
+        routine = MRoutine(name="TEST")
+
+        # Create labels in order: TARGET, MAIN
+        target_label = MLabel(name="TARGET")
+        target_label.body = MScope()
+        target_label.body.parent = target_label
+
+        main_label = MLabel(name="MAIN")
+        main_label.body = MScope()
+        main_label.body.parent = main_label
+
+        routine.add_label(target_label)
+        routine.add_label(main_label)
+
+        # Add GOTO TARGET in MAIN (jumps backward)
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        main_label.body.add_statement(goto_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        assert goto_stmt.goto_type == GotoType.BACKWARD_JUMP
+        assert routine.has_unstructured_goto is True
+
+    def test_external_goto_is_structured(self):
+        """GOTO to external routine is structured (becomes function call)."""
+        routine = self._create_test_routine()
+
+        goto_stmt = MGotoStatement()
+        call = MCall(name="LABEL", routine="OTHERROUTINE")
+        goto_stmt.targets.append(call)
+        routine.labels[0].body.add_statement(goto_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        assert goto_stmt.goto_type == GotoType.EXTERNAL
+        assert routine.has_unstructured_goto is False
+
+    def test_unresolved_goto_is_unstructured(self):
+        """GOTO with unresolved target is unstructured (needs runtime dispatch)."""
+        routine = self._create_test_routine()
+
+        # Create GOTO to nonexistent label
+        goto_stmt = MGotoStatement()
+        call = MCall(name="NONEXISTENT")  # Doesn't exist
+        goto_stmt.targets.append(call)
+        routine.labels[0].body.add_statement(goto_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        assert goto_stmt.goto_type == GotoType.UNRESOLVED
+        assert routine.has_unstructured_goto is True
+
+
 class TestForLoopIsInfinite:
     """Test is_infinite detection for FOR loops."""
 

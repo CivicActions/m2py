@@ -311,7 +311,9 @@ class MCall(ASGElement):
     name: str = ""
     offset: Optional[Any] = None  # MExpr for label+offset
     routine: Optional[str] = None  # For ^routine external calls
-    arguments: List[Any] = field(default_factory=list)  # MExpr arguments
+    arguments: List[Any] = field(
+        default_factory=list
+    )  # MActualParameter for DO/extrinsic calls
     postcondition: Optional[Any] = None  # MExpr condition
     indirection: Optional[Any] = None  # MExpr for DO @expr indirection (label part)
     routine_indirection: Optional[Any] = None  # MExpr for ^@expr (routine part)

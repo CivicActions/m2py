@@ -63,7 +63,7 @@ def get_text_at_label(self, label_name: str, offset: int = 0) -> str:
 ### Code Generation Implications
 
 - **`source_lines`**: Required for `$TEXT` function support. Store original source to return at runtime.
-- **`has_unstructured_goto`**: If True, may need state machine or exception-based control flow.
+- **`has_unstructured_goto`**: If True, may need state machine or exception-based control flow. Set automatically by `classify_gotos()` when cross-label jumps, backward jumps, or unresolved GOTOs are detected.
 - **`requires_runtime_eval`**: If True, cannot generate purely static Python; need runtime variable lookup.
 
 ### Example
@@ -210,7 +210,7 @@ A reference to a label (for DO, GOTO, or extrinsic functions).
 | `name` | `str` | Target label name |
 | `offset` | `Optional[MExpr]` | Offset for `label+n` |
 | `routine` | `Optional[str]` | Routine name for `^routine` |
-| `arguments` | `List[MExpr]` | Call arguments |
+| `arguments` | `List[MActualParameter]` | Call arguments (with passing mode) |
 | `postcondition` | `Optional[MExpr]` | Conditional execution |
 | `indirection` | `Optional[MExpr]` | For `@expr` label indirection |
 | `routine_indirection` | `Optional[MExpr]` | For `^@expr` routine indirection |

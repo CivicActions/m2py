@@ -280,7 +280,6 @@ X?@PAT       ; Pattern indirection
 | `name_indirection_subscripts` | `Optional[List]` | For `@X@(1,2)` |
 | `can_resolve_statically` | `bool` | True if determinable at compile time |
 | `resolved_value` | `Optional[str]` | If statically resolved |
-| `indirection_levels` | `int` | Count of `@` signs (@@=2, @@@=3) |
 
 **IndirectionType values**:
 
@@ -290,7 +289,6 @@ X?@PAT       ; Pattern indirection
 | `SUBSCRIPT` | `Y(@I)` | I provides subscript |
 | `ARGUMENT` | `D @X` | X contains call target |
 | `PATTERN` | `Y?@X` | X contains pattern |
-| `NAME_SUBSCRIPT` | `@X@(1,2)` | Name + subscripts |
 | `UNKNOWN` | Various | Cannot determine |
 
 **Name Indirection with Subscripts** (`@X@(subs)`):
@@ -314,7 +312,7 @@ W @A        ; First eval A→"B", second lookup B: outputs "C"
 W @@A       ; Eval A→"B", eval B→"C", lookup C: outputs 100
 ```
 
-The `indirection_levels` field tracks the nesting depth for runtime dispatch.
+Multi-level indirection requires runtime dispatch with repeated evaluation.
 
 **Code Generation**: Requires runtime support (dynamic variable access).
 

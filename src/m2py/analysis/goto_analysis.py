@@ -23,6 +23,7 @@ def classify_gotos(routine: MRoutine) -> None:
     This function analyzes each MGotoStatement in the routine and:
     1. Sets the goto_type based on target and context
     2. Populates exits_loops with enclosing FOR loops exited
+    3. Sets routine.has_unstructured_goto if any GOTO requires non-structured translation
 
     Must be called AFTER resolve_references() so MCall.target is populated.
 
@@ -32,6 +33,7 @@ def classify_gotos(routine: MRoutine) -> None:
     Side Effects:
         - Sets MGotoStatement.goto_type for each GOTO
         - Sets MGotoStatement.exits_loops for loop exits
+        - Sets MRoutine.has_unstructured_goto if complex control flow detected
     """
     # Build a position map for labels (for forward/backward detection)
     label_positions = {}
@@ -43,6 +45,13 @@ def classify_gotos(routine: MRoutine) -> None:
         _classify_gotos_in_scope(
             label.body, label_idx, label, label_positions, routine, enclosing_fors=[]
         )
+
+    # Set has_unstructured_goto based on GOTO classifications
+    # Unstructured patterns that can't easily translate to structured Python:
+    # - BACKWARD_JUMP to different label (creates implicit loop across labels)
+    # - UNRESOLVED (target unknown at compile time)
+    # - Cross-label jumps not inside FOR loops (can't use break, need restructuring)
+    routine.has_unstructured_goto = _has_unstructured_gotos(routine)
 
 
 def _classify_gotos_in_scope(
@@ -252,3 +261,55 @@ def get_gotos_by_type(routine: MRoutine, goto_type: GotoType) -> List[MGotoState
                 if stmt.goto_type == goto_type:
                     result.append(stmt)
     return result
+
+
+def _has_unstructured_gotos(routine: MRoutine) -> bool:
+    """Determine if routine has GOTOs that require unstructured translation.
+
+    Returns True if any GOTO pattern cannot be easily mapped to structured
+    Python constructs (if/else, break, function calls). These patterns
+    typically require a state machine or exception-based control flow.
+
+    Unstructured patterns:
+    - BACKWARD_JUMP: Creates implicit loops (especially cross-label)
+    - UNRESOLVED: Target unknown at compile time, needs runtime dispatch
+    - Cross-label FORWARD_JUMP not exiting a loop: Can't use simple if/else
+      within a single function without restructuring
+
+    Structured patterns (return False):
+    - LOOP_EXIT / MULTI_LOOP_EXIT: Translates to break (or exception for multi)
+    - FORWARD_JUMP within same label: Translates to if/else
+    - EXTERNAL: Translates to function call to another module
+
+    Args:
+        routine: The MRoutine to analyze
+
+    Returns:
+        True if unstructured control flow detected
+    """
+    for label in routine.labels:
+        for stmt in label.body.walk_statements():
+            if not isinstance(stmt, MGotoStatement):
+                continue
+
+            # UNRESOLVED always requires runtime dispatch
+            if stmt.goto_type == GotoType.UNRESOLVED:
+                return True
+
+            # BACKWARD_JUMP typically creates loops that need state machine
+            if stmt.goto_type == GotoType.BACKWARD_JUMP:
+                return True
+
+            # Check for cross-label forward jumps (not loop exits)
+            # These need restructuring since we can't just "skip ahead" across functions
+            if stmt.goto_type == GotoType.FORWARD_JUMP and not stmt.exits_loops:
+                # Check if this jumps to a different label
+                for call in stmt.targets:
+                    if call.target and call.target.parent != label.parent:
+                        # Different label - this is cross-label
+                        return True
+                    # Also check by name if target not resolved
+                    if call.name and call.name != label.name:
+                        return True
+
+    return False

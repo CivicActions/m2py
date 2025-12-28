@@ -36,7 +36,7 @@ for stmt in scope.walk_statements():
             process(inner_stmt)
 ```
 
-**Applies to**: `MForStatement`, `MDoStatement`, `MDoBlockStatement`
+**Applies to**: `MForStatement`, `MDoStatement`, `MDoBlockStatement`, `MElseStatement`
 
 ### has_then_scope
 
@@ -56,18 +56,16 @@ for stmt in scope.walk_statements():
 
 ### has_else_scope
 
-Checks if a statement has a non-None `else_scope` attribute:
+Checks for an `else_scope` attribute that is set. Currently no ASG statement type defines an `else_scope` attribute - in MUMPS, ELSE is a separate command that checks `$TEST` rather than being structurally linked to IF. `MElseStatement` uses `body`, not `else_scope`. This helper is provided for future extensibility and currently always returns False.
 
 ```python
 from m2py.asg.type_helpers import has_else_scope
 
+# Currently returns False - no statement defines else_scope
 for stmt in scope.walk_statements():
     if has_else_scope(stmt):
-        # Note: Not a TypeGuard, but safely checks for presence
-        process(stmt.else_scope)
+        ...
 ```
-
-**Note**: This is not a TypeGuard because `else_scope` is Optional on `MIfStatement`.
 
 ---
 
@@ -111,20 +109,20 @@ for stmt in scope.walk_statements():
 
 ### get_else_scope
 
-Get the else_scope if present:
+Looks for an `else_scope` attribute and returns it when present. Currently no ASG statement type defines an `else_scope` attribute - in MUMPS, ELSE is a separate command that checks `$TEST` rather than being structurally linked to IF. `MElseStatement` uses `body`, not `else_scope`. This helper is provided for future extensibility and currently always returns None.
 
 ```python
 from m2py.asg.type_helpers import get_else_scope
 
+# Currently returns None - no statement defines else_scope
 for stmt in scope.walk_statements():
     else_scope = get_else_scope(stmt)
     if else_scope is not None:
-        # else_scope is MScope
         for inner_stmt in else_scope.statements:
             process(inner_stmt)
 ```
 
-**Returns**: `MScope | None`
+**Returns**: `MScope | None` (currently always `None`)
 
 ---
 
@@ -161,7 +159,7 @@ def walk_statements(self) -> Iterator["MStatement"]:
 The module defines type aliases for statement categories:
 
 ```python
-StatementWithBody = Union[MForStatement, MDoStatement, MDoBlockStatement]
+StatementWithBody = Union[MForStatement, MDoStatement, MDoBlockStatement, MElseStatement]
 StatementWithThenScope = Union[MIfStatement]
 StatementWithScopes = Union[MIfStatement, MElseStatement]
 ```

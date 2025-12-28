@@ -19,7 +19,12 @@ if TYPE_CHECKING:
 
 
 # Type aliases for statement categories
-StatementWithBody = Union["MForStatement", "MDoStatement", "MDoBlockStatement"]
+StatementWithBody = Union[
+    "MForStatement",
+    "MDoStatement",
+    "MDoBlockStatement",
+    "MElseStatement",
+]
 StatementWithThenScope = Union["MIfStatement"]
 StatementWithScopes = Union["MIfStatement", "MElseStatement"]
 
@@ -31,6 +36,7 @@ def has_body(stmt: "MStatement") -> TypeGuard[StatementWithBody]:
     - MForStatement
     - MDoStatement
     - MDoBlockStatement
+    - MElseStatement
 
     Args:
         stmt: The statement to check
@@ -58,13 +64,16 @@ def has_then_scope(stmt: "MStatement") -> TypeGuard[StatementWithThenScope]:
 def has_else_scope(stmt: "MStatement") -> bool:
     """Check if statement has an else_scope attribute that is not None.
 
-    Note: This is not a TypeGuard because else_scope is Optional on MIfStatement.
+    Note: Currently no ASG statement type defines an else_scope attribute.
+    In MUMPS, IF and ELSE are independent commands - ELSE checks $TEST rather
+    than being structurally linked to IF. MElseStatement uses `body`, not `else_scope`.
+    This helper is provided for future extensibility.
 
     Args:
         stmt: The statement to check
 
     Returns:
-        True if stmt has an else_scope that is not None
+        True if stmt has an else_scope that is not None (currently always False)
     """
     return hasattr(stmt, "else_scope") and getattr(stmt, "else_scope", None) is not None
 
@@ -104,11 +113,15 @@ def get_then_scope(stmt: "MStatement") -> "MScope | None":
 def get_else_scope(stmt: "MStatement") -> "MScope | None":
     """Get the else_scope of a statement if it has one.
 
+    Note: Currently no ASG statement type defines an else_scope attribute.
+    In MUMPS, ELSE is a separate command that checks $TEST, not a structural
+    part of IF. MElseStatement uses `body`. This helper is for future extensibility.
+
     Args:
         stmt: The statement to get the else_scope from
 
     Returns:
-        The else_scope MScope if present, None otherwise
+        The else_scope MScope if present, None otherwise (currently always None)
     """
     if hasattr(stmt, "else_scope"):
         scope = getattr(stmt, "else_scope", None)
