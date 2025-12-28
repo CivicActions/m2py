@@ -211,7 +211,8 @@ GotoTarget:
     ) postcond=Postcondition?
 ;
 
-// GOTO indirection: Enhanced to support full label reference structure
+// GOTO indirection: Supports full label reference structure
+// including nested indirection (@@, @@@), offset, and routine components
 // Patterns: @VAR, @@VAR, @(expr), @VAR+offset, @VAR^routine, @VAR+offset^routine
 GotoIndirect:
     labelIndirect=IndirectChain
@@ -235,9 +236,9 @@ DoTarget:
     ) postcond=Postcondition?
 ;
 
-// DO indirection: Enhanced to support full label reference structure
+// DO indirection: Supports full label reference structure
+// with nested indirection (@@, @@@), offset, routine, and arguments
 // Patterns: @VAR, @@VAR, @(expr), @VAR+offset, @VAR^routine, @VAR+offset^routine
-// The indirection can be nested (@@, @@@) and can have offset and routine components
 DoIndirect:
     labelIndirect=IndirectChain
     ('+' offset=OffsetExpr?)?

@@ -5821,3 +5821,53 @@ This is correct behavior, not a bug. The comment is simply outdated and misleadi
 - [X] **1.3** Update `_build_routine` docstring to remove "placeholder" phrasing
 - [X] **1.4** Reframe "T538 fix" comments in textx_classes.py to describe current behavior
 - [X] **1.5** Remove "new approach" phrasing from `_build_label` comment
+---
+
+## Phase 70: Additional Grammar Comment Cleanup
+
+### Findings from Review
+
+This phase addresses additional findings from a consistency and correctness review, focusing on orphan dot-lines and change-centric comments in grammar files.
+
+#### Issue 1: Orphan Dot-Lines Handling
+**File:** [src/m2py/parser/parser.py#L252-L264](src/m2py/parser/parser.py#L252-L264)  
+**Status:** No Change Needed - Spec-Compliant Behavior  
+**Finding:** `_structure_do_blocks` treats dot-lines with no owning DO as an "error case" but keeps the statements un-nested without surfacing an error.  
+**Analysis:** Per MUMPS ANSI standard 1995 section 6.3 (Routine Execution): "Lines which have a LEVEL greater than the current execution level are **ignored**, i.e., not executed." Orphan dot-lines are valid MUMPS syntax that simply does not execute at runtime - they are not malformed input requiring a parse error. The current behavior correctly preserves the source structure.  
+**Solution:** The comment at line 262 ("No DO found - this is an error case, but keep statements") could be clarified to note this matches MUMPS spec behavior. However, the logic itself is correct and no code change is required.
+
+#### Issue 2: "Enhanced to" Wording in commands.tx GotoIndirect
+**File:** [src/m2py/grammar/commands.tx#L214-L215](src/m2py/grammar/commands.tx#L214-L215)  
+**Status:** Minor - Comment Cleanup  
+**Finding:** Comment says "GOTO indirection: Enhanced to support full label reference structure"  
+**Analysis:** "Enhanced to" is change-centric language referencing a prior state. Should describe current behavior.  
+**Solution:** Reframe to "GOTO indirection: Supports full label reference structure including nested indirection, offset, and routine components"
+
+#### Issue 3: "Enhanced to" Wording in commands.tx DoIndirect
+**File:** [src/m2py/grammar/commands.tx#L238-L240](src/m2py/grammar/commands.tx#L238-L240)  
+**Status:** Minor - Comment Cleanup  
+**Finding:** Comment says "DO indirection: Enhanced to support full label reference structure"  
+**Analysis:** Same issue as GotoIndirect - change-centric rather than descriptive.  
+**Solution:** Reframe to "DO indirection: Supports full label reference structure with nested indirection (@@, @@@), offset, routine, and arguments"
+
+#### Issue 4: "(T538 fix...)" Wording in expressions.tx
+**File:** [src/m2py/grammar/expressions.tx#L131](src/m2py/grammar/expressions.tx#L131)  
+**Status:** Minor - Comment Cleanup  
+**Finding:** Comment says "(T538 fix for abbreviated special variables)"  
+**Analysis:** T538 task reference is change-centric. The comment should explain WHY the ordering matters, not reference a task number.  
+**Solution:** Reframe to "Ordering ensures abbreviated special variables like $S/$H/$T parse correctly before IntrinsicFunctionNoArgs catch-all"
+
+#### Issue 5: "(T538 fix)" in OffsetPrimaryExpr
+**File:** [src/m2py/grammar/expressions.tx#L181](src/m2py/grammar/expressions.tx#L181)  
+**Status:** Minor - Comment Cleanup  
+**Finding:** Comment says "Ordering for $ items same as PrimaryExpr (T538 fix)"  
+**Analysis:** Same issue - task reference should be removed.  
+**Solution:** Reframe to "Ordering for $ items same as PrimaryExpr to ensure correct parsing of abbreviated special variables"
+
+### Tasks
+
+- [X] **2.1** Clarify comment in `_structure_do_blocks` at line 262 to note MUMPS spec behavior (optional improvement)
+- [X] **2.2** Update GotoIndirect comment in commands.tx to remove "Enhanced to" phrasing
+- [X] **2.3** Update DoIndirect comment in commands.tx to remove "Enhanced to" phrasing
+- [X] **2.4** Update PrimaryExpr comment in expressions.tx to remove "(T538 fix...)" reference
+- [X] **2.5** Update OffsetPrimaryExpr comment in expressions.tx to remove "(T538 fix)" reference

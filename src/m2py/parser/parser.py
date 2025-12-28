@@ -259,7 +259,9 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
                     result.append(stmt)
                     i = j  # Skip past the block statements
                 else:
-                    # No DO found - this is an error case, but keep statements
+                    # No owning DO found - per MUMPS spec (ANSI 1995 section 6.3),
+                    # lines with LEVEL > execution level are ignored at runtime.
+                    # Keep statements un-nested; they won't execute.
                     result.append(stmt)
                     i += 1
             else:

@@ -128,7 +128,8 @@ UnaryOp:
 // 2. IntrinsicFunction (with args) - catches $P(args), $L(args), etc.
 // 3. SpecialVariable - catches $S as special variable (STORAGE)
 // 4. IntrinsicFunctionNoArgs - catch-all for unknown $ZVersion etc.
-// (T538 fix for abbreviated special variables)
+// This ordering ensures abbreviated special variables ($S, $H, $T) parse correctly
+// before the IntrinsicFunctionNoArgs catch-all consumes them.
 PrimaryExpr:
     ParenExpr |
     ExtrinsicFunction |
@@ -178,7 +179,8 @@ OffsetUnaryExpr:
 // Primary expressions for offset - includes subscripted globals only
 // (bare ^NAME is excluded because it could be a routine reference,
 // but ^NAME(...) is clearly a global variable in an expression)
-// Ordering for $ items same as PrimaryExpr (T538 fix)
+// Ordering for $ items same as PrimaryExpr to ensure correct parsing
+// of abbreviated special variables.
 OffsetPrimaryExpr:
     OffsetParenExpr |
     ExtrinsicFunction |
