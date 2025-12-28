@@ -43,7 +43,6 @@ for label in routine.labels:
 | `MULTI_LOOP_EXIT` | Exits nested FOR loops | Labeled break or exception |
 | `EXTERNAL` | Jumps to other routine | Cross-module call |
 | `UNRESOLVED` | Target not found | Runtime dispatch |
-| `CROSS_LABEL` | **Deprecated** | Use `is_cross_label` flag |
 
 ### is_cross_label Flag
 

@@ -331,7 +331,6 @@ class GotoType(Enum):
     BACKWARD_JUMP = auto()
     LOOP_EXIT = auto()
     MULTI_LOOP_EXIT = auto()
-    CROSS_LABEL = auto()
     EXTERNAL = auto()
     UNRESOLVED = auto()
 
@@ -343,6 +342,7 @@ class MGotoStatement(MStatement):
     
     # Classification (populated in analysis pass)
     goto_type: Optional[GotoType] = None
+    is_cross_label: bool = False  # True if target is in a different label
     exits_loops: List['MForStatement'] = field(default_factory=list, repr=False)
     is_loop_continue: bool = False
 ```

@@ -14,7 +14,7 @@ from functools import lru_cache
 from textx import metamodel_from_file
 from textx.exceptions import TextXSyntaxError
 
-from ..asg.enums import ForLoopType, ForParamType, LiteralType
+from ..asg.enums import ForLoopType, ForParamType, LiteralType, PassingMode
 from ..asg.statements import (
     MForStatement,
     MForParameter,
@@ -27,7 +27,7 @@ from ..asg.statements import (
     MDoStatement,
     MGotoStatement,
 )
-from ..asg.expressions import MLiteral, MVariable, MGlobal
+from ..asg.expressions import MLiteral, MVariable, MGlobal, MActualParameter
 from ..asg.elements import MCall
 
 
@@ -449,36 +449,6 @@ def parse_expression(expr_text: str) -> Optional[Any]:
         return None
 
 
-def convert_to_literal(textx_model) -> MLiteral:
-    """Convert a textX NumericLiteral or StringLiteral to MLiteral.
-
-    Args:
-        textx_model: The textX literal model
-
-    Returns:
-        An MLiteral ASG node
-    """
-    cls_name = textx_model.__class__.__name__
-
-    if cls_name == "NumericLiteral":
-        value_str = textx_model.value
-        # Determine if integer or float
-        if "." in value_str or "e" in value_str.lower():
-            return MLiteral(value=float(value_str), literal_type=LiteralType.DECIMAL)
-        else:
-            return MLiteral(value=int(value_str), literal_type=LiteralType.INTEGER)
-    elif cls_name == "StringLiteral":
-        # Remove quotes and handle "" escaping
-        raw = textx_model.value
-        if raw.startswith('"') and raw.endswith('"'):
-            raw = raw[1:-1]
-        value = raw.replace('""', '"')
-        return MLiteral(value=value, literal_type=LiteralType.STRING)
-    else:
-        # Fallback
-        return MLiteral(value=str(textx_model), literal_type=LiteralType.STRING)
-
-
 def convert_to_variable(textx_model):
     """Convert a textX LocalVariable, GlobalVariable, or NakedGlobal to ASG.
 
@@ -499,7 +469,7 @@ def convert_to_variable(textx_model):
         # The textX custom class already has subscripts populated
         return textx_model
     else:
-        # Fallback - try to get name attribute
+        # Generic handling for dynamic textX types
         name = getattr(textx_model, "name", str(textx_model))
         return MVariable(name=name)
 
@@ -797,9 +767,38 @@ def parse_do_command(do_text: str) -> Optional[MDoStatement]:
                 if hasattr(label_ref, "routine") and label_ref.routine:
                     call.routine = label_ref.routine
 
-            # Handle arguments if present
+            # Handle arguments if present - create MActualParameter objects
             if hasattr(target, "args") and target.args and target.args.args:
-                call.arguments = [_expr_to_string(arg) for arg in target.args.args]
+                for arg in target.args.args:
+                    # Check for by-reference argument (.VAR)
+                    if hasattr(arg, "byref") and arg.byref:
+                        var = arg.byref.var
+                        call.arguments.append(
+                            MActualParameter(
+                                passing_mode=PassingMode.BY_REFERENCE,
+                                expression=var,
+                                variable_name=var.name
+                                if hasattr(var, "name")
+                                else None,
+                            )
+                        )
+                    elif hasattr(arg, "expr") and arg.expr:
+                        call.arguments.append(
+                            MActualParameter(
+                                passing_mode=PassingMode.BY_VALUE,
+                                expression=arg.expr,
+                                variable_name=None,
+                            )
+                        )
+                    else:
+                        # Omitted argument
+                        call.arguments.append(
+                            MActualParameter(
+                                passing_mode=PassingMode.OMITTED,
+                                expression=None,
+                                variable_name=None,
+                            )
+                        )
 
             # Handle postcondition if present
             if hasattr(target, "postcond") and target.postcond:

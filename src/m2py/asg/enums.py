@@ -51,7 +51,6 @@ class GotoType(Enum):
     - BACKWARD_JUMP: Jump back (same or different label, check is_cross_label)
     - LOOP_EXIT: Exits a single FOR loop
     - MULTI_LOOP_EXIT: Exits multiple nested FOR loops
-    - CROSS_LABEL: Deprecated - use FORWARD_JUMP/BACKWARD_JUMP + is_cross_label flag
     - EXTERNAL: Jumps to external routine (^routine)
     - UNRESOLVED: Target cannot be statically determined
 
@@ -63,7 +62,6 @@ class GotoType(Enum):
     BACKWARD_JUMP = auto()
     LOOP_EXIT = auto()
     MULTI_LOOP_EXIT = auto()
-    CROSS_LABEL = auto()
     EXTERNAL = auto()
     UNRESOLVED = auto()
 

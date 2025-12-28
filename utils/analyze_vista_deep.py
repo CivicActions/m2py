@@ -204,11 +204,12 @@ def analyze_scope(
                 if stmt.goto_type == GotoType.BACKWARD_JUMP:
                     result.has_backward_gotos = True
                     result.backward_goto_count += 1
-                elif stmt.goto_type == GotoType.CROSS_LABEL:
-                    result.has_cross_label_gotos = True
-                    result.cross_label_goto_count += 1
                 elif stmt.goto_type == GotoType.UNRESOLVED:
                     result.has_unresolved_gotos = True
+            # Check cross-label flag (orthogonal to goto_type)
+            if hasattr(stmt, "is_cross_label") and stmt.is_cross_label:
+                result.has_cross_label_gotos = True
+                result.cross_label_goto_count += 1
 
             # Check for computed GOTO (indirection in target)
             if hasattr(stmt, "targets"):

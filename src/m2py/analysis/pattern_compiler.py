@@ -71,7 +71,7 @@ def _combine_patcodes(patcodes: List[str]) -> str:
             ranges.append(PATCODE_RANGES[code])
 
     if not ranges:
-        return r"."  # Fallback
+        return r"."  # Defensive fallback (unreachable with valid grammar input)
 
     return f"[{''.join(ranges)}]"
 

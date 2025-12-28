@@ -402,8 +402,8 @@ def analyze_asg(routine: MRoutine, metrics: FileMetrics) -> None:
                 if hasattr(stmt, "goto_type"):
                     if stmt.goto_type == GotoType.BACKWARD_JUMP:
                         metrics.backward_goto_count += 1
-                    elif stmt.goto_type == GotoType.CROSS_LABEL:
-                        metrics.cross_label_goto_count += 1
+                if hasattr(stmt, "is_cross_label") and stmt.is_cross_label:
+                    metrics.cross_label_goto_count += 1
 
             elif isinstance(stmt, MXecuteStatement):
                 metrics.xecute_count += 1

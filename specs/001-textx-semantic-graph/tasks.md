@@ -6127,3 +6127,83 @@ The field is vestigial - either implement it or remove it. Since `parent` (from 
   - Updated `docs/asg/index.md` to remove `parent_scope` from MScope diagram
 
 **Checkpoint**: Phase 74 complete - Parser entry points correctly call all required analysis passes and unused ASG fields are removed
+
+---
+
+## Phase 75: Code Cleanup and Documentation Consistency
+
+### Overview
+
+This phase addresses findings from a comprehensive review of the `.tx` grammar files and `.py` parser/ASG modules to identify incomplete implementations, dead code, naming inconsistencies, and documentation gaps.
+
+### Findings from Review
+
+#### Finding 1: `GotoType.CROSS_LABEL` Enum Value Is Dead Code
+**Files:** [src/m2py/asg/enums.py#L66](src/m2py/asg/enums.py#L66), [utils/evaluate_vista.py#L405](utils/evaluate_vista.py#L405), [utils/analyze_vista_deep.py#L207](utils/analyze_vista_deep.py#L207)
+**Status:** Remove Dead Code
+**Finding:** `GotoType.CROSS_LABEL` is defined in the enum and marked as deprecated in its docstring ("Deprecated - use FORWARD_JUMP/BACKWARD_JUMP + is_cross_label flag"). However, it is never assigned anywhere in the codebase. The `is_cross_label: bool` field on `MGotoStatement` has replaced this functionality (added in Phase 68b).
+**Analysis:** The `goto_analysis.py` always assigns `FORWARD_JUMP`, `BACKWARD_JUMP`, `LOOP_EXIT`, `MULTI_LOOP_EXIT`, `EXTERNAL`, or `UNRESOLVED` - never `CROSS_LABEL`. Two utility scripts (`evaluate_vista.py`, `analyze_vista_deep.py`) check for `GotoType.CROSS_LABEL` but this condition is never true, making those branches dead code.
+**Solution:** Remove `GotoType.CROSS_LABEL` from the enum. Update the utility scripts to use `stmt.is_cross_label` instead.
+
+#### Finding 2: `convert_to_literal()` Function Is Never Called
+**File:** [src/m2py/analysis/command_parser.py#L452-L480](src/m2py/analysis/command_parser.py#L452-L480)
+**Status:** Remove Dead Code
+**Finding:** The `convert_to_literal()` function is defined to convert textX `NumericLiteral`/`StringLiteral` to `MLiteral` ASG nodes, but it is never called anywhere in the codebase. The textX custom classes `NumericLiteral` and `StringLiteral` in `textx_classes.py` handle this conversion directly during parsing.
+**Analysis:** This function was likely created before the custom class approach was implemented and was never removed. It represents dead code that adds maintenance burden.
+**Solution:** Remove the `convert_to_literal()` function from `command_parser.py`.
+
+#### Finding 3: `convert_to_variable()` Fallback Branch Handles Dynamic Types
+**File:** [src/m2py/analysis/command_parser.py#L501-L504](src/m2py/analysis/command_parser.py#L501-L504)
+**Status:** Documentation Clarification (No Code Change)
+**Finding:** The `convert_to_variable()` function has a fallback `else` branch that creates an `MVariable` when the input is neither `LocalVariable`, `GlobalVariable`, nor `NakedGlobal`. The comment says "# Fallback - try to get name attribute".
+**Analysis:** This fallback handles dynamic textX types from grammar variations and is intentional defensive programming. The function is called from `parse_set_command()` which can receive various target types. The comment could be reframed to indicate this is intentional design rather than a workaround.
+**Solution:** Update the comment to clarify this is intentional handling of dynamic types.
+
+#### Finding 4: Pattern Compiler Fallback Is Unreachable But Defensive
+**File:** [src/m2py/analysis/pattern_compiler.py#L74](src/m2py/analysis/pattern_compiler.py#L74)
+**Status:** Documentation Clarification (No Code Change)
+**Finding:** `_combine_patcodes()` has `if not ranges: return r"."` fallback. This branch is unreachable in practice because:
+1. The function is only called when `len(patcodes) >= 2`
+2. All patcodes have ranges except 'E' (which triggers early return)
+3. The grammar `/[AaCcEeLlNnPpUu]+/` ensures only valid patcodes reach this code
+**Analysis:** This is valid defensive programming. The grammar prevents invalid input, but the runtime check protects against edge cases.
+**Solution:** Update the comment to indicate this is defensive - e.g., "Defensive fallback for empty ranges (should not occur with valid grammar)".
+
+#### Finding 5: `SelectFunction` Arguments Use Tuple Structure (Documentation Gap)
+**Files:** [src/m2py/parser/textx_classes.py#L323-L328](src/m2py/parser/textx_classes.py#L323-L328), [docs/asg/expressions.md#L196](docs/asg/expressions.md#L196)
+**Status:** Documentation Update Needed
+**Finding:** `SelectFunction` (the `$SELECT` intrinsic) stores its arguments as `List[Tuple[condition, value]]` rather than `List[MExpr]` like other intrinsic functions. This is correct for $SELECT's `condition:value` pair syntax, but not explicitly documented in the ASG docs.
+**Analysis:** The code handles this correctly and tests pass. The `MIntrinsicFunction` docstring mentions `arguments: List[MExpr]` but $SELECT is a special case. Adding documentation prevents confusion for codegen implementers.
+**Solution:** Add a note to `docs/asg/expressions.md` under MIntrinsicFunction documenting the $SELECT special case.
+
+#### Finding 6: `MReadStatement.arguments` Type Annotation Is Loose But Documented
+**File:** [src/m2py/asg/statements.py#L140-L142](src/m2py/asg/statements.py#L140-L142)
+**Status:** No Change Needed - Already Documented
+**Finding:** `MReadStatement.arguments` is typed as `List[Any]` but the docstring and `docs/asg/statements.md` correctly document it as containing `MReadTarget`, `MLiteral`, or `MFormatControl`.
+**Analysis:** The `Any` type avoids circular import complexity. The runtime behavior is correct and documentation is accurate. Tightening the type would require import restructuring for minimal benefit.
+**Solution:** No change needed - documentation is sufficient.
+
+### Tasks
+
+- [X] **75.1** Remove `GotoType.CROSS_LABEL` from enum and update utility scripts
+  - File: `src/m2py/asg/enums.py` - Removed `CROSS_LABEL = auto()` and updated docstring
+  - File: `utils/evaluate_vista.py` - Changed `GotoType.CROSS_LABEL` check to use `stmt.is_cross_label`
+  - File: `utils/analyze_vista_deep.py` - Changed `GotoType.CROSS_LABEL` check to use `stmt.is_cross_label`
+  - File: `docs/analysis/goto_analysis.md` - Removed deprecated table row for CROSS_LABEL
+
+- [X] **75.2** Remove unused `convert_to_literal()` function
+  - File: `src/m2py/analysis/command_parser.py` - Deleted function (was never called)
+
+- [X] **75.3** Clarify `convert_to_variable()` fallback comment
+  - File: `src/m2py/analysis/command_parser.py` - Changed comment to "Generic handling for dynamic textX types"
+
+- [X] **75.4** Clarify pattern compiler fallback comment
+  - File: `src/m2py/analysis/pattern_compiler.py` - Changed comment to "Defensive fallback (unreachable with valid grammar input)"
+
+- [X] **75.5** Document $SELECT argument tuple structure
+  - File: `docs/asg/expressions.md` - Added note explaining $SELECT uses `List[Tuple[condition_expr, value_expr]]` instead of `List[MExpr]`
+
+- [X] **75.6** Run tests to verify no regressions
+  - All 903 unit tests pass
+
+**Checkpoint**: Phase 75 complete - Dead code removed, comments clarified, documentation updated for special cases

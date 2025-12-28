@@ -179,6 +179,8 @@ $GET(X,DEFAULT)
 | `name` | `str` | Function name (without `$`) |
 | `arguments` | `List[MExpr]` | Function arguments |
 
+**Special Case - $SELECT**: The `$SELECT` function uses `condition:value` pair syntax rather than standard arguments. Its `arguments` field contains `List[Tuple[condition_expr, value_expr]]` where each tuple represents one `condition:value` pair. Code generators must handle this differently from other intrinsic functions.
+
 **Common Functions**:
 
 | MUMPS | Description | Python Equivalent |
