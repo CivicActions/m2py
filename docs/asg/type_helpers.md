@@ -31,12 +31,12 @@ from m2py.asg.type_helpers import has_body
 
 for stmt in scope.walk_statements():
     if has_body(stmt):
-        # pyright now knows: stmt is MForStatement | MDoStatement | MDoBlockStatement
+        # pyright now knows: stmt is MForStatement | MDoStatement | MElseStatement
         for inner_stmt in stmt.body.statements:
             process(inner_stmt)
 ```
 
-**Applies to**: `MForStatement`, `MDoStatement`, `MDoBlockStatement`, `MElseStatement`
+**Applies to**: `MForStatement`, `MDoStatement`, `MElseStatement`
 
 ### has_then_scope
 
@@ -159,7 +159,7 @@ def walk_statements(self) -> Iterator["MStatement"]:
 The module defines type aliases for statement categories:
 
 ```python
-StatementWithBody = Union[MForStatement, MDoStatement, MDoBlockStatement, MElseStatement]
+StatementWithBody = Union[MForStatement, MDoStatement, MElseStatement]
 StatementWithThenScope = Union[MIfStatement]
 StatementWithScopes = Union[MIfStatement, MElseStatement]
 ```
@@ -180,7 +180,7 @@ Without type helpers, you'd need explicit type checks:
 
 ```python
 # Without helpers - more verbose, less maintainable
-from m2py.asg.statements import MForStatement, MIfStatement, MDoBlockStatement
+from m2py.asg.statements import MForStatement, MIfStatement, MDoStatement
 
 for stmt in scope.walk_statements():
     if isinstance(stmt, MForStatement):

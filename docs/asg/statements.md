@@ -299,19 +299,6 @@ D                    ; argumentless - block follows
 | `targets` | `List[MCall]` | Called labels |
 | `body` | `MScope` | For argumentless DO block |
 
-### MDoBlockStatement
-
-Explicit block for dot-indented lines:
-
-```mumps
-D
-. S X=1
-. W X,!
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `body` | `MScope` | Block statements |
 
 ### MQuitStatement
 
@@ -327,7 +314,7 @@ Q:COND
 |-------|------|-------------|
 | `return_value` | `Optional[MExpr]` | Return value for extrinsics |
 | `exits_for` | `Optional[MForStatement]` | FOR loop being exited |
-| `exits_do_block` | `Optional[MDoBlockStatement]` | Block being exited |
+| `exits_do_block` | `Optional[MDoStatement]` | Argumentless DO block being exited |
 
 ---
 
@@ -522,7 +509,7 @@ J label:params:timeout
 | Conditional | `MIfStatement`, `MElseStatement` |
 | Loops | `MForStatement` |
 | Jumps | `MGotoStatement`, `MQuitStatement` |
-| Subroutines | `MDoStatement`, `MDoBlockStatement` |
+| Subroutines | `MDoStatement` |
 | Variables | `MNewStatement`, `MKillStatement`, `MMergeStatement` |
 | Control | `MHangStatement`, `MHaltStatement`, `MBreakStatement` |
 | Dynamic | `MXecuteStatement` |

@@ -176,7 +176,7 @@ Label body scope
 │       └── MForStatement
 │           └── body: MScope
 │               └── MWriteStatement
-└── MDoBlockStatement
+└── MDoStatement (argumentless)
     └── body: MScope
         └── ...
 ```

@@ -32,7 +32,6 @@ from m2py.analysis.variables import (
 from m2py.asg import MLabel, MRoutine, MScope
 from m2py.asg.enums import ForLoopType
 from m2py.asg.statements import (
-    MDoBlockStatement,
     MDoStatement,
     MElseStatement,
     MForStatement,
@@ -312,7 +311,7 @@ def _mark_unreachable_statements(statements: List[MStatement]) -> None:
             _mark_unreachable_statements(stmt.then_scope.statements)
         if isinstance(stmt, MElseStatement) and stmt.body and stmt.body.statements:
             _mark_unreachable_statements(stmt.body.statements)
-        if isinstance(stmt, MDoBlockStatement) and stmt.body and stmt.body.statements:
+        if isinstance(stmt, MDoStatement) and stmt.body and stmt.body.statements:
             _mark_unreachable_statements(stmt.body.statements)
         # Generic catch using type helper
         body = get_body_scope(stmt)
@@ -320,7 +319,7 @@ def _mark_unreachable_statements(statements: List[MStatement]) -> None:
             body is not None
             and body.statements
             and not isinstance(
-                stmt, (MForStatement, MIfStatement, MElseStatement, MDoBlockStatement)
+                stmt, (MForStatement, MIfStatement, MElseStatement, MDoStatement)
             )
         ):
             _mark_unreachable_statements(body.statements)

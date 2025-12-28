@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Iterator, List, Optional
 if TYPE_CHECKING:
     from m2py.asg.statements import MStatement
     from m2py.asg.enums import CallType
+    from m2py.asg.expressions import MActualParameter
 
 
 @dataclass
@@ -45,7 +46,10 @@ class ASGElement(ABC):
         """Serialize this ASG element to a dictionary.
 
         Args:
-            include_position: Include source position information
+            include_position: Include source position information. When True,
+                includes only start position (line_number, column), not end
+                position (end_line, end_column). This keeps output concise
+                for debugging purposes.
             max_depth: Maximum recursion depth to prevent infinite loops
 
         Returns:
@@ -311,9 +315,7 @@ class MCall(ASGElement):
     name: str = ""
     offset: Optional[Any] = None  # MExpr for label+offset
     routine: Optional[str] = None  # For ^routine external calls
-    arguments: List[Any] = field(
-        default_factory=list
-    )  # MActualParameter for DO/extrinsic calls
+    arguments: List["MActualParameter"] = field(default_factory=list)
     postcondition: Optional[Any] = None  # MExpr condition
     indirection: Optional[Any] = None  # MExpr for DO @expr indirection (label part)
     routine_indirection: Optional[Any] = None  # MExpr for ^@expr (routine part)

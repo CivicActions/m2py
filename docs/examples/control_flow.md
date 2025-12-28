@@ -252,14 +252,15 @@ MForStatement(
     loop_var=MVariable(name="I"),
     body=MScope(
         statements=[
-            MDoBlockStatement(
+            MDoStatement(
+                targets=[],  # Argumentless DO
                 body=MScope(
                     statements=[
                         MForStatement(
                             loop_var=MVariable(name="J"),
                             body=MScope(
                                 statements=[
-                                    MDoBlockStatement(body=MScope(...))
+                                    MDoStatement(targets=[], body=MScope(...))
                                 ]
                             )
                         )

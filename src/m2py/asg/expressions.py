@@ -187,7 +187,8 @@ class MPatternMatch(MExpr):
     pattern_indirect: Optional["MExpr"] = None  # For indirect patterns ?@X
     operator: str = "?"  # Either "?" or "'?" for negated match
 
-    # Pre-compiled regex for code generation (None if indirect pattern)
+    # Pre-built regex pattern string for code generation (not a compiled re.Pattern)
+    # None if indirect pattern (must be compiled at runtime)
     compiled_regex: Optional[str] = None
 
 

@@ -5971,3 +5971,78 @@ The `else_scope` helpers exist for completeness in code that walks all nested sc
   - Added `TestMIndirectionTyping` class verifying proper type annotations
 
 **Checkpoint**: Phase 72 complete - ASG module has consistent exports, typing, and documentation
+
+---
+
+## Phase 73: ASG Type Annotation and Documentation Improvements
+
+### Findings from Review
+
+This phase addresses type annotation improvements, comment clarifications, and dead code identified during a comprehensive ASG consistency review.
+
+#### Finding 1: `to_dict()` Omits End Position Fields
+**File:** [src/m2py/asg/elements.py#L42-L87](src/m2py/asg/elements.py#L42-L87)  
+**Status:** Documentation Clarification Needed  
+**Finding:** The `to_dict()` method with `include_position=True` serializes `line_number` and `column` but explicitly excludes `end_line` and `end_column` (lines 71-78).  
+**Analysis:** This is intentional behavior - end positions are less commonly needed for debugging output. The dataclass fields exist for full span tracking, but serialization focuses on start position for brevity. The docstring doesn't mention this limitation.  
+**Solution:** Update `to_dict()` docstring to clarify that only start position (`line_number`, `column`) is serialized, not end position.
+
+#### Finding 2: `data-model.md` Shows `global_refs: List[MGlobal]` But Implementation Uses `List[str]`
+**File:** [specs/001-textx-semantic-graph/data-model.md](specs/001-textx-semantic-graph/data-model.md) vs [src/m2py/asg/elements.py#L246](src/m2py/asg/elements.py#L246)  
+**Status:** Documentation Update Needed  
+**Finding:** The data model specification shows `global_refs: List['MGlobal']` but the implementation uses `global_refs: List[str]` (storing just global variable names).  
+**Analysis:** The implementation is correct - storing names as strings is more efficient and sufficient for the use case (identifying which globals are referenced). The resolver's `_collect_global_refs()` function at [resolver.py#L217](src/m2py/analysis/resolver.py#L217) collects names, not full MGlobal objects. The data model doc is outdated.  
+**Solution:** Update `data-model.md` to show `global_refs: List[str]` with a comment explaining the design choice.
+
+#### Finding 3: `MCall.arguments` Typed as `List[Any]` Instead of `List[MActualParameter]`
+**File:** [src/m2py/asg/elements.py#L314-L316](src/m2py/asg/elements.py#L314-L316)  
+**Status:** Type Annotation Fix Needed  
+**Finding:** `MCall.arguments` is typed as `List[Any]` but the comment states "MActualParameter for DO/extrinsic calls". The semantic analyzer properly populates it with `MActualParameter` objects.  
+**Analysis:** The loose `Any` typing hinders static analysis and IDE support. The runtime behavior is correct; only the type annotation needs tightening.  
+**Solution:** Change type annotation to `List["MActualParameter"]` with proper forward reference.
+
+#### Finding 4: `MPatternMatch.compiled_regex` Comment Says "Pre-compiled" But It's a String Pattern
+**File:** [src/m2py/asg/expressions.py#L190-L191](src/m2py/asg/expressions.py#L190-L191)  
+**Status:** Comment Clarification Needed  
+**Finding:** The comment says "Pre-compiled regex for code generation" but the type is `Optional[str]` and `compile_pattern_to_regex()` returns a regex pattern string, not a compiled `re.Pattern` object.  
+**Analysis:** The word "compiled" is misleading. The function builds/translates the MUMPS pattern to a Python regex string, but does not call `re.compile()`. The type is correct; the comment is misleading.  
+**Solution:** Change comment to "Pre-built regex pattern string for code generation" to accurately describe the field.
+
+#### Finding 5: `MDoBlockStatement` Is Defined But Never Instantiated
+**Files:** [src/m2py/asg/statements.py](src/m2py/asg/statements.py), type_helpers.py, __init__.py  
+**Status:** ✓ RESOLVED - Removed Dead Code  
+**Finding:** `MDoBlockStatement` was defined and exported but never instantiated anywhere in the codebase. The parser uses `MDoStatement` with empty `targets` and populated `body` for argumentless DO blocks.  
+**Analysis:** The data-model.md showed both `MDoStatement` (for labeled DO calls) and `MDoBlockStatement` (for argumentless DO blocks) as distinct types. However, the implementation unified them - `MDoStatement` handles both cases:
+- With targets: `D LABEL` - call to subroutine
+- Without targets: `D` followed by dot-lines - inline block scope
+
+This is actually a cleaner design since `MDoStatement.targets` being empty clearly indicates an argumentless DO.  
+**Solution:** Removed `MDoBlockStatement` entirely. Updated `MQuitStatement.exits_do_block` to reference `MDoStatement` (for argumentless DO). Updated type_helpers.py, __init__.py, parser.py, and all documentation.
+
+### Tasks
+
+- [X] **1.1** Update `to_dict()` docstring in `src/m2py/asg/elements.py`
+  - Add note that `include_position=True` only includes start position (`line_number`, `column`), not end position (`end_line`, `end_column`)
+
+- [X] **1.2** Update `data-model.md` to match implementation for `global_refs`
+  - Change `global_refs: List['MGlobal']` to `global_refs: List[str]`
+  - Add comment: "# Names of ^GLOBAL references (strings for efficiency)"
+
+- [X] **1.3** Fix `MCall.arguments` type annotation in `src/m2py/asg/elements.py`
+  - Change `arguments: List[Any]` to `arguments: List["MActualParameter"]`
+  - Add import for MActualParameter in TYPE_CHECKING block
+
+- [X] **1.4** Fix `MPatternMatch.compiled_regex` comment in `src/m2py/asg/expressions.py`
+  - Change "Pre-compiled regex for code generation" to "Pre-built regex pattern string for code generation (not a compiled re.Pattern)"
+
+- [X] **1.5** Remove `MDoBlockStatement` dead code and update references
+  - Remove `MDoBlockStatement` class from `src/m2py/asg/statements.py`
+  - Update `MQuitStatement.exits_do_block` to reference `MDoStatement`
+  - Remove from exports in `__init__.py`, imports in `parser.py`, type aliases in `type_helpers.py`
+  - Update documentation in data-model.md, docs/asg/index.md, docs/asg/statements.md
+
+- [X] **1.6** Add unit tests for Phase 73 documentation accuracy
+  - Test that `MDoStatement` with empty targets is used for argumentless DO
+  - Test that `MCall.arguments` contains `MActualParameter` objects
+
+**Checkpoint**: Phase 73 complete - ASG type annotations and documentation accurately reflect implementation

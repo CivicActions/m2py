@@ -3,7 +3,7 @@
 Defines all statement types for the MUMPS ASG:
 - MStatement: Base statement class
 - Control flow: MIfStatement, MElseStatement, MForStatement, MGotoStatement
-- Subroutines: MDoStatement, MDoBlockStatement, MQuitStatement
+- Subroutines: MDoStatement, MQuitStatement
 - Data: MSetStatement, MWriteStatement, MReadStatement
 - Variables: MNewStatement, MKillStatement, MMergeStatement
 - Other: MHangStatement, MHaltStatement, MXecuteStatement, MLockStatement, MViewStatement, MBreakStatement
@@ -263,31 +263,24 @@ class MGotoStatement(MStatement):
 class MDoStatement(MStatement):
     """DO command - call subroutine or inline block.
 
-    When targets are present, calls one or more labels:
-    DO label, D label^routine, D label(args)
+    This class handles BOTH labeled DO calls and argumentless DO blocks:
 
-    When targets are empty (argumentless DO), creates a block scope
-    for following dot-indented lines:
-    DO
-    . command1
-    . command2
+    1. **Labeled DO** (targets not empty):
+       DO label, D label^routine, D label(args)
+       - targets contains MCall references to be executed
+
+    2. **Argumentless DO** (targets empty, body populated):
+       DO
+       . command1
+       . command2
+       - Creates an inline block scope for dot-indented lines
+       - targets is empty, body contains the block statements
+
+    To detect argumentless DO: check `if not statement.targets`.
     """
 
     targets: List["MCall"] = field(default_factory=list)
     body: MScope = field(default_factory=MScope)  # For argumentless DO block
-
-
-@dataclass
-class MDoBlockStatement(MStatement):
-    """Argumentless DO - inline scope block.
-
-    Creates an indented block scope:
-    DO
-    . command1
-    . command2
-    """
-
-    body: MScope = field(default_factory=MScope)
 
 
 @dataclass
@@ -302,7 +295,9 @@ class MQuitStatement(MStatement):
 
     # Context (populated in analysis pass)
     exits_for: Optional["MForStatement"] = field(default=None, repr=False)
-    exits_do_block: Optional["MDoBlockStatement"] = field(default=None, repr=False)
+    exits_do_block: Optional["MDoStatement"] = field(
+        default=None, repr=False
+    )  # Argumentless DO (empty targets)
 
 
 # =============================================================================

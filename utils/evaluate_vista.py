@@ -27,12 +27,12 @@ from m2py.parser.parser import MUMPSParser
 from m2py.asg.elements import MRoutine
 from m2py.asg.statements import (
     MSetStatement,
+    MDoStatement,
     MGotoStatement,
     MForStatement,
     MIfStatement,
     MElseStatement,
     MXecuteStatement,
-    MDoBlockStatement,
 )
 from m2py.asg.expressions import (
     MIntrinsicFunction,
@@ -416,7 +416,7 @@ def analyze_asg(routine: MRoutine, metrics: FileMetrics) -> None:
                 if stmt.body:
                     walk_statements(stmt.body, depth + 1)
 
-            elif isinstance(stmt, MDoBlockStatement):
+            elif isinstance(stmt, MDoStatement):
                 if stmt.body:
                     walk_statements(stmt.body, depth + 1)
 

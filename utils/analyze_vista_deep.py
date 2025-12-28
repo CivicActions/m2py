@@ -26,12 +26,12 @@ from m2py.parser.parser import MUMPSParser
 from m2py.asg.elements import MRoutine
 from m2py.asg.statements import (
     MSetStatement,
+    MDoStatement,
     MGotoStatement,
     MForStatement,
     MIfStatement,
     MElseStatement,
     MXecuteStatement,
-    MDoBlockStatement,
     MJobStatement,
 )
 from m2py.asg.expressions import (
@@ -239,7 +239,7 @@ def analyze_scope(
             if stmt.body:
                 analyze_scope(stmt.body, result, in_for=in_for, for_depth=for_depth)
 
-        elif isinstance(stmt, MDoBlockStatement):
+        elif isinstance(stmt, MDoStatement):
             if stmt.body:
                 analyze_scope(stmt.body, result, in_for=in_for, for_depth=for_depth)
 

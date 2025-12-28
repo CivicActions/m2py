@@ -87,7 +87,6 @@ ASGElement (abstract base)
 │   ├── MElseStatement
 │   ├── MForStatement
 │   ├── MDoStatement
-│   ├── MDoBlockStatement
 │   ├── MGotoStatement
 │   ├── MQuitStatement
 │   ├── MNewStatement
@@ -167,7 +166,7 @@ class MRoutine(ASGElement):
     # Analysis annotations
     has_unstructured_goto: bool = False
     requires_runtime_eval: bool = False  # Has unresolvable indirection
-    global_refs: List['MGlobal'] = field(default_factory=list)
+    global_refs: List[str] = field(default_factory=list)  # Names of ^GLOBAL references (strings for efficiency)
     
     def get_label(self, name: str) -> Optional['MLabel']:
         """Look up label by name."""
@@ -349,20 +348,19 @@ class MGotoStatement(MStatement):
     is_loop_continue: bool = False
 ```
 
-### MDoStatement / MDoBlockStatement
+### MDoStatement
 
 ```python
 @dataclass
 class MDoStatement(MStatement):
-    """DO command - call subroutine."""
+    """DO command - call subroutine or inline block.
+    
+    Handles both labeled calls (targets populated) and
+    argumentless DO blocks (targets empty, body populated).
+    """
     
     targets: List['MCall'] = field(default_factory=list)
-
-@dataclass
-class MDoBlockStatement(MStatement):
-    """Argumentless DO - inline scope block."""
-    
-    body: MScope = field(default_factory=MScope)
+    body: MScope = field(default_factory=MScope)  # For argumentless DO
 ```
 
 ### MQuitStatement
@@ -376,7 +374,7 @@ class MQuitStatement(MStatement):
     
     # Context (populated in analysis pass)
     exits_for: Optional['MForStatement'] = field(default=None, repr=False)
-    exits_do_block: Optional['MDoBlockStatement'] = field(default=None, repr=False)
+    exits_do_block: Optional['MDoStatement'] = field(default=None, repr=False)  # Argumentless DO
 ```
 
 ### MNewStatement

@@ -101,8 +101,7 @@ Control Flow:
 └── MQuitStatement   (return_value, exits_for, exits_do_block)
 
 Subroutines:
-├── MDoStatement     (targets, body)
-└── MDoBlockStatement (body)
+└── MDoStatement     (targets, body)  ; handles both labeled & argumentless
 
 Data:
 ├── MSetStatement    (assignments)

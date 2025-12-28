@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, TypeGuard, Union
 if TYPE_CHECKING:
     from m2py.asg.elements import MScope
     from m2py.asg.statements import (
-        MDoBlockStatement,
         MDoStatement,
         MElseStatement,
         MForStatement,
@@ -22,7 +21,6 @@ if TYPE_CHECKING:
 StatementWithBody = Union[
     "MForStatement",
     "MDoStatement",
-    "MDoBlockStatement",
     "MElseStatement",
 ]
 StatementWithThenScope = Union["MIfStatement"]
@@ -34,8 +32,7 @@ def has_body(stmt: "MStatement") -> TypeGuard[StatementWithBody]:
 
     This TypeGuard narrows the type to statements that have a body:
     - MForStatement
-    - MDoStatement
-    - MDoBlockStatement
+    - MDoStatement (both labeled calls and argumentless blocks)
     - MElseStatement
 
     Args:

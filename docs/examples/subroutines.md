@@ -146,7 +146,8 @@ D
 
 **ASG Structure:**
 ```
-MDoBlockStatement(
+MDoStatement(
+    targets=[],  # Empty = argumentless DO
     body=MScope(
         statements=[
             MSetStatement(...),
