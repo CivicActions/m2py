@@ -689,7 +689,11 @@ class TestClassifyGotos:
         assert goto_stmt.goto_type == GotoType.EXTERNAL
 
     def test_classify_forward_jump(self):
-        """GOTO to later label should be FORWARD_JUMP (T080)."""
+        """GOTO to later label should be FORWARD_JUMP with is_cross_label=True (T080).
+
+        Cross-label GOTOs are classified with their direction (FORWARD_JUMP or
+        BACKWARD_JUMP) plus is_cross_label=True to indicate label boundary crossing.
+        """
         from m2py.analysis import resolve_references, classify_gotos
         from m2py.asg.enums import GotoType
 
@@ -698,8 +702,9 @@ class TestClassifyGotos:
         classify_gotos(routine)
 
         goto_stmt = list(routine.labels[0].body.walk_statements())[0]
-        # TARGET comes after MAIN, so forward jump
+        # TARGET is a different label, so FORWARD_JUMP with is_cross_label
         assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
+        assert goto_stmt.is_cross_label is True
 
     def test_classify_backward_jump(self):
         """GOTO to earlier label should be BACKWARD_JUMP (T081)."""

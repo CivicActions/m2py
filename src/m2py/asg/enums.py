@@ -47,13 +47,16 @@ class GotoType(Enum):
     """Classification of GOTO statement behavior.
 
     Used to determine the control flow impact of a GOTO:
-    - FORWARD_JUMP: Jump ahead within same label
-    - BACKWARD_JUMP: Jump back within same label (creates loop)
+    - FORWARD_JUMP: Jump ahead (same or different label, check is_cross_label)
+    - BACKWARD_JUMP: Jump back (same or different label, check is_cross_label)
     - LOOP_EXIT: Exits a single FOR loop
     - MULTI_LOOP_EXIT: Exits multiple nested FOR loops
-    - CROSS_LABEL: Jumps to a different label
+    - CROSS_LABEL: Deprecated - use FORWARD_JUMP/BACKWARD_JUMP + is_cross_label flag
     - EXTERNAL: Jumps to external routine (^routine)
     - UNRESOLVED: Target cannot be statically determined
+
+    Note: The is_cross_label field on MGotoStatement indicates whether the
+    jump crosses label boundaries. This is orthogonal to direction.
     """
 
     FORWARD_JUMP = auto()

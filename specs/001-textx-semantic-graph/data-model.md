@@ -322,7 +322,6 @@ class MForStatement(MStatement):
     loop_type: Optional[ForLoopType] = None
     has_internal_quit: bool = False
     has_internal_goto: bool = False
-    goto_exits_loop: bool = False
     exit_points: List['MStatement'] = field(default_factory=list, repr=False)
 ```
 

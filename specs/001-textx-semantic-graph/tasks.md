@@ -5623,3 +5623,136 @@ Requires grammar extension for `.VAR` syntax.
   - Ensure no significant performance regression from analysis reordering
 
 **Checkpoint**: Phase 67 complete - Full interprocedural by-ref analysis enabled
+---
+
+## Phase 68: ASG Implementation Gaps Cleanup
+
+**Purpose**: Address implementation gaps identified during documentation accuracy review - fields/enums that are defined in ASG but never populated or used.
+
+**Background**: During a comprehensive documentation vs. source code review, 5 implementation gaps were identified:
+1. `GotoType.CROSS_LABEL` - Enum value defined but never assigned
+2. `MForStatement.goto_exits_loop` - Field defined but never set (redundant with existing analysis)
+3. `MGotoStatement.is_loop_continue` - Field defined but never set
+4. `MRoutine.requires_runtime_eval` - Field defined but never populated (high value for codegen)
+5. `MRoutine.global_refs` - Field defined but never populated
+
+**Value for Code Generation**: Proper population of these fields enables more accurate Python code generation, better optimization decisions, and cleaner function signatures.
+
+---
+
+### Phase 68a: Remove Redundant Field
+
+- [X] T6801 [P68a] Remove `MForStatement.goto_exits_loop` field
+  - File: `src/m2py/asg/statements.py`
+  - This field is redundant - `analyze_for_loops()` already populates `goto_entry_points` and `exit_point_stmts` on labels/scopes
+  - Action: Delete the field definition and any references
+  - Update tests if any reference this field
+
+- [X] T6802 [P68a] Update documentation referencing goto_exits_loop
+  - File: `docs/asg/structural_elements.md`, `docs/codegen/goto_handling.md`
+  - Remove mentions of the deleted field
+  - Clarify that GOTO-exiting-FOR is tracked via `label.exit_point_stmts`
+
+---
+
+### Phase 68b: Add is_cross_label Flag to MGotoStatement
+
+- [X] T6810 [P68b] Add `is_cross_label: bool` field to `MGotoStatement` and set it in `classify_gotos()`
+  - Files: `src/m2py/asg/statements.py`, `src/m2py/analysis/goto_analysis.py`
+  - Added `is_cross_label: bool = False` as an orthogonal flag to track whether GOTO crosses label boundaries
+  - This separates direction (FORWARD_JUMP/BACKWARD_JUMP) from scope (same-label vs cross-label)
+  - Deprecated `GotoType.CROSS_LABEL` enum value - use `is_cross_label` flag instead
+  - Now codegen can use both direction AND scope info (e.g., `LOOP_EXIT` + `is_cross_label=True`)
+
+- [X] T6811 [P68b] Add unit tests for is_cross_label detection
+  - File: `tests/unit/test_goto_for_analysis.py`
+  - Test cases:
+    1. GOTO to different label → `FORWARD_JUMP` + `is_cross_label=True`
+    2. GOTO within same label → `FORWARD_JUMP` + `is_cross_label=False`
+  - Verify: `goto.goto_type == GotoType.FORWARD_JUMP and goto.is_cross_label == True`
+
+- [X] T6812 [P68b] Update documentation for is_cross_label
+  - Files: `docs/asg/enums.md`, `docs/asg/statements.md`, `docs/analysis/goto_analysis.md`
+  - Document `is_cross_label` as orthogonal to `goto_type`
+  - Show code gen strategies for different combinations
+
+---
+
+### Phase 68c: Implement MGotoStatement.is_loop_continue
+
+- [X] T6820 [P68c] Implement `is_loop_continue` detection in `classify_gotos()`
+  - File: `src/m2py/analysis/goto_analysis.py`
+  - Detect GOTO that jumps back to the start of an enclosing FOR loop (continue semantics)
+  - Pattern: GOTO target is the label containing the FOR, and GOTO is inside the FOR body
+  - Set: `goto.is_loop_continue = True`
+
+- [X] T6821 [P68c] Add unit tests for is_loop_continue
+  - File: `tests/unit/test_goto_for_analysis.py`
+  - Test cases:
+    1. GOTO back to label containing FOR from inside FOR body → is_loop_continue=True
+    2. GOTO forward past FOR loop → is_loop_continue=False
+    3. GOTO back but not to loop start → is_loop_continue=False
+
+- [X] T6822 [P68c] Update documentation for is_loop_continue
+  - File: `docs/asg/statements.md`, `docs/codegen/goto_handling.md`
+  - Document the is_loop_continue field and when it's set
+  - Explain how codegen can use this to generate Python `continue` statements
+
+---
+
+### Phase 68d: Implement MRoutine.requires_runtime_eval
+
+- [X] T6830 [P68d] Implement `requires_runtime_eval` rollup in variable analysis
+  - File: `src/m2py/analysis/variables.py`
+  - After computing all label signatures, check if ANY label has `signature.requires_runtime_eval`
+  - Set: `routine.requires_runtime_eval = any(label.signature.requires_runtime_eval for label in routine.labels if label.signature)`
+
+- [X] T6831 [P68d] Add unit tests for requires_runtime_eval
+  - File: `tests/unit/test_variables.py`
+  - Test cases:
+    1. Routine with no indirection → requires_runtime_eval=False
+    2. Routine with @VAR indirection in one label → requires_runtime_eval=True
+    3. Routine with XECUTE in one label → requires_runtime_eval=True
+
+- [X] T6832 [P68d] Update documentation for requires_runtime_eval
+  - File: `docs/asg/structural_elements.md`, `docs/codegen/index.md`
+  - Document the requires_runtime_eval field and its source
+  - Explain how codegen uses this for optimization decisions
+
+---
+
+### Phase 68e: Implement MRoutine.global_refs
+
+- [X] T6840 [P68e] Populate `global_refs` during resolver pass
+  - File: `src/m2py/analysis/resolver.py`
+  - During `resolve_references()`, collect all MGlobal and MNakedGlobal nodes
+  - Populate: `routine.global_refs = {global.name for global in all_globals}`
+  - This enables fast lookup of which globals a routine accesses
+
+- [X] T6841 [P68e] Add unit tests for global_refs population
+  - File: `tests/unit/test_resolver.py`
+  - Test cases:
+    1. Routine with no globals → global_refs=set()
+    2. Routine with ^GLOBAL → global_refs={"GLOBAL"}
+    3. Routine with multiple globals ^A, ^B → global_refs={"A", "B"}
+    4. Routine with naked global ^(x) → handled appropriately (may be empty set or special marker)
+
+- [X] T6842 [P68e] Update documentation for global_refs
+  - File: `docs/asg/structural_elements.md`
+  - Document the global_refs field
+  - Explain how it's populated and what it's used for
+
+---
+
+### Phase 68f: Final Validation
+
+- [X] T6850 [P68f] Run full test suite and verify no regressions
+  - `uv run pytest` - all tests must pass
+
+- [X] T6851 [P68f] Run pyright and verify no new type errors
+  - `uv run pyright src/`
+
+- [ ] T6852 [P68f] Update integration tests to verify new fields
+  - Add assertions in existing MUGJ tests for new field population
+
+**Checkpoint**: Phase 68 complete - All ASG implementation gaps resolved

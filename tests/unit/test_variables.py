@@ -1721,3 +1721,82 @@ class TestRoutineAnalysisCacheIncremental:
         sigs = cache.signatures
         assert "A" in sigs
         assert cache._fully_analyzed
+
+
+class TestRoutineRequiresRuntimeEval:
+    """Tests for MRoutine.requires_runtime_eval rollup from label signatures."""
+
+    def test_routine_without_indirection_does_not_require_runtime(self):
+        """T6831a: Routine with no indirection has requires_runtime_eval=False."""
+        from m2py.analysis.variables import compute_all_signatures
+
+        # Simple SET X=1 - no indirection
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(
+            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
+        )
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="MAIN", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        compute_all_signatures(routine)
+
+        assert routine.requires_runtime_eval is False
+
+    def test_routine_with_xecute_requires_runtime(self):
+        """T6831b: Routine with XECUTE has requires_runtime_eval=True."""
+        from m2py.analysis.variables import compute_all_signatures
+        from m2py.asg.statements import MXecuteStatement
+
+        # Label with XECUTE defeats static analysis
+        xecute_stmt = MXecuteStatement(code_expressions=[MLiteral(value="S X=1")])
+        scope = MScope(statements=[xecute_stmt])
+        label = MLabel(name="DYN", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        compute_all_signatures(routine)
+
+        assert routine.requires_runtime_eval is True
+
+    def test_routine_with_one_runtime_label_requires_runtime(self):
+        """T6831c: Routine requires runtime if ANY label requires it."""
+        from m2py.analysis.variables import compute_all_signatures
+        from m2py.asg.statements import MXecuteStatement
+
+        # Label 1: Simple, no indirection
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(
+            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
+        )
+        scope1 = MScope(statements=[set_stmt])
+        label1 = MLabel(name="SIMPLE", body=scope1)
+
+        # Label 2: Has XECUTE
+        xecute_stmt = MXecuteStatement(code_expressions=[MLiteral(value="S Y=2")])
+        scope2 = MScope(statements=[xecute_stmt])
+        label2 = MLabel(name="DYNAMIC", body=scope2)
+
+        routine = MRoutine(name="TEST", labels=[label1, label2])
+
+        compute_all_signatures(routine)
+
+        # Routine should require runtime because one label does
+        assert routine.requires_runtime_eval is True
+        # Verify individual labels
+        assert label1.signature.requires_runtime_scope is False
+        assert label2.signature.requires_runtime_scope is True
+
+    def test_routine_with_indirect_do_requires_runtime(self):
+        """T6831d: Routine with D @VAR has requires_runtime_eval=True."""
+        from m2py.analysis.variables import compute_all_signatures
+
+        # DO @VAR - indirected call
+        call = MCall(name="", label_is_indirect=True, indirection=MVariable(name="CMD"))
+        do_stmt = MDoStatement(targets=[call])
+        scope = MScope(statements=[do_stmt])
+        label = MLabel(name="INDIRECT", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        compute_all_signatures(routine)
+
+        assert routine.requires_runtime_eval is True

@@ -215,7 +215,6 @@ class MForStatement(MStatement):
     loop_type: Optional[ForLoopType] = None
     has_internal_quit: bool = False
     has_internal_goto: bool = False
-    goto_exits_loop: bool = False
     exit_points: List["MStatement"] = field(default_factory=list, repr=False)
     is_infinite: bool = False  # True for step=0 or ARGUMENTLESS loops
     loop_var_modified_in_body: bool = False  # True if loop variable is SET inside body
@@ -239,6 +238,7 @@ class MGotoStatement(MStatement):
     # Classification (populated in analysis pass)
     goto_type: Optional[GotoType] = None
     exits_loops: List["MForStatement"] = field(default_factory=list, repr=False)
+    is_cross_label: bool = False  # True if target is in a different label
     is_loop_continue: bool = False
 
 

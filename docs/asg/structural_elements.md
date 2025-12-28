@@ -42,7 +42,7 @@ The top-level container for a MUMPS routine (source file).
 | `source_lines` | `List[str]` | Original source lines (for `$TEXT`) |
 | `has_unstructured_goto` | `bool` | True if has cross-label GOTOs |
 | `requires_runtime_eval` | `bool` | True if has unresolvable indirection |
-| `global_refs` | `List[MGlobal]` | All global variable references |
+| `global_refs` | `List[str]` | All global variable names referenced (populated by `resolve_references()`) |
 
 ### Methods
 
@@ -64,7 +64,8 @@ def get_text_at_label(self, label_name: str, offset: int = 0) -> str:
 
 - **`source_lines`**: Required for `$TEXT` function support. Store original source to return at runtime.
 - **`has_unstructured_goto`**: If True, may need state machine or exception-based control flow. Set automatically by `classify_gotos()` when cross-label jumps, backward jumps, or unresolved GOTOs are detected.
-- **`requires_runtime_eval`**: If True, cannot generate purely static Python; need runtime variable lookup.
+- **`requires_runtime_eval`**: If True, cannot generate purely static Python; need runtime variable lookup. Set automatically by `compute_all_signatures()` - True if ANY label in the routine has XECUTE statements or indirected calls (D @VAR, G @VAR).
+- **`global_refs`**: List of global variable names (without `^` prefix) referenced in the routine. Populated by `resolve_references()`. Useful for generating global declarations or imports at the top of generated Python modules.
 
 ### Example
 

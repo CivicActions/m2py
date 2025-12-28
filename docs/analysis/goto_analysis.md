@@ -37,12 +37,22 @@ for label in routine.labels:
 
 | GotoType | Meaning | Code Gen Approach |
 |----------|---------|-------------------|
-| `FORWARD_JUMP` | Jumps to later label | May use function call or goto |
-| `BACKWARD_JUMP` | Jumps to earlier label | Loop or recursive call |
+| `FORWARD_JUMP` | Jumps ahead (any label) | If/elif chain or function call |
+| `BACKWARD_JUMP` | Jumps to earlier position | Loop or recursive call |
 | `LOOP_EXIT` | Exits a single FOR loop | `break` statement |
 | `MULTI_LOOP_EXIT` | Exits nested FOR loops | Labeled break or exception |
 | `EXTERNAL` | Jumps to other routine | Cross-module call |
-| `UNRESOLVED` | Target not found | Error handling |
+| `UNRESOLVED` | Target not found | Runtime dispatch |
+| `CROSS_LABEL` | **Deprecated** | Use `is_cross_label` flag |
+
+### is_cross_label Flag
+
+The `is_cross_label` boolean field on `MGotoStatement` indicates whether the target is in a different label than the source. This is orthogonal to direction:
+
+- **`FORWARD_JUMP` + `is_cross_label=False`**: GOTO within the same label (intra-label). Can be translated to if/elif chains.
+- **`FORWARD_JUMP` + `is_cross_label=True`**: GOTO to a later label (inter-label). Typically requires converting labels to functions.
+- **`BACKWARD_JUMP` + `is_cross_label=True`**: GOTO to an earlier label. Creates implicit loop requiring state machine.
+- **`LOOP_EXIT` + `is_cross_label=True`**: Exit FOR and jump to different label. Requires break + dispatch.
 
 ## What Gets Populated
 
@@ -54,7 +64,9 @@ class MGotoStatement(MStatement):
     targets: List[MCall]
     postcondition: Optional[MExpr]
     goto_type: GotoType = GotoType.FORWARD_JUMP
+    is_cross_label: bool = False  # True if target in different label
     exits_loops: List[MForStatement] = field(default_factory=list)
+    is_loop_continue: bool = False  # True if continue semantics
 ```
 
 ### On MForStatement (back-references)
@@ -74,8 +86,9 @@ class MForStatement(MStatement):
 EARLY  ; Position 0
        S X=1
 MIDDLE ; Position 1
-       G EARLY    ; BACKWARD_JUMP (1 → 0)
-       G LATER    ; FORWARD_JUMP (1 → 2)
+       G EARLY    ; BACKWARD_JUMP, is_cross_label=True (1 → 0)
+       G LATER    ; FORWARD_JUMP, is_cross_label=True (1 → 2)
+       G MIDDLE   ; FORWARD_JUMP, is_cross_label=False (same label)
 LATER  ; Position 2
        Q
 ```
@@ -87,6 +100,7 @@ The analyzer builds a label position map and compares indices.
 ```mumps
 LOOP   F I=1:1:10 D
        . I X=5 G DONE    ; LOOP_EXIT - exits the FOR
+       . I X=3 G LOOP    ; LOOP_EXIT + is_loop_continue=True (continue pattern)
        Q
 DONE   Q
 ```
@@ -95,6 +109,27 @@ The analyzer tracks enclosing FOR loops during traversal. When a GOTO is found i
 - `goto_type` is set to `LOOP_EXIT` or `MULTI_LOOP_EXIT`
 - `exits_loops` is populated with enclosing FORs
 - `has_internal_goto` is set on the FOR statements
+- `is_loop_continue` is set to True if the GOTO target is the same label containing the FOR (continue semantics)
+
+### is_loop_continue Pattern
+
+When a GOTO inside a FOR loop jumps back to the label containing that FOR loop, it simulates Python's `continue` statement - skipping to the next iteration:
+
+```mumps
+LOOP   F I=1:1:10 D
+       . I I#2=0 G LOOP  ; Skip even numbers (is_loop_continue=True)
+       . W I,!
+       Q
+```
+
+This translates to:
+
+```python
+for i in range(1, 11):
+    if i % 2 == 0:
+        continue  # Generated from GOTO with is_loop_continue=True
+    print(i)
+```
 
 ### External vs Same-Routine
 

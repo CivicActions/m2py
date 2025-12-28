@@ -132,6 +132,31 @@ elif exit_type == "success":
     print("Success!")
 ```
 
+## Loop Continue (is_loop_continue=True)
+
+When `is_loop_continue=True`, the GOTO simulates Python's `continue` statement:
+
+```mumps
+LOOP   F I=1:1:10 D
+       . I I#2=0 G LOOP    ; Skip even numbers
+       . W I,!
+       Q
+```
+
+**Continue Pattern:**
+```python
+for i in range(1, 11):
+    if i % 2 == 0:
+        continue
+    print(i)
+```
+
+The analyzer sets `is_loop_continue=True` when:
+1. GOTO is inside a FOR loop
+2. GOTO target is the same label containing the FOR
+
+This is a common MUMPS idiom for skipping to the next iteration without exiting the loop.
+
 ## Multi-Loop Exit
 
 ```mumps

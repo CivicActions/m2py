@@ -208,9 +208,8 @@ F I="A",1:1:3 W I,!        ; MIXED
 | `loop_type` | `ForLoopType` | Classification |
 | `is_infinite` | `bool` | True for step=0 or ARGUMENTLESS |
 | `has_internal_quit` | `bool` | QUIT directly in body |
-| `has_internal_goto` | `bool` | GOTO exiting loop |
-| `goto_exits_loop` | `bool` | GOTO targets outside |
-| `exit_points` | `List[MStatement]` | Exit statements |
+| `has_internal_goto` | `bool` | GOTO inside loop body |
+| `exit_points` | `List[MStatement]` | Exit statements (QUIT/GOTO) |
 | `loop_var_modified_in_body` | `bool` | SET of loop var |
 
 **MForParameter** structure:
@@ -253,24 +252,31 @@ G LABEL1,LABEL2:COND
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `goto_type` | `GotoType` | Classification |
+| `goto_type` | `GotoType` | Direction/behavior classification |
 | `exits_loops` | `List[MForStatement]` | FOR loops exited |
-| `is_loop_continue` | `bool` | True if continues loop |
+| `is_cross_label` | `bool` | True if target is in a different label |
+| `is_loop_continue` | `bool` | True if GOTO simulates `continue` |
+
+**is_cross_label**: Set to True when the GOTO target is in a different label than the GOTO source. This is orthogonal to the direction (forward/backward) and loop-exit status. Code generators can use this to determine whether simple if/else suffices or function-call-based control flow is needed.
+
+**is_loop_continue**: Set to True when a GOTO inside a FOR loop jumps back to the label containing that FOR loop. This pattern is equivalent to Python's `continue` statement - it exits the current iteration and starts the next one.
 
 **GotoType values**:
-- `FORWARD_JUMP` - Jump ahead in same label
+- `FORWARD_JUMP` - Jump ahead (check `is_cross_label` for scope)
 - `BACKWARD_JUMP` - Jump back (creates loop)
 - `LOOP_EXIT` - Exits single FOR loop
 - `MULTI_LOOP_EXIT` - Exits multiple nested FORs
-- `CROSS_LABEL` - Jumps to different label
 - `EXTERNAL` - Jumps to external routine
 - `UNRESOLVED` - Cannot determine statically
+- `CROSS_LABEL` - **Deprecated**: use `is_cross_label` flag instead
 
-**Code Generation by goto_type**:
-- `LOOP_EXIT`: `break`
+**Code Generation by goto_type + is_cross_label**:
+- `LOOP_EXIT` with `is_loop_continue=True`: `continue`
+- `LOOP_EXIT` with `is_loop_continue=False`: `break`
 - `MULTI_LOOP_EXIT`: Exception or state machine
-- `CROSS_LABEL`: Function call with return handling
-- `FORWARD_JUMP`/`BACKWARD_JUMP`: May need restructuring
+- `FORWARD_JUMP` + `is_cross_label=False`: If/elif chain
+- `FORWARD_JUMP` + `is_cross_label=True`: Function call with return
+- `BACKWARD_JUMP`: While loop wrapper
 
 ---
 

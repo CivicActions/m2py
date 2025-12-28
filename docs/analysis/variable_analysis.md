@@ -107,10 +107,25 @@ class FunctionSignature:
     side_effect_outputs: Set[str]   # Other visible modifications
     has_value_quit: bool            # QUIT with return value
     has_void_quit: bool             # QUIT without value
+    requires_runtime_scope: bool    # True if indirection/XECUTE
     scope_strategy: ScopeStrategy   # Code gen approach
     transitive_inputs: Set[str]     # Including callee needs
     transitive_outputs: Set[str]    # Including callee effects
 ```
+
+**requires_runtime_scope**: Set to True when a label contains:
+- XECUTE statements (executes arbitrary code at runtime)
+- Indirected DO/GOTO targets (D @VAR, G @VAR)
+
+When True, static analysis is insufficient - the code generator must include runtime scope support.
+
+## MRoutine Fields Populated
+
+| Field | Description |
+|-------|-------------|
+| `requires_runtime_eval` | True if ANY label requires runtime scope |
+
+The routine-level `requires_runtime_eval` is a rollup of all label signatures. It enables quick checks during code generation to determine if a routine needs runtime scope infrastructure.
 
 ## MLabel Fields Populated
 

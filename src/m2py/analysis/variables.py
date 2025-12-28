@@ -869,6 +869,7 @@ def compute_all_signatures(routine: MRoutine) -> Dict[str, FunctionSignature]:
     1. Runs variable analysis if not already done
     2. Computes signatures for each label
     3. Populates MLabel.signature fields
+    4. Sets MRoutine.requires_runtime_eval if any label requires runtime scope
 
     Args:
         routine: The MRoutine to analyze
@@ -891,6 +892,12 @@ def compute_all_signatures(routine: MRoutine) -> Dict[str, FunctionSignature]:
             object.__setattr__(label, "signature", sig)
         else:
             label.signature = sig
+
+    # Roll up requires_runtime_scope from labels to routine
+    # If ANY label requires runtime scope, the routine does too
+    routine.requires_runtime_eval = any(
+        sig.requires_runtime_scope for sig in signatures.values()
+    )
 
     return signatures
 

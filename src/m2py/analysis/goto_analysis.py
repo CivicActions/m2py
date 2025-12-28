@@ -183,7 +183,8 @@ def _classify_single_goto(
 
         target_label_idx = label_positions.get(target_label.name, -1)
 
-        # Same label = forward or backward within label
+        # Determine base goto type based on target location
+        # Same label = forward or backward within label (intra-label jump)
         if target_label.name == current_label.name:
             # Within same label - need line numbers to determine direction
             # For now, use a heuristic: if target line < source line = backward
@@ -192,8 +193,11 @@ def _classify_single_goto(
             # For targets within same label, we'd need to track statement order
             # Simplify: treat as FORWARD for now
             stmt.goto_type = GotoType.FORWARD_JUMP
+            stmt.is_cross_label = False
         else:
             # Different label = cross-label jump
+            # Set is_cross_label flag to indicate label boundary crossing
+            stmt.is_cross_label = True
             if target_label_idx < current_label_idx:
                 # Jumping backward to earlier label
                 stmt.goto_type = GotoType.BACKWARD_JUMP
@@ -201,7 +205,8 @@ def _classify_single_goto(
                 # Jumping forward to later label
                 stmt.goto_type = GotoType.FORWARD_JUMP
 
-        # If inside FOR loops, this is a loop exit
+        # If inside FOR loops, this is a loop exit (overrides FORWARD_JUMP/BACKWARD_JUMP type)
+        # Note: is_cross_label remains set if target is different label
         if enclosing_fors:
             if len(enclosing_fors) == 1:
                 stmt.goto_type = GotoType.LOOP_EXIT
@@ -216,6 +221,12 @@ def _classify_single_goto(
                 # Add this GOTO to the FOR's exit_points (bidirectional link)
                 if stmt not in for_stmt.exit_points:
                     for_stmt.exit_points.append(stmt)
+
+            # Check for "continue" pattern: GOTO jumps back to the label containing
+            # the innermost FOR loop. This is equivalent to Python's "continue".
+            # The GOTO target must be the same label we're currently in.
+            if target_label.name == current_label.name:
+                stmt.is_loop_continue = True
 
         # If jumping to different label while inside FOR, it's a cross-label exit
         if enclosing_fors and target_label.name != current_label.name:
@@ -273,12 +284,12 @@ def _has_unstructured_gotos(routine: MRoutine) -> bool:
     Unstructured patterns:
     - BACKWARD_JUMP: Creates implicit loops (especially cross-label)
     - UNRESOLVED: Target unknown at compile time, needs runtime dispatch
-    - Cross-label FORWARD_JUMP not exiting a loop: Can't use simple if/else
-      within a single function without restructuring
+    - FORWARD_JUMP with is_cross_label=True (not exiting a loop): Can't use
+      simple if/else within a single function without restructuring
 
     Structured patterns (return False):
     - LOOP_EXIT / MULTI_LOOP_EXIT: Translates to break (or exception for multi)
-    - FORWARD_JUMP within same label: Translates to if/else
+    - FORWARD_JUMP within same label (is_cross_label=False): Translates to if/else
     - EXTERNAL: Translates to function call to another module
 
     Args:
@@ -300,16 +311,9 @@ def _has_unstructured_gotos(routine: MRoutine) -> bool:
             if stmt.goto_type == GotoType.BACKWARD_JUMP:
                 return True
 
-            # Check for cross-label forward jumps (not loop exits)
-            # These need restructuring since we can't just "skip ahead" across functions
-            if stmt.goto_type == GotoType.FORWARD_JUMP and not stmt.exits_loops:
-                # Check if this jumps to a different label
-                for call in stmt.targets:
-                    if call.target and call.target.parent != label.parent:
-                        # Different label - this is cross-label
-                        return True
-                    # Also check by name if target not resolved
-                    if call.name and call.name != label.name:
-                        return True
+            # Cross-label forward jumps (not loop exits) require restructuring
+            # These jump to a different label and can't use simple if/else
+            if stmt.is_cross_label and not stmt.exits_loops:
+                return True
 
     return False

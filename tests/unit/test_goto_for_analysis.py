@@ -38,8 +38,30 @@ class TestClassifyGotos:
 
         return routine
 
+    def test_goto_same_label_is_forward_jump(self):
+        """GOTO to same label should be FORWARD_JUMP (intra-label)."""
+        routine = MRoutine(name="TEST")
+
+        # Create a single label with GOTO to itself
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+        label.body.parent = label
+        routine.add_label(label)
+
+        # Add GOTO MAIN in MAIN (jumps to same label)
+        goto_stmt = MGotoStatement()
+        call = MCall(name="MAIN")
+        goto_stmt.targets.append(call)
+        label.body.add_statement(goto_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # GOTO to same label is FORWARD_JUMP (within label scope)
+        assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
+
     def test_goto_cross_label_forward(self):
-        """GOTO to later label should be FORWARD_JUMP."""
+        """GOTO to later label should be FORWARD_JUMP with is_cross_label=True."""
         routine = self._create_test_routine()
 
         # Add GOTO TARGET to MAIN label
@@ -51,9 +73,9 @@ class TestClassifyGotos:
         resolve_references(routine)
         classify_gotos(routine)
 
-        # GOTO to later label from earlier should be FORWARD_JUMP
-        # Actually, cross-label without FOR = FORWARD_JUMP
+        # GOTO to later label from earlier is FORWARD_JUMP with is_cross_label=True
         assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
+        assert goto_stmt.is_cross_label is True
 
     def test_goto_inside_for_is_loop_exit(self):
         """GOTO inside FOR loop should be classified as LOOP_EXIT."""
@@ -187,8 +209,97 @@ class TestClassifyGotos:
         classify_gotos(routine)
 
         # Should be classified as internal jump, not EXTERNAL
+        # Since it jumps to a different label, it's FORWARD_JUMP with is_cross_label
         assert goto_stmt.goto_type != GotoType.EXTERNAL
         assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
+        assert goto_stmt.is_cross_label is True
+
+    def test_is_loop_continue_when_goto_back_to_label_in_for(self):
+        """GOTO back to same label from inside FOR should set is_loop_continue."""
+        routine = MRoutine(name="TEST")
+
+        # Create MAIN label with FOR loop containing GOTO MAIN
+        main_label = MLabel(name="MAIN")
+        main_label.body = MScope()
+        main_label.body.parent = main_label
+        routine.add_label(main_label)
+
+        # Create FOR loop
+        for_stmt = MForStatement()
+        for_stmt.loop_var = "I"
+        for_stmt.loop_type = ForLoopType.BOUNDED
+        for_stmt.body = MScope()
+
+        # GOTO MAIN inside the FOR - this is a "continue" pattern
+        goto_stmt = MGotoStatement()
+        call = MCall(name="MAIN")
+        goto_stmt.targets.append(call)
+        for_stmt.body.add_statement(goto_stmt)
+
+        main_label.body.add_statement(for_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Should be marked as loop continue
+        assert goto_stmt.is_loop_continue is True
+        assert goto_stmt.goto_type == GotoType.LOOP_EXIT  # Still exits the loop
+
+    def test_is_loop_continue_false_for_cross_label_exit(self):
+        """GOTO to different label from inside FOR should NOT set is_loop_continue."""
+        routine = MRoutine(name="TEST")
+
+        # Create MAIN and TARGET labels
+        main_label = MLabel(name="MAIN")
+        main_label.body = MScope()
+        main_label.body.parent = main_label
+        routine.add_label(main_label)
+
+        target_label = MLabel(name="TARGET")
+        target_label.body = MScope()
+        target_label.body.parent = target_label
+        routine.add_label(target_label)
+
+        # Create FOR loop with GOTO TARGET
+        for_stmt = MForStatement()
+        for_stmt.loop_var = "I"
+        for_stmt.loop_type = ForLoopType.BOUNDED
+        for_stmt.body = MScope()
+
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        for_stmt.body.add_statement(goto_stmt)
+
+        main_label.body.add_statement(for_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Should NOT be marked as loop continue (exits to different label)
+        assert goto_stmt.is_loop_continue is False
+        assert goto_stmt.goto_type == GotoType.LOOP_EXIT
+
+    def test_is_loop_continue_false_when_not_in_for(self):
+        """GOTO not inside FOR should have is_loop_continue=False."""
+        routine = MRoutine(name="TEST")
+
+        main_label = MLabel(name="MAIN")
+        main_label.body = MScope()
+        main_label.body.parent = main_label
+        routine.add_label(main_label)
+
+        # GOTO MAIN not inside a FOR loop
+        goto_stmt = MGotoStatement()
+        call = MCall(name="MAIN")
+        goto_stmt.targets.append(call)
+        main_label.body.add_statement(goto_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Should NOT be marked as loop continue (not in a FOR loop)
+        assert goto_stmt.is_loop_continue is False
 
 
 class TestHasUnstructuredGoto:
@@ -252,7 +363,7 @@ class TestHasUnstructuredGoto:
         assert routine.has_unstructured_goto is False
 
     def test_cross_label_forward_is_unstructured(self):
-        """GOTO to different label (not in FOR) is unstructured."""
+        """GOTO to different label (is_cross_label=True, not in FOR) is unstructured."""
         routine = self._create_test_routine()
 
         # Add GOTO TARGET to MAIN label (not in a FOR loop)
@@ -264,6 +375,9 @@ class TestHasUnstructuredGoto:
         resolve_references(routine)
         classify_gotos(routine)
 
+        # Cross-label jump is FORWARD_JUMP with is_cross_label=True
+        assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
+        assert goto_stmt.is_cross_label is True
         # Cross-label jump needs restructuring
         assert routine.has_unstructured_goto is True
 

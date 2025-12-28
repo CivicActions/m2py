@@ -45,13 +45,18 @@ Classification of GOTO statement behavior. Determines control flow translation s
 
 | Value | Description | Code Gen Strategy |
 |-------|-------------|-------------------|
-| `FORWARD_JUMP` | Jump ahead in same label | if/elif chain or labeled block |
-| `BACKWARD_JUMP` | Jump back in same label | while loop wrapper |
+| `FORWARD_JUMP` | Jump ahead (same or different label) | if/elif chain or labeled block |
+| `BACKWARD_JUMP` | Jump back (same or different label) | while loop wrapper |
 | `LOOP_EXIT` | Exit single FOR loop | `break` |
 | `MULTI_LOOP_EXIT` | Exit nested FOR loops | Exception or state machine |
-| `CROSS_LABEL` | Jump to different label | Function call + return |
+| `CROSS_LABEL` | **Deprecated** - use `is_cross_label` flag | - |
 | `EXTERNAL` | Jump to external routine | Module import + call |
 | `UNRESOLVED` | Cannot determine statically | Runtime dispatch |
+
+**Note**: The `is_cross_label` field on `MGotoStatement` indicates whether the jump crosses label boundaries. This is orthogonal to direction (`FORWARD_JUMP`/`BACKWARD_JUMP`). For example:
+- `FORWARD_JUMP` + `is_cross_label=False`: Jump ahead within same label → simple if/else
+- `FORWARD_JUMP` + `is_cross_label=True`: Jump ahead to different label → function call
+- `LOOP_EXIT` + `is_cross_label=True`: Exit FOR and jump to different label
 
 **Code Generation Notes**:
 - `LOOP_EXIT`: Simple `break` statement
