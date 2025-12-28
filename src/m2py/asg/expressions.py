@@ -158,10 +158,14 @@ class MExtrinsicFunction(MExpr):
 
     Represents calls to user-defined functions:
     $$FUNC, $$FUNC^ROUTINE, $$FUNC(args)
+
+    Per MUMPS spec 8.1.7, extrinsic function arguments support both
+    by-value and by-reference passing modes (same as DO command):
+    $$CALC(.X,Y) - X is by-reference, Y is by-value
     """
 
     target: Optional["MCall"] = None
-    arguments: List["MExpr"] = field(default_factory=list)
+    arguments: List["MActualParameter"] = field(default_factory=list)
 
 
 # =============================================================================

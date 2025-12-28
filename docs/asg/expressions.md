@@ -206,14 +206,15 @@ User-defined function call:
 $$MYFUNC
 $$CALC^MATH
 $$ADD(A,B)
+$$CALC(.X,Y)   ; With by-reference
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `target` | `MCall` | Target label/routine |
-| `arguments` | `List[MExpr]` | Function arguments |
+| `arguments` | `List[MActualParameter]` | Function arguments with passing mode |
 
-**Code Generation**: Function call with return value capture.
+**Code Generation**: Function call with return value capture. By-reference parameters (`.VAR` syntax) require special handling - see `PassingMode` in [enums.md](enums.md).
 
 ---
 

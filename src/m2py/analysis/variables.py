@@ -542,6 +542,7 @@ def _extract_expression_variables(expr) -> Set[str]:
         MIntrinsicFunction,
         MExtrinsicFunction,
         MSpecialVariable,
+        MActualParameter,
     )
 
     # MVariable has a name
@@ -584,6 +585,11 @@ def _extract_expression_variables(expr) -> Set[str]:
     # MSpecialVariable - no variable references (these are $TEST, $HOROLOG, etc.)
     elif isinstance(expr, MSpecialVariable):
         pass
+
+    # MActualParameter - extract variables from the expression field
+    elif isinstance(expr, MActualParameter):
+        if expr.expression:
+            vars_found.update(_extract_expression_variables(expr.expression))
 
     # Fallback: check generic attributes
     elif hasattr(expr, "name") and isinstance(getattr(expr, "name", None), str):

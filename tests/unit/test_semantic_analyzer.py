@@ -352,6 +352,33 @@ class TestExtrinsicFunctionASG:
         assert isinstance(result, MExtrinsicFunction)
         assert len(result.arguments) == 2
 
+    def test_extrinsic_with_byref_args(self):
+        """$$FUNC(.X,Y,.Z) preserves by-reference passing mode.
+
+        MUMPS spec 8.1.7: .actualname = call-by-reference format.
+        """
+        from m2py.asg import MExtrinsicFunction, MActualParameter, PassingMode
+
+        expr = parse_expression("$$CALC(.A,B,.C)")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MExtrinsicFunction)
+        assert len(result.arguments) == 3
+
+        # First arg: .A is by-reference
+        assert isinstance(result.arguments[0], MActualParameter)
+        assert result.arguments[0].passing_mode == PassingMode.BY_REFERENCE
+        assert result.arguments[0].variable_name == "A"
+
+        # Second arg: B is by-value
+        assert isinstance(result.arguments[1], MActualParameter)
+        assert result.arguments[1].passing_mode == PassingMode.BY_VALUE
+
+        # Third arg: .C is by-reference
+        assert isinstance(result.arguments[2], MActualParameter)
+        assert result.arguments[2].passing_mode == PassingMode.BY_REFERENCE
+        assert result.arguments[2].variable_name == "C"
+
 
 class TestIndirectionASG:
     """Test MIndirection ASG node structure (T327)."""

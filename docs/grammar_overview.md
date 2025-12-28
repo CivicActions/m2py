@@ -197,13 +197,23 @@ FunctionArgs:
     '(' args+=FunctionArg[','] ')'
 ;
 
-// Function argument can be omitted (,,)
+// Function argument: by-reference, by-value, or omitted
 FunctionArg:
-    expr=Expr?
+    byref=ByRefArg | expr=Expr?
+;
+
+// By-reference: .VAR syntax
+ByRefArg:
+    '.' var=LocalVariable
 ;
 ```
 
 **Common functions**: `$EXTRACT`, `$PIECE`, `$LENGTH`, `$ORDER`, `$DATA`, `$GET`, etc.
+
+**By-Reference**: The `.VAR` syntax indicates call-by-reference (per MUMPS spec 8.1.7):
+- `D SUB(A,B)` → both by-value
+- `D SUB(.A,B)` → A by-reference, B by-value  
+- `$$CALC(.X,.Y)` → both by-reference (extrinsic functions support this too)
 
 ### Extrinsic Functions
 

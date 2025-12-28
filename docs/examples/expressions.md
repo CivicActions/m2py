@@ -336,10 +336,32 @@ $$CALC^MATH(X,Y)
 MExtrinsicFunction(
     target=MCall(
         name="CALC",
-        routine="MATH",
-        arguments=[...]
+        routine="MATH"
     ),
-    arguments=[MVariable(name="X"), MVariable(name="Y")]
+    arguments=[
+        MActualParameter(expression=MVariable(name="X"), passing_mode=PassingMode.BY_VALUE),
+        MActualParameter(expression=MVariable(name="Y"), passing_mode=PassingMode.BY_VALUE)
+    ]
+)
+```
+
+### Extrinsic with By-Reference
+
+```mumps
+$$SWAP^UTIL(.A,.B)
+```
+
+**ASG Structure:**
+```
+MExtrinsicFunction(
+    target=MCall(
+        name="SWAP",
+        routine="UTIL"
+    ),
+    arguments=[
+        MActualParameter(expression=MVariable(name="A"), passing_mode=PassingMode.BY_REFERENCE, variable_name="A"),
+        MActualParameter(expression=MVariable(name="B"), passing_mode=PassingMode.BY_REFERENCE, variable_name="B")
+    ]
 )
 ```
 

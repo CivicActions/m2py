@@ -5264,3 +5264,79 @@ Run: `uv run ruff format src/` to auto-fix formatting in 16 files.
   - MUGJ test suite structure and purpose
   - Adding new test cases
   - Coverage reporting
+
+
+---
+
+## Phase 66: Enhanced Loop Variable Modification Detection
+
+Analysis of 33,951 VistA files revealed gaps in `loop_var_modified_in_body` detection.
+The current implementation only detects SET commands. Real-world code uses additional
+patterns to modify loop variables.
+
+**Status**: ✅ Phase 66a COMPLETE, ✅ Phase 66b COMPLETE
+
+### Phase 66a: Detect READ/KILL Modifications (Low Priority) - COMPLETE
+
+These patterns are rare (3 READ cases, few real KILL cases in VistA).
+
+- [X] T6601 [P66a] Add MReadStatement detection to `_check_var_modified_in_scope`
+  - Check if loop variable appears as MReadTarget.variable
+  - ~10 lines of code
+  - Test: `F I=1:1 R I Q:I=0` should set loop_var_modified_in_body=True
+
+- [X] T6602 [P66a] Add MKillStatement detection to `_check_var_modified_in_scope`
+  - Check if loop variable appears in kill targets
+  - Handle both selective kill and K-all patterns
+  - Test: `F D="+"... K D Q` should set loop_var_modified_in_body=True
+
+### Phase 66b: Detect Pass-by-Reference Modifications (Medium Priority) - COMPLETE
+
+This is the most significant gap - 11 real cases in VistA using iterator patterns.
+Requires grammar extension for `.VAR` syntax.
+
+- [X] T6610 [P66b] Add pass-by-reference detection to `analyze_for_loops`
+  - Implementation complete in `for_analysis.py`
+  - Scan FOR body for DO statements with loop var passed by reference
+  - Check MActualParameter.passing_mode == BY_REFERENCE
+  - If loop var is passed by-ref, set loop_var_modified_in_body=True (conservative)
+
+- [X] T6612 [P66b] Add `.VAR` syntax to grammar for by-reference parameters
+  - Modified `FunctionArgs` in `expressions.tx` to support `.VAR` prefix
+  - Created `FunctionArg` rule: `byref=ByRefArg | expr=Expr?`
+  - Created `ByRefArg` rule: `'.' var=LocalVariable`
+  - Parse `D BLANK(.I)` as by-ref, `D BLANK(I)` as by-val
+  - Grammar: `FunctionArgs: '(' args+=FunctionArg[','] ')'`
+
+- [X] T6613 [P66b] Update semantic analyzer to create MActualParameter nodes
+  - Added `_analyze_function_arg()` helper to create MActualParameter
+  - Added `_analyze_function_args()` to process FunctionArgs
+  - Create MActualParameter with PassingMode.BY_REFERENCE for `.VAR`
+  - Create MActualParameter with PassingMode.BY_VALUE for expressions
+  - Create MActualParameter with PassingMode.OMITTED for empty positions
+  - Updated all three DO/JOB command argument processing locations
+
+- [X] T6611 [P66b] Enable and fix pass-by-reference loop var pattern tests
+  - Removed `pytest.skip` from 3 by-ref test cases
+  - Test: `F I=1:1:30 D BLANK(.I)` sets loop_var_modified_in_body=True ✓
+  - Test: `F I=1:1:10 D WORK(.X)` (other var) sets loop_var_modified_in_body=False ✓
+  - Test: `F NEXT=1:1 D PTNEXT(.NEXT) Q:NEXT=0` sets loop_var_modified_in_body=True ✓
+
+- [X] T6614 [P66b] Fix ExtrinsicFunction to preserve by-ref argument info
+  - MUMPS spec 8.1.7: extrinsic functions also support `.actualname` call-by-reference
+  - Added `_unwrap_function_args_with_passing_mode()` helper in textx_classes.py
+  - Updated `ExtrinsicFunction` class to use new helper instead of `_unwrap_function_args()`
+  - `$$CALC(.A,B,.C)` now correctly creates MActualParameter with PassingMode.BY_REFERENCE
+  - Updated variables.py `_extract_expression_variables()` to handle MActualParameter
+  - Exported `PassingMode` enum from `m2py.asg`
+  - Added `test_extrinsic_with_byref_args` unit test in test_semantic_analyzer.py
+
+### Phase 66c: Optional Interprocedural Analysis (Future/Low Priority)
+
+Full analysis of whether callee actually modifies the by-ref parameter.
+Requires computing transitive byref_outputs. Deferred until needed.
+
+- [ ] T6620 [P66c] (Future) Integrate with FunctionSignature.byref_outputs
+  - Only set loop_var_modified if callee's signature shows it modifies the param
+  - Requires variable analysis to be complete before FOR analysis
+  - May require reordering analysis passes

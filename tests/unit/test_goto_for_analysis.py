@@ -636,3 +636,229 @@ class TestForAnalysisNestedScopes:
 
         assert for_stmt is not None
         assert for_stmt.has_internal_quit is True
+
+
+class TestLoopVarModificationEnhanced:
+    """Test enhanced loop variable modification detection (Phase 66).
+
+    Tests for READ, KILL, and pass-by-reference detection.
+    """
+
+    def test_loop_var_modified_by_read(self):
+        """FOR loop with READ into loop var should be detected."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # READ I reads into the loop variable, modifying it
+        source = """TEST
+ F I=1:1 R I Q:I=0
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        assert for_stmt.loop_var_modified_in_body is True
+
+    def test_loop_var_not_modified_by_read_other_var(self):
+        """FOR loop with READ into different var should not set modified."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # READ X reads into X, not the loop variable I
+        source = """TEST
+ F I=1:1:10 R X W I
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        assert for_stmt.loop_var_modified_in_body is False
+
+    def test_loop_var_modified_by_kill(self):
+        """FOR loop with KILL of loop var should be detected."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # KILL D removes the loop variable, modifying it
+        # This is the "K D Q" idiom for early loop exit
+        source = """TEST
+ F D="+" K D Q
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        assert for_stmt.loop_var_modified_in_body is True
+
+    def test_loop_var_modified_by_kill_all(self):
+        """FOR loop with argumentless KILL (kill all) should be detected."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # K with no arguments kills ALL local variables (note: K alone, W separate)
+        source = """TEST ; test
+ F I=1:1:10 K  W I
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        assert for_stmt.loop_var_modified_in_body is True
+
+    def test_loop_var_not_modified_by_kill_other_var(self):
+        """FOR loop with KILL of different var should not set modified."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # KILL X does not affect loop variable I
+        source = """TEST
+ F I=1:1:10 K X W I
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        assert for_stmt.loop_var_modified_in_body is False
+
+    def test_loop_var_modified_by_byref_do(self):
+        """FOR loop with loop var passed by-ref should be detected."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # D BLANK(.I) passes I by reference - callee CAN modify it
+        source = """TEST
+ F I=1:1:30 D BLANK(.I)
+ Q
+BLANK(X) ; X is passed by reference
+ S X=X+1
+ Q
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        # Loop var passed by-ref means it COULD be modified
+        assert for_stmt.loop_var_modified_in_body is True
+
+    def test_loop_var_not_modified_by_byval_do(self):
+        """FOR loop with loop var passed by-value should not set modified."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # D WORK(I) passes I by value - callee cannot modify it
+        source = """TEST
+ F I=1:1:10 D WORK(I)
+ Q
+WORK(X)
+ W X
+ Q
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        assert for_stmt.loop_var_modified_in_body is False
+
+    def test_loop_var_not_modified_by_byref_other_var(self):
+        """FOR loop with different var passed by-ref should not set modified."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # D WORK(.X) passes X by reference, but loop var is I
+        source = """TEST
+ N X S X=0
+ F I=1:1:10 D WORK(.X)
+ Q
+WORK(Y) ; Y is passed by reference
+ S Y=Y+1
+ Q
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        # Loop var I is NOT passed by-ref - only X is
+        assert for_stmt.loop_var_modified_in_body is False
+
+    def test_loop_var_byref_iterator_pattern(self):
+        """Test iterator pattern: D ITER(.NEXT) Q:NEXT=0."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # Classic VistA iterator pattern: pass NEXT by-ref so callee can set exit condition
+        source = """TEST
+ F NEXT=1:1 D PTNEXT(.NEXT) Q:NEXT=0
+ Q
+PTNEXT(N) ; Set N to 0 to signal end
+ S N=$O(^PAT(N))
+ Q
+"""
+        routine = parser.parse(source)
+        analyze_for_loops(routine)
+
+        label = routine.labels[0]
+        for_stmt = None
+        for stmt in label.body.statements:
+            if isinstance(stmt, MForStatement):
+                for_stmt = stmt
+                break
+
+        assert for_stmt is not None
+        # NEXT is passed by-ref - it CAN be modified to signal loop exit
+        assert for_stmt.loop_var_modified_in_body is True

@@ -95,9 +95,87 @@ def _unwrap_subscripts(subscripts):
 def _unwrap_function_args(args):
     """Extract and unwrap function argument expressions.
 
-    FunctionArgs is similar to Subscripts.
+    FunctionArgs contains FunctionArg objects with either:
+    - byref: ByRefArg (for .VAR by-reference syntax) - extract the variable
+    - expr: Expr (for by-value expressions) - unwrap the expression
+
+    For intrinsic functions, we just extract the expressions.
+    The semantic analyzer handles MActualParameter creation for DO/extrinsic calls.
     """
-    return _unwrap_subscripts(args)
+    if args is None:
+        return []
+
+    if not hasattr(args, "args"):
+        return []
+
+    result = []
+    for arg in args.args:
+        # Check for by-reference argument: .VAR
+        if hasattr(arg, "byref") and arg.byref:
+            # Extract the LocalVariable from the ByRefArg
+            result.append(arg.byref.var)
+        # Check for by-value argument: expression
+        elif hasattr(arg, "expr") and arg.expr:
+            result.append(_unwrap_expr(arg.expr))
+        else:
+            # Omitted argument - append None
+            result.append(None)
+
+    return result
+
+
+def _unwrap_function_args_with_passing_mode(args):
+    """Extract function arguments preserving by-reference passing mode.
+
+    Used for extrinsic functions where by-reference semantics are meaningful.
+    Creates MActualParameter objects with proper PassingMode.
+
+    FunctionArgs contains FunctionArg objects with either:
+    - byref: ByRefArg (for .VAR by-reference syntax)
+    - expr: Expr (for by-value expressions)
+    - neither: omitted parameter
+    """
+    from m2py.asg.enums import PassingMode
+    from m2py.asg.expressions import MActualParameter
+
+    if args is None:
+        return []
+
+    if not hasattr(args, "args"):
+        return []
+
+    result = []
+    for arg in args.args:
+        # Check for by-reference argument: .VAR
+        if hasattr(arg, "byref") and arg.byref:
+            var = arg.byref.var
+            result.append(
+                MActualParameter(
+                    passing_mode=PassingMode.BY_REFERENCE,
+                    expression=var,  # The LocalVariable
+                    variable_name=var.name,
+                )
+            )
+        # Check for by-value argument: expression
+        elif hasattr(arg, "expr") and arg.expr:
+            result.append(
+                MActualParameter(
+                    passing_mode=PassingMode.BY_VALUE,
+                    expression=_unwrap_expr(arg.expr),
+                    variable_name=None,
+                )
+            )
+        else:
+            # Omitted argument
+            result.append(
+                MActualParameter(
+                    passing_mode=PassingMode.OMITTED,
+                    expression=None,
+                    variable_name=None,
+                )
+            )
+
+    return result
 
 
 # =============================================================================
@@ -254,6 +332,9 @@ class ExtrinsicFunction(MExtrinsicFunction):
     """textX custom class for ExtrinsicFunction grammar rule.
 
     Grammar: ExtrinsicFunction: '$$' label=VARNAME ('^' routine=VARNAME)? args=FunctionArgs?;
+
+    Extrinsic functions support full parameter passing semantics including
+    by-reference (.VAR syntax), so we preserve MActualParameter info.
     """
 
     def __init__(
@@ -266,7 +347,10 @@ class ExtrinsicFunction(MExtrinsicFunction):
         call.name = label
         call.routine = routine
         object.__setattr__(self, "target", call)
-        object.__setattr__(self, "arguments", _unwrap_function_args(args))
+        # Use the helper that preserves by-ref passing mode
+        object.__setattr__(
+            self, "arguments", _unwrap_function_args_with_passing_mode(args)
+        )
 
         object.__setattr__(self, "result_type", None)
 

@@ -35,6 +35,7 @@ from m2py.asg.expressions import (
     MUnaryOp,
     MFormatControl,
     MPatternMatch,
+    MActualParameter,
 )
 from m2py.asg.statements import (
     MStatement,
@@ -71,6 +72,7 @@ from m2py.asg.enums import (
     ForParamType,
     FormatControlType,
     IndirectionType,
+    PassingMode,
 )
 from m2py.analysis.pattern_compiler import compile_pattern_to_regex, PatternCompileError
 
@@ -209,6 +211,67 @@ class SemanticAnalyzer:
             self._classify_indirection(expr, parent)
 
         return expr
+
+    def _analyze_function_arg(self, arg: Any, parent: Any) -> MActualParameter:
+        """Analyze a FunctionArg into an MActualParameter.
+
+        Handles three cases:
+        1. By-reference: .VAR passes variable by reference
+        2. By-value: Expression is evaluated and passed by value
+        3. Omitted: Empty parameter position (nothing between commas)
+
+        Args:
+            arg: A FunctionArg textX object with byref or expr attributes
+            parent: Parent ASG node for setting parent reference
+
+        Returns:
+            MActualParameter with appropriate passing mode
+        """
+        # Check for by-reference argument: .VAR
+        if hasattr(arg, "byref") and arg.byref:
+            byref = arg.byref
+            var = byref.var
+            # Get variable name and subscripts
+            var_name = var.name
+            # Analyze the variable as an expression to track it
+            var_expr = self.analyze(var, parent)
+            return MActualParameter(
+                passing_mode=PassingMode.BY_REFERENCE,
+                expression=var_expr,
+                variable_name=var_name,
+            )
+
+        # Check for by-value argument: expression
+        if hasattr(arg, "expr") and arg.expr:
+            expr = self.analyze(arg.expr, parent)
+            return MActualParameter(
+                passing_mode=PassingMode.BY_VALUE,
+                expression=expr,
+                variable_name=None,
+            )
+
+        # Omitted argument (empty between commas)
+        return MActualParameter(
+            passing_mode=PassingMode.OMITTED,
+            expression=None,
+            variable_name=None,
+        )
+
+    def _analyze_function_args(
+        self, args_obj: Any, parent: Any
+    ) -> list[MActualParameter]:
+        """Analyze FunctionArgs into a list of MActualParameter nodes.
+
+        Args:
+            args_obj: A FunctionArgs textX object with args list
+            parent: Parent ASG node
+
+        Returns:
+            List of MActualParameter nodes
+        """
+        if not args_obj or not hasattr(args_obj, "args") or not args_obj.args:
+            return []
+        return [self._analyze_function_arg(a, parent) for a in args_obj.args]
 
     def _classify_indirection(self, indirection: MIndirection, parent: Any) -> None:
         """Classify indirection type and attempt static resolution.
@@ -876,10 +939,9 @@ class SemanticAnalyzer:
 
                     # Process arguments if present
                     if hasattr(indirect, "args") and indirect.args:
-                        if hasattr(indirect.args, "args") and indirect.args.args:
-                            call.arguments = [
-                                self.analyze(a, call) for a in indirect.args.args
-                            ]
+                        call.arguments = self._analyze_function_args(
+                            indirect.args, call
+                        )
 
                 elif hasattr(target, "label") and target.label:
                     label_ref = target.label
@@ -904,10 +966,7 @@ class SemanticAnalyzer:
                     self._track_label_call(call.name, call.routine)
 
                 if hasattr(target, "args") and target.args:
-                    if hasattr(target.args, "args") and target.args.args:
-                        call.arguments = [
-                            self.analyze(a, call) for a in target.args.args
-                        ]
+                    call.arguments = self._analyze_function_args(target.args, call)
 
                 stmt.targets.append(call)
 
@@ -1291,10 +1350,7 @@ class SemanticAnalyzer:
                     self._track_label_call(call.name, call.routine)
 
                 if hasattr(target, "args") and target.args:
-                    if hasattr(target.args, "args") and target.args.args:
-                        call.arguments = [
-                            self.analyze(a, call) for a in target.args.args
-                        ]
+                    call.arguments = self._analyze_function_args(target.args, call)
 
                 stmt.call = call
                 break  # Take first target for now

@@ -293,9 +293,27 @@ ExtrinsicFunction:
     '$$' label=VARNAME? ('^' routine=VARNAME)? args=FunctionArgs?
 ;
 
-// Function arguments
+// Function arguments - supports by-reference (.VAR) and by-value (Expr) parameters
+// In MUMPS, .VAR passes a variable by reference, allowing callee to modify it
+// Grammar is ordered so that ByRefArg matches before Expr (which could match .5 as a number)
 FunctionArgs:
-    '(' args+=Expr[','] ')'
+    '(' args+=FunctionArg[','] ')'
+;
+
+// Individual function argument: by-reference or by-value
+// .VARNAME is by-reference (e.g., .X passes X by reference)
+// Expression is by-value (e.g., X+1 passes the evaluated result)
+// The byref= attribute captures by-ref args, expr= captures by-val args
+// Empty args (omitted) have both as None
+FunctionArg:
+    byref=ByRefArg | expr=Expr?
+;
+
+// By-reference argument: . prefix followed by a local variable name
+// Global variables cannot be passed by reference (only local variables)
+// Subscripted variables are allowed: .ARR(1,2) passes the subscripted node by reference
+ByRefArg:
+    '.' var=LocalVariable
 ;
 
 // Special variables: $TEST, $HOROLOG, etc.

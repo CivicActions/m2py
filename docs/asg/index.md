@@ -139,7 +139,7 @@ Operators:
 
 Functions:
 ├── MIntrinsicFunction (name, arguments)
-└── MExtrinsicFunction (target: MCall, arguments)
+└── MExtrinsicFunction (target: MCall, arguments: List[MActualParameter])
 
 Special:
 ├── MPatternMatch   (subject, pattern, operator, compiled_regex)

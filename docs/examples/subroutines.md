@@ -334,10 +334,10 @@ MSetStatement(
         MAssignment(
             target=MVariable(name="Y"),
             value=MExtrinsicFunction(
-                target=MCall(name="DOUBLE", arguments=[
-                    MActualParameter(expression=MLiteral(value=5))
-                ]),
-                arguments=[MLiteral(value=5)]
+                target=MCall(name="DOUBLE"),
+                arguments=[
+                    MActualParameter(expression=MLiteral(value=5), passing_mode=PassingMode.BY_VALUE)
+                ]
             )
         )
     ]
@@ -366,7 +366,10 @@ MExtrinsicFunction(
         routine="MATH",
         call_type=CallType.ROUTINE_CALL
     ),
-    arguments=[MVariable(name="A"), MVariable(name="B")]
+    arguments=[
+        MActualParameter(expression=MVariable(name="A"), passing_mode=PassingMode.BY_VALUE),
+        MActualParameter(expression=MVariable(name="B"), passing_mode=PassingMode.BY_VALUE)
+    ]
 )
 ```
 

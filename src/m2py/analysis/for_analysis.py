@@ -12,8 +12,16 @@ and do not perform any text parsing.
 from typing import Union
 
 from ..asg.elements import MRoutine, MScope
-from ..asg.expressions import MVariable
-from ..asg.statements import MForStatement, MQuitStatement, MSetStatement
+from ..asg.enums import PassingMode
+from ..asg.expressions import MActualParameter, MVariable
+from ..asg.statements import (
+    MDoStatement,
+    MForStatement,
+    MKillStatement,
+    MQuitStatement,
+    MReadStatement,
+    MSetStatement,
+)
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
 
@@ -48,18 +56,31 @@ def _analyze_fors_in_scope(scope: MScope) -> None:
             # Analyze this FOR's body for loop var modification and internal QUIT
             if stmt.body:
                 if stmt.loop_var:
-                    # Extract name for type-safe modification check
+                    # Extract loop variable name for modification checks
                     if isinstance(stmt.loop_var, str):
-                        stmt.loop_var_modified_in_body = _check_var_modified_in_scope(
-                            stmt.loop_var, stmt.body
-                        )
+                        loop_var_name = stmt.loop_var
+                        loop_var_for_check: Union[str, MVariable] = stmt.loop_var
                     elif isinstance(stmt.loop_var, MVariable):
-                        stmt.loop_var_modified_in_body = _check_var_modified_in_scope(
-                            stmt.loop_var, stmt.body
-                        )
+                        loop_var_name = stmt.loop_var.name
+                        loop_var_for_check = stmt.loop_var
                     else:
-                        # MExpr case - assume modified for safety
+                        # MExpr case (e.g., indirection) - assume modified for safety
                         stmt.loop_var_modified_in_body = True
+                        loop_var_name = None
+                        loop_var_for_check = None  # type: ignore[assignment]
+
+                    if loop_var_name and loop_var_for_check is not None:
+                        # Check for SET, READ, KILL modifications
+                        modified_in_body = _check_var_modified_in_scope(
+                            loop_var_for_check, stmt.body
+                        )
+                        # Check for pass-by-reference in DO calls (conservative)
+                        passed_byref = _check_var_passed_byref_in_scope(
+                            loop_var_name, stmt.body
+                        )
+                        stmt.loop_var_modified_in_body = (
+                            modified_in_body or passed_byref
+                        )
                 stmt.has_internal_quit = _check_quit_in_scope(stmt.body)
                 # Recurse into nested structures within FOR body
                 _analyze_fors_in_scope(stmt.body)
@@ -82,12 +103,17 @@ def _check_var_modified_in_scope(
 ) -> bool:
     """Check if a loop variable is modified in a scope.
 
+    Detects modification via:
+    - SET command: S I=value
+    - READ command: R I (reads into variable)
+    - KILL command: K I (removes variable, effectively modifying it)
+
     Args:
         loop_var: The loop variable (string name or MVariable)
         scope: The scope to check
 
     Returns:
-        True if the variable is SET within the scope
+        True if the variable is SET, READ, or KILLED within the scope
     """
     # Extract the variable name for comparison
     if isinstance(loop_var, str):
@@ -99,10 +125,35 @@ def _check_var_modified_in_scope(
         return True
 
     for stmt in scope.statements:
+        # Check SET statements
         if isinstance(stmt, MSetStatement):
-            # Check each assignment target
             for assignment in stmt.assignments:
                 target = assignment.target
+                if isinstance(target, MVariable):
+                    if target.name == var_name:
+                        return True
+                elif isinstance(target, str):
+                    if target == var_name:
+                        return True
+
+        # Check READ statements - reading INTO a variable modifies it
+        elif isinstance(stmt, MReadStatement):
+            from ..asg.statements import MReadTarget
+
+            for arg in stmt.arguments:
+                if isinstance(arg, MReadTarget):
+                    target_var = arg.variable
+                    if isinstance(target_var, MVariable):
+                        if target_var.name == var_name:
+                            return True
+
+        # Check KILL statements - killing a variable modifies it
+        elif isinstance(stmt, MKillStatement):
+            # K (no targets, is_kill_all) - kills ALL local variables
+            if stmt.is_kill_all:
+                return True
+            # Selective kill: check if loop var is in targets
+            for target in stmt.targets:
                 if isinstance(target, MVariable):
                     if target.name == var_name:
                         return True
@@ -124,6 +175,47 @@ def _check_var_modified_in_scope(
             # Note: For nested FOR loops, we still check - the outer loop var
             # might be modified in an inner loop's body
             if _check_var_modified_in_scope(loop_var, body):
+                return True
+
+    return False
+
+
+def _check_var_passed_byref_in_scope(var_name: str, scope: MScope) -> bool:
+    """Check if a variable is passed by reference in a DO call within a scope.
+
+    This is a conservative check - if the loop variable is passed by reference
+    to any subroutine, we assume it may be modified (even though the callee
+    may not actually modify it).
+
+    Args:
+        var_name: The variable name to check
+        scope: The scope to check
+
+    Returns:
+        True if the variable is passed by reference in any DO call
+    """
+    for stmt in scope.statements:
+        # Check DO statements for by-ref parameters
+        if isinstance(stmt, MDoStatement):
+            for call in stmt.targets:
+                for arg in call.arguments:
+                    if isinstance(arg, MActualParameter):
+                        if arg.passing_mode == PassingMode.BY_REFERENCE:
+                            if arg.variable_name == var_name:
+                                return True
+
+        # Recurse into nested scopes
+        then_scope = get_then_scope(stmt)
+        if then_scope is not None:
+            if _check_var_passed_byref_in_scope(var_name, then_scope):
+                return True
+        else_scope = get_else_scope(stmt)
+        if else_scope is not None:
+            if _check_var_passed_byref_in_scope(var_name, else_scope):
+                return True
+        body = get_body_scope(stmt)
+        if body is not None:
+            if _check_var_passed_byref_in_scope(var_name, body):
                 return True
 
     return False
