@@ -12,7 +12,9 @@ from m2py.asg.enums import (
     CallType,
     LiteralType,
     FormatControlType,
+    IndirectionType,
     PassingMode,
+    ScopeStrategy,
 )
 from m2py.asg.statements import (
     MStatement,
@@ -75,7 +77,9 @@ __all__ = [
     "CallType",
     "LiteralType",
     "FormatControlType",
+    "IndirectionType",
     "PassingMode",
+    "ScopeStrategy",
     # Statements
     "MStatement",
     "MAssignment",

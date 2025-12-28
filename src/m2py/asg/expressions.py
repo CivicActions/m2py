@@ -207,11 +207,11 @@ class MIndirection(MExpr):
     indirection_type: IndirectionType = IndirectionType.UNKNOWN
 
     # Direct subscripts for @X(1,2) form
-    subscripts: Optional[list] = None
+    subscripts: Optional[List["MExpr"]] = None
 
     # Name indirection subscripts for @X@(1,2) form
-    # Each entry is a list of subscript expressions
-    name_indirection_subscripts: Optional[list] = None
+    # Each entry is a list of subscript expressions for one @(...) group
+    name_indirection_subscripts: Optional[List[List["MExpr"]]] = None
 
     # Analysis flags for static resolution
     can_resolve_statically: bool = False

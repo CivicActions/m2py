@@ -276,8 +276,8 @@ X?@PAT       ; Pattern indirection
 |-------|------|-------------|
 | `expression` | `MExpr` | Expression to evaluate |
 | `indirection_type` | `IndirectionType` | Classification |
-| `subscripts` | `Optional[List]` | For `@X(1,2)` |
-| `name_indirection_subscripts` | `Optional[List]` | For `@X@(1,2)` |
+| `subscripts` | `Optional[List[MExpr]]` | For `@X(1,2)` |
+| `name_indirection_subscripts` | `Optional[List[List[MExpr]]]` | For `@X@(1,2)` |
 | `can_resolve_statically` | `bool` | True if determinable at compile time |
 | `resolved_value` | `Optional[str]` | If statically resolved |
 

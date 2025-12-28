@@ -66,3 +66,142 @@ class TestMUGJFixtures:
         assert filename.endswith(".m")
         assert isinstance(content, str)
         assert len(content) > 0
+
+
+class TestASGModuleExports:
+    """Test that ASG module exports all expected types."""
+
+    def test_all_enums_exported(self):
+        """Verify all enum types are exported from m2py.asg."""
+        from m2py.asg import (
+            ForLoopType,
+            ForParamType,
+            GotoType,
+            CallType,
+            LiteralType,
+            FormatControlType,
+            IndirectionType,
+            PassingMode,
+            ScopeStrategy,
+        )
+
+        # Verify they are the correct enum types
+        assert hasattr(ForLoopType, "BOUNDED")
+        assert hasattr(ForParamType, "VALUE")
+        assert hasattr(GotoType, "FORWARD_JUMP")
+        assert hasattr(CallType, "LABEL_CALL")
+        assert hasattr(LiteralType, "STRING")
+        assert hasattr(FormatControlType, "NEWLINE")
+        assert hasattr(IndirectionType, "NAME")
+        assert hasattr(PassingMode, "BY_VALUE")
+        assert hasattr(ScopeStrategy, "PURE_FUNCTION")
+
+    def test_indirection_type_accessible(self):
+        """Verify IndirectionType can be imported from m2py.asg (Phase 72 fix)."""
+        from m2py.asg import IndirectionType
+
+        assert IndirectionType.NAME.name == "NAME"
+        assert IndirectionType.SUBSCRIPT.name == "SUBSCRIPT"
+        assert IndirectionType.ARGUMENT.name == "ARGUMENT"
+        assert IndirectionType.PATTERN.name == "PATTERN"
+        assert IndirectionType.UNKNOWN.name == "UNKNOWN"
+
+    def test_scope_strategy_accessible(self):
+        """Verify ScopeStrategy can be imported from m2py.asg (Phase 72 fix)."""
+        from m2py.asg import ScopeStrategy
+
+        assert ScopeStrategy.PURE_FUNCTION.name == "PURE_FUNCTION"
+        assert ScopeStrategy.FUNCTION_WITH_OUTPUTS.name == "FUNCTION_WITH_OUTPUTS"
+        assert ScopeStrategy.SUBROUTINE.name == "SUBROUTINE"
+        assert ScopeStrategy.REQUIRES_RUNTIME.name == "REQUIRES_RUNTIME"
+
+    def test_all_in_dunder_all(self):
+        """Verify __all__ includes all expected exports."""
+        import m2py.asg as asg
+
+        # Check enums are in __all__
+        assert "IndirectionType" in asg.__all__
+        assert "ScopeStrategy" in asg.__all__
+        assert "ForLoopType" in asg.__all__
+        assert "PassingMode" in asg.__all__
+
+
+class TestASGSubComponentTypes:
+    """Test that ASG sub-component types are correctly designed."""
+
+    def test_massignment_not_asg_element(self):
+        """Verify MAssignment is a sub-component, not ASGElement."""
+        from m2py.asg.statements import MAssignment
+        from m2py.asg.elements import ASGElement
+
+        assert not issubclass(MAssignment, ASGElement)
+
+        # Should be a dataclass
+        import dataclasses
+
+        assert dataclasses.is_dataclass(MAssignment)
+
+        # Should not have source tracking fields
+        assignment = MAssignment()
+        assert not hasattr(assignment, "source_file")
+        assert not hasattr(assignment, "line_number")
+
+    def test_mreadtarget_not_asg_element(self):
+        """Verify MReadTarget is a sub-component, not ASGElement."""
+        from m2py.asg.statements import MReadTarget
+        from m2py.asg.elements import ASGElement
+
+        assert not issubclass(MReadTarget, ASGElement)
+
+        # Should be a dataclass
+        import dataclasses
+
+        assert dataclasses.is_dataclass(MReadTarget)
+
+    def test_mforparameter_not_asg_element(self):
+        """Verify MForParameter is a sub-component, not ASGElement."""
+        from m2py.asg.statements import MForParameter
+        from m2py.asg.elements import ASGElement
+
+        assert not issubclass(MForParameter, ASGElement)
+
+        # Should be a dataclass
+        import dataclasses
+
+        assert dataclasses.is_dataclass(MForParameter)
+
+    def test_sub_components_docstrings_mention_design(self):
+        """Verify sub-component docstrings explain the design decision."""
+        from m2py.asg.statements import MAssignment, MReadTarget, MForParameter
+
+        # Each should mention it's a sub-component
+        assert "sub-component" in MAssignment.__doc__
+        assert "sub-component" in MReadTarget.__doc__
+        assert "sub-component" in MForParameter.__doc__
+
+
+class TestMIndirectionTyping:
+    """Test MIndirection field types (Phase 72 fix)."""
+
+    def test_subscripts_type_annotation(self):
+        """Verify MIndirection.subscripts has proper type annotation."""
+        import typing
+        from m2py.asg.expressions import MIndirection
+
+        hints = typing.get_type_hints(MIndirection)
+        # Should be Optional[List[MExpr]] not Optional[list]
+        subscripts_hint = str(hints.get("subscripts", ""))
+        assert "List" in subscripts_hint or "list" in subscripts_hint
+        # The key check is that it's not bare "list" without parameters
+        assert subscripts_hint != "typing.Optional[list]"
+
+    def test_name_indirection_subscripts_type_annotation(self):
+        """Verify MIndirection.name_indirection_subscripts has proper type annotation."""
+        import typing
+        from m2py.asg.expressions import MIndirection
+
+        hints = typing.get_type_hints(MIndirection)
+        name_subs_hint = str(hints.get("name_indirection_subscripts", ""))
+        assert "List" in name_subs_hint or "list" in name_subs_hint
+        # Should not be bare "list"
+        assert name_subs_hint != "typing.Optional[list]"

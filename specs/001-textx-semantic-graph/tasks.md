@@ -5898,3 +5898,76 @@ This phase addresses an encoding inconsistency discovered during a grammar and p
   - Create test that verifies both methods handle Latin-1 files consistently
 
 **Checkpoint**: Phase 71 complete - Parser file encoding is consistent across all file-loading methods
+
+---
+
+## Phase 72: ASG Module Consistency Review
+
+### Findings from Review
+
+This phase addresses consistency, completeness, and clarity issues in the ASG module files discovered during a code review.
+
+#### Finding 1: `IndirectionType` and `ScopeStrategy` Not Exported from `m2py.asg`
+**Files:** [src/m2py/asg/__init__.py](src/m2py/asg/__init__.py), [src/m2py/asg/enums.py](src/m2py/asg/enums.py#L119-L175)  
+**Status:** Fix Needed - Export Inconsistency  
+**Finding:** `IndirectionType` and `ScopeStrategy` enums are defined in `enums.py` but not re-exported from `m2py.asg.__init__.py`. All other enums (`ForLoopType`, `ForParamType`, `GotoType`, `CallType`, `LiteralType`, `FormatControlType`, `PassingMode`) are exported.  
+**Analysis:** Verified with `from m2py.asg import IndirectionType` - fails with `ImportError`. These enums are used internally (`expressions.py` imports `IndirectionType`, `variables.py` imports `ScopeStrategy`) but external code must use `from m2py.asg.enums import ...`. For API consistency, all public enums should be re-exported from the package `__init__.py`.  
+**Solution:** Add `IndirectionType` and `ScopeStrategy` to the imports and `__all__` in `src/m2py/asg/__init__.py`.
+
+#### Finding 2: `MAssignment`, `MReadTarget`, `MForParameter` Are Not ASGElements
+**Files:** [src/m2py/asg/statements.py#L51-L62](src/m2py/asg/statements.py#L51-L62), [#L92-L116](src/m2py/asg/statements.py#L92-L116), [#L181-L195](src/m2py/asg/statements.py#L181-L195)  
+**Status:** Not an Issue - Intentional Design  
+**Finding:** `MAssignment`, `MReadTarget`, and `MForParameter` are plain `@dataclass` types that do not inherit from `ASGElement`, so they lack source tracking (`source_file`, `line_number`, `column`) and parent references.  
+**Analysis:** These types are sub-components of statements, not standalone ASG nodes:
+- `MAssignment` is a target=value pair within `MSetStatement.assignments`
+- `MReadTarget` is a read target within `MReadStatement.arguments`
+- `MForParameter` is a loop parameter within `MForStatement.parameters`
+
+They inherit source position from their containing statement (which has source tracking). Making them `ASGElement` subclasses would add ~40 bytes per instance for unused fields and complicate serialization. The current design is intentional and correct for MUMPS semantics where these are syntactic sub-parts of commands, not addressable entities.  
+**Solution:** No code change needed. Add clarifying docstrings to document this design decision.
+
+#### Finding 3: `MIndirection.subscripts` Uses Untyped `Optional[list]`
+**File:** [src/m2py/asg/expressions.py#L209-L214](src/m2py/asg/expressions.py#L209-L214)  
+**Status:** Fix Needed - Type Annotation Improvement  
+**Finding:** `MIndirection.subscripts` and `name_indirection_subscripts` are typed as `Optional[list]` instead of `Optional[List[MExpr]]` like other subscript fields in the ASG (e.g., `MVariable.subscripts`, `MGlobal.subscripts`).  
+**Analysis:** The textX custom class in `textx_classes.py:Indirection` populates these with properly unwrapped `MExpr` objects via `_unwrap_subscripts()`. The loose typing is inconsistent with the rest of the ASG and hinders static analysis tools. The runtime behavior is correct; only the type annotations need updating.  
+**Solution:** Change type annotations to `Optional[List["MExpr"]]` for consistency and type safety.
+
+#### Finding 4: `has_else_scope`/`get_else_scope` Helpers for Non-Existent Attribute
+**File:** [src/m2py/asg/type_helpers.py#L64-L130](src/m2py/asg/type_helpers.py#L64-L130)  
+**Status:** Not an Issue - Intentional Future-Proofing  
+**Finding:** `has_else_scope()` and `get_else_scope()` helpers are documented as "currently always False/None" because no ASG statement type defines an `else_scope` attribute.  
+**Analysis:** In MUMPS, IF and ELSE are independent commands per spec (MDC 8.2.4): "If the value of $Test is 0, execution continues normally at the next command." ELSE checks `$TEST` rather than being structurally linked to IF. The ASG correctly models this:
+- `MIfStatement` has `then_scope` (commands on same line after IF)
+- `MElseStatement` has `body` (commands on same line after ELSE)
+
+The `else_scope` helpers exist for completeness in code that walks all nested scopes (used in `for_analysis.py`, `goto_analysis.py`, `elements.py`). They ensure if a future ASG type adds `else_scope`, the walking code handles it. This is intentional future-proofing, not dead code.  
+**Solution:** No code change needed. The existing documentation already explains this is for future extensibility.
+
+### Tasks
+
+- [X] **1.1** Add `IndirectionType` and `ScopeStrategy` to exports in `src/m2py/asg/__init__.py`
+  - Add to imports from `m2py.asg.enums`
+  - Add to `__all__` list
+
+- [X] **1.2** Fix type annotations for `MIndirection` subscript fields
+  - File: `src/m2py/asg/expressions.py`
+  - Change `subscripts: Optional[list]` to `subscripts: Optional[List["MExpr"]]`
+  - Change `name_indirection_subscripts: Optional[list]` to `name_indirection_subscripts: Optional[List[List["MExpr"]]]`
+
+- [X] **1.3** Add clarifying docstring to `MAssignment`, `MReadTarget`, `MForParameter`
+  - File: `src/m2py/asg/statements.py`
+  - Document that these are sub-components of statements and inherit source tracking from their containing statement
+
+- [X] **1.4** Update documentation in `docs/asg/`
+  - Updated `enums.md` (already had IndirectionType and ScopeStrategy documented)
+  - Updated `statements.md` to add sub-component notes for MAssignment, MReadTarget, MForParameter
+  - Updated `expressions.md` to fix MIndirection subscripts type documentation
+
+- [X] **1.5** Add tests for Phase 72 changes
+  - File: `tests/unit/test_setup.py`
+  - Added `TestASGModuleExports` class testing all enum exports including IndirectionType and ScopeStrategy
+  - Added `TestASGSubComponentTypes` class verifying MAssignment, MReadTarget, MForParameter design
+  - Added `TestMIndirectionTyping` class verifying proper type annotations
+
+**Checkpoint**: Phase 72 complete - ASG module has consistent exports, typing, and documentation
