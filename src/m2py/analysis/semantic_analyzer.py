@@ -348,13 +348,12 @@ class SemanticAnalyzer:
     def _analyze_Expr(self, expr: Any, parent: Any) -> MExpr:
         """Unwrap Expr and build binary operation tree if needed.
 
-        New grammar: Expr: left=UnaryExpr (tail+=ExprTail)*
+        Grammar structure:
+            Expr: left=UnaryExpr (tail+=ExprTail)*
+
         Where ExprTail is either:
         - PatternMatchTail: op=PatternMatchOp pattern=PatternSpec
         - BinaryOpTail: op=BinaryOp right=UnaryExpr
-
-        Old grammar (still supported for backwards compatibility):
-        Expr: left=UnaryExpr (ops+=BinaryOp right+=UnaryExpr)*
 
         Note: textX's PEG parser can misparse expressions like "1-2-3" when
         operators like +/- can also be unary. The handler compensates by
@@ -363,7 +362,7 @@ class SemanticAnalyzer:
         if hasattr(expr, "left"):
             result = self.analyze(expr.left, parent)
 
-            # NEW GRAMMAR: Handle tail-based structure (ExprTail list)
+            # Handle tail-based structure (ExprTail list)
             if hasattr(expr, "tail") and expr.tail:
                 for tail_item in expr.tail:
                     tail_type = type(tail_item).__name__
@@ -479,22 +478,42 @@ class SemanticAnalyzer:
     # OffsetUnaryExpr has the same structure as UnaryExpr
     _analyze_OffsetUnaryExpr = _analyze_UnaryExpr
 
+    def _analyze_SubscriptedGlobal(self, model: Any, parent: Any) -> MGlobal:
+        """Convert SubscriptedGlobal textX object to MGlobal ASG node.
+
+        SubscriptedGlobal is used in offset expressions (OffsetPrimaryExpr)
+        to distinguish ^NAME(subscripts) from routine names. It has the same
+        structure as GlobalVariable but is a separate grammar rule.
+
+        Grammar: SubscriptedGlobal: '^' name=VARNAME subscripts=Subscripts;
+        """
+        result = MGlobal()
+        object.__setattr__(result, "parent", parent)
+        object.__setattr__(result, "name", model.name)
+
+        # Convert subscripts
+        subscripts = []
+        if hasattr(model, "subscripts") and model.subscripts:
+            if hasattr(model.subscripts, "args"):
+                for sub in model.subscripts.args:
+                    subscripts.append(self.analyze(sub, result))
+        object.__setattr__(result, "subscripts", subscripts)
+
+        self._track_global(model.name, result)
+        return result
+
     def _analyze_generic(self, model: Any, parent: Any) -> Any:
         """Generic handler for unknown textX types.
 
-        Tries common patterns for unwrapping.
+        Tries common patterns for unwrapping textX wrapper nodes.
         """
-        # If it has 'operand', likely a wrapper
+        # If it has 'operand', likely a UnaryExpr wrapper
         if hasattr(model, "operand"):
             return self.analyze(model.operand, parent)
 
-        # If it has 'expr', likely a paren wrapper
+        # If it has 'expr', likely a ParenExpr wrapper
         if hasattr(model, "expr"):
             return self.analyze(model.expr, parent)
-
-        # If it has 'unary_expr', it's the old Expr structure
-        if hasattr(model, "unary_expr"):
-            return self.analyze(model.unary_expr, parent)
 
         # Can't unwrap, return as-is with parent set if possible
         if hasattr(model, "__setattr__"):
@@ -1050,7 +1069,7 @@ class SemanticAnalyzer:
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
 
-        # New grammar structure: args is a list of KillArgument
+        # Grammar: args is a list of KillArgument
         if hasattr(cmd, "args") and cmd.args:
             exclusive_groups = []
             selective_targets = []
@@ -1565,7 +1584,7 @@ def unwrap_expression(textx_expr: Any) -> Any:
     if isinstance(textx_expr, MExpr):
         return textx_expr
 
-    # Expr with left attribute (new grammar)
+    # Expr with left attribute
     if hasattr(textx_expr, "left"):
         # If no binary ops (tail or ops/right), just unwrap the left
         has_tail = hasattr(textx_expr, "tail") and textx_expr.tail

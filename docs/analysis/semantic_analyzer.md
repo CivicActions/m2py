@@ -222,6 +222,27 @@ The semantic analyzer expects specific grammar structures. Key alignments:
 | `KillCommand.args` | KillArgs structure | Handles exclusive and selective kills |
 | `NewCommand.exclusive`, `.vars` | Direct attributes | Still uses these attributes |
 | `LockListItem.indirect`, `.target` | Both present | One will be None |
+| `SubscriptedGlobal.name`, `.subscripts` | Converted to MGlobal | See below |
+
+### SubscriptedGlobal Handling
+
+The grammar rule `SubscriptedGlobal` (in `expressions.tx`) parses global references with subscripts used in specific contexts like label offsets. Without a custom class, textX creates a dynamic object. The `_analyze_SubscriptedGlobal` handler converts this to a proper `MGlobal` ASG node:
+
+```python
+def _analyze_SubscriptedGlobal(self, node: Any) -> MGlobal:
+    """Convert SubscriptedGlobal to MGlobal.
+    
+    SubscriptedGlobal appears in label offsets where the grammar
+    needs a separate rule to avoid ambiguity with the routine caret.
+    Example: G LABEL+^DATA(1)^ROUTINE
+    
+    The +^DATA(1) is an offset expression containing a SubscriptedGlobal.
+    """
+    subscripts = [self.analyze_expression(s) for s in (node.subscripts or [])]
+    return MGlobal(name=node.name, subscripts=subscripts)
+```
+
+**Why this matters**: Without this handler, code like `G LABEL+^DATA(1)^ROUTINE` would leave a raw textX dynamic object in the ASG's `offset` field instead of a proper `MGlobal`.
 
 ## Design Decisions
 

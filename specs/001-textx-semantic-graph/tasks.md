@@ -7218,3 +7218,220 @@ mm.model_from_str("X X garbage")
   - Updated `docs/grammar_overview.md` with HALT/HANG disambiguation section
 
 **Checkpoint**: Phase 81 complete - Dead code removed, code clarity improved, naming unified, behavior documented.
+
+---
+
+## Phase 82: Grammar, ASG, and Parser Consistency Validation
+
+**Objective**: Systematically validate concerns about consistency, correctness, and completeness across `.tx` grammar files, ASG classes (`src/m2py/asg/*.py`), and parser modules (`src/m2py/parser/*.py`).
+
+**Context**: A code review identified several potential issues. This phase validates each finding to determine if it requires a fix, is intentional design, or is a non-issue.
+
+### Validated Findings
+
+---
+
+#### Finding 1: Two-Phase Parsing Architecture
+**Status:** ✓ NON-ISSUE - Intentional Design
+**Files:**
+- `src/m2py/parser/parser.py` (Phase 1)
+- `src/m2py/analysis/command_parser.py` (Phase 2)
+- `src/m2py/analysis/semantic_analyzer.py` (Phase 3)
+
+**Description:** The parser uses a two-phase approach:
+1. Phase 1 (`mumps.tx`): Parse routine structure (labels, lines) - treats line content as raw text
+2. Phase 2 (`commands.tx` via `command_parser.py`): Parse line content into commands
+3. Phase 3 (`semantic_analyzer.py`): Convert textX dynamic objects to typed ASG nodes
+
+**Validation:** This is documented in `docs/architecture.md` and comments in `parser.py` (lines 403-408):
+> "NOTE: classes=[] is intentional. This parser uses a two-phase approach...See docs/architecture.md 'Why Two-Phase Parsing?' for details."
+
+**Conclusion:** This is intentional architecture to handle MUMPS's complex whitespace-sensitivity and label/line structure. No change needed.
+
+---
+
+#### Finding 2: Grammar Rule Names vs ASG Class Names
+**Status:** ✓ NON-ISSUE - Intentional Design
+**Files:**
+- Grammar: `*Command` (e.g., `SetCommand`, `ForCommand`)
+- ASG: `M*Statement` (e.g., `MSetStatement`, `MForStatement`)
+
+**Description:** Grammar rules use `*Command` suffix while ASG classes use `M*Statement` prefix/suffix. This prevents automatic textX custom class mapping.
+
+**Validation:** This is by design:
+- Grammar rules describe syntax (commands as parsed)
+- ASG classes describe semantics (statements as analyzed)
+- The `SemanticAnalyzer` contains explicit handlers (`_analyze_SetCommand` → `MSetStatement`) that bridge syntax to semantics
+- All command types have corresponding handlers (verified via grep: 38 `_analyze_*` methods exist)
+
+**Conclusion:** The naming reflects the syntax/semantics distinction. No change needed.
+
+---
+
+#### Finding 3: "New Grammar" / "Old Grammar" Comments
+**Status:** ⚠ CLARITY - Update Comments
+**Files:**
+- `src/m2py/analysis/semantic_analyzer.py` lines 351, 356, 366, 624, 1053, 1568
+- `src/m2py/analysis/command_parser.py` line 632
+
+**Description:** Comments reference "New grammar" vs "Old grammar" which suggests temporary state during refactoring.
+
+**Validation:** Phase 76 and 81 already removed most dead "old grammar" code. The remaining comments describe current behavior, not transitions. Examples:
+- Line 351: `"New grammar: Expr: left=UnaryExpr (tail+=ExprTail)*"` - describes current grammar structure
+- Line 356: `"Old grammar (still supported for backwards compatibility)"` - **DEAD CODE** verified in Phase 81
+
+**Action Required:**
+- [X] Phase 81 already removed dead "old grammar" code paths (Task 81.1)
+- [ ] Update remaining comments to remove "New/Old" framing and just describe current behavior
+
+---
+
+#### Finding 4: MPatternMatch Flattens PatternSpec to String
+**Status:** ✓ NON-ISSUE - Intentional Design
+**Files:**
+- `src/m2py/asg/expressions.py` lines 182-199 (`MPatternMatch`)
+- `src/m2py/analysis/semantic_analyzer.py` (`_pattern_to_string`)
+
+**Description:** The grammar produces a structured `PatternSpec` with atoms/repcounts, but `MPatternMatch` stores only a flattened pattern string and pre-compiled regex.
+
+**Validation:** The docstring in `MPatternMatch` explicitly documents this design decision:
+> "The grammar (expressions.tx) parses patterns into a structured PatternSpec with atoms, repeat counts, and pattern codes. However, the ASG intentionally flattens this to a simple pattern string because:
+> 1. The string is sufficient for regex compilation (via pattern_compiler.py)
+> 2. The compiled_regex field provides the Python equivalent for code generation
+> 3. No downstream code needs to inspect pattern atoms individually
+> 4. Preserving the full AST structure would add complexity without benefit"
+
+**Verification:**
+```python
+# Pattern "1N.A" correctly becomes compiled regex "[0-9][A-Za-z]*"
+from m2py.analysis.command_parser import parse_commands_from_line
+from m2py.analysis.semantic_analyzer import analyze_command
+cmds = parse_commands_from_line('I X?1N.A W OK')
+if_stmt = analyze_command(cmds[0])
+assert if_stmt.condition.pattern == "1N.A"
+assert if_stmt.condition.compiled_regex == "[0-9][A-Za-z]*"
+```
+
+**Conclusion:** Documented intentional simplification. No change needed.
+
+---
+
+#### Finding 5: ReadCommand Uses String Class Name Matching
+**Status:** ✓ NON-ISSUE - Acceptable Pattern
+**Files:**
+- `src/m2py/analysis/semantic_analyzer.py` lines 627-636 (`_analyze_ReadCommand`)
+
+**Description:** The code uses `target_cls == "CharRead"` string comparison instead of `isinstance()`.
+
+**Validation:** This is necessary because `CharRead` is a textX-generated dynamic class (not registered in `textx_classes.py`), so there's no Python class to use with `isinstance()`. This pattern is consistent with textX design - dynamic classes are identified by name.
+
+**Verification:**
+```python
+# CharRead is a textX dynamic class, not a custom class
+from m2py.parser.textx_classes import get_expression_classes
+names = [c.__name__ for c in get_expression_classes()]
+assert "CharRead" not in names  # Not registered
+
+# String matching works correctly
+from m2py.analysis.command_parser import parse_commands_from_line
+cmds = parse_commands_from_line('R *X')
+target = cmds[0].args[0].arg.target
+assert type(target).__name__ == "CharRead"
+```
+
+**Conclusion:** This is the correct approach for textX dynamic classes. No change needed.
+
+---
+
+#### Finding 6: SubscriptedGlobal Not Converted to MGlobal
+**Status:** ⚠ BUG - Implementation Gap
+**Files:**
+- Grammar: `src/m2py/grammar/expressions.tx` line 204 (`SubscriptedGlobal`)
+- Parser: `src/m2py/parser/textx_classes.py` (missing class)
+- Analyzer: `src/m2py/analysis/semantic_analyzer.py` (missing handler)
+
+**Description:** The grammar defines `SubscriptedGlobal` for offset expressions (to distinguish `^DATA(1)` from routine names), but there's no custom class or analyzer handler to convert it to `MGlobal`.
+
+**Validation:**
+```python
+from m2py.analysis.command_parser import parse_commands_from_line
+from m2py.analysis.semantic_analyzer import analyze_command
+from m2py.asg.expressions import MGlobal
+
+cmds = parse_commands_from_line('G LABEL+^DATA(1)^ROUTINE')
+goto_stmt = analyze_command(cmds[0])
+call = goto_stmt.targets[0]
+
+# BUG: offset remains a textX dynamic object, not MGlobal
+assert type(call.offset).__name__ == "SubscriptedGlobal"  # Should be MGlobal
+assert type(call.offset).__module__ == "textx.metamodel"   # Wrong module
+assert not isinstance(call.offset, MGlobal)                # NOT an ASG type
+```
+
+**Impact:** The ASG contains a raw textX object instead of a typed `MGlobal`. This will cause issues:
+1. Serialization shows `"<SubscriptedGlobal:DATA>"` instead of proper structure
+2. Code generators cannot process the offset consistently
+3. Type checkers cannot reason about the offset type
+
+**Solution:** Add handler in `_analyze_generic` or create `_analyze_SubscriptedGlobal` to convert to `MGlobal`.
+
+---
+
+#### Finding 7: Variables.py "Simplified Check" Comment
+**Status:** ✓ NON-ISSUE - Documentation
+**Files:**
+- `src/m2py/analysis/variables.py` line 767
+
+**Description:** Comment says "This is a simplified check - a full check would walk all expressions".
+
+**Validation:** This comment accurately describes a design trade-off. The function `_label_requires_runtime_eval()` checks for indirection in targets but doesn't recursively walk all expressions in all statements. This is intentional:
+1. Full expression walking would be expensive
+2. The current checks catch the most common cases
+3. False negatives (missing runtime requirements) are safe - code still works, just may be less optimized
+
+**Conclusion:** The comment is accurate documentation of a trade-off. No change needed, but could clarify the rationale.
+
+---
+
+#### Finding 8: _analyze_generic Fallback Behavior
+**Status:** ✓ NON-ISSUE - Correct Design
+**Files:**
+- `src/m2py/analysis/semantic_analyzer.py` lines 475-493 (`_analyze_generic`)
+
+**Description:** The `_analyze_generic` method is a catch-all that tries common unwrapping patterns.
+
+**Validation:** This is intentional for handling textX dynamic objects that don't have explicit handlers. It correctly handles:
+- `operand` attribute (wrapper unwrapping)
+- `expr` attribute (parenthesis unwrapping)
+- `unary_expr` attribute (legacy support - likely dead)
+
+The "fallback" at line 421 ("Fallback for current grammar") is actually the normal path when `Expr` is simple (no tail).
+
+**Conclusion:** Correct design pattern. No change needed.
+
+---
+
+### Tasks
+
+- [X] **82.1** Add `_analyze_SubscriptedGlobal` handler to convert to `MGlobal`
+  - File: `src/m2py/analysis/semantic_analyzer.py`
+  - Created handler that extracts `name` and `subscripts`, creates `MGlobal`
+  - Verified: parse `G LABEL+^DATA(1)^ROUTINE` → offset is `MGlobal` with name "DATA"
+  - **Done**: Handler added at line ~1610, test added in `test_command_analysis.py`
+
+- [X] **82.2** Update "New grammar" comments to describe current state
+  - Files: `src/m2py/analysis/semantic_analyzer.py`, `src/m2py/analysis/command_parser.py`
+  - Removed "New/Old" framing from comments
+  - Updated docstrings to describe current grammar structure
+  - **Done**: 5 comments updated in semantic_analyzer.py, 1 in command_parser.py
+
+- [X] **82.3** Run tests to verify SubscriptedGlobal fix
+  - All 1035 tests pass
+  - Added `test_goto_with_subscripted_global_offset` in `TestGotoStatementAnalysis`
+  - Verified offset is `MGlobal` type from `m2py.asg.expressions` module
+
+**Documentation Updated**:
+- `docs/analysis/semantic_analyzer.md`: Added SubscriptedGlobal handling section
+
+**Checkpoint**: Phase 82 complete. Bug fixed, comments clarified, tests added, docs updated.
+

@@ -629,7 +629,7 @@ def parse_if_command(if_text: str) -> Optional[MIfStatement]:
 
     statement = MIfStatement()
 
-    # Handle new grammar: conditions is a list
+    # Grammar: conditions is a comma-separated list (acts as AND)
     if hasattr(model, "conditions") and model.conditions:
         statement.conditions = [
             _expr_to_asg_literal(_expr_to_string(c)) for c in model.conditions

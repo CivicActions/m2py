@@ -374,6 +374,19 @@ class TestGotoStatementAnalysis:
         assert stmt.targets[0].name == "LABEL"
         assert stmt.targets[0].routine == "ROUTINE"
 
+    def test_goto_with_subscripted_global_offset(self):
+        """G LABEL+^DATA(1)^ROUTINE - offset with SubscriptedGlobal becomes MGlobal."""
+        stmt = analyze_first_command("G LABEL+^DATA(1)^ROUTINE")
+
+        assert isinstance(stmt, MGotoStatement)
+        target = stmt.targets[0]
+        assert target.name == "LABEL"
+        assert target.routine == "ROUTINE"
+        # The offset is an MGlobal (converted from SubscriptedGlobal)
+        assert isinstance(target.offset, MGlobal)
+        assert target.offset.name == "DATA"
+        assert len(target.offset.subscripts) == 1
+
 
 class TestDoStatementAnalysis:
     """Tests for DO command analysis."""
