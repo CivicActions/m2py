@@ -8,8 +8,16 @@ from pathlib import Path
 
 from m2py.parser import MUMPSParser
 from m2py.asg import MRoutine
-from m2py.analysis import extract_for_from_line_textx as extract_for_from_line
 from m2py.asg.enums import ForLoopType
+
+# Test helpers for command extraction
+from tests.helpers.extraction_helpers import (
+    get_for_info,
+    get_goto_info,
+    get_do_info,
+    has_for_command,
+    has_goto_command,
+)
 
 
 class TestV1FORARoutine:
@@ -85,9 +93,9 @@ class TestV1FORA1ForClassification:
         string_list_count = 0
 
         for line in lines:
-            result = extract_for_from_line(line)
+            result = get_for_info(line)
             if result:
-                loop_type, var, rest = result
+                loop_type, var = result
                 if loop_type == ForLoopType.BOUNDED:
                     bounded_count += 1
                 elif loop_type == ForLoopType.OPEN_ENDED:
@@ -146,9 +154,9 @@ class TestV1FORBForPatterns:
         string_list_count = 0
 
         for line in lines:
-            result = extract_for_from_line(line)
+            result = get_for_info(line)
             if result:
-                loop_type, var, rest = result
+                loop_type, var = result
                 if loop_type == ForLoopType.STRING_LIST:
                     string_list_count += 1
 
@@ -162,9 +170,9 @@ class TestV1FORBForPatterns:
         mixed_count = 0
 
         for line in lines:
-            result = extract_for_from_line(line)
+            result = get_for_info(line)
             if result:
-                loop_type, var, rest = result
+                loop_type, var = result
                 if loop_type == ForLoopType.MIXED:
                     mixed_count += 1
 
@@ -178,9 +186,9 @@ class TestV1FORBForPatterns:
         open_ended_count = 0
 
         for line in lines:
-            result = extract_for_from_line(line)
+            result = get_for_info(line)
             if result:
-                loop_type, var, rest = result
+                loop_type, var = result
                 if loop_type == ForLoopType.OPEN_ENDED:
                     open_ended_count += 1
 
@@ -228,9 +236,9 @@ class TestV1FORCSeriesForPatterns:
         bounded_count = 0
 
         for line in lines:
-            result = extract_for_from_line(line)
+            result = get_for_info(line)
             if result:
-                loop_type, var, rest = result
+                loop_type, var = result
                 if loop_type == ForLoopType.BOUNDED:
                     bounded_count += 1
 
@@ -264,9 +272,9 @@ class TestV1FORCSeriesForPatterns:
 
         classified_count = 0
         for line in lines:
-            result = extract_for_from_line(line)
+            result = get_for_info(line)
             if result:
-                loop_type, var, rest = result
+                loop_type, var = result
                 # Verify we get a valid classification
                 assert loop_type in ForLoopType, f"Invalid loop type for line: {line}"
                 classified_count += 1
@@ -282,9 +290,9 @@ class TestV1FORCSeriesForPatterns:
         for filename in files:
             source = mugj_file(filename)
             for line in source.split("\n"):
-                result = extract_for_from_line(line)
+                result = get_for_info(line)
                 if result:
-                    loop_type, var, rest = result
+                    loop_type, var = result
                     types_found.add(loop_type)
 
         # Should find at least BOUNDED and STRING_LIST
@@ -361,14 +369,12 @@ class TestV1GO1GotoClassification:
 
     def test_v1go1_has_goto_commands(self, mugj_file):
         """V1GO1.m should contain GOTO commands."""
-        from m2py.analysis import extract_goto_from_line_textx as extract_goto_from_line
-
         source = mugj_file("V1GO1.m")
         lines = source.split("\n")
 
         goto_count = 0
         for line in lines:
-            result = extract_goto_from_line(line)
+            result = get_goto_info(line)
             if result:
                 goto_count += 1
 
@@ -377,17 +383,15 @@ class TestV1GO1GotoClassification:
 
     def test_v1go1_goto_to_percent_label(self, mugj_file):
         """V1GO1.m includes GOTOs to %labels."""
-        from m2py.analysis import extract_goto_from_line_textx as extract_goto_from_line
-
         source = mugj_file("V1GO1.m")
         lines = source.split("\n")
 
         percent_gotos = []
         for line in lines:
-            result = extract_goto_from_line(line)
+            result = get_goto_info(line)
             if result:
                 name, routine, offset = result
-                if name.startswith("%"):
+                if name and name.startswith("%"):
                     percent_gotos.append(name)
 
         # V1GO1 has GOTOs to % labels
@@ -407,14 +411,12 @@ class TestV1GO2OffsetGotos:
 
     def test_v1go2_has_offset_gotos(self, mugj_file):
         """V1GO2.m should contain GOTO with label+offset."""
-        from m2py.analysis import extract_goto_from_line_textx as extract_goto_from_line
-
         source = mugj_file("V1GO2.m")
         lines = source.split("\n")
 
         offset_gotos = []
         for line in lines:
-            result = extract_goto_from_line(line)
+            result = get_goto_info(line)
             if result:
                 name, routine, offset = result
                 if offset is not None:
@@ -445,14 +447,12 @@ class TestV1FORC2NestedForGoto:
 
     def test_v1forc2_has_goto_commands(self, mugj_file):
         """V1FORC2.m should contain GOTO commands inside FORs."""
-        from m2py.analysis import extract_goto_from_line_textx as extract_goto_from_line
-
         source = mugj_file("V1FORC2.m")
         lines = source.split("\n")
 
         goto_count = 0
         for line in lines:
-            result = extract_goto_from_line(line)
+            result = get_goto_info(line)
             if result:
                 goto_count += 1
 
@@ -461,20 +461,13 @@ class TestV1FORC2NestedForGoto:
 
     def test_v1forc2_for_with_goto_in_body(self, mugj_file):
         """V1FORC2.m tests FOR loops containing GOTOs."""
-        from m2py.analysis import (
-            extract_goto_from_line_textx as extract_goto_from_line,
-            extract_for_from_line_textx as extract_for_from_line,
-        )
-
         source = mugj_file("V1FORC2.m")
         lines = source.split("\n")
 
         # Find lines with both FOR and GOTO
         for_and_goto_lines = []
         for line in lines:
-            has_for = extract_for_from_line(line) is not None
-            has_goto = extract_goto_from_line(line) is not None
-            if has_for and has_goto:
+            if has_for_command(line) and has_goto_command(line):
                 for_and_goto_lines.append(line.strip())
 
         # V1FORC2 specifically tests FOR...GOTO patterns
@@ -501,14 +494,12 @@ class TestV1DO1DoCommands:
 
     def test_v1do1_has_do_commands(self, mugj_file):
         """V1DO1.m should contain DO commands."""
-        from m2py.analysis import extract_do_from_line_textx as extract_do_from_line
-
         source = mugj_file("V1DO1.m")
         lines = source.split("\n")
 
         do_count = 0
         for line in lines:
-            result = extract_do_from_line(line)
+            result = get_do_info(line)
             if result:
                 do_count += 1
 
@@ -517,23 +508,21 @@ class TestV1DO1DoCommands:
 
     def test_v1do1_do_to_percent_label(self, mugj_file):
         """V1DO1.m includes DOs to %labels."""
-        from m2py.analysis import (
-            extract_do_from_line_textx as extract_do_from_line,
-            parse_do_statement,
-        )
+        from m2py.analysis import analyze_statement
 
         source = mugj_file("V1DO1.m")
         lines = source.split("\n")
 
         percent_dos = []
         for line in lines:
-            result = extract_do_from_line(line)
+            result = get_do_info(line)
             if result:
                 content, _ = result
-                stmt = parse_do_statement(content)
-                for target in stmt.targets:
-                    if target.name.startswith("%"):
-                        percent_dos.append(target.name)
+                if content:
+                    stmt = analyze_statement("D", content)
+                    for target in stmt.targets:
+                        if target.name.startswith("%"):
+                            percent_dos.append(target.name)
 
         # V1DO1 has DOs to % labels
         assert len(percent_dos) > 0, "V1DO1 should have DO to % labels"
@@ -561,14 +550,12 @@ class TestV1DO2DoPatterns:
 
     def test_v1do2_has_do_commands(self, mugj_file):
         """V1DO2.m should contain DO commands."""
-        from m2py.analysis import extract_do_from_line_textx as extract_do_from_line
-
         source = mugj_file("V1DO2.m")
         lines = source.split("\n")
 
         do_count = 0
         for line in lines:
-            result = extract_do_from_line(line)
+            result = get_do_info(line)
             if result:
                 do_count += 1
 
@@ -811,10 +798,8 @@ class TestPhase9gTextXSemanticIntegration:
         - param.step: MLiteral with value=1
         - param.end: MLiteral with value=9
         """
-        from m2py.analysis.command_parser import (
-            parse_for_command_to_asg,
-            extract_for_commands,
-        )
+        from m2py.parser.line_parser import extract_for_commands
+        from m2py.analysis import analyze_command
         from m2py.asg import MLiteral
 
         source = (mugj_inref_dir / "V1FORA1.m").read_text()
@@ -824,7 +809,7 @@ class TestPhase9gTextXSemanticIntegration:
             if "F I=1:1:9" in line:
                 cmds = extract_for_commands(line)
                 if cmds:
-                    stmt = parse_for_command_to_asg(cmds[0])
+                    stmt = analyze_command(cmds[0])
 
                     # Should have at least one parameter
                     assert len(stmt.parameters) >= 1
@@ -860,7 +845,8 @@ class TestPhase9gTextXSemanticIntegration:
 
         Tests that parsing GOTO commands doesn't produce corrupted strings.
         """
-        from m2py.analysis.command_parser import parse_goto_statement
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis import analyze_command
         import re
 
         source = (mugj_inref_dir / "V1GO1.m").read_text()
@@ -874,7 +860,8 @@ class TestPhase9gTextXSemanticIntegration:
             match = goto_pattern.search(line)
             if match:
                 goto_content = match.group(1)
-                stmt = parse_goto_statement(goto_content)
+                cmds = parse_commands_from_line(f"G {goto_content}")
+                stmt = analyze_command(cmds[0]) if cmds else None
                 if stmt:
                     goto_count += 1
                     # Verify targets don't contain textX object references
@@ -896,10 +883,12 @@ class TestPhase9gTextXSemanticIntegration:
 
         All MForParameter fields (start, step, end, value) should be MLiteral.
         """
-        from m2py.analysis.command_parser import parse_for_statement
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis import analyze_command
         from m2py.asg import MLiteral
 
-        stmt = parse_for_statement("I=1:1:10")
+        cmds = parse_commands_from_line("F I=1:1:10")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
 
         param = stmt.parameters[0]
@@ -923,48 +912,56 @@ class TestPhase9gTextXSemanticIntegration:
     def test_binary_operation_chain_in_for_expr(self):
         """T310: Binary operation chain should produce correct structure.
 
-        Parsing 'F I=A+1:B*2:C' should produce MLiteral with expression strings.
+        Parsing 'F I=A+1:B*2:C' should produce proper expression ASG nodes.
+        With full-fidelity ASG, expressions become MBinaryOp, LocalVariable, etc.
         """
-        from m2py.analysis.command_parser import parse_for_statement
-        from m2py.asg import MLiteral
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis import analyze_command
+        from m2py.asg import MBinaryOp
+        from m2py.parser.textx_classes import LocalVariable
 
-        stmt = parse_for_statement("I=A+1:B*2:C")
+        cmds = parse_commands_from_line("F I=A+1:B*2:C")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
 
         param = stmt.parameters[0]
 
-        # All fields should be MLiteral objects
-        assert isinstance(param.start, MLiteral), (
-            f"start should be MLiteral, got {type(param.start)}"
+        # Full-fidelity ASG returns proper expression types
+        assert isinstance(param.start, MBinaryOp), (
+            f"start should be MBinaryOp, got {type(param.start)}"
         )
-        assert isinstance(param.step, MLiteral), (
-            f"step should be MLiteral, got {type(param.step)}"
+        assert isinstance(param.step, MBinaryOp), (
+            f"step should be MBinaryOp, got {type(param.step)}"
         )
-        assert isinstance(param.end, MLiteral), (
-            f"end should be MLiteral, got {type(param.end)}"
+        assert isinstance(param.end, LocalVariable), (
+            f"end should be LocalVariable, got {type(param.end)}"
         )
 
-        # Complex expressions are stored as strings in MLiteral.value
-        assert param.start.value is not None
-        assert param.step.value is not None
-        assert param.end.value is not None
+        # With full-fidelity ASG, expressions have proper structure
+        # MBinaryOp has operator, left, right - not value
+        assert param.start.operator == "+"
+        assert param.step.operator == "*"
+        assert param.end.name == "C"
 
     def test_nested_function_call_parsing(self):
         """T311: Nested function call should parse correctly.
 
         Parsing FOR with nested $PIECE or $GET calls should work.
+        Full-fidelity ASG returns proper IntrinsicFunction nodes.
         """
-        from m2py.analysis.command_parser import parse_for_statement
-        from m2py.asg import MLiteral
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis import analyze_command
+        from m2py.parser.textx_classes import NumericLiteral, IntrinsicFunction
 
         # Simple case first - just verify it doesn't crash or corrupt
-        stmt = parse_for_statement("I=1:1:$L(X)")
+        cmds = parse_commands_from_line("F I=1:1:$L(X)")
+        stmt = analyze_command(cmds[0]) if cmds else None
 
         if stmt:  # May not be fully supported yet
             param = stmt.parameters[0]
-            # Fields should be MLiteral objects
-            assert isinstance(param.start, MLiteral)
-            assert isinstance(param.end, MLiteral)
+            # start/step are NumericLiteral, end is IntrinsicFunction
+            assert isinstance(param.start, NumericLiteral)
+            assert isinstance(param.end, IntrinsicFunction)
 
     def test_expression_parent_relationships(self):
         """T308: Expression parent relationships should be set correctly.
@@ -972,16 +969,14 @@ class TestPhase9gTextXSemanticIntegration:
         When parsing FOR parameters, the parent-child relationships
         should be maintained in the ASG.
         """
-        from m2py.analysis.command_parser import (
-            parse_for_command_to_asg,
-            extract_for_commands,
-        )
+        from m2py.parser.line_parser import extract_for_commands
+        from m2py.analysis import analyze_command
         from m2py.asg import MLiteral, MVariable
 
         cmds = extract_for_commands("F I=1:2:10 S X=I")
         assert cmds, "Should extract FOR command"
 
-        stmt = parse_for_command_to_asg(cmds[0])
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         # loop_var is now always an ASG node (MVariable or MGlobal)
         assert isinstance(stmt.loop_var, MVariable)
@@ -1011,15 +1006,16 @@ class TestPhase9gTextXSemanticIntegration:
         This is a basic smoke test, not a rigorous benchmark.
         """
         import time
-        from m2py.analysis.command_parser import parse_for_statement
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis import analyze_command
 
         # Parse many FOR commands
         test_cases = [
-            "I=1:1:10",
-            "J=0:0.1:100",
-            "K=A+B:C*2:D-1",
-            "X=1,2,3,4,5",
-            "Y=1:1",
+            "F I=1:1:10",
+            "F J=0:0.1:100",
+            "F K=A+B:C*2:D-1",
+            "F X=1,2,3,4,5",
+            "F Y=1:1",
         ]
 
         start = time.time()
@@ -1027,7 +1023,9 @@ class TestPhase9gTextXSemanticIntegration:
 
         for _ in range(iterations):
             for case in test_cases:
-                parse_for_statement(case)
+                cmds = parse_commands_from_line(case)
+                if cmds:
+                    analyze_command(cmds[0])
 
         elapsed = time.time() - start
         ops_per_second = (iterations * len(test_cases)) / elapsed

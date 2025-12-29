@@ -1,6 +1,6 @@
 """Check KillCommand grammar structure."""
 
-from m2py.analysis.command_parser import parse_line_content
+from m2py.parser.line_parser import parse_line_content
 
 # Test various KILL patterns
 tests = ["K", "K X", "K (X,Y)", "K X,Y"]

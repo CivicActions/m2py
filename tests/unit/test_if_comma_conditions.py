@@ -8,7 +8,7 @@ Reference: https://71.174.62.16/Demo/AnnoStd (MDC 8.1.35 IF Command)
 with one argument, with the respective arguments in the same order."
 """
 
-from m2py.analysis.command_parser import parse_commands_from_line
+from m2py.parser.line_parser import parse_commands_from_line
 from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 from m2py.asg.statements import MIfStatement
 

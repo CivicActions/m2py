@@ -2,7 +2,7 @@
 """Test name indirection support in DO/GOTO commands."""
 
 import sys
-from m2py.analysis.command_parser import parse_commands_from_line
+from m2py.parser.line_parser import parse_commands_from_line
 
 
 def test_do_with_name_indirection():

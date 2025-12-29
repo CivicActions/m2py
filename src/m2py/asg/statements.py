@@ -382,22 +382,6 @@ class MMergeStatement(MStatement):
 
     merges: List[MMergePair] = field(default_factory=list)
 
-    @property
-    def destination(self) -> Any:
-        """Backward-compatible access to first merge destination.
-
-        Returns first merge pair's destination or None if empty.
-        """
-        return self.merges[0].destination if self.merges else None
-
-    @property
-    def source(self) -> Any:
-        """Backward-compatible access to first merge source.
-
-        Returns first merge pair's source or None if empty.
-        """
-        return self.merges[0].source if self.merges else None
-
 
 # =============================================================================
 # Other Statements
@@ -515,21 +499,6 @@ class MOpenStatement(MStatement):
 
     devices: List[MOpenDevice] = field(default_factory=list)
 
-    @property
-    def device_expr(self) -> Optional["MExpr"]:
-        """Backward-compatible access to first device expression."""
-        return self.devices[0].device_expr if self.devices else None
-
-    @property
-    def parameters(self) -> List["MExpr"]:
-        """Backward-compatible access to first device parameters."""
-        return self.devices[0].parameters if self.devices else []
-
-    @property
-    def timeout(self) -> Optional["MExpr"]:
-        """Backward-compatible access to first device timeout."""
-        return self.devices[0].timeout if self.devices else None
-
 
 @dataclass
 class MCloseDevice:
@@ -557,16 +526,6 @@ class MCloseStatement(MStatement):
     """
 
     devices: List[MCloseDevice] = field(default_factory=list)
-
-    @property
-    def device_expr(self) -> Optional["MExpr"]:
-        """Backward-compatible access to first device expression."""
-        return self.devices[0].device_expr if self.devices else None
-
-    @property
-    def parameters(self) -> List["MExpr"]:
-        """Backward-compatible access to first device parameters."""
-        return self.devices[0].parameters if self.devices else []
 
 
 @dataclass
@@ -596,16 +555,6 @@ class MUseStatement(MStatement):
 
     devices: List[MUseDevice] = field(default_factory=list)
 
-    @property
-    def device_expr(self) -> Optional["MExpr"]:
-        """Backward-compatible access to first device expression."""
-        return self.devices[0].device_expr if self.devices else None
-
-    @property
-    def parameters(self) -> List["MExpr"]:
-        """Backward-compatible access to first device parameters."""
-        return self.devices[0].parameters if self.devices else []
-
 
 @dataclass
 class MJobStatement(MStatement):
@@ -624,16 +573,3 @@ class MJobStatement(MStatement):
     targets: List["MCall"] = field(default_factory=list)
     parameters: List["MExpr"] = field(default_factory=list)
     timeout: Optional["MExpr"] = None
-
-    @property
-    def calls(self) -> List["MCall"]:
-        """Backward-compatible alias for targets.
-
-        Deprecated: Use `targets` instead for consistency with MDoStatement.
-        """
-        return self.targets
-
-    @property
-    def call(self) -> Optional["MCall"]:
-        """Backward-compatible access to first call target."""
-        return self.targets[0] if self.targets else None

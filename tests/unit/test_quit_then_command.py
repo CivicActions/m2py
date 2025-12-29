@@ -11,7 +11,7 @@ Reference: MUMPS uses context-sensitive parsing where command keywords
 after QUIT are recognized as new commands, not as return values.
 """
 
-from m2py.analysis.command_parser import parse_commands_from_line
+from m2py.parser.line_parser import parse_commands_from_line
 from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 from m2py.asg.statements import MSetStatement, MQuitStatement
 

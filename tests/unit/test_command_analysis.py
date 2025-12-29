@@ -8,7 +8,7 @@ Tests are organized by command type (SET, WRITE, FOR, GOTO, etc.).
 For expression analysis, see test_semantic_analyzer.py.
 """
 
-from m2py.analysis.command_parser import parse_commands_from_line
+from m2py.parser.line_parser import parse_commands_from_line
 from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.asg.statements import (
     MSetStatement,

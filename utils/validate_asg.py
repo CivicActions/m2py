@@ -145,21 +145,31 @@ def display_asg(routine: Any) -> None:
                 if hasattr(stmt, "arguments") and stmt.arguments:
                     print(f"      arguments: {len(stmt.arguments)} item(s)")
 
-                if hasattr(stmt, "device_expr") and stmt.device_expr:
+                if hasattr(stmt, "devices") and stmt.devices:
                     print(
-                        f"      device_expr: {format_asg_node(stmt.device_expr, 3, max_depth=2)}"
+                        f"      device_expr: {format_asg_node(stmt.devices[0].device_expr, 3, max_depth=2)}"
                     )
 
-                if hasattr(stmt, "timeout") and stmt.timeout:
+                if (
+                    hasattr(stmt, "devices")
+                    and stmt.devices
+                    and stmt.devices[0].timeout
+                ):
                     print(
-                        f"      timeout: {format_asg_node(stmt.timeout, 3, max_depth=2)}"
+                        f"      timeout: {format_asg_node(stmt.devices[0].timeout, 3, max_depth=2)}"
                     )
 
                 if hasattr(stmt, "loop_var") and stmt.loop_var:
                     print(f"      loop_var: {stmt.loop_var}")
 
-                if hasattr(stmt, "parameters") and stmt.parameters:
-                    print(f"      parameters: {len(stmt.parameters)} item(s)")
+                if (
+                    hasattr(stmt, "devices")
+                    and stmt.devices
+                    and stmt.devices[0].parameters
+                ):
+                    print(
+                        f"      parameters: {len(stmt.devices[0].parameters)} item(s)"
+                    )
 
                 if hasattr(stmt, "body") and stmt.body:
                     if hasattr(stmt.body, "statements"):
@@ -379,16 +389,16 @@ def format_compact_stmt(stmt: Any) -> str:
     if hasattr(stmt, "loop_var") and stmt.loop_var:
         parts.append(f"loop={stmt.loop_var}")
 
-    if hasattr(stmt, "parameters") and stmt.parameters:
-        params = len(stmt.parameters)
+    if hasattr(stmt, "devices") and stmt.devices and stmt.devices[0].parameters:
+        params = len(stmt.devices[0].parameters)
         parts.append(f"({params} params)")
 
     if hasattr(stmt, "arguments") and stmt.arguments:
         args = [format_compact_expr(a) for a in stmt.arguments[:2]]
         parts.append(f"args=[{', '.join(args)}]")
 
-    if hasattr(stmt, "call") and stmt.call:
-        parts.append(format_compact_expr(stmt.call))
+    if hasattr(stmt, "targets") and stmt.targets:
+        parts.append(format_compact_expr(stmt.targets[0]))
 
     if hasattr(stmt, "body") and stmt.body and hasattr(stmt.body, "statements"):
         parts.append(f"body={len(stmt.body.statements)}stmts")

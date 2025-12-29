@@ -73,11 +73,12 @@ src/m2py/
 │   └── type_helpers.py      # TypeGuard functions for pyright
 ├── parser/                  # Parser implementation
 │   ├── parser.py            # MUMPSParser class
+│   ├── line_parser.py       # Line content parsing via textX
 │   ├── textx_classes.py     # Custom classes for textX instantiation
 │   └── exceptions.py        # MUMPSSyntaxError
 └── analysis/                # ASG analysis passes
     ├── semantic_analyzer.py # CST → ASG transformation
-    ├── command_parser.py    # Command parsing via textX
+    ├── dead_code_analysis.py # Unreachable code detection
     ├── resolver.py          # Reference resolution
     ├── goto_analysis.py     # GOTO classification
     ├── for_analysis.py      # FOR loop analysis
@@ -203,7 +204,7 @@ The parser uses a deliberate two-phase approach:
    No custom classes are registered at this phase because we only need the raw
    structure, not command semantics.
 
-2. **Phase 2 (Command Parsing)**: `command_parser.py` uses `line.tx`/`commands.tx`
+2. **Phase 2 (Line Parsing)**: `line_parser.py` uses `line.tx`/`commands.tx`
    with the full set of custom classes to parse individual line content into
    typed ASG nodes (commands, expressions, etc.).
 

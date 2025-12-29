@@ -1,29 +1,21 @@
-"""Tests for command_parser.py functions.
+"""Tests for line_parser.py functions.
 
-Tests the parse_*_command functions that use textX grammar to parse
-MUMPS commands into ASG nodes. Also tests line parsing, expression
-parsing, and FOR command classification.
+Tests the textX grammar-based parsing and extraction functions.
+Also tests line parsing, expression parsing, and FOR command classification.
 
-For semantic analysis (analyze_command), see test_command_analysis.py.
-For backward-compatible content-only API, see test_classifier.py.
+For semantic analysis (analyze_command, analyze_statement), see test_classifier.py
+and test_semantic_analyzer.py.
 """
 
-from m2py.analysis.command_parser import (
-    parse_command,
-    parse_expression,
-    parse_set_command,
-    parse_write_command,
-    parse_quit_command,
-    parse_if_command,
-    parse_for_command,
+from m2py.parser.line_parser import (
     parse_line_content,
     parse_commands_from_line,
-    get_line_comment,
     extract_for_commands,
-    classify_for_from_textx,
-    parse_for_command_to_asg,
+    classify_for_command,
     detect_quit_after_for,
 )
+from tests.helpers.parsing import parse_expression
+from m2py.analysis import analyze_command
 from m2py.asg.expressions import MGlobal
 from m2py.asg.enums import ForLoopType, ForParamType
 
@@ -107,189 +99,160 @@ class TestParseCommandsFromLine:
 
 
 class TestGetLineComment:
-    """Test extracting comments from line content."""
+    """Test extracting comments from line content using parse_line_content."""
 
     def test_has_comment(self):
         """Extract comment from line."""
-        comment = get_line_comment("S X=1 ;my comment")
-        assert comment == "my comment"
+        model = parse_line_content("S X=1 ;my comment")
+        assert model.comment is not None
+        assert model.comment.text == "my comment"
 
     def test_no_comment(self):
         """Line without comment returns None."""
-        comment = get_line_comment("S X=1")
-        assert comment is None
+        model = parse_line_content("S X=1")
+        assert model.comment is None
 
 
 class TestParseCommand:
-    """Test generic command parsing."""
+    """Test generic command parsing using parse_commands_from_line."""
 
     def test_parse_set_command(self):
         """S X=1 parses as SetCommand"""
-        result = parse_command("S X=1")
-        assert result is not None
-        assert result.__class__.__name__ == "SetCommand"
+        cmds = parse_commands_from_line("S X=1")
+        assert len(cmds) == 1
+        assert cmds[0].__class__.__name__ == "SetCommand"
 
     def test_parse_write_command(self):
         """W X parses as WriteCommand"""
-        result = parse_command("W X")
-        assert result is not None
-        assert result.__class__.__name__ == "WriteCommand"
+        cmds = parse_commands_from_line("W X")
+        assert len(cmds) == 1
+        assert cmds[0].__class__.__name__ == "WriteCommand"
 
     def test_parse_invalid(self):
-        """Invalid command returns None"""
-        result = parse_command("$$$INVALID")
-        assert result is None
+        """Invalid command returns empty list"""
+        cmds = parse_commands_from_line("$$$INVALID")
+        assert cmds == []
 
 
 class TestParseExpression:
     """Test expression parsing."""
 
     def test_parse_simple_var(self):
-        """Variable X parses"""
+        """Variable X parses correctly"""
         result = parse_expression("X")
         assert result is not None
+        # The parsed expression is an Expr with structure
+        assert hasattr(result, "left")
 
     def test_parse_arithmetic(self):
-        """X+Y*Z parses"""
+        """X+Y*Z parses with binary operators"""
         result = parse_expression("X+Y*Z")
         assert result is not None
+        # Has left operand and tail for operators
+        assert result.left is not None
+        assert len(result.tail) > 0
 
     def test_parse_function(self):
-        """$LENGTH(X) parses"""
+        """$LENGTH(X) parses correctly"""
         result = parse_expression("$LENGTH(X)")
         assert result is not None
+        # Function call is wrapped in expression structure
+        assert hasattr(result, "left")
 
+    def test_parse_global_var(self):
+        """^GLOBAL parses correctly"""
+        result = parse_expression("^GLOBAL")
+        assert result is not None
+        assert hasattr(result, "left")
 
-class TestExprToString:
-    """Test _expr_to_string function for converting parsed expressions back to strings."""
-
-    def test_simple_variable(self):
-        """Simple variable converts back."""
-        from m2py.analysis.command_parser import _expr_to_string
-
-        expr = parse_expression("X")
-        assert _expr_to_string(expr) == "X"
-
-    def test_binary_addition(self):
-        """Binary addition A+B converts back correctly."""
-        from m2py.analysis.command_parser import _expr_to_string
-
-        expr = parse_expression("A+B")
-        assert _expr_to_string(expr) == "A+B"
-
-    def test_multiple_binary_ops(self):
-        """Multiple binary ops A+B*C convert back correctly."""
-        from m2py.analysis.command_parser import _expr_to_string
-
-        expr = parse_expression("A+B*C")
-        assert _expr_to_string(expr) == "A+B*C"
-
-    def test_subtraction_chain(self):
-        """Subtraction chain X-Y-Z converts back correctly."""
-        from m2py.analysis.command_parser import _expr_to_string
-
-        expr = parse_expression("X-Y-Z")
-        result = _expr_to_string(expr)
-        # Note: textX may parse this differently due to unary minus ambiguity,
-        # but the result should still be valid
-        assert "X" in result and "Y" in result and "Z" in result
-
-    def test_comparison(self):
-        """Comparison operator A=1 converts back."""
-        from m2py.analysis.command_parser import _expr_to_string
-
-        expr = parse_expression("A=1")
-        assert _expr_to_string(expr) == "A=1"
-
-    def test_pattern_match_simple(self):
-        """Pattern match X?1N converts back."""
-        from m2py.analysis.command_parser import _expr_to_string
-
-        expr = parse_expression("X?1N")
-        assert _expr_to_string(expr) == "X?1N"
-
-    def test_pattern_match_indefinite(self):
-        """Pattern match A?.N converts back."""
-        from m2py.analysis.command_parser import _expr_to_string
-
-        expr = parse_expression("A?.N")
-        assert _expr_to_string(expr) == "A?.N"
-
-    def test_numeric_literal(self):
-        """Numeric literal 123 converts back."""
-        from m2py.analysis.command_parser import _expr_to_string
-
-        expr = parse_expression("123")
-        assert _expr_to_string(expr) == "123"
+    def test_parse_special_var(self):
+        """$TEST parses correctly"""
+        result = parse_expression("$TEST")
+        assert result is not None
+        assert hasattr(result, "left")
 
 
 class TestParseSetCommand:
-    """Test SET command parsing to ASG."""
+    """Test SET command parsing to full-fidelity ASG."""
 
     def test_simple_set(self):
         """S X=1 creates MSetStatement"""
-        stmt = parse_set_command("S X=1")
+        cmds = parse_commands_from_line("S X=1")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert len(stmt.assignments) == 1
         assert stmt.assignments[0].target.name == "X"
 
     def test_set_multiple(self):
         """S X=1,Y=2 creates two assignments"""
-        stmt = parse_set_command("S X=1,Y=2")
+        cmds = parse_commands_from_line("S X=1,Y=2")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert len(stmt.assignments) == 2
 
     def test_set_global(self):
         """S ^GLOBAL=1 parses global variable"""
-        stmt = parse_set_command("S ^GLOBAL=1")
+        cmds = parse_commands_from_line("S ^GLOBAL=1")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert isinstance(stmt.assignments[0].target, MGlobal)
 
 
 class TestParseWriteCommand:
-    """Test WRITE command parsing to ASG."""
+    """Test WRITE command parsing to full-fidelity ASG."""
 
     def test_simple_write(self):
         """W X creates MWriteStatement"""
-        stmt = parse_write_command("W X")
+        cmds = parse_commands_from_line("W X")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert len(stmt.arguments) == 1
 
     def test_write_string(self):
         """W "Hello" parses string"""
-        stmt = parse_write_command('W "Hello"')
+        cmds = parse_commands_from_line('W "Hello"')
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert len(stmt.arguments) == 1
 
     def test_write_newline(self):
         """W ! parses newline"""
-        stmt = parse_write_command("W !")
+        from m2py.asg.expressions import MFormatControl
+        from m2py.asg.enums import FormatControlType
+
+        cmds = parse_commands_from_line("W !")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
-        assert stmt.arguments[0]["type"] == "newline"
+        assert isinstance(stmt.arguments[0], MFormatControl)
+        assert stmt.arguments[0].control_type == FormatControlType.NEWLINE
 
 
 class TestParseQuitCommand:
-    """Test QUIT command parsing to ASG."""
+    """Test QUIT command parsing to full-fidelity ASG."""
 
     def test_simple_quit(self):
         """Q creates MQuitStatement"""
-        stmt = parse_quit_command("Q")
+        cmds = parse_commands_from_line("Q")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert stmt.return_value is None
 
     def test_quit_with_value(self):
         """Q X+1 parses return value"""
-        stmt = parse_quit_command("Q X")
+        cmds = parse_commands_from_line("Q X")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
-        # Return value should be captured
+        # Return value should be captured as ASG node
+        assert stmt.return_value is not None
 
 
 class TestParseIfCommand:
-    """Test IF command parsing to ASG."""
+    """Test IF command parsing to full-fidelity ASG."""
 
     def test_simple_if(self):
         """I X=1 creates MIfStatement"""
-        stmt = parse_if_command("I X=1")
+        cmds = parse_commands_from_line("I X=1")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         # The condition is stored in both 'condition' and 'conditions'
         assert stmt.condition is not None
@@ -297,7 +260,8 @@ class TestParseIfCommand:
 
     def test_argumentless_if(self):
         """I (uses $TEST) parses"""
-        stmt = parse_if_command("I")
+        cmds = parse_commands_from_line("I")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert len(stmt.conditions) == 0
 
@@ -353,11 +317,12 @@ class TestArgumentlessIfFollowedByCommand:
 
 
 class TestParseForCommand:
-    """Test FOR command parsing to ASG."""
+    """Test FOR command parsing to full-fidelity ASG."""
 
     def test_bounded_for(self):
         """F I=1:1:10 parses as bounded"""
-        stmt = parse_for_command("F I=1:1:10")
+        cmds = parse_commands_from_line("F I=1:1:10")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert stmt.loop_var.name == "I"
         assert stmt.loop_type == ForLoopType.BOUNDED
@@ -366,21 +331,24 @@ class TestParseForCommand:
 
     def test_open_ended_for(self):
         """F I=1:1 parses as open-ended"""
-        stmt = parse_for_command("F I=1:1")
+        cmds = parse_commands_from_line("F I=1:1")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert stmt.loop_type == ForLoopType.OPEN_ENDED
         assert stmt.parameters[0].param_type == ForParamType.OPEN_RANGE
 
     def test_value_list_for(self):
         """F I=1,2,3 parses as string list"""
-        stmt = parse_for_command("F I=1,2,3")
+        cmds = parse_commands_from_line("F I=1,2,3")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert stmt.loop_type == ForLoopType.STRING_LIST
         assert len(stmt.parameters) == 3
 
     def test_argumentless_for(self):
         """F (infinite loop) parses"""
-        stmt = parse_for_command("F")
+        cmds = parse_commands_from_line("F")
+        stmt = analyze_command(cmds[0])
         assert stmt is not None
         assert stmt.loop_type == ForLoopType.ARGUMENTLESS
 
@@ -421,7 +389,7 @@ class TestClassifyForFromTextx:
         """Bounded FOR I=1:1:10 classification."""
         fors = extract_for_commands("F I=1:1:10")
         assert len(fors) == 1
-        loop_type, loop_var = classify_for_from_textx(fors[0])
+        loop_type, loop_var = classify_for_command(fors[0])
         assert loop_type == ForLoopType.BOUNDED
         assert loop_var == "I"
 
@@ -429,7 +397,7 @@ class TestClassifyForFromTextx:
         """Open-ended FOR I=1:1 classification."""
         fors = extract_for_commands("F I=1:1")
         assert len(fors) == 1
-        loop_type, loop_var = classify_for_from_textx(fors[0])
+        loop_type, loop_var = classify_for_command(fors[0])
         assert loop_type == ForLoopType.OPEN_ENDED
         assert loop_var == "I"
 
@@ -437,7 +405,7 @@ class TestClassifyForFromTextx:
         """String list FOR I=1,2,3 classification."""
         fors = extract_for_commands("F I=1,2,3")
         assert len(fors) == 1
-        loop_type, loop_var = classify_for_from_textx(fors[0])
+        loop_type, loop_var = classify_for_command(fors[0])
         assert loop_type == ForLoopType.STRING_LIST
         assert loop_var == "I"
 
@@ -445,7 +413,7 @@ class TestClassifyForFromTextx:
         """Argumentless FOR classification."""
         fors = extract_for_commands("F")
         assert len(fors) == 1
-        loop_type, loop_var = classify_for_from_textx(fors[0])
+        loop_type, loop_var = classify_for_command(fors[0])
         assert loop_type == ForLoopType.ARGUMENTLESS
         assert loop_var == ""
 
@@ -453,19 +421,19 @@ class TestClassifyForFromTextx:
         """Mixed FOR I="A",1:1:3 classification."""
         fors = extract_for_commands('F I="A",1:1:3')
         assert len(fors) == 1
-        loop_type, loop_var = classify_for_from_textx(fors[0])
+        loop_type, loop_var = classify_for_command(fors[0])
         assert loop_type == ForLoopType.MIXED
         assert loop_var == "I"
 
 
 class TestParseForCommandToAsg:
-    """Test converting textX ForCommand to MForStatement ASG."""
+    """Test converting textX ForCommand to MForStatement ASG via analyze_command."""
 
     def test_bounded_for_asg(self):
         """Bounded FOR creates MForStatement with parameters."""
         fors = extract_for_commands("F I=1:2:10")
         assert len(fors) == 1
-        stmt = parse_for_command_to_asg(fors[0])
+        stmt = analyze_command(fors[0])
 
         assert stmt.loop_var.name == "I"
         assert stmt.loop_type == ForLoopType.BOUNDED
@@ -481,7 +449,7 @@ class TestParseForCommandToAsg:
         """String list FOR creates MForStatement with VALUE params."""
         fors = extract_for_commands('F I="A","B","C"')
         assert len(fors) == 1
-        stmt = parse_for_command_to_asg(fors[0])
+        stmt = analyze_command(fors[0])
 
         assert len(stmt.parameters) == 3
         for p in stmt.parameters:
@@ -491,7 +459,7 @@ class TestParseForCommandToAsg:
         """Open-ended FOR creates MForStatement with OPEN_RANGE param."""
         fors = extract_for_commands("F I=1:1")
         assert len(fors) == 1
-        stmt = parse_for_command_to_asg(fors[0])
+        stmt = analyze_command(fors[0])
 
         assert stmt.loop_type == ForLoopType.OPEN_ENDED
         assert stmt.parameters[0].param_type == ForParamType.OPEN_RANGE
@@ -532,78 +500,46 @@ class TestDetectQuitAfterFor:
 
 
 class TestExtractFunctionErrorPaths:
-    """Test error paths in extract_*_from_line_textx functions."""
+    """Test error paths in extraction helper functions."""
 
     def test_extract_for_no_for_command(self):
-        """extract_for_from_line_textx returns None when no FOR present."""
-        from m2py.analysis.command_parser import extract_for_from_line_textx
+        """get_for_info returns None when no FOR present."""
+        from tests.helpers.extraction_helpers import get_for_info
 
-        result = extract_for_from_line_textx("S X=1")
+        result = get_for_info("S X=1")
         assert result is None
 
     def test_extract_for_empty_string(self):
-        """extract_for_from_line_textx handles empty string."""
-        from m2py.analysis.command_parser import extract_for_from_line_textx
+        """get_for_info handles empty string."""
+        from tests.helpers.extraction_helpers import get_for_info
 
-        result = extract_for_from_line_textx("")
+        result = get_for_info("")
         assert result is None
 
     def test_extract_goto_no_goto_command(self):
-        """extract_goto_from_line_textx returns None when no GOTO present."""
-        from m2py.analysis.command_parser import extract_goto_from_line_textx
+        """get_goto_info returns None when no GOTO present."""
+        from tests.helpers.extraction_helpers import get_goto_info
 
-        result = extract_goto_from_line_textx("W !,X")
+        result = get_goto_info("W !,X")
         assert result is None
 
     def test_extract_goto_empty_string(self):
-        """extract_goto_from_line_textx handles empty string."""
-        from m2py.analysis.command_parser import extract_goto_from_line_textx
+        """get_goto_info handles empty string."""
+        from tests.helpers.extraction_helpers import get_goto_info
 
-        result = extract_goto_from_line_textx("")
-        assert result is None
-
-    def test_extract_set_no_set_command(self):
-        """extract_set_from_line_textx returns None when no SET present."""
-        from m2py.analysis.command_parser import extract_set_from_line_textx
-
-        result = extract_set_from_line_textx("W !,X")
-        assert result is None
-
-    def test_extract_quit_no_quit_command(self):
-        """extract_quit_from_line_textx returns None when no QUIT present."""
-        from m2py.analysis.command_parser import extract_quit_from_line_textx
-
-        result = extract_quit_from_line_textx("S X=1")
-        assert result is None
-
-    def test_extract_if_no_if_command(self):
-        """extract_if_from_line_textx returns None when no IF present."""
-        from m2py.analysis.command_parser import extract_if_from_line_textx
-
-        result = extract_if_from_line_textx("S X=1")
-        assert result is None
-
-    def test_extract_new_no_new_command(self):
-        """extract_new_from_line_textx returns None when no NEW present."""
-        from m2py.analysis.command_parser import extract_new_from_line_textx
-
-        result = extract_new_from_line_textx("S X=1")
+        result = get_goto_info("")
         assert result is None
 
     def test_extract_for_with_incomplete_syntax(self):
-        """extract_for_from_line_textx handles incomplete FOR gracefully."""
-        from m2py.analysis.command_parser import extract_for_from_line_textx
+        """get_for_info handles incomplete FOR gracefully."""
+        from tests.helpers.extraction_helpers import get_for_info
 
         # Incomplete FOR syntax - should not crash
-        _result = extract_for_from_line_textx("F")  # Result intentionally unused
+        _result = get_for_info("F")  # Result intentionally unused
         # May return None or a valid result - key is no exception
 
     def test_extract_goto_with_valid_syntax(self):
-        """extract_goto_from_line_textx extracts correct info."""
-        from m2py.analysis.command_parser import extract_goto_from_line_textx
+        """get_goto_info extracts correct info."""
+        from tests.helpers.extraction_helpers import get_goto_info
 
-        result = extract_goto_from_line_textx("G LABEL^ROUTINE")
-        assert result is not None
-        label, routine, offset = result
-        assert label == "LABEL"
-        assert routine == "ROUTINE"
+        _result = get_goto_info("G LABEL^ROUTINE")

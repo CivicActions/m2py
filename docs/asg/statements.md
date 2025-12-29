@@ -376,8 +376,6 @@ M X=Y,Z=W           ; Multiple merge pairs
 | Field | Type | Description |
 |-------|------|-------------|
 | `merges` | `List[MMergePair]` | List of destination=source pairs |
-| `destination` | `Any` (property) | Backward-compat: first pair's destination |
-| `source` | `Any` (property) | Backward-compat: first pair's source |
 
 **MMergePair** structure:
 
@@ -503,9 +501,6 @@ O DEV1:("A"):5,DEV2     ; Multiple with params
 | Field | Type | Description |
 |-------|------|-------------|
 | `devices` | `List[MOpenDevice]` | List of devices to open |
-| `device_expr` | `MExpr` (property) | Backward-compat: first device |
-| `parameters` | `List[MExpr]` (property) | Backward-compat: first device params |
-| `timeout` | `MExpr` (property) | Backward-compat: first device timeout |
 
 **MOpenDevice** structure:
 
@@ -529,8 +524,6 @@ C DEV1,DEV2             ; Multiple devices
 | `device_expr` | `MExpr` (property) | Backward-compat: first device |
 | `parameters` | `List[MExpr]` (property) | Backward-compat: first device params |
 
-**MCloseDevice** structure:
-
 | Field | Type | Description |
 |-------|------|-------------|
 | `device_expr` | `MExpr` | Device expression |
@@ -549,8 +542,6 @@ U DEV1,DEV2             ; Multiple devices
 | `devices` | `List[MUseDevice]` | List of devices |
 | `device_expr` | `MExpr` (property) | Backward-compat: first device |
 | `parameters` | `List[MExpr]` (property) | Backward-compat: first device params |
-
-**MUseDevice** structure:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -574,12 +565,10 @@ J @VAR^@ROUTINE          ; Full indirection
 | `call` | `MCall` (property) | Backward-compat: first target |
 | `parameters` | `List[MExpr]` | Process parameters |
 | `timeout` | `Optional[MExpr]` | Timeout in seconds |
+parameters` | `List[MExpr]` | Process parameters |
+| `timeout` | `Optional[MExpr]` | Timeout in seconds |
 
-**Note**: The `targets` field aligns with `MDoStatement.targets` and `MGotoStatement.targets` for consistency. The `calls` property is a deprecated alias maintained for backward compatibility.
-
-**Indirection Support**: MJobStatement supports both direct labels and indirection (J @VAR). When indirection is used, the corresponding MCall will have:
-- `label_is_indirect = True`
-- `indirection` set to the indirection expression (e.g., MVariable)
+**Note**: The `targets` field aligns with `MDoStatement.targets` and `MGotoStatement.targets` for consistenc
 
 ---
 

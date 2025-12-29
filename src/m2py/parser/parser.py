@@ -11,12 +11,11 @@ from typing import List, Optional, Union
 from textx import metamodel_from_file
 from textx.exceptions import TextXSyntaxError
 
-from m2py.analysis.command_parser import (
-    classify_for_from_textx,
+from m2py.parser.line_parser import (
+    classify_for_command,
     detect_quit_after_for,
     extract_for_commands,
     parse_commands_from_line,
-    parse_for_command_to_asg,
     parse_line_content,
 )
 from m2py.analysis.for_analysis import analyze_for_loops as _analyze_for_loops
@@ -401,7 +400,7 @@ class MUMPSParser:
         #
         # NOTE: classes=[] is intentional. This parser uses a two-phase approach:
         # - Phase 1 (here): mumps.tx parses routine structure (labels, lines)
-        # - Phase 2: command_parser.py parses line content with custom classes
+        # - Phase 2: line_parser.py parses line content with custom classes
         # See docs/architecture.md "Why Two-Phase Parsing?" for details.
         self._metamodel = metamodel_from_file(
             str(grammar_file),
@@ -752,12 +751,20 @@ class MUMPSParser:
                 has_quit = detect_quit_after_for(line_rest)
 
                 for for_cmd in for_commands:
-                    # Classify the FOR command using textX
-                    loop_type, loop_var = classify_for_from_textx(for_cmd)
+                    # Classify the FOR command
+                    loop_type, loop_var = classify_for_command(for_cmd)
 
-                    # Build MForStatement from textX ForCommand
-                    statement = parse_for_command_to_asg(for_cmd)
-                    statement.has_internal_quit = has_quit
+                    # Build MForStatement from textX ForCommand using full-fidelity analyzer
+                    # Import here to avoid circular imports at module level
+                    from m2py.asg.statements import MForStatement
+
+                    statement = analyze_command(for_cmd)
+
+                    # Type narrow to MForStatement for proper attribute access
+                    for_statement: MForStatement | None = None
+                    if isinstance(statement, MForStatement):
+                        statement.has_internal_quit = has_quit
+                        for_statement = statement
 
                     results.append(
                         ForPatternResult(
@@ -765,7 +772,7 @@ class MUMPSParser:
                             loop_type=loop_type,
                             loop_var=loop_var,
                             line_content=line_rest,
-                            statement=statement,
+                            statement=for_statement,
                         )
                     )
 

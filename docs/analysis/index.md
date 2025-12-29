@@ -70,6 +70,7 @@ parser.analyze(routine)  # Runs all passes
 | [for_analysis.md](for_analysis.md) | FOR loop analysis |
 | [variable_analysis.md](variable_analysis.md) | Variable scope analysis |
 | [pattern_compiler.md](pattern_compiler.md) | Pattern to regex compilation |
+| dead_code_analysis | Unreachable code detection (detect_unreachable_code) |
 
 ## Source Code
 

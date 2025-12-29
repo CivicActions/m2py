@@ -71,17 +71,6 @@ class TestMultiMerge:
         assert isinstance(stmt.merges[1].destination, MGlobal)
         assert stmt.merges[1].destination.name == "C"
 
-    def test_merge_backward_compat_properties(self):
-        """Backward-compatible properties work with multiple pairs."""
-        parser = MUMPSParser()
-        routine = parser.parse("TEST\n M X=Y,Z=W\n")
-
-        stmt = routine.labels[0].body.statements[0]
-
-        # Backward-compat properties return first pair
-        assert stmt.destination.name == "X"
-        assert stmt.source.name == "Y"
-
     def test_vista_ztmon_pattern(self):
         """Test VistA ZTMON.m pattern with two merge pairs.
 
@@ -131,16 +120,6 @@ class TestMultiOpen:
         assert stmt.devices[0].device_expr.name == "DEV1"
         assert stmt.devices[1].device_expr.name == "DEV2"
 
-    def test_open_backward_compat_properties(self):
-        """Backward-compatible properties work with multiple devices."""
-        parser = MUMPSParser()
-        routine = parser.parse("TEST\n O DEV1,DEV2\n")
-
-        stmt = routine.labels[0].body.statements[0]
-
-        # Backward-compat property returns first device
-        assert stmt.device_expr.name == "DEV1"
-
     def test_open_with_params_multiple(self):
         """OPEN with parameters on multiple devices."""
         parser = MUMPSParser()
@@ -185,16 +164,6 @@ class TestMultiClose:
         assert stmt.devices[0].device_expr.name == "DEV1"
         assert stmt.devices[1].device_expr.name == "DEV2"
 
-    def test_close_backward_compat_properties(self):
-        """Backward-compatible properties work with multiple devices."""
-        parser = MUMPSParser()
-        routine = parser.parse("TEST\n C DEV1,DEV2\n")
-
-        stmt = routine.labels[0].body.statements[0]
-
-        # Backward-compat property returns first device
-        assert stmt.device_expr.name == "DEV1"
-
 
 class TestMultiUse:
     """Tests for USE command with multiple devices."""
@@ -221,16 +190,6 @@ class TestMultiUse:
         assert stmt.devices[0].device_expr.name == "DEV1"
         assert stmt.devices[1].device_expr.name == "DEV2"
 
-    def test_use_backward_compat_properties(self):
-        """Backward-compatible properties work with multiple devices."""
-        parser = MUMPSParser()
-        routine = parser.parse("TEST\n U DEV1,DEV2\n")
-
-        stmt = routine.labels[0].body.statements[0]
-
-        # Backward-compat property returns first device
-        assert stmt.device_expr.name == "DEV1"
-
 
 class TestMultiJob:
     """Tests for JOB command with multiple targets."""
@@ -256,22 +215,6 @@ class TestMultiJob:
 
         assert stmt.targets[0].name == "LABEL1"
         assert stmt.targets[1].name == "LABEL2"
-
-    def test_job_backward_compat_properties(self):
-        """Backward-compatible .call property returns first target.
-
-        Note: .calls is deprecated in favor of .targets for consistency
-        with MDoStatement and MGotoStatement. Use .targets for new code.
-        """
-        parser = MUMPSParser()
-        routine = parser.parse("TEST\n J LABEL1,LABEL2\n")
-
-        stmt = routine.labels[0].body.statements[0]
-
-        # .call returns first target (backward-compat convenience)
-        assert stmt.call.name == "LABEL1"
-        # .calls is alias for .targets (deprecated)
-        assert stmt.calls is stmt.targets
 
     def test_job_external_multiple(self):
         """JOB with multiple external routine targets."""

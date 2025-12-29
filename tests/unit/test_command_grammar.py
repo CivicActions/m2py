@@ -383,7 +383,7 @@ class TestQuitFollowedBySet:
 
     def test_quit_then_set_with_left_hand_piece(self):
         """Q S $P(X,';')=1 - regression test for T578 bug"""
-        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.parser.line_parser import parse_commands_from_line
 
         cmds = parse_commands_from_line('Q S $P(X,";")=1')
         assert len(cmds) == 2
@@ -392,7 +392,7 @@ class TestQuitFollowedBySet:
 
     def test_quit_postcond_then_set_with_left_hand_piece(self):
         """Q:A='' S $P(X,';')=1 - regression test for T578 bug"""
-        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.parser.line_parser import parse_commands_from_line
 
         cmds = parse_commands_from_line('Q:A="" S $P(X,";")=1')
         assert len(cmds) == 2
@@ -402,7 +402,7 @@ class TestQuitFollowedBySet:
 
     def test_for_quit_postcond_set_left_hand_piece(self):
         """F I=1:1 Q:A='' S $P(X,';')=1 - regression test for T578 bug (full pattern)"""
-        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.parser.line_parser import parse_commands_from_line
 
         cmds = parse_commands_from_line('F I=1:1 Q:A="" S $P(X,";")=1')
         assert len(cmds) == 3
@@ -412,7 +412,7 @@ class TestQuitFollowedBySet:
 
     def test_vv2lhp2_line73_full(self):
         """Full line 73 from VV2LHP2.m - the original failing case"""
-        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.parser.line_parser import parse_commands_from_line
 
         line = 'F I=1:1 S A=$T(TEX+I),X=Y Q:A=""  S $P(X,$P(A,";",2),$P(A,";",3),$P(A,";",4))=$P(A,";",5),VCOMP=VCOMP_X_" "'
         cmds = parse_commands_from_line(line)

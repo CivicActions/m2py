@@ -4,7 +4,7 @@ Tests expression analysis and the unwrap_expression function.
 Command analysis tests are in test_command_analysis.py.
 """
 
-from m2py.analysis.command_parser import parse_expression
+from tests.helpers.parsing import parse_expression
 from m2py.analysis.semantic_analyzer import analyze_expression, unwrap_expression
 from m2py.asg.expressions import (
     MLiteral,
@@ -487,7 +487,7 @@ class TestFormatControlASG:
         """W ! produces MFormatControl with NEWLINE type."""
         from m2py.asg import MFormatControl, FormatControlType
         from m2py.asg.statements import MWriteStatement
-        from m2py.analysis.command_parser import parse_command
+        from tests.helpers.parsing import parse_command
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmd = parse_command("W !")
@@ -505,7 +505,7 @@ class TestFormatControlASG:
         """W # produces MFormatControl with FORMFEED type."""
         from m2py.asg import MFormatControl, FormatControlType
         from m2py.asg.statements import MWriteStatement
-        from m2py.analysis.command_parser import parse_command
+        from tests.helpers.parsing import parse_command
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmd = parse_command("W #")
@@ -523,7 +523,7 @@ class TestFormatControlASG:
         """W ?10 produces MFormatControl with TAB type and column expression."""
         from m2py.asg import MFormatControl, FormatControlType, MLiteral
         from m2py.asg.statements import MWriteStatement
-        from m2py.analysis.command_parser import parse_command
+        from tests.helpers.parsing import parse_command
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmd = parse_command("W ?10")
@@ -542,7 +542,7 @@ class TestFormatControlASG:
         """W *65 produces MFormatControl with CHARCODE type and code expression."""
         from m2py.asg import MFormatControl, FormatControlType, MLiteral
         from m2py.asg.statements import MWriteStatement
-        from m2py.analysis.command_parser import parse_command
+        from tests.helpers.parsing import parse_command
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmd = parse_command("W *65")
@@ -561,7 +561,7 @@ class TestFormatControlASG:
         """W !!,"Test",# produces multiple MFormatControl nodes."""
         from m2py.asg import MFormatControl, FormatControlType, MLiteral
         from m2py.asg.statements import MWriteStatement
-        from m2py.analysis.command_parser import parse_command
+        from tests.helpers.parsing import parse_command
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmd = parse_command('W !!,"Test",#')
@@ -592,7 +592,7 @@ class TestXecuteConstantDetection:
     def test_xecute_constant_string(self):
         """X "S X=1" should be detected as constant."""
         from m2py.asg.statements import MXecuteStatement
-        from m2py.analysis.command_parser import parse_command
+        from tests.helpers.parsing import parse_command
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmd = parse_command('X "S X=1"')
@@ -606,7 +606,7 @@ class TestXecuteConstantDetection:
     def test_xecute_multiple_constants(self):
         """X "S X=1","S Y=2" should detect both as constant."""
         from m2py.asg.statements import MXecuteStatement
-        from m2py.analysis.command_parser import parse_command
+        from tests.helpers.parsing import parse_command
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmd = parse_command('X "S X=1","S Y=2"')
@@ -620,7 +620,7 @@ class TestXecuteConstantDetection:
     def test_xecute_variable_expression(self):
         """X CODE should not be detected as constant."""
         from m2py.asg.statements import MXecuteStatement
-        from m2py.analysis.command_parser import parse_command
+        from tests.helpers.parsing import parse_command
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmd = parse_command("X CODE")
@@ -634,7 +634,7 @@ class TestXecuteConstantDetection:
     def test_xecute_mixed_args(self):
         """X "S X=1",CODE should not be detected as constant."""
         from m2py.asg.statements import MXecuteStatement
-        from m2py.analysis.command_parser import parse_command
+        from tests.helpers.parsing import parse_command
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmd = parse_command('X "S X=1",CODE')
@@ -651,7 +651,7 @@ class TestPatternMatchCompilation:
     def test_pattern_match_compiled_regex(self):
         """X?1A.N should have compiled_regex set."""
         from m2py.asg.expressions import MPatternMatch
-        from m2py.analysis.command_parser import parse_expression
+        from tests.helpers.parsing import parse_expression
         from m2py.analysis.semantic_analyzer import analyze_expression
 
         expr = parse_expression("X?1A.N")
@@ -668,7 +668,7 @@ class TestPatternMatchCompilation:
     def test_pattern_match_alphanumeric(self):
         """X?1A.AN should compile to alphanumeric pattern."""
         from m2py.asg.expressions import MPatternMatch
-        from m2py.analysis.command_parser import parse_expression
+        from tests.helpers.parsing import parse_expression
         from m2py.analysis.semantic_analyzer import analyze_expression
         import re
 
@@ -689,7 +689,7 @@ class TestIndirectionClassification:
         """@X should have IndirectionType.NAME by default."""
         from m2py.asg.expressions import MIndirection
         from m2py.asg.enums import IndirectionType
-        from m2py.analysis.command_parser import parse_expression
+        from tests.helpers.parsing import parse_expression
         from m2py.analysis.semantic_analyzer import analyze_expression
 
         expr = parse_expression("@X")
@@ -701,7 +701,7 @@ class TestIndirectionClassification:
     def test_indirection_static_resolution_string(self):
         """@"VARNAME" should resolve statically."""
         from m2py.asg.expressions import MIndirection
-        from m2py.analysis.command_parser import parse_expression
+        from tests.helpers.parsing import parse_expression
         from m2py.analysis.semantic_analyzer import analyze_expression
 
         expr = parse_expression('@"VARNAME"')
@@ -714,7 +714,7 @@ class TestIndirectionClassification:
     def test_indirection_variable_not_static(self):
         """@X should not resolve statically."""
         from m2py.asg.expressions import MIndirection
-        from m2py.analysis.command_parser import parse_expression
+        from tests.helpers.parsing import parse_expression
         from m2py.analysis.semantic_analyzer import analyze_expression
 
         expr = parse_expression("@X")
@@ -731,7 +731,7 @@ class TestReadFixedLength:
     def test_read_fixed_length_basic(self):
         """R X#5 should produce MReadTarget with fixed_length."""
         from m2py.asg.statements import MReadStatement, MReadTarget
-        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.parser.line_parser import parse_commands_from_line
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmds = parse_commands_from_line("R X#5")
@@ -753,7 +753,7 @@ class TestReadFixedLength:
     def test_read_fixed_length_with_timeout(self):
         """R X#5:10 should have both fixed_length and timeout."""
         from m2py.asg.statements import MReadStatement, MReadTarget
-        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.parser.line_parser import parse_commands_from_line
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmds = parse_commands_from_line("R X#5:10")
@@ -776,7 +776,7 @@ class TestReadFixedLength:
     def test_read_fixed_length_negative(self):
         """R X#-1 should parse (runtime error, not parse error)."""
         from m2py.asg.statements import MReadStatement
-        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.parser.line_parser import parse_commands_from_line
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmds = parse_commands_from_line("R X#-1")
@@ -796,7 +796,7 @@ class TestReadFixedLength:
         """R X#N should have variable as fixed_length."""
         from m2py.asg.statements import MReadStatement, MReadTarget
         from m2py.asg.expressions import MVariable
-        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.parser.line_parser import parse_commands_from_line
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmds = parse_commands_from_line("R X#N")
@@ -816,7 +816,7 @@ class TestReadFixedLength:
     def test_kill_followed_by_read_fixed_length(self):
         """K A R A#-1 should parse both KILL and READ correctly."""
         from m2py.asg.statements import MKillStatement, MReadStatement, MReadTarget
-        from m2py.analysis.command_parser import parse_commands_from_line
+        from m2py.parser.line_parser import parse_commands_from_line
         from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 
         cmds = parse_commands_from_line("K A R A#-1")

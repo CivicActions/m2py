@@ -1638,6 +1638,50 @@ def analyze_command(textx_cmd: Any, parent: Any = None) -> Optional[MStatement]:
     return analyzer.analyze(textx_cmd, parent)
 
 
+def analyze_statement(command_type: str, content: str) -> Optional[MStatement]:
+    """Parse and analyze a MUMPS statement from command type and content.
+
+    This is a convenience function for testing that parses a command string
+    and returns a full-fidelity ASG statement node.
+
+    Args:
+        command_type: Command prefix (e.g., "S", "SET", "F", "FOR", "W", "WRITE")
+        content: Statement content without command word (e.g., "X=1" for SET)
+
+    Returns:
+        Full-fidelity ASG statement node, or None if parsing fails
+
+    Examples:
+        >>> analyze_statement("S", "X=1")
+        MSetStatement(assignments=[MAssignment(target=MVariable('X'), value=MLiteral(1))])
+
+        >>> analyze_statement("F", "I=1:1:10")
+        MForStatement(loop_var=MVariable('I'), parameters=[...])
+
+        >>> analyze_statement("W", '"Hello"')
+        MWriteStatement(arguments=[MLiteral("Hello")])
+    """
+    from m2py.parser.line_parser import parse_commands_from_line
+
+    # Handle empty content for argumentless commands
+    if not content or not content.strip():
+        # Build minimal command string
+        cmd_str = command_type.upper()[0]  # Use single-letter form
+    else:
+        # Combine command type with content
+        # Use single-letter abbreviation for consistency
+        cmd_letter = command_type.upper()[0]
+        cmd_str = f"{cmd_letter} {content}"
+
+    # Parse the command string via textX
+    commands = parse_commands_from_line(cmd_str)
+    if not commands:
+        return None
+
+    # Analyze the first command using full-fidelity SemanticAnalyzer
+    return analyze_command(commands[0])
+
+
 def unwrap_expression(textx_expr: Any) -> Any:
     """Simple unwrap without full semantic analysis.
 

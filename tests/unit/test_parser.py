@@ -4,7 +4,7 @@ Tests parser initialization, parse(), parse_file(), and classify_patterns().
 Verifies routine/label structure parsing and error handling.
 
 For grammar acceptance tests, see test_grammar.py.
-For command-level parsing, see test_command_parser.py.
+For command-level parsing, see test_line_parser.py.
 """
 
 import pytest

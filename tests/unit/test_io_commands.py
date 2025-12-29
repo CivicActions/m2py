@@ -15,7 +15,8 @@ def test_open_command_simple():
 
     stmt = label.body.statements[0]
     assert isinstance(stmt, MOpenStatement)
-    assert stmt.device_expr is not None
+    assert len(stmt.devices) == 1
+    assert stmt.devices[0].device_expr is not None
 
 
 def test_close_command_simple():
@@ -29,7 +30,8 @@ def test_close_command_simple():
 
     stmt = label.body.statements[0]
     assert isinstance(stmt, MCloseStatement)
-    assert stmt.device_expr is not None
+    assert len(stmt.devices) == 1
+    assert stmt.devices[0].device_expr is not None
 
 
 def test_use_command_simple():
@@ -43,7 +45,8 @@ def test_use_command_simple():
 
     stmt = label.body.statements[0]
     assert isinstance(stmt, MUseStatement)
-    assert stmt.device_expr is not None
+    assert len(stmt.devices) == 1
+    assert stmt.devices[0].device_expr is not None
 
 
 def test_job_command_simple():
@@ -57,8 +60,9 @@ def test_job_command_simple():
 
     stmt = label.body.statements[0]
     assert isinstance(stmt, MJobStatement)
-    assert stmt.call is not None
-    assert stmt.call.name == "LABEL"
+    assert len(stmt.targets) == 1
+    assert stmt.targets[0] is not None
+    assert stmt.targets[0].name == "LABEL"
 
 
 def test_job_command_external():
@@ -72,8 +76,9 @@ def test_job_command_external():
 
     stmt = label.body.statements[0]
     assert isinstance(stmt, MJobStatement)
-    assert stmt.call is not None
-    assert stmt.call.routine == "ROUTINE"
+    assert len(stmt.targets) == 1
+    assert stmt.targets[0] is not None
+    assert stmt.targets[0].routine == "ROUTINE"
 
 
 def test_io_commands_with_postconditions():
@@ -99,11 +104,12 @@ def test_open_command_with_timeout():
     stmt = label.body.statements[0]
 
     assert isinstance(stmt, MOpenStatement)
-    assert stmt.device_expr is not None
-    assert stmt.device_expr.name == "X"
-    assert stmt.timeout is not None
-    assert stmt.timeout.value == 5
-    assert stmt.parameters == []
+    assert len(stmt.devices) == 1
+    assert stmt.devices[0].device_expr is not None
+    assert stmt.devices[0].device_expr.name == "X"
+    assert stmt.devices[0].timeout is not None
+    assert stmt.devices[0].timeout.value == 5
+    assert stmt.devices[0].parameters == []
 
 
 def test_open_command_with_double_colon_timeout():
@@ -115,11 +121,12 @@ def test_open_command_with_double_colon_timeout():
     stmt = label.body.statements[0]
 
     assert isinstance(stmt, MOpenStatement)
-    assert stmt.device_expr is not None
-    assert stmt.device_expr.name == "X"
-    assert stmt.timeout is not None
-    assert stmt.timeout.value == 10
-    assert stmt.parameters == []
+    assert len(stmt.devices) == 1
+    assert stmt.devices[0].device_expr is not None
+    assert stmt.devices[0].device_expr.name == "X"
+    assert stmt.devices[0].timeout is not None
+    assert stmt.devices[0].timeout.value == 10
+    assert stmt.devices[0].parameters == []
 
 
 def test_open_command_with_params():
@@ -131,10 +138,11 @@ def test_open_command_with_params():
     stmt = label.body.statements[0]
 
     assert isinstance(stmt, MOpenStatement)
-    assert stmt.device_expr is not None
-    assert stmt.device_expr.name == "X"
-    assert stmt.timeout is None
-    assert len(stmt.parameters) == 1
+    assert len(stmt.devices) == 1
+    assert stmt.devices[0].device_expr is not None
+    assert stmt.devices[0].device_expr.name == "X"
+    assert stmt.devices[0].timeout is None
+    assert len(stmt.devices[0].parameters) == 1
 
 
 def test_open_command_with_params_and_timeout():
@@ -146,11 +154,12 @@ def test_open_command_with_params_and_timeout():
     stmt = label.body.statements[0]
 
     assert isinstance(stmt, MOpenStatement)
-    assert stmt.device_expr is not None
-    assert stmt.device_expr.name == "X"
-    assert stmt.timeout is not None
-    assert stmt.timeout.value == 5
-    assert len(stmt.parameters) == 3
+    assert len(stmt.devices) == 1
+    assert stmt.devices[0].device_expr is not None
+    assert stmt.devices[0].device_expr.name == "X"
+    assert stmt.devices[0].timeout is not None
+    assert stmt.devices[0].timeout.value == 5
+    assert len(stmt.devices[0].parameters) == 3
 
 
 # =============================================================================
@@ -173,8 +182,9 @@ class TestMergeCommand:
 
         stmt = label.body.statements[0]
         assert isinstance(stmt, MMergeStatement)
-        assert stmt.destination is not None
-        assert stmt.source is not None
+        assert len(stmt.merges) == 1
+        assert stmt.merges[0].destination is not None
+        assert stmt.merges[0].source is not None
 
     def test_merge_command_with_postcondition(self):
         """MERGE:condition dest=source handles postcondition."""
@@ -188,8 +198,9 @@ class TestMergeCommand:
 
         assert isinstance(stmt, MMergeStatement)
         assert stmt.postcondition is not None
-        assert stmt.destination is not None
-        assert stmt.source is not None
+        assert len(stmt.merges) == 1
+        assert stmt.merges[0].destination is not None
+        assert stmt.merges[0].source is not None
 
     def test_merge_with_local_variables(self):
         """MERGE can merge local variable trees."""
@@ -202,8 +213,9 @@ class TestMergeCommand:
         stmt = label.body.statements[0]
 
         assert isinstance(stmt, MMergeStatement)
-        assert stmt.destination is not None
-        assert stmt.source is not None
+        assert len(stmt.merges) == 1
+        assert stmt.merges[0].destination is not None
+        assert stmt.merges[0].source is not None
 
 
 # =============================================================================
@@ -399,21 +411,3 @@ class TestJobIndirection:
         assert hasattr(do_stmt, "targets")
         assert len(job_stmt.targets) == 1
         assert len(do_stmt.targets) == 1
-
-    def test_job_backward_compat_calls_property(self):
-        """MJobStatement.calls property provides backward compatibility.
-
-        The .calls property is a deprecated alias for .targets to maintain
-        backward compatibility with existing code.
-        """
-        parser = MUMPSParser()
-        routine = parser.parse("TEST\n J LABEL\n")
-
-        label = routine.labels[0]
-        stmt = label.body.statements[0]
-
-        assert isinstance(stmt, MJobStatement)
-        # Both .calls and .targets should return the same list
-        assert stmt.calls is stmt.targets
-        assert len(stmt.calls) == 1
-        assert stmt.calls[0].name == "LABEL"
