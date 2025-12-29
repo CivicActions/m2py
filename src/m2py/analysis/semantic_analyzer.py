@@ -59,9 +59,13 @@ from m2py.asg.statements import (
     MXecuteStatement,
     MLockStatement,
     MMergeStatement,
+    MMergePair,
     MOpenStatement,
+    MOpenDevice,
     MCloseStatement,
+    MCloseDevice,
     MUseStatement,
+    MUseDevice,
     MJobStatement,
     MViewStatement,
 )
@@ -207,6 +211,17 @@ class SemanticAnalyzer:
 
         elif isinstance(expr, MIndirection):
             object.__setattr__(expr, "expression", self.analyze(expr.expression, expr))
+            # Analyze direct subscripts for @X(1,2) form
+            if expr.subscripts:
+                new_subs = [self.analyze(s, expr) for s in expr.subscripts]
+                object.__setattr__(expr, "subscripts", new_subs)
+            # Analyze name indirection subscripts for @X@(1,2) form
+            if expr.name_indirection_subscripts:
+                new_name_subs = [
+                    [self.analyze(s, expr) for s in sub_list]
+                    for sub_list in expr.name_indirection_subscripts
+                ]
+                object.__setattr__(expr, "name_indirection_subscripts", new_name_subs)
             # Classify indirection type based on context
             self._classify_indirection(expr, parent)
 
@@ -1241,22 +1256,32 @@ class SemanticAnalyzer:
         return lock_info
 
     def _analyze_MergeCommand(self, cmd: Any, parent: Any) -> MMergeStatement:
-        """Analyze MERGE command into MMergeStatement."""
+        """Analyze MERGE command into MMergeStatement.
+
+        Supports multiple merge pairs per MUMPS 1995 spec:
+        M X=Y,Z=W copies both Y→X and W→Z
+        """
         stmt = MMergeStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
 
         if hasattr(cmd, "merges") and cmd.merges:
             for merge in cmd.merges:
+                pair = MMergePair()
                 if hasattr(merge, "dest") and merge.dest:
-                    stmt.destination = self.analyze(merge.dest, stmt)
+                    pair.destination = self.analyze(merge.dest, stmt)
                 if hasattr(merge, "src") and merge.src:
-                    stmt.source = self.analyze(merge.src, stmt)
+                    pair.source = self.analyze(merge.src, stmt)
+                stmt.merges.append(pair)
 
         return stmt
 
     def _analyze_OpenCommand(self, cmd: Any, parent: Any) -> MOpenStatement:
-        """Analyze OPEN command into MOpenStatement."""
+        """Analyze OPEN command into MOpenStatement.
+
+        Supports multiple devices per MUMPS 1995 spec:
+        O DEV1:params,DEV2:params opens both devices
+        """
         stmt = MOpenStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -1265,28 +1290,34 @@ class SemanticAnalyzer:
         # cmd.args is a list of OpenArg objects
         if hasattr(cmd, "args") and cmd.args:
             args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
-            if len(args) > 0:
-                open_arg = args[0]
+            for open_arg in args:
+                device = MOpenDevice()
 
                 # Handle OpenArg object
                 if hasattr(open_arg, "device"):
-                    stmt.device_expr = self.analyze(open_arg.device, stmt)
+                    device.device_expr = self.analyze(open_arg.device, stmt)
 
                     if hasattr(open_arg, "params") and open_arg.params:
-                        stmt.parameters = [
+                        device.parameters = [
                             self.analyze(p, stmt) for p in open_arg.params
                         ]
 
                     if hasattr(open_arg, "timeout") and open_arg.timeout:
-                        stmt.timeout = self.analyze(open_arg.timeout, stmt)
+                        device.timeout = self.analyze(open_arg.timeout, stmt)
                 else:
                     # Fallback if it's just an expression (shouldn't happen with current grammar)
-                    stmt.device_expr = self.analyze(open_arg, stmt)
+                    device.device_expr = self.analyze(open_arg, stmt)
+
+                stmt.devices.append(device)
 
         return stmt
 
     def _analyze_CloseCommand(self, cmd: Any, parent: Any) -> MCloseStatement:
-        """Analyze CLOSE command into MCloseStatement."""
+        """Analyze CLOSE command into MCloseStatement.
+
+        Supports multiple devices per MUMPS 1995 spec:
+        C DEV1,DEV2 closes both devices
+        """
         stmt = MCloseStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -1294,13 +1325,26 @@ class SemanticAnalyzer:
         # CLOSE device(:parameters)
         if hasattr(cmd, "args") and cmd.args:
             args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
-            if len(args) > 0:
-                stmt.device_expr = self.analyze(args[0], stmt)
+            for arg in args:
+                device = MCloseDevice()
+                # Handle CloseArg object if it has device attribute
+                if hasattr(arg, "device"):
+                    device.device_expr = self.analyze(arg.device, stmt)
+                    if hasattr(arg, "params") and arg.params:
+                        device.parameters = [self.analyze(p, stmt) for p in arg.params]
+                else:
+                    # Handle plain expression
+                    device.device_expr = self.analyze(arg, stmt)
+                stmt.devices.append(device)
 
         return stmt
 
     def _analyze_UseCommand(self, cmd: Any, parent: Any) -> MUseStatement:
-        """Analyze USE command into MUseStatement."""
+        """Analyze USE command into MUseStatement.
+
+        Supports multiple devices per MUMPS 1995 spec:
+        U DEV1,DEV2 uses both devices in sequence
+        """
         stmt = MUseStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -1308,13 +1352,26 @@ class SemanticAnalyzer:
         # USE device(:parameters)
         if hasattr(cmd, "args") and cmd.args:
             args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
-            if len(args) > 0:
-                stmt.device_expr = self.analyze(args[0], stmt)
+            for arg in args:
+                device = MUseDevice()
+                # Handle UseArg object if it has device attribute
+                if hasattr(arg, "device"):
+                    device.device_expr = self.analyze(arg.device, stmt)
+                    if hasattr(arg, "params") and arg.params:
+                        device.parameters = [self.analyze(p, stmt) for p in arg.params]
+                else:
+                    # Handle plain expression
+                    device.device_expr = self.analyze(arg, stmt)
+                stmt.devices.append(device)
 
         return stmt
 
     def _analyze_JobCommand(self, cmd: Any, parent: Any) -> MJobStatement:
-        """Analyze JOB command into MJobStatement."""
+        """Analyze JOB command into MJobStatement.
+
+        Supports multiple targets per MUMPS 1995 spec:
+        J LABEL1,LABEL2 starts two concurrent jobs
+        """
         stmt = MJobStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -1340,8 +1397,7 @@ class SemanticAnalyzer:
                 if hasattr(target, "args") and target.args:
                     call.arguments = self._analyze_function_args(target.args, call)
 
-                stmt.call = call
-                break  # Take first target for now
+                stmt.calls.append(call)
 
         return stmt
 

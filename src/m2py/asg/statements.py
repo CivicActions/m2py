@@ -6,8 +6,11 @@ Defines all statement types for the MUMPS ASG:
 - Subroutines: MDoStatement, MQuitStatement
 - Data: MSetStatement, MWriteStatement, MReadStatement
 - Variables: MNewStatement, MKillStatement, MMergeStatement
-- Other: MHangStatement, MHaltStatement, MXecuteStatement, MLockStatement, MViewStatement, MBreakStatement
+- I/O: MOpenStatement, MCloseStatement, MUseStatement
+- Other: MHangStatement, MHaltStatement, MXecuteStatement, MLockStatement, MViewStatement, MBreakStatement, MJobStatement
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, List, Optional, Union
@@ -352,16 +355,54 @@ class MKillStatement(MStatement):
         return not self.targets and not self.exclusive
 
 
+# =============================================================================
+# Merge Statement
+# =============================================================================
+
+
+@dataclass
+class MMergePair:
+    """Single merge pair within MERGE command.
+
+    Represents one destination=source pair in a MERGE command.
+    MERGE can have multiple pairs: M X=Y,Z=W
+
+    Note: This is a sub-component of MMergeStatement, not a standalone ASG node.
+    It inherits source position context from its containing MMergeStatement.
+    """
+
+    destination: Any = None  # MVariable or MGlobal
+    source: Any = None  # MVariable or MGlobal
+
+
 @dataclass
 class MMergeStatement(MStatement):
     """MERGE command - copy tree structures.
 
     Copies entire variable trees:
     M ^DEST=^SOURCE, MERGE LOCAL=^GLOBAL
+
+    Supports multiple merge pairs per MUMPS 1995 spec:
+    M X=Y,Z=W copies both Y→X and W→Z
     """
 
-    destination: Any = None  # MVariable or MGlobal
-    source: Any = None  # MVariable or MGlobal
+    merges: List[MMergePair] = field(default_factory=list)
+
+    @property
+    def destination(self) -> Any:
+        """Backward-compatible access to first merge destination.
+
+        Returns first merge pair's destination or None if empty.
+        """
+        return self.merges[0].destination if self.merges else None
+
+    @property
+    def source(self) -> Any:
+        """Backward-compatible access to first merge source.
+
+        Returns first merge pair's source or None if empty.
+        """
+        return self.merges[0].source if self.merges else None
 
 
 # =============================================================================
@@ -451,11 +492,13 @@ class MViewStatement(MStatement):
 
 
 @dataclass
-class MOpenStatement(MStatement):
-    """OPEN command - open device for I/O.
+class MOpenDevice:
+    """Single device in OPEN command.
 
-    Opens a device for input/output:
-    O device, OPEN device:parameters
+    Represents one device with its parameters in an OPEN command.
+    OPEN can have multiple devices: O DEV1,DEV2
+
+    Note: This is a sub-component of MOpenStatement, not a standalone ASG node.
     """
 
     device_expr: Optional["MExpr"] = None
@@ -464,11 +507,80 @@ class MOpenStatement(MStatement):
 
 
 @dataclass
+class MOpenStatement(MStatement):
+    """OPEN command - open device for I/O.
+
+    Opens one or more devices for input/output:
+    O device, OPEN device:parameters, O DEV1,DEV2
+
+    Supports multiple devices per MUMPS 1995 spec:
+    O DEV1:params,DEV2:params opens both devices
+    """
+
+    devices: List[MOpenDevice] = field(default_factory=list)
+
+    @property
+    def device_expr(self) -> Optional["MExpr"]:
+        """Backward-compatible access to first device expression."""
+        return self.devices[0].device_expr if self.devices else None
+
+    @property
+    def parameters(self) -> List["MExpr"]:
+        """Backward-compatible access to first device parameters."""
+        return self.devices[0].parameters if self.devices else []
+
+    @property
+    def timeout(self) -> Optional["MExpr"]:
+        """Backward-compatible access to first device timeout."""
+        return self.devices[0].timeout if self.devices else None
+
+
+@dataclass
+class MCloseDevice:
+    """Single device in CLOSE command.
+
+    Represents one device with its parameters in a CLOSE command.
+    CLOSE can have multiple devices: C DEV1,DEV2
+
+    Note: This is a sub-component of MCloseStatement, not a standalone ASG node.
+    """
+
+    device_expr: Optional["MExpr"] = None
+    parameters: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
 class MCloseStatement(MStatement):
     """CLOSE command - close device.
 
-    Closes a device:
-    C device, CLOSE device:parameters
+    Closes one or more devices:
+    C device, CLOSE device:parameters, C DEV1,DEV2
+
+    Supports multiple devices per MUMPS 1995 spec:
+    C DEV1,DEV2 closes both devices
+    """
+
+    devices: List[MCloseDevice] = field(default_factory=list)
+
+    @property
+    def device_expr(self) -> Optional["MExpr"]:
+        """Backward-compatible access to first device expression."""
+        return self.devices[0].device_expr if self.devices else None
+
+    @property
+    def parameters(self) -> List["MExpr"]:
+        """Backward-compatible access to first device parameters."""
+        return self.devices[0].parameters if self.devices else []
+
+
+@dataclass
+class MUseDevice:
+    """Single device in USE command.
+
+    Represents one device with its parameters in a USE command.
+    USE can have multiple devices: U DEV1,DEV2
+
+    Note: This is a sub-component of MUseStatement, not a standalone ASG node.
     """
 
     device_expr: Optional["MExpr"] = None
@@ -479,22 +591,42 @@ class MCloseStatement(MStatement):
 class MUseStatement(MStatement):
     """USE command - select current device.
 
-    Makes device current I/O device:
-    U device, USE device:parameters
+    Makes one or more devices current I/O device:
+    U device, USE device:parameters, U DEV1,DEV2
+
+    Supports multiple devices per MUMPS 1995 spec:
+    U DEV1,DEV2 uses both devices in sequence
     """
 
-    device_expr: Optional["MExpr"] = None
-    parameters: List["MExpr"] = field(default_factory=list)
+    devices: List[MUseDevice] = field(default_factory=list)
+
+    @property
+    def device_expr(self) -> Optional["MExpr"]:
+        """Backward-compatible access to first device expression."""
+        return self.devices[0].device_expr if self.devices else None
+
+    @property
+    def parameters(self) -> List["MExpr"]:
+        """Backward-compatible access to first device parameters."""
+        return self.devices[0].parameters if self.devices else []
 
 
 @dataclass
 class MJobStatement(MStatement):
     """JOB command - start concurrent job.
 
-    Starts a new process executing a routine:
-    J label, JOB label^routine:parameters
+    Starts one or more new processes executing routines:
+    J label, JOB label^routine:parameters, J LABEL1,LABEL2
+
+    Supports multiple targets per MUMPS 1995 spec:
+    J LABEL1,LABEL2 starts two concurrent jobs
     """
 
-    call: Optional["MCall"] = None
+    calls: List["MCall"] = field(default_factory=list)
     parameters: List["MExpr"] = field(default_factory=list)
     timeout: Optional["MExpr"] = None
+
+    @property
+    def call(self) -> Optional["MCall"]:
+        """Backward-compatible access to first call target."""
+        return self.calls[0] if self.calls else None

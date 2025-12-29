@@ -94,7 +94,11 @@ ASGElement (abstract base)
 │   ├── MHaltStatement
 │   ├── MXecuteStatement
 │   ├── MLockStatement
-│   ├── MMergeStatement
+│   ├── MMergeStatement          # merges: List[MMergePair]
+│   ├── MOpenStatement           # devices: List[MOpenDevice]
+│   ├── MCloseStatement          # devices: List[MCloseDevice]
+│   ├── MUseStatement            # devices: List[MUseDevice]
+│   ├── MJobStatement            # calls: List[MCall]
 │   └── MViewStatement
 │
 ├── MExpr (abstract)            # Expression base
@@ -107,19 +111,36 @@ ASGElement (abstract base)
 │   ├── MIntrinsicFunction
 │   ├── MExtrinsicFunction
 │   ├── MPatternMatch
-│   └── MIndirection
+│   └── MIndirection             # requires_runtime_eval: bool = True
 │
 ├── MCall                       # Reference to label
 │   ├── target: MLabel?         # Resolved reference
 │   ├── routine: str?           # External routine
 │   └── call_type: CallType
 │
-└── MForParameter               # FOR loop parameter
-    ├── param_type: ForParamType
-    ├── value: MExpr?           # For string-list
-    ├── start: MExpr?           # For range
-    ├── step: MExpr?
-    └── end: MExpr?
+├── MForParameter               # FOR loop parameter
+│   ├── param_type: ForParamType
+│   ├── value: MExpr?           # For string-list
+│   ├── start: MExpr?           # For range
+│   ├── step: MExpr?
+│   └── end: MExpr?
+│
+├── MMergePair                  # MERGE pair (new in Phase 78)
+│   ├── destination: MExpr      # Target variable
+│   └── source: MExpr           # Source variable
+│
+├── MOpenDevice                 # OPEN device (new in Phase 78)
+│   ├── device_expr: MExpr      # Device expression
+│   ├── parameters: List[MExpr] # Device parameters
+│   └── timeout: MExpr?         # Timeout
+│
+├── MCloseDevice                # CLOSE device (new in Phase 78)
+│   ├── device_expr: MExpr      # Device expression
+│   └── parameters: List[MExpr] # Device parameters
+│
+└── MUseDevice                  # USE device (new in Phase 78)
+    ├── device_expr: MExpr      # Device expression
+    └── parameters: List[MExpr] # Device parameters
 ```
 
 ---
@@ -516,9 +537,17 @@ class MIndirection(MExpr):
     expression: Optional['MExpr'] = None
     indirection_type: str = ""  # "name", "subscript", "argument"
     
+    # Subscripts for @X(1,2) and @X@(1,2) forms
+    subscripts: Optional[List['MExpr']] = None
+    name_indirection_subscripts: Optional[List[List['MExpr']]] = None
+    
     # Analysis flags
     can_resolve_statically: bool = False
     resolved_value: Optional[str] = None
+    
+    # Runtime evaluation flags (always True for indirection)
+    requires_runtime_eval: bool = True
+    result_type: Optional[str] = None
 
 @dataclass
 class MSpecialVariable(MExpr):

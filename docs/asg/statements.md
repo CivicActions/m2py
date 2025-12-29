@@ -365,17 +365,34 @@ K (X,Y,Z),(X,W) ; Multiple exclusive groups - keep intersection
 
 ### MMergeStatement
 
-Copy variable tree:
+Copy variable tree. Supports multiple merge pairs per MUMPS 1995 specification:
 
 ```mumps
 M ^DEST=^SOURCE
 M LOCAL=^GLOBAL(1)
+M X=Y,Z=W           ; Multiple merge pairs
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `merges` | `List[MMergePair]` | List of destination=source pairs |
+| `destination` | `Any` (property) | Backward-compat: first pair's destination |
+| `source` | `Any` (property) | Backward-compat: first pair's source |
+
+**MMergePair** structure:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `destination` | `MVariable\|MGlobal` | Target |
 | `source` | `MVariable\|MGlobal` | Source |
+
+**Example**: `M X=Y,Z=W` produces:
+```python
+stmt.merges = [
+    MMergePair(destination=MVariable('X'), source=MVariable('Y')),
+    MMergePair(destination=MVariable('Z'), source=MVariable('W'))
+]
+```
 
 ---
 
@@ -466,39 +483,88 @@ VIEW expr
 
 ### I/O Device Statements
 
-**MOpenStatement**: Open device
+All I/O device statements support multiple devices per MUMPS 1995 specification.
+
+**MOpenStatement**: Open one or more devices
 
 ```mumps
 O device
 O device:params:timeout
-```
-
-**MCloseStatement**: Close device
-
-```mumps
-C device
-C device:params
-```
-
-**MUseStatement**: Select current device
-
-```mumps
-U device
-U device:params
-```
-
-**MJobStatement**: Start concurrent job
-
-```mumps
-J label^routine
-J label:params:timeout
+O DEV1,DEV2             ; Multiple devices
+O DEV1:("A"):5,DEV2     ; Multiple with params
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `device_expr` / `call` | `MExpr` / `MCall` | Device or call target |
+| `devices` | `List[MOpenDevice]` | List of devices to open |
+| `device_expr` | `MExpr` (property) | Backward-compat: first device |
+| `parameters` | `List[MExpr]` (property) | Backward-compat: first device params |
+| `timeout` | `MExpr` (property) | Backward-compat: first device timeout |
+
+**MOpenDevice** structure:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `device_expr` | `MExpr` | Device expression |
 | `parameters` | `List[MExpr]` | Device parameters |
-| `timeout` | `Optional[MExpr]` | Timeout (OPEN, JOB) |
+| `timeout` | `Optional[MExpr]` | Timeout in seconds |
+
+**MCloseStatement**: Close one or more devices
+
+```mumps
+C device
+C device:(params)
+C DEV1,DEV2             ; Multiple devices
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `devices` | `List[MCloseDevice]` | List of devices to close |
+| `device_expr` | `MExpr` (property) | Backward-compat: first device |
+| `parameters` | `List[MExpr]` (property) | Backward-compat: first device params |
+
+**MCloseDevice** structure:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `device_expr` | `MExpr` | Device expression |
+| `parameters` | `List[MExpr]` | Device parameters |
+
+**MUseStatement**: Select one or more devices as current
+
+```mumps
+U device
+U device:(params)
+U DEV1,DEV2             ; Multiple devices
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `devices` | `List[MUseDevice]` | List of devices |
+| `device_expr` | `MExpr` (property) | Backward-compat: first device |
+| `parameters` | `List[MExpr]` (property) | Backward-compat: first device params |
+
+**MUseDevice** structure:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `device_expr` | `MExpr` | Device expression |
+| `parameters` | `List[MExpr]` | Device parameters |
+
+**MJobStatement**: Start one or more concurrent jobs
+
+```mumps
+J label^routine
+J label:params:timeout
+J LABEL1,LABEL2         ; Multiple targets
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `calls` | `List[MCall]` | List of job targets |
+| `call` | `MCall` (property) | Backward-compat: first call |
+| `parameters` | `List[MExpr]` | Process parameters |
+| `timeout` | `Optional[MExpr]` | Timeout in seconds |
 
 ---
 

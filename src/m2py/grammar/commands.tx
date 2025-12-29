@@ -325,6 +325,18 @@ CommandWithArg:
     /[Kk]:/ |  // KILL with postcondition
     // BREAK: B followed by space, end, or postcondition
     /[Bb][Rr][Ee][Aa][Kk]|[Bb][ \t]|[Bb]$|[Bb]:/ |
+    // JOB: J followed by space or postcondition
+    /[Jj][Oo][Bb][ \t:]|[Jj][ \t]+[A-Za-z%^@]/ |
+    /[Jj]:/ |  // JOB with postcondition
+    // OPEN: O followed by space or postcondition
+    /[Oo][Pp][Ee][Nn][ \t:]|[Oo][ \t]+[A-Za-z%^@0-9]/ |
+    /[Oo]:/ |  // OPEN with postcondition
+    // CLOSE: C followed by space or postcondition
+    /[Cc][Ll][Oo][Ss][Ee][ \t:]|[Cc][ \t]+[A-Za-z%^@0-9]/ |
+    /[Cc]:/ |  // CLOSE with postcondition
+    // USE: U followed by space or postcondition
+    /[Uu][Ss][Ee][ \t:]|[Uu][ \t]+[A-Za-z%^@0-9]/ |
+    /[Uu]:/ |  // USE with postcondition
     // Other commands (less common after QUIT) - also check postcondition
     /[Hh][Aa][Nn][Gg][ \t:]/ |
     /[Hh][Aa][Ll][Tt]/ |
@@ -485,14 +497,42 @@ OpenArg:
     )?
 ;
 
-// CLOSE command: CLOSE device
+// CLOSE command: CLOSE device[:parameters]
+// Per MUMPS 1995 spec, CLOSE supports optional device parameters
 CloseCommand:
-    /[Cc]([Ll][Oo][Ss][Ee])?/ postcond=Postcondition? WS args+=Expr[/,/]
+    /[Cc]([Ll][Oo][Ss][Ee])?/ postcond=Postcondition? WS args+=CloseArg[/,/]
 ;
 
-// USE command: USE device
+// Close argument: device with optional parameters
+// Supports:
+//   X - device only
+//   X:(params) - device with parameters
+CloseArg:
+    device=Expr (
+        ':' (
+            // Parenthesized parameters: :(param:param:...)
+            '(' params+=Expr[':'] ')'
+        )
+    )?
+;
+
+// USE command: USE device[:parameters]
+// Per MUMPS 1995 spec, USE supports optional device parameters
 UseCommand:
-    /[Uu]([Ss][Ee])?/ postcond=Postcondition? WS args+=Expr[/,/]
+    /[Uu]([Ss][Ee])?/ postcond=Postcondition? WS args+=UseArg[/,/]
+;
+
+// Use argument: device with optional parameters
+// Supports:
+//   X - device only
+//   X:(params) - device with parameters
+UseArg:
+    device=Expr (
+        ':' (
+            // Parenthesized parameters: :(param:param:...)
+            '(' params+=Expr[':'] ')'
+        )
+    )?
 ;
 
 // =============================================================================

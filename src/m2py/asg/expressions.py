@@ -231,6 +231,10 @@ class MIndirection(MExpr):
     can_resolve_statically: bool = False
     resolved_value: Optional[str] = None
 
+    # Runtime evaluation flags (set by textX custom class)
+    requires_runtime_eval: bool = True  # Indirection always requires runtime
+    result_type: Optional[str] = None  # Type is unknown until runtime
+
 
 @dataclass
 class MFormatControl(MExpr):

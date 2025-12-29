@@ -6478,3 +6478,250 @@ Verified mappings:
 - [X] **77.5** Run tests to verify no regressions
 
 **Checkpoint**: Phase 77 complete - Dead code removed (requires_runtime_tracking, has_else_scope), documentation corrected (MPatternMatch.operator), design decisions documented. All 1002 tests pass.
+
+---
+
+## Phase 78: Multi-Argument Command Support (Critical for VistA)
+
+**Objective**: Fix commands that support comma-separated argument lists but currently only capture a single argument, losing data.
+
+**Context**: MUMPS 1995 specification (§8.2.x) defines several commands with "L argument" syntax where "L" means a comma-separated list. The textX grammar correctly captures lists (`+=` syntax), but the semantic analyzer and ASG classes only store singular values, silently discarding all but one argument.
+
+**Impact**: 210+ VistA routine files use multi-argument MERGE. Code generation would produce incorrect output.
+
+### Validated Findings
+
+#### Finding 1: `MMergeStatement` Loses Multiple Merge Pairs - CRITICAL BUG
+**Status:** Fix Required - Data Loss
+**Files:**
+- Grammar: `src/m2py/grammar/commands.tx` line 447: `merges+=MergeArg[/,/]` ✓ (correct)
+- ASG: `src/m2py/asg/statements.py` line 356-365: singular `destination` and `source` fields ✗
+- Analyzer: `src/m2py/analysis/semantic_analyzer.py` line 1243-1256: loop overwrites singular fields ✗
+
+**MUMPS Spec Reference:** 1995__a108041.md - "M[ERGE] postcond SP L mergeargument" where L = list
+
+**VistA Evidence:** 210 files use multi-argument MERGE, including:
+- `Packages/Kernel/Routines/ZTMON.m:32` - `M ZTC("S")=^%ZTSCH("STATUS"),ZTC("L")=^%ZTSCH("LOADA")`
+- `Packages/Kernel/Routines/XUPC991.m:16` - `M XUO=X1,XUN=X2`
+- `Packages/Outpatient Pharmacy/Routines/PSOXZA13.m:17` - `M X1=X,X2=X`
+
+**Reproduction:**
+```python
+parser.parse('TEST\\n\\t M X=Y,Z=W')
+# Result: destination=Z, source=W
+# LOST: X=Y (first merge pair)
+```
+
+**Solution:** 
+1. Change `MMergeStatement` to have `merges: List[MMergePair]` where `MMergePair` has `destination` and `source`
+2. Update semantic analyzer to populate the list instead of overwriting
+
+#### Finding 2: `MOpenStatement` Loses Multiple Devices - BUG  
+**Status:** Fix Required - Data Loss
+**Files:**
+- Grammar: `src/m2py/grammar/commands.tx` line 465: `args+=OpenArg[/,/]` ✓ (correct)
+- ASG: `src/m2py/asg/statements.py` line 454-465: singular `device_expr` field ✗
+- Analyzer: `src/m2py/analysis/semantic_analyzer.py` line 1258-1286: `args[0]` only ✗
+
+**MUMPS Spec Reference:** 1995__a108043.md - "O[PEN] postcond SP L openargument" where L = list
+
+**Solution:** Change to `devices: List[MOpenDevice]` where each has `device_expr`, `parameters`, `timeout`
+
+#### Finding 3: `MCloseStatement` Loses Multiple Devices - BUG
+**Status:** Fix Required - Data Loss
+**Files:**
+- Grammar: `src/m2py/grammar/commands.tx` line 488: `args+=CloseArg[/,/]` ✓ (correct)
+- ASG: `src/m2py/asg/statements.py` line 467-477: singular `device_expr` field ✗
+- Analyzer: `src/m2py/analysis/semantic_analyzer.py` line 1288-1300: `args[0]` only ✗
+
+**MUMPS Spec Reference:** 1995__a108025.md - "C[LOSE] postcond SP L closeargument" where L = list
+
+**Solution:** Change to `devices: List[MCloseDevice]` where each has `device_expr`, `parameters`
+
+#### Finding 4: `MUseStatement` Loses Multiple Devices - BUG
+**Status:** Fix Required - Data Loss
+**Files:**
+- Grammar: `src/m2py/grammar/commands.tx` line 503: `args+=UseArg[/,/]` ✓ (correct)
+- ASG: `src/m2py/asg/statements.py` line 479-489: singular `device_expr` field ✗
+- Analyzer: `src/m2py/analysis/semantic_analyzer.py` line 1302-1314: `args[0]` only ✗
+
+**MUMPS Spec Reference:** 1995__a108054.md - "U[SE] postcond SP L useargument" where L = list
+
+**Solution:** Change to `devices: List[MUseDevice]` where each has `device_expr`, `parameters`
+
+#### Finding 5: `MJobStatement` Loses Multiple Targets - BUG
+**Status:** Fix Required - Data Loss  
+**Files:**
+- Grammar: `src/m2py/grammar/commands.tx` line 454-456: `targets+=DoTarget[/,/]` ✓ (correct)
+- ASG: `src/m2py/asg/statements.py` line 491-501: singular `call` field ✗
+- Analyzer: `src/m2py/analysis/semantic_analyzer.py` line 1316-1348: `break` after first target ✗
+
+**MUMPS Spec Reference:** 1995__a108036.md - "J[OB] postcond SP L jobargument" where L = list
+
+**Note:** JOB also has `processparameters` which differ from DO's `actuallist`. Current grammar reuses `DoTarget` which may not capture JOB-specific fields like process parameters. Low priority since multi-target JOB is rare in practice.
+
+**Solution:** Change to `calls: List[MCall]` (plural)
+
+#### Finding 6: `MIndirection` Subscript Analysis Missing - VARIABLE TRACKING BUG
+**Status:** Fix Required - Variables Not Tracked
+**Files:**
+- ASG: `src/m2py/asg/expressions.py` line 209-230: defines `subscripts` and `name_indirection_subscripts` ✓
+- Analyzer: `src/m2py/analysis/semantic_analyzer.py` line 208-212: only analyzes `expression`, not subscripts ✗
+
+**Issue:** In `_analyze_expression()` for `MIndirection`, only the base expression is analyzed:
+```python
+elif isinstance(expr, MIndirection):
+    object.__setattr__(expr, "expression", self.analyze(expr.expression, expr))
+    # Classify indirection type based on context
+    self._classify_indirection(expr, parent)
+```
+
+**Consequence:** Variables used inside indirection subscripts are NOT tracked in `ScopeVariables`:
+- `@X(Y)` - Y is not marked as read
+- `@A@(B,C)` - B and C are not marked as read
+
+**Solution:** Add subscript analysis in `_analyze_expression()` for MIndirection
+
+#### Finding 7: `CommandWithArg` Missing Commands - GRAMMAR DISAMBIGUATION BUG
+**Status:** Fix Required - Parsing Ambiguity
+**File:** `src/m2py/grammar/commands.tx` line 295-336
+
+**Issue:** The `CommandWithArg` rule is used to disambiguate QUIT arguments (e.g., `Q S X=1` is QUIT then SET, not QUIT with value). The rule is missing:
+- JOB (J)
+- OPEN (O)
+- CLOSE (C)
+- USE (U)
+
+**Consequence:** A line like `Q J label^routine` (Quit then Job) might be misparsed because JOB is not recognized as a command start.
+
+**Solution:** Add patterns for JOB, OPEN, CLOSE, USE to `CommandWithArg`
+
+#### Finding 8: `CloseCommand` and `UseCommand` Missing Parameter Support - GRAMMAR BUG
+**Status:** Fix Required - Valid Syntax Fails to Parse
+**Files:**
+- `src/m2py/grammar/commands.tx` line 490: `CloseCommand` uses `args+=Expr[/,/]`
+- `src/m2py/grammar/commands.tx` line 495: `UseCommand` uses `args+=Expr[/,/]`
+
+**Issue:** MUMPS allows device parameters for CLOSE and USE:
+- `CLOSE device:params` 
+- `USE device:params`
+
+The current grammar uses `Expr` which doesn't handle the `:params` suffix.
+
+**MUMPS Spec Reference:** 
+- 1995__a108025.md: closeargument includes optional deviceparameters
+- 1995__a108054.md: useargument includes optional deviceparameters
+
+**Note:** OPEN already correctly uses `OpenArg` with parameter support.
+
+**Solution:** Create `CloseArg` and `UseArg` grammar rules with optional parameters, similar to `OpenArg`
+
+#### Finding 9: TextX Class Attribute Inconsistency - MINOR
+**Status:** Low Priority - Harmless But Inconsistent
+**Files:**
+- `src/m2py/parser/textx_classes.py` line 390-391: `Indirection` sets `requires_runtime_eval` and `result_type`
+- `src/m2py/asg/expressions.py` line 209-230: `MIndirection` does NOT define these fields
+
+**Issue:** The textX `Indirection` class sets attributes that don't exist in the `MIndirection` base class:
+```python
+object.__setattr__(self, "requires_runtime_eval", True)
+object.__setattr__(self, "result_type", None)
+```
+
+**Consequence:** Works at runtime due to Python's dynamic nature, but:
+- Type checkers won't recognize these attributes
+- IDE autocompletion won't show them
+- Documentation doesn't mention them
+
+**Solution:** Either add these fields to `MIndirection` or remove from `Indirection`
+
+#### Finding 10: Legacy Grammar Support Code - CLEANUP
+**Status:** Low Priority - Technical Debt
+**Files:**
+- `src/m2py/analysis/semantic_analyzer.py` line 316: "Backwards compatibility for old grammar"
+- `src/m2py/analysis/semantic_analyzer.py` line 344: "Old grammar (still supported for backwards compatibility)"
+- `src/m2py/analysis/semantic_analyzer.py` line 1077: "Legacy support: old grammar structure"
+
+**Issue:** Several code paths exist for "old grammar" vs "new grammar" compatibility. Since the grammar is now stable in expressions.tx and commands.tx, these branches may be dead code.
+
+**Recommendation:** Audit and remove if no longer needed to simplify maintenance.
+
+### Tasks
+
+- [X] **78.1** Create `MMergePair` dataclass in `src/m2py/asg/statements.py`
+  - Fields: `destination: MExpr`, `source: MExpr`
+  - Add `from __future__ import annotations` if not present
+
+- [X] **78.2** Update `MMergeStatement` to use list
+  - Change `destination: Any` and `source: Any` to `merges: List[MMergePair]`
+  - Add backward-compatible properties: `@property destination` returns `merges[0].destination if merges else None`
+  - Update docstring with multi-merge example
+
+- [X] **78.3** Update `_analyze_MergeCommand` in semantic analyzer
+  - Change loop to append `MMergePair` objects to `stmt.merges` list
+  - Remove the field overwriting pattern
+
+- [X] **78.4** Create `MOpenDevice`, `MCloseDevice`, `MUseDevice` dataclasses
+  - `MOpenDevice`: `device_expr`, `parameters`, `timeout`
+  - `MCloseDevice`: `device_expr`, `parameters`
+  - `MUseDevice`: `device_expr`, `parameters`
+
+- [X] **78.5** Update `MOpenStatement`, `MCloseStatement`, `MUseStatement` to use lists
+  - Change singular `device_expr` to `devices: List[MXxxDevice]`
+  - Add backward-compatible `@property device_expr` returning first device
+
+- [X] **78.6** Update `_analyze_OpenCommand`, `_analyze_CloseCommand`, `_analyze_UseCommand`
+  - Iterate through all `cmd.args` and append to device list
+
+- [X] **78.7** Update `MJobStatement` to use list
+  - Change `call: Optional[MCall]` to `calls: List[MCall]`
+  - Add backward-compatible `@property call` returning first call
+
+- [X] **78.8** Update `_analyze_JobCommand` in semantic analyzer
+  - Remove `break` statement, iterate through all targets
+
+- [X] **78.9** Add unit tests for multi-argument commands
+  - Test `M X=Y,Z=W` captures both pairs
+  - Test `O DEV1,DEV2` captures both devices
+  - Test `C DEV1,DEV2` captures both devices
+  - Test `U DEV1,DEV2` captures both devices
+  - Test `J LABEL1,LABEL2` captures both calls
+
+- [X] **78.10** Add integration test with VistA ZTMON.m pattern
+  - Parse `M ZTC("S")=^%ZTSCH("STATUS"),ZTC("L")=^%ZTSCH("LOADA")`
+  - Verify both merge pairs are captured
+
+- [X] **78.11** Fix `MIndirection` subscript analysis in `_analyze_expression()`
+  - Add: `if expr.subscripts: expr.subscripts = [self.analyze(s, expr) for s in expr.subscripts]`
+  - Add: similar for `name_indirection_subscripts`
+  - Add test: parse `@X(Y)` and verify Y is tracked as read variable
+
+- [X] **78.12** Add missing commands to `CommandWithArg` in commands.tx
+  - Add JOB pattern: `/[Jj][Oo][Bb][ \t:]|[Jj][ \t]+[A-Za-z%^@]/`
+  - Add OPEN pattern: `/[Oo][Pp][Ee][Nn][ \t:]|[Oo][ \t]+[A-Za-z%^@0-9]/`
+  - Add CLOSE pattern: `/[Cc][Ll][Oo][Ss][Ee][ \t:]|[Cc][ \t]+[A-Za-z%^@0-9]/`
+  - Add USE pattern: `/[Uu][Ss][Ee][ \t:]|[Uu][ \t]+[A-Za-z%^@0-9]/`
+
+- [X] **78.13** Create `CloseArg` and `UseArg` grammar rules with parameter support
+  - Model after `OpenArg` structure
+  - Update `CloseCommand` to use `args+=CloseArg[/,/]`
+  - Update `UseCommand` to use `args+=UseArg[/,/]`
+  - Update semantic analyzer to handle new arg structures
+
+- [X] **78.14** (Optional) Add missing attributes to `MIndirection`
+  - Add `requires_runtime_eval: bool = True` field
+  - Add `result_type: Optional[str] = None` field
+  - Or remove from textx_classes.py if not needed
+
+- [ ] **78.15** (Optional) Audit and remove legacy grammar support code
+  - Review each "backwards compatibility" branch
+  - Add tests to verify old patterns don't occur
+  - Remove dead code branches if safe
+
+- [X] **78.16** Update documentation
+  - Update `docs/asg/statements.md` with new list-based structures
+  - Update `data-model.md` entity diagrams
+
+- [X] **78.17** Run all tests to verify no regressions
+
+**Checkpoint**: Phase 78 complete - Multi-argument commands correctly capture all arguments
