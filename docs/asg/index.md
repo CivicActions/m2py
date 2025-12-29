@@ -122,7 +122,7 @@ Other:
 ├── MOpenStatement   (device_expr, parameters, timeout)
 ├── MCloseStatement  (device_expr)
 ├── MUseStatement    (device_expr, parameters)
-└── MJobStatement    (call, parameters, timeout)
+└── MJobStatement    (targets, parameters, timeout)
 ```
 
 ### Expression Types
@@ -147,7 +147,7 @@ Functions:
 └── MExtrinsicFunction (target: MCall, arguments: List[MActualParameter])
 
 Special:
-├── MPatternMatch   (subject, pattern, operator, compiled_regex)
+├── MPatternMatch   (subject, pattern, pattern_indirect, operator, compiled_regex)
 ├── MIndirection    (expression, indirection_type, subscripts)
 ├── MFormatControl  (control_type, expression)
 ├── MSpecialVariable (name)

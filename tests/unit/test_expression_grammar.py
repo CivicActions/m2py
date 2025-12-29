@@ -198,7 +198,7 @@ class TestUnaryOperators:
         assert model is not None
 
     def test_double_negative(self, expr_metamodel):
-        """Parse double unary minus (BUG-002 fix)."""
+        """Parse double unary minus (chained unary operators are valid MUMPS syntax)."""
         model = expr_metamodel.model_from_str("--X", "Expr")
         assert model is not None
         # Verify we got two unary operators
@@ -213,7 +213,7 @@ class TestUnaryOperators:
         assert len(model.left.operators) == 3
 
     def test_double_not(self, expr_metamodel):
-        """Parse double logical NOT (BUG-002 fix)."""
+        """Parse double logical NOT (chained unary operators are valid MUMPS syntax)."""
         model = expr_metamodel.model_from_str("''X", "Expr")
         assert model is not None
         assert len(model.left.operators) == 2
@@ -476,7 +476,7 @@ class TestSpecialVariables:
         assert model is not None
 
     def test_abbreviated_horolog(self, expr_metamodel):
-        """Parse $H as abbreviated $HOROLOG (T538 fix)."""
+        """Parse $H as abbreviated $HOROLOG (single-letter forms allowed per MUMPS spec)."""
         model = expr_metamodel.model_from_str("$H", "Expr")
         assert model is not None
         # Navigate: Expr -> left (UnaryExpr) -> operand (PrimaryExpr)
@@ -488,7 +488,7 @@ class TestSpecialVariables:
         assert operand.name == "H"
 
     def test_abbreviated_storage(self, expr_metamodel):
-        """Parse $S as abbreviated $STORAGE (T538 fix)."""
+        """Parse $S as abbreviated $STORAGE (single-letter forms allowed per MUMPS spec)."""
         model = expr_metamodel.model_from_str("$S", "Expr")
         assert model is not None
         operand = model.left.operand
@@ -498,7 +498,7 @@ class TestSpecialVariables:
         assert operand.name == "S"
 
     def test_abbreviated_test(self, expr_metamodel):
-        """Parse $T as abbreviated $TEST (T538 fix)."""
+        """Parse $T as abbreviated $TEST (single-letter forms allowed per MUMPS spec)."""
         model = expr_metamodel.model_from_str("$T", "Expr")
         assert model is not None
         operand = model.left.operand
@@ -508,7 +508,7 @@ class TestSpecialVariables:
         assert operand.name == "T"
 
     def test_abbreviated_job(self, expr_metamodel):
-        """Parse $J as abbreviated $JOB (T538 fix)."""
+        """Parse $J as abbreviated $JOB (single-letter forms allowed per MUMPS spec)."""
         model = expr_metamodel.model_from_str("$J", "Expr")
         assert model is not None
         operand = model.left.operand
@@ -518,7 +518,7 @@ class TestSpecialVariables:
         assert operand.name == "J"
 
     def test_abbreviated_io(self, expr_metamodel):
-        """Parse $I as abbreviated $IO (T538 fix)."""
+        """Parse $I as abbreviated $IO (single-letter forms allowed per MUMPS spec)."""
         model = expr_metamodel.model_from_str("$I", "Expr")
         assert model is not None
         operand = model.left.operand
@@ -528,7 +528,7 @@ class TestSpecialVariables:
         assert operand.name == "I"
 
     def test_abbreviated_device(self, expr_metamodel):
-        """Parse $D as abbreviated $DEVICE (T538 fix)."""
+        """Parse $D as abbreviated $DEVICE (single-letter forms allowed per MUMPS spec)."""
         model = expr_metamodel.model_from_str("$D", "Expr")
         assert model is not None
         operand = model.left.operand
@@ -538,7 +538,7 @@ class TestSpecialVariables:
         assert operand.name == "D"
 
     def test_select_function_still_works(self, expr_metamodel):
-        """Parse $SELECT(cond:val) as SelectFunction, not special variable (T538 fix).
+        """Parse $SELECT(cond:val) as SelectFunction, not special variable.
 
         $S alone is $STORAGE special variable, but $S(cond:val) is $SELECT function.
         $SELECT uses special syntax with condition:value pairs.

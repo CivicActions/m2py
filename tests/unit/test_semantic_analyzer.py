@@ -132,9 +132,9 @@ class TestUnwrapExpression:
 
 
 class TestPatternMatchASG:
-    """Test MPatternMatch ASG node structure (T324).
+    """Test MPatternMatch ASG node structure.
 
-    Pattern match expressions now parse as MPatternMatch nodes with:
+    Pattern match expressions parse as MPatternMatch nodes with:
     - subject: the left-hand expression being matched
     - pattern: string representation of the pattern specification
     - operator: either "?" or "'?" for negated match
@@ -166,7 +166,7 @@ class TestPatternMatchASG:
         assert result.pattern == "1A"
 
     def test_pattern_match_indefinite_multiplier(self):
-        """Indefinite multiplier .N parses correctly (T527)."""
+        """Indefinite multiplier .N parses correctly (zero or more)."""
         from m2py.asg import MPatternMatch
 
         expr = parse_expression("X?.N")
@@ -232,7 +232,7 @@ class TestPatternMatchASG:
 
 
 class TestIntrinsicFunctionASG:
-    """Test MIntrinsicFunction ASG node structure (T325)."""
+    """Test MIntrinsicFunction ASG node structure."""
 
     def test_piece_function_args(self):
         """$PIECE(str,delim,pos) has 3 arguments."""
@@ -317,7 +317,7 @@ class TestIntrinsicFunctionASG:
 
 
 class TestExtrinsicFunctionASG:
-    """Test MExtrinsicFunction ASG node structure (T326)."""
+    """Test MExtrinsicFunction ASG node structure."""
 
     def test_extrinsic_simple(self):
         """$$FUNC creates MExtrinsicFunction with target."""
@@ -381,7 +381,7 @@ class TestExtrinsicFunctionASG:
 
 
 class TestIndirectionASG:
-    """Test MIndirection ASG node structure (T327)."""
+    """Test MIndirection ASG node structure."""
 
     def test_indirection_simple(self):
         """@X creates MIndirection with expression."""
@@ -407,7 +407,7 @@ class TestIndirectionASG:
 
 
 class TestSpecialVariableASG:
-    """Test MSpecialVariable ASG node structure (T328)."""
+    """Test MSpecialVariable ASG node structure."""
 
     def test_test_variable(self):
         """$TEST creates MSpecialVariable with name."""
@@ -440,7 +440,7 @@ class TestSpecialVariableASG:
         assert result.name == "JOB"
 
     def test_abbreviated_horolog(self):
-        """$H creates MSpecialVariable with name 'H' (T538 fix)."""
+        """$H creates MSpecialVariable with name 'H' (single-letter abbreviation)."""
         from m2py.asg import MSpecialVariable
 
         expr = parse_expression("$H")
@@ -450,7 +450,7 @@ class TestSpecialVariableASG:
         assert result.name == "H"
 
     def test_abbreviated_storage(self):
-        """$S creates MSpecialVariable with name 'S' (T538 fix)."""
+        """$S creates MSpecialVariable with name 'S' (single-letter abbreviation)."""
         from m2py.asg import MSpecialVariable
 
         expr = parse_expression("$S")
@@ -460,7 +460,7 @@ class TestSpecialVariableASG:
         assert result.name == "S"
 
     def test_abbreviated_test(self):
-        """$T creates MSpecialVariable with name 'T' (T538 fix)."""
+        """$T creates MSpecialVariable with name 'T' (single-letter abbreviation)."""
         from m2py.asg import MSpecialVariable
 
         expr = parse_expression("$T")
@@ -470,7 +470,7 @@ class TestSpecialVariableASG:
         assert result.name == "T"
 
     def test_abbreviated_job(self):
-        """$J creates MSpecialVariable with name 'J' (T538 fix)."""
+        """$J creates MSpecialVariable with name 'J' (single-letter abbreviation)."""
         from m2py.asg import MSpecialVariable
 
         expr = parse_expression("$J")
@@ -481,7 +481,7 @@ class TestSpecialVariableASG:
 
 
 class TestFormatControlASG:
-    """Test MFormatControl ASG nodes for Write format controls (T524)."""
+    """Test MFormatControl ASG nodes for Write format controls (!, #, ?n)."""
 
     def test_newline_control(self):
         """W ! produces MFormatControl with NEWLINE type."""
@@ -587,7 +587,7 @@ class TestFormatControlASG:
 
 
 class TestXecuteConstantDetection:
-    """Tests for XECUTE constant detection (T552-553)."""
+    """Tests for XECUTE constant detection (literal string arguments)."""
 
     def test_xecute_constant_string(self):
         """X "S X=1" should be detected as constant."""
@@ -646,7 +646,7 @@ class TestXecuteConstantDetection:
 
 
 class TestPatternMatchCompilation:
-    """Tests for pattern match regex compilation (T549-550)."""
+    """Tests for pattern match regex compilation."""
 
     def test_pattern_match_compiled_regex(self):
         """X?1A.N should have compiled_regex set."""
@@ -683,7 +683,7 @@ class TestPatternMatchCompilation:
 
 
 class TestIndirectionClassification:
-    """Tests for indirection type classification (T554-556)."""
+    """Tests for indirection type classification and static resolution."""
 
     def test_indirection_default_type(self):
         """@X should have IndirectionType.NAME by default."""
@@ -726,7 +726,7 @@ class TestIndirectionClassification:
 
 
 class TestReadFixedLength:
-    """Tests for READ command with fixed-length syntax (T586-T588)."""
+    """Tests for READ command with fixed-length syntax (R X#n)."""
 
     def test_read_fixed_length_basic(self):
         """R X#5 should produce MReadTarget with fixed_length."""

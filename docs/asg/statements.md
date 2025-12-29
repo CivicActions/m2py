@@ -355,7 +355,7 @@ K (X,Y,Z),(X,W) ; Multiple exclusive groups - keep intersection
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `targets` | `List[MVariable\|MGlobal]` | Variables to kill |
+| `targets` | `List[MVariable\|MGlobal\|MIndirection]` | Variables to kill |
 | `exclusive` | `bool` | True for exclusive form |
 | `except_list` | `List[str]` | Computed intersection of all exclusive groups |
 | `except_groups` | `List[List[str]]` | Raw exclusive groups before intersection |
@@ -469,7 +469,7 @@ L ^GLOBAL:5       ; With timeout
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `targets` | `List` | Lock targets |
+| `targets` | `List[dict]` | Lock target dicts with keys: `target`/`indirection`, `timeout`, `postcondition`, `indirection_levels` |
 | `lock_type` | `str` | `""`, `"+"`, or `"-"` |
 | `timeout` | `Optional[MExpr]` | Timeout seconds |
 

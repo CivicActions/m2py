@@ -245,6 +245,11 @@ than the structured `PatternSpec` from the grammar. The `compiled_regex` field p
 the Python regex equivalent for code generation. This keeps the ASG simple since
 downstream code only needs the regex, not individual pattern atoms.
 
+**compiled_regex Values**:
+- **Populated**: For static patterns like `X?3N` that can be pre-compiled
+- **None**: For indirect patterns (`X?@PAT`) - pattern evaluated at runtime
+- **None**: For patterns that fail to compile (complex or unsupported patterns)
+
 **Pattern Codes**:
 
 | Code | Meaning | Regex Equivalent |

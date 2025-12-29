@@ -267,3 +267,50 @@ start = time.time()
 routine = parser.parse_file("large.m")
 print(f"Parse time: {time.time() - start:.2f}s")
 ```
+
+## Testing Conventions
+
+### Test Docstrings
+
+Test docstrings should describe the **behavior being tested**, not reference internal task numbers or bug IDs:
+
+```python
+# Good - describes behavior
+def test_double_negative(self):
+    """Parse double unary minus (chained unary operators are valid MUMPS syntax)."""
+
+# Avoid - references internal tracking
+def test_double_negative(self):
+    """Parse double unary minus (BUG-002 fix)."""  # ❌
+```
+
+### API Property Naming
+
+When testing statement properties, use the **primary field names** rather than deprecated aliases:
+
+```python
+# Good - uses primary field name
+assert len(stmt.targets) == 2  # MJobStatement, MDoStatement, MGotoStatement
+
+# Avoid - uses deprecated alias
+assert len(stmt.calls) == 2  # ❌ deprecated for MJobStatement
+```
+
+### Deprecated Properties
+
+The following properties are deprecated but maintained for backward compatibility:
+
+| Statement | Deprecated | Use Instead |
+|-----------|------------|-------------|
+| `MJobStatement` | `.calls` | `.targets` |
+| `MJobStatement` | `.call` | `.targets[0]` |
+
+Tests for backward compatibility should explicitly document the deprecation:
+
+```python
+def test_backward_compat_calls_property(self):
+    """Verify deprecated .calls property works for backward compatibility."""
+    stmt = ...
+    # .calls is deprecated alias for .targets
+    assert stmt.calls is stmt.targets
+```

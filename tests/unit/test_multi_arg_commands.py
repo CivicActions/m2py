@@ -242,8 +242,8 @@ class TestMultiJob:
 
         stmt = routine.labels[0].body.statements[0]
         assert isinstance(stmt, MJobStatement)
-        assert len(stmt.calls) == 1
-        assert stmt.calls[0].name == "LABEL"
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
 
     def test_multi_job(self):
         """JOB with multiple targets captures all targets."""
@@ -252,20 +252,26 @@ class TestMultiJob:
 
         stmt = routine.labels[0].body.statements[0]
         assert isinstance(stmt, MJobStatement)
-        assert len(stmt.calls) == 2
+        assert len(stmt.targets) == 2
 
-        assert stmt.calls[0].name == "LABEL1"
-        assert stmt.calls[1].name == "LABEL2"
+        assert stmt.targets[0].name == "LABEL1"
+        assert stmt.targets[1].name == "LABEL2"
 
     def test_job_backward_compat_properties(self):
-        """Backward-compatible properties work with multiple targets."""
+        """Backward-compatible .call property returns first target.
+
+        Note: .calls is deprecated in favor of .targets for consistency
+        with MDoStatement and MGotoStatement. Use .targets for new code.
+        """
         parser = MUMPSParser()
         routine = parser.parse("TEST\n J LABEL1,LABEL2\n")
 
         stmt = routine.labels[0].body.statements[0]
 
-        # Backward-compat property returns first call
+        # .call returns first target (backward-compat convenience)
         assert stmt.call.name == "LABEL1"
+        # .calls is alias for .targets (deprecated)
+        assert stmt.calls is stmt.targets
 
     def test_job_external_multiple(self):
         """JOB with multiple external routine targets."""
@@ -274,10 +280,10 @@ class TestMultiJob:
 
         stmt = routine.labels[0].body.statements[0]
         assert isinstance(stmt, MJobStatement)
-        assert len(stmt.calls) == 2
+        assert len(stmt.targets) == 2
 
-        assert stmt.calls[0].routine == "ROUTINE1"
-        assert stmt.calls[1].routine == "ROUTINE2"
+        assert stmt.targets[0].routine == "ROUTINE1"
+        assert stmt.targets[1].routine == "ROUTINE2"
 
 
 class TestIndirectionSubscriptAnalysis:

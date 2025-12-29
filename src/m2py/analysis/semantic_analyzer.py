@@ -164,7 +164,9 @@ class SemanticAnalyzer:
         if isinstance(model, MExpr):
             return self._analyze_expression(model, parent)
 
-        # Fallback: try to unwrap common textX patterns
+        # Fallback for unhandled textX dynamic objects: try to unwrap common
+        # patterns (operand, expr, unary_expr). This handles edge cases where
+        # grammar rules produce wrapper objects without explicit handlers.
         return self._analyze_generic(model, parent)
 
     def _analyze_expression(self, expr: MExpr, parent: Any) -> MExpr:
@@ -367,9 +369,17 @@ class SemanticAnalyzer:
                 for tail_item in expr.tail:
                     tail_type = type(tail_item).__name__
 
-                    if tail_type == "PatternMatchTail" or (
-                        hasattr(tail_item, "pattern") and tail_item.pattern
-                    ):
+                    # Check for pattern match: either by type name or having pattern/indirect_expr
+                    is_pattern_match = (
+                        tail_type == "PatternMatchTail"
+                        or (hasattr(tail_item, "pattern") and tail_item.pattern)
+                        or (
+                            hasattr(tail_item, "indirect_expr")
+                            and tail_item.indirect_expr
+                        )
+                    )
+
+                    if is_pattern_match:
                         # Pattern match: create MPatternMatch node
                         op = tail_item.op
                         op_str = op.op if hasattr(op, "op") else str(op)
@@ -377,19 +387,35 @@ class SemanticAnalyzer:
                         pattern_match = MPatternMatch()
                         object.__setattr__(pattern_match, "operator", op_str)
                         object.__setattr__(pattern_match, "subject", result)
-                        # Store the raw pattern textX object for later processing
-                        pattern_str = self._pattern_to_string(tail_item.pattern)
-                        object.__setattr__(pattern_match, "pattern", pattern_str)
 
-                        # Pre-compile pattern to regex for code generation
-                        if pattern_str and not pattern_str.startswith("@"):
-                            try:
-                                compiled = compile_pattern_to_regex(pattern_str)
-                                object.__setattr__(
-                                    pattern_match, "compiled_regex", compiled
-                                )
-                            except PatternCompileError:
-                                pass  # Leave compiled_regex as None for complex patterns
+                        # Handle indirect patterns (e.g., X?@PAT) vs literal patterns (e.g., X?3N)
+                        if (
+                            hasattr(tail_item, "indirect_expr")
+                            and tail_item.indirect_expr
+                        ):
+                            # Indirect pattern: store the expression, leave pattern empty
+                            indirect_analyzed = self.analyze(
+                                tail_item.indirect_expr, pattern_match
+                            )
+                            object.__setattr__(
+                                pattern_match, "pattern_indirect", indirect_analyzed
+                            )
+                            object.__setattr__(pattern_match, "pattern", "")
+                            # compiled_regex stays None for indirect patterns (runtime evaluation)
+                        else:
+                            # Literal pattern: store the pattern string
+                            pattern_str = self._pattern_to_string(tail_item.pattern)
+                            object.__setattr__(pattern_match, "pattern", pattern_str)
+
+                            # Pre-compile pattern to regex for code generation
+                            if pattern_str:
+                                try:
+                                    compiled = compile_pattern_to_regex(pattern_str)
+                                    object.__setattr__(
+                                        pattern_match, "compiled_regex", compiled
+                                    )
+                                except PatternCompileError:
+                                    pass  # Leave compiled_regex as None for complex patterns
 
                         object.__setattr__(pattern_match, "parent", parent)
                         object.__setattr__(result, "parent", pattern_match)
@@ -417,7 +443,9 @@ class SemanticAnalyzer:
 
             return result
 
-        # Fallback for current grammar (Expr IS UnaryExpr due to match rule)
+        # Fallback for simple expressions: When Expr has no tail operators,
+        # it's equivalent to UnaryExpr. Process via generic analysis which
+        # handles UnaryExpr unwrapping.
         return self._analyze_generic(expr, parent)
 
     def _pattern_to_string(self, pattern_spec: Any) -> str:
@@ -454,7 +482,8 @@ class SemanticAnalyzer:
                 # Exact form: just the number
                 result += str(rc.exact)
             elif hasattr(rc, "exact") and rc.exact is not None:
-                # Fallback: check for exact attribute
+                # Fallback for textX dynamic objects: check for exact attribute
+                # when class name doesn't match expected patterns
                 result += str(rc.exact)
 
         # Add patcode or strlit or alternation
@@ -1307,7 +1336,9 @@ class SemanticAnalyzer:
                     if hasattr(open_arg, "timeout") and open_arg.timeout:
                         device.timeout = self.analyze(open_arg.timeout, stmt)
                 else:
-                    # Fallback if it's just an expression (shouldn't happen with current grammar)
+                    # Fallback for non-standard grammar: treat as bare device expression.
+                    # Current grammar always produces OpenArg with device attribute,
+                    # so this path handles potential future grammar variations.
                     device.device_expr = self.analyze(open_arg, stmt)
 
                 stmt.devices.append(device)

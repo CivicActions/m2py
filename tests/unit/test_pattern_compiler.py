@@ -229,3 +229,50 @@ class TestEdgeCases:
         """Test invalid pattern code raises error."""
         with pytest.raises(PatternCompileError):
             compile_pattern_to_regex("1X")
+
+
+class TestPatternMatchASGIntegration:
+    """Test MPatternMatch.compiled_regex field behavior in ASG."""
+
+    def test_compiled_regex_populated_for_simple_pattern(self):
+        """Pattern match with simple pattern should have compiled_regex populated."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        routine = parser.parse('TEST\n I X?1N W "num"\n')
+
+        # Find the IF statement
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        # The condition should be an MPatternMatch
+        from m2py.asg.expressions import MPatternMatch
+
+        assert isinstance(stmt.condition, MPatternMatch)
+        assert stmt.condition.pattern == "1N"
+        assert stmt.condition.compiled_regex == "[0-9]"
+
+    def test_compiled_regex_none_for_indirect_pattern(self):
+        """Indirect pattern (?@VAR) should have compiled_regex=None.
+
+        Indirect patterns cannot be pre-compiled because the pattern value
+        is determined at runtime. The semantic analyzer gracefully leaves
+        compiled_regex as None in these cases.
+        """
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        routine = parser.parse('TEST\n I X?@PAT W "match"\n')
+
+        # Find the IF statement
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        # The condition should be an MPatternMatch with indirect pattern
+        from m2py.asg.expressions import MPatternMatch
+
+        assert isinstance(stmt.condition, MPatternMatch)
+        # Indirect patterns have pattern_indirect set
+        assert stmt.condition.pattern_indirect is not None
+        # compiled_regex should be None since pattern is runtime-determined
+        assert stmt.condition.compiled_regex is None

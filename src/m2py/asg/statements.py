@@ -20,7 +20,7 @@ from m2py.asg.enums import ForLoopType, ForParamType, GotoType
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MCall
-    from m2py.asg.expressions import MExpr, MVariable
+    from m2py.asg.expressions import MExpr, MVariable, MGlobal, MIndirection
 
 
 # =============================================================================
@@ -338,9 +338,9 @@ class MKillStatement(MStatement):
     appear in ALL groups (intersection semantics).
     """
 
-    targets: List[Any] = field(
+    targets: List[Union["MVariable", "MGlobal", "MIndirection"]] = field(
         default_factory=list
-    )  # MVariable, MGlobal - selective kill targets
+    )  # Selective kill targets (variables, globals, or indirection)
     exclusive: bool = False  # True if any exclusive groups present
     except_list: List[str] = field(
         default_factory=list
@@ -469,7 +469,9 @@ class MLockStatement(MStatement):
     L +^GLOBAL, L -^GLOBAL, L ^GLOBAL:timeout
     """
 
-    targets: List[Any] = field(default_factory=list)
+    targets: List[Any] = field(
+        default_factory=list
+    )  # Lock target dicts with: target/indirection, timeout, postcondition, indirection_levels
     lock_type: str = ""  # "", "+", "-"
     timeout: Optional["MExpr"] = None
 

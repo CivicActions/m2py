@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Iterator, List, Optional
 if TYPE_CHECKING:
     from m2py.asg.statements import MStatement
     from m2py.asg.enums import CallType
-    from m2py.asg.expressions import MActualParameter
+    from m2py.asg.expressions import MActualParameter, MExpr
 
 
 @dataclass
@@ -313,12 +313,12 @@ class MCall(ASGElement):
     """
 
     name: str = ""
-    offset: Optional[Any] = None  # MExpr for label+offset
+    offset: Optional["MExpr"] = None  # For label+offset expressions
     routine: Optional[str] = None  # For ^routine external calls
     arguments: List["MActualParameter"] = field(default_factory=list)
-    postcondition: Optional[Any] = None  # MExpr condition
-    indirection: Optional[Any] = None  # MExpr for DO @expr indirection (label part)
-    routine_indirection: Optional[Any] = None  # MExpr for ^@expr (routine part)
+    postcondition: Optional["MExpr"] = None  # Conditional execution expression
+    indirection: Optional["MExpr"] = None  # For DO @expr indirection (label part)
+    routine_indirection: Optional["MExpr"] = None  # For ^@expr (routine part)
 
     # Indirection analysis flags
     label_is_indirect: bool = False  # True if label comes from indirection
