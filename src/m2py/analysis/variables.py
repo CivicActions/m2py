@@ -466,7 +466,9 @@ def _extract_statement_variables(
         if not stmt.is_kill_all and not stmt.exclusive:
             # Selective kill: mark specific variables as "killed" (undefined after this)
             for target in stmt.targets:
-                if hasattr(target, "name"):
+                # Target may be MVariable, MGlobal, or MIndirection
+                # Only MVariable has a name we can track statically
+                if isinstance(target, MVariable):
                     name = target.name
                     # For variable analysis, treat KILL as making variable undefined
                     # This is similar to NEW in that subsequent reads see empty/undefined
@@ -543,6 +545,7 @@ def _extract_expression_variables(expr) -> Set[str]:
         MExtrinsicFunction,
         MSpecialVariable,
         MActualParameter,
+        MSelectArg,
     )
 
     # MVariable has a name
@@ -591,7 +594,29 @@ def _extract_expression_variables(expr) -> Set[str]:
         if expr.expression:
             vars_found.update(_extract_expression_variables(expr.expression))
 
-    # Fallback: check generic attributes
+    # MSelectArg - extract variables from both condition and value expressions
+    elif isinstance(expr, MSelectArg):
+        if expr.condition:
+            vars_found.update(_extract_expression_variables(expr.condition))
+        if expr.value:
+            vars_found.update(_extract_expression_variables(expr.value))
+
+    # Fallback: Handle raw textX expression wrappers (Expr, UnaryExpr)
+    # These can appear in MSelectArg.condition when parsing binary expressions like "A=1"
+    # textX Expr has 'left' (UnaryExpr) and 'tail' (list of BinaryOpTail with op/right)
+    elif hasattr(expr, "left") and hasattr(expr, "tail"):
+        # Handle textX Expr wrapper
+        vars_found.update(_extract_expression_variables(expr.left))
+        tail = getattr(expr, "tail", [])
+        if tail:
+            for tail_item in tail:
+                if hasattr(tail_item, "right"):
+                    vars_found.update(_extract_expression_variables(tail_item.right))
+    elif hasattr(expr, "operand"):
+        # Handle textX UnaryExpr wrapper
+        vars_found.update(_extract_expression_variables(expr.operand))
+
+    # Fallback: check generic attributes for variable names
     elif hasattr(expr, "name") and isinstance(getattr(expr, "name", None), str):
         name = expr.name
         if name and not name.startswith("^") and not name.startswith("$"):

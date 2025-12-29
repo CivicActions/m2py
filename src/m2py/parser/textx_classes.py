@@ -25,6 +25,7 @@ from m2py.asg.expressions import (
     MExtrinsicFunction,
     MSpecialVariable,
     MIndirection,
+    MSelectArg,
 )
 from m2py.asg.enums import LiteralType
 
@@ -312,8 +313,8 @@ class SelectFunction(MIntrinsicFunction):
     Grammar: SelectFunction: '$' name=SELECTNAME args=SelectFunctionArgs;
 
     $SELECT uses special syntax with condition:value pairs.
-    We map this to MIntrinsicFunction with the condition:value pairs
-    stored as a list of tuples in the arguments.
+    We map this to MIntrinsicFunction with proper MSelectArg ASG nodes
+    containing the unwrapped condition and value expressions.
 
     Note: Name is preserved as-is (not uppercased) for consistency with
     IntrinsicFunction. Code generators normalize function names as needed.
@@ -322,12 +323,16 @@ class SelectFunction(MIntrinsicFunction):
     def __init__(self, parent=None, name: str = "", args=None):
         object.__setattr__(self, "name", name)  # Preserve as-is for consistency
         # args is a SelectFunctionArgs with args=[SelectArg, ...]
-        # Each SelectArg has .condition and .value attributes
+        # Each SelectArg has .condition and .value attributes (raw textX objects)
+        # Convert to proper MSelectArg ASG nodes with unwrapped expressions
         arguments = []
         if args and hasattr(args, "args"):
             for select_arg in args.args:
-                # Store as tuple (condition, value) for code generation
-                arguments.append((select_arg.condition, select_arg.value))
+                # Create MSelectArg with properly unwrapped expressions
+                m_select_arg = MSelectArg()
+                m_select_arg.condition = _unwrap_expr(select_arg.condition)
+                m_select_arg.value = _unwrap_expr(select_arg.value)
+                arguments.append(m_select_arg)
         object.__setattr__(self, "arguments", arguments)
         object.__setattr__(self, "result_type", None)
 

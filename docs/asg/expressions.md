@@ -178,7 +178,7 @@ $GET(X,DEFAULT)
 | `name` | `str` | Function name (without `$`) |
 | `arguments` | `List[MExpr]` | Function arguments |
 
-**Special Case - $SELECT**: The `$SELECT` function uses `condition:value` pair syntax rather than standard arguments. Its `arguments` field contains `List[Tuple[condition_expr, value_expr]]` where each tuple represents one `condition:value` pair. Code generators must handle this differently from other intrinsic functions.
+**Special Case - $SELECT**: The `$SELECT` function uses `condition:value` pair syntax rather than standard arguments. Its `arguments` field contains `List[MSelectArg]` where each `MSelectArg` represents one `condition:value` pair. See [MSelectArg](#mselectarg) below.
 
 **Common Functions**:
 
@@ -198,6 +198,29 @@ $GET(X,DEFAULT)
 | `$RANDOM(n)` | Random 0..n-1 | `random.randint(0,n-1)` |
 
 See: [codegen/functions.md](../codegen/functions.md)
+
+### MSelectArg
+
+A single `condition:value` pair argument for the `$SELECT` function.
+
+```mumps
+$SELECT(A=1:X, B=2:Y, 1:Z)
+;       ^^^^  ^^^^  ^^^
+;       arg1  arg2  arg3
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `condition` | `MExpr` | The condition expression (tvexpr) |
+| `value` | `MExpr` | The value returned if condition is true |
+
+**Usage**: `$SELECT` evaluates condition:value pairs left-to-right, returning the value associated with the first true condition. The final pair is typically `1:default` as a fallback.
+
+**Code Generation**:
+```python
+# $SELECT(A=1:X, B=2:Y, 1:Z)
+X if A == 1 else Y if B == 2 else Z
+```
 
 ### MExtrinsicFunction
 

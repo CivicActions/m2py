@@ -669,7 +669,7 @@ class SemanticAnalyzer:
 
         if hasattr(cmd, "args") and cmd.args:
             for arg in cmd.args:
-                # New grammar: arg contains arg=ReadArgValue
+                # ReadArg grammar: /,/? postcond=Postcondition? arg=ReadArgValue
                 arg_value = getattr(arg, "arg", arg)
 
                 # Check what type of ReadArgValue this is

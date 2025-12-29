@@ -19,6 +19,7 @@ from m2py.parser.textx_classes import (
     GlobalVariable,
     IntrinsicFunction,
     SpecialVariable,
+    SelectFunction,
 )
 from m2py.asg.expressions import (
     MLiteral,
@@ -209,6 +210,111 @@ class TestTextXCustomClasses:
         if hasattr(unary, "operand"):
             return unary.operand
         return unary
+
+
+class TestSelectFunctionCustomClass:
+    """Test SelectFunction custom class with MSelectArg.
+
+    These tests verify that SelectFunction arguments are properly converted
+    to MSelectArg ASG nodes with unwrapped condition/value expressions.
+    """
+
+    @pytest.fixture
+    def expression_metamodel(self):
+        """Create metamodel with custom classes registered."""
+        grammar_dir = Path(__file__).parent.parent.parent / "src" / "m2py" / "grammar"
+        return metamodel_from_file(
+            grammar_dir / "expressions.tx", classes=EXPRESSION_CLASSES, skipws=False
+        )
+
+    def _unwrap_expr(self, expr):
+        """Unwrap textX expression to get operand."""
+        if hasattr(expr, "left"):
+            if hasattr(expr.left, "operand"):
+                return expr.left.operand
+        return expr
+
+    def test_select_arguments_are_mselectarg(self, expression_metamodel):
+        """Verify SelectFunction.arguments contains MSelectArg objects, not tuples.
+
+        This test ensures proper ASG typing for variable extraction and code gen.
+        Previously, arguments were raw tuples which broke the ASG type hierarchy.
+        """
+        from m2py.asg.expressions import MSelectArg
+
+        model = expression_metamodel.model_from_str("$SELECT(A=1:X,B=2:Y,1:Z)")
+        operand = self._unwrap_expr(model)
+
+        # Should be a SelectFunction with arguments attribute
+        assert isinstance(operand, SelectFunction)
+        assert hasattr(operand, "arguments")
+        assert len(operand.arguments) == 3
+
+        # Each argument should be MSelectArg
+        for arg in operand.arguments:
+            assert isinstance(arg, MSelectArg), f"Expected MSelectArg, got {type(arg)}"
+            assert hasattr(arg, "condition")
+            assert hasattr(arg, "value")
+
+    def test_select_mselectarg_has_unwrapped_expressions(self, expression_metamodel):
+        """Verify MSelectArg contains properly unwrapped ASG expressions."""
+        from m2py.asg.expressions import MSelectArg, MVariable, MLiteral
+
+        model = expression_metamodel.model_from_str("$SELECT(1:Z)")
+        operand = self._unwrap_expr(model)
+
+        assert isinstance(operand, SelectFunction)
+        assert len(operand.arguments) == 1
+
+        arg = operand.arguments[0]
+        assert isinstance(arg, MSelectArg)
+
+        # Condition should be MLiteral(1), value should be MVariable(Z)
+        assert isinstance(arg.condition, MLiteral), (
+            f"Expected MLiteral, got {type(arg.condition)}"
+        )
+        assert arg.condition.value == 1
+
+        assert isinstance(arg.value, MVariable), (
+            f"Expected MVariable, got {type(arg.value)}"
+        )
+        assert arg.value.name == "Z"
+
+    def test_select_variable_extraction(self, expression_metamodel):
+        """Verify variables can be extracted from SelectFunction arguments.
+
+        This tests the full pipeline: parsing -> MSelectArg -> variable extraction.
+        """
+        from m2py.analysis.variables import _extract_expression_variables
+
+        model = expression_metamodel.model_from_str("$SELECT(A=1:X,1:Y)")
+        operand = self._unwrap_expr(model)
+
+        assert isinstance(operand, SelectFunction)
+
+        # Extract variables from the entire SelectFunction
+        variables = _extract_expression_variables(operand)
+
+        # Should find A, X, Y (but not the literal 1)
+        assert "A" in variables, f"Expected 'A' in {variables}"
+        assert "X" in variables, f"Expected 'X' in {variables}"
+        assert "Y" in variables, f"Expected 'Y' in {variables}"
+
+    def test_select_multiple_complex_args(self, expression_metamodel):
+        """Test variable extraction from complex $SELECT with multiple args."""
+        from m2py.analysis.variables import _extract_expression_variables
+
+        # $SELECT(A=B:X+Y, C>D:Z, 1:"default")
+        model = expression_metamodel.model_from_str('$SELECT(A=B:X,C>D:Z,1:"default")')
+        operand = self._unwrap_expr(model)
+
+        assert isinstance(operand, SelectFunction)
+        variables = _extract_expression_variables(operand)
+
+        # Should find A, B, X, C, D, Z (but not literals)
+        expected = {"A", "B", "X", "C", "D", "Z"}
+        for var in expected:
+            assert var in variables, f"Expected '{var}' in {variables}"
 
 
 class TestClassRegistry:

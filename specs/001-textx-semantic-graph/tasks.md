@@ -8265,3 +8265,293 @@ This verifies SubscriptedGlobal is converted to MGlobal.
    - Updated `docs/asg/index.md` to include `pattern_indirect` in MPatternMatch fields
 
 **All 1039 tests pass.**
+
+---
+
+## Phase 86: Grammar and ASG Consistency Audit - Parser/Analyzer Review
+
+**Purpose**: Validate findings from comprehensive code review of grammar (.tx), ASG, parser, and analyzer files.
+
+### Validation Summary
+
+This phase validates findings from a detailed review of:
+- `src/m2py/grammar/*.tx` - textX grammar files
+- `src/m2py/asg/*.py` - ASG element definitions  
+- `src/m2py/parser/*.py` - Parser and textX custom classes
+- `src/m2py/analysis/semantic_analyzer.py` - Semantic analysis
+
+---
+
+### Finding 1: Pattern Matching Structure (Flattening)
+
+**Status**: ✓ NOT AN ISSUE - Intentional Design
+
+**Files**: 
+- `src/m2py/asg/expressions.py` - `MPatternMatch.pattern` field
+- `src/m2py/grammar/expressions.tx` - `PatternSpec`, `PatternAtom` rules
+- `src/m2py/analysis/semantic_analyzer.py` - `_pattern_to_string()`, `_pattern_atom_to_string()`
+
+**Observation**: `MPatternMatch` stores pattern as flattened string (e.g., `"1A.N"`) rather than structured `PatternSpec` from grammar.
+
+**Validation**: 
+- The `_pattern_to_string()` method in semantic_analyzer.py correctly reconstructs the pattern string from the textX PatternSpec structure
+- The `compile_pattern_to_regex()` in pattern_compiler.py converts the flattened string to Python regex
+- Test verified: `I X?1A.N` correctly produces `pattern="1A.N"` and `compiled_regex="[A-Za-z][0-9]*"`
+
+**Conclusion**: This is intentional design - downstream code only needs the compiled regex, not individual pattern atoms. The flattening preserves all information needed for code generation. No action required.
+
+---
+
+### Finding 2: SelectFunction Arguments Type Violation (BUG)
+
+**Status**: ✗ CONFIRMED BUG - Needs Fix
+
+**Files**:
+- `src/m2py/parser/textx_classes.py` - `SelectFunction` class (lines 309-331)
+- `src/m2py/asg/expressions.py` - `MIntrinsicFunction.arguments: List["MExpr"]`
+- `src/m2py/analysis/semantic_analyzer.py` - `_analyze_expression()` MIntrinsicFunction handler
+- `src/m2py/analysis/variables.py` - `_extract_expression_variables()`
+
+**Observation**: `SelectFunction` inherits from `MIntrinsicFunction` but stores `arguments` as `List[Tuple[condition, value]]` containing raw textX `Expr` objects, violating the `List[MExpr]` type annotation.
+
+**Validation**:
+```python
+# Test shows arguments contain raw textX Expr tuples, not ASG nodes:
+# Arguments: [(textx:Expr, textx:Expr), (textx:Expr, textx:Expr)]
+# Arg types: [<class 'tuple'>, <class 'tuple'>]
+
+# The semantic analyzer's MIntrinsicFunction handler:
+#   for arg in expr.arguments:
+#       new_args.append(self.analyze(arg, expr))
+# ...calls analyze() on tuples, which returns them unchanged.
+
+# Variable extraction fails:
+# Variables found in $SELECT: set()  # Should find 'A' from $S(A>1:"YES",1:"NO")
+```
+
+**Impact**: 
+1. Type violation - arguments contain tuples, not MExpr
+2. Variable analysis fails - cannot extract variables from $SELECT conditions/values
+3. Code generation would need special handling for tuples
+
+**Task 86.1**: Fix `SelectFunction` to properly unwrap condition:value pairs. Options:
+- Option A: Create dedicated `MSelectArg` dataclass for condition:value pairs
+- Option B: Store as flat list `[cond1, val1, cond2, val2, ...]` with convention
+- Option C: Keep tuple structure but create custom ASG class `MSelectFunction`
+
+Recommended: Option A - matches existing pattern of dedicated ASG types. Add `MSelectArg(condition: MExpr, value: MExpr)` and have `SelectFunction` produce `List[MSelectArg]`.
+
+---
+
+### Finding 3: Orphaned Do-Block Handling
+
+**Status**: ✓ CORRECT PER SPEC - Comment Could Be Clearer
+
+**Files**:
+- `src/m2py/parser/parser.py` - `_structure_do_blocks()` function (lines 165-270)
+- `mumps-reference/1990__a106009.md` - MUMPS 1990 spec section 2.4.2
+
+**Observation**: Dot-indented lines without an owning DO are kept un-nested with comment: "Keep statements un-nested; they won't execute."
+
+**Validation**: MUMPS 1990 spec 2.4.2 states: "Lines which have a LEVEL greater than the current execution level are ignored, i.e., not executed."
+
+**Conclusion**: Current behavior is correct per spec. Orphaned dot-lines are silently ignored at runtime.
+
+**Task 86.2** (Optional): Improve comment to cite spec and consider adding a warning during analysis for potential coding errors (orphaned blocks).
+
+---
+
+### Finding 4: Quit Command Heuristic
+
+**Status**: ✓ CORRECT - Well Tested
+
+**Files**:
+- `src/m2py/grammar/commands.tx` - `QuitCommand` and `CommandWithArg` rules (lines 285-350)
+- `tests/unit/test_quit_then_command.py` - 15+ test cases
+- `tests/unit/test_command_grammar.py` - `TestQuitFollowedBySet` class
+
+**Observation**: `QuitCommand` uses negative lookahead `!CommandWithArg` to distinguish `Q X` (QUIT with value) from `Q S X=1` (QUIT then SET).
+
+**Validation**: Extensive test coverage confirms correct behavior:
+- `test_quit_then_set`: `Q  S X=1` → [QuitCommand, SetCommand]
+- `test_quit_with_value`: `Q X` → [QuitCommand with value=X]
+- `test_v1call1_line3_parses_correctly`: Real MUGJ test case
+- Multiple tests for `Q S $P(X,";")=1` (QUIT then left-hand-PIECE SET)
+
+**Conclusion**: The heuristic is necessary due to MUMPS grammar ambiguity and is thoroughly tested. No action required.
+
+---
+
+### Finding 5: Expression Unwrapping Separation of Concerns
+
+**Status**: ✓ INTENTIONAL ARCHITECTURE
+
+**Files**:
+- `src/m2py/parser/textx_classes.py` - `_unwrap_expr()` function (lines 38-76)
+- `src/m2py/analysis/semantic_analyzer.py` - `_analyze_Expr()` method
+
+**Observation**: `_unwrap_expr()` returns raw textX objects for complex expressions (binary ops, pattern match) instead of ASG nodes.
+
+**Validation**: The docstring explicitly documents this:
+```python
+# For expressions with operators (binary ops, pattern match), the textX structure
+# is preserved here because SemanticAnalyzer._analyze_Expr() will process the
+# tail elements to build proper ASG nodes (MBinaryOp, MPatternMatch, etc.).
+```
+
+**Conclusion**: This is intentional architecture - the textX custom classes handle simple unwrapping, while the semantic analyzer handles complex expression building. The separation keeps textX classes simple and centralizes complex ASG construction in the analyzer. No action required.
+
+---
+
+### Finding 6: Grammar/ASG Naming Differences
+
+**Status**: ✓ INTENTIONAL - Documentation Could Help
+
+**Mappings**:
+| Grammar | ASG | Rationale |
+|---------|-----|-----------|
+| `ForCommand.params` | `MForStatement.parameters` | Full name for clarity |
+| `WriteCommand.args` | `MWriteStatement.arguments` | Full name for clarity |
+| `ReadCommand.args` | `MReadStatement.arguments` | Full name for clarity |
+| `IntrinsicFunction.args` | `MIntrinsicFunction.arguments` | Full name for clarity |
+| `ExtrinsicFunction.args` | `MExtrinsicFunction.arguments` | Full name for clarity |
+| `SetArgument` | `MAssignment` | Semantic naming |
+| `DoTarget`/`GotoTarget` | `MCall` | Unified call reference |
+
+**Validation**: The `SemanticAnalyzer` explicitly maps grammar attributes to ASG fields. This separation:
+- Keeps grammar concise (`args`, `params`)
+- Makes ASG self-documenting (`arguments`, `parameters`)
+- Allows ASG to use semantic names (`MCall` vs grammar's target objects)
+
+**Conclusion**: Intentional design choice. The mapping is handled correctly by the semantic analyzer.
+
+**Task 86.3** (Low Priority): Add a mapping reference comment in `semantic_analyzer.py` or `docs/architecture.md` documenting the grammar→ASG field name mappings.
+
+---
+
+### Finding 7: Sub-component Optimization Comments
+
+**Status**: ✓ DOCUMENTATION STYLE - Minor Cleanup
+
+**Files**:
+- `src/m2py/asg/statements.py` - `MAssignment`, `MReadTarget`, `MForParameter` docstrings
+
+**Observation**: Docstrings contain justification comments like:
+> "Note: This is a sub-component of MSetStatement, not a standalone ASG node. It inherits source position context from its containing MSetStatement. This design avoids adding unused source tracking overhead (~40 bytes per instance)."
+
+**Validation**: The design is correct - these are value-like containers, not independently-tracked ASG nodes. The justification is accurate but verbose.
+
+**Task 86.4** (Low Priority): Simplify docstrings to describe current behavior without justification. Example:
+> "This is a sub-component of MSetStatement, not a standalone ASG node. Source position is inherited from the containing statement."
+
+---
+
+### Finding 8: "New grammar" Comment
+
+**Status**: ✗ STALE COMMENT - Should Update
+
+**Files**:
+- `src/m2py/analysis/semantic_analyzer.py` line 672
+
+**Observation**: Comment says "New grammar: arg contains arg=ReadArgValue" implying a recent change.
+
+**Validation**: This is the current grammar structure, not a change indicator.
+
+**Task 86.5**: Reframe comment to describe current structure:
+```python
+# ReadArg grammar structure: arg=ReadArgValue
+arg_value = getattr(arg, "arg", arg)
+```
+
+---
+
+### Finding 9: Unreachable Code "Generic Catch"
+
+**Status**: ✓ CORRECT - Defensive Future-Proofing
+
+**Files**:
+- `src/m2py/parser/parser.py` - `_mark_unreachable_statements()` (lines 274-325)
+- `src/m2py/asg/type_helpers.py` - `get_body_scope()`
+
+**Observation**: After explicitly handling `MForStatement`, `MIfStatement`, `MElseStatement`, `MDoStatement`, there's a "Generic catch using type helper" block.
+
+**Validation**: 
+- All current statement types with `body: MScope` are explicitly handled before the generic catch
+- The `if not isinstance(stmt, (MForStatement, MIfStatement, MElseStatement, MDoStatement))` guard prevents double-processing
+- The generic catch only triggers for future statement types that might add a `body` attribute
+
+**Conclusion**: Defensive programming for future extensibility. No action required.
+
+---
+
+### Finding 10: Indirection Default Values
+
+**Status**: ✓ INTENTIONAL DEFAULTS
+
+**Files**:
+- `src/m2py/asg/expressions.py` - `MIndirection` class (lines 207-235)
+- `src/m2py/parser/textx_classes.py` - `Indirection` class
+- `src/m2py/analysis/semantic_analyzer.py` - `_classify_indirection()`
+
+**Observation**: `MIndirection` defaults to `requires_runtime_eval=True` and `can_resolve_statically=False`.
+
+**Validation**: The semantic analyzer's `_classify_indirection()` method does attempt static resolution:
+```python
+# Try static resolution for constant string expressions
+if isinstance(inner_expr, MLiteral) and inner_expr.literal_type == LiteralType.STRING:
+    object.__setattr__(indirection, "can_resolve_statically", True)
+    object.__setattr__(indirection, "resolved_value", inner_expr.value)
+```
+
+**Conclusion**: Defaults are intentionally conservative - indirection inherently requires runtime evaluation unless proven otherwise. The analyzer correctly updates flags when static resolution is possible. No action required.
+
+---
+
+### Tasks Summary
+
+| Task | Priority | Description | Status |
+|------|----------|-------------|--------|
+| 86.1 | **High** | Fix `SelectFunction` arguments - create `MSelectArg` for proper typing | ✓ Done |
+| 86.2 | Low | Improve orphaned do-block comment with spec citation | ✓ Done |
+| 86.3 | Low | Add grammar→ASG naming mapping documentation | ✓ Done |
+| 86.4 | Low | Simplify sub-component docstrings | ✓ Done |
+| 86.5 | Low | Reframe "New grammar" comment | ✓ Done |
+
+---
+
+### Implementation Notes for Task 86.1 (SelectFunction Fix)
+
+**Problem**: `SelectFunction.arguments` contains `List[Tuple[textX.Expr, textX.Expr]]` but type is `List[MExpr]`
+
+**Solution**:
+
+1. **Create `MSelectArg` in `src/m2py/asg/expressions.py`**:
+```python
+@dataclass
+class MSelectArg(ASGElement):
+    """A condition:value pair for $SELECT function.
+    
+    Represents one argument of $SELECT(cond1:val1, cond2:val2, ...).
+    """
+    condition: Optional["MExpr"] = None
+    value: Optional["MExpr"] = None
+```
+
+2. **Update `SelectFunction` in `src/m2py/parser/textx_classes.py`**:
+   - Import `MSelectArg`
+   - Change to store `List[MSelectArg]` with raw textX expressions (will be unwrapped by analyzer)
+
+3. **Add handler in `src/m2py/analysis/semantic_analyzer.py`**:
+   - Add `_analyze_MSelectArg` or handle in `_analyze_expression`
+   - Unwrap the condition and value expressions
+
+4. **Update `_extract_expression_variables` in `src/m2py/analysis/variables.py`**:
+   - Add case for `MSelectArg` to extract variables from both condition and value
+
+5. **Update documentation**:
+   - `docs/asg/expressions.md` - Document `MSelectArg`
+   - Update $SELECT special case note
+
+6. **Add tests**:
+   - Test parsing $SELECT produces `List[MSelectArg]`
+   - Test variable extraction finds variables in $SELECT conditions/values

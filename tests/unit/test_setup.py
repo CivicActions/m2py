@@ -174,10 +174,10 @@ class TestASGSubComponentTypes:
         """Verify sub-component docstrings explain the design decision."""
         from m2py.asg.statements import MAssignment, MReadTarget, MForParameter
 
-        # Each should mention it's a sub-component
-        assert "sub-component" in MAssignment.__doc__
-        assert "sub-component" in MReadTarget.__doc__
-        assert "sub-component" in MForParameter.__doc__
+        # Each should mention it's a sub-component (case-insensitive check)
+        assert "sub-component" in MAssignment.__doc__.lower()
+        assert "sub-component" in MReadTarget.__doc__.lower()
+        assert "sub-component" in MForParameter.__doc__.lower()
 
 
 class TestMIndirectionTyping:

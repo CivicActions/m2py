@@ -58,9 +58,7 @@ class MAssignment:
     Represents one target=value pair in a SET command.
     SET can have multiple assignments: SET A=1,B=2,C=3
 
-    Note: This is a sub-component of MSetStatement, not a standalone ASG node.
-    It inherits source position context from its containing MSetStatement.
-    This design avoids adding unused source tracking overhead (~40 bytes per instance).
+    Sub-component of MSetStatement; source position is inherited from container.
     """
 
     target: Any = None  # MVariable, MGlobal, or MIndirection
@@ -112,9 +110,7 @@ class MReadTarget:
     - R X#5 -> MReadTarget(variable=MVariable('X'), fixed_length=MLiteral(5))
     - R X#5:10 -> MReadTarget(variable=MVariable('X'), fixed_length=MLiteral(5), timeout=MLiteral(10))
 
-    Note: This is a sub-component of MReadStatement, not a standalone ASG node.
-    It inherits source position context from its containing MReadStatement.
-    This design avoids adding unused source tracking overhead (~40 bytes per instance).
+    Sub-component of MReadStatement; source position is inherited from container.
     """
 
     variable: Optional["MExpr"] = (
@@ -200,9 +196,7 @@ class MForParameter:
     - RANGE: Bounded range (1:1:10 in F I=1:1:10)
     - OPEN_RANGE: Unbounded range (1:1 in F I=1:1)
 
-    Note: This is a sub-component of MForStatement, not a standalone ASG node.
-    It inherits source position context from its containing MForStatement.
-    This design avoids adding unused source tracking overhead (~40 bytes per instance).
+    Sub-component of MForStatement; source position is inherited from container.
     """
 
     param_type: ForParamType = ForParamType.VALUE

@@ -216,6 +216,25 @@ This separation provides several benefits:
 > **Note**: If you see `classes=[]` in `MUMPSParser.__init__`, this is intentional—
 > it's part of the two-phase architecture, not incomplete implementation.
 
+### Grammar to ASG Field Naming
+
+The textX grammar uses short attribute names for compactness, while ASG classes use
+descriptive names for clarity. The `SemanticAnalyzer` handles this mapping during
+CST→ASG transformation:
+
+| Grammar File | Grammar Attribute | ASG Class | ASG Field | Notes |
+|--------------|-------------------|-----------|-----------|-------|
+| `commands.tx` | `ForCommand.params` | `MForStatement` | `parameters` | FOR loop parameters |
+| `commands.tx` | `WriteCommand.args` | `MWriteStatement` | `arguments` | WRITE arguments |
+| `commands.tx` | `ReadCommand.args` | `MReadStatement` | `arguments` | READ arguments |
+| `expressions.tx` | `IntrinsicFunction.args` | `MIntrinsicFunction` | `arguments` | Function arguments |
+| `expressions.tx` | `ExtrinsicFunction.args` | `MExtrinsicFunction` | `arguments` | Function arguments |
+| `commands.tx` | `SetArgument` | - | `MAssignment` | Renamed for clarity |
+| `commands.tx` | `DoTarget` | - | `MCall` | Unified call reference |
+| `commands.tx` | `GotoTarget` | - | `MCall` | Unified call reference |
+
+This intentional separation keeps grammar files concise while making ASG code self-documenting.
+
 ## Key Data Structures
 
 ### MRoutine

@@ -126,6 +126,49 @@ class TestExtractExpressionVariables:
         reads = _extract_expression_variables(op)
         assert reads == {"A", "B"}
 
+    def test_extract_from_select_arg(self):
+        """Test extracting variables from MSelectArg (condition:value pair).
+
+        MSelectArg represents a single condition:value pair in $SELECT,
+        e.g., A=1:X in $SELECT(A=1:X,1:Y)
+        """
+        from m2py.asg.expressions import MSelectArg
+
+        # Simple case: A=1:X -> reads A and X
+        condition = MVariable(name="A", subscripts=[])
+        value = MVariable(name="X", subscripts=[])
+        select_arg = MSelectArg(condition=condition, value=value)
+        reads = _extract_expression_variables(select_arg)
+        assert reads == {"A", "X"}
+
+    def test_extract_from_select_arg_with_complex_expressions(self):
+        """Test extracting variables from MSelectArg with binary ops."""
+        from m2py.asg.expressions import MSelectArg
+
+        # A+B=1:X+Y -> reads A, B, X, Y
+        cond_left = MVariable(name="A", subscripts=[])
+        cond_right = MVariable(name="B", subscripts=[])
+        condition = MBinaryOp(operator="+", left=cond_left, right=cond_right)
+
+        val_left = MVariable(name="X", subscripts=[])
+        val_right = MVariable(name="Y", subscripts=[])
+        value = MBinaryOp(operator="+", left=val_left, right=val_right)
+
+        select_arg = MSelectArg(condition=condition, value=value)
+        reads = _extract_expression_variables(select_arg)
+        assert reads == {"A", "B", "X", "Y"}
+
+    def test_extract_from_select_arg_with_literals(self):
+        """Test extracting variables from MSelectArg with literal condition."""
+        from m2py.asg.expressions import MSelectArg
+
+        # 1:Z (final fallback case in $SELECT) -> only reads Z
+        condition = MLiteral(value=1)
+        value = MVariable(name="Z", subscripts=[])
+        select_arg = MSelectArg(condition=condition, value=value)
+        reads = _extract_expression_variables(select_arg)
+        assert reads == {"Z"}
+
 
 class TestExtractStatementVariables:
     """Tests for _extract_statement_variables function."""

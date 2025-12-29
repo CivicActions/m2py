@@ -156,6 +156,26 @@ class MIntrinsicFunction(MExpr):
 
 
 @dataclass
+class MSelectArg(ASGElement):
+    """A single condition:value pair argument for $SELECT function.
+
+    $SELECT evaluates condition:value pairs left-to-right, returning the
+    value associated with the first true condition. This class provides
+    proper ASG structure for each pair, enabling variable extraction and
+    code generation.
+
+    Example:
+        $SELECT(A=1:X, B=2:Y, 1:Z)
+        -> [MSelectArg(A=1,X), MSelectArg(B=2,Y), MSelectArg(1,Z)]
+    """
+
+    condition: Optional["MExpr"] = None  # The condition expression (tvexpr)
+    value: Optional["MExpr"] = (
+        None  # The value expression returned if condition is true
+    )
+
+
+@dataclass
 class MExtrinsicFunction(MExpr):
     """Extrinsic (user-defined) function call.
 
