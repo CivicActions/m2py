@@ -42,11 +42,31 @@ FormalList:
     '(' params+=PARAM_NAME[/,/] ')'
 ;
 
-// Continuation line: starts with whitespace or dot
+// Continuation line: starts with tab or single space, then rest
+// Note: Dot level indicators appear in 'rest', not as linestart character
 ContLine:
     /[\t ]/ rest=/[^\r\n]*/ NL
 ;
 ```
+
+### Line Level (Dot Blocks)
+
+MUMPS uses dot prefixes to indicate block nesting level (per MUMPS 1995 spec §6.2):
+
+```mumps
+TEST
+ D           ; Argumentless DO starts a block
+ . S X=1     ; Level 1: space + dot + space + command
+ . D         ; Nested argumentless DO  
+ . . S Y=2   ; Level 2: space + two dots + space + command
+ . W X       ; Back to level 1
+ Q           ; Level 0: block ended
+```
+
+The linestart character (tab or space) is matched by the grammar's `ContLine` rule. 
+The dot(s) and subsequent content are captured in the `rest` attribute, then parsed 
+separately by the line content parser. The parser tracks `_dot_level` internally to 
+structure DO blocks correctly.
 
 ### Label Names
 

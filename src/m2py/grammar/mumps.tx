@@ -9,7 +9,7 @@ Routine:
     lines*=Line
 ;
 
-// A line - label line (starts with letter/%) or continuation (starts with tab/dot) or comment
+// A line - label line (starts with letter/%) or continuation (starts with whitespace) or comment
 Line:
     LabelLine | ContLine | CommentLine | EmptyLine
 ;
@@ -25,7 +25,9 @@ FormalList:
     '(' params+=PARAM_NAME[/,/] ')'
 ;
 
-// Continuation line: starts with tab or single space or dot, then rest
+// Continuation line: starts with tab or single space, then rest
+// Note: Dot level indicators (per MUMPS spec §6.2) appear in the 'rest' content,
+// not as the linestart character. E.g., " . S X=1" starts with space, dot is in rest.
 ContLine:
     /[\t ]/ rest=/[^\r\n]*/ NL
 ;

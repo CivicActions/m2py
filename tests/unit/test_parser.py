@@ -83,6 +83,36 @@ THIRD
         routine = parser.parse("LABEL\n", filename="test.m")
         assert routine.source_file == "test.m"
 
+    def test_parse_tab_indented_line(self):
+        """Tab-indented continuation line should parse correctly."""
+        parser = MUMPSParser()
+        routine = parser.parse("LABEL\n\tS X=1\n")
+        assert len(routine.labels) == 1
+        assert len(routine.labels[0].body.statements) == 1
+
+    def test_parse_space_indented_line(self):
+        """Space-indented continuation line should parse correctly."""
+        parser = MUMPSParser()
+        routine = parser.parse("LABEL\n S X=1\n")
+        assert len(routine.labels) == 1
+        assert len(routine.labels[0].body.statements) == 1
+
+    def test_parse_dot_block_requires_leading_space(self):
+        """Dot-indented block line must have leading space (dot is in content)."""
+        parser = MUMPSParser()
+        # This should work: space + dot + space + command
+        routine = parser.parse("TEST\n D\n . S X=1\n")
+        do_stmt = routine.labels[0].body.statements[0]
+        assert len(do_stmt.body.statements) == 1
+
+    def test_parse_dot_without_leading_space_fails(self):
+        """Line starting with dot (no leading space) is not valid MUMPS."""
+        parser = MUMPSParser()
+        # A line starting with '.' at column 1 is invalid - would be treated as label
+        # The grammar expects ContLine to start with tab or space
+        with pytest.raises(MUMPSSyntaxError):
+            parser.parse("TEST\n.\n")  # dot at column 1 is not a valid line type
+
 
 class TestMUMPSParserParseFile:
     """Test MUMPSParser.parse_file() method."""

@@ -6725,3 +6725,138 @@ object.__setattr__(self, "result_type", None)
 - [X] **78.17** Run all tests to verify no regressions
 
 **Checkpoint**: Phase 78 complete - Multi-argument commands correctly capture all arguments
+
+---
+
+## Phase 79: Grammar and ASG Code Review Validation
+
+**Objective**: Validate findings from code review of `.tx` grammar files and ASG Python files, determining which issues require fixes and which are valid design choices.
+
+**Context**: A comprehensive review of the textX grammar files and ASG Python files identified several potential issues. This phase validates each finding against MUMPS specs, textX documentation, and runtime behavior to distinguish genuine issues from intentional design choices.
+
+### Validated Findings
+
+#### Finding 1: MPatternMatch Pattern Flattening - NO CHANGE NEEDED
+**Status:** Valid Design Choice
+**Files:**
+- `src/m2py/asg/expressions.py` lines 180-205 (MPatternMatch)
+- `src/m2py/analysis/semantic_analyzer.py` lines 377-396 (_pattern_to_string)
+- `src/m2py/analysis/pattern_compiler.py` (compile_pattern_to_regex)
+
+**Description:** The grammar parses patterns into a structured `PatternSpec` with atoms, repeat counts, and pattern codes. The ASG intentionally flattens this to a simple pattern string in `MPatternMatch.pattern`.
+
+**Validation:**
+- The `pattern_compiler.py` converts the string to Python regex (`compiled_regex` field)
+- No downstream code needs to inspect pattern atoms individually
+- All 26 pattern compiler tests pass, covering all pattern types
+- Design note in docstring adequately explains the rationale
+
+**Conclusion:** Intentional simplification. No change required.
+
+#### Finding 2: Expression Unwrapping Comment - NO CHANGE NEEDED
+**Status:** Accurate Comment
+**Files:**
+- `src/m2py/parser/textx_classes.py` lines 37-74 (_unwrap_expr)
+
+**Description:** Comment says "For expressions with operators, we keep the structure for now" and "Complex expression with binary ops or pattern match - handled by semantic analyzer".
+
+**Validation:**
+- Complex expressions ARE correctly handled by `semantic_analyzer._analyze_Expr()`
+- `_unwrap_expr` is only for simple expression unwrapping in textX custom classes
+- The comment accurately describes the division of responsibility
+
+**Conclusion:** Comment is accurate. No change required.
+
+#### Finding 3: MForStatement.loop_var Type Hint - NO CHANGE NEEDED
+**Status:** Correct Type
+**Files:**
+- `src/m2py/asg/statements.py` line 216 (MForStatement)
+
+**Description:** Type hint `Union[str, "MVariable", "MExpr"]` was flagged as potentially redundant since MVariable is a subclass of MExpr.
+
+**Validation:**
+- Runtime test confirms all three types are used:
+  - `str`: Simple variable name (e.g., `F I=1:1:10`)
+  - `MVariable`: Subscripted variable (e.g., `F ARR(1)=1:1:5`)
+  - `MIndirection` (subclass of MExpr): Indirect variable (e.g., `F @V=1:1:3`)
+- The explicit `MVariable` makes code clearer for the common subscripted case
+
+**Conclusion:** Type is correct and intentional. No change required.
+
+#### Finding 4: ContLine Comment Inaccuracy - COMMENT FIX NEEDED
+**Status:** Comment Incorrect
+**Files:**
+- `src/m2py/grammar/mumps.tx` lines 28-30 (ContLine rule)
+
+**Description:** Comment says "Continuation line: starts with tab or single space or dot" but the regex `/[\t ]/` only matches tab or space, not dot.
+
+**Validation:**
+- Test confirmed: Line starting with `.` (no leading space) fails to parse
+- Line starting with ` .` (space then dot) parses correctly
+- Per MUMPS spec (1995 §6.2), dots (`li` = level indicator) follow the linestart (`ls`)
+- The dot is captured in the `rest` attribute, not by the ContLine regex
+
+**Conclusion:** Comment is misleading. Should say "starts with tab or single space" (dots are part of line content, not the linestart character).
+
+#### Finding 5: CommandWithArg Complexity - NO CHANGE NEEDED
+**Status:** Necessary Complexity
+**Files:**
+- `src/m2py/grammar/commands.tx` lines 285-322 (CommandWithArg rule)
+
+**Description:** The `QuitCommand` uses a complex negative lookahead `!CommandWithArg` to distinguish QUIT with return value from QUIT followed by another command.
+
+**Validation:**
+- Test confirmed correct behavior:
+  - `Q S` → QUIT with return value `S` (S alone is not a command)
+  - `Q S X=1` → QUIT then SET (S followed by assignment pattern)
+  - `Q E` → QUIT then ELSE (E recognized as command keyword)
+  - `Q I X` → QUIT then IF (I followed by expression is IF)
+- Without this lookahead, parsing would be ambiguous
+
+**Conclusion:** Complexity is necessary for correct parsing. No change required.
+
+#### Finding 6: OffsetExpr Duplication - NO CHANGE NEEDED
+**Status:** Necessary Design
+**Files:**
+- `src/m2py/grammar/expressions.tx` lines 152-210 (OffsetExpr, OffsetPrimaryExpr)
+
+**Description:** `OffsetExpr` duplicates much of `Expr` logic but excludes bare `GlobalVariable` and `NakedGlobal`.
+
+**Validation:**
+- Test confirmed: In `G LABEL+^NAME`, `^NAME` must be parsed as routine name, not global
+- `OffsetExpr` correctly:
+  - Excludes bare `GlobalVariable` (which would be ambiguous with routine reference)
+  - Includes `SubscriptedGlobal` (^NAME(...) is unambiguously a global variable)
+- This disambiguation cannot be achieved without separate grammar rules
+
+**Conclusion:** Duplication is necessary for correct parsing. No change required.
+
+#### Finding 7: Sub-component Classes Without ASGElement - NO CHANGE NEEDED
+**Status:** Intentional Optimization
+**Files:**
+- `src/m2py/asg/statements.py` (MAssignment, MReadTarget, MForParameter, MMergePair, MOpenDevice, MCloseDevice, MUseDevice)
+
+**Description:** These classes are plain dataclasses rather than `ASGElement` subclasses, lacking source tracking and `to_dict()` method.
+
+**Validation:**
+- Classes are actively used: MReadTarget in for_analysis.py, MForParameter in command_parser.py
+- Classes are exported in `__all__` for external use
+- Docstrings explain: "This is a sub-component... avoids adding unused source tracking overhead (~40 bytes per instance)"
+- Source tracking is available via the parent statement (MSetStatement, MReadStatement, etc.)
+
+**Conclusion:** Intentional memory optimization. Documentation is adequate. No change required.
+
+### Tasks
+
+- [X] **79.1** Fix ContLine comment in mumps.tx
+  - Change "starts with tab or single space or dot" to "starts with tab or single space"
+  - Add clarification: "Dot level indicators (per MUMPS spec §6.2) appear in the line content after the linestart character"
+  - Updated Line comment to remove "tab/dot" mention
+  - Updated docs/grammar_overview.md with new Line Level section explaining dot blocks
+  - Added 4 unit tests in test_parser.py:
+    - `test_parse_tab_indented_line` - Tab continuation works
+    - `test_parse_space_indented_line` - Space continuation works
+    - `test_parse_dot_block_requires_leading_space` - Dot blocks need space prefix
+    - `test_parse_dot_without_leading_space_fails` - Bare dot at column 1 fails
+
+**Checkpoint**: Phase 79 complete - Grammar comments corrected, documentation updated, tests added (939 tests passing).
