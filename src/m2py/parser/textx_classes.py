@@ -41,8 +41,10 @@ def _unwrap_expr(expr):
     - Expr: Contains left=UnaryExpr tail+=BinaryOpTail (where BinaryOpTail has op and right)
     - UnaryExpr: Contains operators + operand
 
-    For simple expressions, we want just the operand (our custom class).
-    For expressions with operators, we keep the structure for now.
+    For simple expressions, we return the operand directly (our custom ASG class).
+    For expressions with operators (binary ops, pattern match), the textX structure
+    is preserved here because SemanticAnalyzer._analyze_Expr() will process the
+    tail elements to build proper ASG nodes (MBinaryOp, MPatternMatch, etc.).
     """
     if expr is None:
         return None
@@ -312,10 +314,13 @@ class SelectFunction(MIntrinsicFunction):
     $SELECT uses special syntax with condition:value pairs.
     We map this to MIntrinsicFunction with the condition:value pairs
     stored as a list of tuples in the arguments.
+
+    Note: Name is preserved as-is (not uppercased) for consistency with
+    IntrinsicFunction. Code generators normalize function names as needed.
     """
 
     def __init__(self, parent=None, name: str = "", args=None):
-        object.__setattr__(self, "name", name.upper())  # Normalize to uppercase
+        object.__setattr__(self, "name", name)  # Preserve as-is for consistency
         # args is a SelectFunctionArgs with args=[SelectArg, ...]
         # Each SelectArg has .condition and .value attributes
         arguments = []

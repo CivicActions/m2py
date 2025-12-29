@@ -634,6 +634,32 @@ class TestSelectFunction:
         model = expr_metamodel.model_from_str("$selec(1:1)", "Expr")
         assert model is not None
 
+    def test_select_name_preserves_casing(self, expr_metamodel):
+        """Verify SelectFunction preserves original name casing.
+
+        Function names are stored as-is in the ASG for consistency with
+        IntrinsicFunction. Code generators normalize to uppercase as needed.
+        """
+        # Lowercase
+        model = expr_metamodel.model_from_str("$select(1:1)", "Expr")
+        operand = model.left.operand
+        assert operand.name == "select", f"Expected 'select', got '{operand.name}'"
+
+        # Uppercase
+        model = expr_metamodel.model_from_str("$SELECT(1:1)", "Expr")
+        operand = model.left.operand
+        assert operand.name == "SELECT", f"Expected 'SELECT', got '{operand.name}'"
+
+        # Mixed case
+        model = expr_metamodel.model_from_str("$Select(1:1)", "Expr")
+        operand = model.left.operand
+        assert operand.name == "Select", f"Expected 'Select', got '{operand.name}'"
+
+        # Abbreviated
+        model = expr_metamodel.model_from_str("$s(1:1)", "Expr")
+        operand = model.left.operand
+        assert operand.name == "s", f"Expected 's', got '{operand.name}'"
+
 
 class TestIndirection:
     """Test indirection parsing."""

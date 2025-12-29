@@ -186,12 +186,16 @@ def _classify_single_goto(
         # Determine base goto type based on target location
         # Same label = forward or backward within label (intra-label jump)
         if target_label.name == current_label.name:
-            # Within same label - need line numbers to determine direction
-            # For now, use a heuristic: if target line < source line = backward
-            # If no line info, assume forward
-            _source_line = stmt.line_number or 0  # Reserved for future use
-            # For targets within same label, we'd need to track statement order
-            # Simplify: treat as FORWARD for now
+            # Intra-label jump: both source and target are within the same label.
+            # Determining forward vs. backward direction would require tracking
+            # statement order within the label, which isn't currently available.
+            # Classification: Default to FORWARD_JUMP since the more important
+            # signal for code generation is is_cross_label=False, which indicates
+            # the jump stays within local scope and can typically be translated
+            # to structured control flow (if/elif/continue).
+            _source_line = (
+                stmt.line_number or 0
+            )  # Reserved for future direction analysis
             stmt.goto_type = GotoType.FORWARD_JUMP
             stmt.is_cross_label = False
         else:

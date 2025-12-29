@@ -94,6 +94,12 @@ LATER  ; Position 2
 
 The analyzer builds a label position map and compares indices.
 
+**Intra-Label Jumps**: When source and target are in the same label (`is_cross_label=False`),
+the analyzer defaults to `FORWARD_JUMP` since determining forward vs. backward direction
+would require tracking statement order within the label. The `is_cross_label=False` flag
+is the key signal for code generation, indicating the jump stays within local scope and
+can typically be translated to structured control flow.
+
 ### Loop Exit Detection
 
 ```mumps

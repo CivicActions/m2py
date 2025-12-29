@@ -235,10 +235,15 @@ X'?1N        ; NOT match (negated)
 | Field | Type | Description |
 |-------|------|-------------|
 | `subject` | `MExpr` | Value being matched |
-| `pattern` | `str` | Raw pattern string |
+| `pattern` | `str` | Flattened pattern string (e.g., "1A.N") |
 | `pattern_indirect` | `Optional[MExpr]` | For `?@X` |
 | `operator` | `str` | `?` or `'?` |
-| `compiled_regex` | `Optional[str]` | Pre-compiled regex |
+| `compiled_regex` | `Optional[str]` | Pre-compiled Python regex |
+
+**Design Note**: The `pattern` field stores a flattened string representation rather
+than the structured `PatternSpec` from the grammar. The `compiled_regex` field provides
+the Python regex equivalent for code generation. This keeps the ASG simple since
+downstream code only needs the regex, not individual pattern atoms.
 
 **Pattern Codes**:
 

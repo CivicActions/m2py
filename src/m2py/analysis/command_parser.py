@@ -77,17 +77,14 @@ def parse_line_content(line_content: str) -> Optional[Any]:
     Returns:
         The parsed textX LineContent model or None if parsing fails.
 
-    Note:
-        Returning None on parse failure is intentional error-tolerant design.
-        textX enforces full input consumption by default (raises TextXSyntaxError
-        if any input remains unparsed). We catch this error and return None to
-        allow partial parsing of files that may contain some invalid lines.
+    Error Handling:
+        Returns None on parse failure for error-tolerant parsing. textX enforces
+        full input consumption by default, raising TextXSyntaxError if any input
+        remains unparsed. This function catches that error and returns None,
+        allowing partial parsing of files that may contain some invalid lines.
 
-        This behavior is documented in Phase 81 of tasks.md. If stricter error
-        handling is needed, consider adding an optional strict_mode parameter.
-
-    See Also:
-        Phase 81 in specs/001-textx-semantic-graph/tasks.md for rationale.
+        For stricter error handling, catch the result being None and handle
+        accordingly, or use the underlying metamodel directly with try/except.
     """
     mm = _get_line_metamodel()
     try:
@@ -394,16 +391,20 @@ def parse_for_command_to_asg(for_cmd) -> MForStatement:
 
 
 def _expr_to_asg_literal(expr_str: str) -> MLiteral:
-    """Create an MLiteral from an expression string.
+    """Create an MLiteral from an expression string for utility functions.
 
-    For now, we capture expressions as raw text in an MLiteral.
-    A more complete implementation would parse full expressions.
+    This is a lightweight converter used by the classify_patterns utility path
+    (via parse_for_command_to_asg) for analyzing FOR loop patterns. It captures
+    simple literals directly and stores complex expressions as raw text.
+
+    The main parsing path (parser.py -> SemanticAnalyzer) properly converts all
+    expressions to typed ASG nodes and should be used for full parsing.
 
     Args:
         expr_str: Expression string like "1", '"ABC"', or "X+1"
 
     Returns:
-        MLiteral with the raw expression
+        MLiteral with the parsed value or raw expression string
     """
     literal = MLiteral()
     literal.raw_value = expr_str

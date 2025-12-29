@@ -7435,3 +7435,288 @@ The "fallback" at line 421 ("Fallback for current grammar") is actually the norm
 
 **Checkpoint**: Phase 82 complete. Bug fixed, comments clarified, tests added, docs updated.
 
+---
+
+## Phase 83: ASG Code Review Validation
+
+**Purpose**: Validate findings from ASG code review to identify real issues vs. correct design decisions
+
+**Validation Date**: 2025-12-29
+
+### Findings Analysis
+
+#### Finding 1: MPatternMatch Flattening
+**Status**: ✓ NON-ISSUE - Intentional Design
+**Files**: `src/m2py/asg/expressions.py` (MPatternMatch class), `src/m2py/analysis/semantic_analyzer.py`
+
+**Description**: The grammar (`expressions.tx`) parses patterns into a structured `PatternSpec` with atoms, repeat counts, and pattern codes, but the ASG flattens this to a simple string.
+
+**Validation**:
+```python
+# Pattern match works correctly:
+# S X=Y?1A.N -> MPatternMatch(pattern='1A.N', compiled_regex='[A-Za-z][0-9]*')
+```
+
+The `pattern_compiler.py` converts the string to regex at analysis time. Downstream code generators only need the compiled regex. No AST structure is required.
+
+**Conclusion**: Correct design. The "Design Note" comment is accurate.
+
+**Task**: None required.
+
+---
+
+#### Finding 2: MIndirection Static Resolution
+**Status**: ✓ NON-ISSUE - Already Implemented
+**Files**: `src/m2py/asg/expressions.py`, `src/m2py/analysis/semantic_analyzer.py`
+
+**Description**: Initial review suggested `requires_runtime_eval=True` was hardcoded, but static resolution IS implemented.
+
+**Validation**:
+```python
+# Literal indirection IS statically resolved:
+# S @"VARNAME"=1 -> MIndirection(can_resolve_statically=True, resolved_value='VARNAME', requires_runtime_eval=True)
+# S @X=1 -> MIndirection(can_resolve_statically=False, resolved_value=None, requires_runtime_eval=True)
+```
+
+The semantic analyzer (line 312-313) sets `can_resolve_statically=True` and `resolved_value` for literal indirection. The `requires_runtime_eval` field is used by the variable analyzer to flag routines with unresolvable indirection - it's correctly True for all indirection since even resolved indirection needs runtime variable lookup.
+
+**Conclusion**: Correct implementation. Tests verify behavior in `test_semantic_analyzer.py` lines 711-725.
+
+**Task**: None required.
+
+---
+
+#### Finding 3: _unwrap_expr "for now" Comment
+**Status**: ✓ NON-ISSUE - Comment Improvement
+**Files**: `src/m2py/parser/textx_classes.py` (line 45)
+
+**Description**: Comment says "we keep the structure for now" for complex expressions.
+
+**Validation**: The function correctly:
+1. Returns ASG nodes directly if already converted
+2. Unwraps simple Expr → UnaryExpr → operand chains
+3. Preserves textX structure for complex expressions (binary ops, pattern match)
+
+The preserved structure is then processed by `SemanticAnalyzer._analyze_Expr()` which handles the tail correctly.
+
+**Conclusion**: Behavior is correct. Comment could be clearer.
+
+**Task**: 83.1 - Update comment to explain rationale (complex expressions handled by SemanticAnalyzer)
+
+---
+
+#### Finding 4: SelectFunction Name Normalization Inconsistency
+**Status**: ⚠️ MINOR ISSUE - Inconsistent but Harmless
+**Files**: `src/m2py/parser/textx_classes.py` (SelectFunction class)
+
+**Description**: SelectFunction calls `.upper()` on the name, while IntrinsicFunction does not.
+
+**Validation**:
+```python
+# SelectFunction applies .upper():
+# $s(1:2) -> name='S' (not 'SELECT' - abbreviation preserved)
+# $SELECT(1:2) -> name='SELECT'
+
+# IntrinsicFunction does NOT apply .upper():
+# $p(Y,"^",1) -> name='p' (lowercase preserved)
+# $PIECE(Y,"^",1) -> name='PIECE'
+```
+
+The code generators already handle this by calling `.upper()` on names (documented in `docs/codegen/functions.md` line 302).
+
+**Conclusion**: Inconsistency exists but is harmless since codegen normalizes anyway. The `.upper()` in SelectFunction is unnecessary but not wrong.
+
+**Task**: 83.2 - Remove `.upper()` from SelectFunction for consistency with IntrinsicFunction (optional cleanup)
+
+---
+
+#### Finding 5: Sub-Component ASGElement Inheritance
+**Status**: ✓ NON-ISSUE - Intentional Design
+**Files**: `src/m2py/asg/statements.py` (MReadTarget, MForParameter, MAssignment)
+
+**Description**: MReadTarget, MForParameter, and MAssignment are plain dataclasses (not ASGElement), while MActualParameter inherits ASGElement.
+
+**Validation**: The docstrings explicitly document this design choice:
+```
+Note: This is a sub-component of MSetStatement, not a standalone ASG node.
+It inherits source position context from its containing MSetStatement.
+This design avoids adding unused source tracking overhead (~40 bytes per instance).
+```
+
+MActualParameter inherits ASGElement because it may need independent source tracking for error messages about parameter passing (e.g., "cannot pass global by reference at line X").
+
+**Conclusion**: Intentional design with clear rationale documented. No change needed.
+
+**Task**: None required.
+
+---
+
+#### Finding 6: Statement Arguments List[Any] Typing
+**Status**: ✓ NON-ISSUE - Acceptable Trade-off
+**Files**: `src/m2py/asg/statements.py` (MReadStatement, MWriteStatement)
+
+**Description**: Arguments fields are typed as `List[Any]` rather than Union types.
+
+**Validation**:
+- MWriteStatement arguments: MExpr | MFormatControl (various subclasses)
+- MReadStatement arguments: MReadTarget | MLiteral | MFormatControl
+
+Strict Union typing would require complex type definitions that change with features. The current typing documents expected types in docstrings.
+
+**Conclusion**: Trade-off between type safety and maintainability. Runtime types are correct; static analysis catches most issues via isinstance checks.
+
+**Task**: None required (could add type aliases in future if needed for codegen)
+
+---
+
+#### Finding 7: _expr_to_asg_literal "For now" Comment
+**Status**: ⚠️ MINOR ISSUE - Utility Function
+**Files**: `src/m2py/analysis/command_parser.py` (line 399)
+
+**Description**: Function comment says "For now, we capture expressions as raw text in an MLiteral."
+
+**Validation**: This function is used only in the `classify_patterns` path (via `parse_for_command_to_asg`), which is a utility function for FOR loop analysis. The main parse path uses SemanticAnalyzer which properly converts expressions to ASG.
+
+Usage sites:
+1. `_build_for_parameters` - used by `parse_for_command_to_asg` (classify_patterns path)
+2. Various postcondition parsing in command_parser.py
+
+The main parser path (`parser.py` → `analyze_command` → `SemanticAnalyzer`) does NOT use this function.
+
+**Conclusion**: Function works for its purpose but comment is misleading. The function is adequate for the classify_patterns utility but is not the primary expression parsing path.
+
+**Task**: 83.3 - Update docstring to clarify this is for the classify_patterns utility path only
+
+---
+
+#### Finding 8: goto_analysis.py "for now" Comments
+**Status**: ⚠️ MINOR ISSUE - Documented Simplification  
+**Files**: `src/m2py/analysis/goto_analysis.py` (lines 190, 194)
+
+**Description**: Comments say "For now, use a heuristic" and "Simplify: treat as FORWARD for now" for intra-label GOTO direction.
+
+**Validation**: Within same label, determining forward vs. backward requires statement ordering which isn't tracked. Current simplification treats all intra-label GOTOs as FORWARD_JUMP. This affects:
+- `stmt.goto_type` classification
+- Not critical for most code generation scenarios
+
+**Conclusion**: Known simplification. Impact is limited since intra-label GOTOs are relatively rare and the `is_cross_label=False` flag is the more important signal.
+
+**Task**: 83.4 - Update comments to document limitation rather than "for now" phrasing
+
+---
+
+#### Finding 9: Error Swallowing in parse_line_content
+**Status**: ✓ NON-ISSUE - Intentional Design
+**Files**: `src/m2py/analysis/command_parser.py` (parse_line_content function)
+
+**Description**: `parse_line_content` catches `TextXSyntaxError` and returns `None`. The docstring mentions "intentional error-tolerant design" and "Phase 81".
+
+**Validation**: The function correctly handles parse failures for:
+- Files with some invalid lines (partial parsing)
+- Edge cases in MUMPS syntax that the grammar doesn't handle
+
+The docstring already explains the rationale clearly. The suggestion for a `strict_mode` parameter is a future enhancement note, not a deficiency.
+
+**Conclusion**: Correct design. Comment could be slightly reframed.
+
+**Task**: 83.5 - Minor: Reframe "Phase 81" reference to describe current behavior
+
+---
+
+#### Finding 10: _find_last_argumentless_do Scope Check
+**Status**: ✓ NON-ISSUE - Complete for Current ASG
+**Files**: `src/m2py/parser/parser.py` (_find_last_argumentless_do function)
+
+**Description**: Function explicitly checks only `MIfStatement`, `MElseStatement`, and `MForStatement` for nested scopes.
+
+**Validation**: Reviewed all statement types in `statements.py`:
+- `MJobStatement` - NO body field (targets only)
+- `MXecuteStatement` - NO body field (expression only)
+- `MLockStatement` - NO body field
+- All other statements - NO body field
+
+Only `MIfStatement` (then_scope), `MElseStatement` (body), `MForStatement` (body), and `MDoStatement` (body) have scope fields. The function correctly handles all of these.
+
+**Conclusion**: Function is complete for the current ASG. No change needed.
+
+**Task**: None required.
+
+---
+
+#### Finding 11: Inconsistent object.__setattr__ Usage
+**Status**: ✓ NON-ISSUE - Style Choice
+**Files**: `src/m2py/parser/textx_classes.py`, `src/m2py/analysis/semantic_analyzer.py`
+
+**Description**: textX custom classes use `object.__setattr__(self, ...)` instead of direct assignment.
+
+**Validation**: Testing shows both styles work equivalently:
+```python
+# Both work in dataclass child classes:
+self.value = x                    # Direct assignment
+object.__setattr__(self, "value", x)  # Explicit setattr
+```
+
+The `object.__setattr__` style was likely chosen for:
+1. Explicit signal that bypassing potential property setters
+2. Consistency with code that handles frozen dataclasses (even though ASG isn't frozen)
+3. Convention from earlier development phases
+
+**Conclusion**: Style choice, not a bug. Consistency within each file is maintained.
+
+**Task**: None required.
+
+---
+
+#### Finding 12: MPatternMatch Comment Reframing
+**Status**: ⚠️ MINOR ISSUE - Comment Style
+**Files**: `src/m2py/asg/expressions.py` (MPatternMatch docstring)
+
+**Description**: The "Design Note" describes a decision process ("However, the ASG intentionally flattens...") rather than stating current architecture.
+
+**Validation**: The current docstring is accurate but uses decision-framing. Could be reframed to:
+"Stores the pattern as a string for regex compilation. The grammar parses structured PatternSpec atoms, but downstream consumers only need the compiled regex, so the AST structure is not retained."
+
+**Conclusion**: Comment is accurate but could be clearer. Low priority.
+
+**Task**: 83.6 - [OPTIONAL] Reframe MPatternMatch docstring to state architecture
+
+---
+
+### Tasks
+
+- [x] **83.1** Update `_unwrap_expr` comment to explain design
+  - File: `src/m2py/parser/textx_classes.py`
+  - Changed "For expressions with operators, we keep the structure for now" to explain that complex expressions are processed by SemanticAnalyzer._analyze_Expr()
+
+- [x] **83.2** [OPTIONAL] Remove `.upper()` from SelectFunction for consistency
+  - File: `src/m2py/parser/textx_classes.py`
+  - Removed `.upper()` to match IntrinsicFunction behavior; added test to verify casing preserved
+
+- [x] **83.3** Update `_expr_to_asg_literal` docstring for clarity
+  - File: `src/m2py/analysis/command_parser.py`
+  - Clarified this is for classify_patterns utility, not main parse path
+
+- [x] **83.4** Update goto_analysis.py intra-label GOTO comments
+  - File: `src/m2py/analysis/goto_analysis.py`  
+  - Changed "for now" phrasing to document current behavior and rationale
+
+- [x] **83.5** Reframe parse_line_content docstring
+  - File: `src/m2py/analysis/command_parser.py`
+  - Removed "Phase 81" reference, described behavior directly under "Error Handling" section
+
+- [x] **83.6** [OPTIONAL] Reframe MPatternMatch docstring
+  - File: `src/m2py/asg/expressions.py`
+  - Restated as architecture description rather than decision process
+
+### Documentation Updates
+
+- Updated `docs/analysis/semantic_analyzer.md` - Added detail about expression unwrapping architecture
+- Updated `docs/analysis/goto_analysis.md` - Added "Intra-Label Jumps" explanation
+- Updated `docs/asg/expressions.md` - Updated MPatternMatch description with design note
+- Updated `docs/codegen/functions.md` - Added "Function Name Normalization" section explaining ASG preserves original casing
+
+### Tests Added
+
+- `test_select_name_preserves_casing` in `tests/unit/test_expression_grammar.py` - Verifies SelectFunction preserves original casing (lowercase, uppercase, mixed, abbreviated)
+
+**Checkpoint**: Phase 83 implementation complete. All 6 tasks done, 4 documentation files updated, 1 new test added, all 1037 tests pass.

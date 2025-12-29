@@ -85,6 +85,15 @@ MBinaryOp
 └── right: MLiteral(value=2, literal_type=INTEGER)
 ```
 
+The `_unwrap_expr()` helper in `textx_classes.py` handles simple unwrapping:
+- Returns ASG nodes directly if already converted
+- Unwraps simple Expr → UnaryExpr → operand chains
+- Preserves textX structure for complex expressions (binary ops, pattern match)
+
+Complex expressions with operators are handled by `SemanticAnalyzer._analyze_Expr()`,
+which processes the `tail` elements to build proper ASG nodes like `MBinaryOp` and
+`MPatternMatch`.
+
 The analyzer recursively processes expression trees:
 
 ```python

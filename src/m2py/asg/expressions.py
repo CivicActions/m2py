@@ -184,13 +184,12 @@ class MPatternMatch(MExpr):
     X?1A.N, X?@pattern (indirect pattern)
     Also supports negated pattern match: X'?1A.N
 
-    Design Note: The grammar (expressions.tx) parses patterns into a structured
-    PatternSpec with atoms, repeat counts, and pattern codes. However, the ASG
-    intentionally flattens this to a simple pattern string because:
-    1. The string is sufficient for regex compilation (via pattern_compiler.py)
-    2. The compiled_regex field provides the Python equivalent for code generation
-    3. No downstream code needs to inspect pattern atoms individually
-    4. Preserving the full AST structure would add complexity without benefit
+    The pattern field stores a flattened string representation (e.g., "1A.N")
+    rather than the structured PatternSpec from the grammar. The compiled_regex
+    field contains the equivalent Python regex for code generation. This design
+    keeps the ASG simple since downstream code only needs the regex, not the
+    individual pattern atoms. See pattern_compiler.py for the string-to-regex
+    conversion.
     """
 
     subject: Optional["MExpr"] = None

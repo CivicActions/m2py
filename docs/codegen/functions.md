@@ -278,6 +278,20 @@ def mumps_horolog():
 
 ## Code Generation Pattern
 
+### Function Name Normalization
+
+The ASG preserves function names exactly as written in the source (`$p`, `$PIECE`, etc.).
+Code generators should normalize to uppercase when mapping to runtime functions:
+
+```python
+def generate_intrinsic(node: MIntrinsicFunction) -> str:
+    func_name = FUNCTION_MAP.get(node.name.upper())  # Normalize here
+    # ...
+```
+
+This design allows case-sensitive source preservation for debugging and error messages
+while ensuring correct function dispatch regardless of source casing.
+
 ```python
 FUNCTION_MAP = {
     "E": "mumps_extract",
