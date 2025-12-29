@@ -404,23 +404,29 @@ Pause execution:
 
 ```mumps
 H 5           ; Hang 5 seconds
-H DURATION
+HANG DURATION
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `duration` | `Optional[MExpr]` | Seconds to pause |
 
+**Note**: `H` alone (without argument) is HALT, not HANG. See MHaltStatement.
+
 ### MHaltStatement
 
 Terminate execution:
 
 ```mumps
-H             ; Argumentless - halt
+H             ; Argumentless H = halt
 HALT
 ```
 
 No additional fields.
+
+**Note**: Per MUMPS spec, `H` and `HALT` share the same abbreviation. The grammar distinguishes them by argument presence:
+- `H` (no argument) → HALT (terminate)
+- `H 5` (with argument) → HANG (pause 5 seconds)
 
 ### MBreakStatement
 
@@ -557,14 +563,23 @@ U DEV1,DEV2             ; Multiple devices
 J label^routine
 J label:params:timeout
 J LABEL1,LABEL2         ; Multiple targets
+J @VAR                   ; Indirection
+J @VAR^@ROUTINE          ; Full indirection
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `calls` | `List[MCall]` | List of job targets |
-| `call` | `MCall` (property) | Backward-compat: first call |
+| `targets` | `List[MCall]` | List of job targets |
+| `calls` | `List[MCall]` (property) | Deprecated alias for `targets` |
+| `call` | `MCall` (property) | Backward-compat: first target |
 | `parameters` | `List[MExpr]` | Process parameters |
 | `timeout` | `Optional[MExpr]` | Timeout in seconds |
+
+**Note**: The `targets` field aligns with `MDoStatement.targets` and `MGotoStatement.targets` for consistency. The `calls` property is a deprecated alias maintained for backward compatibility.
+
+**Indirection Support**: MJobStatement supports both direct labels and indirection (J @VAR). When indirection is used, the corresponding MCall will have:
+- `label_is_indirect = True`
+- `indirection` set to the indirection expression (e.g., MVariable)
 
 ---
 

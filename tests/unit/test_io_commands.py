@@ -330,3 +330,90 @@ class TestLockCommand:
 
         assert isinstance(stmt, MLockStatement)
         assert stmt.targets == []
+
+
+class TestJobIndirection:
+    """Tests for JOB command indirection handling (Phase 80 bug fix)."""
+
+    def test_job_with_simple_indirection(self):
+        """JOB @VAR sets label_is_indirect=True and captures indirection.
+
+        Per MUMPS spec, J @VAR should start a job whose label is determined
+        at runtime from the value of VAR.
+        """
+        from m2py.asg.expressions import MVariable
+
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n J @VAR\n")
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        assert len(stmt.targets) == 1
+        call = stmt.targets[0]
+        assert call.label_is_indirect is True
+        assert call.indirection is not None
+        assert isinstance(call.indirection, MVariable)
+        assert call.indirection.name == "VAR"
+
+    def test_job_with_routine_indirection(self):
+        """JOB @VAR^ROUTINE handles label indirection with explicit routine."""
+        from m2py.asg.expressions import MVariable
+
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n J @VAR^MYROUTINE\n")
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        assert len(stmt.targets) == 1
+        call = stmt.targets[0]
+        assert call.label_is_indirect is True
+        assert call.indirection is not None
+        assert isinstance(call.indirection, MVariable)
+        assert call.indirection.name == "VAR"
+        assert call.routine == "MYROUTINE"
+
+    def test_job_targets_consistency_with_do(self):
+        """MJobStatement.targets and MDoStatement.targets have consistent naming.
+
+        Phase 81 renamed MJobStatement.calls to .targets for consistency with
+        MDoStatement and MGotoStatement.
+        """
+        from m2py.asg import MDoStatement
+
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n J LABEL\n D OTHER\n")
+
+        label = routine.labels[0]
+        job_stmt = label.body.statements[0]
+        do_stmt = label.body.statements[1]
+
+        assert isinstance(job_stmt, MJobStatement)
+        assert isinstance(do_stmt, MDoStatement)
+
+        # Both should have .targets attribute
+        assert hasattr(job_stmt, "targets")
+        assert hasattr(do_stmt, "targets")
+        assert len(job_stmt.targets) == 1
+        assert len(do_stmt.targets) == 1
+
+    def test_job_backward_compat_calls_property(self):
+        """MJobStatement.calls property provides backward compatibility.
+
+        The .calls property is a deprecated alias for .targets to maintain
+        backward compatibility with existing code.
+        """
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n J LABEL\n")
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        # Both .calls and .targets should return the same list
+        assert stmt.calls is stmt.targets
+        assert len(stmt.calls) == 1
+        assert stmt.calls[0].name == "LABEL"

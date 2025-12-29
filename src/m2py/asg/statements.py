@@ -620,13 +620,24 @@ class MJobStatement(MStatement):
 
     Supports multiple targets per MUMPS 1995 spec:
     J LABEL1,LABEL2 starts two concurrent jobs
+
+    Supports indirection per MUMPS spec:
+    J @VAR, J @VAR^ROUTINE, J @VAR^@ROUTINEVAR
     """
 
-    calls: List["MCall"] = field(default_factory=list)
+    targets: List["MCall"] = field(default_factory=list)
     parameters: List["MExpr"] = field(default_factory=list)
     timeout: Optional["MExpr"] = None
 
     @property
+    def calls(self) -> List["MCall"]:
+        """Backward-compatible alias for targets.
+
+        Deprecated: Use `targets` instead for consistency with MDoStatement.
+        """
+        return self.targets
+
+    @property
     def call(self) -> Optional["MCall"]:
         """Backward-compatible access to first call target."""
-        return self.calls[0] if self.calls else None
+        return self.targets[0] if self.targets else None

@@ -323,13 +323,10 @@ class SemanticAnalyzer:
         """
         operand = self.analyze(unary.operand, parent)
 
-        # Handle chained unary operators (new grammar uses 'operators' list)
+        # Handle chained unary operators (grammar uses 'operators' list)
         operators = []
         if hasattr(unary, "operators") and unary.operators:
             operators = list(unary.operators)
-        elif hasattr(unary, "operator") and unary.operator:
-            # Backwards compatibility for old grammar
-            operators = [unary.operator]
 
         if operators:
             # Apply operators from right to left (innermost first)
@@ -1089,18 +1086,6 @@ class SemanticAnalyzer:
             # Add selective targets (these are killed AFTER exclusive processing)
             stmt.targets = selective_targets
 
-        # Legacy support: old grammar structure with 'exclusive' attribute
-        elif hasattr(cmd, "exclusive") and cmd.exclusive:
-            stmt.exclusive = True
-            exc = cmd.exclusive
-            except_list = getattr(exc, "except", None) or getattr(exc, "except_", None)
-            if except_list:
-                stmt.except_list = list(except_list)
-                stmt.except_groups = [list(except_list)]
-        elif hasattr(cmd, "vars") and cmd.vars:
-            for v in cmd.vars:
-                stmt.targets.append(self.analyze(v, stmt))
-
         return stmt
 
     def _analyze_HangCommand(self, cmd: Any, parent: Any) -> MHangStatement:
@@ -1200,14 +1185,15 @@ class SemanticAnalyzer:
     def _analyze_lock_item(self, item: Any, parent: Any) -> dict:
         """Analyze a single item in a parenthesized lock list.
 
-        LockListItem can be:
-        - indirect=IndirectChain (e.g., @A, @@A, @(expr))
-        - target=VarRef (e.g., ^A, X, ^A(1,2))
+        LockListItem grammar produces both indirect and target attributes
+        (one will be None, the other populated based on input syntax):
+        - indirect: IndirectChain (e.g., @A, @@A, @(expr))
+        - target: VarRef (e.g., ^A, X, ^A(1,2))
         """
         lock_info = {}
 
         # Handle indirection: @A, @@A, @(expr)
-        if hasattr(item, "indirect") and item.indirect:
+        if item.indirect:
             indirection_expr, levels = self._analyze_indirect_chain(
                 item.indirect, parent
             )
@@ -1215,11 +1201,8 @@ class SemanticAnalyzer:
             lock_info["indirection_levels"] = levels
             lock_info["is_indirect"] = True
         # Handle direct variable reference
-        elif hasattr(item, "target") and item.target:
+        elif item.target:
             lock_info["target"] = self.analyze(item.target, parent)
-        else:
-            # Fallback: try to analyze the item directly (might be a VarRef)
-            lock_info["target"] = self.analyze(item, parent)
 
         return lock_info
 
@@ -1371,6 +1354,8 @@ class SemanticAnalyzer:
 
         Supports multiple targets per MUMPS 1995 spec:
         J LABEL1,LABEL2 starts two concurrent jobs
+
+        Handles both direct labels and indirection (J @VAR, J @VAR^@ROU).
         """
         stmt = MJobStatement()
         object.__setattr__(stmt, "parent", parent)
@@ -1384,11 +1369,60 @@ class SemanticAnalyzer:
                 if hasattr(target, "postcond") and target.postcond:
                     call.postcondition = self.analyze(target.postcond.condition, call)
 
-                if hasattr(target, "label") and target.label:
+                # Handle indirection: J @VAR, J @@VAR, J @VAR^@routine
+                if hasattr(target, "indirect") and target.indirect:
+                    indirect = target.indirect
+                    call.name = ""  # Indirection target - no static name
+                    call.label_is_indirect = True
+
+                    # Process the IndirectChain for the label part
+                    if hasattr(indirect, "labelIndirect") and indirect.labelIndirect:
+                        indirection_expr, levels = self._analyze_indirect_chain(
+                            indirect.labelIndirect, call
+                        )
+                        call.indirection = indirection_expr
+                        call.indirection_levels = levels
+
+                    # Process offset if present: @VAR+offset
+                    if hasattr(indirect, "offset") and indirect.offset:
+                        call.offset = self.analyze(indirect.offset, call)
+
+                    # Process routine part: ^routine or ^@routine
+                    if hasattr(indirect, "routine") and indirect.routine:
+                        call.routine = indirect.routine
+                    elif (
+                        hasattr(indirect, "routineIndirect")
+                        and indirect.routineIndirect
+                    ):
+                        routine_expr, _ = self._analyze_indirect_chain(
+                            indirect.routineIndirect, call
+                        )
+                        call.routine_indirection = routine_expr
+                        call.routine_is_indirect = True
+
+                    # Process arguments if present
+                    if hasattr(indirect, "args") and indirect.args:
+                        call.arguments = self._analyze_function_args(
+                            indirect.args, call
+                        )
+
+                elif hasattr(target, "label") and target.label:
                     label_ref = target.label
                     call.name = label_ref.label or ""
+
+                    # Handle routine: either literal name or indirect (@VAR, @@VAR)
                     if hasattr(label_ref, "routine") and label_ref.routine:
                         call.routine = label_ref.routine
+                    elif (
+                        hasattr(label_ref, "routineIndirect")
+                        and label_ref.routineIndirect
+                    ):
+                        routine_expr, _ = self._analyze_indirect_chain(
+                            label_ref.routineIndirect, call
+                        )
+                        call.routine_indirection = routine_expr
+                        call.routine_is_indirect = True
+
                     if hasattr(label_ref, "offset") and label_ref.offset:
                         call.offset = self.analyze(label_ref.offset, call)
 
@@ -1397,7 +1431,7 @@ class SemanticAnalyzer:
                 if hasattr(target, "args") and target.args:
                     call.arguments = self._analyze_function_args(target.args, call)
 
-                stmt.calls.append(call)
+                stmt.targets.append(call)
 
         return stmt
 

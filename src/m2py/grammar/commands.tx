@@ -24,8 +24,8 @@ Command:
     QuitCommand |
     NewCommand |
     KillCommand |
-    HangCommand |
     HaltCommand |
+    HangCommand |
     BreakCommand |
     LockCommand |
     MergeCommand |
@@ -395,9 +395,12 @@ HangCommand:
     /[Hh][Aa][Nn][Gg]|[Hh]/ postcond=Postcondition? WS seconds=Expr
 ;
 
-// HALT command: H|HALT (same abbreviation as HANG - context determines)
+// HALT command: H|HALT (same abbreviation as HANG - context determines by argument)
+// Per MUMPS spec: H alone = HALT, H followed by expression = HANG
+// The !WS negative lookahead ensures H alone (or at end of line) matches HALT
+// while H followed by space+expression will NOT match, falling through to HangCommand
 HaltCommand:
-    /[Hh][Aa][Ll][Tt]/ postcond=Postcondition?
+    /[Hh][Aa][Ll][Tt]|[Hh]/ !WS postcond=Postcondition?
 ;
 
 // BREAK command: B|BREAK

@@ -467,6 +467,30 @@ class TestOtherStatementAnalysis:
 
         assert isinstance(stmt, MHaltStatement)
 
+    def test_halt_abbreviation(self):
+        """H alone (no argument) produces MHaltStatement, not MHangStatement.
+
+        Per MUMPS spec, H and HALT are the same command when no argument follows.
+        H followed by an expression is HANG.
+        """
+        stmt = analyze_first_command("H")
+
+        assert isinstance(stmt, MHaltStatement)
+
+    def test_hang_vs_halt_disambiguation(self):
+        """H with argument is HANG, H alone is HALT.
+
+        This tests the grammar's correct disambiguation between:
+        - H (no argument) → HALT
+        - H 5 (with argument) → HANG with duration 5
+        """
+        halt_stmt = analyze_first_command("H")
+        hang_stmt = analyze_first_command("H 5")
+
+        assert isinstance(halt_stmt, MHaltStatement)
+        assert isinstance(hang_stmt, MHangStatement)
+        assert hang_stmt.duration is not None
+
     def test_break(self):
         """B produces MBreakStatement."""
         stmt = analyze_first_command("B")

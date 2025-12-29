@@ -6860,3 +6860,361 @@ object.__setattr__(self, "result_type", None)
     - `test_parse_dot_without_leading_space_fails` - Bare dot at column 1 fails
 
 **Checkpoint**: Phase 79 complete - Grammar comments corrected, documentation updated, tests added (939 tests passing).
+
+---
+
+## Phase 80: Grammar and Analyzer Bug Fixes
+
+**Objective**: Fix validated bugs in grammar and semantic analyzer identified during comprehensive code review.
+
+**Context**: Follow-up validation discovered three genuine bugs in the parsing/analysis pipeline that require fixes. This phase addresses each validated bug with targeted fixes and tests.
+
+### Validated Bugs
+
+#### Bug 1: HALT Command 'H' Abbreviation Not Recognized
+**Status:** ✗ BUG - Fix Required
+**Files:**
+- `src/m2py/grammar/commands.tx` lines 399-401 (HaltCommand rule)
+
+**Description:** Per MUMPS spec (1977 §3.6.7, 1995 §8.2.7), HALT syntax is `H[ALT] postcond [ SP ]`, meaning `H` is the minimum abbreviation. However, the current grammar only matches `/[Hh][Aa][Ll][Tt]/` (full spelling), while HANG correctly matches `/[Hh][Aa][Nn][Gg]|[Hh]/`.
+
+**Validation:**
+```
+HALT -> MHaltStatement ✓
+H    -> (no statements) ✗ should be MHaltStatement  
+H 5  -> MHangStatement ✓ (HANG with argument)
+```
+
+**Root Cause:** The ambiguity between HALT and HANG with `H` abbreviation is resolved by argument presence:
+- `H` alone → HALT (no argument)
+- `H expr` → HANG (has argument)
+
+The grammar must use ordering: HaltCommand (argumentless `H`) should be tried BEFORE HangCommand (which requires argument). Currently HaltCommand doesn't match `H` at all.
+
+**Solution:** Change HaltCommand regex from `/[Hh][Aa][Ll][Tt]/` to `/[Hh][Aa][Ll][Tt]|[Hh]/`, and ensure HaltCommand is matched before HangCommand in the Command alternative list. The `!WS` at end of HaltCommand prevents matching `H 5` which should be HANG.
+
+---
+
+#### Bug 2: JOB Command Indirection Not Analyzed
+**Status:** ✗ BUG - Fix Required
+**Files:**
+- `src/m2py/analysis/semantic_analyzer.py` lines 1369-1400 (`_analyze_JobCommand`)
+
+**Description:** The JOB command uses `DoTarget` in grammar which supports both `indirect=DoIndirect` and `label=LabelRef`. However, `_analyze_JobCommand` only handles `target.label`, ignoring `target.indirect`.
+
+**Validation:**
+```
+D @VAR -> label_is_indirect: True, indirection: LocalVariable ✓
+J @VAR -> label_is_indirect: False, indirection: None ✗
+```
+
+**Root Cause:** `_analyze_JobCommand` was modeled after a simpler pattern and doesn't handle indirection. Compare to `_analyze_DoCommand` which correctly handles both `target.indirect` and `target.label` at lines 1139-1193.
+
+**Solution:** Add indirection handling to `_analyze_JobCommand` following the pattern in `_analyze_DoCommand`:
+```python
+if hasattr(target, "indirect") and target.indirect:
+    call.indirection = self.analyze(target.indirect, call)
+    call.label_is_indirect = True
+    call.indirection_levels = 1
+elif hasattr(target, "label") and target.label:
+    # existing label handling...
+```
+
+---
+
+#### Bug 3: Silent Parse Failures (Documentation/Design Issue)
+**Status:** ⚠ DESIGN CONCERN - Track for Future
+**Files:**
+- `src/m2py/analysis/command_parser.py` lines 67-84 (`parse_line_content`)
+
+**Description:** When line content fails to parse (invalid syntax), the function catches `TextXSyntaxError` and returns `None`, resulting in empty statements with no error tracking.
+
+**Validation:**
+```
+NOTACOMMAND 123 -> 0 statements (silently ignored)
+SET (no args)   -> 0 statements (silently ignored)
+```
+
+**Analysis:** This is a deliberate error-tolerant design that allows partial parsing of files with some invalid lines. However, it makes debugging difficult when valid code is silently rejected.
+
+**Recommendation:** This is a design tradeoff, not necessarily a bug. Options:
+1. Add optional error collection mode that tracks parse failures
+2. Log warnings when parse failures occur
+3. Add a strict mode that raises on any parse failure
+
+**Decision:** Document as known behavior. Consider adding error collection in a future phase if users report difficulty debugging parse issues.
+
+---
+
+#### Non-Bug: ASG Naming Inconsistency (`calls` vs `targets`)
+**Status:** ✓ NOT A BUG - Intentional
+**Files:**
+- `src/m2py/asg/statements.py` (MJobStatement.calls, MDoStatement.targets, MGotoStatement.targets)
+
+**Description:** MJobStatement uses `calls` while MDoStatement/MGotoStatement use `targets`. This inconsistency was flagged but is not a bug.
+
+**Validation:**
+- Both attributes are List[MCall] with identical semantics
+- Each has a `@property` for backward compatibility (`.call`, `.target`)
+- Code that uses these statements accesses the correct attribute
+
+**Conclusion:** Style inconsistency, not functional bug. Could be unified in a future refactoring phase but no functional impact.
+
+---
+
+### Tasks
+
+- [X] **80.1** Fix HaltCommand abbreviation in grammar
+  - Changed `/[Hh][Aa][Ll][Tt]/` to `/[Hh][Aa][Ll][Tt]|[Hh]/ !WS`
+  - The `!WS` prevents matching `H 5` which should be HANG
+  - Moved HaltCommand before HangCommand in Command alternatives
+
+- [X] **80.2** Add indirection handling to `_analyze_JobCommand`
+  - Added check for `target.indirect` before `target.label`
+  - Sets `call.indirection`, `call.label_is_indirect`, `call.indirection_levels`
+  - Follows pattern from `_analyze_DoCommand`
+
+- [X] **80.3** Add unit tests for HALT abbreviation
+  - Test `H` parses as MHaltStatement
+  - Test `HALT` parses as MHaltStatement  
+  - Test `H 5` parses as MHangStatement (not HALT)
+  - Added `test_halt_abbreviation` and `test_hang_vs_halt_disambiguation` tests
+
+- [X] **80.4** Add unit tests for JOB indirection
+  - Test `J @VAR` sets `label_is_indirect=True` and `indirection` is populated
+  - Test `J @VAR^MYROUTINE` sets label indirection with explicit routine
+  - Test `J LABEL` (non-indirect) still works correctly
+  - Added `TestJobIndirection` test class with 4 tests
+
+- [X] **80.5** Updated MJobStatement.calls to MJobStatement.targets for consistency
+  - Renamed `calls` field to `targets` to match MDoStatement/MGotoStatement
+  - Added backward-compatible `calls` property that returns `targets`
+  - Added `test_job_targets_consistency_with_do` and `test_job_backward_compat_calls_property` tests
+
+- [X] **80.6** Run full test suite to verify no regressions
+  - All 1035 tests pass
+  - New tests for HALT and JOB indirection pass
+
+**Checkpoint**: Phase 80 complete - Grammar and analyzer bugs fixed, validation tests added.
+
+---
+
+## Phase 81: Dead Code Removal and Code Clarity
+
+**Objective**: Remove validated dead code from the semantic analyzer and add clarity comments where needed.
+
+**Context**: Comprehensive validation of code flagged as potentially "dead" or "backward-compatible fallback" revealed several patterns:
+1. Some code is genuinely dead (grammar structure changed but analyzer fallbacks remain)
+2. Some code is active and necessary (grammar still produces those attributes)
+3. Some code is defensive but unreachable with current grammar
+
+### Validated Dead Code (To Remove)
+
+#### Finding 1: UnaryExpr `operator` Singular Fallback - DEAD CODE
+**Status:** ✗ DEAD CODE - Remove
+**Files:**
+- `src/m2py/analysis/semantic_analyzer.py` lines 331-334 (`_analyze_UnaryExpr`)
+
+**Description:** The code has a fallback for `elif hasattr(unary, "operator")` with comment "# Backwards compatibility for old grammar". This code path is never executed.
+
+**Validation:**
+```python
+# Check UnaryExpr grammar structure
+from m2py.analysis.command_parser import parse_line_content
+result = parse_line_content("S X=-Y")
+unary_expr = result.commands[0].cmd.assignments[0].value
+
+# UnaryExpr has 'operators' (plural) only - never 'operator' (singular)
+hasattr(unary_expr, 'operators')   # True
+hasattr(unary_expr, 'operator')    # False
+```
+
+**Evidence:** The current grammar in `expressions.tx` defines:
+```
+UnaryExpr: operators*=UnaryOp operand=UnaryTerm;
+```
+There is no `operator` singular attribute - this is leftover from an older grammar version.
+
+**Solution:** Remove the dead fallback code at lines 331-334 and the "Backwards compatibility" comment.
+
+---
+
+#### Finding 2: KillCommand Legacy Fallback - DEAD CODE
+**Status:** ✗ DEAD CODE - Remove
+**Files:**
+- `src/m2py/analysis/semantic_analyzer.py` lines 1092-1103 (`_analyze_KillCommand`)
+
+**Description:** The code has a fallback checking for `kill.exclusive`, `kill.vars`, and `kill.targets` attributes. The current grammar uses only `kill.args`.
+
+**Validation:**
+```python
+from m2py.analysis.command_parser import parse_line_content
+result = parse_line_content("K X")
+kill_cmd = result.commands[0].cmd
+
+# KillCommand only has 'args' attribute
+dir(kill_cmd)  # ['args', 'parent', 'postcond'] - NO 'exclusive', 'vars', 'targets'
+```
+
+**Evidence:** The current grammar in `commands.tx` defines:
+```
+KillCommand: /[Kk][Ii][Ll][Ll]|[Kk]/ postcond=Postcond? args=KillArgs?;
+```
+The `KillArgs` rule resolves to a list of `KillItem`, accessed via `kill.args`.
+
+**Solution:** Remove the dead fallback code at lines 1092-1103.
+
+---
+
+#### Finding 3: LockItem Fallback - DEFENSIVE BUT UNREACHABLE
+**Status:** ⚠ DEFENSIVE - Consider Removing
+**Files:**
+- `src/m2py/analysis/semantic_analyzer.py` line 1221 (`_analyze_lock_item`)
+
+**Description:** The code has a fallback `elif hasattr(item, "target")` after checking `item.indirect`. Current grammar always produces both attributes.
+
+**Validation:**
+```python
+from m2py.analysis.command_parser import parse_line_content
+result = parse_line_content("L X,@Y")
+
+for lock_item in result.commands[0].cmd.items:
+    # All LockListItem objects have BOTH attributes
+    hasattr(lock_item, 'indirect')  # True (may be None)
+    hasattr(lock_item, 'target')    # True (may be None)
+```
+
+**Evidence:** The grammar in `commands.tx` defines LockListItem with both `indirect` and `target` attributes. The `hasattr` check is unnecessary defensive coding.
+
+**Solution:** Remove the defensive fallback but keep the main `if/elif` logic that checks attribute values (not presence).
+
+---
+
+### Validated Active Code (Keep As-Is)
+
+#### Finding 4: NewCommand `exclusive`/`vars` Handling - ACTIVE
+**Status:** ✓ ACTIVE - Keep
+**Files:**
+- `src/m2py/analysis/semantic_analyzer.py` lines 1058-1089 (`_analyze_NewCommand`)
+
+**Description:** Unlike KillCommand, NewCommand still uses `exclusive` and `vars` attributes.
+
+**Validation:**
+```python
+from m2py.analysis.command_parser import parse_line_content
+result = parse_line_content("N X")
+new_cmd = result.commands[0].cmd
+
+# NewCommand has 'exclusive' and 'vars' attributes
+dir(new_cmd)  # ['exclusive', 'parent', 'postcond', 'vars']
+```
+
+**Evidence:** Grammar in `commands.tx` defines:
+```
+NewCommand: /[Nn][Ee][Ww]|[Nn]/ postcond=Postcond? 
+    (exclusive?='(' vars+=NewVar[','] ')' | vars*=NewVar[/[\t ,]+/]);
+```
+
+**Conclusion:** Code is active and correctly handles the grammar. No change needed.
+
+---
+
+#### Finding 5: Backward-Compatible Properties on Device Statements - ACTIVE
+**Status:** ✓ ACTIVE - Keep
+**Files:**
+- `src/m2py/asg/statements.py` (MOpenStatement, MCloseStatement, MUseStatement)
+
+**Description:** These statements have properties like `.device_expr`, `.parameters`, `.call` for "backward-compatible access" to devices list.
+
+**Validation:**
+```bash
+grep -rn "device_expr\|\.parameters\|\.call" tests/
+# Shows these properties are actively used in test files
+```
+
+**Evidence:** Tests use these properties:
+- `test_open_command.py` uses `.device_expr`
+- Various tests use `.call` property for single-call statements
+
+**Conclusion:** Properties are actively used in tests and serve as convenience accessors. Keep as-is.
+
+---
+
+### Clarified Understanding: Silent Parse Failures
+
+#### Finding 6: textX Full Consumption Behavior - NOT A GRAMMAR BUG
+**Status:** ✓ CLARIFIED - Design Decision
+**Files:**
+- `src/m2py/analysis/command_parser.py` (`parse_line_content`)
+
+**Description:** Initial concern was that `LineContent` grammar doesn't enforce full consumption, allowing invalid text to silently pass. This was incorrect.
+
+**Validation:**
+```python
+# textX DOES enforce full consumption by default
+from textx import metamodel_from_str
+mm = metamodel_from_str("Item: /[A-Z]+/; Model: items+=Item;")
+mm.model_from_str("X X garbage")
+# Error: None:1:5: Expected Item or EOF => 'X X *garbage'
+```
+
+**Clarification:** textX requires either full match or raises `TextXSyntaxError`. The "silent failure" behavior comes from `parse_line_content()` catching `TextXSyntaxError` and returning `None`. This is intentional error-tolerant design, not a grammar bug.
+
+**Additional Finding:** `NOTACOMMAND` does NOT silently fail - it successfully parses as `N OTACOMMAND` (NEW OTACOMMAND), which is valid MUMPS. MUMPS commands like N, S, W don't require whitespace after single-letter abbreviations.
+
+**Conclusion:** This is documented design behavior, not a bug. No grammar changes needed.
+
+---
+
+### Naming Inconsistency
+
+#### Finding 7: MJobStatement.calls vs MDoStatement.targets
+**Status:** To fix
+**Files:**
+- `src/m2py/asg/statements.py`
+
+**Description:** Both attributes contain `List[MCall]` with identical semantics, but use different names.
+
+**Validation:** Both work correctly in their respective contexts. No functional impact.
+
+**Recommendation:** Addressed in Phase 81 - unified to `targets` with backward-compatible `calls` property.
+
+---
+
+### Tasks
+
+- [X] **81.1** Remove UnaryExpr `operator` singular fallback
+  - Removed dead code from `semantic_analyzer.py`
+  - Removed "Backwards compatibility for old grammar" comment
+  - The `operators` plural path handles all cases
+
+- [X] **81.2** Remove KillCommand legacy fallback code
+  - Removed legacy `exclusive`/`vars`/`targets` handling
+  - Current code using `kill.args` is correct and sufficient
+
+- [X] **81.3** Simplify LockItem analysis
+  - Removed defensive `hasattr` checks
+  - Kept the value-checking logic: `if item.indirect` / `elif item.target`
+  - Both attributes are always present (may be None)
+
+- [X] **81.4** Add clarifying comment to `parse_line_content`
+  - Documented that returning `None` on parse failure is intentional
+  - Note: textX does enforce full consumption; we catch the error intentionally
+  - Referenced this phase for rationale
+
+- [X] **81.5** Run full test suite to verify no regressions
+  - All 1035 tests pass after dead code removal
+  - Dead code paths were never executed, so no test changes needed
+
+- [X] **81.6** Unified MJobStatement.calls to MJobStatement.targets
+  - Renamed field to `targets` for consistency with MDoStatement/MGotoStatement
+  - Added backward-compatible `calls` property (deprecated alias)
+  - Updated documentation and added tests
+
+- [X] **81.7** Updated documentation
+  - Updated `docs/asg/statements.md` with MJobStatement indirection support
+  - Updated `docs/asg/statements.md` with HALT/HANG clarification
+  - Updated `docs/analysis/semantic_analyzer.md` with design decisions
+  - Updated `docs/grammar_overview.md` with HALT/HANG disambiguation section
+
+**Checkpoint**: Phase 81 complete - Dead code removed, code clarity improved, naming unified, behavior documented.

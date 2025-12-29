@@ -309,6 +309,50 @@ class LocalVariable(MVariable):
 
 This allows the parser to directly construct ASG nodes during parsing.
 
+## Command Abbreviations
+
+MUMPS commands can be abbreviated (per MUMPS spec). Most commands have a single minimum abbreviation, but **HALT and HANG share the `H` abbreviation**:
+
+| Full | Minimum | Example |
+|------|---------|---------|
+| SET | S | `S X=1` |
+| WRITE | W | `W "hello"` |
+| QUIT | Q | `Q` |
+| GOTO | G | `G LABEL` |
+| DO | D | `D SUB` |
+| IF | I | `I X>0` |
+| FOR | F | `F I=1:1:10` |
+| **HALT** | **H** | `H` (no argument) |
+| **HANG** | **H** | `H 5` (with argument) |
+
+### HALT vs HANG Disambiguation
+
+The grammar uses **ordered alternatives** and **negative lookahead** to distinguish:
+
+```textx
+// In Command alternatives, HaltCommand comes BEFORE HangCommand
+Command:
+    ... |
+    HaltCommand |    // Try this first
+    HangCommand |    // Only if HaltCommand doesn't match
+    ...
+;
+
+// HaltCommand: matches H|HALT without following whitespace
+HaltCommand:
+    /[Hh][Aa][Ll][Tt]|[Hh]/ !WS postcond=Postcondition?
+;
+
+// HangCommand: requires H|HANG followed by whitespace and expression
+HangCommand:
+    /[Hh][Aa][Nn][Gg]|[Hh]/ postcond=Postcondition? WS seconds=Expr
+;
+```
+
+The `!WS` negative lookahead ensures:
+- `H` alone → HALT (no whitespace follows, so `!WS` succeeds)
+- `H 5` → HANG (`!WS` fails because space follows, so HaltCommand doesn't match)
+
 ## Grammar Testing
 
 Test grammar rules with:

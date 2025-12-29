@@ -75,7 +75,19 @@ def parse_line_content(line_content: str) -> Optional[Any]:
         line_content: The line content (e.g., "S X=1 W X  ;comment")
 
     Returns:
-        The parsed textX LineContent model or None if parsing fails
+        The parsed textX LineContent model or None if parsing fails.
+
+    Note:
+        Returning None on parse failure is intentional error-tolerant design.
+        textX enforces full input consumption by default (raises TextXSyntaxError
+        if any input remains unparsed). We catch this error and return None to
+        allow partial parsing of files that may contain some invalid lines.
+
+        This behavior is documented in Phase 81 of tasks.md. If stricter error
+        handling is needed, consider adding an optional strict_mode parameter.
+
+    See Also:
+        Phase 81 in specs/001-textx-semantic-graph/tasks.md for rationale.
     """
     mm = _get_line_metamodel()
     try:

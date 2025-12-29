@@ -197,3 +197,57 @@ from m2py.analysis.semantic_analyzer import SemanticAnalyzer
 analyzer = SemanticAnalyzer()
 asg_node = analyzer.analyze(textx_node)
 ```
+## Command-Specific Analysis
+
+### Indirection Handling
+
+Commands that support indirection (DO, JOB, GOTO, etc.) have specialized analysis methods that handle both direct and indirect targets.
+
+**Example**: `_analyze_JobCommand` handles:
+- Direct labels: `J LABEL^ROUTINE`
+- Indirection: `J @VAR`, `J @VAR^@ROUTINE`
+
+For indirect calls, the resulting MCall will have:
+- `label_is_indirect = True`
+- `indirection` containing the indirection expression
+- `indirection_levels` indicating nesting depth (@, @@, etc.)
+
+### Grammar/Analyzer Alignment
+
+The semantic analyzer expects specific grammar structures. Key alignments:
+
+| Grammar Attribute | Analyzer Expectation | Notes |
+|-------------------|---------------------|-------|
+| `UnaryExpr.operators` | List of operators | Plural form; applies operators right-to-left |
+| `KillCommand.args` | KillArgs structure | Handles exclusive and selective kills |
+| `NewCommand.exclusive`, `.vars` | Direct attributes | Still uses these attributes |
+| `LockListItem.indirect`, `.target` | Both present | One will be None |
+
+## Design Decisions
+
+### Error-Tolerant Parsing
+
+The `parse_line_content()` function returns `None` on parse failures rather than raising exceptions. This is intentional:
+
+```python
+def parse_line_content(line_content: str) -> Optional[Any]:
+    """Parse line content, returning None on failure.
+    
+    Note: textX enforces full consumption by default. We catch
+    TextXSyntaxError to allow partial parsing of files with
+    invalid lines. See Phase 81 in tasks.md for rationale.
+    """
+    try:
+        return mm.model_from_str(line_content)
+    except TextXSyntaxError:
+        return None
+```
+
+### Naming Conventions
+
+Statement target fields follow consistent naming:
+- `MDoStatement.targets: List[MCall]`
+- `MGotoStatement.targets: List[MCall]`
+- `MJobStatement.targets: List[MCall]`
+
+The `MJobStatement.calls` property is a deprecated alias for backward compatibility.
