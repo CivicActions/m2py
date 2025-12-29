@@ -385,7 +385,7 @@ SECOND\tF J=1:1:10 W J
         assert len(result) == 1
         assert result[0].statement is not None
         assert isinstance(result[0].statement, MForStatement)
-        assert result[0].statement.loop_var == "I"
+        assert result[0].statement.loop_var.name == "I"
         assert result[0].statement.loop_type == ForLoopType.BOUNDED
 
     def test_classify_patterns_mforstatement_has_parameters(self):
@@ -793,12 +793,12 @@ class TestControlFlowBodyPopulation:
 
         outer_for = routine.labels[0].body.statements[0]
         assert isinstance(outer_for, MForStatement)
-        assert outer_for.loop_var == "I"
+        assert outer_for.loop_var.name == "I"
         assert len(outer_for.body.statements) == 1
 
         inner_for = outer_for.body.statements[0]
         assert isinstance(inner_for, MForStatement)
-        assert inner_for.loop_var == "J"
+        assert inner_for.loop_var.name == "J"
         assert len(inner_for.body.statements) == 1
         assert isinstance(inner_for.body.statements[0], MSetStatement)
 

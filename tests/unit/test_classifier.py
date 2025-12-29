@@ -148,7 +148,7 @@ class TestParseForStatement:
         stmt = parse_for_statement("I=1:1:10")
 
         assert isinstance(stmt, MForStatement)
-        assert stmt.loop_var == "I"
+        assert stmt.loop_var.name == "I"
         assert stmt.loop_type == ForLoopType.BOUNDED
         assert len(stmt.parameters) == 1
 
@@ -162,7 +162,7 @@ class TestParseForStatement:
         """Parse FOR I=1:1 into MForStatement with OPEN_RANGE."""
         stmt = parse_for_statement("I=1:1")
 
-        assert stmt.loop_var == "I"
+        assert stmt.loop_var.name == "I"
         assert stmt.loop_type == ForLoopType.OPEN_ENDED
         assert len(stmt.parameters) == 1
 
@@ -176,7 +176,7 @@ class TestParseForStatement:
         """Parse FOR I="A","B","C" into MForStatement with VALUE params."""
         stmt = parse_for_statement('I="A","B","C"')
 
-        assert stmt.loop_var == "I"
+        assert stmt.loop_var.name == "I"
         assert stmt.loop_type == ForLoopType.STRING_LIST
         assert len(stmt.parameters) == 3
 
@@ -190,7 +190,7 @@ class TestParseForStatement:
         """Parse FOR I="A",1:1:3 into MForStatement with MIXED type."""
         stmt = parse_for_statement('I="A",1:1:3')
 
-        assert stmt.loop_var == "I"
+        assert stmt.loop_var.name == "I"
         assert stmt.loop_type == ForLoopType.MIXED
         assert len(stmt.parameters) == 2
 
@@ -538,8 +538,8 @@ class TestParseGotoStatement:
         assert len(stmt.targets) == 1
         assert stmt.targets[0].name == "LABEL"
         assert stmt.targets[0].offset is not None
-        # New API returns string offset
-        assert stmt.targets[0].offset == "2"
+        # Offset is an MLiteral with raw_value
+        assert stmt.targets[0].offset.raw_value == "2"
 
     def test_parse_goto_label_expression_offset(self):
         """Parse G LABEL+$D(A) into MGotoStatement with expression offset (T066)."""

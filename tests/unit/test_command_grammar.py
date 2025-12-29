@@ -773,6 +773,27 @@ class TestIndirection:
         # DoIndirect has labelIndirect which is IndirectChain
         assert target.indirect.labelIndirect.nested is not None
 
+    def test_do_name_indirection(self, command_metamodel):
+        """D @X@(1) - name indirection: evaluate X to get label name, append subscript 1"""
+        model = command_metamodel.model_from_str("D @X@(1)", "DoCommand")
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        assert target.indirect is not None
+        # IndirectChain should have name_subscripts
+        label_indirect = target.indirect.labelIndirect
+        assert label_indirect is not None
+        assert hasattr(label_indirect, "name_subscripts")
+        assert len(label_indirect.name_subscripts) == 1
+
+    def test_do_chained_name_indirection(self, command_metamodel):
+        """D @X@(A)@(B) - chained name indirection: append subscripts A then B"""
+        model = command_metamodel.model_from_str("D @X@(A)@(B)", "DoCommand")
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        label_indirect = target.indirect.labelIndirect
+        assert label_indirect is not None
+        assert len(label_indirect.name_subscripts) == 2
+
     # --- GOTO indirection (uses IndirectChain) ---
     def test_goto_indirection(self, command_metamodel):
         """G @A - simple GOTO indirection"""
@@ -787,3 +808,24 @@ class TestIndirection:
         target = model.targets[0]
         # GotoIndirect has labelIndirect which is IndirectChain
         assert target.indirect.labelIndirect.nested is not None
+
+    def test_goto_name_indirection(self, command_metamodel):
+        """G @X@(A) - name indirection: evaluate X to get label name, append subscript A"""
+        model = command_metamodel.model_from_str("G @X@(A)", "GotoCommand")
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        assert target.indirect is not None
+        # IndirectChain should have name_subscripts
+        label_indirect = target.indirect.labelIndirect
+        assert label_indirect is not None
+        assert hasattr(label_indirect, "name_subscripts")
+        assert len(label_indirect.name_subscripts) == 1
+
+    def test_goto_chained_name_indirection(self, command_metamodel):
+        """G @X@(1)@(2) - chained name indirection: append subscripts 1 then 2"""
+        model = command_metamodel.model_from_str("G @X@(1)@(2)", "GotoCommand")
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        label_indirect = target.indirect.labelIndirect
+        assert label_indirect is not None
+        assert len(label_indirect.name_subscripts) == 2

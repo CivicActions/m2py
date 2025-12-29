@@ -359,7 +359,7 @@ class TestParseForCommand:
         """F I=1:1:10 parses as bounded"""
         stmt = parse_for_command("F I=1:1:10")
         assert stmt is not None
-        assert stmt.loop_var == "I"
+        assert stmt.loop_var.name == "I"
         assert stmt.loop_type == ForLoopType.BOUNDED
         assert len(stmt.parameters) == 1
         assert stmt.parameters[0].param_type == ForParamType.RANGE
@@ -467,7 +467,7 @@ class TestParseForCommandToAsg:
         assert len(fors) == 1
         stmt = parse_for_command_to_asg(fors[0])
 
-        assert stmt.loop_var == "I"
+        assert stmt.loop_var.name == "I"
         assert stmt.loop_type == ForLoopType.BOUNDED
         assert len(stmt.parameters) == 1
 

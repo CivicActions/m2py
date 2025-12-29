@@ -230,7 +230,7 @@ TEST
     asg = parser.parse(source)
     # Find FOR statement
     for_stmt = asg.labels[0].statements[0]
-    assert for_stmt.loop_var == "I"
+    assert for_stmt.loop_var.name == "I"  # loop_var is now always an MVariable/MGlobal node
 ```
 
 ### Step 5: Run Tests

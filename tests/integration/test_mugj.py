@@ -976,14 +976,17 @@ class TestPhase9gTextXSemanticIntegration:
             parse_for_command_to_asg,
             extract_for_commands,
         )
-        from m2py.asg import MLiteral
+        from m2py.asg import MLiteral, MVariable
 
         cmds = extract_for_commands("F I=1:2:10 S X=I")
         assert cmds, "Should extract FOR command"
 
         stmt = parse_for_command_to_asg(cmds[0])
         assert stmt is not None
-        assert stmt.loop_var == "I"
+        # loop_var is now always an ASG node (MVariable or MGlobal)
+        assert isinstance(stmt.loop_var, MVariable)
+        assert stmt.loop_var.name == "I"
+        assert stmt.loop_var.subscripts == []
 
         # Verify parameters are populated
         assert len(stmt.parameters) >= 1
@@ -1656,7 +1659,7 @@ class TestMUGJValidation:
 
         # First FOR: I=6:1:8
         for1 = for_stmts[0]
-        assert for1.loop_var == "I", "First FOR loop variable should be I"
+        assert for1.loop_var.name == "I", "First FOR loop variable should be I"
         assert len(for1.parameters) >= 1, "First FOR should have at least one parameter"
         # start is a NumericLiteral, check its value attribute
         assert for1.parameters[0].start.value == 6, "First FOR start should be 6"
@@ -1677,7 +1680,7 @@ class TestMUGJValidation:
 
         # Second FOR: I=9:1:15
         for2 = for_stmts[1]
-        assert for2.loop_var == "I", "Second FOR loop variable should be I"
+        assert for2.loop_var.name == "I", "Second FOR loop variable should be I"
         assert len(for2.parameters) >= 1, (
             "Second FOR should have at least one parameter"
         )

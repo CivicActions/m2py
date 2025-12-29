@@ -259,6 +259,9 @@ IndirectChain:
         // Simple variable: @VAR or @VAR(subscripts)
         var=LocalVariable
     )
+    // Name indirection subscripts: @(subscripts) after the main indirection
+    // Used in DO/GOTO targets like DO @X@(1) to append subscripts to the indirect name
+    name_subscripts+=NameIndirectionSubscripts*
 ;
 
 // Label reference: label, label+offset, label^routine, label+^routine, ^routine
@@ -285,65 +288,56 @@ LABELNAME:
 // Using negative lookahead to prevent "Q S X" from treating "S" as value
 // Key: Command keyword followed by space+arg pattern indicates next command
 QuitCommand:
-    /[Qq][Uu][Ii][Tt]|[Qq]/ postcond=Postcondition? (WS !CommandWithArg value=Expr)?
+    /[Qq][Uu][Ii][Tt]|[Qq]/ postcond=Postcondition? (SingleSpace !CommandWithArg value=Expr)?
 ;
 
 // Pattern: Command keyword followed by space + likely argument pattern
 // This distinguishes "Q S X=1" (QUIT then SET) from "Q X" (QUIT with value)
-// Note: SET requires "=" in arguments, others require space before args
+// Note: SET requires whitespace between S and the target variable
 // CRITICAL: Also detect command keywords followed by : (postcondition)
+// NOTE: "S=1" is a valid MUMPS expression (comparison), NOT a SET command
+//       SET requires: S<space>VAR= not S=
+// This pattern detects UNAMBIGUOUS command starts that cannot be confused
+// with variable names in expressions. We use conservative matching:
+// - Full command words (SET, WRITE, etc.) are always commands
+// - Postconditioned abbreviations (S:, W:, etc.) are always commands
+// - Single-letter + space + clear target patterns (S $P, S %VAR, S @X)
+// The line.tx grammar handles command separation, so we just need to prevent
+// QUIT from consuming what is clearly the start of another command.
 CommandWithArg:
-    // SET: S VAR= or S (...) or S $PIECE (left-hand intrinsic functions)
-    /[Ss][Ee][Tt][ \t:]|[Ss][ \t]+[A-Za-z%^($]/ |
-    /[Ss][ \t]*=/ |  // S= is impossible as return value (assignment)
-    /[Ss]:/ |  // SET with postcondition
-    // WRITE: W followed by space or postcondition
-    /[Ww][Rr][Ii][Tt][Ee][ \t:]|[Ww][ \t]+[^=]/ |
-    /[Ww]:/ |  // WRITE with postcondition
-    // READ: R followed by space or postcondition
-    /[Rr][Ee][Aa][Dd][ \t:]|[Rr][ \t]+[^=]/ |
-    /[Rr]:/ |  // READ with postcondition
-    // IF: I followed by space, end, or postcondition
-    /[Ii][Ff][ \t:]|[Ii][Ff]$|[Ii][ \t]+[^=]|[Ii]$|[Ii]:/ |
-    // ELSE: E followed by space, end, or postcondition (rare but valid)
-    /[Ee][Ll][Ss][Ee]|[Ee][ \t]|[Ee]$|[Ee]:/ |
-    // FOR: F followed by space or postcondition
-    /[Ff][Oo][Rr][ \t:]|[Ff][ \t]|[Ff]:/ |
-    // GOTO: G followed by space or postcondition
-    /[Gg][Oo][Tt][Oo][ \t:]|[Gg][ \t]+[A-Za-z%^]/ |
-    /[Gg]:/ |  // GOTO with postcondition
-    // DO: D followed by space or postcondition
-    /[Dd][Oo][ \t:]|[Dd][ \t]+[A-Za-z%^@]/ |
-    /[Dd]:/ |  // DO with postcondition
-    // QUIT: Q followed by space, end, or postcondition
-    /[Qq][Uu][Ii][Tt]|[Qq][ \t]|[Qq]$|[Qq]:/ |
-    // NEW: N followed by space or postcondition
-    /[Nn][Ee][Ww][ \t:]|[Nn][ \t]+[A-Za-z%(]/ |
-    /[Nn]:/ |  // NEW with postcondition
-    // KILL: K followed by space or postcondition
-    /[Kk][Ii][Ll][Ll][ \t:]|[Kk][ \t]/ |
-    /[Kk]:/ |  // KILL with postcondition
-    // BREAK: B followed by space, end, or postcondition
-    /[Bb][Rr][Ee][Aa][Kk]|[Bb][ \t]|[Bb]$|[Bb]:/ |
-    // JOB: J followed by space or postcondition
-    /[Jj][Oo][Bb][ \t:]|[Jj][ \t]+[A-Za-z%^@]/ |
-    /[Jj]:/ |  // JOB with postcondition
-    // OPEN: O followed by space or postcondition
-    /[Oo][Pp][Ee][Nn][ \t:]|[Oo][ \t]+[A-Za-z%^@0-9]/ |
-    /[Oo]:/ |  // OPEN with postcondition
-    // CLOSE: C followed by space or postcondition
-    /[Cc][Ll][Oo][Ss][Ee][ \t:]|[Cc][ \t]+[A-Za-z%^@0-9]/ |
-    /[Cc]:/ |  // CLOSE with postcondition
-    // USE: U followed by space or postcondition
-    /[Uu][Ss][Ee][ \t:]|[Uu][ \t]+[A-Za-z%^@0-9]/ |
-    /[Uu]:/ |  // USE with postcondition
-    // Other commands (less common after QUIT) - also check postcondition
+    // Full command words are unambiguous
+    /[Ss][Ee][Tt][ \t:]/ |
+    /[Ww][Rr][Ii][Tt][Ee][ \t:]/ |
+    /[Rr][Ee][Aa][Dd][ \t:]/ |
+    /[Ii][Ff][ \t:]|[Ii][Ff]$/ |
+    /[Ee][Ll][Ss][Ee]/ |
+    /[Ff][Oo][Rr][ \t:]/ |
+    /[Gg][Oo][Tt][Oo][ \t:]/ |
+    /[Dd][Oo][ \t:]/ |
+    /[Qq][Uu][Ii][Tt]/ |
+    /[Nn][Ee][Ww][ \t:]/ |
+    /[Kk][Ii][Ll][Ll][ \t:]/ |
+    /[Bb][Rr][Ee][Aa][Kk]/ |
+    /[Jj][Oo][Bb][ \t:]/ |
+    /[Oo][Pp][Ee][Nn][ \t:]/ |
+    /[Cc][Ll][Oo][Ss][Ee][ \t:]/ |
+    /[Uu][Ss][Ee][ \t:]/ |
     /[Hh][Aa][Nn][Gg][ \t:]/ |
     /[Hh][Aa][Ll][Tt]/ |
-    /[Ll][Oo][Cc][Kk][ \t:]|[Ll][ \t]|[Ll]:/ |
-    /[Mm][Ee][Rr][Gg][Ee][ \t:]|[Mm][ \t]+[A-Za-z%^]|[Mm]:/ |
-    /[Vv][Ii][Ee][Ww][ \t:]|[Vv][ \t]+[^=]|[Vv]:/ |
-    /[Xx][Ee][Cc][Uu][Tt][Ee][ \t:]|[Xx][ \t]+[^=]|[Xx]:/
+    /[Ll][Oo][Cc][Kk][ \t:]/ |
+    /[Mm][Ee][Rr][Gg][Ee][ \t:]/ |
+    /[Vv][Ii][Ee][Ww][ \t:]/ |
+    /[Xx][Ee][Cc][Uu][Tt][Ee][ \t:]/ |
+    // Postconditioned single-letter commands are unambiguous (colon after letter)
+    /[SsWwRrIiFfGgDdQqNnKkBbJjOoCcUuLlMmVvXxEeHh]:/ |
+    // Single-letter S/W/R/I/K followed by space is always a command (not part of expression)
+    // "S X" after QUIT = SET command (not variable S with value X)
+    // "X S=1" = variable X with comparison S=1, but space between makes it X (QUIT value), then SET
+    /[Ss][ \t]/ |
+    /[Ww][ \t]/ |
+    /[Rr][ \t]/ |
+    /[Ii][ \t]/ |
+    /[Kk][ \t]/
 ;
 
 // =============================================================================
@@ -550,4 +544,9 @@ Postcondition:
 // Whitespace (explicit since skipws=False)
 WS:
     /[ \t]+/
+;
+
+// Single space only (used where double-space has semantic meaning)
+SingleSpace:
+    /[ \t]/
 ;

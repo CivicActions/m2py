@@ -775,12 +775,13 @@ class SemanticAnalyzer:
             stmt.loop_var = self.analyze(cmd.indirect, stmt)
             stmt.loop_var_indirect = True
         elif hasattr(cmd, "var") and cmd.var:
-            # For simple variables, use the string name; for subscripted, use the full object
+            # Always convert to ASG node (MVariable or MGlobal)
+            # For subscripted variables, analyze subscripts semantically
             if hasattr(cmd.var, "subscripts") and cmd.var.subscripts:
-                # Convert subscripts to proper ASG expressions
                 stmt.loop_var = self._convert_loop_var_subscripts(cmd.var)
             else:
-                stmt.loop_var = cmd.var.name if hasattr(cmd.var, "name") else cmd.var
+                # Simple variable - convert to ASG node (MVariable or MGlobal)
+                stmt.loop_var = self._simple_var_to_asg(cmd.var)
             self._track_variable(cmd.var, cmd, is_set=True)
 
         if hasattr(cmd, "params") and cmd.params:
@@ -821,6 +822,41 @@ class SemanticAnalyzer:
                         break
 
         return stmt
+
+    def _simple_var_to_asg(self, var: Any) -> Any:
+        """Convert a simple variable (no subscripts) to ASG form.
+
+        Args:
+            var: A LocalVariable, GlobalVariable, or string name
+
+        Returns:
+            MVariable or MGlobal ASG node
+        """
+        from ..asg.expressions import MVariable, MGlobal
+
+        # Handle string names
+        if isinstance(var, str):
+            if var.startswith("^"):
+                new_var = MGlobal()
+                new_var.name = var.lstrip("^")
+            else:
+                new_var = MVariable()
+                new_var.name = var
+            return new_var
+
+        # Handle variable objects
+        var_name = var.name if hasattr(var, "name") else str(var)
+
+        if var_name.startswith("^") or isinstance(var, MGlobal):
+            new_var = MGlobal()
+            new_var.name = (
+                var_name.lstrip("^") if var_name.startswith("^") else var_name
+            )
+        else:
+            new_var = MVariable()
+            new_var.name = var_name
+
+        return new_var
 
     def _convert_loop_var_subscripts(self, var: Any) -> Any:
         """Convert a loop variable's subscripts to proper ASG expressions.

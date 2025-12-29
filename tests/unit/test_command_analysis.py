@@ -331,7 +331,7 @@ class TestForStatementAnalysis:
         stmt = analyze_first_command("F I=1:1:10")
 
         assert isinstance(stmt, MForStatement)
-        assert stmt.loop_var == "I"
+        assert stmt.loop_var.name == "I"
         assert len(stmt.parameters) == 1
         assert stmt.parameters[0].param_type == ForParamType.RANGE
         assert stmt.loop_type == ForLoopType.BOUNDED
@@ -341,7 +341,7 @@ class TestForStatementAnalysis:
         stmt = analyze_first_command("F I=1,2,3")
 
         assert isinstance(stmt, MForStatement)
-        assert stmt.loop_var == "I"
+        assert stmt.loop_var.name == "I"
         assert len(stmt.parameters) == 3
         assert all(p.param_type == ForParamType.VALUE for p in stmt.parameters)
         assert stmt.loop_type == ForLoopType.STRING_LIST
@@ -351,7 +351,7 @@ class TestForStatementAnalysis:
         stmt = analyze_first_command("F I=1:1")
 
         assert isinstance(stmt, MForStatement)
-        assert stmt.loop_var == "I"
+        assert stmt.loop_var.name == "I"
         assert stmt.loop_type == ForLoopType.OPEN_ENDED
 
 

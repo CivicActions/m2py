@@ -256,39 +256,46 @@ def _convert_subscripts_to_asg(subscripts: List[Any]) -> List[Any]:
 def _convert_loop_var_to_asg(loop_var: Any) -> Any:
     """Convert a loop variable to proper ASG form with converted subscripts.
 
-    For simple variables (string name), returns the name unchanged.
-    For subscripted variables, returns a copy with subscripts converted to ASG.
+    Always returns an ASG node (MVariable or MGlobal), never a string.
 
     Args:
         loop_var: Either a string name or a LocalVariable/GlobalVariable
 
     Returns:
-        String name or variable with ASG subscripts
+        MVariable or MGlobal ASG node
     """
     from ..asg.expressions import MVariable, MGlobal
 
-    # Simple string name - return as-is
+    # Simple string name - convert to MVariable
     if isinstance(loop_var, str):
-        return loop_var
+        var = MVariable()
+        var.name = loop_var
+        return var
 
-    # Variable with subscripts - convert subscripts
+    # Variable with or without subscripts - convert subscripts if present
     if hasattr(loop_var, "subscripts") and loop_var.subscripts:
         converted_subscripts = _convert_subscripts_to_asg(loop_var.subscripts)
+    else:
+        converted_subscripts = []
 
-        # Create a new variable with converted subscripts
-        if isinstance(loop_var, MGlobal):
-            new_var = MGlobal()
-            new_var.name = loop_var.name
-            new_var.subscripts = converted_subscripts
-            return new_var
-        else:
-            new_var = MVariable()
-            new_var.name = loop_var.name
-            new_var.subscripts = converted_subscripts
-            return new_var
-
-    # No subscripts - return as-is
-    return loop_var
+    # Create proper ASG node based on type
+    if isinstance(loop_var, MGlobal) or (
+        hasattr(loop_var, "name") and loop_var.name.startswith("^")
+    ):
+        new_var = MGlobal()
+        new_var.name = (
+            loop_var.name
+            if isinstance(loop_var, MGlobal)
+            else loop_var.name.lstrip("^")
+        )
+        new_var.subscripts = converted_subscripts
+        return new_var
+    else:
+        # Default to MVariable for LocalVariable objects
+        new_var = MVariable()
+        new_var.name = loop_var.name if hasattr(loop_var, "name") else str(loop_var)
+        new_var.subscripts = converted_subscripts
+        return new_var
 
 
 def _build_for_parameters(params: list) -> list:
@@ -329,26 +336,19 @@ def _build_for_parameters(params: list) -> list:
 
 
 def _extract_loop_var(for_var) -> Any:
-    """Extract loop variable from parsed FOR command.
-
-    For simple variables, returns the string name.
-    For subscripted variables, returns the full ASG object.
+    """Extract loop variable from parsed FOR command, always returning an ASG node.
 
     Args:
         for_var: A textX LocalVariable model (or None)
 
     Returns:
-        String name, subscripted variable object, or None
+        MVariable or MGlobal ASG node, or None if for_var is None
     """
     if not for_var:
         return None
 
-    # For simple variables, use the string name for backwards compatibility
-    # For subscripted variables, convert to proper ASG with clean subscripts
-    if for_var.subscripts:
-        return _convert_loop_var_to_asg(for_var)
-    else:
-        return for_var.name
+    # Always convert to ASG node via _convert_loop_var_to_asg
+    return _convert_loop_var_to_asg(for_var)
 
 
 def parse_for_command_to_asg(for_cmd) -> MForStatement:
@@ -635,7 +635,9 @@ def parse_if_command(if_text: str) -> Optional[MIfStatement]:
         statement.conditions = [
             _expr_to_asg_literal(_expr_to_string(c)) for c in model.conditions
         ]
-        # For backwards compatibility, also set single condition if only one
+        # Set condition field for backward compatibility with old API
+        # (MIfStatement supports both single condition and conditions list)
+        # Tests and legacy code expect .condition property to work
         if len(statement.conditions) == 1:
             statement.condition = statement.conditions[0]
 
@@ -703,13 +705,17 @@ def parse_goto_command(goto_text: str) -> Optional[MGotoStatement]:
             if label_ref:
                 call.name = label_ref.label or ""
                 if hasattr(label_ref, "offset") and label_ref.offset:
-                    call.offset = _expr_to_string(label_ref.offset)
+                    call.offset = _expr_to_asg_literal(
+                        _expr_to_string(label_ref.offset)
+                    )
                 if hasattr(label_ref, "routine") and label_ref.routine:
                     call.routine = label_ref.routine
 
             # Handle target-level postcondition if present
             if hasattr(target, "postcond") and target.postcond:
-                call.postcondition = _expr_to_string(target.postcond.condition)
+                call.postcondition = _expr_to_asg_literal(
+                    _expr_to_string(target.postcond.condition)
+                )
 
             statement.targets.append(call)
 
@@ -776,7 +782,9 @@ def parse_do_command(do_text: str) -> Optional[MDoStatement]:
             if label_ref:
                 call.name = label_ref.label or ""
                 if hasattr(label_ref, "offset") and label_ref.offset:
-                    call.offset = _expr_to_string(label_ref.offset)
+                    call.offset = _expr_to_asg_literal(
+                        _expr_to_string(label_ref.offset)
+                    )
                 if hasattr(label_ref, "routine") and label_ref.routine:
                     call.routine = label_ref.routine
 
@@ -815,7 +823,9 @@ def parse_do_command(do_text: str) -> Optional[MDoStatement]:
 
             # Handle postcondition if present
             if hasattr(target, "postcond") and target.postcond:
-                call.postcondition = _expr_to_string(target.postcond.condition)
+                call.postcondition = _expr_to_asg_literal(
+                    _expr_to_string(target.postcond.condition)
+                )
 
             statement.targets.append(call)
 
@@ -1143,7 +1153,13 @@ def classify_for_loop_textx(for_content: str) -> tuple:
     statement = parse_for_command(for_params_str)
 
     if statement and statement.loop_var:
-        return statement.loop_type, statement.loop_var
+        # Extract variable name from ASG node
+        var_name = None
+        if hasattr(statement.loop_var, "name"):
+            var_name = getattr(statement.loop_var, "name", None)
+        elif isinstance(statement.loop_var, str):
+            var_name = statement.loop_var
+        return statement.loop_type, var_name
 
     # If full parsing failed, try parsing just the params part
     # Find where params end - look for space followed by letter (command start)
@@ -1155,7 +1171,12 @@ def classify_for_loop_textx(for_content: str) -> tuple:
         params_only = after_var[:params_end]
         statement = parse_for_command(f"F {loop_var}={params_only}")
         if statement:
-            return statement.loop_type, statement.loop_var
+            var_name = None
+            if hasattr(statement.loop_var, "name"):
+                var_name = getattr(statement.loop_var, "name", None)
+            elif isinstance(statement.loop_var, str):
+                var_name = statement.loop_var
+            return statement.loop_type, var_name
 
     # Fallback: try parsing just the variable assignment without body
     # At this point we know there's a var=, so let's try to classify from the params
@@ -1163,7 +1184,12 @@ def classify_for_loop_textx(for_content: str) -> tuple:
         f"F {loop_var}={after_var.split()[0] if after_var.split() else ''}"
     )
     if statement:
-        return statement.loop_type, statement.loop_var
+        var_name = None
+        if hasattr(statement.loop_var, "name"):
+            var_name = getattr(statement.loop_var, "name", None)
+        elif isinstance(statement.loop_var, str):
+            var_name = statement.loop_var
+        return statement.loop_type, var_name
 
     # Last resort: if we have a var but can't parse, treat as STRING_LIST
     return ForLoopType.STRING_LIST, loop_var
