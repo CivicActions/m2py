@@ -138,7 +138,7 @@ As a developer, I want the parser to correctly represent special MUMPS features 
 - **FR-005**: System MUST parse MUMPS operators (arithmetic: +, -, *, /, \, #, **; comparison: =, <, >, '=, '<, '>; logical: &, !, '; string: _, [, ], ]], ?; unary: +, -)
 - **FR-006**: System MUST handle line labels with optional formal parameter lists (`LABEL(param1,param2)`)
 - **FR-007**: System MUST handle postconditioned commands (`W:X>0 "positive"`)
-- **FR-008**: System MUST handle argument postconditions (`W X:X>0`)
+- **FR-008**: System MUST handle argument postconditions for DO/GOTO/XECUTE only (`D LABEL:X>0` per MUMPS spec 8.1.4)
 - **FR-009**: System MUST handle multiple arguments in single commands (`S X=1,Y=2,Z=3`)
 - **FR-010**: System MUST handle dotted block syntax (`. S X=1`)
 - **FR-011**: System MUST handle line continuation with proper scope

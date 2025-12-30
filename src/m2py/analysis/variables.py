@@ -454,9 +454,12 @@ def _extract_statement_variables(
     if isinstance(stmt, MSetStatement):
         # SET X=expr writes X, may read variables in expr
         for assignment in stmt.assignments:
-            if hasattr(assignment, "target") and assignment.target:
-                if hasattr(assignment.target, "name"):
-                    writes.add(assignment.target.name)
+            target = assignment.target
+            if target is not None:
+                # Use isinstance for type narrowing - MIndirection has no name
+                if isinstance(target, (MVariable, MGlobal)):
+                    writes.add(target.name)
+                # MNakedGlobal and MIndirection have no name - can't track statically
             if hasattr(assignment, "value") and assignment.value:
                 reads.update(_extract_expression_variables(assignment.value))
 
@@ -559,6 +562,11 @@ def _extract_expression_variables(expr) -> Set[str]:
         MSpecialVariable,
         MActualParameter,
         MSelectArg,
+        MPatternMatch,
+        MGlobal,
+        MNakedGlobal,
+        MFormatControl,
+        MIndirection,
     )
 
     # MVariable has a name
@@ -613,6 +621,42 @@ def _extract_expression_variables(expr) -> Set[str]:
             vars_found.update(_extract_expression_variables(expr.condition))
         if expr.value:
             vars_found.update(_extract_expression_variables(expr.value))
+
+    # MPatternMatch - extract variables from subject and indirect pattern
+    elif isinstance(expr, MPatternMatch):
+        if expr.subject:
+            vars_found.update(_extract_expression_variables(expr.subject))
+        if expr.pattern_indirect:
+            vars_found.update(_extract_expression_variables(expr.pattern_indirect))
+
+    # MGlobal - extract variables from subscripts (name is excluded)
+    elif isinstance(expr, MGlobal):
+        if expr.subscripts:
+            for sub in expr.subscripts:
+                vars_found.update(_extract_expression_variables(sub))
+
+    # MNakedGlobal - extract variables from subscripts
+    elif isinstance(expr, MNakedGlobal):
+        if expr.subscripts:
+            for sub in expr.subscripts:
+                vars_found.update(_extract_expression_variables(sub))
+
+    # MFormatControl - extract variables from column/charcode expression
+    elif isinstance(expr, MFormatControl):
+        if expr.expression:
+            vars_found.update(_extract_expression_variables(expr.expression))
+
+    # MIndirection - extract variables from expression and subscripts
+    elif isinstance(expr, MIndirection):
+        if expr.expression:
+            vars_found.update(_extract_expression_variables(expr.expression))
+        if expr.subscripts:
+            for sub in expr.subscripts:
+                vars_found.update(_extract_expression_variables(sub))
+        if expr.name_indirection_subscripts:
+            for subscript_group in expr.name_indirection_subscripts:
+                for sub in subscript_group:
+                    vars_found.update(_extract_expression_variables(sub))
 
     # Check for nested expressions in lists
     # Note: FunctionArgs is an object with an 'args' list attribute, not a list itself

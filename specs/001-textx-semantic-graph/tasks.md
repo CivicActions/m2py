@@ -10869,4 +10869,159 @@ The architecture documentation (`docs/architecture.md`) correctly describes this
 - Fixed test fixture in test_expression_grammar.py to include custom classes
 - Fixed test assertions that compared numeric values to strings
 - All 1094 tests passing
-- Pyright shows 1 pre-existing error (unrelated to these changes)
+
+---
+
+## Phase 96: Grammar and Variable Analysis Corrections
+
+**Purpose**: Address validated issues from comprehensive code review (2024-12-30)
+
+**Reference**: MUMPS 1995 MDC specification section 8.1.4 (postconditions)
+
+---
+
+### Finding 1: Invalid Argument-Level Postconditions in Grammar ✅ CONFIRMED BUG
+
+**Status**: Grammar allows postconditions where MUMPS spec forbids them
+
+**MUMPS Spec 8.1.4**: "The postcond may also be used to conditionalize the arguments of **Do, Goto, and Xecute**."
+
+This explicitly lists ONLY three commands that support argument-level postconditions.
+
+**Files**:
+- `src/m2py/grammar/commands.tx` (lines 99, 132, 66)
+
+**Issues**:
+1. `WriteArg` (line 99): `postcond=Postcondition?` - INVALID per spec
+2. `ReadArg` (line 132): `postcond=Postcondition?` - INVALID per spec  
+3. `Assignment` (line 66): `postcond=Postcondition?` - INVALID per spec (SET doesn't support argument postcond)
+
+**Solution**: Remove `postcond=Postcondition?` from WriteArg, ReadArg, and Assignment rules.
+
+**Priority**: HIGH - Grammar accepts invalid MUMPS syntax
+
+---
+
+### Finding 2: Transaction Commands Missing from CommandWithArg ✅ CONFIRMED BUG
+
+**Status**: Parsing bug - `Q TS` parsed incorrectly
+
+**Test Case**:
+```mumps
+ Q TS
+```
+- **Actual**: Parsed as QUIT with return value "TS" (variable)
+- **Expected**: QUIT followed by TSTART command
+
+**Files**:
+- `src/m2py/grammar/commands.tx` (CommandWithArg rule, lines 310-344)
+
+**Issue**: Transaction commands (TSTART, TCOMMIT, TRESTART, TROLLBACK) are in the Command list but missing from CommandWithArg, which is used by QUIT's negative lookahead to detect following commands.
+
+**Solution**: Add transaction command patterns to CommandWithArg:
+```textx
+/[Tt][Ss][Tt][Aa][Rr][Tt]|[Tt][Ss]/ |
+/[Tt][Cc][Oo][Mm][Mm][Ii][Tt]|[Tt][Cc]/ |
+/[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Tt][Rr][Ee]/ |
+/[Tt][Rr][Oo][Ll][Ll][Bb][Aa][Cc][Kk]|[Tt][Rr][Oo]/ |
+```
+
+**Priority**: HIGH - Parsing produces incorrect ASG
+
+---
+
+### Finding 3: Incomplete Variable Analysis for Expression Types ✅ CONFIRMED BUG
+
+**Status**: `_extract_expression_variables` misses variable references in multiple expression types
+
+**Files**:
+- `src/m2py/analysis/variables.py` (`_extract_expression_variables` function, lines 537-638)
+
+**Test Cases**:
+| Code | Expected | Actual | Issue |
+|------|----------|--------|-------|
+| `I X?1N.A` | X in reads | empty | MPatternMatch.subject not handled |
+| `I X?@PAT` | X,PAT in reads | empty | MPatternMatch not handled |
+| `S X=^G(Y)` | Y in reads | empty | MGlobal subscripts not handled |
+| `W ?X` | X in reads | empty | MFormatControl.expr not handled |
+| `S @X=1` | X in reads | empty | MIndirection not handled |
+
+**Missing Handlers**:
+1. `MPatternMatch` - extract from `subject` and `pattern_indirect`
+2. `MGlobal` - extract from `subscripts` (name is excluded but subscripts may have locals)
+3. `MNakedGlobal` - extract from `subscripts`
+4. `MFormatControl` - extract from `expr` (for ?n and *n formats)
+5. `MIndirection` - extract from `expression` and `subscripts`
+
+**Mitigating Factor**: `check_requires_runtime_scope()` correctly flags labels with indirection, so codegen knows static analysis is incomplete. However, pattern match and global subscript issues affect labels WITHOUT indirection.
+
+**Solution**: Add handlers for all missing expression types in `_extract_expression_variables`.
+
+**Priority**: 
+- HIGH for MPatternMatch, MGlobal subscripts, MNakedGlobal, MFormatControl (affects static analysis)
+- MEDIUM for MIndirection (mitigated by runtime scope flag)
+
+---
+
+### Finding 4: Non-Issues (Validation Complete)
+
+The following originally flagged items were validated as **non-issues**:
+
+1. **OPEN/CLOSE/USE argument postconditions**: Grammar correctly does NOT support them, matching MUMPS spec 8.1.4
+
+2. **ASG field naming inconsistency**: Naming is semantically appropriate:
+   - `targets` for jump/call destinations (GOTO, DO, JOB)
+   - `arguments` for I/O items (WRITE, READ, VIEW)
+   - `devices` for I/O device references (OPEN, CLOSE, USE)
+   - `assignments` for SET operations
+   - No changes needed
+
+---
+
+### Tasks
+
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T96.1 | Remove `postcond=Postcondition?` from WriteArg in commands.tx | HIGH | [X] |
+| T96.2 | Remove `postcond=Postcondition?` from ReadArg in commands.tx | HIGH | [X] |
+| T96.3 | Remove `postcond=Postcondition?` from Assignment in commands.tx | HIGH | [X] |
+| T96.4 | Add transaction commands to CommandWithArg in commands.tx | HIGH | [X] |
+| T96.5 | Add MPatternMatch handler to `_extract_expression_variables` | HIGH | [X] |
+| T96.6 | Add MGlobal subscript handling to `_extract_expression_variables` | HIGH | [X] |
+| T96.7 | Add MNakedGlobal handling to `_extract_expression_variables` | HIGH | [X] |
+| T96.8 | Add MFormatControl handler to `_extract_expression_variables` | HIGH | [X] |
+| T96.9 | Add MIndirection handler to `_extract_expression_variables` | MEDIUM | [X] |
+| T96.10 | Add unit tests for corrected postcondition grammar | HIGH | [X] |
+| T96.11 | Add unit test for `Q TS` parsing (QUIT then TSTART) | HIGH | [X] |
+| T96.12 | Add unit tests for variable extraction from all expression types | HIGH | [X] |
+| T96.13 | Run full test suite to verify no regressions | HIGH | [X] |
+
+### Phase 96 Implementation Notes
+
+**Completed 2025-12-30**:
+
+**Grammar Changes** (commands.tx):
+- Removed `postcond=Postcondition?` from WriteArg, ReadArg, and Assignment rules
+- Added transaction commands (TSTART, TCOMMIT, TRESTART, TROLLBACK) to CommandWithArg
+- Used lookahead assertions `(?=[ \t:]|$)` for abbreviated transaction commands to match end-of-line
+
+**Variable Analysis Changes** (variables.py):
+- Added imports for: MPatternMatch, MGlobal, MNakedGlobal, MFormatControl, MIndirection
+- Added handlers in `_extract_expression_variables()`:
+  - MPatternMatch: extract from subject and pattern_indirect
+  - MGlobal: extract from subscripts
+  - MNakedGlobal: extract from subscripts
+  - MFormatControl: extract from expression (for ?X and *N)
+  - MIndirection: extract from expression, subscripts, and name_indirection_subscripts
+
+**Tests Added**:
+- TestArgumentPostconditions class: validates GOTO/DO allow postconds, WRITE/READ/SET do not
+- TestQuitFollowedByTransaction class: validates Q TS, Q TC, Q TRE, Q TRO parsing
+- Variable extraction tests for MPatternMatch, MGlobal, MNakedGlobal, MFormatControl, MIndirection
+
+**Documentation Updates**:
+- Updated spec.md FR-008 to clarify argument postconditions only for DO/GOTO/XECUTE
+- Updated variable_analysis.md with expression variable extraction table
+- Updated semantic_analyzer.py comments to reflect grammar changes
+
+All 1120 tests passing.

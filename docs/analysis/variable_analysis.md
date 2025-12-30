@@ -290,6 +290,45 @@ MODIFY(R)
 
 The analyzer tracks `PassingMode.BY_REFERENCE` to identify `byref_outputs`.
 
+## Expression Variable Extraction
+
+The `_extract_expression_variables()` function extracts variable references from all expression types. This is critical for accurate input/output computation.
+
+### Handled Expression Types
+
+| Expression Type | Variable Extraction |
+|-----------------|---------------------|
+| `MVariable` | Extract variable name and recursively check subscripts |
+| `MBinaryOp` | Extract from left and right operands |
+| `MUnaryOp` | Extract from operand |
+| `MLiteral` | None (no variables) |
+| `MIntrinsicFunction` | Extract from arguments |
+| `MExtrinsicFunction` | Extract from arguments |
+| `MSpecialVariable` | None ($TEST, $HOROLOG are not variables) |
+| `MActualParameter` | Extract from expression |
+| `MSelectArg` | Extract from condition and value |
+| `MPatternMatch` | Extract from subject and pattern_indirect |
+| `MGlobal` | Extract from subscripts (global name excluded) |
+| `MNakedGlobal` | Extract from subscripts |
+| `MFormatControl` | Extract from expression (for ?X and *N formats) |
+| `MIndirection` | Extract from expression, subscripts, and name_indirection_subscripts |
+
+### Examples
+
+```mumps
+; Pattern match: X?1N.A
+; Extracts: {X} (subject of pattern match)
+
+; Global with local subscripts: ^DATA(I,J)
+; Extracts: {I, J} (local vars used as subscripts)
+
+; Format control: W ?COL
+; Extracts: {COL} (tab column expression)
+
+; Indirection: S @VAR(I)=1
+; Extracts: {VAR, I} (indirect name and subscript)
+```
+
 ### byref_outputs Computation
 
 The `byref_outputs` field is populated by `compute_function_signature()`:

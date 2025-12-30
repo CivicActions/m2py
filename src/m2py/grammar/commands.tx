@@ -62,8 +62,9 @@ SetIndirection:
 ;
 
 // Single assignment: target=value or (targets)=value
+// Note: MUMPS spec 8.1.4 allows argument postconditions only on DO/GOTO/XECUTE
 Assignment:
-    targets=SetTargets '=' value=Expr postcond=Postcondition?
+    targets=SetTargets '=' value=Expr
 ;
 
 // Set targets: single variable/global or parenthesized list
@@ -93,10 +94,11 @@ WriteCommand:
     /[Ww][Rr][Ii][Tt][Ee]|[Ww]/ postcond=Postcondition? WS? args*=WriteArg
 ;
 
-// Write argument: format control or expression with optional postcondition
+// Write argument: format control or expression
 // Comma is optional before format controls but required between expressions
+// Note: MUMPS spec 8.1.4 allows argument postconditions only on DO/GOTO/XECUTE
 WriteArg:
-    /,/? postcond=Postcondition? arg=WriteArgValue
+    /,/? arg=WriteArgValue
 ;
 
 WriteArgValue:
@@ -128,8 +130,9 @@ ReadCommand:
 //   *VAR or *VAR:timeout - single char read
 //   "prompt",VAR:timeout - prompt followed by read
 //   !!?10,"prompt",VAR - multiple format/prompt before variable (! adjacent)
+// Note: MUMPS spec 8.1.4 allows argument postconditions only on DO/GOTO/XECUTE
 ReadArg:
-    /,/? postcond=Postcondition? arg=ReadArgValue
+    /,/? arg=ReadArgValue
 ;
 
 ReadArgValue:
@@ -332,6 +335,16 @@ CommandWithArg:
     /[Mm][Ee][Rr][Gg][Ee][ \t:]/ |
     /[Vv][Ii][Ee][Ww][ \t:]/ |
     /[Xx][Ee][Cc][Uu][Tt][Ee][ \t:]/ |
+    // Transaction commands - full keywords (can be argumentless)
+    /[Tt][Ss][Tt][Aa][Rr][Tt]/ |
+    /[Tt][Cc][Oo][Mm][Mm][Ii][Tt]/ |
+    /[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]/ |
+    /[Tt][Rr][Oo][Ll][Ll][Bb][Aa][Cc][Kk]/ |
+    // Transaction abbreviations - TS, TC can be at end of line or followed by space
+    /[Tt][Ss](?=[ \t:]|$)/ |
+    /[Tt][Cc](?=[ \t:]|$)/ |
+    /[Tt][Rr][Ee](?=[ \t:]|$)/ |
+    /[Tt][Rr][Oo](?=[ \t:]|$)/ |
     // Postconditioned single-letter commands are unambiguous (colon after letter)
     /[SsWwRrIiFfGgDdQqNnKkBbJjOoCcUuLlMmVvXxEeHh]:/ |
     // Single-letter S/W/R/I/K followed by space is always a command (not part of expression)

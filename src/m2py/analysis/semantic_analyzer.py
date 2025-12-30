@@ -729,7 +729,7 @@ class SemanticAnalyzer:
         - CharRead: *VAR or *VAR:timeout (single character read)
 
         Grammar structure:
-        ReadArg: /,/? postcond=Postcondition? arg=ReadArgValue
+        ReadArg: /,/? arg=ReadArgValue
         ReadArgValue: ReadFormat | StringLiteral | ReadTargetWithTimeout
         ReadTargetWithTimeout: target=ReadTarget (':' timeout=Expr)?
         ReadTarget: CharRead | GlobalVariable | LocalVariable | Indirection
@@ -741,7 +741,7 @@ class SemanticAnalyzer:
 
         if hasattr(cmd, "args") and cmd.args:
             for arg in cmd.args:
-                # ReadArg grammar: /,/? postcond=Postcondition? arg=ReadArgValue
+                # ReadArg grammar: /,/? arg=ReadArgValue
                 arg_value = getattr(arg, "arg", arg)
 
                 # Check what type of ReadArgValue this is

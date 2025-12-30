@@ -378,6 +378,43 @@ class TestQuitCommand:
         assert model.postcond is not None
 
 
+class TestArgumentPostconditions:
+    """Tests for argument postcondition support per MUMPS spec 8.1.4.
+
+    MUMPS spec 8.1.4: "The postcond may also be used to conditionalize
+    the arguments of Do, Goto, and Xecute." This means ONLY these three
+    commands support argument-level postconditions.
+    """
+
+    def test_goto_arg_postcondition_allowed(self, command_metamodel):
+        """G ABC:X=1 - GOTO supports argument postconditions"""
+        model = command_metamodel.model_from_str("G ABC:X=1", "GotoCommand")
+        assert model.targets[0].postcond is not None
+
+    def test_do_arg_postcondition_allowed(self, command_metamodel):
+        """D LABEL:X=1 - DO supports argument postconditions"""
+        model = command_metamodel.model_from_str("D LABEL:X=1", "DoCommand")
+        assert model.targets[0].postcond is not None
+
+    def test_write_arg_no_postcondition_field(self, command_metamodel):
+        """W X - WriteArg has no postcond field (MUMPS spec 8.1.4 compliance)"""
+        model = command_metamodel.model_from_str("W X", "WriteCommand")
+        # Verify WriteArg does not have postcond attribute
+        assert not hasattr(model.args[0], "postcond")
+
+    def test_read_arg_no_postcondition_field(self, command_metamodel):
+        """R X - ReadArg has no postcond field (MUMPS spec 8.1.4 compliance)"""
+        model = command_metamodel.model_from_str("R X", "ReadCommand")
+        # Verify ReadArg does not have postcond attribute
+        assert not hasattr(model.args[0], "postcond")
+
+    def test_set_assignment_no_postcondition_field(self, command_metamodel):
+        """S X=1 - Assignment has no postcond field (MUMPS spec 8.1.4 compliance)"""
+        model = command_metamodel.model_from_str("S X=1", "SetCommand")
+        # Verify Assignment does not have postcond attribute
+        assert not hasattr(model.assignments[0], "postcond")
+
+
 class TestQuitFollowedBySet:
     """Tests for QUIT followed by SET - regression tests for T578 bug fix."""
 
@@ -421,6 +458,66 @@ class TestQuitFollowedBySet:
         assert cmds[1].__class__.__name__ == "SetCommand"
         assert cmds[2].__class__.__name__ == "QuitCommand"
         assert cmds[3].__class__.__name__ == "SetCommand"
+
+
+class TestQuitFollowedByTransaction:
+    """Tests for QUIT followed by transaction commands - T96.11."""
+
+    def test_quit_then_tstart(self):
+        """Q TS - QUIT followed by TSTART (abbreviated)"""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q TS")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[0].value is None  # Q has no return value
+        assert cmds[1].__class__.__name__ == "TStartCommand"
+
+    def test_quit_then_tstart_full(self):
+        """Q TSTART - QUIT followed by TSTART (full keyword)"""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q TSTART")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[1].__class__.__name__ == "TStartCommand"
+
+    def test_quit_then_tcommit(self):
+        """Q TC - QUIT followed by TCOMMIT (abbreviated)"""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q TC")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[1].__class__.__name__ == "TCommitCommand"
+
+    def test_quit_then_trestart(self):
+        """Q TRE - QUIT followed by TRESTART (abbreviated)"""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q TRE")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[1].__class__.__name__ == "TRestartCommand"
+
+    def test_quit_then_trollback(self):
+        """Q TRO - QUIT followed by TROLLBACK (abbreviated)"""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q TRO")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[1].__class__.__name__ == "TRollbackCommand"
+
+    def test_quit_postcond_then_tstart(self):
+        """Q:DONE TS - postconditioned QUIT then TSTART"""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q:DONE TS")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[0].postcond is not None
+        assert cmds[1].__class__.__name__ == "TStartCommand"
 
 
 class TestNewKillCommands:

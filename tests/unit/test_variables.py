@@ -169,6 +169,155 @@ class TestExtractExpressionVariables:
         reads = _extract_expression_variables(select_arg)
         assert reads == {"Z"}
 
+    def test_extract_from_pattern_match(self):
+        """Test extracting variables from MPatternMatch (T96.5).
+
+        I X?1N.A - X is the subject being matched
+        """
+        from m2py.asg.expressions import MPatternMatch
+
+        subject = MVariable(name="X", subscripts=[])
+        pattern_match = MPatternMatch(subject=subject, pattern="1N.A")
+        reads = _extract_expression_variables(pattern_match)
+        assert reads == {"X"}
+
+    def test_extract_from_pattern_match_indirect(self):
+        """Test extracting variables from MPatternMatch with indirect pattern (T96.5).
+
+        I X?@PAT - X is subject, PAT holds the pattern
+        """
+        from m2py.asg.expressions import MPatternMatch
+
+        subject = MVariable(name="X", subscripts=[])
+        pattern_indirect = MVariable(name="PAT", subscripts=[])
+        pattern_match = MPatternMatch(
+            subject=subject, pattern_indirect=pattern_indirect
+        )
+        reads = _extract_expression_variables(pattern_match)
+        assert reads == {"X", "PAT"}
+
+    def test_extract_from_global_subscripts(self):
+        """Test extracting variables from MGlobal subscripts (T96.6).
+
+        S X=^GLOBAL(Y,Z) - Y and Z are local variables used as subscripts
+        """
+        from m2py.asg.expressions import MGlobal
+
+        sub_y = MVariable(name="Y", subscripts=[])
+        sub_z = MVariable(name="Z", subscripts=[])
+        global_ref = MGlobal(name="GLOBAL", subscripts=[sub_y, sub_z])
+        reads = _extract_expression_variables(global_ref)
+        # Global name is excluded, but subscript variables are included
+        assert reads == {"Y", "Z"}
+
+    def test_extract_from_global_no_subscripts(self):
+        """Test extracting variables from MGlobal without subscripts.
+
+        ^GLOBAL - no variables to extract
+        """
+        from m2py.asg.expressions import MGlobal
+
+        global_ref = MGlobal(name="GLOBAL", subscripts=[])
+        reads = _extract_expression_variables(global_ref)
+        assert reads == set()
+
+    def test_extract_from_naked_global(self):
+        """Test extracting variables from MNakedGlobal subscripts (T96.7).
+
+        S X=^(Y) - Y is a local variable used as subscript
+        """
+        from m2py.asg.expressions import MNakedGlobal
+
+        sub_y = MVariable(name="Y", subscripts=[])
+        naked_ref = MNakedGlobal(subscripts=[sub_y])
+        reads = _extract_expression_variables(naked_ref)
+        assert reads == {"Y"}
+
+    def test_extract_from_format_control_tab(self):
+        """Test extracting variables from MFormatControl Tab expression (T96.8).
+
+        W ?X - tab to column X
+        """
+        from m2py.asg.expressions import MFormatControl
+        from m2py.asg.enums import FormatControlType
+
+        col_expr = MVariable(name="X", subscripts=[])
+        format_ctrl = MFormatControl(
+            control_type=FormatControlType.TAB, expression=col_expr
+        )
+        reads = _extract_expression_variables(format_ctrl)
+        assert reads == {"X"}
+
+    def test_extract_from_format_control_charcode(self):
+        """Test extracting variables from MFormatControl CharCode expression (T96.8).
+
+        W *N - output character with ASCII code N
+        """
+        from m2py.asg.expressions import MFormatControl
+        from m2py.asg.enums import FormatControlType
+
+        code_expr = MVariable(name="N", subscripts=[])
+        format_ctrl = MFormatControl(
+            control_type=FormatControlType.CHARCODE, expression=code_expr
+        )
+        reads = _extract_expression_variables(format_ctrl)
+        assert reads == {"N"}
+
+    def test_extract_from_format_control_newline(self):
+        """Test extracting variables from MFormatControl Newline (T96.8).
+
+        W ! - no expression, no variables
+        """
+        from m2py.asg.expressions import MFormatControl
+        from m2py.asg.enums import FormatControlType
+
+        format_ctrl = MFormatControl(
+            control_type=FormatControlType.NEWLINE, expression=None
+        )
+        reads = _extract_expression_variables(format_ctrl)
+        assert reads == set()
+
+    def test_extract_from_indirection(self):
+        """Test extracting variables from MIndirection expression (T96.9).
+
+        S @X=1 - X is read to get the variable name
+        """
+        from m2py.asg.expressions import MIndirection
+
+        indir_expr = MVariable(name="X", subscripts=[])
+        indirection = MIndirection(expression=indir_expr)
+        reads = _extract_expression_variables(indirection)
+        assert reads == {"X"}
+
+    def test_extract_from_indirection_with_subscripts(self):
+        """Test extracting variables from MIndirection with subscripts (T96.9).
+
+        S @X(Y)=1 - X is the indirect name, Y is a subscript
+        """
+        from m2py.asg.expressions import MIndirection
+
+        indir_expr = MVariable(name="X", subscripts=[])
+        sub_y = MVariable(name="Y", subscripts=[])
+        indirection = MIndirection(expression=indir_expr, subscripts=[sub_y])
+        reads = _extract_expression_variables(indirection)
+        assert reads == {"X", "Y"}
+
+    def test_extract_from_indirection_with_name_subscripts(self):
+        """Test extracting variables from MIndirection with name indirection subscripts (T96.9).
+
+        @X@(A,B) - X is the indirect name, A and B are name indirection subscripts
+        """
+        from m2py.asg.expressions import MIndirection
+
+        indir_expr = MVariable(name="X", subscripts=[])
+        sub_a = MVariable(name="A", subscripts=[])
+        sub_b = MVariable(name="B", subscripts=[])
+        indirection = MIndirection(
+            expression=indir_expr, name_indirection_subscripts=[[sub_a, sub_b]]
+        )
+        reads = _extract_expression_variables(indirection)
+        assert reads == {"X", "A", "B"}
+
 
 class TestExtractStatementVariables:
     """Tests for _extract_statement_variables function."""
