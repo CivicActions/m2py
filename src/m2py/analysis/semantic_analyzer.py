@@ -574,6 +574,23 @@ class SemanticAnalyzer:
 
         return arg
 
+    def _analyze_MActualParameter(
+        self, param: MActualParameter, parent: Any
+    ) -> MActualParameter:
+        """Analyze MActualParameter to properly set parent and unwrap expression.
+
+        MActualParameter is created by textX custom classes (ExtrinsicFunction,
+        DoCommand) with potentially raw textX objects in the expression field.
+        This handler ensures proper parent references and expression unwrapping.
+        """
+        object.__setattr__(param, "parent", parent)
+
+        if param.expression is not None:
+            analyzed_expr = self.analyze(param.expression, param)
+            object.__setattr__(param, "expression", analyzed_expr)
+
+        return param
+
     # =========================================================================
     # Format Control Analysis (textX FormatControl → MFormatControl)
     # =========================================================================

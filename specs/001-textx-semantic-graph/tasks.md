@@ -10315,3 +10315,155 @@ This is confusing because:
 | T92.7-T92.8 (Cleanup/Test) | 30 min | LOW |
 
 **Total Estimate**: ~4 hours
+
+---
+
+## Phase 93: Code Quality Audit - Validation and Cleanup
+
+**Purpose**: Validate reported code quality issues and implement fixes where needed
+
+**Created**: 2025-12-29
+
+### Overview
+
+This phase validates findings from a comprehensive code quality review of the parser, analysis, and ASG modules. Each finding was investigated to determine if it's a real issue requiring a fix, or a non-issue with proper documentation.
+
+---
+
+### Finding 1: Missing `_analyze_MActualParameter` Handler
+
+**Status**: ⚠️ REAL ISSUE - Needs Fix
+
+**Files**:
+- `src/m2py/analysis/semantic_analyzer.py`
+
+**Problem**: `MActualParameter` objects hit the generic fallback handler `_analyze_generic` because there's no `_analyze_MActualParameter` handler. This causes:
+1. Parent references point to textX internal wrapper objects (e.g., `textx:expressions.UnaryExpr`) instead of proper ASG nodes
+2. The `expression` field of `MActualParameter` may contain textX custom classes (`LocalVariable`) that haven't been fully analyzed
+
+**Evidence**:
+```python
+# When parsing: S X=$$FUNC^ROUT(A,B)
+# Arg expressions have parent pointing to textX internals:
+#   Parent value: <textx:expressions.UnaryExpr instance at 0x...>
+```
+
+**Root Cause**: `MActualParameter` extends `ASGElement` (not `MExpr`), so it doesn't go through `_analyze_expression`. There's no explicit handler, so it falls to `_analyze_generic` which can't unwrap it.
+
+**Solution**: Add `_analyze_MActualParameter` handler that:
+1. Sets `parent` reference correctly
+2. Recursively analyzes the `expression` field
+
+**Files to modify**:
+- `src/m2py/analysis/semantic_analyzer.py` - Add handler
+
+---
+
+### Finding 2: Unused `_tx_position` Fields
+
+**Status**: ⚠️ MINOR CLEANUP - Can Be Removed
+
+**Files**:
+- `src/m2py/asg/elements.py`
+
+**Problem**: `ASGElement` defines `_tx_position` and `_tx_position_end` fields, but:
+1. They are never read anywhere in the codebase
+2. We have our own source tracking: `line_number`, `column`, `end_line`, `end_column`
+3. textX automatically adds these attributes to all parsed objects anyway
+
+**Evidence**:
+```bash
+$ grep -r "_tx_position" src/ tests/ --include="*.py"
+# Only hits: field definitions in elements.py
+```
+
+Per textX documentation (model.md):
+> `_tx_position` attribute holds the position in the input string where the object has been matched by the parser. Each object from the model object graph has this attribute.
+
+**Conclusion**: These fields are redundant. textX adds them automatically, and we use our own source tracking fields.
+
+**Solution**: Remove `_tx_position` and `_tx_position_end` fields from `ASGElement`.
+
+**Files to modify**:
+- `src/m2py/asg/elements.py` - Remove fields
+- `docs/asg/structural_elements.md` - Update documentation
+- `specs/001-textx-semantic-graph/data-model.md` - Update if referenced
+
+---
+
+### Finding 3: `classify_patterns` Method Naming
+
+**Status**: ⚠️ MINOR NAMING - Should Rename
+
+**Files**:
+- `src/m2py/parser/parser.py`
+
+**Problem**: The method `classify_patterns` is specifically for FOR loop classification but has a generic name:
+- Returns `ForPatternResult` objects (specific to FOR loops)
+- Docstring says "classify FOR loop patterns"
+- All tests use it exclusively for FOR loop patterns
+
+**Inconsistency**: Generic name vs. specific implementation.
+
+**Solution Options**:
+1. Rename to `classify_for_patterns` (breaking change for tests)
+2. Keep name but add clearer docstring noting it's FOR-specific
+3. Accept as-is since project is internal
+
+**Recommendation**: Rename to `classify_for_patterns` for consistency with `ForPatternResult`. No external users per constitution.
+
+**Files to modify**:
+- `src/m2py/parser/parser.py` - Rename method
+- `tests/unit/test_parser.py` - Update test calls
+- `tests/integration/test_mugj.py` - Update test calls
+
+---
+
+### Validated Non-Issues
+
+The following reported findings were investigated and confirmed as **NOT ISSUES**:
+
+| Finding | Conclusion | Evidence |
+|---------|------------|----------|
+| Two-Phase Parsing Architecture | Documented design decision | `docs/architecture.md` "Why Two-Phase Parsing?" section |
+| Unreachable Code Propagation | Intentional - nested scope resets reachability | Comment in `_mark_unreachable_statements`: "don't propagate INTO nested scopes" |
+| Pattern Compilation Fallback | Intentional graceful degradation | Validated in Phase 84 as non-issue |
+| Architecture Notes Comments | Excellent - reference docs | Parser.py comments point to `docs/architecture.md` |
+| Empty grammar/__init__.py | Standard practice | Package contains .tx files, not Python modules |
+| Coupled Analysis Flags | Documented behavior | Docstring: "implies analyze_variables=True" |
+
+---
+
+### Tasks
+
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T93.1 | Add `_analyze_MActualParameter` handler in semantic_analyzer.py | HIGH | [X] |
+| T93.2 | Add test for proper parent refs in extrinsic function arguments | HIGH | [X] |
+| T93.3 | Remove `_tx_position` and `_tx_position_end` from ASGElement | LOW | [X] |
+| T93.4 | Update docs/asg/structural_elements.md for _tx_position removal | LOW | [X] |
+| T93.5 | Rename `classify_patterns` to `classify_for_patterns` | LOW | [X] |
+| T93.6 | Update tests for renamed method | LOW | [X] |
+| T93.7 | Run full test suite after changes | HIGH | [X] |
+
+### Implementation Notes (2025-12-29)
+
+**Completed**:
+1. **T93.1**: Added `_analyze_MActualParameter` handler (lines 576-590) - sets parent, recursively analyzes expression field
+2. **T93.2**: Added `TestMActualParameterAnalysis` test class with 2 tests in `tests/unit/test_semantic_analyzer.py`
+3. **T93.3**: Removed `_tx_position` and `_tx_position_end` fields from ASGElement, added docstring explaining textX adds these at runtime
+4. **T93.4**: Updated `docs/asg/structural_elements.md`, `docs/architecture.md`, `specs/001-textx-semantic-graph/data-model.md`
+5. **T93.5-T93.6**: Renamed `classify_patterns` → `classify_for_patterns` in parser.py and all test files
+6. **T93.7**: All 1078 tests pass
+7. **Bonus**: Fixed outdated `utils/test_parse_failures.py` utility script that referenced non-existent `label_is_indirect` attribute
+
+### Phase 93 Effort Estimate
+
+| Task | Effort | Priority |
+|------|--------|----------|
+| T93.1-T93.2 (MActualParameter fix) | 45 min | HIGH |
+| T93.3-T93.4 (_tx_position removal) | 15 min | LOW |
+| T93.5-T93.6 (Method rename) | 30 min | LOW |
+| T93.7 (Test suite) | 10 min | HIGH |
+
+**Total Estimate**: ~1.5 hours

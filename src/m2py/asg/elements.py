@@ -24,6 +24,10 @@ class ASGElement(ABC):
 
     Provides source tracking (file, line, column) and tree structure
     (parent reference) for all ASG nodes.
+
+    Note: textX automatically adds _tx_position and _tx_position_end attributes
+    to parsed objects. We use our own source tracking fields (line_number,
+    column, end_line, end_column) which are more useful for error reporting.
     """
 
     # Source tracking
@@ -35,10 +39,6 @@ class ASGElement(ABC):
 
     # Tree structure
     parent: Optional["ASGElement"] = field(default=None, repr=False)
-
-    # textX integration - position in source text
-    _tx_position: Optional[int] = field(default=None, repr=False)
-    _tx_position_end: Optional[int] = field(default=None, repr=False)
 
     def to_dict(
         self, include_position: bool = False, max_depth: int = 10

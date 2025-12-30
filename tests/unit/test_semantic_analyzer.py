@@ -833,3 +833,60 @@ class TestReadFixedLength:
         assert isinstance(read_target, MReadTarget)
         assert read_target.variable.name == "A"
         assert read_target.fixed_length is not None
+
+
+class TestMActualParameterAnalysis:
+    """Test T93.2: MActualParameter parent references are correctly set."""
+
+    def test_extrinsic_function_args_have_correct_parents(self):
+        """Extrinsic function arguments should have proper parent chain."""
+        from m2py import MUMPSParser
+        from m2py.asg.expressions import MActualParameter, MVariable, MExtrinsicFunction
+
+        source = """TEST
+ S X=$$FUNC^ROUT(A,B)
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+
+        # Find the SET statement with extrinsic function
+        stmt = routine.labels[0].body.statements[0]
+        func = stmt.assignments[0].value
+
+        assert isinstance(func, MExtrinsicFunction)
+        assert len(func.arguments) == 2
+
+        for i, arg in enumerate(func.arguments):
+            assert isinstance(arg, MActualParameter)
+            # Parent of MActualParameter should be the function
+            assert arg.parent is func, f"Arg {i} parent should be the function"
+            # Expression should be analyzed and have arg as parent
+            assert isinstance(arg.expression, MVariable)
+            assert arg.expression.parent is arg, (
+                f"Arg {i} expression parent should be the arg"
+            )
+
+    def test_extrinsic_function_byref_args_have_correct_parents(self):
+        """By-reference arguments should also have proper parent chain."""
+        from m2py import MUMPSParser
+        from m2py.asg.expressions import MActualParameter, MVariable, MExtrinsicFunction
+        from m2py.asg.enums import PassingMode
+
+        source = """TEST
+ S X=$$FUNC(.Y)
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+
+        stmt = routine.labels[0].body.statements[0]
+        func = stmt.assignments[0].value
+
+        assert isinstance(func, MExtrinsicFunction)
+        assert len(func.arguments) == 1
+
+        arg = func.arguments[0]
+        assert isinstance(arg, MActualParameter)
+        assert arg.passing_mode == PassingMode.BY_REFERENCE
+        assert arg.parent is func
+        assert isinstance(arg.expression, MVariable)
+        assert arg.expression.parent is arg

@@ -45,9 +45,9 @@ if result.labels and result.labels[0].body.statements:
     call = stmt.targets[0] if hasattr(stmt, "targets") and stmt.targets else None
     print(f"'D @VAR' -> {type(stmt).__name__}")
     if call:
-        print(f"  label_is_indirect: {call.label_is_indirect}")
+        # MCall uses call_type and indirection
         print(
-            f"  indirection: {type(call.indirection).__name__ if call.indirection else None}"
+            f"  indirection: {type(call.indirection).__name__ if hasattr(call, 'indirection') and call.indirection else None}"
         )
 else:
     print("'D @VAR' -> No statements")
@@ -57,13 +57,15 @@ test_job_ind = "LABEL5 J @VAR\n"
 result = parser.parse(test_job_ind)
 if result.labels and result.labels[0].body.statements:
     stmt = result.labels[0].body.statements[0]
-    call = stmt.targets[0] if hasattr(stmt, "targets") and stmt.targets else None
+    target = stmt.targets[0] if hasattr(stmt, "targets") and stmt.targets else None
     print(f"'J @VAR' -> {type(stmt).__name__}")
-    if call:
-        print(f"  label_is_indirect: {call.label_is_indirect}")
-        print(
-            f"  indirection: {type(call.indirection).__name__ if call.indirection else None}"
-        )
+    if target:
+        # MJobTarget has call attribute which is MCall
+        call = target.call if hasattr(target, "call") else None
+        if call:
+            print(
+                f"  call.indirection: {type(call.indirection).__name__ if hasattr(call, 'indirection') and call.indirection else None}"
+            )
 else:
     print("'J @VAR' -> No statements")
 

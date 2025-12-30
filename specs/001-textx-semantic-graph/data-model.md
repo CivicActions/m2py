@@ -168,9 +168,8 @@ class ASGElement(ABC):
     # Tree structure
     parent: Optional['ASGElement'] = field(default=None, repr=False)
     
-    # textX integration
-    _tx_position: Optional[int] = field(default=None, repr=False)
-    _tx_position_end: Optional[int] = field(default=None, repr=False)
+    # Note: textX adds _tx_position/_tx_position_end at runtime;
+    # we use our own line_number/column fields for error reporting
 ```
 
 ### MRoutine

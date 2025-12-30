@@ -307,7 +307,7 @@ class TestQuitExitPointDetection:
         """V1FORB.m has open-ended FOR loops with QUIT exit points."""
         parser = MUMPSParser()
         source = mugj_file("V1FORB.m")
-        results = parser.classify_patterns(source)
+        results = parser.classify_for_patterns(source)
 
         # Find open-ended FOR loops
         open_ended_with_quit = [
@@ -326,7 +326,7 @@ class TestQuitExitPointDetection:
         """V1FORC1.m tests FOR-QUIT combinations."""
         parser = MUMPSParser()
         source = mugj_file("V1FORC1.m")
-        results = parser.classify_patterns(source)
+        results = parser.classify_for_patterns(source)
 
         # Count FOR loops with QUIT detected
         for_with_quit = [r for r in results if r.statement.has_internal_quit]
@@ -339,7 +339,7 @@ class TestQuitExitPointDetection:
         """Bounded FOR can also have early QUIT exit."""
         parser = MUMPSParser()
         source = mugj_file("V1FORC1.m")
-        results = parser.classify_patterns(source)
+        results = parser.classify_for_patterns(source)
 
         # Find bounded FOR with quit (e.g., line 370: FOR I=1:1:3 ... Q)
         bounded_with_quit = [
@@ -441,7 +441,7 @@ class TestV1FORC2NestedForGoto:
         """V1FORC2.m should have FOR loops."""
         parser = MUMPSParser()
         source = mugj_file("V1FORC2.m")
-        results = parser.classify_patterns(source)
+        results = parser.classify_for_patterns(source)
 
         assert len(results) > 0, "V1FORC2 should have FOR loops"
 

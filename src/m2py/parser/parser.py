@@ -704,7 +704,7 @@ class MUMPSParser:
 
         return label
 
-    def classify_patterns(
+    def classify_for_patterns(
         self, source: str, filename: Optional[str] = None
     ) -> list[ForPatternResult]:
         """Parse source and classify FOR loop patterns.
@@ -781,7 +781,7 @@ class MUMPSParser:
 
         return results
 
-    def classify_patterns_from_file(
+    def classify_for_patterns_from_file(
         self, filepath: Union[str, Path]
     ) -> list[ForPatternResult]:
         """Parse a file and classify FOR loop patterns.
@@ -807,7 +807,7 @@ class MUMPSParser:
             source = filepath.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             source = filepath.read_text(encoding="latin-1")
-        return self.classify_patterns(source, filename=str(filepath))
+        return self.classify_for_patterns(source, filename=str(filepath))
 
     def resolve_references(self, routine: MRoutine) -> None:
         """Resolve all MCall references in a routine to their targets.

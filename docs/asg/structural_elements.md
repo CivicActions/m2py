@@ -19,13 +19,13 @@ class ASGElement(ABC):
     # Tree structure
     parent: Optional["ASGElement"] = None
 
-    # textX integration
-    _tx_position: Optional[int] = None
-    _tx_position_end: Optional[int] = None
-
     def to_dict(self, include_position=False, max_depth=10) -> dict:
         """Serialize to dictionary for debugging/JSON output."""
 ```
+
+**Note**: textX automatically adds `_tx_position` and `_tx_position_end` attributes
+to parsed objects at runtime. We use our own source tracking fields (`line_number`,
+`column`, etc.) which provide line/column information rather than absolute byte offsets.
 
 **Source**: [`src/m2py/asg/elements.py`](../../src/m2py/asg/elements.py)
 

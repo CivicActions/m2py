@@ -1,6 +1,6 @@
 """Tests for MUMPSParser class.
 
-Tests parser initialization, parse(), parse_file(), and classify_patterns().
+Tests parser initialization, parse(), parse_file(), and classify_for_patterns().
 Verifies routine/label structure parsing and error handling.
 
 For grammar acceptance tests, see test_grammar.py.
@@ -226,8 +226,8 @@ class TestMUMPSParserParseFile:
         assert len(routine.source_lines) == 3
         assert "§" in routine.source_lines[1] or "÷" in routine.source_lines[1]
 
-    def test_classify_patterns_from_file_latin1_fallback(self, tmp_path):
-        """classify_patterns_from_file should fall back to Latin-1 for non-UTF-8 files."""
+    def test_classify_for_patterns_from_file_latin1_fallback(self, tmp_path):
+        """classify_for_patterns_from_file should fall back to Latin-1 for non-UTF-8 files."""
         test_file = tmp_path / "LATIN1FOR.m"
         # Latin-1 content with FOR loop and characters that are invalid in UTF-8
         # 0xba = º (masculine ordinal) - appears in VistA files
@@ -236,7 +236,7 @@ class TestMUMPSParserParseFile:
 
         parser = MUMPSParser()
         # Should not raise UnicodeDecodeError
-        results = parser.classify_patterns_from_file(test_file)
+        results = parser.classify_for_patterns_from_file(test_file)
 
         # Should find the bounded FOR loop
         assert len(results) == 1
@@ -299,51 +299,51 @@ class TestMUMPSParserGrammarIntegration:
 
 
 class TestMUMPSParserClassifyPatterns:
-    """Test MUMPSParser.classify_patterns() method."""
+    """Test MUMPSParser.classify_for_patterns() method."""
 
-    def test_classify_patterns_returns_list(self):
-        """classify_patterns should return a list."""
+    def test_classify_for_patterns_returns_list(self):
+        """classify_for_patterns should return a list."""
         parser = MUMPSParser()
-        result = parser.classify_patterns("LABEL\n")
+        result = parser.classify_for_patterns("LABEL\n")
         assert isinstance(result, list)
 
-    def test_classify_patterns_finds_bounded_for(self):
+    def test_classify_for_patterns_finds_bounded_for(self):
         """Should find bounded FOR loop."""
         parser = MUMPSParser()
         source = "TEST\tF I=1:1:10 W I\n"
-        result = parser.classify_patterns(source)
+        result = parser.classify_for_patterns(source)
 
         assert len(result) == 1
         assert result[0].loop_type == ForLoopType.BOUNDED
         assert result[0].loop_var == "I"
         assert result[0].label_name == "TEST"
 
-    def test_classify_patterns_finds_open_ended_for(self):
+    def test_classify_for_patterns_finds_open_ended_for(self):
         """Should find open-ended FOR loop."""
         parser = MUMPSParser()
         source = "TEST\tF I=1:1 W I Q:I>10\n"
-        result = parser.classify_patterns(source)
+        result = parser.classify_for_patterns(source)
 
         assert len(result) == 1
         assert result[0].loop_type == ForLoopType.OPEN_ENDED
         assert result[0].loop_var == "I"
 
-    def test_classify_patterns_finds_argumentless_for(self):
+    def test_classify_for_patterns_finds_argumentless_for(self):
         """Should find argumentless FOR loop."""
         parser = MUMPSParser()
         source = 'TEST\tF  W "loop" Q:X\n'
-        result = parser.classify_patterns(source)
+        result = parser.classify_for_patterns(source)
 
         assert len(result) == 1
         assert result[0].loop_type == ForLoopType.ARGUMENTLESS
 
-    def test_classify_patterns_multiple_for_loops(self):
+    def test_classify_for_patterns_multiple_for_loops(self):
         """Should find multiple FOR loops in different labels."""
         parser = MUMPSParser()
         source = """FIRST\tF I=1:1:5 W I
 SECOND\tF J=1:1:10 W J
 """
-        result = parser.classify_patterns(source)
+        result = parser.classify_for_patterns(source)
 
         assert len(result) == 2
         assert result[0].label_name == "FIRST"
@@ -351,36 +351,36 @@ SECOND\tF J=1:1:10 W J
         assert result[1].label_name == "SECOND"
         assert result[1].loop_var == "J"
 
-    def test_classify_patterns_no_for_loops(self):
+    def test_classify_for_patterns_no_for_loops(self):
         """Should return empty list when no FOR loops."""
         parser = MUMPSParser()
         source = 'TEST\tW "hello"\n'
-        result = parser.classify_patterns(source)
+        result = parser.classify_for_patterns(source)
 
         assert len(result) == 0
 
-    def test_classify_patterns_from_file(self, tmp_path):
-        """classify_patterns_from_file should work on file paths."""
+    def test_classify_for_patterns_from_file(self, tmp_path):
+        """classify_for_patterns_from_file should work on file paths."""
         test_file = tmp_path / "TEST.m"
         test_file.write_text("TEST\tF I=1:1:5 W I\n")
 
         parser = MUMPSParser()
-        result = parser.classify_patterns_from_file(test_file)
+        result = parser.classify_for_patterns_from_file(test_file)
 
         assert len(result) == 1
         assert result[0].loop_type == ForLoopType.BOUNDED
 
-    def test_classify_patterns_from_file_not_found(self, tmp_path):
-        """classify_patterns_from_file should raise for missing file."""
+    def test_classify_for_patterns_from_file_not_found(self, tmp_path):
+        """classify_for_patterns_from_file should raise for missing file."""
         parser = MUMPSParser()
         with pytest.raises(FileNotFoundError):
-            parser.classify_patterns_from_file(tmp_path / "nonexistent.m")
+            parser.classify_for_patterns_from_file(tmp_path / "nonexistent.m")
 
-    def test_classify_patterns_returns_mforstatement(self):
-        """classify_patterns should include MForStatement ASG node in result."""
+    def test_classify_for_patterns_returns_mforstatement(self):
+        """classify_for_patterns should include MForStatement ASG node in result."""
         parser = MUMPSParser()
         source = "TEST\tF I=1:1:10 W I\n"
-        result = parser.classify_patterns(source)
+        result = parser.classify_for_patterns(source)
 
         assert len(result) == 1
         assert result[0].statement is not None
@@ -388,11 +388,11 @@ SECOND\tF J=1:1:10 W J
         assert result[0].statement.loop_var.name == "I"
         assert result[0].statement.loop_type == ForLoopType.BOUNDED
 
-    def test_classify_patterns_mforstatement_has_parameters(self):
+    def test_classify_for_patterns_mforstatement_has_parameters(self):
         """MForStatement in result should have parsed parameters."""
         parser = MUMPSParser()
         source = "TEST\tF I=1:2:10 W I\n"
-        result = parser.classify_patterns(source)
+        result = parser.classify_for_patterns(source)
 
         assert len(result) == 1
         stmt = result[0].statement
@@ -404,11 +404,11 @@ SECOND\tF J=1:1:10 W J
         assert param.step.value == 2
         assert param.end.value == 10
 
-    def test_classify_patterns_mforstatement_multiple_params(self):
+    def test_classify_for_patterns_mforstatement_multiple_params(self):
         """MForStatement should capture multiple forparameters."""
         parser = MUMPSParser()
         source = 'TEST\tF I="A",1:1:3 W I\n'
-        result = parser.classify_patterns(source)
+        result = parser.classify_for_patterns(source)
 
         assert len(result) == 1
         stmt = result[0].statement

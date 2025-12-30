@@ -169,7 +169,7 @@ textX was chosen over alternatives for several reasons:
 textX provides:
 - Declarative grammar syntax
 - Automatic AST construction
-- Source position tracking via `_tx_position`
+- Source position tracking (via `_tx_position`, which we convert to line/column)
 - Custom class integration for direct ASG instantiation
 - Forward reference resolution
 
