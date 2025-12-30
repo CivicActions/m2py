@@ -324,6 +324,10 @@ MUMPS commands can be abbreviated (per MUMPS spec). Most commands have a single 
 | FOR | F | `F I=1:1:10` |
 | **HALT** | **H** | `H` (no argument) |
 | **HANG** | **H** | `H 5` (with argument) |
+| TSTART | TS | `TS (X,Y)` (begin transaction) |
+| TCOMMIT | TC | `TC` (commit transaction) |
+| TRESTART | TRE | `TRE` (restart transaction) |
+| TROLLBACK | TRO | `TRO` (rollback transaction) |
 
 ### HALT vs HANG Disambiguation
 

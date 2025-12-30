@@ -29,6 +29,50 @@ to parsed objects at runtime. We use our own source tracking fields (`line_numbe
 
 **Source**: [`src/m2py/asg/elements.py`](../../src/m2py/asg/elements.py)
 
+---
+
+## MParseError
+
+A sentinel type for capturing parse failures during error-tolerant parsing.
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `line_number` | `int` | 1-indexed line number where error occurred |
+| `column` | `int` | Column position of error |
+| `message` | `str` | Error message from parser |
+| `line_content` | `str` | Original line content that failed to parse |
+
+### Usage
+
+Parse errors are collected in `MRoutine.parse_errors` instead of causing parsing
+to fail. This allows error-tolerant parsing where valid lines are still processed
+even when some lines have syntax errors:
+
+```python
+parser = MUMPSParser()
+routine = parser.parse(source)
+
+# Check for parse errors
+if routine.parse_errors:
+    for error in routine.parse_errors:
+        print(f"Parse error at line {error.line_number}: {error.message}")
+        print(f"  Content: {error.line_content}")
+
+# Valid statements are still accessible
+for label in routine.labels:
+    for stmt in label.body.statements:
+        # Process valid statements
+        ...
+```
+
+**Rationale**: Previously, parse failures returned `None` silently, causing lines
+to be dropped without warning. The `MParseError` sentinel allows consumers to
+distinguish between empty lines and actual parse failures.
+
+---
+
 ## MRoutine
 
 The top-level container for a MUMPS routine (source file).
@@ -40,6 +84,7 @@ The top-level container for a MUMPS routine (source file).
 | `name` | `str` | Routine name (from filename) |
 | `labels` | `List[MLabel]` | All labels in the routine |
 | `source_lines` | `List[str]` | Original source lines (for `$TEXT`) |
+| `parse_errors` | `List[MParseError]` | Parse errors collected during parsing |
 | `has_unstructured_goto` | `bool` | True if has cross-label GOTOs |
 | `requires_runtime_eval` | `bool` | True if has unresolvable indirection |
 | `global_refs` | `List[str]` | All global variable names referenced (populated by `resolve_references()`) |

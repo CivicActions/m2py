@@ -571,6 +571,75 @@ parameters` | `List[MExpr]` | Process parameters |
 
 ---
 
+## Transaction Statements
+
+### MTStartStatement
+
+Begin a transaction (MUMPS 1995 spec 8.2.22):
+
+```mumps
+TS                  ; Non-restartable transaction
+TSTART              ; Full keyword
+TS ()               ; Restartable (no variables saved)
+TS (X,Y,Z)          ; Restartable, save specified variables on restart
+TS *                ; Restartable, save all variables on restart
+TS:COND             ; Conditional TSTART
+TS (X):SERIAL       ; With parameters
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `restart_vars` | `List[MExpr]` | Variables to restore on TRESTART |
+| `restart_all` | `bool` | True if `*` (restore all variables) |
+| `parameters` | `List[MExpr]` | Transaction parameters (SERIAL, TRANSACTIONID, etc.) |
+
+**Special Variables**:
+- `$TLEVEL` - Transaction nesting level (0 = no transaction)
+- `$TRESTART` - Restart counter for current transaction
+
+### MTCommitStatement
+
+Commit the current transaction (MUMPS 1995 spec 8.2.19):
+
+```mumps
+TC                  ; Commit
+TCOMMIT             ; Full keyword
+TC:COND             ; Conditional commit
+```
+
+If `$TLEVEL = 1`, commits the transaction. If `$TLEVEL > 1`, decrements nesting level.
+
+### MTRestartStatement
+
+Restart the current transaction (MUMPS 1995 spec 8.2.20):
+
+```mumps
+TRE                 ; Restart
+TRESTART            ; Full keyword
+TRE:COND            ; Conditional restart
+```
+
+If in a restartable transaction, performs restart and increments `$TRESTART`.
+
+### MTRollbackStatement
+
+Rollback the current transaction (MUMPS 1995 spec 8.2.21):
+
+```mumps
+TRO                 ; Rollback all
+TROLLBACK           ; Full keyword
+TRO 1               ; Rollback to specified level
+TRO:COND            ; Conditional rollback
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `level` | `Optional[MExpr]` | Transaction level to rollback to |
+
+Rolls back all changes since transaction start. Sets `$TLEVEL = 0` and `$TRESTART = 0`.
+
+---
+
 ## Statement Type Summary
 
 | Category | Statements |
@@ -586,3 +655,4 @@ parameters` | `List[MExpr]` | Process parameters |
 | Dynamic | `MXecuteStatement` |
 | Resources | `MLockStatement`, `MViewStatement` |
 | Devices | `MOpenStatement`, `MCloseStatement`, `MUseStatement`, `MJobStatement` |
+| Transactions | `MTStartStatement`, `MTCommitStatement`, `MTRestartStatement`, `MTRollbackStatement` |

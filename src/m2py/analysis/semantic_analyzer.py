@@ -70,6 +70,10 @@ from m2py.asg.statements import (
     MJobStatement,
     MJobTarget,
     MViewStatement,
+    MTStartStatement,
+    MTCommitStatement,
+    MTRestartStatement,
+    MTRollbackStatement,
 )
 from m2py.asg.elements import MCall
 from m2py.asg.enums import (
@@ -1579,6 +1583,74 @@ class SemanticAnalyzer:
 
         return stmt
 
+    def _analyze_TStartCommand(self, cmd: Any, parent: Any) -> MTStartStatement:
+        """Analyze TSTART command into MTStartStatement.
+
+        TSTART [:pc] [[(lvn[,...])][:keyword[,...]]]
+        - lvn: Local variables to restore on TROLLBACK (restart variables)
+        - keywords: Parameters like SERIAL, TRANSACTIONID=name
+        """
+        stmt = MTStartStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        # Handle restart variables (lvn list in parentheses)
+        if hasattr(cmd, "restart_arg") and cmd.restart_arg:
+            restart_arg = cmd.restart_arg
+            # Check for * (restart all variables)
+            if hasattr(restart_arg, "all") and restart_arg.all:
+                stmt.restart_all = True
+            elif hasattr(restart_arg, "vars") and restart_arg.vars:
+                vars_list = restart_arg.vars
+                if not isinstance(vars_list, list):
+                    vars_list = [vars_list]
+                stmt.restart_vars = [self.analyze(var, stmt) for var in vars_list]
+
+        # Handle parameters (keyword arguments after colon)
+        if hasattr(cmd, "params") and cmd.params:
+            params = cmd.params if isinstance(cmd.params, list) else [cmd.params]
+            stmt.parameters = [self.analyze(param, stmt) for param in params]
+
+        return stmt
+
+    def _analyze_TCommitCommand(self, cmd: Any, parent: Any) -> MTCommitStatement:
+        """Analyze TCOMMIT command into MTCommitStatement.
+
+        TCOMMIT [:pc]
+        Commits the current transaction level.
+        """
+        stmt = MTCommitStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+        return stmt
+
+    def _analyze_TRestartCommand(self, cmd: Any, parent: Any) -> MTRestartStatement:
+        """Analyze TRESTART command into MTRestartStatement.
+
+        TRESTART [:pc]
+        Restarts the current transaction.
+        """
+        stmt = MTRestartStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+        return stmt
+
+    def _analyze_TRollbackCommand(self, cmd: Any, parent: Any) -> MTRollbackStatement:
+        """Analyze TROLLBACK command into MTRollbackStatement.
+
+        TROLLBACK [:pc] [tlevel]
+        Rolls back to specified transaction level or all if not specified.
+        """
+        stmt = MTRollbackStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        # Handle optional transaction level argument
+        if hasattr(cmd, "level") and cmd.level is not None:
+            stmt.level = self.analyze(cmd.level, stmt)
+
+        return stmt
+
     # =========================================================================
     # Scope and Variable Tracking
     # =========================================================================
@@ -1706,6 +1778,7 @@ def analyze_statement(command_type: str, content: str) -> Optional[MStatement]:
         >>> analyze_statement("W", '"Hello"')
         MWriteStatement(arguments=[MLiteral("Hello")])
     """
+    from m2py.asg.elements import MParseError
     from m2py.parser.line_parser import parse_commands_from_line
 
     # Handle empty content for argumentless commands
@@ -1720,7 +1793,7 @@ def analyze_statement(command_type: str, content: str) -> Optional[MStatement]:
 
     # Parse the command string via textX
     commands = parse_commands_from_line(cmd_str)
-    if not commands:
+    if not commands or isinstance(commands, MParseError):
         return None
 
     # Analyze the first command using full-fidelity SemanticAnalyzer

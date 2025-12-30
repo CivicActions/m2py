@@ -129,9 +129,12 @@ class TestParseCommand:
         assert cmds[0].__class__.__name__ == "WriteCommand"
 
     def test_parse_invalid(self):
-        """Invalid command returns empty list"""
-        cmds = parse_commands_from_line("$$$INVALID")
-        assert cmds == []
+        """Invalid command returns MParseError (Phase 94: error-tolerant parsing)"""
+        from m2py.asg.elements import MParseError
+
+        result = parse_commands_from_line("$$$INVALID")
+        # Phase 94: Now returns MParseError instead of empty list
+        assert isinstance(result, MParseError)
 
 
 class TestParseExpression:

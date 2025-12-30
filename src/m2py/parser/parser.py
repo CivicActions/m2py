@@ -28,7 +28,7 @@ from m2py.analysis.variables import (
     analyze_variables as _analyze_variables,
     compute_transitive_inputs as _compute_transitive_inputs,
 )
-from m2py.asg import MLabel, MRoutine, MScope
+from m2py.asg import MLabel, MRoutine, MScope, MParseError
 from m2py.asg.enums import ForLoopType
 from m2py.asg.statements import (
     MDoStatement,
@@ -551,6 +551,9 @@ class MUMPSParser:
         lines), and creating a synthetic preamble label for any lines that
         appear before the first named label.
 
+        Parse errors are collected in routine.parse_errors for error-tolerant
+        parsing. Lines that fail to parse are skipped but reported.
+
         Args:
             model: The textX parse model
             filename: Source filename for location tracking
@@ -578,7 +581,7 @@ class MUMPSParser:
 
                 # LabelLine has a label attribute - creates new label
                 if cls_name == "LabelLine" and hasattr(line, "label") and line.label:
-                    label = self._build_label(line)
+                    label = self._build_label(line, line_number, routine)
                     label.line_number = line_number  # Track source line for $TEXT
                     routine.add_label(label)
                     current_label = label
@@ -586,7 +589,9 @@ class MUMPSParser:
                 # ContLine - continuation line for current label
                 elif cls_name == "ContLine":
                     if current_label is not None:
-                        self._add_continuation_to_label(line, current_label)
+                        self._add_continuation_to_label(
+                            line, current_label, line_number, routine
+                        )
                     else:
                         # Labelless line before first label - create synthetic preamble
                         rest = getattr(line, "rest", "")
@@ -596,7 +601,9 @@ class MUMPSParser:
                                 preamble_label.line_number = line_number
                                 routine.add_label(preamble_label)
                                 current_label = preamble_label
-                            self._add_continuation_to_label(line, preamble_label)
+                            self._add_continuation_to_label(
+                                line, preamble_label, line_number, routine
+                            )
 
         # Post-process: structure DO blocks with dot-indented lines
         for label in routine.labels:
@@ -612,7 +619,9 @@ class MUMPSParser:
 
         return routine
 
-    def _add_continuation_to_label(self, cont_line, label: MLabel) -> None:
+    def _add_continuation_to_label(
+        self, cont_line, label: MLabel, line_number: int, routine: MRoutine
+    ) -> None:
         """Add continuation line commands to a label's body.
 
         Continuation lines (starting with tab or space) belong to the
@@ -622,9 +631,13 @@ class MUMPSParser:
         The _dot_level marker is set here and later processed by
         _structure_do_blocks to properly nest into DO bodies.
 
+        Parse errors are collected in routine.parse_errors.
+
         Args:
             cont_line: The textX ContLine model
             label: The MLabel to add statements to
+            line_number: Source line number for error reporting
+            routine: The MRoutine to collect parse errors in
         """
         rest = getattr(cont_line, "rest", "")
         if not rest or not rest.strip():
@@ -639,7 +652,12 @@ class MUMPSParser:
             stripped_rest = stripped_rest[1:].lstrip()
 
         # Parse the continuation line content
-        commands = parse_commands_from_line(stripped_rest)
+        commands = parse_commands_from_line(stripped_rest, line_number)
+
+        # Check for parse error
+        if isinstance(commands, MParseError):
+            routine.parse_errors.append(commands)
+            return
 
         # Convert to ASG statements and add to label body
         if commands:
@@ -655,11 +673,15 @@ class MUMPSParser:
                     stmt._dot_level = dot_level
                 label.body.statements.append(stmt)
 
-    def _build_label(self, line) -> MLabel:
+    def _build_label(self, line, line_number: int, routine: MRoutine) -> MLabel:
         """Convert textX LabelLine to MLabel ASG.
+
+        Parse errors are collected in routine.parse_errors.
 
         Args:
             line: The textX LabelLine model
+            line_number: Source line number for error reporting
+            routine: The MRoutine to collect parse errors in
 
         Returns:
             An MLabel ASG node
@@ -679,8 +701,20 @@ class MUMPSParser:
         # Parse line content using textX command grammar.
         # Parsed commands are stored for later ASG building.
         if label._line_rest:
-            label._parsed_content = parse_line_content(label._line_rest)
-            label._parsed_commands = parse_commands_from_line(label._line_rest)
+            parsed_content = parse_line_content(label._line_rest, line_number)
+            if isinstance(parsed_content, MParseError):
+                routine.parse_errors.append(parsed_content)
+                label._parsed_content = None
+                label._parsed_commands = []
+            else:
+                label._parsed_content = parsed_content
+                # Get commands from parsed content
+                if parsed_content and hasattr(parsed_content, "commands"):
+                    label._parsed_commands = [
+                        lc.cmd for lc in parsed_content.commands if lc.cmd
+                    ]
+                else:
+                    label._parsed_commands = []
         else:
             label._parsed_content = None
             label._parsed_commands = []

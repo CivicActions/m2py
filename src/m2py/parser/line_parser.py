@@ -25,8 +25,11 @@ Test utilities for parsing single commands/expressions are in tests/helpers/pars
 """
 
 from pathlib import Path
-from typing import Optional, Any, List
+from typing import TYPE_CHECKING, Any, List
 from functools import lru_cache
+
+if TYPE_CHECKING:
+    from m2py.asg.elements import MParseError
 
 from textx import metamodel_from_file
 from textx.exceptions import TextXSyntaxError
@@ -56,7 +59,9 @@ def _get_line_metamodel():
     )
 
 
-def parse_line_content(line_content: str) -> Optional[Any]:
+def parse_line_content(
+    line_content: str, line_number: int = 0
+) -> "Any | MParseError | None":
     """Parse a MUMPS line content string into a textX model.
 
     This parses the content after a label or continuation prefix,
@@ -65,38 +70,74 @@ def parse_line_content(line_content: str) -> Optional[Any]:
 
     Args:
         line_content: The line content (e.g., "S X=1 W X  ;comment")
+        line_number: Optional line number for error reporting (0 if unknown)
 
     Returns:
-        The parsed textX LineContent model or None if parsing fails.
+        - The parsed textX LineContent model on success
+        - MParseError on parse failure (with error details)
+        - None for empty/whitespace-only lines (not an error)
 
     Error Handling:
-        Returns None on parse failure for error-tolerant parsing. textX enforces
-        full input consumption by default, raising TextXSyntaxError if any input
-        remains unparsed. This function catches that error and returns None,
-        allowing partial parsing of files that may contain some invalid lines.
+        Returns MParseError on parse failure for error-tolerant parsing. textX
+        enforces full input consumption by default, raising TextXSyntaxError if
+        any input remains unparsed. This function catches that error and returns
+        an MParseError, allowing partial parsing of files while preserving error
+        information for later reporting.
 
-        For stricter error handling, catch the result being None and handle
-        accordingly, or use the underlying metamodel directly with try/except.
+        None is returned only for empty/whitespace lines which are not errors.
     """
+    from m2py.asg.elements import MParseError
+
+    # Empty or whitespace-only lines are not errors
+    if not line_content or not line_content.strip():
+        return None
+
     mm = _get_line_metamodel()
     try:
         return mm.model_from_str(line_content)
-    except TextXSyntaxError:
-        return None
+    except TextXSyntaxError as e:
+        # Extract position info from textX exception
+        col = getattr(e, "col", 0) or 0
+        msg = str(e)
+        # Clean up the message (remove file path prefix if present)
+        if ": " in msg:
+            msg = msg.split(": ", 1)[-1]
+        return MParseError(
+            line_number=line_number,
+            column=col,
+            message=msg,
+            line_content=line_content,
+        )
 
 
-def parse_commands_from_line(line_content: str) -> List[Any]:
+def parse_commands_from_line(
+    line_content: str, line_number: int = 0
+) -> "List[Any] | MParseError":
     """Parse a line content string and return list of command models.
 
     Args:
         line_content: The line content string
+        line_number: Optional line number for error reporting (0 if unknown)
 
     Returns:
-        List of textX command models (empty if parsing fails)
+        List of textX command models on success, or MParseError on failure.
+        Empty list for empty/whitespace lines (not an error).
     """
-    model = parse_line_content(line_content)
-    if model and model.commands:
-        return [lc.cmd for lc in model.commands]
+    from m2py.asg.elements import MParseError
+
+    result = parse_line_content(line_content, line_number)
+
+    # Propagate parse errors
+    if isinstance(result, MParseError):
+        return result
+
+    # Empty line or parse returned None (whitespace only)
+    if result is None:
+        return []
+
+    # Extract commands from parsed model
+    if hasattr(result, "commands") and result.commands:
+        return [lc.cmd for lc in result.commands]
     return []
 
 
@@ -112,8 +153,10 @@ def detect_quit_after_for(line_content: str) -> bool:
     Returns:
         True if QUIT found after FOR, False otherwise
     """
+    from m2py.asg.elements import MParseError
+
     commands = parse_commands_from_line(line_content)
-    if not commands:
+    if not commands or isinstance(commands, MParseError):
         return False
 
     found_for = False
@@ -139,7 +182,11 @@ def extract_for_commands(line_content: str) -> List[Any]:
     Returns:
         List of ForCommand textX models found in the line
     """
+    from m2py.asg.elements import MParseError
+
     cmds = parse_commands_from_line(line_content)
+    if isinstance(cmds, MParseError):
+        return []
     return [cmd for cmd in cmds if cmd.__class__.__name__ == "ForCommand"]
 
 

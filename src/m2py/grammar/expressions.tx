@@ -359,12 +359,12 @@ FUNCNAME:
 // Special variable name (these are specific keywords)
 // Includes both full names and valid abbreviations
 // Order matters: longer matches first to prevent partial matching
-// Full names: DEVICE, ECODE, ESTACK, ETRAP, HOROLOG, IO, JOB, KEY, PRINCIPAL, QUIT, REFERENCE, STACK, STORAGE, SYSTEM, TEST, X, Y, ZLEVEL
-// Abbreviations: D (DEVICE), EC (ECODE), ES (ESTACK), ET (ETRAP), H (HOROLOG), I (IO), J (JOB), K (KEY), P (PRINCIPAL), Q (QUIT), R (REFERENCE), S (STORAGE), ST (STACK), SY (SYSTEM), T (TEST), ZL (ZLEVEL)
+// Full names: DEVICE, ECODE, ESTACK, ETRAP, HOROLOG, IO, JOB, KEY, PRINCIPAL, QUIT, REFERENCE, STACK, STORAGE, SYSTEM, TEST, TLEVEL, TRESTART, X, Y, ZLEVEL
+// Abbreviations: D (DEVICE), EC (ECODE), ES (ESTACK), ET (ETRAP), H (HOROLOG), I (IO), J (JOB), K (KEY), P (PRINCIPAL), Q (QUIT), R (REFERENCE), S (STORAGE), ST (STACK), SY (SYSTEM), T (TEST), TL (TLEVEL), TR (TRESTART), ZL (ZLEVEL)
 // Note: X and Y are single-letter and need no abbreviation
 // MUMPS is case-insensitive for special variable names
 SVARNAME:
-    /[Dd][Ee][Vv][Ii][Cc][Ee]|[Ee][Cc][Oo][Dd][Ee]|[Ee][Ss][Tt][Aa][Cc][Kk]|[Ee][Tt][Rr][Aa][Pp]|[Hh][Oo][Rr][Oo][Ll][Oo][Gg]|[Ii][Oo]|[Jj][Oo][Bb]|[Kk][Ee][Yy]|[Pp][Rr][Ii][Nn][Cc][Ii][Pp][Aa][Ll]|[Qq][Uu][Ii][Tt]|[Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Ss][Tt][Aa][Cc][Kk]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Tt][Ee][Ss][Tt]|[Zz][Ll][Ee][Vv][Ee][Ll]|[Ee][Cc]|[Ee][Ss]|[Ee][Tt]|[Ss][Tt]|[Ss][Yy]|[Zz][Ll]|[DdHhIiJjKkPpQqRrSsTtXxYy]/
+    /[Tt][Ll][Ee][Vv][Ee][Ll]|[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Ee][Cc][Oo][Dd][Ee]|[Ee][Ss][Tt][Aa][Cc][Kk]|[Ee][Tt][Rr][Aa][Pp]|[Hh][Oo][Rr][Oo][Ll][Oo][Gg]|[Ii][Oo]|[Jj][Oo][Bb]|[Kk][Ee][Yy]|[Pp][Rr][Ii][Nn][Cc][Ii][Pp][Aa][Ll]|[Qq][Uu][Ii][Tt]|[Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Ss][Tt][Aa][Cc][Kk]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Tt][Ee][Ss][Tt]|[Zz][Ll][Ee][Vv][Ee][Ll]|[Ee][Cc]|[Ee][Ss]|[Ee][Tt]|[Ss][Tt]|[Ss][Yy]|[Tt][Ll]|[Tt][Rr]|[Zz][Ll]|[DdHhIiJjKkPpQqRrSsTtXxYy]/
 ;
 
 // Quoted string (handles "" escaping)

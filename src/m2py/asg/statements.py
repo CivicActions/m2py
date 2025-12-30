@@ -592,3 +592,79 @@ class MJobStatement(MStatement):
     """
 
     targets: List[MJobTarget] = field(default_factory=list)
+
+
+# =============================================================================
+# Transaction Processing Statements (MUMPS 1995 Spec 8.2.19-8.2.22)
+# =============================================================================
+
+
+@dataclass
+class MTStartStatement(MStatement):
+    """TSTART command - begin transaction.
+
+    Begins a transaction:
+    TS, TSTART, TS (), TS (A,B), TS *
+
+    Per MUMPS 1995 spec 8.2.22:
+    - If $TLEVEL was 0, initiates a new transaction
+    - If $TLEVEL > 0, increments $TLEVEL (nested transaction)
+    - Optional restart argument specifies variables to restore on restart
+    - Optional parameters control serialization behavior
+    """
+
+    # Restart argument: empty list = restartable, list = vars to restore
+    restart_vars: List["MExpr"] = field(default_factory=list)
+    # True if restart argument was '*' (restore all local variables)
+    restart_all: bool = False
+    # Transaction parameters (SERIAL, TRANSACTIONID, etc.)
+    parameters: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MTCommitStatement(MStatement):
+    """TCOMMIT command - commit transaction.
+
+    Commits the current transaction:
+    TC, TCOMMIT
+
+    Per MUMPS 1995 spec 8.2.19:
+    - If $TLEVEL = 1, commits the transaction
+    - If $TLEVEL > 1, decrements $TLEVEL
+    - Error M44 if $TLEVEL = 0
+    """
+
+    pass
+
+
+@dataclass
+class MTRestartStatement(MStatement):
+    """TRESTART command - restart transaction.
+
+    Restarts the current transaction:
+    TRE, TRESTART
+
+    Per MUMPS 1995 spec 8.2.20:
+    - If in a restartable transaction, performs restart
+    - Error M44 if $TLEVEL = 0
+    """
+
+    pass
+
+
+@dataclass
+class MTRollbackStatement(MStatement):
+    """TROLLBACK command - rollback transaction.
+
+    Rolls back the current transaction:
+    TRO, TROLLBACK, TRO 1
+
+    Per MUMPS 1995 spec 8.2.21:
+    - Rolls back all changes since transaction start
+    - Sets $TLEVEL = 0 and $TRESTART = 0
+    - Optional level argument specifies transaction level to roll back to
+    - Error M44 if $TLEVEL = 0
+    """
+
+    # Optional transaction level to roll back to
+    level: Optional["MExpr"] = None

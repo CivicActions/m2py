@@ -10467,3 +10467,235 @@ The following reported findings were investigated and confirmed as **NOT ISSUES*
 | T93.7 (Test suite) | 10 min | HIGH |
 
 **Total Estimate**: ~1.5 hours
+
+---
+
+## Phase 94: Comprehensive Code Audit - Validated Findings
+
+**Purpose**: Systematic audit of the m2py codebase for consistency, correctness, completion, and naming issues.
+
+**Date**: January 2025
+
+**Methodology**: Each identified potential issue was rigorously validated using:
+- Code inspection and static analysis
+- MUMPS 1995 ANSI Standard reference documentation
+- Test scripts to verify actual runtime behavior
+- textX grammar verification
+
+---
+
+### Finding 1: Silent Data Loss on Parse Errors ⚠️ CONFIRMED ISSUE
+
+**Status**: 🔴 HIGH PRIORITY - Silent data loss
+
+**Files**:
+- `src/m2py/parser/line_parser.py` (lines 58-86)
+- `src/m2py/parser/parser.py` (lines using `parse_commands_from_line`)
+
+**Problem**: When `parse_line_content()` encounters a `TextXSyntaxError`, it returns `None` silently. The calling code in the parser then skips that line entirely, causing **silent data loss**.
+
+**Validation Evidence**:
+```python
+# Test script: utils/validate_parse_errors.py
+# Input MUMPS with 4 lines (1 invalid):
+"""SIMPLE S X=1
+ INVALIDZZ!@#$%^&*
+ S Y=2
+ S Z=3"""
+
+# Result: Only 3 statements parsed, invalid line silently dropped
+# Output shows: statement_count=3, labels=['SIMPLE'], variables_set={'X', 'Z', 'Y'}
+```
+
+**Impact**: 
+- Parse errors cause lines to disappear without warning
+- Debugging becomes difficult - user sees no indication of failure
+- Semantic correctness compromised (Constitution Principle I violated)
+
+**Root Cause**: `parse_line_content()` docstring says "Returns None for empty/comment lines or on parse failure" - intentional error-tolerant design, but consumers don't distinguish between "empty line" and "parse error".
+
+**Solution**: 
+1. Return a dedicated error sentinel type (e.g., `MParseError`) instead of `None` for parse failures
+2. Collect parse errors and report them after parsing completes
+3. Add warning/error collection mechanism to `MRoutine` ASG node
+
+**Files to modify**:
+- `src/m2py/parser/line_parser.py` - Add `MParseError` return type, distinguish from empty lines
+- `src/m2py/parser/parser.py` - Collect and propagate parse errors
+- `src/m2py/asg/elements.py` - Add `parse_errors: List[MParseError]` to `MRoutine`
+
+---
+
+### Finding 2: Missing Transaction Commands ⚠️ CONFIRMED ISSUE
+
+**Status**: 🔴 HIGH PRIORITY - MUMPS 1995 Standard compliance gap
+
+**Files**:
+- `src/m2py/grammar/commands.tx` - Missing command rules
+- `src/m2py/asg/statements.py` - Missing statement types
+- `src/m2py/analysis/semantic_analyzer.py` - Missing handlers
+
+**Problem**: The grammar does not support MUMPS 1995 transaction processing commands:
+- `TSTART` (TS) - Begin transaction
+- `TCOMMIT` (TC) - Commit transaction
+- `TRESTART` (TRE) - Restart transaction
+- `TROLLBACK` (TRO) - Rollback transaction
+
+**Validation Evidence**:
+
+1. **MUMPS 1995 Standard References**:
+   - `mumps-reference/1995__a108048.md`: TSTART spec (MDC 8.2.19)
+   - `mumps-reference/1995__a108049.md`: TCOMMIT spec (MDC 8.2.20)
+   - `mumps-reference/1995__a108050.md`: TROLLBACK spec (MDC 8.2.21)
+   - `mumps-reference/1995__a108051.md`: TRESTART spec (MDC 8.2.22)
+
+2. **Grammar verification**:
+```bash
+$ grep -i "tstart\|tcommit\|trollback\|trestart" src/m2py/grammar/*.tx
+# No matches - commands are missing
+```
+
+**Specification Syntax**:
+- `TS[TART] postcond [ SP (:varname,...) [ :keyword=value ] ]`
+- `TC[OMMIT] postcond [ SP ]`
+- `TRO[LLBACK] postcond [ SP ]`
+- `TRE[START] postcond [ SP ]`
+
+**Related Special Variables**:
+- `$TLEVEL` - Transaction nesting level (0 = no transaction)
+- `$TRESTART` - Restart counter for current transaction
+
+**Solution**:
+1. Add grammar rules for TSTART, TCOMMIT, TRESTART, TROLLBACK in `commands.tx`
+2. Add ASG statement types: `MTStartStatement`, `MTCommitStatement`, `MTRestartStatement`, `MTRollbackStatement`
+3. Add `$TLEVEL` and `$TRESTART` to special variable handling
+4. Add semantic analyzer handlers
+
+**Files to modify**:
+- `src/m2py/grammar/commands.tx` - Add transaction command rules
+- `src/m2py/asg/statements.py` - Add transaction statement types
+- `src/m2py/asg/__init__.py` - Export new statement types
+- `src/m2py/analysis/semantic_analyzer.py` - Add `_analyze_TStartCommand`, etc.
+- `src/m2py/grammar/expressions.tx` - Add TLEVEL, TRESTART to SVARNAME
+
+---
+
+### Finding 3: Implementation-Specific Variables ✅ NOT AN ISSUE
+
+**Status**: ✅ VALIDATED - Working as designed
+
+**Files**:
+- `src/m2py/grammar/expressions.tx` (lines 289-295)
+
+**Original Concern**: $Z* implementation-specific variables like `$ZVERSION`, `$ZTRAP`, `$ZJOB` might not be supported.
+
+**Validation Evidence**:
+```python
+# Test script: utils/validate_zvar_parsing.py
+# All $Z* variables parse successfully:
+# 'S X=$ZVERSION' - Parsed type: LineCommand ✓
+# 'S X=$ZV' - Parsed type: LineCommand ✓
+# 'S X=$ZTRAP' - Parsed type: LineCommand ✓
+# 'S X=$ZJOB' - Parsed type: LineCommand ✓
+# Known special variables also work: $TEST, $T, $HOROLOG, $H, $IO, $I
+```
+
+**How It Works**:
+1. `SVARNAME` regex matches known standard special variables ($TEST, $HOROLOG, etc.)
+2. `IntrinsicFunctionNoArgs` using `FUNCNAME` is a catch-all for unknown `$*` items
+3. Grammar ordering ensures known SVARs match first, then unknown falls to catch-all
+
+**Conclusion**: The grammar correctly handles implementation-specific `$Z*` variables through the `IntrinsicFunctionNoArgs` catch-all rule. No changes needed.
+
+---
+
+### Finding 4: Loose Typing in I/O Statements ✅ MINOR IMPROVEMENT ONLY
+
+**Status**: ✅ Working correctly, minor type annotation improvement possible
+
+**Files**:
+- `src/m2py/asg/statements.py` (lines 93, 139-141)
+
+**Original Concern**: `List[Any]` typing in `MWriteStatement.arguments` and `MReadStatement.arguments` could cause type safety issues.
+
+**Analysis**:
+- `MWriteStatement.arguments`: Contains `MExpr` and `MFormatControl` (which extends `MExpr`)
+- `MReadStatement.arguments`: Contains `MReadTarget`, `MLiteral`, `MFormatControl`
+
+**Validation**:
+- `MFormatControl` inherits from `MExpr`, so all Write arguments are `MExpr` subclasses
+- For Read, a `Union[MExpr, MReadTarget]` would be more precise
+
+**Conclusion**: The `List[Any]` is intentional flexibility that works correctly. Could be improved to `List[MExpr]` for Write and `List[Union[MExpr, MReadTarget]]` for Read, but this is a minor type annotation improvement, not a correctness issue.
+
+**Task**: Low priority - add more precise Union types for better IDE support
+
+**Files to modify** (optional):
+- `src/m2py/asg/statements.py` - Update type hints
+
+---
+
+### Finding 5: Device Abstraction ✅ NOT AN ISSUE
+
+**Status**: ✅ Already implemented
+
+**Files**:
+- `src/m2py/asg/statements.py` (lines 478-548)
+
+**Original Concern**: Missing `MDevice` abstraction for I/O operations.
+
+**Validation**: Device abstractions already exist and are properly implemented:
+- `MOpenDevice` - Device in OPEN command (lines 478-490)
+- `MCloseDevice` - Device in CLOSE command (lines 507-519)
+- `MUseDevice` - Device in USE command (lines 534-546)
+
+All three are used in the semantic analyzer:
+- `semantic_analyzer.py` line 1399: `MOpenDevice()`
+- `semantic_analyzer.py` line 1429: `MCloseDevice()`
+- `semantic_analyzer.py` line 1453: `MUseDevice()`
+
+**Conclusion**: No changes needed. Device abstraction is complete.
+
+---
+
+### Validated Non-Issues Summary
+
+| Finding | Conclusion | Evidence |
+|---------|------------|----------|
+| Implementation-specific $Z* variables | Working via IntrinsicFunctionNoArgs catch-all | Test script validates $ZVERSION, $ZTRAP, etc. parse correctly |
+| List[Any] in I/O statements | Intentional flexibility, minor type improvement only | MFormatControl extends MExpr; semantic analyzer populates correctly |
+| Device abstraction missing | Already implemented | MOpenDevice, MCloseDevice, MUseDevice exist and are used |
+
+---
+
+### Tasks
+
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T94.1 | Design `MParseError` sentinel type for parse failures | HIGH | [X] |
+| T94.2 | Update `parse_line_content()` to return `MParseError` instead of `None` on failure | HIGH | [X] |
+| T94.3 | Add `parse_errors: List[MParseError]` field to `MRoutine` ASG node | HIGH | [X] |
+| T94.4 | Update parser to collect and propagate parse errors | HIGH | [X] |
+| T94.5 | Add unit test for parse error collection behavior | HIGH | [X] |
+| T94.6 | Add grammar rules for TSTART command in commands.tx | MEDIUM | [X] |
+| T94.7 | Add grammar rules for TCOMMIT command in commands.tx | MEDIUM | [X] |
+| T94.8 | Add grammar rules for TRESTART command in commands.tx | MEDIUM | [X] |
+| T94.9 | Add grammar rules for TROLLBACK command in commands.tx | MEDIUM | [X] |
+| T94.10 | Add `MTStartStatement` ASG type | MEDIUM | [X] |
+| T94.11 | Add `MTCommitStatement`, `MTRestartStatement`, `MTRollbackStatement` ASG types | MEDIUM | [X] |
+| T94.12 | Add `$TLEVEL` and `$TRESTART` to SVARNAME in expressions.tx | MEDIUM | [X] |
+| T94.13 | Add semantic analyzer handlers for transaction commands | MEDIUM | [X] |
+| T94.14 | Add unit tests for transaction command parsing | MEDIUM | [X] |
+| T94.15 | (Optional) Improve type hints in MWriteStatement/MReadStatement | LOW | [ ] |
+| T94.16 | Run full test suite after changes | HIGH | [X] |
+
+### Phase 94 Effort Estimate
+
+| Task | Effort | Priority |
+|------|--------|----------|
+| T94.1-T94.5 (Parse error collection) | 2-3 hours | HIGH |
+| T94.6-T94.14 (Transaction commands) | 3-4 hours | MEDIUM |
+| T94.15 (Type hints) | 30 min | LOW |
+| T94.16 (Test suite) | 10 min | HIGH |
+
+**Total Estimate**: ~6 hours

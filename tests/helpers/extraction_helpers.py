@@ -67,7 +67,11 @@ def has_goto_command(line_content: str) -> bool:
     Returns:
         True if GOTO command found, False otherwise
     """
+    from m2py.asg.elements import MParseError
+
     cmds = parse_commands_from_line(line_content)
+    if isinstance(cmds, MParseError):
+        return False
     return any(cmd.__class__.__name__ == "GotoCommand" for cmd in cmds)
 
 
@@ -80,7 +84,11 @@ def get_goto_info(line_content: str) -> Optional[tuple]:
     Returns:
         Tuple of (label, routine, offset) or None if no GOTO found
     """
+    from m2py.asg.elements import MParseError
+
     cmds = parse_commands_from_line(line_content)
+    if isinstance(cmds, MParseError):
+        return None
 
     for cmd in cmds:
         if cmd.__class__.__name__ == "GotoCommand":
@@ -110,7 +118,11 @@ def has_do_command(line_content: str) -> bool:
     Returns:
         True if DO command found, False otherwise
     """
+    from m2py.asg.elements import MParseError
+
     cmds = parse_commands_from_line(line_content)
+    if isinstance(cmds, MParseError):
+        return False
     return any(cmd.__class__.__name__ == "DoCommand" for cmd in cmds)
 
 
@@ -123,7 +135,11 @@ def get_do_info(line_content: str) -> Optional[tuple]:
     Returns:
         Tuple of (do_content, target_label) or None if no DO found
     """
+    from m2py.asg.elements import MParseError
+
     cmds = parse_commands_from_line(line_content)
+    if isinstance(cmds, MParseError):
+        return None
 
     for cmd in cmds:
         if cmd.__class__.__name__ == "DoCommand":

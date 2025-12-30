@@ -6,6 +6,7 @@ Defines the foundational elements for the MUMPS Abstract Semantic Graph:
 - MLabel: Entry point with back-references
 - MScope: Statement container with recursive walking
 - MCall: Reference to labels with resolution tracking
+- MParseError: Parse error information for error-tolerant parsing
 """
 
 from abc import ABC
@@ -16,6 +17,31 @@ if TYPE_CHECKING:
     from m2py.asg.statements import MStatement
     from m2py.asg.enums import CallType
     from m2py.asg.expressions import MActualParameter, MExpr
+
+
+@dataclass
+class MParseError:
+    """Parse error information for error-tolerant parsing.
+
+    Captures details about lines that failed to parse, allowing the parser
+    to continue processing remaining content while preserving error information
+    for later reporting.
+
+    This is NOT an ASGElement as it represents a failure to produce ASG nodes,
+    not an actual semantic element. It's a data structure for error collection.
+    """
+
+    line_number: int
+    column: int = 0
+    message: str = ""
+    line_content: str = ""  # The original line text that failed to parse
+
+    def __str__(self) -> str:
+        """Human-readable error message."""
+        loc = f"line {self.line_number}"
+        if self.column > 0:
+            loc += f", column {self.column}"
+        return f"Parse error at {loc}: {self.message}"
 
 
 @dataclass
@@ -236,6 +262,10 @@ class MRoutine(ASGElement):
     $TEXT function support during code generation. $TEXT returns the
     actual source line text at runtime, so the code generator needs
     access to the original source.
+
+    The parse_errors field collects any parse errors encountered during
+    parsing, allowing error-tolerant parsing that continues even when
+    some lines fail to parse. Errors can be inspected after parsing.
     """
 
     name: str = ""
@@ -243,6 +273,9 @@ class MRoutine(ASGElement):
 
     # Original source lines for $TEXT support (1-indexed access via source_lines[line_num-1])
     source_lines: List[str] = field(default_factory=list, repr=False)
+
+    # Parse errors encountered during parsing (for error-tolerant mode)
+    parse_errors: List["MParseError"] = field(default_factory=list, repr=False)
 
     # Analysis annotations
     has_unstructured_goto: bool = False

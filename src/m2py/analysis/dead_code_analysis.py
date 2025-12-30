@@ -51,7 +51,7 @@ def detect_unreachable_code(lines: List[str]) -> List[Tuple[int, str]]:
 
         # Parse commands from the line
         cmds = parse_commands_from_line(line_stripped)
-        if not cmds:
+        if not cmds or not isinstance(cmds, list):
             continue
 
         # Check the last command on the line

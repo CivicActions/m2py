@@ -34,7 +34,11 @@ Command:
     JobCommand |
     OpenCommand |
     CloseCommand |
-    UseCommand
+    UseCommand |
+    TStartCommand |
+    TCommitCommand |
+    TRestartCommand |
+    TRollbackCommand
 ;
 
 // =============================================================================
@@ -563,6 +567,62 @@ UseArg:
             '(' params+=Expr[':'] ')'
         )
     )?
+;
+
+// =============================================================================
+// Transaction Processing Commands (MUMPS 1995 Spec 8.2.19-8.2.22)
+// =============================================================================
+
+// TSTART command: TS|TSTART - begin transaction
+// Per MUMPS 1995 spec 8.2.22:
+//   TS[TART] postcond [ SP [ restartargument ] [ : L tsparam ] ]
+//   restartargument = ( L lvn ) | *
+// Examples:
+//   TS - start non-restartable transaction
+//   TS () - start restartable transaction (empty restart list)
+//   TS (A,B) - start restartable transaction, restore A and B on restart
+//   TS * - start restartable transaction, restore all locals on restart
+//   TS ():S - start restartable serial transaction
+TStartCommand:
+    /[Tt][Ss][Tt][Aa][Rr][Tt]|[Tt][Ss]/ postcond=Postcondition? (WS restart_arg=TStartRestartArg? (':' params+=TStartParam[':'])?)?
+;
+
+// TSTART restart argument: * or (varlist)
+TStartRestartArg:
+    all='*' | '(' vars+=VARNAME[','] ')'
+;
+
+// TSTART parameters: S[ERIAL], T[RANSACTIONID]=expr, or Z-prefixed
+TStartParam:
+    name=/[Ss][Ee][Rr][Ii][Aa][Ll]|[Ss]|[Tt][Rr][Aa][Nn][Ss][Aa][Cc][Tt][Ii][Oo][Nn][Ii][Dd]|[Tt]|[Zz][A-Za-z0-9]*/ ('=' value=Expr)?
+;
+
+// TCOMMIT command: TC|TCOMMIT - commit transaction
+// Per MUMPS 1995 spec 8.2.19:
+//   TC[OMMIT] postcond [ SP ]
+// Commits the current transaction if $TLEVEL=1, else decrements $TLEVEL.
+// Error M44 if $TLEVEL=0.
+TCommitCommand:
+    /[Tt][Cc][Oo][Mm][Mm][Ii][Tt]|[Tt][Cc]/ postcond=Postcondition?
+;
+
+// TRESTART command: TRE|TRESTART - restart transaction
+// Per MUMPS 1995 spec 8.2.20:
+//   TRE[START] postcond [ SP ]
+// Performs a restart if in a restartable transaction.
+// Error M44 if $TLEVEL=0.
+TRestartCommand:
+    /[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Tt][Rr][Ee]/ postcond=Postcondition?
+;
+
+// TROLLBACK command: TRO|TROLLBACK - rollback transaction
+// Per MUMPS 1995 spec 8.2.21:
+//   TRO[LLBACK] postcond [ SP tlevel ]
+// Rolls back the current transaction, setting $TLEVEL=0.
+// Optional tlevel specifies the transaction level to roll back to.
+// Error M44 if $TLEVEL=0.
+TRollbackCommand:
+    /[Tt][Rr][Oo][Ll][Ll][Bb][Aa][Cc][Kk]|[Tt][Rr][Oo]/ postcond=Postcondition? (WS level=Expr)?
 ;
 
 // =============================================================================

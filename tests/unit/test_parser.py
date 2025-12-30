@@ -647,6 +647,322 @@ class TestParserErrorHandling:
 
 
 # ============================================================================
+# Phase 94: Parse Error Collection Tests (T94.5)
+# ============================================================================
+
+
+class TestParseErrorCollection:
+    """Test parse error collection for error-tolerant parsing.
+
+    Phase 94: Parser should collect parse errors in routine.parse_errors
+    instead of silently dropping unparseable lines.
+    """
+
+    def test_parse_error_collection_single_invalid_line(self):
+        """T94.5: Single invalid line should be collected in parse_errors."""
+        from m2py.asg import MParseError
+
+        parser = MUMPSParser()
+        # Valid label with invalid command syntax in continuation
+        source = """LABEL
+\tINVALIDZZ!@#$%^&*
+"""
+        routine = parser.parse(source)
+
+        # Should have collected the error
+        assert len(routine.parse_errors) >= 1
+        assert isinstance(routine.parse_errors[0], MParseError)
+        assert "INVALIDZZ" in routine.parse_errors[0].line_content
+
+    def test_parse_error_collection_preserves_valid_lines(self):
+        """T94.5: Valid lines should still be parsed when mixed with invalid."""
+        parser = MUMPSParser()
+        source = """LABEL S X=1
+\tINVALIDZZ!@#$%^&*
+\tS Y=2
+"""
+        routine = parser.parse(source)
+
+        # Should have the valid statements
+        label = routine.labels[0]
+        # First line has S X=1, continuation has S Y=2 (skipping invalid line)
+        stmt_count = len(label.body.statements)
+        assert stmt_count == 2, (
+            f"Expected 2 statements (before and after error), got {stmt_count}"
+        )
+
+        # Should have collected the error
+        assert len(routine.parse_errors) >= 1
+
+    def test_parse_error_collection_multiple_errors(self):
+        """T94.5: Multiple invalid lines should all be collected."""
+        parser = MUMPSParser()
+        source = """LABEL S X=1
+\tINVALID1!@#
+\tS Y=2
+\tINVALID2!@#
+\tS Z=3
+"""
+        routine = parser.parse(source)
+
+        # Should have collected both errors
+        assert len(routine.parse_errors) >= 2
+
+    def test_parse_error_has_line_number(self):
+        """T94.5: Parse errors should include line number information."""
+        from m2py.asg import MParseError
+
+        parser = MUMPSParser()
+        source = """LABEL S X=1
+\tS Y=2
+\tINVALIDZZ!@#$%^&*
+\tS Z=3
+"""
+        routine = parser.parse(source)
+
+        assert len(routine.parse_errors) >= 1
+        error = routine.parse_errors[0]
+        assert isinstance(error, MParseError)
+        # The invalid line is on line 3
+        assert error.line_number == 3
+
+    def test_parse_error_str_representation(self):
+        """T94.5: MParseError should have useful string representation."""
+        from m2py.asg import MParseError
+
+        error = MParseError(
+            line_number=10, column=5, message="Unexpected token", line_content="BADLINE"
+        )
+        error_str = str(error)
+
+        assert "10" in error_str
+        assert "5" in error_str
+        assert "Unexpected token" in error_str or "Parse error" in error_str
+
+
+# ============================================================================
+# Phase 94: Transaction Command Tests (T94.14)
+# ============================================================================
+
+
+class TestTransactionCommands:
+    """Test transaction command parsing (TSTART, TCOMMIT, TRESTART, TROLLBACK).
+
+    Phase 94: Transaction commands (MUMPS 1995 spec 8.2.19-8.2.22) should be
+    parsed and converted to ASG types.
+    """
+
+    def test_tstart_basic(self):
+        """T94.14: Basic TSTART command should parse to MTStartStatement."""
+        from m2py.asg.statements import MTStartStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTS\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTStartStatement)
+        assert stmt.restart_all is False
+        assert stmt.restart_vars == []
+        assert stmt.parameters == []
+
+    def test_tstart_full_keyword(self):
+        """T94.14: TSTART with full keyword should parse."""
+        from m2py.asg.statements import MTStartStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTSTART\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTStartStatement)
+
+    def test_tstart_with_restart_vars(self):
+        """T94.14: TSTART with restart variables should parse."""
+        from m2py.asg.statements import MTStartStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTS (X,Y,Z)\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTStartStatement)
+        # Should have 3 restart variables
+        assert len(stmt.restart_vars) == 3
+        assert stmt.restart_all is False
+
+    def test_tstart_with_restart_all(self):
+        """T94.14: TSTART * should set restart_all flag."""
+        from m2py.asg.statements import MTStartStatement
+
+        parser = MUMPSParser()
+        # Per MUMPS spec, * is outside parens: TS *
+        source = "TEST\tTS *\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTStartStatement)
+        assert stmt.restart_all is True
+
+    def test_tstart_with_postcondition(self):
+        """T94.14: TSTART with postcondition should parse."""
+        from m2py.asg.statements import MTStartStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTS:X=1\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTStartStatement)
+        assert stmt.postcondition is not None
+
+    def test_tcommit_basic(self):
+        """T94.14: Basic TCOMMIT command should parse to MTCommitStatement."""
+        from m2py.asg.statements import MTCommitStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTC\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTCommitStatement)
+
+    def test_tcommit_full_keyword(self):
+        """T94.14: TCOMMIT with full keyword should parse."""
+        from m2py.asg.statements import MTCommitStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTCOMMIT\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTCommitStatement)
+
+    def test_tcommit_with_postcondition(self):
+        """T94.14: TCOMMIT with postcondition should parse."""
+        from m2py.asg.statements import MTCommitStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTC:X=1\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTCommitStatement)
+        assert stmt.postcondition is not None
+
+    def test_trestart_basic(self):
+        """T94.14: Basic TRESTART command should parse to MTRestartStatement."""
+        from m2py.asg.statements import MTRestartStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTRE\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTRestartStatement)
+
+    def test_trestart_full_keyword(self):
+        """T94.14: TRESTART with full keyword should parse."""
+        from m2py.asg.statements import MTRestartStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTRESTART\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTRestartStatement)
+
+    def test_trollback_basic(self):
+        """T94.14: Basic TROLLBACK command should parse to MTRollbackStatement."""
+        from m2py.asg.statements import MTRollbackStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTRO\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTRollbackStatement)
+        assert stmt.level is None
+
+    def test_trollback_full_keyword(self):
+        """T94.14: TROLLBACK with full keyword should parse."""
+        from m2py.asg.statements import MTRollbackStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTROLLBACK\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTRollbackStatement)
+
+    def test_trollback_with_level(self):
+        """T94.14: TROLLBACK with level argument should parse."""
+        from m2py.asg.statements import MTRollbackStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTRO 1\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTRollbackStatement)
+        assert stmt.level is not None
+
+    def test_trollback_with_postcondition(self):
+        """T94.14: TROLLBACK with postcondition should parse."""
+        from m2py.asg.statements import MTRollbackStatement
+
+        parser = MUMPSParser()
+        source = "TEST\tTRO:X=1\n"
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MTRollbackStatement)
+        assert stmt.postcondition is not None
+
+    def test_transaction_sequence(self):
+        """T94.14: Full transaction sequence should parse correctly."""
+        from m2py.asg.statements import (
+            MTStartStatement,
+            MTCommitStatement,
+        )
+
+        parser = MUMPSParser()
+        source = """TEST
+\tTS (X)
+\tS X=1
+\tTC
+"""
+        routine = parser.parse(source)
+
+        label = routine.labels[0]
+        assert len(label.body.statements) == 3
+
+        # First statement: TSTART
+        stmt0 = label.body.statements[0]
+        assert isinstance(stmt0, MTStartStatement)
+        assert len(stmt0.restart_vars) == 1
+
+        # Third statement: TCOMMIT
+        stmt2 = label.body.statements[2]
+        assert isinstance(stmt2, MTCommitStatement)
+
+
+# ============================================================================
 # Phase 11 Serialization Tests (T338-T339)
 # ============================================================================
 
