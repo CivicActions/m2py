@@ -43,10 +43,23 @@ function signatures.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from ..asg.elements import MCall, MLabel, MRoutine
-from ..asg.expressions import MVariable
+from ..asg.expressions import (
+    MActualParameter,
+    MBinaryOp,
+    MExpr,
+    MExtrinsicFunction,
+    MGlobal,
+    MIndirection,
+    MIntrinsicFunction,
+    MNakedGlobal,
+    MPatternMatch,
+    MSelectArg,
+    MUnaryOp,
+    MVariable,
+)
 from ..asg.statements import (
     MDoStatement,
     MForStatement,
@@ -759,29 +772,162 @@ def analyze_quit_statements(label: MLabel) -> Tuple[bool, bool, Optional[Any]]:
     return has_value_quit, has_void_quit, first_return_expr
 
 
+# =============================================================================
+# Indirection Detection Helpers
+# =============================================================================
+
+
+def walk_expressions(node: Any) -> Iterator[MExpr]:
+    """Recursively yield all expressions in an ASG node.
+
+    Walks through all expression-containing fields in statements
+    and expressions, yielding each MExpr encountered. This is used
+    to find MIndirection nodes anywhere in the ASG.
+
+    Args:
+        node: Any ASG node (statement, expression, or container)
+
+    Yields:
+        All MExpr nodes found recursively
+    """
+    if node is None:
+        return
+
+    # If it's an expression, yield it and recurse into its children
+    if isinstance(node, MExpr):
+        yield node
+
+        # Recurse based on expression type
+        if isinstance(node, MBinaryOp):
+            yield from walk_expressions(node.left)
+            yield from walk_expressions(node.right)
+
+        elif isinstance(node, MUnaryOp):
+            yield from walk_expressions(node.operand)
+
+        elif isinstance(node, MIndirection):
+            yield from walk_expressions(node.expression)
+            if node.subscripts:
+                for sub in node.subscripts:
+                    yield from walk_expressions(sub)
+            if node.name_indirection_subscripts:
+                for sub_list in node.name_indirection_subscripts:
+                    for sub in sub_list:
+                        yield from walk_expressions(sub)
+
+        elif isinstance(node, MPatternMatch):
+            yield from walk_expressions(node.subject)
+            yield from walk_expressions(node.pattern_indirect)
+
+        elif isinstance(node, (MIntrinsicFunction, MExtrinsicFunction)):
+            if node.arguments:
+                for arg in node.arguments:
+                    yield from walk_expressions(arg)
+
+        elif isinstance(node, MSelectArg):
+            yield from walk_expressions(node.condition)
+            yield from walk_expressions(node.value)
+
+        # MVariable, MGlobal, MNakedGlobal have subscripts
+        elif isinstance(node, (MVariable, MGlobal, MNakedGlobal)):
+            if node.subscripts:
+                for sub in node.subscripts:
+                    yield from walk_expressions(sub)
+
+    # MActualParameter wraps an expression
+    elif isinstance(node, MActualParameter):
+        yield from walk_expressions(node.expression)
+
+    # Lists - recurse into each element
+    elif isinstance(node, list):
+        for item in node:
+            yield from walk_expressions(item)
+
+    # Statements - walk all expression-containing attributes
+    elif hasattr(node, "__dataclass_fields__"):
+        # Common expression fields in statements
+        expr_attrs = [
+            "condition",
+            "postcondition",
+            "value",
+            "expression",
+            "return_value",
+            "arguments",
+            "timeout",
+            "parameters",
+            "expressions",
+            "device_expr",
+            "format_expr",
+            "code",
+        ]
+        for attr in expr_attrs:
+            if hasattr(node, attr):
+                val = getattr(node, attr)
+                if val is not None:
+                    yield from walk_expressions(val)
+
+        # SET statement has assignments list with target/value
+        if hasattr(node, "assignments") and node.assignments:
+            for assign in node.assignments:
+                if hasattr(assign, "target"):
+                    yield from walk_expressions(assign.target)
+                if hasattr(assign, "value"):
+                    yield from walk_expressions(assign.value)
+
+        # Statements with targets (DO, GOTO, READ, KILL, NEW, JOB)
+        if hasattr(node, "targets") and node.targets:
+            for target in node.targets:
+                yield from walk_expressions(target)
+
+        # FOR statement has loop variable and params
+        if hasattr(node, "loop_var"):
+            yield from walk_expressions(getattr(node, "loop_var"))
+        if hasattr(node, "for_params"):
+            for param in getattr(node, "for_params") or []:
+                if hasattr(param, "start"):
+                    yield from walk_expressions(param.start)
+                if hasattr(param, "end"):
+                    yield from walk_expressions(param.end)
+                if hasattr(param, "step"):
+                    yield from walk_expressions(param.step)
+
+
+def has_indirection(node: Any) -> bool:
+    """Check if any MIndirection node exists in the expression tree.
+
+    This is used to detect if a statement or expression contains
+    any form of indirection (@), which requires runtime scope.
+
+    Args:
+        node: Any ASG node to check
+
+    Returns:
+        True if any MIndirection is found anywhere in the tree
+    """
+    for expr in walk_expressions(node):
+        if isinstance(expr, MIndirection):
+            return True
+    return False
+
+
 def check_requires_runtime_scope(label: MLabel) -> bool:
     """Check if a label requires runtime scope (static analysis insufficient).
 
     Returns True if the label contains:
     - XECUTE command (executes arbitrary code)
-    - Name indirection (@VAR for variable access)
-    - Argument indirection (D @VAR, G @VAR)
+    - ANY MIndirection node anywhere in expressions
+    - MCall targets with label_is_indirect or routine_is_indirect flags
 
     These patterns defeat static analysis because the affected variables
     cannot be determined until runtime.
 
-    LIMITATION: This is a simplified check that catches the most common
-    patterns but does NOT walk all expressions. The following patterns
-    are NOT detected:
+    This function performs comprehensive detection by walking ALL expressions
+    in the ASG, catching patterns like:
     - S @VAR=expr (SET to indirect variable)
+    - W @VAR (WRITE with indirect variable)
     - $O(@VAR) (indirect variable in function arguments)
-    - General @VAR in arbitrary expression contexts
-
-    A comprehensive check would walk all expressions in the ASG and
-    check for MIndirection nodes, but this would be more expensive.
-    For most practical purposes, the patterns we do check (XECUTE,
-    DO/GOTO indirection, and target indirection) cover the majority
-    of real-world cases where runtime scope is needed.
+    - A(@I) (indirect subscript)
+    - D @VAR, G @VAR (indirect call/goto targets)
 
     Args:
         label: The MLabel to analyze
@@ -789,25 +935,26 @@ def check_requires_runtime_scope(label: MLabel) -> bool:
     Returns:
         True if runtime scope is required
     """
-
     for stmt in label.body.walk_statements():
         # XECUTE defeats static analysis
         if isinstance(stmt, MXecuteStatement):
             return True
 
-        # Check for indirection in DO targets
-        if isinstance(stmt, MDoStatement):
-            for target in stmt.targets:
-                if target.label_is_indirect or target.routine_is_indirect:
-                    return True
-
-        # Check for indirection in GOTO/JOB targets
+        # Check for indirection flags on call targets (D @VAR, G @VAR)
+        # These are set by the semantic analyzer and may not have MIndirection nodes
         if hasattr(stmt, "targets"):
             for target in getattr(stmt, "targets", []):
-                if hasattr(target, "indirection") and target.indirection:
-                    return True
                 if hasattr(target, "label_is_indirect") and target.label_is_indirect:
                     return True
+                if (
+                    hasattr(target, "routine_is_indirect")
+                    and target.routine_is_indirect
+                ):
+                    return True
+
+        # Check ALL expressions in this statement for MIndirection nodes
+        if has_indirection(stmt):
+            return True
 
     return False
 

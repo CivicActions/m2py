@@ -9902,6 +9902,303 @@ is the important semantic for control flow analysis.
 | T90.1 (JobCommand) | 4 hours | HIGH | ✅ Done |
 | T90.2 (ViewStatement cleanup) | 15 min | LOW | ✅ Done |
 | T90.3 (GOTO direction) | 2 hours | LOW | ⏭️ Skipped |
-| T90.4 (Indirection doc) | 30 min | MEDIUM |
+| T90.4 (Indirection doc) | 30 min | MEDIUM | ✅ Done |
 
 **Total**: ~5-7 hours depending on optional tasks
+
+---
+
+## Phase 91: Comprehensive Indirection Detection ✅
+
+**Goal**: Ensure `check_requires_runtime_scope()` detects ALL indirection in a label, not just common patterns
+
+**Status**: COMPLETE - Comprehensive detection implemented
+
+**Priority**: HIGH - Missed indirection causes **incorrect** Python code generation
+
+### Problem Statement
+
+The current `check_requires_runtime_scope()` function only checks for:
+- XECUTE commands
+- DO target indirection (`D @VAR`)
+- Targets with `.indirection` attribute
+
+It **misses** indirection anywhere else in expressions:
+- `S @VAR=expr` - SET to indirect variable
+- `W @VAR` - WRITE with indirect variable
+- `R @VAR` - READ into indirect variable
+- `$O(@VAR)` - Indirect variable in function arguments
+- `I @FLAG` - Indirect variable in conditions
+- Any `@` in arbitrary expression contexts
+
+**Impact**: Code incorrectly marked `requires_runtime_scope=False` will generate **wrong Python**:
+```mumps
+S X="RESULT"
+S @X=42        ; Should set RESULT=42
+```
+
+With missed detection, codegen might generate:
+```python
+# WRONG - static generation attempted
+x = "RESULT"
+# ... missing the indirect SET entirely or generating wrong code
+```
+
+Instead of correct runtime-based generation:
+```python
+# CORRECT - runtime scope used
+x = "RESULT"
+runtime.set_var(runtime.get_var("x"), 42)  # Resolves to RESULT=42
+```
+
+### Design: Option A - Expression Walker
+
+**Approach**: Add a recursive expression walker that finds any `MIndirection` node in the ASG.
+
+**Why Option A**:
+- Simplest and most correct implementation
+- Easy to test and debug
+- Performance can be optimized later if needed (Option B)
+- Clear separation of concerns
+
+**Architecture**:
+
+```
+check_requires_runtime_scope(label)
+    │
+    ├── Check for XECUTE (existing)
+    │
+    └── For each statement:
+            │
+            └── walk_expressions(stmt) 
+                    │
+                    └── Recursively visit all expression fields
+                            │
+                            └── Return True if any MIndirection found
+```
+
+### Implementation Details
+
+#### T91.1 Add `walk_expressions()` Helper Function
+
+Add to `src/m2py/analysis/variables.py`:
+
+```python
+def walk_expressions(node: Any) -> Iterator[MExpr]:
+    """Recursively yield all expressions in an ASG node.
+    
+    Walks through all expression-containing fields in statements
+    and expressions, yielding each MExpr encountered.
+    
+    Args:
+        node: Any ASG node (statement, expression, or container)
+        
+    Yields:
+        All MExpr nodes found recursively
+    """
+```
+
+**Fields to walk** (from statement types):
+- `condition`, `postcondition` - IF, command postconditions
+- `value`, `expression` - SET values, QUIT values
+- `arguments` - WRITE, function calls
+- `targets` - DO, GOTO, READ, KILL, NEW
+- `assignments` - SET statement (walk both `.target` and `.value`)
+- `subscripts` - Variable/global subscripts
+- `left`, `right`, `operand` - Binary/unary operations
+- `timeout`, `parameters` - READ, JOB, LOCK
+
+**Expression types to recurse into**:
+- `MBinaryOp`: left, right
+- `MUnaryOp`: operand
+- `MVariable`, `MGlobal`: subscripts
+- `MIntrinsicFunction`, `MExtrinsicFunction`: arguments
+- `MIndirection`: expression, subscripts, name_indirection_subscripts
+- `MPatternMatch`: expression, pattern
+- `MActualParameter`: expression
+- Lists: iterate and recurse
+
+#### T91.2 Add `has_indirection()` Helper Function
+
+```python
+def has_indirection(node: Any) -> bool:
+    """Check if any MIndirection node exists in the expression tree.
+    
+    Args:
+        node: Any ASG node to check
+        
+    Returns:
+        True if any MIndirection is found anywhere in the tree
+    """
+    for expr in walk_expressions(node):
+        if isinstance(expr, MIndirection):
+            return True
+    return False
+```
+
+#### T91.3 Update `check_requires_runtime_scope()`
+
+Replace the current simplified check with comprehensive detection:
+
+```python
+def check_requires_runtime_scope(label: MLabel) -> bool:
+    """Check if a label requires runtime scope.
+    
+    Returns True if the label contains ANY of:
+    - XECUTE command (executes arbitrary code)
+    - MIndirection node anywhere in expressions
+    
+    These patterns defeat static analysis because the affected
+    variables cannot be determined until runtime.
+    """
+    for stmt in label.body.walk_statements():
+        # XECUTE always requires runtime
+        if isinstance(stmt, MXecuteStatement):
+            return True
+        
+        # Check ALL expressions in this statement for indirection
+        if has_indirection(stmt):
+            return True
+    
+    return False
+```
+
+#### T91.4 Add Unit Tests
+
+Create `tests/unit/test_indirection_detection.py`:
+
+```python
+class TestHasIndirection:
+    """Test has_indirection() helper function."""
+    
+    def test_simple_set_no_indirection(self):
+        """S X=1 has no indirection."""
+        
+    def test_set_with_indirect_target(self):
+        """S @X=1 has indirection in target."""
+        
+    def test_set_with_indirect_value(self):
+        """S Y=@X has indirection in value."""
+        
+    def test_write_with_indirection(self):
+        """W @X has indirection."""
+        
+    def test_read_with_indirection(self):
+        """R @X has indirection."""
+        
+    def test_function_arg_with_indirection(self):
+        """$O(@X) has indirection in argument."""
+        
+    def test_subscript_with_indirection(self):
+        """A(@I) has indirection in subscript."""
+        
+    def test_nested_indirection(self):
+        """$P(A(@I),",",1) has nested indirection."""
+        
+    def test_condition_with_indirection(self):
+        """I @FLAG has indirection in condition."""
+
+
+class TestCheckRequiresRuntimeScope:
+    """Test updated check_requires_runtime_scope()."""
+    
+    def test_xecute_requires_runtime(self):
+        """XECUTE always requires runtime."""
+        
+    def test_do_indirection_requires_runtime(self):
+        """D @VAR requires runtime."""
+        
+    def test_set_indirection_requires_runtime(self):
+        """S @VAR=1 requires runtime (was previously missed!)."""
+        
+    def test_function_indirection_requires_runtime(self):
+        """$O(@VAR) requires runtime (was previously missed!)."""
+        
+    def test_no_indirection_static_ok(self):
+        """S X=1 W X does not require runtime."""
+```
+
+#### T91.5 Update Documentation
+
+Update docstring in `check_requires_runtime_scope()` to reflect comprehensive detection.
+
+Update `docs/analysis/variable_analysis.md` if it references the limitation.
+
+### Test Data
+
+**MUMPS code that should trigger `requires_runtime_scope=True`:**
+
+```mumps
+; Case 1: Indirect SET target
+TEST1
+ S X="RESULT"
+ S @X=42
+ Q
+
+; Case 2: Indirect value
+TEST2
+ S X="SOURCE"
+ S Y=@X
+ Q
+
+; Case 3: Indirect in function
+TEST3
+ S X="^DATA"
+ S Y=$O(@X)
+ Q
+
+; Case 4: Indirect subscript
+TEST4
+ S I=1
+ S A(@I)=5
+ Q
+
+; Case 5: Nested indirection
+TEST5
+ S REF="A(1)"
+ S @REF@(2)=3
+ Q
+
+; Case 6: Indirect condition
+TEST6
+ S FLAG="X"
+ I @FLAG W "yes"
+ Q
+
+; Case 7: No indirection (should be False)
+STATIC
+ S X=1
+ W X
+ Q
+```
+
+### Performance Consideration
+
+The expression walker adds O(expressions) work per label. This runs once during analysis, not at runtime.
+
+**If performance becomes an issue** (test with VistA codebase):
+- Migrate to Option B: Set flag during `SemanticAnalyzer.analyze()` pass
+- Zero additional traversal - just track when MIndirection is created
+- Can be done as a follow-up optimization
+
+### Tasks
+
+- [X] T91.1 Add `walk_expressions()` generator function to variables.py
+- [X] T91.2 Add `has_indirection()` helper function to variables.py
+- [X] T91.3 Update `check_requires_runtime_scope()` to use comprehensive detection
+- [X] T91.4 Add unit tests for indirection detection in test_indirection_detection.py (35 tests)
+- [X] T91.5 Update documentation (docstrings, variable_analysis.md)
+- [X] T91.6 Run full test suite - all 1075 tests pass
+
+### Phase 91 Effort Estimate
+
+| Task | Effort | Priority | Status |
+|------|--------|----------|--------|
+| T91.1 walk_expressions() | 1 hour | HIGH | ✅ Done |
+| T91.2 has_indirection() | 15 min | HIGH | ✅ Done |
+| T91.3 Update check function | 30 min | HIGH | ✅ Done |
+| T91.4 Unit tests | 1.5 hours | HIGH | ✅ Done |
+| T91.5 Documentation | 15 min | MEDIUM | ✅ Done |
+| T91.6 Test verification | 5 min | HIGH | ✅ Done |
+
+**Total**: ~4 hours

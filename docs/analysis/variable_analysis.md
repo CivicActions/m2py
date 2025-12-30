@@ -115,7 +115,16 @@ class FunctionSignature:
 
 **requires_runtime_scope**: Set to True when a label contains:
 - XECUTE statements (executes arbitrary code at runtime)
-- Indirected DO/GOTO targets (D @VAR, G @VAR)
+- ANY MIndirection node anywhere in expressions:
+  - `S @VAR=expr` (SET to indirect variable)
+  - `W @VAR` (WRITE with indirect variable)
+  - `$O(@VAR)` (indirect in function arguments)
+  - `A(@I)` (indirect subscripts)
+  - `D @VAR`, `G @VAR` (indirect DO/GOTO targets)
+  - Pattern indirection (`X?@PAT`)
+
+The detection is comprehensive - it walks ALL expressions in the ASG
+to find any MIndirection nodes, ensuring no indirection is missed.
 
 When True, static analysis is insufficient - the code generator must include runtime scope support.
 
