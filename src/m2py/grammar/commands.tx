@@ -79,8 +79,9 @@ ParenTargets:
 // NakedGlobal MUST come before GlobalVariable since both start with ^
 // NakedGlobal is ^(...) while GlobalVariable is ^name(...)
 // IntrinsicFunction supports left-hand $PIECE: $P(var,"^")="value"
+// SpecialVariable allows SET $X=0, SET $Y=10 (assignable ISVs)
 SingleTarget:
-    NakedGlobal | GlobalVariable | LocalVariable | Indirection | IntrinsicFunction
+    NakedGlobal | GlobalVariable | SpecialVariable | LocalVariable | Indirection | IntrinsicFunction
 ;
 
 // =============================================================================
@@ -524,22 +525,26 @@ OpenCommand:
     /[Oo]([Pp][Ee][Nn])?/ postcond=Postcondition? WS args+=OpenArg[/,/]
 ;
 
-// Open argument: device with optional parameters and timeout
+// Open argument: device with optional parameters, timeout, and mnemonicspec
+// Per MUMPS 1995 spec 8.2.15: OPEN devicespecification::timeout:mnemonicspec
 // Supports:
 //   X - device only
 //   X:timeout - device with timeout
 //   X:(params) - device with parameters
 //   X:(params):timeout - device with parameters and timeout
+//   X:(params):timeout:mnemonic - full 4-argument form
 //   X::timeout - device with empty params and timeout (double colon)
+//   X::timeout:mnemonic - empty params with timeout and mnemonic
+//   X:::mnemonic - device with mnemonic only
 OpenArg:
     device=Expr (
         ':' (
             // Parenthesized parameters: :(param:param:...):
-            '(' params+=Expr[':'] ')' (':' timeout=Expr)? |
-            // Empty params with timeout: ::timeout (double colon)
-            ':' timeout=Expr |
-            // Simple timeout: :timeout
-            timeout=Expr
+            '(' params+=Expr[':'] ')' (':' timeout=Expr? (':' mnemonic=Expr)?)? |
+            // Empty params with timeout and optional mnemonic: ::timeout:mnemonic
+            ':' timeout=Expr? (':' mnemonic=Expr)? |
+            // Simple timeout with optional mnemonic: :timeout:mnemonic
+            timeout=Expr (':' mnemonic=Expr)?
         )
     )?
 ;
@@ -601,8 +606,9 @@ TStartCommand:
 ;
 
 // TSTART restart argument: * or (varlist)
+// Per MUMPS 1995 spec 8.2.22, empty () means "restart all local variables"
 TStartRestartArg:
-    all='*' | '(' vars+=VARNAME[','] ')'
+    all='*' | '(' vars*=VARNAME[','] ')'
 ;
 
 // TSTART parameters: S[ERIAL], T[RANSACTIONID]=expr, or Z-prefixed

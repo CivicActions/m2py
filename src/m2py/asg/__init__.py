@@ -66,6 +66,7 @@ from m2py.asg.expressions import (
     MPatternMatch,
     MIndirection,
     MSpecialVariable,
+    MStructuredSystemVariable,
     MFormatControl,
     MActualParameter,
 )
@@ -138,6 +139,7 @@ __all__ = [
     "MPatternMatch",
     "MIndirection",
     "MSpecialVariable",
+    "MStructuredSystemVariable",
     "MFormatControl",
     "MActualParameter",
 ]

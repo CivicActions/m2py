@@ -211,6 +211,67 @@ Subscripts:
 ;
 ```
 
+### Intrinsic Special Variables (ISVs)
+
+MUMPS provides built-in special variables accessed with `$NAME` syntax:
+
+```textx
+SpecialVariable:
+    '$' name=SVARNAME
+;
+
+// ISV names ordered for longest-match-first (critical for PEG parsing)
+SVARNAME:
+    /[Pp][Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|...|[Xx]|[Yy]/
+;
+```
+
+**Longest-Match-First Rule**: The `SVARNAME` regex lists patterns from longest to shortest:
+- `PIOREFERENCE` before `IO` (prevents partial match)
+- `IOREFERENCE` before `IO`
+- `PRINCIPAL` before `P`
+
+**Common ISVs**:
+| ISV | Description | Assignable |
+|-----|-------------|------------|
+| `$HOROLOG` | Current date/time | No |
+| `$IO` | Current I/O device | No |
+| `$JOB` | Process ID | No |
+| `$PRINCIPAL` | Principal I/O device | No |
+| `$TEST` | IF condition result | No |
+| `$X` | Cursor column position | Yes |
+| `$Y` | Cursor row position | Yes |
+
+**Assignable ISVs**: Some ISVs like `$X` and `$Y` can appear on the left side of SET:
+```mumps
+S $X=0,$Y=0  ; Reset cursor position
+```
+
+### Structured System Variables (SSVs)
+
+SSVs provide subscripted access to system information via `^$NAME` syntax:
+
+```textx
+StructuredSystemVariable:
+    '^$' name=SSVNAME subscripts=Subscripts?
+;
+
+// SSV names
+SSVNAME:
+    /[Jj][Oo][Bb]|[Ll][Oo][Cc][Kk]|[Rr][Oo][Uu][Tt][Ii][Nn][Ee]|.../
+;
+```
+
+**Common SSVs**:
+| SSV | Description | Example |
+|-----|-------------|---------|
+| `^$JOB` | Process information | `^$JOB($JOB,"NAME")` |
+| `^$LOCK` | Lock table | `^$LOCK(name)` |
+| `^$ROUTINE` | Routine information | `^$ROUTINE("TEST")` |
+| `^$GLOBAL` | Global directory | `^$GLOBAL("^DATA")` |
+| `^$DEVICE` | Device information | `^$DEVICE(device)` |
+| `^$SYSTEM` | System information | `^$SYSTEM("VERSION")` |
+
 ### Intrinsic Functions
 
 ```textx

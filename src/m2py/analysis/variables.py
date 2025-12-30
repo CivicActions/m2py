@@ -560,6 +560,7 @@ def _extract_expression_variables(expr) -> Set[str]:
         MIntrinsicFunction,
         MExtrinsicFunction,
         MSpecialVariable,
+        MStructuredSystemVariable,
         MActualParameter,
         MSelectArg,
         MPatternMatch,
@@ -609,6 +610,13 @@ def _extract_expression_variables(expr) -> Set[str]:
     # MSpecialVariable - no variable references (these are $TEST, $HOROLOG, etc.)
     elif isinstance(expr, MSpecialVariable):
         pass
+
+    # MStructuredSystemVariable - extract variables from subscripts
+    # These are ^$DEVICE, ^$JOB etc (system introspection SSVNs)
+    elif isinstance(expr, MStructuredSystemVariable):
+        if expr.subscripts:
+            for sub in expr.subscripts:
+                vars_found.update(_extract_expression_variables(sub))
 
     # MActualParameter - extract variables from the expression field
     elif isinstance(expr, MActualParameter):

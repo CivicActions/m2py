@@ -400,6 +400,40 @@ $STORAGE     ; Available storage
 | `$X`, `$Y` | Cursor position | State variables |
 | `$PIECE` | Last $PIECE | Not commonly used |
 
+**Assignable ISVs**: Some special variables can be assigned (e.g., `S $X=0` to reset cursor column). These are SET targets in addition to read expressions.
+
+### MStructuredSystemVariable
+
+Structured System Variables (SSVNs) for system introspection:
+
+```mumps
+^$DEVICE           ; Device information
+^$JOB(pid)         ; Job information
+^$GLOBAL("NAME")   ; Global metadata
+^$ROUTINE("ROUT")  ; Routine information
+^$SYSTEM           ; System information
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | SSV name (without `^$`) |
+| `subscripts` | `List[MExpr]` | Subscript arguments |
+
+**Per MUMPS 1995 spec 7.1.4.12**, SSVNs provide system introspection:
+
+| SSVN | Description | Subscript |
+|------|-------------|-----------|
+| `^$CHARACTER` | Character set information | Set number |
+| `^$DEVICE` | Device characteristics | Device name |
+| `^$EVENT` | Event information | Event class |
+| `^$GLOBAL` | Global directory info | Global name |
+| `^$JOB` | Job/process information | Job number |
+| `^$LOCK` | Lock information | Lock name |
+| `^$ROUTINE` | Routine information | Routine name |
+| `^$SYSTEM` | System information | System ID |
+
+**Code Generation**: Requires runtime system introspection support.
+
 ---
 
 ## Parameter Passing
@@ -440,7 +474,7 @@ D SUB(,Y)     ; First is OMITTED
 | Category | Types |
 |----------|-------|
 | Literals | `MLiteral` |
-| Variables | `MVariable`, `MGlobal`, `MNakedGlobal` |
+| Variables | `MVariable`, `MGlobal`, `MNakedGlobal`, `MStructuredSystemVariable` |
 | Operations | `MBinaryOp`, `MUnaryOp` |
 | Functions | `MIntrinsicFunction`, `MExtrinsicFunction` |
 | Special | `MPatternMatch`, `MIndirection`, `MFormatControl`, `MSpecialVariable` |

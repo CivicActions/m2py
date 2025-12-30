@@ -293,6 +293,25 @@ class MSpecialVariable(MExpr):
     name: str = ""  # Variable name without $
 
 
+@dataclass
+class MStructuredSystemVariable(MExpr):
+    """Structured system variable reference.
+
+    Represents SSVNs per MUMPS 1995 spec 7.1.4.12:
+    ^$CHARACTER, ^$DEVICE, ^$EVENT, ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE, ^$SYSTEM
+
+    These provide system introspection capabilities:
+    - ^$JOB(pid) - Job information
+    - ^$DEVICE(dev) - Device characteristics
+    - ^$GLOBAL(name) - Global metadata
+    - ^$ROUTINE(name) - Routine information
+    - ^$SYSTEM(id) - System information
+    """
+
+    name: str = ""  # SSV name without ^$
+    subscripts: list["MExpr"] = field(default_factory=list)
+
+
 # =============================================================================
 # Parameter Passing Support
 # =============================================================================

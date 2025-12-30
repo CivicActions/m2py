@@ -24,6 +24,7 @@ from m2py.asg.expressions import (
     MIntrinsicFunction,
     MExtrinsicFunction,
     MSpecialVariable,
+    MStructuredSystemVariable,
     MIndirection,
     MSelectArg,
 )
@@ -277,6 +278,21 @@ class SpecialVariable(MSpecialVariable):
         object.__setattr__(self, "result_type", None)
 
 
+class StructuredSystemVariable(MStructuredSystemVariable):
+    """textX custom class for StructuredSystemVariable grammar rule.
+
+    Grammar: StructuredSystemVariable: '^$' name=SSVNAME subscripts=Subscripts?;
+
+    Represents Structured System Variables (SSVNs) per MUMPS 1995 spec 7.1.4.12:
+    ^$CHARACTER, ^$DEVICE, ^$EVENT, ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE, ^$SYSTEM
+    """
+
+    def __init__(self, parent=None, name: str = "", subscripts=None):
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
+        object.__setattr__(self, "result_type", None)
+
+
 class IntrinsicFunction(MIntrinsicFunction):
     """textX custom class for IntrinsicFunction grammar rule.
 
@@ -413,6 +429,7 @@ EXPRESSION_CLASSES = [
     GlobalVariable,
     NakedGlobal,
     SpecialVariable,
+    StructuredSystemVariable,
     SelectFunction,
     IntrinsicFunction,
     IntrinsicFunctionNoArgs,

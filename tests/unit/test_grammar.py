@@ -917,3 +917,333 @@ class TestDoIndirectionGrammar:
         label = routine.labels[0]
         assert len(label.body.statements) == 1
         assert label.body.statements[0].__class__.__name__ == "MDoStatement"
+
+
+# =============================================================================
+# Phase 97: Grammar Gap Fixes (T97.4-T97.8)
+# =============================================================================
+
+
+class TestSetSpecialVariableGrammar:
+    """Test SET command with special variables (T97.4).
+
+    Per MUMPS 1995 spec 8.2.18, SET can assign to special variables
+    like $X and $Y (cursor position). Not all ISVs are assignable,
+    but the parser should accept the syntax.
+    """
+
+    def test_set_special_variable_x(self):
+        """SET $X=0 should parse - sets cursor column to 0."""
+        parser = MUMPSParser()
+        source = "LABEL\tS $X=0\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        stmt = label.body.statements[0]
+        assert stmt.__class__.__name__ == "MSetStatement"
+
+    def test_set_special_variable_y(self):
+        """SET $Y=10 should parse - sets cursor row to 10."""
+        parser = MUMPSParser()
+        source = "LABEL\tS $Y=10\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+
+    def test_set_special_variable_mixed(self):
+        """SET with multiple targets including special variables."""
+        parser = MUMPSParser()
+        source = "LABEL\tS X=1,$X=0,Y=2\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+
+    def test_set_special_variable_expression(self):
+        """SET $X=LEN+1 should parse - expression on right side."""
+        parser = MUMPSParser()
+        source = "LABEL\tS $X=LEN+1\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+
+
+class TestTStartEmptyRestartGrammar:
+    """Test TSTART with empty restart argument (T97.5).
+
+    Per MUMPS 1995 spec 8.2.22, TSTART () means "restart all local
+    variables" - equivalent to TSTART *.
+    """
+
+    def test_tstart_empty_parens(self):
+        """TSTART () should parse - restart all locals."""
+        parser = MUMPSParser()
+        source = "LABEL\tTS ()\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        stmt = label.body.statements[0]
+        assert stmt.__class__.__name__ == "MTStartStatement"
+
+    def test_tstart_empty_parens_with_serial(self):
+        """TSTART ():S should parse - restart all, serial mode.
+
+        Note: This test verifies parsing only; the TStartParam semantic
+        analysis is a separate concern (semantic analyzer handles parameters).
+        """
+        from m2py.parser import parse_line_content
+
+        # Test at grammar level without full semantic analysis
+        result = parse_line_content(" TS ():S", 1)
+        assert result is not None
+        # The command parsed successfully
+
+    def test_tstart_star_still_works(self):
+        """TSTART * should still parse - restart all (explicit)."""
+        parser = MUMPSParser()
+        source = "LABEL\tTS *\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+
+    def test_tstart_varlist_still_works(self):
+        """TSTART (A,B,C) should still parse - named vars."""
+        parser = MUMPSParser()
+        source = "LABEL\tTS (A,B,C)\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+
+
+class TestIORefSpecialVariableGrammar:
+    """Test $IOREFERENCE and related long ISV names (T97.6).
+
+    Per MUMPS 1995 spec 7.1.4.10.7, $IOREFERENCE tracks the current
+    I/O device. The grammar must match the full name, not just $IO.
+    """
+
+    def test_ioreference_full(self):
+        """$IOREFERENCE should parse as single special variable."""
+        from m2py.asg import MSpecialVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW $IOREFERENCE\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        # Should have exactly one WRITE argument
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MSpecialVariable)
+        assert arg.name.upper() == "IOREFERENCE"
+
+    def test_ioreference_abbreviated(self):
+        """$IOR should parse as IOREFERENCE."""
+        from m2py.asg import MSpecialVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW $IOR\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MSpecialVariable)
+        # IOR is the abbreviated form
+        assert arg.name.upper() == "IOR"
+
+    def test_pioreference_full(self):
+        """$PIOREFERENCE should parse as single special variable."""
+        from m2py.asg import MSpecialVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW $PIOREFERENCE\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MSpecialVariable)
+        assert arg.name.upper() == "PIOREFERENCE"
+
+    def test_io_still_works(self):
+        """$IO should still parse correctly."""
+        from m2py.asg import MSpecialVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW $IO\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MSpecialVariable)
+        assert arg.name.upper() == "IO"
+
+
+class TestStructuredSystemVariableGrammar:
+    """Test Structured System Variables (SSVs) parsing (T97.8).
+
+    Per MUMPS 1995 spec 7.1.4.12, SSVNs use ^$ prefix:
+    ^$CHARACTER, ^$DEVICE, ^$EVENT, ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE, ^$SYSTEM
+    """
+
+    def test_ssv_device(self):
+        """^$DEVICE should parse as SSV."""
+        from m2py.asg import MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$DEVICE\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "DEVICE"
+
+    def test_ssv_job_with_subscript(self):
+        """^$JOB(pid) should parse as SSV with subscript."""
+        from m2py.asg import MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$JOB(PID)\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "JOB"
+        assert len(arg.subscripts) == 1
+
+    def test_ssv_global_with_name(self):
+        """^$GLOBAL("MYDATA") should parse."""
+        from m2py.asg import MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = 'LABEL\tW ^$GLOBAL("MYDATA")\n'
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "GLOBAL"
+
+    def test_ssv_routine_with_name(self):
+        """^$ROUTINE("TEST") should parse."""
+        from m2py.asg import MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = 'LABEL\tW ^$ROUTINE("TEST")\n'
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "ROUTINE"
+
+    def test_ssv_system(self):
+        """^$SYSTEM should parse."""
+        from m2py.asg import MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$SYSTEM\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "SYSTEM"
+
+    def test_ssv_abbreviated_d(self):
+        """^$D should parse as abbreviated DEVICE."""
+        from m2py.asg import MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$D\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        # Single letter D is the abbreviation
+        assert arg.name.upper() == "D"
+
+    def test_ssv_abbreviated_j_with_subscript(self):
+        """^$J(1) should parse as abbreviated JOB."""
+        from m2py.asg import MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$J(1)\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "J"
+
+
+class TestOpenMnemonicGrammar:
+    """Test OPEN with 4th mnemonic argument (T97.9).
+
+    Per MUMPS 1995 spec 8.2.15: OPEN dev:params:timeout:mnemonicspec
+    """
+
+    def test_open_with_mnemonic(self):
+        """OPEN DEV:(params):10:MNEMONIC should parse."""
+        parser = MUMPSParser()
+        source = "LABEL\tO DEV:(PARAMS):10:MNE\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+
+    def test_open_empty_params_with_mnemonic(self):
+        """OPEN DEV::10:MNEMONIC should parse."""
+        parser = MUMPSParser()
+        source = "LABEL\tO DEV::10:MNE\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+
+    def test_open_mnemonic_only(self):
+        """OPEN DEV:::MNEMONIC should parse."""
+        parser = MUMPSParser()
+        source = "LABEL\tO DEV:::MNE\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+
+    def test_open_without_mnemonic_still_works(self):
+        """OPEN DEV:(params):10 should still work."""
+        parser = MUMPSParser()
+        source = "LABEL\tO DEV:(PARAMS):10\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
