@@ -460,9 +460,12 @@ class MViewStatement(MStatement):
 
     Access to implementation-specific features:
     V expr, VIEW expr
+
+    Per MUMPS 1995 MDC spec section 8.2.24, VIEW is "arguments unspecified"
+    meaning the exact syntax is implementation-defined. We capture all
+    arguments as a generic list.
     """
 
-    keyword: Optional["MExpr"] = None
     arguments: List["MExpr"] = field(default_factory=list)
 
 

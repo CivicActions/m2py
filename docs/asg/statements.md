@@ -473,7 +473,7 @@ L ^GLOBAL:5       ; With timeout
 
 ### MViewStatement
 
-Implementation-specific:
+Implementation-specific per MUMPS 1995 MDC spec section 8.2.24:
 
 ```mumps
 V "STATUS"
@@ -482,8 +482,7 @@ VIEW expr
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `keyword` | `Optional[MExpr]` | View keyword |
-| `arguments` | `List[MExpr]` | Additional args |
+| `arguments` | `List[MExpr]` | View arguments (implementation-specific) |
 
 ### I/O Device Statements
 

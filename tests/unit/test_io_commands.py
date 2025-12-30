@@ -411,3 +411,114 @@ class TestJobIndirection:
         assert hasattr(do_stmt, "targets")
         assert len(job_stmt.targets) == 1
         assert len(do_stmt.targets) == 1
+
+
+class TestJobTimeoutAndProcessParameters:
+    """Tests for JOB command timeout and processparameters syntax.
+
+    Phase 90: Added support for full JOB syntax per MUMPS 1995 MDC 8.2.10:
+    J label^routine(actuallist):(processparameters):timeout
+
+    VistA Examples:
+    - J ^XMRONT::5                     - routine with timeout only
+    - J START^XWBVLL(PORT)::5          - routine with args and timeout
+    - J CHILDONT^%ZISTCPS(NIO,RTN):(:16::):10  - full syntax
+    """
+
+    def test_job_with_timeout_only(self):
+        """JOB with timeout only (::timeout syntax)."""
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n J ^XMRONT::5\n")
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].routine == "XMRONT"
+        # Timeout should be populated
+        assert stmt.timeout is not None
+        assert stmt.timeout.value == 5
+        # No processparameters
+        assert stmt.parameters == []
+
+    def test_job_with_routine_args_and_timeout(self):
+        """JOB with actuallist and timeout: J START^ROUTINE(PORT)::5"""
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n J START^XWBVLL(PORT)::5\n")
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        assert len(stmt.targets) == 1
+        call = stmt.targets[0]
+        assert call.name == "START"
+        assert call.routine == "XWBVLL"
+        # Should have arguments (actuallist) - wrapped in MActualParameter
+        assert len(call.arguments) == 1
+        # Access the actual expression via .expression
+        assert call.arguments[0].expression.name == "PORT"
+        # Timeout should be populated
+        assert stmt.timeout is not None
+        assert stmt.timeout.value == 5
+        # No processparameters
+        assert stmt.parameters == []
+
+    def test_job_with_processparams_only(self):
+        """JOB with processparameters but no timeout."""
+        from m2py.asg.expressions import MBinaryOp
+
+        parser = MUMPSParser()
+        routine = parser.parse('TEST\n J LABEL:(IN="/dev/null":OUT="/dev/null")\n')
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+        # Should have processparameters - these are expressions like IN="/dev/null"
+        assert len(stmt.parameters) == 2
+        # Processparams are key=value expressions (MBinaryOp with = operator)
+        assert isinstance(stmt.parameters[0], MBinaryOp)
+        assert stmt.parameters[0].operator == "="
+        # No timeout
+        assert stmt.timeout is None
+
+    def test_job_with_processparams_and_timeout(self):
+        """JOB with both processparameters and timeout."""
+        parser = MUMPSParser()
+        # Simpler pattern that our grammar supports (no empty slots)
+        routine = parser.parse("TEST\n J CHILDONT^ZISTCPS(NIO,RTN):(16:32:64):10\n")
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        assert len(stmt.targets) == 1
+        call = stmt.targets[0]
+        assert call.name == "CHILDONT"
+        assert call.routine == "ZISTCPS"
+        # Should have arguments (actuallist)
+        assert len(call.arguments) == 2
+        # Should have processparameters
+        assert len(stmt.parameters) == 3
+        # Timeout should be populated
+        assert stmt.timeout is not None
+        assert stmt.timeout.value == 10
+
+    def test_job_simple_label_with_timeout(self):
+        """JOB with simple label and timeout: J LABEL::5"""
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n J LABEL::5\n")
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+        # Timeout should be populated
+        assert stmt.timeout is not None
+        assert stmt.timeout.value == 5

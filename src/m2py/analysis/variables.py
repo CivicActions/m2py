@@ -770,6 +770,19 @@ def check_requires_runtime_scope(label: MLabel) -> bool:
     These patterns defeat static analysis because the affected variables
     cannot be determined until runtime.
 
+    LIMITATION: This is a simplified check that catches the most common
+    patterns but does NOT walk all expressions. The following patterns
+    are NOT detected:
+    - S @VAR=expr (SET to indirect variable)
+    - $O(@VAR) (indirect variable in function arguments)
+    - General @VAR in arbitrary expression contexts
+
+    A comprehensive check would walk all expressions in the ASG and
+    check for MIndirection nodes, but this would be more expensive.
+    For most practical purposes, the patterns we do check (XECUTE,
+    DO/GOTO indirection, and target indirection) cover the majority
+    of real-world cases where runtime scope is needed.
+
     Args:
         label: The MLabel to analyze
 
@@ -788,11 +801,12 @@ def check_requires_runtime_scope(label: MLabel) -> bool:
                 if target.label_is_indirect or target.routine_is_indirect:
                     return True
 
-        # Check for indirection in expressions (name indirection)
-        # This is a simplified check - a full check would walk all expressions
+        # Check for indirection in GOTO/JOB targets
         if hasattr(stmt, "targets"):
             for target in getattr(stmt, "targets", []):
                 if hasattr(target, "indirection") and target.indirection:
+                    return True
+                if hasattr(target, "label_is_indirect") and target.label_is_indirect:
                     return True
 
     return False

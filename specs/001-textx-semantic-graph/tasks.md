@@ -9791,3 +9791,117 @@ Regex: [!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]
 
 **Total Phase 89 Effort**: ~3.5 hours
 | **Total** | **~11 hours** | **1.5 days** |
+
+---
+
+## Phase 90: Code Review - Validated Findings (December 2025) ✅
+
+**Goal**: Address validated findings from comprehensive py/tx file review
+
+**Status**: COMPLETE - All high-priority items implemented
+
+**Review Scope**: Consistency, correctness, and completion of parser/ASG implementation
+
+### Summary
+
+| # | Finding | Status | Priority |
+|---|---------|--------|----------|
+| 1 | JobCommand missing timeout/processparameters | ✅ Implemented | HIGH |
+| 2 | MViewStatement.keyword unused | ✅ Removed | LOW |
+| 3 | Intra-label GOTO defaults to FORWARD_JUMP | ⏭️ Skipped | LOW |
+| 4 | Simplified indirection check | ✅ Documented | MEDIUM |
+| 5-9 | Various | Intentional Design / No Action | N/A |
+
+---
+
+### T90.1 JobCommand Grammar Missing Timeout/Processparameters ✅ COMPLETE
+
+**Status**: Implemented
+
+**What was done**:
+- Added `JobTarget` grammar rule in commands.tx extending DoTarget with:
+  - Optional processparameters: `':' '(' processparams+=Expr[/:/]? ')'`
+  - Optional timeout: `':' timeout=Expr` or `'::' timeout=Expr`
+- Updated `_analyze_JobCommand` in semantic_analyzer.py to populate `stmt.parameters` and `stmt.timeout`
+- Added 5 unit tests in `tests/unit/test_io_commands.py`:
+  - test_job_with_timeout_only
+  - test_job_with_routine_args_and_timeout
+  - test_job_with_processparams_only
+  - test_job_with_processparams_and_timeout
+  - test_job_simple_label_with_timeout
+
+**Tasks**:
+- [X] T90.1.1 Create new grammar rule `JobTarget` in commands.tx
+- [X] T90.1.2 Update `_analyze_JobCommand` in semantic_analyzer.py
+- [X] T90.1.3 Add unit tests for JOB timeout syntax (`J LABEL::5`)
+- [X] T90.1.4 Add unit tests for JOB processparameters syntax (`J LABEL:(params):timeout`)
+- [X] T90.1.5 Add integration test parsing VistA JOB patterns
+
+---
+
+### T90.2 MViewStatement.keyword Field Unused ✅ COMPLETE
+
+**Status**: Removed
+
+**What was done**:
+- Removed `keyword` field from `MViewStatement` in statements.py
+- Updated docs/asg/statements.md to remove keyword references
+- Updated docs/asg/index.md to correct field list
+
+**Tasks**:
+- [X] T90.2.1 Remove `keyword` field from `MViewStatement` in statements.py
+- [X] T90.2.2 Update docs/asg/statements.md and docs/asg/index.md
+
+---
+
+### T90.3 Intra-Label GOTO Direction ⏭️ SKIPPED
+
+**Status**: Skipped - Low priority, current default is sufficient
+
+**Reason**: The current default (FORWARD_JUMP) works for codegen since `is_cross_label=False` 
+is the important semantic for control flow analysis.
+
+**Tasks** (not implemented):
+- [ ] T90.3.1 Populate `stmt.line_number` in semantic analyzer using textX position info
+- [ ] T90.3.2 Compare source line_number vs target line for intra-label GOTOs
+- [ ] T90.3.3 Set FORWARD_JUMP vs BACKWARD_JUMP based on line comparison
+
+---
+
+### T90.4 Document Simplified Indirection Check ✅ COMPLETE
+
+**Status**: Documented (Option B)
+
+**What was done**:
+- Enhanced docstring of `check_requires_runtime_scope()` in variables.py to:
+  - Document what the check detects: XECUTE, DO/GOTO indirection, target indirection
+  - Document what it misses: S @VAR=expr, $O(@VAR), general @VAR in expressions
+  - Explain the trade-off: Performance vs completeness
+
+**Tasks**:
+- [X] T90.4.2 **Option B**: Document limitation clearly in docstring
+
+---
+
+### Findings Not Requiring Action ✅
+
+| # | Finding | Reason |
+|---|---------|--------|
+| 5 | textX wrapper fallbacks | Intentional defensive coding |
+| 6 | Command vs MStatement naming | Clear layer separation (parse vs semantic) |
+| 7 | Custom classes only for expressions | Intentional architecture decision |
+| 8 | dead_code_analysis string matching | Works correctly for textX objects |
+| 9 | MReadTarget edge cases | False positive - fully implemented |
+
+---
+
+### Phase 90 Completed ✅
+
+| Task | Effort | Priority | Status |
+|------|--------|----------|--------|
+| T90.1 (JobCommand) | 4 hours | HIGH | ✅ Done |
+| T90.2 (ViewStatement cleanup) | 15 min | LOW | ✅ Done |
+| T90.3 (GOTO direction) | 2 hours | LOW | ⏭️ Skipped |
+| T90.4 (Indirection doc) | 30 min | MEDIUM |
+
+**Total**: ~5-7 hours depending on optional tasks

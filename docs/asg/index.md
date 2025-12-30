@@ -118,7 +118,7 @@ Other:
 ├── MBreakStatement
 ├── MXecuteStatement (code_expressions)
 ├── MLockStatement   (targets, lock_type, timeout)
-├── MViewStatement   (keyword, arguments)
+├── MViewStatement   (arguments)
 ├── MOpenStatement   (device_expr, parameters, timeout)
 ├── MCloseStatement  (device_expr)
 ├── MUseStatement    (device_expr, parameters)

@@ -459,9 +459,42 @@ XecuteArg:
     postcond=Postcondition? expr=Expr
 ;
 
-// JOB command: JOB label
+// JOB command: JOB label:(processparams):timeout
+// Full syntax per MUMPS 1995 MDC 8.2.10:
+//   J label^routine(actuallist):(processparameters):timeout
+// Examples from VistA:
+//   J ^XMRONT::5                     - routine with timeout only
+//   J START^XWBVLL(PORT)::5          - routine with args and timeout
+//   J CHILDONT^%ZISTCPS(NIO,RTN):(:16::):10  - full syntax with processparams
+//   J SSVNJOB1:(IN="/dev/null":OUT="/dev/null") - processparams without timeout
 JobCommand:
-    /[Jj]([Oo][Bb])?/ postcond=Postcondition? WS targets+=DoTarget[/,/]
+    /[Jj]([Oo][Bb])?/ postcond=Postcondition? WS targets+=JobTarget[/,/]
+;
+
+// JOB target: extends DoTarget with optional processparameters and timeout
+// Syntax: label^routine(args):(processparams):timeout
+// - actuallist: passed via DoTarget's args=FunctionArgs
+// - processparameters: implementation-specific (partition size, device settings)
+// - timeout: affects $TEST, optional
+// The :: syntax (empty processparams) is equivalent to :():
+//   J ^XMRONT::5 means J ^XMRONT:():5 (empty processparams, 5 second timeout)
+JobTarget:
+    (
+        // Indirection: @expr, @@expr, @expr+offset, @expr^routine, etc.
+        indirect=DoIndirect |
+        // Regular label reference
+        label=LabelRef args=FunctionArgs?
+    ) postcond=Postcondition?
+    // Optional processparameters and/or timeout
+    // Supports: :timeout, :(params), :(params):timeout, ::timeout (empty params)
+    (
+        // :(params) optionally followed by :timeout
+        ':' '(' processparams+=Expr[/:/]? ')' (':' timeout=Expr)? |
+        // ::timeout (empty processparams) - shorthand for :():timeout
+        '::' timeout=Expr |
+        // :timeout only (single colon with numeric value)
+        ':' timeout=Expr
+    )?
 ;
 
 // OPEN command: OPEN device[:timeout] or OPEN device:(params)[:timeout]

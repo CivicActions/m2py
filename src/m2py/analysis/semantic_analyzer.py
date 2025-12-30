@@ -1425,8 +1425,13 @@ class SemanticAnalyzer:
     def _analyze_JobCommand(self, cmd: Any, parent: Any) -> MJobStatement:
         """Analyze JOB command into MJobStatement.
 
-        Supports multiple targets per MUMPS 1995 spec:
+        Supports multiple targets per MUMPS 1995 spec (MDC 8.2.10):
         J LABEL1,LABEL2 starts two concurrent jobs
+
+        Full syntax: J label^routine(actuallist):(processparameters):timeout
+        - actuallist: parameters passed to the JOB'd routine (via args)
+        - processparameters: implementation-specific (partition size, device settings)
+        - timeout: affects $TEST, optional
 
         Handles both direct labels and indirection (J @VAR, J @VAR^@ROU).
         """
@@ -1434,7 +1439,7 @@ class SemanticAnalyzer:
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
 
-        # JOB uses targets like DO command (label^routine)
+        # JOB uses targets like DO command (label^routine) but with extra params
         if hasattr(cmd, "targets") and cmd.targets:
             for target in cmd.targets:
                 call = MCall()
@@ -1505,6 +1510,18 @@ class SemanticAnalyzer:
                     call.arguments = self._analyze_function_args(target.args, call)
 
                 stmt.targets.append(call)
+
+                # Populate processparameters from this target (JOB-specific)
+                # Note: Per MUMPS spec, each jobargument can have its own params/timeout
+                # but MJobStatement currently has single lists, so we use the last target's
+                if hasattr(target, "processparams") and target.processparams:
+                    stmt.parameters = [
+                        self.analyze(p, stmt) for p in target.processparams
+                    ]
+
+                # Populate timeout from this target (JOB-specific)
+                if hasattr(target, "timeout") and target.timeout:
+                    stmt.timeout = self.analyze(target.timeout, stmt)
 
         return stmt
 
