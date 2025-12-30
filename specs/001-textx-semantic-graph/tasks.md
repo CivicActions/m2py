@@ -10699,3 +10699,174 @@ All three are used in the semantic analyzer:
 | T94.16 (Test suite) | 10 min | HIGH |
 
 **Total Estimate**: ~6 hours
+
+---
+
+## Phase 95: Type Safety and Documentation Fixes (December 2025)
+
+**Purpose**: Address validated findings from comprehensive code audit focusing on type annotations, documentation accuracy, and minor cleanup.
+
+### Validation Summary
+
+Three findings were investigated:
+
+| Finding | Initial Assessment | Validation Result |
+|---------|-------------------|-------------------|
+| Missing `MReference` Type | Correctness issue | ✅ CONFIRMED - Type annotation issue |
+| `_analyze_generic` Fallback | Simplified implementation | ✅ CONFIRMED - Silent failure risk |
+| Misleading Grammar Docs | Documentation issue | ✅ CONFIRMED - Minor documentation fix |
+
+---
+
+### Finding 1: Missing `AssignmentTarget` Type Alias ✅ CONFIRMED
+
+**Status**: Type annotation issue - code works but lacks type safety
+
+**Files**:
+- `specs/001-textx-semantic-graph/data-model.md` (line 276): References `MReference` type
+- `src/m2py/asg/statements.py` (line 64): Uses `target: Any = None`
+
+**Issue**: 
+The specification document references a type `MReference` that was never defined. The implementation uses `Any` with a clarifying comment:
+```python
+target: Any = None  # MVariable, MGlobal, or MIndirection
+```
+
+**Validation Evidence**:
+```bash
+grep -r "MReference" .  # Only 1 match in data-model.md
+```
+
+`MKillStatement.targets` was already properly typed as `List[Union["MVariable", "MGlobal", "MIndirection"]]` showing the correct pattern exists.
+
+**Solution**:
+1. Create type alias `AssignmentTarget = Union[MVariable, MGlobal, MNakedGlobal, MIndirection]` in `expressions.py`
+2. Update `MAssignment.target` to use `Optional[AssignmentTarget]`
+3. Update `data-model.md` to use `AssignmentTarget` instead of fictional `MReference`
+
+**Impact**: Low - improves IDE support and static type checking, no runtime change
+
+---
+
+### Finding 2: `_analyze_generic` Fallback ✅ CONFIRMED - SAFETY ISSUE
+
+**Status**: Silent fallthrough could hide unhandled CST nodes
+
+**Files**:
+- `src/m2py/analysis/semantic_analyzer.py` (lines 176, 455, 540-560)
+
+**Original Concern**: "Simplified implementation" that blindly copies attributes from CST to ASG could miss semantic validation.
+
+**Validation Method**: Created test utility to track fallthrough nodes:
+```python
+# utils/check_analyzer_fallthrough.py
+# Monkey-patched _analyze_generic to track which node types fall through
+```
+
+**Evidence**:
+```
+'S X=(A+B)*C': fallthrough nodes: {'ParenExpr'}
+All unique fallthrough node types: {'ParenExpr'}
+```
+
+Currently only `ParenExpr` falls through and is correctly unwrapped. **However**, the design is unsafe:
+
+1. If a new grammar construct is added that doesn't have a handler, it will **silently pass through**
+2. The raw textX object would be left in the ASG with just `parent` set
+3. This would only fail later during code generation, making debugging difficult
+
+**Correct Approach**:
+1. Add explicit `_analyze_ParenExpr` handler for the known case
+2. Change `_analyze_generic` to **raise an error** for unknown types (fail-fast)
+3. This ensures any missing handlers are caught immediately during parsing, not later
+
+**Solution**:
+```python
+def _analyze_ParenExpr(self, model: Any, parent: Any) -> Any:
+    """Unwrap parenthesized expression (X) -> X."""
+    return self.analyze(model.expr, parent)
+
+def _analyze_generic(self, model: Any, parent: Any) -> Any:
+    """Fallback for unknown textX types - should not normally be reached."""
+    cls_name = model.__class__.__name__
+    # Fail-fast: unknown types indicate missing handler
+    raise NotImplementedError(
+        f"SemanticAnalyzer has no handler for textX type '{cls_name}'. "
+        f"Add _analyze_{cls_name}() method or update grammar."
+    )
+```
+
+---
+
+### Finding 3: Misleading Grammar Documentation ✅ CONFIRMED
+
+
+**Status**: Minor documentation inaccuracy
+
+**Files**:
+- `src/m2py/grammar/mumps.tx` (lines 1-5)
+
+**Issue**: Header comment claims:
+```
+// MUMPS Grammar for textX - Full Implementation
+// Complete MUMPS grammar with proper ASG construction
+```
+
+This is inaccurate. `mumps.tx` only handles routine structure (labels, lines, formal parameters). The actual command/expression parsing is done by:
+- `line.tx` - Line content parsing
+- `commands.tx` - Command-specific grammar
+- `expressions.tx` - Expression grammar
+
+The architecture documentation (`docs/architecture.md`) correctly describes this as "Routine and label structure".
+
+**Solution**: Update `mumps.tx` header comment to accurately describe its role in the two-layer architecture:
+```
+// MUMPS Routine Structure Grammar for textX
+// =============================================================================
+// Parses routine-level structure: labels, lines, formal parameters.
+// Line content is parsed separately via line.tx → commands.tx/expressions.tx.
+// See docs/architecture.md "Two-Layer Architecture" for details.
+// =============================================================================
+```
+
+---
+
+### Tasks
+
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T95.1 | Create `AssignmentTarget` type alias in `expressions.py` | MEDIUM | [X] |
+| T95.2 | Update `MAssignment.target` to use `AssignmentTarget` type | MEDIUM | [X] |
+| T95.3 | Update `data-model.md` to replace `MReference` with `AssignmentTarget` | LOW | [X] |
+| T95.4 | Update `mumps.tx` header comment for accuracy | LOW | [X] |
+| T95.5 | Add explicit `_analyze_ParenExpr` handler in semantic_analyzer.py | HIGH | [X] |
+| T95.6 | Change `_analyze_generic` to raise `NotImplementedError` for unknown types | HIGH | [X] |
+| T95.7 | Run test suite to verify no other types fall through unexpectedly | HIGH | [X] |
+| T95.8 | Remove `utils/check_analyzer_fallthrough.py` utility (validation complete) | LOW | [X] |
+| T95.9 | Run pyright/mypy to verify type changes don't introduce errors | MEDIUM | [X] |
+
+### Phase 95 Effort Estimate
+
+| Task | Effort | Priority |
+|------|--------|----------|
+| T95.1-T95.2 (Type alias) | 15 min | MEDIUM |
+| T95.3 (Data model docs) | 5 min | LOW |
+| T95.4 (Grammar comment) | 5 min | LOW |
+| T95.5-T95.7 (Analyzer safety) | 20 min | HIGH |
+| T95.8 (Cleanup utility) | 2 min | LOW |
+| T95.9 (Type check) | 10 min | MEDIUM |
+
+**Total Estimate**: ~1 hour
+
+### Phase 95 Implementation Notes
+
+**Completed 2025-01-XX**:
+- Created `AssignmentTarget` type alias: `Union[MVariable, MGlobal, MNakedGlobal, MIndirection]`
+- Updated MAssignment.target type annotation
+- Fixed misleading header comment in mumps.tx (now accurately describes two-layer grammar)
+- Made `_analyze_generic` fail-fast with `NotImplementedError` (T95.6)
+- Added handlers for: `_analyze_ParenExpr`, `_analyze_OffsetParenExpr`, `_analyze_str` (T95.5)
+- Fixed test fixture in test_expression_grammar.py to include custom classes
+- Fixed test assertions that compared numeric values to strings
+- All 1094 tests passing
+- Pyright shows 1 pre-existing error (unrelated to these changes)

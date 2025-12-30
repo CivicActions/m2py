@@ -270,11 +270,14 @@ class MStatement(ASGElement):
 ### MSetStatement
 
 ```python
+# Type alias for valid assignment targets
+AssignmentTarget = Union[MVariable, MGlobal, MNakedGlobal, MIndirection]
+
 @dataclass
 class MAssignment:
     """Single assignment within SET."""
-    target: 'MReference'
-    value: 'MExpr'
+    target: Optional[AssignmentTarget] = None
+    value: Optional['MExpr'] = None
     postcondition: Optional['MExpr'] = None
 
 @dataclass

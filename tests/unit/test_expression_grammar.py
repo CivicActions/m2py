@@ -9,11 +9,18 @@ For semantic analysis of expressions, see test_semantic_analyzer.py.
 import pytest
 from pathlib import Path
 from textx import metamodel_from_file
+from m2py.parser.textx_classes import get_expression_classes
 
 
 @pytest.fixture
 def expr_metamodel():
-    """Load the expression grammar metamodel."""
+    """Load the expression grammar metamodel with custom classes.
+
+    The custom classes (LocalVariable, GlobalVariable, etc.) ensure proper
+    inheritance from ASG base classes (MVariable, MExpr). This is required
+    for tests that use SemanticAnalyzer, which dispatches based on isinstance
+    checks against these base classes.
+    """
     grammar_path = (
         Path(__file__).parent.parent.parent
         / "src"
@@ -21,7 +28,9 @@ def expr_metamodel():
         / "grammar"
         / "expressions.tx"
     )
-    return metamodel_from_file(str(grammar_path), skipws=True)
+    return metamodel_from_file(
+        str(grammar_path), classes=get_expression_classes(), skipws=True
+    )
 
 
 class TestNumericLiterals:
@@ -285,8 +294,8 @@ class TestChainedUnarySemantics:
         assert result.operand.operator == "-"
         assert isinstance(result.operand.operand, MUnaryOp)
         assert result.operand.operand.operator == "-"
-        # Innermost is the numeric literal
-        assert result.operand.operand.operand.value == "2"
+        # Innermost is the numeric literal (value is int, not string)
+        assert result.operand.operand.operand.value == 2
 
     def test_triple_not_asg(self, expr_metamodel):
         """Verify '''0 produces 3 nested MUnaryOp nodes (from V1UO4B)."""
@@ -304,7 +313,8 @@ class TestChainedUnarySemantics:
         assert result.operand.operator == "'"
         assert isinstance(result.operand.operand, MUnaryOp)
         assert result.operand.operand.operator == "'"
-        assert result.operand.operand.operand.value == "0"
+        # value is int 0, not string "0"
+        assert result.operand.operand.operand.value == 0
 
     def test_mixed_negate_not_asg(self, expr_metamodel):
         """Verify -'0 produces MUnaryOp('-', MUnaryOp("'", Literal)) (from V1UO4A)."""
@@ -320,7 +330,8 @@ class TestChainedUnarySemantics:
         assert result.operator == "-"
         assert isinstance(result.operand, MUnaryOp)
         assert result.operand.operator == "'"
-        assert result.operand.operand.value == "0"
+        # value is int 0, not string "0"
+        assert result.operand.operand.value == 0
 
     def test_mixed_not_negate_asg(self, expr_metamodel):
         """Verify '-0 produces MUnaryOp("'", MUnaryOp('-', Literal)) (from V1UO4A)."""
@@ -336,7 +347,8 @@ class TestChainedUnarySemantics:
         assert result.operator == "'"
         assert isinstance(result.operand, MUnaryOp)
         assert result.operand.operator == "-"
-        assert result.operand.operand.value == "0"
+        # value is int 0, not string "0"
+        assert result.operand.operand.value == 0
 
     def test_mixed_positive_not_asg(self, expr_metamodel):
         """Verify +'0 produces MUnaryOp('+', MUnaryOp("'", Literal)) (from V1UO4A)."""
@@ -352,7 +364,8 @@ class TestChainedUnarySemantics:
         assert result.operator == "+"
         assert isinstance(result.operand, MUnaryOp)
         assert result.operand.operator == "'"
-        assert result.operand.operand.value == "0"
+        # value is int 0, not string "0"
+        assert result.operand.operand.value == 0
 
     def test_complex_chain_asg(self, expr_metamodel):
         """Verify -'+'-'+'-4.5 produces 9 nested MUnaryOp nodes (from V1UO4B)."""
@@ -375,8 +388,8 @@ class TestChainedUnarySemantics:
         # Should have 9 operators: -, ', +, ', -, ', +, ', -
         assert depth == 9
         assert ops == ["-", "'", "+", "'", "-", "'", "+", "'", "-"]
-        # Innermost should be 4.5
-        assert node.value == "4.5"
+        # Innermost should be 4.5 (float, not string)
+        assert node.value == 4.5
 
 
 class TestIntrinsicFunctions:

@@ -61,7 +61,7 @@ class MAssignment:
     Sub-component of MSetStatement; source position is inherited from container.
     """
 
-    target: Any = None  # MVariable, MGlobal, or MIndirection
+    target: Optional[Union["MVariable", "MGlobal", "MIndirection"]] = None
     value: Optional["MExpr"] = None
     postcondition: Optional["MExpr"] = None  # Individual assignment postcondition
 

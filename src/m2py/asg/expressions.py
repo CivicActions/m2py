@@ -16,13 +16,22 @@ Defines all expression types for the MUMPS ASG:
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 from m2py.asg.elements import ASGElement
 from m2py.asg.enums import LiteralType, FormatControlType, IndirectionType, PassingMode
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MCall
+
+
+# =============================================================================
+# Type Aliases
+# =============================================================================
+
+# Valid targets for SET command assignments
+# Note: Forward references as strings because classes defined below
+AssignmentTarget = Union["MVariable", "MGlobal", "MNakedGlobal", "MIndirection"]
 
 
 @dataclass

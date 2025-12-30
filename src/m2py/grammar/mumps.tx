@@ -1,6 +1,8 @@
-// MUMPS Grammar for textX - Full Implementation
+// MUMPS Routine Structure Grammar for textX
 // =============================================================================
-// Complete MUMPS grammar with proper ASG construction
+// Parses routine-level structure: labels, lines, formal parameters.
+// Line content is parsed separately via line.tx → commands.tx/expressions.tx.
+// See docs/architecture.md "Two-Layer Architecture" for details.
 // Whitespace-sensitive: skipws=False in metamodel
 // =============================================================================
 

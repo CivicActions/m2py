@@ -537,27 +537,57 @@ class SemanticAnalyzer:
         self._track_global(model.name, result)
         return result
 
-    def _analyze_generic(self, model: Any, parent: Any) -> Any:
-        """Generic handler for unknown textX types.
+    def _analyze_ParenExpr(self, model: Any, parent: Any) -> Any:
+        """Unwrap parenthesized expression: (expr) -> expr.
 
-        Tries common patterns for unwrapping textX wrapper nodes.
+        textX grammar creates ParenExpr wrapper nodes for parenthesized
+        expressions. This handler unwraps them to expose the inner expression.
         """
-        # If it has 'operand', likely a UnaryExpr wrapper
-        if hasattr(model, "operand"):
-            return self.analyze(model.operand, parent)
+        return self.analyze(model.expr, parent)
 
-        # If it has 'expr', likely a ParenExpr wrapper
-        if hasattr(model, "expr"):
-            return self.analyze(model.expr, parent)
+    def _analyze_OffsetParenExpr(self, model: Any, parent: Any) -> Any:
+        """Unwrap parenthesized offset expression: (offset_expr) -> expr.
 
-        # Can't unwrap, return as-is with parent set if possible
-        if hasattr(model, "__setattr__"):
-            try:
-                object.__setattr__(model, "parent", parent)
-            except (TypeError, AttributeError):
-                pass
+        Similar to ParenExpr but used in GOTO offset expressions context.
+        textX grammar uses separate rule to avoid ambiguity with ^NAME.
+        """
+        return self.analyze(model.expr, parent)
 
-        return model
+    def _analyze_generic(self, model: Any, parent: Any) -> Any:
+        """Fallback handler for unknown textX types.
+
+        This handler should not normally be reached. If a new grammar construct
+        is added without a corresponding analyzer handler, this will raise an
+        error to ensure the issue is caught during parsing rather than later
+        during code generation.
+
+        Raises:
+            NotImplementedError: Always - unknown types indicate missing handler
+        """
+        cls_name = model.__class__.__name__
+        raise NotImplementedError(
+            f"SemanticAnalyzer has no handler for textX type '{cls_name}'. "
+            f"Add _analyze_{cls_name}() method to semantic_analyzer.py."
+        )
+
+    def _analyze_str(self, model: str, parent: Any) -> MVariable:
+        """Handle raw variable name strings from grammar rules like VARNAME.
+
+        Some grammar rules capture variable names as raw strings (e.g.,
+        TStartRestartArg's `vars+=VARNAME[',']`). This handler converts
+        them to proper MVariable ASG nodes.
+
+        Args:
+            model: A variable name string (e.g., 'X', 'DATA', '%ABC')
+            parent: Parent ASG node
+
+        Returns:
+            MVariable instance with the given name
+        """
+        var = MVariable(name=model, subscripts=[])
+        object.__setattr__(var, "parent", parent)
+        self._track_variable(model, var, is_read=True)
+        return var
 
     def _analyze_MSelectArg(self, arg: MSelectArg, parent: Any) -> MSelectArg:
         """Analyze MSelectArg to properly unwrap condition and value expressions.
