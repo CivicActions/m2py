@@ -257,12 +257,15 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
                     result.append(stmt)
                     i = j  # Skip past the block statements
                 else:
-                    # No owning DO found. Per MUMPS spec (1990 ANSI section 2.4.2):
+                    # No owning DO found. Per MUMPS spec (1995 ANSI section 6.3):
                     # "Lines which have a LEVEL greater than the current execution
                     # level are ignored, i.e., not executed."
-                    # These orphaned dot-lines are kept but will be skipped at runtime.
+                    # Mark orphaned dot-lines as unreachable but preserve them in ASG.
                     result.append(stmt)
-                    i += 1
+                    for orphan in block_stmts:
+                        orphan.is_unreachable = True
+                        result.append(orphan)
+                    i = j  # Skip past the orphaned statements
             else:
                 result.append(stmt)
                 i += 1

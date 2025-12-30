@@ -1360,22 +1360,15 @@ class SemanticAnalyzer:
             for open_arg in args:
                 device = MOpenDevice()
 
-                # Handle OpenArg object
-                if hasattr(open_arg, "device"):
+                # Handle OpenArg object - grammar always produces device attribute
+                if hasattr(open_arg, "device") and open_arg.device:
                     device.device_expr = self.analyze(open_arg.device, stmt)
 
-                    if hasattr(open_arg, "params") and open_arg.params:
-                        device.parameters = [
-                            self.analyze(p, stmt) for p in open_arg.params
-                        ]
+                if hasattr(open_arg, "params") and open_arg.params:
+                    device.parameters = [self.analyze(p, stmt) for p in open_arg.params]
 
-                    if hasattr(open_arg, "timeout") and open_arg.timeout:
-                        device.timeout = self.analyze(open_arg.timeout, stmt)
-                else:
-                    # Fallback for non-standard grammar: treat as bare device expression.
-                    # Current grammar always produces OpenArg with device attribute,
-                    # so this path handles potential future grammar variations.
-                    device.device_expr = self.analyze(open_arg, stmt)
+                if hasattr(open_arg, "timeout") and open_arg.timeout:
+                    device.timeout = self.analyze(open_arg.timeout, stmt)
 
                 stmt.devices.append(device)
 
@@ -1396,14 +1389,11 @@ class SemanticAnalyzer:
             args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
             for arg in args:
                 device = MCloseDevice()
-                # Handle CloseArg object if it has device attribute
-                if hasattr(arg, "device"):
+                # Handle CloseArg object - grammar always produces device attribute
+                if hasattr(arg, "device") and arg.device:
                     device.device_expr = self.analyze(arg.device, stmt)
-                    if hasattr(arg, "params") and arg.params:
-                        device.parameters = [self.analyze(p, stmt) for p in arg.params]
-                else:
-                    # Handle plain expression
-                    device.device_expr = self.analyze(arg, stmt)
+                if hasattr(arg, "params") and arg.params:
+                    device.parameters = [self.analyze(p, stmt) for p in arg.params]
                 stmt.devices.append(device)
 
         return stmt
@@ -1423,14 +1413,11 @@ class SemanticAnalyzer:
             args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
             for arg in args:
                 device = MUseDevice()
-                # Handle UseArg object if it has device attribute
-                if hasattr(arg, "device"):
+                # Handle UseArg object - grammar always produces device attribute
+                if hasattr(arg, "device") and arg.device:
                     device.device_expr = self.analyze(arg.device, stmt)
-                    if hasattr(arg, "params") and arg.params:
-                        device.parameters = [self.analyze(p, stmt) for p in arg.params]
-                else:
-                    # Handle plain expression
-                    device.device_expr = self.analyze(arg, stmt)
+                if hasattr(arg, "params") and arg.params:
+                    device.parameters = [self.analyze(p, stmt) for p in arg.params]
                 stmt.devices.append(device)
 
         return stmt

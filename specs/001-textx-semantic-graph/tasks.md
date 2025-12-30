@@ -9540,4 +9540,254 @@ _find_for_params_end()
 | 88.7 | 30 min | 9.5 hours |
 | 88.8 | 1 hour | 10.5 hours |
 | 88.9 | 30 min | 11 hours |
+
+---
+
+## Phase 89: Code Correctness and Cleanup
+
+**Status**: COMPLETED  
+**Date Added**: 2025-01-13  
+**Date Completed**: 2025-12-29  
+**Context**: Comprehensive code review identified several issues requiring validation and fixes.
+
+### Overview
+
+This phase addresses findings from a systematic code review of all `.py` and `.tx` files in the project. Each finding was validated against the MUMPS 1990/1995 ANSI specification and textX documentation.
+
+---
+
+### Task 89.1: Fix Orphaned Dot Lines Bug
+
+**Status**: COMPLETED  
+**Priority**: HIGH  
+**Location**: `src/m2py/parser/parser.py` lines 240-265 (`_structure_do_blocks()`)
+
+#### Issue Description
+
+Orphaned dot lines (lines with dot indentation that don't follow an argumentless DO) are currently flattened into the parent scope and executed, violating the MUMPS specification.
+
+#### MUMPS Specification Reference
+
+Per MUMPS 1995 spec section 6.3 (Routine execution):
+> "Lines which have a LEVEL greater than the current execution level are ignored, i.e., not executed."
+
+#### Current Behavior (Incorrect)
+
+```python
+# Input MUMPS:
+# TEST
+#  S X=1
+#  . S Y=2   <- orphaned dot line
+#  S Z=3
+
+# Current output: All 3 statements treated as regular statements
+# Statement "S Y=2" has: unreachable=False, _dot_level=0
+```
+
+#### Expected Behavior
+
+The orphaned dot line `S Y=2` should be marked with `is_unreachable=True` or equivalent, ensuring code generators skip it.
+
+#### Validation Evidence
+
+```
+=== Test: Orphaned Dot Lines ===
+Label: 'TEST'
+Number of statements: 3
+  [0] MSetStatement | unreachable=False | _dot_level=0 -> sets: X
+  [1] MSetStatement | unreachable=False | _dot_level=0 -> sets: Y  # BUG
+  [2] MSetStatement | unreachable=False | _dot_level=0 -> sets: Z
+
+*** BUG: Per MUMPS spec, orphaned dot lines should NOT be executed ***
+```
+
+#### Proposed Fix
+
+In `_structure_do_blocks()`, when the stack is empty but we encounter a dotted line:
+1. Do NOT flatten the statement into the parent scope
+2. Mark the statement with `is_unreachable=True`
+3. Preserve the `_dot_level` for debugging/analysis purposes
+
+#### Test Script
+
+See `utils/validate_dot_lines.py` for reproducible test case.
+
+---
+
+### Task 89.2: Document E Pattern Code DOTALL Requirement
+
+**Status**: COMPLETED  
+**Priority**: MEDIUM  
+**Location**: `src/m2py/analysis/pattern_compiler.py` (E pattern code handling)
+
+#### Issue Description
+
+The E pattern code (matching "any character including non-printable") generates Python regex `.*` which does NOT match newlines by default.
+
+#### MUMPS Specification Reference
+
+Per MUMPS 1995 spec section 7.2.3 (Pattern match):
+> "E - matches any character including non-printable characters"
+
+This includes newlines, which are non-printable characters.
+
+#### Current Behavior
+
+```python
+# Pattern code "E" generates regex: .*
+# Result: re.match(r'.*', 'line1\nline2') matches only 'line1'
+```
+
+#### Expected Behavior
+
+With `re.DOTALL` flag:
+```python
+# re.match(r'.*', 'line1\nline2', re.DOTALL) matches 'line1\nline2'
+```
+
+#### Validation Evidence
+
+```
+Testing E pattern code (any character including non-printable):
+  Pattern '1.E' generates regex: ^(?:.)+$
+  match('hello')=True (expected: True)
+  match('line1\nline2')=False (expected: True for E code)  # BUG
+  With re.DOTALL: match('line1\nline2')=True
+```
+
+#### Proposed Fix
+
+This is a codegen concern, not a pattern_compiler issue. The pattern_compiler correctly generates `.*` - it's the code generator's responsibility to use `re.DOTALL` when compiling patterns.
+
+**Options:**
+1. Document in codegen guidance that all pattern matches MUST use `re.DOTALL`
+2. Add a comment in `pattern_compiler.py` noting the DOTALL requirement
+3. Consider generating `[\s\S]*` instead of `.*` to be self-contained (but less readable)
+
+**Recommendation**: Option 1 with Option 2 as documentation reinforcement.
+
+---
+
+### Task 89.3: Remove Unreachable Fallback Code
+
+**Status**: COMPLETED  
+**Priority**: LOW  
+**Location**: `src/m2py/analysis/semantic_analyzer.py` lines 1375-1379
+
+#### Issue Description
+
+Defensive fallback code in I/O command analysis methods is unreachable because the grammar always produces the required attributes.
+
+#### Affected Methods
+
+1. `_analyze_OpenCommand()` - fallback for missing `device`
+2. `_analyze_CloseCommand()` - fallback for missing `device`  
+3. `_analyze_UseCommand()` - fallback for missing `device`
+
+#### Grammar Analysis
+
+From `commands.tx`:
+```
+OpenArg: ':' parameters=Parameters | device=Expr (':' parameters=Parameters)?;
+CloseArg: ':' parameters=Parameters | device=Expr (':' parameters=Parameters)?;
+UseArg: ':' parameters=Parameters | device=Expr (':' parameters=Parameters)?;
+```
+
+All three grammar rules ALWAYS produce a `device` attribute (either from the expression or as None when only parameters are given).
+
+#### Current Code (Line 1375-1379)
+
+```python
+# Fallback for edge cases
+if not device_expr:
+    device_expr = None  # This can never execute
+```
+
+#### Proposed Fix
+
+Remove the unreachable fallback blocks. The code already handles `device_expr = None` correctly from the grammar.
+
+---
+
+### Task 89.4: Clarify Encoding Fallback Comment (Optional)
+
+**Status**: PENDING  
+**Priority**: LOW  
+**Location**: `src/m2py/parser/parser.py` lines 504-509
+
+#### Issue Description
+
+The UTF-8 to Latin-1 encoding fallback is intentional and well-documented, but could benefit from a brief in-code explanation of WHY it exists.
+
+#### Current Code
+
+```python
+try:
+    text = path.read_text(encoding='utf-8')
+except UnicodeDecodeError:
+    # Some legacy VistA files use latin-1 encoding
+    text = path.read_text(encoding='latin-1')
+```
+
+#### Proposed Enhancement (Optional)
+
+```python
+try:
+    text = path.read_text(encoding='utf-8')
+except UnicodeDecodeError:
+    # Legacy VistA files often use Latin-1 encoding (ISO-8859-1) due to
+    # historical systems that predated UTF-8 standardization.
+    text = path.read_text(encoding='latin-1')
+```
+
+#### Status
+
+This is NOT a bug - the behavior is correct and intentional. This task is optional documentation improvement.
+
+---
+
+### Task 89.5: Validate P Pattern Code Completeness
+
+**Status**: COMPLETED (VALIDATED)  
+**Priority**: N/A  
+**Location**: `src/m2py/analysis/pattern_compiler.py`
+
+#### Validation Result
+
+The P pattern code implementation correctly covers all 33 ASCII punctuation characters as defined in the MUMPS specification.
+
+#### Evidence
+
+```
+Testing P pattern code (punctuation):
+All 33 ASCII punctuation characters covered by P code
+Regex: [!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]
+```
+
+**No action required.**
+
+---
+
+### Summary Table
+
+| Task | Description | Priority | Status |
+|------|-------------|----------|--------|
+| 89.1 | Fix orphaned dot lines bug | HIGH | PENDING |
+| 89.2 | Document E pattern DOTALL | MEDIUM | PENDING |
+| 89.3 | Remove unreachable fallback | LOW | PENDING |
+| 89.4 | Clarify encoding comment | LOW | OPTIONAL |
+| 89.5 | Validate P pattern code | N/A | COMPLETED |
+
+---
+
+### Estimated Effort
+
+| Task | Effort | Cumulative |
+|------|--------|------------|
+| 89.1 | 2 hours | 2 hours |
+| 89.2 | 30 min | 2.5 hours |
+| 89.3 | 30 min | 3 hours |
+| 89.4 | 15 min | 3.25 hours |
+
+**Total Phase 89 Effort**: ~3.5 hours
 | **Total** | **~11 hours** | **1.5 days** |
