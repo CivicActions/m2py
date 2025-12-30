@@ -62,7 +62,7 @@ def test_job_command_simple():
     assert isinstance(stmt, MJobStatement)
     assert len(stmt.targets) == 1
     assert stmt.targets[0] is not None
-    assert stmt.targets[0].name == "LABEL"
+    assert stmt.targets[0].call.name == "LABEL"
 
 
 def test_job_command_external():
@@ -78,7 +78,7 @@ def test_job_command_external():
     assert isinstance(stmt, MJobStatement)
     assert len(stmt.targets) == 1
     assert stmt.targets[0] is not None
-    assert stmt.targets[0].routine == "ROUTINE"
+    assert stmt.targets[0].call.routine == "ROUTINE"
 
 
 def test_io_commands_with_postconditions():
@@ -363,7 +363,7 @@ class TestJobIndirection:
 
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 1
-        call = stmt.targets[0]
+        call = stmt.targets[0].call
         assert call.label_is_indirect is True
         assert call.indirection is not None
         assert isinstance(call.indirection, MVariable)
@@ -381,7 +381,7 @@ class TestJobIndirection:
 
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 1
-        call = stmt.targets[0]
+        call = stmt.targets[0].call
         assert call.label_is_indirect is True
         assert call.indirection is not None
         assert isinstance(call.indirection, MVariable)
@@ -435,12 +435,13 @@ class TestJobTimeoutAndProcessParameters:
 
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 1
-        assert stmt.targets[0].routine == "XMRONT"
-        # Timeout should be populated
-        assert stmt.timeout is not None
-        assert stmt.timeout.value == 5
+        job_target = stmt.targets[0]
+        assert job_target.call.routine == "XMRONT"
+        # Timeout should be populated on the target
+        assert job_target.timeout is not None
+        assert job_target.timeout.value == 5
         # No processparameters
-        assert stmt.parameters == []
+        assert job_target.processparameters == []
 
     def test_job_with_routine_args_and_timeout(self):
         """JOB with actuallist and timeout: J START^ROUTINE(PORT)::5"""
@@ -452,18 +453,19 @@ class TestJobTimeoutAndProcessParameters:
 
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 1
-        call = stmt.targets[0]
+        job_target = stmt.targets[0]
+        call = job_target.call
         assert call.name == "START"
         assert call.routine == "XWBVLL"
         # Should have arguments (actuallist) - wrapped in MActualParameter
         assert len(call.arguments) == 1
         # Access the actual expression via .expression
         assert call.arguments[0].expression.name == "PORT"
-        # Timeout should be populated
-        assert stmt.timeout is not None
-        assert stmt.timeout.value == 5
+        # Timeout should be populated on the target
+        assert job_target.timeout is not None
+        assert job_target.timeout.value == 5
         # No processparameters
-        assert stmt.parameters == []
+        assert job_target.processparameters == []
 
     def test_job_with_processparams_only(self):
         """JOB with processparameters but no timeout."""
@@ -477,14 +479,15 @@ class TestJobTimeoutAndProcessParameters:
 
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 1
-        assert stmt.targets[0].name == "LABEL"
+        job_target = stmt.targets[0]
+        assert job_target.call.name == "LABEL"
         # Should have processparameters - these are expressions like IN="/dev/null"
-        assert len(stmt.parameters) == 2
+        assert len(job_target.processparameters) == 2
         # Processparams are key=value expressions (MBinaryOp with = operator)
-        assert isinstance(stmt.parameters[0], MBinaryOp)
-        assert stmt.parameters[0].operator == "="
+        assert isinstance(job_target.processparameters[0], MBinaryOp)
+        assert job_target.processparameters[0].operator == "="
         # No timeout
-        assert stmt.timeout is None
+        assert job_target.timeout is None
 
     def test_job_with_processparams_and_timeout(self):
         """JOB with both processparameters and timeout."""
@@ -497,16 +500,17 @@ class TestJobTimeoutAndProcessParameters:
 
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 1
-        call = stmt.targets[0]
+        job_target = stmt.targets[0]
+        call = job_target.call
         assert call.name == "CHILDONT"
         assert call.routine == "ZISTCPS"
         # Should have arguments (actuallist)
         assert len(call.arguments) == 2
-        # Should have processparameters
-        assert len(stmt.parameters) == 3
-        # Timeout should be populated
-        assert stmt.timeout is not None
-        assert stmt.timeout.value == 10
+        # Should have processparameters on the target
+        assert len(job_target.processparameters) == 3
+        # Timeout should be populated on the target
+        assert job_target.timeout is not None
+        assert job_target.timeout.value == 10
 
     def test_job_simple_label_with_timeout(self):
         """JOB with simple label and timeout: J LABEL::5"""
@@ -518,7 +522,41 @@ class TestJobTimeoutAndProcessParameters:
 
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 1
-        assert stmt.targets[0].name == "LABEL"
-        # Timeout should be populated
-        assert stmt.timeout is not None
-        assert stmt.timeout.value == 5
+        job_target = stmt.targets[0]
+        assert job_target.call.name == "LABEL"
+        # Timeout should be populated on the target
+        assert job_target.timeout is not None
+        assert job_target.timeout.value == 5
+
+    def test_job_multi_target_with_per_target_params(self):
+        """JOB with multiple targets having individual timeouts.
+
+        Per MUMPS 1995 spec 8.2.10, each jobargument can have its own
+        processparameters and timeout:
+        J LABEL1::5,LABEL2::10
+
+        This tests the MJobTarget wrapper which stores per-target
+        processparameters and timeout (Phase 92 fix).
+        """
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n J LABEL1::5,LABEL2::10\n")
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        assert len(stmt.targets) == 2
+
+        # First target: LABEL1 with timeout=5
+        job_target1 = stmt.targets[0]
+        assert job_target1.call.name == "LABEL1"
+        assert job_target1.timeout is not None
+        assert job_target1.timeout.value == 5
+        assert job_target1.processparameters == []
+
+        # Second target: LABEL2 with timeout=10
+        job_target2 = stmt.targets[1]
+        assert job_target2.call.name == "LABEL2"
+        assert job_target2.timeout is not None
+        assert job_target2.timeout.value == 10
+        assert job_target2.processparameters == []

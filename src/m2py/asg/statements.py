@@ -560,19 +560,35 @@ class MUseStatement(MStatement):
 
 
 @dataclass
+class MJobTarget:
+    """Single target in JOB command.
+
+    Represents one job target with its per-target parameters and timeout.
+    JOB can have multiple targets with individual settings per MUMPS 1995 spec 8.2.10:
+    J LABEL1::5,LABEL2:params:10
+
+    Note: This is a sub-component of MJobStatement, not a standalone ASG node.
+    """
+
+    call: "MCall" = field(default_factory=lambda: None)  # type: ignore
+    processparameters: List["MExpr"] = field(default_factory=list)
+    timeout: Optional["MExpr"] = None
+
+
+@dataclass
 class MJobStatement(MStatement):
     """JOB command - start concurrent job.
 
     Starts one or more new processes executing routines:
     J label, JOB label^routine:parameters, J LABEL1,LABEL2
 
-    Supports multiple targets per MUMPS 1995 spec:
-    J LABEL1,LABEL2 starts two concurrent jobs
+    Supports multiple targets per MUMPS 1995 spec 8.2.10:
+    J LABEL1::5,LABEL2:params:10 starts two concurrent jobs with individual timeouts
+
+    Each target can have its own processparameters and timeout.
 
     Supports indirection per MUMPS spec:
     J @VAR, J @VAR^ROUTINE, J @VAR^@ROUTINEVAR
     """
 
-    targets: List["MCall"] = field(default_factory=list)
-    parameters: List["MExpr"] = field(default_factory=list)
-    timeout: Optional["MExpr"] = None
+    targets: List[MJobTarget] = field(default_factory=list)

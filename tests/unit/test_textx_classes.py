@@ -283,17 +283,21 @@ class TestSelectFunctionCustomClass:
     def test_select_variable_extraction(self, expression_metamodel):
         """Verify variables can be extracted from SelectFunction arguments.
 
-        This tests the full pipeline: parsing -> MSelectArg -> variable extraction.
+        This tests the full pipeline: parsing -> semantic analysis -> variable extraction.
+        Uses MUMPSParser to ensure MSelectArg conditions are properly analyzed.
         """
         from m2py.analysis.variables import _extract_expression_variables
+        from m2py.parser import MUMPSParser
 
-        model = expression_metamodel.model_from_str("$SELECT(A=1:X,1:Y)")
-        operand = self._unwrap_expr(model)
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n S X=$SELECT(A=1:X,1:Y)\n")
+        stmt = routine.labels[0].body.statements[0]
+        select_fn = stmt.assignments[0].value
 
-        assert isinstance(operand, SelectFunction)
+        assert isinstance(select_fn, SelectFunction)
 
         # Extract variables from the entire SelectFunction
-        variables = _extract_expression_variables(operand)
+        variables = _extract_expression_variables(select_fn)
 
         # Should find A, X, Y (but not the literal 1)
         assert "A" in variables, f"Expected 'A' in {variables}"
@@ -303,13 +307,15 @@ class TestSelectFunctionCustomClass:
     def test_select_multiple_complex_args(self, expression_metamodel):
         """Test variable extraction from complex $SELECT with multiple args."""
         from m2py.analysis.variables import _extract_expression_variables
+        from m2py.parser import MUMPSParser
 
-        # $SELECT(A=B:X+Y, C>D:Z, 1:"default")
-        model = expression_metamodel.model_from_str('$SELECT(A=B:X,C>D:Z,1:"default")')
-        operand = self._unwrap_expr(model)
+        parser = MUMPSParser()
+        routine = parser.parse('TEST\n S R=$SELECT(A=B:X,C>D:Z,1:"default")\n')
+        stmt = routine.labels[0].body.statements[0]
+        select_fn = stmt.assignments[0].value
 
-        assert isinstance(operand, SelectFunction)
-        variables = _extract_expression_variables(operand)
+        assert isinstance(select_fn, SelectFunction)
+        variables = _extract_expression_variables(select_fn)
 
         # Should find A, B, X, C, D, Z (but not literals)
         expected = {"A", "B", "X", "C", "D", "Z"}

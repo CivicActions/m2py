@@ -10202,3 +10202,116 @@ The expression walker adds O(expressions) work per label. This runs once during 
 | T91.6 Test verification | 5 min | HIGH | ✅ Done |
 
 **Total**: ~4 hours
+
+---
+
+## Phase 92: Code Quality Validation and Fixes
+
+**Purpose**: Address issues identified during comprehensive code review of all `.py` and `.tx` files.
+
+**Review Date**: 2024-12-29
+
+### Issue 1: MJobStatement Per-Target Parameters (SPEC VIOLATION)
+
+**Status**: VALIDATED - Real Issue
+
+**Problem**: `MJobStatement` stores `parameters` and `timeout` at the statement level, but per MUMPS 1995 spec (8.2.10) each `JobTarget` can have its own `processparameters` and `timeout`. The grammar (`commands.tx` lines 480-496) correctly parses per-target values, but the semantic analyzer (`_analyze_JobCommand`) overwrites statement-level fields with values from the last target.
+
+**Evidence**:
+- Grammar `JobTarget` has `processparams` and `timeout` per target
+- `MJobStatement` has single `parameters: List[MExpr]` and `timeout: Optional[MExpr]`
+- Analyzer comment: "Per MUMPS spec, each jobargument can have its own params/timeout but MJobStatement currently has single lists, so we use the last target's"
+
+**Solution**: Create `MJobTarget` dataclass (similar to `MOpenDevice`, `MCloseDevice`, `MUseDevice`) that wraps `MCall` with per-target `processparameters` and `timeout`. Update `MJobStatement.targets` to be `List[MJobTarget]`.
+
+**Files to modify**:
+- `src/m2py/asg/statements.py` - Add `MJobTarget` class, update `MJobStatement`
+- `src/m2py/analysis/semantic_analyzer.py` - Update `_analyze_JobCommand`
+- `tests/unit/test_command_analysis.py` - Add tests for multi-target JOB
+
+### Issue 2: CLI Module and main.py Stubs
+
+**Status**: DEFERRED - Keep for future CLI implementation
+
+**Notes**: `src/m2py/cli/__init__.py` and `main.py` are placeholders for future CLI functionality. No action needed at this time.
+
+### Issue 3: MSelectArg Condition Not Fully Unwrapped (ASG INCONSISTENCY)
+
+**Status**: VALIDATED - Real Issue
+
+**Problem**: `MSelectArg.condition` can contain raw textX `Expr` objects instead of proper ASG nodes like `MBinaryOp`. The `SelectFunction` custom class calls `_unwrap_expr()`, but that function returns raw `Expr` when it has a `tail` (binary operations), expecting the semantic analyzer to handle it later. But for custom classes, the semantic analyzer doesn't run on their internals.
+
+**Evidence**:
+```python
+# Test output:
+# Type: MSelectArg
+#   condition type: Expr  <-- Should be MBinaryOp for "A=B"
+#   value type: LocalVariable
+```
+
+**Impact**: The fallback code in `_extract_expression_variables()` (lines 617-631) handles these raw textX objects, so variable analysis works. However, the ASG is inconsistent - some nodes are fully unwrapped, others aren't.
+
+**Solution Options**:
+1. Add `SelectArg` custom class that calls `SemanticAnalyzer.analyze()` for proper unwrapping
+2. Have `SelectFunction` custom class explicitly handle binary expressions in conditions
+
+**Files to modify**:
+- `src/m2py/parser/textx_classes.py` - Add proper unwrapping in SelectFunction or add SelectArg class
+- `src/m2py/analysis/variables.py` - Remove/simplify fallback code after fix
+
+### Issue 4: Confusing Comments in _extract_expression_variables
+
+**Status**: VALIDATED - Minor Documentation Issue
+
+**Problem**: The `pass` blocks for `MIntrinsicFunction` and `MExtrinsicFunction` have comments saying "Arguments are extracted below via the 'args' attribute handling", but the actual logic is split:
+- Lines 641-648 handle textX `args` attribute (fallback for raw objects)
+- Lines 652-656 handle ASG `arguments` attribute
+
+This is confusing because:
+1. The comment says "args" but ASG uses "arguments"
+2. It's unclear which code path applies to ASG nodes vs. textX fallback
+
+**Related to**: Issue 3 - both stem from incomplete unwrapping leaving textX objects in ASG
+
+**Solution**: After fixing Issue 3, simplify the variable extraction code and clarify comments. If fallback code remains necessary, document why clearly.
+
+### Non-Issues (Validated as Correct)
+
+#### Exclusive NEW/KILL Static Analysis Limitation
+
+**Status**: NOT AN ISSUE - Correct behavior per spec
+
+**Analysis**: The code correctly identifies that exclusive NEW (`N (X,Y)`) and exclusive KILL (`K (X,Y)`) cannot be fully analyzed statically because they affect all variables except the named ones, and the full variable set is unknown until runtime.
+
+**Evidence**: Documented in `docs/codegen/variable_scoping.md` under "Exclusive NEW" section, which correctly notes this requires runtime scope management.
+
+#### MHaltStatement/MBreakStatement Empty Bodies
+
+**Status**: NOT AN ISSUE - Correct per MUMPS spec
+
+**Analysis**: Per MUMPS 1995 spec sections 8.2.1 (BREAK) and 8.2.7 (HALT), these commands have no arguments beyond postcondition. The `pass` statement is required Python syntax for empty class bodies.
+
+**Evidence**: Grammar rules match spec - `BreakCommand` and `HaltCommand` only capture postcondition.
+
+### Tasks
+
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T92.1 | Create `MJobTarget` dataclass in statements.py | HIGH | [X] |
+| T92.2 | Update `MJobStatement.targets` to use `MJobTarget` | HIGH | [X] |
+| T92.3 | Update `_analyze_JobCommand` in semantic_analyzer.py | HIGH | [X] |
+| T92.4 | Add tests for multi-target JOB with per-target params | HIGH | [X] |
+| T92.5 | Add `_analyze_MSelectArg` handler in semantic_analyzer.py | MEDIUM | [X] |
+| T92.6 | Simplify `_extract_expression_variables` - remove textX fallback | MEDIUM | [X] |
+| T92.7 | Update `asg/__init__.py` exports for MJobTarget | LOW | [X] |
+| T92.8 | Run full test suite after changes - 1072 tests pass | HIGH | [X] |
+
+### Phase 92 Effort Estimate
+
+| Task | Effort | Priority |
+|------|--------|----------|
+| T92.1-T92.4 (MJobTarget) | 2 hours | HIGH |
+| T92.5-T92.6 (SelectArg fix) | 1.5 hours | MEDIUM |
+| T92.7-T92.8 (Cleanup/Test) | 30 min | LOW |
+
+**Total Estimate**: ~4 hours

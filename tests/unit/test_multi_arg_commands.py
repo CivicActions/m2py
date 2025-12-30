@@ -202,7 +202,7 @@ class TestMultiJob:
         stmt = routine.labels[0].body.statements[0]
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 1
-        assert stmt.targets[0].name == "LABEL"
+        assert stmt.targets[0].call.name == "LABEL"
 
     def test_multi_job(self):
         """JOB with multiple targets captures all targets."""
@@ -213,8 +213,8 @@ class TestMultiJob:
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 2
 
-        assert stmt.targets[0].name == "LABEL1"
-        assert stmt.targets[1].name == "LABEL2"
+        assert stmt.targets[0].call.name == "LABEL1"
+        assert stmt.targets[1].call.name == "LABEL2"
 
     def test_job_external_multiple(self):
         """JOB with multiple external routine targets."""
@@ -225,8 +225,8 @@ class TestMultiJob:
         assert isinstance(stmt, MJobStatement)
         assert len(stmt.targets) == 2
 
-        assert stmt.targets[0].routine == "ROUTINE1"
-        assert stmt.targets[1].routine == "ROUTINE2"
+        assert stmt.targets[0].call.routine == "ROUTINE1"
+        assert stmt.targets[1].call.routine == "ROUTINE2"
 
 
 class TestIndirectionSubscriptAnalysis:

@@ -47,6 +47,7 @@ from m2py.asg.statements import (
     MUseStatement,
     MUseDevice,
     MJobStatement,
+    MJobTarget,
 )
 from m2py.asg.expressions import (
     MExpr,
@@ -114,6 +115,7 @@ __all__ = [
     "MUseStatement",
     "MUseDevice",
     "MJobStatement",
+    "MJobTarget",
     # Expressions
     "MExpr",
     "MLiteral",

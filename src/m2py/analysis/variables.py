@@ -614,27 +614,6 @@ def _extract_expression_variables(expr) -> Set[str]:
         if expr.value:
             vars_found.update(_extract_expression_variables(expr.value))
 
-    # Fallback: Handle raw textX expression wrappers (Expr, UnaryExpr)
-    # These can appear in MSelectArg.condition when parsing binary expressions like "A=1"
-    # textX Expr has 'left' (UnaryExpr) and 'tail' (list of BinaryOpTail with op/right)
-    elif hasattr(expr, "left") and hasattr(expr, "tail"):
-        # Handle textX Expr wrapper
-        vars_found.update(_extract_expression_variables(expr.left))
-        tail = getattr(expr, "tail", [])
-        if tail:
-            for tail_item in tail:
-                if hasattr(tail_item, "right"):
-                    vars_found.update(_extract_expression_variables(tail_item.right))
-    elif hasattr(expr, "operand"):
-        # Handle textX UnaryExpr wrapper
-        vars_found.update(_extract_expression_variables(expr.operand))
-
-    # Fallback: check generic attributes for variable names
-    elif hasattr(expr, "name") and isinstance(getattr(expr, "name", None), str):
-        name = expr.name
-        if name and not name.startswith("^") and not name.startswith("$"):
-            vars_found.add(name)
-
     # Check for nested expressions in lists
     # Note: FunctionArgs is an object with an 'args' list attribute, not a list itself
     # Use isinstance checks for type-safe access

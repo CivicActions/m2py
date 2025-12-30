@@ -36,6 +36,7 @@ from m2py.asg.expressions import (
     MFormatControl,
     MPatternMatch,
     MActualParameter,
+    MSelectArg,
 )
 from m2py.asg.statements import (
     MStatement,
@@ -67,6 +68,7 @@ from m2py.asg.statements import (
     MUseStatement,
     MUseDevice,
     MJobStatement,
+    MJobTarget,
     MViewStatement,
 )
 from m2py.asg.elements import MCall
@@ -552,6 +554,25 @@ class SemanticAnalyzer:
                 pass
 
         return model
+
+    def _analyze_MSelectArg(self, arg: MSelectArg, parent: Any) -> MSelectArg:
+        """Analyze MSelectArg to properly unwrap condition and value expressions.
+
+        MSelectArg is created by SelectFunction custom class with potentially
+        raw textX Expr objects in condition/value fields. This handler ensures
+        they're properly converted to ASG nodes (e.g., MBinaryOp for A=B).
+        """
+        object.__setattr__(arg, "parent", parent)
+
+        if arg.condition is not None:
+            analyzed_condition = self.analyze(arg.condition, arg)
+            object.__setattr__(arg, "condition", analyzed_condition)
+
+        if arg.value is not None:
+            analyzed_value = self.analyze(arg.value, arg)
+            object.__setattr__(arg, "value", analyzed_value)
+
+        return arg
 
     # =========================================================================
     # Format Control Analysis (textX FormatControl → MFormatControl)
@@ -1433,6 +1454,8 @@ class SemanticAnalyzer:
         - processparameters: implementation-specific (partition size, device settings)
         - timeout: affects $TEST, optional
 
+        Each target has its own processparameters and timeout per MUMPS spec.
+
         Handles both direct labels and indirection (J @VAR, J @VAR^@ROU).
         """
         stmt = MJobStatement()
@@ -1509,19 +1532,20 @@ class SemanticAnalyzer:
                 if hasattr(target, "args") and target.args:
                     call.arguments = self._analyze_function_args(target.args, call)
 
-                stmt.targets.append(call)
+                # Create MJobTarget with per-target processparameters and timeout
+                job_target = MJobTarget(call=call)
 
-                # Populate processparameters from this target (JOB-specific)
-                # Note: Per MUMPS spec, each jobargument can have its own params/timeout
-                # but MJobStatement currently has single lists, so we use the last target's
+                # Populate processparameters for this target (JOB-specific)
                 if hasattr(target, "processparams") and target.processparams:
-                    stmt.parameters = [
+                    job_target.processparameters = [
                         self.analyze(p, stmt) for p in target.processparams
                     ]
 
-                # Populate timeout from this target (JOB-specific)
+                # Populate timeout for this target (JOB-specific)
                 if hasattr(target, "timeout") and target.timeout:
-                    stmt.timeout = self.analyze(target.timeout, stmt)
+                    job_target.timeout = self.analyze(target.timeout, stmt)
+
+                stmt.targets.append(job_target)
 
         return stmt
 
