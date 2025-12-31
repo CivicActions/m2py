@@ -68,14 +68,22 @@ Global (persistent) variable reference:
 ```mumps
 ^GLOBAL
 ^DATA(1,2,3)
+^|"env"|CROSS        ; Extended reference with environment
+^["mumps.gld"]DATA   ; Extended reference with global directory
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | `str` | Global name (without ^) |
 | `subscripts` | `List[MExpr]` | Array subscripts |
+| `environment` | `Optional[MExpr]` | Environment/global directory for extended references |
 
-**Code Generation**: Requires runtime global storage (database, file, etc.)
+**Extended Global References**: The `environment` field is populated for extended
+global references that specify an environment (`^|"env"|name`) or global directory
+(`^["gld"]name`). Standard global references have `environment=None`.
+
+**Code Generation**: Requires runtime global storage (database, file, etc.).
+Extended references may require switching database environments.
 
 ### MNakedGlobal
 

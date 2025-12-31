@@ -14,7 +14,8 @@ uv sync                          # Sync environment
 ```
 
 Never use bare `python`, `pip`, or `pytest` commands.
-Avoid using `uv python -c` or creating /tmp files - either run with pylanceRunCodeSnippet or create a permanent helper script in `/utils`.
+
+Run short Python snippets with pylanceRunCodeSnippet or create a permanent helper script in `/utils`. *Don't* use `uv python -c` or cat to /tmp files.
 
 ## Key Reference Materials
 

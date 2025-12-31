@@ -70,10 +70,33 @@ from m2py.asg.statements import (
     MJobStatement,
     MJobTarget,
     MViewStatement,
+    MTStartParam,
     MTStartStatement,
     MTCommitStatement,
     MTRestartStatement,
     MTRollbackStatement,
+    # Z-commands
+    MZShowStatement,
+    MZShowArg,
+    MZWriteStatement,
+    MZWriteArg,
+    MZBreakStatement,
+    MZBreakArg,
+    MZGotoStatement,
+    MZGotoArg,
+    MZKillStatement,
+    MZWithdrawStatement,
+    MZAllocateStatement,
+    MZDeallocateStatement,
+    MZHaltStatement,
+    MZLinkStatement,
+    MZPrintStatement,
+    MZPrintArg,
+    MZSystemStatement,
+    MZMessageStatement,
+    MZTriggerStatement,
+    MZCompileStatement,
+    MZContinueStatement,
 )
 from m2py.asg.elements import MCall
 from m2py.asg.enums import (
@@ -1250,8 +1273,20 @@ class SemanticAnalyzer:
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
 
-        if hasattr(cmd, "seconds") and cmd.seconds:
+        # Handle multiple duration arguments (new 'args' attribute)
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                analyzed_arg = self.analyze(arg, stmt)
+                if analyzed_arg is not None:
+                    stmt.durations.append(analyzed_arg)
+            # For backward compatibility, set duration to first arg
+            if stmt.durations:
+                stmt.duration = stmt.durations[0]
+        # Legacy support for old 'seconds' attribute
+        elif hasattr(cmd, "seconds") and cmd.seconds:
             stmt.duration = self.analyze(cmd.seconds, stmt)
+            if stmt.duration is not None:
+                stmt.durations.append(stmt.duration)
 
         return stmt
 
@@ -1309,44 +1344,62 @@ class SemanticAnalyzer:
         - L ^A:1 - lock with timeout
         - L ^A,^B - lock multiple targets
         - L (^A,^B):1 - parenthesized list with shared timeout
+        - L +(^A,^B):1 - parenthesized list with +/- prefix
         - L @A - lock with indirection (name resolved at runtime)
         - L @A:1 - indirection with timeout
-        - L +^A / L -^A - incremental lock/unlock
+        - L +^A,-^B - per-target incremental/decremental lock
         """
         stmt = MLockStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
 
-        if hasattr(cmd, "lockop") and cmd.lockop:
-            stmt.lock_type = str(cmd.lockop)
-
-        # Handle parenthesized lock list: L (^A,^B):timeout or L (@A,^B):timeout
+        # Handle parenthesized lock list: L (^A,^B):timeout or L +(^A,^B):timeout
         if hasattr(cmd, "locklist") and cmd.locklist:
             locklist = cmd.locklist
+            # Get list-level lockop (for L +(^A,^B) syntax)
+            list_lockop = ""
+            if hasattr(locklist, "lockop") and locklist.lockop:
+                list_lockop = str(locklist.lockop)
             if hasattr(locklist, "targets") and locklist.targets:
                 for item in locklist.targets:
-                    lock_info = self._analyze_lock_item(item, stmt)
+                    lock_info = self._analyze_lock_item(item, stmt, list_lockop)
                     stmt.targets.append(lock_info)
             if hasattr(locklist, "timeout") and locklist.timeout:
                 stmt.timeout = self.analyze(locklist.timeout, stmt)
 
-        # Handle regular target list: L ^A:1,^B:2 or L @A:1,^B:2
+        # Handle regular target list: L +^A:1,-^B:2 or L @A:1,^B:2
         if hasattr(cmd, "targets") and cmd.targets:
             for target in cmd.targets:
                 lock_info = self._analyze_lock_target(target, stmt)
                 stmt.targets.append(lock_info)
 
+        # Derive statement-level lock_type from targets (for simple cases)
+        # If all targets have same lockop, use it; otherwise leave empty
+        if stmt.targets:
+            lockops = [t.get("lockop", "") for t in stmt.targets]
+            if lockops and all(op == lockops[0] for op in lockops):
+                stmt.lock_type = lockops[0]
+
         return stmt
 
-    def _analyze_lock_item(self, item: Any, parent: Any) -> dict:
+    def _analyze_lock_item(self, item: Any, parent: Any, list_lockop: str = "") -> dict:
         """Analyze a single item in a parenthesized lock list.
 
-        LockListItem grammar produces both indirect and target attributes
-        (one will be None, the other populated based on input syntax):
+        LockListItem grammar produces lockop, indirect, and target attributes:
+        - lockop: "+" or "-" for incremental/decremental
         - indirect: IndirectChain (e.g., @A, @@A, @(expr))
         - target: VarRef (e.g., ^A, X, ^A(1,2))
+
+        The list_lockop is inherited from the parent LockList (for L +(^A,^B) syntax).
+        Item-level lockop takes precedence over list-level lockop.
         """
         lock_info = {}
+
+        # Handle lockop (+/-): item-level takes precedence over list-level
+        if hasattr(item, "lockop") and item.lockop:
+            lock_info["lockop"] = str(item.lockop)
+        else:
+            lock_info["lockop"] = list_lockop
 
         # Handle indirection: @A, @@A, @(expr)
         if item.indirect:
@@ -1363,14 +1416,21 @@ class SemanticAnalyzer:
         return lock_info
 
     def _analyze_lock_target(self, target: Any, parent: Any) -> dict:
-        """Analyze a LockTarget: postcond? (indirect | target) (':' timeout)?
+        """Analyze a LockTarget: lockop? postcond? (indirect | target) (':' timeout)?
 
         Handles:
-        - L ^A:1 - variable with timeout
+        - L +^A:1 - incremental lock with timeout
+        - L -^A:1 - decremental lock with timeout
         - L @A:1 - indirection with timeout
         - L:cond ^A - postconditioned lock target
         """
         lock_info = {}
+
+        # Handle lockop (+/-)
+        if hasattr(target, "lockop") and target.lockop:
+            lock_info["lockop"] = str(target.lockop)
+        else:
+            lock_info["lockop"] = ""
 
         # Handle postcondition on target
         if hasattr(target, "postcond") and target.postcond:
@@ -1451,6 +1511,11 @@ class SemanticAnalyzer:
 
         Supports multiple devices per MUMPS 1995 spec:
         C DEV1,DEV2 closes both devices
+
+        Also supports GT.M/YottaDB device parameter variations:
+        - C file:(DELETE) - parenthesized keyword
+        - C file:delete - single keyword without parens
+        - C file:(RENAME=newname) - keyword with value
         """
         stmt = MCloseStatement()
         object.__setattr__(stmt, "parent", parent)
@@ -1464,17 +1529,58 @@ class SemanticAnalyzer:
                 # Handle CloseArg object - grammar always produces device attribute
                 if hasattr(arg, "device") and arg.device:
                     device.device_expr = self.analyze(arg.device, stmt)
+                # Handle parenthesized params
                 if hasattr(arg, "params") and arg.params:
-                    device.parameters = [self.analyze(p, stmt) for p in arg.params]
+                    device.parameters = [
+                        self._analyze_device_param(p, stmt) for p in arg.params
+                    ]
+                # Handle single param (no parens)
+                if hasattr(arg, "single_param") and arg.single_param:
+                    device.parameters = [
+                        self._analyze_device_param(arg.single_param, stmt)
+                    ]
                 stmt.devices.append(device)
 
         return stmt
+
+    def _analyze_device_param(self, param: Any, parent: Any) -> MExpr:
+        """Analyze a DeviceParam into an expression.
+
+        DeviceParam can be:
+        - keyword (like DELETE, REWIND)
+        - keyword=value (like EXCEPTION="G EOF")
+        - plain expr (legacy or numeric params)
+        """
+        # If it has a keyword attribute, treat keyword as a string literal
+        if hasattr(param, "keyword") and param.keyword:
+            # For keyword=value, create an assignment-like expression
+            if hasattr(param, "value") and param.value:
+                # Return the value expression - keyword is metadata
+                return self.analyze(param.value, parent)
+            else:
+                # Return keyword as a literal string
+                from m2py.asg.expressions import MLiteral
+
+                lit = MLiteral()
+                object.__setattr__(lit, "parent", parent)
+                lit.value = param.keyword
+                return lit
+        # Plain expression
+        if hasattr(param, "expr") and param.expr:
+            return self.analyze(param.expr, parent)
+        # Fallback - analyze the param itself
+        return self.analyze(param, parent)
 
     def _analyze_UseCommand(self, cmd: Any, parent: Any) -> MUseStatement:
         """Analyze USE command into MUseStatement.
 
         Supports multiple devices per MUMPS 1995 spec:
         U DEV1,DEV2 uses both devices in sequence
+
+        Also supports GT.M/YottaDB device parameter variations:
+        - U p:(REWIND:FOLLOW) - parenthesized keywords
+        - U p:rewind - single keyword without parens
+        - U p:exception="G EOF" - keyword with value
         """
         stmt = MUseStatement()
         object.__setattr__(stmt, "parent", parent)
@@ -1488,8 +1594,16 @@ class SemanticAnalyzer:
                 # Handle UseArg object - grammar always produces device attribute
                 if hasattr(arg, "device") and arg.device:
                     device.device_expr = self.analyze(arg.device, stmt)
+                # Handle parenthesized params
                 if hasattr(arg, "params") and arg.params:
-                    device.parameters = [self.analyze(p, stmt) for p in arg.params]
+                    device.parameters = [
+                        self._analyze_device_param(p, stmt) for p in arg.params
+                    ]
+                # Handle single param (no parens)
+                if hasattr(arg, "single_param") and arg.single_param:
+                    device.parameters = [
+                        self._analyze_device_param(arg.single_param, stmt)
+                    ]
                 stmt.devices.append(device)
 
         return stmt
@@ -1607,11 +1721,34 @@ class SemanticAnalyzer:
         self._analyze_postcondition(cmd, stmt)
 
         # VIEW arguments (implementation-specific parameters)
+        # ViewArg contains expr and optional colon-separated values
         if hasattr(cmd, "args") and cmd.args:
             args = cmd.args if isinstance(cmd.args, list) else [cmd.args]
-            stmt.arguments = [self.analyze(arg, stmt) for arg in args]
+            stmt.arguments = [self._analyze_ViewArg(arg, stmt) for arg in args]
 
         return stmt
+
+    def _analyze_ViewArg(self, arg: Any, parent: Any) -> MExpr:
+        """Analyze VIEW argument (ViewArg) into expression.
+
+        ViewArg contains:
+        - expr: The main expression (keyword or value)
+        - values: Optional list of colon-separated ViewColonValue items
+
+        For now, we return the main expression. The colon-separated values
+        are preserved in the textX model but not separately tracked in ASG
+        since they are implementation-specific GT.M/YottaDB parameters.
+        """
+        if hasattr(arg, "expr"):
+            return self.analyze(arg.expr, parent)
+        # Fallback for direct expressions
+        return self.analyze(arg, parent)
+
+    def _analyze_ViewColonValue(self, val: Any, parent: Any) -> MExpr:
+        """Analyze colon-separated value in VIEW command."""
+        if hasattr(val, "value"):
+            return self.analyze(val.value, parent)
+        return self.analyze(val, parent)
 
     def _analyze_TStartCommand(self, cmd: Any, parent: Any) -> MTStartStatement:
         """Analyze TSTART command into MTStartStatement.
@@ -1639,9 +1776,22 @@ class SemanticAnalyzer:
         # Handle parameters (keyword arguments after colon)
         if hasattr(cmd, "params") and cmd.params:
             params = cmd.params if isinstance(cmd.params, list) else [cmd.params]
-            stmt.parameters = [self.analyze(param, stmt) for param in params]
+            stmt.parameters = [
+                self._analyze_TStartParam(param, stmt) for param in params
+            ]
 
         return stmt
+
+    def _analyze_TStartParam(self, param: Any, parent: Any) -> MTStartParam:
+        """Analyze TSTART parameter into MTStartParam.
+
+        Parameters like SERIAL, S, TRANSACTIONID="value", T="value".
+        """
+        name = param.name if hasattr(param, "name") else str(param)
+        value = None
+        if hasattr(param, "value") and param.value is not None:
+            value = self.analyze(param.value, parent)
+        return MTStartParam(name=name, value=value)
 
     def _analyze_TCommitCommand(self, cmd: Any, parent: Any) -> MTCommitStatement:
         """Analyze TCOMMIT command into MTCommitStatement.
@@ -1680,6 +1830,464 @@ class SemanticAnalyzer:
             stmt.level = self.analyze(cmd.level, stmt)
 
         return stmt
+
+    def _analyze_TRollbackLevel(self, level: Any, parent: Any) -> MLiteral:
+        """Analyze TROLLBACK level expression.
+
+        TRollbackLevel captures a simple numeric-looking expression as raw text.
+        We return it as a string literal for now.
+        """
+        # Get the full level text from textX position info
+        full_text = ""
+        if hasattr(level, "_tx_parser") and hasattr(level, "_tx_position"):
+            # Access the original text
+            input_text = level._tx_parser.input
+            start = level._tx_position
+            end = level._tx_position_end
+            full_text = input_text[start:end]
+        else:
+            # Fallback: combine captured parts
+            rest = getattr(level, "rest", "") or ""
+            full_text = rest  # Best effort
+        return MLiteral(value=full_text, literal_type=LiteralType.STRING)
+
+    # =========================================================================
+    # Z-Command Analysis (YottaDB/GT.M Extensions)
+    # =========================================================================
+
+    def _analyze_ZShowCommand(self, cmd: Any, parent: Any) -> MZShowStatement:
+        """Analyze ZSHOW command into MZShowStatement.
+
+        ZSHOW [:pc] [codes] [:destination]
+        Displays process environment information.
+        """
+        stmt = MZShowStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                zshow_arg = MZShowArg()
+                if hasattr(arg, "codes") and arg.codes:
+                    zshow_arg.codes = self.analyze(arg.codes, stmt)
+                if hasattr(arg, "destination") and arg.destination:
+                    zshow_arg.destination = self.analyze(arg.destination, stmt)
+                stmt.args.append(zshow_arg)
+
+        return stmt
+
+    def _analyze_ZWriteCommand(self, cmd: Any, parent: Any) -> MZWriteStatement:
+        """Analyze ZWRITE command into MZWriteStatement.
+
+        ZWRITE [:pc] [target]
+        Writes variables with their names in readable format.
+        """
+        stmt = MZWriteStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                zwrite_arg = MZWriteArg()
+                if hasattr(arg, "target") and arg.target:
+                    zwrite_arg.target = self.analyze(arg.target, stmt)
+                stmt.args.append(zwrite_arg)
+
+        return stmt
+
+    def _analyze_ZBreakCommand(self, cmd: Any, parent: Any) -> MZBreakStatement:
+        """Analyze ZBREAK command into MZBreakStatement.
+
+        ZBREAK [:pc] [location[:action[:count]]]
+        Sets or removes breakpoints.
+        """
+        stmt = MZBreakStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                zbreak_arg = MZBreakArg()
+                if hasattr(arg, "location") and arg.location:
+                    zbreak_arg.location = self.analyze(arg.location, stmt)
+                if hasattr(arg, "action") and arg.action:
+                    zbreak_arg.action = self.analyze(arg.action, stmt)
+                if hasattr(arg, "count") and arg.count:
+                    zbreak_arg.count = self.analyze(arg.count, stmt)
+                stmt.args.append(zbreak_arg)
+
+        return stmt
+
+    def _analyze_ZGotoCommand(self, cmd: Any, parent: Any) -> MZGotoStatement:
+        """Analyze ZGOTO command into MZGotoStatement.
+
+        ZGOTO [:pc] [level[:target]] | @indirection
+        Extended GOTO with stack unwinding.
+        """
+        stmt = MZGotoStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                zgoto_arg = MZGotoArg()
+                if hasattr(arg, "level") and arg.level:
+                    zgoto_arg.level = self.analyze(arg.level, stmt)
+                if hasattr(arg, "target") and arg.target:
+                    zgoto_arg.target = self.analyze(arg.target, stmt)
+                if hasattr(arg, "indirection") and arg.indirection:
+                    zgoto_arg.indirection = self.analyze(arg.indirection, stmt)
+                stmt.args.append(zgoto_arg)
+
+        return stmt
+
+    def _analyze_ZKillCommand(self, cmd: Any, parent: Any) -> MZKillStatement:
+        """Analyze ZKILL command into MZKillStatement.
+
+        ZKILL [:pc] targets
+        Kills variable but preserves descendants.
+        """
+        stmt = MZKillStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "targets") and cmd.targets:
+            for target in cmd.targets:
+                analyzed = self.analyze(target, stmt)
+                if analyzed:
+                    stmt.targets.append(analyzed)
+
+        return stmt
+
+    def _analyze_ZWithdrawCommand(self, cmd: Any, parent: Any) -> MZWithdrawStatement:
+        """Analyze ZWITHDRAW command into MZWithdrawStatement.
+
+        ZWITHDRAW [:pc] targets
+        Alias for ZKILL - kills variable but preserves descendants.
+        """
+        stmt = MZWithdrawStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "targets") and cmd.targets:
+            for target in cmd.targets:
+                analyzed = self.analyze(target, stmt)
+                if analyzed:
+                    stmt.targets.append(analyzed)
+
+        return stmt
+
+    def _analyze_ZHaltCommand(self, cmd: Any, parent: Any) -> MZHaltStatement:
+        """Analyze ZHALT command into MZHaltStatement.
+
+        ZHALT [:pc] exitcode
+        Halts with an exit code.
+        """
+        stmt = MZHaltStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "exitcode") and cmd.exitcode:
+            stmt.exitcode = self.analyze(cmd.exitcode, stmt)
+
+        return stmt
+
+    def _analyze_ZAllocateCommand(self, cmd: Any, parent: Any) -> MZAllocateStatement:
+        """Analyze ZALLOCATE command into MZAllocateStatement.
+
+        ZALLOCATE [:pc] targets
+        Incremental lock (always uses +).
+        Uses same target structure as LOCK command.
+        """
+        stmt = MZAllocateStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        # Handle parenthesized lock list: ZA (^A,^B):timeout
+        if hasattr(cmd, "locklist") and cmd.locklist:
+            locklist = cmd.locklist
+            # ZALLOCATE always uses incremental locking
+            list_lockop = "+"
+            if hasattr(locklist, "targets") and locklist.targets:
+                for item in locklist.targets:
+                    lock_info = self._analyze_lock_item(item, stmt, list_lockop)
+                    stmt.targets.append(lock_info)
+            if hasattr(locklist, "timeout") and locklist.timeout:
+                stmt.timeout = self.analyze(locklist.timeout, stmt)
+
+        # Handle regular target list: ZA ^A:1,^B:2
+        if hasattr(cmd, "targets") and cmd.targets:
+            for target in cmd.targets:
+                lock_info = self._analyze_lock_target(target, stmt)
+                # Force incremental lock for ZALLOCATE
+                lock_info["lockop"] = "+"
+                stmt.targets.append(lock_info)
+
+        return stmt
+
+    def _analyze_ZDeallocateCommand(
+        self, cmd: Any, parent: Any
+    ) -> MZDeallocateStatement:
+        """Analyze ZDEALLOCATE command into MZDeallocateStatement.
+
+        ZDEALLOCATE [:pc] targets
+        Decremental unlock (always uses -).
+        Opposite of ZALLOCATE - releases incremental locks.
+        """
+        stmt = MZDeallocateStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        # Handle parenthesized lock list: ZD (^A,^B)
+        if hasattr(cmd, "locklist") and cmd.locklist:
+            locklist = cmd.locklist
+            # ZDEALLOCATE always uses decremental unlocking
+            list_lockop = "-"
+            if hasattr(locklist, "targets") and locklist.targets:
+                for item in locklist.targets:
+                    lock_info = self._analyze_lock_item(item, stmt, list_lockop)
+                    stmt.targets.append(lock_info)
+
+        # Handle regular target list: ZD ^A,^B
+        if hasattr(cmd, "targets") and cmd.targets:
+            for target in cmd.targets:
+                lock_info = self._analyze_lock_target(target, stmt)
+                # Force decremental unlock for ZDEALLOCATE
+                lock_info["lockop"] = "-"
+                stmt.targets.append(lock_info)
+
+        return stmt
+
+    def _analyze_ZLinkCommand(self, cmd: Any, parent: Any) -> MZLinkStatement:
+        """Analyze ZLINK command into MZLinkStatement.
+
+        ZLINK [:pc] routine
+        Compiles and links routine into process.
+        """
+        stmt = MZLinkStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                analyzed = self.analyze(arg, stmt)
+                if analyzed:
+                    stmt.args.append(analyzed)
+
+        return stmt
+
+    def _analyze_ZPrintCommand(self, cmd: Any, parent: Any) -> MZPrintStatement:
+        """Analyze ZPRINT command into MZPrintStatement.
+
+        ZPRINT [:pc] [label[:routine]]
+        Prints source code.
+        """
+        stmt = MZPrintStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                zprint_arg = MZPrintArg()
+                if hasattr(arg, "start_label") and arg.start_label:
+                    zprint_arg.start_label = arg.start_label
+                if hasattr(arg, "start_offset") and arg.start_offset:
+                    zprint_arg.start_offset = self.analyze(arg.start_offset, stmt)
+                if hasattr(arg, "routine") and arg.routine:
+                    zprint_arg.routine = arg.routine
+                if hasattr(arg, "end_label") and arg.end_label:
+                    zprint_arg.end_label = arg.end_label
+                if hasattr(arg, "end_offset") and arg.end_offset:
+                    zprint_arg.end_offset = self.analyze(arg.end_offset, stmt)
+                stmt.args.append(zprint_arg)
+
+        return stmt
+
+    def _analyze_ZSystemCommand(self, cmd: Any, parent: Any) -> MZSystemStatement:
+        """Analyze ZSYSTEM command into MZSystemStatement.
+
+        ZSYSTEM [:pc] [command]
+        Executes shell command.
+        """
+        stmt = MZSystemStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                analyzed = self.analyze(arg, stmt)
+                if analyzed:
+                    stmt.args.append(analyzed)
+
+        return stmt
+
+    def _analyze_ZMessageCommand(self, cmd: Any, parent: Any) -> MZMessageStatement:
+        """Analyze ZMESSAGE command into MZMessageStatement.
+
+        ZMESSAGE [:pc] error_code
+        Generates MUMPS error.
+        """
+        stmt = MZMessageStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                analyzed = self.analyze(arg, stmt)
+                if analyzed:
+                    stmt.args.append(analyzed)
+
+        return stmt
+
+    def _analyze_ZTriggerCommand(self, cmd: Any, parent: Any) -> MZTriggerStatement:
+        """Analyze ZTRIGGER command into MZTriggerStatement.
+
+        ZTRIGGER [:pc] target
+        Invokes triggers associated with a global reference.
+        """
+        stmt = MZTriggerStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "target") and cmd.target is not None:
+            stmt.target = self.analyze(cmd.target, stmt)
+
+        return stmt
+
+    def _analyze_ZCompileCommand(self, cmd: Any, parent: Any) -> MZCompileStatement:
+        """Analyze ZCOMPILE command into MZCompileStatement.
+
+        ZCOMPILE [:pc] routine
+        Compiles routine without linking.
+        """
+        stmt = MZCompileStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                analyzed = self.analyze(arg, stmt)
+                if analyzed:
+                    stmt.args.append(analyzed)
+
+        return stmt
+
+    def _analyze_ZContinueCommand(self, cmd: Any, parent: Any) -> MZContinueStatement:
+        """Analyze ZCONTINUE command into MZContinueStatement.
+
+        ZCONTINUE [:pc]
+        Continues execution after breakpoint.
+        """
+        stmt = MZContinueStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+        return stmt
+
+    # =========================================================================
+    # Z-Command Helper Type Handlers
+    # =========================================================================
+
+    def _analyze_ZBreakArg(self, arg: Any, parent: Any) -> MZBreakArg:
+        """Analyze ZBreakArg into MZBreakArg."""
+        result = MZBreakArg()
+        if hasattr(arg, "location") and arg.location:
+            result.location = self.analyze(arg.location, parent)
+        if hasattr(arg, "action") and arg.action:
+            result.action = self.analyze(arg.action, parent)
+        if hasattr(arg, "count") and arg.count:
+            result.count = self.analyze(arg.count, parent)
+        return result
+
+    def _analyze_ZBreakLocation(self, loc: Any, parent: Any) -> Any:
+        """Analyze ZBreakLocation - dispatches to Indirection or ZBreakTarget."""
+        # Grammar: ZBreakLocation: Indirection | ZBreakTarget
+        # Since it's a union, the actual object is the matched alternative
+        return self.analyze(loc, parent)
+
+    def _analyze_ZBreakTarget(self, target: Any, parent: Any) -> MCall:
+        """Analyze ZBreakTarget into MCall for label/routine reference."""
+        # ZBreakTarget: ('+' offset=Expr)? label=VARNAME? ('^' routine=VARNAME)?
+        call = MCall()
+        object.__setattr__(call, "parent", parent)
+
+        if hasattr(target, "label") and target.label:
+            call.name = target.label
+        if hasattr(target, "routine") and target.routine:
+            call.routine = target.routine
+        if hasattr(target, "routineIndirect") and target.routineIndirect:
+            call.routine_indirection = self.analyze(target.routineIndirect, call)
+        if hasattr(target, "offset") and target.offset:
+            call.offset = self.analyze(target.offset, call)
+
+        return call
+
+    def _analyze_ZGotoArg(self, arg: Any, parent: Any) -> MZGotoArg:
+        """Analyze ZGotoArg into MZGotoArg."""
+        result = MZGotoArg()
+        if hasattr(arg, "level") and arg.level:
+            result.level = self.analyze(arg.level, parent)
+        if hasattr(arg, "target") and arg.target:
+            result.target = self.analyze(arg.target, parent)
+        if hasattr(arg, "indirection") and arg.indirection:
+            result.indirection = self.analyze(arg.indirection, parent)
+        return result
+
+    def _analyze_ZGotoTarget(self, target: Any, parent: Any) -> Any:
+        """Analyze ZGotoTarget - dispatches to Indirection or LabelRef."""
+        # Grammar: ZGotoTarget: Indirection | LabelRef
+        return self.analyze(target, parent)
+
+    def _analyze_LabelRef(self, label_ref: Any, parent: Any) -> MCall:
+        """Analyze LabelRef into MCall.
+
+        LabelRef: (label=LABELNAME ('+' offset=OffsetExpr?)?)?
+                  ('^' (routineIndirect=IndirectChain | routine=VARNAME))?
+
+        Returns an MCall with the label name, offset, and routine information.
+        """
+        call = MCall()
+
+        # Get label name
+        if hasattr(label_ref, "label") and label_ref.label:
+            call.name = label_ref.label
+
+        # Get offset if present (label+offset)
+        if hasattr(label_ref, "offset") and label_ref.offset:
+            call.offset = self.analyze(label_ref.offset, parent)
+
+        # Get routine - either literal name or indirect expression
+        if hasattr(label_ref, "routine") and label_ref.routine:
+            call.routine = label_ref.routine
+        elif hasattr(label_ref, "routineIndirect") and label_ref.routineIndirect:
+            routine_expr, levels = self._analyze_indirect_chain(
+                label_ref.routineIndirect, parent
+            )
+            call.routine_indirection = routine_expr
+            call.routine_is_indirect = True
+            call.indirection_levels = levels
+
+        # Track the label call for reference resolution
+        if call.name:
+            self._track_label_call(call.name, call.routine)
+
+        return call
+
+    def _analyze_ZPrintArg(self, arg: Any, parent: Any) -> MZPrintArg:
+        """Analyze ZPrintArg into MZPrintArg."""
+        result = MZPrintArg()
+        if hasattr(arg, "start_label") and arg.start_label:
+            result.start_label = arg.start_label
+        if hasattr(arg, "start_offset") and arg.start_offset:
+            result.start_offset = self.analyze(arg.start_offset, parent)
+        if hasattr(arg, "routine") and arg.routine:
+            result.routine = arg.routine
+        if hasattr(arg, "routineIndirect") and arg.routineIndirect:
+            result.routine_indirection = self.analyze(arg.routineIndirect, parent)
+        if hasattr(arg, "end_label") and arg.end_label:
+            result.end_label = arg.end_label
+        if hasattr(arg, "end_offset") and arg.end_offset:
+            result.end_offset = self.analyze(arg.end_offset, parent)
+        return result
 
     # =========================================================================
     # Scope and Variable Tracking

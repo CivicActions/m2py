@@ -970,10 +970,12 @@ class TestSetSpecialVariableGrammar:
 
 
 class TestTStartEmptyRestartGrammar:
-    """Test TSTART with empty restart argument (T97.5).
+    """Test TSTART with empty restart argument and parameters.
 
     Per MUMPS 1995 spec 8.2.22, TSTART () means "restart all local
     variables" - equivalent to TSTART *.
+
+    Parameters like SERIAL, TRANSACTIONID control transaction behavior.
     """
 
     def test_tstart_empty_parens(self):
@@ -989,17 +991,52 @@ class TestTStartEmptyRestartGrammar:
         assert stmt.__class__.__name__ == "MTStartStatement"
 
     def test_tstart_empty_parens_with_serial(self):
-        """TSTART ():S should parse - restart all, serial mode.
+        """TSTART ():S should parse - restart all, serial mode."""
+        parser = MUMPSParser()
+        source = "LABEL\tTS ():serial\n"
+        routine = parser.parse(source)
 
-        Note: This test verifies parsing only; the TStartParam semantic
-        analysis is a separate concern (semantic analyzer handles parameters).
-        """
-        from m2py.parser import parse_line_content
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert stmt.__class__.__name__ == "MTStartStatement"
+        assert len(stmt.parameters) == 1
+        assert stmt.parameters[0].name == "serial"
+        assert stmt.parameters[0].value is None
 
-        # Test at grammar level without full semantic analysis
-        result = parse_line_content(" TS ():S", 1)
-        assert result is not None
-        # The command parsed successfully
+    def test_tstart_abbreviated_serial(self):
+        """TSTART ():S should parse with abbreviated serial."""
+        parser = MUMPSParser()
+        source = "LABEL\tTS ():S\n"
+        routine = parser.parse(source)
+
+        stmt = routine.labels[0].body.statements[0]
+        assert len(stmt.parameters) == 1
+        assert stmt.parameters[0].name == "S"
+
+    def test_tstart_transactionid(self):
+        """TSTART ():T=\"BA\" should parse with transaction ID."""
+        parser = MUMPSParser()
+        source = 'LABEL\tTS ():transactionid="BA"\n'
+        routine = parser.parse(source)
+
+        stmt = routine.labels[0].body.statements[0]
+        assert len(stmt.parameters) == 1
+        assert stmt.parameters[0].name == "transactionid"
+        assert stmt.parameters[0].value is not None
+        assert stmt.parameters[0].value.value == "BA"
+
+    def test_tstart_multiple_params(self):
+        """TSTART ():serial:T=\"X\" should parse multiple params."""
+        parser = MUMPSParser()
+        source = 'LABEL\tTS ():serial:T="X"\n'
+        routine = parser.parse(source)
+
+        stmt = routine.labels[0].body.statements[0]
+        assert len(stmt.parameters) == 2
+        assert stmt.parameters[0].name == "serial"
+        assert stmt.parameters[1].name == "T"
+        assert stmt.parameters[1].value.value == "X"
 
     def test_tstart_star_still_works(self):
         """TSTART * should still parse - restart all (explicit)."""
@@ -1008,6 +1045,8 @@ class TestTStartEmptyRestartGrammar:
         routine = parser.parse(source)
 
         assert isinstance(routine, MRoutine)
+        stmt = routine.labels[0].body.statements[0]
+        assert stmt.restart_all is True
 
     def test_tstart_varlist_still_works(self):
         """TSTART (A,B,C) should still parse - named vars."""
@@ -1016,6 +1055,8 @@ class TestTStartEmptyRestartGrammar:
         routine = parser.parse(source)
 
         assert isinstance(routine, MRoutine)
+        stmt = routine.labels[0].body.statements[0]
+        assert len(stmt.restart_vars) == 3
 
 
 class TestIORefSpecialVariableGrammar:

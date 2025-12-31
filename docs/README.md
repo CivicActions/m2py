@@ -85,6 +85,7 @@ for label in routine.labels:
 | Document | Description |
 |----------|-------------|
 | [testing.md](testing.md) | How to test and validate parser output |
+| [limitations.md](limitations.md) | Known parser limitations and unsupported commands |
 
 ## Source Code Reference
 

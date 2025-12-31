@@ -266,31 +266,65 @@ class TestIntrinsicFunctionASG:
         assert inner.name in ("P", "PIECE")
 
     def test_binary_expression_in_function_arg(self):
-        """$T(TEX+I) has a binary expression argument - regression test for T582.
+        """$E(X,I+1) has a binary expression argument - regression test for T582.
 
         This tests that binary expressions inside function arguments are correctly
         preserved and not dropped during unwrapping. Previously, _unwrap_expr()
         checked for '.ops' attribute but the grammar uses '.tail' for BinaryOpTail.
+
+        Note: We use $E (EXTRACT) instead of $T (TEXT) because $TEXT has special
+        line reference syntax where TEX+I means "label TEX plus I lines", not
+        a binary expression.
         """
-        expr = parse_expression("$T(TEX+I)")
+        expr = parse_expression("$E(X,I+1)")
         result = analyze_expression(expr)
 
         assert isinstance(result, MIntrinsicFunction)
-        assert result.name == "T"
-        assert len(result.arguments) == 1
+        assert result.name == "E"
+        assert len(result.arguments) == 2
 
-        # The argument should be an MBinaryOp, not just LocalVariable
-        arg = result.arguments[0]
+        # First argument is just X
+        assert isinstance(result.arguments[0], MVariable)
+        assert result.arguments[0].name == "X"
+
+        # Second argument should be an MBinaryOp, not just LocalVariable
+        arg = result.arguments[1]
         assert isinstance(arg, MBinaryOp), (
             f"Expected MBinaryOp, got {type(arg).__name__}"
         )
         assert arg.operator == "+"
 
-        # Left should be TEX, right should be I
+        # Left should be I, right should be 1
         assert isinstance(arg.left, MVariable)
-        assert arg.left.name == "TEX"
-        assert isinstance(arg.right, MVariable)
-        assert arg.right.name == "I"
+        assert arg.left.name == "I"
+        assert isinstance(arg.right, MLiteral)
+        assert arg.right.value == 1
+
+    def test_text_function_line_reference(self):
+        """$T(TEX+I) is parsed as a line reference, not a binary expression.
+
+        In MUMPS, $TEXT takes a line reference argument where:
+        - TEX is the label name
+        - +I is the offset (number of lines from the label)
+
+        This is distinct from a binary expression argument.
+        """
+        from m2py.parser.textx_classes import TextFunction
+
+        expr = parse_expression("$T(TEX+I)")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, TextFunction)
+        assert result.name == "T"
+        # Arguments list is empty because line_ref is stored separately
+        assert len(result.arguments) == 0
+
+        # Check line_ref contains the label and offset
+        assert hasattr(result, "line_ref")
+        assert result.line_ref["label"] == "TEX"
+        # Offset should be a variable reference to I
+        assert isinstance(result.line_ref["offset"], MVariable)
+        assert result.line_ref["offset"].name == "I"
 
     def test_complex_expression_in_function_arg(self):
         """$P(A," ;",2,99) preserves all arguments including string literals."""
@@ -890,3 +924,51 @@ class TestMActualParameterAnalysis:
         assert arg.parent is func
         assert isinstance(arg.expression, MVariable)
         assert arg.expression.parent is arg
+
+
+class TestZGotoLabelRefAnalysis:
+    """Test LabelRef analysis for ZGOTO command."""
+
+    def test_zgoto_with_labelref_target(self):
+        """ZGOTO 1:label^routine should produce MZGotoStatement with target."""
+        from m2py import MUMPSParser
+        from m2py.asg.statements import MZGotoStatement
+        from m2py.asg.elements import MCall
+
+        source = """TEST
+ ZGOTO 1:label^routine
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+
+        # Find the ZGOTO statement
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MZGotoStatement)
+        assert len(stmt.args) == 1
+
+        arg = stmt.args[0]
+        assert arg.target is not None
+        assert isinstance(arg.target, MCall)
+        assert arg.target.name == "label"
+        assert arg.target.routine == "routine"
+
+    def test_zgoto_with_indirect_routine(self):
+        """ZGOTO 1:label^@routinevar should handle indirect routine."""
+        from m2py import MUMPSParser
+        from m2py.asg.statements import MZGotoStatement
+        from m2py.asg.elements import MCall
+
+        source = """TEST
+ ZGOTO 1:label^@routinevar
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MZGotoStatement)
+        assert len(stmt.args) == 1
+
+        arg = stmt.args[0]
+        assert arg.target is not None
+        assert isinstance(arg.target, MCall)
+        assert arg.target.routine_is_indirect

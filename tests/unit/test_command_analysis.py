@@ -23,6 +23,8 @@ from m2py.asg.statements import (
     MHangStatement,
     MHaltStatement,
     MBreakStatement,
+    MZAllocateStatement,
+    MZDeallocateStatement,
 )
 from m2py.asg.expressions import (
     MLiteral,
@@ -509,6 +511,30 @@ class TestOtherStatementAnalysis:
         stmt = analyze_first_command("B")
 
         assert isinstance(stmt, MBreakStatement)
+
+    def test_zallocate(self):
+        """za X produces MZAllocateStatement with incremental lock."""
+        stmt = analyze_first_command("za X")
+
+        assert isinstance(stmt, MZAllocateStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0]["lockop"] == "+"
+
+    def test_zdeallocate(self):
+        """zd X produces MZDeallocateStatement with decremental unlock."""
+        stmt = analyze_first_command("zd X")
+
+        assert isinstance(stmt, MZDeallocateStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0]["lockop"] == "-"
+
+    def test_zdeallocate_with_postcondition(self):
+        """Zdeallocate:'(i#2) X produces MZDeallocateStatement with postcondition."""
+        stmt = analyze_first_command("Zdeallocate:'(i#2) X")
+
+        assert isinstance(stmt, MZDeallocateStatement)
+        assert stmt.postcondition is not None
+        assert len(stmt.targets) == 1
 
 
 class TestMultipleCommandsAnalysis:

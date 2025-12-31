@@ -53,3 +53,44 @@ class MUMPSSyntaxError(Exception):
                 full_message += f"\n  {' ' * (column - 1)}^"
 
         super().__init__(full_message)
+
+
+class MUMPSUnknownCommandError(MUMPSSyntaxError):
+    """Exception raised when an unrecognized command is encountered.
+
+    This error is raised during parsing when a word in command position
+    does not match any known MUMPS command. This catches:
+    - Misspelled commands
+    - Rare or vendor-specific commands not yet implemented
+    - Invalid abbreviations
+    """
+
+    def __init__(
+        self,
+        command: str,
+        line: Optional[int] = None,
+        column: Optional[int] = None,
+        source_file: Optional[str] = None,
+        source_line: Optional[str] = None,
+    ):
+        """Initialize an unknown command error.
+
+        Args:
+            command: The unrecognized command word
+            line: Line number where error occurred (1-based)
+            column: Column number where error occurred (1-based)
+            source_file: Path to the source file
+            source_line: The actual source line text
+        """
+        self.command = command
+        message = (
+            f"Unknown command '{command}'. "
+            "Not a recognized MUMPS command or valid abbreviation."
+        )
+        super().__init__(
+            message=message,
+            line=line,
+            column=column,
+            source_file=source_file,
+            source_line=source_line,
+        )

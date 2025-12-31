@@ -129,23 +129,29 @@ UnaryOp:
 // Primary expressions (atoms)
 // Ordering rules for correct parsing:
 // 1. $ prefixed items (ordered by specificity):
+//    - TextFunction - catches $TEXT/$T(lineref) with special line-reference syntax
 //    - SelectFunction - catches $SELECT/$S(cond:val,...) with special syntax
 //    - IntrinsicFunction (with args) - catches $P(args), $L(args), etc.
 //    - SpecialVariable - catches $S as special variable (STORAGE)
 //    - IntrinsicFunctionNoArgs - catch-all for unknown $ZVersion etc.
-// 2. ^ prefixed items (ordered for ^$ before ^):
+// 2. ^ prefixed items (ordered for more specific patterns first):
 //    - StructuredSystemVariable - catches ^$DEVICE, ^$JOB etc (SSVs)
+//    - ExtendedGlobalPipe - catches ^|"env"|name (pipe-delimited)
+//    - ExtendedGlobalBracket - catches ^["gld"]name (bracket-delimited)
 //    - NakedGlobal - catches ^(subscripts)
 //    - GlobalVariable - catches ^name(subscripts)
 // 3. Other primaries: Indirection, LocalVariable, Literals
 PrimaryExpr:
     ParenExpr |
     ExtrinsicFunction |
+    TextFunction |
     SelectFunction |
     IntrinsicFunction |
     SpecialVariable |
     IntrinsicFunctionNoArgs |
     StructuredSystemVariable |
+    ExtendedGlobalPipe |
+    ExtendedGlobalBracket |
     NakedGlobal |
     GlobalVariable |
     Indirection |
@@ -185,20 +191,26 @@ OffsetUnaryExpr:
     operators*=UnaryOp operand=OffsetPrimaryExpr
 ;
 
-// Primary expressions for offset - includes subscripted globals only
-// (bare ^NAME is excluded because it could be a routine reference,
-// but ^NAME(...) is clearly a global variable in an expression)
-// Ordering matches PrimaryExpr for correct parsing of abbreviated special variables.
+// Primary expressions for offset - includes globals (subscripted, naked, and bare)
+// Bare ^NAME is safe to include because OffsetExpr stops at non-binary operators,
+// so a trailing ^ROUTINE will be correctly parsed as the routine reference.
+// For example, in "1+^V1A^V1CALLE", OffsetExpr consumes "^V1A" and stops at the
+// second "^" which is then parsed as the routine reference.
+// Ordering: SubscriptedGlobal before GlobalVariable (more specific first),
+// NakedGlobal after GlobalVariable (^(subscripts) vs ^name).
 // StructuredSystemVariable is included since ^$NAME is unambiguously an SSV.
 OffsetPrimaryExpr:
     OffsetParenExpr |
     ExtrinsicFunction |
+    TextFunction |
     SelectFunction |
     IntrinsicFunction |
     SpecialVariable |
     IntrinsicFunctionNoArgs |
     StructuredSystemVariable |
     SubscriptedGlobal |
+    GlobalVariable |
+    NakedGlobal |
     Indirection |
     LocalVariable |
     StringLiteral |
@@ -244,7 +256,21 @@ LocalVariable:
     name=VARNAME subscripts=Subscripts?
 ;
 
-// Global variable with optional subscripts
+// Extended global variable - environment/namespace specification
+// ^|"env"|globalname - pipe-delimited environment
+// MUST come before GlobalVariable to parse correctly
+ExtendedGlobalPipe:
+    '^|' environment=StringLiteral '|' name=VARNAME subscripts=Subscripts?
+;
+
+// Extended global variable - bracket-delimited (alternative syntax)
+// ^["gld"]globalname - bracket-delimited global directory
+ExtendedGlobalBracket:
+    '^[' environment=StringLiteral ']' name=VARNAME subscripts=Subscripts?
+;
+
+// Global variable with optional subscripts (simple form)
+// ^globalname - without environment specification
 GlobalVariable:
     '^' name=VARNAME subscripts=Subscripts?
 ;
@@ -277,6 +303,45 @@ Subscripts:
 // =============================================================================
 // Functions
 // =============================================================================
+
+// $TEXT function uses special line-reference argument syntax
+// This must be matched BEFORE IntrinsicFunction to correctly parse $T(label^routine)
+// Syntax: $T[EXT](lineref) where lineref is label+offset^routine format
+// Examples:
+//   $T(label) - line at label in current routine
+//   $T(+5) - line at offset 5 from routine start
+//   $T(label+3) - line at label+3 offset
+//   $T(label^routine) - line in another routine
+//   $T(^routine) - first line of routine
+//   $T(^@VAR) - routine from indirection
+//   $T(@VAR) - complete line reference from indirection
+TextFunction:
+    '$' name=TEXTNAME '(' arg=TextFunctionArg ')'
+;
+
+// $TEXT function name patterns (case-insensitive abbreviations)
+TEXTNAME:
+    /[Tt][Ee][Xx][Tt]|[Tt][Ee][Xx]|[Tt][Ee]|[Tt](?=\()/
+;
+
+// $TEXT argument: line reference (similar to LabelRef but may include indirection for everything)
+// Order matters: try indirection-only first, then full label reference patterns
+TextFunctionArg:
+    // Complete indirection: @VAR resolves to entire line reference at runtime
+    fullIndirect=Indirection |
+    // Label reference: [label][+offset][^routine]
+    (label=TEXTLABELNAME ('+' offset=OffsetExpr?)?)? 
+    ('^' (routineIndirect=Indirection | routine=VARNAME))?
+;
+
+// Text label name - can be:
+// - Purely numeric (1, 012, 0) 
+// - Start with % followed by alphanumeric (%ABC, %0000000)
+// - Start with letter followed by alphanumeric (LABEL, A1B2)
+// Same as LABELNAME but defined separately for clarity
+TEXTLABELNAME:
+    /[0-9]+|[%A-Za-z][A-Za-z0-9]*/
+;
 
 // $SELECT function uses special argument syntax: condition:value pairs
 // This must be matched BEFORE IntrinsicFunction to correctly parse $SELECT/$S/$s
@@ -323,8 +388,9 @@ ExtrinsicFunction:
 // Function arguments - supports by-reference (.VAR) and by-value (Expr) parameters
 // In MUMPS, .VAR passes a variable by reference, allowing callee to modify it
 // Grammar is ordered so that ByRefArg matches before Expr (which could match .5 as a number)
+// Empty parentheses () are valid - indicates "call with parameter passing semantics" with no params
 FunctionArgs:
-    '(' args+=FunctionArg[','] ')'
+    '(' args*=FunctionArg[','] ')'
 ;
 
 // Individual function argument: by-reference or by-value
@@ -380,9 +446,9 @@ FUNCNAME:
 // Special variable name (these are specific keywords)
 // Includes both full names and valid abbreviations
 // CRITICAL: Order longest matches FIRST to prevent partial matching issues
-// e.g., IOREFERENCE must match before IO, otherwise $IOREFERENCE parses as $IO + REFERENCE
+// e.g., ZTWORMHOLE must match before ZT, otherwise $ZTWORMHOLE parses as $ZT + WORMHOLE
 //
-// Full names (longest first within each group):
+// Standard MUMPS Special Variables:
 //   IOREFERENCE, PIOREFERENCE - I/O reference tracking
 //   TRESTART, TLEVEL - Transaction variables
 //   PRINCIPAL - Principal device
@@ -392,7 +458,6 @@ FUNCNAME:
 //   ESTACK - Error stack level
 //   SYSTEM - System identifier
 //   DEVICE - Current device info
-//   ZLEVEL - Z-level
 //   ETRAP - Error trap
 //   ECODE - Error code
 //   STACK - Stack level
@@ -403,17 +468,43 @@ FUNCNAME:
 //   IO - Current device
 //   X, Y - Cursor position
 //
+// YDB Z-ISVs (Implementation-specific special variables):
+//   ZTWORMHOLE - Transaction wormhole data
+//   ZTRIGGEROP - Trigger operation type
+//   ZTOLDVALUE - Trigger old value
+//   ZINTERRUPT - Interrupt flag
+//   ZPOSITION, ZPOS, ZP - Current position
+//   ZCMDLINE - Command line arguments
+//   ZTUPDATE - Trigger update
+//   ZERROR, ZE - Error message text
+//   ZGBLDIR - Global directory
+//   ZSTATUS - Status code
+//   ZTVALUE - Trigger value
+//   ZTSLATE - Transaction slate
+//   ZTDELIM - Trigger delimiter
+//   ZTLEVEL, ZTL - Transaction level
+//   ZLEVEL, ZL - Stack level
+//   ZSTEP - Step action
+//   ZTRAP, ZT - Error trap
+//   ZTNAME - Trigger name
+//   ZTCODE - Trigger code
+//   ZTDATA - Trigger data
+//   ZYERROR - Error handler
+//   ZKEY - Key value
+//   ZEOF - End of file flag
+//   ZJOB - Job info
+//
 // Abbreviations (two-letter before single-letter):
 //   IOR (IOREFERENCE), PIOR (PIOREFERENCE)
 //   EC (ECODE), ES (ESTACK), ET (ETRAP)
 //   ST (STACK), SY (SYSTEM)
 //   TL (TLEVEL), TR (TRESTART)
-//   ZL (ZLEVEL)
+//   ZL (ZLEVEL), ZT (ZTRAP), ZE (ZERROR), ZP (ZPOSITION), ZTL (ZTLEVEL)
 //   Single letters: D, H, I, J, K, P, Q, R, S, T, X, Y
 //
 // MUMPS is case-insensitive for special variable names
 SVARNAME:
-    /[Pp][Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Pp][Rr][Ii][Nn][Cc][Ii][Pp][Aa][Ll]|[Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Hh][Oo][Rr][Oo][Ll][Oo][Gg]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee]|[Ee][Ss][Tt][Aa][Cc][Kk]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Zz][Ll][Ee][Vv][Ee][Ll]|[Tt][Ll][Ee][Vv][Ee][Ll]|[Ee][Tt][Rr][Aa][Pp]|[Ee][Cc][Oo][Dd][Ee]|[Ss][Tt][Aa][Cc][Kk]|[Qq][Uu][Ii][Tt]|[Tt][Ee][Ss][Tt]|[Kk][Ee][Yy]|[Jj][Oo][Bb]|[Pp][Ii][Oo][Rr]|[Ii][Oo][Rr]|[Ii][Oo]|[Ee][Cc]|[Ee][Ss]|[Ee][Tt]|[Ss][Tt]|[Ss][Yy]|[Tt][Ll]|[Tt][Rr]|[Zz][Ll]|[DdHhIiJjKkPpQqRrSsTtXxYy]/
+    /[Zz][Tt][Ww][Oo][Rr][Mm][Hh][Oo][Ll][Ee]|[Zz][Tt][Rr][Ii][Gg][Gg][Ee][Rr][Oo][Pp]|[Zz][Tt][Oo][Ll][Dd][Vv][Aa][Ll][Uu][Ee]|[Zz][Ii][Nn][Tt][Ee][Rr][Rr][Uu][Pp][Tt]|[Zz][Pp][Oo][Ss][Ii][Tt][Ii][Oo][Nn]|[Pp][Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Cc][Mm][Dd][Ll][Ii][Nn][Ee]|[Zz][Tt][Uu][Pp][Dd][Aa][Tt][Ee]|[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Pp][Rr][Ii][Nn][Cc][Ii][Pp][Aa][Ll]|[Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Yy][Ee][Rr][Rr][Oo][Rr]|[Zz][Gg][Bb][Ll][Dd][Ii][Rr]|[Zz][Ss][Tt][Aa][Tt][Uu][Ss]|[Zz][Tt][Vv][Aa][Ll][Uu][Ee]|[Zz][Tt][Ss][Ll][Aa][Tt][Ee]|[Zz][Tt][Dd][Ee][Ll][Ii][Mm]|[Zz][Tt][Ll][Ee][Vv][Ee][Ll]|[Hh][Oo][Rr][Oo][Ll][Oo][Gg]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee]|[Ee][Ss][Tt][Aa][Cc][Kk]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Zz][Ll][Ee][Vv][Ee][Ll]|[Tt][Ll][Ee][Vv][Ee][Ll]|[Zz][Ee][Rr][Rr][Oo][Rr]|[Zz][Tt][Nn][Aa][Mm][Ee]|[Zz][Tt][Cc][Oo][Dd][Ee]|[Zz][Tt][Dd][Aa][Tt][Aa]|[Ee][Tt][Rr][Aa][Pp]|[Ee][Cc][Oo][Dd][Ee]|[Ss][Tt][Aa][Cc][Kk]|[Zz][Ss][Tt][Ee][Pp]|[Zz][Tt][Rr][Aa][Pp]|[Qq][Uu][Ii][Tt]|[Tt][Ee][Ss][Tt]|[Zz][Pp][Oo][Ss]|[Zz][Kk][Ee][Yy]|[Zz][Ee][Oo][Ff]|[Zz][Jj][Oo][Bb]|[Kk][Ee][Yy]|[Jj][Oo][Bb]|[Pp][Ii][Oo][Rr]|[Zz][Tt][Ll]|[Ii][Oo][Rr]|[Ii][Oo]|[Ee][Cc]|[Ee][Ss]|[Ee][Tt]|[Ss][Tt]|[Ss][Yy]|[Tt][Ll]|[Tt][Rr]|[Zz][Ll]|[Zz][Tt]|[Zz][Ee]|[Zz][Pp]|[DdHhIiJjKkPpQqRrSsTtXxYy]/
 ;
 
 // Quoted string (handles "" escaping)

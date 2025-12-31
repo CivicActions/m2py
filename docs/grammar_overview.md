@@ -37,9 +37,9 @@ LabelLine:
     label=LABEL_NAME formal_list=FormalList? rest=/[^\r\n]*/ NL
 ;
 
-// Formal parameter list: (param1, param2, ...)
+// Formal parameter list: (param1, param2, ...) or empty ()
 FormalList:
-    '(' params+=PARAM_NAME[/,/] ')'
+    '(' params*=PARAM_NAME[/,/] ')'
 ;
 
 // Continuation line: starts with tab or single space, then rest
@@ -200,6 +200,17 @@ GlobalVariable:
     '^' name=VARNAME subscripts=Subscripts?
 ;
 
+// Extended global references (environment/namespace specification)
+// ^|"env"|name - pipe-delimited environment
+ExtendedGlobalPipe:
+    '^|' environment=StringLiteral '|' name=VARNAME subscripts=Subscripts?
+;
+
+// ^["gld"]name - bracket-delimited global directory
+ExtendedGlobalBracket:
+    '^[' environment=StringLiteral ']' name=VARNAME subscripts=Subscripts?
+;
+
 // Naked global: ^(subscripts) - uses last referenced global name
 NakedGlobal:
     '^' '(' subscripts+=Expr[','] ')'
@@ -246,6 +257,68 @@ SVARNAME:
 ```mumps
 S $X=0,$Y=0  ; Reset cursor position
 ```
+
+### Z-ISVs (YottaDB/GT.M Extensions)
+
+YottaDB and GT.M implementations provide additional intrinsic special variables with `$Z` prefix. These are called Z-ISVs and many of them are settable (can appear on the left side of SET and in NEW statements).
+
+**Settable Z-ISVs** (parsed as `SpecialVariable`):
+| Z-ISV | Description | Use in SET/NEW |
+|-------|-------------|----------------|
+| `$ZTRAP` | Error trap handler | `S $ZTRAP="ERRSUB"` |
+| `$ZSTATUS` | Error status/message | `S $ZSTATUS=""` |
+| `$ZGBLDIR` | Global directory path | `S $ZGBLDIR="db.gld"` |
+| `$ZINTERRUPT` | Interrupt handler | `S $ZINTERRUPT="INTSUB"` |
+| `$ZYERROR` | Extended error info | `S $ZYERROR="ERRSUB^ROU"` |
+| `$ZSTEP` | Step action handler | `S $ZSTEP="N"` |
+| `$ZLEVEL` | Stack level | Read mostly |
+| `$ZPOSITION` | Current position | Read mostly |
+| `$ZEOF` | End of file flag | Device-dependent |
+| `$ZJOB` | Job information | Read mostly |
+| `$ZCMDLINE` | Command line args | Read mostly |
+| `$ZKEY` | Key value | Device-dependent |
+
+**Trigger Z-ISVs** (for trigger context):
+| Z-ISV | Description |
+|-------|-------------|
+| `$ZTWORMHOLE` | Data passed through transaction |
+| `$ZTRIGGEROP` | Trigger operation type (SET/KILL/etc.) |
+| `$ZTOLDVALUE` | Value before trigger |
+| `$ZTVALUE` | Current/new value |
+| `$ZTUPDATE` | Piece numbers updated |
+| `$ZTSLATE` | Transaction slate data |
+| `$ZTDELIM` | Trigger delimiter |
+| `$ZTLEVEL` | Transaction level |
+| `$ZTNAME` | Trigger name |
+| `$ZTCODE` | Trigger code |
+| `$ZTDATA` | Trigger data info |
+
+**Read-only Z-ISVs** (parsed as `IntrinsicFunctionNoArgs`):
+| Z-ISV | Description |
+|-------|-------------|
+| `$ZCHSET` | Character set (M or UTF-8) |
+| `$ZSYSTEM` | Last OS command return code |
+| `$ZVERSION` | YDB/GT.M version |
+
+**Example usage**:
+```mumps
+; Error trapping
+S $ZTRAP="ERRHND"  
+; ... code that might fail ...
+Q
+ERRHND
+W "Error: ",$ZSTATUS,!
+S $ZTRAP=""
+Q
+
+; Transaction wormhole (triggers)
+S $ZTWORMHOLE="audit-user-123"
+TSTART
+S ^DATA("key")="value"
+TCOMMIT
+```
+
+**Grammar Note**: Settable Z-ISVs are included in the `SVARNAME` pattern, ensuring they parse as `SpecialVariable` and can be used with SET and NEW commands. The pattern uses longest-match-first ordering (e.g., `ZTWORMHOLE` before `ZT`) to prevent partial matching.
 
 ### Structured System Variables (SSVs)
 
@@ -311,9 +384,66 @@ ExtrinsicFunction:
 ;
 
 CallTarget:
-    name=LABEL_NAME ('+' offset=Expr)? ('^' routine=ROUTINE_NAME)?
+    name=LABEL_NAME ('+' offset=OffsetExpr)? ('^' routine=ROUTINE_NAME)?
 ;
 ```
+
+### Computed Entry Points in DO/GOTO
+
+MUMPS allows computed offsets in DO and GOTO targets. The offset expression can include
+global variable values, intrinsic functions, and arithmetic operations:
+
+```mumps
+; Simple computed offset
+D 1+^COUNT^ROUTINE    ; Label 1, offset = value of ^COUNT, routine = ROUTINE
+
+; Complex offset expression with globals
+D LABEL+^V1A(2)-^(3)/10    ; Offset = ^V1A(2) - ^(3) / 10
+
+; Multiple bare globals in offset
+D Z+-20+^VAR1+^VAR2^ROUTINE
+```
+
+The grammar uses `OffsetExpr` instead of `Expr` to properly distinguish offset expressions
+from routine references. `OffsetExpr` supports:
+- Bare globals (`^NAME`) - parsed as global values, not routine refs
+- Subscripted globals (`^NAME(subscripts)`)
+- Naked globals (`^(subscripts)`)
+- Local variables, intrinsic functions, and literals
+
+The key insight is that after the offset expression is parsed, any subsequent `^NAME`
+is interpreted as the routine reference.
+
+### Argument Postconditions (DO, GOTO, XECUTE)
+
+Per MUMPS spec 8.1.4, three commands support argument-level postconditions:
+DO, GOTO, and XECUTE. This allows conditional execution of individual arguments.
+
+```mumps
+; DO with argument postconditions
+D INIT,PROC:DEBUG,CLEANUP    ; PROC runs only if DEBUG is true
+
+; GOTO with argument postconditions  
+G DONE:X>100,RETRY:ERR,LOOP  ; First matching condition wins
+
+; XECUTE with argument postconditions
+X "S X=1":A>0,"S Y=1":B>0    ; Each arg can have its own condition
+X:ENABLE "CODE1":COND1,"CODE2":COND2  ; Command AND arg postconditions
+```
+
+The grammar structure for XECUTE arguments:
+```textx
+XecuteCommand:
+    /([Xx][Ee][Cc][Uu][Tt][Ee]|[Xx])(?![A-Za-z])/ postcond=Postcondition? WS args+=XecuteArg[/,/]
+;
+
+XecuteArg:
+    expr=Expr postcond=Postcondition?
+;
+```
+
+Note: Only DO, GOTO, and XECUTE support argument postconditions. Other commands
+like SET, WRITE, and READ do NOT have this capability per the MUMPS specification.
 
 ### Indirection
 
@@ -385,10 +515,129 @@ MUMPS commands can be abbreviated (per MUMPS spec). Most commands have a single 
 | FOR | F | `F I=1:1:10` |
 | **HALT** | **H** | `H` (no argument) |
 | **HANG** | **H** | `H 5` (with argument) |
-| TSTART | TS | `TS (X,Y)` (begin transaction) |
+| TSTART | TS | `TS ():serial` (begin transaction) |
 | TCOMMIT | TC | `TC` (commit transaction) |
 | TRESTART | TRE | `TRE` (restart transaction) |
 | TROLLBACK | TRO | `TRO` (rollback transaction) |
+
+### Transaction Commands (TSTART)
+
+The TSTART command begins a transaction with optional restart variables and parameters:
+
+```textx
+TStartCommand:
+    /([Tt][Ss][Tt][Aa][Rr][Tt]|[Tt][Ss])(?![A-Za-z])/ postcond=Postcondition? 
+    (WS restart_arg=TStartRestartArg? (':' params+=TStartParam[':'])?)?
+;
+
+TStartRestartArg:
+    all='*' | '(' vars*=VARNAME[','] ')'
+;
+
+TStartParam:
+    name=/[Ss][Ee][Rr][Ii][Aa][Ll]|[Ss]|[Tt][Rr][Aa][Nn][Ss][Aa][Cc][Tt][Ii][Oo][Nn][Ii][Dd]|[Tt]|[Zz][A-Za-z0-9]*/ 
+    ('=' value=Expr)?
+;
+```
+
+**Examples**:
+| Syntax | Description |
+|--------|-------------|
+| `TS` | Non-restartable transaction |
+| `TS ()` | Restartable transaction (empty restart list) |
+| `TS *` | Restartable, restore all local variables on restart |
+| `TS (A,B)` | Restartable, restore A and B on restart |
+| `TS ():serial` | Restartable serial transaction |
+| `TS ():S` | Restartable serial (abbreviated) |
+| `TS ():T="BA"` | Transaction with ID "BA" |
+| `TS ():serial:T="X"` | Serial transaction with ID "X" |
+
+**Parameters**:
+- `SERIAL` (S): Transaction is serializable
+- `TRANSACTIONID` (T): Named transaction identifier (value required)
+- Z-prefixed: Implementation-specific parameters
+
+### VIEW Command
+
+The VIEW command provides implementation-specific system control:
+
+```textx
+ViewCommand:
+    /([Vv][Ii][Ee][Ww]|[Vv])(?![A-Za-z])/ postcond=Postcondition? WS? args+=ViewArg[/,/]?
+;
+
+ViewArg:
+    expr=Expr values+=ViewColonValue*
+;
+
+ViewColonValue:
+    ':' value=Expr
+;
+```
+
+**GT.M/YottaDB Syntax**: Each VIEW argument supports colon-separated values:
+
+| Example | Description |
+|---------|-------------|
+| `VIEW "trace":1:"^trace"` | Enable tracing with global storage |
+| `VIEW "GVDUPSETNOOP":0` | Set duplicate SET behavior |
+| `VIEW "JOBPID":1` | Enable job PID tracking |
+| `V 0` | Simple VIEW with expression |
+
+The `ViewArg` rule captures the main expression and any colon-separated values that follow.
+
+### Z-Commands (YottaDB/GT.M Extensions)
+
+M2PY supports vendor-specific Z-commands commonly used in YottaDB and GT.M implementations:
+
+| Full | Minimum | Purpose | Example |
+|------|---------|---------|---------|
+| ZALLOCATE | ZA | Incremental lock (always +) | `ZALLOCATE ^gbl:60` |
+| ZBREAK | ZB | Set/remove breakpoints | `ZBREAK label^routine:"action"` |
+| ZCOMPILE | ZC | Compile routine | `ZCOMPILE "routine.m"` |
+| ZCONTINUE | (none) | Continue from breakpoint | `ZCONTINUE` |
+| ZDEALLOCATE | ZD | Decremental unlock (always -) | `ZDEALLOCATE ^gbl` |
+| ZGOTO | ZGO | Extended GOTO with stack unwinding | `ZGOTO 0:label` |
+| ZHALT | ZH | Halt with exit code | `ZHALT 1` |
+| ZKILL | ZKI | Kill variable, keep descendants | `ZKILL X(1)` |
+| ZLINK | ZLI | Compile and link routine | `ZLINK "routine"` |
+| ZMESSAGE | ZM | Generate MUMPS error | `ZMESSAGE 150372994` |
+| ZPRINT | ZP | Print source code | `ZPRINT label^routine` |
+| ZSHOW | ZSH | Display process info | `ZSHOW "BS":^RESULT` (to global) |
+| ZSYSTEM | ZSY | Execute shell command | `ZSYSTEM "ls -la"` |
+| ZTRIGGER | (none) | Trigger update notification | `ZTRIGGER ^global` |
+| ZWITHDRAW | ZWI | Kill variable, keep descendants | `ZWITHDRAW X(1)` (alias for ZKILL) |
+| ZWRITE | ZWR | Write variables with names | `ZWR X` |
+
+**Note**: ZCONTINUE requires full spelling to avoid conflict with ZC (ZCOMPILE abbreviation).
+
+### ZSHOW Output Destinations
+
+ZSHOW supports optional output destinations to capture information into variables:
+
+```mumps
+ZSHOW "*"             ; Display all info to terminal
+ZSHOW "V":^RESULT     ; Output variables to ^RESULT global
+ZSHOW "L":@gvar       ; Output locks via indirection
+ZSHOW "*":^XUTL("SYS",$J)  ; Output to subscripted global
+```
+
+The grammar rule is:
+```textx
+ZShowArg:
+    codes=Expr (':' destination=VarRef)?
+;
+```
+
+**ZSHOW codes** (string argument):
+- `"*"` - All information
+- `"B"` - Breakpoints
+- `"D"` - Devices
+- `"G"` - Globals
+- `"I"` - Intrinsic special variables
+- `"L"` - Locks
+- `"S"` - Stack
+- `"V"` - Variables
 
 ### HALT vs HANG Disambiguation
 
@@ -403,20 +652,24 @@ Command:
     ...
 ;
 
-// HaltCommand: matches H|HALT without following whitespace
+// HaltCommand: matches H|HALT without following whitespace (before AND after postcondition)
 HaltCommand:
-    /[Hh][Aa][Ll][Tt]|[Hh]/ !WS postcond=Postcondition?
+    /[Hh][Aa][Ll][Tt]|[Hh]/ !WS postcond=Postcondition? !WS
 ;
 
-// HangCommand: requires H|HANG followed by whitespace and expression
+// HangCommand: requires H|HANG followed by whitespace and expression(s)
+// Supports multiple comma-separated durations: H 0,1,2,3
 HangCommand:
-    /[Hh][Aa][Nn][Gg]|[Hh]/ postcond=Postcondition? WS seconds=Expr
+    /[Hh][Aa][Nn][Gg]|[Hh]/ postcond=Postcondition? SingleSpace args+=Expr[/,/]
 ;
 ```
 
-The `!WS` negative lookahead ensures:
-- `H` alone → HALT (no whitespace follows, so `!WS` succeeds)
+The double `!WS` negative lookahead ensures:
+- `H` alone → HALT (no whitespace follows)
+- `H:X` → HALT with postcondition (no whitespace after postcond)
 - `H 5` → HANG (`!WS` fails because space follows, so HaltCommand doesn't match)
+- `H:X>0 5` → HANG with postcondition (`!WS` after postcond fails due to space)
+- `H 0,1,2,3` → HANG with multiple durations
 
 ## Grammar Testing
 

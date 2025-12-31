@@ -22,9 +22,9 @@ LabelLine:
     label=LABEL_NAME formal_list=FormalList? rest=/[^\r\n]*/ NL
 ;
 
-// Formal parameter list: (param1, param2, ...)
+// Formal parameter list: (param1, param2, ...) or empty ()
 FormalList:
-    '(' params+=PARAM_NAME[/,/] ')'
+    '(' params*=PARAM_NAME[/,/] ')'
 ;
 
 // Continuation line: starts with tab or single space, then rest

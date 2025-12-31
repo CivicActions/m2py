@@ -398,16 +398,19 @@ stmt.merges = [
 
 ### MHangStatement
 
-Pause execution:
+Pause execution for specified duration(s):
 
 ```mumps
 H 5           ; Hang 5 seconds
 HANG DURATION
+H 0,1,2,3     ; Hang for 0, then 1, then 2, then 3 seconds
+H:X>0 5       ; Conditional hang with postcondition
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `duration` | `Optional[MExpr]` | Seconds to pause |
+| `duration` | `Optional[MExpr]` | First duration (deprecated, use `durations`) |
+| `durations` | `List[MExpr]` | All duration expressions |
 
 **Note**: `H` alone (without argument) is HALT, not HANG. See MHaltStatement.
 
@@ -418,13 +421,16 @@ Terminate execution:
 ```mumps
 H             ; Argumentless H = halt
 HALT
+H:X           ; Conditional halt with postcondition
 ```
 
 No additional fields.
 
 **Note**: Per MUMPS spec, `H` and `HALT` share the same abbreviation. The grammar distinguishes them by argument presence:
 - `H` (no argument) → HALT (terminate)
+- `H:X` (postcondition, no argument) → HALT with postcondition
 - `H 5` (with argument) → HANG (pause 5 seconds)
+- `H:X>0 5` (postcondition with argument) → HANG with postcondition
 
 ### MBreakStatement
 
@@ -460,16 +466,22 @@ Resource locking:
 
 ```mumps
 L ^GLOBAL
-L +^GLOBAL        ; Incremental lock
-L -^GLOBAL        ; Decremental unlock
-L ^GLOBAL:5       ; With timeout
+L +^GLOBAL            ; Incremental lock
+L -^GLOBAL            ; Decremental unlock
+L ^GLOBAL:5           ; With timeout
+L +^A,+^B,+^C         ; Multiple incremental locks
+L +^A,-^B,^C          ; Mixed lock types per target
+L +(^A,^B,^C)         ; List-level incremental
+L -(^A):5             ; List-level decremental with timeout
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `targets` | `List[dict]` | Lock target dicts with keys: `target`/`indirection`, `timeout`, `postcondition`, `indirection_levels` |
-| `lock_type` | `str` | `""`, `"+"`, or `"-"` |
-| `timeout` | `Optional[MExpr]` | Timeout seconds |
+| `targets` | `List[dict]` | Lock target dicts with keys: `target`/`indirection`, `timeout`, `postcondition`, `indirection_levels`, `lockop` |
+| `lock_type` | `str` | `""`, `"+"`, or `"-"` (derived from targets when all have same lockop) |
+| `timeout` | `Optional[MExpr]` | Shared timeout for parenthesized list |
+
+Each target dict contains `lockop` with values `""`, `"+"`, or `"-"` for individual lock operations.
 
 ### MViewStatement
 

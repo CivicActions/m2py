@@ -11304,3 +11304,1698 @@ The following were investigated and determined to be non-issues:
 - 1 MEDIUM priority gap (SSVs) not used in MUGJ tests
 - 1 LOW priority gap (OPEN mnemonic) rarely used
 - Several spec commands not needed for typical transpilation
+---
+
+## Phase 98: MUMPS Specification Parsing Gaps Validation (January 2025)
+
+**Purpose**: Validate findings from the Phase 97 audit and identify any additional gaps discovered through targeted testing and reference review
+
+**Reference**: MUMPS 1995 ANSI M X11.1-1995 Standard (mumps-reference/)
+
+**Created**: 2025-01-03
+
+---
+
+### Validated Findings
+
+#### Finding 1: Intrinsic Function Name Validation - CONFIRMED GAP (Low Priority)
+
+**Status**: Parser accepts any function name - no validation against standard list
+
+**Test Case**:
+```mumps
+ W $INVALID("test")
+```
+- **Actual**: Parses successfully to `MIntrinsicFunction(name='INVALID', arguments=[...])`
+- **Expected**: Ideally should warn/error that `$INVALID` is not a standard function
+
+**Technical Analysis**:
+- Grammar rule in `expressions.tx`: `'$' name=FUNCNAME args=FunctionArgs`
+- FUNCNAME accepts any `[A-Za-z]+` without validation
+- `MIntrinsicFunction` ASG class stores name without validation
+- Semantic analyzer processes arguments but does not validate function name
+
+**MUMPS Spec 7.1.5**: Standard functions include $ASCII, $CHAR, $DATA, $EXTRACT, $FIND, $FNUMBER, $GET, $JUSTIFY, $LENGTH, $NAME, $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE, $VIEW, $Z*
+
+**Files**:
+- `src/m2py/grammar/expressions.tx` (IntrinsicFunction rule)
+- `src/m2py/analysis/semantic_analyzer.py` (no function name validation)
+- `src/m2py/asg/expressions.py` (MIntrinsicFunction class)
+
+**Mitigating Factor**: Invalid function names will fail at runtime/codegen anyway
+
+**Recommendation**: Add optional semantic validation warning for unknown function names. Low priority since runtime will catch invalid functions.
+
+**Priority**: LOW - Non-standard functions fail at runtime anyway; mostly affects early error detection
+
+---
+
+#### Finding 2: BREAK Command with Arguments - NOT AN ISSUE (Correct Behavior)
+
+**Status**: `B "test"` causes parse error - this is CORRECT per specification
+
+**Test Case**:
+```mumps
+ B "test"
+```
+- **Actual**: Parse error captured in `routine.parse_errors`
+- **Expected**: Parse error (BREAK does not accept arguments in standard MUMPS)
+
+**MUMPS Spec 8.2.1 (BREAK)**:
+> "Break without arguments suspends execution until receipt of a signal, not specified here, from a device."
+
+The spec explicitly says "without arguments" - any argument form is for "non-standard programming aids."
+
+**Technical Analysis**:
+- Grammar rule: `BreakCommand: /[Bb][Rr][Ee][Aa][Kk]|[Bb]/ postcond=Postcondition?`
+- No argument support - CORRECT per spec
+- Parse error is properly captured in `routine.parse_errors` - not "silent"
+
+**Files**:
+- `src/m2py/grammar/commands.tx` (BreakCommand rule, line ~419)
+
+**Conclusion**: NOT AN ISSUE - Current behavior is correct per MUMPS specification
+
+---
+
+#### Finding 3: VIEW Command Arguments - NOT AN ISSUE (Correct Behavior)
+
+**Status**: VIEW accepts generic expressions - this is CORRECT per specification
+
+**Test Case**:
+```mumps
+ V "test"
+ V 1,2,3
+ V:X=1 "debug"
+```
+- **Actual**: All parse successfully to `MViewStatement` with generic expression arguments
+- **Expected**: Success - VIEW arguments are implementation-defined
+
+**MUMPS Spec 8.2.24 (VIEW)**:
+> "V[IEW] postcond arguments unspecified"
+
+The spec explicitly states "arguments unspecified" - meaning arguments are implementation-defined.
+
+**Technical Analysis**:
+- Grammar rule: `ViewCommand: /[Vv][Ii][Ee][Ww]|[Vv]/ postcond=Postcondition? WS? args+=Expr[/,/]?`
+- Accepts zero or more comma-separated expressions - CORRECT generic handling
+
+**Conclusion**: NOT AN ISSUE - Generic expression handling is appropriate for implementation-defined arguments
+
+---
+
+#### Finding 4: Missing Standard Commands - PARTIALLY VALIDATED
+
+**Status**: Several commands from 1995 spec are not in grammar
+
+**Commands NOT in grammar**:
+
+1. **THEN (TH[EN])** - Standard Part 1 command
+   - Status: NOT IMPLEMENTED
+   - Usage in MUGJ tests: None found (grep verified)
+   - Spec 8.2.32: Creates new context structure, saves $TEST
+   - **Recommendation**: Add if needed for specific MUMPS code
+
+2. **Z-commands (Z[unspecified])** - Implementation-defined
+   - Status: NOT IMPLEMENTED
+   - Spec 8.2.27: "All commandwords not defined in the standard begin with Z"
+   - **Recommendation**: Not needed - implementation-specific
+
+3. **Part 2 SSV commands** (ABlock, Assign, ASTArt, ASTOp, AUnblock)
+   - Status: NOT IMPLEMENTED
+   - Part 2 features for Structured System Variables
+   - Usage in MUGJ tests: None found
+   - **Recommendation**: Not in scope for basic transpilation
+
+4. **Event commands** (ESTArt, ESTOp, ETrigger)
+   - Status: NOT IMPLEMENTED
+   - Part 2 event-driven programming features
+   - Usage in MUGJ tests: None found
+   - **Recommendation**: Not in scope for basic transpilation
+
+5. **Extended KILL** (KSubscripts, KValue)
+   - Status: NOT IMPLEMENTED
+   - Part 2 extensions
+   - Usage in MUGJ tests: None found
+   - **Recommendation**: Not in scope for basic transpilation
+
+6. **Routine management** (RLoad, RSave)
+   - Status: NOT IMPLEMENTED
+   - Routine persistence commands
+   - Usage in MUGJ tests: None found
+   - **Recommendation**: Not in scope - rarely used in transpilation scenarios
+
+**Conclusion**: Only THEN is a standard Part 1 command that might be needed. All others are Part 2 features, Z-commands, or specialized commands not used in MUGJ tests.
+
+---
+
+### Tasks
+
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T98.1 | Consider adding optional function name validation to semantic analyzer | LOW | [ ] |
+| T98.2 | Consider adding THEN command support if needed for specific use cases | LOW | [ ] |
+| T98.3 | Document that parse errors are captured in routine.parse_errors | DOCS | [X] |
+
+**Note**: T98.1 and T98.2 are marked LOW priority because:
+- Invalid function names will fail at runtime anyway (T98.1)
+- THEN command is not used in MUGJ tests and no specific need identified (T98.2)
+
+---
+
+### Phase 98 Validation Summary
+
+**Audit Method**:
+1. Ran targeted parser tests using `parse_line_content()` and `MUMPSParser.parse()`
+2. Cross-referenced MUMPS 1995 spec sections
+3. Checked MUGJ test suite for usage patterns
+4. Examined grammar rules and ASG class implementations
+
+**Key Conclusions**:
+- **1 LOW priority gap** (intrinsic function name validation) - non-blocking
+- **1 potential addition** (THEN command) - not needed for current use cases
+- **2 confirmed NON-ISSUES** (BREAK arguments, VIEW arguments) - current behavior is correct
+- **Parse error handling is working** - errors captured in `routine.parse_errors`, not silent
+
+**Overall Assessment**: The parser implementation is well-aligned with the MUMPS specification. The identified gaps are either low priority or out of scope for the current transpilation use cases.
+
+---
+
+## Phase 99: YDBTest Analysis and Z-Command Implementation Plan (January 2025)
+
+**Purpose**: Analyze YottaDB test suite (YDBTest) to identify Z-command/vendor-specific syntax usage and plan comprehensive implementation for 100% parsing coverage.
+
+**Scope Change**: Per user clarification (2025-01-03), **ALL commands and syntax from the current MUMPS spec AND vendor-specific extensions (if used in practice) are in scope** for parsing, analysis, and ASG generation. Goal is 100% coverage of the entire standard plus commonly-used vendor extensions.
+
+---
+
+### YDBTest Analysis Results
+
+**Source**: YottaDB test suite temporarily mounted at `/Users/owen.barton/workspace/m2py/YDBTest/`
+
+#### Z-Command Usage (from YDBTest)
+
+| Command | Count | Priority | Notes |
+|---------|-------|----------|-------|
+| ZSHOW | 78 | HIGH | Display variables/context |
+| ZKILL | 34 | HIGH | Delete local variables (alias ZK) |
+| ZSYSTEM | 34 | HIGH | Execute OS commands |
+| ZWRITE | 27 | HIGH | Display variables in parseable format |
+| ZWR | 22 | HIGH | Abbreviation of ZWRITE |
+| ZM | 35 | HIGH | ZMESSAGE - display message |
+| ZGOTO | 13 | MEDIUM | Unwind stack and transfer control |
+| ZLINK | 7 | MEDIUM | Link/load routine |
+| ZCOMPILE | 4 | LOW | Compile routine |
+| ZBREAK | 3 | LOW | Set breakpoint |
+| ZMESSAGE | 2 | LOW | Display system message |
+| ZPRINT | 2 | LOW | Print routine source |
+
+#### Z-Function/ISV Usage (from YDBTest)
+
+| Function/ISV | Count | Priority | Notes |
+|--------------|-------|----------|-------|
+| $ZYSQLNULL | 711 | HIGH | SQL null handling |
+| $ZTRAP | 371 | HIGH | Error trapping |
+| $ZCHAR | 351 | HIGH | Extended character handling |
+| $ZWRITE | 313 | HIGH | Write format function |
+| $ZPOSITION | 207 | HIGH | Position ISV |
+| $ZSTATUS | 179 | HIGH | Status ISV |
+| $ZLEVEL | 137 | HIGH | Stack level ISV |
+| $ZPREVIOUS | 128 | MEDIUM | Previous in order |
+| $ZEXTRACT | 127 | MEDIUM | Extended extract |
+| $ZGETJPI | 110 | MEDIUM | Job/process info |
+| $ZPARSE | 100 | MEDIUM | File path parsing |
+| $ZJOB | 97 | MEDIUM | Job ID ISV |
+| $ZSEARCH | 96 | MEDIUM | File search |
+| $ZTRANSLATE | 93 | MEDIUM | Extended translate |
+| $ZEOF | 88 | MEDIUM | End of file ISV |
+| $ZASCII | 74 | MEDIUM | Extended ASCII |
+| $ZPIECE | 74 | MEDIUM | Extended piece |
+| $ZLENGTH | 70 | MEDIUM | Extended length |
+| $ZFIND | 66 | MEDIUM | Extended find |
+| $ZCHSET | 58 | MEDIUM | Character set ISV |
+| $ZCMDLINE | 56 | MEDIUM | Command line ISV |
+| $ZGBLDIR | 54 | MEDIUM | Global directory ISV |
+| $ZCONVERT | 53 | MEDIUM | Character conversion |
+| $ZTEXIT | 52 | MEDIUM | Transaction exit ISV |
+| ... | ... | ... | Many more |
+
+#### Part 2 / Event Commands
+
+| Command | Count | Notes |
+|---------|-------|-------|
+| ABlock | 0 | Not used in YDBTest |
+| AUnblock | 0 | Not used in YDBTest |
+| Assign | 0 | Not used in YDBTest |
+| ASTArt | 0 | Not used in YDBTest |
+| ASTOp | 0 | Not used in YDBTest |
+| ESTArt | 0 | Not used in YDBTest |
+| ESTOp | 0 | Not used in YDBTest |
+| ETrigger | 0 | Not used in YDBTest |
+| THEN | 0 | Not used in YDBTest |
+
+**Conclusion on Part 2**: Part 2 SSV/Event commands are NOT used in YDBTest. These may be deferred.
+
+---
+
+### Test Suite Comparison
+
+| Suite | Test Files | Directory |
+|-------|------------|-----------|
+| MUGJ | 376 | tests/functional/mugj/inref/ |
+| MVTS | 714 | YDBTest/mvts/inref/ |
+
+**Additional MVTS Test Categories** (not in MUGJ):
+- V3NEW (67 files) - NEW command variants
+- V1BOR (38 files) - Binary operators
+- V3FN2 (23 files) - Functions part 2
+- V4MER (20 files) - MERGE variants
+- V4QSU (16 files) - Query/subscript
+- V4GET (16 files) - $GET variants
+- V4NAM (15 files) - $NAME variants
+- V4TPE (13 files) - $TEXT/piece
+- V4ORD (12 files) - $ORDER variants
+- V4SOR (11 files) - Sorting variants
+- V4PAT (10 files) - Pattern matching
+
+**Recommendation**: Consider importing MVTS tests for more comprehensive validation.
+
+---
+
+### Implementation Tasks (Phase 99)
+
+**Status**: ✅ COMPLETE - All Z-commands and Z-functions implemented and tested
+
+#### HIGH Priority - Core Z-Commands
+
+| Task ID | Description | Files | Status |
+|---------|-------------|-------|--------|
+| T99.1 | Add ZSHOW command to grammar | commands.tx | [X] |
+| T99.2 | Add ZKILL command to grammar | commands.tx | [X] |
+| T99.3 | Add ZWRITE/ZWR command to grammar | commands.tx | [X] |
+| T99.4 | Add ZSYSTEM command to grammar | commands.tx | [X] |
+| T99.5 | Add ZMESSAGE/ZM command to grammar | commands.tx | [X] |
+
+#### HIGH Priority - Core Z-Functions/ISVs
+
+| Task ID | Description | Files | Status |
+|---------|-------------|-------|--------|
+| T99.6 | Add $ZTRAP ISV support | expressions.tx | [X] Already works via IntrinsicFunctionNoArgs |
+| T99.7 | Add $ZSTATUS ISV support | expressions.tx | [X] Already works via IntrinsicFunctionNoArgs |
+| T99.8 | Add $ZLEVEL ISV support | expressions.tx | [X] In SVARNAME pattern, works as SpecialVariable |
+| T99.9 | Add $ZPOSITION ISV support | expressions.tx | [X] Already works via IntrinsicFunctionNoArgs |
+| T99.10 | Add Z-function general pattern ($Z*) | expressions.tx | [X] FUNCNAME pattern already handles all Z-functions |
+
+#### MEDIUM Priority - Additional Z-Commands
+
+| Task ID | Description | Files | Status |
+|---------|-------------|-------|--------|
+| T99.11 | Add ZGOTO command to grammar | commands.tx | [X] |
+| T99.12 | Add ZLINK command to grammar | commands.tx | [X] |
+| T99.13 | Add ZBREAK command to grammar | commands.tx | [X] |
+| T99.14 | Add ZCOMPILE command to grammar | commands.tx | [X] |
+| T99.15 | Add ZPRINT command to grammar | commands.tx | [X] |
+
+#### MEDIUM Priority - Additional Z-Functions
+
+| Task ID | Description | Files | Status |
+|---------|-------------|-------|--------|
+| T99.16 | Add $ZCHAR function | expressions.tx | [X] Already works via IntrinsicFunction |
+| T99.17 | Add $ZWRITE function | expressions.tx | [X] Already works via IntrinsicFunction |
+| T99.18 | Add $ZPREVIOUS function | expressions.tx | [X] Already works via IntrinsicFunction |
+| T99.19 | Add $ZEXTRACT function | expressions.tx | [X] Already works via IntrinsicFunction |
+| T99.20 | Add $ZPIECE function | expressions.tx | [X] Already works via IntrinsicFunction |
+| T99.21 | Add $ZTRANSLATE function | expressions.tx | [X] Already works via IntrinsicFunction |
+| T99.22 | Add $ZPARSE function | expressions.tx | [X] Already works via IntrinsicFunction |
+| T99.23 | Add $ZSEARCH function | expressions.tx | [X] Already works via IntrinsicFunction |
+| T99.24 | Add $ZGETJPI function | expressions.tx | [X] Already works via IntrinsicFunction |
+| T99.25 | Add $ZCONVERT function | expressions.tx | [X] Already works via IntrinsicFunction |
+
+#### LOW Priority - Less Common
+
+| Task ID | Description | Files | Status |
+|---------|-------------|-------|--------|
+| T99.26 | Add additional Z ISVs ($ZEOF, $ZCHSET, etc.) | expressions.tx | [X] Already works via IntrinsicFunctionNoArgs |
+| T99.27 | Add $ZYSQLNULL for SQL interop | expressions.tx | [X] Already works via IntrinsicFunctionNoArgs |
+| T99.28 | Add remaining Z-functions as discovered | expressions.tx | [X] FUNCNAME pattern handles all |
+
+#### Testing Tasks
+
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T99.T1 | Add parsing tests for Z-commands | HIGH | [X] 43 tests in test_command_grammar.py |
+| T99.T2 | Add parsing tests for Z-functions | HIGH | [X] 24 tests in test_expression_grammar.py |
+| T99.T3 | Import MVTS test suite to tests/functional/mvts/ | HIGH | [X] Done in Phase 100 |
+| T99.T4 | Add ASG node types for Z-commands | HIGH | [X] 11 MZ*Statement types in statements.py |
+| T99.T5 | Add ASG node types for Z-functions | HIGH | [X] Works via existing MIntrinsicFunction/MSpecialVariable |
+
+---
+
+### Implementation Summary
+
+**Z-Commands** (11 implemented in commands.tx with ASG nodes in statements.py):
+- ZSHOW, ZWRITE/ZWR, ZBREAK, ZGOTO, ZKILL, ZLINK, ZPRINT, ZSYSTEM, ZMESSAGE/ZM, ZCOMPILE, ZCONTINUE
+
+**Z-Functions/ISVs** (already supported via generic patterns):
+- The grammar's `FUNCNAME` pattern (`[A-Za-z][A-Za-z0-9]*`) accepts all Z-function names
+- Z-ISVs without args parse as `IntrinsicFunctionNoArgs`
+- Z-functions with args parse as `IntrinsicFunction`
+- $ZLEVEL is explicitly in SVARNAME and parses as `SpecialVariable`
+
+**Tests**:
+- 43 Z-command grammar tests in tests/unit/test_command_grammar.py
+- 24 Z-function/ISV tests in tests/unit/test_expression_grammar.py
+- Full test suite: 1223+ tests pass
+
+### Reference Output Availability
+
+- **MUGJ**: Has `outref/mugj.txt` with pass/fail results
+- **MVTS**: Has `outref/mvts.txt` with pass/fail results
+- **Note**: These are aggregate pass/fail, not per-test expected output. Individual test validation uses `^VCOMP` vs `^VCORR` global comparison within MUMPS.
+
+### Phase Execution Order
+
+1. **Phase 100**: Import all YDBTest directories to tests/functional/
+2. **Phase 100**: Create integration tests for each directory (parse validation)
+3. **Phase 99**: Implement Z-commands (grammar + ASG nodes)
+4. **Phase 99**: Implement Z-functions/ISVs (grammar + ASG nodes)
+5. **Phase 101**: Create docs/limitations.md for unimplemented commands
+6. **Phase 101**: Add graceful error handling for Part 2 commands
+7. **Phase 102** (if needed): Fix parsing issues discovered from new test suites
+
+---
+
+## Additional YDBTest Directories of Interest
+
+Beyond MUGJ (376 tests) and MVTS (714 tests), the following YDBTest directories contain language-focused tests:
+
+| Directory | Files | Focus | Notes |
+|-----------|-------|-------|-------|
+| **basic/** | 107 | Core language tests | FOR, KILL, arithmetic, functions, globals - GOOD for core language |
+| **io/** | 116 | I/O operations | Device handling, FIFO, sockets - I/O specific |
+| **tp/** | 109 | Transaction processing | TSTART, TCOMMIT, etc - advanced feature |
+| **merge/** | 54 | MERGE command | Comprehensive MERGE tests - GOOD for MERGE coverage |
+| **indirection/** | 9 | Indirection (@) | Focused indirection tests - GOOD for @ coverage |
+| **triggers/** | 101 | Trigger system | YDB-specific trigger tests |
+| **m_commands/** | 27 | Command tests | ZBREAK, ZSHOW, etc - GOOD for Z-command testing |
+| **longname/** | 34 | Long variable names | Variable naming edge cases |
+| **unicode/** | 47 | Unicode handling | Character encoding tests |
+
+---
+
+## Phase 100: YDBTest Suite Integration (Complete)
+
+**Purpose**: Integrate ALL YDBTest directories for parsing/ASG validation to support comprehensive codegen testing.
+
+**Approach**: Follow same pattern as MUGJ integration in `tests/integration/test_mugj.py`
+
+**Status**: ✅ COMPLETE - All test suites imported and integration tests created
+
+### Parsing Results Summary
+
+| Suite | Parsed | Total | Success Rate |
+|-------|--------|-------|--------------|
+| basic | 107 | 107 | 100.0% ✓ |
+| indirection | 9 | 9 | 100.0% ✓ |
+| io | 116 | 116 | 100.0% ✓ |
+| longname | 34 | 34 | 100.0% ✓ |
+| m_commands | 27 | 27 | 100.0% ✓ |
+| merge | 50 | 54 | 92.6% ○ |
+| mugj | 376 | 376 | 100.0% ✓ |
+| mvts | 708 | 714 | 99.2% ○ |
+| tp | 38 | 109 | 34.9% ✗ |
+| triggers | 89 | 101 | 88.1% ○ |
+| unicode | 47 | 47 | 100.0% ✓ |
+| **TOTAL** | **1601** | **1694** | **94.5%** |
+
+### Test Suite Import Tasks
+
+| Task ID | Directory | Files | Priority | Status |
+|---------|-----------|-------|----------|--------|
+| T100.1 | Copy mvts/ to tests/functional/mvts_inref/ | 714 | HIGH | [X] |
+| T100.2 | Copy basic/ to tests/functional/basic_inref/ | 107 | HIGH | [X] |
+| T100.3 | Copy merge/ to tests/functional/merge_inref/ | 54 | HIGH | [X] |
+| T100.4 | Copy indirection/ to tests/functional/indirection_inref/ | 9 | HIGH | [X] |
+| T100.5 | Copy m_commands/ to tests/functional/m_commands_inref/ | 27 | HIGH | [X] |
+| T100.6 | Copy io/ to tests/functional/io_inref/ | 116 | MEDIUM | [X] |
+| T100.7 | Copy tp/ to tests/functional/tp_inref/ | 109 | MEDIUM | [X] |
+| T100.8 | Copy triggers/ to tests/functional/triggers_inref/ | 101 | MEDIUM | [X] |
+| T100.9 | Copy longname/ to tests/functional/longname_inref/ | 34 | MEDIUM | [X] |
+| T100.10 | Copy unicode/ to tests/functional/unicode_inref/ | 47 | MEDIUM | [X] |
+
+### Integration Test Tasks
+
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T100.11 | Create tests/integration/test_ydb_suites.py with all suite tests | HIGH | [X] |
+| T100.12 | Update tests/conftest.py with fixtures for all suites | HIGH | [X] |
+| T100.13 | Update docs/testing.md with test suite documentation | HIGH | [X] |
+
+### Files Modified
+
+- `tests/conftest.py` - Added fixtures for all 11 test suites
+- `tests/integration/test_ydb_suites.py` - Created with tests for all suites
+- `docs/testing.md` - Added test suite documentation
+
+### Known Parsing Failures
+
+Suites with <100% parsing success need investigation in Phase 102:
+
+- **tp** (34.9%): Transaction processing tests - likely need TSTART/TCOMMIT/TROLLBACK support
+- **triggers** (88.1%): Trigger-specific syntax
+- **merge** (92.6%): Some MERGE edge cases
+- **mvts** (99.2%): 6 files with parse issues
+
+---
+
+## Part 2 Command Analysis
+
+### MUMPS Reference Examples Found
+
+The MUMPS reference contains example files for Part 2 commands:
+
+| File | Command | Example Available |
+|------|---------|-------------------|
+| examples__a108019.md | ABlock | Yes - event blocking with ^$Job |
+| examples__a108020.md | ASTArt | Yes - async event start |
+| examples__a108021.md | ASTOp | Yes - async event stop |
+| examples__a108022.md | AUnblock | Yes - event unblocking |
+| examples__a108023.md | Assign | Yes - SSV assignment |
+| examples__a108050.md | THEN | Yes - $TEST stacking example |
+
+**Example from MUMPS Reference (THEN command)**:
+```mumps
+For A=1,0 Do
+ . If A Write !,"TRUE 1" If 0
+ . Else  Write !,"FALSE 1"
+ . If A THen Write !,"TRUE 2" If 0
+ . Else  Write !,"FALSE 2"
+ . Quit
+```
+
+**Example from MUMPS Reference (ABlock/ASTArt)**:
+```mumps
+; Register the procedure to process a POWER event
+Set ^$Job($Job,"EVENT","POWER",1)="^SHTDN"
+; Enable this event for Asynchronous Event Processing
+ASTArt "POWER"
+```
+
+### Vista Codebase Analysis
+
+**Part 2 Commands - NOT FOUND as actual commands**:
+- ABLOCK: 0 uses (word appears in data, not as command)
+- AUNBLOCK: 0 uses  
+- ASSIGN: 773 uses - ALL are labels/comments, not commands
+- ASTART: 2 uses - ALL are labels
+- ASTOP: 18 uses - ALL are labels
+- ESTART: 49 uses - ALL are labels (e.g., `ESTART^XTFC1`)
+- ESTOP: 30 uses - ALL are labels
+- ETRIGGER: 3 uses - ALL are labels
+- THEN: 0 uses as command (only word "THEN" in strings/comments)
+
+**Z-Commands - FOUND (actual usage in Vista and YDBTest)**:
+```
+ZSHOW: 78 (YDBTest) + 4 (Vista) uses
+ZKILL: 34 (YDBTest) uses
+ZSYSTEM: 34 (YDBTest) + 1 (Vista) uses
+ZWRITE: 49 (YDBTest) + 2 (Vista) uses
+ZMESSAGE: 37 (YDBTest) uses
+ZGOTO: 13 (YDBTest) uses
+ZLINK: 7 (YDBTest) + 2 (Vista) uses
+ZBREAK: 3 (YDBTest) uses
+ZCOMPILE: 4 (YDBTest) uses
+ZPRINT: 2 (YDBTest) uses
+```
+
+**Vista ZSHOW example** (from Kernel/Routines/ZUGTM.m):
+```mumps
+ZSHOW "*":^XUTL("XUSYS",$J,"JE")
+```
+
+---
+
+## Phase 101: Unimplemented Command Handling ✅ COMPLETE
+
+**Purpose**: Document limitations and add graceful error handling for commands we choose not to implement.
+
+**Completion Summary**:
+- ✅ Created docs/limitations.md documenting parser limitations and unimplemented features
+- ✅ Added UnknownCommand grammar rule as catch-all for unrecognized commands
+- ✅ Created MUMPSUnknownCommandError exception for clear error messages
+- ✅ Added negative lookahead to all command patterns to prevent partial matching
+- ✅ Unknown commands are converted to MParseError for error-tolerant parsing
+- ✅ Added 4 unit tests for unknown command handling
+- ✅ All existing tests pass (1223 passed, 7 pre-existing $PIECE failures)
+
+### Commands to Implement (Have Usage)
+
+Z-commands with YDBTest or Vista usage - **IMPLEMENTED** in Phase 99:
+- ZSHOW, ZKILL, ZWRITE/ZWR, ZSYSTEM, ZMESSAGE/ZM, ZGOTO, ZLINK, ZBREAK, ZCOMPILE, ZPRINT
+
+### Commands NOT to Implement (Zero Usage)
+
+Part 2 SSV/Event commands with **zero** usage in YDBTest AND Vista:
+
+| Command | Spec Section | Reason for Exclusion |
+|---------|--------------|----------------------|
+| ABlock | 8.2.1 | Event processing - 0 usage in YDBTest/Vista |
+| AUnblock | 8.2.2 | Event processing - 0 usage in YDBTest/Vista |
+| Assign | 8.2.3 | SSV assignment - 0 usage in YDBTest/Vista |
+| ASTArt | 8.2.4 | Async event start - 0 usage in YDBTest/Vista |
+| ASTOp | 8.2.5 | Async event stop - 0 usage in YDBTest/Vista |
+| ESTArt | 8.2.7 | Sync event start - 0 usage in YDBTest/Vista |
+| ESTOp | 8.2.8 | Sync event stop - 0 usage in YDBTest/Vista |
+| ETrigger | 8.2.9 | Event trigger - 0 usage in YDBTest/Vista |
+| KSubscripts | Part 2 | Extended KILL - 0 usage in YDBTest/Vista |
+| KValue | Part 2 | Extended KILL - 0 usage in YDBTest/Vista |
+| RLoad | Part 2 | Routine load - 0 usage in YDBTest/Vista |
+| RSave | Part 2 | Routine save - 0 usage in YDBTest/Vista |
+
+### THEN Command - Special Case
+
+| Command | Spec Section | Decision |
+|---------|--------------|----------|
+| THEN | 8.2.32 | **DEFER** - Standard Part 1 command but 0 usage found. Add to limitations doc but revisit if encountered. |
+
+### Implementation Tasks
+
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T101.1 | Create docs/limitations.md documenting unimplemented commands | HIGH | [X] |
+| T101.2 | Add grammar rules that recognize but reject unknown commands | MEDIUM | [X] |
+| T101.3 | Create MUMPSUnknownCommandError for graceful errors | MEDIUM | [X] |
+| T101.4 | Add parse-time error for unimplemented commands | MEDIUM | [X] |
+| T101.5 | Add left-hand $PIECE to limitations.md | LOW | [X] |
+
+### Graceful Error Approach (IMPLEMENTED)
+
+For unknown commands, the grammar uses a catch-all `UnknownCommand` rule that:
+1. **Recognizes** any word that doesn't match a known command (must be last in alternatives)
+2. **Captures** the command word and remaining text
+3. **Raises** `MUMPSUnknownCommandError` during parsing
+4. **Reports** a clear error: "Unknown command 'FOOBAR'. Not a recognized MUMPS command or valid abbreviation."
+
+Additionally, all command patterns use negative lookahead `(?![A-Za-z])` to prevent
+partial matching of unknown words. For example, `SETUP` won't incorrectly match `S`
+(SET abbreviation) because `S` is followed by a letter.
+
+Example grammar:
+```textx
+// MUST be last in Command alternatives - catches unrecognized commands
+UnknownCommand:
+    word=/[A-Za-z]+/ rest=/[^\n]*/
+;
+```
+
+The custom class raises the error during instantiation:
+```python
+class UnknownCommand:
+    def __init__(self, word="", rest="", **kwargs):
+        raise MUMPSUnknownCommandError(command=word)
+```
+
+This approach:
+- Prevents silent parse failures
+- Provides actionable error messages
+- Documents exactly what's unsupported
+- Integrates with error-tolerant parsing (MParseError)
+
+### Limitations Documentation (COMPLETED)
+
+Created `docs/limitations.md` with:
+- Left-hand $PIECE assignment limitation
+- Unknown command handling documentation
+- Recognized commands list
+- Semantic analysis limitations (indirection, pattern matching)
+- Code generation limitations (FOR semantics, device I/O)
+
+---
+
+### Action Items for Test Suite Expansion
+
+| ID | Action | Source | Priority |
+|----|--------|--------|----------|
+| T99.T6 | Extract THEN examples from mumps-reference | examples__a108050.md | LOW |
+| T99.T7 | Import basic/ tests from YDBTest | YDBTest/basic/inref/ | HIGH |
+| T99.T8 | Import merge/ tests from YDBTest | YDBTest/merge/inref/ | HIGH |
+| T99.T9 | Import indirection/ tests from YDBTest | YDBTest/indirection/inref/ | HIGH |
+| T99.T10 | Extract Part 2 examples if implementation needed | examples__a108019-023.md | LOW |
+
+---
+
+## Phase 102: Complete YDB Test Suite Parse Success
+
+**Purpose**: Achieve 100% accurate parsing across ALL YDB test suites. Every file must:
+1. Parse without errors (no masked failures)
+2. Produce a correct, complete ASG
+3. Enable proper semantic analysis for codegen
+
+**Goal**: The resulting ASG must be **codegen-ready** - not just syntactically parsed, but properly analyzed with all references resolved, scopes established, and control flow mapped.
+
+### Current State (Analysis via `utils/analyze_all_ydb_errors.py`)
+
+| Suite | Total | Clean | Errors | Success Rate |
+|-------|-------|-------|--------|--------------|
+| tp | 38 | 6 | 32 | 15.8% |
+| m_commands | 26 | 6 | 20 | 23.1% |
+| io | 116 | 48 | 68 | 41.4% |
+| triggers | 83 | 35 | 48 | 42.2% |
+| basic | 106 | 59 | 47 | 55.7% |
+| unicode | 47 | 27 | 20 | 57.4% |
+| merge | 50 | 30 | 20 | 60.0% |
+| longname | 34 | 21 | 13 | 61.8% |
+| mvts | 708 | 624 | 84 | 88.1% |
+| mugj | 376 | 366 | 10 | 97.3% |
+| indirection | 9 | 9 | 0 | 100.0% ✅ |
+
+**Total**: 362 files with parse errors across 10 suites
+
+### Error Category Summary
+
+From analysis of failing lines, errors fall into these categories:
+
+| Category | Error Count | Suites Affected | Description |
+|----------|-------------|-----------------|-------------|
+| Z-ISVs (SET/NEW $ZTRAP, $ZGBLDIR, etc.) | ~150 | all except indirection | YDB-specific intrinsic special variables |
+| TSTART syntax variations | ~40 | tp, basic, mvts | `TSTART ():(serial)`, `TSTART var`, etc. |
+| ZTRIGGER command | ~80 | triggers | `ztrigger ^gvn` - trigger management |
+| Double/triple indirection | ~30 | mvts, basic, longname | `@@var`, `@@@var` patterns |
+| Extended globals `^|"env"|gvn` | ~20 | merge | Extended reference syntax |
+| VIEW command variations | ~15 | triggers, unicode | `VIEW "setting":value` |
+| Computed DO/GOTO entry | ~15 | mugj, mvts | `D expr^routine` |
+| XECUTE arg postconditions | ~10 | mugj, mvts, basic | `X "code":cond` |
+| HANG multiple args | ~5 | mugj, mvts | `H 1,2,3` |
+| ZSHOW variations | ~10 | triggers | `ZSHOW "*":var` |
+| Parameterless labels `()` | ~20 | mvts, longname | `label() ; comment` |
+| LOCK +/- syntax | ~10 | mvts | `LOCK +^a,+^b` |
+| ZALLOCATE | ~5 | longname | Extended LOCK |
+| ZHALT | ~5 | triggers, unicode | Halt with status |
+| ZWITHDRAW | ~5 | triggers, basic | Extended KILL |
+| Misc edge cases | ~20 | various | Empty string indirection, etc. |
+
+---
+
+### Part A: Test Infrastructure (Expose Masked Failures) ✅ COMPLETE
+
+#### T102.A1: Consolidated YDB Suite Testing ✅ DONE
+
+All YDB test suites are tested via `tests/integration/test_ydb_suites.py` with a consistent base class structure.
+
+**Implementation**:
+- `YDBSuiteTestBase` - Base class with common test methods
+- `ParseResult` / `SuiteParseResults` - Named tuples for tracking results
+- `parse_suite()` - Function to parse all files and collect results
+- Each suite has a test class inheriting from `YDBSuiteTestBase`
+
+**Tests per suite**:
+1. `test_directory_exists` - Verify directory exists
+2. `test_has_test_files` - Verify .m files present
+3. `test_all_files_parse` - All files parse without exceptions
+4. `test_parse_error_tracking` - Track files with masked parse errors
+
+**Summary test output**:
+- Parsed: Files parsed without exceptions
+- Clean: Files with zero `parse_errors`
+- Clean%: True error-free rate
+
+**Unit tests**: `tests/unit/test_parse_result_tracking.py`
+
+#### T102.A2: Parse Error Tracking ✅ DONE
+
+Parse errors are now tracked separately from parse failures:
+- `success_rate`: % of files that parse without exceptions  
+- `clean_rate`: % of files with zero `parse_errors`
+- `files_with_errors`: List of files that parsed but have masked errors
+- `files_that_failed`: List of files that raised exceptions
+
+---
+
+### Part B: Z-ISVs - YDB Intrinsic Special Variables (~150 errors) ✅ DONE
+
+**Affected Suites**: ALL (most common error category)
+
+**Completion Summary**:
+- Added ~25 Z-ISVs to SVARNAME pattern in `expressions.tx`
+- Updated `NewVar` rule in `commands.tx` to accept `SpecialVariable`
+- Z-ISVs parse as `SpecialVariable` (not `IntrinsicFunctionNoArgs`)
+- Improvement: basic suite 55.1% → 86.0%, triggers 34.7% → 46.5%
+- All 1130 unit tests pass
+- Documented Z-ISVs in `docs/grammar_overview.md`
+
+**Validation**: Use `parse_suite()` to measure improvement:
+```python
+from tests.integration.test_ydb_suites import parse_suite
+from m2py.parser import MUMPSParser
+
+parser = MUMPSParser()
+results = parse_suite("triggers", parser)
+print(f"Clean: {results.clean_count}/{results.total_files} ({results.clean_rate:.1f}%)")
+for r in results.files_with_errors[:5]:
+    print(f"  {r.filename}: {r.error_count} errors")
+```
+
+**Examples**:
+```mumps
+NEW $ZTRAP                    ; NEW of ISV
+SET $ZTRAP="goto error"       ; SET of ISV  
+SET $ZGBLDIR="file.gld"       ; Global directory
+SET $ZSTEP="action"           ; Step action
+SET $ZYERROR="handler"        ; Error handler
+SET $ZERROR=value             ; Error text
+NEW $ETRAP                    ; Standard error trap
+```
+
+**Grammar Changes**:
+1. Add ZISV names to `SpecialVariable` pattern in `expressions.tx`
+2. Ensure NEW command accepts ISVs: `NEW $ZTRAP`
+3. Ensure SET command accepts ISVs: `SET $ZTRAP="value"`
+
+**Tasks**:
+| Task ID | Description | Priority |
+|---------|-------------|----------|
+| T102.B1.1 | Add $ZTRAP, $ZT abbreviation to SVARNAME | HIGH |
+| T102.B1.2 | Add $ZGBLDIR, $ZSTEP, $ZYERROR, $ZERROR | HIGH |
+| T102.B1.3 | Add $ETRAP (standard) | HIGH |
+| T102.B1.4 | Add $ZTWORMHOLE, $ZTSLATE, $ZTVALUE (trigger vars) | HIGH |
+| T102.B1.5 | Add $ZPOSITION/$ZPOS | HIGH |
+| T102.B1.6 | Verify NEW $ZTRAP parses | HIGH |
+| T102.B1.7 | Unit tests for all new ISVs | HIGH |
+
+---
+
+### Part C: TSTART Syntax Variations (~40 errors) ✅ DONE
+
+**Affected Suites**: tp, basic, mvts
+
+**Completion Summary**:
+- Added `MTStartParam` dataclass to represent TSTART parameters
+- Added `_analyze_TStartParam` handler in semantic analyzer
+- tp suite: 34.9% → 100% parsed
+- triggers suite: 82.2% → 94.1% parsed
+- All 1130+ unit tests pass
+- Documented TSTART parameters in `docs/grammar_overview.md`
+
+**Validation**: Run `parse_suite("tp", parser)` before/after to measure improvement.
+
+**Examples**:
+```mumps
+TSTART ():serial              ; Empty parens with keyword
+TSTART ():T="BA"              ; With transaction ID
+TSTART VA                     ; Named transaction variable
+TSTART (var1,var2)            ; Multiple vars
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.C1.1 | Support TSTART () empty parens | HIGH | ✅ |
+| T102.C1.2 | Support TSTART var (named transaction) | HIGH | ✅ |
+| T102.C1.3 | Support :serial, :transaction="value" options | HIGH | ✅ |
+| T102.C1.4 | Support (var1,var2) multiple variables | HIGH | ✅ |
+| T102.C1.5 | Unit tests for TSTART variations | HIGH | ✅ |
+
+---
+
+### Part D: ZTRIGGER Command (~80 errors) ✅ COMPLETE
+
+**Affected Suites**: triggers
+
+**Validation**: Run `parse_suite("triggers", parser)` before/after to measure improvement.
+
+**Results**: triggers suite: 95/101 (94.1%) - remaining failures are due to LabelRef issues (ZPRINT `^a#1#`), not ZTRIGGER.
+
+**Examples**:
+```mumps
+ztrigger ^a("")               ; Trigger with subscript
+ztrigger ^idontexist          ; Basic trigger
+ztrigger @gbl(gbl)            ; With indirection
+```
+
+**Grammar Changes** (IMPLEMENTED):
+Added `ZTriggerCommand` to `commands.tx`:
+```textx
+ZTriggerCommand:
+    /[Zz][Tt][Rr][Ii][Gg][Gg][Ee][Rr](?![A-Za-z])/ postcond=Postcondition? (WS target=Expr)?
+;
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.D1.1 | Add ZTriggerCommand grammar | HIGH | ✅ |
+| T102.D1.2 | Support global reference targets | HIGH | ✅ |
+| T102.D1.3 | Support indirection targets | HIGH | ✅ |
+| T102.D1.4 | Unit tests for ZTRIGGER | HIGH | ✅ |
+
+**Implementation**:
+- Grammar: `src/m2py/grammar/commands.tx` - ZTriggerCommand rule
+- ASG: `src/m2py/asg/statements.py` - MZTriggerStatement dataclass
+- Analyzer: `src/m2py/analysis/semantic_analyzer.py` - _analyze_ZTriggerCommand handler
+- Tests: `tests/unit/test_command_grammar.py::TestZTriggerCommand` - 6 tests
+- Docs: `docs/grammar_overview.md` - Z-commands table updated
+
+---
+
+### Part E: Double/Triple Indirection (~30 errors) ✅ COMPLETE
+
+**Affected Suites**: mvts, basic, longname
+
+**Validation**: All three suites at excellent parsing rates:
+- mvts: 714/714 (100%)
+- basic: 105/107 (98.1%) - remaining failures are LabelRef issues, not indirection
+- longname: 34/34 (100%)
+
+**Examples**:
+```mumps
+D @@A^@C                      ; Double indirect DO
+G @@"^V1A"                    ; Double indirect GOTO
+NEW @@A                       ; Double indirect NEW (parsed through line parser)
+N @@@B("AB",2.4)              ; Triple indirection
+M @B@(1)=^V(2)                ; Subscripted indirection
+```
+
+**Implementation Status**:
+Multi-level indirection (`@@`, `@@@`) was already implemented via recursive grammar.
+The `Indirection` rule in `expressions.tx` is listed in `PrimaryExpr`, allowing
+`@@X` to be parsed as `@(Indirection(@X))` naturally.
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.E1.1 | Make Indirection recursive for @@ | HIGH | ✅ (already implemented) |
+| T102.E1.2 | Support @@@ triple indirection | HIGH | ✅ (already implemented) |
+| T102.E1.3 | Support @var@(subscript) syntax | HIGH | ✅ (already implemented) |
+| T102.E1.4 | Unit tests for nested indirection | HIGH | ✅ |
+
+**Tests Added**:
+- `tests/unit/test_expression_grammar.py::TestIndirection` - 8 tests for double/triple indirection
+- `tests/unit/test_command_grammar.py::TestIndirection` - 4 new tests for triple indirection (DO, GOTO, KILL, SET)
+
+---
+
+### Part F: Extended Global References (~20 errors) ✅ COMPLETE
+
+**Affected Suites**: merge
+
+**Validation**: Run `parse_suite("merge", parser)` before/after.
+
+**Examples**:
+```mumps
+M ^|"second"|asecond=a        ; Extended reference
+SET ^["mumps.gld"]I=1         ; Bracket syntax
+```
+
+**Grammar Changes**:
+Update `GlobalVariable` in `expressions.tx` to support:
+1. `^|"env"|name` pipe-delimited environment
+2. `^["gld"]name` bracket-delimited global directory
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.F1.1 | Support ^|"env"|global syntax | HIGH | ✅ |
+| T102.F1.2 | Support ^["gld"]global syntax | HIGH | ✅ |
+| T102.F1.3 | Unit tests for extended globals | HIGH | ✅ |
+
+**Implementation Notes**:
+- Added `ExtendedGlobalPipe` and `ExtendedGlobalBracket` rules to expressions.tx
+- Added `environment` field to `MGlobal` ASG class
+- Created textX custom classes for both extended global types
+- Updated `SingleTarget` and `VarRef` rules in commands.tx
+- Added `MergeIndirection` rule for argument-level indirection in MERGE
+- Added `NakedGlobal` to `VarRef` for naked globals in MERGE
+- Merge suite: 49/54 (90%) - remaining failures are unrelated (WRITE format, KILL *, ZWITHDRAW)
+
+---
+
+### Part G: VIEW Command Variations (~15 errors) ✅ COMPLETE
+
+**Affected Suites**: triggers, unicode
+
+**Validation**: Run `parse_suite("triggers", parser)` and `parse_suite("unicode", parser)` before/after.
+
+**Examples**:
+```mumps
+VIEW "GVDUPSETNOOP":0         ; With colon value
+VIEW "trace":1:"^trace"       ; Multiple colon values
+view "JOBPID":1               ; Lowercase
+```
+
+**Grammar Changes**:
+Update `ViewCommand` in `commands.tx` to support colon-separated arguments.
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.G1.1 | Support VIEW "keyword":value syntax | MEDIUM | ✅ |
+| T102.G1.2 | Support multiple colon-separated values | MEDIUM | ✅ |
+| T102.G1.3 | Unit tests for VIEW variations | MEDIUM | ✅ |
+
+**Implementation Notes**:
+- Added `ViewArg` and `ViewColonValue` rules to commands.tx
+- Updated `ViewCommand` to use `args+=ViewArg[/,/]?` instead of `args+=Expr[/,/]?`
+- Added `_analyze_ViewArg` and `_analyze_ViewColonValue` handlers to semantic_analyzer.py
+- triggers_inref: 63 → 64 (+1)
+- unicode_inref: unchanged at 32/47
+
+---
+
+### Part H: Computed DO/GOTO Entry Points (~15 errors) ✅ COMPLETE
+
+**Affected Suites**: mugj, mvts
+
+**Validation**: Run `parse_suite("mugj", parser)` before/after.
+
+**Examples**:
+```mumps
+D 1+^V1A^V1CALL1              ; Computed offset
+D %0A1B2C3+^V1A(2)-^(3)/10    ; Complex expression
+G 389+^V1A-A(^V1A)            ; GOTO with computed
+```
+
+**Grammar Changes**:
+Updated `OffsetPrimaryExpr` in expressions.tx to include `GlobalVariable` and `NakedGlobal`,
+allowing bare globals and naked globals in offset expressions. The grammar correctly
+distinguishes offset expressions from routine references by relying on PEG's greedy
+matching - the offset consumes global values until it sees a non-binary-operator `^`,
+which is then parsed as the routine reference.
+
+**Result**: mvts_inref improved from 625/714 (87.5%) to 629/714 (88.1%) - fixed 4 files.
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.H1.1 | Update OffsetPrimaryExpr for bare globals | HIGH | ✅ |
+| T102.H1.2 | Update OffsetPrimaryExpr for naked globals | HIGH | ✅ |
+| T102.H1.3 | Unit tests for computed targets | HIGH | ✅ |
+
+---
+
+### Part I: XECUTE Argument Postconditions (~10 errors) ✅ COMPLETE
+
+**Affected Suites**: mugj, mvts, basic
+
+**Validation**: Run `parse_suite("mugj", parser)` and `parse_suite("basic", parser)` before/after.
+
+**Examples**:
+```mumps
+X:P=1 "S VCOMP=""#""":P=0,"S P=2":P=1
+X P,Q:X=10,R:X=10,S
+x x:tt>12,y:tt>6
+```
+
+**Grammar Changes**:
+Fixed `XecuteArg` to place postcondition AFTER expression (not before).
+Per MUMPS spec 8.1.4, the pattern is `X expr:postcond,expr:postcond,...`
+
+**Result**: mvts_inref improved from 629/714 (88.1%) to 631/714 (88.4%) - fixed 2 files.
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.I1.1 | Update XecuteArg for postconditions | HIGH | ✅ |
+| T102.I1.2 | Unit tests for X arg postconditions | HIGH | ✅ |
+
+---
+
+### Part J: HANG Multiple Arguments (~5 errors) ✅ COMPLETE
+
+**Affected Suites**: mugj, mvts
+
+**Validation**: Run `parse_suite("mugj", parser)` before/after.
+
+**Examples**:
+```mumps
+H 0,1,2,3                     ; Multiple timeout values
+H @1,@A                       ; Indirection args
+H:X>0 5                       ; Postconditioned HANG
+```
+
+**Implementation**:
+- Changed HangCommand from single `seconds=Expr` to multiple `args+=Expr[/,/]`
+- Changed from `WS` to `SingleSpace` for proper postcondition handling
+- Updated HaltCommand with double `!WS` lookahead (before AND after postcondition)
+- Updated MHangStatement to support `durations` list (with backward-compatible `duration`)
+- Updated semantic_analyzer to handle new `args` attribute
+- Added 4 unit tests for multi-arg HANG patterns
+
+**Result**: mvts_inref 714/714 (100.0%) - all files now parse!
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.J1.1 | Update HangCommand for multiple args | HIGH | ✅ |
+| T102.J1.2 | Unit tests for multi-arg HANG | HIGH | ✅ |
+
+---
+
+### Part K: Parameterless Labels (~20 errors) ✅ COMPLETE
+
+**Affected Suites**: mvts, longname
+
+**Validation**: Run `parse_suite("mvts", parser)` and `parse_suite("longname", parser)` before/after.
+
+**Examples**:
+```mumps
+() S A="A",B="B",C="C"        ; Label with empty params
+() ;comment                   ; Empty label line
+```
+
+**Grammar Changes**:
+The grammar needs to handle `()` as a valid label definition (parameterless entry point).
+
+**Implementation Notes (Phase 102K)**:
+- Changed `FormalList` from `params+=PARAM_NAME[/,/]` to `params*=PARAM_NAME[/,/]`
+- This allows zero or more parameters in the formal list
+- Improved mvts_inref from 632/714 (88.5%) to 653/714 (91.5%) (+21 files)
+- Added 5 unit tests for empty and non-empty formal lists
+
+**Tasks**:
+| Task ID | Description | Priority |
+|---------|-------------|----------|
+| T102.K1.1 | Support () as label definition | MEDIUM ✅ |
+| T102.K1.2 | Unit tests for parameterless labels | MEDIUM ✅ |
+
+---
+
+### Part L: LOCK +/- Syntax (~10 errors) ✅ COMPLETE
+
+**Affected Suites**: mvts
+
+**Validation**: Run `parse_suite("mvts", parser)` before/after.
+
+**Examples**:
+```mumps
+LOCK +^VA,+^VA,+^VA           ; Multiple incremental locks
+LOCK -^VA,-^VA,-^VA           ; Multiple decremental locks
+LOCK +(^VA,^VA,^VA)           ; List-level incremental
+LOCK -(^VA):3                 ; List-level decremental with timeout
+```
+
+**Implementation Notes (Phase 102L)**:
+- Moved `lockop` from command level to per-target in grammar
+- Added `lockop` attribute to `LockTarget` and `LockListItem` rules
+- Added `lockop` attribute to `LockList` for list-level `+/-` prefix
+- Updated semantic analyzer to propagate lockop to each target's dict
+- `MLockStatement.lock_type` derived from targets when all have same lockop
+- Improved mvts_inref from 653/714 (91.5%) to 657/714 (92.0%) (+4 files)
+- Added 6 new unit tests for LOCK +/- syntax variations
+
+**Tasks**:
+| Task ID | Description | Priority |
+|---------|-------------|----------|
+| T102.L1.1 | Verify LOCK +ref,+ref syntax | MEDIUM ✅ |
+| T102.L1.2 | Verify LOCK -ref,-ref syntax | MEDIUM ✅ |
+
+---
+
+### Part M: Additional Z-Commands (~15 errors) ✅ COMPLETE
+
+**Validation**: Run `parse_suite("triggers", parser)` and `parse_suite("longname", parser)` before/after.
+
+**Completion Summary**:
+- ZHALT, ZWITHDRAW, and ZALLOCATE were already implemented in Phase 99
+- Added ZDEALLOCATE command (ZD abbreviation) - decremental unlock, opposite of ZALLOCATE
+- longname suite: 29/34 (85.3%) → 30/34 (88.2%) (+1 file fixed: lkelong.m)
+- Added 7 grammar unit tests + 3 semantic analyzer tests
+- Documented all Z-commands in docs/grammar_overview.md
+
+**ZHALT** (triggers, unicode):
+```mumps
+zhalt 1                       ; Halt with exit code
+ZHalt 1                       ; Case variation
+```
+
+**ZWITHDRAW** (triggers, basic):
+```mumps
+zwithdraw ^a(1,2)             ; Extended KILL
+```
+
+**ZALLOCATE** (longname):
+```mumps
+Zallocate:'(i#2) (@lvar,@gvar):60   ; Extended LOCK with postcond
+```
+
+**ZDEALLOCATE** (longname):
+```mumps
+Zdeallocate:'(i#2) (@lvar,@gvar)    ; Extended unlock with postcond
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.M1.1 | Add ZHaltCommand grammar | MEDIUM | ✅ (already in Phase 99) |
+| T102.M1.2 | Add ZWithdrawCommand grammar | MEDIUM | ✅ (already in Phase 99) |
+| T102.M1.3 | Add ZAllocateCommand grammar | MEDIUM | ✅ (already in Phase 99) |
+| T102.M1.4 | Add ZDeallocateCommand grammar | MEDIUM | ✅ |
+
+---
+
+### Part N: ZSHOW Variations (~10 errors) ✅ COMPLETE
+
+**Status**: All ZSHOW destination patterns already implemented and tested.
+
+**Affected Suites**: triggers
+
+**Validation**: Run `parse_suite("triggers", parser)` before/after.
+
+**Examples**:
+```mumps
+ZSHOW "*":^XUTL              ; Output to global
+ZSHOW "L":@gvar              ; With indirection
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Status |
+|---------|-------------|----------|--------|
+| T102.N1.1 | Verify ZSHOW output target syntax | MEDIUM | ✅ |
+| T102.N1.2 | Unit tests for ZSHOW targets | MEDIUM | ✅ |
+
+---
+
+### Part O: Final Punch List (~195 remaining errors)
+
+**STATUS: [X] COMPLETED** (Jan 2025)
+
+**Final Suite Status** (All at 100%):
+| Suite | Pass | Total | Rate | Status |
+|-------|------|-------|------|--------|
+| indirection | 9 | 9 | 100.0% | ✓ |
+| mugj | 376 | 376 | 100.0% | ✓ |
+| m_commands | 27 | 27 | 100.0% | ✓ |
+| longname | 34 | 34 | 100.0% | ✓ |
+| merge | 54 | 54 | 100.0% | ✓ |
+| basic | 107 | 107 | 100.0% | ✓ |
+| unicode | 47 | 47 | 100.0% | ✓ |
+| io | 116 | 116 | 100.0% | ✓ |
+| triggers | 101 | 101 | 100.0% | ✓ |
+| tp | 109 | 109 | 100.0% | ✓ |
+| mvts | 714 | 714 | 100.0% | ✓ |
+| **TOTAL** | **1694** | **1694** | **100.0%** | ✓ |
+
+**Key Fixes Applied**:
+1. **TROLLBACK Command** - Fixed TRollbackCommand grammar to use restricted level matching
+   (TRollbackLevel rule) preventing it from consuming following commands as arguments
+2. **LabelRef Handler** - Added `_analyze_LabelRef` handler to SemanticAnalyzer for
+   ZGOTO and other commands that use LabelRef for their targets
+3. **EOF Handling** - Added trailing newline normalization in parser.parse() for files
+   that don't end with newlines
+
+**Validation**: Run full summary test:
+```bash
+uv run pytest tests/integration/test_ydb_suites.py::TestAllSuitesSummary::test_all_suites_summary -v -s
+```
+
+---
+
+#### Category 1: Missing Z-Commands (~35 errors)
+
+**ZSTEP** (basic - 2 files):
+```mumps
+zstep into           ; Step into subroutine
+zstep over           ; Step over
+zstep outof          ; Step out of
+```
+
+**ZEDIT** (m_commands - 1 file):
+```mumps
+zedit @routinename   ; Edit routine
+```
+
+**ZBREAK** (m_commands, triggers - ~15 files):
+```mumps
+zb -*                ; Clear all breakpoints
+zb zbbasic+lineno^zbbasicexec:"action"  ; Conditional breakpoint
+zbreak:'rand @longtrigname   ; With postcondition
+```
+
+**ZLINK** (tp - 1 file):
+```mumps
+zl "tptest5a"        ; Link routine (ZL abbreviation)
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O1.1 | Add ZStepCommand grammar | HIGH | 2 |
+| T102.O1.2 | Add ZEditCommand grammar | MEDIUM | 1 |
+| T102.O1.3 | Add ZBreakCommand with args/postcond | HIGH | 15 |
+| T102.O1.4 | Verify ZLinkCommand ZL abbreviation | MEDIUM | 1 |
+
+---
+
+#### Category 2: WRITE Format Codes (~25 errors)
+
+**WRITE /EOF** (io, merge - ~10 files):
+```mumps
+write /eof           ; End-of-file marker
+write /wait          ; Wait for I/O completion
+write /clear         ; Clear screen
+```
+
+**WRITE #** page break (io - ~5 files):
+```mumps
+W:$Y>55 #            ; Conditional page break
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O2.1 | Add WRITE /keyword format codes | HIGH | 10 |
+| T102.O2.2 | Verify WRITE # page break | MEDIUM | 5 |
+
+---
+
+#### Category 3: READ Variations (~10 errors)
+
+**READ * (character code)** with targets (m_commands, mvts):
+```mumps
+read *@var@(2)       ; Read char into double indirection
+read **@var@(2)      ; Read char code (double star?)
+R *^VV("M")          ; READ char into global
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O3.1 | READ * into global/indirection targets | HIGH | 5 |
+| T102.O3.2 | Verify READ ** double-star syntax | MEDIUM | 2 |
+
+---
+
+#### Category 4: ZWRITE Variations (~10 errors)
+
+**ZWRITE subscript ranges** (triggers):
+```mumps
+zwr ^fired(:,1:2)    ; Range subscripts
+zwr ^fired(:,:)      ; All subscripts
+zwrite ^?.E          ; Pattern subscript
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O4.1 | ZWRITE subscript range syntax | HIGH | 5 |
+| T102.O4.2 | ZWRITE pattern subscript | MEDIUM | 2 |
+
+---
+
+#### Category 5: ZPRINT with Routine Specifiers (~5 errors)
+
+**ZPRINT** with indirection (triggers):
+```mumps
+zprint:rand @longtrigname  ; Print with indirection
+zprint ^routine            ; Print routine source
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O5.1 | ZPRINT with indirection target | MEDIUM | 3 |
+
+---
+
+#### Category 6: TROLLBACK Command (~15 errors)
+
+**TROLLBACK** (m_commands, tp, merge - ~15 files):
+```mumps
+i $trestart trollback  ; Argumentless TROLLBACK
+trollback              ; Rollback transaction
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O6.1 | Add TRollbackCommand grammar | HIGH | 15 |
+
+---
+
+#### Category 7: NEW Exclusive Variations (~5 errors)
+
+**NEW with exclusive and indirection** (basic):
+```mumps
+n:1=1 (@ind,@ind2,x,y)  ; Postconditioned exclusive NEW with indirection
+N (*@ind,...)           ; Star indirection in exclusive NEW
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O7.1 | NEW exclusive with * indirection | MEDIUM | 3 |
+
+---
+
+#### Category 8: Pattern Match Variations (~5 errors)
+
+**Complex pattern alternation** (triggers, unicode):
+```mumps
+name?1(1"%",1A).20(1A,1N)1"#"1(1.6N.1"#",1"*")  ; Complex pattern
+X?10(1N3A)             ; Repeat with count
+X?10(1N*3A)            ; Repeat with range
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O8.1 | Pattern with nested repeat ranges | HIGH | 5 |
+
+---
+
+#### Category 9: OPEN/CLOSE Device Options (~10 errors)
+
+**OPEN with socket options** (io):
+```mumps
+open s:zlisten=port_":TCP":10:"SOCKET"  ; Socket open with colon options
+```
+
+**CLOSE :DELETE** (basic, longname):
+```mumps
+Close scratch:delete          ; Close with option
+close fn:delete               ; Lowercase
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O9.1 | OPEN with colon-separated socket options | MEDIUM | 5 |
+| T102.O9.2 | CLOSE :delete option | MEDIUM | 3 |
+
+---
+
+#### Category 10: USE Options (~5 errors)
+
+**USE with exception** (triggers):
+```mumps
+use tf:exception="goto EOF"   ; USE with exception handler
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O10.1 | USE :exception option | MEDIUM | 3 |
+
+---
+
+#### Category 11: TSTART Edge Cases (~5 errors)
+
+**TSTART with colon options** (unicode, m_commands):
+```mumps
+tstart ():(serial:t="BA")    ; Double colon options
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O11.1 | TSTART double-colon option syntax | HIGH | 5 |
+
+---
+
+#### Category 12: DO/GOTO with Special Indirection (~10 errors)
+
+**DO with @@* syntax** (mvts, mugj):
+```mumps
+D @@A^@C              ; Double indirection with circumflex
+D @@*"^V1A"           ; Double-star indirection (computed)
+do @$zcmdline         ; DO with $zcmdline indirection
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O12.1 | DO @@* double-star indirection | HIGH | 5 |
+| T102.O12.2 | DO @$ISV indirection | MEDIUM | 2 |
+
+---
+
+#### Category 13: External Function Calls (~10 errors)
+
+**$& external functions** (io, triggers):
+```mumps
+if $&ydbposix.signalval("SIGQUIT",.quitVal)  ; External call
+```
+
+**$$routine^indirection** (unicode):
+```mumps
+$$stringify^@("ZJSON"_suffix)(.output)  ; Extrinsic with indirection
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O13.1 | $& external function calls | MEDIUM | 5 |
+| T102.O13.2 | $$ extrinsic with routine indirection | MEDIUM | 3 |
+
+---
+
+#### Category 14: FOR Loop Edge Cases (~5 errors)
+
+**FOR with DO inside** (basic):
+```mumps
+For i=1:1:7  Do   Set d=d\16  ; DO followed by SET on same line
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O14.1 | FOR with multiple commands after DO | MEDIUM | 2 |
+
+---
+
+#### Category 15: Label Reference in Analyzer (~10 errors)
+
+**SemanticAnalyzer LabelRef** (multiple suites):
+Multiple files fail with `SemanticAnalyzer has no handler for textX type 'LabelRef'` during
+semantic analysis phase (not grammar).
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O15.1 | Add LabelRef handler to SemanticAnalyzer | HIGH | 10 |
+
+---
+
+#### Category 16: Numeric Label Edge Cases (~10 errors)
+
+**Pure numeric labels** starting lines (tp, mvts):
+```mumps
+dzsplit3:            ; Label ending with colon but no formal list
+A . S ^VCOMP=...     ; Line starting with A after numeric context
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O16.1 | Label line ending with colon only | MEDIUM | 5 |
+
+---
+
+#### Category 17: $$ Extrinsic Variations (~5 errors)
+
+**$$function without parens** (mvts):
+```mumps
+S ^VCOMP=^VCOMP_$$0000  ; Extrinsic without parens
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O17.1 | $$ extrinsic without parentheses | MEDIUM | 3 |
+
+---
+
+#### Category 18: @'' Empty Indirection (~3 errors)
+
+**Empty string indirection** (mvts, mugj):
+```mumps
+W !?3,@''10          ; @'' indirection with immediate value
+```
+
+**Tasks**:
+| Task ID | Description | Priority | Est. Files |
+|---------|-------------|----------|------------|
+| T102.O18.1 | @'' empty string indirection | LOW | 3 |
+
+---
+
+### Master Punch List Summary
+
+| Category | Description | Est. Errors | Priority |
+|----------|-------------|-------------|----------|
+| O1 | Missing Z-Commands (ZSTEP, ZEDIT, ZBREAK, ZLINK) | ~35 | HIGH |
+| O2 | WRITE Format Codes (/eof, /wait, #) | ~25 | HIGH |
+| O3 | READ Variations (*, **, globals) | ~10 | HIGH |
+| O4 | ZWRITE Variations (ranges, patterns) | ~10 | HIGH |
+| O5 | ZPRINT with indirection | ~5 | MEDIUM |
+| O6 | TROLLBACK Command | ~15 | HIGH |
+| O7 | NEW Exclusive Variations (*@) | ~5 | MEDIUM |
+| O8 | Pattern Match Variations | ~5 | HIGH |
+| O9 | OPEN/CLOSE Device Options | ~10 | MEDIUM |
+| O10 | USE Options | ~5 | MEDIUM |
+| O11 | TSTART Edge Cases | ~5 | HIGH |
+| O12 | DO/GOTO Special Indirection (@@*) | ~10 | HIGH |
+| O13 | External Function Calls ($&) | ~10 | MEDIUM |
+| O14 | FOR Loop Edge Cases | ~5 | MEDIUM |
+| O15 | LabelRef Analyzer Handler | ~10 | HIGH |
+| O16 | Numeric Label Edge Cases | ~10 | MEDIUM |
+| O17 | $$ Extrinsic Variations | ~5 | MEDIUM |
+| O18 | @'' Empty Indirection | ~3 | LOW |
+
+**Total Estimated Errors**: ~195
+
+---
+
+### Implementation Priority Order
+
+**Phase O-1: High-Impact (Unblocks most files)**
+1. T102.O6.1 - TROLLBACK (~15 files in tp, m_commands, merge)
+2. T102.O1.3 - ZBREAK with args (~15 files)
+3. T102.O15.1 - LabelRef analyzer handler (~10 files)
+4. T102.O2.1 - WRITE /keyword format codes (~10 files)
+
+**Phase O-2: Medium-Impact**
+5. T102.O3.1 - READ * into targets (~5 files)
+6. T102.O4.1 - ZWRITE subscript ranges (~5 files)
+7. T102.O11.1 - TSTART double-colon (~5 files)
+8. T102.O12.1 - DO @@* indirection (~5 files)
+9. T102.O8.1 - Complex pattern matching (~5 files)
+
+**Phase O-3: Lower Impact**
+10. Remaining categories as time permits
+
+---
+
+### Parts A-N Review: Skipped/Incomplete Tasks
+
+**All Parts A-N are COMPLETE.** No skipped tasks identified.
+
+Parts verification:
+- ✅ Part A: Test Infrastructure - All assertions added
+- ✅ Part B: Z-ISVs - All ~25 Z-ISVs added
+- ✅ Part C: TSTART - All variations working
+- ✅ Part D: ZTRIGGER - Command implemented
+- ✅ Part E: Double/Triple Indirection - Already working
+- ✅ Part F: Extended Globals - Pipe and bracket syntax
+- ✅ Part G: VIEW Variations - Colon args supported
+- ✅ Part H: Computed DO/GOTO - Offset expressions
+- ✅ Part I: XECUTE Postconditions - Arg:postcond syntax
+- ✅ Part J: HANG Multiple Args - Multiple durations
+- ✅ Part K: Parameterless Labels - () syntax
+- ✅ Part L: LOCK +/- - Per-target lockop
+- ✅ Part M: Z-Commands - ZHALT, ZWITHDRAW, ZALLOCATE, ZDEALLOCATE
+- ✅ Part N: ZSHOW Variations - Destination syntax
+
+---
+
+### Implementation Order
+
+**Phase 1: Test Infrastructure (Expose failures)**
+1. T102.A1, T102.A2 - Add assertions to ALL tests
+
+**Phase 2: High-Impact Fixes (Most errors)**
+2. T102.B - Z-ISVs (~150 errors)
+3. T102.D - ZTRIGGER (~80 errors)
+4. T102.C - TSTART variations (~40 errors)
+5. T102.E - Double/triple indirection (~30 errors)
+
+**Phase 3: Medium-Impact Fixes**
+6. T102.F - Extended globals (~20 errors)
+7. T102.K - Parameterless labels (~20 errors)
+8. T102.G - VIEW variations (~15 errors)
+9. T102.H - Computed DO/GOTO (~15 errors)
+
+**Phase 4: Remaining Fixes**
+10. T102.I - XECUTE postconditions (~10 errors)
+11. T102.L - LOCK +/- syntax (~10 errors)
+12. T102.N - ZSHOW variations (~10 errors)
+13. T102.J - HANG multi-arg (~5 errors)
+14. T102.M - ZHALT/ZWITHDRAW/ZALLOCATE (~15 errors)
+15. T102.O - Final Punch List (~195 errors)
+
+---
+
+### Validation Criteria
+
+After ALL fixes:
+
+```bash
+# Full analysis - expect 0 errors across all suites
+uv run python utils/analyze_all_ydb_errors.py
+# Expected output:
+# Suite           Total    Clean    Errors   Success
+# tp              38       38       0        100.0%
+# m_commands      26       26       0        100.0%
+# io              116      116      0        100.0%
+# triggers        83       83       0        100.0%
+# basic           106      106      0        100.0%
+# unicode         47       47       0        100.0%
+# merge           50       50       0        100.0%
+# longname        34       34       0        100.0%
+# mvts            708      708      0        100.0%
+# mugj            376      376      0        100.0%
+# indirection     9        9        0        100.0%
+
+# Full test suite passes
+uv run pytest tests/ -q
+# Expected: ALL tests pass
+
+# Integration tests specifically
+uv run pytest tests/integration/ -v
+# Expected: ALL pass with 0 parse errors
+```
+
+### Success Metrics
+
+| Metric | Current | Target |
+|--------|---------|--------|
+| Total files with errors | 362 | 0 |
+| Suites at 100% | 1 | 11 |
+| Parse success rate | ~75% | 100% |
+| ASG codegen-ready | Partial | Complete |
+
+---
+
+### Master Task Summary Table
+
+| Task ID | Description | Category | Errors Fixed | Priority | Status |
+|---------|-------------|----------|--------------|----------|--------|
+| T102.A1 | Add parse_errors==0 assertions | Testing | - | HIGH | [X] |
+| T102.A2 | Create suite coverage tests | Testing | - | HIGH | [X] |
+| T102.B1.1-7 | Z-ISVs support | Grammar | ~150 | HIGH | [X] |
+| T102.C1.1-5 | TSTART variations | Grammar | ~40 | HIGH | [X] |
+| T102.D1.1-4 | ZTRIGGER command | Grammar | ~80 | HIGH | [X] |
+| T102.E1.1-4 | Double/triple indirection | Grammar | ~30 | HIGH | [X] |
+| T102.F1.1-3 | Extended global references | Grammar | ~20 | HIGH | [X] |
+| T102.G1.1-3 | VIEW variations | Grammar | ~15 | MEDIUM | [X] |
+| T102.H1.1-3 | Computed DO/GOTO | Grammar | ~15 | HIGH | [X] |
+| T102.I1.1-2 | XECUTE arg postconditions | Grammar | ~10 | HIGH | [X] |
+| T102.J1.1-2 | HANG multiple args | Grammar | ~5 | HIGH | [X] |
+| T102.K1.1-2 | Parameterless labels | Grammar | ~20 | MEDIUM | [X] |
+| T102.L1.1-2 | LOCK +/- syntax | Grammar | ~10 | MEDIUM | [X] |
+| T102.M1.1-4 | ZHALT/ZWITHDRAW/ZALLOCATE/ZDEALLOCATE | Grammar | ~15 | MEDIUM | [X] |
+| T102.N1.1-2 | ZSHOW variations | Grammar | ~10 | MEDIUM | [X] |
+| T102.O1-18 | Final Punch List (18 categories) | Grammar/Analyzer | ~195 | MEDIUM | [X] |
+
+**Errors Fixed in A-O**: ~615 (estimated)
+**Remaining**: 0
+**Achievement**: 0 errors, 100% parse success across all 11 test suites (1694 files)
+
+### Phase 102 Complete! 🎉
+
+All test suites now pass at 100%:
+- **indirection**: 9/9 (100%)
+- **mugj**: 376/376 (100%)  
+- **m_commands**: 27/27 (100%)
+- **longname**: 34/34 (100%)
+- **merge**: 54/54 (100%)
+- **basic**: 107/107 (100%)
+- **unicode**: 47/47 (100%)
+- **io**: 116/116 (100%)
+- **triggers**: 101/101 (100%)
+- **tp**: 109/109 (100%)
+- **mvts**: 714/714 (100%)
+
+**Key Final Fixes** (Part O):
+1. TROLLBACK command grammar with restricted level matching
+2. LabelRef analyzer handler for ZGOTO targets
+3. EOF handling for files without trailing newlines

@@ -97,6 +97,56 @@ THIRD
         assert len(routine.labels) == 1
         assert len(routine.labels[0].body.statements) == 1
 
+    def test_parse_label_with_empty_formal_list(self):
+        """Label with empty parentheses () should have empty formal_list."""
+        parser = MUMPSParser()
+        routine = parser.parse("TEST() S X=1\n")
+        assert len(routine.labels) == 1
+        label = routine.labels[0]
+        assert label.name == "TEST"
+        assert label.formal_list == []
+        assert not routine.parse_errors
+
+    def test_parse_label_with_one_param(self):
+        """Label with one parameter should capture it in formal_list."""
+        parser = MUMPSParser()
+        routine = parser.parse("CALC(X) S Y=X*2\n")
+        assert len(routine.labels) == 1
+        label = routine.labels[0]
+        assert label.name == "CALC"
+        assert label.formal_list == ["X"]
+        assert not routine.parse_errors
+
+    def test_parse_label_with_multiple_params(self):
+        """Label with multiple parameters should capture all in formal_list."""
+        parser = MUMPSParser()
+        routine = parser.parse("ADD(A,B,C) Q A+B+C\n")
+        assert len(routine.labels) == 1
+        label = routine.labels[0]
+        assert label.name == "ADD"
+        assert label.formal_list == ["A", "B", "C"]
+        assert not routine.parse_errors
+
+    def test_parse_numeric_label_with_empty_params(self):
+        """Numeric label with empty () should have empty formal_list."""
+        parser = MUMPSParser()
+        routine = parser.parse("00001() S A=1\n")
+        assert len(routine.labels) == 1
+        label = routine.labels[0]
+        assert label.name == "00001"
+        assert label.formal_list == []
+        assert not routine.parse_errors
+
+    def test_parse_label_empty_params_with_comment(self):
+        """Label with empty () and only comment should parse correctly."""
+        parser = MUMPSParser()
+        routine = parser.parse("V4GETS1() ;This is a comment\n")
+        assert len(routine.labels) == 1
+        label = routine.labels[0]
+        assert label.name == "V4GETS1"
+        assert label.formal_list == []
+        assert not routine.parse_errors
+
     def test_parse_dot_block_requires_leading_space(self):
         """Dot-indented block line must have leading space (dot is in content)."""
         parser = MUMPSParser()
@@ -565,8 +615,8 @@ class TestParserErrorHandling:
         """T336: MUMPSSyntaxError should include line number."""
         parser = MUMPSParser()
 
-        # Invalid syntax - missing trailing newline
-        invalid_source = "TEST\tS X=1"  # No newline at end
+        # Invalid syntax - null character triggers syntax error
+        invalid_source = "\x00INVALID\n"
 
         with pytest.raises(MUMPSSyntaxError) as excinfo:
             parser.parse(invalid_source)
@@ -581,8 +631,8 @@ class TestParserErrorHandling:
         """Phase 69: MUMPSSyntaxError should extract line/column from textX exceptions."""
         parser = MUMPSParser()
 
-        # Invalid syntax - missing trailing newline triggers TextXSyntaxError
-        invalid_source = "TEST\tS X=1"  # No newline at end
+        # Invalid syntax - null character triggers TextXSyntaxError
+        invalid_source = "\x00INVALID\n"
 
         with pytest.raises(MUMPSSyntaxError) as excinfo:
             parser.parse(invalid_source)
@@ -613,12 +663,9 @@ class TestParserErrorHandling:
         """T336: Errors from parse should include filename when provided."""
         parser = MUMPSParser()
 
-        # Missing trailing newline causes syntax error
-        # Note: parse_file auto-adds newlines, so we test parse() directly
+        # Invalid syntax - null character triggers syntax error
         with pytest.raises(MUMPSSyntaxError) as excinfo:
-            parser.parse(
-                "TEST\tS X=1", filename="/path/to/test.m"
-            )  # No trailing newline
+            parser.parse("\x00INVALID\n", filename="/path/to/test.m")
 
         # Error should reference the file
         assert excinfo.value.source_file is not None

@@ -392,11 +392,12 @@ class MMergeStatement(MStatement):
 class MHangStatement(MStatement):
     """HANG command - pause execution.
 
-    Pauses for specified seconds:
-    H 5, HANG seconds
+    Pauses for specified seconds (can have multiple durations):
+    H 5, HANG seconds, H 0,1,2,3
     """
 
-    duration: Optional["MExpr"] = None
+    duration: Optional["MExpr"] = None  # Deprecated: use durations
+    durations: List["MExpr"] = field(default_factory=list)
 
 
 @dataclass
@@ -408,6 +409,21 @@ class MHaltStatement(MStatement):
     """
 
     pass
+
+
+@dataclass
+class MZHaltStatement(MStatement):
+    """ZHALT command - terminate execution with exit code.
+
+    GT.M/YottaDB extension. Stops the current job with an exit code:
+    ZHALT exitcode, zh 1
+
+    Examples:
+      zhalt 1 - halt with exit code 1
+      zhalt +$zstatus - halt with $zstatus as exit code
+    """
+
+    exitcode: Optional["MExpr"] = None  # Exit code expression
 
 
 @dataclass
@@ -600,17 +616,45 @@ class MJobStatement(MStatement):
 
 
 @dataclass
+class MTStartParam:
+    """TSTART parameter (keyword argument).
+
+    Parameters control transaction behavior:
+    - SERIAL (S): Transaction is serializable
+    - TRANSACTIONID (T): Named transaction identifier
+    - Z-prefixed: Implementation-specific parameters
+
+    Examples:
+        TS ():serial           -> MTStartParam(name="serial", value=None)
+        TS ():T="BA"           -> MTStartParam(name="T", value=MLiteral("BA"))
+    """
+
+    # Parameter name (e.g., "serial", "S", "transactionid", "T")
+    name: str
+    # Optional value expression (for name=value parameters)
+    value: Optional["MExpr"] = None
+
+
+@dataclass
 class MTStartStatement(MStatement):
     """TSTART command - begin transaction.
 
     Begins a transaction:
-    TS, TSTART, TS (), TS (A,B), TS *
+    TS, TSTART, TS (), TS (A,B), TS ():serial
 
     Per MUMPS 1995 spec 8.2.22:
     - If $TLEVEL was 0, initiates a new transaction
     - If $TLEVEL > 0, increments $TLEVEL (nested transaction)
     - Optional restart argument specifies variables to restore on restart
-    - Optional parameters control serialization behavior
+    - Optional parameters control serialization and transaction naming
+
+    Examples:
+        TS              - Non-restartable transaction
+        TS ()           - Restartable transaction (empty restart list)
+        TS (A,B)        - Restartable, restore A and B on restart
+        TS *            - Restartable, restore all locals on restart
+        TS ():serial    - Restartable serial transaction
+        TS ():S:T="X"   - Serial with transaction ID
     """
 
     # Restart argument: empty list = restartable, list = vars to restore
@@ -618,7 +662,7 @@ class MTStartStatement(MStatement):
     # True if restart argument was '*' (restore all local variables)
     restart_all: bool = False
     # Transaction parameters (SERIAL, TRANSACTIONID, etc.)
-    parameters: List["MExpr"] = field(default_factory=list)
+    parameters: List[MTStartParam] = field(default_factory=list)
 
 
 @dataclass
@@ -668,3 +712,372 @@ class MTRollbackStatement(MStatement):
 
     # Optional transaction level to roll back to
     level: Optional["MExpr"] = None
+
+
+# =============================================================================
+# Z-Command Statements (YottaDB/GT.M Extensions)
+# =============================================================================
+# These are vendor-specific commands supported by YottaDB and GT.M.
+# They are commonly used in real-world MUMPS applications.
+
+
+@dataclass
+class MZShowDestination:
+    """Destination for ZSHOW output.
+
+    ZSHOW can write to a variable instead of the current device.
+    ZSHOW "V":^RESULT writes variable info to ^RESULT global.
+    """
+
+    # The destination variable (local or global)
+    variable: Optional["MExpr"] = None
+
+
+@dataclass
+class MZShowArg:
+    """Single argument in ZSHOW command.
+
+    Each ZSHOW argument specifies what to show and optionally where.
+    ZSHOW "BS" - show breakpoints and stack to current device
+    ZSHOW "V":X - show variables to local variable X
+    """
+
+    # The codes specifying what to show (B, D, G, I, L, S, V, etc.)
+    codes: Optional["MExpr"] = None
+    # Optional destination for output
+    destination: Optional["MExpr"] = None
+
+
+@dataclass
+class MZShowStatement(MStatement):
+    """ZSHOW command - show process information.
+
+    Displays information about the process environment:
+    ZSH[OW] [codes] [:destination]
+
+    codes: String specifying what to show:
+      - B: Breakpoints
+      - D: Devices
+      - G: Global variables
+      - I: Intrinsic special variables
+      - L: Locks held
+      - S: Stack trace
+      - V: Local variables
+      - *: All of the above
+
+    Examples:
+      ZSHOW "BS" - show breakpoints and stack
+      ZSHOW "*" - show everything
+      ZSHOW "V":^RESULT - write variable info to global
+    """
+
+    # Arguments (codes and optional destination)
+    args: List[MZShowArg] = field(default_factory=list)
+
+
+@dataclass
+class MZWriteArg:
+    """Single argument in ZWRITE command.
+
+    Each ZWRITE argument specifies what to write.
+    ZWR X - write variable X
+    ZWR @VAR - write via indirection
+    """
+
+    # The target to write (variable, global, indirection, or pattern)
+    target: Optional["MExpr"] = None
+
+
+@dataclass
+class MZWriteStatement(MStatement):
+    """ZWRITE command - write variables with names.
+
+    Writes local or global variables and their values in a format
+    that can be read back in. Similar to WRITE but includes variable names.
+
+    Examples:
+      ZWR - write all local variables
+      ZWR X - write variable X and descendants
+      ZWR @indirection - write via indirection
+      ZWR ^GLOBAL - write global and descendants
+    """
+
+    # Arguments specifying what to write
+    args: List[MZWriteArg] = field(default_factory=list)
+
+
+@dataclass
+class MZBreakArg:
+    """Single argument in ZBREAK command.
+
+    Each ZBREAK argument specifies a breakpoint location and action.
+    ZBREAK label^routine:"set x=1":5
+    """
+
+    # The location for the breakpoint (label reference or indirection)
+    location: Optional["MExpr"] = None
+    # Optional action to execute at breakpoint
+    action: Optional["MExpr"] = None
+    # Optional count (execute action this many times)
+    count: Optional["MExpr"] = None
+
+
+@dataclass
+class MZBreakStatement(MStatement):
+    """ZBREAK command - set/remove breakpoints.
+
+    Sets or removes breakpoints for debugging:
+    ZB[REAK] location[:action[:count]]
+
+    Examples:
+      ZBREAK label^routine - set breakpoint
+      ZBREAK +5^routine - set at offset
+      ZBREAK label:"set x=1" - set with action
+      ZBREAK - remove all breakpoints
+    """
+
+    # Breakpoint arguments
+    args: List[MZBreakArg] = field(default_factory=list)
+
+
+@dataclass
+class MZGotoArg:
+    """Single argument in ZGOTO command.
+
+    ZGOTO level:target - unwind to level and goto target
+    ZGOTO @indirection - indirect target
+    """
+
+    # Stack level to unwind to
+    level: Optional["MExpr"] = None
+    # Target to transfer control to
+    target: Optional["MExpr"] = None
+    # Indirection (alternative to level:target)
+    indirection: Optional["MExpr"] = None
+
+
+@dataclass
+class MZGotoStatement(MStatement):
+    """ZGOTO command - extended goto with stack unwinding.
+
+    Extended GOTO that can unwind the stack to a specific level:
+    ZGO[TO] [level[:target]]
+
+    level: Stack level (0=restart, $ZLEVEL=current)
+    target: Label/routine to transfer control to
+
+    Examples:
+      ZGOTO - return to direct mode
+      ZGOTO 0 - restart from beginning
+      ZGOTO 1:label^routine - unwind to level 1 and goto
+      ZGOTO $ZLEVEL:label - goto without unwinding
+    """
+
+    # ZGOTO arguments
+    args: List[MZGotoArg] = field(default_factory=list)
+
+
+@dataclass
+class MZKillStatement(MStatement):
+    """ZKILL command - kill variable preserving descendants.
+
+    Kills a variable but preserves its subscripted descendants.
+    Opposite of normal KILL behavior. Also known as ZWITHDRAW.
+
+    Examples:
+      ZKILL X - kill X but keep X(1), X(2), etc.
+      ZKILL myvar(1) - kill myvar(1) but keep myvar(1,1), etc.
+    """
+
+    # Variables to zkill
+    targets: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MZWithdrawStatement(MStatement):
+    """ZWITHDRAW command - alias for ZKILL.
+
+    GT.M/YottaDB extension. Kills a variable but preserves its descendants.
+    Semantically identical to ZKILL.
+
+    Examples:
+      ZWITHDRAW X - same as ZKILL X
+      zwithdraw ^a(1,2),^b - kill these but preserve descendants
+    """
+
+    # Variables to zwithdraw
+    targets: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MZAllocateStatement(MStatement):
+    """ZALLOCATE command - incremental lock.
+
+    GT.M/YottaDB extension. Always uses incremental locking (like L +).
+    Syntax is similar to LOCK but always incremental.
+
+    Examples:
+      Zallocate (@lvar,@gvar):60 - allocate with timeout
+      Zallocate:'(i#2) (@lvar,@gvar):60 - with postcondition
+      za X:5 - simple allocate with timeout
+    """
+
+    targets: List[Any] = field(
+        default_factory=list
+    )  # Lock target dicts with: target/indirection, timeout, postcondition, indirection_levels
+    timeout: Optional["MExpr"] = None
+
+
+@dataclass
+class MZDeallocateStatement(MStatement):
+    """ZDEALLOCATE command - decremental unlock.
+
+    GT.M/YottaDB extension. Always uses decremental unlocking (like L -).
+    Opposite of ZALLOCATE - releases incremental locks.
+
+    Examples:
+      Zdeallocate (@lvar,@gvar) - deallocate list
+      Zdeallocate:'(i#2) (@lvar,@gvar) - with postcondition
+      zd X - simple deallocate
+    """
+
+    targets: List[Any] = field(
+        default_factory=list
+    )  # Lock target dicts with: target/indirection, indirection_levels
+
+
+@dataclass
+class MZLinkStatement(MStatement):
+    """ZLINK command - compile and link routine.
+
+    Compiles and/or links a routine into the current process:
+    ZL[INK] routine[:qualifier]
+
+    Examples:
+      ZLINK "routine"
+      ZLINK routine
+      ZLINK:postcond routine
+    """
+
+    # Routine(s) to link
+    args: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MZPrintArg:
+    """Single argument in ZPRINT command.
+
+    Specifies a range of source code to print.
+    ZPRINT label^routine - print from label
+    ZPRINT label:endlabel - print range
+    """
+
+    # Starting label
+    start_label: Optional[str] = None
+    # Starting offset
+    start_offset: Optional["MExpr"] = None
+    # Routine name
+    routine: Optional[str] = None
+    # Routine indirection (for ^@expr)
+    routine_indirection: Optional["MExpr"] = None
+    # Ending label for range
+    end_label: Optional[str] = None
+    # Ending offset
+    end_offset: Optional["MExpr"] = None
+
+
+@dataclass
+class MZPrintStatement(MStatement):
+    """ZPRINT command - print source code.
+
+    Displays source code from the current or specified routine:
+    ZP[RINT] [label[:routine]]
+
+    Examples:
+      ZPRINT - print current routine
+      ZPRINT label - print from label
+      ZPRINT label^routine - print from label in routine
+      ZPRINT label1:label2 - print range
+    """
+
+    # Print arguments
+    args: List[MZPrintArg] = field(default_factory=list)
+
+
+@dataclass
+class MZSystemStatement(MStatement):
+    """ZSYSTEM command - execute shell command.
+
+    Executes a shell command:
+    ZSY[STEM] [command]
+
+    Examples:
+      ZSYSTEM - spawn interactive shell
+      ZSYSTEM "ls -la"
+      ZSYSTEM command_var
+    """
+
+    # Shell command(s) to execute
+    args: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MZMessageStatement(MStatement):
+    """ZMESSAGE command - generate MUMPS error.
+
+    Generates a MUMPS error:
+    ZM[ESSAGE] error_code
+
+    Examples:
+      ZMESSAGE 150372994 - generate specific error
+      ZM error_code
+    """
+
+    # Error code(s) to generate
+    args: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MZTriggerStatement(MStatement):
+    """ZTRIGGER command - invoke triggers.
+
+    Invokes triggers associated with a global reference:
+    ZTRIGGER target
+
+    Examples:
+      ZTRIGGER ^global
+      ZTRIGGER ^global(subscript)
+      ZTRIGGER @indirection
+    """
+
+    # Target expression (global reference or indirection)
+    target: Optional["MExpr"] = None
+
+
+@dataclass
+class MZCompileStatement(MStatement):
+    """ZCOMPILE command - compile routine.
+
+    Compiles a routine without linking it:
+    ZC[OMPILE] routine
+
+    Examples:
+      ZCOMPILE "routine.m"
+      ZC routine
+    """
+
+    # Routine(s) to compile
+    args: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MZContinueStatement(MStatement):
+    """ZCONTINUE command - continue from breakpoint.
+
+    Continues execution after a breakpoint:
+    ZC[ONTINUE]
+
+    Used in ZBREAK action strings to resume execution.
+    """
+
+    pass

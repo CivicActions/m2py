@@ -256,6 +256,36 @@ class GlobalVariable(MGlobal):
         object.__setattr__(self, "result_type", None)
 
 
+class ExtendedGlobalPipe(MGlobal):
+    """textX custom class for ExtendedGlobalPipe grammar rule.
+
+    Grammar: ExtendedGlobalPipe: '^|' environment=StringLiteral '|' name=VARNAME subscripts=Subscripts?;
+
+    Represents pipe-delimited extended global reference: ^|"env"|globalname
+    """
+
+    def __init__(self, parent=None, name: str = "", subscripts=None, environment=None):
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
+        object.__setattr__(self, "environment", environment)
+        object.__setattr__(self, "result_type", None)
+
+
+class ExtendedGlobalBracket(MGlobal):
+    """textX custom class for ExtendedGlobalBracket grammar rule.
+
+    Grammar: ExtendedGlobalBracket: '^[' environment=StringLiteral ']' name=VARNAME subscripts=Subscripts?;
+
+    Represents bracket-delimited extended global reference: ^["gld"]globalname
+    """
+
+    def __init__(self, parent=None, name: str = "", subscripts=None, environment=None):
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
+        object.__setattr__(self, "environment", environment)
+        object.__setattr__(self, "result_type", None)
+
+
 class NakedGlobal(MNakedGlobal):
     """textX custom class for NakedGlobal grammar rule.
 
@@ -353,6 +383,48 @@ class SelectFunction(MIntrinsicFunction):
         object.__setattr__(self, "result_type", None)
 
 
+class TextFunction(MIntrinsicFunction):
+    """textX custom class for TextFunction grammar rule.
+
+    Grammar: TextFunction: '$' name=TEXTNAME '(' arg=TextFunctionArg ')';
+
+    $TEXT uses special line-reference syntax. The argument contains:
+    - fullIndirect: Indirection for entire line reference
+    - label: Label name
+    - offset: Optional offset expression (via OffsetExpr)
+    - routineIndirect: Indirection for routine name
+    - routine: Literal routine name
+
+    We map this to MIntrinsicFunction. The arguments list is empty (line refs
+    are not normal expressions). The line_ref dict captures parsed components.
+    """
+
+    def __init__(self, parent=None, name: str = "", arg=None):
+        object.__setattr__(self, "name", name)  # Preserve as-is
+
+        # Build a dict capturing the line reference structure
+        # Values are unwrapped ASG nodes where applicable
+        line_ref = {}
+        if arg:
+            if hasattr(arg, "fullIndirect") and arg.fullIndirect:
+                line_ref["full_indirect"] = _unwrap_expr(arg.fullIndirect)
+            else:
+                if hasattr(arg, "label") and arg.label:
+                    line_ref["label"] = arg.label  # Plain string
+                if hasattr(arg, "offset") and arg.offset:
+                    line_ref["offset"] = _unwrap_expr(arg.offset)
+                if hasattr(arg, "routineIndirect") and arg.routineIndirect:
+                    line_ref["routine_indirect"] = _unwrap_expr(arg.routineIndirect)
+                if hasattr(arg, "routine") and arg.routine:
+                    line_ref["routine"] = arg.routine  # Plain string
+
+        # Don't put dict in arguments - that causes analyzer issues
+        # The line_ref is stored separately
+        object.__setattr__(self, "arguments", [])
+        object.__setattr__(self, "line_ref", line_ref)
+        object.__setattr__(self, "result_type", None)
+
+
 class ExtrinsicFunction(MExtrinsicFunction):
     """textX custom class for ExtrinsicFunction grammar rule.
 
@@ -418,6 +490,40 @@ class Indirection(MIndirection):
 
 
 # =============================================================================
+# Unknown Command Handler
+# =============================================================================
+
+
+class UnknownCommand:
+    """Catch-all for unrecognized commands.
+
+    This class is instantiated by textX when a word in command position
+    doesn't match any known command. It immediately raises an error
+    with a clear message about the unrecognized command.
+
+    This ensures unknown commands fail fast during parsing rather than
+    propagating through to the ASG or code generation phases.
+    """
+
+    def __init__(self, parent=None, word: str = "", rest: str = "", **kwargs):
+        """Raise MUMPSUnknownCommandError for the unrecognized command.
+
+        Args:
+            parent: Parent node (from textX)
+            word: The unrecognized command word
+            rest: Rest of the line after the command word
+            **kwargs: Additional textX attributes (e.g., _tx_position)
+        """
+        from m2py.parser.exceptions import MUMPSUnknownCommandError
+
+        raise MUMPSUnknownCommandError(
+            command=word,
+            line=None,  # Position info not easily available from textX offset
+            column=None,
+        )
+
+
+# =============================================================================
 # Class Registry
 # =============================================================================
 
@@ -427,14 +533,22 @@ EXPRESSION_CLASSES = [
     StringLiteral,
     LocalVariable,
     GlobalVariable,
+    ExtendedGlobalPipe,
+    ExtendedGlobalBracket,
     NakedGlobal,
     SpecialVariable,
     StructuredSystemVariable,
+    TextFunction,
     SelectFunction,
     IntrinsicFunction,
     IntrinsicFunctionNoArgs,
     ExtrinsicFunction,
     Indirection,
+]
+
+# Command classes that need special handling
+COMMAND_CLASSES = [
+    UnknownCommand,
 ]
 
 
@@ -443,10 +557,21 @@ def get_expression_classes() -> List[Type]:
     return EXPRESSION_CLASSES.copy()
 
 
+def get_command_classes() -> List[Type]:
+    """Get list of custom command classes for textX registration."""
+    return COMMAND_CLASSES.copy()
+
+
+def get_all_classes() -> List[Type]:
+    """Get all custom classes (expressions + commands) for textX registration."""
+    return EXPRESSION_CLASSES + COMMAND_CLASSES
+
+
 def get_class_for_rule(rule_name: str) -> Optional[Type]:
     """Get custom class for a grammar rule name.
 
     This can be passed as a callable to metamodel_from_file(classes=...).
     """
-    class_map = {cls.__name__: cls for cls in EXPRESSION_CLASSES}
+    all_classes = EXPRESSION_CLASSES + COMMAND_CLASSES
+    class_map = {cls.__name__: cls for cls in all_classes}
     return class_map.get(rule_name)

@@ -90,10 +90,15 @@ class MGlobal(MExpr):
 
     Represents a reference to a global (persistent) variable:
     ^GLOBAL, ^DATA(1,2,3)
+
+    Supports extended global references with environment specification:
+    ^|"env"|GLOBAL - pipe-delimited environment
+    ^["gld"]GLOBAL - bracket-delimited global directory
     """
 
     name: str = ""
     subscripts: List["MExpr"] = field(default_factory=list)
+    environment: Optional["MExpr"] = None  # For extended global references
 
 
 @dataclass

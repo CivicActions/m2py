@@ -439,6 +439,11 @@ class MUMPSParser:
         """
         self._current_file = filename
 
+        # Normalize source: ensure it ends with a newline
+        # MUMPS files should end with a newline, but many editors/sources omit it
+        if source and not source.endswith("\n"):
+            source = source + "\n"
+
         try:
             # Parse using textX
             model = self._metamodel.model_from_str(source)

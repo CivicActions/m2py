@@ -109,6 +109,39 @@ class TestGlobalVariables:
         assert model is not None
 
 
+class TestExtendedGlobalReferences:
+    """Test extended global reference parsing (^|"env"|name and ^["gld"]name).
+
+    Extended global references allow specifying an environment or global
+    directory for the global variable, enabling cross-environment access.
+    """
+
+    def test_pipe_extended_global(self, expr_metamodel):
+        """Parse pipe-delimited extended global: ^|"env"|name."""
+        model = expr_metamodel.model_from_str('^|"env"|global', "Expr")
+        assert model is not None
+
+    def test_pipe_extended_global_subscripted(self, expr_metamodel):
+        """Parse pipe-delimited extended global with subscripts."""
+        model = expr_metamodel.model_from_str('^|"db"|data(1,2)', "Expr")
+        assert model is not None
+
+    def test_bracket_extended_global(self, expr_metamodel):
+        """Parse bracket-delimited extended global: ^["gld"]name."""
+        model = expr_metamodel.model_from_str('^["mumps.gld"]global', "Expr")
+        assert model is not None
+
+    def test_bracket_extended_global_subscripted(self, expr_metamodel):
+        """Parse bracket-delimited extended global with subscripts."""
+        model = expr_metamodel.model_from_str('^["gld"]data(1,2,3)', "Expr")
+        assert model is not None
+
+    def test_pipe_extended_global_empty_env(self, expr_metamodel):
+        """Parse pipe-delimited extended global with empty environment."""
+        model = expr_metamodel.model_from_str('^|""|global', "Expr")
+        assert model is not None
+
+
 class TestBinaryOperators:
     """Test binary operator parsing."""
 
@@ -470,6 +503,227 @@ class TestCacheSpecificFunctions:
         assert operand.name == "EREF"
 
 
+class TestZFunctionsAndISVs:
+    """Test YottaDB/GT.M Z-function and Z-ISV parsing.
+
+    Z-functions are parsed via IntrinsicFunction (with args) or IntrinsicFunctionNoArgs (without args).
+    Z-ISVs that can be SET/NEW are parsed as SpecialVariable (in SVARNAME pattern).
+
+    The distinction is important:
+    - Functions: $ZCHAR(x), $ZWRITE(x) - callable with args
+    - Settable ISVs: $ZTRAP, $ZGBLDIR - can be SET or NEW'd
+    - Read-only ISVs: $ZCHSET, $ZYSQLNULL - implementation-specific, not settable
+    """
+
+    # Settable Z-ISVs (parsed as SpecialVariable)
+    def test_ztrap_isv(self, expr_metamodel):
+        """Parse $ZTRAP Z-ISV for error trapping."""
+        model = expr_metamodel.model_from_str("$ZTRAP", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZTRAP"
+
+    def test_zstatus_isv(self, expr_metamodel):
+        """Parse $ZSTATUS Z-ISV for status information."""
+        model = expr_metamodel.model_from_str("$ZSTATUS", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZSTATUS"
+
+    def test_zlevel_isv(self, expr_metamodel):
+        """Parse $ZLEVEL Z-ISV for stack level."""
+        model = expr_metamodel.model_from_str("$ZLEVEL", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZLEVEL"
+
+    def test_zposition_isv(self, expr_metamodel):
+        """Parse $ZPOSITION Z-ISV for position information."""
+        model = expr_metamodel.model_from_str("$ZPOSITION", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZPOSITION"
+
+    def test_zeof_isv(self, expr_metamodel):
+        """Parse $ZEOF Z-ISV for end of file."""
+        model = expr_metamodel.model_from_str("$ZEOF", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZEOF"
+
+    def test_zcmdline_isv(self, expr_metamodel):
+        """Parse $ZCMDLINE Z-ISV for command line."""
+        model = expr_metamodel.model_from_str("$ZCMDLINE", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZCMDLINE"
+
+    def test_zgbldir_isv(self, expr_metamodel):
+        """Parse $ZGBLDIR Z-ISV for global directory."""
+        model = expr_metamodel.model_from_str("$ZGBLDIR", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZGBLDIR"
+
+    def test_zjob_isv(self, expr_metamodel):
+        """Parse $ZJOB Z-ISV for job ID."""
+        model = expr_metamodel.model_from_str("$ZJOB", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZJOB"
+
+    # Read-only Z-ISVs (parsed as IntrinsicFunctionNoArgs - not in SVARNAME)
+    def test_zchset_isv(self, expr_metamodel):
+        """Parse $ZCHSET Z-ISV for character set (read-only)."""
+        model = expr_metamodel.model_from_str("$ZCHSET", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunctionNoArgs"
+        assert operand.name == "ZCHSET"
+
+    def test_zsystem_isv(self, expr_metamodel):
+        """Parse $ZSYSTEM Z-ISV for OS return code (read-only)."""
+        model = expr_metamodel.model_from_str("$ZSYSTEM", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunctionNoArgs"
+        assert operand.name == "ZSYSTEM"
+
+    def test_zysqlnull_isv(self, expr_metamodel):
+        """Parse $ZYSQLNULL Z-ISV for SQL null handling (read-only)."""
+        model = expr_metamodel.model_from_str("$ZYSQLNULL", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunctionNoArgs"
+        assert operand.name == "ZYSQLNULL"
+
+    # HIGH/MEDIUM priority Z-functions (from YDBTest analysis)
+    def test_zchar_function(self, expr_metamodel):
+        """Parse $ZCHAR Z-function for extended character handling."""
+        model = expr_metamodel.model_from_str("$ZCHAR(65)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZCHAR"
+        assert len(operand.args.args) == 1
+
+    def test_zwrite_function(self, expr_metamodel):
+        """Parse $ZWRITE Z-function for write format."""
+        model = expr_metamodel.model_from_str("$ZWRITE(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZWRITE"
+        assert len(operand.args.args) == 1
+
+    def test_zprevious_function(self, expr_metamodel):
+        """Parse $ZPREVIOUS Z-function for previous in order."""
+        model = expr_metamodel.model_from_str("$ZPREVIOUS(^DATA)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZPREVIOUS"
+        assert len(operand.args.args) == 1
+
+    def test_zextract_function(self, expr_metamodel):
+        """Parse $ZEXTRACT Z-function for extended extract."""
+        model = expr_metamodel.model_from_str("$ZEXTRACT(STR,1,5)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZEXTRACT"
+        assert len(operand.args.args) == 3
+
+    def test_zpiece_function(self, expr_metamodel):
+        """Parse $ZPIECE Z-function for extended piece."""
+        model = expr_metamodel.model_from_str('$ZPIECE(STR,",",1)', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZPIECE"
+        assert len(operand.args.args) == 3
+
+    def test_ztranslate_function(self, expr_metamodel):
+        """Parse $ZTRANSLATE Z-function for extended translate."""
+        model = expr_metamodel.model_from_str('$ZTRANSLATE(STR,"abc","xyz")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZTRANSLATE"
+        assert len(operand.args.args) == 3
+
+    def test_zparse_function(self, expr_metamodel):
+        """Parse $ZPARSE Z-function for file path parsing."""
+        model = expr_metamodel.model_from_str('$ZPARSE("/path/to/file")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZPARSE"
+        assert len(operand.args.args) == 1
+
+    def test_zsearch_function(self, expr_metamodel):
+        """Parse $ZSEARCH Z-function for file search."""
+        model = expr_metamodel.model_from_str('$ZSEARCH("*.m")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZSEARCH"
+        assert len(operand.args.args) == 1
+
+    def test_zgetjpi_function(self, expr_metamodel):
+        """Parse $ZGETJPI Z-function for job/process info."""
+        model = expr_metamodel.model_from_str('$ZGETJPI(0,"PID")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZGETJPI"
+        assert len(operand.args.args) == 2
+
+    def test_zconvert_function(self, expr_metamodel):
+        """Parse $ZCONVERT Z-function for character conversion."""
+        model = expr_metamodel.model_from_str('$ZCONVERT(STR,"L")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZCONVERT"
+        assert len(operand.args.args) == 2
+
+    def test_zascii_function(self, expr_metamodel):
+        """Parse $ZASCII Z-function for extended ASCII."""
+        model = expr_metamodel.model_from_str("$ZASCII(STR)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZASCII"
+        assert len(operand.args.args) == 1
+
+    def test_zlength_function(self, expr_metamodel):
+        """Parse $ZLENGTH Z-function for extended length."""
+        model = expr_metamodel.model_from_str("$ZLENGTH(STR)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZLENGTH"
+        assert len(operand.args.args) == 1
+
+    def test_zfind_function(self, expr_metamodel):
+        """Parse $ZFIND Z-function for extended find."""
+        model = expr_metamodel.model_from_str('$ZFIND(STR,"pattern")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZFIND"
+        assert len(operand.args.args) == 2
+
+
 class TestSpecialVariables:
     """Test special variable parsing."""
 
@@ -675,7 +929,11 @@ class TestSelectFunction:
 
 
 class TestIndirection:
-    """Test indirection parsing."""
+    """Test indirection parsing including multi-level indirection (@@, @@@).
+
+    Multi-level indirection is parsed recursively - @@X becomes @(@X) where the
+    outer @ has an Indirection as its expr attribute.
+    """
 
     def test_simple_indirection(self, expr_metamodel):
         """Parse simple @variable indirection."""
@@ -686,6 +944,81 @@ class TestIndirection:
         """Parse @variable(subscripts) indirection."""
         model = expr_metamodel.model_from_str("@X(1,2)", "Expr")
         assert model is not None
+
+    def test_double_indirection(self, expr_metamodel):
+        """Parse @@X double indirection (Phase 102 Part E)."""
+        model = expr_metamodel.model_from_str("@@X", "Expr")
+        assert model is not None
+        # Outer indirection
+        outer = model.left.operand
+        assert outer.__class__.__name__ == "Indirection"
+        # Inner indirection (expr contains another Indirection)
+        inner = outer.expr
+        assert inner.__class__.__name__ == "Indirection"
+        # Innermost is the variable
+        assert inner.expr.name == "X"
+
+    def test_triple_indirection(self, expr_metamodel):
+        """Parse @@@X triple indirection (Phase 102 Part E)."""
+        model = expr_metamodel.model_from_str("@@@X", "Expr")
+        assert model is not None
+        outer = model.left.operand
+        assert outer.__class__.__name__ == "Indirection"
+        middle = outer.expr
+        assert middle.__class__.__name__ == "Indirection"
+        inner = middle.expr
+        assert inner.__class__.__name__ == "Indirection"
+        assert inner.expr.name == "X"
+
+    def test_double_indirection_with_string(self, expr_metamodel):
+        """Parse @@"literal" double indirection with string literal."""
+        model = expr_metamodel.model_from_str('@@"^V1A"', "Expr")
+        assert model is not None
+        outer = model.left.operand
+        inner = outer.expr
+        assert inner.__class__.__name__ == "Indirection"
+        # Innermost is a string literal
+        assert inner.expr.__class__.__name__ == "StringLiteral"
+
+    def test_double_indirection_with_subscripts(self, expr_metamodel):
+        """Parse @@X(1,2) double indirection - subscripts apply to innermost variable.
+
+        In MUMPS, @@X(1,2) means: evaluate X(1,2), then indirect twice.
+        The subscripts attach to the innermost variable reference.
+        """
+        model = expr_metamodel.model_from_str("@@X(1,2)", "Expr")
+        assert model is not None
+        outer = model.left.operand
+        inner = outer.expr
+        # Subscripts are on the innermost variable X
+        innermost = inner.expr
+        assert innermost.__class__.__name__ == "LocalVariable"
+        assert len(innermost.subscripts) == 2
+
+    def test_triple_indirection_with_subscripts(self, expr_metamodel):
+        """Parse @@@B("AB",2.4) triple indirection - subscripts apply to innermost variable.
+
+        In MUMPS, @@@B("AB",2.4) means: evaluate B("AB",2.4), then indirect three times.
+        """
+        model = expr_metamodel.model_from_str('@@@B("AB",2.4)', "Expr")
+        assert model is not None
+        outer = model.left.operand
+        middle = outer.expr
+        inner = middle.expr
+        innermost = inner.expr
+        assert innermost.__class__.__name__ == "LocalVariable"
+        assert innermost.name == "B"
+        assert len(innermost.subscripts) == 2
+
+    def test_name_indirection_with_subscripts(self, expr_metamodel):
+        """Parse @B@(1) name indirection with subscripts (from task examples)."""
+        model = expr_metamodel.model_from_str("@B@(1)", "Expr")
+        assert model is not None
+        ind = model.left.operand
+        assert ind.__class__.__name__ == "Indirection"
+        # name_subscripts captures the @(1) part
+        assert ind.name_subscripts is not None
+        assert len(ind.name_subscripts) == 1
 
 
 class TestExtrinsicFunctions:

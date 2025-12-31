@@ -40,22 +40,22 @@ from ..asg.enums import ForLoopType, ForParamType
 @lru_cache(maxsize=1)
 def _get_command_metamodel():
     """Get the cached command grammar metamodel with custom classes."""
-    from .textx_classes import get_expression_classes
+    from .textx_classes import get_all_classes
 
     grammar_dir = Path(__file__).parent.parent / "grammar"
     return metamodel_from_file(
-        grammar_dir / "commands.tx", classes=get_expression_classes(), skipws=False
+        grammar_dir / "commands.tx", classes=get_all_classes(), skipws=False
     )
 
 
 @lru_cache(maxsize=1)
 def _get_line_metamodel():
     """Get the cached line content grammar metamodel with custom classes."""
-    from .textx_classes import get_expression_classes
+    from .textx_classes import get_all_classes
 
     grammar_dir = Path(__file__).parent.parent / "grammar"
     return metamodel_from_file(
-        grammar_dir / "line.tx", classes=get_expression_classes(), skipws=False
+        grammar_dir / "line.tx", classes=get_all_classes(), skipws=False
     )
 
 
@@ -84,9 +84,13 @@ def parse_line_content(
         an MParseError, allowing partial parsing of files while preserving error
         information for later reporting.
 
+        MUMPSUnknownCommandError is also caught and converted to MParseError for
+        unknown commands that don't match any recognized MUMPS command pattern.
+
         None is returned only for empty/whitespace lines which are not errors.
     """
     from m2py.asg.elements import MParseError
+    from m2py.parser.exceptions import MUMPSUnknownCommandError
 
     # Empty or whitespace-only lines are not errors
     if not line_content or not line_content.strip():
@@ -106,6 +110,14 @@ def parse_line_content(
             line_number=line_number,
             column=col,
             message=msg,
+            line_content=line_content,
+        )
+    except MUMPSUnknownCommandError as e:
+        # Unknown command - convert to MParseError for error-tolerant parsing
+        return MParseError(
+            line_number=line_number,
+            column=e.column or 0,
+            message=str(e),
             line_content=line_content,
         )
 
