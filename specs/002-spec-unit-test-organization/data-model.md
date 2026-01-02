@@ -138,19 +138,45 @@ tests/unit/
     └── test_parse_result_tracking.py
 ```
 
-## Index File Format
+## Coverage Audit Script
 
-`tests/unit/TEST_INDEX.md`:
+`utils/audit_tests.py` dynamically scans test files and generates coverage reports.
+
+### Usage
+
+```bash
+# Run full audit
+uv run python utils/audit_tests.py
+
+# Filter to specific section
+uv run python utils/audit_tests.py --section s8_commands
+
+# Generate markdown output
+uv run python utils/audit_tests.py --output docs/coverage-matrix.md
+```
+
+### Output Format
 
 ```markdown
-# Unit Test Coverage Index
+# Unit Test Coverage Matrix
 
-## Parser Tests
+Generated: 2025-01-02T12:00:00
 
-### §7.1.5 Intrinsic Functions
+## Summary
 
-| Function | File | Status | Stubs | Tests |
-|----------|------|--------|-------|-------|
-| $ASCII | test_s7_1_5_1_ascii.py | partial | 2 | 5 |
-| $CHAR | test_s7_1_5_2_char.py | stub | 8 | 0 |
+| Category | Passed | Stubs | Skipped | Total |
+|----------|--------|-------|---------|-------|
+| Parser   | 450    | 120   | 15      | 585   |
+| ASG      | 380    | 95    | 12      | 487   |
+| Codegen  | 210    | 180   | 8       | 398   |
+
+## §8 Commands
+
+| Section | Parser | ASG | Codegen | Notes |
+|---------|--------|-----|---------|-------|
+| §8.2.1 BREAK | ✓ 5 | ✓ 3 | ○ 2 | |
+| §8.2.2 CLOSE | ✓ 8 | ✓ 6 | ○ 4 | |
+| §8.2.3 DO | ✓ 12 | ✓ 10 | ✓ 8 | |
+
+Legend: ✓ = passed, ○ = xfail stubs, ✗ = skipped, - = missing
 ```

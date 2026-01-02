@@ -70,13 +70,14 @@ As a project maintainer, I want a clear coverage matrix that shows exactly which
 
 **Why this priority**: Without explicit gap tracking, it's impossible to know when we've achieved complete coverage or what work remains.
 
-**Independent Test**: Generate a coverage report from test markers and compare against the full spec section list.
+**Independent Test**: Run `uv run python utils/audit_tests.py` and verify all §5-§9 sections are accounted for.
 
 **Acceptance Scenarios**:
 
-1. **Given** the complete MUMPS 1995 spec table of contents, **When** compared to test files, **Then** every section is accounted for in at least one test category (parser, asg, or codegen) as either: tested, stub-marked (xfail), skip-marked, or documented as out-of-scope in coverage-matrix.md
-2. **Given** a test file with `@pytest.mark.skip(reason="not-implemented")`, **When** the coverage report runs, **Then** it appears in the "pending" category with the reason
-3. **Given** the limitations.md exclusions, **When** the coverage report runs, **Then** those sections appear as "out-of-scope" not "missing"
+1. **Given** the complete MUMPS 1995 spec table of contents, **When** the audit script runs, **Then** every section is accounted for in at least one test category (parser, asg, or codegen) as either: tested (pass), stub-marked (xfail), skip-marked, or flagged as missing
+2. **Given** a test file with `@pytest.mark.skip(reason="...")`, **When** the audit script runs, **Then** it appears in the "skipped" category with the reason
+3. **Given** a test with `@pytest.mark.xfail(reason="...")`, **When** the audit script runs, **Then** it appears in the "stub" category
+4. **Given** a missing spec section, **When** the audit script runs, **Then** it is flagged and the script exits with non-zero status
 
 ---
 
@@ -305,7 +306,12 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **FR-042**: `docs/testing.md` MUST document the three-level testing approach (parser, asg, codegen)
 - **FR-043**: `docs/testing.md` MUST document the stub/xfail workflow for pending tests
 - **FR-044**: `docs/testing.md` MUST include the marker usage table and common pytest commands
-- **FR-045**: Coverage matrix document MUST be created as `docs/coverage-matrix.md` in Markdown table format with columns: Section, Subsection, Parser Status, ASG Status, Codegen Status, Notes
+- **FR-045**: A coverage audit script MUST be created as `utils/audit_tests.py` that dynamically scans test files and generates coverage reports. The script MUST:
+  - Accept optional `--section` argument to filter by spec section (e.g., `--section s7` or `--section s8_commands`)
+  - Output summary counts per spec section: total tests, passed, xfail stubs, skipped
+  - Show status for each test category (parser, asg, codegen)
+  - Generate markdown table output suitable for docs/coverage-matrix.md
+  - Exit with non-zero status if any expected sections are missing test files
 
 ### Key Entities
 
@@ -324,7 +330,7 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **SC-001**: 100% of MUMPS 1995 spec sections (§5-§9) are accounted for in the test structure (tested, xfail stub, or skip-marked per FR-055)
 - **SC-002**: All existing unit tests are migrated without loss of coverage (test count ≥ current count)
 - **SC-003**: Running `pytest --collect-only tests/unit/` shows clear categorization of all tests by spec section
-- **SC-004**: Coverage matrix document accurately reflects test status for every spec section
+- **SC-004**: Running `uv run python utils/audit_tests.py` exits with status 0 and shows all sections covered
 - **SC-005**: All implemented commands have parser-level, ASG-level, and codegen-level tests (or stubs)
 - **SC-006**: All implemented intrinsic functions have parser-level, ASG-level, and codegen-level tests (or stubs)
 - **SC-007**: All implemented operators have parser-level, ASG-level, and codegen-level tests (or stubs)
@@ -337,7 +343,7 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **SC-014**: Running `pytest -m "not stub"` executes only implemented tests
 - **SC-015**: Every spec section has stubs at all three levels (parser, asg, codegen) from initial structure creation
 - **SC-016**: `docs/testing.md` accurately describes the new test organization and workflows
-- **SC-017**: `docs/coverage-matrix.md` exists and matches actual test coverage status
+- **SC-017**: `utils/audit_tests.py` exists and can generate `docs/coverage-matrix.md` dynamically
 - **SC-018**: Language semantic edge cases (naked refs, $TEST, Exclusive NEW, postcondition scope, L-to-R eval, transaction nesting) have dedicated tests
 - **SC-019**: Non-spec-aligned tests (analysis functions, tooling/meta) are organized separately from spec-aligned tests
 
