@@ -1,0 +1,1218 @@
+// MUMPS Command Grammar for textX
+// =============================================================================
+// Commands: SET, WRITE, READ, IF, FOR, GOTO, DO, QUIT, NEW, etc.
+// Combined with expression grammar for standalone use.
+// =============================================================================
+
+// Import expression grammar
+import expressions
+
+// =============================================================================
+// Commands
+// =============================================================================
+
+// A command with optional postcondition
+// Note: Z-commands must come before their non-Z counterparts to avoid
+// ambiguous parsing (e.g., ZBREAK before BREAK, ZGOTO before GOTO)
+// Also, ZCONTINUE must come before ZCOMPILE since ZCONTINUE requires full
+// spelling while ZCOMPILE can be abbreviated to ZC.
+Command:
+    SetCommand |
+    WriteCommand |
+    ReadCommand |
+    IfCommand |
+    ElseCommand |
+    ForCommand |
+    ZGotoCommand |
+    GotoCommand |
+    DoCommand |
+    QuitCommand |
+    NewCommand |
+    ZWithdrawCommand |
+    ZKillCommand |
+    KillCommand |
+    ZHaltCommand |
+    HangCommand |
+    HaltCommand |
+    ZBreakCommand |
+    ZStepCommand |
+    BreakCommand |
+    ZDeallocateCommand |
+    ZAllocateCommand |
+    LockCommand |
+    MergeCommand |
+    ViewCommand |
+    XecuteCommand |
+    JobCommand |
+    OpenCommand |
+    CloseCommand |
+    UseCommand |
+    TStartCommand |
+    TCommitCommand |
+    TRestartCommand |
+    TRollbackCommand |
+    ZTStartCommand |
+    ZTCommitCommand |
+    ZShowCommand |
+    ZWriteCommand |
+    ZTriggerCommand |
+    ZSystemCommand |
+    ZMessageCommand |
+    ZLoadCommand |
+    ZLinkCommand |
+    ZPrintCommand |
+    ZContinueCommand |
+    ZCompileCommand |
+    ZEditCommand |
+    UnknownCommand  // MUST be last - catches unrecognized commands
+;
+
+// =============================================================================
+// Assignment Commands
+// =============================================================================
+
+// SET command: S|SET target=value,target=value,...
+// Note: (?![A-Za-z]) prevents matching prefix of unknown words like "SETUP"
+SetCommand:
+    /([Ss][Ee][Tt]|[Ss])(?![A-Za-z])/ postcond=Postcondition? WS assignments+=SetArgument[/,/]
+;
+
+// SET argument: can be a regular assignment, or argument-level indirection
+// Argument-level indirection (@VAR) contains the complete "target=value" text
+SetArgument:
+    Assignment | SetIndirection
+;
+
+// Argument-level indirection in SET: @VAR where VAR contains "target=value"
+SetIndirection:
+    indirect=Indirection
+;
+
+// Single assignment: target=value or (targets)=value
+// Note: MUMPS spec 8.1.4 allows argument postconditions only on DO/GOTO/XECUTE
+Assignment:
+    targets=SetTargets '=' value=Expr
+;
+
+// Set targets: single variable/global or parenthesized list
+SetTargets:
+    ParenTargets | SingleTarget
+;
+
+ParenTargets:
+    '(' targets+=SingleTarget[/,/] ')'
+;
+
+// Order matters for PEG parsing - more specific patterns first:
+// - ExtendedGlobalPipe (^|"env"|name) before GlobalVariable (^name) - longer match
+// - ExtendedGlobalBracket (^["gld"]name) before GlobalVariable (^name) - longer match  
+// - NakedGlobal (^(...)) before GlobalVariable (^name(...)) - both start with ^
+// - IntrinsicFunction ($P(...)) before SpecialVariable ($P) - function has parens
+// - AnySpecialVariable ($ZXXX) catches implementation-specific ISVs not in SVARNAME
+// - Indirection (@X) last among @ patterns
+SingleTarget:
+    ExtendedGlobalPipe | ExtendedGlobalBracket | NakedGlobal | GlobalVariable | IntrinsicFunction | SpecialVariable | AnySpecialVariable | LocalVariable | Indirection
+;
+
+// Catch-all for implementation-specific special variables (e.g., $ZYERR, $ZINT)
+// that may use non-standard abbreviations not covered by SVARNAME
+AnySpecialVariable:
+    '$' name=/[A-Za-z][A-Za-z0-9]*/
+;
+
+// =============================================================================
+// I/O Commands
+// =============================================================================
+
+// WRITE command: W|WRITE args
+// Format controls (!, #) can be adjacent without commas
+// Other args need comma separation
+WriteCommand:
+    /([Ww][Rr][Ii][Tt][Ee]|[Ww])(?![A-Za-z])/ postcond=Postcondition? WS? args*=WriteArg
+;
+
+// Write argument: format control or expression
+// Comma is optional before format controls but required between expressions
+// Note: MUMPS spec 8.1.4 allows argument postconditions only on DO/GOTO/XECUTE
+WriteArg:
+    /,/? arg=WriteArgValue
+;
+
+WriteArgValue:
+    FormatControl | DeviceControl | Expr
+;
+
+// Format controls: !, #, ?n, *n (newline, form feed, column, char code)
+FormatControl:
+    Newline | FormFeed | Tab | CharCode
+;
+
+// Device control: /keyword for device-specific commands
+// GT.M/YDB extension: write /eof, write /wait, write /listen, etc.
+DeviceControl:
+    '/' keyword=DEVICECTRLKEYWORD ('(' params+=Expr[','] ')')?
+;
+
+// Device control keywords (case-insensitive)
+DEVICECTRLKEYWORD:
+    /[Ee][Oo][Ff]|[Ww][Aa][Ii][Tt]|[Ll][Ii][Ss][Tt][Ee][Nn]|[Aa][Cc][Cc][Ee][Pp][Tt]|[Pp][Aa][Ss][Ss]|[Cc][Ll][Ee][Aa][Rr]|[Ff][Ii][Ll][Tt][Ee][Rr]|[Ff][Ll][Uu][Ss][Hh]|[Hh][Aa][Nn][Gg][Uu][Pp]|[Bb][Ll][Oo][Cc][Kk][Ss][Ii][Zz][Ee]|[Rr][Ee][Cc][Oo][Rr][Dd]|[Aa][Ll][Ee][Rr][Tt]|[Rr][Ee][Pp][Ll][Aa][Cc][Ee]|[Nn][Oo][Ll][Ff]|[Ss][Oo][Cc][Kk][Ee][Tt]|[Nn][Oo][Ee][Oo][Ff]|[Mm][Oo][Rr][Ee]|[Ll][Ff]|[Tt][Ll][Ss]|[Rr][Ee][Nn][Ee][Gg][Oo][Tt][Ii][Aa][Tt][Ee]|[Zz][Ff][Ff]|[Nn][Bb]|[Ee][Rr][Rr]|[Ee][Xx][Cc][Ee][Pp][Tt]|[Cc][Aa][Nn][Cc][Ee][Ll]|[Ss][Ee][Nn][Dd]|[Rr][Ee][Cc][Vv]|[Bb][Ii][Nn][Dd]|[Cc][Oo][Nn][Nn][Ee][Cc][Tt]|[Dd][Ii][Ss][Cc][Oo][Nn][Nn][Ee][Cc][Tt]|[Ss][Hh][Uu][Tt][Dd][Oo][Ww][Nn]|[Oo][Pp][Tt][Ii][Oo][Nn]|[Dd][Ee][Vv][Pp][Aa][Rr][Mm]|[Zz][Ee][Oo][Ff]|[Ii][Oo][Ee][Rr][Rr]|[Ss][Ii][Gg]|[Pp][Rr][Ii][Oo][Rr][Ii][Tt][Yy]|[A-Za-z][A-Za-z0-9]*/
+;
+
+Newline: val='!';
+FormFeed: val='#';
+Tab: val=/\?/ expr=Expr;
+CharCode: val=/\*/ expr=Expr;
+
+// READ command: R|READ args
+// Format controls (!, #) can be adjacent without commas (like WRITE)
+// Other args need comma separation
+ReadCommand:
+    /([Rr][Ee][Aa][Dd]|[Rr])(?![A-Za-z])/ postcond=Postcondition? WS? args*=ReadArg
+;
+
+// Read argument: can be format control, prompt, or variable target
+// Valid forms:
+//   ! or # or ?n - format control only (output to device)
+//   "prompt" - string literal prompt (output to device)
+//   VAR or VAR:timeout - variable read (input from device)
+//   *VAR or *VAR:timeout - single char read
+//   "prompt",VAR:timeout - prompt followed by read
+//   !!?10,"prompt",VAR - multiple format/prompt before variable (! adjacent)
+// Note: MUMPS spec 8.1.4 allows argument postconditions only on DO/GOTO/XECUTE
+ReadArg:
+    /,/? arg=ReadArgValue
+;
+
+ReadArgValue:
+    // Format controls (can be adjacent without comma)
+    ReadFormat |
+    // Prompt string
+    StringLiteral |
+    // Target with optional timeout
+    ReadTargetWithTimeout
+;
+
+ReadTargetWithTimeout:
+    target=ReadTarget ('#' fixed_length=Expr)? (':' timeout=Expr)?
+;
+
+// Format controls valid in READ (not * which is CharRead)
+ReadFormat:
+    Newline | FormFeed | Tab
+;
+
+// ReadTarget: variable to read into
+// FixedLengthRead is handled at ReadTargetWithTimeout level with #length syntax
+// NakedGlobal (^(subscripts)) must be checked before GlobalVariable (^name)
+ReadTarget:
+    CharRead | NakedGlobal | GlobalVariable | LocalVariable | Indirection
+;
+
+// CharRead: READ * into a variable (gets ASCII value of single character)
+// Variable can be local or global (e.g., R *X or R *^VV("M"))
+// GlobalVariable must come before LocalVariable to avoid consuming ^VV as local
+CharRead:
+    /\*/ var=CharReadVar
+;
+
+// CharReadVar: target for READ *
+// Can be local variable, global variable, or indirection
+// Indirection allows: R *@var or R *@var@(1,2)
+CharReadVar:
+    GlobalVariable | Indirection | LocalVariable
+;
+
+// =============================================================================
+// Control Flow - Conditional
+// =============================================================================
+
+// IF command: I|IF conditions (comma-separated = AND)
+// Per MUMPS spec: "IF with n arguments is equivalent to n IFs"
+// IMPORTANT: Uses single space (not WS) to distinguish:
+//   - "I 1 S X=1" = IF with condition 1, then SET (one space after I)
+//   - "I  S X=1"  = argumentless IF, then SET (two spaces = command separator)
+IfCommand:
+    /([Ii][Ff]|[Ii])(?![A-Za-z])/ (/[ \t]/ conditions+=Expr[/,/])?
+;
+
+// ELSE command: E|ELSE
+ElseCommand:
+    /([Ee][Ll][Ss][Ee]|[Ee])(?![A-Za-z])/ postcond=Postcondition?
+;
+
+// =============================================================================
+// Control Flow - Loops
+// =============================================================================
+
+// FOR command: F|FOR var=forparams or argumentless FOR
+// Note: var can be a subscripted variable like J(1,2,3)
+// Also supports indirection: FOR @A=1:1:10
+ForCommand:
+    /([Ff][Oo][Rr]|[Ff])(?![A-Za-z])/ (WS (indirect=Indirection | var=LocalVariable) '=' params+=ForParam[/,/])?
+;
+
+// FOR parameter: value, start:step, or start:step:end
+ForParam:
+    start=Expr (':' step=Expr (':' end=Expr)?)?
+;
+
+// =============================================================================
+// Control Flow - Branching
+// =============================================================================
+
+// GOTO command: G|GOTO targets
+GotoCommand:
+    /([Gg][Oo][Tt][Oo]|[Gg])(?![A-Za-z])/ postcond=Postcondition? WS targets+=GotoTarget[/,/]
+;
+
+// GOTO target: label, label+offset, label^routine, label+offset^routine
+// Or indirection: @expr, @@expr, @expr+offset, @expr^routine
+// Postcondition comes AFTER the label: G ABC:X=1
+GotoTarget:
+    (
+        // Indirection: @expr, @@expr, @expr+offset, @expr^routine, etc.
+        indirect=GotoIndirect |
+        // Regular label reference
+        label=LabelRef
+    ) postcond=Postcondition?
+;
+
+// GOTO indirection: Supports full label reference structure
+// including nested indirection (@@, @@@), offset, and routine components
+// Patterns: @VAR, @@VAR, @(expr), @VAR+offset, @VAR^routine, @VAR+offset^routine
+GotoIndirect:
+    labelIndirect=IndirectChain
+    ('+' offset=OffsetExpr?)?
+    ('^' (routineIndirect=IndirectChain | routine=VARNAME))?
+;
+
+// DO command: D|DO targets or argumentless DO
+// Uses SingleSpace (not WS) so double-space after D means argumentless DO followed by next command.
+// Examples: "D X" = DO with target X, "D  S X=1" = argumentless DO, then SET X=1
+DoCommand:
+    /([Dd][Oo]|[Dd])(?![A-Za-z])/ postcond=Postcondition? (SingleSpace targets+=DoTarget[/,/])?
+;
+
+// DO target: label reference, indirection, external call, or label with args
+// Postcondition comes AFTER the label/indirection: D ABC:X=1
+DoTarget:
+    (
+        // External C function call: &name(args) or &package.name(args)
+        external=DoExternal |
+        // Indirection: @expr, @@expr, @expr+offset, @expr^routine, etc.
+        indirect=DoIndirect |
+        // Regular label reference
+        label=LabelRef args=FunctionArgs?
+    ) postcond=Postcondition?
+;
+
+// DO external: Call to external C function linked into the runtime
+// Syntax: DO &name(args) or DO &package.name(args)
+// Uses same pattern as ExternalFunction expression but in DO context
+DoExternal:
+    '&' (package=VARNAME '.' name=VARNAME | name=VARNAME) args=FunctionArgs?
+;
+
+// DO indirection: Supports full label reference structure
+// with nested indirection (@@, @@@), offset, routine, and arguments
+// Patterns: @VAR, @@VAR, @(expr), @VAR+offset, @VAR^routine, @VAR+offset^routine
+DoIndirect:
+    labelIndirect=IndirectChain
+    ('+' offset=OffsetExpr?)?
+    ('^' (routineIndirect=IndirectChain | routine=VARNAME))?
+    args=FunctionArgs?
+;
+
+// Indirection chain: handles nested indirection like @@VAR or @@@VAR
+// Each @ adds a level of indirection (runtime dereference)
+// Also handles string literals: @"LABEL" is a valid indirection where the
+// string contains the target to resolve at runtime
+IndirectChain:
+    '@' (
+        // Nested indirection: @@VAR, @@@VAR, etc.
+        nested=IndirectChain |
+        // Parenthesized expression: @(expr)
+        '(' expr=Expr ')' |
+        // Naked global reference: @^(subscripts) - uses previous global context
+        nakedGlobal=NakedGlobal |
+        // Global variable: @^VAR or @^VAR(subscripts)
+        global=GlobalVariable |
+        // Intrinsic function indirection: @$E(...), @$P(...), etc.
+        // The function result is evaluated then used as the variable name
+        intrinsicFunc=IntrinsicFunction |
+        // String literal: @"LABEL^ROUTINE" - string contains target
+        string=STRING_VALUE |
+        // Simple variable: @VAR or @VAR(subscripts)
+        var=LocalVariable
+    )
+    // Name indirection subscripts: @(subscripts) after the main indirection
+    // Used in DO/GOTO targets like DO @X@(1) to append subscripts to the indirect name
+    name_subscripts+=NameIndirectionSubscripts*
+;
+
+// Label reference: label, label+offset, label^routine, label+^routine, ^routine
+// NOTE: MUMPS labels can be numeric (1, 012, 0) or alphanumeric (%ABC, LABEL1)
+// Uses OffsetExpr instead of Expr to prevent consuming ^routine as a global variable
+// The offset is optional when immediately followed by ^routine (means offset 0):
+//   G LABEL+^ROUTINE is equivalent to G LABEL+0^ROUTINE
+// Routine can be either a literal name or an indirect expression: LABEL^ROUTINE or LABEL^@VAR
+// Label can also be indirect: @VAR^ROUTINE or @VAR+1^@ROUTINE
+LabelRef:
+    (labelIndirect=Indirection | label=LABELNAME)? ('+' offset=OffsetExpr?)?
+    ('^' (routineIndirect=IndirectChain | routine=VARNAME))?
+;
+
+// Label name - can be:
+// - Purely numeric (1, 012, 0) 
+// - Start with % followed by alphanumeric (%ABC, %0000000)
+// - Start with letter followed by alphanumeric (LABEL, A1B2)
+LABELNAME:
+    /[0-9]+|[%A-Za-z][A-Za-z0-9]*/
+;
+
+// QUIT command: Q|QUIT with optional return value
+// NOTE: Must not consume command keywords as return value
+// Using negative lookahead to prevent "Q S X" from treating "S" as value
+// Key: Command keyword followed by space+arg pattern indicates next command
+QuitCommand:
+    /([Qq][Uu][Ii][Tt]|[Qq])(?![A-Za-z])/ postcond=Postcondition? (SingleSpace !CommandWithArg value=Expr)?
+;
+
+// Pattern: Command keyword followed by space + likely argument pattern
+// This distinguishes "Q S X=1" (QUIT then SET) from "Q X" (QUIT with value)
+// Note: SET requires whitespace between S and the target variable
+// CRITICAL: Also detect command keywords followed by : (postcondition)
+// NOTE: "S=1" is a valid MUMPS expression (comparison), NOT a SET command
+//       SET requires: S<space>VAR= not S=
+// This pattern detects UNAMBIGUOUS command starts that cannot be confused
+// with variable names in expressions. We use conservative matching:
+// - Full command words (SET, WRITE, etc.) are always commands
+// - Postconditioned abbreviations (S:, W:, etc.) are always commands
+// - Single-letter + space + clear target patterns (S $P, S %VAR, S @X)
+// The line.tx grammar handles command separation, so we just need to prevent
+// QUIT from consuming what is clearly the start of another command.
+CommandWithArg:
+    // Full command words are unambiguous
+    /[Ss][Ee][Tt][ \t:]/ |
+    /[Ww][Rr][Ii][Tt][Ee][ \t:]/ |
+    /[Rr][Ee][Aa][Dd][ \t:]/ |
+    /[Ii][Ff][ \t:]|[Ii][Ff]$/ |
+    /[Ee][Ll][Ss][Ee]/ |
+    /[Ff][Oo][Rr][ \t:]/ |
+    /[Gg][Oo][Tt][Oo][ \t:]/ |
+    /[Dd][Oo][ \t:]/ |
+    /[Qq][Uu][Ii][Tt]/ |
+    /[Nn][Ee][Ww][ \t:]/ |
+    /[Kk][Ii][Ll][Ll][ \t:]/ |
+    /[Bb][Rr][Ee][Aa][Kk]/ |
+    /[Jj][Oo][Bb][ \t:]/ |
+    /[Oo][Pp][Ee][Nn][ \t:]/ |
+    /[Cc][Ll][Oo][Ss][Ee][ \t:]/ |
+    /[Uu][Ss][Ee][ \t:]/ |
+    /[Hh][Aa][Nn][Gg][ \t:]/ |
+    /[Hh][Aa][Ll][Tt]/ |
+    /[Ll][Oo][Cc][Kk][ \t:]/ |
+    /[Mm][Ee][Rr][Gg][Ee][ \t:]/ |
+    /[Vv][Ii][Ee][Ww][ \t:]/ |
+    /[Xx][Ee][Cc][Uu][Tt][Ee][ \t:]/ |
+    // Transaction commands - full keywords (can be argumentless)
+    /[Tt][Ss][Tt][Aa][Rr][Tt]/ |
+    /[Tt][Cc][Oo][Mm][Mm][Ii][Tt]/ |
+    /[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]/ |
+    /[Tt][Rr][Oo][Ll][Ll][Bb][Aa][Cc][Kk]/ |
+    // Transaction abbreviations - TS, TC can be at end of line or followed by space
+    /[Tt][Ss](?=[ \t:]|$)/ |
+    /[Tt][Cc](?=[ \t:]|$)/ |
+    /[Tt][Rr][Ee](?=[ \t:]|$)/ |
+    /[Tt][Rr][Oo](?=[ \t:]|$)/ |
+    // Postconditioned single-letter commands are unambiguous (colon after letter)
+    /[SsWwRrIiFfGgDdQqNnKkBbJjOoCcUuLlMmVvXxEeHh]:/ |
+    // Single-letter S/W/R/I/K followed by space is always a command (not part of expression)
+    // "S X" after QUIT = SET command (not variable S with value X)
+    // "X S=1" = variable X with comparison S=1, but space between makes it X (QUIT value), then SET
+    /[Ss][ \t]/ |
+    /[Ww][ \t]/ |
+    /[Rr][ \t]/ |
+    /[Ii][ \t]/ |
+    /[Kk][ \t]/
+;
+
+// =============================================================================
+// Variable Management
+// =============================================================================
+
+// NEW command: N|NEW vars or exclusive NEW
+// Supports local variables, special variables ($ZTRAP, $ETRAP, etc.), and indirection
+// Uses SingleSpace to detect argumentless NEW: "N  S X=1" = argumentless NEW then SET
+// Can combine selective and exclusive NEW: NEW A,B,(C,D) means NEW A,B then exclusive NEW keeping C,D
+NewCommand:
+    /([Nn][Ee][Ww]|[Nn])(?![A-Za-z])/ postcond=Postcondition? (SingleSpace (
+        // Exclusive NEW only: NEW (A,B)
+        exclusive=ExclusiveNew |
+        // Selective NEW vars, optionally followed by exclusive: NEW A,B  or  NEW A,B,(C,D)
+        vars+=NewVar[/,/] (',' exclusive=ExclusiveNew)?
+    ))?
+;
+
+// Exclusive NEW: (var,...) means NEW all except listed vars
+// Supports indirection inside: NEW (@A,B) means NEW all except @A and B
+ExclusiveNew:
+    '(' except+=ExclusiveNewVar[/,/] ')'
+;
+
+// Variable in exclusive NEW list - can be a variable name or indirection
+ExclusiveNewVar:
+    indirect=IndirectChain | name=VARNAME
+;
+
+// NEW target: local variable (with optional subscripts), special variable, or indirection
+// Special variables can be NEW'd to push their value onto a stack
+// Indirection patterns: @A, @@B, @@@C, @@B@(2) (subscripted double indirection)
+NewVar:
+    indirect=IndirectChain | svar=SpecialVariable | name=VARNAME subscripts=Subscripts?
+;
+
+// KILL command: K|KILL killarglist
+// killarglist = comma-separated killarguments
+// killargument = glvn (selective) | (L lname) (exclusive)
+// Multiple exclusive groups: keep only vars in ALL groups (intersection)
+// Mixed: K (X,W),Z means exclusive kill keeping X,W, then also kill Z
+// Note: K with no space before next command means kill all.
+// K<space>VAR means kill VAR. K<space><space>CMD means kill all then CMD.
+KillCommand:
+    /([Kk][Ii][Ll][Ll]|[Kk])(?![A-Za-z])/ postcond=Postcondition? (' ' args+=KillArgument[/,/])?
+;
+
+KillArgument:
+    exclusive?='(' except+=VARNAME[/,/] ')' | target=KillTarget
+;
+
+// KILL target can be a naked global, global, local variable, or indirection (@expr)
+// NakedGlobal MUST come before GlobalVariable since both start with ^
+// NakedGlobal is ^(...) while GlobalVariable is ^name(...)
+KillTarget:
+    NakedGlobal | GlobalVariable | Indirection | LocalVariable
+;
+
+// =============================================================================
+// Other Commands
+// =============================================================================
+
+// HANG command: H|HANG seconds (supports multiple comma-separated values)
+// Per MUMPS spec: HANG suspends execution for specified duration(s)
+// Examples: H 5, H 1,2,3, H @VAR, H:X>0 5
+// Note: HANG REQUIRES arguments (space + expr). Bare "H" or "H:postcond" = HALT
+// The postcondition is optional, but the space+args part is REQUIRED.
+// This allows HaltCommand to catch "H" and "H:X" while HangCommand gets "H 5" etc.
+HangCommand:
+    /([Hh][Aa][Nn][Gg]|[Hh])(?![A-Za-z])/ postcond=Postcondition? SingleSpace args+=Expr[/,/]
+;
+
+// HALT command: H|HALT (same abbreviation as HANG - context determines by argument)
+// Per MUMPS spec: H alone = HALT, H followed by expression = HANG
+// HANG is ordered BEFORE HALT in the command list and requires arguments,
+// so if HANG fails to match (no args), HALT will be tried.
+// This allows:
+// - H 5 -> HANG (has args)
+// - H -> HALT (no args, HANG fails)
+// - H ;comment -> HALT (HANG fails - semicolon isn't a valid expression start)
+HaltCommand:
+    /([Hh][Aa][Ll][Tt]|[Hh])(?![A-Za-z])/ postcond=Postcondition?
+;
+
+// ZHALT command: ZH[ALT] exitcode
+// GT.M/YottaDB extension: Halt with an exit code
+// Unlike HALT, ZHALT always takes an expression (exit code)
+// Examples:
+//   zhalt 1
+//   zhalt +$zstatus
+//   ZHalt 0
+ZHaltCommand:
+    /([Zz][Hh][Aa][Ll][Tt]|[Zz][Hh])(?![A-Za-z])/ postcond=Postcondition? (WS exitcode=Expr)?
+;
+
+// BREAK command: B|BREAK
+BreakCommand:
+    /([Bb][Rr][Ee][Aa][Kk]|[Bb])(?![A-Za-z])/ postcond=Postcondition?
+;
+
+// ZALLOCATE command: ZA[LLOCATE] targets
+// GT.M/YottaDB extension: Incremental lock (always uses +)
+// Syntax is similar to LOCK but always incremental
+// Supports postcondition, parenthesized list, and timeout
+// Examples:
+//   Zallocate (@lvar,@gvar):60
+//   Zallocate:'(i#2) (@lvar,@gvar):60
+//   zallocate X
+ZAllocateCommand:
+    /([Zz][Aa][Ll][Ll][Oo][Cc][Aa][Tt][Ee]|[Zz][Aa])(?![A-Za-z])/ postcond=Postcondition? (' ' (locklist=LockList | targets+=LockTarget[/,/]))?
+;
+
+// ZDEALLOCATE command: ZD[EALLOCATE] targets
+// GT.M/YottaDB extension: Decremental unlock (always uses -)
+// Opposite of ZALLOCATE - releases incremental locks
+// Supports postcondition, parenthesized list
+// Examples:
+//   Zdeallocate (@lvar,@gvar)
+//   Zdeallocate:'(i#2) (@lvar,@gvar)
+//   zdeallocate X
+ZDeallocateCommand:
+    /([Zz][Dd][Ee][Aa][Ll][Ll][Oo][Cc][Aa][Tt][Ee]|[Zz][Dd])(?![A-Za-z])/ postcond=Postcondition? (' ' (locklist=LockList | targets+=LockTarget[/,/]))?
+;
+
+// LOCK command: L|LOCK targets
+// Note: Like KillCommand, requires single space before targets to distinguish
+// "L target" (lock target) from "L  CMD" (unlock all, then next command)
+// Also supports parenthesized list: L (^A,^B):timeout or L +(^A,^B):timeout
+// Supports indirection: L @A, L @A:1, L (@A,^B):1
+// Each lock target can have its own +/- prefix: L +^A,+^B,-^C
+LockCommand:
+    /([Ll][Oo][Cc][Kk]|[Ll])(?![A-Za-z])/ postcond=Postcondition? (' ' (locklist=LockList | targets+=LockTarget[/,/]))?
+;
+
+LockOp:
+    '+' | '-'
+;
+
+// Parenthesized lock list: (targets):timeout or +(targets):timeout
+// Supports optional +/- prefix for the entire list
+// Supports indirection within the list: L (@A,^B,@C):1
+LockList:
+    lockop=LockOp? '(' targets+=LockListItem[/,/] ')' (':' timeout=Expr)?
+;
+
+// Lock list item: either indirection or variable reference, with optional +/-
+LockListItem:
+    lockop=LockOp? (indirect=IndirectChain | target=VarRef)
+;
+
+// Lock target: +/-prefix, variable or indirection with optional postcondition and timeout
+// Each target can have its own +/- prefix for incremental/decremental locking
+LockTarget:
+    lockop=LockOp? postcond=Postcondition? (indirect=IndirectChain | target=VarRef) (':' timeout=Expr)?
+;
+
+// Helper rule for global or local variable reference (or indirection/naked global)
+// Extended globals must come before GlobalVariable for correct PEG matching
+// NakedGlobal must come before GlobalVariable since both start with ^
+// Indirection is also allowed as it evaluates to a variable reference
+VarRef:
+    ExtendedGlobalPipe | ExtendedGlobalBracket | NakedGlobal | GlobalVariable | LocalVariable | Indirection
+;
+
+// MERGE command: M|MERGE dest=source or M @indirect
+MergeCommand:
+    /([Mm][Ee][Rr][Gg][Ee]|[Mm])(?![A-Za-z])/ postcond=Postcondition? WS merges+=MergeArg[/,/]
+;
+
+// MERGE argument: either dest=source or argument-level indirection
+MergeArg:
+    MergeAssign | MergeIndirection
+;
+
+// Standard merge assignment: dest=source
+MergeAssign:
+    dest=VarRef '=' src=VarRef
+;
+
+// Argument-level indirection in MERGE: @VAR where VAR contains "dest=source"
+MergeIndirection:
+    indirect=Indirection
+;
+
+// VIEW command: V|VIEW args
+// GT.M/YottaDB syntax: VIEW "keyword":value:value2,...
+// Each argument can be a simple expression or keyword with colon-separated values
+// Examples:
+//   VIEW "trace":1:"^trace"   ; keyword with multiple colon-separated values
+//   VIEW "GVDUPSETNOOP":0     ; keyword with single value
+//   VIEW 0                    ; simple expression
+ViewCommand:
+    /([Vv][Ii][Ee][Ww]|[Vv])(?![A-Za-z])/ postcond=Postcondition? WS? args+=ViewArg[/,/]?
+;
+
+// VIEW argument: expression optionally followed by colon-separated values
+ViewArg:
+    expr=Expr values+=ViewColonValue*
+;
+
+// Colon-separated value in VIEW command
+ViewColonValue:
+    ':' value=Expr
+;
+
+// XECUTE command: X|XECUTE expr:postcond,expr:postcond,...
+// Per MUMPS spec 8.1.4, XECUTE supports argument postconditions like DO and GOTO.
+// The postcondition comes AFTER the expression: X "code1":cond1,"code2":cond2
+XecuteCommand:
+    /([Xx][Ee][Cc][Uu][Tt][Ee]|[Xx])(?![A-Za-z])/ postcond=Postcondition? WS args+=XecuteArg[/,/]
+;
+
+// XECUTE argument: expression with optional postcondition
+// Pattern: expr:postcond where postcond is optional
+// Examples:
+//   X "S X=1"          - no postcondition
+//   X "S X=1":A>0      - execute only if A>0
+//   X P,Q:X=10,R:X=10  - mixed, some with postconditions
+XecuteArg:
+    expr=Expr postcond=Postcondition?
+;
+
+// JOB command: JOB label:(processparams):timeout
+// Full syntax per MUMPS 1995 MDC 8.2.10:
+//   J label^routine(actuallist):(processparameters):timeout
+// Examples from VistA:
+//   J ^XMRONT::5                     - routine with timeout only
+//   J START^XWBVLL(PORT)::5          - routine with args and timeout
+//   J CHILDONT^%ZISTCPS(NIO,RTN):(:16::):10  - full syntax with processparams
+//   J SSVNJOB1:(IN="/dev/null":OUT="/dev/null") - processparams without timeout
+JobCommand:
+    /[Jj]([Oo][Bb])?(?![A-Za-z])/ postcond=Postcondition? WS targets+=JobTarget[/,/]
+;
+
+// JOB target: extends DoTarget with optional processparameters and timeout
+// Syntax: label^routine(args):(processparams):timeout
+// - actuallist: passed via DoTarget's args=FunctionArgs
+// - processparameters: implementation-specific (partition size, device settings)
+// - timeout: affects $TEST, optional
+// The :: syntax (empty processparams) is equivalent to :():
+//   J ^XMRONT::5 means J ^XMRONT:():5 (empty processparams, 5 second timeout)
+JobTarget:
+    (
+        // Indirection: @expr, @@expr, @expr+offset, @expr^routine, etc.
+        indirect=DoIndirect |
+        // Regular label reference
+        label=LabelRef args=FunctionArgs?
+    ) postcond=Postcondition?
+    // Optional processparameters and/or timeout
+    // Supports: :timeout, :(params), :(params):timeout, ::timeout (empty params)
+    (
+        // :(params) optionally followed by :timeout
+        ':' '(' processparams+=Expr[/:/]? ')' (':' timeout=Expr)? |
+        // ::timeout (empty processparams) - shorthand for :():timeout
+        '::' timeout=Expr |
+        // :timeout only (single colon with numeric value)
+        ':' timeout=Expr
+    )?
+;
+
+// OPEN command: OPEN device[:timeout] or OPEN device:(params)[:timeout]
+// Examples:
+//   O X - simple open
+//   O X:1 - open with timeout
+//   O X:(params) - open with parameters
+//   O DEV:("AVL4":0:2048) - open with multiple params
+OpenCommand:
+    /[Oo]([Pp][Ee][Nn])?(?![A-Za-z])/ postcond=Postcondition? WS args+=OpenArg[/,/]
+;
+
+// Open argument: device with optional parameters, timeout, and mnemonicspec
+// Per MUMPS 1995 spec 8.2.15: OPEN devicespecification::timeout:mnemonicspec
+// GT.M/YottaDB extension: unparenthesized keyword=value params
+// Supports:
+//   X - device only
+//   X:timeout - device with timeout
+//   X:(params) - device with parameters
+//   X:(params):timeout - device with parameters and timeout
+//   X:(params):timeout:mnemonic - full 4-argument form
+//   X::timeout - device with empty params and timeout (double colon)
+//   X::timeout:mnemonic - empty params with timeout and mnemonic
+//   X:::mnemonic - device with mnemonic only
+//   X:key=val:timeout:mnemonic - unparenthesized key=value (GT.M extension)
+OpenArg:
+    device=Expr (
+        ':' (
+            // Parenthesized parameters: :(param:param:...):
+            '(' params+=Expr[':'] ')' (':' timeout=Expr? (':' mnemonic=Expr)?)? |
+            // Empty params with timeout and optional mnemonic: ::timeout:mnemonic
+            ':' timeout=Expr? (':' mnemonic=Expr)? |
+            // Unparenthesized params with timeout and mnemonic: :key=val:timeout:mnemonic (GT.M)
+            unparenthesized_param=Expr ':' timeout=Expr (':' mnemonic=Expr)? |
+            // Simple timeout with optional mnemonic: :timeout:mnemonic
+            timeout=Expr (':' mnemonic=Expr)?
+        )
+    )?
+;
+
+// CLOSE command: CLOSE device[:parameters]
+// Per MUMPS 1995 spec, CLOSE supports optional device parameters
+CloseCommand:
+    /[Cc]([Ll][Oo][Ss][Ee])?(?![A-Za-z])/ postcond=Postcondition? WS args+=CloseArg[/,/]
+;
+
+// Close argument: device with optional parameters
+// Supports GT.M/YottaDB variations:
+//   X - device only
+//   X:(params) - parenthesized parameters
+//   X:keyword - single keyword without parens (e.g., close file:delete)
+//   X:keyword=value - keyword with value without parens (rare)
+CloseArg:
+    device=Expr (
+        ':' (
+            // Parenthesized parameters: :(param:param:...)
+            '(' params+=DeviceParam[':'] ')' |
+            // Single keyword without parens: :DELETE, :NODESTROY
+            single_param=DeviceParam
+        )
+    )?
+;
+
+// Device parameter: keyword, keyword=value, or plain expression
+// Keywords are implementation-specific (DELETE, DESTROY, NODESTROY, RENAME, etc.)
+// The keyword pattern must come before expr to avoid consuming as variable
+DeviceParam:
+    keyword=DEVICEKEYWORD ('=' value=Expr)? | expr=Expr
+;
+
+// Device parameter keywords - common GT.M/YottaDB keywords
+// Case-insensitive, must not be followed by alphanumeric (to distinguish from variables)
+DEVICEKEYWORD:
+    /[Dd][Ee][Ll][Ee][Tt][Ee]|[Dd][Ee][Ss][Tt][Rr][Oo][Yy]|[Nn][Oo][Dd][Ee][Ss][Tt][Rr][Oo][Yy]|[Rr][Ee][Nn][Aa][Mm][Ee]|[Ss][Oo][Cc][Kk][Ee][Tt]|[Rr][Ee][Ww][Ii][Nn][Dd]|[Ee][Xx][Cc][Ee][Pp][Tt][Ii][Oo][Nn]|[Ww][Ii][Dd][Tt][Hh]|[Ff][Oo][Ll][Ll][Oo][Ww]|[Nn][Oo][Ff][Oo][Ll][Ll][Oo][Ww]|[Ss][Ee][Ee][Kk]|[Dd][Ee][Tt][Aa][Cc][Hh]|[Ll][Ii][Ss][Tt][Ee][Nn]|[Aa][Pp][Pp][Ee][Nn][Dd]|[Nn][Ee][Ww][Vv][Ee][Rr][Ss][Ii][Oo][Nn]|[Tt][Rr][Uu][Nn][Cc][Aa][Tt][Ee]|[Ss][Tt][Rr][Ee][Aa][Mm]/
+;
+
+// USE command: USE device[:parameters]
+// Per MUMPS 1995 spec, USE supports optional device parameters
+UseCommand:
+    /[Uu]([Ss][Ee])?(?![A-Za-z])/ postcond=Postcondition? WS args+=UseArg[/,/]
+;
+
+// Use argument: device with optional parameters
+// Supports GT.M/YottaDB variations:
+//   X - device only
+//   X:(params) - parenthesized parameters
+//   X:keyword - single keyword without parens (e.g., use file:rewind)
+//   X:keyword=value - keyword with value without parens (e.g., use p:exception="G EOF")
+UseArg:
+    device=Expr (
+        ':' (
+            // Parenthesized parameters: :(param:param:...)
+            '(' params+=DeviceParam[':'] ')' |
+            // Single keyword without parens: :REWIND, :FOLLOW
+            single_param=DeviceParam
+        )
+    )?
+;
+
+// =============================================================================
+// Transaction Processing Commands (MUMPS 1995 Spec 8.2.19-8.2.22)
+// =============================================================================
+
+// TSTART command: TS|TSTART - begin transaction
+// Per MUMPS 1995 spec 8.2.22:
+//   TS[TART] postcond [ SP [ restartargument ] [ : L tsparam ] ]
+//   restartargument = ( L lvn ) | * | bare variable name (GT.M/YDB extension)
+// Examples:
+//   TS - start non-restartable transaction
+//   TS () - start restartable transaction (empty restart list)
+//   TS (A,B) - start restartable transaction, restore A and B on restart
+//   TS * - start restartable transaction, restore all locals on restart
+//   TS ():S - start restartable serial transaction
+//   TS VA - GT.M/YDB: bare variable name (equivalent to TS (VA))
+//   TS VA:S - GT.M/YDB: bare variable with SERIAL option
+TStartCommand:
+    /([Tt][Ss][Tt][Aa][Rr][Tt]|[Tt][Ss])(?![A-Za-z])/ postcond=Postcondition? (WS restart_arg=TStartRestartArg? (':' params+=TStartParam[':'])?)?
+;
+
+// TSTART restart argument: * or (varlist) or bare variable name
+// Per MUMPS 1995 spec 8.2.22, empty () means "restart all local variables"
+// GT.M/YDB extension: bare variable name without parentheses
+// Variable list can include @indirection for dynamic variable names
+TStartRestartArg:
+    all='*' | '(' vars*=TStartRestartVar[','] ')' | barevar=VARNAME
+;
+
+// Individual variable in TSTART restart list
+// Can be a regular variable name or @indirection
+TStartRestartVar:
+    indirect=Indirection | varname=VARNAME
+;
+
+// TSTART parameters: S[ERIAL], T[RANSACTIONID]=expr, or Z-prefixed
+// Supports compound forms like (serial:t="BA") where multiple params are in parens
+// GT.M/YDB allows parameters to be parenthesized: ():(serial) or ():(s)
+// Compound form: (param:param:...) where params are colon-separated inside parens
+TStartParam:
+    '(' inner_params+=TStartParamInner[':'] ')' | name=TStartParamName ('=' value=Expr)?
+;
+
+// Parameter inside parenthesized compound form: serial, t="BA", etc.
+TStartParamInner:
+    name=TStartParamName ('=' value=Expr)?
+;
+
+// TSTART parameter name pattern
+// Includes: SERIAL/S, TRANSACTIONID/TRANSACTION/T, and any Z-prefixed params
+// Note: "transaction" is a YDB alias for "transactionid"
+TStartParamName:
+    /[Ss][Ee][Rr][Ii][Aa][Ll]|[Ss]|[Tt][Rr][Aa][Nn][Ss][Aa][Cc][Tt][Ii][Oo][Nn]([Ii][Dd])?|[Tt]|[Zz][A-Za-z0-9]*/
+;
+
+// TCOMMIT command: TC|TCOMMIT - commit transaction
+// Per MUMPS 1995 spec 8.2.19:
+//   TC[OMMIT] postcond [ SP ]
+// Commits the current transaction if $TLEVEL=1, else decrements $TLEVEL.
+// Error M44 if $TLEVEL=0.
+TCommitCommand:
+    /([Tt][Cc][Oo][Mm][Mm][Ii][Tt]|[Tt][Cc])(?![A-Za-z])/ postcond=Postcondition?
+;
+
+// TRESTART command: TRE|TRESTART - restart transaction
+// Per MUMPS 1995 spec 8.2.20:
+//   TRE[START] postcond [ SP ]
+// Performs a restart if in a restartable transaction.
+// Error M44 if $TLEVEL=0.
+TRestartCommand:
+    /([Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Tt][Rr][Ee])(?![A-Za-z])/ postcond=Postcondition?
+;
+
+// TROLLBACK command: TRO|TROLLBACK - rollback transaction
+// Per MUMPS 1995 spec 8.2.21:
+//   TRO[LLBACK] postcond [ SP tlevel ]
+// Rolls back the current transaction, setting $TLEVEL=0.
+// Optional tlevel specifies the transaction level to roll back to (numeric).
+// Error M44 if $TLEVEL=0.
+// Note: Uses SingleSpace (not WS) and only matches numeric-looking levels
+// to avoid consuming following commands like 's x=1'.
+TRollbackCommand:
+    /([Tt][Rr][Oo][Ll][Ll][Bb][Aa][Cc][Kk]|[Tt][Rr][Oo])(?![A-Za-z])/ postcond=Postcondition? (SingleSpace level=TRollbackLevel)?
+;
+
+// TRollbackLevel: only matches expressions starting with numbers, $, (, +, -
+// This prevents consuming single-letter commands like 's' as a level argument
+TRollbackLevel:
+    /[0-9$\(\+\-]/ rest=/[^ \t\n]*/
+;
+
+// ZTSTART command: ZTS[TART] - GT.M/YDB journaled transaction start
+// This is a GT.M/YDB-specific command for starting a journaled transaction.
+// Unlike TSTART, ZTSTART transactions only support rollback to level 0.
+ZTStartCommand:
+    /([Zz][Tt][Ss][Tt][Aa][Rr][Tt]|[Zz][Tt][Ss])(?![A-Za-z])/ postcond=Postcondition?
+;
+
+// ZTCOMMIT command: ZTC[OMMIT] - GT.M/YDB journaled transaction commit
+// This is a GT.M/YDB-specific command for committing a journaled transaction.
+// Optional level argument specifies commit depth (0 for full commit).
+ZTCommitCommand:
+    /([Zz][Tt][Cc][Oo][Mm][Mm][Ii][Tt]|[Zz][Tt][Cc])(?![A-Za-z])/ postcond=Postcondition? (WS level=Expr)?
+;
+
+// =============================================================================
+// Z-Commands (YottaDB/GT.M Extensions)
+// =============================================================================
+// These are implementation-specific commands supported by YottaDB and GT.M.
+
+// ZSHOW command: ZSH[OW] [codes] [:global|local]
+// Displays information about the process environment.
+// codes: String specifying what to show (B=breakpoints, D=devices, G=globals,
+//        I=ISVs, L=locks, S=stack, V=variables, etc.)
+// Examples:
+//   ZSHOW "BS" - show breakpoints and stack
+//   ZSHOW "*" - show everything
+//   ZSHOW "V":^RESULT - write variable info to global
+ZShowCommand:
+    /([Zz][Ss][Hh][Oo][Ww]|[Zz][Ss][Hh])(?![A-Za-z])/ postcond=Postcondition? (WS args+=ZShowArg[/,/])?
+;
+
+ZShowArg:
+    codes=Expr (':' destination=VarRef)?
+;
+
+// ZWRITE command: ZWR[ITE] [variable|pattern]
+// Displays local or global variables and their values in a format that can be
+// read back in. Similar to WRITE but includes variable names.
+// Examples:
+//   ZWR - write all local variables
+//   ZWR X - write variable X
+//   ZWR @indirection - write via indirection
+//   ZWR ^GLOBAL - write global
+//   ZWR ^("naked") - write naked reference
+// Note: Uses SingleSpace instead of WS because ZWRITE can be argumentless.
+// With two spaces (e.g., "zwrite  write !"), the first space should cause
+// the optional args to backtrack, leaving the second space for the next command.
+ZWriteCommand:
+    /([Zz][Ww][Rr][Ii][Tt][Ee]|[Zz][Ww][Rr])(?![A-Za-z])/ postcond=Postcondition? (SingleSpace args+=ZWriteArg[/,/])?
+;
+
+// ZWRITE argument: variable with optional subscript patterns for filtering
+// ZWRITE supports special subscript syntax for filtering output:
+//   :      - wildcard (matches any value)
+//   start: - from start value to end
+//   :end   - from beginning to end value
+//   start:end - range from start to end
+//   *      - all remaining subscripts
+ZWriteArg:
+    target=ZWriteTarget
+;
+
+// ZWRITE target: global, local, special variable, or indirection with pattern subscripts
+ZWriteTarget:
+    ZWriteGlobalPattern | ZWriteGlobal | ZWriteNakedGlobal | ZWriteLocal | SpecialVariable | Indirection
+;
+
+// Global with name pattern (e.g., ^?.E matches all globals with single-letter name ending in E)
+// The ? introduces a pattern match for the global name
+ZWriteGlobalPattern:
+    '^' '?' name_pattern=PatternSpec subscripts=ZWriteSubscripts?
+;
+
+// Global variable with ZWRITE pattern subscripts
+ZWriteGlobal:
+    '^' name=VARNAME subscripts=ZWriteSubscripts?
+;
+
+// Naked global with ZWRITE pattern subscripts
+ZWriteNakedGlobal:
+    '^' subscripts=ZWriteSubscripts
+;
+
+// Local variable with ZWRITE pattern subscripts
+ZWriteLocal:
+    name=VARNAME subscripts=ZWriteSubscripts?
+;
+
+// ZWRITE subscript list - supports ranges and wildcards
+ZWriteSubscripts:
+    '(' args+=ZWriteSubscript[','] ')'
+;
+
+// Single ZWRITE subscript: can be wildcard (*), pattern filter (?pattern),
+// range (a:b, :b, a:), or plain expression
+// Pattern filter: ?pattern matches subscripts against the pattern
+// Note: We use separate captures to distinguish between types
+ZWriteSubscript:
+    all='*' |
+    ('?' (pattern_indirect='@' pattern_indirect_expr=Expr | pattern=PatternSpec)) |
+    (start=Expr? ':' end=Expr?) |
+    expr=Expr
+;
+
+
+// ZBREAK command: ZB[REAK] location[:action[:count]]
+// Sets/removes breakpoints for debugging.
+// location: Label, offset, or routine reference
+// action: Commands to execute at breakpoint
+// count: Execute action this many times
+// Examples:
+//   ZBREAK label^routine:"set x=1"
+//   ZBREAK +5^routine:"do debug"
+//   ZBREAK FORCERR+lineno^zbmain:"set zberr(ecnt)=zberr(ecnt)+1"
+//   ZBREAK ^TRIG#:"action" - trigger routine breakpoint (YottaDB extension)
+//   ZBREAK -* - remove all breakpoints
+ZBreakCommand:
+    /([Zz][Bb][Rr][Ee][Aa][Kk]|[Zz][Bb])(?![A-Za-z])/ postcond=Postcondition? (WS args+=ZBreakArg[/,/])?
+;
+
+ZBreakArg:
+    location=ZBreakLocation (':' action=Expr (':' count=Expr)?)?
+;
+
+// ZBREAK location can be: label+offset^routine, @indirection, -* (clear all), etc.
+// This is similar to GOTO/DO targets but also supports +offset prefix
+// Order matters: label comes first, then +offset, then ^routine
+// Note: +offset can come without label (just +5^routine) or with label (label+5^routine)
+// Special: -* removes all breakpoints
+ZBreakLocation:
+    Indirection | ZBreakClearAll | ZBreakTarget
+;
+
+// ZBREAK -* removes all breakpoints (special syntax)
+ZBreakClearAll:
+    clearAll=/-\*/
+;
+
+ZBreakTarget:
+    label=VARNAME? ('+' offset=OffsetExpr)? ('^' (routineIndirect=IndirectChain | routine=TRIGGERROUTINENAME))?
+;
+
+// ZSTEP command: ZST[EP] [mode[:action]]
+// Single-step debugging command that controls execution tracing.
+// mode: INTO, OVER, OUTOF (controls step behavior)
+// action: Code to execute at each step
+// Examples:
+//   ZSTEP - disable single-stepping
+//   ZSTEP INTO - step into subroutines
+//   ZSTEP OVER - step over subroutines
+//   ZSTEP OUTOF - step out of current routine
+//   ZSTEP INTO:"w x,!" - step into with action
+//   ZSTEP OVER:"w ""$zstep="",$zstep,!"
+ZStepCommand:
+    /([Zz][Ss][Tt][Ee][Pp]|[Zz][Ss][Tt])(?![A-Za-z])/ postcond=Postcondition? (WS mode=ZStepMode (':' action=Expr)?)?
+;
+
+// ZSTEP mode keywords (case-insensitive)
+ZStepMode:
+    /([Ii][Nn][Tt][Oo]|[Oo][Vv][Ee][Rr]|[Oo][Uu][Tt][Oo][Ff])/
+;
+
+// ZGOTO command: ZGO[TO] [level[:target]]
+// Extended GOTO that can unwind the stack to a specific level.
+// level: Stack level to go to (0 = restart, $ZLEVEL = current)
+// target: Label/routine to transfer control to
+// Examples:
+//   ZGOTO - return to direct mode
+//   ZGOTO 0 - restart from beginning
+//   ZGOTO 1:label^routine - unwind to level 1 and goto
+//   ZGOTO $ZLEVEL:label - goto without unwinding
+//   ZGOTO @indirection
+ZGotoCommand:
+    /([Zz][Gg][Oo][Tt][Oo]|[Zz][Gg][Oo])(?![A-Za-z])/ postcond=Postcondition? (WS args+=ZGotoArg[/,/])?
+;
+
+ZGotoArg:
+    level=Expr (':' target=ZGotoTarget)?
+    | '@' indirection=Expr
+;
+
+ZGotoTarget:
+    LabelRef
+;
+
+// ZKILL command: ZK[ILL] variable
+// Kills a variable but preserves its descendants (opposite of normal KILL).
+// Also known as ZWITHDRAW in some implementations.
+// Examples:
+//   ZKILL X - kill X but keep X(1), X(2), etc.
+//   ZKILL myvar(1)
+ZKillCommand:
+    /([Zz][Kk][Ii][Ll][Ll]|[Zz][Kk][Ii])(?![A-Za-z])/ postcond=Postcondition? (WS targets+=KillTarget[/,/])?
+;
+
+// ZWITHDRAW command: ZWI[THDRAW] variable
+// Alias for ZKILL - kills a variable but preserves its descendants.
+// Examples:
+//   ZWITHDRAW X - same as ZKILL X
+//   zwithdraw ^a(1,2),^b
+ZWithdrawCommand:
+    /([Zz][Ww][Ii][Tt][Hh][Dd][Rr][Aa][Ww]|[Zz][Ww][Ii])(?![A-Za-z])/ postcond=Postcondition? (WS targets+=KillTarget[/,/])?
+;
+
+// ZLOAD command: ZL[OAD] routine
+// Loads a routine object file into memory (YottaDB extension).
+// Different from ZLINK - ZLOAD loads without compilation.
+// Note: ZL is the abbreviation, not ZLI (which is ZLINK).
+// Examples:
+//   ZLOAD "routine"
+//   ZL "routine"
+ZLoadCommand:
+    /([Zz][Ll][Oo][Aa][Dd]|[Zz][Ll])(?![A-Za-z])/ postcond=Postcondition? (WS args+=Expr[/,/])?
+;
+
+// ZLINK command: ZLI[NK] routine[:qualifier]
+// Compiles and/or links a routine into the current process.
+// Note: Abbreviation is ZLI (not ZL which is ZLOAD).
+// Examples:
+//   ZLINK "routine"
+//   ZLINK routine
+//   ZLINK:postcond routine
+ZLinkCommand:
+    /([Zz][Ll][Ii][Nn][Kk]|[Zz][Ll][Ii])(?![A-Za-z])/ postcond=Postcondition? (WS args+=Expr[/,/])?
+;
+
+// ZPRINT command: ZP[RINT] [label[:routine]]
+// Displays source code.
+// Examples:
+//   ZPRINT - print current routine
+//   ZPRINT label - print from label
+//   ZPRINT label^routine - print from label in routine
+//   ZPRINT ^routine#1#A - print trigger routine (YottaDB extension)
+//   ZPRINT @ref - print using indirection
+ZPrintCommand:
+    /([Zz][Pp][Rr][Ii][Nn][Tt]|[Zz][Pp])(?![A-Za-z])/ postcond=Postcondition? (WS args+=ZPrintArg[/,/])?
+;
+
+// ZPrintArg: label reference with optional offset, routine, and range
+// Supports indirection: @ref where ref resolves to a label reference
+// Routine name can include trigger suffixes like #1#A/REGION
+ZPrintArg:
+    (indirect=IndirectChain | start_label=VARNAME)? ('+' start_offset=Expr)? ('^' (routineIndirect=IndirectChain | routine=TRIGGERROUTINENAME))?
+    (':' end_label=VARNAME? ('+' end_offset=Expr)?)?
+;
+
+// ZSYSTEM command: ZSY[STEM] [command]
+// Executes a shell command.
+// Examples:
+//   ZSYSTEM - spawn interactive shell
+//   ZSYSTEM "ls -la"
+//   ZSYSTEM command_var
+ZSystemCommand:
+    /([Zz][Ss][Yy][Ss][Tt][Ee][Mm]|[Zz][Ss][Yy])(?![A-Za-z])/ postcond=Postcondition? (WS args+=Expr[/,/])?
+;
+
+// ZMESSAGE command: ZM[ESSAGE] error_code
+// Generates a MUMPS error.
+// Examples:
+//   ZMESSAGE 150372994 - generate specific error
+//   ZM error_code
+ZMessageCommand:
+    /([Zz][Mm][Ee][Ss][Ss][Aa][Gg][Ee]|[Zz][Mm])(?![A-Za-z])/ postcond=Postcondition? (WS args+=Expr[/,/])?
+;
+
+// ZCOMPILE command: ZC[OMPILE] routine
+// Compiles a routine without linking it.
+// Examples:
+//   ZCOMPILE "routine.m"
+//   ZC routine
+ZCompileCommand:
+    /([Zz][Cc][Oo][Mm][Pp][Ii][Ll][Ee]|[Zz][Cc])(?![A-Za-z])/ postcond=Postcondition? (WS args+=Expr[/,/])?
+;
+
+// ZEDIT command: ZED[IT] routine
+// Opens a routine in an editor.
+// Examples:
+//   ZEDIT "routine.m"
+//   ZEDIT @routinename
+//   ZED routine
+ZEditCommand:
+    /([Zz][Ee][Dd][Ii][Tt]|[Zz][Ee][Dd])(?![A-Za-z])/ postcond=Postcondition? (WS args+=Expr[/,/])?
+;
+
+// ZCONTINUE command: ZC[ONTINUE]
+// Continues execution after a breakpoint.
+// Note: Must be careful not to conflict with ZCOMPILE abbreviation.
+// In practice, ZCONTINUE appears in ZBREAK actions as "zcontinue" (no args)
+// while ZCOMPILE takes arguments.
+ZContinueCommand:
+    /[Zz][Cc][Oo][Nn][Tt][Ii][Nn][Uu][Ee](?![A-Za-z])/ postcond=Postcondition?
+;
+
+// ZTRIGGER command: ZTRIGGER target
+// Invokes triggers associated with a global reference.
+// Examples:
+//   ZTRIGGER ^global
+//   ZTRIGGER ^global(subscript)
+//   ZTRIGGER ^global,^global2 - comma-separated list
+//   ZTRIGGER @indirection
+ZTriggerCommand:
+    /[Zz][Tt][Rr][Ii][Gg][Gg][Ee][Rr](?![A-Za-z])/ postcond=Postcondition? (WS targets+=Expr[','])?
+;
+
+// =============================================================================
+// Shared Elements
+// =============================================================================
+
+// Command postcondition: :condition
+Postcondition:
+    ':' condition=Expr
+;
+
+// Whitespace (explicit since skipws=False)
+WS:
+    /[ \t]+/
+;
+
+// Single space only (used where double-space has semantic meaning)
+SingleSpace:
+    /[ \t]/
+;
+
+// =============================================================================
+// Unknown Command (Catch-All)
+// =============================================================================
+
+// UnknownCommand catches any word in command position that doesn't match
+// a known command. This MUST be last in the Command alternatives.
+// The custom class raises MUMPSUnknownCommandError during parsing.
+UnknownCommand:
+    word=/[A-Za-z]+/ rest=/[^\n]*/
+;

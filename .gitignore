@@ -52,4 +52,11 @@ MANIFEST
 .venv*/
 .conda*/
 .python-version
-mumps-reference/
+
+# Reference directories
+mumps-reference
+proleap-research
+textX-reference
+YDBTest
+Vista-M
+

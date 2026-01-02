@@ -1,0 +1,586 @@
+// MUMPS Expression Grammar for textX
+// =============================================================================
+// Expressions: literals, variables, operators, functions
+// Imported by main mumps.tx grammar
+// =============================================================================
+
+// Top-level expression - MUMPS uses strict left-to-right evaluation
+// No operator precedence - everything is left-to-right
+// Named attributes allow semantic analysis to access all parts
+//
+// Pattern match operators (? and '?) are special: they take a PatternSpec
+// on the right side, not a regular expression. Pattern specs have unique
+// syntax like .N, 1A, ."string" that are not valid expressions.
+Expr:
+    left=UnaryExpr (tail+=ExprTail)*
+;
+
+// Expression tail can be either:
+// 1. Pattern match: ?PatternSpec or '?PatternSpec (followed by optional more operators)
+// 2. Regular binary operation: op right
+ExprTail:
+    PatternMatchTail | BinaryOpTail
+;
+
+// Pattern match tail: ? or '? followed by pattern specification OR indirect pattern
+// Direct: X?1N.A  (pattern spec with atoms)
+// Indirect: X?@PAT  (pattern is in variable PAT, evaluated at runtime)
+// The '@' must be required (not optional) to avoid ambiguity with PatternSpec
+PatternMatchTail:
+    op=PatternMatchOp ('@' indirect_expr=UnaryExpr | pattern=PatternSpec)
+;
+
+// Pattern match operators
+PatternMatchOp:
+    op=/'\?|\?/
+;
+
+// Regular binary operation tail
+BinaryOpTail:
+    op=BinaryOp right=UnaryExpr
+;
+
+// Unary expression with optional prefix operators (can be chained: --X, ''X, +-X)
+UnaryExpr:
+    operators*=UnaryOp operand=PrimaryExpr
+;
+
+// Binary operators - using regex to avoid issues with multi-char operators
+// NOTE: ? and '? are handled separately as PatternMatchOp
+BinaryOp:
+    // Multi-character operators first (order matters in PEG)
+    // '& is NAND, '! is NOR, '> '< '= are negated comparisons
+    // '[ is "not contains", '] is "not follows"
+    // ]] is "sorts after" (distinct from ] "follows") per MUMPS 1995 spec 7.2.2.1
+    // ']] is "not sorts after" (negation of ]])
+    op=/']]|\*\*|>=|<=|'>|'<|'=|'\[|'\]|'&|'!|]]|\[|\]/
+    | op=/[+\-*\/#\\=<>&!_\]]/ 
+;
+
+// =============================================================================
+// Pattern Match Specification
+// =============================================================================
+// Patterns consist of concatenated pattern atoms
+// Example: 1N.A."hello".E matches: 1 numeric, any alphas, "hello", any chars
+
+PatternSpec:
+    atoms+=PatternAtom+
+;
+
+// Pattern atom: repcount followed by patcode, string literal, or alternation
+// Per MUMPS 1995 spec 7.2.3: "Each pattern atom consists of a repeat count
+// repcount, followed by either a pattern code patcode or a string literal strlit."
+// Repcount is REQUIRED - bare patcodes like "N" are invalid; use ".N" or "1N".
+// Examples: 1N, .A, 3.5P, ."hello", (1N,1A)
+//
+// Alternation syntax: ( pattern , pattern , ... )
+// Each pattern option can be multiple concatenated atoms.
+// Nested alternations are allowed: 1(1(1l,1u),2(3l,4u))
+// Examples:
+//   1(1N,1A) = 1 repetition of (1 numeric OR 1 alpha)
+//   10(1N3A) = 10 repetitions of (1 numeric then 3 alpha) - single option
+//   1(1N3A,2L) = 1 rep of (1N3A OR 2L) - two options
+//   5.8(1(1l,1u),2(3l,4u)) = nested alternations
+PatternAtom:
+    repcount=RepCount (
+        patcode=PatCode | 
+        strlit=PATTERN_STRING |
+        '(' alternation+=PatternAlternative[','] ')'
+    )
+;
+
+// Each alternation option is a concatenated sequence of pattern atoms
+// Allows nested parens by using full PatternAtom
+PatternAlternative:
+    atoms+=PatternAtom+
+;
+
+// Repeat count for pattern atoms:
+// . = any number (0 or more) - indefinite multiplier
+// n = exactly n
+// n. = at least n (n or more)
+// .n = at most n (0 to n)
+// n.m = between n and m (inclusive)
+RepCount:
+    // Exact form must be tried last - it matches any integer
+    // Range forms all contain '.' so try them first
+    RangeRepCount | ExactRepCount
+;
+
+// Range forms: must have the dot
+RangeRepCount:
+    min=REPINT? '.' max=REPINT?
+;
+
+// Exact count: just an integer
+ExactRepCount:
+    exact=REPINT
+;
+
+// Integer for repeat counts
+REPINT:
+    /[0-9]+/
+;
+// Pattern codes: A=alpha, C=control, E=any, L=lower, N=numeric, P=punctuation, U=upper
+// Combinations allowed: AN, ACULPN, etc.
+PatCode:
+    codes=/[AaCcEeLlNnPpUu]+/
+;
+
+// String literal in pattern - same as regular string but captured separately
+PATTERN_STRING:
+    /"([^"]|"")*"/
+;
+
+// Integer for repeat counts
+INT:
+    /[0-9]+/
+;
+
+// Unary operators
+UnaryOp:
+    op=/[+\-']/
+;
+
+// Primary expressions (atoms)
+// Ordering rules for correct parsing:
+// 1. $ prefixed items (ordered by specificity):
+//    - TextFunction - catches $TEXT/$T(lineref) with special line-reference syntax
+//    - SelectFunction - catches $SELECT/$S(cond:val,...) with special syntax
+//    - IntrinsicFunction (with args) - catches $P(args), $L(args), etc.
+//    - SpecialVariable - catches $S as special variable (STORAGE)
+//    - IntrinsicFunctionNoArgs - catch-all for unknown $ZVersion etc.
+// 2. ^ prefixed items (ordered for more specific patterns first):
+//    - StructuredSystemVariable - catches ^$DEVICE, ^$JOB etc (SSVs)
+//    - ExtendedGlobalPipe - catches ^|"env"|name (pipe-delimited)
+//    - ExtendedGlobalBracket - catches ^["gld"]name (bracket-delimited)
+//    - NakedGlobal - catches ^(subscripts)
+//    - GlobalVariable - catches ^name(subscripts)
+// 3. Other primaries: Indirection, LocalVariable, Literals
+PrimaryExpr:
+    ParenExpr |
+    ExtrinsicFunction |
+    ExternalFunction |
+    TextFunction |
+    SelectFunction |
+    IntrinsicFunction |
+    SpecialVariable |
+    IntrinsicFunctionNoArgs |
+    StructuredSystemVariable |
+    ExtendedGlobalPipe |
+    ExtendedGlobalBracket |
+    NakedGlobal |
+    GlobalVariable |
+    Indirection |
+    LocalVariable |
+    StringLiteral |
+    NumericLiteral
+;
+
+// =============================================================================
+// Offset Expression (for label+offset in DO/GOTO/JOB commands)
+// =============================================================================
+// This is a restricted expression that does NOT match GlobalVariable or NakedGlobal
+// because in "LABEL+5+^V1CALL1", the "^V1CALL1" is the routine name, not a global.
+// Pattern match is unlikely in offset expressions, but we support it for consistency.
+
+OffsetExpr:
+    left=OffsetUnaryExpr (tail+=OffsetExprTail)*
+;
+
+// Offset expression tail - same structure as ExprTail
+OffsetExprTail:
+    OffsetPatternMatchTail | OffsetBinaryOpTail
+;
+
+// Offset pattern match tail: supports both direct and indirect patterns
+// The '@' must be required (not optional) to avoid ambiguity with PatternSpec
+OffsetPatternMatchTail:
+    op=PatternMatchOp ('@' indirect_expr=OffsetUnaryExpr | pattern=PatternSpec)
+;
+
+OffsetBinaryOpTail:
+    op=BinaryOp right=OffsetUnaryExpr
+;
+
+// Offset unary expression with optional prefix operators (can be chained)
+OffsetUnaryExpr:
+    operators*=UnaryOp operand=OffsetPrimaryExpr
+;
+
+// Primary expressions for offset - includes globals (subscripted, naked, and bare)
+// Bare ^NAME is safe to include because OffsetExpr stops at non-binary operators,
+// so a trailing ^ROUTINE will be correctly parsed as the routine reference.
+// For example, in "1+^V1A^V1CALLE", OffsetExpr consumes "^V1A" and stops at the
+// second "^" which is then parsed as the routine reference.
+// Ordering: SubscriptedGlobal before GlobalVariable (more specific first),
+// NakedGlobal after GlobalVariable (^(subscripts) vs ^name).
+// StructuredSystemVariable is included since ^$NAME is unambiguously an SSV.
+OffsetPrimaryExpr:
+    OffsetParenExpr |
+    ExtrinsicFunction |
+    ExternalFunction |
+    TextFunction |
+    SelectFunction |
+    IntrinsicFunction |
+    SpecialVariable |
+    IntrinsicFunctionNoArgs |
+    StructuredSystemVariable |
+    SubscriptedGlobal |
+    GlobalVariable |
+    NakedGlobal |
+    Indirection |
+    LocalVariable |
+    StringLiteral |
+    NumericLiteral
+;
+
+// Global variable WITH subscripts - used in offset expressions
+// where bare ^NAME could be confused with routine reference
+SubscriptedGlobal:
+    '^' name=VARNAME subscripts=Subscripts
+;
+
+// Parenthesized offset expression
+OffsetParenExpr:
+    '(' expr=OffsetExpr ')'
+;
+
+// Parenthesized expression
+ParenExpr:
+    '(' expr=Expr ')'
+;
+
+// =============================================================================
+// Literals
+// =============================================================================
+
+// String literal with double-quote escaping
+StringLiteral:
+    value=STRING_VALUE
+;
+
+// Numeric literal (integer or decimal, with optional sign handled by unary)
+NumericLiteral:
+    value=NUMBER
+;
+
+// =============================================================================
+// Variables
+// =============================================================================
+
+// Local variable with optional subscripts
+LocalVariable:
+    name=VARNAME subscripts=Subscripts?
+;
+
+// Extended global variable - environment/namespace specification
+// ^|"env"|globalname - pipe-delimited environment
+// MUST come before GlobalVariable to parse correctly
+ExtendedGlobalPipe:
+    '^|' environment=StringLiteral '|' name=VARNAME subscripts=Subscripts?
+;
+
+// Extended global variable - bracket-delimited (alternative syntax)
+// ^["gld"]globalname - bracket-delimited global directory
+ExtendedGlobalBracket:
+    '^[' environment=StringLiteral ']' name=VARNAME subscripts=Subscripts?
+;
+
+// Global variable with optional subscripts (simple form)
+// ^globalname - without environment specification
+GlobalVariable:
+    '^' name=VARNAME subscripts=Subscripts?
+;
+
+// Structured System Variable (SSV) - system-level subscripted variables
+// Per MUMPS 1995 spec 7.1.4.12: ^$NAME(subscripts)
+// SSVNs: ^$CHARACTER, ^$DEVICE, ^$EVENT, ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE, ^$SYSTEM
+// These provide system introspection capabilities
+StructuredSystemVariable:
+    '^$' name=SSVNAME subscripts=Subscripts?
+;
+
+// Structured System Variable names (case-insensitive with abbreviations)
+// Per MUMPS 1995 spec: C[HARACTER], D[EVICE], E[VENT], G[LOBAL], J[OB], L[OCK], R[OUTINE], S[YSTEM]
+// Longer names must come first to prevent partial matching
+SSVNAME:
+    /[Cc][Hh][Aa][Rr][Aa][Cc][Tt][Ee][Rr]|[Rr][Oo][Uu][Tt][Ii][Nn][Ee]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Gg][Ll][Oo][Bb][Aa][Ll]|[Ee][Vv][Ee][Nn][Tt]|[Ll][Oo][Cc][Kk]|[Jj][Oo][Bb]|[CcDdEeGgJjLlRrSs]/
+;
+
+// Naked global reference (uses last global context)
+NakedGlobal:
+    '^' subscripts=Subscripts
+;
+
+// Subscript list
+Subscripts:
+    '(' args+=Expr[','] ')'
+;
+
+// =============================================================================
+// Functions
+// =============================================================================
+
+// $TEXT function uses special line-reference argument syntax
+// This must be matched BEFORE IntrinsicFunction to correctly parse $T(label^routine)
+// Syntax: $T[EXT](lineref) where lineref is label+offset^routine format
+// Examples:
+//   $T(label) - line at label in current routine
+//   $T(+5) - line at offset 5 from routine start
+//   $T(label+3) - line at label+3 offset
+//   $T(label^routine) - line in another routine
+//   $T(^routine) - first line of routine
+//   $T(^@VAR) - routine from indirection
+//   $T(@VAR) - complete line reference from indirection
+TextFunction:
+    '$' name=TEXTNAME '(' arg=TextFunctionArg ')'
+;
+
+// $TEXT function name patterns (case-insensitive abbreviations)
+TEXTNAME:
+    /[Tt][Ee][Xx][Tt]|[Tt][Ee][Xx]|[Tt][Ee]|[Tt](?=\()/
+;
+
+// $TEXT argument: line reference (similar to LabelRef but may include indirection for everything)
+// Supports many combinations:
+//   $T(@VAR) - complete indirection resolves entire line ref
+//   $T(@lbl+3^routine) - label indirection + offset + routine
+//   $T(@lbl^@rtn) - label indirection + routine indirection
+//   $T(+3^routine) - offset-only + routine  
+//   $T(LABEL+3^routine) - standard label + offset + routine
+//   $T(^routine#1#A) - trigger routine with # suffixes (YottaDB extension)
+TextFunctionArg:
+    // Label part: either indirection or static label name (both optional)
+    (labelIndirect=Indirection | label=TEXTLABELNAME)?
+    // Offset part: +expr (optional, expr can also be omitted for +)
+    ('+' offset=OffsetExpr?)?
+    // Routine part: ^name or ^@indirection (optional)
+    // Routine name can include trigger suffixes like #1#A/REGION
+    ('^' (routineIndirect=Indirection | routine=TRIGGERROUTINENAME))?
+;
+
+// Text label name - can be:
+// - Purely numeric (1, 012, 0) 
+// - Start with % followed by alphanumeric (%ABC, %0000000)
+// - Start with letter followed by alphanumeric (LABEL, A1B2)
+// Same as LABELNAME but defined separately for clarity
+TEXTLABELNAME:
+    /[0-9]+|[%A-Za-z][A-Za-z0-9]*/
+;
+
+// Trigger routine name (YottaDB extension)
+// Supports standard routine names plus trigger-specific suffixes:
+//   routine - standard routine name
+//   routine# - user-named trigger
+//   routine#1# - auto-named trigger with number
+//   routine#1#A - with runtime disambiguator letter
+//   routine/REGION - with region suffix
+//   routine#1#A/REGION - full trigger syntax
+TRIGGERROUTINENAME:
+    /[%A-Za-z][A-Za-z0-9]*(#[0-9]*#?[A-Za-z]?)?(\/[A-Za-z]+)?/
+;
+
+// $SELECT function uses special argument syntax: condition:value pairs
+// This must be matched BEFORE IntrinsicFunction to correctly parse $SELECT/$S/$s
+// Syntax: $S[ELECT](tvexpr:expr, tvexpr:expr, ...)
+SelectFunction:
+    '$' name=SELECTNAME args=SelectFunctionArgs
+;
+
+// $SELECT function name patterns (case-insensitive abbreviations)
+SELECTNAME:
+    /[Ss][Ee][Ll][Ee][Cc][Tt]|[Ss][Ee][Ll][Ee][Cc]|[Ss][Ee][Ll][Ee]|[Ss][Ee][Ll]|[Ss][Ee]|[Ss](?=[( ])/
+;
+
+// $SELECT arguments: condition:value pairs separated by commas
+SelectFunctionArgs:
+    '(' args+=SelectArg[','] ')'
+;
+
+// A single $SELECT argument: condition:value pair
+SelectArg:
+    condition=Expr ':' value=Expr
+;
+
+// Intrinsic (built-in) function WITH arguments - parentheses are REQUIRED
+// This must come before SpecialVariable and IntrinsicFunctionNoArgs in PrimaryExpr
+// to correctly parse $S(1:2) as $SELECT function, not $STORAGE variable
+IntrinsicFunction:
+    '$' name=FUNCNAME args=FunctionArgs
+;
+
+// Intrinsic function WITHOUT arguments - catch-all for unknown $ items
+// like implementation-specific $ZVersion, $ZJob, etc.
+// This comes AFTER SpecialVariable to ensure known special vars are matched first
+IntrinsicFunctionNoArgs:
+    '$' name=FUNCNAME
+;
+
+// Extrinsic (user-defined) function: $$label^routine(args) or $$label(args) or $$^routine(args)
+// The label is optional when a routine is specified: $$^routine means call entry point of routine
+// Label can be numeric-only (e.g., $$0000) or alphanumeric (e.g., $$FUNC)
+// Routine part can be indirect: $$func^@(expr)
+ExtrinsicFunction:
+    '$$' label=TEXTLABELNAME? ('^' (routineIndirect=Indirection | routine=VARNAME))? args=FunctionArgs?
+;
+
+// External (C/system) function call: $&name(args) or $&package.name(args)
+// Used to call external C functions linked into the MUMPS runtime
+// Examples: $&RAND(.var), $&ydbposix.signalval("SIGTERM",.val)
+// Grammar: either "package.name" form or just "name" form (no package)
+ExternalFunction:
+    '$&' (package=VARNAME '.' name=VARNAME | name=VARNAME) args=FunctionArgs?
+;
+
+// Function arguments - supports by-reference (.VAR) and by-value (Expr) parameters
+// In MUMPS, .VAR passes a variable by reference, allowing callee to modify it
+// Grammar is ordered so that ByRefArg matches before Expr (which could match .5 as a number)
+// Empty parentheses () are valid - indicates "call with parameter passing semantics" with no params
+// Empty arg positions are valid: func(,arg2) passes empty first arg, func(arg1,,arg3) etc.
+// We use first+rest pattern to properly handle empty leading arguments:
+//   - Empty () has no first, no rest
+//   - (arg) has first=arg, no rest
+//   - (,arg) has first=empty, rest contains arg
+//   - (arg1,arg2) has first=arg1, rest contains arg2
+FunctionArgs:
+    '(' first=FunctionArg? rest+=FunctionArgRest* ')'
+;
+
+// Rest of function args: comma followed by optional argument
+FunctionArgRest:
+    ',' arg=FunctionArg?
+;
+
+// Individual function argument: by-reference or by-value
+// .VARNAME is by-reference (e.g., .X passes X by reference)  
+// Expression is by-value (e.g., X+1 passes the evaluated result)
+// Empty position between commas or at edges represents omitted/default argument
+// The byref= and expr= will both be None for empty positions
+FunctionArg:
+    byref=ByRefArg | expr=Expr
+;
+
+// By-reference argument: . prefix followed by a local variable or indirection
+// Global variables cannot be passed by reference (only local variables)
+// Subscripted variables are allowed: .ARR(1,2) passes the subscripted node by reference
+// Indirection is allowed: .@VAR passes the variable whose name is in VAR by reference
+ByRefArg:
+    '.' (indirect=Indirection | var=LocalVariable)
+;
+
+// Special variables: $TEST, $HOROLOG, etc.
+SpecialVariable:
+    '$' name=SVARNAME
+;
+
+// Indirection: @expr with optional subscripts and name indirection
+// @expr - simple indirection
+// @expr(subscripts) - indirection with direct subscripts (indirection of subscripted variable)
+// @expr@(subscripts) - name indirection: evaluate expr to get variable name, append subscripts
+// @expr@(subs1)@(subs2) - chained name indirection
+Indirection:
+    '@' expr=PrimaryExpr subscripts=Subscripts? name_subscripts+=NameIndirectionSubscripts*
+;
+
+// Name indirection subscript suffix: @(subscripts)
+// Used in variable name indirection like @X@(1,2) where X evaluates to a variable name
+NameIndirectionSubscripts:
+    '@' subscripts=Subscripts
+;
+
+// =============================================================================
+// Terminal Rules
+// =============================================================================
+
+// Variable/label name
+VARNAME:
+    /[%A-Za-z][A-Za-z0-9]*/
+;
+
+// Function name (uppercase by convention but not required)
+FUNCNAME:
+    /[A-Za-z][A-Za-z0-9]*/
+;
+
+// Special variable name (these are specific keywords)
+// Includes both full names and valid abbreviations
+// CRITICAL: Order longest matches FIRST to prevent partial matching issues
+// e.g., ZTWORMHOLE must match before ZT, otherwise $ZTWORMHOLE parses as $ZT + WORMHOLE
+//
+// Standard MUMPS Special Variables:
+//   IOREFERENCE, PIOREFERENCE - I/O reference tracking
+//   TRESTART, TLEVEL - Transaction variables
+//   PRINCIPAL - Principal device
+//   REFERENCE - Last global reference
+//   HOROLOG - Date/time
+//   STORAGE - Free storage
+//   ESTACK - Error stack level
+//   SYSTEM - System identifier
+//   DEVICE - Current device info
+//   ETRAP - Error trap
+//   ECODE - Error code
+//   STACK - Stack level
+//   QUIT - Quit flag
+//   TEST - Test flag
+//   KEY - Key
+//   JOB - Job number
+//   IO - Current device
+//   X, Y - Cursor position
+//
+// YDB Z-ISVs (Implementation-specific special variables):
+//   ZTWORMHOLE - Transaction wormhole data
+//   ZTRIGGEROP - Trigger operation type
+//   ZTOLDVALUE - Trigger old value
+//   ZINTERRUPT - Interrupt flag
+//   ZPOSITION, ZPOS, ZP - Current position
+//   ZCMDLINE - Command line arguments
+//   ZTUPDATE - Trigger update
+//   ZERROR, ZE - Error message text
+//   ZGBLDIR - Global directory
+//   ZSTATUS - Status code
+//   ZTVALUE - Trigger value
+//   ZTSLATE - Transaction slate
+//   ZTDELIM - Trigger delimiter
+//   ZTLEVEL, ZTL - Transaction level
+//   ZLEVEL, ZL - Stack level
+//   ZSTEP - Step action
+//   ZTRAP, ZT - Error trap
+//   ZTNAME - Trigger name
+//   ZTCODE - Trigger code
+//   ZTDATA - Trigger data
+//   ZYERROR - Error handler
+//   ZKEY - Key value
+//   ZEOF - End of file flag
+//   ZJOB - Job info
+//   ZPIN, ZPOUT - Standard input/output devices
+//   ZPATN - Pattern table name
+//   ZINT - Interrupt handler string
+//
+// Abbreviations (two-letter before single-letter):
+//   IOR (IOREFERENCE), PIOR (PIOREFERENCE)
+//   EC (ECODE), ES (ESTACK), ET (ETRAP)
+//   ST (STACK), SY (SYSTEM)
+//   TL (TLEVEL), TR (TRESTART)
+//   ZL (ZLEVEL), ZT (ZTRAP), ZE (ZERROR), ZP (ZPOSITION), ZTL (ZTLEVEL)
+//   Single letters: D, H, I, J, K, P, Q, R, S, T, X, Y
+//
+// MUMPS is case-insensitive for special variable names
+// NOTE: Uses (?![A-Za-z0-9]) lookahead to ensure complete word match.
+// Without this, $ZTWO would incorrectly match $ZT and leave "WO" unconsumed.
+SVARNAME:
+    /(?:[Zz][Tt][Ww][Oo][Rr][Mm][Hh][Oo][Ll][Ee]|[Zz][Tt][Rr][Ii][Gg][Gg][Ee][Rr][Oo][Pp]|[Zz][Tt][Oo][Ll][Dd][Vv][Aa][Ll][Uu][Ee]|[Zz][Ii][Nn][Tt][Ee][Rr][Rr][Uu][Pp][Tt]|[Zz][Pp][Oo][Ss][Ii][Tt][Ii][Oo][Nn]|[Pp][Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Cc][Mm][Dd][Ll][Ii][Nn][Ee]|[Zz][Tt][Uu][Pp][Dd][Aa][Tt][Ee]|[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Pp][Rr][Ii][Nn][Cc][Ii][Pp][Aa][Ll]|[Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Yy][Ee][Rr][Rr][Oo][Rr]|[Zz][Gg][Bb][Ll][Dd][Ii][Rr]|[Zz][Ss][Tt][Aa][Tt][Uu][Ss]|[Zz][Tt][Vv][Aa][Ll][Uu][Ee]|[Zz][Tt][Ss][Ll][Aa][Tt][Ee]|[Zz][Tt][Dd][Ee][Ll][Ii][Mm]|[Zz][Tt][Ll][Ee][Vv][Ee][Ll]|[Hh][Oo][Rr][Oo][Ll][Oo][Gg]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee]|[Ee][Ss][Tt][Aa][Cc][Kk]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Zz][Ll][Ee][Vv][Ee][Ll]|[Tt][Ll][Ee][Vv][Ee][Ll]|[Zz][Ee][Rr][Rr][Oo][Rr]|[Zz][Tt][Nn][Aa][Mm][Ee]|[Zz][Tt][Cc][Oo][Dd][Ee]|[Zz][Tt][Dd][Aa][Tt][Aa]|[Ee][Tt][Rr][Aa][Pp]|[Ee][Cc][Oo][Dd][Ee]|[Ss][Tt][Aa][Cc][Kk]|[Zz][Ss][Tt][Ee][Pp]|[Zz][Tt][Rr][Aa][Pp]|[Qq][Uu][Ii][Tt]|[Tt][Ee][Ss][Tt]|[Zz][Pp][Oo][Ss]|[Zz][Kk][Ee][Yy]|[Zz][Ee][Oo][Ff]|[Zz][Jj][Oo][Bb]|[Zz][Pp][Oo][Uu][Tt]|[Zz][Pp][Aa][Tt][Nn]|[Zz][Pp][Ii][Nn]|[Zz][Ii][Nn][Tt]|[Kk][Ee][Yy]|[Jj][Oo][Bb]|[Pp][Ii][Oo][Rr]|[Zz][Tt][Ll]|[Ii][Oo][Rr]|[Ii][Oo]|[Ee][Cc]|[Ee][Ss]|[Ee][Tt]|[Ss][Tt]|[Ss][Yy]|[Tt][Ll]|[Tt][Rr]|[Zz][Ll]|[Zz][Tt]|[Zz][Ee]|[Zz][Pp]|[DdHhIiJjKkPpQqRrSsTtXxYy])(?![A-Za-z0-9])/
+;
+
+// Quoted string (handles "" or '' escaping for double and single quotes)
+// MUMPS supports both double-quoted "text" and single-quoted 'text' strings
+// Inside a string, the quote character is escaped by doubling: "" or ''
+STRING_VALUE:
+    /"([^"]|"")*"|'([^']|'')*'/
+;
+
+// Number (integer or decimal, allowing leading decimal like .5)
+// MUMPS allows: 5, 5.5, .5, 5E3, .5E3, 5.5E-3
+NUMBER:
+    /([0-9]+\.?[0-9]*|\.[0-9]+)([Ee][+-]?[0-9]+)?/
+;

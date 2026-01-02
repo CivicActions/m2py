@@ -1,0 +1,233 @@
+# GOTO Analysis
+
+The GOTO analyzer classifies GOTO statements and tracks loop exits.
+
+**Source**: [`src/m2py/analysis/goto_analysis.py`](../../src/m2py/analysis/goto_analysis.py)
+
+## Overview
+
+GOTO analysis:
+
+1. Walks all statements looking for `MGotoStatement`
+2. Classifies each by target location and context
+3. Tracks enclosing FOR loops to detect loop exits
+4. Sets `goto_type` and `exits_loops` on statements
+5. Sets `has_internal_goto` and populates `exit_points` on FOR statements
+
+## Usage
+
+```python
+from m2py import MUMPSParser
+
+parser = MUMPSParser()
+routine = parser.parse_file("routine.m")
+parser.resolve_references(routine)  # Required first
+parser.classify_gotos(routine)      # Then classify
+
+# Check GOTO types
+for label in routine.labels:
+    for stmt in label.body.walk_statements():
+        if isinstance(stmt, MGotoStatement):
+            print(f"GOTO: {stmt.goto_type}")
+            if stmt.exits_loops:
+                print(f"  Exits {len(stmt.exits_loops)} loops")
+```
+
+## GotoType Classification
+
+| GotoType | Meaning | Code Gen Approach |
+|----------|---------|-------------------|
+| `FORWARD_JUMP` | Jumps ahead (any label) | If/elif chain or function call |
+| `BACKWARD_JUMP` | Jumps to earlier position | Loop or recursive call |
+| `LOOP_EXIT` | Exits a single FOR loop | `break` statement |
+| `MULTI_LOOP_EXIT` | Exits nested FOR loops | Labeled break or exception |
+| `EXTERNAL` | Jumps to other routine | Cross-module call |
+| `UNRESOLVED` | Target not found | Runtime dispatch |
+
+### is_cross_label Flag
+
+The `is_cross_label` boolean field on `MGotoStatement` indicates whether the target is in a different label than the source. This is orthogonal to direction:
+
+- **`FORWARD_JUMP` + `is_cross_label=False`**: GOTO within the same label (intra-label). Can be translated to if/elif chains.
+- **`FORWARD_JUMP` + `is_cross_label=True`**: GOTO to a later label (inter-label). Typically requires converting labels to functions.
+- **`BACKWARD_JUMP` + `is_cross_label=True`**: GOTO to an earlier label. Creates implicit loop requiring state machine.
+- **`LOOP_EXIT` + `is_cross_label=True`**: Exit FOR and jump to different label. Requires break + dispatch.
+
+## What Gets Populated
+
+### On MGotoStatement
+
+```python
+@dataclass
+class MGotoStatement(MStatement):
+    targets: List[MCall]
+    postcondition: Optional[MExpr]
+    goto_type: GotoType = GotoType.FORWARD_JUMP
+    is_cross_label: bool = False  # True if target in different label
+    exits_loops: List[MForStatement] = field(default_factory=list)
+    is_loop_continue: bool = False  # True if continue semantics
+```
+
+### On MForStatement (back-references)
+
+```python
+@dataclass
+class MForStatement(MStatement):
+    has_internal_goto: bool = False
+    exit_points: List[MGotoStatement] = field(default_factory=list)
+```
+
+## Classification Logic
+
+### Position-Based Classification
+
+```mumps
+EARLY  ; Position 0
+       S X=1
+MIDDLE ; Position 1
+       G EARLY    ; BACKWARD_JUMP, is_cross_label=True (1 → 0)
+       G LATER    ; FORWARD_JUMP, is_cross_label=True (1 → 2)
+       G MIDDLE   ; FORWARD_JUMP, is_cross_label=False (same label)
+LATER  ; Position 2
+       Q
+```
+
+The analyzer builds a label position map and compares indices.
+
+**Intra-Label Jumps**: When source and target are in the same label (`is_cross_label=False`),
+the analyzer defaults to `FORWARD_JUMP` since determining forward vs. backward direction
+would require tracking statement order within the label. The `is_cross_label=False` flag
+is the key signal for code generation, indicating the jump stays within local scope and
+can typically be translated to structured control flow.
+
+### Loop Exit Detection
+
+```mumps
+LOOP   F I=1:1:10 D
+       . I X=5 G DONE    ; LOOP_EXIT - exits the FOR
+       . I X=3 G LOOP    ; LOOP_EXIT + is_loop_continue=True (continue pattern)
+       Q
+DONE   Q
+```
+
+The analyzer tracks enclosing FOR loops during traversal. When a GOTO is found inside a FOR:
+- `goto_type` is set to `LOOP_EXIT` or `MULTI_LOOP_EXIT`
+- `exits_loops` is populated with enclosing FORs
+- `has_internal_goto` is set on the FOR statements
+- `is_loop_continue` is set to True if the GOTO target is the same label containing the FOR (continue semantics)
+
+### is_loop_continue Pattern
+
+When a GOTO inside a FOR loop jumps back to the label containing that FOR loop, it simulates Python's `continue` statement - skipping to the next iteration:
+
+```mumps
+LOOP   F I=1:1:10 D
+       . I I#2=0 G LOOP  ; Skip even numbers (is_loop_continue=True)
+       . W I,!
+       Q
+```
+
+This translates to:
+
+```python
+for i in range(1, 11):
+    if i % 2 == 0:
+        continue  # Generated from GOTO with is_loop_continue=True
+    print(i)
+```
+
+### External vs Same-Routine
+
+```mumps
+       G LABEL^OTHER   ; EXTERNAL (different routine)
+       G LABEL^SAME    ; Resolved if SAME matches routine name
+       G LABEL         ; Resolved locally
+```
+
+## Helper Functions
+
+### get_loop_exiting_gotos
+
+Find all GOTOs that exit FOR loops:
+
+```python
+from m2py.analysis.goto_analysis import get_loop_exiting_gotos
+
+exits = get_loop_exiting_gotos(routine)
+for goto in exits:
+    print(f"GOTO exits {len(goto.exits_loops)} loops")
+```
+
+### get_gotos_by_type
+
+Filter GOTOs by classification:
+
+```python
+from m2py.analysis.goto_analysis import get_gotos_by_type
+from m2py.asg.enums import GotoType
+
+backwards = get_gotos_by_type(routine, GotoType.BACKWARD_JUMP)
+for goto in backwards:
+    print("Backward jump detected")
+```
+
+## Code Generation Implications
+
+| Scenario | Strategy |
+|----------|----------|
+| Forward to same label | Continue/fallthrough |
+| Forward to different label | Function call |
+| Backward jump | Loop construct or recursion |
+| Single loop exit | `break` |
+| Multi-loop exit | Labeled break, exception, or state machine |
+| Conditional GOTO | `if condition: break/return` |
+
+### Example Patterns
+
+**Loop Exit to Break**:
+```mumps
+F I=1:1:10 D
+. I X=5 G DONE
+```
+```python
+for i in range(1, 11):
+    if x == 5:
+        break  # LOOP_EXIT becomes break
+```
+
+**Multi-Loop Exit**:
+```mumps
+F I=1:1:10 D
+. F J=1:1:10 D
+. . I X=Y G ALLDONE
+```
+```python
+# Requires special handling - exception or flag pattern
+class LoopExit(Exception): pass
+try:
+    for i in range(1, 11):
+        for j in range(1, 11):
+            if x == y:
+                raise LoopExit()
+except LoopExit:
+    pass
+```
+
+## Routine-Level Flag
+
+`classify_gotos()` automatically sets `MRoutine.has_unstructured_goto` based on GOTO patterns in the routine:
+
+```python
+# After classify_gotos(), check the flag:
+if routine.has_unstructured_goto:
+    # Use state machine or other unstructured approach
+    pass
+else:
+    # Can use structured Python (if/else, break, function calls)
+    pass
+```
+
+**Patterns that set the flag to True:**
+- `BACKWARD_JUMP`: Creates implicit loops across labels
+- `UNRESOLVED`: Target unknown, needs runtime dispatch
+- Cross-label `FORWARD_JUMP` not inside a FOR loop
