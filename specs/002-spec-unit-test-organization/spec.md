@@ -243,6 +243,14 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **FR-027**: Migration MUST preserve all test assertions and coverage
 - **FR-028**: Migration MUST not break CI/CD pipelines during transition
 
+#### Documentation Requirements
+
+- **FR-041**: `docs/testing.md` MUST be updated to describe the new spec-aligned test structure
+- **FR-042**: `docs/testing.md` MUST document the three-level testing approach (parser, asg, codegen)
+- **FR-043**: `docs/testing.md` MUST document the stub/xfail workflow for pending tests
+- **FR-044**: `docs/testing.md` MUST include the marker usage table and common pytest commands
+- **FR-045**: Coverage matrix document MUST be created in `docs/` (e.g., `docs/coverage-matrix.md`)
+
 ### Key Entities
 
 - **Spec Section**: A numbered section from ANSI M X11.1-1995 (e.g., §7.1.2 Local variable name)
@@ -272,6 +280,8 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **SC-013**: Running `pytest` with default options produces exit code 0 (green CI)
 - **SC-014**: Running `pytest -m "not stub"` executes only implemented tests
 - **SC-015**: Every spec section has stubs at all three levels (parser, asg, codegen) from initial structure creation
+- **SC-016**: `docs/testing.md` accurately describes the new test organization and workflows
+- **SC-017**: `docs/coverage-matrix.md` exists and matches actual test coverage status
 
 ---
 
@@ -375,7 +385,8 @@ The test structure will map to these major sections:
 ## Dependencies
 
 - **Spec 001** (textX Semantic Graph): The ASG structure and analysis passes defined there are the basis for ASG-level testing
-- **limitations.md**: Defines which commands are out-of-scope
+- **docs/limitations.md**: Defines which commands are out-of-scope
+- **docs/testing.md**: Current testing documentation (to be updated)
 - **mumps-reference/**: Contains spec text and examples for test creation
 - **YDBTest/**: Contains real-world MUMPS code for test examples
 - **VistA-M/**: Contains production MUMPS code for compatibility validation
