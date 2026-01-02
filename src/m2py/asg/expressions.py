@@ -205,6 +205,26 @@ class MExtrinsicFunction(MExpr):
     arguments: List["MActualParameter"] = field(default_factory=list)
 
 
+@dataclass
+class MExternalFunction(MExpr):
+    """External (C/system) function call.
+
+    Represents calls to external C functions linked into the MUMPS runtime:
+    $&RAND(args), $&package.name(args)
+
+    Examples:
+      $&RAND(.var) - call RAND function
+      $&ydbposix.signalval("SIGTERM",.val) - call ydbposix package function
+    """
+
+    # Package name (if present) - e.g., "ydbposix" in $&ydbposix.signalval
+    package: Optional[str] = None
+    # Function name - e.g., "RAND" or "signalval"
+    name: Optional[str] = None
+    # Function arguments (supports by-ref and by-value)
+    arguments: List["MActualParameter"] = field(default_factory=list)
+
+
 # =============================================================================
 # Special Expressions
 # =============================================================================
@@ -285,6 +305,20 @@ class MFormatControl(MExpr):
 
     control_type: Optional["FormatControlType"] = None  # Type of format control
     expression: Optional["MExpr"] = None  # Column/charcode expr for ?n/*n
+
+
+@dataclass
+class MDeviceControl(MExpr):
+    """Device control command for WRITE/READ.
+
+    Represents GT.M/YDB device control mnemonics:
+    /EOF, /WAIT, /LISTEN, /ACCEPT, /PASS, /CLEAR, /FILTER, /FLUSH, etc.
+
+    These are implementation-specific extensions for device I/O control.
+    """
+
+    keyword: str = ""  # Control keyword without /
+    params: list["MExpr"] = field(default_factory=list)  # Optional parameters
 
 
 @dataclass

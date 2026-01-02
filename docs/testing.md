@@ -6,8 +6,11 @@ How to test and validate parser output.
 
 ### Full Test Suite
 
+Tests run in parallel by default using `pytest-xdist`:
+
 ```bash
-uv run pytest
+uv run pytest              # Parallel execution on all CPU cores
+uv run pytest -n 1         # Sequential execution (for debugging)
 ```
 
 ### Specific Test Files
@@ -21,6 +24,16 @@ uv run pytest tests/unit/
 
 ```bash
 uv run pytest -v tests/integration/test_ydb_suites.py
+```
+
+### Including Slow Tests
+
+The summary report test is marked as `@pytest.mark.slow` and skipped by default:
+
+```bash
+uv run pytest                           # Skip slow tests (default)
+uv run pytest -m slow -v -s             # Run only slow tests
+uv run pytest -m ''                     # Run all tests including slow
 ```
 
 ### Coverage Report
@@ -54,23 +67,26 @@ The project includes multiple MUMPS test suites from YottaDB (YDBTest) for compr
 
 ### Running YDBTest Suite Tests
 
-All YDB test suites are tested via `test_ydb_suites.py`:
+All YDB test suites are tested via `test_ydb_suites.py`. Each `.m` file is tested individually for efficient parallel execution:
 
 ```bash
-# Run all YDB suite tests (summary + all suite validations)
+# Run all file parsing tests (1694 tests, parallel)
 uv run pytest tests/integration/test_ydb_suites.py -v
 
-# Run just the summary report
-uv run pytest tests/integration/test_ydb_suites.py::TestYDBSuites::test_all_suites_summary -v -s
+# Run the summary report (marked slow, must be explicitly included)
+uv run pytest -m slow tests/integration/test_ydb_suites.py -v -s
 
-# Run a specific suite's validation
-uv run pytest tests/integration/test_ydb_suites.py::TestYDBSuites::test_suite_parses[mugj] -v
-uv run pytest tests/integration/test_ydb_suites.py::TestYDBSuites::test_suite_parses[mvts] -v
+# Run tests for a specific suite
+uv run pytest tests/integration/test_ydb_suites.py -k mugj -v
+uv run pytest tests/integration/test_ydb_suites.py -k mvts -v
+
+# Run a specific file's test
+uv run pytest tests/integration/test_ydb_suites.py -k "mugj/V1SET.m" -v
 ```
 
 The test class provides:
-- `test_all_suites_summary` - Displays parsing status across all 11 suites
-- `test_suite_parses[<suite>]` - Validates all files in a specific suite parse
+- `test_file_parses[<suite>/<file>]` - Validates each `.m` file parses without exceptions
+- `test_all_suites_summary` - Displays parsing status across all 11 suites (slow, skipped by default)
 
 The summary displays:
 - **Parsed**: Files that parsed without raising exceptions
@@ -332,9 +348,11 @@ See `pyproject.toml` for pytest settings:
 
 ```toml
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]
+addopts = "-n auto -m 'not slow'"  # Parallel, skip slow tests
+pythonpath = ["src"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
 ```
 
 ### Coverage Thresholds

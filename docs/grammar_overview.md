@@ -388,6 +388,31 @@ CallTarget:
 ;
 ```
 
+### External Functions ($&)
+
+External functions call C routines linked into the MUMPS runtime. The syntax uses
+`$&` followed by either a package-qualified name or just a function name:
+
+```textx
+// External function call syntax
+// Examples: $&RAND(.var), $&ydbposix.signalval("SIGTERM",.val)
+ExternalFunction:
+    '$&' (package=VARNAME '.' name=VARNAME | name=VARNAME) args=FunctionArgs?
+;
+```
+
+Examples:
+- `$&RAND(1)` - external function without package
+- `$&RAND(.x)` - with by-reference argument (passes local variable by reference)
+- `$&ydbposix.signalval("SIGTERM",.val)` - package.function form with mixed args
+
+**Note:** The grammar uses an ordered choice to distinguish between:
+1. `package.name` form (has a dot separator)
+2. `name` only form (no package prefix)
+
+This is important because `$&RAND(1)` should parse `RAND` as the function name,
+not as a package with a missing function name.
+
 ### Computed Entry Points in DO/GOTO
 
 MUMPS allows computed offsets in DO and GOTO targets. The offset expression can include
@@ -670,6 +695,160 @@ The double `!WS` negative lookahead ensures:
 - `H 5` → HANG (`!WS` fails because space follows, so HaltCommand doesn't match)
 - `H:X>0 5` → HANG with postcondition (`!WS` after postcond fails due to space)
 - `H 0,1,2,3` → HANG with multiple durations
+
+## YDB/GT.M Grammar Extensions
+
+The grammar includes several YDB/GT.M-specific extensions beyond the standard MUMPS specification.
+
+### ZWRITE with Global Name Patterns
+
+ZWRITE supports pattern matching on global names (not just subscript filtering):
+
+```textx
+// Global pattern match: zwrite ^?.E (all single-letter globals)
+ZWriteGlobalPattern:
+    '^' '?' name_pattern=PatternSpec subscripts=ZWriteSubscripts?
+;
+```
+
+Example usage:
+```mumps
+ZWRITE ^?.E        ; All globals matching pattern .E (single char)
+ZWRITE ^?1"%"2U.E  ; All globals matching "%" followed by uppercase
+```
+
+### DO External Functions
+
+DO command can call external C functions linked into the runtime:
+
+```textx
+// External C function call: do &name(args) or do &package.name(args)
+DoExternal:
+    '&' (package=VARNAME '.' name=VARNAME | name=VARNAME) args=FunctionArgs?
+;
+```
+
+Example:
+```mumps
+DO &inmult(a,b,c)           ; Call external function inmult
+DO &mypackage.func(x)       ; Call with package namespace
+```
+
+### Pass-by-Reference with Indirection
+
+Function arguments support pass-by-reference with indirection (`.@VAR`):
+
+```textx
+// By-reference: .VAR or .@VAR (indirect pass-by-ref)
+ByRefArg:
+    '.' (indirect=Indirection | var=LocalVariable)
+;
+```
+
+Example:
+```mumps
+SET IX="X",IY="Y"
+DO routine(.@IX,.@IY)  ; Pass the variables named by IX and IY by reference
+```
+
+### Labeled Dot Block Lines
+
+Labels can appear on dot-indented lines (DO block continuation):
+
+```mumps
+MAIN  SET F=0 DO
+ABC   . SET ^VCOMP=^VCOMP_"A"    ; Label ABC on a dot-indented line
+      . GOTO XYZ:F=0
+XYZ   . SET ^VCOMP=^VCOMP_"B",F=1 GOTO ABC
+      . SET ^VCOMP=^VCOMP_"C"
+```
+
+The parser strips leading dots before parsing line content and tracks the dot level for DO block structuring.
+
+### ZLOAD Command
+
+The ZLOAD command loads MUMPS code from source files:
+
+```textx
+ZLoadCommand:
+    /([Zz][Ll][Oo][Aa][Dd]|[Zz][Ll])(?![A-Za-z])/ postcond=Postcondition? (SingleSpace filename=Expr)?
+;
+```
+
+Example:
+```mumps
+ZL "routine.m"     ; Load routine.m source
+ZLOAD "program"    ; Load program source
+```
+
+### ZTRIGGER Multiple Globals
+
+The ZTRIGGER command supports multiple comma-separated global references:
+
+```textx
+ZTriggerCommand:
+    /([Zz][Tt][Rr][Ii][Gg][Gg][Ee][Rr]|[Zz][Tt][Rr])(?![A-Za-z])/ 
+    postcond=Postcondition? (SingleSpace targets+=Expr[','])?
+;
+```
+
+Example:
+```mumps
+ZTRIGGER ^globalA,^globalB  ; Load triggers for multiple globals
+```
+
+### TSTART with Indirection in Restart Variables
+
+TSTART supports indirection in the list of variables to restart:
+
+```textx
+TStartRestartVar:
+    indirect=Indirection | varname=VARNAME
+;
+```
+
+Example:
+```mumps
+SET VARLIST="X,Y,Z"
+TSTART (a,@VARLIST,%b):(SERIAL)  ; Include indirect variable list
+```
+
+### Extrinsic Functions with Numeric Labels
+
+Extrinsic functions can reference numeric labels:
+
+```textx
+ExtrinsicFunction:
+    '$$' label=TEXTLABELNAME? ('^' routine=VARNAME)? args=FunctionArgs?
+;
+
+// TEXTLABELNAME allows numeric labels like 0000 or 00001
+TEXTLABELNAME:
+    /[A-Za-z%][A-Za-z0-9]*|[0-9]+/
+;
+```
+
+Example:
+```mumps
+SET X=$$0000        ; Call extrinsic at label 0000
+SET Y=$$00001^ROUT  ; Call extrinsic at label 00001 in ROUT
+```
+
+### Extrinsic Functions with Routine Indirection
+
+Extrinsic functions can use indirection for the routine name:
+
+```textx
+ExtrinsicFunction:
+    '$$' label=TEXTLABELNAME? ('^' (routineIndirect=Indirection | routine=VARNAME))? args=FunctionArgs?
+;
+```
+
+Example:
+```mumps
+SET ROUT="MYROUTINE"
+SET X=$$func^@ROUT(arg)  ; Call $$func in routine named by ROUT
+```
 
 ## Grammar Testing
 

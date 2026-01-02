@@ -30,10 +30,12 @@ from m2py.asg.expressions import (
     MGlobal,
     MIntrinsicFunction,
     MExtrinsicFunction,
+    MExternalFunction,
     MIndirection,
     MBinaryOp,
     MUnaryOp,
     MFormatControl,
+    MDeviceControl,
     MPatternMatch,
     MActualParameter,
     MSelectArg,
@@ -75,13 +77,19 @@ from m2py.asg.statements import (
     MTCommitStatement,
     MTRestartStatement,
     MTRollbackStatement,
+    MZTStartStatement,
+    MZTCommitStatement,
     # Z-commands
     MZShowStatement,
     MZShowArg,
+    MZWriteSubscriptAll,
+    MZWriteSubscriptRange,
     MZWriteStatement,
     MZWriteArg,
+    MZBreakClearAll,
     MZBreakStatement,
     MZBreakArg,
+    MZStepStatement,
     MZGotoStatement,
     MZGotoArg,
     MZKillStatement,
@@ -96,7 +104,9 @@ from m2py.asg.statements import (
     MZMessageStatement,
     MZTriggerStatement,
     MZCompileStatement,
+    MZEditStatement,
     MZContinueStatement,
+    MZLoadStatement,
 )
 from m2py.asg.elements import MCall
 from m2py.asg.enums import (
@@ -233,6 +243,12 @@ class SemanticAnalyzer:
             if expr.target:
                 self._track_label_call(expr.target.name, expr.target.routine)
 
+        elif isinstance(expr, MExternalFunction):
+            new_args = []
+            for arg in expr.arguments:
+                new_args.append(self.analyze(arg, expr))
+            object.__setattr__(expr, "arguments", new_args)
+
         elif isinstance(expr, MBinaryOp):
             object.__setattr__(expr, "left", self.analyze(expr.left, expr))
             object.__setattr__(expr, "right", self.analyze(expr.right, expr))
@@ -256,15 +272,22 @@ class SemanticAnalyzer:
             # Classify indirection type based on context
             self._classify_indirection(expr, parent)
 
+        elif isinstance(expr, MDeviceControl):
+            # Analyze device control parameters
+            if expr.params:
+                new_params = [self.analyze(p, expr) for p in expr.params]
+                object.__setattr__(expr, "params", new_params)
+
         return expr
 
     def _analyze_function_arg(self, arg: Any, parent: Any) -> MActualParameter:
         """Analyze a FunctionArg into an MActualParameter.
 
-        Handles three cases:
-        1. By-reference: .VAR passes variable by reference
-        2. By-value: Expression is evaluated and passed by value
-        3. Omitted: Empty parameter position (nothing between commas)
+        Handles four cases:
+        1. By-reference variable: .VAR passes variable by reference
+        2. By-reference indirection: .@VAR passes indirect variable by reference
+        3. By-value: Expression is evaluated and passed by value
+        4. Omitted: Empty parameter position (nothing between commas)
 
         Args:
             arg: A FunctionArg textX object with byref or expr attributes
@@ -273,19 +296,28 @@ class SemanticAnalyzer:
         Returns:
             MActualParameter with appropriate passing mode
         """
-        # Check for by-reference argument: .VAR
+        # Check for by-reference argument: .VAR or .@VAR
         if hasattr(arg, "byref") and arg.byref:
             byref = arg.byref
-            var = byref.var
-            # Get variable name and subscripts
-            var_name = var.name
-            # Analyze the variable as an expression to track it
-            var_expr = self.analyze(var, parent)
-            return MActualParameter(
-                passing_mode=PassingMode.BY_REFERENCE,
-                expression=var_expr,
-                variable_name=var_name,
-            )
+            # Check for indirection: .@VAR
+            if hasattr(byref, "indirect") and byref.indirect:
+                indirect_expr = self.analyze(byref.indirect, parent)
+                return MActualParameter(
+                    passing_mode=PassingMode.BY_REFERENCE,
+                    expression=indirect_expr,
+                    variable_name=None,  # Name determined at runtime
+                )
+            # Regular variable: .VAR
+            elif hasattr(byref, "var") and byref.var:
+                var = byref.var
+                var_name = var.name
+                # Analyze the variable as an expression to track it
+                var_expr = self.analyze(var, parent)
+                return MActualParameter(
+                    passing_mode=PassingMode.BY_REFERENCE,
+                    expression=var_expr,
+                    variable_name=var_name,
+                )
 
         # Check for by-value argument: expression
         if hasattr(arg, "expr") and arg.expr:
@@ -630,6 +662,38 @@ class SemanticAnalyzer:
             object.__setattr__(arg, "value", analyzed_value)
 
         return arg
+
+    def _analyze_TextFunction(self, model: Any, parent: Any) -> Any:
+        """Analyze TextFunction ($TEXT) arguments.
+
+        TextFunction stores its arguments in a `line_ref` dictionary, not the
+        standard `arguments` list. We need to analyze any expressions within
+        this dictionary (e.g., offset, routine_indirect).
+        """
+        # Set parent
+        object.__setattr__(model, "parent", parent)
+
+        # Analyze expressions in line_ref
+        if hasattr(model, "line_ref") and model.line_ref:
+            line_ref = model.line_ref
+
+            # Analyze offset expression if present
+            if "offset" in line_ref and line_ref["offset"]:
+                line_ref["offset"] = self.analyze(line_ref["offset"], model)
+
+            # Analyze routine indirection expression if present
+            if "routine_indirect" in line_ref and line_ref["routine_indirect"]:
+                line_ref["routine_indirect"] = self.analyze(
+                    line_ref["routine_indirect"], model
+                )
+
+            # Analyze full indirection expression if present
+            if "full_indirect" in line_ref and line_ref["full_indirect"]:
+                line_ref["full_indirect"] = self.analyze(
+                    line_ref["full_indirect"], model
+                )
+
+        return model
 
     def _analyze_MActualParameter(
         self, param: MActualParameter, parent: Any
@@ -1151,6 +1215,20 @@ class SemanticAnalyzer:
 
         return stmt
 
+    def _analyze_IndirectChain(self, chain: Any, parent: Any) -> MIndirection:
+        """Analyze IndirectChain into MIndirection.
+
+        IndirectChain handles patterns like @VAR, @@VAR, @@@VAR, @(expr), @^GLOBAL.
+        Returns an MIndirection with nested levels properly represented.
+        """
+        expr, levels = self._analyze_indirect_chain(chain, parent)
+
+        # Wrap the innermost expression in MIndirection
+        result = MIndirection(expression=expr, indirection_type=IndirectionType.NAME)
+        object.__setattr__(result, "parent", parent)
+
+        return result
+
     def _analyze_indirect_chain(self, chain: Any, parent: Any) -> tuple:
         """Analyze an IndirectChain and return (expression, indirection_levels).
 
@@ -1173,6 +1251,12 @@ class SemanticAnalyzer:
             expr = self.analyze(getattr(current, "global"), parent)
         elif hasattr(current, "expr") and current.expr:
             expr = self.analyze(current.expr, parent)
+        elif hasattr(current, "string") and current.string:
+            # String literal: @"LABEL^ROUTINE"
+            expr = MLiteral(
+                value=current.string.strip("\"'"), literal_type=LiteralType.STRING
+            )
+            object.__setattr__(expr, "parent", parent)
         else:
             expr = None
 
@@ -1196,7 +1280,15 @@ class SemanticAnalyzer:
         return stmt
 
     def _analyze_NewCommand(self, cmd: Any, parent: Any) -> MNewStatement:
-        """Analyze NEW command into MNewStatement."""
+        """Analyze NEW command into MNewStatement.
+
+        Handles:
+        - N X,Y - selective NEW of X and Y
+        - N @A - NEW with indirection
+        - N @@B@(2) - NEW with subscripted double indirection
+        - N (X,Y) - exclusive NEW (keep all except X,Y)
+        - N (@A,B) - exclusive NEW with indirection in list
+        """
         stmt = MNewStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -1206,12 +1298,33 @@ class SemanticAnalyzer:
             exc = cmd.exclusive
             except_list = getattr(exc, "except", None) or getattr(exc, "except_", None)
             if except_list:
-                stmt.except_list = list(except_list)
+                # ExclusiveNewVar can have .name or .indirect
+                names = []
+                for v in except_list:
+                    if hasattr(v, "name") and v.name:
+                        names.append(v.name)
+                    elif hasattr(v, "indirect") and v.indirect:
+                        # Indirection in exclusive list - store as analyzed expression
+                        names.append(self.analyze(v.indirect, stmt))
+                    else:
+                        names.append(str(v))
+                stmt.except_list = names
         elif hasattr(cmd, "vars") and cmd.vars:
             for v in cmd.vars:
-                var_name = v.name if hasattr(v, "name") else str(v)
-                stmt.variables.append(var_name)
-                self._track_variable(var_name, v, is_newed=True)
+                if hasattr(v, "indirect") and v.indirect:
+                    # Indirection: @A, @@B@(2), etc.
+                    indirect_expr = self.analyze(v.indirect, stmt)
+                    stmt.variables.append(indirect_expr)
+                elif hasattr(v, "svar") and v.svar:
+                    # Special variable: $ZTRAP, etc.
+                    svar_expr = self.analyze(v.svar, stmt)
+                    stmt.variables.append(svar_expr)
+                elif hasattr(v, "name") and v.name:
+                    var_name = v.name
+                    stmt.variables.append(var_name)
+                    self._track_variable(var_name, v, is_newed=True)
+                else:
+                    stmt.variables.append(str(v))
 
         return stmt
 
@@ -1771,27 +1884,81 @@ class SemanticAnalyzer:
                 vars_list = restart_arg.vars
                 if not isinstance(vars_list, list):
                     vars_list = [vars_list]
-                stmt.restart_vars = [self.analyze(var, stmt) for var in vars_list]
+                stmt.restart_vars = [
+                    self._analyze_TStartRestartVar(var, stmt) for var in vars_list
+                ]
 
         # Handle parameters (keyword arguments after colon)
         if hasattr(cmd, "params") and cmd.params:
             params = cmd.params if isinstance(cmd.params, list) else [cmd.params]
-            stmt.parameters = [
-                self._analyze_TStartParam(param, stmt) for param in params
-            ]
+            result_params = []
+            for param in params:
+                # Handle compound parenthesized form: (serial:t="BA")
+                if hasattr(param, "inner_params") and param.inner_params:
+                    # Expand compound form into multiple params
+                    for inner in param.inner_params:
+                        result_params.append(
+                            self._analyze_TStartParamInner(inner, stmt)
+                        )
+                else:
+                    result_params.append(self._analyze_TStartParam(param, stmt))
+            stmt.parameters = result_params
 
         return stmt
+
+    def _analyze_TStartRestartVar(self, var: Any, parent: Any):
+        """Analyze TStartRestartVar - can be varname or @indirection."""
+        if hasattr(var, "indirect") and var.indirect:
+            return self.analyze(var.indirect, parent)
+        elif hasattr(var, "varname") and var.varname:
+            # Return as MVariable to be consistent
+            from m2py.asg.expressions import MVariable
+
+            return MVariable(name=var.varname)
+        else:
+            # Fallback for bare strings
+            from m2py.asg.expressions import MVariable
+
+            return MVariable(name=str(var))
 
     def _analyze_TStartParam(self, param: Any, parent: Any) -> MTStartParam:
         """Analyze TSTART parameter into MTStartParam.
 
         Parameters like SERIAL, S, TRANSACTIONID="value", T="value".
+        Supports both bare names, parenthesized forms: serial or (serial),
+        and compound forms: (serial:t="BA") which expand to multiple params.
         """
-        name = param.name if hasattr(param, "name") else str(param)
+        # Handle parenthesized compound form: (serial:t="BA")
+        if hasattr(param, "inner_params") and param.inner_params:
+            # This contains multiple params - return first one for now
+            # The caller should handle multiple params if needed
+            first = param.inner_params[0]
+            name = str(first.name) if hasattr(first, "name") else str(first)
+            value = None
+            if hasattr(first, "value") and first.value is not None:
+                value = self.analyze(first.value, parent)
+            return MTStartParam(name=name, value=value)
+        elif hasattr(param, "name") and param.name:
+            name = str(param.name)
+        else:
+            name = str(param)
+
         value = None
         if hasattr(param, "value") and param.value is not None:
             value = self.analyze(param.value, parent)
         return MTStartParam(name=name, value=value)
+
+    def _analyze_TStartParamInner(self, param: Any, parent: Any) -> MTStartParam:
+        """Analyze TStartParamInner - a parameter inside compound (serial:t=val) form."""
+        name = str(param.name) if hasattr(param, "name") else str(param)
+        value = None
+        if hasattr(param, "value") and param.value is not None:
+            value = self.analyze(param.value, parent)
+        return MTStartParam(name=name, value=value)
+
+    def _analyze_TStartParamName(self, param: Any, parent: Any) -> str:
+        """Analyze TStartParamName rule - just returns the matched string."""
+        return str(param)
 
     def _analyze_TCommitCommand(self, cmd: Any, parent: Any) -> MTCommitStatement:
         """Analyze TCOMMIT command into MTCommitStatement.
@@ -1851,6 +2018,33 @@ class SemanticAnalyzer:
             full_text = rest  # Best effort
         return MLiteral(value=full_text, literal_type=LiteralType.STRING)
 
+    def _analyze_ZTStartCommand(self, cmd: Any, parent: Any) -> MZTStartStatement:
+        """Analyze ZTSTART command into MZTStartStatement.
+
+        ZTSTART [:pc]
+        GT.M/YDB-specific journaled transaction start.
+        """
+        stmt = MZTStartStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+        return stmt
+
+    def _analyze_ZTCommitCommand(self, cmd: Any, parent: Any) -> MZTCommitStatement:
+        """Analyze ZTCOMMIT command into MZTCommitStatement.
+
+        ZTCOMMIT [:pc] [level]
+        GT.M/YDB-specific journaled transaction commit.
+        """
+        stmt = MZTCommitStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        # Handle optional commit level argument
+        if hasattr(cmd, "level") and cmd.level is not None:
+            stmt.level = self.analyze(cmd.level, stmt)
+
+        return stmt
+
     # =========================================================================
     # Z-Command Analysis (YottaDB/GT.M Extensions)
     # =========================================================================
@@ -1895,6 +2089,44 @@ class SemanticAnalyzer:
 
         return stmt
 
+    def _analyze_MZWriteSubscriptAll(
+        self, model: MZWriteSubscriptAll, parent: Any
+    ) -> MZWriteSubscriptAll:
+        """Handle ZWRITE wildcard subscript (*).
+
+        The MZWriteSubscriptAll is already an ASG type from the custom class,
+        just needs parent set.
+        """
+        return model
+
+    def _analyze_MZWriteSubscriptRange(
+        self, model: MZWriteSubscriptRange, parent: Any
+    ) -> MZWriteSubscriptRange:
+        """Handle ZWRITE range subscript (start:end).
+
+        The MZWriteSubscriptRange is already an ASG type from the custom class,
+        but we need to analyze its start/end expressions if present.
+        """
+        if model.start is not None:
+            object.__setattr__(model, "start", self.analyze(model.start, parent))
+        if model.end is not None:
+            object.__setattr__(model, "end", self.analyze(model.end, parent))
+        return model
+
+    def _analyze_ZWriteGlobalPattern(self, model: Any, parent: Any) -> Any:
+        """Handle ZWRITE global name pattern match (^?.E).
+
+        The ZWriteGlobalPattern is already an ASG type from the custom class.
+        Pattern atoms within name_pattern may contain expressions that need analysis.
+        """
+        # Analyze subscripts if present (they may contain expressions)
+        if model.subscripts:
+            analyzed_subscripts = []
+            for sub in model.subscripts:
+                analyzed_subscripts.append(self.analyze(sub, parent))
+            object.__setattr__(model, "subscripts", analyzed_subscripts)
+        return model
+
     def _analyze_ZBreakCommand(self, cmd: Any, parent: Any) -> MZBreakStatement:
         """Analyze ZBREAK command into MZBreakStatement.
 
@@ -1915,6 +2147,23 @@ class SemanticAnalyzer:
                 if hasattr(arg, "count") and arg.count:
                     zbreak_arg.count = self.analyze(arg.count, stmt)
                 stmt.args.append(zbreak_arg)
+
+        return stmt
+
+    def _analyze_ZStepCommand(self, cmd: Any, parent: Any) -> MZStepStatement:
+        """Analyze ZSTEP command into MZStepStatement.
+
+        ZSTEP [:pc] [mode[:action]]
+        Single-step debugging control.
+        """
+        stmt = MZStepStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "mode") and cmd.mode:
+            stmt.mode = str(cmd.mode).upper()
+        if hasattr(cmd, "action") and cmd.action:
+            stmt.action = self.analyze(cmd.action, stmt)
 
         return stmt
 
@@ -2058,6 +2307,25 @@ class SemanticAnalyzer:
 
         return stmt
 
+    def _analyze_ZLoadCommand(self, cmd: Any, parent: Any) -> MZLoadStatement:
+        """Analyze ZLOAD command into MZLoadStatement.
+
+        ZLOAD [:pc] routine
+        Loads routine object file into memory (YottaDB extension).
+        """
+
+        stmt = MZLoadStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                analyzed = self.analyze(arg, stmt)
+                if analyzed:
+                    stmt.args.append(analyzed)
+
+        return stmt
+
     def _analyze_ZLinkCommand(self, cmd: Any, parent: Any) -> MZLinkStatement:
         """Analyze ZLINK command into MZLinkStatement.
 
@@ -2142,15 +2410,18 @@ class SemanticAnalyzer:
     def _analyze_ZTriggerCommand(self, cmd: Any, parent: Any) -> MZTriggerStatement:
         """Analyze ZTRIGGER command into MZTriggerStatement.
 
-        ZTRIGGER [:pc] target
-        Invokes triggers associated with a global reference.
+        ZTRIGGER [:pc] target[,target...]
+        Invokes triggers associated with global references.
         """
         stmt = MZTriggerStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
 
-        if hasattr(cmd, "target") and cmd.target is not None:
-            stmt.target = self.analyze(cmd.target, stmt)
+        if hasattr(cmd, "targets") and cmd.targets:
+            for target in cmd.targets:
+                analyzed = self.analyze(target, stmt)
+                if analyzed:
+                    stmt.targets.append(analyzed)
 
         return stmt
 
@@ -2161,6 +2432,24 @@ class SemanticAnalyzer:
         Compiles routine without linking.
         """
         stmt = MZCompileStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                analyzed = self.analyze(arg, stmt)
+                if analyzed:
+                    stmt.args.append(analyzed)
+
+        return stmt
+
+    def _analyze_ZEditCommand(self, cmd: Any, parent: Any) -> MZEditStatement:
+        """Analyze ZEDIT command into MZEditStatement.
+
+        ZED[IT] [:pc] routine
+        Opens routine in editor.
+        """
+        stmt = MZEditStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
 
@@ -2199,10 +2488,16 @@ class SemanticAnalyzer:
         return result
 
     def _analyze_ZBreakLocation(self, loc: Any, parent: Any) -> Any:
-        """Analyze ZBreakLocation - dispatches to Indirection or ZBreakTarget."""
-        # Grammar: ZBreakLocation: Indirection | ZBreakTarget
+        """Analyze ZBreakLocation - dispatches to Indirection, ZBreakClearAll, or ZBreakTarget."""
+        # Grammar: ZBreakLocation: Indirection | ZBreakClearAll | ZBreakTarget
         # Since it's a union, the actual object is the matched alternative
         return self.analyze(loc, parent)
+
+    def _analyze_ZBreakClearAll(self, node: Any, parent: Any) -> MZBreakClearAll:
+        """Analyze ZBreakClearAll (-*) into MZBreakClearAll marker."""
+        result = MZBreakClearAll()
+        object.__setattr__(result, "parent", parent)
+        return result
 
     def _analyze_ZBreakTarget(self, target: Any, parent: Any) -> MCall:
         """Analyze ZBreakTarget into MCall for label/routine reference."""

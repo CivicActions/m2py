@@ -714,6 +714,39 @@ class MTRollbackStatement(MStatement):
     level: Optional["MExpr"] = None
 
 
+@dataclass
+class MZTStartStatement(MStatement):
+    """ZTSTART command - begin journaled transaction (GT.M/YDB extension).
+
+    Begins a journaled (fenced) transaction:
+    ZTStart, ZTS
+
+    Per GT.M/YDB documentation:
+    - Unlike TSTART, ZTSTART begins journaled transaction processing
+    - Must be paired with ZTCOMMIT to complete the fenced transaction
+    - Provides additional journaling semantics beyond standard TSTART
+    """
+
+    pass
+
+
+@dataclass
+class MZTCommitStatement(MStatement):
+    """ZTCOMMIT command - commit journaled transaction (GT.M/YDB extension).
+
+    Commits a journaled (fenced) transaction:
+    ZTCommit, ZTC, ZTCommit 1
+
+    Per GT.M/YDB documentation:
+    - Commits a transaction started with ZTSTART
+    - Optional level argument specifies transaction level to commit to
+    - Error if not in a journaled transaction
+    """
+
+    # Optional transaction level to commit to
+    level: Optional["MExpr"] = None
+
+
 # =============================================================================
 # Z-Command Statements (YottaDB/GT.M Extensions)
 # =============================================================================
@@ -776,6 +809,33 @@ class MZShowStatement(MStatement):
 
 
 @dataclass
+class MZWriteSubscriptAll:
+    """Wildcard subscript (*) in ZWRITE pattern.
+
+    Matches all remaining subscript levels.
+    Example: ZWR ^X("A",*) - write all ^X("A",...) entries
+    """
+
+    pass
+
+
+@dataclass
+class MZWriteSubscriptRange:
+    """Range subscript (start:end) in ZWRITE pattern.
+
+    Specifies a range of values for a subscript level.
+    Either start or end can be omitted:
+      a:b - from a to b
+      :b  - from beginning to b
+      a:  - from a to end
+      :   - all values (wildcard for this level)
+    """
+
+    start: Optional["MExpr"] = None
+    end: Optional["MExpr"] = None
+
+
+@dataclass
 class MZWriteArg:
     """Single argument in ZWRITE command.
 
@@ -807,14 +867,25 @@ class MZWriteStatement(MStatement):
 
 
 @dataclass
+class MZBreakClearAll:
+    """ZBREAK -* (clear all breakpoints) marker.
+
+    Represents the special -* syntax that removes all breakpoints.
+    """
+
+    pass
+
+
+@dataclass
 class MZBreakArg:
     """Single argument in ZBREAK command.
 
     Each ZBREAK argument specifies a breakpoint location and action.
     ZBREAK label^routine:"set x=1":5
+    ZBREAK -* (represented by MZBreakClearAll in location)
     """
 
-    # The location for the breakpoint (label reference or indirection)
+    # The location for the breakpoint (label reference, indirection, or MZBreakClearAll)
     location: Optional["MExpr"] = None
     # Optional action to execute at breakpoint
     action: Optional["MExpr"] = None
@@ -838,6 +909,30 @@ class MZBreakStatement(MStatement):
 
     # Breakpoint arguments
     args: List[MZBreakArg] = field(default_factory=list)
+
+
+@dataclass
+class MZStepStatement(MStatement):
+    """ZSTEP command - single-step debugging control.
+
+    Controls single-step execution for debugging:
+    ZST[EP] [mode[:action]]
+
+    mode: INTO, OVER, OUTOF (controls step behavior)
+    action: Code to execute at each step
+
+    Examples:
+      ZSTEP - disable single-stepping
+      ZSTEP INTO - step into subroutines
+      ZSTEP OVER - step over subroutines
+      ZSTEP OUTOF - step out of current routine
+      ZSTEP INTO:"w x,!" - step into with action
+    """
+
+    # Step mode: INTO, OVER, OUTOF, or None (disable)
+    mode: Optional[str] = None
+    # Action to execute at each step
+    action: Optional["MExpr"] = None
 
 
 @dataclass
@@ -951,7 +1046,7 @@ class MZLinkStatement(MStatement):
     """ZLINK command - compile and link routine.
 
     Compiles and/or links a routine into the current process:
-    ZL[INK] routine[:qualifier]
+    ZLI[NK] routine[:qualifier]
 
     Examples:
       ZLINK "routine"
@@ -960,6 +1055,24 @@ class MZLinkStatement(MStatement):
     """
 
     # Routine(s) to link
+    args: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MZLoadStatement(MStatement):
+    """ZLOAD command - load routine object file.
+
+    Loads a compiled routine object file into memory (YottaDB extension):
+    ZL[OAD] routine
+
+    Different from ZLINK - ZLOAD loads without compilation.
+
+    Examples:
+      ZLOAD "routine"
+      ZL "routine"
+    """
+
+    # Routine(s) to load
     args: List["MExpr"] = field(default_factory=list)
 
 
@@ -1041,17 +1154,18 @@ class MZMessageStatement(MStatement):
 class MZTriggerStatement(MStatement):
     """ZTRIGGER command - invoke triggers.
 
-    Invokes triggers associated with a global reference:
-    ZTRIGGER target
+    Invokes triggers associated with global references:
+    ZTRIGGER target[,target...]
 
     Examples:
       ZTRIGGER ^global
       ZTRIGGER ^global(subscript)
+      ZTRIGGER ^a,^b - comma-separated globals
       ZTRIGGER @indirection
     """
 
-    # Target expression (global reference or indirection)
-    target: Optional["MExpr"] = None
+    # Target expressions (global references or indirection)
+    targets: List["MExpr"] = field(default_factory=list)
 
 
 @dataclass
@@ -1067,6 +1181,23 @@ class MZCompileStatement(MStatement):
     """
 
     # Routine(s) to compile
+    args: List["MExpr"] = field(default_factory=list)
+
+
+@dataclass
+class MZEditStatement(MStatement):
+    """ZEDIT command - open routine in editor.
+
+    Opens a routine for editing:
+    ZED[IT] routine
+
+    Examples:
+      ZEDIT "routine.m"
+      ZEDIT @routinename
+      ZED routine
+    """
+
+    # Routine(s) to edit
     args: List["MExpr"] = field(default_factory=list)
 
 

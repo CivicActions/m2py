@@ -1035,6 +1035,57 @@ class TestExtrinsicFunctions:
         assert model is not None
 
 
+class TestExternalFunctions:
+    """Test external function parsing (Phase 103 fix).
+
+    External functions call C functions linked into the MUMPS runtime.
+    Syntax: $&name(args) or $&package.name(args)
+    """
+
+    def test_external_function_simple(self, expr_metamodel):
+        """Parse $&RAND(1) - external function without package."""
+        model = expr_metamodel.model_from_str("$&RAND(1)", "Expr")
+        assert model is not None
+        # The result is an ExternalFunction wrapped in UnaryExpr
+        assert model.left.operand.__class__.__name__ == "ExternalFunction"
+        assert model.left.operand.name == "RAND"
+        assert model.left.operand.package is None
+
+    def test_external_function_byref_arg(self, expr_metamodel):
+        """Parse $&RAND(.var) - external function with by-reference argument."""
+        model = expr_metamodel.model_from_str("$&RAND(.x)", "Expr")
+        assert model is not None
+        ext_func = model.left.operand
+        assert ext_func.__class__.__name__ == "ExternalFunction"
+        assert ext_func.name == "RAND"
+        # Check that the argument is a by-ref arg
+        assert ext_func.args.first.byref is not None
+
+    def test_external_function_with_package(self, expr_metamodel):
+        """Parse $&pkg.func(1) - external function with package prefix."""
+        model = expr_metamodel.model_from_str("$&ydbposix.signalval(1)", "Expr")
+        assert model is not None
+        ext_func = model.left.operand
+        assert ext_func.__class__.__name__ == "ExternalFunction"
+        assert ext_func.package == "ydbposix"
+        assert ext_func.name == "signalval"
+
+    def test_external_function_complex_args(self, expr_metamodel):
+        """Parse $&ydbposix.signalval("SIGTERM",.val) - with string and by-ref."""
+        model = expr_metamodel.model_from_str(
+            '$&ydbposix.signalval("SIGTERM",.val)', "Expr"
+        )
+        assert model is not None
+        ext_func = model.left.operand
+        assert ext_func.__class__.__name__ == "ExternalFunction"
+        assert ext_func.package == "ydbposix"
+        assert ext_func.name == "signalval"
+        # First arg is string, second is by-ref
+        assert ext_func.args.first.expr is not None  # string arg
+        assert len(ext_func.args.rest) == 1
+        assert ext_func.args.rest[0].arg.byref is not None  # by-ref arg
+
+
 class TestParentheses:
     """Test parenthesized expressions."""
 

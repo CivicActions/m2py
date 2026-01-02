@@ -16,14 +16,14 @@ Tests parsing of YDBTest validation files across all test suites:
 Goal: 100% parse success across ALL suites with codegen-ready ASG (zero parse_errors).
 
 Usage:
-    # Run all suite tests (summary + validation)
+    # Run all file parsing tests
     uv run pytest tests/integration/test_ydb_suites.py -v
 
     # Run just the summary report
-    uv run pytest tests/integration/test_ydb_suites.py::TestYDBSuites::test_all_suites_summary -v -s
+    uv run pytest tests/integration/test_ydb_suites.py::TestYDBSuites::test_all_suites_summary -v -s --no-skip
 
-    # Run a specific suite's validation
-    uv run pytest tests/integration/test_ydb_suites.py::TestYDBSuites::test_suite_parses[mugj] -v
+    # Run a specific suite's files
+    uv run pytest tests/integration/test_ydb_suites.py -k mugj -v
 """
 
 from typing import NamedTuple
@@ -126,92 +126,74 @@ def parse_suite(suite_name: str, parser: MUMPSParser) -> SuiteParseResults:
 
 
 # =============================================================================
-# YDB Suite Tests - Single Test Class for All Suites
+# File Collection for Parametrization
+# =============================================================================
+
+# Files with intentionally invalid syntax (excluded from test collection)
+KNOWN_INVALID_FILES = {
+    "badcompile.m",  # triggers suite: contains "badcommand" to test compiler error handling
+}
+
+
+def _collect_all_m_files():
+    """Collect all .m files from all test suites for parametrization.
+
+    Files listed in KNOWN_INVALID_FILES are excluded as they contain
+    intentionally invalid syntax for error handling tests.
+    """
+    files = []
+    for suite_name, suite_dir in TEST_SUITES.items():
+        if suite_dir.exists():
+            for filepath in sorted(suite_dir.glob("*.m")):
+                if filepath.name not in KNOWN_INVALID_FILES:
+                    files.append((suite_name, filepath))
+    return files
+
+
+# Collect files at module load time for parametrization
+_ALL_M_FILES = _collect_all_m_files()
+
+
+# =============================================================================
+# YDB Suite Tests
 # =============================================================================
 
 
 class TestYDBSuites:
-    """Tests for parsing status across all YDB test suites.
+    """Tests for parsing all .m files across YDB test suites.
 
-    This single class handles all suite parsing validation. Use pytest
-    parametrization to run specific suites:
+    Each .m file is tested individually for better parallelization with
+    pytest-xdist. Use pytest -k to filter by suite name:
 
-        # All suites
+        # All files
         uv run pytest tests/integration/test_ydb_suites.py -v
 
         # Specific suite
-        uv run pytest tests/integration/test_ydb_suites.py::TestYDBSuites::test_suite_parses[mugj] -v
+        uv run pytest tests/integration/test_ydb_suites.py -k mugj -v
+
+        # Specific file
+        uv run pytest tests/integration/test_ydb_suites.py -k "mugj/V1FN001" -v
     """
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def parser(self):
-        """Create a fresh parser instance."""
+        """Shared parser instance for the test class."""
         return MUMPSParser()
 
-    def test_all_suites_summary(self, parser):
-        """Report parsing status across all test suites."""
-        print("\n" + "=" * 70)
-        print("YDBTest Suite Parsing Summary")
-        print("=" * 70)
-        print(f"{'Suite':<15} {'Parsed':>8} {'Clean':>8} {'Total':>8} {'Clean%':>8}")
-        print("-" * 70)
-
-        total_parsed = 0
-        total_clean = 0
-        total_files = 0
-
-        for suite_name in sorted(TEST_SUITES.keys()):
-            results = parse_suite(suite_name, parser)
-            total_parsed += results.parsed_count
-            total_clean += results.clean_count
-            total_files += results.total_files
-
-            status = (
-                "✓"
-                if results.clean_rate == 100
-                else "○"
-                if results.clean_rate >= 80
-                else "✗"
-            )
-            print(
-                f"{suite_name:<15} {results.parsed_count:>8} {results.clean_count:>8} "
-                f"{results.total_files:>8} {results.clean_rate:>7.1f}% {status}"
-            )
-
-        print("-" * 70)
-        overall_rate = (total_clean / total_files * 100) if total_files > 0 else 0
-        print(
-            f"{'TOTAL':<15} {total_parsed:>8} {total_clean:>8} "
-            f"{total_files:>8} {overall_rate:>7.1f}%"
-        )
-        print("=" * 70)
-        print("Legend: ✓ = 100% clean, ○ = ≥80% clean, ✗ = <80% clean")
-        print("=" * 70)
-
-    @pytest.mark.parametrize("suite_name", list(TEST_SUITES.keys()))
-    def test_suite_parses(self, parser, suite_name):
-        """Each suite should parse all files without exceptions.
+    @pytest.mark.parametrize(
+        "suite_name,filepath",
+        _ALL_M_FILES,
+        ids=[f"{s}/{f.name}" for s, f in _ALL_M_FILES],
+    )
+    def test_file_parses(self, parser, suite_name, filepath):
+        """Each .m file should parse without exceptions.
 
         This is the authoritative test that all .m files in each suite
-        can be parsed. Individual suite results are also shown in the
-        summary test above.
+        can be parsed. Files are tested individually for better parallel
+        execution with pytest-xdist.
+
+        Files with intentionally invalid syntax (like badcompile.m) are
+        excluded from test collection in _collect_all_m_files().
         """
-        results = parse_suite(suite_name, parser)
-
-        # Verify directory exists and has files
-        suite_dir = TEST_SUITES[suite_name]
-        assert suite_dir.exists(), f"{suite_name} directory not found: {suite_dir}"
-        assert results.total_files > 0, (
-            f"{suite_name} directory should contain .m files"
-        )
-
-        # All files must parse without exceptions
-        failed = results.files_that_failed
-        if failed:
-            details = "\n".join(f"  {r.filename}: {r.exception}" for r in failed[:10])
-            if len(failed) > 10:
-                details += f"\n  ... and {len(failed) - 10} more"
-            pytest.fail(
-                f"{suite_name}: {len(failed)}/{results.total_files} files "
-                f"failed to parse:\n{details}"
-            )
+        routine = parser.parse_file(filepath)
+        assert isinstance(routine, MRoutine), f"Failed to parse {filepath.name}"

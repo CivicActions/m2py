@@ -18,8 +18,10 @@ Line:
 
 // Label line: label at column 1 (letter/% or numeric), optional formal params, then rest
 // Labels can be: NAME, %NAME, or NUMERIC
+// Optional colon after label name (some MUMPS code uses label: style)
+// Optional formal parameter list for subroutine entry points
 LabelLine:
-    label=LABEL_NAME formal_list=FormalList? rest=/[^\r\n]*/ NL
+    label=LABEL_NAME ':'? formal_list=FormalList? rest=/[^\r\n]*/ NL
 ;
 
 // Formal parameter list: (param1, param2, ...) or empty ()

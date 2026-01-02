@@ -52,7 +52,8 @@ BinaryOp:
     // '& is NAND, '! is NOR, '> '< '= are negated comparisons
     // '[ is "not contains", '] is "not follows"
     // ]] is "sorts after" (distinct from ] "follows") per MUMPS 1995 spec 7.2.2.1
-    op=/\*\*|>=|<=|'>|'<|'=|'\[|'\]|'&|'!|]]|\[|\]/
+    // ']] is "not sorts after" (negation of ]])
+    op=/']]|\*\*|>=|<=|'>|'<|'=|'\[|'\]|'&|'!|]]|\[|\]/
     | op=/[+\-*\/#\\=<>&!_\]]/ 
 ;
 
@@ -71,12 +72,27 @@ PatternSpec:
 // repcount, followed by either a pattern code patcode or a string literal strlit."
 // Repcount is REQUIRED - bare patcodes like "N" are invalid; use ".N" or "1N".
 // Examples: 1N, .A, 3.5P, ."hello", (1N,1A)
+//
+// Alternation syntax: ( pattern , pattern , ... )
+// Each pattern option can be multiple concatenated atoms.
+// Nested alternations are allowed: 1(1(1l,1u),2(3l,4u))
+// Examples:
+//   1(1N,1A) = 1 repetition of (1 numeric OR 1 alpha)
+//   10(1N3A) = 10 repetitions of (1 numeric then 3 alpha) - single option
+//   1(1N3A,2L) = 1 rep of (1N3A OR 2L) - two options
+//   5.8(1(1l,1u),2(3l,4u)) = nested alternations
 PatternAtom:
     repcount=RepCount (
         patcode=PatCode | 
         strlit=PATTERN_STRING |
-        '(' alternation+=PatternAtom[','] ')'
+        '(' alternation+=PatternAlternative[','] ')'
     )
+;
+
+// Each alternation option is a concatenated sequence of pattern atoms
+// Allows nested parens by using full PatternAtom
+PatternAlternative:
+    atoms+=PatternAtom+
 ;
 
 // Repeat count for pattern atoms:
@@ -144,6 +160,7 @@ UnaryOp:
 PrimaryExpr:
     ParenExpr |
     ExtrinsicFunction |
+    ExternalFunction |
     TextFunction |
     SelectFunction |
     IntrinsicFunction |
@@ -202,6 +219,7 @@ OffsetUnaryExpr:
 OffsetPrimaryExpr:
     OffsetParenExpr |
     ExtrinsicFunction |
+    ExternalFunction |
     TextFunction |
     SelectFunction |
     IntrinsicFunction |
@@ -325,13 +343,21 @@ TEXTNAME:
 ;
 
 // $TEXT argument: line reference (similar to LabelRef but may include indirection for everything)
-// Order matters: try indirection-only first, then full label reference patterns
+// Supports many combinations:
+//   $T(@VAR) - complete indirection resolves entire line ref
+//   $T(@lbl+3^routine) - label indirection + offset + routine
+//   $T(@lbl^@rtn) - label indirection + routine indirection
+//   $T(+3^routine) - offset-only + routine  
+//   $T(LABEL+3^routine) - standard label + offset + routine
+//   $T(^routine#1#A) - trigger routine with # suffixes (YottaDB extension)
 TextFunctionArg:
-    // Complete indirection: @VAR resolves to entire line reference at runtime
-    fullIndirect=Indirection |
-    // Label reference: [label][+offset][^routine]
-    (label=TEXTLABELNAME ('+' offset=OffsetExpr?)?)? 
-    ('^' (routineIndirect=Indirection | routine=VARNAME))?
+    // Label part: either indirection or static label name (both optional)
+    (labelIndirect=Indirection | label=TEXTLABELNAME)?
+    // Offset part: +expr (optional, expr can also be omitted for +)
+    ('+' offset=OffsetExpr?)?
+    // Routine part: ^name or ^@indirection (optional)
+    // Routine name can include trigger suffixes like #1#A/REGION
+    ('^' (routineIndirect=Indirection | routine=TRIGGERROUTINENAME))?
 ;
 
 // Text label name - can be:
@@ -341,6 +367,18 @@ TextFunctionArg:
 // Same as LABELNAME but defined separately for clarity
 TEXTLABELNAME:
     /[0-9]+|[%A-Za-z][A-Za-z0-9]*/
+;
+
+// Trigger routine name (YottaDB extension)
+// Supports standard routine names plus trigger-specific suffixes:
+//   routine - standard routine name
+//   routine# - user-named trigger
+//   routine#1# - auto-named trigger with number
+//   routine#1#A - with runtime disambiguator letter
+//   routine/REGION - with region suffix
+//   routine#1#A/REGION - full trigger syntax
+TRIGGERROUTINENAME:
+    /[%A-Za-z][A-Za-z0-9]*(#[0-9]*#?[A-Za-z]?)?(\/[A-Za-z]+)?/
 ;
 
 // $SELECT function uses special argument syntax: condition:value pairs
@@ -381,32 +419,54 @@ IntrinsicFunctionNoArgs:
 
 // Extrinsic (user-defined) function: $$label^routine(args) or $$label(args) or $$^routine(args)
 // The label is optional when a routine is specified: $$^routine means call entry point of routine
+// Label can be numeric-only (e.g., $$0000) or alphanumeric (e.g., $$FUNC)
+// Routine part can be indirect: $$func^@(expr)
 ExtrinsicFunction:
-    '$$' label=VARNAME? ('^' routine=VARNAME)? args=FunctionArgs?
+    '$$' label=TEXTLABELNAME? ('^' (routineIndirect=Indirection | routine=VARNAME))? args=FunctionArgs?
+;
+
+// External (C/system) function call: $&name(args) or $&package.name(args)
+// Used to call external C functions linked into the MUMPS runtime
+// Examples: $&RAND(.var), $&ydbposix.signalval("SIGTERM",.val)
+// Grammar: either "package.name" form or just "name" form (no package)
+ExternalFunction:
+    '$&' (package=VARNAME '.' name=VARNAME | name=VARNAME) args=FunctionArgs?
 ;
 
 // Function arguments - supports by-reference (.VAR) and by-value (Expr) parameters
 // In MUMPS, .VAR passes a variable by reference, allowing callee to modify it
 // Grammar is ordered so that ByRefArg matches before Expr (which could match .5 as a number)
 // Empty parentheses () are valid - indicates "call with parameter passing semantics" with no params
+// Empty arg positions are valid: func(,arg2) passes empty first arg, func(arg1,,arg3) etc.
+// We use first+rest pattern to properly handle empty leading arguments:
+//   - Empty () has no first, no rest
+//   - (arg) has first=arg, no rest
+//   - (,arg) has first=empty, rest contains arg
+//   - (arg1,arg2) has first=arg1, rest contains arg2
 FunctionArgs:
-    '(' args*=FunctionArg[','] ')'
+    '(' first=FunctionArg? rest+=FunctionArgRest* ')'
+;
+
+// Rest of function args: comma followed by optional argument
+FunctionArgRest:
+    ',' arg=FunctionArg?
 ;
 
 // Individual function argument: by-reference or by-value
-// .VARNAME is by-reference (e.g., .X passes X by reference)
+// .VARNAME is by-reference (e.g., .X passes X by reference)  
 // Expression is by-value (e.g., X+1 passes the evaluated result)
-// The byref= attribute captures by-ref args, expr= captures by-val args
-// Empty args (omitted) have both as None
+// Empty position between commas or at edges represents omitted/default argument
+// The byref= and expr= will both be None for empty positions
 FunctionArg:
-    byref=ByRefArg | expr=Expr?
+    byref=ByRefArg | expr=Expr
 ;
 
-// By-reference argument: . prefix followed by a local variable name
+// By-reference argument: . prefix followed by a local variable or indirection
 // Global variables cannot be passed by reference (only local variables)
 // Subscripted variables are allowed: .ARR(1,2) passes the subscripted node by reference
+// Indirection is allowed: .@VAR passes the variable whose name is in VAR by reference
 ByRefArg:
-    '.' var=LocalVariable
+    '.' (indirect=Indirection | var=LocalVariable)
 ;
 
 // Special variables: $TEST, $HOROLOG, etc.
@@ -493,6 +553,9 @@ FUNCNAME:
 //   ZKEY - Key value
 //   ZEOF - End of file flag
 //   ZJOB - Job info
+//   ZPIN, ZPOUT - Standard input/output devices
+//   ZPATN - Pattern table name
+//   ZINT - Interrupt handler string
 //
 // Abbreviations (two-letter before single-letter):
 //   IOR (IOREFERENCE), PIOR (PIOREFERENCE)
@@ -503,13 +566,17 @@ FUNCNAME:
 //   Single letters: D, H, I, J, K, P, Q, R, S, T, X, Y
 //
 // MUMPS is case-insensitive for special variable names
+// NOTE: Uses (?![A-Za-z0-9]) lookahead to ensure complete word match.
+// Without this, $ZTWO would incorrectly match $ZT and leave "WO" unconsumed.
 SVARNAME:
-    /[Zz][Tt][Ww][Oo][Rr][Mm][Hh][Oo][Ll][Ee]|[Zz][Tt][Rr][Ii][Gg][Gg][Ee][Rr][Oo][Pp]|[Zz][Tt][Oo][Ll][Dd][Vv][Aa][Ll][Uu][Ee]|[Zz][Ii][Nn][Tt][Ee][Rr][Rr][Uu][Pp][Tt]|[Zz][Pp][Oo][Ss][Ii][Tt][Ii][Oo][Nn]|[Pp][Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Cc][Mm][Dd][Ll][Ii][Nn][Ee]|[Zz][Tt][Uu][Pp][Dd][Aa][Tt][Ee]|[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Pp][Rr][Ii][Nn][Cc][Ii][Pp][Aa][Ll]|[Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Yy][Ee][Rr][Rr][Oo][Rr]|[Zz][Gg][Bb][Ll][Dd][Ii][Rr]|[Zz][Ss][Tt][Aa][Tt][Uu][Ss]|[Zz][Tt][Vv][Aa][Ll][Uu][Ee]|[Zz][Tt][Ss][Ll][Aa][Tt][Ee]|[Zz][Tt][Dd][Ee][Ll][Ii][Mm]|[Zz][Tt][Ll][Ee][Vv][Ee][Ll]|[Hh][Oo][Rr][Oo][Ll][Oo][Gg]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee]|[Ee][Ss][Tt][Aa][Cc][Kk]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Zz][Ll][Ee][Vv][Ee][Ll]|[Tt][Ll][Ee][Vv][Ee][Ll]|[Zz][Ee][Rr][Rr][Oo][Rr]|[Zz][Tt][Nn][Aa][Mm][Ee]|[Zz][Tt][Cc][Oo][Dd][Ee]|[Zz][Tt][Dd][Aa][Tt][Aa]|[Ee][Tt][Rr][Aa][Pp]|[Ee][Cc][Oo][Dd][Ee]|[Ss][Tt][Aa][Cc][Kk]|[Zz][Ss][Tt][Ee][Pp]|[Zz][Tt][Rr][Aa][Pp]|[Qq][Uu][Ii][Tt]|[Tt][Ee][Ss][Tt]|[Zz][Pp][Oo][Ss]|[Zz][Kk][Ee][Yy]|[Zz][Ee][Oo][Ff]|[Zz][Jj][Oo][Bb]|[Kk][Ee][Yy]|[Jj][Oo][Bb]|[Pp][Ii][Oo][Rr]|[Zz][Tt][Ll]|[Ii][Oo][Rr]|[Ii][Oo]|[Ee][Cc]|[Ee][Ss]|[Ee][Tt]|[Ss][Tt]|[Ss][Yy]|[Tt][Ll]|[Tt][Rr]|[Zz][Ll]|[Zz][Tt]|[Zz][Ee]|[Zz][Pp]|[DdHhIiJjKkPpQqRrSsTtXxYy]/
+    /(?:[Zz][Tt][Ww][Oo][Rr][Mm][Hh][Oo][Ll][Ee]|[Zz][Tt][Rr][Ii][Gg][Gg][Ee][Rr][Oo][Pp]|[Zz][Tt][Oo][Ll][Dd][Vv][Aa][Ll][Uu][Ee]|[Zz][Ii][Nn][Tt][Ee][Rr][Rr][Uu][Pp][Tt]|[Zz][Pp][Oo][Ss][Ii][Tt][Ii][Oo][Nn]|[Pp][Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Cc][Mm][Dd][Ll][Ii][Nn][Ee]|[Zz][Tt][Uu][Pp][Dd][Aa][Tt][Ee]|[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Pp][Rr][Ii][Nn][Cc][Ii][Pp][Aa][Ll]|[Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Yy][Ee][Rr][Rr][Oo][Rr]|[Zz][Gg][Bb][Ll][Dd][Ii][Rr]|[Zz][Ss][Tt][Aa][Tt][Uu][Ss]|[Zz][Tt][Vv][Aa][Ll][Uu][Ee]|[Zz][Tt][Ss][Ll][Aa][Tt][Ee]|[Zz][Tt][Dd][Ee][Ll][Ii][Mm]|[Zz][Tt][Ll][Ee][Vv][Ee][Ll]|[Hh][Oo][Rr][Oo][Ll][Oo][Gg]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee]|[Ee][Ss][Tt][Aa][Cc][Kk]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Zz][Ll][Ee][Vv][Ee][Ll]|[Tt][Ll][Ee][Vv][Ee][Ll]|[Zz][Ee][Rr][Rr][Oo][Rr]|[Zz][Tt][Nn][Aa][Mm][Ee]|[Zz][Tt][Cc][Oo][Dd][Ee]|[Zz][Tt][Dd][Aa][Tt][Aa]|[Ee][Tt][Rr][Aa][Pp]|[Ee][Cc][Oo][Dd][Ee]|[Ss][Tt][Aa][Cc][Kk]|[Zz][Ss][Tt][Ee][Pp]|[Zz][Tt][Rr][Aa][Pp]|[Qq][Uu][Ii][Tt]|[Tt][Ee][Ss][Tt]|[Zz][Pp][Oo][Ss]|[Zz][Kk][Ee][Yy]|[Zz][Ee][Oo][Ff]|[Zz][Jj][Oo][Bb]|[Zz][Pp][Oo][Uu][Tt]|[Zz][Pp][Aa][Tt][Nn]|[Zz][Pp][Ii][Nn]|[Zz][Ii][Nn][Tt]|[Kk][Ee][Yy]|[Jj][Oo][Bb]|[Pp][Ii][Oo][Rr]|[Zz][Tt][Ll]|[Ii][Oo][Rr]|[Ii][Oo]|[Ee][Cc]|[Ee][Ss]|[Ee][Tt]|[Ss][Tt]|[Ss][Yy]|[Tt][Ll]|[Tt][Rr]|[Zz][Ll]|[Zz][Tt]|[Zz][Ee]|[Zz][Pp]|[DdHhIiJjKkPpQqRrSsTtXxYy])(?![A-Za-z0-9])/
 ;
 
-// Quoted string (handles "" escaping)
+// Quoted string (handles "" or '' escaping for double and single quotes)
+// MUMPS supports both double-quoted "text" and single-quoted 'text' strings
+// Inside a string, the quote character is escaped by doubling: "" or ''
 STRING_VALUE:
-    /"([^"]|"")*"/
+    /"([^"]|"")*"|'([^']|'')*'/
 ;
 
 // Number (integer or decimal, allowing leading decimal like .5)

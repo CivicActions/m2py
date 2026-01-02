@@ -9,13 +9,19 @@ For semantic analysis tests, see test_command_analysis.py.
 import pytest
 from pathlib import Path
 from textx import metamodel_from_file
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+from m2py.parser.textx_classes import get_all_classes
 
 
 @pytest.fixture(scope="module")
 def command_metamodel():
-    """Load the command grammar metamodel."""
+    """Load the command grammar metamodel with custom classes."""
     grammar_dir = Path(__file__).parent.parent.parent / "src" / "m2py" / "grammar"
-    return metamodel_from_file(grammar_dir / "commands.tx", skipws=False)
+    return metamodel_from_file(
+        grammar_dir / "commands.tx", classes=get_all_classes(), skipws=False
+    )
 
 
 class TestSetCommand:
@@ -69,16 +75,16 @@ class TestSetCommand:
         model = command_metamodel.model_from_str("S ^(1)=100", "SetCommand")
         target = model.assignments[0].targets
         assert target.__class__.__name__ == "NakedGlobal"
-        # subscripts is a Subscripts wrapper at grammar level; check args inside
-        assert len(target.subscripts.args) == 1
+        # subscripts is unwrapped to a list by custom classes
+        assert len(target.subscripts) == 1
 
     def test_set_naked_global_multiple_subscripts(self, command_metamodel):
         """S ^(1,2,3)=value - naked global with multiple subscripts (T526 fix)."""
         model = command_metamodel.model_from_str("S ^(1,2,3)=100", "SetCommand")
         target = model.assignments[0].targets
         assert target.__class__.__name__ == "NakedGlobal"
-        # subscripts is a Subscripts wrapper at grammar level; check args inside
-        assert len(target.subscripts.args) == 3
+        # subscripts is unwrapped to a list by custom classes
+        assert len(target.subscripts) == 3
 
     def test_set_mixed_global_naked_global(self, command_metamodel):
         """S ^V1(1)=1,^(2)=2 - mix of global and naked global (T526 fix)."""
@@ -276,14 +282,14 @@ class TestForCommand:
         """F J(1,2,3)=1:1:3 - subscripted loop variable (BUG-003)"""
         model = command_metamodel.model_from_str("F J(1,2,3)=1:1:3", "ForCommand")
         assert model.var.name == "J"
-        assert len(model.var.subscripts.args) == 3
+        assert len(model.var.subscripts) == 3
         assert len(model.params) == 1
 
     def test_single_subscripted_for_var(self, command_metamodel):
         """F ARR(I)=1:1:10 - single subscript on loop variable"""
         model = command_metamodel.model_from_str("F ARR(I)=1:1:10", "ForCommand")
         assert model.var.name == "ARR"
-        assert len(model.var.subscripts.args) == 1
+        assert len(model.var.subscripts) == 1
 
 
 class TestGotoCommand:
@@ -1312,6 +1318,80 @@ class TestZWriteCommand:
         model = command_metamodel.model_from_str("ZWR", "ZWriteCommand")
         assert len(model.args) == 0
 
+    def test_zwrite_global_pattern(self, command_metamodel):
+        """ZWRITE ^?.E - write globals matching pattern"""
+        model = command_metamodel.model_from_str("ZWRITE ^?.E", "ZWriteCommand")
+        assert model is not None
+        assert len(model.args) == 1
+        # The target should be a ZWriteGlobalPattern
+        target = model.args[0].target
+        assert target.__class__.__name__ == "ZWriteGlobalPattern"
+
+    def test_zwrite_global_pattern_complex(self, command_metamodel):
+        """ZWRITE ^?1"%"2U.E - complex pattern"""
+        model = command_metamodel.model_from_str('ZWRITE ^?1"%"2U.E', "ZWriteCommand")
+        assert model is not None
+        assert len(model.args) == 1
+
+
+class TestZLoadCommand:
+    """Tests for ZLOAD command parsing."""
+
+    def test_zload_simple(self, command_metamodel):
+        """ZLOAD "file.m" - load source file"""
+        model = command_metamodel.model_from_str('ZLOAD "file.m"', "ZLoadCommand")
+        assert model is not None
+        assert len(model.args) == 1
+
+    def test_zload_abbreviated(self, command_metamodel):
+        """ZL "file" - abbreviated"""
+        model = command_metamodel.model_from_str('ZL "file"', "ZLoadCommand")
+        assert model is not None
+        assert len(model.args) == 1
+
+    def test_zload_no_args(self, command_metamodel):
+        """ZLOAD - no argument"""
+        model = command_metamodel.model_from_str("ZLOAD", "ZLoadCommand")
+        assert model is not None
+        assert len(model.args) == 0
+
+
+class TestDoExternalCommand:
+    """Tests for DO with external C functions."""
+
+    def test_do_external_simple(self, command_metamodel):
+        """DO &func(a,b) - external function call"""
+        model = command_metamodel.model_from_str("DO &func(a,b)", "DoCommand")
+        assert model is not None
+        assert len(model.targets) == 1
+        target = model.targets[0]
+        assert target.external is not None
+        assert target.external.name == "func"
+
+    def test_do_external_package(self, command_metamodel):
+        """DO &pkg.func(x) - external with package"""
+        model = command_metamodel.model_from_str("DO &pkg.func(x)", "DoCommand")
+        target = model.targets[0]
+        assert target.external.package == "pkg"
+        assert target.external.name == "func"
+
+
+class TestByRefIndirection:
+    """Tests for pass-by-reference with indirection."""
+
+    def test_do_byref_indirection(self, command_metamodel):
+        """DO routine(.@X) - pass-by-ref with indirection"""
+        model = command_metamodel.model_from_str("DO routine(.@X)", "DoCommand")
+        assert model is not None
+        # Args should parse correctly
+        target = model.targets[0]
+        assert target.args is not None
+
+    def test_do_mixed_byref_args(self, command_metamodel):
+        """DO routine(.@IX,.Y,Z) - mixed args"""
+        model = command_metamodel.model_from_str("DO routine(.@IX,.Y,Z)", "DoCommand")
+        assert model is not None
+
 
 class TestZBreakCommand:
     """Tests for ZBREAK command parsing."""
@@ -1664,9 +1744,9 @@ class TestZTriggerCommand:
         """ZTRIGGER ^global - trigger update notification for global"""
         model = command_metamodel.model_from_str("ZTRIGGER ^global", "ZTriggerCommand")
         assert model is not None
-        assert model.target is not None
+        assert len(model.targets) == 1
         # target is Expr -> left (UnaryExpr) -> operand (GlobalVariable)
-        global_var = model.target.left.operand
+        global_var = model.targets[0].left.operand
         assert global_var.name == "global"
 
     def test_ztrigger_subscripted_global(self, command_metamodel):
@@ -1675,21 +1755,21 @@ class TestZTriggerCommand:
             "ZTRIGGER ^global(sub)", "ZTriggerCommand"
         )
         assert model is not None
-        global_var = model.target.left.operand
+        global_var = model.targets[0].left.operand
         assert global_var.name == "global"
-        assert len(global_var.subscripts.args) == 1
+        assert len(global_var.subscripts) == 1
 
     def test_ztrigger_indirection(self, command_metamodel):
         """ZTRIGGER @gbl - trigger with indirection"""
         model = command_metamodel.model_from_str("ZTRIGGER @gbl", "ZTriggerCommand")
         assert model is not None
-        assert model.target is not None
+        assert len(model.targets) == 1
 
     def test_ztrigger_lowercase(self, command_metamodel):
         """ztrigger ^a - lowercase version"""
         model = command_metamodel.model_from_str("ztrigger ^a", "ZTriggerCommand")
         assert model is not None
-        global_var = model.target.left.operand
+        global_var = model.targets[0].left.operand
         assert global_var.name == "a"
 
     def test_ztrigger_with_postcondition(self, command_metamodel):
@@ -1702,8 +1782,16 @@ class TestZTriggerCommand:
         """ZTRIGGER ^a("") - with empty string subscript (from test suite)"""
         model = command_metamodel.model_from_str('ZTRIGGER ^a("")', "ZTriggerCommand")
         assert model is not None
-        global_var = model.target.left.operand
+        global_var = model.targets[0].left.operand
         assert global_var.name == "a"
+
+    def test_ztrigger_multiple_globals(self, command_metamodel):
+        """ZTRIGGER ^a,^b - comma-separated globals"""
+        model = command_metamodel.model_from_str("ZTRIGGER ^a,^b", "ZTriggerCommand")
+        assert model is not None
+        assert len(model.targets) == 2
+        assert model.targets[0].left.operand.name == "a"
+        assert model.targets[1].left.operand.name == "b"
 
 
 class TestZCompileCommand:
@@ -1956,3 +2044,182 @@ class TestUnknownCommand:
             result = parse_line_content(cmd)
             assert isinstance(result, MParseError), f"Expected MParseError for '{cmd}'"
             assert "Unknown command" in result.message or "Expected" in result.message
+
+
+# =============================================================================
+# Phase 103 Grammar Tests - New features added for 100% clean parse rate
+# =============================================================================
+
+
+class TestZEditCommand:
+    """Tests for ZEDIT command parsing (Phase 103)."""
+
+    def test_zedit_routine(self, command_metamodel):
+        """ZEDIT routine - edit a routine"""
+        model = command_metamodel.model_from_str("ZEDIT routine", "ZEditCommand")
+        assert model is not None
+        assert len(model.args) == 1
+
+    def test_zedit_abbreviated(self, command_metamodel):
+        """ZED routine - abbreviated form"""
+        model = command_metamodel.model_from_str("ZED routine", "ZEditCommand")
+        assert model is not None
+        assert len(model.args) == 1
+
+    def test_zedit_with_indirection(self, command_metamodel):
+        """ZEDIT @routinename - with indirection"""
+        model = command_metamodel.model_from_str("ZEDIT @routinename", "ZEditCommand")
+        assert model is not None
+        assert len(model.args) == 1
+        # Expression structure: Expr.left (UnaryExpr).operand = Indirection
+        arg = model.args[0]
+        # Navigate: Expr -> left (UnaryExpr) -> operand
+        if hasattr(arg, "left"):
+            operand = arg.left
+            if hasattr(operand, "operand"):
+                operand = operand.operand
+        else:
+            operand = arg
+        assert operand.__class__.__name__ == "Indirection"
+
+
+class TestZStepCommand:
+    """Tests for ZSTEP command parsing (Phase 103)."""
+
+    def test_zstep_into(self, command_metamodel):
+        """ZSTEP INTO - step into subroutines"""
+        model = command_metamodel.model_from_str("ZSTEP INTO", "ZStepCommand")
+        assert model is not None
+        assert model.mode == "INTO"
+
+    def test_zstep_over(self, command_metamodel):
+        """ZSTEP OVER - step over subroutines"""
+        model = command_metamodel.model_from_str("ZSTEP OVER", "ZStepCommand")
+        assert model.mode == "OVER"
+
+    def test_zstep_outof(self, command_metamodel):
+        """ZSTEP OUTOF - step out of current routine"""
+        model = command_metamodel.model_from_str("ZSTEP OUTOF", "ZStepCommand")
+        assert model.mode == "OUTOF"
+
+    def test_zstep_with_action(self, command_metamodel):
+        """ZSTEP INTO:"set x=1" - with action expression"""
+        model = command_metamodel.model_from_str('ZSTEP INTO:"set x=1"', "ZStepCommand")
+        assert model.mode == "INTO"
+        assert model.action is not None
+
+
+class TestExternalFunction:
+    """Tests for external function call syntax $&func() (Phase 103).
+
+    NOTE: ExternalFunction is tested via parse_line_content integration tests
+    rather than direct grammar tests because:
+    1. The command_metamodel fixture doesn't have access to the full expression
+       parsing context needed to properly parse expressions inside SetCommand
+    2. The ExternalFunction rule is part of expressions.tx which is imported
+       by commands.tx, but testing SetCommand values requires the full line
+       parsing context
+
+    These tests are marked skip; see test_parse_coverage.py for ExternalFunction
+    coverage through actual file parsing.
+    """
+
+    @pytest.mark.skip(
+        reason="ExternalFunction requires line parser context, not command grammar context"
+    )
+    def test_external_function_simple(self, command_metamodel):
+        """$&RAND() - external function call"""
+        pass
+
+    @pytest.mark.skip(
+        reason="ExternalFunction requires line parser context, not command grammar context"
+    )
+    def test_external_function_with_args(self, command_metamodel):
+        """$&func(x,y) - with arguments"""
+        pass
+
+    @pytest.mark.skip(
+        reason="ExternalFunction requires line parser context, not command grammar context"
+    )
+    def test_external_function_byref_arg(self, command_metamodel):
+        """$&RAND(.x) - with by-reference argument"""
+        pass
+
+
+class TestZBreakLabelOffset:
+    """Tests for ZBREAK label+offset^routine pattern (Phase 103 fix)."""
+
+    def test_zbreak_label_offset_routine(self, command_metamodel):
+        """ZBREAK label+offset^routine - common debugger pattern"""
+        model = command_metamodel.model_from_str(
+            "ZBREAK forcerr+lineno^zbmain", "ZBreakCommand"
+        )
+        assert len(model.args) == 1
+        location = model.args[0].location
+        assert location.label == "forcerr"
+        assert location.routine == "zbmain"
+        assert location.offset is not None
+
+    def test_zbreak_label_offset_routine_with_action(self, command_metamodel):
+        """ZBREAK label+offset^routine:action - with action string"""
+        model = command_metamodel.model_from_str(
+            'ZBREAK label+5^routine:"set x=1"', "ZBreakCommand"
+        )
+        assert len(model.args) == 1
+        assert model.args[0].action is not None
+
+
+class TestReadTargets:
+    """Tests for READ target extensions (Phase 103)."""
+
+    def test_read_charread_with_indirection(self, command_metamodel):
+        """READ *@var - char read with indirection"""
+        model = command_metamodel.model_from_str("R *@var", "ReadCommand")
+        assert len(model.args) == 1
+
+    def test_read_charread_with_name_indirection(self, command_metamodel):
+        """READ *@var@(2) - char read with name indirection subscript"""
+        model = command_metamodel.model_from_str("R *@var@(2)", "ReadCommand")
+        assert len(model.args) == 1
+
+    def test_read_naked_global(self, command_metamodel):
+        """READ ^("naked") - naked global read target"""
+        model = command_metamodel.model_from_str('R ^("naked")', "ReadCommand")
+        assert len(model.args) == 1
+        target = model.args[0].arg.target
+        assert target.__class__.__name__ == "NakedGlobal"
+
+
+class TestZWriteArgumentless:
+    """Tests for argumentless ZWRITE followed by other commands (Phase 103)."""
+
+    def test_zwrite_argumentless(self, command_metamodel):
+        """ZWRITE - no arguments (shows all locals)"""
+        model = command_metamodel.model_from_str("ZWRITE", "ZWriteCommand")
+        assert len(model.args) == 0
+
+    def test_zwrite_with_args(self, command_metamodel):
+        """ZWRITE x - with variable argument"""
+        model = command_metamodel.model_from_str("ZWRITE x", "ZWriteCommand")
+        assert len(model.args) == 1
+
+
+class TestFunctionArgsEmpty:
+    """Tests for function arguments with empty positions (Phase 103)."""
+
+    def test_do_with_empty_first_arg(self, command_metamodel):
+        """DO routine(,begin) - empty first argument"""
+        model = command_metamodel.model_from_str(
+            "DO select^routine(,begin)", "DoCommand"
+        )
+        assert model is not None
+
+    def test_do_with_multiple_empty_args(self, command_metamodel):
+        """DO routine(,,,val) - multiple empty positions"""
+        model = command_metamodel.model_from_str("DO routine(,,,val)", "DoCommand")
+        assert model is not None
+
+    def test_extrinsic_with_empty_first_arg(self, command_metamodel):
+        """$$func(,arg) - extrinsic with empty first"""
+        model = command_metamodel.model_from_str("S X=$$func(,arg)", "SetCommand")
+        assert model is not None

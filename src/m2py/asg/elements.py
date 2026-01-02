@@ -220,6 +220,7 @@ class MLabel(ASGElement):
     _line_rest: Optional[str] = field(default=None, repr=False)
     _parsed_content: Optional[Any] = field(default=None, repr=False)
     _parsed_commands: Optional[List[Any]] = field(default=None, repr=False)
+    _dot_level: Optional[int] = field(default=None, repr=False)
 
     @property
     def has_explicit_exit(self) -> bool:

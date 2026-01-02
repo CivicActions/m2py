@@ -705,24 +705,39 @@ class MUMPSParser:
 
         # Parse line content using textX command grammar.
         # Parsed commands are stored for later ASG building.
+        # Handle dotted block continuation (`. S X=1`) - strip leading dots
         if label._line_rest:
-            parsed_content = parse_line_content(label._line_rest, line_number)
-            if isinstance(parsed_content, MParseError):
-                routine.parse_errors.append(parsed_content)
+            line_content = label._line_rest.strip()
+            dot_level = 0
+            while line_content.startswith("."):
+                dot_level += 1
+                line_content = line_content[1:].lstrip()
+
+            # Store dot level for later DO block structuring
+            label._dot_level = dot_level if dot_level > 0 else None
+
+            if line_content:
+                parsed_content = parse_line_content(line_content, line_number)
+                if isinstance(parsed_content, MParseError):
+                    routine.parse_errors.append(parsed_content)
+                    label._parsed_content = None
+                    label._parsed_commands = []
+                else:
+                    label._parsed_content = parsed_content
+                    # Get commands from parsed content
+                    if parsed_content and hasattr(parsed_content, "commands"):
+                        label._parsed_commands = [
+                            lc.cmd for lc in parsed_content.commands if lc.cmd
+                        ]
+                    else:
+                        label._parsed_commands = []
+            else:
                 label._parsed_content = None
                 label._parsed_commands = []
-            else:
-                label._parsed_content = parsed_content
-                # Get commands from parsed content
-                if parsed_content and hasattr(parsed_content, "commands"):
-                    label._parsed_commands = [
-                        lc.cmd for lc in parsed_content.commands if lc.cmd
-                    ]
-                else:
-                    label._parsed_commands = []
         else:
             label._parsed_content = None
             label._parsed_commands = []
+            label._dot_level = None
 
         # Build the body scope
         label.body = MScope()
@@ -739,6 +754,9 @@ class MUMPSParser:
             structured_statements = _structure_commands_with_bodies(flat_statements)
             for stmt in structured_statements:
                 stmt.scope = label.body
+                # Mark with dot level if this is a dot-indented labeled line
+                if label._dot_level is not None:
+                    stmt._dot_level = label._dot_level
                 label.body.statements.append(stmt)
 
         return label
