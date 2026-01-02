@@ -10,12 +10,20 @@ import pytest
 class TestElseCommandParsing:
     """Parser-level tests for ELSE command (§8.2.4)."""
 
-    def test_simple_else(self, command_metamodel):
-        """E - abbreviated ELSE command (§8.2.4)."""
-        model = command_metamodel.model_from_str("E", "ElseCommand")
-        assert model is not None
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: ELSE basic form")
+    def test_else_basic(self, parse_line):
+        """ELSE command parses correctly (§8.2.4)."""
+        pytest.fail("Stub - implement test")
 
-    def test_else_full_keyword(self, command_metamodel):
-        """ELSE - full keyword form (§8.2.4)."""
-        model = command_metamodel.model_from_str("ELSE", "ElseCommand")
-        assert model is not None
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: ELSE abbreviated")
+    def test_else_abbreviated(self, parse_line):
+        """E abbreviation parses correctly (§8.2.4)."""
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: ELSE with commands")
+    def test_else_with_commands(self, parse_line):
+        """ELSE followed by commands parses correctly (§8.2.4)."""
+        pytest.fail("Stub - implement test")

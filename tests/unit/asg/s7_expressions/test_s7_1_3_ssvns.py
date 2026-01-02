@@ -58,12 +58,12 @@ class TestSsvnsAnalysis:
         """^$DISPLAY SSVN is correctly analyzed (§7.1.3)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.skip(reason="Out of scope: ^$LIBRARY SSVN (0 uses in VistA)")
+    @pytest.mark.skip(reason="Out of scope: ^$LIBRARY SSVN per FR-055")
     def test_ssvn_library(self):
         """^$LIBRARY SSVN is out of scope (§7.1.3)."""
         pass
 
-    @pytest.mark.xfail(reason="Used in VistA: ^$EVENT SSVN (7 uses)")
+    @pytest.mark.skip(reason="Out of scope: ^$EVENT SSVN per FR-055")
     def test_ssvn_event(self):
-        """^$EVENT SSVN is used in VistA (§7.1.3)."""
-        pytest.fail("Stub - implement test")
+        """^$EVENT SSVN is out of scope (§7.1.3)."""
+        pass

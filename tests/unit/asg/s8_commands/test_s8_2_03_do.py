@@ -1,116 +1,25 @@
 """Tests for DO command ASG analysis (§8.2.3).
 
 Reference: MUMPS 1995 ANSI Standard, Section 8.2.3
-
-Migrated from:
-- tests/unit/test_semantic_analyzer.py::TestMActualParameterAnalysis
-- tests/unit/test_command_analysis.py::TestDoStatementAnalysis
-- tests/unit/test_external_calls.py
 """
 
 import pytest
-from m2py import MUMPSParser
-from m2py.parser.line_parser import parse_commands_from_line
-from m2py.analysis.semantic_analyzer import analyze_command
-from m2py.asg.expressions import MActualParameter, MVariable, MExtrinsicFunction
-from m2py.asg.statements import MDoStatement, MGotoStatement
-from m2py.asg.enums import PassingMode
-
-
-def analyze_first_command(line: str):
-    """Helper to parse a line and analyze the first command."""
-    cmds = parse_commands_from_line(line)
-    assert len(cmds) >= 1, f"No commands parsed from: {line}"
-    return analyze_command(cmds[0])
 
 
 @pytest.mark.asg
 class TestDoCommandAnalysis:
-    """ASG-level tests for DO command analysis (§8.2.3).
-
-    Migrated from:
-    - TestMActualParameterAnalysis (partial)
-    - tests/unit/test_command_analysis.py::TestDoStatementAnalysis
-    """
-
-    def test_simple_do(self):
-        """D LABEL produces MDoStatement (§8.2.3).
-
-        Migrated from: test_command_analysis.py::TestDoStatementAnalysis::test_simple_do
-        """
-        stmt = analyze_first_command("D LABEL")
-
-        assert isinstance(stmt, MDoStatement)
-        assert len(stmt.targets) == 1
-        assert stmt.targets[0].name == "LABEL"
-
-    def test_do_with_args(self):
-        """D FUNC(1,2) produces target with arguments (§8.2.3).
-
-        Migrated from: test_command_analysis.py::TestDoStatementAnalysis::test_do_with_args
-        """
-        stmt = analyze_first_command("D FUNC(1,2)")
-
-        assert isinstance(stmt, MDoStatement)
-        target = stmt.targets[0]
-        assert target.name == "FUNC"
-        assert len(target.arguments) == 2
-
-    def test_extrinsic_function_args_have_correct_parents(self):
-        """Extrinsic function arguments should have proper parent chain (§8.2.3).
-
-        Test T93.2: MActualParameter parent references are correctly set.
-        """
-        source = """TEST
- S X=$$FUNC^ROUT(A,B)
-"""
-        parser = MUMPSParser()
-        routine = parser.parse(source)
-
-        # Find the SET statement with extrinsic function
-        stmt = routine.labels[0].body.statements[0]
-        func = stmt.assignments[0].value
-
-        assert isinstance(func, MExtrinsicFunction)
-        assert len(func.arguments) == 2
-
-        for i, arg in enumerate(func.arguments):
-            assert isinstance(arg, MActualParameter)
-            # Parent of MActualParameter should be the function
-            assert arg.parent is func, f"Arg {i} parent should be the function"
-            # Expression should be analyzed and have arg as parent
-            assert isinstance(arg.expression, MVariable)
-            assert arg.expression.parent is arg, (
-                f"Arg {i} expression parent should be the arg"
-            )
-
-    def test_extrinsic_function_byref_args_have_correct_parents(self):
-        """By-reference arguments should also have proper parent chain (§8.2.3)."""
-        source = """TEST
- S X=$$FUNC(.Y)
-"""
-        parser = MUMPSParser()
-        routine = parser.parse(source)
-
-        stmt = routine.labels[0].body.statements[0]
-        func = stmt.assignments[0].value
-
-        assert isinstance(func, MExtrinsicFunction)
-        assert len(func.arguments) == 1
-
-        arg = func.arguments[0]
-        assert isinstance(arg, MActualParameter)
-        assert arg.passing_mode == PassingMode.BY_REFERENCE
-        assert arg.parent is func
-        assert isinstance(arg.expression, MVariable)
-        assert arg.expression.parent is arg
-
-    # ---- Stub tests for unimplemented features ----
+    """ASG-level tests for DO command analysis (§8.2.3)."""
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: DO target resolution")
     def test_do_target_resolution(self, analyze_routine):
         """DO command target is resolved to MLabel (§8.2.3)."""
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: DO with arguments")
+    def test_do_with_arguments(self, analyze_routine):
+        """DO command arguments are correctly analyzed (§8.2.3)."""
         pytest.fail("Stub - implement test")
 
     @pytest.mark.stub
@@ -130,96 +39,3 @@ class TestDoCommandAnalysis:
     def test_external_routine_reference(self, analyze_routine):
         """External routine references are tracked (§8.2.3)."""
         pytest.fail("Stub - implement test")
-
-
-@pytest.mark.asg
-class TestExternalRoutineCalls:
-    """Test external routine call representation (§8.2.3).
-
-    Migrated from: tests/unit/test_external_calls.py
-
-    Tests that external routine calls (^ROUTINE syntax) are correctly represented
-    with name='' (not None) for routine-only references.
-    """
-
-    def test_do_external_routine_has_empty_name(self):
-        """D ^ROUTINE sets name='' not name=None (§8.2.3).
-
-        Migrated from: test_external_calls.py::TestExternalRoutineCalls::test_do_external_routine_has_empty_name
-        """
-        parser = MUMPSParser()
-        source = """TEST	;TEST
-	D ^VREPORT
-	Q
-"""
-        routine = parser.parse(source, "test.m")
-
-        # Find the DO statement
-        do_stmt = routine.labels[0].body.statements[0]
-        assert isinstance(do_stmt, MDoStatement)
-
-        # Check the target
-        assert len(do_stmt.targets) == 1
-        target = do_stmt.targets[0]
-        assert target.name == "", f"Expected name='', got name={repr(target.name)}"
-        assert target.name is not None, "name should be '' not None"
-        assert target.routine == "VREPORT"
-
-    def test_goto_external_routine_has_empty_name(self):
-        """G ^ROUTINE sets name='' not name=None (§8.2.3).
-
-        Migrated from: test_external_calls.py::TestExternalRoutineCalls::test_goto_external_routine_has_empty_name
-        """
-        parser = MUMPSParser()
-        source = """TEST	;TEST
-	G ^VREPORT
-	Q
-"""
-        routine = parser.parse(source, "test.m")
-
-        # Find the GOTO statement
-        goto_stmt = routine.labels[0].body.statements[0]
-        assert isinstance(goto_stmt, MGotoStatement)
-
-        # Check the target
-        assert len(goto_stmt.targets) == 1
-        target = goto_stmt.targets[0]
-        assert target.name == "", f"Expected name='', got name={repr(target.name)}"
-        assert target.name is not None, "name should be '' not None"
-        assert target.routine == "VREPORT"
-
-    def test_do_label_with_routine_has_label_name(self):
-        """D LABEL^ROUTINE sets name='LABEL' (§8.2.3).
-
-        Migrated from: test_external_calls.py::TestExternalRoutineCalls::test_do_label_with_routine_has_label_name
-        """
-        parser = MUMPSParser()
-        source = """TEST	;TEST
-	D START^VREPORT
-	Q
-"""
-        routine = parser.parse(source, "test.m")
-
-        do_stmt = routine.labels[0].body.statements[0]
-        target = do_stmt.targets[0]
-        assert target.name == "START"
-        assert target.routine == "VREPORT"
-
-    def test_do_local_label_has_name_no_routine(self):
-        """D LABEL sets name='LABEL', routine=None (§8.2.3).
-
-        Migrated from: test_external_calls.py::TestExternalRoutineCalls::test_do_local_label_has_name_no_routine
-        """
-        parser = MUMPSParser()
-        source = """TEST	;TEST
-	D HELPER
-	Q
-HELPER	W "Test"
-	Q
-"""
-        routine = parser.parse(source, "test.m")
-
-        do_stmt = routine.labels[0].body.statements[0]
-        target = do_stmt.targets[0]
-        assert target.name == "HELPER"
-        assert target.routine is None

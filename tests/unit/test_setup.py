@@ -1,7 +1,5 @@
 """Unit tests for M2PY package setup and fixtures.
 
-Migrated from: tests/unit/test_setup.py
-
 Verifies that the package structure and MUGJ fixtures are properly configured.
 """
 

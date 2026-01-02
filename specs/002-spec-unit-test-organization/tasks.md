@@ -410,204 +410,204 @@
 
 ### Pre-Migration Setup
 
-- [X] T165 [US6] Capture pre-migration test baseline: `uv run pytest tests/unit/ --collect-only -q | tail -1` → record count in research.md
-- [X] T165a [US6] Verify test naming convention exists at specs/002-spec-unit-test-organization/contracts/test-naming.md (created in T013a)
-- [X] T165b [US6] Enumerate ALL test files: `find tests/unit -name 'test_*.py' -type f | sort` and verify each file has a corresponding migration task in Phase 8. Document any unmapped files in research.md "### Migration File Inventory" section
+- [ ] T165 [US6] Capture pre-migration test baseline: `uv run pytest tests/unit/ --collect-only -q | tail -1` → record count in research.md
+- [ ] T165a [US6] Verify test naming convention exists at specs/002-spec-unit-test-organization/contracts/test-naming.md (created in T013a)
+- [ ] T165b [US6] Enumerate ALL test files: `find tests/unit -name 'test_*.py' -type f | sort` and verify each file has a corresponding migration task in Phase 8. Document any unmapped files in research.md "### Migration File Inventory" section
 
 ### Migration Tasks - Parser Tests (to parser/)
 
 #### From test_command_grammar.py (parser-level grammar tests)
 
-- [X] T166 [US6] Migrate test_command_grammar.py TestSetCommand → parser/s8_commands/test_s8_2_18_set.py, merge into stubs, add @pytest.mark.parser
-- [X] T166a [US6] Migrate test_command_grammar.py TestWriteCommand → parser/s8_commands/test_s8_2_27_write.py
-- [X] T166b [US6] Migrate test_command_grammar.py TestReadCommand, TestReadTargets → parser/s8_commands/test_s8_2_17_read.py
-- [X] T166c [US6] Migrate test_command_grammar.py TestIfElseCommands → parser/s8_commands/test_s8_2_09_if.py and test_s8_2_04_else.py
-- [X] T166d [US6] Migrate test_command_grammar.py TestForCommand → parser/s8_commands/test_s8_2_05_for.py
-- [X] T166e [US6] Migrate test_command_grammar.py TestGotoCommand → parser/s8_commands/test_s8_2_06_goto.py
-- [X] T166f [US6] Migrate test_command_grammar.py TestDoCommand, TestDoExternalCommand → parser/s8_commands/test_s8_2_03_do.py
-- [X] T166g [US6] Migrate test_command_grammar.py TestQuitCommand, TestQuitFollowedBySet, TestQuitFollowedByTransaction → parser/s8_commands/test_s8_2_16_quit.py
-- [X] T166h [US6] Migrate test_command_grammar.py TestNewKillCommands → parser/s8_commands/test_s8_2_14_new.py and test_s8_2_11_kill.py
-- [X] T166i1 [US6] Migrate test_command_grammar.py TestOtherCommands (test_hang*, test_halt, test_break, test_xecute) → parser/s8_commands/test_s8_2_07_halt.py, test_s8_2_08_hang.py, test_s8_2_01_break.py, test_s8_2_28_xecute.py
-- [X] T166i2 [US6] Migrate test_command_grammar.py TestOtherCommands (test_lock*, test_merge*) → parser/s8_commands/test_s8_2_12_lock.py, test_s8_2_13_merge.py
-- [X] T166j [US6] Migrate test_command_grammar.py TestPostconditions, TestArgumentPostconditions → parser/s8_commands/test_s8_1_general_rules.py
-- [X] T166k [US6] Migrate test_command_grammar.py TestIndirection, TestByRefIndirection → parser/s7_expressions/test_s7_3_indirection.py
-- [X] T166l1 [US6] Migrate test_command_grammar.py TestZShowCommand → parser/extensions/ydb/test_zshow.py
-- [X] T166l2 [US6] Migrate test_command_grammar.py TestZWriteCommand, TestZWriteArgumentless → parser/extensions/ydb/test_zwrite.py
-- [X] T166l3 [US6] Migrate test_command_grammar.py TestZBreakCommand, TestZBreakLabelOffset → parser/extensions/ydb/test_zbreak.py
-- [X] T166l4 [US6] Migrate test_command_grammar.py TestZGotoCommand → parser/extensions/ydb/test_zgoto.py
-- [X] T166l5 [US6] Migrate test_command_grammar.py TestZLoadCommand, TestZLinkCommand → parser/extensions/ydb/test_zlink.py
-- [X] T166l6 [US6] Migrate test_command_grammar.py TestZKillCommand, TestZWithdrawCommand → parser/extensions/ydb/test_zkill.py (new)
-- [X] T166l7 [US6] Migrate test_command_grammar.py TestZHaltCommand → parser/extensions/ydb/test_zhalt.py (new)
-- [X] T166l8 [US6] Migrate test_command_grammar.py TestZAllocateCommand, TestZDeallocateCommand → parser/extensions/ydb/test_zallocate.py (new)
-- [X] T166l9 [US6] Migrate test_command_grammar.py TestZPrintCommand → parser/extensions/ydb/test_zprint.py
-- [X] T166l10 [US6] Migrate test_command_grammar.py TestZSystemCommand → parser/extensions/ydb/test_zsystem.py
-- [X] T166l11 [US6] Migrate test_command_grammar.py TestZMessageCommand → parser/extensions/ydb/test_zmessage.py
-- [X] T166l12 [US6] Migrate test_command_grammar.py TestZTriggerCommand → parser/extensions/ydb/test_ztrigger.py (new)
-- [X] T166l13 [US6] Migrate test_command_grammar.py TestZCompileCommand → parser/extensions/ydb/test_zcompile.py
-- [X] T166l14 [US6] Migrate test_command_grammar.py TestZContinueCommand → parser/extensions/ydb/test_zcontinue.py
-- [X] T166l15 [US6] Migrate test_command_grammar.py TestZEditCommand → parser/extensions/ydb/test_zedit.py (new)
-- [X] T166l16 [US6] Migrate test_command_grammar.py TestZStepCommand → parser/extensions/ydb/test_zstep.py
-- [X] T166m [US6] Migrate test_command_grammar.py TestTextFunctionGrammar → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py ($TEXT)
-- [X] T166n [US6] Migrate test_command_grammar.py TestExternalFunction → parser/s7_expressions/test_s7_1_6_extrinsic_functions.py
-- [X] T166o [US6] Migrate test_command_grammar.py TestPartOEdgeCases, TestUnknownCommand, TestFunctionArgsEmpty → tests/unit/meta/test_parser_edge_cases.py (new)
+- [ ] T166 [US6] Migrate test_command_grammar.py TestSetCommand → parser/s8_commands/test_s8_2_18_set.py, merge into stubs, add @pytest.mark.parser
+- [ ] T166a [US6] Migrate test_command_grammar.py TestWriteCommand → parser/s8_commands/test_s8_2_27_write.py
+- [ ] T166b [US6] Migrate test_command_grammar.py TestReadCommand, TestReadTargets → parser/s8_commands/test_s8_2_17_read.py
+- [ ] T166c [US6] Migrate test_command_grammar.py TestIfElseCommands → parser/s8_commands/test_s8_2_09_if.py and test_s8_2_04_else.py
+- [ ] T166d [US6] Migrate test_command_grammar.py TestForCommand → parser/s8_commands/test_s8_2_05_for.py
+- [ ] T166e [US6] Migrate test_command_grammar.py TestGotoCommand → parser/s8_commands/test_s8_2_06_goto.py
+- [ ] T166f [US6] Migrate test_command_grammar.py TestDoCommand, TestDoExternalCommand → parser/s8_commands/test_s8_2_03_do.py
+- [ ] T166g [US6] Migrate test_command_grammar.py TestQuitCommand, TestQuitFollowedBySet, TestQuitFollowedByTransaction → parser/s8_commands/test_s8_2_16_quit.py
+- [ ] T166h [US6] Migrate test_command_grammar.py TestNewKillCommands → parser/s8_commands/test_s8_2_14_new.py and test_s8_2_11_kill.py
+- [ ] T166i1 [US6] Migrate test_command_grammar.py TestOtherCommands (test_hang*, test_halt, test_break, test_xecute) → parser/s8_commands/test_s8_2_07_halt.py, test_s8_2_08_hang.py, test_s8_2_01_break.py, test_s8_2_28_xecute.py
+- [ ] T166i2 [US6] Migrate test_command_grammar.py TestOtherCommands (test_lock*, test_merge*) → parser/s8_commands/test_s8_2_12_lock.py, test_s8_2_13_merge.py
+- [ ] T166j [US6] Migrate test_command_grammar.py TestPostconditions, TestArgumentPostconditions → parser/s8_commands/test_s8_1_general_rules.py
+- [ ] T166k [US6] Migrate test_command_grammar.py TestIndirection, TestByRefIndirection → parser/s7_expressions/test_s7_3_indirection.py
+- [ ] T166l1 [US6] Migrate test_command_grammar.py TestZShowCommand → parser/extensions/ydb/test_zshow.py
+- [ ] T166l2 [US6] Migrate test_command_grammar.py TestZWriteCommand, TestZWriteArgumentless → parser/extensions/ydb/test_zwrite.py
+- [ ] T166l3 [US6] Migrate test_command_grammar.py TestZBreakCommand, TestZBreakLabelOffset → parser/extensions/ydb/test_zbreak.py
+- [ ] T166l4 [US6] Migrate test_command_grammar.py TestZGotoCommand → parser/extensions/ydb/test_zgoto.py
+- [ ] T166l5 [US6] Migrate test_command_grammar.py TestZLoadCommand, TestZLinkCommand → parser/extensions/ydb/test_zlink.py
+- [ ] T166l6 [US6] Migrate test_command_grammar.py TestZKillCommand, TestZWithdrawCommand → parser/extensions/ydb/test_zkill.py (new)
+- [ ] T166l7 [US6] Migrate test_command_grammar.py TestZHaltCommand → parser/extensions/ydb/test_zhalt.py (new)
+- [ ] T166l8 [US6] Migrate test_command_grammar.py TestZAllocateCommand, TestZDeallocateCommand → parser/extensions/ydb/test_zallocate.py (new)
+- [ ] T166l9 [US6] Migrate test_command_grammar.py TestZPrintCommand → parser/extensions/ydb/test_zprint.py
+- [ ] T166l10 [US6] Migrate test_command_grammar.py TestZSystemCommand → parser/extensions/ydb/test_zsystem.py
+- [ ] T166l11 [US6] Migrate test_command_grammar.py TestZMessageCommand → parser/extensions/ydb/test_zmessage.py
+- [ ] T166l12 [US6] Migrate test_command_grammar.py TestZTriggerCommand → parser/extensions/ydb/test_ztrigger.py (new)
+- [ ] T166l13 [US6] Migrate test_command_grammar.py TestZCompileCommand → parser/extensions/ydb/test_zcompile.py
+- [ ] T166l14 [US6] Migrate test_command_grammar.py TestZContinueCommand → parser/extensions/ydb/test_zcontinue.py
+- [ ] T166l15 [US6] Migrate test_command_grammar.py TestZEditCommand → parser/extensions/ydb/test_zedit.py (new)
+- [ ] T166l16 [US6] Migrate test_command_grammar.py TestZStepCommand → parser/extensions/ydb/test_zstep.py
+- [ ] T166m [US6] Migrate test_command_grammar.py TestTextFunctionGrammar → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py ($TEXT)
+- [ ] T166n [US6] Migrate test_command_grammar.py TestExternalFunction → parser/s7_expressions/test_s7_1_6_extrinsic_functions.py
+- [ ] T166o [US6] Migrate test_command_grammar.py TestPartOEdgeCases, TestUnknownCommand, TestFunctionArgsEmpty → tests/unit/meta/test_parser_edge_cases.py (new)
 
 #### From test_expression_grammar.py (expression-level grammar tests)
 
-- [X] T167 [US6] Migrate test_expression_grammar.py TestNumericLiterals, TestStringLiterals → parser/s7_expressions/test_s7_1_4_literals.py
-- [X] T167a [US6] Migrate test_expression_grammar.py TestLocalVariables, TestGlobalVariables → parser/s7_expressions/test_s7_1_2_variables.py
-- [X] T167b [US6] Migrate test_expression_grammar.py TestBinaryOperators, TestUnaryOperators → parser/s7_expressions/test_s7_2_operators.py
-- [X] T167c [US6] Migrate test_expression_grammar.py TestIntrinsicFunctions → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py
-- [X] T167d [US6] Migrate test_expression_grammar.py TestSpecialVariables → parser/s7_expressions/test_s7_1_7_special_variables.py
-- [X] T167e [US6] Migrate test_expression_grammar.py TestSelectFunction → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py
-- [X] T167f [US6] Migrate test_expression_grammar.py TestIndirection → parser/s7_expressions/test_s7_3_indirection.py
-- [X] T167g [US6] Migrate test_expression_grammar.py TestExtrinsicFunctions → parser/s7_expressions/test_s7_1_6_extrinsic_functions.py
-- [X] T167h [US6] Migrate test_expression_grammar.py TestExternalFunctions → parser/s7_expressions/test_s7_1_6_extrinsic_functions.py
+- [ ] T167 [US6] Migrate test_expression_grammar.py TestNumericLiterals, TestStringLiterals → parser/s7_expressions/test_s7_1_4_literals.py
+- [ ] T167a [US6] Migrate test_expression_grammar.py TestLocalVariables, TestGlobalVariables → parser/s7_expressions/test_s7_1_2_variables.py
+- [ ] T167b [US6] Migrate test_expression_grammar.py TestBinaryOperators, TestUnaryOperators → parser/s7_expressions/test_s7_2_operators.py
+- [ ] T167c [US6] Migrate test_expression_grammar.py TestIntrinsicFunctions → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [ ] T167d [US6] Migrate test_expression_grammar.py TestSpecialVariables → parser/s7_expressions/test_s7_1_7_special_variables.py
+- [ ] T167e [US6] Migrate test_expression_grammar.py TestSelectFunction → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [ ] T167f [US6] Migrate test_expression_grammar.py TestIndirection → parser/s7_expressions/test_s7_3_indirection.py
+- [ ] T167g [US6] Migrate test_expression_grammar.py TestExtrinsicFunctions → parser/s7_expressions/test_s7_1_6_extrinsic_functions.py
+- [ ] T167h [US6] Migrate test_expression_grammar.py TestExternalFunctions → parser/s7_expressions/test_s7_1_6_extrinsic_functions.py
 
 #### From test_grammar.py (full-routine grammar acceptance tests)
 
-- [X] T168a [US6] Migrate test_grammar.py TestSetStatementGrammar → parser/s8_commands/test_s8_2_18_set.py
-- [X] T168b [US6] Migrate test_grammar.py TestWriteStatementGrammar → parser/s8_commands/test_s8_2_27_write.py
-- [X] T168c [US6] Migrate test_grammar.py TestBoundedForGrammar, TestStringListForGrammar, TestOpenEndedForGrammar, TestMixedForGrammar, TestArgumentlessForGrammar → parser/s8_commands/test_s8_2_05_for.py
-- [X] T168d [US6] Migrate test_grammar.py TestSimpleIfGrammar → parser/s8_commands/test_s8_2_09_if.py
-- [X] T168e [US6] Migrate test_grammar.py TestPatternMatchGrammar, TestIndirectPatternMatchGrammar → parser/s7_expressions/test_s7_2_5_pattern_match.py
-- [X] T168f [US6] Migrate test_grammar.py TestIntrinsicFunctionGrammar → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py
-- [X] T168g [US6] Migrate test_grammar.py TestSpecialVariableGrammar, TestIORefSpecialVariableGrammar → parser/s7_expressions/test_s7_1_7_special_variables.py
-- [X] T168h [US6] Migrate test_grammar.py TestIndirectionGrammar, TestDoIndirectionGrammar → parser/s7_expressions/test_s7_3_indirection.py
-- [X] T168i [US6] Migrate test_grammar.py TestReadFormatControlGrammar → parser/s8_commands/test_s8_2_17_read.py
-- [X] T168j [US6] Migrate test_grammar.py TestOpenDeviceParametersGrammar, TestOpenMnemonicGrammar → parser/s8_commands/test_s8_2_15_open.py
-- [X] T168k [US6] Migrate test_grammar.py TestNotContainsOperatorGrammar → parser/s7_expressions/test_s7_2_operators.py
-- [X] T168l [US6] Migrate test_grammar.py TestSetSpecialVariableGrammar → parser/s8_commands/test_s8_2_18_set.py
-- [X] T168m [US6] Migrate test_grammar.py TestTStartEmptyRestartGrammar → parser/s8_commands/test_s8_2_24_tstart.py
-- [X] T168n [US6] Migrate test_grammar.py TestStructuredSystemVariableGrammar → parser/s7_expressions/test_s7_1_3_ssvns.py
+- [ ] T168a [US6] Migrate test_grammar.py TestSetStatementGrammar → parser/s8_commands/test_s8_2_18_set.py
+- [ ] T168b [US6] Migrate test_grammar.py TestWriteStatementGrammar → parser/s8_commands/test_s8_2_27_write.py
+- [ ] T168c [US6] Migrate test_grammar.py TestBoundedForGrammar, TestStringListForGrammar, TestOpenEndedForGrammar, TestMixedForGrammar, TestArgumentlessForGrammar → parser/s8_commands/test_s8_2_05_for.py
+- [ ] T168d [US6] Migrate test_grammar.py TestSimpleIfGrammar → parser/s8_commands/test_s8_2_09_if.py
+- [ ] T168e [US6] Migrate test_grammar.py TestPatternMatchGrammar, TestIndirectPatternMatchGrammar → parser/s7_expressions/test_s7_2_5_pattern_match.py
+- [ ] T168f [US6] Migrate test_grammar.py TestIntrinsicFunctionGrammar → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [ ] T168g [US6] Migrate test_grammar.py TestSpecialVariableGrammar, TestIORefSpecialVariableGrammar → parser/s7_expressions/test_s7_1_7_special_variables.py
+- [ ] T168h [US6] Migrate test_grammar.py TestIndirectionGrammar, TestDoIndirectionGrammar → parser/s7_expressions/test_s7_3_indirection.py
+- [ ] T168i [US6] Migrate test_grammar.py TestReadFormatControlGrammar → parser/s8_commands/test_s8_2_17_read.py
+- [ ] T168j [US6] Migrate test_grammar.py TestOpenDeviceParametersGrammar, TestOpenMnemonicGrammar → parser/s8_commands/test_s8_2_15_open.py
+- [ ] T168k [US6] Migrate test_grammar.py TestNotContainsOperatorGrammar → parser/s7_expressions/test_s7_2_operators.py
+- [ ] T168l [US6] Migrate test_grammar.py TestSetSpecialVariableGrammar → parser/s8_commands/test_s8_2_18_set.py
+- [ ] T168m [US6] Migrate test_grammar.py TestTStartEmptyRestartGrammar → parser/s8_commands/test_s8_2_24_tstart.py
+- [ ] T168n [US6] Migrate test_grammar.py TestStructuredSystemVariableGrammar → parser/s7_expressions/test_s7_1_3_ssvns.py
 
 #### From test_line_parser.py (line-level parsing)
 
-- [X] T168o [US6] Migrate test_line_parser.py TestParseLineContent, TestParseCommand, TestGetLineComment → tests/unit/meta/test_line_parser.py (new)
-- [X] T168p [US6] Migrate test_line_parser.py TestParseCommandsFromLine → tests/unit/meta/test_line_parser.py
-- [X] T168q [US6] Migrate test_line_parser.py TestParseExpression → parser/s7_expressions/test_s7_1_1_values.py
-- [X] T168r [US6] Migrate test_line_parser.py TestParseSetCommand → parser/s8_commands/test_s8_2_18_set.py
-- [X] T168s [US6] Migrate test_line_parser.py TestParseWriteCommand → parser/s8_commands/test_s8_2_27_write.py
-- [X] T168t [US6] Migrate test_line_parser.py TestParseQuitCommand → parser/s8_commands/test_s8_2_16_quit.py
-- [X] T168u [US6] Migrate test_line_parser.py TestParseIfCommand, TestArgumentlessIfFollowedByCommand → parser/s8_commands/test_s8_2_09_if.py
-- [X] T168v [US6] Migrate test_line_parser.py TestParseForCommand, TestParseForCommandToAsg, TestExtractForCommands, TestClassifyForFromTextx, TestDetectQuitAfterFor → parser/s8_commands/test_s8_2_05_for.py
-- [X] T168w [US6] Migrate test_line_parser.py TestExtractFunctionErrorPaths → tests/unit/meta/test_line_parser.py
+- [ ] T168o [US6] Migrate test_line_parser.py TestParseLineContent, TestParseCommand, TestGetLineComment → tests/unit/meta/test_line_parser.py (new)
+- [ ] T168p [US6] Migrate test_line_parser.py TestParseCommandsFromLine → tests/unit/meta/test_line_parser.py
+- [ ] T168q [US6] Migrate test_line_parser.py TestParseExpression → parser/s7_expressions/test_s7_1_1_values.py
+- [ ] T168r [US6] Migrate test_line_parser.py TestParseSetCommand → parser/s8_commands/test_s8_2_18_set.py
+- [ ] T168s [US6] Migrate test_line_parser.py TestParseWriteCommand → parser/s8_commands/test_s8_2_27_write.py
+- [ ] T168t [US6] Migrate test_line_parser.py TestParseQuitCommand → parser/s8_commands/test_s8_2_16_quit.py
+- [ ] T168u [US6] Migrate test_line_parser.py TestParseIfCommand, TestArgumentlessIfFollowedByCommand → parser/s8_commands/test_s8_2_09_if.py
+- [ ] T168v [US6] Migrate test_line_parser.py TestParseForCommand, TestParseForCommandToAsg, TestExtractForCommands, TestClassifyForFromTextx, TestDetectQuitAfterFor → parser/s8_commands/test_s8_2_05_for.py
+- [ ] T168w [US6] Migrate test_line_parser.py TestExtractFunctionErrorPaths → tests/unit/meta/test_line_parser.py
 
 #### From other parser test files
 
-- [X] T168x [US6] Migrate test_special_constructs.py TestIntrinsicFunctions → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py
-- [X] T168y [US6] Migrate test_special_constructs.py TestPatternMatch → parser/s7_expressions/test_s7_2_5_pattern_match.py
-- [X] T168z [US6] Migrate test_special_constructs.py TestIndirection → parser/s7_expressions/test_s7_3_indirection.py
-- [X] T168aa [US6] Migrate test_special_constructs.py TestExtrinsicFunctions → parser/s7_expressions/test_s7_1_6_extrinsic_functions.py
-- [X] T168ab [US6] Migrate test_special_constructs.py TestSpecialVariables → parser/s7_expressions/test_s7_1_7_special_variables.py
-- [X] T168ac [US6] Migrate test_special_constructs.py TestComplexExpressions → parser/s7_expressions/test_s7_2_operators.py
-- [X] T168ad [US6] Migrate test_if_comma_conditions.py → parser/s8_commands/test_s8_2_09_if.py
-- [X] T168ae [US6] Migrate test_quit_then_command.py TestQuitThenCommand → parser/s8_commands/test_s8_2_16_quit.py
-- [X] T168af [US6] Migrate test_quit_then_command.py TestV1CALL1Line3 → parser/s8_commands/test_s8_2_16_quit.py
-- [X] T169 [US6] Migrate test_pattern_compiler.py → parser/s7_expressions/test_s7_2_5_pattern_match.py
+- [ ] T168x [US6] Migrate test_special_constructs.py TestIntrinsicFunctions → parser/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [ ] T168y [US6] Migrate test_special_constructs.py TestPatternMatch → parser/s7_expressions/test_s7_2_5_pattern_match.py
+- [ ] T168z [US6] Migrate test_special_constructs.py TestIndirection → parser/s7_expressions/test_s7_3_indirection.py
+- [ ] T168aa [US6] Migrate test_special_constructs.py TestExtrinsicFunctions → parser/s7_expressions/test_s7_1_6_extrinsic_functions.py
+- [ ] T168ab [US6] Migrate test_special_constructs.py TestSpecialVariables → parser/s7_expressions/test_s7_1_7_special_variables.py
+- [ ] T168ac [US6] Migrate test_special_constructs.py TestComplexExpressions → parser/s7_expressions/test_s7_2_operators.py
+- [ ] T168ad [US6] Migrate test_if_comma_conditions.py → parser/s8_commands/test_s8_2_09_if.py
+- [ ] T168ae [US6] Migrate test_quit_then_command.py TestQuitThenCommand → parser/s8_commands/test_s8_2_16_quit.py
+- [ ] T168af [US6] Migrate test_quit_then_command.py TestV1CALL1Line3 → parser/s8_commands/test_s8_2_16_quit.py
+- [ ] T169 [US6] Migrate test_pattern_compiler.py → parser/s7_expressions/test_s7_2_5_pattern_match.py
 
 #### From test_io_commands.py (I/O command parser tests)
 
-- [X] T169a1 [US6] Migrate test_io_commands.py TestMergeCommand → parser/s8_commands/test_s8_2_13_merge.py
-- [X] T169a2 [US6] Migrate test_io_commands.py TestViewCommand → parser/s8_commands/test_s8_2_26_view.py
-- [X] T169a3 [US6] Migrate test_io_commands.py TestLockCommand → parser/s8_commands/test_s8_2_12_lock.py
-- [X] T169a4 [US6] Migrate test_io_commands.py TestJobIndirection, TestJobTimeoutAndProcessParameters → parser/s8_commands/test_s8_2_10_job.py
+- [ ] T169a1 [US6] Migrate test_io_commands.py TestMergeCommand → parser/s8_commands/test_s8_2_13_merge.py
+- [ ] T169a2 [US6] Migrate test_io_commands.py TestViewCommand → parser/s8_commands/test_s8_2_26_view.py
+- [ ] T169a3 [US6] Migrate test_io_commands.py TestLockCommand → parser/s8_commands/test_s8_2_12_lock.py
+- [ ] T169a4 [US6] Migrate test_io_commands.py TestJobIndirection, TestJobTimeoutAndProcessParameters → parser/s8_commands/test_s8_2_10_job.py
 
 #### From test_multi_arg_commands.py (multi-argument parser tests)
 
-- [X] T169b1 [US6] Migrate test_multi_arg_commands.py TestMultiMerge → parser/s8_commands/test_s8_2_13_merge.py
-- [X] T169b2 [US6] Migrate test_multi_arg_commands.py TestMultiOpen → parser/s8_commands/test_s8_2_15_open.py
-- [X] T169b3 [US6] Migrate test_multi_arg_commands.py TestMultiClose, TestCloseUseWithParams → parser/s8_commands/test_s8_2_02_close.py
-- [X] T169b4 [US6] Migrate test_multi_arg_commands.py TestMultiUse → parser/s8_commands/test_s8_2_25_use.py
-- [X] T169b5 [US6] Migrate test_multi_arg_commands.py TestMultiJob → parser/s8_commands/test_s8_2_10_job.py
-- [X] T169b6 [US6] Migrate test_multi_arg_commands.py TestIndirectionSubscriptAnalysis → asg/s7_expressions/test_s7_3_indirection.py
+- [ ] T169b1 [US6] Migrate test_multi_arg_commands.py TestMultiMerge → parser/s8_commands/test_s8_2_13_merge.py
+- [ ] T169b2 [US6] Migrate test_multi_arg_commands.py TestMultiOpen → parser/s8_commands/test_s8_2_15_open.py
+- [ ] T169b3 [US6] Migrate test_multi_arg_commands.py TestMultiClose, TestCloseUseWithParams → parser/s8_commands/test_s8_2_02_close.py
+- [ ] T169b4 [US6] Migrate test_multi_arg_commands.py TestMultiUse → parser/s8_commands/test_s8_2_25_use.py
+- [ ] T169b5 [US6] Migrate test_multi_arg_commands.py TestMultiJob → parser/s8_commands/test_s8_2_10_job.py
+- [ ] T169b6 [US6] Migrate test_multi_arg_commands.py TestIndirectionSubscriptAnalysis → asg/s7_expressions/test_s7_3_indirection.py
 
 #### From test_parser.py (core MUMPSParser class tests) - CRITICAL
 
-- [X] T169c1 [US6] Migrate test_parser.py TestMUMPSParserInit → tests/unit/meta/test_parser_api.py (new)
-- [X] T169c2 [US6] Migrate test_parser.py TestMUMPSParserParse → tests/unit/meta/test_parser_api.py
-- [X] T169c3 [US6] Migrate test_parser.py TestMUMPSParserParseFile → tests/unit/meta/test_parser_api.py
-- [X] T169c4 [US6] Migrate test_parser.py TestMUMPSParserMUGJ → tests/unit/meta/test_parser_api.py
-- [X] T169c5 [US6] Migrate test_parser.py TestMUMPSParserGrammarIntegration → tests/unit/meta/test_parser_api.py
-- [X] T169c6 [US6] Migrate test_parser.py TestMUMPSParserClassifyPatterns → tests/unit/analysis/test_for_classifier.py
-- [X] T169c7 [US6] Migrate test_parser.py TestParserPerformance → tests/unit/meta/test_parser_performance.py (new, @pytest.mark.slow)
-- [X] T169c8 [US6] Migrate test_parser.py TestParserErrorHandling → tests/unit/meta/test_parser_errors.py (new)
-- [X] T169c9 [US6] Migrate test_parser.py TestParseErrorCollection → tests/unit/meta/test_parser_errors.py
-- [X] T169c10 [US6] Migrate test_parser.py TestTransactionCommands → parser/s8_commands/test_s8_2_19_tcommit.py, test_s8_2_24_tstart.py, test_s8_2_23_trollback.py
-- [X] T169c11 [US6] Migrate test_parser.py TestASGSerialization → tests/unit/meta/test_asg_serialization.py (new)
-- [X] T169c12 [US6] Migrate test_parser.py TestControlFlowBodyPopulation → asg/s8_commands/test_s8_2_05_for.py (FOR body), asg/s8_commands/test_s8_2_09_if.py (IF body)
-- [X] T169c13 [US6] Migrate test_parser.py TestPhase74Fixes → tests/unit/meta/test_regression_fixes.py (new)
+- [ ] T169c1 [US6] Migrate test_parser.py TestMUMPSParserInit → tests/unit/meta/test_parser_api.py (new)
+- [ ] T169c2 [US6] Migrate test_parser.py TestMUMPSParserParse → tests/unit/meta/test_parser_api.py
+- [ ] T169c3 [US6] Migrate test_parser.py TestMUMPSParserParseFile → tests/unit/meta/test_parser_api.py
+- [ ] T169c4 [US6] Migrate test_parser.py TestMUMPSParserMUGJ → tests/unit/meta/test_parser_api.py
+- [ ] T169c5 [US6] Migrate test_parser.py TestMUMPSParserGrammarIntegration → tests/unit/meta/test_parser_api.py
+- [ ] T169c6 [US6] Migrate test_parser.py TestMUMPSParserClassifyPatterns → tests/unit/analysis/test_for_classifier.py
+- [ ] T169c7 [US6] Migrate test_parser.py TestParserPerformance → tests/unit/meta/test_parser_performance.py (new, @pytest.mark.slow)
+- [ ] T169c8 [US6] Migrate test_parser.py TestParserErrorHandling → tests/unit/meta/test_parser_errors.py (new)
+- [ ] T169c9 [US6] Migrate test_parser.py TestParseErrorCollection → tests/unit/meta/test_parser_errors.py
+- [ ] T169c10 [US6] Migrate test_parser.py TestTransactionCommands → parser/s8_commands/test_s8_2_19_tcommit.py, test_s8_2_24_tstart.py, test_s8_2_23_trollback.py
+- [ ] T169c11 [US6] Migrate test_parser.py TestASGSerialization → tests/unit/meta/test_asg_serialization.py (new)
+- [ ] T169c12 [US6] Migrate test_parser.py TestControlFlowBodyPopulation → asg/s8_commands/test_s8_2_05_for.py (FOR body), asg/s8_commands/test_s8_2_09_if.py (IF body)
+- [ ] T169c13 [US6] Migrate test_parser.py TestPhase74Fixes → tests/unit/meta/test_regression_fixes.py (new)
 
 ### Migration Tasks - ASG Tests (to asg/)
 
 #### From test_semantic_analyzer.py
 
-- [X] T170 [US6] Migrate test_semantic_analyzer.py TestAnalyzeExpression → asg/s7_expressions/test_s7_1_1_values.py and test_s7_1_2_variables.py
-- [X] T170a [US6] Migrate test_semantic_analyzer.py TestPatternMatchASG, TestPatternMatchCompilation → asg/s7_expressions/test_s7_2_5_pattern_match.py
-- [X] T170b [US6] Migrate test_semantic_analyzer.py TestIntrinsicFunctionASG → asg/s7_expressions/test_s7_1_5_intrinsic_functions.py
-- [X] T170c [US6] Migrate test_semantic_analyzer.py TestExtrinsicFunctionASG → asg/s7_expressions/test_s7_1_6_extrinsic_functions.py
-- [X] T170d [US6] Migrate test_semantic_analyzer.py TestIndirectionASG, TestIndirectionClassification → asg/s7_expressions/test_s7_3_indirection.py
-- [X] T170e [US6] Migrate test_semantic_analyzer.py TestSpecialVariableASG → asg/s7_expressions/test_s7_1_7_special_variables.py
-- [X] T170f [US6] Migrate test_semantic_analyzer.py TestFormatControlASG → asg/s8_commands/test_s8_2_27_write.py
-- [X] T170g [US6] Migrate test_semantic_analyzer.py TestXecuteConstantDetection → asg/s8_commands/test_s8_2_28_xecute.py
-- [X] T170h [US6] Migrate test_semantic_analyzer.py TestUnwrapExpression → tests/unit/meta/test_semantic_analyzer_internals.py (new)
-- [X] T170i [US6] Migrate test_semantic_analyzer.py TestReadFixedLength → asg/s8_commands/test_s8_2_17_read.py
-- [X] T170j [US6] Migrate test_semantic_analyzer.py TestMActualParameterAnalysis → asg/s8_commands/test_s8_2_03_do.py
-- [X] T170k [US6] Migrate test_semantic_analyzer.py TestZGotoLabelRefAnalysis → asg/extensions/ydb/test_zgoto.py
+- [ ] T170 [US6] Migrate test_semantic_analyzer.py TestAnalyzeExpression → asg/s7_expressions/test_s7_1_1_values.py and test_s7_1_2_variables.py
+- [ ] T170a [US6] Migrate test_semantic_analyzer.py TestPatternMatchASG, TestPatternMatchCompilation → asg/s7_expressions/test_s7_2_5_pattern_match.py
+- [ ] T170b [US6] Migrate test_semantic_analyzer.py TestIntrinsicFunctionASG → asg/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [ ] T170c [US6] Migrate test_semantic_analyzer.py TestExtrinsicFunctionASG → asg/s7_expressions/test_s7_1_6_extrinsic_functions.py
+- [ ] T170d [US6] Migrate test_semantic_analyzer.py TestIndirectionASG, TestIndirectionClassification → asg/s7_expressions/test_s7_3_indirection.py
+- [ ] T170e [US6] Migrate test_semantic_analyzer.py TestSpecialVariableASG → asg/s7_expressions/test_s7_1_7_special_variables.py
+- [ ] T170f [US6] Migrate test_semantic_analyzer.py TestFormatControlASG → asg/s8_commands/test_s8_2_27_write.py
+- [ ] T170g [US6] Migrate test_semantic_analyzer.py TestXecuteConstantDetection → asg/s8_commands/test_s8_2_28_xecute.py
+- [ ] T170h [US6] Migrate test_semantic_analyzer.py TestUnwrapExpression → tests/unit/meta/test_semantic_analyzer_internals.py (new)
+- [ ] T170i [US6] Migrate test_semantic_analyzer.py TestReadFixedLength → asg/s8_commands/test_s8_2_17_read.py
+- [ ] T170j [US6] Migrate test_semantic_analyzer.py TestMActualParameterAnalysis → asg/s8_commands/test_s8_2_03_do.py
+- [ ] T170k [US6] Migrate test_semantic_analyzer.py TestZGotoLabelRefAnalysis → asg/extensions/ydb/test_zgoto.py
 
 #### From test_command_analysis.py
 
-- [X] T171 [US6] Migrate test_command_analysis.py TestSetStatementAnalysis → asg/s8_commands/test_s8_2_18_set.py
-- [X] T171a [US6] Migrate test_command_analysis.py TestWriteStatementAnalysis → asg/s8_commands/test_s8_2_27_write.py
-- [X] T171b [US6] Migrate test_command_analysis.py TestQuitStatementAnalysis → asg/s8_commands/test_s8_2_16_quit.py
-- [X] T171c [US6] Migrate test_command_analysis.py TestIfStatementAnalysis → asg/s8_commands/test_s8_2_09_if.py
-- [X] T171d [US6] Migrate test_command_analysis.py TestForStatementAnalysis → asg/s8_commands/test_s8_2_05_for.py
-- [X] T171e [US6] Migrate test_command_analysis.py TestGotoStatementAnalysis → asg/s8_commands/test_s8_2_06_goto.py
-- [X] T171f [US6] Migrate test_command_analysis.py TestDoStatementAnalysis → asg/s8_commands/test_s8_2_03_do.py
-- [X] T171g [US6] Migrate test_command_analysis.py TestNewStatementAnalysis → asg/s8_commands/test_s8_2_14_new.py
-- [X] T171h [US6] Migrate test_command_analysis.py TestKillStatementAnalysis → asg/s8_commands/test_s8_2_11_kill.py
-- [X] T171i1 [US6] Migrate test_command_analysis.py TestOtherStatementAnalysis (test_hang, test_halt*) → asg/s8_commands/test_s8_2_07_halt.py, test_s8_2_08_hang.py
-- [X] T171i2 [US6] Migrate test_command_analysis.py TestOtherStatementAnalysis (test_break) → asg/s8_commands/test_s8_2_01_break.py
-- [X] T171i3 [US6] Migrate test_command_analysis.py TestOtherStatementAnalysis (test_zallocate, test_zdeallocate*) → asg/extensions/ydb/test_zallocate.py
-- [X] T171j [US6] Migrate test_command_analysis.py TestMultipleCommandsAnalysis → tests/unit/meta/test_command_analysis_integration.py (new)
-- [X] T171k [US6] Migrate test_command_analysis.py TestExpressionAnalysis → asg/s7_expressions/test_s7_2_operators.py
+- [ ] T171 [US6] Migrate test_command_analysis.py TestSetStatementAnalysis → asg/s8_commands/test_s8_2_18_set.py
+- [ ] T171a [US6] Migrate test_command_analysis.py TestWriteStatementAnalysis → asg/s8_commands/test_s8_2_27_write.py
+- [ ] T171b [US6] Migrate test_command_analysis.py TestQuitStatementAnalysis → asg/s8_commands/test_s8_2_16_quit.py
+- [ ] T171c [US6] Migrate test_command_analysis.py TestIfStatementAnalysis → asg/s8_commands/test_s8_2_09_if.py
+- [ ] T171d [US6] Migrate test_command_analysis.py TestForStatementAnalysis → asg/s8_commands/test_s8_2_05_for.py
+- [ ] T171e [US6] Migrate test_command_analysis.py TestGotoStatementAnalysis → asg/s8_commands/test_s8_2_06_goto.py
+- [ ] T171f [US6] Migrate test_command_analysis.py TestDoStatementAnalysis → asg/s8_commands/test_s8_2_03_do.py
+- [ ] T171g [US6] Migrate test_command_analysis.py TestNewStatementAnalysis → asg/s8_commands/test_s8_2_14_new.py
+- [ ] T171h [US6] Migrate test_command_analysis.py TestKillStatementAnalysis → asg/s8_commands/test_s8_2_11_kill.py
+- [ ] T171i1 [US6] Migrate test_command_analysis.py TestOtherStatementAnalysis (test_hang, test_halt*) → asg/s8_commands/test_s8_2_07_halt.py, test_s8_2_08_hang.py
+- [ ] T171i2 [US6] Migrate test_command_analysis.py TestOtherStatementAnalysis (test_break) → asg/s8_commands/test_s8_2_01_break.py
+- [ ] T171i3 [US6] Migrate test_command_analysis.py TestOtherStatementAnalysis (test_zallocate, test_zdeallocate*) → asg/extensions/ydb/test_zallocate.py
+- [ ] T171j [US6] Migrate test_command_analysis.py TestMultipleCommandsAnalysis → tests/unit/meta/test_command_analysis_integration.py (new)
+- [ ] T171k [US6] Migrate test_command_analysis.py TestExpressionAnalysis → asg/s7_expressions/test_s7_2_operators.py
 
 #### From other ASG test files
 
-- [X] T172 [US6] Migrate test_complex_expressions_analysis.py → asg/s7_expressions/test_s7_1_5_intrinsic_functions.py
-- [X] T172a [US6] Migrate test_text_function_analysis.py → asg/s7_expressions/test_s7_1_5_intrinsic_functions.py ($TEXT)
-- [X] T172b [US6] Migrate test_external_calls.py → asg/s8_commands/test_s8_2_03_do.py (external routine calls)
-- [X] T172c1 [US6] Migrate test_io_commands.py (ASG-level MERGE tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_13_merge.py
-- [X] T172c2 [US6] Migrate test_io_commands.py (ASG-level VIEW tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_26_view.py
-- [X] T172c3 [US6] Migrate test_io_commands.py (ASG-level LOCK tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_12_lock.py
-- [X] T172c4 [US6] Migrate test_io_commands.py (ASG-level JOB tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_10_job.py
-- [X] T172d1 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-MERGE tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_13_merge.py
-- [X] T172d2 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-OPEN tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_15_open.py
-- [X] T172d3 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-CLOSE tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_02_close.py
-- [X] T172d4 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-USE tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_25_use.py
-- [X] T172d5 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-JOB tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_10_job.py
-- [X] T173 [US6] Migrate test_variables.py TestScopeVariables, TestFormalParameters, TestScopeStrategy → asg/s8_commands/test_s8_2_14_new.py
-- [X] T173a [US6] Migrate test_variables.py TestExtractExpressionVariables, TestExtractStatementVariables, TestAnalyzeVariables, TestGetDefUseChains, TestComputeTransitiveInputs → tests/unit/analysis/test_variable_analysis.py
-- [X] T173b [US6] Migrate test_variables.py TestFunctionSignature, TestQuitAnalysis, TestParameterBinding → tests/unit/analysis/test_variable_analysis.py
-- [X] T173c [US6] Migrate test_variables.py TestVariableInfo, TestEdgeCases → tests/unit/analysis/test_variable_analysis.py
-- [X] T174 [US6] Migrate test_unreachable_code.py TestUnreachableCodeDetection, TestHasExplicitExit, TestMUGJUnreachableCodeExamples → asg/s6_routine/test_s6_3_execution.py
+- [ ] T172 [US6] Migrate test_complex_expressions_analysis.py → asg/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [ ] T172a [US6] Migrate test_text_function_analysis.py → asg/s7_expressions/test_s7_1_5_intrinsic_functions.py ($TEXT)
+- [ ] T172b [US6] Migrate test_external_calls.py → asg/s8_commands/test_s8_2_03_do.py (external routine calls)
+- [ ] T172c1 [US6] Migrate test_io_commands.py (ASG-level MERGE tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_13_merge.py
+- [ ] T172c2 [US6] Migrate test_io_commands.py (ASG-level VIEW tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_26_view.py
+- [ ] T172c3 [US6] Migrate test_io_commands.py (ASG-level LOCK tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_12_lock.py
+- [ ] T172c4 [US6] Migrate test_io_commands.py (ASG-level JOB tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_10_job.py
+- [ ] T172d1 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-MERGE tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_13_merge.py
+- [ ] T172d2 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-OPEN tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_15_open.py
+- [ ] T172d3 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-CLOSE tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_02_close.py
+- [ ] T172d4 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-USE tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_25_use.py
+- [ ] T172d5 [US6] Migrate test_multi_arg_commands.py (ASG-level multi-JOB tests: tests importing analyze_* or asserting M*Statement types) → asg/s8_commands/test_s8_2_10_job.py
+- [ ] T173 [US6] Migrate test_variables.py TestScopeVariables, TestFormalParameters, TestScopeStrategy → asg/s8_commands/test_s8_2_14_new.py
+- [ ] T173a [US6] Migrate test_variables.py TestExtractExpressionVariables, TestExtractStatementVariables, TestAnalyzeVariables, TestGetDefUseChains, TestComputeTransitiveInputs → tests/unit/analysis/test_variable_analysis.py
+- [ ] T173b [US6] Migrate test_variables.py TestFunctionSignature, TestQuitAnalysis, TestParameterBinding → tests/unit/analysis/test_variable_analysis.py
+- [ ] T173c [US6] Migrate test_variables.py TestVariableInfo, TestEdgeCases → tests/unit/analysis/test_variable_analysis.py
+- [ ] T174 [US6] Migrate test_unreachable_code.py TestUnreachableCodeDetection, TestHasExplicitExit, TestMUGJUnreachableCodeExamples → asg/s6_routine/test_s6_3_execution.py
 
 ### Migration Tasks - Analysis Tests (to analysis/)
 
-- [X] T175 [US6] Migrate test_classifier.py → tests/unit/analysis/test_for_classifier.py
-- [X] T175a [US6] Migrate test_goto_for_analysis.py TestClassifyGotos → tests/unit/analysis/test_goto_classifier.py
-- [X] T175b [US6] Migrate test_goto_for_analysis.py TestAnalyzeForLoops → tests/unit/analysis/test_for_analysis.py
-- [X] T175c [US6] Migrate test_resolver.py TestResolveReferences, TestGetUnresolvedCalls, TestGetExternalCalls, TestCallTypePopulation, TestGlobalRefsCollection → tests/unit/analysis/test_resolver.py
+- [ ] T175 [US6] Migrate test_classifier.py → tests/unit/analysis/test_for_classifier.py
+- [ ] T175a [US6] Migrate test_goto_for_analysis.py TestClassifyGotos → tests/unit/analysis/test_goto_classifier.py
+- [ ] T175b [US6] Migrate test_goto_for_analysis.py TestAnalyzeForLoops → tests/unit/analysis/test_for_analysis.py
+- [ ] T175c [US6] Migrate test_resolver.py TestResolveReferences, TestGetUnresolvedCalls, TestGetExternalCalls, TestCallTypePopulation, TestGlobalRefsCollection → tests/unit/analysis/test_resolver.py
 
 ### Migration Tasks - Cross-Cutting Tests (to cross_cutting/)
 
-- [X] T176 [US6] Migrate test_indirection_detection.py → tests/unit/cross_cutting/test_indirection.py (merge into stubs from T183)
+- [ ] T176 [US6] Migrate test_indirection_detection.py → tests/unit/cross_cutting/test_indirection.py (merge into stubs from T183)
 
 ### Migration Tasks - Meta Tests (to meta/)
 
-- [X] T177 [US6] Migrate test_textx_classes.py TestTextXCustomClasses, TestSelectFunctionCustomClass, TestClassRegistry → tests/unit/meta/test_textx_classes.py
-- [X] T177a [US6] Migrate test_parse_result_tracking.py TestParseResult, TestSuiteParseResults, TestParseSuite → tests/unit/meta/test_parse_result_tracking.py
-- [X] T177b [US6] Migrate test_setup.py TestPackageSetup, TestMUGJFixtures, TestASGModuleExports, TestASGSubComponentTypes, TestMIndirectionTyping → tests/unit/meta/test_setup.py
-- [X] T177c [US6] Migrate test_asg_type_annotations.py → tests/unit/meta/test_asg_type_annotations.py
+- [ ] T177 [US6] Migrate test_textx_classes.py TestTextXCustomClasses, TestSelectFunctionCustomClass, TestClassRegistry → tests/unit/meta/test_textx_classes.py
+- [ ] T177a [US6] Migrate test_parse_result_tracking.py TestParseResult, TestSuiteParseResults, TestParseSuite → tests/unit/meta/test_parse_result_tracking.py
+- [ ] T177b [US6] Migrate test_setup.py TestPackageSetup, TestMUGJFixtures, TestASGModuleExports, TestASGSubComponentTypes, TestMIndirectionTyping → tests/unit/meta/test_setup.py
+- [ ] T177c [US6] Migrate test_asg_type_annotations.py → tests/unit/meta/test_asg_type_annotations.py
 
 ### Test Naming and Marker Alignment
 

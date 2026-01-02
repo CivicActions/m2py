@@ -1,7 +1,5 @@
 """Tests for textX custom class integration.
 
-Migrated from: tests/unit/test_textx_classes.py
-
 These tests verify that textX can directly instantiate our ASG classes
 during parsing, eliminating the need for post-parse conversion.
 """
@@ -39,9 +37,7 @@ class TestTextXCustomClasses:
     @pytest.fixture
     def expression_metamodel(self):
         """Create metamodel with custom classes registered."""
-        grammar_dir = (
-            Path(__file__).parent.parent.parent.parent / "src" / "m2py" / "grammar"
-        )
+        grammar_dir = Path(__file__).parent.parent.parent / "src" / "m2py" / "grammar"
         return metamodel_from_file(
             grammar_dir / "expressions.tx", classes=EXPRESSION_CLASSES, skipws=False
         )
@@ -226,9 +222,7 @@ class TestSelectFunctionCustomClass:
     @pytest.fixture
     def expression_metamodel(self):
         """Create metamodel with custom classes registered."""
-        grammar_dir = (
-            Path(__file__).parent.parent.parent.parent / "src" / "m2py" / "grammar"
-        )
+        grammar_dir = Path(__file__).parent.parent.parent / "src" / "m2py" / "grammar"
         return metamodel_from_file(
             grammar_dir / "expressions.tx", classes=EXPRESSION_CLASSES, skipws=False
         )

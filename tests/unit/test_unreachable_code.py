@@ -1,15 +1,8 @@
-"""Tests for Execution Semantics ASG analysis (§6.3).
+"""Tests for unreachable code detection and has_explicit_exit property.
 
-Reference: MUMPS 1995 ANSI Standard, Section 6.3
-
-Migrated from: tests/unit/test_unreachable_code.py
-
-Tests for:
-- T531: is_unreachable marking for statements after unconditional exit
-- T532: has_explicit_exit property for labels
+Tests for T531 (is_unreachable marking) and T532 (has_explicit_exit property).
 """
 
-import pytest
 from m2py.parser import MUMPSParser
 from m2py.asg.statements import (
     MQuitStatement,
@@ -19,18 +12,11 @@ from m2py.asg.statements import (
 )
 
 
-@pytest.mark.asg
 class TestUnreachableCodeDetection:
-    """Test T531: Statements after unconditional exit are marked is_unreachable (§6.3).
-
-    Migrated from: tests/unit/test_unreachable_code.py::TestUnreachableCodeDetection
-    """
+    """Test T531: Statements after unconditional exit are marked is_unreachable."""
 
     def test_statements_after_quit_are_unreachable(self):
-        """Statements after unconditional QUIT should be marked unreachable (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_statements_after_quit_are_unreachable
-        """
+        """Statements after unconditional QUIT should be marked unreachable."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -53,10 +39,7 @@ class TestUnreachableCodeDetection:
         assert stmts[3].is_unreachable is True  # W "never"
 
     def test_statements_after_goto_are_unreachable(self):
-        """Statements after unconditional GOTO should be marked unreachable (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_statements_after_goto_are_unreachable
-        """
+        """Statements after unconditional GOTO should be marked unreachable."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -75,10 +58,7 @@ OTHER Q
         assert stmts[2].is_unreachable is True  # S Y=2
 
     def test_statements_after_halt_are_unreachable(self):
-        """Statements after unconditional HALT should be marked unreachable (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_statements_after_halt_are_unreachable
-        """
+        """Statements after unconditional HALT should be marked unreachable."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -96,10 +76,7 @@ OTHER Q
         assert stmts[2].is_unreachable is True  # S Y=2
 
     def test_conditional_quit_does_not_make_following_unreachable(self):
-        """Statements after conditional QUIT should NOT be marked unreachable (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_conditional_quit_does_not_make_following_unreachable
-        """
+        """Statements after conditional QUIT should NOT be marked unreachable."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -118,10 +95,7 @@ OTHER Q
         assert stmts[2].is_unreachable is False  # S Y=2
 
     def test_conditional_goto_does_not_make_following_unreachable(self):
-        """Statements after conditional GOTO should NOT be marked unreachable (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_conditional_goto_does_not_make_following_unreachable
-        """
+        """Statements after conditional GOTO should NOT be marked unreachable."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -141,10 +115,7 @@ OTHER Q
         assert stmts[2].is_unreachable is False
 
     def test_unreachable_in_if_then_scope(self):
-        """Unreachable code detection works inside IF then_scope (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_unreachable_in_if_then_scope
-        """
+        """Unreachable code detection works inside IF then_scope."""
         parser = MUMPSParser()
         source = """TEST
  I X=1 D
@@ -169,10 +140,7 @@ OTHER Q
         assert body_stmts[2].is_unreachable is True  # S B=2
 
     def test_unreachable_in_for_body(self):
-        """Unreachable code detection works inside FOR body (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_unreachable_in_for_body
-        """
+        """Unreachable code detection works inside FOR body."""
         parser = MUMPSParser()
         source = """TEST
  F I=1:1:10 D
@@ -197,10 +165,7 @@ OTHER Q
         assert body_stmts[2].is_unreachable is True  # S Y=I
 
     def test_unreachable_in_do_block_body(self):
-        """Unreachable code detection works inside DO block body (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_unreachable_in_do_block_body
-        """
+        """Unreachable code detection works inside DO block body."""
         parser = MUMPSParser()
         source = """TEST
  D
@@ -226,10 +191,7 @@ OTHER Q
         assert routine.labels[0].body.statements[1].is_unreachable is False  # S Z=3
 
     def test_multiple_labels_independent_unreachable_tracking(self):
-        """Each label tracks unreachable code independently (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_multiple_labels_independent_unreachable_tracking
-        """
+        """Each label tracks unreachable code independently."""
         parser = MUMPSParser()
         source = """FIRST
  Q
@@ -254,10 +216,7 @@ SECOND
         assert second_stmts[2].is_unreachable is True  # S Z=3
 
     def test_no_statements_no_unreachable(self):
-        """Empty label body has no unreachable code (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestUnreachableCodeDetection::test_no_statements_no_unreachable
-        """
+        """Empty label body has no unreachable code."""
         parser = MUMPSParser()
         source = """TEST
 """
@@ -267,18 +226,11 @@ SECOND
         assert len(routine.labels[0].body.statements) == 0
 
 
-@pytest.mark.asg
 class TestHasExplicitExit:
-    """Test T532: MLabel.has_explicit_exit property (§6.3).
-
-    Migrated from: tests/unit/test_unreachable_code.py::TestHasExplicitExit
-    """
+    """Test T532: MLabel.has_explicit_exit property."""
 
     def test_label_ending_with_quit_has_explicit_exit(self):
-        """Label ending with QUIT has has_explicit_exit=True (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_label_ending_with_quit_has_explicit_exit
-        """
+        """Label ending with QUIT has has_explicit_exit=True."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -290,10 +242,7 @@ class TestHasExplicitExit:
         assert routine.labels[0].has_explicit_exit is True
 
     def test_label_ending_with_goto_has_explicit_exit(self):
-        """Label ending with GOTO has has_explicit_exit=True (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_label_ending_with_goto_has_explicit_exit
-        """
+        """Label ending with GOTO has has_explicit_exit=True."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -306,10 +255,7 @@ OTHER Q
         assert routine.labels[0].has_explicit_exit is True
 
     def test_label_ending_with_halt_has_explicit_exit(self):
-        """Label ending with HALT has has_explicit_exit=True (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_label_ending_with_halt_has_explicit_exit
-        """
+        """Label ending with HALT has has_explicit_exit=True."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -321,10 +267,7 @@ OTHER Q
         assert routine.labels[0].has_explicit_exit is True
 
     def test_label_ending_with_set_has_no_explicit_exit(self):
-        """Label ending with SET has has_explicit_exit=False (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_label_ending_with_set_has_no_explicit_exit
-        """
+        """Label ending with SET has has_explicit_exit=False."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -336,10 +279,7 @@ OTHER Q
         assert routine.labels[0].has_explicit_exit is False
 
     def test_label_ending_with_write_has_no_explicit_exit(self):
-        """Label ending with WRITE has has_explicit_exit=False (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_label_ending_with_write_has_no_explicit_exit
-        """
+        """Label ending with WRITE has has_explicit_exit=False."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -351,10 +291,7 @@ OTHER Q
         assert routine.labels[0].has_explicit_exit is False
 
     def test_label_with_conditional_quit_at_end_has_no_explicit_exit(self):
-        """Label ending with conditional QUIT has has_explicit_exit=False (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_label_with_conditional_quit_at_end_has_no_explicit_exit
-        """
+        """Label ending with conditional QUIT has has_explicit_exit=False."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -367,10 +304,7 @@ OTHER Q
         assert routine.labels[0].has_explicit_exit is False
 
     def test_label_with_unreachable_code_after_quit(self):
-        """Label with unreachable code after QUIT still has has_explicit_exit=True (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_label_with_unreachable_code_after_quit
-        """
+        """Label with unreachable code after QUIT still has has_explicit_exit=True."""
         parser = MUMPSParser()
         source = """TEST
  S X=1
@@ -385,10 +319,7 @@ OTHER Q
         assert routine.labels[0].has_explicit_exit is True
 
     def test_empty_label_has_no_explicit_exit(self):
-        """Empty label has has_explicit_exit=False (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_empty_label_has_no_explicit_exit
-        """
+        """Empty label has has_explicit_exit=False."""
         parser = MUMPSParser()
         source = """TEST
 """
@@ -398,10 +329,7 @@ OTHER Q
         assert routine.labels[0].has_explicit_exit is False
 
     def test_label_only_comments_has_no_explicit_exit(self):
-        """Label with only comments has has_explicit_exit=False (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_label_only_comments_has_no_explicit_exit
-        """
+        """Label with only comments has has_explicit_exit=False."""
         parser = MUMPSParser()
         source = """TEST ; just a label with inline comment
 """
@@ -411,10 +339,7 @@ OTHER Q
         assert routine.labels[0].has_explicit_exit is False
 
     def test_multiple_labels_independent_exit_status(self):
-        """Each label has its own has_explicit_exit status (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestHasExplicitExit::test_multiple_labels_independent_exit_status
-        """
+        """Each label has its own has_explicit_exit status."""
         parser = MUMPSParser()
         source = """FIRST
  S X=1
@@ -432,18 +357,11 @@ THIRD
         assert routine.labels[2].has_explicit_exit is True  # THIRD ends with G
 
 
-@pytest.mark.asg
 class TestMUGJUnreachableCodeExamples:
-    """Test unreachable code detection with real MUGJ test patterns (§6.3).
-
-    Migrated from: tests/unit/test_unreachable_code.py::TestMUGJUnreachableCodeExamples
-    """
+    """Test unreachable code detection with real MUGJ test patterns."""
 
     def test_v1prgd_label2_unreachable_pattern(self):
-        """V1PRGD label 2 has code after QUIT that should be unreachable (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestMUGJUnreachableCodeExamples::test_v1prgd_label2_unreachable_pattern
-        """
+        """V1PRGD label 2 has code after QUIT that should be unreachable."""
         parser = MUMPSParser()
         routine = parser.parse_file("tests/functional/mugj/inref/V1PRGD.m")
         parser.resolve_references(routine)
@@ -470,10 +388,7 @@ class TestMUGJUnreachableCodeExamples:
                 )
 
     def test_v1prgd2_implicit_quit_pattern(self):
-        """V1PRGD2 main label ends without QUIT (implicit QUIT) (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestMUGJUnreachableCodeExamples::test_v1prgd2_implicit_quit_pattern
-        """
+        """V1PRGD2 main label ends without QUIT (implicit QUIT)."""
         parser = MUMPSParser()
         routine = parser.parse_file("tests/functional/mugj/inref/V1PRGD2.m")
         parser.resolve_references(routine)
@@ -483,13 +398,11 @@ class TestMUGJUnreachableCodeExamples:
         assert main_label.has_explicit_exit is False
 
     def test_vabc_implicit_quit_no_synthetic_statement(self):
-        """VABC.m ends without QUIT - ASG should NOT add synthetic MQuitStatement (§6.3).
+        """VABC.m ends without QUIT - ASG should NOT add synthetic MQuitStatement.
 
         The ASG must accurately represent the source code. Labels without explicit
         QUIT use MLabel.has_explicit_exit=False to signal implicit return behavior.
         Python code generation handles this via Python's implicit return semantics.
-
-        Migrated from: test_unreachable_code.py::TestMUGJUnreachableCodeExamples::test_vabc_implicit_quit_no_synthetic_statement
         """
         parser = MUMPSParser()
         routine = parser.parse_file("tests/functional/mugj/inref/VABC.m")
@@ -505,10 +418,7 @@ class TestMUGJUnreachableCodeExamples:
         assert main_label.has_explicit_exit is False
 
     def test_va_explicit_quit_captured(self):
-        """VA.m ends with explicit QUIT - ASG captures it correctly (§6.3).
-
-        Migrated from: test_unreachable_code.py::TestMUGJUnreachableCodeExamples::test_va_explicit_quit_captured
-        """
+        """VA.m ends with explicit QUIT - ASG captures it correctly."""
         parser = MUMPSParser()
         routine = parser.parse_file("tests/functional/mugj/inref/VA.m")
         parser.resolve_references(routine)

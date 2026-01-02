@@ -40,12 +40,12 @@ class TestOutOfScopeCommands:
         """RSAVE command is out of scope (§8.3)."""
         pass
 
-    @pytest.mark.xfail(reason="Used in VistA: ZALLOCATE (8 uses)")
+    @pytest.mark.skip(reason="Out of scope: ZALLOCATE is implementation-defined")
     def test_zallocate_command(self):
-        """ZALLOCATE command is implementation-defined but used in VistA."""
-        pytest.fail("Stub - implement test")
+        """ZALLOCATE command is out of scope (Z-command)."""
+        pass
 
-    @pytest.mark.xfail(reason="Used in VistA: ZDEALLOCATE (with ZALLOCATE)")
+    @pytest.mark.skip(reason="Out of scope: ZDEALLOCATE is implementation-defined")
     def test_zdeallocate_command(self):
-        """ZDEALLOCATE command is implementation-defined but used with ZALLOCATE."""
-        pytest.fail("Stub - implement test")
+        """ZDEALLOCATE command is out of scope (Z-command)."""
+        pass

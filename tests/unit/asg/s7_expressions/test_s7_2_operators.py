@@ -1,116 +1,14 @@
 """Tests for Operators ASG analysis (§7.2).
 
 Reference: MUMPS 1995 ANSI Standard, Section 7.2
-
-Migrated from: tests/unit/test_command_analysis.py::TestExpressionAnalysis (partial)
 """
 
 import pytest
-from m2py.parser.line_parser import parse_commands_from_line
-from m2py.analysis.semantic_analyzer import analyze_command
-from m2py.asg.expressions import MLiteral, MVariable, MIntrinsicFunction, MBinaryOp
-from m2py.asg.enums import LiteralType
-
-
-def analyze_first_command(line: str):
-    """Helper to parse a line and analyze the first command."""
-    cmds = parse_commands_from_line(line)
-    assert len(cmds) >= 1, f"No commands parsed from: {line}"
-    return analyze_command(cmds[0])
-
-
-@pytest.mark.asg
-class TestLiteralAnalysis:
-    """ASG-level tests for literal analysis (§7.1).
-
-    Migrated from: tests/unit/test_command_analysis.py::TestExpressionAnalysis (partial)
-    """
-
-    def test_numeric_literal_integer(self):
-        """Integer numeric literal (§7.1).
-
-        Migrated from: test_command_analysis.py::TestExpressionAnalysis::test_numeric_literal_integer
-        """
-        stmt = analyze_first_command("S X=42")
-
-        value = stmt.assignments[0].value
-        assert isinstance(value, MLiteral)
-        assert value.literal_type == LiteralType.INTEGER
-        assert value.value == 42
-
-    def test_numeric_literal_decimal(self):
-        """Decimal numeric literal (§7.1).
-
-        Migrated from: test_command_analysis.py::TestExpressionAnalysis::test_numeric_literal_decimal
-        """
-        stmt = analyze_first_command("S X=3.14")
-
-        value = stmt.assignments[0].value
-        assert isinstance(value, MLiteral)
-        assert value.literal_type == LiteralType.DECIMAL
-        assert value.value == 3.14
-
-
-@pytest.mark.asg
-class TestVariableAnalysis:
-    """ASG-level tests for variable analysis (§7.1).
-
-    Migrated from: tests/unit/test_command_analysis.py::TestExpressionAnalysis (partial)
-    """
-
-    def test_variable_with_subscripts(self):
-        """Variable with subscripts (§7.1).
-
-        Migrated from: test_command_analysis.py::TestExpressionAnalysis::test_variable_with_subscripts
-        """
-        stmt = analyze_first_command("S X(1,2)=3")
-
-        target = stmt.assignments[0].target
-        assert isinstance(target, MVariable)
-        assert target.name == "X"
-        assert len(target.subscripts) == 2
-
-
-@pytest.mark.asg
-class TestFunctionAnalysis:
-    """ASG-level tests for intrinsic function analysis (§7.1).
-
-    Migrated from: tests/unit/test_command_analysis.py::TestExpressionAnalysis (partial)
-    """
-
-    def test_intrinsic_function(self):
-        """Intrinsic function call (§7.1).
-
-        Migrated from: test_command_analysis.py::TestExpressionAnalysis::test_intrinsic_function
-        """
-        stmt = analyze_first_command('S X=$L("hello")')
-
-        value = stmt.assignments[0].value
-        assert isinstance(value, MIntrinsicFunction)
-        assert value.name == "L"
-        assert len(value.arguments) == 1
 
 
 @pytest.mark.asg
 class TestOperatorsAnalysis:
-    """ASG-level tests for operators analysis (§7.2).
-
-    Migrated from: tests/unit/test_command_analysis.py::TestExpressionAnalysis (partial)
-    """
-
-    def test_binary_expression(self):
-        """Binary expression in assignment (§7.2).
-
-        Migrated from: test_command_analysis.py::TestExpressionAnalysis::test_binary_expression
-        """
-        stmt = analyze_first_command("S X=A+B")
-
-        value = stmt.assignments[0].value
-        assert isinstance(value, MBinaryOp)
-        assert value.operator == "+"
-        assert isinstance(value.left, MVariable)
-
-    # ---- Stub tests for unimplemented features ----
+    """ASG-level tests for operators analysis (§7.2)."""
 
     # Unary operators
     @pytest.mark.stub
@@ -132,6 +30,12 @@ class TestOperatorsAnalysis:
         pytest.fail("Stub - implement test")
 
     # Binary arithmetic operators
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: addition")
+    def test_addition(self, analyze_expression):
+        """Addition operator is correctly analyzed (§7.2.2)."""
+        pytest.fail("Stub - implement test")
+
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: subtraction")
     def test_subtraction(self, analyze_expression):
