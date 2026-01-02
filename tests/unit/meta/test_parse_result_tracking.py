@@ -1,5 +1,7 @@
 """Unit tests for YDB suite parse result tracking.
 
+Migrated from: tests/unit/test_parse_result_tracking.py
+
 Tests the ParseResult and SuiteParseResults classes used to track
 parsing status across YDB test suites.
 """

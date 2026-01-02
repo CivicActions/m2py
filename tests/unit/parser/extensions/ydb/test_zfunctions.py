@@ -2,6 +2,8 @@
 
 Reference: YottaDB implementation-defined $Z... functions
 These are implementation-defined per FR-017.
+
+Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
 """
 
 import pytest
@@ -9,285 +11,300 @@ import pytest
 
 @pytest.mark.parser
 @pytest.mark.ydb
+class TestZISVsParsing:
+    """Parser-level tests for Z-ISVs (YDB implementation-defined).
+
+    Z-ISVs that can be SET/NEW are parsed as SpecialVariable (in SVARNAME pattern).
+
+    Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+    """
+
+    # Settable Z-ISVs (parsed as SpecialVariable)
+    def test_ztrap_isv(self, parse_expression):
+        """$ZTRAP Z-ISV for error trapping (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZTRAP")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZTRAP"
+
+    def test_zstatus_isv(self, parse_expression):
+        """$ZSTATUS Z-ISV for status information (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZSTATUS")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZSTATUS"
+
+    def test_zlevel_isv(self, parse_expression):
+        """$ZLEVEL Z-ISV for stack level (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZLEVEL")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZLEVEL"
+
+    def test_zposition_isv(self, parse_expression):
+        """$ZPOSITION Z-ISV for position information (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZPOSITION")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZPOSITION"
+
+    def test_zeof_isv(self, parse_expression):
+        """$ZEOF Z-ISV for end of file (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZEOF")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZEOF"
+
+    def test_zcmdline_isv(self, parse_expression):
+        """$ZCMDLINE Z-ISV for command line (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZCMDLINE")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZCMDLINE"
+
+    def test_zgbldir_isv(self, parse_expression):
+        """$ZGBLDIR Z-ISV for global directory (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZGBLDIR")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZGBLDIR"
+
+    def test_zjob_isv(self, parse_expression):
+        """$ZJOB Z-ISV for job ID (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZJOB")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ZJOB"
+
+    # Read-only Z-ISVs (parsed as IntrinsicFunctionNoArgs - not in SVARNAME)
+    def test_zchset_isv(self, parse_expression):
+        """$ZCHSET Z-ISV for character set (read-only) (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZCHSET")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunctionNoArgs"
+        assert operand.name == "ZCHSET"
+
+    def test_zsystem_isv(self, parse_expression):
+        """$ZSYSTEM Z-ISV for OS return code (read-only) (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZSYSTEM")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunctionNoArgs"
+        assert operand.name == "ZSYSTEM"
+
+    def test_zysqlnull_isv(self, parse_expression):
+        """$ZYSQLNULL Z-ISV for SQL null handling (read-only) (YDB extension).
+
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZYSQLNULL")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunctionNoArgs"
+        assert operand.name == "ZYSQLNULL"
+
+
+@pytest.mark.parser
+@pytest.mark.ydb
 class TestZfunctionsParsing:
-    """Parser-level tests for Z-functions (YDB implementation-defined)."""
+    """Parser-level tests for Z-functions (YDB implementation-defined).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZASCII per FR-017")
-    def test_zascii(self, parse_expression):
-        """$ZASCII parsing."""
-        pass
+    HIGH/MEDIUM priority Z-functions (from YDBTest analysis).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITAND per FR-017")
-    def test_zbitand(self, parse_expression):
-        """$ZBITAND parsing."""
-        pass
+    Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+    """
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITCOUNT per FR-017")
-    def test_zbitcount(self, parse_expression):
-        """$ZBITCOUNT parsing."""
-        pass
+    def test_zchar_function(self, parse_expression):
+        """$ZCHAR Z-function for extended character handling (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITFIND per FR-017")
-    def test_zbitfind(self, parse_expression):
-        """$ZBITFIND parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZCHAR(65)")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZCHAR"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITGET per FR-017")
-    def test_zbitget(self, parse_expression):
-        """$ZBITGET parsing."""
-        pass
+    def test_zwrite_function(self, parse_expression):
+        """$ZWRITE Z-function for write format (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITNOT per FR-017")
-    def test_zbitnot(self, parse_expression):
-        """$ZBITNOT parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZWRITE(X)")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZWRITE"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITOR per FR-017")
-    def test_zbitor(self, parse_expression):
-        """$ZBITOR parsing."""
-        pass
+    def test_zprevious_function(self, parse_expression):
+        """$ZPREVIOUS Z-function for previous in order (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITSET per FR-017")
-    def test_zbitset(self, parse_expression):
-        """$ZBITSET parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZPREVIOUS(^DATA)")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZPREVIOUS"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITSTR per FR-017")
-    def test_zbitstr(self, parse_expression):
-        """$ZBITSTR parsing."""
-        pass
+    def test_zextract_function(self, parse_expression):
+        """$ZEXTRACT Z-function for extended extract (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITXOR per FR-017")
-    def test_zbitxor(self, parse_expression):
-        """$ZBITXOR parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZEXTRACT(STR,1,5)")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZEXTRACT"
+        assert len(operand.args.args) == 3
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZCHAR per FR-017")
-    def test_zchar(self, parse_expression):
-        """$ZCHAR parsing."""
-        pass
+    def test_zpiece_function(self, parse_expression):
+        """$ZPIECE Z-function for extended piece (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZCOLLATE per FR-017")
-    def test_zcollate(self, parse_expression):
-        """$ZCOLLATE parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression('$ZPIECE(STR,",",1)')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZPIECE"
+        assert len(operand.args.args) == 3
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZCONVERT per FR-017")
-    def test_zconvert(self, parse_expression):
-        """$ZCONVERT parsing."""
-        pass
+    def test_ztranslate_function(self, parse_expression):
+        """$ZTRANSLATE Z-function for extended translate (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZDATA per FR-017")
-    def test_zdata(self, parse_expression):
-        """$ZDATA parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression('$ZTRANSLATE(STR,"abc","xyz")')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZTRANSLATE"
+        assert len(operand.args.args) == 3
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZDATE per FR-017")
-    def test_zdate(self, parse_expression):
-        """$ZDATE parsing."""
-        pass
+    def test_zparse_function(self, parse_expression):
+        """$ZPARSE Z-function for file path parsing (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZDIRECTORY per FR-017")
-    def test_zdirectory(self, parse_expression):
-        """$ZDIRECTORY parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression('$ZPARSE("/path/to/file")')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZPARSE"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZEDIT per FR-017")
-    def test_zedit(self, parse_expression):
-        """$ZEDIT parsing."""
-        pass
+    def test_zsearch_function(self, parse_expression):
+        """$ZSEARCH Z-function for file search (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZEXTRACT per FR-017")
-    def test_zextract(self, parse_expression):
-        """$ZEXTRACT parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression('$ZSEARCH("*.m")')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZSEARCH"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZFF per FR-017")
-    def test_zff(self, parse_expression):
-        """$ZFF parsing."""
-        pass
+    def test_zgetjpi_function(self, parse_expression):
+        """$ZGETJPI Z-function for job/process info (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZFIND per FR-017")
-    def test_zfind(self, parse_expression):
-        """$ZFIND parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression('$ZGETJPI(0,"PID")')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZGETJPI"
+        assert len(operand.args.args) == 2
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZGETJPI per FR-017")
-    def test_zgetjpi(self, parse_expression):
-        """$ZGETJPI parsing."""
-        pass
+    def test_zconvert_function(self, parse_expression):
+        """$ZCONVERT Z-function for character conversion (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZINCR per FR-017")
-    def test_zincr(self, parse_expression):
-        """$ZINCR parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression('$ZCONVERT(STR,"L")')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZCONVERT"
+        assert len(operand.args.args) == 2
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZIO per FR-017")
-    def test_zio(self, parse_expression):
-        """$ZIO parsing."""
-        pass
+    def test_zascii_function(self, parse_expression):
+        """$ZASCII Z-function for extended ASCII (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZJOB per FR-017")
-    def test_zjob(self, parse_expression):
-        """$ZJOB parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZASCII(STR)")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZASCII"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZJOBEXAM per FR-017")
-    def test_zjobexam(self, parse_expression):
-        """$ZJOBEXAM parsing."""
-        pass
+    def test_zlength_function(self, parse_expression):
+        """$ZLENGTH Z-function for extended length (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZLENGTH per FR-017")
-    def test_zlength(self, parse_expression):
-        """$ZLENGTH parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression("$ZLENGTH(STR)")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZLENGTH"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZLEVEL per FR-017")
-    def test_zlevel(self, parse_expression):
-        """$ZLEVEL parsing."""
-        pass
+    def test_zfind_function(self, parse_expression):
+        """$ZFIND Z-function for extended find (YDB extension).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZMESSAGE per FR-017")
-    def test_zmessage(self, parse_expression):
-        """$ZMESSAGE parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZMODE per FR-017")
-    def test_zmode(self, parse_expression):
-        """$ZMODE parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZNAME per FR-017")
-    def test_zname(self, parse_expression):
-        """$ZNAME parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZNEXT per FR-017")
-    def test_znext(self, parse_expression):
-        """$ZNEXT parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZORDER per FR-017")
-    def test_zorder(self, parse_expression):
-        """$ZORDER parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZPARSE per FR-017")
-    def test_zparse(self, parse_expression):
-        """$ZPARSE parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZPEEK per FR-017")
-    def test_zpeek(self, parse_expression):
-        """$ZPEEK parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZPID per FR-017")
-    def test_zpid(self, parse_expression):
-        """$ZPID parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZPIECE per FR-017")
-    def test_zpiece(self, parse_expression):
-        """$ZPIECE parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZPOSITION per FR-017")
-    def test_zposition(self, parse_expression):
-        """$ZPOSITION parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZPREVIOUS per FR-017")
-    def test_zprevious(self, parse_expression):
-        """$ZPREVIOUS parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZPREFERREDLANG per FR-017")
-    def test_zpreferredlang(self, parse_expression):
-        """$ZPREFERREDLANG parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZPRINT per FR-017")
-    def test_zprint(self, parse_expression):
-        """$ZPRINT parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZQGBLMOD per FR-017")
-    def test_zqgblmod(self, parse_expression):
-        """$ZQGBLMOD parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZQSUB per FR-017")
-    def test_zqsub(self, parse_expression):
-        """$ZQSUB parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZSEARCH per FR-017")
-    def test_zsearch(self, parse_expression):
-        """$ZSEARCH parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZSOCKET per FR-017")
-    def test_zsocket(self, parse_expression):
-        """$ZSOCKET parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZSTATUS per FR-017")
-    def test_zstatus(self, parse_expression):
-        """$ZSTATUS parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZSUB per FR-017")
-    def test_zsub(self, parse_expression):
-        """$ZSUB parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZSUFFIX per FR-017")
-    def test_zsuffix(self, parse_expression):
-        """$ZSUFFIX parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZSUPERMASK per FR-017")
-    def test_zsupermask(self, parse_expression):
-        """$ZSUPERMASK parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZSYSLOG per FR-017")
-    def test_zsyslog(self, parse_expression):
-        """$ZSYSLOG parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZTRAP per FR-017")
-    def test_ztrap(self, parse_expression):
-        """$ZTRAP parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZTRANSLATE per FR-017")
-    def test_ztranslate(self, parse_expression):
-        """$ZTRANSLATE parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZTRIGGER per FR-017")
-    def test_ztrigger(self, parse_expression):
-        """$ZTRIGGER parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZTRNLNM per FR-017")
-    def test_ztrnlnm(self, parse_expression):
-        """$ZTRNLNM parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZVERSION per FR-017")
-    def test_zversion(self, parse_expression):
-        """$ZVERSION parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZWIDTH per FR-017")
-    def test_zwidth(self, parse_expression):
-        """$ZWIDTH parsing."""
-        pass
-
-    @pytest.mark.skip(reason="Implementation-defined: $ZWRITE per FR-017")
-    def test_zwrite(self, parse_expression):
-        """$ZWRITE parsing."""
-        pass
+        Migrated from: tests/unit/test_expression_grammar.py::TestZFunctionsAndISVs
+        """
+        model = parse_expression('$ZFIND(STR,"pattern")')
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZFIND"
+        assert len(operand.args.args) == 2

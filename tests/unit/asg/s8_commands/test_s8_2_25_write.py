@@ -1,26 +1,151 @@
 """Tests for WRITE command ASG analysis (§8.2.25).
 
 Reference: MUMPS 1995 ANSI Standard, Section 8.2.25
+
+Migrated from:
+- tests/unit/test_semantic_analyzer.py::TestFormatControlASG
+- tests/unit/test_command_analysis.py::TestWriteStatementAnalysis
 """
 
 import pytest
+from tests.helpers.parsing import parse_command
+from m2py.parser.line_parser import parse_commands_from_line
+from m2py.analysis.semantic_analyzer import SemanticAnalyzer, analyze_command
+from m2py.asg import MFormatControl, FormatControlType, MLiteral
+from m2py.asg.statements import MWriteStatement
+
+
+def analyze_first_command(line: str):
+    """Helper to parse a line and analyze the first command."""
+    cmds = parse_commands_from_line(line)
+    assert len(cmds) >= 1, f"No commands parsed from: {line}"
+    return analyze_command(cmds[0])
 
 
 @pytest.mark.asg
 class TestWriteCommandAnalysis:
-    """ASG-level tests for WRITE command analysis (§8.2.25)."""
+    """ASG-level tests for WRITE command analysis (§8.2.25).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE command node")
-    def test_write_command_node(self, analyze_routine):
-        """WRITE command creates correct ASG node (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    Migrated from:
+    - TestFormatControlASG
+    - tests/unit/test_command_analysis.py::TestWriteStatementAnalysis
+    """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE format controls")
-    def test_write_format_controls(self, analyze_routine):
-        """WRITE format controls (!, ?, #) are analyzed (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_simple_write(self):
+        """WRITE X produces MWriteStatement (§8.2.25).
+
+        Migrated from: test_command_analysis.py::TestWriteStatementAnalysis::test_simple_write
+        """
+        stmt = analyze_first_command("W X")
+
+        assert isinstance(stmt, MWriteStatement)
+        assert len(stmt.arguments) >= 1
+
+    def test_write_string(self):
+        """WRITE "hello" produces string literal argument (§8.2.25).
+
+        Migrated from: test_command_analysis.py::TestWriteStatementAnalysis::test_write_string
+        """
+        stmt = analyze_first_command('W "hello"')
+
+        assert isinstance(stmt, MWriteStatement)
+        assert len(stmt.arguments) >= 1
+        # Argument may be wrapped, check the underlying value
+        arg = stmt.arguments[0]
+        if isinstance(arg, MLiteral):
+            assert arg.value == "hello"
+        else:
+            # May be an Expr wrapper - just verify it exists
+            assert arg is not None
+
+    def test_write_format_control(self):
+        """WRITE ! produces newline format control (§8.2.25).
+
+        Migrated from: test_command_analysis.py::TestWriteStatementAnalysis::test_write_format_control
+        """
+        stmt = analyze_first_command("W !")
+
+        assert isinstance(stmt, MWriteStatement)
+        assert len(stmt.arguments) >= 1
+
+    def test_newline_control(self):
+        """W ! produces MFormatControl with NEWLINE type (§8.2.25)."""
+        cmd = parse_command("W !")
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(cmd, None)
+
+        assert isinstance(result, MWriteStatement)
+        assert len(result.arguments) == 1
+        arg = result.arguments[0]
+        assert isinstance(arg, MFormatControl)
+        assert arg.control_type == FormatControlType.NEWLINE
+        assert arg.expression is None
+
+    def test_formfeed_control(self):
+        """W # produces MFormatControl with FORMFEED type (§8.2.25)."""
+        cmd = parse_command("W #")
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(cmd, None)
+
+        assert isinstance(result, MWriteStatement)
+        assert len(result.arguments) == 1
+        arg = result.arguments[0]
+        assert isinstance(arg, MFormatControl)
+        assert arg.control_type == FormatControlType.FORMFEED
+        assert arg.expression is None
+
+    def test_tab_control_with_expression(self):
+        """W ?10 produces MFormatControl with TAB type and column expression (§8.2.25)."""
+        cmd = parse_command("W ?10")
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(cmd, None)
+
+        assert isinstance(result, MWriteStatement)
+        assert len(result.arguments) == 1
+        arg = result.arguments[0]
+        assert isinstance(arg, MFormatControl)
+        assert arg.control_type == FormatControlType.TAB
+        assert isinstance(arg.expression, MLiteral)
+        assert arg.expression.value == 10
+
+    def test_charcode_control_with_expression(self):
+        """W *65 produces MFormatControl with CHARCODE type and code expression (§8.2.25)."""
+        cmd = parse_command("W *65")
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(cmd, None)
+
+        assert isinstance(result, MWriteStatement)
+        assert len(result.arguments) == 1
+        arg = result.arguments[0]
+        assert isinstance(arg, MFormatControl)
+        assert arg.control_type == FormatControlType.CHARCODE
+        assert isinstance(arg.expression, MLiteral)
+        assert arg.expression.value == 65
+
+    def test_mixed_format_controls(self):
+        """W !!,"Test",# produces multiple MFormatControl nodes (§8.2.25)."""
+        cmd = parse_command('W !!,"Test",#')
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(cmd, None)
+
+        assert isinstance(result, MWriteStatement)
+        assert len(result.arguments) == 4
+
+        # First two are newlines
+        assert isinstance(result.arguments[0], MFormatControl)
+        assert result.arguments[0].control_type == FormatControlType.NEWLINE
+        assert isinstance(result.arguments[1], MFormatControl)
+        assert result.arguments[1].control_type == FormatControlType.NEWLINE
+
+        # Third is string literal
+        assert isinstance(result.arguments[2], MLiteral)
+        assert result.arguments[2].value == "Test"
+
+        # Fourth is formfeed
+        assert isinstance(result.arguments[3], MFormatControl)
+        assert result.arguments[3].control_type == FormatControlType.FORMFEED
+
+    # ---- Stub tests for unimplemented features ----
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: WRITE $X/$Y modification")

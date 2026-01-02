@@ -3,160 +3,311 @@
 Tests verify the textX grammar correctly captures operator syntax.
 
 Reference: MUMPS 1995 ANSI Standard, Section 7.2
+
+Migrated from:
+- tests/unit/test_expression_grammar.py::TestBinaryOperators
+- tests/unit/test_expression_grammar.py::TestUnaryOperators
+- tests/unit/test_expression_grammar.py::TestChainedUnarySemantics
+- tests/unit/test_grammar.py::TestNotContainsOperatorGrammar
+- tests/unit/test_special_constructs.py::TestComplexExpressions
 """
 
 import pytest
 
+from m2py.asg import MRoutine
+from m2py.parser import MUMPSParser
+
 
 @pytest.mark.parser
-class TestOperatorsParsing:
-    """Parser-level tests for Operators (§7.2).
+class TestBinaryOperators:
+    """Test binary operator parsing (§7.2).
 
-    MUMPS operators include arithmetic, string, relational, and logical.
+    Migrated from test_expression_grammar.py::TestBinaryOperators
     """
 
-    # ---- Arithmetic Operators ----
+    def test_addition(self, parse_expression):
+        """Parse addition (§7.2)."""
+        model = parse_expression("1+2")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: addition operator")
-    def test_addition_operator(self, parse_expression):
-        """Addition + operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_subtraction(self, parse_expression):
+        """Parse subtraction (§7.2)."""
+        model = parse_expression("X-Y")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: subtraction operator")
-    def test_subtraction_operator(self, parse_expression):
-        """Subtraction - operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_multiplication(self, parse_expression):
+        """Parse multiplication (§7.2)."""
+        model = parse_expression("A*B")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: multiplication operator")
-    def test_multiplication_operator(self, parse_expression):
-        """Multiplication * operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_division(self, parse_expression):
+        """Parse division (§7.2)."""
+        model = parse_expression("X/Y")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: division operator")
-    def test_division_operator(self, parse_expression):
-        """Division / operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_integer_division(self, parse_expression):
+        """Parse integer division (§7.2)."""
+        model = parse_expression("X\\Y")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: integer division operator")
-    def test_integer_division_operator(self, parse_expression):
-        """Integer division \\ operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_modulo(self, parse_expression):
+        """Parse modulo (§7.2)."""
+        model = parse_expression("X#Y")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: modulo operator")
-    def test_modulo_operator(self, parse_expression):
-        """Modulo # operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_power(self, parse_expression):
+        """Parse exponentiation (§7.2)."""
+        model = parse_expression("X**2")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exponentiation operator")
-    def test_exponentiation_operator(self, parse_expression):
-        """Exponentiation ** operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_concatenation(self, parse_expression):
+        """Parse string concatenation (§7.2)."""
+        model = parse_expression("A_B")
+        assert model is not None
 
-    # ---- Unary Operators ----
+    def test_equality(self, parse_expression):
+        """Parse equality comparison (§7.2)."""
+        model = parse_expression("X=Y")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: unary minus")
-    def test_unary_minus(self, parse_expression):
-        """Unary minus -X parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_less_than(self, parse_expression):
+        """Parse less than (§7.2)."""
+        model = parse_expression("X<Y")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: unary plus")
-    def test_unary_plus(self, parse_expression):
-        """Unary plus +X parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_greater_than(self, parse_expression):
+        """Parse greater than (§7.2)."""
+        model = parse_expression("X>Y")
+        assert model is not None
 
-    # ---- String Operator ----
+    def test_logical_and(self, parse_expression):
+        """Parse logical AND (§7.2)."""
+        model = parse_expression("A&B")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: concatenation operator")
-    def test_concatenation_operator(self, parse_expression):
-        """Concatenation _ operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_logical_or(self, parse_expression):
+        """Parse logical OR (§7.2)."""
+        model = parse_expression("A!B")
+        assert model is not None
 
-    # ---- Relational Operators ----
+    def test_not_equal(self, parse_expression):
+        """Parse not equal (§7.2)."""
+        model = parse_expression("X'=Y")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: equality operator")
-    def test_equality_operator(self, parse_expression):
-        """Equality = operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_chain_left_to_right(self, parse_expression):
+        """Parse chained operators (MUMPS is L-to-R, no precedence) (§7.2)."""
+        model = parse_expression("1+2*3")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: less than operator")
-    def test_less_than_operator(self, parse_expression):
-        """Less than < operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: greater than operator")
-    def test_greater_than_operator(self, parse_expression):
-        """Greater than > operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+@pytest.mark.parser
+class TestUnaryOperators:
+    """Test unary operator parsing (§7.2).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: contains operator")
-    def test_contains_operator(self, parse_expression):
-        """Contains [ operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    Migrated from test_expression_grammar.py::TestUnaryOperators
+    """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: follows operator")
-    def test_follows_operator(self, parse_expression):
-        """Follows ] operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_not(self, parse_expression):
+        """Parse logical NOT (§7.2)."""
+        model = parse_expression("'X")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: sorts after operator")
-    def test_sorts_after_operator(self, parse_expression):
-        """Sorts after ]] operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_positive(self, parse_expression):
+        """Parse unary plus (§7.2)."""
+        model = parse_expression("+X")
+        assert model is not None
 
-    # ---- Logical Operators ----
+    def test_negative(self, parse_expression):
+        """Parse unary minus (§7.2)."""
+        model = parse_expression("-X")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: logical NOT operator")
-    def test_logical_not_operator(self, parse_expression):
-        """Logical NOT ' operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_double_negative(self, parse_expression):
+        """Parse double unary minus (chained unary operators are valid MUMPS syntax) (§7.2)."""
+        model = parse_expression("--X")
+        assert model is not None
+        # Verify we got two unary operators
+        assert hasattr(model, "left")
+        assert hasattr(model.left, "operators")
+        assert len(model.left.operators) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: logical AND operator")
-    def test_logical_and_operator(self, parse_expression):
-        """Logical AND & operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_triple_negative(self, parse_expression):
+        """Parse triple unary minus (§7.2)."""
+        model = parse_expression("---X")
+        assert model is not None
+        assert len(model.left.operators) == 3
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: logical OR operator")
-    def test_logical_or_operator(self, parse_expression):
-        """Logical OR ! operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_double_not(self, parse_expression):
+        """Parse double logical NOT (chained unary operators are valid MUMPS syntax) (§7.2)."""
+        model = parse_expression("''X")
+        assert model is not None
+        assert len(model.left.operators) == 2
 
-    # ---- Negated Operators ----
+    def test_mixed_unary_plus_minus(self, parse_expression):
+        """Parse mixed unary +- operators (§7.2)."""
+        model = parse_expression("+-X")
+        assert model is not None
+        assert len(model.left.operators) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: not equal operator")
-    def test_not_equal_operator(self, parse_expression):
-        """Not equal '= operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_not_then_minus(self, parse_expression):
+        """Parse NOT followed by minus (§7.2)."""
+        model = parse_expression("'-X")
+        assert model is not None
+        assert len(model.left.operators) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: not contains operator")
-    def test_not_contains_operator(self, parse_expression):
-        """Not contains '[ operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
 
-    # ---- Left-to-Right Evaluation ----
+@pytest.mark.parser
+class TestChainedUnarySemantics:
+    """Test that chained unary operators produce correct ASG structure (§7.2).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: left-to-right evaluation")
-    def test_left_to_right_evaluation(self, parse_expression):
-        """Left-to-right evaluation order parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+    Migrated from test_expression_grammar.py::TestChainedUnarySemantics
+    """
+
+    def test_double_negative_asg(self, parse_expression):
+        """Verify --X produces nested MUnaryOp nodes (§7.2)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+
+        model = parse_expression("--X")
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+
+        # Should be MUnaryOp('-', MUnaryOp('-', Variable))
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == "-"
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == "-"
+        # The innermost operand is a LocalVariable (textX class)
+        # It has a name attribute we can check
+        assert result.operand.operand.name == "X"
+
+    def test_double_not_asg(self, parse_expression):
+        """Verify ''X produces nested MUnaryOp nodes (§7.2)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+
+        model = parse_expression("''X")
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+
+        # Should be MUnaryOp("'", MUnaryOp("'", Variable))
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == "'"
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == "'"
+        # The innermost operand is a LocalVariable (textX class)
+        assert result.operand.operand.name == "X"
+
+    def test_triple_negative_asg(self, parse_expression):
+        """Verify ---X produces 3 nested MUnaryOp nodes (from V1UO4B) (§7.2)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+
+        model = parse_expression("---2")
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+
+        # Should be MUnaryOp('-', MUnaryOp('-', MUnaryOp('-', Literal)))
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == "-"
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == "-"
+        assert isinstance(result.operand.operand, MUnaryOp)
+        assert result.operand.operand.operator == "-"
+        # Innermost is the numeric literal (value is int, not string)
+        assert result.operand.operand.operand.value == 2
+
+    def test_triple_not_asg(self, parse_expression):
+        """Verify '''0 produces 3 nested MUnaryOp nodes (from V1UO4B) (§7.2)."""
+        from m2py.analysis.semantic_analyzer import SemanticAnalyzer
+        from m2py.asg.expressions import MUnaryOp
+
+        model = parse_expression("'''0")
+        analyzer = SemanticAnalyzer()
+        result = analyzer.analyze(model, None)
+
+        # Should be MUnaryOp("'", MUnaryOp("'", MUnaryOp("'", Literal)))
+        assert isinstance(result, MUnaryOp)
+        assert result.operator == "'"
+        assert isinstance(result.operand, MUnaryOp)
+        assert result.operand.operator == "'"
+        assert isinstance(result.operand.operand, MUnaryOp)
+        assert result.operand.operand.operator == "'"
+        # value is int 0, not string "0"
+        assert result.operand.operand.operand.value == 0
+
+
+@pytest.mark.parser
+class TestNotContainsOperatorGrammar:
+    """Test 'not contains' operator '[ (§7.2).
+
+    Migrated from: tests/unit/test_grammar.py::TestNotContainsOperatorGrammar
+    """
+
+    def test_not_contains_variables(self):
+        """X'[Y should parse as not-contains binary op (§7.2)."""
+        parser = MUMPSParser()
+        source = "LABEL\tI X'[Y\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        assert len(label.body.statements) == 1
+        assert label.body.statements[0].__class__.__name__ == "MIfStatement"
+
+    def test_not_contains_string(self):
+        """'\"12345678\"'[ans should parse (§7.2)."""
+        parser = MUMPSParser()
+        source = 'LABEL\tI "12345678"\'[ans\n'
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+
+
+@pytest.mark.parser
+class TestComplexExpressions:
+    """Tests for complex expression combinations (§7.2).
+
+    Migrated from: tests/unit/test_special_constructs.py::TestComplexExpressions
+    """
+
+    def test_function_in_subscript(self, parse_expression):
+        """^DATA($ORDER(^DATA(\"\"))) (§7.2).
+
+        Migrated from: tests/unit/test_special_constructs.py::TestComplexExpressions
+        """
+        model = parse_expression('^DATA($ORDER(^DATA("")))')
+        assert model is not None
+
+    def test_piece_concatenation(self, parse_expression):
+        """$PIECE(X,\"^\",1)_\"-\"_$PIECE(X,\"^\",2) (§7.2).
+
+        Migrated from: tests/unit/test_special_constructs.py::TestComplexExpressions
+        """
+        model = parse_expression('$PIECE(X,"^",1)_"-"_$PIECE(X,"^",2)')
+        assert model is not None
+
+    def test_conditional_in_function(self, parse_expression):
+        """$SELECT with simple expressions (§7.2).
+
+        Migrated from: tests/unit/test_special_constructs.py::TestComplexExpressions
+        """
+        model = parse_expression("$SELECT(A,B,C)")
+        assert model is not None
+
+    def test_indirection_in_function(self, parse_expression):
+        """$DATA(@X) (§7.2).
+
+        Migrated from: tests/unit/test_special_constructs.py::TestComplexExpressions
+        """
+        model = parse_expression("$DATA(@X)")
+        assert model is not None
+
+    def test_extrinsic_in_expression(self, parse_expression):
+        """A+$$FUNC(B)*C (§7.2).
+
+        Migrated from: tests/unit/test_special_constructs.py::TestComplexExpressions
+        """
+        model = parse_expression("A+$$FUNC(B)*C")
+        assert model is not None

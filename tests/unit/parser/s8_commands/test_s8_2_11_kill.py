@@ -10,38 +10,40 @@ import pytest
 class TestKillCommandParsing:
     """Parser-level tests for KILL command (§8.2.11)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL single variable")
-    def test_kill_single_variable(self, parse_line):
-        """KILL X parses correctly (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+    def test_simple_kill(self, command_metamodel):
+        """K X - KILL single variable (§8.2.11)."""
+        model = command_metamodel.model_from_str("K X", "KillCommand")
+        assert len(model.args) == 1
+        assert model.args[0].target is not None
+        assert not model.args[0].exclusive  # False when not exclusive
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL multiple variables")
-    def test_kill_multiple_variables(self, parse_line):
-        """KILL X,Y,Z multiple variables parses correctly (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+    def test_kill_global(self, command_metamodel):
+        """K ^GLOBAL - KILL global variable (§8.2.11)."""
+        model = command_metamodel.model_from_str("K ^GLOBAL", "KillCommand")
+        assert len(model.args) == 1
+        assert model.args[0].target is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL subscripted variable")
-    def test_kill_subscripted(self, parse_line):
-        """KILL arr(1) subscripted variable parses correctly (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+    def test_exclusive_kill(self, command_metamodel):
+        """K (X,Y) - KILL exclusive form (§8.2.11)."""
+        model = command_metamodel.model_from_str("K (X,Y)", "KillCommand")
+        assert len(model.args) == 1
+        assert model.args[0].exclusive  # True-ish when exclusive
+        # textX uses 'except' attribute name from grammar
+        assert len(getattr(model.args[0], "except")) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL global variable")
-    def test_kill_global(self, parse_line):
-        """KILL ^GLOBAL parses correctly (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+    def test_multiple_exclusive_groups(self, command_metamodel):
+        """K (X,Y,Z),(X,W) - multiple exclusive groups/intersection (§8.2.11)."""
+        model = command_metamodel.model_from_str("K (X,Y,Z),(X,W)", "KillCommand")
+        assert len(model.args) == 2
+        assert model.args[0].exclusive
+        assert model.args[1].exclusive
+        assert getattr(model.args[0], "except") == ["X", "Y", "Z"]
+        assert getattr(model.args[1], "except") == ["X", "W"]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL exclusive form")
-    def test_kill_exclusive(self, parse_line):
-        """KILL (X,Y) exclusive form parses correctly (§8.2.11)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL argumentless")
-    def test_kill_argumentless(self, parse_line):
-        """KILL without argument parses correctly (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+    def test_mixed_exclusive_selective(self, command_metamodel):
+        """K (X,W),Z - mixed exclusive and selective (§8.2.11)."""
+        model = command_metamodel.model_from_str("K (X,W),Z", "KillCommand")
+        assert len(model.args) == 2
+        assert model.args[0].exclusive
+        assert getattr(model.args[0], "except") == ["X", "W"]
+        assert model.args[1].target is not None

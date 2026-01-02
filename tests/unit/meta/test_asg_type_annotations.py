@@ -1,5 +1,7 @@
 """Tests for ASG type annotation correctness (Phase 73 validation).
 
+Migrated from: tests/unit/test_asg_type_annotations.py
+
 Validates that type annotations match runtime behavior for key ASG elements.
 """
 

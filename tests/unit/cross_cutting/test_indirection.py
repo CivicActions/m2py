@@ -1,5 +1,7 @@
 """Tests for comprehensive indirection detection.
 
+Migrated from: tests/unit/test_indirection_detection.py
+
 Phase 91: Tests for walk_expressions(), has_indirection(), and
 the updated check_requires_runtime_scope() function.
 """

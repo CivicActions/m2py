@@ -3,56 +3,54 @@
 Tests verify the textX grammar correctly captures literal syntax.
 
 Reference: MUMPS 1995 ANSI Standard, Section 7.1.4
+
+Migrated from: tests/unit/test_expression_grammar.py (TestNumericLiterals, TestStringLiterals)
 """
 
 import pytest
 
 
 @pytest.mark.parser
-class TestLiteralsParsing:
-    """Parser-level tests for Literals (§7.1.4).
+class TestNumericLiterals:
+    """Test numeric literal parsing (§7.1.4).
 
-    Literal types: numeric (integer, decimal, exponential) and string.
+    Migrated from: tests/unit/test_expression_grammar.py::TestNumericLiterals
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: integer literal")
-    def test_integer_literal(self, parse_expression):
-        """Integer literal 123 parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+    def test_integer(self, parse_expression):
+        """Parse integer literal (§7.1.4)."""
+        model = parse_expression("42")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: decimal literal")
-    def test_decimal_literal(self, parse_expression):
-        """Decimal literal 123.456 parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+    def test_decimal(self, parse_expression):
+        """Parse decimal literal (§7.1.4)."""
+        model = parse_expression("3.14")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exponential literal")
-    def test_exponential_literal(self, parse_expression):
-        """Exponential literal 1.23E5 parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+    def test_negative_integer(self, parse_expression):
+        """Parse negative integer (unary minus) (§7.1.4)."""
+        model = parse_expression("-42")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: negative number")
-    def test_negative_number(self, parse_expression):
-        """Negative number -123 parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: string literal")
-    def test_string_literal(self, parse_expression):
-        """String literal \"hello\" parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+@pytest.mark.parser
+class TestStringLiterals:
+    """Test string literal parsing (§7.1.4).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: string with embedded quotes")
-    def test_string_embedded_quotes(self, parse_expression):
-        """String with embedded quotes \"he said \"\"hi\"\"\" parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+    Migrated from: tests/unit/test_expression_grammar.py::TestStringLiterals
+    """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: empty string")
+    def test_simple_string(self, parse_expression):
+        """Parse simple quoted string (§7.1.4)."""
+        model = parse_expression('"hello"')
+        assert model is not None
+
     def test_empty_string(self, parse_expression):
-        """Empty string \"\" parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+        """Parse empty string (§7.1.4)."""
+        model = parse_expression('""')
+        assert model is not None
+
+    def test_escaped_quote(self, parse_expression):
+        """Parse string with escaped quote (§7.1.4)."""
+        model = parse_expression('"say ""hi"""')
+        assert model is not None

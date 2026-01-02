@@ -1,6 +1,8 @@
 """Tests for WRITE command parsing (§8.2.25).
 
 Reference: MUMPS 1995 ANSI Standard, Section 8.2.25
+
+Migrated from: tests/unit/test_command_grammar.py::TestWriteCommand
 """
 
 import pytest
@@ -10,44 +12,58 @@ import pytest
 class TestWriteCommandParsing:
     """Parser-level tests for WRITE command (§8.2.25)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE expression")
-    def test_write_expression(self, parse_line):
-        """WRITE expr parses correctly (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_simple_write(self, command_metamodel):
+        """W X - simple variable write (§8.2.25)."""
+        model = command_metamodel.model_from_str("W X", "WriteCommand")
+        assert model is not None
+        assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE string literal")
-    def test_write_string(self, parse_line):
-        """WRITE \"string\" parses correctly (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_write_string(self, command_metamodel):
+        """W "Hello" - string literal write (§8.2.25)."""
+        model = command_metamodel.model_from_str('W "Hello"', "WriteCommand")
+        assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE format control")
-    def test_write_format_control(self, parse_line):
-        """WRITE !,?10,# format controls parse correctly (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_write_newline(self, command_metamodel):
+        """W ! - newline format control (§8.2.25)."""
+        model = command_metamodel.model_from_str("W !", "WriteCommand")
+        assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE character code")
-    def test_write_char_code(self, parse_line):
-        """WRITE *65 character code parses correctly (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_write_adjacent_newlines(self, command_metamodel):
+        """W !! - two newlines without comma separator (§8.2.25)."""
+        model = command_metamodel.model_from_str("W !!", "WriteCommand")
+        assert len(model.args) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE multiple items")
-    def test_write_multiple(self, parse_line):
-        """WRITE X,!,Y,?10,Z multiple items parses correctly (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_write_triple_newlines(self, command_metamodel):
+        """W !!! - three newlines (§8.2.25)."""
+        model = command_metamodel.model_from_str("W !!!", "WriteCommand")
+        assert len(model.args) == 3
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE argumentless")
-    def test_write_argumentless(self, parse_line):
-        """WRITE without argument parses correctly (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_write_mixed_format_controls(self, command_metamodel):
+        """W !!,"Test",! - mix of adjacent and comma-separated (§8.2.25)."""
+        model = command_metamodel.model_from_str('W !!,"Test",!', "WriteCommand")
+        assert len(model.args) == 4
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE abbreviated")
-    def test_write_abbreviated(self, parse_line):
-        """W abbreviation parses correctly (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_write_multiple_args(self, command_metamodel):
+        """W "Name: ",NAME,! - multiple arguments (§8.2.25)."""
+        model = command_metamodel.model_from_str('W "Name: ",NAME,!', "WriteCommand")
+        assert len(model.args) == 3
+
+    def test_write_tab(self, command_metamodel):
+        """W ?10 - tab format control (§8.2.25)."""
+        model = command_metamodel.model_from_str("W ?10", "WriteCommand")
+        assert len(model.args) == 1
+
+    def test_write_form_feed(self, command_metamodel):
+        """W # - form feed format control (§8.2.25)."""
+        model = command_metamodel.model_from_str("W #", "WriteCommand")
+        assert len(model.args) == 1
+
+    def test_write_char_code(self, command_metamodel):
+        """W *65 - ASCII character code (§8.2.25)."""
+        model = command_metamodel.model_from_str("W *65", "WriteCommand")
+        assert len(model.args) == 1
+
+    def test_write_with_postcondition(self, command_metamodel):
+        """W:DEBUG "Debug mode" - postconditioned write (§8.2.25)."""
+        model = command_metamodel.model_from_str('W:DEBUG "Debug mode"', "WriteCommand")
+        assert model.postcond is not None

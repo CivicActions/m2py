@@ -34,12 +34,12 @@ class TestSsvnsCodegen:
         """^$ROUTINE generates routine info access (§7.1.3)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.skip(reason="Out of scope: ^$LIBRARY SSVN per FR-055")
+    @pytest.mark.skip(reason="Out of scope: ^$LIBRARY SSVN (0 uses in VistA)")
     def test_ssvn_library(self):
         """^$LIBRARY SSVN is out of scope (§7.1.3)."""
         pass
 
-    @pytest.mark.skip(reason="Out of scope: ^$EVENT SSVN per FR-055")
+    @pytest.mark.xfail(reason="Used in VistA: ^$EVENT SSVN (7 uses)")
     def test_ssvn_event(self):
-        """^$EVENT SSVN is out of scope (§7.1.3)."""
-        pass
+        """^$EVENT SSVN is used in VistA (§7.1.3)."""
+        pytest.fail("Stub - implement test")

@@ -1,6 +1,7 @@
 """Tests for ZPRINT command parsing (YDB extension).
 
 Reference: YottaDB Z-Commands
+Migrated from: tests/unit/test_command_grammar.py
 """
 
 import pytest
@@ -8,17 +9,28 @@ import pytest
 
 @pytest.mark.parser
 @pytest.mark.ydb
-class TestZprintParsing:
-    """Parser-level tests for ZPRINT command (YDB)."""
+class TestZPrintCommand:
+    """Tests for ZPRINT command parsing."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZPRINT parsing")
-    def test_zprint_basic(self, parse_line):
-        """ZPRINT parses without error."""
-        pytest.fail("Stub - implement test")
+    def test_zprint_simple(self, command_metamodel):
+        """ZPRINT label - print from label"""
+        model = command_metamodel.model_from_str("ZPRINT label", "ZPrintCommand")
+        assert model is not None
+        assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZPRINT with range")
-    def test_zprint_with_range(self, parse_line):
-        """ZPRINT with line range parses correctly."""
-        pytest.fail("Stub - implement test")
+    def test_zprint_abbreviated(self, command_metamodel):
+        """ZP label - abbreviated"""
+        model = command_metamodel.model_from_str("ZP label", "ZPrintCommand")
+        assert len(model.args) == 1
+
+    def test_zprint_label_routine(self, command_metamodel):
+        """ZPRINT label^routine"""
+        model = command_metamodel.model_from_str(
+            "ZPRINT label^routine", "ZPrintCommand"
+        )
+        assert len(model.args) == 1
+
+    def test_zprint_no_args(self, command_metamodel):
+        """ZPRINT - print current routine"""
+        model = command_metamodel.model_from_str("ZPRINT", "ZPrintCommand")
+        assert len(model.args) == 0

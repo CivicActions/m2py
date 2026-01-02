@@ -4,6 +4,50 @@ Provides fixtures for parsing MUMPS source code at the textX grammar level.
 """
 
 import pytest
+from pathlib import Path
+
+
+@pytest.fixture(scope="module")
+def command_metamodel():
+    """Load the command grammar metamodel with custom classes.
+
+    This provides direct access to textX command parsing for low-level
+    grammar validation tests. Migrated from legacy test_command_grammar.py.
+    """
+    from textx import metamodel_from_file
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
+    from m2py.parser.textx_classes import get_all_classes
+
+    grammar_dir = (
+        Path(__file__).parent.parent.parent.parent / "src" / "m2py" / "grammar"
+    )
+    return metamodel_from_file(
+        grammar_dir / "commands.tx", classes=get_all_classes(), skipws=False
+    )
+
+
+@pytest.fixture(scope="module")
+def expr_metamodel():
+    """Load the expression grammar metamodel with custom classes.
+
+    This provides direct access to textX expression parsing for grammar
+    validation tests. Migrated from legacy test_expression_grammar.py.
+    """
+    from textx import metamodel_from_file
+    from m2py.parser.textx_classes import get_expression_classes
+
+    grammar_path = (
+        Path(__file__).parent.parent.parent.parent
+        / "src"
+        / "m2py"
+        / "grammar"
+        / "expressions.tx"
+    )
+    return metamodel_from_file(
+        str(grammar_path), classes=get_expression_classes(), skipws=True
+    )
 
 
 @pytest.fixture
@@ -68,7 +112,7 @@ def parse_expression():
             result = parse_expression("1+2*3")
             assert result is not None
     """
-    from m2py.parser.line_parser import parse_expression as _parse_expr
+    from tests.helpers.parsing import parse_expression as _parse_expr
 
     return _parse_expr
 
