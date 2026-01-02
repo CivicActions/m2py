@@ -1,6 +1,6 @@
 # Feature Specification: MUMPS Spec-Aligned Unit Test Organization
 
-**Feature Branch**: `002-spec-unit-test-organization`  
+**Feature Branch**: `002-spec-unit-test-organization` (tracking branch for PR; changes apply in-place to `tests/` directory)  
 **Created**: 2026-01-01  
 **Status**: Draft  
 **Input**: User description: "Reorganize unit tests to systematically map to MUMPS spec sections, enabling verifiable coverage of parser and ASG output against the 1995 ANSI M standard"
@@ -24,7 +24,7 @@ This specification defines a systematic reorganization of M2PY's unit tests to d
 
 - Event processing commands (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER, ASSIGN) per `docs/limitations.md`
 - THEN command (zero real-world usage identified)
-- Actual MUMPS runtime execution (codegen tests verify generated Python behavior, not MUMPS interpreter behavior)
+- Actual MUMPS runtime execution (codegen tests verify generated Python behavior against YDBTest expected outputs and MUMPS spec, not live MUMPS interpreter comparison)
 
 ---
 
@@ -74,7 +74,7 @@ As a project maintainer, I want a clear coverage matrix that shows exactly which
 
 **Acceptance Scenarios**:
 
-1. **Given** the complete MUMPS 1995 spec table of contents, **When** compared to test files, **Then** every section is accounted for (tested, skip-marked, or documented as out-of-scope)
+1. **Given** the complete MUMPS 1995 spec table of contents, **When** compared to test files, **Then** every section is accounted for in at least one test category (parser, asg, or codegen) as either: tested, stub-marked (xfail), skip-marked, or documented as out-of-scope in coverage-matrix.md
 2. **Given** a test file with `@pytest.mark.skip(reason="not-implemented")`, **When** the coverage report runs, **Then** it appears in the "pending" category with the reason
 3. **Given** the limitations.md exclusions, **When** the coverage report runs, **Then** those sections appear as "out-of-scope" not "missing"
 
@@ -136,12 +136,18 @@ As a developer building the Python code generator, I want stub tests for every l
 
 **Independent Test**: For each spec section, generate Python from MUMPS, execute it, and verify output matches expected MUMPS behavior.
 
+**Source of Truth for Expected Behavior**: Codegen tests MUST validate against one of these authoritative sources:
+- **YDBTest functional suites**: `tests/functional/` contains YottaDB validation suites (MUGJ, MVTS, basic_inref, merge_inref, indirection_inref, m_commands_inref, io_inref, tp_inref, triggers_inref, longname_inref, unicode_inref) with known expected outputs
+- **MUMPS Spec Citations**: For behaviors not covered by test suites, cite the specific MUMPS 1995 spec section (e.g., "per §7.2.5, pattern match returns 1 or 0")
+- **Reference Implementation**: When ambiguous, YottaDB/GT.M runtime behavior is authoritative
+
 **Acceptance Scenarios**:
 
-1. **Given** a MUMPS routine with SET and WRITE commands, **When** transpiled and executed, **Then** the Python output matches expected MUMPS output
-2. **Given** a MUMPS FOR loop, **When** transpiled and executed, **Then** the Python loop iterates correctly with proper variable scoping
-3. **Given** a MUMPS intrinsic function call, **When** transpiled and executed, **Then** the Python function produces identical results
+1. **Given** a MUMPS routine with SET and WRITE commands, **When** transpiled and executed, **Then** the Python output matches expected YDBTest output or MUMPS spec behavior
+2. **Given** a MUMPS FOR loop, **When** transpiled and executed, **Then** the Python loop iterates correctly with proper variable scoping per YDBTest validation
+3. **Given** a MUMPS intrinsic function call, **When** transpiled and executed, **Then** the Python function produces identical results to YDBTest expected outputs
 4. **Given** a codegen stub test (marked xfail), **When** implementation is completed, **Then** the test transitions from xfail to passing
+5. **Given** a codegen test without YDBTest coverage, **When** implemented, **Then** the test MUST cite the MUMPS spec section defining the expected behavior
 
 ---
 
@@ -158,7 +164,7 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 1. **Given** a stub test marked with `@pytest.mark.xfail(reason="stub: needs implementation")`, **When** pytest runs, **Then** it shows as "xfail" (expected failure) and the suite passes
 2. **Given** a stub test that gets implemented, **When** the implementation is complete, **Then** removing the xfail marker causes the test to pass normally
 3. **Given** the full test suite with stubs, **When** `pytest` runs with default options, **Then** exit code is 0 (success)
-4. **Given** compound markers `@pytest.mark.stub` and `@pytest.mark.codegen`, **When** running `pytest -m "not stub"`, **Then** only implemented tests run
+4. **Given** compound markers (`@pytest.mark.stub`, `@pytest.mark.parser`/`@pytest.mark.asg`/`@pytest.mark.codegen`, and `@pytest.mark.xfail(reason="...")` together), **When** running `pytest -m "not stub"`, **Then** only implemented tests run
 
 ---
 
@@ -167,9 +173,9 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **Syntax ambiguity**: MUMPS allows abbreviated commands—how do we test that `S` parses identically to `SET`?
 - **Indirection everywhere**: Many constructs support `@` indirection—how do we avoid duplicating indirection tests across every command?
 - **Argumentless commands**: Commands like argumentless DO, FOR, and NEW have special semantics—ensure they're tested distinctly from argument forms
-- **Multi-argument commands**: Commands accepting multiple arguments (SET, WRITE, KILL) need tests for both single and multiple argument forms
+- **Multi-argument commands**: Commands accepting multiple arguments (SET, WRITE, KILL) need tests for both single and multiple argument forms (minimum: 1, 2, and 3+ arguments)
 - **Postcondition scope**: Command postconditions (`SET:Cond X=1`) gate the entire command; argument postconditions (`DO Label:C1,Label2:C2`) are independent per argument per §8.1.4
-- **Pattern match complexity**: Pattern syntax (§7.2.5) is complex enough to warrant exhaustive separate testing—including alternation `?(3N,2A)`, indefinite quantifiers `.E`, and pattern indirection `?@P`
+- **Pattern match complexity**: Pattern syntax (§7.2.5) is complex enough to warrant exhaustive separate testing—including pattern codes (A=alpha, C=control, E=any, L=lowercase, N=numeric, P=punctuation, U=uppercase), alternation `?(3N,2A)`, indefinite quantifiers `.E`, and pattern indirection `?@P`
 - **Naked global references**: The "naked indicator" (`^(subscript)`) relies on runtime state from the last global reference—tests must verify sequence-dependent behavior
 - **$TEST side effects**: `$TEST` is set by argumentless IF, and by OPEN/READ/JOB/LOCK commands with timeouts—tests must verify all contributing commands and ELSE behavior
 - **Exclusive NEW**: `NEW (X,Y)` stacks *all locals except* X and Y (inverse of normal NEW)—requires distinct variable scope tests
@@ -187,8 +193,14 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 
 - **FR-001**: Test directory structure MUST mirror MUMPS 1995 spec organization with directories for each major section (§5 Metalanguage, §6 Routine, §7 Expression, §8 Commands, §9 Charset)
 - **FR-002**: Each test file MUST be named to indicate its corresponding spec section (e.g., `test_s7_1_2_local_variables.py` for §7.1.2)
-- **FR-003**: Tests MUST be organized into three categories: `parser/` (textX output), `asg/` (final ASG after analysis), and `codegen/` (Python generation and execution)
-- **FR-004**: Test files MUST include docstrings referencing the specific MUMPS spec section(s) they cover
+- **FR-003**: Tests MUST be organized into these categories:
+  - `parser/` - textX output verification
+  - `asg/` - final ASG after analysis
+  - `codegen/` - Python generation and execution
+  - `analysis/` - internal algorithm unit tests (FOR classifier, GOTO classifier, resolver)
+  - `meta/` - tooling and infrastructure tests (textX integration, parser API)
+  - `cross_cutting/` - features spanning multiple commands (indirection, postconditions, timeouts)
+- **FR-004**: Test files MUST include docstrings referencing the specific MUMPS spec section(s) they cover. Example format: `"""Tests for SET command parsing (§8.2.18)."""`. This applies to both stub creation and migration.
 - **FR-005**: Cross-cutting features (indirection, postconditions, timeouts) MUST have dedicated test files rather than being duplicated across command tests
 
 #### Parser Test Requirements
@@ -211,8 +223,9 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **FR-030**: Codegen tests MUST verify that generated Python code executes without errors
 - **FR-031**: Codegen tests MUST verify that generated Python produces output matching expected MUMPS behavior
 - **FR-032**: Codegen tests MUST cover all language features that have ASG support
-- **FR-033**: Codegen tests MUST use realistic MUMPS examples (from mumps-reference, YDBTest, or VistA where appropriate)
+- **FR-033**: Codegen tests MUST use MUMPS examples from one of these authoritative sources: `mumps-reference/`, `tests/functional/*_inref/` (YDBTest), `tests/functional/mugj/`, or `VistA-M/`
 - **FR-034**: Codegen tests for unimplemented features MUST exist as stubs marked with `@pytest.mark.xfail`
+- **FR-056**: Codegen test stubs MUST include comments citing the YDBTest functional suite file or MUMPS spec section that defines expected behavior
 
 #### Stub Management Requirements
 
@@ -222,10 +235,11 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **FR-038**: Running `pytest -m "not stub"` MUST execute only implemented tests
 - **FR-039**: Out-of-scope features (per limitations.md) MUST use `@pytest.mark.skip(reason="out-of-scope: <reason>")` instead of xfail
 - **FR-040**: When a stub is implemented, the `@pytest.mark.stub` and `@pytest.mark.xfail` markers MUST be removed
+- **FR-057**: Migration tasks MUST verify that implemented tests have had stub/xfail markers removed per FR-040
 
 #### Coverage Tracking Requirements
 
-- **FR-015**: Unimplemented spec sections MUST have stub test files with `@pytest.mark.xfail` and `@pytest.mark.stub` markers
+- **FR-015**: Unimplemented spec sections MUST have stub test files per FR-035 marker requirements
 - **FR-016**: Out-of-scope sections (per limitations.md) MUST have stub test files with `@pytest.mark.skip(reason="out-of-scope: <reason>")`
 - **FR-017**: Implementation-defined features (VIEW, Z-commands) MUST have stub test files with `@pytest.mark.skip(reason="implementation-defined: <note>")` for unimplemented variants
 - **FR-018**: A coverage matrix document MUST exist mapping every §1995 section to its test status
@@ -242,6 +256,29 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **FR-023**: Test structure MUST accommodate YottaDB/GT.M Z-commands in a dedicated extension section
 - **FR-024**: Z-commands that are implemented MUST have corresponding tests
 - **FR-025**: Z-commands that are not implemented MUST be documented in the coverage matrix
+- **FR-061**: Test structure MUST accommodate YottaDB/GT.M Z-functions ($Z... intrinsic functions) in the dedicated extension section
+- **FR-062**: Z-functions that are implemented or referenced in the codebase MUST have corresponding tests (at minimum: $ZSTATUS, $ZLEVEL, $ZTRAP, $ZDATE, $ZSEARCH, $ZVERSION)
+- **FR-063**: Z-functions that are not implemented MUST be documented in the coverage matrix with skip markers
+
+#### Library Function Requirements (ANSI M Annex I)
+
+- **FR-058**: Test structure MUST include stub files for ANSI M Annex I normative library functions:
+  - **MATH library** (57 functions per §7.1.6.5): %ABS, %ARCCOS, %ARCCOSH, %ARCCOT, %ARCCOTH, %ARCCSC, %ARCSEC, %ARCSIN, %ARCSINH, %ARCTAN, %ARCTANH, %CABS, %CADD, %CCOS, %CDIV, %CEXP, %CLOG, %CMUL, %COMPLEX, %CONJUG, %COS, %COSH, %COT, %COTH, %CPOWER, %CSC, %CSCH, %CSIN, %CSUB, %DECDMS, %DEGRAD, %DMSDEC, %E, %EXP, %LOG, %LOG10, %MTXADD, %MTXCOF, %MTXCOPY, %MTXDET, %MTXEQU, %MTXINV, %MTXMUL, %MTXSCA, %MTXSUB, %MTXTRP, %MTXUNIT, %PI, %RADDEG, %SEC, %SECH, %SIGN, %SIN, %SINH, %SQRT, %TAN, %TANH
+  - **STRING library** (6 functions per §7.1.6.6): %CRC16, %CRC32, %CRCCCITT, %FORMAT, %PRODUCE, %REPLACE
+  - **CHARACTER library** (5 functions per §7.1.6.4): %COLLATE, %COMPARE, %LOWER, %PATCODE, %UPPER
+- **FR-059**: Library function stubs MUST be organized under `test_s7_1_6_5_library_functions_*.py` files within parser/asg/codegen directories
+- **FR-060**: Library function stubs MUST use `@pytest.mark.xfail` since these are normative but rarely implemented in real codebases
+
+#### Out-of-Scope Features (per limitations.md)
+
+- **FR-055**: The following MUMPS 1995 spec sections are explicitly out-of-scope and MUST have skip-marked test files (not xfail stubs):
+  - §5 Metalanguage (informative, no executable semantics)
+  - §6.3.4 Event Processing (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER)
+  - §6.4 Embedded Programs
+  - THEN command (zero real-world usage)
+  - ASSIGN command (event processing)
+  - RLOAD/RSAVE commands (routine library management)
+  - ^$LIBRARY, ^$EVENT SSVNs (related to out-of-scope features)
 
 #### Language Semantic Requirements
 
@@ -251,11 +288,15 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **FR-049**: Tests for postconditions MUST distinguish command-level (`SET:C X=1,Y=2` gates both) from argument-level (`DO L1:C1,L2:C2` independent)
 - **FR-050**: Tests for binary operators MUST verify strict left-to-right evaluation without precedence (e.g., `2+3*4=20`)
 - **FR-051**: Tests for transaction commands MUST cover nested TSTART with `$TLEVEL` tracking
+- **FR-052**: Tests for Structured System Variables (SSVNs per §7.1.3) MUST cover parsing and ASG representation for: `^$JOB`, `^$ROUTINE`, `^$GLOBAL`, `^$LOCK`, `^$DEVICE`, `^$CHARACTER`, `^$SYSTEM`, `^$Z` (§7.1.3.8 implementation-defined), and `^$Y` (§7.1.3.10 implementation-defined). Note: `^$LIBRARY` and `^$EVENT` are out-of-scope per limitations.md but MUST have skip-marked test files. (Special variables like `$DEVICE`, `$IOREFERENCE`, `$PIOREFERENCE` are covered under FR-028/§7.1.4.10, not here.)
+- **FR-053**: Analysis function unit tests (FOR classifier, GOTO classifier, resolver) MUST be organized in a dedicated `analysis/` directory since they test internal algorithms, not spec compliance
+- **FR-054**: Non-spec-aligned tooling tests (textX integration, parse result tracking) MUST be organized in a dedicated `meta/` directory
+- **FR-029**: Codegen test fixtures MUST provide a helper function `compare_output_to_functional_suite(routine_name: str, actual_output: str, suite: str = "mugj") -> ComparisonResult` where `ComparisonResult` has `passed: bool`, `expected: str`, `diff: str | None`. Comparison rules: (a) trailing whitespace is ignored, (b) floating-point numbers match if within 1e-9 relative tolerance OR 1e-12 absolute tolerance for values < 1e-6, (c) line order matters. Supported suites: `tests/functional/*_inref/`, `tests/functional/mugj/`
 
 #### Migration Requirements
 
 - **FR-026**: All existing tests in `tests/unit/` MUST be migrated to the new structure or explicitly marked as superseded
-- **FR-027**: Migration MUST preserve all test assertions and coverage
+- **FR-027**: Migration MUST preserve all test assertions and coverage. Validation: post-migration test count MUST equal or exceed pre-migration count, AND a diff of test function names MUST show no unaccounted removals
 - **FR-028**: Migration MUST not break CI/CD pipelines during transition
 
 #### Documentation Requirements
@@ -264,12 +305,12 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **FR-042**: `docs/testing.md` MUST document the three-level testing approach (parser, asg, codegen)
 - **FR-043**: `docs/testing.md` MUST document the stub/xfail workflow for pending tests
 - **FR-044**: `docs/testing.md` MUST include the marker usage table and common pytest commands
-- **FR-045**: Coverage matrix document MUST be created in `docs/` (e.g., `docs/coverage-matrix.md`)
+- **FR-045**: Coverage matrix document MUST be created as `docs/coverage-matrix.md` in Markdown table format with columns: Section, Subsection, Parser Status, ASG Status, Codegen Status, Notes
 
 ### Key Entities
 
 - **Spec Section**: A numbered section from ANSI M X11.1-1995 (e.g., §7.1.2 Local variable name)
-- **Test Category**: One of: "parser" (textX output), "asg" (final ASG after analysis), or "codegen" (Python generation/execution)
+- **Test Category**: One of: "parser" (textX output), "asg" (final ASG after analysis), "codegen" (Python generation/execution), "analysis" (internal algorithm tests—no marker required), "meta" (tooling/infrastructure tests—no marker required), "cross_cutting" (features spanning multiple commands—uses appropriate parser/asg/codegen marker)
 - **Test Status**: One of: implemented (passes), stub (xfail), out-of-scope (skip), implementation-defined (skip)
 - **Test Source**: Origin of test code: original, mumps-reference example, YDBTest, VistA
 - **Pytest Markers**: `@pytest.mark.stub`, `@pytest.mark.parser`, `@pytest.mark.asg`, `@pytest.mark.codegen`, `@pytest.mark.xfail`, `@pytest.mark.skip`
@@ -280,7 +321,7 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 
 ### Measurable Outcomes
 
-- **SC-001**: 100% of MUMPS 1995 spec sections (§5-§9) are accounted for in the test structure (tested, xfail stub, or skip-marked)
+- **SC-001**: 100% of MUMPS 1995 spec sections (§5-§9) are accounted for in the test structure (tested, xfail stub, or skip-marked per FR-055)
 - **SC-002**: All existing unit tests are migrated without loss of coverage (test count ≥ current count)
 - **SC-003**: Running `pytest --collect-only tests/unit/` shows clear categorization of all tests by spec section
 - **SC-004**: Coverage matrix document accurately reflects test status for every spec section
@@ -290,21 +331,22 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **SC-008**: All implemented special variables have parser-level, ASG-level, and codegen-level tests (or stubs)
 - **SC-009**: Cross-cutting features (indirection, postconditions, timeouts) have exhaustive dedicated tests
 - **SC-010**: YottaDB Z-commands that are implemented have corresponding tests
-- **SC-011**: Backward compatibility analysis is documented with specific syntax differences identified
-- **SC-012**: VistA codebase parses without syntax errors due to standard version differences
+- **SC-011**: Backward compatibility analysis is documented with specific syntax differences identified (P2—may be deferred)
+- **SC-012**: VistA codebase parses without syntax errors due to standard version differences (P2—may be deferred)
 - **SC-013**: Running `pytest` with default options produces exit code 0 (green CI)
 - **SC-014**: Running `pytest -m "not stub"` executes only implemented tests
 - **SC-015**: Every spec section has stubs at all three levels (parser, asg, codegen) from initial structure creation
 - **SC-016**: `docs/testing.md` accurately describes the new test organization and workflows
 - **SC-017**: `docs/coverage-matrix.md` exists and matches actual test coverage status
 - **SC-018**: Language semantic edge cases (naked refs, $TEST, Exclusive NEW, postcondition scope, L-to-R eval, transaction nesting) have dedicated tests
+- **SC-019**: Non-spec-aligned tests (analysis functions, tooling/meta) are organized separately from spec-aligned tests
 
 ---
 
 ## Assumptions
 
 - The MUMPS 1995 ANSI standard is the authoritative reference, with earlier standards consulted for backward compatibility only
-- Test code examples can be adapted from `mumps-reference/examples__*.md`, YDBTest suite, and VistA codebase under appropriate licensing
+- Test code examples can be adapted from `mumps-reference/examples__*.md`, YDBTest functional suites (`tests/functional/*_inref/`), MUGJ suite (`tests/functional/mugj/`), and VistA codebase under appropriate licensing
 - The existing analysis passes (semantic analyzer, resolver, goto_analysis, for_analysis, variables) represent the complete set needed for Python codegen
 - Z-command support follows YottaDB/GT.M semantics where applicable
 - The spec section numbering in `mumps-reference/` files accurately reflects the 1995 standard structure
@@ -316,7 +358,7 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 The test structure will map to these major sections:
 
 ### §5 Metalanguage (Informative)
-- §5.1 BNF notation and operators
+- §5.1 BNF notation and operators (out-of-scope per FR-055: informative, no executable semantics)
 
 ### §6 Routine Structure
 - §6.1 Routine head (routinehead)
@@ -327,31 +369,34 @@ The test structure will map to these major sections:
   - §6.2.4 Label separator
   - §6.2.5 Line body
 - §6.3 Routine execution
-  - §6.3.1 Generic indirection
-  - §6.3.2 Transaction processing (limited scope)
-  - §6.3.3 Error processing
-  - §6.3.4 Event processing (out-of-scope)
-- §6.4 Embedded programs (out-of-scope)
+  - §6.3.1 Generic indirection / Transaction processing (note: 1995 spec has duplicate §6.3.1 numbering)
+  - §6.3.2 Error processing
+  - §6.3.4 Event processing (out-of-scope per FR-055: ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER)
+- §6.4 Embedded programs (out-of-scope per FR-055)
 
 ### §7 Expressions
 - §7.1 Expression atom (expratom)
   - §7.1.1 Values and Variables
   - §7.1.2 Variable names (glvn, lvn, gvn)
-  - §7.1.3 Structured system variables (ssvn)
-  - §7.1.4 Expression items (literals)
-  - §7.1.5 Intrinsic functions ($ASCII through $VIEW)
-  - §7.1.6 Extrinsic functions ($$label)
-  - §7.1.7 Special variables ($DEVICE through $Y)
+  - §7.1.3 Structured system variables (ssvn): ^$CHARACTER (§7.1.3.1), ^$DEVICE (§7.1.3.2), ^$EVENT/^$GLOBAL (§7.1.3.3—duplicate numbering), ^$JOB (§7.1.3.4), ^$LOCK (§7.1.3.5), ^$LIBRARY/^$ROUTINE (§7.1.3.6—duplicate numbering), ^$SYSTEM (§7.1.3.7), ^$Z (§7.1.3.8), ^$Y (§7.1.3.10). Note: ^$LIBRARY/^$EVENT out-of-scope per FR-055.
+  - §7.1.4 Expression items (literals, extrinsic functions, special variables)
+    - §7.1.4.8 Extrinsic functions ($$label)
+    - §7.1.4.10 Special variables ($DEVICE, $ECODE, $EREF, $ESTACK, $ETRAP, $HOROLOG, $IO, $IOREFERENCE, $JOB, $KEY, $PDISPLAY, $PIOREFERENCE, $PRINCIPAL, $QUIT, $REFERENCE, $STACK, $STORAGE, $SYSTEM, $TEST, $TLEVEL, $TRESTART, $X, $Y, $Z)
+  - §7.1.5 Intrinsic functions ($ASCII, $CHAR, $DATA, $DEXTRACT [deprecated—§7.1.5.4], $DPIECE [deprecated—§7.1.5.5], $EXTRACT, $FIND, $FNUMBER, $GET, $HOROLOG [function form—§7.1.5.10], $JUSTIFY, $LENGTH, $MUMPS [§7.1.5.13], $NAME, $NEXT [deprecated—§7.1.5.14, use $ORDER], $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE, $TYPE [§7.1.5.25], $VIEW, $Z [implementation-defined—§7.1.5.23])
+  - §7.1.6 M[UMPS] Standard Library (CHARACTER, MATH, STRING libraries per Annex I)
 - §7.2 Operators
   - §7.2.1 Unary operators
-  - §7.2.2 Binary operators (arithmetic, string, relational, logical)
-  - §7.2.3 String operators (_, [, ], ]])
-  - §7.2.4 Relational operators
-  - §7.2.5 Pattern match operator (?)
-- §7.3 Indirection
-  - §7.3.1 Name indirection
-  - §7.3.2 Argument indirection
-  - §7.3.3 Pattern indirection
+  - §7.2.1 Binary operators (concatenation, arithmetic)
+  - §7.2.2 Truth operators (relational, logical)
+    - §7.2.2.1 Relational operators (=, <, >, [, ], ]])
+    - §7.2.2.2 Numeric relations
+    - §7.2.2.3 String relations (contains, follows, sorts-after)
+    - §7.2.2.4 Logical operators (&, !, ')
+  - §7.2.3 Pattern match operator (?)
+- §7.3 Indirection (canonical location: §7.1.4.12 namevalue in 1995 spec; §7.3 is a logical grouping for test organization)
+  - Name indirection (@)
+  - Argument indirection
+  - Pattern indirection
 
 ### §8 Commands
 - §8.1 General command rules
@@ -382,29 +427,41 @@ The test structure will map to these major sections:
   - §8.2.16 QUIT
   - §8.2.17 READ
   - §8.2.18 SET
-  - §8.2.19-22 Transaction commands (TCOMMIT, TRESTART, TROLLBACK, TSTART)
+  - §8.2.19 TCOMMIT
+  - §8.2.20 TRESTART
+  - §8.2.21 TROLLBACK
+  - §8.2.22 TSTART
   - §8.2.23 USE
   - §8.2.24 VIEW
   - §8.2.25 WRITE
   - §8.2.26 XECUTE
   - §8.2.27 Z-commands (implementation-defined)
+  - §8.2.28 RLOAD (out-of-scope)
+  - §8.2.29 RSAVE (out-of-scope)
+  - §8.2.32 THEN (out-of-scope)
+  - Extended KILL commands (numbered in parallel to transaction commands):
+    - KSUBSCRIPTS (shares §8.2.20 numbering with TRESTART)
+    - KVALUE (shares §8.2.21 numbering with TROLLBACK)
+  - Event processing commands (out-of-scope): ABLOCK, ASSIGN, ASTART, ASTOP, AUNBLOCK, ESTART, ESTOP, ETRIGGER
 - §8.3 Device parameters
 
 ### §9 Character Set Profile (Informative)
 - §9.1 Character set definitions
 
 ### Extensions (Non-Standard)
-- YottaDB Z-commands (ZBREAK, ZCOMPILE, ZCONTINUE, ZEDIT, ZGOTO, ZHELP, ZLINK, ZMESSAGE, ZPRINT, ZSHOW, ZSTEP, ZSYSTEM, ZWRITE, etc.)
+- YottaDB Z-commands: ZBREAK, ZCOMPILE, ZCONTINUE, ZEDIT, ZGOTO, ZHELP, ZLINK, ZMESSAGE, ZPRINT, ZSHOW, ZSTEP, ZSYSTEM, ZWRITE, ZKILL, ZWITHDRAW, ZHALT, ZALLOCATE, ZDEALLOCATE, ZTRIGGER
+- YottaDB Z-functions: Implementation-defined `$Z...` functions tested in extensions section. Key functions include: $ZASCII, $ZCHAR, $ZCOLLATE, $ZCONVERT, $ZDATA, $ZDATE, $ZEXTRACT, $ZFIND, $ZINCR, $ZIO, $ZJOB, $ZLENGTH, $ZLEVEL, $ZMESSAGE, $ZMODE, $ZNAME, $ZNEXT, $ZORDER, $ZPARSE, $ZPIECE, $ZPOSITION, $ZPREVIOUS, $ZSEARCH, $ZSOCKET, $ZSTATUS, $ZTRANSLATE, $ZTRAP, $ZTRIGGER, $ZVERSION, $ZWIDTH, $ZWRITE
 
 ---
 
 ## Dependencies
 
 - **Spec 001** (textX Semantic Graph): The ASG structure and analysis passes defined there are the basis for ASG-level testing
-- **docs/limitations.md**: Defines which commands are out-of-scope
+- **docs/limitations.md**: Defines which commands are out-of-scope (referenced by FR-016, FR-039)
 - **docs/testing.md**: Current testing documentation (to be updated)
 - **mumps-reference/**: Contains spec text and examples for test creation
-- **YDBTest/**: Contains real-world MUMPS code for test examples
+- **tests/functional/**: YDBTest validation suites (MUGJ, MVTS, basic_inref, merge_inref, etc.) providing expected behavior baselines
+- **YDBTest/**: Source YottaDB test files
 - **VistA-M/**: Contains production MUMPS code for compatibility validation
 
 ---
@@ -489,4 +546,3 @@ uv run pytest -m "stub and codegen" --collect-only
 # Run implemented codegen tests only
 uv run pytest -m "codegen and not stub"
 ```
-- **VistA-M/**: Contains production MUMPS code for compatibility validation

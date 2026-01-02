@@ -43,7 +43,7 @@ The primary goal is 100% correct translation of MUMPS logic to Python. Idiomatic
 
 ### II. Test-Driven Validation
 
-Testing is the source of truth for correctness. External test suites (e.g., `tests/functional/mugj/`)
+Testing is the source of truth for correctness. External test suites (e.g., `tests/functional/`)
 provide authoritative validation.
 
 - Tests MUST pass before adding new complexity
