@@ -173,6 +173,60 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 
 ---
 
+## Key Language Nuances *(guidance for test authors)*
+
+The following MUMPS language features have subtle semantics that require dedicated test coverage beyond simple parsing verification:
+
+### Naked Global References (`^(subscripts)`)
+**Spec Reference**: §7.1.2.1 (gvn), multiple command sections  
+**Challenge**: The "naked indicator" is runtime state updated by *any* global reference. `^(subscript)` relies on the *last* global reference context.  
+**Test Strategy**: Sequence-dependent tests (e.g., `SET ^A(1)=1 SET ^(2)=2` must verify naked indicator tracks correctly). Codegen tests must verify Python runtime maintains naked indicator state.  
+**Status**: Parser/ASG support implemented (`MNakedGlobal`), codegen requires runtime tracking.
+
+### `$TEST` Special Variable Side Effects
+**Spec Reference**: §7.1.7, §8.2.9 (IF), §8.2.12 (LOCK), §8.2.15 (OPEN), §8.2.17 (READ)  
+**Challenge**: `$TEST` is set by argumentless IF, and by OPEN/READ/JOB/LOCK commands *with timeouts*. It drives ELSE behavior.  
+**Test Strategy**: Tests for each command that sets `$TEST` must verify the side effect. ELSE tests must verify dependency on `$TEST` from multiple sources.  
+**Status**: Parser support exists; codegen must track `$TEST` runtime state.
+
+### Exclusive NEW (`NEW (X,Y)`)
+**Spec Reference**: §8.2.14  
+**Challenge**: Exclusive NEW stacks *all variables except* the named ones—inverse of normal scoping. Static analysis cannot fully determine affected variables.  
+**Test Strategy**: Parser tests for syntax; ASG tests verify `MNewStatement.exclusive=True` and `except_list` populated; codegen tests verify runtime scope behavior.  
+**Status**: Fully implemented and tested (see `test_classifier.py`).
+
+### Command vs. Argument Postconditions
+**Spec Reference**: §8.1.4  
+**Challenge**: `SET:Cond X=1,Y=2` (command postcondition) gates both assignments. `DO L1:C1,L2:C2` (argument postconditions) are independent per argument.  
+**Test Strategy**: Dedicated tests for postcondition scope boundaries at both levels for commands that support both forms.  
+**Status**: Parser distinguishes them; ASG/codegen tests needed.
+
+### Transaction Processing Nesting
+**Spec Reference**: §8.2.19-22, §6.3.2  
+**Challenge**: `TSTART` can be nested. `$TLEVEL` tracks depth. `TROLLBACK` can roll back one level or all.  
+**Test Strategy**: Parser tests for nested TSTART/TCOMMIT; ASG tests for `$TLEVEL` tracking; codegen tests for rollback behavior at different nesting levels.  
+**Status**: Parser support exists; codegen scope limited.
+
+### Device Parameter Syntax
+**Spec Reference**: §8.3, §8.2.15 (OPEN), §8.2.23 (USE)  
+**Challenge**: Device parameters use complex, implementation-defined syntax with nested colons and parentheses (e.g., `OPEN "DEV":(param1:param2:param3)`).  
+**Test Strategy**: Parser tests must handle parameter strings generically without choking on internal delimiters.  
+**Status**: Basic support exists; exhaustive device parameter testing deferred.
+
+### Structured System Variables (SSVNs)
+**Spec Reference**: §7.1.3  
+**Challenge**: `^$JOB`, `^$DEVICE`, `^$ROUTINE` look like globals but have fixed schema-defined subscripts.  
+**Test Strategy**: Parser must distinguish SSVNs from standard globals; ASG must use correct node type.  
+**Status**: Parser support exists (`MSSVN` class).
+
+### Strict Left-to-Right Operator Evaluation
+**Spec Reference**: §7.2  
+**Challenge**: MUMPS has NO operator precedence—all operators evaluate strictly left-to-right. `2+3*4` equals `20`, not `14`.  
+**Test Strategy**: Expression tests must verify left-to-right evaluation without implicit precedence.  
+**Status**: Parser captures correctly; codegen must generate Python with explicit parentheses.
+
+---
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
@@ -251,6 +305,15 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **FR-044**: `docs/testing.md` MUST include the marker usage table and common pytest commands
 - **FR-045**: Coverage matrix document MUST be created in `docs/` (e.g., `docs/coverage-matrix.md`)
 
+#### Language Nuance Requirements
+
+- **FR-046**: Naked global references MUST have dedicated tests verifying runtime context tracking across sequences of global operations
+- **FR-047**: `$TEST` side effects MUST be tested for each command that modifies it (argumentless IF, OPEN/READ/JOB/LOCK with timeouts)
+- **FR-048**: Exclusive NEW syntax (`NEW (X,Y)`) MUST have tests at all three levels verifying inverse scoping behavior
+- **FR-049**: Command vs. argument postcondition scope differences MUST have dedicated comparative tests
+- **FR-050**: Left-to-right operator evaluation (no precedence) MUST have tests verifying expressions like `2+3*4` produce MUMPS-correct results
+- **FR-051**: Transaction nesting (TSTART within TSTART) MUST have parser and ASG tests for nested structures
+
 ### Key Entities
 
 - **Spec Section**: A numbered section from ANSI M X11.1-1995 (e.g., §7.1.2 Local variable name)
@@ -282,6 +345,7 @@ As a developer, I want all unimplemented tests to use `pytest.xfail` markers so 
 - **SC-015**: Every spec section has stubs at all three levels (parser, asg, codegen) from initial structure creation
 - **SC-016**: `docs/testing.md` accurately describes the new test organization and workflows
 - **SC-017**: `docs/coverage-matrix.md` exists and matches actual test coverage status
+- **SC-018**: Language nuance tests exist for: naked globals, `$TEST` side effects, exclusive NEW, postcondition scope, left-to-right evaluation, transaction nesting
 
 ---
 
