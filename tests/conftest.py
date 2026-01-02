@@ -14,10 +14,67 @@ Provides fixtures for loading MUMPS test files from multiple test suites:
 - unicode: Unicode handling tests (47 files)
 """
 
+import warnings
 from pathlib import Path
 from typing import Callable, Iterator
 
 import pytest
+
+
+# =============================================================================
+# Pytest Marker Registration (T007)
+# =============================================================================
+
+
+def pytest_configure(config):
+    """Register custom markers for spec-aligned test organization."""
+    config.addinivalue_line("markers", "parser: Tests at textX grammar/parser level")
+    config.addinivalue_line("markers", "asg: Tests at ASG semantic analysis level")
+    config.addinivalue_line("markers", "codegen: Tests at Python code generation level")
+    config.addinivalue_line(
+        "markers", "stub: Placeholder test, expected to fail until implemented"
+    )
+    config.addinivalue_line("markers", "slow: Long-running test, skipped by default")
+    config.addinivalue_line("markers", "pre1995: Tests pre-1995 MUMPS syntax")
+    config.addinivalue_line("markers", "ydb: YottaDB-specific extension test")
+
+
+# =============================================================================
+# Marker Validation Hook (T009)
+# =============================================================================
+
+# Directories that require category markers (parser, asg, codegen)
+_SPEC_ALIGNED_DIRS = frozenset(["parser", "asg", "codegen"])
+
+# Directories that do NOT require category markers (internal algorithms, tooling)
+_NON_SPEC_DIRS = frozenset(["analysis", "meta", "cross_cutting"])
+
+
+def pytest_collection_modifyitems(session, config, items):
+    """Warn during migration if tests in spec-aligned directories lack category markers."""
+    category_markers = {"parser", "asg", "codegen"}
+
+    for item in items:
+        # Get the path relative to tests/unit/
+        try:
+            rel_path = Path(item.fspath).relative_to(Path(__file__).parent / "unit")
+            top_dir = rel_path.parts[0] if rel_path.parts else ""
+        except (ValueError, IndexError):
+            continue
+
+        # Only check spec-aligned directories
+        if top_dir not in _SPEC_ALIGNED_DIRS:
+            continue
+
+        # Check if item has any category marker
+        item_markers = {m.name for m in item.iter_markers()}
+        if not item_markers & category_markers:
+            warnings.warn(
+                f"Test '{item.nodeid}' missing category marker "
+                f"(@pytest.mark.parser, @pytest.mark.asg, or @pytest.mark.codegen)",
+                UserWarning,
+                stacklevel=1,
+            )
 
 
 # Base path for all functional test suites

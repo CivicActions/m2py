@@ -19,14 +19,14 @@
 
 **Purpose**: Create directory structure and register pytest markers
 
-- [ ] T001 Create parser test directory structure: tests/unit/parser/{s5_metalanguage,s6_routine,s7_expressions,s8_commands,s9_charset,extensions/ydb}/
-- [ ] T002 [P] Create asg test directory structure: tests/unit/asg/{s5_metalanguage,s6_routine,s7_expressions,s8_commands,s9_charset,extensions/ydb}/
-- [ ] T003 [P] Create codegen test directory structure: tests/unit/codegen/{s5_metalanguage,s6_routine,s7_expressions,s8_commands,s9_charset,extensions/ydb}/
-- [ ] T004 [P] Create cross_cutting test directory: tests/unit/cross_cutting/
-- [ ] T005 [P] Create analysis test directory: tests/unit/analysis/ (Note: most analysis/ files are created during Phase 8 migration, not as empty stubs—this creates the directory only)
-- [ ] T006 [P] Create meta test directory: tests/unit/meta/ (Note: most meta/ files are created during Phase 8 migration, not as empty stubs—this creates the directory only)
-- [ ] T007 Register pytest markers in tests/conftest.py (parser, asg, codegen, stub, slow, pre1995, ydb)
-- [ ] T008 [P] Create __init__.py files in all new directories
+- [X] T001 Create parser test directory structure: tests/unit/parser/{s5_metalanguage,s6_routine,s7_expressions,s8_commands,s9_charset,extensions/ydb}/
+- [X] T002 [P] Create asg test directory structure: tests/unit/asg/{s5_metalanguage,s6_routine,s7_expressions,s8_commands,s9_charset,extensions/ydb}/
+- [X] T003 [P] Create codegen test directory structure: tests/unit/codegen/{s5_metalanguage,s6_routine,s7_expressions,s8_commands,s9_charset,extensions/ydb}/
+- [X] T004 [P] Create cross_cutting test directory: tests/unit/cross_cutting/
+- [X] T005 [P] Create analysis test directory: tests/unit/analysis/ (Note: most analysis/ files are created during Phase 8 migration, not as empty stubs—this creates the directory only)
+- [X] T006 [P] Create meta test directory: tests/unit/meta/ (Note: most meta/ files are created during Phase 8 migration, not as empty stubs—this creates the directory only)
+- [X] T007 Register pytest markers in tests/conftest.py (parser, asg, codegen, stub, slow, pre1995, ydb)
+- [X] T008 [P] Create __init__.py files in all new directories
 
 ---
 
@@ -36,15 +36,15 @@
 
 **⚠️ CRITICAL**: No stub creation can begin until markers are registered and validated
 
-- [ ] T009 Add marker validation hook to tests/conftest.py (warn on missing category marker during migration)
-- [ ] T010 Create shared parser fixture in tests/unit/parser/conftest.py
-- [ ] T011 [P] Create shared ASG analysis fixture in tests/unit/asg/conftest.py
-- [ ] T011a [P] Create shared analysis fixture in tests/unit/analysis/conftest.py (if needed for classifier/resolver tests)
-- [ ] T012 [P] Create shared codegen execution fixture in tests/unit/codegen/conftest.py
-- [ ] T012a [P] Create shared codegen validation helper in tests/unit/codegen/conftest.py: `compare_output_to_functional_suite(routine_name, output)` that compares against tests/functional/ baselines (satisfies FR-029)
-- [ ] T013 Verify markers work: `uv run pytest --markers | grep -E "parser|asg|codegen|stub|slow|pre1995|ydb"` (all 7 markers from T007)
-- [ ] T013a Verify test naming convention document exists at specs/002-spec-unit-test-organization/contracts/test-naming.md (created during design phase)
-- [ ] T014 Create stub test template file at tests/unit/STUB_TEMPLATE.py for copy-paste reuse (MUST include spec section docstring per FR-004)
+- [X] T009 Add marker validation hook to tests/conftest.py (warn on missing category marker during migration)
+- [X] T010 Create shared parser fixture in tests/unit/parser/conftest.py
+- [X] T011 [P] Create shared ASG analysis fixture in tests/unit/asg/conftest.py
+- [X] T011a [P] Create shared analysis fixture in tests/unit/analysis/conftest.py (if needed for classifier/resolver tests)
+- [X] T012 [P] Create shared codegen execution fixture in tests/unit/codegen/conftest.py
+- [X] T012a [P] Create shared codegen validation helper in tests/unit/codegen/conftest.py: `compare_output_to_functional_suite(routine_name, output)` that compares against tests/functional/ baselines (satisfies FR-029)
+- [X] T013 Verify markers work: `uv run pytest --markers | grep -E "parser|asg|codegen|stub|slow|pre1995|ydb"` (all 7 markers from T007)
+- [X] T013a Verify test naming convention document exists at specs/002-spec-unit-test-organization/contracts/test-naming.md (created during design phase)
+- [X] T014 Create stub test template file at tests/unit/STUB_TEMPLATE.py for copy-paste reuse (MUST include spec section docstring per FR-004)
 
 **Checkpoint**: Foundation ready - stub creation can now begin
 
@@ -58,11 +58,11 @@
 
 ### Implementation for US8
 
-- [ ] T015 [US8] Create first stub file tests/unit/parser/s8_commands/test_s8_2_18_set.py with 3 xfail stubs (include single and multiple argument forms per edge case requirement)
-- [ ] T016 [US8] Verify stub runs as xfail: `uv run pytest tests/unit/parser/s8_commands/test_s8_2_18_set.py -v`
-- [ ] T016a [US8] Verify xfail/skip reasons visible: `uv run pytest tests/unit/parser/s8_commands/test_s8_2_18_set.py -v 2>&1 | grep -E "xfail|skip"` (FR-019, depends on T015)
-- [ ] T017 [US8] Verify `pytest -m "not stub"` excludes the stub tests
-- [ ] T018 [US8] Verify `pytest -m stub --collect-only` lists only stub tests
+- [X] T015 [US8] Create first stub file tests/unit/parser/s8_commands/test_s8_2_18_set.py with 3 xfail stubs (include single and multiple argument forms per edge case requirement)
+- [X] T016 [US8] Verify stub runs as xfail: `uv run pytest tests/unit/parser/s8_commands/test_s8_2_18_set.py -v`
+- [X] T016a [US8] Verify xfail/skip reasons visible: `uv run pytest tests/unit/parser/s8_commands/test_s8_2_18_set.py -v 2>&1 | grep -E "xfail|skip"` (FR-019, depends on T015)
+- [X] T017 [US8] Verify `pytest -m "not stub"` excludes the stub tests
+- [X] T018 [US8] Verify `pytest -m stub --collect-only` lists only stub tests
 
 **Checkpoint**: Stub infrastructure validated - bulk stub creation can proceed
 
@@ -76,76 +76,76 @@
 
 ### §5 Metalanguage (parser) - Out-of-Scope
 
-- [ ] T018a [P] [US1] Create tests/unit/parser/s5_metalanguage/test_s5_1_bnf_notation.py with skip (out-of-scope per FR-055: informative, no executable semantics)
+- [X] T018a [P] [US1] Create tests/unit/parser/s5_metalanguage/test_s5_1_bnf_notation.py with skip (out-of-scope per FR-055: informative, no executable semantics)
 
 ### §6 Routine Structure (parser)
 
-- [ ] T019 [P] [US1] Create tests/unit/parser/s6_routine/test_s6_1_routine_head.py with stubs
-- [ ] T020 [P] [US1] Create tests/unit/parser/s6_routine/test_s6_2_routine_body.py with stubs (covers §6.2.1-6.2.5: levelline, formalline, label, label separator, linebody)
-- [ ] T021 [P] [US1] Create tests/unit/parser/s6_routine/test_s6_3_1_indirection.py with stubs (§6.3.1 Generic Indirection)
-- [ ] T021b [P] [US1] Create tests/unit/parser/s6_routine/test_s6_3_1_transaction.py with stubs (§6.3.1 Transaction processing - cross-reference TSTART/TCOMMIT/TROLLBACK)
-- [ ] T021c [P] [US1] Create tests/unit/parser/s6_routine/test_s6_3_2_error_processing.py with stubs (§6.3.2 Error processing - cross-reference $ETRAP/$ECODE)
-- [ ] T021d [P] [US1] Create tests/unit/parser/s6_routine/test_s6_3_4_event_processing.py with skip (§6.3.4 out-of-scope per FR-055)
-- [ ] T021a [P] [US1] Create tests/unit/parser/s6_routine/test_s6_4_embedded_programs.py with skip (out-of-scope per FR-055)
+- [X] T019 [P] [US1] Create tests/unit/parser/s6_routine/test_s6_1_routine_head.py with stubs
+- [X] T020 [P] [US1] Create tests/unit/parser/s6_routine/test_s6_2_routine_body.py with stubs (covers §6.2.1-6.2.5: levelline, formalline, label, label separator, linebody)
+- [X] T021 [P] [US1] Create tests/unit/parser/s6_routine/test_s6_3_1_indirection.py with stubs (§6.3.1 Generic Indirection)
+- [X] T021b [P] [US1] Create tests/unit/parser/s6_routine/test_s6_3_1_transaction.py with stubs (§6.3.1 Transaction processing - cross-reference TSTART/TCOMMIT/TROLLBACK)
+- [X] T021c [P] [US1] Create tests/unit/parser/s6_routine/test_s6_3_2_error_processing.py with stubs (§6.3.2 Error processing - cross-reference $ETRAP/$ECODE)
+- [X] T021d [P] [US1] Create tests/unit/parser/s6_routine/test_s6_3_4_event_processing.py with skip (§6.3.4 out-of-scope per FR-055)
+- [X] T021a [P] [US1] Create tests/unit/parser/s6_routine/test_s6_4_embedded_programs.py with skip (out-of-scope per FR-055)
 
 ### §7 Expressions (parser)
 
-- [ ] T022 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_1_values.py with stubs
-- [ ] T023 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_2_variables.py with stubs (lvn, gvn, glvn)
-- [ ] T024 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_3_ssvns.py with stubs (per-SSVN per SSVN_LIST in contracts/test-naming.md; skip-marked: ^$LIBRARY, ^$EVENT per FR-055) [Cross-ref: T066 ASG, T107 codegen - keep SSVN lists synchronized]
-- [ ] T025 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_4_literals.py with stubs
-- [ ] T026 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_5_intrinsic_functions.py with stubs (per-function: $ASCII, $CHAR, $DATA, $DEXTRACT [deprecated—@pytest.mark.pre1995], $DPIECE [deprecated—@pytest.mark.pre1995], $EXTRACT, $FIND, $FNUMBER, $GET, $HOROLOG [function form], $JUSTIFY, $LENGTH, $MUMPS, $NAME, $NEXT [deprecated—@pytest.mark.pre1995], $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE, $TYPE, $VIEW, $Z [implementation-defined])
-- [ ] T027 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_6_extrinsic_functions.py with stubs
-- [ ] T028 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_7_special_variables.py with stubs (per-variable: $DEVICE, $ECODE, $EREF, $ESTACK, $ETRAP, $HOROLOG, $IO, $IOREFERENCE, $JOB, $KEY, $PDISPLAY, $PIOREFERENCE, $PRINCIPAL, $QUIT, $REFERENCE, $STACK, $STORAGE, $SYSTEM, $TEST, $TLEVEL, $TRESTART, $X, $Y)
-- [ ] T029 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_2_operators.py with stubs
-- [ ] T030 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_2_5_pattern_match.py with stubs (quantifiers, alternation, pattern indirection)
-- [ ] T031 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_3_indirection.py with stubs
+- [X] T022 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_1_values.py with stubs
+- [X] T023 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_2_variables.py with stubs (lvn, gvn, glvn)
+- [X] T024 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_3_ssvns.py with stubs (per-SSVN per SSVN_LIST in contracts/test-naming.md; skip-marked: ^$LIBRARY, ^$EVENT per FR-055) [Cross-ref: T066 ASG, T107 codegen - keep SSVN lists synchronized]
+- [X] T025 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_4_literals.py with stubs
+- [X] T026 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_5_intrinsic_functions.py with stubs (per-function: $ASCII, $CHAR, $DATA, $DEXTRACT [deprecated—@pytest.mark.pre1995], $DPIECE [deprecated—@pytest.mark.pre1995], $EXTRACT, $FIND, $FNUMBER, $GET, $HOROLOG [function form], $JUSTIFY, $LENGTH, $MUMPS, $NAME, $NEXT [deprecated—@pytest.mark.pre1995], $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE, $TYPE, $VIEW, $Z [implementation-defined])
+- [X] T027 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_6_extrinsic_functions.py with stubs
+- [X] T028 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_7_special_variables.py with stubs (per-variable: $DEVICE, $ECODE, $EREF, $ESTACK, $ETRAP, $HOROLOG, $IO, $IOREFERENCE, $JOB, $KEY, $PDISPLAY, $PIOREFERENCE, $PRINCIPAL, $QUIT, $REFERENCE, $STACK, $STORAGE, $SYSTEM, $TEST, $TLEVEL, $TRESTART, $X, $Y)
+- [X] T029 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_2_operators.py with stubs
+- [X] T030 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_2_5_pattern_match.py with stubs (quantifiers, alternation, pattern indirection)
+- [X] T031 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_3_indirection.py with stubs
 
 ### §8 Commands (parser) - General Rules
 
-- [ ] T032 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_1_general_rules.py with stubs (spaces, comments, postconditions, timeouts, **abbreviated vs full command keywords per FR-009**: e.g., `S` vs `SET`, `W` vs `WRITE`). MUST include abbreviation parity tests verifying `S X=1` and `SET X=1` produce identical ASG structure for each implemented command
+- [X] T032 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_1_general_rules.py with stubs (spaces, comments, postconditions, timeouts, **abbreviated vs full command keywords per FR-009**: e.g., `S` vs `SET`, `W` vs `WRITE`). MUST include abbreviation parity tests verifying `S X=1` and `SET X=1` produce identical ASG structure for each implemented command
 
 ### §8 Commands (parser) - Individual Commands
 
-- [ ] T033 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_01_break.py with stubs
-- [ ] T034 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_02_close.py with stubs
-- [ ] T035 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_03_do.py with stubs
-- [ ] T036 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_04_else.py with stubs
-- [ ] T037 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_05_for.py with stubs
-- [ ] T038 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_06_goto.py with stubs
-- [ ] T039 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_07_halt.py with stubs
-- [ ] T040 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_08_hang.py with stubs
-- [ ] T041 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_09_if.py with stubs
-- [ ] T042 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_10_job.py with stubs
-- [ ] T043 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_11_kill.py with stubs (include single and multiple argument forms)
-- [ ] T044 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_12_lock.py with stubs
-- [ ] T045 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_13_merge.py with stubs
-- [ ] T046 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_14_new.py with stubs
-- [ ] T047 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_15_open.py with stubs
-- [ ] T048 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_16_quit.py with stubs
-- [ ] T049 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_17_read.py with stubs
-- [ ] T050 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_18_set.py with stubs
-- [ ] T051 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_19_tcommit.py with stubs
-- [ ] T052 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_20_trestart.py with stubs
-- [ ] T052a [P] [US1] Create tests/unit/parser/s8_commands/test_s8_ksubscripts.py with stubs (shares §8.2.20 numbering with TRESTART)
-- [ ] T053 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_21_trollback.py with stubs
-- [ ] T053a [P] [US1] Create tests/unit/parser/s8_commands/test_s8_kvalue.py with stubs (shares §8.2.21 numbering with TROLLBACK)
-- [ ] T054 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_22_tstart.py with stubs
-- [ ] T055 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_23_use.py with stubs
-- [ ] T056 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_24_view.py with skip (implementation-defined)
-- [ ] T057 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_25_write.py with stubs (include single and multiple argument forms)
-- [ ] T058 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_26_xecute.py with stubs
-- [ ] T058a [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_27_zcommand.py with stubs (Z-commands)
-- [ ] T059 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_3_device_params.py with stubs
-- [ ] T059a [P] [US1] Create tests/unit/parser/s8_commands/test_s8_event_processing.py with skip (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER - out-of-scope per FR-055)
-- [ ] T059b [P] [US1] Create tests/unit/parser/s8_commands/test_s8_then_command.py with skip (THEN §8.2.32 - out-of-scope per FR-055, zero real-world usage)
-- [ ] T059c [P] [US1] Create tests/unit/parser/s8_commands/test_s8_assign.py with skip (out-of-scope per FR-055: ASSIGN command)
-- [ ] T059d [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_28_rload.py with skip (out-of-scope per FR-055: RLOAD command)
-- [ ] T059e [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_29_rsave.py with skip (out-of-scope per FR-055: RSAVE command)
+- [X] T033 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_01_break.py with stubs
+- [X] T034 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_02_close.py with stubs
+- [X] T035 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_03_do.py with stubs
+- [X] T036 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_04_else.py with stubs
+- [X] T037 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_05_for.py with stubs
+- [X] T038 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_06_goto.py with stubs
+- [X] T039 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_07_halt.py with stubs
+- [X] T040 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_08_hang.py with stubs
+- [X] T041 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_09_if.py with stubs
+- [X] T042 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_10_job.py with stubs
+- [X] T043 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_11_kill.py with stubs (include single and multiple argument forms)
+- [X] T044 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_12_lock.py with stubs
+- [X] T045 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_13_merge.py with stubs
+- [X] T046 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_14_new.py with stubs
+- [X] T047 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_15_open.py with stubs
+- [X] T048 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_16_quit.py with stubs
+- [X] T049 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_17_read.py with stubs
+- [X] T050 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_18_set.py with stubs
+- [X] T051 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_19_tcommit.py with stubs
+- [X] T052 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_20_trestart.py with stubs
+- [X] T052a [P] [US1] Create tests/unit/parser/s8_commands/test_s8_ksubscripts.py with stubs (shares §8.2.20 numbering with TRESTART)
+- [X] T053 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_21_trollback.py with stubs
+- [X] T053a [P] [US1] Create tests/unit/parser/s8_commands/test_s8_kvalue.py with stubs (shares §8.2.21 numbering with TROLLBACK)
+- [X] T054 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_22_tstart.py with stubs
+- [X] T055 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_23_use.py with stubs
+- [X] T056 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_24_view.py with skip (implementation-defined)
+- [X] T057 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_25_write.py with stubs (include single and multiple argument forms)
+- [X] T058 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_26_xecute.py with stubs
+- [X] T058a [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_27_zcommand.py with stubs (Z-commands)
+- [X] T059 [P] [US1] Create tests/unit/parser/s8_commands/test_s8_3_device_params.py with stubs
+- [X] T059a [P] [US1] Create tests/unit/parser/s8_commands/test_s8_event_processing.py with skip (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER - out-of-scope per FR-055)
+- [X] T059b [P] [US1] Create tests/unit/parser/s8_commands/test_s8_then_command.py with skip (THEN §8.2.32 - out-of-scope per FR-055, zero real-world usage)
+- [X] T059c [P] [US1] Create tests/unit/parser/s8_commands/test_s8_assign.py with skip (out-of-scope per FR-055: ASSIGN command)
+- [X] T059d [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_28_rload.py with skip (out-of-scope per FR-055: RLOAD command)
+- [X] T059e [P] [US1] Create tests/unit/parser/s8_commands/test_s8_2_29_rsave.py with skip (out-of-scope per FR-055: RSAVE command)
 
 ### §9 Character Set (parser)
 
-- [ ] T060 [P] [US1] Create tests/unit/parser/s9_charset/test_s9_1_definitions.py with stubs
+- [X] T060 [P] [US1] Create tests/unit/parser/s9_charset/test_s9_1_definitions.py with stubs
 
 **Checkpoint**: All parser-level spec sections have stub files
 
@@ -159,82 +159,82 @@
 
 ### §5 Metalanguage (ASG) - Out-of-Scope
 
-- [ ] T060a [P] [US2] Create tests/unit/asg/s5_metalanguage/test_s5_1_bnf_notation.py with skip (out-of-scope per FR-055: informative, no executable semantics)
+- [X] T060a [P] [US2] Create tests/unit/asg/s5_metalanguage/test_s5_1_bnf_notation.py with skip (out-of-scope per FR-055: informative, no executable semantics)
 
 ### §6 Routine Structure (ASG)
 
-- [ ] T061 [P] [US2] Create tests/unit/asg/s6_routine/test_s6_1_routine_head.py with stubs
-- [ ] T062 [P] [US2] Create tests/unit/asg/s6_routine/test_s6_2_routine_body.py with stubs (covers §6.2.1-6.2.5)
-- [ ] T063 [P] [US2] Create tests/unit/asg/s6_routine/test_s6_3_1_indirection.py with stubs (§6.3.1 Generic Indirection)
-- [ ] T063b [P] [US2] Create tests/unit/asg/s6_routine/test_s6_3_1_transaction.py with stubs (§6.3.1 Transaction processing)
-- [ ] T063c [P] [US2] Create tests/unit/asg/s6_routine/test_s6_3_2_error_processing.py with stubs (§6.3.2 Error processing)
-- [ ] T063d [P] [US2] Create tests/unit/asg/s6_routine/test_s6_3_4_event_processing.py with skip (§6.3.4 out-of-scope per FR-055)
-- [ ] T063a [P] [US2] Create tests/unit/asg/s6_routine/test_s6_4_embedded_programs.py with skip (out-of-scope per FR-055)
+- [X] T061 [P] [US2] Create tests/unit/asg/s6_routine/test_s6_1_routine_head.py with stubs
+- [X] T062 [P] [US2] Create tests/unit/asg/s6_routine/test_s6_2_routine_body.py with stubs (covers §6.2.1-6.2.5)
+- [X] T063 [P] [US2] Create tests/unit/asg/s6_routine/test_s6_3_1_indirection.py with stubs (§6.3.1 Generic Indirection)
+- [X] T063b [P] [US2] Create tests/unit/asg/s6_routine/test_s6_3_1_transaction.py with stubs (§6.3.1 Transaction processing)
+- [X] T063c [P] [US2] Create tests/unit/asg/s6_routine/test_s6_3_2_error_processing.py with stubs (§6.3.2 Error processing)
+- [X] T063d [P] [US2] Create tests/unit/asg/s6_routine/test_s6_3_4_event_processing.py with skip (§6.3.4 out-of-scope per FR-055)
+- [X] T063a [P] [US2] Create tests/unit/asg/s6_routine/test_s6_4_embedded_programs.py with skip (out-of-scope per FR-055)
 
 ### §7 Expressions (ASG)
 
-- [ ] T064 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_1_values.py with stubs
-- [ ] T065 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_2_variables.py with stubs (lvn, gvn, glvn resolution)
-- [ ] T066 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_3_ssvns.py with stubs (per-SSVN per SSVN_LIST in contracts/test-naming.md; skip-marked: ^$LIBRARY, ^$EVENT per FR-055) [Cross-ref: T024 parser, T107 codegen - keep SSVN lists synchronized]
-- [ ] T067 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_4_literals.py with stubs
-- [ ] T068 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_5_intrinsic_functions.py with stubs (per-function: $ASCII, $CHAR, $DATA, $DEXTRACT [deprecated—@pytest.mark.pre1995], $DPIECE [deprecated—@pytest.mark.pre1995], $EXTRACT, $FIND, $FNUMBER, $GET, $HOROLOG [function form], $JUSTIFY, $LENGTH, $MUMPS, $NAME, $NEXT [deprecated—@pytest.mark.pre1995], $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE, $TYPE, $VIEW, $Z [implementation-defined])
-- [ ] T069 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_6_extrinsic_functions.py with stubs
-- [ ] T070 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_7_special_variables.py with stubs (per-variable: $DEVICE, $ECODE, $EREF, $ESTACK, $ETRAP, $HOROLOG, $IO, $IOREFERENCE, $JOB, $KEY, $PDISPLAY, $PIOREFERENCE, $PRINCIPAL, $QUIT, $REFERENCE, $STACK, $STORAGE, $SYSTEM, $TEST, $TLEVEL, $TRESTART, $X, $Y)
-- [ ] T071 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_2_operators.py with stubs
-- [ ] T072 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_2_5_pattern_match.py with stubs (quantifiers, alternation)
-- [ ] T073 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_3_indirection.py with stubs (name, argument, pattern)
+- [X] T064 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_1_values.py with stubs
+- [X] T065 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_2_variables.py with stubs (lvn, gvn, glvn resolution)
+- [X] T066 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_3_ssvns.py with stubs (per-SSVN per SSVN_LIST in contracts/test-naming.md; skip-marked: ^$LIBRARY, ^$EVENT per FR-055) [Cross-ref: T024 parser, T107 codegen - keep SSVN lists synchronized]
+- [X] T067 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_4_literals.py with stubs
+- [X] T068 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_5_intrinsic_functions.py with stubs (per-function: $ASCII, $CHAR, $DATA, $DEXTRACT [deprecated—@pytest.mark.pre1995], $DPIECE [deprecated—@pytest.mark.pre1995], $EXTRACT, $FIND, $FNUMBER, $GET, $HOROLOG [function form], $JUSTIFY, $LENGTH, $MUMPS, $NAME, $NEXT [deprecated—@pytest.mark.pre1995], $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE, $TYPE, $VIEW, $Z [implementation-defined])
+- [X] T069 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_6_extrinsic_functions.py with stubs
+- [X] T070 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_7_special_variables.py with stubs (per-variable: $DEVICE, $ECODE, $EREF, $ESTACK, $ETRAP, $HOROLOG, $IO, $IOREFERENCE, $JOB, $KEY, $PDISPLAY, $PIOREFERENCE, $PRINCIPAL, $QUIT, $REFERENCE, $STACK, $STORAGE, $SYSTEM, $TEST, $TLEVEL, $TRESTART, $X, $Y)
+- [X] T071 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_2_operators.py with stubs
+- [X] T072 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_2_5_pattern_match.py with stubs (quantifiers, alternation)
+- [X] T073 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_3_indirection.py with stubs (name, argument, pattern)
 
 ### §8 Commands (ASG) - General Rules
 
-- [ ] T074 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_1_general_rules.py with stubs (postconditions, timeouts, line refs, param passing)
+- [X] T074 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_1_general_rules.py with stubs (postconditions, timeouts, line refs, param passing)
 
 ### §8 Commands (ASG) - Individual Commands
 
-- [ ] T075 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_01_break.py with stubs
-- [ ] T076 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_02_close.py with stubs
-- [ ] T077 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_03_do.py with stubs (MCall resolution)
-- [ ] T078 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_04_else.py with stubs
-- [ ] T079 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_05_for.py with stubs (ForLoopType classification)
-- [ ] T080 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_06_goto.py with stubs (GotoType classification)
-- [ ] T081 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_07_halt.py with stubs
-- [ ] T082 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_08_hang.py with stubs
-- [ ] T083 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_09_if.py with stubs ($TEST modification)
-- [ ] T084 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_10_job.py with stubs
-- [ ] T085 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_11_kill.py with stubs
-- [ ] T086 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_12_lock.py with stubs
-- [ ] T087 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_13_merge.py with stubs
-- [ ] T088 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_14_new.py with stubs (variable scoping, Exclusive NEW)
-- [ ] T089 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_15_open.py with stubs
-- [ ] T090 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_16_quit.py with stubs
-- [ ] T091 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_17_read.py with stubs
-- [ ] T092 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_18_set.py with stubs (variable tracking)
-- [ ] T093 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_19_tcommit.py with stubs
-- [ ] T094 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_20_trestart.py with stubs
-- [ ] T094a [P] [US2] Create tests/unit/asg/s8_commands/test_s8_ksubscripts.py with stubs (shares §8.2.20 numbering with TRESTART)
-- [ ] T095 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_21_trollback.py with stubs
-- [ ] T095a [P] [US2] Create tests/unit/asg/s8_commands/test_s8_kvalue.py with stubs (shares §8.2.21 numbering with TROLLBACK)
-- [ ] T096 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_22_tstart.py with stubs ($TLEVEL tracking)
-- [ ] T097 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_23_use.py with stubs
-- [ ] T098 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_24_view.py with skip (implementation-defined)
-- [ ] T099 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_25_write.py with stubs
-- [ ] T100 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_26_xecute.py with stubs
-- [ ] T100a [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_27_zcommand.py with stubs (Z-commands)
-- [ ] T101 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_3_device_params.py with stubs
-- [ ] T102 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_event_processing.py with skip (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER - out-of-scope per FR-055)
-- [ ] T102a [P] [US2] Create tests/unit/asg/s8_commands/test_s8_then_command.py with skip (THEN command - out-of-scope per FR-055)
-- [ ] T102b [P] [US2] Create tests/unit/asg/s8_commands/test_s8_assign.py with skip (out-of-scope per FR-055: ASSIGN command)
-- [ ] T102c [P] [US2] Create tests/unit/asg/s8_commands/test_s8_rload.py with skip (out-of-scope per FR-055: RLOAD command)
-- [ ] T102d [P] [US2] Create tests/unit/asg/s8_commands/test_s8_rsave.py with skip (out-of-scope per FR-055: RSAVE command)
+- [X] T075 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_01_break.py with stubs
+- [X] T076 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_02_close.py with stubs
+- [X] T077 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_03_do.py with stubs (MCall resolution)
+- [X] T078 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_04_else.py with stubs
+- [X] T079 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_05_for.py with stubs (ForLoopType classification)
+- [X] T080 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_06_goto.py with stubs (GotoType classification)
+- [X] T081 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_07_halt.py with stubs
+- [X] T082 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_08_hang.py with stubs
+- [X] T083 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_09_if.py with stubs ($TEST modification)
+- [X] T084 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_10_job.py with stubs
+- [X] T085 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_11_kill.py with stubs
+- [X] T086 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_12_lock.py with stubs
+- [X] T087 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_13_merge.py with stubs
+- [X] T088 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_14_new.py with stubs (variable scoping, Exclusive NEW)
+- [X] T089 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_15_open.py with stubs
+- [X] T090 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_16_quit.py with stubs
+- [X] T091 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_17_read.py with stubs
+- [X] T092 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_18_set.py with stubs (variable tracking)
+- [X] T093 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_19_tcommit.py with stubs
+- [X] T094 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_20_trestart.py with stubs
+- [X] T094a [P] [US2] Create tests/unit/asg/s8_commands/test_s8_ksubscripts.py with stubs (shares §8.2.20 numbering with TRESTART)
+- [X] T095 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_21_trollback.py with stubs
+- [X] T095a [P] [US2] Create tests/unit/asg/s8_commands/test_s8_kvalue.py with stubs (shares §8.2.21 numbering with TROLLBACK)
+- [X] T096 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_22_tstart.py with stubs ($TLEVEL tracking)
+- [X] T097 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_23_use.py with stubs
+- [X] T098 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_24_view.py with skip (implementation-defined)
+- [X] T099 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_25_write.py with stubs
+- [X] T100 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_26_xecute.py with stubs
+- [X] T100a [P] [US2] Create tests/unit/asg/s8_commands/test_s8_2_27_zcommand.py with stubs (Z-commands)
+- [X] T101 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_3_device_params.py with stubs
+- [X] T102 [P] [US2] Create tests/unit/asg/s8_commands/test_s8_event_processing.py with skip (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER - out-of-scope per FR-055)
+- [X] T102a [P] [US2] Create tests/unit/asg/s8_commands/test_s8_then_command.py with skip (THEN command - out-of-scope per FR-055)
+- [X] T102b [P] [US2] Create tests/unit/asg/s8_commands/test_s8_assign.py with skip (out-of-scope per FR-055: ASSIGN command)
+- [X] T102c [P] [US2] Create tests/unit/asg/s8_commands/test_s8_rload.py with skip (out-of-scope per FR-055: RLOAD command)
+- [X] T102d [P] [US2] Create tests/unit/asg/s8_commands/test_s8_rsave.py with skip (out-of-scope per FR-055: RSAVE command)
 
 ### §9 Character Set (ASG)
 
-- [ ] T103 [P] [US2] Create tests/unit/asg/s9_charset/test_s9_1_definitions.py with stubs
+- [X] T103 [P] [US2] Create tests/unit/asg/s9_charset/test_s9_1_definitions.py with stubs
 
 ### FR-010-014 Validation Tasks
 
-- [ ] T103a [US2] Verify ASG stubs include assertions for `loop_type`, `goto_type` fields per FR-012 (spot-check 5 files)
-- [ ] T103b [US2] Verify ASG stubs include assertions for reference resolution per FR-013 (spot-check MCall.target linked to MLabel)
-- [ ] T103c [US2] Verify ASG stubs include assertions for variable scope analysis per FR-014 (spot-check input_variables, output_variables)
+- [X] T103a [US2] Verify ASG stubs include assertions for `loop_type`, `goto_type` fields per FR-012 (spot-check 5 files)
+- [X] T103b [US2] Verify ASG stubs include assertions for reference resolution per FR-013 (spot-check MCall.target linked to MLabel)
+- [X] T103c [US2] Verify ASG stubs include assertions for variable scope analysis per FR-014 (spot-check input_variables, output_variables)
 
 **Checkpoint**: All ASG-level spec sections have stub files; FR-010-014 compliance verified
 
@@ -248,76 +248,76 @@
 
 ### §5 Metalanguage (Codegen) - Out-of-Scope
 
-- [ ] T103d [P] [US7] Create tests/unit/codegen/s5_metalanguage/test_s5_1_bnf_notation.py with skip (out-of-scope per FR-055: informative, no executable semantics)
+- [X] T103d [P] [US7] Create tests/unit/codegen/s5_metalanguage/test_s5_1_bnf_notation.py with skip (out-of-scope per FR-055: informative, no executable semantics)
 
 ### §6 Routine Structure (Codegen)
 
-- [ ] T104 [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_1_routine_head.py with stubs
-- [ ] T104a [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_2_routine_body.py with stubs (covers §6.2.1-6.2.5)
-- [ ] T104b [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_3_1_indirection.py with stubs (§6.3.1 Generic Indirection)
-- [ ] T104c [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_3_1_transaction.py with stubs (§6.3.1 Transaction processing)
-- [ ] T104d [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_3_2_error_processing.py with stubs (§6.3.2 Error processing)
-- [ ] T104e [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_3_4_event_processing.py with skip (§6.3.4 out-of-scope per FR-055)
-- [ ] T104f [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_4_embedded_programs.py with skip (out-of-scope per FR-055)
+- [X] T104 [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_1_routine_head.py with stubs
+- [X] T104a [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_2_routine_body.py with stubs (covers §6.2.1-6.2.5)
+- [X] T104b [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_3_1_indirection.py with stubs (§6.3.1 Generic Indirection)
+- [X] T104c [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_3_1_transaction.py with stubs (§6.3.1 Transaction processing)
+- [X] T104d [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_3_2_error_processing.py with stubs (§6.3.2 Error processing)
+- [X] T104e [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_3_4_event_processing.py with skip (§6.3.4 out-of-scope per FR-055)
+- [X] T104f [P] [US7] Create tests/unit/codegen/s6_routine/test_s6_4_embedded_programs.py with skip (out-of-scope per FR-055)
 
 ### §7 Expressions (Codegen)
 
-- [ ] T105 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_1_values.py with stubs
-- [ ] T106 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_2_variables.py with stubs (local/global access)
-- [ ] T107 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py with stubs (per-SSVN per SSVN_LIST in contracts/test-naming.md; skip-marked: ^$LIBRARY, ^$EVENT per FR-055) [Cross-ref: T024 parser, T066 ASG - keep SSVN lists synchronized]
-- [ ] T108 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_4_literals.py with stubs
-- [ ] T109 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py with stubs (per-function: $ASCII, $CHAR, $DATA, $DEXTRACT [deprecated—@pytest.mark.pre1995], $DPIECE [deprecated—@pytest.mark.pre1995], $EXTRACT, $FIND, $FNUMBER, $GET, $HOROLOG [function form], $JUSTIFY, $LENGTH, $MUMPS, $NAME, $NEXT [deprecated—@pytest.mark.pre1995], $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE, $TYPE, $VIEW, $Z [implementation-defined])
-- [ ] T110 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_6_extrinsic_functions.py with stubs
-- [ ] T111 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_7_special_variables.py with stubs (per-variable: $DEVICE, $ECODE, $EREF, $ESTACK, $ETRAP, $HOROLOG, $IO, $IOREFERENCE, $JOB, $KEY, $PDISPLAY, $PIOREFERENCE, $PRINCIPAL, $QUIT, $REFERENCE, $STACK, $STORAGE, $SYSTEM, $TEST, $TLEVEL, $TRESTART, $X, $Y)
-- [ ] T112 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_2_operators.py with stubs (L-to-R evaluation)
-- [ ] T113 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py with stubs
-- [ ] T114 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_3_indirection.py with stubs
+- [X] T105 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_1_values.py with stubs
+- [X] T106 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_2_variables.py with stubs (local/global access)
+- [X] T107 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py with stubs (per-SSVN per SSVN_LIST in contracts/test-naming.md; skip-marked: ^$LIBRARY, ^$EVENT per FR-055) [Cross-ref: T024 parser, T066 ASG - keep SSVN lists synchronized]
+- [X] T108 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_4_literals.py with stubs
+- [X] T109 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py with stubs (per-function: $ASCII, $CHAR, $DATA, $DEXTRACT [deprecated—@pytest.mark.pre1995], $DPIECE [deprecated—@pytest.mark.pre1995], $EXTRACT, $FIND, $FNUMBER, $GET, $HOROLOG [function form], $JUSTIFY, $LENGTH, $MUMPS, $NAME, $NEXT [deprecated—@pytest.mark.pre1995], $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE, $TYPE, $VIEW, $Z [implementation-defined])
+- [X] T110 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_6_extrinsic_functions.py with stubs
+- [X] T111 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_7_special_variables.py with stubs (per-variable: $DEVICE, $ECODE, $EREF, $ESTACK, $ETRAP, $HOROLOG, $IO, $IOREFERENCE, $JOB, $KEY, $PDISPLAY, $PIOREFERENCE, $PRINCIPAL, $QUIT, $REFERENCE, $STACK, $STORAGE, $SYSTEM, $TEST, $TLEVEL, $TRESTART, $X, $Y)
+- [X] T112 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_2_operators.py with stubs (L-to-R evaluation)
+- [X] T113 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py with stubs
+- [X] T114 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_3_indirection.py with stubs
 
 ### §8 Commands (Codegen) - General Rules
 
-- [ ] T115 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_1_general_rules.py with stubs (postconditions, timeouts behavior)
+- [X] T115 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_1_general_rules.py with stubs (postconditions, timeouts behavior)
 
 ### §8 Commands (Codegen) - Individual Commands
 
-- [ ] T116 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_01_break.py with stubs
-- [ ] T117 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_02_close.py with stubs
-- [ ] T118 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_03_do.py with stubs
-- [ ] T119 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_04_else.py with stubs
-- [ ] T120 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_05_for.py with stubs
-- [ ] T121 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_06_goto.py with stubs
-- [ ] T122 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_07_halt.py with stubs
-- [ ] T123 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_08_hang.py with stubs
-- [ ] T124 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_09_if.py with stubs
-- [ ] T125 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_10_job.py with stubs
-- [ ] T126 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_11_kill.py with stubs
-- [ ] T127 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_12_lock.py with stubs
-- [ ] T128 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_13_merge.py with stubs
-- [ ] T129 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_14_new.py with stubs (Exclusive NEW behavior)
-- [ ] T130 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_15_open.py with stubs
-- [ ] T131 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_16_quit.py with stubs
-- [ ] T132 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_17_read.py with stubs
-- [ ] T133 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_18_set.py with stubs
-- [ ] T134 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_19_tcommit.py with stubs
-- [ ] T135 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_20_trestart.py with stubs
-- [ ] T135a [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_ksubscripts.py with stubs (shares §8.2.20 numbering with TRESTART)
-- [ ] T136 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_21_trollback.py with stubs (nested rollback)
-- [ ] T136a [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_kvalue.py with stubs (shares §8.2.21 numbering with TROLLBACK)
-- [ ] T137 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_22_tstart.py with stubs ($TLEVEL behavior)
-- [ ] T138 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_23_use.py with stubs
-- [ ] T139 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_24_view.py with skip (implementation-defined)
-- [ ] T140 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_25_write.py with stubs
-- [ ] T141 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py with stubs
-- [ ] T141a [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_27_zcommand.py with stubs (Z-commands)
-- [ ] T142 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_3_device_params.py with stubs
-- [ ] T143 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_event_processing.py with skip (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER - out-of-scope per FR-055)
-- [ ] T143a [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_then_command.py with skip (THEN §8.2.32 - out-of-scope per FR-055)
-- [ ] T143b [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_assign.py with skip (out-of-scope per FR-055: ASSIGN command)
-- [ ] T143c [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_28_rload.py with skip (out-of-scope per FR-055: RLOAD command)
-- [ ] T143d [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_29_rsave.py with skip (out-of-scope per FR-055: RSAVE command)
+- [X] T116 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_01_break.py with stubs
+- [X] T117 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_02_close.py with stubs
+- [X] T118 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_03_do.py with stubs
+- [X] T119 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_04_else.py with stubs
+- [X] T120 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_05_for.py with stubs
+- [X] T121 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_06_goto.py with stubs
+- [X] T122 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_07_halt.py with stubs
+- [X] T123 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_08_hang.py with stubs
+- [X] T124 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_09_if.py with stubs
+- [X] T125 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_10_job.py with stubs
+- [X] T126 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_11_kill.py with stubs
+- [X] T127 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_12_lock.py with stubs
+- [X] T128 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_13_merge.py with stubs
+- [X] T129 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_14_new.py with stubs (Exclusive NEW behavior)
+- [X] T130 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_15_open.py with stubs
+- [X] T131 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_16_quit.py with stubs
+- [X] T132 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_17_read.py with stubs
+- [X] T133 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_18_set.py with stubs
+- [X] T134 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_19_tcommit.py with stubs
+- [X] T135 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_20_trestart.py with stubs
+- [X] T135a [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_ksubscripts.py with stubs (shares §8.2.20 numbering with TRESTART)
+- [X] T136 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_21_trollback.py with stubs (nested rollback)
+- [X] T136a [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_kvalue.py with stubs (shares §8.2.21 numbering with TROLLBACK)
+- [X] T137 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_22_tstart.py with stubs ($TLEVEL behavior)
+- [X] T138 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_23_use.py with stubs
+- [X] T139 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_24_view.py with skip (implementation-defined)
+- [X] T140 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_25_write.py with stubs
+- [X] T141 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py with stubs
+- [X] T141a [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_27_zcommand.py with stubs (Z-commands)
+- [X] T142 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_3_device_params.py with stubs
+- [X] T143 [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_event_processing.py with skip (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER - out-of-scope per FR-055)
+- [X] T143a [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_then_command.py with skip (THEN §8.2.32 - out-of-scope per FR-055)
+- [X] T143b [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_assign.py with skip (out-of-scope per FR-055: ASSIGN command)
+- [X] T143c [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_28_rload.py with skip (out-of-scope per FR-055: RLOAD command)
+- [X] T143d [P] [US7] Create tests/unit/codegen/s8_commands/test_s8_2_29_rsave.py with skip (out-of-scope per FR-055: RSAVE command)
 
 ### §9 Character Set (Codegen)
 
-- [ ] T144 [P] [US7] Create tests/unit/codegen/s9_charset/test_s9_1_definitions.py with stubs
+- [X] T144 [P] [US7] Create tests/unit/codegen/s9_charset/test_s9_1_definitions.py with stubs
 
 **Checkpoint**: All codegen-level spec sections have stub files
 
@@ -331,70 +331,70 @@
 
 ### Z-Command Parser Stubs
 
-- [ ] T145 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zbreak.py with stubs
-- [ ] T146 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zcompile.py with stubs
-- [ ] T147 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zcontinue.py with stubs
-- [ ] T148 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zgoto.py with stubs
-- [ ] T149 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zlink.py with stubs
-- [ ] T150 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zmessage.py with stubs
-- [ ] T151 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zprint.py with stubs
-- [ ] T152 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zshow.py with stubs
-- [ ] T153 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zstep.py with stubs
-- [ ] T154 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zsystem.py with stubs
-- [ ] T155 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zwrite.py with stubs
-- [ ] T155a [P] [US5] Create tests/unit/parser/extensions/ydb/test_zhelp.py with stubs
-- [ ] T155b [P] [US5] Create tests/unit/parser/extensions/ydb/test_zkill.py with stubs (ZKILL, ZWITHDRAW)
-- [ ] T155c [P] [US5] Create tests/unit/parser/extensions/ydb/test_zhalt.py with stubs
-- [ ] T155d [P] [US5] Create tests/unit/parser/extensions/ydb/test_zallocate.py with stubs (ZALLOCATE, ZDEALLOCATE)
-- [ ] T155e [P] [US5] Create tests/unit/parser/extensions/ydb/test_ztrigger.py with stubs
-- [ ] T155f [P] [US5] Create tests/unit/parser/extensions/ydb/test_zedit.py with stubs
+- [X] T145 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zbreak.py with stubs
+- [X] T146 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zcompile.py with stubs
+- [X] T147 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zcontinue.py with stubs
+- [X] T148 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zgoto.py with stubs
+- [X] T149 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zlink.py with stubs
+- [X] T150 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zmessage.py with stubs
+- [X] T151 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zprint.py with stubs
+- [X] T152 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zshow.py with stubs
+- [X] T153 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zstep.py with stubs
+- [X] T154 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zsystem.py with stubs
+- [X] T155 [P] [US5] Create tests/unit/parser/extensions/ydb/test_zwrite.py with stubs
+- [X] T155a [P] [US5] Create tests/unit/parser/extensions/ydb/test_zhelp.py with stubs
+- [X] T155b [P] [US5] Create tests/unit/parser/extensions/ydb/test_zkill.py with stubs (ZKILL, ZWITHDRAW)
+- [X] T155c [P] [US5] Create tests/unit/parser/extensions/ydb/test_zhalt.py with stubs
+- [X] T155d [P] [US5] Create tests/unit/parser/extensions/ydb/test_zallocate.py with stubs (ZALLOCATE, ZDEALLOCATE)
+- [X] T155e [P] [US5] Create tests/unit/parser/extensions/ydb/test_ztrigger.py with stubs
+- [X] T155f [P] [US5] Create tests/unit/parser/extensions/ydb/test_zedit.py with stubs
 
 ### Z-Command ASG Stubs
 
-- [ ] T156 [P] [US5] Create tests/unit/asg/extensions/ydb/test_zbreak.py with stubs
-- [ ] T157 [P] [US5] Create tests/unit/asg/extensions/ydb/test_zgoto.py with stubs (ZGotoType classification)
-- [ ] T158 [P] [US5] Create tests/unit/asg/extensions/ydb/test_zlink.py with stubs
-- [ ] T159 [P] [US5] Create tests/unit/asg/extensions/ydb/test_zwrite.py with stubs
-- [ ] T159a [P] [US5] Create tests/unit/asg/extensions/ydb/test_zkill.py with stubs (ZKILL, ZWITHDRAW)
-- [ ] T159b [P] [US5] Create tests/unit/asg/extensions/ydb/test_zhalt.py with stubs
-- [ ] T159c [P] [US5] Create tests/unit/asg/extensions/ydb/test_zallocate.py with stubs (ZALLOCATE, ZDEALLOCATE)
-- [ ] T159d [P] [US5] Create tests/unit/asg/extensions/ydb/test_ztrigger.py with stubs
-- [ ] T159e [P] [US5] Create tests/unit/asg/extensions/ydb/test_zedit.py with stubs
-- [ ] T159f [P] [US5] Create tests/unit/asg/extensions/ydb/test_zhelp.py with stubs
+- [X] T156 [P] [US5] Create tests/unit/asg/extensions/ydb/test_zbreak.py with stubs
+- [X] T157 [P] [US5] Create tests/unit/asg/extensions/ydb/test_zgoto.py with stubs (ZGotoType classification)
+- [X] T158 [P] [US5] Create tests/unit/asg/extensions/ydb/test_zlink.py with stubs
+- [X] T159 [P] [US5] Create tests/unit/asg/extensions/ydb/test_zwrite.py with stubs
+- [X] T159a [P] [US5] Create tests/unit/asg/extensions/ydb/test_zkill.py with stubs (ZKILL, ZWITHDRAW)
+- [X] T159b [P] [US5] Create tests/unit/asg/extensions/ydb/test_zhalt.py with stubs
+- [X] T159c [P] [US5] Create tests/unit/asg/extensions/ydb/test_zallocate.py with stubs (ZALLOCATE, ZDEALLOCATE)
+- [X] T159d [P] [US5] Create tests/unit/asg/extensions/ydb/test_ztrigger.py with stubs
+- [X] T159e [P] [US5] Create tests/unit/asg/extensions/ydb/test_zedit.py with stubs
+- [X] T159f [P] [US5] Create tests/unit/asg/extensions/ydb/test_zhelp.py with stubs
 
 ### Z-Command Codegen Stubs
 
-- [ ] T160 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zbreak.py with stubs
-- [ ] T161 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zgoto.py with stubs
-- [ ] T162 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zlink.py with stubs
-- [ ] T163 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zsystem.py with stubs
-- [ ] T164 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zwrite.py with stubs
-- [ ] T164a [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zhelp.py with stubs
-- [ ] T164e [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zkill.py with stubs (ZKILL, ZWITHDRAW)
-- [ ] T164f [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zhalt.py with stubs
-- [ ] T164g [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zallocate.py with stubs (ZALLOCATE, ZDEALLOCATE)
-- [ ] T164h [P] [US5] Create tests/unit/codegen/extensions/ydb/test_ztrigger.py with stubs
-- [ ] T164i [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zedit.py with stubs
-- [ ] T164j [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zcompile.py with stubs
-- [ ] T164k [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zcontinue.py with stubs
-- [ ] T164l [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zmessage.py with stubs
-- [ ] T164m [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zprint.py with stubs
-- [ ] T164n [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zshow.py with stubs
-- [ ] T164o [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zstep.py with stubs
+- [X] T160 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zbreak.py with stubs
+- [X] T161 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zgoto.py with stubs
+- [X] T162 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zlink.py with stubs
+- [X] T163 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zsystem.py with stubs
+- [X] T164 [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zwrite.py with stubs
+- [X] T164a [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zhelp.py with stubs
+- [X] T164e [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zkill.py with stubs (ZKILL, ZWITHDRAW)
+- [X] T164f [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zhalt.py with stubs
+- [X] T164g [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zallocate.py with stubs (ZALLOCATE, ZDEALLOCATE)
+- [X] T164h [P] [US5] Create tests/unit/codegen/extensions/ydb/test_ztrigger.py with stubs
+- [X] T164i [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zedit.py with stubs
+- [X] T164j [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zcompile.py with stubs
+- [X] T164k [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zcontinue.py with stubs
+- [X] T164l [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zmessage.py with stubs
+- [X] T164m [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zprint.py with stubs
+- [X] T164n [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zshow.py with stubs
+- [X] T164o [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zstep.py with stubs
 
 **Checkpoint**: All implemented Z-commands have parser/ASG/codegen stub files
 
 ### Z-Function Parser Stubs (YottaDB implementation-defined $Z... functions)
 
-- [ ] T164b [P] [US5] Create tests/unit/parser/extensions/ydb/test_zfunctions.py with skip markers (per FR-017: implementation-defined) for Z-functions: $ZASCII, $ZBITAND, $ZBITCOUNT, $ZBITFIND, $ZBITGET, $ZBITNOT, $ZBITOR, $ZBITSET, $ZBITSTR, $ZBITXOR, $ZCHAR, $ZCOLLATE, $ZCONVERT, $ZDATA, $ZDATE, $ZDIRECTORY, $ZEDIT, $ZEXTRACT, $ZFF, $ZFIND, $ZGETJPI, $ZINCR, $ZIO, $ZJOB, $ZJOBEXAM, $ZLENGTH, $ZLEVEL, $ZMESSAGE, $ZMODE, $ZNAME, $ZNEXT, $ZORDER, $ZPARSE, $ZPEEK, $ZPID, $ZPIECE, $ZPOSITION, $ZPREVIOUS, $ZPREFERREDLANG, $ZPRINT, $ZQGBLMOD, $ZQSUB, $ZSEARCH, $ZSOCKET, $ZSTATUS, $ZSUB, $ZSUFFIX, $ZSUPERMASK, $ZSYSLOG, $ZTRAP, $ZTRANSLATE, $ZTRIGGER, $ZTRNLNM, $ZVERSION, $ZWIDTH, $ZWRITE
+- [X] T164b [P] [US5] Create tests/unit/parser/extensions/ydb/test_zfunctions.py with skip markers (per FR-017: implementation-defined) for Z-functions: $ZASCII, $ZBITAND, $ZBITCOUNT, $ZBITFIND, $ZBITGET, $ZBITNOT, $ZBITOR, $ZBITSET, $ZBITSTR, $ZBITXOR, $ZCHAR, $ZCOLLATE, $ZCONVERT, $ZDATA, $ZDATE, $ZDIRECTORY, $ZEDIT, $ZEXTRACT, $ZFF, $ZFIND, $ZGETJPI, $ZINCR, $ZIO, $ZJOB, $ZJOBEXAM, $ZLENGTH, $ZLEVEL, $ZMESSAGE, $ZMODE, $ZNAME, $ZNEXT, $ZORDER, $ZPARSE, $ZPEEK, $ZPID, $ZPIECE, $ZPOSITION, $ZPREVIOUS, $ZPREFERREDLANG, $ZPRINT, $ZQGBLMOD, $ZQSUB, $ZSEARCH, $ZSOCKET, $ZSTATUS, $ZSUB, $ZSUFFIX, $ZSUPERMASK, $ZSYSLOG, $ZTRAP, $ZTRANSLATE, $ZTRIGGER, $ZTRNLNM, $ZVERSION, $ZWIDTH, $ZWRITE
 
 ### Z-Function ASG Stubs
 
-- [ ] T164c [P] [US5] Create tests/unit/asg/extensions/ydb/test_zfunctions.py with skip markers for Z-functions (ASG analysis and resolution)
+- [X] T164c [P] [US5] Create tests/unit/asg/extensions/ydb/test_zfunctions.py with skip markers for Z-functions (ASG analysis and resolution)
 
 ### Z-Function Codegen Stubs
 
-- [ ] T164d [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zfunctions.py with skip markers for Z-functions (Python codegen and execution)
+- [X] T164d [P] [US5] Create tests/unit/codegen/extensions/ydb/test_zfunctions.py with skip markers for Z-functions (Python codegen and execution)
 
 **Checkpoint**: All implemented Z-commands AND Z-functions have parser/ASG/codegen stub files
 
