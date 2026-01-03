@@ -3,30 +3,43 @@
 Reference: MUMPS 1995 ANSI Standard, Section 8.2.14
 """
 
+from pathlib import Path
+
 import pytest
+from textx import metamodel_from_file
+
+from m2py.parser.textx_classes import get_all_classes
+
+
+@pytest.fixture(scope="module")
+def command_metamodel():
+    """Load the command grammar for NEW command tests."""
+    grammar_dir = (
+        Path(__file__).parent.parent.parent.parent.parent / "src" / "m2py" / "grammar"
+    )
+    return metamodel_from_file(
+        grammar_dir / "commands.tx", classes=get_all_classes(), skipws=False
+    )
 
 
 @pytest.mark.parser
 class TestNewCommandParsing:
     """Parser-level tests for NEW command (§8.2.14)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW single variable")
-    def test_new_single_variable(self, parse_line):
-        """NEW X parses correctly (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+    def test_new_single_variable(self, command_metamodel):
+        """N X parses correctly (§8.2.14)."""
+        model = command_metamodel.model_from_str("N X", "NewCommand")
+        assert len(model.vars) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW multiple variables")
-    def test_new_multiple_variables(self, parse_line):
-        """NEW X,Y,Z multiple variables parses correctly (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+    def test_new_multiple_variables(self, command_metamodel):
+        """N X,Y,Z multiple variables parses correctly (§8.2.14)."""
+        model = command_metamodel.model_from_str("N X,Y,Z", "NewCommand")
+        assert len(model.vars) == 3
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW exclusive form")
-    def test_new_exclusive(self, parse_line):
-        """NEW (X,Y) exclusive NEW parses correctly (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+    def test_new_exclusive(self, command_metamodel):
+        """N (X) exclusive NEW parses correctly (§8.2.14)."""
+        model = command_metamodel.model_from_str("N (X)", "NewCommand")
+        assert model.exclusive is not None
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: NEW argumentless")

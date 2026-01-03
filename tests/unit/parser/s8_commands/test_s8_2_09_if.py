@@ -4,38 +4,69 @@ Reference: MUMPS 1995 ANSI Standard, Section 8.2.9
 """
 
 import pytest
+from pathlib import Path
+from textx import metamodel_from_file
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "src"))
+from m2py.parser.textx_classes import get_all_classes
+
+
+@pytest.fixture(scope="module")
+def command_metamodel():
+    """Load the command grammar metamodel with custom classes."""
+    grammar_dir = (
+        Path(__file__).parent.parent.parent.parent.parent / "src" / "m2py" / "grammar"
+    )
+    return metamodel_from_file(
+        grammar_dir / "commands.tx", classes=get_all_classes(), skipws=False
+    )
 
 
 @pytest.mark.parser
 class TestIfCommandParsing:
     """Parser-level tests for IF command (§8.2.9)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF with condition")
-    def test_if_with_condition(self, parse_line):
-        """IF condition parses correctly (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+    def test_if_with_condition(self, command_metamodel):
+        """I X=1 parses IF with single condition (§8.2.9)."""
+        model = command_metamodel.model_from_str("I X=1", "IfCommand")
+        assert model.conditions is not None
+        assert len(model.conditions) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF argumentless")
-    def test_if_argumentless(self, parse_line):
-        """IF without argument (uses $TEST) parses correctly (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+    def test_if_argumentless(self, command_metamodel):
+        """I (uses $TEST) parses IF without argument (§8.2.9)."""
+        model = command_metamodel.model_from_str("I", "IfCommand")
+        assert len(model.conditions) == 0
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: IF with multiple conditions")
-    def test_if_multiple_conditions(self, parse_line):
+    def test_if_multiple_conditions(self, command_metamodel):
         """IF cond1,cond2 comma-separated conditions parses correctly (§8.2.9)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF abbreviated")
-    def test_if_abbreviated(self, parse_line):
-        """I abbreviation parses correctly (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+    def test_if_abbreviated(self, command_metamodel):
+        """IF X=1 full keyword parses same as I X=1 (§8.2.9)."""
+        model = command_metamodel.model_from_str("IF X=1", "IfCommand")
+        assert model.conditions is not None
+        assert len(model.conditions) == 1
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: IF followed by commands")
-    def test_if_followed_by_commands(self, parse_line):
+    def test_if_followed_by_commands(self, command_metamodel):
         """IF condition followed by commands parses correctly (§8.2.9)."""
         pytest.fail("Stub - implement test")
+
+
+@pytest.mark.parser
+class TestElseCommandParsing:
+    """Parser-level tests for ELSE command (§8.2.4)."""
+
+    def test_else_simple(self, command_metamodel):
+        """E parses ELSE command (§8.2.4)."""
+        model = command_metamodel.model_from_str("E", "ElseCommand")
+        assert model is not None
+
+    def test_else_full_keyword(self, command_metamodel):
+        """ELSE parses correctly (§8.2.4)."""
+        model = command_metamodel.model_from_str("ELSE", "ElseCommand")
+        assert model is not None

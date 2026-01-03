@@ -5,6 +5,16 @@ Reference: MUMPS 1995 ANSI Standard, Section 7.2
 
 import pytest
 
+from m2py.parser.line_parser import parse_commands_from_line
+from m2py.analysis.semantic_analyzer import analyze_command
+from m2py.asg.expressions import (
+    MLiteral,
+    LiteralType,
+    MVariable,
+    MIntrinsicFunction,
+    MBinaryOp,
+)
+
 
 @pytest.mark.asg
 class TestOperatorsAnalysis:
@@ -135,3 +145,61 @@ class TestOperatorsAnalysis:
     def test_left_to_right_evaluation(self, analyze_expression):
         """Left-to-right evaluation order is maintained (§7.2)."""
         pytest.fail("Stub - implement test")
+
+
+def analyze_first_command(line: str):
+    """Helper to parse a line and analyze the first command."""
+    cmds = parse_commands_from_line(line)
+    assert len(cmds) >= 1, f"No commands parsed from: {line}"
+    return analyze_command(cmds[0])
+
+
+@pytest.mark.asg
+class TestExpressionAnalysisInContext:
+    """Tests for expression analysis within commands."""
+
+    def test_numeric_literal_integer(self):
+        """Integer numeric literal."""
+        stmt = analyze_first_command("S X=42")
+
+        value = stmt.assignments[0].value
+        assert isinstance(value, MLiteral)
+        assert value.literal_type == LiteralType.INTEGER
+        assert value.value == 42
+
+    def test_numeric_literal_decimal(self):
+        """Decimal numeric literal."""
+        stmt = analyze_first_command("S X=3.14")
+
+        value = stmt.assignments[0].value
+        assert isinstance(value, MLiteral)
+        assert value.literal_type == LiteralType.DECIMAL
+        assert value.value == 3.14
+
+    def test_variable_with_subscripts(self):
+        """Variable with subscripts."""
+        stmt = analyze_first_command("S X(1,2)=3")
+
+        target = stmt.assignments[0].target
+        assert isinstance(target, MVariable)
+        assert target.name == "X"
+        assert len(target.subscripts) == 2
+
+    def test_intrinsic_function(self):
+        """Intrinsic function call."""
+        stmt = analyze_first_command('S X=$L("hello")')
+
+        value = stmt.assignments[0].value
+        assert isinstance(value, MIntrinsicFunction)
+        assert value.name == "L"
+        assert len(value.arguments) == 1
+
+    def test_binary_expression(self):
+        """Binary expression in assignment."""
+        stmt = analyze_first_command("S X=A+B")
+
+        value = stmt.assignments[0].value
+        assert isinstance(value, MBinaryOp)
+        assert value.operator == "+"
+        assert isinstance(value.left, MVariable)
+        assert isinstance(value.right, MVariable)

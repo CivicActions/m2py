@@ -5,54 +5,70 @@ Tests verify the textX grammar correctly captures literal syntax.
 Reference: MUMPS 1995 ANSI Standard, Section 7.1.4
 """
 
+from pathlib import Path
+
 import pytest
+from textx import metamodel_from_file
+
+from m2py.parser.textx_classes import get_expression_classes
+
+
+@pytest.fixture(scope="module")
+def expr_metamodel():
+    """Load the expression grammar metamodel with custom classes."""
+    grammar_path = (
+        Path(__file__).parent.parent.parent.parent.parent
+        / "src"
+        / "m2py"
+        / "grammar"
+        / "expressions.tx"
+    )
+    return metamodel_from_file(
+        str(grammar_path), classes=get_expression_classes(), skipws=True
+    )
 
 
 @pytest.mark.parser
-class TestLiteralsParsing:
-    """Parser-level tests for Literals (§7.1.4).
+class TestNumericLiterals:
+    """Test numeric literal parsing (§7.1.4)."""
 
-    Literal types: numeric (integer, decimal, exponential) and string.
-    """
+    def test_integer_literal(self, expr_metamodel):
+        """Integer literal 42 parses correctly (§7.1.4)."""
+        model = expr_metamodel.model_from_str("42", "Expr")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: integer literal")
-    def test_integer_literal(self, parse_expression):
-        """Integer literal 123 parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+    def test_decimal_literal(self, expr_metamodel):
+        """Decimal literal 3.14 parses correctly (§7.1.4)."""
+        model = expr_metamodel.model_from_str("3.14", "Expr")
+        assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: decimal literal")
-    def test_decimal_literal(self, parse_expression):
-        """Decimal literal 123.456 parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+    def test_negative_integer(self, expr_metamodel):
+        """Negative integer -42 (unary minus) parses correctly (§7.1.4)."""
+        model = expr_metamodel.model_from_str("-42", "Expr")
+        assert model is not None
+
+
+@pytest.mark.parser
+class TestStringLiterals:
+    """Test string literal parsing (§7.1.4)."""
+
+    def test_string_literal(self, expr_metamodel):
+        """Simple quoted string parses correctly (§7.1.4)."""
+        model = expr_metamodel.model_from_str('"hello"', "Expr")
+        assert model is not None
+
+    def test_empty_string(self, expr_metamodel):
+        """Empty string \"\" parses correctly (§7.1.4)."""
+        model = expr_metamodel.model_from_str('""', "Expr")
+        assert model is not None
+
+    def test_string_embedded_quotes(self, expr_metamodel):
+        """String with embedded quotes parses correctly (§7.1.4)."""
+        model = expr_metamodel.model_from_str('"say ""hi"""', "Expr")
+        assert model is not None
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: exponential literal")
-    def test_exponential_literal(self, parse_expression):
+    def test_exponential_literal(self, expr_metamodel):
         """Exponential literal 1.23E5 parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: negative number")
-    def test_negative_number(self, parse_expression):
-        """Negative number -123 parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: string literal")
-    def test_string_literal(self, parse_expression):
-        """String literal \"hello\" parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: string with embedded quotes")
-    def test_string_embedded_quotes(self, parse_expression):
-        """String with embedded quotes \"he said \"\"hi\"\"\" parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: empty string")
-    def test_empty_string(self, parse_expression):
-        """Empty string \"\" parses correctly (§7.1.4)."""
         pytest.fail("Stub - implement test")

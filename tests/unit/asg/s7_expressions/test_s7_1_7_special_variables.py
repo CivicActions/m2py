@@ -123,3 +123,92 @@ class TestSpecialVariablesAnalysis:
     def test_sv_y(self, analyze_expression):
         """$Y special variable is correctly analyzed (§7.1.7)."""
         pytest.fail("Stub - implement test")
+
+
+@pytest.mark.asg
+class TestSpecialVariableASG:
+    """Test MSpecialVariable ASG node structure."""
+
+    def test_test_variable(self):
+        """$TEST creates MSpecialVariable with name."""
+        from tests.helpers.parsing import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        from m2py.asg import MSpecialVariable
+
+        expr = parse_expression("$TEST")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "TEST"
+
+    def test_horolog_variable(self):
+        """$HOROLOG creates MSpecialVariable."""
+        from tests.helpers.parsing import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        from m2py.asg import MSpecialVariable
+
+        expr = parse_expression("$HOROLOG")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "HOROLOG"
+
+    def test_job_variable(self):
+        """$JOB creates MSpecialVariable."""
+        from tests.helpers.parsing import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        from m2py.asg import MSpecialVariable
+
+        expr = parse_expression("$JOB")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "JOB"
+
+    def test_abbreviated_horolog(self):
+        """$H creates MSpecialVariable with name 'H' (single-letter abbreviation)."""
+        from tests.helpers.parsing import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        from m2py.asg import MSpecialVariable
+
+        expr = parse_expression("$H")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "H"
+
+    def test_abbreviated_storage(self):
+        """$S creates MSpecialVariable with name 'S' (single-letter abbreviation)."""
+        from tests.helpers.parsing import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        from m2py.asg import MSpecialVariable
+
+        expr = parse_expression("$S")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "S"
+
+    def test_abbreviated_test(self):
+        """$T creates MSpecialVariable with name 'T' (single-letter abbreviation)."""
+        from tests.helpers.parsing import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        from m2py.asg import MSpecialVariable
+
+        expr = parse_expression("$T")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "T"
+
+    def test_abbreviated_job(self):
+        """$J creates MSpecialVariable with name 'J' (single-letter abbreviation)."""
+        from tests.helpers.parsing import parse_expression
+        from m2py.analysis.semantic_analyzer import analyze_expression
+        from m2py.asg import MSpecialVariable
+
+        expr = parse_expression("$J")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MSpecialVariable)
+        assert result.name == "J"

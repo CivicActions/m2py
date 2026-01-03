@@ -95,3 +95,129 @@ class TestSSVNsOutOfScope:
     def test_ssvn_event_out_of_scope(self):
         """^$EVENT is out of scope."""
         pass
+
+
+@pytest.mark.parser
+class TestStructuredSystemVariableGrammar:
+    """Test Structured System Variables (SSVs) parsing via MUMPSParser.
+
+    Per MUMPS 1995 spec 7.1.4.12, SSVNs use ^$ prefix:
+    ^$CHARACTER, ^$DEVICE, ^$EVENT, ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE, ^$SYSTEM
+    """
+
+    def test_ssv_device(self):
+        """^$DEVICE should parse as SSV."""
+        from m2py.parser import MUMPSParser
+        from m2py.asg import MRoutine, MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$DEVICE\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "DEVICE"
+
+    def test_ssv_job_with_subscript(self):
+        """^$JOB(pid) should parse as SSV with subscript."""
+        from m2py.parser import MUMPSParser
+        from m2py.asg import MRoutine, MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$JOB(PID)\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "JOB"
+        assert len(arg.subscripts) == 1
+
+    def test_ssv_global_with_name(self):
+        """^$GLOBAL("MYDATA") should parse."""
+        from m2py.parser import MUMPSParser
+        from m2py.asg import MRoutine, MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = 'LABEL\tW ^$GLOBAL("MYDATA")\n'
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert len(stmt.arguments) == 1
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "GLOBAL"
+
+    def test_ssv_routine_with_name(self):
+        """^$ROUTINE("TEST") should parse."""
+        from m2py.parser import MUMPSParser
+        from m2py.asg import MRoutine, MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = 'LABEL\tW ^$ROUTINE("TEST")\n'
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "ROUTINE"
+
+    def test_ssv_system(self):
+        """^$SYSTEM should parse."""
+        from m2py.parser import MUMPSParser
+        from m2py.asg import MRoutine, MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$SYSTEM\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "SYSTEM"
+
+    def test_ssv_abbreviated_d(self):
+        """^$D should parse as abbreviated DEVICE."""
+        from m2py.parser import MUMPSParser
+        from m2py.asg import MRoutine, MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$D\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        # Single letter D is the abbreviation
+        assert arg.name.upper() == "D"
+
+    def test_ssv_abbreviated_j_with_subscript(self):
+        """^$J(1) should parse as abbreviated JOB."""
+        from m2py.parser import MUMPSParser
+        from m2py.asg import MRoutine, MStructuredSystemVariable
+
+        parser = MUMPSParser()
+        source = "LABEL\tW ^$J(1)\n"
+        routine = parser.parse(source)
+
+        assert isinstance(routine, MRoutine)
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        arg = stmt.arguments[0]
+        assert isinstance(arg, MStructuredSystemVariable)
+        assert arg.name.upper() == "J"

@@ -1,0 +1,3371 @@
+{
+  "tests/unit/asg/extensions/ydb/test_zallocate.py": {
+    "classes": [
+      "TestZallocateAsg"
+    ],
+    "functions": {
+      "TestZallocateAsg": [
+        "test_zallocate_asg_node",
+        "test_zdeallocate_asg_node"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_zbreak.py": {
+    "classes": [
+      "TestZbreakAsg"
+    ],
+    "functions": {
+      "TestZbreakAsg": [
+        "test_zbreak_asg_node",
+        "test_zbreak_action_analysis"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_zedit.py": {
+    "classes": [
+      "TestZeditAsg"
+    ],
+    "functions": {
+      "TestZeditAsg": [
+        "test_zedit_asg_node"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_zfunctions.py": {
+    "classes": [
+      "TestZfunctionsAsg"
+    ],
+    "functions": {
+      "TestZfunctionsAsg": [
+        "test_zfunctions_placeholder"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_zgoto.py": {
+    "classes": [
+      "TestZgotoAsg",
+      "TestZGotoLabelRefAnalysis"
+    ],
+    "functions": {
+      "TestZGotoLabelRefAnalysis": [
+        "test_zgoto_with_labelref_target",
+        "test_zgoto_with_indirect_routine"
+      ],
+      "TestZgotoAsg": [
+        "test_zgoto_asg_node",
+        "test_zgoto_type_classification",
+        "test_zgoto_entryref_resolution"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_zhalt.py": {
+    "classes": [
+      "TestZhaltAsg"
+    ],
+    "functions": {
+      "TestZhaltAsg": [
+        "test_zhalt_asg_node",
+        "test_zhalt_status_tracking"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_zhelp.py": {
+    "classes": [
+      "TestZhelpAsg"
+    ],
+    "functions": {
+      "TestZhelpAsg": [
+        "test_zhelp_asg_node"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_zkill.py": {
+    "classes": [
+      "TestZkillAsg"
+    ],
+    "functions": {
+      "TestZkillAsg": [
+        "test_zkill_asg_node",
+        "test_zwithdraw_asg_node"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_zlink.py": {
+    "classes": [
+      "TestZlinkAsg"
+    ],
+    "functions": {
+      "TestZlinkAsg": [
+        "test_zlink_asg_node",
+        "test_zlink_routine_tracking"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_ztrigger.py": {
+    "classes": [
+      "TestZtriggerAsg"
+    ],
+    "functions": {
+      "TestZtriggerAsg": [
+        "test_ztrigger_asg_node"
+      ]
+    }
+  },
+  "tests/unit/asg/extensions/ydb/test_zwrite.py": {
+    "classes": [
+      "TestZwriteAsg"
+    ],
+    "functions": {
+      "TestZwriteAsg": [
+        "test_zwrite_asg_node",
+        "test_zwrite_variable_analysis"
+      ]
+    }
+  },
+  "tests/unit/asg/s5_metalanguage/test_s5_1_bnf_notation.py": {
+    "classes": [
+      "TestBnfNotationAnalysis"
+    ],
+    "functions": {
+      "TestBnfNotationAnalysis": [
+        "test_bnf_metalanguage"
+      ]
+    }
+  },
+  "tests/unit/asg/s6_routine/test_s6_1_routine_head.py": {
+    "classes": [
+      "TestRoutineHeadAnalysis"
+    ],
+    "functions": {
+      "TestRoutineHeadAnalysis": [
+        "test_routine_name_extraction",
+        "test_formal_parameter_list",
+        "test_routine_metadata"
+      ]
+    }
+  },
+  "tests/unit/asg/s6_routine/test_s6_2_routine_body.py": {
+    "classes": [
+      "TestRoutineBodyAnalysis"
+    ],
+    "functions": {
+      "TestRoutineBodyAnalysis": [
+        "test_level_line_analysis",
+        "test_formal_line_analysis",
+        "test_label_extraction",
+        "test_label_reference_resolution",
+        "test_line_body_analysis",
+        "test_block_structure",
+        "test_comment_handling"
+      ]
+    }
+  },
+  "tests/unit/asg/s6_routine/test_s6_3_1_indirection.py": {
+    "classes": [
+      "TestIndirectionAnalysis"
+    ],
+    "functions": {
+      "TestIndirectionAnalysis": [
+        "test_name_indirection_resolution",
+        "test_argument_indirection_resolution",
+        "test_pattern_indirection_resolution",
+        "test_indirection_static_analysis"
+      ]
+    }
+  },
+  "tests/unit/asg/s6_routine/test_s6_3_1_transaction.py": {
+    "classes": [
+      "TestTransactionProcessingAnalysis"
+    ],
+    "functions": {
+      "TestTransactionProcessingAnalysis": [
+        "test_transaction_boundary_detection",
+        "test_tlevel_tracking",
+        "test_transaction_variable_isolation"
+      ]
+    }
+  },
+  "tests/unit/asg/s6_routine/test_s6_3_2_error_processing.py": {
+    "classes": [
+      "TestErrorProcessingAnalysis"
+    ],
+    "functions": {
+      "TestErrorProcessingAnalysis": [
+        "test_etrap_analysis",
+        "test_ecode_analysis",
+        "test_error_handler_scope"
+      ]
+    }
+  },
+  "tests/unit/asg/s6_routine/test_s6_3_4_event_processing.py": {
+    "classes": [
+      "TestEventProcessingAnalysis"
+    ],
+    "functions": {
+      "TestEventProcessingAnalysis": [
+        "test_event_processing"
+      ]
+    }
+  },
+  "tests/unit/asg/s6_routine/test_s6_4_embedded_programs.py": {
+    "classes": [
+      "TestEmbeddedProgramsAnalysis"
+    ],
+    "functions": {
+      "TestEmbeddedProgramsAnalysis": [
+        "test_embedded_programs"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_1_1_values.py": {
+    "classes": [
+      "TestValuesAnalysis"
+    ],
+    "functions": {
+      "TestValuesAnalysis": [
+        "test_value_type_inference",
+        "test_string_value_representation",
+        "test_numeric_value_representation",
+        "test_empty_string_representation"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_1_2_variables.py": {
+    "classes": [
+      "TestVariablesAnalysis"
+    ],
+    "functions": {
+      "TestVariablesAnalysis": [
+        "test_local_variable_resolution",
+        "test_global_variable_resolution",
+        "test_naked_global_reference",
+        "test_variable_scope_analysis",
+        "test_subscripted_variable",
+        "test_glvn_unification"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_1_3_ssvns.py": {
+    "classes": [
+      "TestSsvnsAnalysis"
+    ],
+    "functions": {
+      "TestSsvnsAnalysis": [
+        "test_ssvn_global",
+        "test_ssvn_job",
+        "test_ssvn_lock",
+        "test_ssvn_routine",
+        "test_ssvn_system",
+        "test_ssvn_device",
+        "test_ssvn_character",
+        "test_ssvn_display",
+        "test_ssvn_library",
+        "test_ssvn_event"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_1_4_literals.py": {
+    "classes": [
+      "TestLiteralsAnalysis"
+    ],
+    "functions": {
+      "TestLiteralsAnalysis": [
+        "test_integer_literal",
+        "test_decimal_literal",
+        "test_string_literal",
+        "test_escaped_quotes",
+        "test_numeric_string_literal",
+        "test_empty_string_literal",
+        "test_scientific_notation"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_1_5_intrinsic_functions.py": {
+    "classes": [
+      "TestIntrinsicFunctionsAnalysis",
+      "TestIntrinsicFunctionASG"
+    ],
+    "functions": {
+      "TestIntrinsicFunctionASG": [
+        "test_piece_function_args",
+        "test_length_function_args",
+        "test_nested_function_args",
+        "test_binary_expression_in_function_arg",
+        "test_text_function_line_reference",
+        "test_complex_expression_in_function_arg"
+      ],
+      "TestIntrinsicFunctionsAnalysis": [
+        "test_function_ascii",
+        "test_function_char",
+        "test_function_data",
+        "test_function_dextract",
+        "test_function_dpiece",
+        "test_function_extract",
+        "test_function_find",
+        "test_function_fnumber",
+        "test_function_get",
+        "test_function_justify",
+        "test_function_length",
+        "test_function_name",
+        "test_function_next",
+        "test_function_order",
+        "test_function_piece",
+        "test_function_qlength",
+        "test_function_qsubscript",
+        "test_function_query",
+        "test_function_random",
+        "test_function_reverse",
+        "test_function_select",
+        "test_function_stack",
+        "test_function_text",
+        "test_function_translate",
+        "test_function_view"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_1_6_extrinsic_functions.py": {
+    "classes": [
+      "TestExtrinsicFunctionsAnalysis",
+      "TestExtrinsicFunctionASG"
+    ],
+    "functions": {
+      "TestExtrinsicFunctionASG": [
+        "test_extrinsic_simple",
+        "test_extrinsic_with_routine",
+        "test_extrinsic_with_args",
+        "test_extrinsic_with_byref_args"
+      ],
+      "TestExtrinsicFunctionsAnalysis": [
+        "test_extrinsic_function_resolution",
+        "test_extrinsic_function_arguments",
+        "test_extrinsic_function_return",
+        "test_extrinsic_special_variable",
+        "test_external_routine_reference"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_1_7_special_variables.py": {
+    "classes": [
+      "TestSpecialVariablesAnalysis",
+      "TestSpecialVariableASG"
+    ],
+    "functions": {
+      "TestSpecialVariableASG": [
+        "test_test_variable",
+        "test_horolog_variable",
+        "test_job_variable",
+        "test_abbreviated_horolog",
+        "test_abbreviated_storage",
+        "test_abbreviated_test",
+        "test_abbreviated_job"
+      ],
+      "TestSpecialVariablesAnalysis": [
+        "test_sv_device",
+        "test_sv_ecode",
+        "test_sv_estack",
+        "test_sv_etrap",
+        "test_sv_horolog",
+        "test_sv_io",
+        "test_sv_job",
+        "test_sv_key",
+        "test_sv_principal",
+        "test_sv_quit",
+        "test_sv_reference",
+        "test_sv_stack",
+        "test_sv_storage",
+        "test_sv_system",
+        "test_sv_test",
+        "test_sv_tlevel",
+        "test_sv_trestart",
+        "test_sv_x",
+        "test_sv_y"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_2_5_pattern_match.py": {
+    "classes": [
+      "TestPatternMatchAnalysis",
+      "TestPatternMatchASG",
+      "TestPatternMatchCompilation"
+    ],
+    "functions": {
+      "TestPatternMatchASG": [
+        "test_pattern_match_as_pattern_match",
+        "test_pattern_match_recognizable",
+        "test_pattern_match_indefinite_multiplier",
+        "test_pattern_match_negated",
+        "test_pattern_match_range_repcount",
+        "test_pattern_match_multiple_atoms",
+        "test_pattern_match_with_string",
+        "test_pattern_match_followed_by_concat"
+      ],
+      "TestPatternMatchAnalysis": [
+        "test_pattern_operator",
+        "test_pattern_codes",
+        "test_pattern_quantifiers",
+        "test_pattern_alternation",
+        "test_pattern_literal",
+        "test_pattern_indirection"
+      ],
+      "TestPatternMatchCompilation": [
+        "test_pattern_match_compiled_regex",
+        "test_pattern_match_alphanumeric"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_2_operators.py": {
+    "classes": [
+      "TestOperatorsAnalysis"
+    ],
+    "functions": {
+      "TestOperatorsAnalysis": [
+        "test_unary_plus",
+        "test_unary_minus",
+        "test_logical_not",
+        "test_addition",
+        "test_subtraction",
+        "test_multiplication",
+        "test_division",
+        "test_integer_division",
+        "test_modulo",
+        "test_exponentiation",
+        "test_concatenation",
+        "test_equals",
+        "test_less_than",
+        "test_greater_than",
+        "test_contains",
+        "test_follows",
+        "test_sorts_after",
+        "test_logical_and",
+        "test_logical_or",
+        "test_left_to_right_evaluation"
+      ]
+    }
+  },
+  "tests/unit/asg/s7_expressions/test_s7_3_indirection.py": {
+    "classes": [
+      "TestIndirectionAnalysis",
+      "TestIndirectionASG",
+      "TestIndirectionClassification"
+    ],
+    "functions": {
+      "TestIndirectionASG": [
+        "test_indirection_simple",
+        "test_indirection_subscripted"
+      ],
+      "TestIndirectionAnalysis": [
+        "test_name_indirection",
+        "test_subscript_indirection",
+        "test_argument_indirection",
+        "test_indirection_in_set",
+        "test_indirection_limitations",
+        "test_nested_indirection",
+        "test_indirection_side_effects"
+      ],
+      "TestIndirectionClassification": [
+        "test_indirection_default_type",
+        "test_indirection_static_resolution_string",
+        "test_indirection_variable_not_static"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_1_general_rules.py": {
+    "classes": [
+      "TestCommandGeneralRulesAnalysis"
+    ],
+    "functions": {
+      "TestCommandGeneralRulesAnalysis": [
+        "test_postcondition_analysis",
+        "test_timeout_analysis",
+        "test_line_reference_resolution",
+        "test_parameter_passing_analysis",
+        "test_command_abbreviation_normalization"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_01_break.py": {
+    "classes": [
+      "TestBreakCommandAnalysis"
+    ],
+    "functions": {
+      "TestBreakCommandAnalysis": [
+        "test_break_command_node",
+        "test_break_with_postcondition"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_02_close.py": {
+    "classes": [
+      "TestCloseCommandAnalysis"
+    ],
+    "functions": {
+      "TestCloseCommandAnalysis": [
+        "test_close_command_node",
+        "test_close_device_tracking"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_03_do.py": {
+    "classes": [
+      "TestDoCommandAnalysis",
+      "TestDoBlockBodyPopulation",
+      "TestMActualParameterAnalysis"
+    ],
+    "functions": {
+      "TestDoBlockBodyPopulation": [
+        "test_do_block_simple",
+        "test_do_block_nested"
+      ],
+      "TestDoCommandAnalysis": [
+        "test_do_target_resolution",
+        "test_do_with_arguments",
+        "test_do_block_structure",
+        "test_mcall_creation",
+        "test_external_routine_reference"
+      ],
+      "TestMActualParameterAnalysis": [
+        "test_extrinsic_function_args_have_correct_parents",
+        "test_extrinsic_function_byref_args_have_correct_parents"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_04_else.py": {
+    "classes": [
+      "TestElseCommandAnalysis"
+    ],
+    "functions": {
+      "TestElseCommandAnalysis": [
+        "test_else_command_node",
+        "test_else_test_dependency",
+        "test_else_control_flow"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_05_for.py": {
+    "classes": [
+      "TestForCommandAnalysis",
+      "TestForBodyPopulation"
+    ],
+    "functions": {
+      "TestForBodyPopulation": [
+        "test_for_body_single_command",
+        "test_for_body_multiple_commands",
+        "test_for_nested_for"
+      ],
+      "TestForCommandAnalysis": [
+        "test_for_loop_type_classification",
+        "test_for_counted_loop",
+        "test_for_list_loop",
+        "test_for_infinite_loop",
+        "test_for_loop_variable",
+        "test_for_nested_loops"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_06_goto.py": {
+    "classes": [
+      "TestGotoCommandAnalysis"
+    ],
+    "functions": {
+      "TestGotoCommandAnalysis": [
+        "test_goto_type_classification",
+        "test_goto_target_resolution",
+        "test_goto_computed_target",
+        "test_goto_control_flow_impact"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_07_halt.py": {
+    "classes": [
+      "TestHaltCommandAnalysis"
+    ],
+    "functions": {
+      "TestHaltCommandAnalysis": [
+        "test_halt_command_node",
+        "test_halt_control_flow_termination"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_08_hang.py": {
+    "classes": [
+      "TestHangCommandAnalysis"
+    ],
+    "functions": {
+      "TestHangCommandAnalysis": [
+        "test_hang_command_node",
+        "test_hang_duration_expression"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_09_if.py": {
+    "classes": [
+      "TestIfCommandAnalysis",
+      "TestIfElseBodyPopulation"
+    ],
+    "functions": {
+      "TestIfCommandAnalysis": [
+        "test_if_test_modification",
+        "test_if_condition_analysis",
+        "test_if_control_flow",
+        "test_if_argumentless",
+        "test_if_multiple_conditions"
+      ],
+      "TestIfElseBodyPopulation": [
+        "test_if_body_single_command",
+        "test_if_body_multiple_commands",
+        "test_else_body_commands",
+        "test_for_with_nested_if",
+        "test_if_with_nested_for"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_10_job.py": {
+    "classes": [
+      "TestJobCommandAnalysis"
+    ],
+    "functions": {
+      "TestJobCommandAnalysis": [
+        "test_job_command_node",
+        "test_job_target_resolution",
+        "test_job_process_parameters"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_11_kill.py": {
+    "classes": [
+      "TestKillCommandAnalysis"
+    ],
+    "functions": {
+      "TestKillCommandAnalysis": [
+        "test_kill_variable_tracking",
+        "test_kill_exclusive_form",
+        "test_kill_global_impact",
+        "test_kill_subscripted"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_12_lock.py": {
+    "classes": [
+      "TestLockCommandAnalysis"
+    ],
+    "functions": {
+      "TestLockCommandAnalysis": [
+        "test_lock_command_node",
+        "test_lock_increment_decrement",
+        "test_lock_timeout"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_13_merge.py": {
+    "classes": [
+      "TestMergeCommandAnalysis"
+    ],
+    "functions": {
+      "TestMergeCommandAnalysis": [
+        "test_merge_variable_tracking",
+        "test_merge_source_analysis",
+        "test_merge_global_impact"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_14_new.py": {
+    "classes": [
+      "TestNewCommandAnalysis"
+    ],
+    "functions": {
+      "TestNewCommandAnalysis": [
+        "test_new_variable_scoping",
+        "test_new_exclusive_form",
+        "test_new_scope_lifetime",
+        "test_new_multiple_variables"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_15_open.py": {
+    "classes": [
+      "TestOpenCommandAnalysis"
+    ],
+    "functions": {
+      "TestOpenCommandAnalysis": [
+        "test_open_command_node",
+        "test_open_device_expression",
+        "test_open_parameters"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_16_quit.py": {
+    "classes": [
+      "TestQuitCommandAnalysis"
+    ],
+    "functions": {
+      "TestQuitCommandAnalysis": [
+        "test_quit_control_flow",
+        "test_quit_with_value",
+        "test_quit_scope_cleanup",
+        "test_quit_from_for"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_17_read.py": {
+    "classes": [
+      "TestReadCommandAnalysis",
+      "TestReadFixedLength"
+    ],
+    "functions": {
+      "TestReadCommandAnalysis": [
+        "test_read_variable_tracking",
+        "test_read_format_controls",
+        "test_read_timeout",
+        "test_read_single_character"
+      ],
+      "TestReadFixedLength": [
+        "test_read_fixed_length_basic",
+        "test_read_fixed_length_with_timeout",
+        "test_read_fixed_length_negative",
+        "test_read_fixed_length_variable",
+        "test_kill_followed_by_read_fixed_length"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_18_set.py": {
+    "classes": [
+      "TestSetCommandAnalysis"
+    ],
+    "functions": {
+      "TestSetCommandAnalysis": [
+        "test_set_variable_tracking",
+        "test_set_multiple_targets",
+        "test_set_global",
+        "test_set_piece",
+        "test_set_extract",
+        "test_set_indirection"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_19_tcommit.py": {
+    "classes": [
+      "TestTcommitCommandAnalysis"
+    ],
+    "functions": {
+      "TestTcommitCommandAnalysis": [
+        "test_tcommit_tlevel_tracking",
+        "test_tcommit_transaction_boundary"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_20_trestart.py": {
+    "classes": [
+      "TestTrestartCommandAnalysis"
+    ],
+    "functions": {
+      "TestTrestartCommandAnalysis": [
+        "test_trestart_command_node",
+        "test_trestart_control_flow"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_21_trollback.py": {
+    "classes": [
+      "TestTrollbackCommandAnalysis"
+    ],
+    "functions": {
+      "TestTrollbackCommandAnalysis": [
+        "test_trollback_tlevel_tracking",
+        "test_trollback_variable_restoration",
+        "test_trollback_to_level"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_22_tstart.py": {
+    "classes": [
+      "TestTstartCommandAnalysis"
+    ],
+    "functions": {
+      "TestTstartCommandAnalysis": [
+        "test_tstart_tlevel_tracking",
+        "test_tstart_variable_list",
+        "test_tstart_transaction_boundary",
+        "test_tstart_restart_option"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_23_use.py": {
+    "classes": [
+      "TestUseCommandAnalysis"
+    ],
+    "functions": {
+      "TestUseCommandAnalysis": [
+        "test_use_command_node",
+        "test_use_io_modification",
+        "test_use_parameters"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_24_view.py": {
+    "classes": [
+      "TestViewCommandAnalysis"
+    ],
+    "functions": {
+      "TestViewCommandAnalysis": [
+        "test_view_implementation_defined"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_25_write.py": {
+    "classes": [
+      "TestWriteCommandAnalysis",
+      "TestFormatControlASG"
+    ],
+    "functions": {
+      "TestFormatControlASG": [
+        "test_newline_control",
+        "test_formfeed_control",
+        "test_tab_control_with_expression",
+        "test_charcode_control_with_expression",
+        "test_mixed_format_controls"
+      ],
+      "TestWriteCommandAnalysis": [
+        "test_write_command_node",
+        "test_write_format_controls",
+        "test_write_xy_modification",
+        "test_write_expression_evaluation"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_26_xecute.py": {
+    "classes": [
+      "TestXecuteCommandAnalysis",
+      "TestXecuteConstantDetection"
+    ],
+    "functions": {
+      "TestXecuteCommandAnalysis": [
+        "test_xecute_command_node",
+        "test_xecute_static_analysis_limitation",
+        "test_xecute_postcondition"
+      ],
+      "TestXecuteConstantDetection": [
+        "test_xecute_constant_string",
+        "test_xecute_multiple_constants",
+        "test_xecute_variable_expression",
+        "test_xecute_mixed_args"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_2_27_zcommand.py": {
+    "classes": [
+      "TestZCommandsAnalysis"
+    ],
+    "functions": {
+      "TestZCommandsAnalysis": [
+        "test_zwrite_analysis",
+        "test_zhalt_analysis",
+        "test_zlink_analysis",
+        "test_zshow_analysis",
+        "test_zt_transaction_analysis"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_3_device_params.py": {
+    "classes": [
+      "TestDeviceParametersAnalysis"
+    ],
+    "functions": {
+      "TestDeviceParametersAnalysis": [
+        "test_device_param_asg_node",
+        "test_device_param_value_analysis",
+        "test_mnemonic_device_param_analysis"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_assign.py": {
+    "classes": [
+      "TestAssignCommandAnalysis"
+    ],
+    "functions": {
+      "TestAssignCommandAnalysis": [
+        "test_assign_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_event_processing.py": {
+    "classes": [
+      "TestEventProcessingCommandsAnalysis"
+    ],
+    "functions": {
+      "TestEventProcessingCommandsAnalysis": [
+        "test_ablock_out_of_scope",
+        "test_aunblock_out_of_scope",
+        "test_astart_out_of_scope",
+        "test_astop_out_of_scope",
+        "test_estart_out_of_scope",
+        "test_estop_out_of_scope",
+        "test_etrigger_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_ksubscripts.py": {
+    "classes": [
+      "TestKSubscriptsAnalysis"
+    ],
+    "functions": {
+      "TestKSubscriptsAnalysis": [
+        "test_ksubscripts_asg_node",
+        "test_ksubscripts_subscript_analysis"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_kvalue.py": {
+    "classes": [
+      "TestKValueAnalysis"
+    ],
+    "functions": {
+      "TestKValueAnalysis": [
+        "test_kvalue_asg_node",
+        "test_kvalue_expression_analysis"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_rload.py": {
+    "classes": [
+      "TestRloadCommandAnalysis"
+    ],
+    "functions": {
+      "TestRloadCommandAnalysis": [
+        "test_rload_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_rsave.py": {
+    "classes": [
+      "TestRsaveCommandAnalysis"
+    ],
+    "functions": {
+      "TestRsaveCommandAnalysis": [
+        "test_rsave_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/asg/s8_commands/test_s8_then_command.py": {
+    "classes": [
+      "TestThenCommandAnalysis"
+    ],
+    "functions": {
+      "TestThenCommandAnalysis": [
+        "test_then_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/asg/s9_charset/test_s9_1_definitions.py": {
+    "classes": [
+      "TestCharacterSetAnalysis"
+    ],
+    "functions": {
+      "TestCharacterSetAnalysis": [
+        "test_character_encoding",
+        "test_collation_order",
+        "test_string_comparison"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zallocate.py": {
+    "classes": [
+      "TestZallocateCodegen"
+    ],
+    "functions": {
+      "TestZallocateCodegen": [
+        "test_zallocate_generates_lock",
+        "test_zdeallocate_generates_unlock"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zbreak.py": {
+    "classes": [
+      "TestZbreakCodegen"
+    ],
+    "functions": {
+      "TestZbreakCodegen": [
+        "test_zbreak_generates_breakpoint"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zcompile.py": {
+    "classes": [
+      "TestZcompileCodegen"
+    ],
+    "functions": {
+      "TestZcompileCodegen": [
+        "test_zcompile_generates_compile_call"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zcontinue.py": {
+    "classes": [
+      "TestZcontinueCodegen"
+    ],
+    "functions": {
+      "TestZcontinueCodegen": [
+        "test_zcontinue_generates_resume"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zedit.py": {
+    "classes": [
+      "TestZeditCodegen"
+    ],
+    "functions": {
+      "TestZeditCodegen": [
+        "test_zedit_generates_editor_call"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zfunctions.py": {
+    "classes": [
+      "TestZfunctionsCodegen"
+    ],
+    "functions": {
+      "TestZfunctionsCodegen": [
+        "test_zfunctions_placeholder"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zgoto.py": {
+    "classes": [
+      "TestZgotoCodegen"
+    ],
+    "functions": {
+      "TestZgotoCodegen": [
+        "test_zgoto_generates_stack_unwind",
+        "test_zgoto_level_handling"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zhalt.py": {
+    "classes": [
+      "TestZhaltCodegen"
+    ],
+    "functions": {
+      "TestZhaltCodegen": [
+        "test_zhalt_generates_exit"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zhelp.py": {
+    "classes": [
+      "TestZhelpCodegen"
+    ],
+    "functions": {
+      "TestZhelpCodegen": [
+        "test_zhelp_generates_help"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zkill.py": {
+    "classes": [
+      "TestZkillCodegen"
+    ],
+    "functions": {
+      "TestZkillCodegen": [
+        "test_zkill_generates_node_delete",
+        "test_zwithdraw_generates_node_delete"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zlink.py": {
+    "classes": [
+      "TestZlinkCodegen"
+    ],
+    "functions": {
+      "TestZlinkCodegen": [
+        "test_zlink_generates_import"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zmessage.py": {
+    "classes": [
+      "TestZmessageCodegen"
+    ],
+    "functions": {
+      "TestZmessageCodegen": [
+        "test_zmessage_generates_error_signal"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zprint.py": {
+    "classes": [
+      "TestZprintCodegen"
+    ],
+    "functions": {
+      "TestZprintCodegen": [
+        "test_zprint_generates_source_display"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zshow.py": {
+    "classes": [
+      "TestZshowCodegen"
+    ],
+    "functions": {
+      "TestZshowCodegen": [
+        "test_zshow_generates_state_display"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zstep.py": {
+    "classes": [
+      "TestZstepCodegen"
+    ],
+    "functions": {
+      "TestZstepCodegen": [
+        "test_zstep_generates_debug_step"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zsystem.py": {
+    "classes": [
+      "TestZsystemCodegen"
+    ],
+    "functions": {
+      "TestZsystemCodegen": [
+        "test_zsystem_generates_subprocess"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_ztrigger.py": {
+    "classes": [
+      "TestZtriggerCodegen"
+    ],
+    "functions": {
+      "TestZtriggerCodegen": [
+        "test_ztrigger_generates_trigger_call"
+      ]
+    }
+  },
+  "tests/unit/codegen/extensions/ydb/test_zwrite.py": {
+    "classes": [
+      "TestZwriteCodegen"
+    ],
+    "functions": {
+      "TestZwriteCodegen": [
+        "test_zwrite_generates_dump"
+      ]
+    }
+  },
+  "tests/unit/codegen/s5_metalanguage/test_s5_1_bnf_notation.py": {
+    "classes": [
+      "TestBnfNotationCodegen"
+    ],
+    "functions": {
+      "TestBnfNotationCodegen": [
+        "test_bnf_metalanguage"
+      ]
+    }
+  },
+  "tests/unit/codegen/s6_routine/test_s6_1_routine_head.py": {
+    "classes": [
+      "TestRoutineHeadCodegen"
+    ],
+    "functions": {
+      "TestRoutineHeadCodegen": [
+        "test_routine_to_function",
+        "test_formal_parameters",
+        "test_routine_docstring"
+      ]
+    }
+  },
+  "tests/unit/codegen/s6_routine/test_s6_2_routine_body.py": {
+    "classes": [
+      "TestRoutineBodyCodegen"
+    ],
+    "functions": {
+      "TestRoutineBodyCodegen": [
+        "test_label_to_function",
+        "test_line_body",
+        "test_block_structure",
+        "test_comment_preservation"
+      ]
+    }
+  },
+  "tests/unit/codegen/s6_routine/test_s6_3_1_indirection.py": {
+    "classes": [
+      "TestIndirectionCodegen"
+    ],
+    "functions": {
+      "TestIndirectionCodegen": [
+        "test_name_indirection",
+        "test_subscript_indirection",
+        "test_argument_indirection"
+      ]
+    }
+  },
+  "tests/unit/codegen/s6_routine/test_s6_3_1_transaction.py": {
+    "classes": [
+      "TestTransactionProcessingCodegen"
+    ],
+    "functions": {
+      "TestTransactionProcessingCodegen": [
+        "test_tstart_codegen",
+        "test_tcommit_codegen",
+        "test_trollback_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s6_routine/test_s6_3_2_error_processing.py": {
+    "classes": [
+      "TestErrorProcessingCodegen"
+    ],
+    "functions": {
+      "TestErrorProcessingCodegen": [
+        "test_etrap_codegen",
+        "test_ecode_codegen",
+        "test_error_propagation"
+      ]
+    }
+  },
+  "tests/unit/codegen/s6_routine/test_s6_3_4_event_processing.py": {
+    "classes": [
+      "TestEventProcessingCodegen"
+    ],
+    "functions": {
+      "TestEventProcessingCodegen": [
+        "test_event_processing"
+      ]
+    }
+  },
+  "tests/unit/codegen/s6_routine/test_s6_4_embedded_programs.py": {
+    "classes": [
+      "TestEmbeddedProgramsCodegen"
+    ],
+    "functions": {
+      "TestEmbeddedProgramsCodegen": [
+        "test_embedded_programs"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_1_1_values.py": {
+    "classes": [
+      "TestValuesCodegen"
+    ],
+    "functions": {
+      "TestValuesCodegen": [
+        "test_string_value",
+        "test_numeric_value",
+        "test_empty_string",
+        "test_mvalue_wrapper"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_1_2_variables.py": {
+    "classes": [
+      "TestVariablesCodegen"
+    ],
+    "functions": {
+      "TestVariablesCodegen": [
+        "test_local_variable_access",
+        "test_global_variable_access",
+        "test_subscripted_access",
+        "test_naked_global"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py": {
+    "classes": [
+      "TestSsvnsCodegen"
+    ],
+    "functions": {
+      "TestSsvnsCodegen": [
+        "test_ssvn_global",
+        "test_ssvn_job",
+        "test_ssvn_lock",
+        "test_ssvn_routine",
+        "test_ssvn_library",
+        "test_ssvn_event"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_1_4_literals.py": {
+    "classes": [
+      "TestLiteralsCodegen"
+    ],
+    "functions": {
+      "TestLiteralsCodegen": [
+        "test_integer_literal",
+        "test_decimal_literal",
+        "test_string_literal",
+        "test_escaped_quotes",
+        "test_scientific_notation"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py": {
+    "classes": [
+      "TestIntrinsicFunctionsCodegen"
+    ],
+    "functions": {
+      "TestIntrinsicFunctionsCodegen": [
+        "test_function_ascii",
+        "test_function_char",
+        "test_function_data",
+        "test_function_extract",
+        "test_function_find",
+        "test_function_get",
+        "test_function_length",
+        "test_function_order",
+        "test_function_piece",
+        "test_function_query",
+        "test_function_random",
+        "test_function_select",
+        "test_function_text",
+        "test_function_translate",
+        "test_function_next"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_1_6_extrinsic_functions.py": {
+    "classes": [
+      "TestExtrinsicFunctionsCodegen"
+    ],
+    "functions": {
+      "TestExtrinsicFunctionsCodegen": [
+        "test_extrinsic_function_call",
+        "test_extrinsic_with_arguments",
+        "test_external_routine_call",
+        "test_return_value_handling"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_1_7_special_variables.py": {
+    "classes": [
+      "TestSpecialVariablesCodegen"
+    ],
+    "functions": {
+      "TestSpecialVariablesCodegen": [
+        "test_sv_horolog",
+        "test_sv_io",
+        "test_sv_job",
+        "test_sv_test",
+        "test_sv_tlevel",
+        "test_sv_x",
+        "test_sv_y",
+        "test_sv_quit",
+        "test_sv_ecode",
+        "test_sv_etrap"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py": {
+    "classes": [
+      "TestPatternMatchCodegen"
+    ],
+    "functions": {
+      "TestPatternMatchCodegen": [
+        "test_pattern_to_regex",
+        "test_pattern_codes",
+        "test_pattern_quantifiers",
+        "test_pattern_alternation"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_2_operators.py": {
+    "classes": [
+      "TestOperatorsCodegen"
+    ],
+    "functions": {
+      "TestOperatorsCodegen": [
+        "test_addition",
+        "test_subtraction",
+        "test_multiplication",
+        "test_division",
+        "test_integer_division",
+        "test_modulo",
+        "test_exponentiation",
+        "test_concatenation",
+        "test_equals",
+        "test_contains",
+        "test_follows",
+        "test_logical_and",
+        "test_logical_or",
+        "test_left_to_right_evaluation"
+      ]
+    }
+  },
+  "tests/unit/codegen/s7_expressions/test_s7_3_indirection.py": {
+    "classes": [
+      "TestIndirectionCodegen"
+    ],
+    "functions": {
+      "TestIndirectionCodegen": [
+        "test_name_indirection",
+        "test_subscript_indirection",
+        "test_argument_indirection",
+        "test_indirection_runtime"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_1_general_rules.py": {
+    "classes": [
+      "TestCommandGeneralRulesCodegen"
+    ],
+    "functions": {
+      "TestCommandGeneralRulesCodegen": [
+        "test_postcondition_codegen",
+        "test_timeout_codegen",
+        "test_command_sequence"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_01_break.py": {
+    "classes": [
+      "TestBreakCommandCodegen"
+    ],
+    "functions": {
+      "TestBreakCommandCodegen": [
+        "test_break_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_02_close.py": {
+    "classes": [
+      "TestCloseCommandCodegen"
+    ],
+    "functions": {
+      "TestCloseCommandCodegen": [
+        "test_close_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_03_do.py": {
+    "classes": [
+      "TestDoCommandCodegen"
+    ],
+    "functions": {
+      "TestDoCommandCodegen": [
+        "test_do_call_codegen",
+        "test_do_with_args",
+        "test_do_block_codegen",
+        "test_do_external_routine"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_04_else.py": {
+    "classes": [
+      "TestElseCommandCodegen"
+    ],
+    "functions": {
+      "TestElseCommandCodegen": [
+        "test_else_codegen",
+        "test_else_test_usage"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_05_for.py": {
+    "classes": [
+      "TestForCommandCodegen"
+    ],
+    "functions": {
+      "TestForCommandCodegen": [
+        "test_for_counted_to_range",
+        "test_for_list_to_for_in",
+        "test_for_infinite_to_while",
+        "test_for_with_quit",
+        "test_for_nested"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_06_goto.py": {
+    "classes": [
+      "TestGotoCommandCodegen"
+    ],
+    "functions": {
+      "TestGotoCommandCodegen": [
+        "test_goto_to_function_call",
+        "test_goto_computed",
+        "test_goto_external"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_07_halt.py": {
+    "classes": [
+      "TestHaltCommandCodegen"
+    ],
+    "functions": {
+      "TestHaltCommandCodegen": [
+        "test_halt_to_sys_exit"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_08_hang.py": {
+    "classes": [
+      "TestHangCommandCodegen"
+    ],
+    "functions": {
+      "TestHangCommandCodegen": [
+        "test_hang_to_time_sleep"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_09_if.py": {
+    "classes": [
+      "TestIfCommandCodegen"
+    ],
+    "functions": {
+      "TestIfCommandCodegen": [
+        "test_if_to_if_statement",
+        "test_if_test_update",
+        "test_if_multiple_conditions",
+        "test_if_argumentless"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_10_job.py": {
+    "classes": [
+      "TestJobCommandCodegen"
+    ],
+    "functions": {
+      "TestJobCommandCodegen": [
+        "test_job_to_subprocess",
+        "test_job_timeout"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_11_kill.py": {
+    "classes": [
+      "TestKillCommandCodegen"
+    ],
+    "functions": {
+      "TestKillCommandCodegen": [
+        "test_kill_to_del",
+        "test_kill_exclusive",
+        "test_kill_global"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_12_lock.py": {
+    "classes": [
+      "TestLockCommandCodegen"
+    ],
+    "functions": {
+      "TestLockCommandCodegen": [
+        "test_lock_to_lock_primitive",
+        "test_lock_increment",
+        "test_lock_decrement"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_13_merge.py": {
+    "classes": [
+      "TestMergeCommandCodegen"
+    ],
+    "functions": {
+      "TestMergeCommandCodegen": [
+        "test_merge_to_deep_copy",
+        "test_merge_global"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_14_new.py": {
+    "classes": [
+      "TestNewCommandCodegen"
+    ],
+    "functions": {
+      "TestNewCommandCodegen": [
+        "test_new_to_scope_push",
+        "test_new_exclusive",
+        "test_new_scope_cleanup"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_15_open.py": {
+    "classes": [
+      "TestOpenCommandCodegen"
+    ],
+    "functions": {
+      "TestOpenCommandCodegen": [
+        "test_open_to_file_open",
+        "test_open_with_parameters"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_16_quit.py": {
+    "classes": [
+      "TestQuitCommandCodegen"
+    ],
+    "functions": {
+      "TestQuitCommandCodegen": [
+        "test_quit_to_return",
+        "test_quit_with_value",
+        "test_quit_in_for"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_17_read.py": {
+    "classes": [
+      "TestReadCommandCodegen"
+    ],
+    "functions": {
+      "TestReadCommandCodegen": [
+        "test_read_to_input",
+        "test_read_with_prompt",
+        "test_read_timeout",
+        "test_read_single_char"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_18_set.py": {
+    "classes": [
+      "TestSetCommandCodegen"
+    ],
+    "functions": {
+      "TestSetCommandCodegen": [
+        "test_set_to_assignment",
+        "test_set_multiple_targets",
+        "test_set_global",
+        "test_set_piece",
+        "test_set_extract"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_19_tcommit.py": {
+    "classes": [
+      "TestTcommitCommandCodegen"
+    ],
+    "functions": {
+      "TestTcommitCommandCodegen": [
+        "test_tcommit_to_commit"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_20_trestart.py": {
+    "classes": [
+      "TestTrestartCommandCodegen"
+    ],
+    "functions": {
+      "TestTrestartCommandCodegen": [
+        "test_trestart_to_restart"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_21_trollback.py": {
+    "classes": [
+      "TestTrollbackCommandCodegen"
+    ],
+    "functions": {
+      "TestTrollbackCommandCodegen": [
+        "test_trollback_to_rollback"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_22_tstart.py": {
+    "classes": [
+      "TestTstartCommandCodegen"
+    ],
+    "functions": {
+      "TestTstartCommandCodegen": [
+        "test_tstart_to_begin",
+        "test_tstart_serial"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_23_use.py": {
+    "classes": [
+      "TestUseCommandCodegen"
+    ],
+    "functions": {
+      "TestUseCommandCodegen": [
+        "test_use_to_device_select",
+        "test_use_with_parameters"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_24_view.py": {
+    "classes": [
+      "TestViewCommandCodegen"
+    ],
+    "functions": {
+      "TestViewCommandCodegen": [
+        "test_view_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_25_write.py": {
+    "classes": [
+      "TestWriteCommandCodegen"
+    ],
+    "functions": {
+      "TestWriteCommandCodegen": [
+        "test_write_to_print",
+        "test_write_format_controls",
+        "test_write_column",
+        "test_write_char_code"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py": {
+    "classes": [
+      "TestXecuteCommandCodegen"
+    ],
+    "functions": {
+      "TestXecuteCommandCodegen": [
+        "test_xecute_to_exec",
+        "test_xecute_static_optimization"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_27_zcommand.py": {
+    "classes": [
+      "TestZCommandCodegenMeta"
+    ],
+    "functions": {
+      "TestZCommandCodegenMeta": [
+        "test_zbreak_codegen",
+        "test_zshow_codegen",
+        "test_zwrite_codegen",
+        "test_zcmd_pass_through"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_28_rload.py": {
+    "classes": [
+      "TestRloadCommandCodegen"
+    ],
+    "functions": {
+      "TestRloadCommandCodegen": [
+        "test_rload_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_2_29_rsave.py": {
+    "classes": [
+      "TestRsaveCommandCodegen"
+    ],
+    "functions": {
+      "TestRsaveCommandCodegen": [
+        "test_rsave_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_3_device_params.py": {
+    "classes": [
+      "TestDeviceParamsCodegen"
+    ],
+    "functions": {
+      "TestDeviceParamsCodegen": [
+        "test_device_params_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_assign.py": {
+    "classes": [
+      "TestAssignCommandCodegen"
+    ],
+    "functions": {
+      "TestAssignCommandCodegen": [
+        "test_assign_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_event_processing.py": {
+    "classes": [
+      "TestEventProcessingCodegen"
+    ],
+    "functions": {
+      "TestEventProcessingCodegen": [
+        "test_ablock_aunblock_codegen",
+        "test_astart_astop_codegen",
+        "test_estart_estop_codegen",
+        "test_etrigger_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_ksubscripts.py": {
+    "classes": [
+      "TestKsubscriptsCodegen"
+    ],
+    "functions": {
+      "TestKsubscriptsCodegen": [
+        "test_ksubscripts_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_kvalue.py": {
+    "classes": [
+      "TestKvalueCodegen"
+    ],
+    "functions": {
+      "TestKvalueCodegen": [
+        "test_kvalue_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s8_commands/test_s8_then_command.py": {
+    "classes": [
+      "TestThenCommandCodegen"
+    ],
+    "functions": {
+      "TestThenCommandCodegen": [
+        "test_then_codegen"
+      ]
+    }
+  },
+  "tests/unit/codegen/s9_charset/test_s9_1_definitions.py": {
+    "classes": [
+      "TestCharacterSetCodegen"
+    ],
+    "functions": {
+      "TestCharacterSetCodegen": [
+        "test_m_character_encoding",
+        "test_graphic_characters",
+        "test_control_characters"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zallocate.py": {
+    "classes": [
+      "TestZallocateParsing",
+      "TestZdeallocateParsing"
+    ],
+    "functions": {
+      "TestZallocateParsing": [
+        "test_zallocate_simple",
+        "test_zallocate_with_timeout",
+        "test_zallocate_list",
+        "test_zallocate_postcondition",
+        "test_zallocate_full"
+      ],
+      "TestZdeallocateParsing": [
+        "test_zdeallocate_simple",
+        "test_zdeallocate_full_spelling",
+        "test_zdeallocate_list",
+        "test_zdeallocate_postcondition",
+        "test_zdeallocate_full",
+        "test_zdeallocate_multiple_targets",
+        "test_zdeallocate_global"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zbreak.py": {
+    "classes": [
+      "TestZbreakParsing"
+    ],
+    "functions": {
+      "TestZbreakParsing": [
+        "test_zbreak_simple",
+        "test_zbreak_abbreviated",
+        "test_zbreak_label_routine",
+        "test_zbreak_with_action",
+        "test_zbreak_offset",
+        "test_zbreak_no_args",
+        "test_zbreak_label_offset_routine",
+        "test_zbreak_label_offset_routine_with_action"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zcompile.py": {
+    "classes": [
+      "TestZcompileParsing"
+    ],
+    "functions": {
+      "TestZcompileParsing": [
+        "test_zcompile_simple",
+        "test_zcompile_abbreviated"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zcontinue.py": {
+    "classes": [
+      "TestZcontinueParsing"
+    ],
+    "functions": {
+      "TestZcontinueParsing": [
+        "test_zcontinue_simple",
+        "test_zcontinue_lowercase"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zedit.py": {
+    "classes": [
+      "TestZeditParsing"
+    ],
+    "functions": {
+      "TestZeditParsing": [
+        "test_zedit_routine",
+        "test_zedit_abbreviated",
+        "test_zedit_with_indirection"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zfunctions.py": {
+    "classes": [
+      "TestZFunctionsAndISVs",
+      "TestZfunctionsStubs"
+    ],
+    "functions": {
+      "TestZFunctionsAndISVs": [
+        "test_ztrap_isv",
+        "test_zstatus_isv",
+        "test_zlevel_isv",
+        "test_zposition_isv",
+        "test_zeof_isv",
+        "test_zcmdline_isv",
+        "test_zgbldir_isv",
+        "test_zjob_isv",
+        "test_zchset_isv",
+        "test_zsystem_isv",
+        "test_zysqlnull_isv",
+        "test_zchar_function",
+        "test_zwrite_function",
+        "test_zprevious_function",
+        "test_zextract_function",
+        "test_zpiece_function",
+        "test_ztranslate_function",
+        "test_zparse_function",
+        "test_zsearch_function",
+        "test_zgetjpi_function",
+        "test_zconvert_function",
+        "test_zascii_function",
+        "test_zlength_function",
+        "test_zfind_function"
+      ],
+      "TestZfunctionsStubs": [
+        "test_zbitand",
+        "test_zbitcount",
+        "test_zbitfind",
+        "test_zbitget",
+        "test_zbitnot",
+        "test_zbitor",
+        "test_zbitset",
+        "test_zbitstr",
+        "test_zbitxor",
+        "test_zcollate",
+        "test_zdata",
+        "test_zdate",
+        "test_zdirectory",
+        "test_zedit",
+        "test_zff",
+        "test_zincr",
+        "test_zio",
+        "test_zjobexam",
+        "test_zmessage",
+        "test_zmode",
+        "test_zname",
+        "test_znext",
+        "test_zorder",
+        "test_zpeek",
+        "test_zpid",
+        "test_zpreferredlang",
+        "test_zprint",
+        "test_zqgblmod",
+        "test_zqsub",
+        "test_zsocket",
+        "test_zsub",
+        "test_zsuffix",
+        "test_zsupermask",
+        "test_zsyslog",
+        "test_ztrigger",
+        "test_ztrnlnm",
+        "test_zversion",
+        "test_zwidth"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zgoto.py": {
+    "classes": [
+      "TestZgotoParsing"
+    ],
+    "functions": {
+      "TestZgotoParsing": [
+        "test_zgoto_level",
+        "test_zgoto_abbreviated",
+        "test_zgoto_level_target",
+        "test_zgoto_zlevel",
+        "test_zgoto_no_args"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zhalt.py": {
+    "classes": [
+      "TestZhaltParsing"
+    ],
+    "functions": {
+      "TestZhaltParsing": [
+        "test_zhalt_simple",
+        "test_zhalt_uppercase",
+        "test_zhalt_abbreviated",
+        "test_zhalt_expression",
+        "test_zhalt_postcondition"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zhelp.py": {
+    "classes": [
+      "TestZhelpParsing"
+    ],
+    "functions": {
+      "TestZhelpParsing": [
+        "test_zhelp_basic",
+        "test_zhelp_with_topic"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zkill.py": {
+    "classes": [
+      "TestZkillParsing",
+      "TestZwithdrawParsing"
+    ],
+    "functions": {
+      "TestZkillParsing": [
+        "test_zkill_simple",
+        "test_zkill_abbreviated",
+        "test_zkill_subscripted"
+      ],
+      "TestZwithdrawParsing": [
+        "test_zwithdraw_simple",
+        "test_zwithdraw_abbreviated",
+        "test_zwithdraw_multiple",
+        "test_zwithdraw_global",
+        "test_zwithdraw_postcondition"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zlink.py": {
+    "classes": [
+      "TestZlinkParsing",
+      "TestZloadParsing"
+    ],
+    "functions": {
+      "TestZlinkParsing": [
+        "test_zlink_simple",
+        "test_zlink_abbreviated",
+        "test_zlink_string",
+        "test_zlink_postcondition"
+      ],
+      "TestZloadParsing": [
+        "test_zload_simple",
+        "test_zload_abbreviated",
+        "test_zload_no_args"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zmessage.py": {
+    "classes": [
+      "TestZmessageParsing"
+    ],
+    "functions": {
+      "TestZmessageParsing": [
+        "test_zmessage_simple",
+        "test_zmessage_abbreviated"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zprint.py": {
+    "classes": [
+      "TestZprintParsing"
+    ],
+    "functions": {
+      "TestZprintParsing": [
+        "test_zprint_simple",
+        "test_zprint_abbreviated",
+        "test_zprint_label_routine",
+        "test_zprint_no_args"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zshow.py": {
+    "classes": [
+      "TestZshowParsing"
+    ],
+    "functions": {
+      "TestZshowParsing": [
+        "test_zshow_simple",
+        "test_zshow_abbreviated",
+        "test_zshow_all",
+        "test_zshow_with_destination",
+        "test_zshow_no_args",
+        "test_zshow_postcondition",
+        "test_zshow_destination_local",
+        "test_zshow_destination_indirection",
+        "test_zshow_destination_subscripted_global",
+        "test_zshow_lowercase"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zstep.py": {
+    "classes": [
+      "TestZstepParsing"
+    ],
+    "functions": {
+      "TestZstepParsing": [
+        "test_zstep_into",
+        "test_zstep_over",
+        "test_zstep_outof",
+        "test_zstep_with_action"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zsystem.py": {
+    "classes": [
+      "TestZsystemParsing"
+    ],
+    "functions": {
+      "TestZsystemParsing": [
+        "test_zsystem_simple",
+        "test_zsystem_abbreviated",
+        "test_zsystem_variable",
+        "test_zsystem_no_args"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_ztrigger.py": {
+    "classes": [
+      "TestZtriggerParsing"
+    ],
+    "functions": {
+      "TestZtriggerParsing": [
+        "test_ztrigger_simple_global",
+        "test_ztrigger_subscripted_global",
+        "test_ztrigger_indirection",
+        "test_ztrigger_lowercase",
+        "test_ztrigger_with_postcondition",
+        "test_ztrigger_empty_string_subscript",
+        "test_ztrigger_multiple_globals"
+      ]
+    }
+  },
+  "tests/unit/parser/extensions/ydb/test_zwrite.py": {
+    "classes": [
+      "TestZwriteParsing"
+    ],
+    "functions": {
+      "TestZwriteParsing": [
+        "test_zwrite_simple",
+        "test_zwrite_abbreviated",
+        "test_zwrite_global",
+        "test_zwrite_indirection",
+        "test_zwrite_no_args",
+        "test_zwrite_global_pattern",
+        "test_zwrite_global_pattern_complex"
+      ]
+    }
+  },
+  "tests/unit/parser/s5_metalanguage/test_s5_1_bnf_notation.py": {
+    "classes": [
+      "TestBnfNotation"
+    ],
+    "functions": {
+      "TestBnfNotation": [
+        "test_bnf_notation_informative"
+      ]
+    }
+  },
+  "tests/unit/parser/s6_routine/test_s6_1_routine_head.py": {
+    "classes": [
+      "TestRoutineHeadParsing"
+    ],
+    "functions": {
+      "TestRoutineHeadParsing": [
+        "test_routine_head_basic",
+        "test_routine_head_with_label",
+        "test_routine_head_name_validation"
+      ]
+    }
+  },
+  "tests/unit/parser/s6_routine/test_s6_2_routine_body.py": {
+    "classes": [
+      "TestRoutineBodyParsing"
+    ],
+    "functions": {
+      "TestRoutineBodyParsing": [
+        "test_level_line_parsing",
+        "test_formal_line_parsing",
+        "test_label_parsing",
+        "test_label_separator",
+        "test_line_body_parsing",
+        "test_multiple_commands_on_line",
+        "test_comment_after_commands"
+      ]
+    }
+  },
+  "tests/unit/parser/s6_routine/test_s6_3_1_indirection.py": {
+    "classes": [
+      "TestGenericIndirectionParsing"
+    ],
+    "functions": {
+      "TestGenericIndirectionParsing": [
+        "test_name_indirection",
+        "test_subscript_indirection",
+        "test_argument_indirection",
+        "test_pattern_indirection"
+      ]
+    }
+  },
+  "tests/unit/parser/s6_routine/test_s6_3_1_transaction.py": {
+    "classes": [
+      "TestTransactionProcessingParsing"
+    ],
+    "functions": {
+      "TestTransactionProcessingParsing": [
+        "test_tstart_basic",
+        "test_nested_transactions",
+        "test_transaction_with_restart"
+      ]
+    }
+  },
+  "tests/unit/parser/s6_routine/test_s6_3_2_error_processing.py": {
+    "classes": [
+      "TestErrorProcessingParsing"
+    ],
+    "functions": {
+      "TestErrorProcessingParsing": [
+        "test_etrap_setting",
+        "test_ecode_reference",
+        "test_error_handling_structure"
+      ]
+    }
+  },
+  "tests/unit/parser/s6_routine/test_s6_3_4_event_processing.py": {
+    "classes": [
+      "TestEventProcessingParsing"
+    ],
+    "functions": {
+      "TestEventProcessingParsing": [
+        "test_event_processing_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/parser/s6_routine/test_s6_4_embedded_programs.py": {
+    "classes": [
+      "TestEmbeddedProgramsParsing"
+    ],
+    "functions": {
+      "TestEmbeddedProgramsParsing": [
+        "test_embedded_programs_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_1_1_values.py": {
+    "classes": [
+      "TestValuesParsing"
+    ],
+    "functions": {
+      "TestValuesParsing": [
+        "test_numeric_value",
+        "test_string_value",
+        "test_variable_as_value",
+        "test_function_as_value"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_1_2_variables.py": {
+    "classes": [
+      "TestLocalVariables",
+      "TestGlobalVariables",
+      "TestExtendedGlobalReferences"
+    ],
+    "functions": {
+      "TestExtendedGlobalReferences": [
+        "test_pipe_extended_global",
+        "test_pipe_extended_global_subscripted",
+        "test_bracket_extended_global",
+        "test_bracket_extended_global_subscripted",
+        "test_extended_global_reference"
+      ],
+      "TestGlobalVariables": [
+        "test_global_variable_simple",
+        "test_global_variable_subscripted",
+        "test_naked_global_reference"
+      ],
+      "TestLocalVariables": [
+        "test_local_variable_simple",
+        "test_percent_variable",
+        "test_local_variable_subscripted"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_1_3_ssvns.py": {
+    "classes": [
+      "TestSSVNsParsing",
+      "TestSSVNsOutOfScope",
+      "TestStructuredSystemVariableGrammar"
+    ],
+    "functions": {
+      "TestSSVNsOutOfScope": [
+        "test_ssvn_library_out_of_scope",
+        "test_ssvn_event_out_of_scope"
+      ],
+      "TestSSVNsParsing": [
+        "test_ssvn_job",
+        "test_ssvn_routine",
+        "test_ssvn_global",
+        "test_ssvn_lock",
+        "test_ssvn_device",
+        "test_ssvn_character",
+        "test_ssvn_system",
+        "test_ssvn_z_implementation_defined"
+      ],
+      "TestStructuredSystemVariableGrammar": [
+        "test_ssv_device",
+        "test_ssv_job_with_subscript",
+        "test_ssv_global_with_name",
+        "test_ssv_routine_with_name",
+        "test_ssv_system",
+        "test_ssv_abbreviated_d",
+        "test_ssv_abbreviated_j_with_subscript"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_1_4_literals.py": {
+    "classes": [
+      "TestNumericLiterals",
+      "TestStringLiterals"
+    ],
+    "functions": {
+      "TestNumericLiterals": [
+        "test_integer_literal",
+        "test_decimal_literal",
+        "test_negative_integer"
+      ],
+      "TestStringLiterals": [
+        "test_string_literal",
+        "test_empty_string",
+        "test_string_embedded_quotes",
+        "test_exponential_literal"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_1_5_intrinsic_functions.py": {
+    "classes": [
+      "TestIntrinsicFunctionsParsing",
+      "TestDeprecatedFunctions",
+      "TestCacheSpecificFunctions",
+      "TestSelectFunction",
+      "TestImplementationDefinedFunctions",
+      "TestTextFunctionGrammar",
+      "TestIntrinsicFunctionGrammar"
+    ],
+    "functions": {
+      "TestCacheSpecificFunctions": [
+        "test_li_list_abbreviation",
+        "test_listget_function",
+        "test_increment_function",
+        "test_namespace_special_var",
+        "test_eref_special_var"
+      ],
+      "TestDeprecatedFunctions": [
+        "test_next_function_deprecated",
+        "test_dextract_function_deprecated",
+        "test_dpiece_function_deprecated"
+      ],
+      "TestImplementationDefinedFunctions": [
+        "test_view_function",
+        "test_z_functions"
+      ],
+      "TestIntrinsicFunctionGrammar": [
+        "test_piece_function",
+        "test_piece_function_abbreviated",
+        "test_select_function",
+        "test_select_function_abbreviated",
+        "test_length_function",
+        "test_nested_functions"
+      ],
+      "TestIntrinsicFunctionsParsing": [
+        "test_length_function",
+        "test_piece_function",
+        "test_extract_function",
+        "test_abbreviated_function",
+        "test_ascii_function",
+        "test_char_function",
+        "test_find_function",
+        "test_justify_function",
+        "test_reverse_function",
+        "test_translate_function",
+        "test_fnumber_function",
+        "test_random_function",
+        "test_data_function",
+        "test_get_function",
+        "test_order_function",
+        "test_query_function",
+        "test_name_function",
+        "test_qlength_function",
+        "test_qsubscript_function",
+        "test_stack_function",
+        "test_text_function",
+        "test_type_function",
+        "test_mumps_function",
+        "test_horolog_function_form"
+      ],
+      "TestSelectFunction": [
+        "test_select_simple",
+        "test_select_abbreviated",
+        "test_select_multiple_pairs",
+        "test_select_with_expressions",
+        "test_select_chained",
+        "test_select_uppercase",
+        "test_select_lowercase",
+        "test_select_mixedcase",
+        "test_select_abbrev_se",
+        "test_select_abbrev_sel",
+        "test_select_abbrev_sele",
+        "test_select_abbrev_selec",
+        "test_select_name_preserves_casing"
+      ],
+      "TestTextFunctionGrammar": [
+        "test_text_function_with_label",
+        "test_text_function_with_label_routine",
+        "test_text_function_with_offset",
+        "test_text_function_with_full_spec",
+        "test_text_function_with_indirection",
+        "test_text_function_with_routine_indirection",
+        "test_text_full_keyword"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_1_6_extrinsic_functions.py": {
+    "classes": [
+      "TestExtrinsicFunctionsParsing",
+      "TestExternalFunctionsParsing"
+    ],
+    "functions": {
+      "TestExternalFunctionsParsing": [
+        "test_external_function_simple",
+        "test_external_function_byref_arg",
+        "test_external_function_with_package",
+        "test_external_function_complex_args"
+      ],
+      "TestExtrinsicFunctionsParsing": [
+        "test_local_extrinsic",
+        "test_external_extrinsic",
+        "test_extrinsic_function_label_offset",
+        "test_extrinsic_function_by_ref"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_1_7_special_variables.py": {
+    "classes": [
+      "TestSpecialVariablesParsing",
+      "TestSpecialVariablesStubs",
+      "TestSpecialVariableGrammar",
+      "TestIORefSpecialVariableGrammar"
+    ],
+    "functions": {
+      "TestIORefSpecialVariableGrammar": [
+        "test_ioreference_full",
+        "test_ioreference_abbreviated",
+        "test_pioreference_full",
+        "test_io_still_works"
+      ],
+      "TestSpecialVariableGrammar": [
+        "test_test_variable",
+        "test_test_abbreviated",
+        "test_horolog_variable",
+        "test_job_variable"
+      ],
+      "TestSpecialVariablesParsing": [
+        "test_test",
+        "test_horolog",
+        "test_x",
+        "test_abbreviated_horolog",
+        "test_abbreviated_storage",
+        "test_abbreviated_test",
+        "test_abbreviated_job",
+        "test_abbreviated_io",
+        "test_abbreviated_device",
+        "test_select_function_still_works"
+      ],
+      "TestSpecialVariablesStubs": [
+        "test_device_variable",
+        "test_ecode_variable",
+        "test_eref_variable",
+        "test_estack_variable",
+        "test_etrap_variable",
+        "test_ioreference_variable",
+        "test_key_variable",
+        "test_pdisplay_variable",
+        "test_pioreference_variable",
+        "test_principal_variable",
+        "test_quit_variable",
+        "test_reference_variable",
+        "test_stack_variable",
+        "test_system_variable",
+        "test_tlevel_variable",
+        "test_trestart_variable",
+        "test_y_variable"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_2_5_pattern_match.py": {
+    "classes": [
+      "TestPatternMatchParsing",
+      "TestPatternMatchGrammar",
+      "TestIndirectPatternMatchGrammar"
+    ],
+    "functions": {
+      "TestIndirectPatternMatchGrammar": [
+        "test_indirect_pattern_match_simple",
+        "test_indirect_pattern_match_with_parens",
+        "test_indirect_pattern_match_string_literal",
+        "test_indirect_pattern_with_concat"
+      ],
+      "TestPatternMatchGrammar": [
+        "test_pattern_match_simple",
+        "test_pattern_match_negated",
+        "test_pattern_match_complex",
+        "test_pattern_match_numeric_repcount_exact",
+        "test_pattern_match_numeric_repcount_atleast",
+        "test_pattern_match_numeric_repcount_atmost",
+        "test_pattern_match_numeric_repcount_range",
+        "test_pattern_match_multi_atom_with_repcounts"
+      ],
+      "TestPatternMatchParsing": [
+        "test_pattern_match_basic",
+        "test_pattern_with_codes",
+        "test_pattern_quantifier_range",
+        "test_pattern_quantifier_unlimited",
+        "test_pattern_with_literal",
+        "test_pattern_alternation",
+        "test_pattern_indirection",
+        "test_complex_pattern"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_2_operators.py": {
+    "classes": [
+      "TestBinaryOperators",
+      "TestUnaryOperators",
+      "TestChainedUnarySemantics",
+      "TestParentheses",
+      "TestComplexExpressions",
+      "TestNotContainsOperatorGrammar"
+    ],
+    "functions": {
+      "TestBinaryOperators": [
+        "test_addition_operator",
+        "test_subtraction_operator",
+        "test_multiplication_operator",
+        "test_division_operator",
+        "test_integer_division_operator",
+        "test_modulo_operator",
+        "test_exponentiation_operator",
+        "test_concatenation_operator",
+        "test_equality_operator",
+        "test_less_than_operator",
+        "test_greater_than_operator",
+        "test_logical_and_operator",
+        "test_logical_or_operator",
+        "test_not_equal_operator",
+        "test_left_to_right_evaluation",
+        "test_contains_operator",
+        "test_follows_operator",
+        "test_sorts_after_operator",
+        "test_not_contains_operator"
+      ],
+      "TestChainedUnarySemantics": [
+        "test_double_negative_asg",
+        "test_double_not_asg",
+        "test_triple_negative_asg",
+        "test_triple_not_asg",
+        "test_mixed_negate_not_asg",
+        "test_mixed_not_negate_asg",
+        "test_mixed_positive_not_asg",
+        "test_complex_chain_asg"
+      ],
+      "TestComplexExpressions": [
+        "test_complex_arithmetic",
+        "test_function_in_expression",
+        "test_subscripted_in_expression"
+      ],
+      "TestNotContainsOperatorGrammar": [
+        "test_not_contains_variables",
+        "test_not_contains_string"
+      ],
+      "TestParentheses": [
+        "test_simple_parens",
+        "test_nested_parens"
+      ],
+      "TestUnaryOperators": [
+        "test_logical_not_operator",
+        "test_unary_plus",
+        "test_unary_minus",
+        "test_double_negative",
+        "test_triple_negative",
+        "test_double_not",
+        "test_mixed_unary_plus_minus",
+        "test_not_then_minus"
+      ]
+    }
+  },
+  "tests/unit/parser/s7_expressions/test_s7_3_indirection.py": {
+    "classes": [
+      "TestIndirectionParsing",
+      "TestExpressionIndirection",
+      "TestIndirectionGrammar",
+      "TestDoIndirectionGrammar"
+    ],
+    "functions": {
+      "TestDoIndirectionGrammar": [
+        "test_do_indirect_variable",
+        "test_do_indirect_expression",
+        "test_do_indirect_complex_expression"
+      ],
+      "TestExpressionIndirection": [
+        "test_simple_indirection",
+        "test_subscript_indirection",
+        "test_double_indirection",
+        "test_triple_indirection",
+        "test_double_indirection_with_string",
+        "test_double_indirection_with_subscripts",
+        "test_triple_indirection_with_subscripts",
+        "test_name_indirection_with_subscripts"
+      ],
+      "TestIndirectionGrammar": [
+        "test_simple_indirection",
+        "test_subscripted_indirection",
+        "test_name_indirection",
+        "test_do_indirection",
+        "test_goto_indirection",
+        "test_name_indirection_single_subscript",
+        "test_name_indirection_multiple_subscripts",
+        "test_name_indirection_chained",
+        "test_name_indirection_with_double_indirection",
+        "test_name_indirection_global",
+        "test_name_indirection_complex_mugj_pattern"
+      ],
+      "TestIndirectionParsing": [
+        "test_kill_indirection",
+        "test_kill_double_indirection",
+        "test_kill_multiple_indirection",
+        "test_set_target_indirection",
+        "test_set_value_indirection",
+        "test_set_both_indirection",
+        "test_set_double_indirection",
+        "test_set_argument_indirection",
+        "test_write_indirection",
+        "test_write_double_indirection",
+        "test_read_indirection",
+        "test_read_multiple_indirection",
+        "test_hang_indirection",
+        "test_for_indirection_var",
+        "test_for_double_indirection_var",
+        "test_for_indirection_params",
+        "test_do_indirection",
+        "test_do_double_indirection",
+        "test_do_name_indirection",
+        "test_do_chained_name_indirection",
+        "test_goto_indirection",
+        "test_goto_double_indirection",
+        "test_goto_name_indirection",
+        "test_goto_chained_name_indirection",
+        "test_do_triple_indirection",
+        "test_goto_triple_indirection",
+        "test_kill_triple_indirection",
+        "test_set_triple_indirection_value",
+        "test_subscript_indirection",
+        "test_pattern_indirection"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_1_general_rules.py": {
+    "classes": [
+      "TestGeneralCommandRulesParsing",
+      "TestCommandAbbreviations",
+      "TestArgumentPostconditions",
+      "TestPostconditions"
+    ],
+    "functions": {
+      "TestArgumentPostconditions": [
+        "test_goto_arg_postcondition_allowed",
+        "test_do_arg_postcondition_allowed",
+        "test_xecute_arg_postcondition_allowed",
+        "test_xecute_multiple_args_with_postconditions",
+        "test_xecute_command_and_arg_postconditions",
+        "test_xecute_numeric_postcondition",
+        "test_write_arg_no_postcondition_field",
+        "test_read_arg_no_postcondition_field",
+        "test_set_assignment_no_postcondition_field"
+      ],
+      "TestCommandAbbreviations": [
+        "test_set_abbreviation_parity",
+        "test_write_abbreviation_parity",
+        "test_read_abbreviation_parity",
+        "test_if_abbreviation_parity",
+        "test_for_abbreviation_parity",
+        "test_do_abbreviation_parity",
+        "test_quit_abbreviation_parity"
+      ],
+      "TestGeneralCommandRulesParsing": [
+        "test_command_spacing",
+        "test_command_comment",
+        "test_command_postcondition",
+        "test_argument_postcondition",
+        "test_command_timeout"
+      ],
+      "TestPostconditions": [
+        "test_goto_postcondition",
+        "test_do_postcondition"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_01_break.py": {
+    "classes": [
+      "TestBreakCommandParsing"
+    ],
+    "functions": {
+      "TestBreakCommandParsing": [
+        "test_break_basic",
+        "test_break_argumentless",
+        "test_break_abbreviated",
+        "test_break_with_postcondition"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_02_close.py": {
+    "classes": [
+      "TestCloseCommandParsing"
+    ],
+    "functions": {
+      "TestCloseCommandParsing": [
+        "test_close_basic",
+        "test_close_with_parameters",
+        "test_close_multiple_devices"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_03_do.py": {
+    "classes": [
+      "TestDoCommandParsing"
+    ],
+    "functions": {
+      "TestDoCommandParsing": [
+        "test_do_with_label",
+        "test_do_external_routine",
+        "test_do_with_arguments",
+        "test_do_with_offset",
+        "test_do_argumentless_block",
+        "test_do_with_postcondition",
+        "test_do_pass_by_reference",
+        "test_do_multiple_targets",
+        "test_do_routine_only",
+        "test_do_arg_postcondition",
+        "test_do_external_simple",
+        "test_do_external_package",
+        "test_do_byref_indirection",
+        "test_do_mixed_byref_args"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_04_else.py": {
+    "classes": [
+      "TestElseCommandParsing"
+    ],
+    "functions": {
+      "TestElseCommandParsing": [
+        "test_else_basic",
+        "test_else_abbreviated",
+        "test_else_with_commands"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_05_for.py": {
+    "classes": [
+      "TestForCommandParsing",
+      "TestBoundedForGrammar",
+      "TestSimpleIfGrammar",
+      "TestStringListForGrammar",
+      "TestOpenEndedForGrammar",
+      "TestMixedForGrammar",
+      "TestArgumentlessForGrammar"
+    ],
+    "functions": {
+      "TestArgumentlessForGrammar": [
+        "test_argumentless_for",
+        "test_argumentless_for_with_read",
+        "test_argumentless_for_with_kill"
+      ],
+      "TestBoundedForGrammar": [
+        "test_bounded_for_simple",
+        "test_for_abbreviated",
+        "test_bounded_for_expression",
+        "test_bounded_for_negative_step"
+      ],
+      "TestForCommandParsing": [
+        "test_for_bounded",
+        "test_for_string_list",
+        "test_for_open_ended",
+        "test_for_argumentless",
+        "test_for_mixed_forms",
+        "test_for_negative_increment",
+        "test_for_decimal_increment",
+        "test_for_subscripted_var",
+        "test_for_single_subscripted_var"
+      ],
+      "TestMixedForGrammar": [
+        "test_mixed_for_values_and_range",
+        "test_mixed_for_complex",
+        "test_mixed_for_ranges_only",
+        "test_mixed_for_open_ranges"
+      ],
+      "TestOpenEndedForGrammar": [
+        "test_open_ended_for_simple",
+        "test_open_ended_for_decimal_step",
+        "test_open_ended_for_expression_step"
+      ],
+      "TestSimpleIfGrammar": [
+        "test_simple_if",
+        "test_if_abbreviated",
+        "test_if_comparison",
+        "test_if_argumentless"
+      ],
+      "TestStringListForGrammar": [
+        "test_string_list_for_simple",
+        "test_string_list_for_numbers",
+        "test_string_list_for_mixed_values",
+        "test_string_list_for_with_expressions"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_06_goto.py": {
+    "classes": [
+      "TestGotoCommandParsing"
+    ],
+    "functions": {
+      "TestGotoCommandParsing": [
+        "test_goto_with_label",
+        "test_goto_external_routine",
+        "test_goto_with_offset",
+        "test_goto_with_postcondition",
+        "test_goto_abbreviated",
+        "test_goto_multiple_targets",
+        "test_goto_routine_only",
+        "test_goto_conditional",
+        "test_goto_arg_postcondition"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_07_halt.py": {
+    "classes": [
+      "TestHaltCommandParsing"
+    ],
+    "functions": {
+      "TestHaltCommandParsing": [
+        "test_halt_basic",
+        "test_halt_abbreviated",
+        "test_halt_with_postcondition"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_08_hang.py": {
+    "classes": [
+      "TestHangCommandParsing"
+    ],
+    "functions": {
+      "TestHangCommandParsing": [
+        "test_hang_basic",
+        "test_hang_multiple_args",
+        "test_hang_indirection_multiple",
+        "test_hang_with_postcondition",
+        "test_hang_with_simple_postcondition",
+        "test_hang_abbreviated",
+        "test_hang_with_decimal",
+        "test_hang_with_expression"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_09_if.py": {
+    "classes": [
+      "TestIfCommandParsing",
+      "TestElseCommandParsing"
+    ],
+    "functions": {
+      "TestElseCommandParsing": [
+        "test_else_simple",
+        "test_else_full_keyword"
+      ],
+      "TestIfCommandParsing": [
+        "test_if_with_condition",
+        "test_if_argumentless",
+        "test_if_multiple_conditions",
+        "test_if_abbreviated",
+        "test_if_followed_by_commands"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_10_job.py": {
+    "classes": [
+      "TestJobCommandParsing"
+    ],
+    "functions": {
+      "TestJobCommandParsing": [
+        "test_job_basic",
+        "test_job_with_label",
+        "test_job_with_arguments",
+        "test_job_with_timeout",
+        "test_job_with_process_params"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_11_kill.py": {
+    "classes": [
+      "TestKillCommandParsing"
+    ],
+    "functions": {
+      "TestKillCommandParsing": [
+        "test_kill_single_variable",
+        "test_kill_multiple_variables",
+        "test_kill_subscripted",
+        "test_kill_global",
+        "test_kill_exclusive",
+        "test_kill_multiple_exclusive_groups",
+        "test_kill_mixed_exclusive_selective",
+        "test_kill_argumentless"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_12_lock.py": {
+    "classes": [
+      "TestLockCommandParsing"
+    ],
+    "functions": {
+      "TestLockCommandParsing": [
+        "test_lock_basic",
+        "test_lock_indirection",
+        "test_lock_double_indirection",
+        "test_lock_indirection_with_timeout",
+        "test_lock_paren_with_indirection",
+        "test_lock_postcond_indirection",
+        "test_lock_increment",
+        "test_lock_decrement",
+        "test_lock_multiple_increments",
+        "test_lock_multiple_decrements",
+        "test_lock_mixed_ops",
+        "test_lock_paren_with_ops",
+        "test_lock_paren_list_lockop",
+        "test_lock_paren_decremental",
+        "test_lock_with_timeout",
+        "test_lock_multiple",
+        "test_lock_argumentless"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_13_merge.py": {
+    "classes": [
+      "TestMergeCommandParsing"
+    ],
+    "functions": {
+      "TestMergeCommandParsing": [
+        "test_merge_basic",
+        "test_merge_naked_global",
+        "test_merge_indirection",
+        "test_merge_extended_global_pipe",
+        "test_merge_extended_global_bracket",
+        "test_merge_global_to_local",
+        "test_merge_local_to_global",
+        "test_merge_with_subscripts",
+        "test_merge_multiple"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_14_new.py": {
+    "classes": [
+      "TestNewCommandParsing"
+    ],
+    "functions": {
+      "TestNewCommandParsing": [
+        "test_new_single_variable",
+        "test_new_multiple_variables",
+        "test_new_exclusive",
+        "test_new_argumentless",
+        "test_new_abbreviated"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_15_open.py": {
+    "classes": [
+      "TestOpenCommandParsing",
+      "TestOpenDeviceParametersGrammar",
+      "TestOpenMnemonicGrammar"
+    ],
+    "functions": {
+      "TestOpenCommandParsing": [
+        "test_open_basic",
+        "test_open_with_parameters",
+        "test_open_with_timeout",
+        "test_open_with_mnemonic",
+        "test_open_multiple"
+      ],
+      "TestOpenDeviceParametersGrammar": [
+        "test_open_simple",
+        "test_open_with_timeout",
+        "test_open_with_params",
+        "test_open_with_multiple_params",
+        "test_open_with_params_and_timeout"
+      ],
+      "TestOpenMnemonicGrammar": [
+        "test_open_with_mnemonic",
+        "test_open_empty_params_with_mnemonic",
+        "test_open_mnemonic_only",
+        "test_open_without_mnemonic_still_works"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_16_quit.py": {
+    "classes": [
+      "TestQuitCommandParsing",
+      "TestQuitFollowedBySetParsing",
+      "TestQuitFollowedByTransactionParsing"
+    ],
+    "functions": {
+      "TestQuitCommandParsing": [
+        "test_quit_argumentless",
+        "test_quit_with_value",
+        "test_quit_abbreviated",
+        "test_quit_with_postcondition",
+        "test_quit_followed_by_command",
+        "test_quit_with_string_value",
+        "test_quit_with_expression"
+      ],
+      "TestQuitFollowedBySetParsing": [
+        "test_quit_then_set_with_left_hand_piece",
+        "test_quit_postcond_then_set_with_left_hand_piece",
+        "test_for_quit_postcond_set_left_hand_piece",
+        "test_vv2lhp2_line73_full"
+      ],
+      "TestQuitFollowedByTransactionParsing": [
+        "test_quit_then_tstart",
+        "test_quit_then_tstart_full",
+        "test_quit_then_tcommit",
+        "test_quit_then_trestart",
+        "test_quit_then_trollback",
+        "test_trollback_then_set",
+        "test_trollback_with_level",
+        "test_quit_postcond_then_tstart"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_17_read.py": {
+    "classes": [
+      "TestReadCommandParsing",
+      "TestReadTargetsParsing",
+      "TestReadFormatControlGrammar"
+    ],
+    "functions": {
+      "TestReadCommandParsing": [
+        "test_read_basic",
+        "test_read_with_prompt",
+        "test_read_fixed_length",
+        "test_read_with_timeout",
+        "test_read_single_char",
+        "test_read_format_control",
+        "test_read_multiple_targets",
+        "test_read_fixed_length_with_timeout",
+        "test_read_fixed_length_negative",
+        "test_read_fixed_length_variable",
+        "test_read_fixed_length_expression"
+      ],
+      "TestReadFormatControlGrammar": [
+        "test_read_variable_only",
+        "test_read_newline_only",
+        "test_read_tab_only",
+        "test_read_format_then_variable",
+        "test_read_prompt_and_variable",
+        "test_read_complex_format",
+        "test_read_format_controls_as_asg_nodes",
+        "test_read_with_timeout",
+        "test_read_char_read",
+        "test_read_char_read_with_timeout",
+        "test_read_negative_timeout",
+        "test_read_multiple_char_reads"
+      ],
+      "TestReadTargetsParsing": [
+        "test_read_charread_with_indirection",
+        "test_read_charread_with_name_indirection",
+        "test_read_naked_global",
+        "test_read_char_into_global"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_18_set.py": {
+    "classes": [
+      "TestSetCommandParsing",
+      "TestSetStatementGrammar",
+      "TestSetSpecialVariableGrammar"
+    ],
+    "functions": {
+      "TestSetCommandParsing": [
+        "test_set_simple_assignment",
+        "test_set_abbreviated_form",
+        "test_set_multiple_assignments",
+        "test_set_with_expression",
+        "test_set_global",
+        "test_set_subscripted_global",
+        "test_set_with_postcondition",
+        "test_set_parenthesized_targets",
+        "test_set_naked_global_target",
+        "test_set_naked_global_multiple_subscripts",
+        "test_set_mixed_global_naked_global",
+        "test_set_extended_global_pipe",
+        "test_set_extended_global_bracket"
+      ],
+      "TestSetSpecialVariableGrammar": [
+        "test_set_special_variable_x",
+        "test_set_special_variable_y",
+        "test_set_special_variable_mixed",
+        "test_set_special_variable_expression"
+      ],
+      "TestSetStatementGrammar": [
+        "test_simple_set",
+        "test_set_abbreviated",
+        "test_set_multiple_targets",
+        "test_set_string_value"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_19_tcommit.py": {
+    "classes": [
+      "TestTcommitCommandParsing"
+    ],
+    "functions": {
+      "TestTcommitCommandParsing": [
+        "test_tcommit_basic",
+        "test_tcommit_full_keyword",
+        "test_tcommit_with_postcondition"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_20_trestart.py": {
+    "classes": [
+      "TestTrestartCommandParsing"
+    ],
+    "functions": {
+      "TestTrestartCommandParsing": [
+        "test_trestart_basic",
+        "test_trestart_full_keyword"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_21_trollback.py": {
+    "classes": [
+      "TestTrollbackCommandParsing"
+    ],
+    "functions": {
+      "TestTrollbackCommandParsing": [
+        "test_trollback_basic",
+        "test_trollback_full_keyword",
+        "test_trollback_with_postcondition",
+        "test_trollback_to_level"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_22_tstart.py": {
+    "classes": [
+      "TestTstartCommandParsing",
+      "TestTStartEmptyRestartGrammar"
+    ],
+    "functions": {
+      "TestTStartEmptyRestartGrammar": [
+        "test_tstart_empty_parens",
+        "test_tstart_empty_parens_with_serial",
+        "test_tstart_abbreviated_serial",
+        "test_tstart_transactionid",
+        "test_tstart_multiple_params",
+        "test_tstart_star_still_works",
+        "test_tstart_varlist_still_works"
+      ],
+      "TestTstartCommandParsing": [
+        "test_tstart_basic",
+        "test_tstart_with_variables",
+        "test_tstart_with_restart_all",
+        "test_tstart_abbreviated",
+        "test_tstart_full_keyword",
+        "test_tstart_with_postcondition"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_23_use.py": {
+    "classes": [
+      "TestUseCommandParsing"
+    ],
+    "functions": {
+      "TestUseCommandParsing": [
+        "test_use_basic",
+        "test_use_with_parameters",
+        "test_use_with_mnemonic",
+        "test_use_abbreviated"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_24_view.py": {
+    "classes": [
+      "TestViewCommandParsing"
+    ],
+    "functions": {
+      "TestViewCommandParsing": [
+        "test_view_basic",
+        "test_view_keyword_value",
+        "test_view_keyword_multiple_values",
+        "test_view_mixed_case",
+        "test_view_multiple_args",
+        "test_view_with_arguments",
+        "test_view_abbreviated",
+        "test_view_implementation_keywords"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_25_write.py": {
+    "classes": [
+      "TestWriteCommandParsing",
+      "TestWriteStatementGrammar"
+    ],
+    "functions": {
+      "TestWriteCommandParsing": [
+        "test_write_expression",
+        "test_write_string",
+        "test_write_newline",
+        "test_write_adjacent_newlines",
+        "test_write_triple_newlines",
+        "test_write_mixed_format_controls",
+        "test_write_multiple",
+        "test_write_tab",
+        "test_write_form_feed",
+        "test_write_char_code",
+        "test_write_with_postcondition",
+        "test_write_format_control",
+        "test_write_argumentless",
+        "test_write_abbreviated"
+      ],
+      "TestWriteStatementGrammar": [
+        "test_simple_write",
+        "test_write_abbreviated",
+        "test_write_format_codes",
+        "test_write_variable"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_26_xecute.py": {
+    "classes": [
+      "TestXecuteCommandParsing"
+    ],
+    "functions": {
+      "TestXecuteCommandParsing": [
+        "test_xecute_string",
+        "test_xecute_expression",
+        "test_xecute_with_postcondition",
+        "test_xecute_multiple",
+        "test_xecute_abbreviated"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_27_zcommand.py": {
+    "classes": [
+      "TestZCommandParsing"
+    ],
+    "functions": {
+      "TestZCommandParsing": [
+        "test_zcommand_generic",
+        "test_zcommand_with_arguments",
+        "test_zcommand_unknown"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_28_rload.py": {
+    "classes": [
+      "TestRloadCommandParsing"
+    ],
+    "functions": {
+      "TestRloadCommandParsing": [
+        "test_rload_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_2_29_rsave.py": {
+    "classes": [
+      "TestRsaveCommandParsing"
+    ],
+    "functions": {
+      "TestRsaveCommandParsing": [
+        "test_rsave_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_3_device_params.py": {
+    "classes": [
+      "TestDeviceParametersParsing"
+    ],
+    "functions": {
+      "TestDeviceParametersParsing": [
+        "test_device_param_basic",
+        "test_device_param_with_value",
+        "test_device_param_list",
+        "test_mnemonic_device_params"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_assign.py": {
+    "classes": [
+      "TestAssignCommandParsing"
+    ],
+    "functions": {
+      "TestAssignCommandParsing": [
+        "test_assign_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_event_processing.py": {
+    "classes": [
+      "TestEventProcessingCommandsParsing"
+    ],
+    "functions": {
+      "TestEventProcessingCommandsParsing": [
+        "test_ablock_out_of_scope",
+        "test_aunblock_out_of_scope",
+        "test_astart_out_of_scope",
+        "test_astop_out_of_scope",
+        "test_estart_out_of_scope",
+        "test_estop_out_of_scope",
+        "test_etrigger_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_ksubscripts.py": {
+    "classes": [
+      "TestKSubscriptsParsing"
+    ],
+    "functions": {
+      "TestKSubscriptsParsing": [
+        "test_ksubscripts_basic",
+        "test_ksubscripts_with_arguments"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_kvalue.py": {
+    "classes": [
+      "TestKValueParsing"
+    ],
+    "functions": {
+      "TestKValueParsing": [
+        "test_kvalue_basic",
+        "test_kvalue_with_arguments"
+      ]
+    }
+  },
+  "tests/unit/parser/s8_commands/test_s8_then_command.py": {
+    "classes": [
+      "TestThenCommandParsing"
+    ],
+    "functions": {
+      "TestThenCommandParsing": [
+        "test_then_out_of_scope"
+      ]
+    }
+  },
+  "tests/unit/parser/s9_charset/test_s9_1_definitions.py": {
+    "classes": [
+      "TestCharacterSetDefinitionsParsing"
+    ],
+    "functions": {
+      "TestCharacterSetDefinitionsParsing": [
+        "test_ascii_characters",
+        "test_control_characters",
+        "test_graphic_characters",
+        "test_special_characters"
+      ]
+    }
+  }
+}
