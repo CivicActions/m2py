@@ -2,6 +2,122 @@
 
 How to test and validate parser output.
 
+## Test Organization
+
+M2PY tests are organized to systematically map to the MUMPS 1995 ANSI specification sections (§5-§9). This spec-aligned structure ensures verifiable, gap-free coverage tracking against the standard.
+
+### Directory Structure
+
+```
+tests/
+├── unit/
+│   ├── parser/                    # Parser-level tests (textX grammar)
+│   │   ├── s5_metalanguage/       # §5 Metalanguage (informative)
+│   │   ├── s6_routine/            # §6 Routine Structure
+│   │   ├── s7_expressions/        # §7 Expressions
+│   │   ├── s8_commands/           # §8 Commands
+│   │   ├── s9_charset/            # §9 Character Set
+│   │   ├── extensions/ydb/        # YottaDB Z-commands
+│   │   └── legacy/                # Pre-1995 syntax tests
+│   ├── asg/                       # ASG-level tests (semantic analysis)
+│   │   └── (parallel structure to parser/)
+│   ├── codegen/                   # Codegen-level tests (Python output)
+│   │   └── (parallel structure to parser/)
+│   ├── cross_cutting/             # Features spanning multiple commands
+│   ├── analysis/                  # Internal algorithm tests
+│   └── meta/                      # Tooling and infrastructure tests
+├── integration/                   # Integration tests
+└── functional/                    # YDBTest functional suites
+```
+
+### Three-Level Testing
+
+Each MUMPS language feature is tested at three levels, mirroring the transpiler architecture:
+
+| Level | What it tests | Example assertion |
+|-------|--------------|-------------------|
+| **Parser** | textX grammar produces correct AST | `assert stmt.command == 'SET'` |
+| **ASG** | Semantic analyzer produces correct ASG | `assert node.loop_type == ForLoopType.BOUNDED` |
+| **Codegen** | Generated Python matches MUMPS behavior | `assert runtime.get('X') == 'value'` |
+
+**File naming convention**: Test files mirror spec sections with a parallel structure:
+```
+tests/unit/parser/s8_commands/test_s8_2_18_set.py   # §8.2.18 SET - parser level
+tests/unit/asg/s8_commands/test_s8_2_18_set.py      # §8.2.18 SET - ASG level
+tests/unit/codegen/s8_commands/test_s8_2_18_set.py  # §8.2.18 SET - codegen level
+```
+
+### Test Markers
+
+Tests use pytest markers to categorize and filter:
+
+| Marker | Purpose | Example |
+|--------|---------|---------|
+| `@pytest.mark.parser` | Parser-level test | Required in `tests/unit/parser/` |
+| `@pytest.mark.asg` | ASG-level test | Required in `tests/unit/asg/` |
+| `@pytest.mark.codegen` | Codegen-level test | Required in `tests/unit/codegen/` |
+| `@pytest.mark.stub` | Placeholder test (xfail) | Pending implementation |
+| `@pytest.mark.slow` | Long-running test | Skipped by default |
+| `@pytest.mark.pre1995` | Pre-1995 MUMPS syntax | Backward compatibility |
+| `@pytest.mark.ydb` | YottaDB-specific | Z-commands, Z-functions |
+
+**Marker enforcement**: Tests in `parser/`, `asg/`, and `codegen/` directories require a category marker. Tests in `analysis/`, `meta/`, and `cross_cutting/` do not (they test internal algorithms, not spec compliance).
+
+### Stub/XFail Workflow
+
+Stub tests mark unimplemented functionality while keeping CI green:
+
+```python
+@pytest.mark.stub
+@pytest.mark.parser
+@pytest.mark.xfail(reason="Not yet implemented: §8.2.18 SET multi-target assignment")
+def test_set_multi_target():
+    """Parse SET with multiple targets: SET (A,B)=value."""
+    pytest.fail("Stub - implement test")
+```
+
+**Converting a stub to an implemented test**:
+```python
+# After implementation, remove @stub and @xfail, add real test:
+@pytest.mark.parser
+def test_set_multi_target(parser):
+    """Parse SET with multiple targets: SET (A,B)=value."""
+    routine = parser.parse_string('TEST S (A,B)="x"')
+    stmt = routine.labels[0].body.statements[0]
+    assert len(stmt.assignments) == 1
+    assert len(stmt.assignments[0].targets) == 2
+```
+
+### Common pytest Commands
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run by category
+uv run pytest -m parser              # All parser-level tests
+uv run pytest -m asg                 # All ASG-level tests
+uv run pytest -m codegen             # All codegen-level tests
+
+# Run only implemented tests (exclude stubs)
+uv run pytest -m "not stub"
+
+# Run only stubs (see pending work)
+uv run pytest -m stub --collect-only
+
+# Run specific spec section
+uv run pytest tests/unit/parser/s8_commands/ -v
+uv run pytest -k "s8_2_18"           # All SET command tests
+
+# Run by extension
+uv run pytest -m ydb -v              # YottaDB-specific tests
+uv run pytest -m pre1995 -v          # Backward compatibility tests
+
+# Include slow tests
+uv run pytest -m ''                  # All tests including slow
+uv run pytest -m slow -v -s          # Only slow tests
+```
+
 ## Running Tests
 
 ### Full Test Suite

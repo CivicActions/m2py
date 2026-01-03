@@ -727,13 +727,13 @@ Original plan had some going to spec-aligned command files, but keeping together
 
 **Purpose**: Update documentation to reflect new test organization
 
-- [ ] T198 Update docs/testing.md with new spec-aligned test structure description
-- [ ] T199 [P] Add three-level testing explanation (parser/asg/codegen) to docs/testing.md
-- [ ] T200 [P] Add stub/xfail workflow documentation to docs/testing.md
-- [ ] T201 [P] Add marker usage table and common pytest commands to docs/testing.md
-- [ ] T202 Run quickstart.md validation: verify all documented commands work
-- [ ] T203 Final verification: `uv run pytest` produces exit code 0 (green CI)
-- [ ] T204 Final verification: `uv run pytest -m "not stub"` runs only implemented tests
+- [X] T198 Update docs/testing.md with new spec-aligned test structure description
+- [X] T199 [P] Add three-level testing explanation (parser/asg/codegen) to docs/testing.md
+- [X] T200 [P] Add stub/xfail workflow documentation to docs/testing.md
+- [X] T201 [P] Add marker usage table and common pytest commands to docs/testing.md
+- [X] T202 Run quickstart.md validation: verify all documented commands work
+- [X] T203 Final verification: `uv run pytest` produces exit code 0 (green CI)
+- [X] T204 Final verification: `uv run pytest -m "not stub"` runs only implemented tests
 
 ---
 
