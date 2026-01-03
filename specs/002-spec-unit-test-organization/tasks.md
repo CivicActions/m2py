@@ -745,25 +745,25 @@ Original plan had some going to spec-aligned command files, but keeping together
 
 ### Parser Library Functions (US1)
 
-- [ ] T205 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_6_5_library_functions_math.py with stubs (57 MATH library functions listed in Annex I-2)
-- [ ] T206 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_6_5_library_functions_string.py with stubs (6 STRING library functions: CRC16, CRC32, CRCCCITT, FORMAT, PRODUCE, REPLACE)
-- [ ] T207 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_6_5_library_functions_character.py with stubs (5 CHARACTER library functions: COLLATE, COMPARE, LOWER, PATCODE, UPPER)
+- [X] T205 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_6_5_library_functions_math.py with stubs (57 MATH library functions listed in Annex I-2)
+- [X] T206 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_6_5_library_functions_string.py with stubs (6 STRING library functions: CRC16, CRC32, CRCCCITT, FORMAT, PRODUCE, REPLACE)
+- [X] T207 [P] [US1] Create tests/unit/parser/s7_expressions/test_s7_1_6_5_library_functions_character.py with stubs (5 CHARACTER library functions: COLLATE, COMPARE, LOWER, PATCODE, UPPER)
 
 ### ASG Library Functions (US2)
 
-- [ ] T208 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_6_5_library_functions_math.py with stubs (57 MATH library functions)
-- [ ] T209 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_6_5_library_functions_string.py with stubs (6 STRING library functions)
-- [ ] T210 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_6_5_library_functions_character.py with stubs (5 CHARACTER library functions)
+- [X] T208 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_6_5_library_functions_math.py with stubs (57 MATH library functions)
+- [X] T209 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_6_5_library_functions_string.py with stubs (6 STRING library functions)
+- [X] T210 [P] [US2] Create tests/unit/asg/s7_expressions/test_s7_1_6_5_library_functions_character.py with stubs (5 CHARACTER library functions)
 
 ### Codegen Library Functions (US7)
 
-- [ ] T211 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_6_5_library_functions_math.py with stubs (57 MATH library functions)
-- [ ] T212 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_6_5_library_functions_string.py with stubs (6 STRING library functions)
-- [ ] T213 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_6_5_library_functions_character.py with stubs (5 CHARACTER library functions)
+- [X] T211 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_6_5_library_functions_math.py with stubs (57 MATH library functions)
+- [X] T212 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_6_5_library_functions_string.py with stubs (6 STRING library functions)
+- [X] T213 [P] [US7] Create tests/unit/codegen/s7_expressions/test_s7_1_6_5_library_functions_character.py with stubs (5 CHARACTER library functions)
 
 ### Library Function Validation
 
-- [ ] T214 [US7] Verify library function stub files contain individual test stubs for all 68 functions: `uv run pytest tests/unit/*/s7_expressions/test_s7_1_6_5_library_functions_*.py --collect-only | grep -c "test_"` should be ≥ 68×3=204
+- [X] T214 [US7] Verify library function stub files contain individual test stubs for all 68 functions: `uv run pytest tests/unit/*/s7_expressions/test_s7_1_6_5_library_functions_*.py --collect-only | grep -c "test_"` should be ≥ 68×3=204
 
 ---
 
