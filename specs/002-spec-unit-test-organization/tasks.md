@@ -687,11 +687,11 @@ Original plan had some going to spec-aligned command files, but keeping together
 
 ### Cross-Cutting Stubs
 
-- [ ] T183 [P] Create tests/unit/cross_cutting/test_indirection.py with stubs (name, argument, pattern indirection) - Note: T176 migrates existing content INTO this file
-- [ ] T184 [P] Create tests/unit/cross_cutting/test_postconditions.py with stubs (command-level vs argument-level)
-- [ ] T185 [P] Create tests/unit/cross_cutting/test_timeouts.py with stubs (OPEN, READ, JOB, LOCK timeout syntax)
-- [ ] T186 [P] Create tests/unit/cross_cutting/test_naked_references.py with stubs (naked indicator state)
-- [ ] T187 [P] Create tests/unit/cross_cutting/test_language_semantics.py with stubs ($TEST, L-to-R eval, Exclusive NEW, transaction nesting)
+- [X] T183 [P] Create tests/unit/cross_cutting/test_indirection.py with stubs (name, argument, pattern indirection) - Note: T176 migrates existing content INTO this file
+- [X] T184 [P] Create tests/unit/cross_cutting/test_postconditions.py with stubs (command-level vs argument-level)
+- [X] T185 [P] Create tests/unit/cross_cutting/test_timeouts.py with stubs (OPEN, READ, JOB, LOCK timeout syntax)
+- [X] T186 [P] Create tests/unit/cross_cutting/test_naked_references.py with stubs (naked indicator state)
+- [X] T187 [P] Create tests/unit/cross_cutting/test_language_semantics.py with stubs ($TEST, L-to-R eval, Exclusive NEW, transaction nesting)
 
 **Checkpoint**: All FR-046-051 language semantic requirements have stub tests
 
