@@ -148,3 +148,168 @@ From YDBTest and implementation:
 | a107301-316.md (MWAPI) | MUMPS Windowing API (GUI attributes: Window, Gadget, Choice, Event) + character set tables (ISO-8859-1, DOS, DEC, EBCDIC); out of scope for core language transpiler |
 | MATH library count | Verified 57 functions in 1995 spec (a107127-182): trig, complex, matrix functions |
 | $NEXT deprecation | $NEXT is deprecated in favor of $ORDER; documented but functional |
+---
+
+## Backward Compatibility Research
+
+### Standard Version Evolution Summary
+
+| Feature | 1977 | 1984 | 1990 | 1995 | Breaking? |
+|---------|------|------|------|------|-----------|
+| **Commands** |
+| BREAK | ✓ | ✓ | ✓ | ✓ | No |
+| CLOSE | ✓ | ✓ | ✓ | ✓ | No |
+| DO | ✓ | ✓ | ✓ | ✓ | No |
+| ELSE | ✓ | ✓ | ✓ | ✓ | No |
+| FOR | ✓ | ✓ | ✓ | ✓ | No |
+| GOTO | ✓ | ✓ | ✓ | ✓ | No |
+| HALT | ✓ | ✓ | ✓ | ✓ | No |
+| HANG | ✓ | ✓ | ✓ | ✓ | No |
+| IF | ✓ | ✓ | ✓ | ✓ | No |
+| JOB | ✓ | ✓ | ✓ | ✓ | No |
+| KILL | ✓ | ✓ | ✓ | ✓ | No |
+| LOCK | ✓ | ✓ | ✓ | ✓ | No |
+| NEW | - | ✓ | ✓ | ✓ | No (addition) |
+| MERGE | - | - | ✓ | ✓ | No (addition) |
+| OPEN | ✓ | ✓ | ✓ | ✓ | No |
+| QUIT | ✓ | ✓ | ✓ | ✓ | No |
+| READ | ✓ | ✓ | ✓ | ✓ | No |
+| SET | ✓ | ✓ | ✓ | ✓ | No |
+| TSTART | - | - | - | ✓ | No (addition) |
+| TCOMMIT | - | - | - | ✓ | No (addition) |
+| TROLLBACK | - | - | - | ✓ | No (addition) |
+| TRESTART | - | - | - | ✓ | No (addition) |
+| USE | ✓ | ✓ | ✓ | ✓ | No |
+| VIEW | ✓ | ✓ | ✓ | ✓ | No |
+| WRITE | ✓ | ✓ | ✓ | ✓ | No |
+| XECUTE | ✓ | ✓ | ✓ | ✓ | No |
+| KVALUE | - | - | - | ✓ | No (addition) |
+| KSUBSCRIPTS | - | - | - | ✓ | No (addition) |
+| **Intrinsic Functions** |
+| $ASCII | ✓ | ✓ | ✓ | ✓ | No |
+| $CHAR | ✓ | ✓ | ✓ | ✓ | No |
+| $DATA | ✓ | ✓ | ✓ | ✓ | No |
+| $EXTRACT | ✓ | ✓ | ✓ | ✓ | No |
+| $FIND | ✓ | ✓ | ✓ | ✓ | No |
+| $FNUMBER | - | - | ✓ | ✓ | No (addition) |
+| $GET | - | ✓ | ✓ | ✓ | No (addition) |
+| $JUSTIFY | ✓ | ✓ | ✓ | ✓ | No |
+| $LENGTH | ✓ | ✓ | ✓ | ✓ | No |
+| $NAME | - | - | ✓ | ✓ | No (addition) |
+| $NEXT | ✓ | ✓ | ✓ | **deprecated** | **Yes (use $ORDER)** |
+| $ORDER | - | ✓ | ✓ | ✓ | No (addition) |
+| $PIECE | ✓ | ✓ | ✓ | ✓ | No |
+| $QLENGTH | - | ✓ | ✓ | ✓ | No (addition) |
+| $QSUBSCRIPT | - | ✓ | ✓ | ✓ | No (addition) |
+| $QUERY | - | ✓ | ✓ | ✓ | No (addition) |
+| $RANDOM | ✓ | ✓ | ✓ | ✓ | No |
+| $REVERSE | - | - | ✓ | ✓ | No (addition) |
+| $SELECT | ✓ | ✓ | ✓ | ✓ | No |
+| $STACK | - | - | - | ✓ | No (addition) |
+| $TEXT | ✓ | ✓ | ✓ | ✓ | No |
+| $TRANSLATE | - | - | ✓ | ✓ | No (addition) |
+| $VIEW | ✓ | ✓ | ✓ | ✓ | No |
+| $DEXTRACT | - | proposed | proposed | **dropped** | **Yes (never standardized)** |
+| $DPIECE | - | proposed | proposed | **dropped** | **Yes (never standardized)** |
+| **Special Variables** |
+| $DEVICE | ✓ | ✓ | ✓ | ✓ | No |
+| $ECODE | - | - | - | ✓ | No (addition) |
+| $ESTACK | - | - | - | ✓ | No (addition) |
+| $ETRAP | - | - | - | ✓ | No (addition) |
+| $HOROLOG | ✓ | ✓ | ✓ | ✓ | No |
+| $IO | ✓ | ✓ | ✓ | ✓ | No |
+| $JOB | ✓ | ✓ | ✓ | ✓ | No |
+| $KEY | - | - | ✓ | ✓ | No (addition) |
+| $PRINCIPAL | - | - | - | ✓ | No (addition) |
+| $QUIT | - | - | - | ✓ | No (addition) |
+| $REFERENCE | - | - | ✓ | ✓ | No (addition) |
+| $STACK | - | - | - | ✓ | No (addition) |
+| $STORAGE | ✓ | ✓ | ✓ | ✓ | No |
+| $SYSTEM | - | - | - | ✓ | No (addition) |
+| $TEST | ✓ | ✓ | ✓ | ✓ | No |
+| $TLEVEL | - | - | - | ✓ | No (addition) |
+| $TRESTART | - | - | - | ✓ | No (addition) |
+| $X, $Y | ✓ | ✓ | ✓ | ✓ | No |
+| **SSVNs** |
+| ^$JOB | - | - | - | ✓ | No (addition) |
+| ^$ROUTINE | - | - | - | ✓ | No (addition) |
+| ^$GLOBAL | - | - | - | ✓ | No (addition) |
+| ^$LOCK | - | - | - | ✓ | No (addition) |
+| ^$DEVICE | - | - | - | ✓ | No (addition) |
+| ^$SYSTEM | - | - | - | ✓ | No (addition) |
+
+### Legacy Patterns Found
+
+**$NEXT usage in VistA-M (488 occurrences)**:
+```
+; VistA-M commonly uses $N(glvn) or $NEXT(glvn) for traversal
+; Modern code should use $O(glvn) or $ORDER(glvn)
+```
+
+**$NEXT usage in functional test suites (58 occurrences)**:
+- `tests/functional/mvts_inref/V1NX1.m` - $NEXT function test -1-
+- `tests/functional/mvts_inref/V1NX2.m` - $NEXT function test -2-
+- `tests/functional/mvts_inref/V2NO1.m` - $NEXT and $ORDER comparison
+- `tests/functional/mvts_inref/V2NO2.m` - $NEXT and $ORDER comparison -2-
+
+These tests explicitly validate backward compatibility of $NEXT against $ORDER behavior.
+
+### BNF Changes
+
+**1977 → 1984 Additions**:
+- NEW command (variable scoping)
+- $GET function (default value access)
+- $ORDER function (replaces $NEXT for traversal)
+- $QUERY function (hierarchical traversal)
+- $QLENGTH, $QSUBSCRIPT functions (query decomposition)
+- Parameter passing with `NEW` command
+
+**1984 → 1990 Additions**:
+- MERGE command (array copy)
+- $NAME function (construct reference names)
+- $FNUMBER function (numeric formatting)
+- $REVERSE function (string reversal)
+- $TRANSLATE function (character translation)
+- $KEY special variable (input terminator)
+- $REFERENCE special variable (naked indicator)
+
+**1990 → 1995 Additions**:
+- Transaction processing: TSTART, TCOMMIT, TROLLBACK, TRESTART commands
+- KVALUE, KSUBSCRIPTS commands (granular kill operations)
+- $STACK function and variable (error context)
+- $ECODE, $ESTACK, $ETRAP (structured error handling)
+- $TLEVEL, $TRESTART (transaction state)
+- $PRINCIPAL (original principal device)
+- $QUIT (return mode indicator)
+- $SYSTEM (system identifier)
+- SSVNs: ^$JOB, ^$ROUTINE, ^$GLOBAL, ^$LOCK, ^$DEVICE, ^$SYSTEM
+
+### Deprecated Constructs
+
+| Construct | Status | Replacement | M2PY Behavior |
+|-----------|--------|-------------|---------------|
+| $NEXT(glvn) | Deprecated per 1995 §7.1.5 | $ORDER(glvn) | Parse and transpile; emit `MUMPSDeprecationWarning` |
+| $DEXTRACT | Never standardized | $EXTRACT with multiple args | Not supported; raise parse error |
+| $DPIECE | Never standardized | $PIECE with multiple args | Not supported; raise parse error |
+
+### Pre-Migration Test Baseline
+
+- **Pre-migration test count**: 1380 tests collected
+- **Post-migration target**: ≥ 1380 tests
+- Captured via `uv run pytest tests/unit/ --collect-only -q | tail -1`
+
+### Migration File Inventory
+
+Files to migrate from `tests/unit/`:
+- ✓ test_command_grammar.py (migrated)
+- ✓ test_expression_grammar.py (migrated)
+- ✓ test_grammar.py (migrated)
+- ✓ test_parser.py (migrated)
+- ✓ test_classifier.py (migrated)
+- ✓ test_semantic_analyzer.py (migrated)
+- ✓ test_command_analysis.py (migrated)
+- ✓ test_goto_for_analysis.py (migrated)
+- ✓ test_resolver.py (migrated)
+- ✓ test_variables.py (migrated)
+
+All legacy files have been migrated to spec-aligned structure.

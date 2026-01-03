@@ -26,4 +26,10 @@ addopts = "-n auto -m 'not slow'"
 pythonpath = ["src"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "pre1995: marks tests for pre-1995 MUMPS syntax backward compatibility",
+    "parser: marks parser-level tests",
+    "asg: marks ASG-level semantic tests",
+    "codegen: marks code generation tests",
+    "stub: marks stub tests pending implementation",
+    "analysis: marks analysis module tests",
 ]

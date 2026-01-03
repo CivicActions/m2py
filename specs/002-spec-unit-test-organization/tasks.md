@@ -705,19 +705,19 @@ Original plan had some going to spec-aligned command files, but keeping together
 
 ### Research & Documentation
 
-- [ ] T188 [US4] Research 1977/1984/1990 spec differences vs 1995: append new "## Backward Compatibility Research" section to research.md with markdown table (columns: Feature, 1977, 1984, 1990, 1995, Breaking?). Consult mumps-reference files: `1977__*.md`, `1984__*.md`, `1990__*.md`, `1995__*.md` for version-specific syntax
-- [ ] T189 [US4] Identify pre-1995 syntax in VistA-M/ and YDBTest functional suites (`tests/functional/*_inref/`, `tests/functional/mugj/`): append grep results with file:line to research.md "### Legacy Patterns Found" subsection
-- [ ] T190 [US4] Extract concrete syntax diffs from mumps-reference/: append changed BNF productions to research.md "### BNF Changes" subsection. Key files: compare `1977__a107*.md` vs `1995__a107*.md` for function/operator changes
-- [ ] T191 [US4] Document identified backward-compatible syntax in docs/testing.md "Backward Compatibility" section. For deprecated constructs (e.g., $NEXT), document: (a) the deprecated syntax, (b) the modern replacement, (c) whether M2PY emits a Python warning via `warnings.warn()` or silently accepts. If warnings are emitted, use format: `MUMPSDeprecationWarning: $NEXT is deprecated per 1995 spec §7.1.5; use $ORDER instead`
+- [X] T188 [US4] Research 1977/1984/1990 spec differences vs 1995: append new "## Backward Compatibility Research" section to research.md with markdown table (columns: Feature, 1977, 1984, 1990, 1995, Breaking?). Consult mumps-reference files: `1977__*.md`, `1984__*.md`, `1990__*.md`, `1995__*.md` for version-specific syntax
+- [X] T189 [US4] Identify pre-1995 syntax in VistA-M/ and YDBTest functional suites (`tests/functional/*_inref/`, `tests/functional/mugj/`): append grep results with file:line to research.md "### Legacy Patterns Found" subsection
+- [X] T190 [US4] Extract concrete syntax diffs from mumps-reference/: append changed BNF productions to research.md "### BNF Changes" subsection. Key files: compare `1977__a107*.md` vs `1995__a107*.md` for function/operator changes
+- [X] T191 [US4] Document identified backward-compatible syntax in docs/testing.md "Backward Compatibility" section. For deprecated constructs (e.g., $NEXT), document: (a) the deprecated syntax, (b) the modern replacement, (c) whether M2PY emits a Python warning via `warnings.warn()` or silently accepts. If warnings are emitted, use format: `MUMPSDeprecationWarning: $NEXT is deprecated per 1995 spec §7.1.5; use $ORDER instead`
 
 ### Tests for Identified Differences
 
-- [ ] T192 [P] [US4] Create tests/unit/parser/legacy/test_pre1995_syntax.py with @pytest.mark.pre1995 marker
-- [ ] T193 [P] [US4] Create tests/unit/asg/legacy/test_pre1995_semantics.py with stubs
-- [ ] T194 [P] [US4] Create tests/unit/codegen/legacy/test_pre1995_behavior.py with stubs
-- [ ] T195 [US4] Add test cases for each identified syntax difference (FR-022)
-- [ ] T196 [US4] Verify VistA parsing: create utils/verify_vista_parse.py script that imports m2py.parse and parses VistA-M/sample.m; run via `uv run python utils/verify_vista_parse.py`
-- [ ] T197 [US4] Run `uv run python utils/audit_tests.py --output docs/coverage-matrix.md` to regenerate coverage matrix with backward-compat status
+- [X] T192 [P] [US4] Create tests/unit/parser/legacy/test_pre1995_syntax.py with @pytest.mark.pre1995 marker
+- [X] T193 [P] [US4] Create tests/unit/asg/legacy/test_pre1995_semantics.py with stubs
+- [X] T194 [P] [US4] Create tests/unit/codegen/legacy/test_pre1995_behavior.py with stubs
+- [X] T195 [US4] Add test cases for each identified syntax difference (FR-022)
+- [X] T196 [US4] Verify VistA parsing: create utils/verify_vista_parse.py script that imports m2py.parse and parses VistA-M/sample.m; run via `uv run python utils/verify_vista_parse.py`
+- [X] T197 [US4] Run `uv run python utils/audit_tests.py --output docs/coverage-matrix.md` to regenerate coverage matrix with backward-compat status
 
 **Checkpoint**: All identified pre-1995 syntax variations have test coverage
 

@@ -476,3 +476,89 @@ def test_backward_compat_calls_property(self):
     # .calls is deprecated alias for .targets
     assert stmt.calls is stmt.targets
 ```
+## Backward Compatibility
+
+M2PY supports MUMPS code written to older ANSI standards (1977, 1984, 1990) as well as the current 1995 standard. This section documents syntax differences across standards and how M2PY handles legacy constructs.
+
+### Supported Standards
+
+| Standard | Year | Key Features |
+|----------|------|--------------|
+| ANSI X11.1-1977 | 1977 | Base language (SET, IF, FOR, GOTO, etc.) |
+| ANSI X11.1-1984 | 1984 | NEW command, $ORDER, $QUERY, $GET, parameter passing |
+| ANSI M X11.1-1990 | 1990 | MERGE command, $TRANSLATE, $NAME, $FNUMBER, $REVERSE |
+| ANSI M X11.1-1995 | 1995 | Transaction processing, SSVNs, structured error handling |
+
+### Deprecated Constructs
+
+#### $NEXT Function (Pre-1995)
+
+The `$NEXT` function was deprecated in the 1995 standard in favor of `$ORDER`.
+
+**Syntax**: `$N[EXT](glvn)` or `$NEXT(glvn)`
+
+**M2PY Behavior**: 
+- Parses and transpiles correctly
+- Emits `MUMPSDeprecationWarning` at runtime:
+  ```
+  MUMPSDeprecationWarning: $NEXT is deprecated per 1995 spec §7.1.5; use $ORDER instead
+  ```
+
+**Usage in legacy code**:
+- VistA-M repository: ~488 occurrences
+- MVTS test suite: ~58 occurrences (explicit compatibility tests)
+
+**Example**:
+```mumps
+; Legacy (deprecated)
+S X=$N(^GLOBAL(""))
+; Modern (preferred)
+S X=$O(^GLOBAL(""))
+```
+
+#### $DEXTRACT and $DPIECE (Never Standardized)
+
+These functions were proposed for the 1984/1990 standards but never included in the final ANSI standard.
+
+**M2PY Behavior**: Not supported; raises parse error.
+
+### Pre-1995 Test Marker
+
+Tests for backward compatibility features use the `@pytest.mark.pre1995` marker:
+
+```python
+@pytest.mark.pre1995
+def test_next_function_parsing():
+    """Verify $NEXT parses correctly (deprecated but supported)."""
+    parser = MUMPSParser()
+    routine = parser.parse_string('TEST S X=$N(^A(""))')
+    # Assertions...
+```
+
+**Running pre-1995 tests**:
+```bash
+# Run only pre-1995 compatibility tests
+uv run pytest -m pre1995 -v
+
+# Exclude pre-1995 tests
+uv run pytest -m "not pre1995"
+```
+
+### Feature Evolution Reference
+
+For detailed information about which features were added in each standard version, see:
+- [specs/002-spec-unit-test-organization/research.md](../specs/002-spec-unit-test-organization/research.md#backward-compatibility-research) - Complete evolution table
+- [mumps-reference/INDEX.md](../mumps-reference/INDEX.md) - MUMPS specification reference documents
+
+### VistA Compatibility
+
+M2PY is designed to parse the VistA codebase without syntax errors due to standard version differences. The primary compatibility considerations are:
+
+1. **$NEXT usage**: Approximately 488 occurrences in VistA-M; all parse correctly
+2. **Core syntax**: All 1977 core commands/functions are stable across versions
+3. **Additions only**: No breaking syntax changes between standards; features are only added
+
+To verify VistA compatibility:
+```bash
+uv run python utils/verify_vista_parse.py
+```
