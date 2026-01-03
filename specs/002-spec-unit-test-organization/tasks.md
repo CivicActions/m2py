@@ -659,15 +659,21 @@ Original plan had some going to spec-aligned command files, but keeping together
 
 ### Audit Script Development
 
-- [ ] T178 [US3] Create utils/audit_tests.py with SPEC_SECTIONS constant defining all §5-§9 sections with subsections
-- [ ] T179 [US3] Implement scan_test_files() function that discovers all test_s*.py files in parser/, asg/, codegen/
-- [ ] T180 [US3] Implement parse_test_markers() function using AST to extract pytest markers (skip, xfail, stub) from each test
-- [ ] T181 [US3] Implement count_test_status() function that categorizes tests as: passed (no xfail/skip), stub (xfail), skipped (skip)
-- [ ] T182 [US3] Implement generate_report() function that outputs markdown table with columns: Section, Parser, ASG, Codegen, Notes
-- [ ] T183 [US3] Add --section filter argument to audit specific sections (e.g., `--section s7` or `--section s8_2_18`)
-- [ ] T184 [US3] Add --output argument to write report to docs/coverage-matrix.md
-- [ ] T185 [US3] Add exit code logic: return 0 if all sections covered, non-zero if any section missing test files
-- [ ] T186 [US3] Document script usage in docs/testing.md
+- [X] T178 [US3] Create utils/audit_tests.py with SPEC_SECTIONS constant defining all §5-§9 sections with subsections
+- [X] T179 [US3] Implement scan_test_files() function that discovers all test_s*.py files in parser/, asg/, codegen/
+- [X] T180 [US3] Implement parse_test_markers() function using AST to extract pytest markers (skip, xfail, stub) from each test
+- [X] T181 [US3] Implement count_test_status() function that categorizes tests as: passed (no xfail/skip), stub (xfail), skipped (skip)
+- [X] T182 [US3] Implement generate_report() function that outputs markdown table with columns: Section, Parser, ASG, Codegen, Notes
+- [X] T183 [US3] Add --section filter argument to audit specific sections (e.g., `--section s7` or `--section s8_2_18`)
+- [X] T184 [US3] Add --output argument to write report to docs/coverage-matrix.md
+- [X] T185 [US3] Add exit code logic: return 0 if all sections covered, non-zero if any section missing test files
+- [X] T186 [US3] Document script usage in docs/testing.md
+
+### Fix File Naming Issues
+
+- [X] T186a [US3] Rename tests/unit/asg/s8_commands/test_s8_rload.py to test_s8_2_28_rload.py (align with parser/codegen naming per §8.2.28)
+- [X] T186b [US3] Rename tests/unit/asg/s8_commands/test_s8_rsave.py to test_s8_2_29_rsave.py (align with parser/codegen naming per §8.2.29)
+- [X] T186c [US3] Verify audit script exits with code 0: `uv run python utils/audit_tests.py --check-only`
 
 **Checkpoint**: Audit script complete and exits with status 0
 

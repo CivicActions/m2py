@@ -43,6 +43,45 @@ uv run pytest --cov=src/m2py --cov-report=html
 open htmlcov/index.html
 ```
 
+## Test Coverage Audit
+
+The `utils/audit_tests.py` script audits test coverage against MUMPS 1995 ANSI spec sections (§5-§9):
+
+```bash
+# Full coverage report
+uv run python utils/audit_tests.py
+
+# Filter by section
+uv run python utils/audit_tests.py --section s7              # All §7 sections
+uv run python utils/audit_tests.py --section s8_2_18         # Just SET command
+uv run python utils/audit_tests.py --section extensions/ydb  # YottaDB extensions
+
+# Save report to file
+uv run python utils/audit_tests.py --output docs/coverage-matrix.md
+
+# Check coverage only (returns exit code 0 if all sections covered)
+uv run python utils/audit_tests.py --check-only
+
+# Quiet mode (only exit code, no output)
+uv run python utils/audit_tests.py -q
+```
+
+### Report Legend
+
+| Symbol | Meaning |
+|--------|---------|
+| ✅ | Implemented (tests pass) |
+| 🚧 | Stub (xfail, pending implementation) |
+| ⚠️ | XFail (needs investigation) |
+| ⏭️ | Skipped (out of scope or implementation-defined) |
+| ❌ | Missing (no test file) |
+| — N/A | Not applicable for this category |
+
+### Exit Codes
+
+- `0` - All required sections have test files
+- `1` - One or more sections missing test files
+
 ## Test Suites
 
 The project includes multiple MUMPS test suites from YottaDB (YDBTest) for comprehensive validation:
