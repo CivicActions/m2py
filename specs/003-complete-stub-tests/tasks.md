@@ -1,0 +1,416 @@
+# Tasks: Complete Stub Tests
+
+**Input**: Design documents from `/specs/003-complete-stub-tests/`
+**Prerequisites**: plan.md, spec.md, research.md (53 batch definitions)
+
+**Tests**: Tests are the PRIMARY deliverable of this feature - no separate test tasks needed.
+
+**Organization**: Tasks organized by implementation phase (coverage-first strategy from research.md).
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: Can run in parallel (different files, no dependencies)
+- **[US1]**: Parser stub tests (Priority 1)
+- **[US2]**: ASG stub tests (Priority 2)  
+- **[US4]**: Coverage matrix tracking (Priority 1)
+
+---
+
+## Phase 1: Setup
+
+**Purpose**: Tooling enhancements for efficient test development workflow
+
+- [ ] T001 [US4] Enhance utils/validate_asg.py to accept M code from stdin (FR-012)
+- [ ] T002 [US4] Enhance utils/validate_asg.py to accept M code from command-line argument (FR-012)
+- [ ] T003 [US4] Verify utils/audit_tests.py correctly identifies xfail stubs vs implemented tests
+- [ ] T004 [US4] Regenerate baseline coverage matrix in docs/coverage-matrix.md
+
+**Checkpoint**: Tooling ready for batch implementation
+
+---
+
+## Phase 2: High Coverage Impact - ASG (Priority 1) 🎯 MVP
+
+**Purpose**: Maximize regression protection by testing semantic_analyzer.py uncovered paths (49 stubs, 7 batches)
+
+**Goal**: Cover the most critical code paths first - semantic_analyzer.py has 63% coverage with 418 missed lines
+
+**Independent Test**: `uv run pytest tests/unit/asg/ -v` shows Phase 2 tests passing
+
+### Batch A1: ASG SSVNs (8 stubs, Medium complexity)
+
+- [ ] T005 [US2] Research MUMPS spec §7.1.3 SSVNs in mumps-reference/
+- [ ] T006 [US2] Find SSVN examples in YDBTest/mugj/inref/
+- [ ] T007 [US2] Evaluate ASG quality for SSVNs using validate_asg.py
+- [ ] T008 [US2] Implement 8 SSVN tests in tests/unit/asg/s7_expressions/test_s7_1_3_ssvns.py
+- [ ] T009 [US2] Fix any implementation gaps in src/m2py/analysis/semantic_analyzer.py
+- [ ] T010 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch A2: ASG Special Variables (10 stubs, Medium complexity)
+
+- [ ] T011 [P] [US2] Research MUMPS spec §7.1.7 special variables in mumps-reference/
+- [ ] T012 [US2] Find special variable examples in YDBTest/mugj/inref/
+- [ ] T013 [US2] Evaluate ASG quality for special variables using validate_asg.py
+- [ ] T014 [US2] Implement 10 special variable tests in tests/unit/asg/s7_expressions/test_s7_1_7_special_variables.py
+- [ ] T015 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T016 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch A3: ASG Command General Rules (5 stubs, Medium complexity)
+
+- [ ] T017 [P] [US2] Research MUMPS spec §8.1 command general rules in mumps-reference/
+- [ ] T018 [US2] Find command examples in YDBTest/mugj/inref/
+- [ ] T019 [US2] Evaluate ASG quality for commands using validate_asg.py
+- [ ] T020 [US2] Implement 5 command rule tests in tests/unit/asg/s8_commands/test_s8_1_general_rules.py
+- [ ] T021 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T022 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch A4: ASG Operators (10 stubs, Medium complexity)
+
+- [ ] T023 [P] [US2] Research MUMPS spec §7.2 operators in mumps-reference/
+- [ ] T024 [US2] Find operator examples in YDBTest/mugj/inref/
+- [ ] T025 [US2] Evaluate ASG quality for operators using validate_asg.py
+- [ ] T026 [US2] Implement 10 operator tests in tests/unit/asg/s7_expressions/test_s7_2_operators.py
+- [ ] T027 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T028 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch A5: ASG Routine Body (7 stubs, High complexity)
+
+- [ ] T029 [P] [US2] Research MUMPS spec §6.2 routine body in mumps-reference/
+- [ ] T030 [US2] Find routine body examples in YDBTest/mugj/inref/
+- [ ] T031 [US2] Evaluate ASG quality for routine structure using validate_asg.py
+- [ ] T032 [US2] Implement 7 routine body tests in tests/unit/asg/s6_routine/test_s6_2_routine_body.py
+- [ ] T033 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T034 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch A6: ASG Transaction Processing (3 stubs, High complexity)
+
+- [ ] T035 [P] [US2] Research MUMPS spec §6.3.1 transactions (TSTART/TCOMMIT) in mumps-reference/
+- [ ] T036 [US2] Find transaction examples in YDBTest/mugj/inref/
+- [ ] T037 [US2] Evaluate ASG quality for transactions using validate_asg.py
+- [ ] T038 [US2] Implement 3 transaction tests in tests/unit/asg/s6_routine/test_s6_3_1_transaction.py
+- [ ] T039 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T040 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch A7: ASG Error Processing (3 stubs, High complexity)
+
+- [ ] T041 [P] [US2] Research MUMPS spec §6.3.2 error processing in mumps-reference/
+- [ ] T042 [US2] Find error trap examples in YDBTest/mugj/inref/
+- [ ] T043 [US2] Evaluate ASG quality for error handling using validate_asg.py
+- [ ] T044 [US2] Implement 3 error processing tests in tests/unit/asg/s6_routine/test_s6_3_2_error_processing.py
+- [ ] T045 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T046 [US2] Run full test suite and regenerate coverage matrix
+
+**Checkpoint**: Phase 2 complete - 49 ASG stubs converted, semantic_analyzer.py coverage significantly improved
+
+---
+
+## Phase 3: Parser Completion (Priority 2)
+
+**Purpose**: Complete parser test coverage - largely routine tests (172 stubs, 17 batches)
+
+**Goal**: All parser stubs converted, parser coverage reaches 95%+
+
+**Independent Test**: `uv run pytest tests/unit/parser/ -v` shows all tests passing with 0 xfails
+
+### Batch B1-B5: Parser Math Library Functions (57 stubs, Low complexity)
+
+- [ ] T047 [P] [US1] Research MUMPS spec §7.1.6.5 library math functions in mumps-reference/
+- [ ] T048 [P] [US1] Find math function examples in YDBTest/mugj/inref/
+- [ ] T049 [US1] Implement 12 trig function tests (SIN/COS/TAN) in tests/unit/parser/s7_expressions/test_s7_1_6_5_library_functions_math.py (B1)
+- [ ] T050 [US1] Implement 12 hyperbolic function tests (SINH/COSH) in same file (B2)
+- [ ] T051 [US1] Implement 12 inverse trig function tests (ASIN/ACOS) in same file (B3)
+- [ ] T052 [US1] Implement 12 misc math function tests (LOG/EXP/SQRT) in same file (B4)
+- [ ] T053 [US1] Implement 9 remaining math function tests in same file (B5)
+- [ ] T054 [US1] Run full test suite and regenerate coverage matrix
+
+### Batch B6-B7: Parser Intrinsic Functions (24 stubs, Low complexity)
+
+- [ ] T055 [P] [US1] Research MUMPS spec §7.1.5 intrinsic functions in mumps-reference/
+- [ ] T056 [US1] Find intrinsic function examples in YDBTest/mugj/inref/
+- [ ] T057 [US1] Implement 12 intrinsic function tests in tests/unit/parser/s7_expressions/test_s7_1_5_intrinsic_functions.py (B6)
+- [ ] T058 [US1] Implement 12 remaining intrinsic tests in same file (B7)
+- [ ] T059 [US1] Run full test suite and regenerate coverage matrix
+
+### Batch B8-B9: Parser Special Variables (17 stubs, Low complexity)
+
+- [ ] T060 [P] [US1] Research MUMPS spec §7.1.7 special variables in mumps-reference/
+- [ ] T061 [US1] Find special variable examples in YDBTest/mugj/inref/
+- [ ] T062 [US1] Implement 10 special variable tests in tests/unit/parser/s7_expressions/test_s7_1_7_special_variables.py (B8)
+- [ ] T063 [US1] Implement 7 remaining special variable tests in same file (B9)
+- [ ] T064 [US1] Run full test suite and regenerate coverage matrix
+
+### Batch B10: Parser Z-Commands (13 stubs, Low complexity)
+
+- [ ] T065 [P] [US1] Research YDB Z-command extensions
+- [ ] T066 [US1] Find Z-command examples in YDBTest/
+- [ ] T067 [US1] Implement 13 Z-command tests in tests/unit/parser/s8_commands/ or tests/unit/parser/extensions/
+- [ ] T068 [US1] Run full test suite and regenerate coverage matrix
+
+### Batch B11: Parser Command General Rules (10 stubs, Medium complexity)
+
+- [ ] T069 [P] [US1] Research MUMPS spec §8.1 command structure in mumps-reference/
+- [ ] T070 [US1] Find command structure examples in YDBTest/mugj/inref/
+- [ ] T071 [US1] Implement 10 command rule tests in tests/unit/parser/s8_commands/test_s8_1_general_rules.py
+- [ ] T072 [US1] Run full test suite and regenerate coverage matrix
+
+### Batch B12-B13: Parser Legacy Pre-1995 Syntax (17 stubs, Medium complexity)
+
+- [ ] T073 [P] [US1] Research pre-1995 MUMPS syntax differences
+- [ ] T074 [US1] Find legacy syntax examples in VistA-M/
+- [ ] T075 [US1] Implement 10 legacy syntax tests in tests/unit/parser/legacy/test_pre1995_syntax.py (B12)
+- [ ] T076 [US1] Implement 7 remaining legacy tests in same file (B13)
+- [ ] T077 [US1] Run full test suite and regenerate coverage matrix
+
+### Batch B14: Parser Expressions Misc (15 stubs, Low complexity)
+
+- [ ] T078 [P] [US1] Research MUMPS spec §7 expressions in mumps-reference/
+- [ ] T079 [US1] Find expression examples in YDBTest/mugj/inref/
+- [ ] T080 [US1] Implement 15 misc expression tests (pattern match, operators, ssvns) in tests/unit/parser/s7_expressions/
+- [ ] T081 [US1] Run full test suite and regenerate coverage matrix
+
+### Batch B15: Parser Routine Misc (10 stubs, Medium complexity)
+
+- [ ] T082 [P] [US1] Research MUMPS spec §6 routine structure in mumps-reference/
+- [ ] T083 [US1] Find routine structure examples in YDBTest/mugj/inref/
+- [ ] T084 [US1] Implement 10 routine structure tests in tests/unit/parser/s6_routine/
+- [ ] T085 [US1] Run full test suite and regenerate coverage matrix
+
+### Batch B16: Parser Commands Misc (15 stubs, Low complexity)
+
+- [ ] T086 [P] [US1] Research MUMPS spec §8 commands in mumps-reference/
+- [ ] T087 [US1] Find command examples in YDBTest/mugj/inref/
+- [ ] T088 [US1] Implement 15 misc command tests in tests/unit/parser/s8_commands/
+- [ ] T089 [US1] Run full test suite and regenerate coverage matrix
+
+### Batch B17: Parser Character Set (10 stubs, Low complexity)
+
+- [ ] T090 [P] [US1] Research MUMPS spec §9 character set in mumps-reference/
+- [ ] T091 [US1] Find character set examples in YDBTest/mugj/inref/
+- [ ] T092 [US1] Implement 10 character set tests in tests/unit/parser/s9_charset/
+- [ ] T093 [US1] Run full test suite and regenerate coverage matrix
+
+**Checkpoint**: Phase 3 complete - 172 parser stubs converted, parser coverage at 95%+
+
+---
+
+## Phase 4: ASG Medium Complexity (Priority 2)
+
+**Purpose**: Complete ASG semantic assertion tests (128 stubs, 10 batches)
+
+**Goal**: All ASG stubs converted, ASG analysis coverage reaches 95%+
+
+**Independent Test**: `uv run pytest tests/unit/asg/ -v` shows all tests passing with 0 xfails
+
+### Batch C1-C2: ASG Intrinsic Functions (21 stubs, Medium complexity)
+
+- [ ] T094 [P] [US2] Research MUMPS spec §7.1.5 intrinsic function semantics in mumps-reference/
+- [ ] T095 [US2] Evaluate ASG quality for intrinsic functions using validate_asg.py
+- [ ] T096 [US2] Implement 10 intrinsic function ASG tests in tests/unit/asg/s7_expressions/test_s7_1_5_intrinsic_functions.py (C1)
+- [ ] T097 [US2] Implement 11 remaining intrinsic ASG tests in same file (C2)
+- [ ] T098 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T099 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch C3-C6: ASG Math Library Functions (57 stubs, Low complexity)
+
+- [ ] T100 [P] [US2] Research MUMPS spec §7.1.6.5 math library semantics in mumps-reference/
+- [ ] T101 [US2] Evaluate ASG quality for math functions using validate_asg.py
+- [ ] T102 [US2] Implement 15 math lib ASG tests in tests/unit/asg/s7_expressions/test_s7_1_6_5_library_functions_math.py (C3)
+- [ ] T103 [US2] Implement 15 more math lib ASG tests in same file (C4)
+- [ ] T104 [US2] Implement 15 more math lib ASG tests in same file (C5)
+- [ ] T105 [US2] Implement 12 remaining math lib ASG tests in same file (C6)
+- [ ] T106 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch C7: ASG Expressions Misc (15 stubs, Medium complexity)
+
+- [ ] T107 [P] [US2] Research MUMPS spec §7 expression semantics (literals, variables, strings)
+- [ ] T108 [US2] Evaluate ASG quality for expressions using validate_asg.py
+- [ ] T109 [US2] Implement 15 expression ASG tests in tests/unit/asg/s7_expressions/
+- [ ] T110 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T111 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch C8: ASG Commands Misc (15 stubs, Medium complexity)
+
+- [ ] T112 [P] [US2] Research MUMPS spec §8 command semantics in mumps-reference/
+- [ ] T113 [US2] Evaluate ASG quality for commands using validate_asg.py
+- [ ] T114 [US2] Implement 15 command ASG tests in tests/unit/asg/s8_commands/
+- [ ] T115 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T116 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch C9: ASG YDB Extensions (15 stubs, Medium complexity)
+
+- [ ] T117 [P] [US2] Research YDB Z-command semantics
+- [ ] T118 [US2] Evaluate ASG quality for Z-commands using validate_asg.py
+- [ ] T119 [US2] Implement 15 Z-command ASG tests in tests/unit/asg/extensions/
+- [ ] T120 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T121 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch C10: ASG Legacy Pre-1995 (5 stubs, Medium complexity)
+
+- [ ] T122 [P] [US2] Research pre-1995 semantic differences
+- [ ] T123 [US2] Evaluate ASG quality for legacy constructs using validate_asg.py
+- [ ] T124 [US2] Implement 5 legacy ASG tests in tests/unit/asg/legacy/
+- [ ] T125 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T126 [US2] Run full test suite and regenerate coverage matrix
+
+**Checkpoint**: Phase 4 complete - 128 ASG stubs converted, ASG coverage at 95%+
+
+---
+
+## Phase 5: High Complexity Cross-Cutting (Priority 3)
+
+**Purpose**: Complex cross-cutting tests requiring careful semantic analysis (133 stubs, 19 batches)
+
+**Goal**: All cross-cutting stubs converted, complete feature coverage
+
+**Independent Test**: `uv run pytest tests/unit/cross_cutting/ -v` shows all tests passing with 0 xfails
+
+### Batch D1-D5: Indirection Tests (26 stubs, High complexity)
+
+- [ ] T127 [US2] Research MUMPS spec indirection (@) semantics in mumps-reference/
+- [ ] T128 [US2] Find indirection examples in YDBTest/mugj/inref/
+- [ ] T129 [US2] Evaluate ASG quality for indirection using validate_asg.py
+- [ ] T130 [US2] Implement 4 name indirection tests in tests/unit/cross_cutting/test_indirection.py (D1)
+- [ ] T131 [US2] Implement 4 argument indirection tests in same file (D2)
+- [ ] T132 [US2] Implement 4 pattern indirection tests in same file (D3)
+- [ ] T133 [US2] Implement 7 indirection semantics tests in same file (D4)
+- [ ] T134 [US2] Implement 7 nested indirection tests in same file (D5)
+- [ ] T135 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T136 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch D6-D8: Naked Reference Tests (24 stubs, High complexity)
+
+- [ ] T137 [US2] Research MUMPS spec naked references (^) in mumps-reference/
+- [ ] T138 [US2] Find naked reference examples in YDBTest/mugj/inref/
+- [ ] T139 [US2] Evaluate ASG quality for naked references using validate_asg.py
+- [ ] T140 [US2] Implement 8 naked reference state tracking tests in tests/unit/cross_cutting/test_naked_references.py (D6)
+- [ ] T141 [US2] Implement 8 naked in expressions tests in same file (D7)
+- [ ] T142 [US2] Implement 8 naked edge case tests in same file (D8)
+- [ ] T143 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T144 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch D9-D11: Postcondition Tests (21 stubs, Medium complexity)
+
+- [ ] T145 [US2] Research MUMPS spec postconditions (:) in mumps-reference/
+- [ ] T146 [US2] Find postcondition examples in YDBTest/mugj/inref/
+- [ ] T147 [US2] Evaluate ASG quality for postconditions using validate_asg.py
+- [ ] T148 [US2] Implement 7 conditional gate tests in tests/unit/cross_cutting/test_postconditions.py (D9)
+- [ ] T149 [US2] Implement 7 argument postcondition tests in same file (D10)
+- [ ] T150 [US2] Implement 7 ASG postcondition tests in same file (D11)
+- [ ] T151 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T152 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch D12-D14: Timeout Tests (27 stubs, Medium complexity)
+
+- [ ] T153 [US2] Research MUMPS spec timeout parameters in mumps-reference/
+- [ ] T154 [US2] Find timeout examples in YDBTest/mugj/inref/
+- [ ] T155 [US2] Evaluate ASG quality for timeouts using validate_asg.py
+- [ ] T156 [US2] Implement 9 timeout parameter tests in tests/unit/cross_cutting/test_timeouts.py (D12)
+- [ ] T157 [US2] Implement 9 timeout ASG tests in same file (D13)
+- [ ] T158 [US2] Implement 9 timeout codegen-related tests in same file (D14)
+- [ ] T159 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T160 [US2] Run full test suite and regenerate coverage matrix
+
+### Batch D15-D19: Language Semantics Tests (35 stubs, High complexity)
+
+- [ ] T161 [US2] Research MUMPS spec language semantics in mumps-reference/
+- [ ] T162 [US2] Find language semantics examples in YDBTest/mugj/inref/
+- [ ] T163 [US2] Evaluate ASG quality for language semantics using validate_asg.py
+- [ ] T164 [US2] Implement 7 $TEST tracking tests in tests/unit/cross_cutting/test_language_semantics.py (D15)
+- [ ] T165 [US2] Implement 7 evaluation order tests in same file (D16)
+- [ ] T166 [US2] Implement 7 NEW scoping tests in same file (D17)
+- [ ] T167 [US2] Implement 7 transaction semantics tests in same file (D18)
+- [ ] T168 [US2] Implement 7 misc semantics tests in same file (D19)
+- [ ] T169 [US2] Fix any implementation gaps in src/m2py/
+- [ ] T170 [US2] Run full test suite and regenerate coverage matrix
+
+**Checkpoint**: Phase 5 complete - 133 cross-cutting stubs converted
+
+---
+
+## Phase 6: Polish & Verification
+
+**Purpose**: Final verification and documentation updates
+
+- [ ] T171 [US4] Regenerate final coverage matrix in docs/coverage-matrix.md
+- [ ] T172 [US4] Verify SC-002 success command passes with 0 xfails
+- [ ] T173 [US4] Verify SC-004 parser code coverage reaches 95%+
+- [ ] T174 [US4] Verify SC-005 ASG analysis code coverage reaches 95%+
+- [ ] T175 [US4] Verify SC-006 all MUGJ functional tests parse successfully
+- [ ] T176 Run quickstart.md validation workflow
+- [ ] T177 Update README.md test status documentation if needed
+
+**Checkpoint**: Feature complete - 687 stubs converted to implemented tests
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Phase 1 (Setup)**: No dependencies - can start immediately
+- **Phase 2 (High Coverage ASG)**: Depends on Phase 1 - 🎯 **MVP target**
+- **Phase 3 (Parser)**: Can start after Phase 1, parallel with Phase 2
+- **Phase 4 (ASG Medium)**: Can start after Phase 2
+- **Phase 5 (Cross-Cutting)**: Can start after Phase 4 (complex tests may need earlier ASG work)
+- **Phase 6 (Polish)**: Depends on all phases complete
+
+### User Story Independence
+
+- **US1 (Parser)**: Phase 3 only - can be completed independently
+- **US2 (ASG)**: Phases 2, 4, 5 - sequential dependency within ASG work
+- **US4 (Tracking)**: Integrated throughout - coverage matrix regenerated per-batch
+
+### Within Each Batch (FR-010 Workflow)
+
+1. Research (can parallel with other batch research tasks marked [P])
+2. Find examples
+3. Evaluate ASG quality
+4. Implement tests
+5. Fix implementation gaps (commit before tests)
+6. Run full suite and regenerate coverage matrix
+
+### Parallel Opportunities
+
+- All research tasks marked [P] can run in parallel
+- Parser Phase 3 can run in parallel with ASG Phase 2 (different test files)
+- Within large batches (B1-B5, C3-C6), sub-tasks are sequential per-file
+
+---
+
+## Implementation Strategy
+
+### MVP Scope
+
+**Phase 1 + Phase 2** constitute the MVP:
+- Setup tooling (4 tasks)
+- 7 high-coverage ASG batches (42 tasks)
+- **Total MVP**: 46 tasks, 49 stubs converted
+- **Value**: Maximizes regression protection by covering semantic_analyzer.py gaps first
+
+### Incremental Delivery
+
+Each batch completion provides value:
+- Reduced xfail count
+- Updated coverage matrix
+- Improved code coverage
+- More robust regression protection
+
+### Suggested Order for Single Developer
+
+1. **Phase 1**: Setup (T001-T004)
+2. **Phase 2**: High coverage ASG batches A1-A7 (T005-T046)
+3. **Phase 3**: Parser batches B1-B17 (T047-T093) - routine, high throughput
+4. **Phase 4**: ASG medium batches C1-C10 (T094-T126)
+5. **Phase 5**: Cross-cutting D1-D19 (T127-T170) - most complex, save for last
+6. **Phase 6**: Final verification (T171-T177)
+
+---
+
+## Success Command
+
+```bash
+# Final success verification (SC-002)
+uv run pytest tests/unit/parser/ tests/unit/asg/ tests/unit/analysis/ tests/unit/meta/ tests/unit/cross_cutting/ -v
+
+# Expected: ~1876 passed, 93 skipped, 0 xfailed
+```
