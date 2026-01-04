@@ -15,17 +15,27 @@ from m2py.asg.statements import MZAllocateStatement, MZDeallocateStatement
 class TestZallocateAsg:
     """ASG-level tests for ZALLOCATE/ZDEALLOCATE command (YDB)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZALLOCATE ASG")
-    def test_zallocate_asg_node(self, analyze_statement):
-        """ZALLOCATE creates proper ASG node."""
-        pytest.fail("Stub - implement test")
+    def test_zallocate_asg_node(self):
+        """ZALLOCATE creates proper ASG node with targets and lockop."""
+        stmt = analyze_first_command("za X")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZDEALLOCATE ASG")
-    def test_zdeallocate_asg_node(self, analyze_statement):
-        """ZDEALLOCATE creates proper ASG node."""
-        pytest.fail("Stub - implement test")
+        assert isinstance(stmt, MZAllocateStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0]["lockop"] == "+"
+        # Verify target is a variable
+        target = stmt.targets[0]["target"]
+        assert target.name == "X"
+
+    def test_zdeallocate_asg_node(self):
+        """ZDEALLOCATE creates proper ASG node with targets and lockop."""
+        stmt = analyze_first_command("zd X")
+
+        assert isinstance(stmt, MZDeallocateStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0]["lockop"] == "-"
+        # Verify target is a variable
+        target = stmt.targets[0]["target"]
+        assert target.name == "X"
 
 
 def analyze_first_command(line: str):

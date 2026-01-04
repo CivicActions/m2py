@@ -31,6 +31,7 @@ Command:
     ZWithdrawCommand |
     ZKillCommand |
     KillCommand |
+    ZHelpCommand |
     ZHaltCommand |
     HangCommand |
     HaltCommand |
@@ -518,6 +519,24 @@ HangCommand:
 // - H ;comment -> HALT (HANG fails - semicolon isn't a valid expression start)
 HaltCommand:
     /([Hh][Aa][Ll][Tt]|[Hh])(?![A-Za-z])/ postcond=Postcondition?
+;
+
+// ZHELP command: ZHE[LP] topic:library
+// GT.M/YottaDB extension: Displays help from help libraries
+// ZHELP must come before ZHALT in grammar because ZH is ZHALT abbreviation
+// Examples:
+//   zhelp - interactive help browser
+//   zhelp "WRITE" - help on WRITE command
+//   zhelp "MUPIP":"mupip" - help from specific library
+ZHelpCommand:
+    /([Zz][Hh][Ee][Ll][Pp]|[Zz][Hh][Ee])(?![A-Za-z])/ postcond=Postcondition? (WS args+=ZHelpArg[/,/])?
+;
+
+// ZHELP argument: topic[:library]
+// topic is an expression (often a string literal)
+// library is optional expression specifying which help library to use
+ZHelpArg:
+    topic=Expr (':' library=Expr)?
 ;
 
 // ZHALT command: ZH[ALT] exitcode

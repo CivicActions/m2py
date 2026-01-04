@@ -97,6 +97,8 @@ from m2py.asg.statements import (
     MZAllocateStatement,
     MZDeallocateStatement,
     MZHaltStatement,
+    MZHelpStatement,
+    MZHelpArg,
     MZLinkStatement,
     MZPrintStatement,
     MZPrintArg,
@@ -2238,6 +2240,31 @@ class SemanticAnalyzer:
 
         if hasattr(cmd, "exitcode") and cmd.exitcode:
             stmt.exitcode = self.analyze(cmd.exitcode, stmt)
+
+        return stmt
+
+    def _analyze_ZHelpCommand(self, cmd: Any, parent: Any) -> MZHelpStatement:
+        """Analyze ZHELP command into MZHelpStatement.
+
+        ZHELP [:pc] topic[:library],...
+        Displays help from help libraries.
+        """
+        stmt = MZHelpStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            for arg in cmd.args:
+                help_arg = MZHelpArg()
+                object.__setattr__(help_arg, "parent", stmt)
+
+                if hasattr(arg, "topic") and arg.topic:
+                    help_arg.topic = self.analyze(arg.topic, help_arg)
+
+                if hasattr(arg, "library") and arg.library:
+                    help_arg.library = self.analyze(arg.library, help_arg)
+
+                stmt.args.append(help_arg)
 
         return stmt
 

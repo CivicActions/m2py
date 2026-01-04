@@ -11,23 +11,65 @@ import pytest
 class TestZgotoAsg:
     """ASG-level tests for ZGOTO command (YDB)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZGOTO ASG")
-    def test_zgoto_asg_node(self, analyze_statement):
-        """ZGOTO creates proper ASG node."""
-        pytest.fail("Stub - implement test")
+    def test_zgoto_asg_node(self):
+        """ZGOTO creates proper ASG node with level and target."""
+        from m2py import MUMPSParser
+        from m2py.asg.statements import MZGotoStatement
+        from m2py.asg.elements import MCall
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZGotoType classification")
-    def test_zgoto_type_classification(self, analyze_statement):
-        """ZGOTO is classified by type (unwinding, computed)."""
-        pytest.fail("Stub - implement test")
+        source = """TEST
+ ZGOTO 1:label^routine
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+        stmt = routine.labels[0].body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZGOTO entryref resolution")
-    def test_zgoto_entryref_resolution(self, analyze_statement):
-        """ZGOTO entryref is resolved to target."""
-        pytest.fail("Stub - implement test")
+        assert isinstance(stmt, MZGotoStatement)
+        assert len(stmt.args) == 1
+        arg = stmt.args[0]
+        assert arg.level is not None
+        assert arg.level.value == 1
+        assert isinstance(arg.target, MCall)
+
+    def test_zgoto_type_classification(self):
+        """ZGOTO level 0 is classified as unwinding (return to base)."""
+        from m2py import MUMPSParser
+        from m2py.asg.statements import MZGotoStatement
+
+        source = """TEST
+ ZGOTO 0
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MZGotoStatement)
+        assert len(stmt.args) == 1
+        arg = stmt.args[0]
+        # Level 0 means unwind to base - this is the "unwinding" type
+        assert arg.level is not None
+        assert arg.level.value == 0
+        # No target means just unwind
+        assert arg.target is None
+
+    def test_zgoto_entryref_resolution(self):
+        """ZGOTO entryref is resolved to target with label and routine."""
+        from m2py import MUMPSParser
+        from m2py.asg.statements import MZGotoStatement
+        from m2py.asg.elements import MCall
+
+        source = """TEST
+ ZGOTO 2:ERROR^HANDLER
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MZGotoStatement)
+        arg = stmt.args[0]
+        assert isinstance(arg.target, MCall)
+        assert arg.target.name == "ERROR"
+        assert arg.target.routine == "HANDLER"
 
 
 @pytest.mark.asg

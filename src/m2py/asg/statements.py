@@ -427,6 +427,34 @@ class MZHaltStatement(MStatement):
 
 
 @dataclass
+class MZHelpArg:
+    """ZHELP argument: topic[:library].
+
+    Represents a single ZHELP argument with a topic expression
+    and optional library expression.
+    """
+
+    topic: Optional["MExpr"] = None  # Help topic expression
+    library: Optional["MExpr"] = None  # Optional help library expression
+
+
+@dataclass
+class MZHelpStatement(MStatement):
+    """ZHELP command - display help from help libraries.
+
+    GT.M/YottaDB extension. Displays help information:
+    ZHELP, ZHELP "topic", ZHELP "topic":"library"
+
+    Examples:
+      zhelp - interactive help browser
+      zhelp "WRITE" - help on WRITE command
+      zhelp "MUPIP":"mupip" - help from specific library
+    """
+
+    args: List["MZHelpArg"] = field(default_factory=list)
+
+
+@dataclass
 class MBreakStatement(MStatement):
     """BREAK command - enter debugger.
 
