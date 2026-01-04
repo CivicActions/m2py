@@ -83,14 +83,22 @@
 - All 5 stubs converted to passing tests
 - Final count: 3016 passed, 110 skipped, 906 xfailed
 
-### Batch A4: ASG Operators (10 stubs, Medium complexity)
+### Batch A4: ASG Operators (10 stubs, Medium complexity) ✅ COMPLETE
 
-- [ ] T023 [P] [US2] Research MUMPS spec §7.2 operators in mumps-reference/
-- [ ] T024 [US2] Find operator examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T025 [US2] Evaluate ASG quality for operators using validate_asg.py
-- [ ] T026 [US2] Implement 10 operator tests in tests/unit/asg/s7_expressions/test_s7_2_operators.py
-- [ ] T027 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T028 [US2] Run full test suite and regenerate coverage matrix
+- [X] T023 [P] [US2] Research MUMPS spec §7.2 operators in mumps-reference/
+- [X] T024 [US2] Find operator examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T025 [US2] Evaluate ASG quality for operators using validate_asg.py
+- [X] T026 [US2] Implement 10 operator tests in tests/unit/asg/s7_expressions/test_s7_2_operators.py
+- [X] T027 [US2] Fix any implementation gaps in src/m2py/
+- [X] T028 [US2] Run full test suite and regenerate coverage matrix
+
+**Additional work completed:**
+- Researched §7.2 from spec files: 1977__a107192-199, 1995__a901001, 1995__a101005
+- All operators produce correct ASG: MUnaryOp (unary), MBinaryOp (binary)
+- 19 stubs converted: 3 unary (+,-,'), 7 arithmetic (+,-,*,/,\,#,**), 1 string (_), 6 relational (=,<,>,[,],]]), 2 logical (&,!)
+- Left-to-right evaluation test verifies MUMPS precedence (1+2*3 = 9, not 7)
+- No implementation gaps - ASG already correct
+- Final count: 3036 passed, 110 skipped, 886 xfailed
 
 ### Batch A5: ASG Routine Body (7 stubs, High complexity)
 
