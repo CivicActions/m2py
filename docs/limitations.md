@@ -48,3 +48,28 @@ other implementations (InterSystems Caché/IRIS, MicroM, DSM, etc.) are not curr
 supported and will trigger the unknown command error.
 
 If you encounter a command that should be supported, please open an issue.
+
+## MWAPI (Windowing API) - Out of Scope
+
+The MUMPS Windowing API (MWAPI, defined in ANSI M X11.6) provides GUI capabilities
+through structured system variables and event processing. M2PY does **not** support
+MWAPI because:
+
+1. **Limited real-world usage** - Only 5 files in VA VistA reference MWAPI (`ZISG*.m`)
+2. **Separate standard** - MWAPI is a distinct specification (X11.6) from core MUMPS (X11.1)
+
+### Unsupported MWAPI Structured System Variables
+
+| SSVN | Description |
+|------|-------------|
+| `^$WINDOW` | Window definitions and properties |
+| `^$DISPLAY` | Display/screen information |
+| `^$EVENT` | Event information for GUI callbacks |
+
+### Unsupported MWAPI Commands
+
+Event processing commands (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER)
+listed above are also part of the MWAPI event model.
+
+**Note**: The parser *can* parse `^$EVENT` syntax (it's valid SSVN syntax), but the
+semantics require MWAPI runtime support which is not available in YottaDB.

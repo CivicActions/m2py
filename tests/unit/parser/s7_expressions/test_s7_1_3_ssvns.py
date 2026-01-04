@@ -17,12 +17,14 @@ SSVN_IN_SCOPE = [
     "^$DEVICE",
     "^$CHARACTER",
     "^$SYSTEM",
+    "^$LIBRARY",
 ]
 
-# Out-of-scope SSVNs per FR-055
+# Out-of-scope SSVNs - MWAPI (X11.6) requires windowing support not available in YottaDB
 SSVN_OUT_OF_SCOPE = [
-    "^$LIBRARY",
-    "^$EVENT",
+    "^$EVENT",  # MWAPI windowing events
+    "^$WINDOW",  # MWAPI window definitions
+    "^$DISPLAY",  # MWAPI display info
 ]
 
 
@@ -84,16 +86,17 @@ class TestSSVNsParsing:
 
 @pytest.mark.parser
 class TestSSVNsOutOfScope:
-    """Out-of-scope SSVNs (§7.1.3)."""
+    """Out-of-scope SSVNs - MWAPI (X11.6) requires windowing support.
 
-    @pytest.mark.skip(reason="Out of scope: ^$LIBRARY SSVN per FR-055")
-    def test_ssvn_library_out_of_scope(self):
-        """^$LIBRARY is out of scope."""
-        pass
+    YottaDB does not implement MWAPI. See docs/limitations.md for details.
+    """
 
-    @pytest.mark.skip(reason="Out of scope: ^$EVENT SSVN per FR-055")
+    @pytest.mark.skip(
+        reason="Out of scope: ^$EVENT requires MWAPI (X11.6) which YottaDB does not implement. "
+        "See docs/limitations.md#mwapi-windowing-api---out-of-scope"
+    )
     def test_ssvn_event_out_of_scope(self):
-        """^$EVENT is out of scope."""
+        """^$EVENT is out of scope - requires MWAPI windowing support."""
         pass
 
 

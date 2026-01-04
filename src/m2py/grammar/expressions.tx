@@ -302,10 +302,10 @@ StructuredSystemVariable:
 ;
 
 // Structured System Variable names (case-insensitive with abbreviations)
-// Per MUMPS 1995 spec: C[HARACTER], D[EVICE], E[VENT], G[LOBAL], J[OB], L[OCK], R[OUTINE], S[YSTEM]
-// Longer names must come first to prevent partial matching
+// Per MUMPS 1995 spec §7.1.3: C[HARACTER], D[EVICE], E[VENT], G[LOBAL], J[OB], LI[BRARY], L[OCK], R[OUTINE], S[YSTEM]
+// Longer names must come first to prevent partial matching (e.g., LIBRARY before LOCK)
 SSVNAME:
-    /[Cc][Hh][Aa][Rr][Aa][Cc][Tt][Ee][Rr]|[Rr][Oo][Uu][Tt][Ii][Nn][Ee]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Gg][Ll][Oo][Bb][Aa][Ll]|[Ee][Vv][Ee][Nn][Tt]|[Ll][Oo][Cc][Kk]|[Jj][Oo][Bb]|[CcDdEeGgJjLlRrSs]/
+    /[Cc][Hh][Aa][Rr][Aa][Cc][Tt][Ee][Rr]|[Ll][Ii][Bb][Rr][Aa][Rr][Yy]|[Rr][Oo][Uu][Tt][Ii][Nn][Ee]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Gg][Ll][Oo][Bb][Aa][Ll]|[Ee][Vv][Ee][Nn][Tt]|[Ll][Oo][Cc][Kk]|[Jj][Oo][Bb]|[CcDdEeGgJjLlRrSs][Ii]?/
 ;
 
 // Naked global reference (uses last global context)

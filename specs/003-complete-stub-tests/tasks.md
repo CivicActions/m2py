@@ -37,14 +37,21 @@
 
 **Independent Test**: `uv run pytest tests/unit/asg/ -v` shows Phase 2 tests passing
 
-### Batch A1: ASG SSVNs (8 stubs, Medium complexity)
+### Batch A1: ASG SSVNs (8 stubs, Medium complexity) ✅ COMPLETE
 
-- [ ] T005 [US2] Research MUMPS spec §7.1.3 SSVNs in mumps-reference/
-- [ ] T006 [US2] Find SSVN examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T007 [US2] Evaluate ASG quality for SSVNs using validate_asg.py
-- [ ] T008 [US2] Implement 8 SSVN tests in tests/unit/asg/s7_expressions/test_s7_1_3_ssvns.py
-- [ ] T009 [US2] Fix any implementation gaps in src/m2py/analysis/semantic_analyzer.py
-- [ ] T010 [US2] Run full test suite and regenerate coverage matrix
+- [X] T005 [US2] Research MUMPS spec §7.1.3 SSVNs in mumps-reference/
+- [X] T006 [US2] Find SSVN examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T007 [US2] Evaluate ASG quality for SSVNs using validate_asg.py
+- [X] T008 [US2] Implement 8 SSVN tests in tests/unit/asg/s7_expressions/test_s7_1_3_ssvns.py
+- [X] T009 [US2] Fix any implementation gaps in src/m2py/analysis/semantic_analyzer.py
+- [X] T010 [US2] Run full test suite and regenerate coverage matrix
+
+**Additional work completed:**
+- Fixed grammar to add ^$LIBRARY SSVN support (was missing from SSVNAME regex)
+- Added 2 new tests: test_ssvn_library, test_ssvn_library_abbreviated
+- Updated ^$EVENT skip reason with detailed MWAPI explanation
+- Documented MWAPI out-of-scope in docs/limitations.md
+- Final count: 10 passed, 1 skipped (^$EVENT - MWAPI)
 
 ### Batch A2: ASG Special Variables (10 stubs, Medium complexity)
 
