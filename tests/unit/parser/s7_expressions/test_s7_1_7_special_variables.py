@@ -127,109 +127,187 @@ class TestSpecialVariablesParsing:
 
 @pytest.mark.parser
 class TestSpecialVariablesStubs:
-    """Stub tests for Special Variables (§7.1.7) not yet covered."""
+    """Tests for Special Variables (§7.1.7) - full and abbreviated forms."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $DEVICE special variable")
     def test_device_variable(self, expr_metamodel):
         """$DEVICE parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$DEVICE", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "DEVICE"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ECODE special variable")
     def test_ecode_variable(self, expr_metamodel):
         """$ECODE parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$ECODE", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ECODE"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $EREF special variable")
     def test_eref_variable(self, expr_metamodel):
-        """$EREF parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$EREF parses correctly (§7.1.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ESTACK special variable")
+        Note: $EREF is implementation-specific (Caché/IRIS), but the parser
+        accepts it via the generic special variable pattern.
+        """
+        model = expr_metamodel.model_from_str("$EREF", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        # May parse as SpecialVariable or IntrinsicFunctionNoArgs depending on grammar
+        assert operand.__class__.__name__ in (
+            "SpecialVariable",
+            "IntrinsicFunctionNoArgs",
+        )
+        assert operand.name == "EREF"
+
     def test_estack_variable(self, expr_metamodel):
         """$ESTACK parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$ESTACK", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ESTACK"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ETRAP special variable")
     def test_etrap_variable(self, expr_metamodel):
         """$ETRAP parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$ETRAP", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "ETRAP"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $IOREFERENCE special variable")
     def test_ioreference_variable(self, expr_metamodel):
-        """$IOREFERENCE parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$IOREFERENCE parses correctly (§7.1.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $KEY special variable")
+        Note: $IOREFERENCE is implementation-specific, but the parser
+        accepts it via the generic special variable pattern.
+        """
+        model = expr_metamodel.model_from_str("$IOREFERENCE", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        # May parse as SpecialVariable or IntrinsicFunctionNoArgs
+        assert operand.__class__.__name__ in (
+            "SpecialVariable",
+            "IntrinsicFunctionNoArgs",
+        )
+        assert operand.name == "IOREFERENCE"
+
     def test_key_variable(self, expr_metamodel):
         """$KEY parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$KEY", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "KEY"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $PDISPLAY special variable")
     def test_pdisplay_variable(self, expr_metamodel):
-        """$PDISPLAY parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$PDISPLAY parses correctly (§7.1.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $PIOREFERENCE special variable")
+        Note: $PDISPLAY is implementation-specific (GT.M/YDB), but the parser
+        accepts it via the generic special variable pattern.
+        """
+        model = expr_metamodel.model_from_str("$PDISPLAY", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        # May parse as SpecialVariable or IntrinsicFunctionNoArgs
+        assert operand.__class__.__name__ in (
+            "SpecialVariable",
+            "IntrinsicFunctionNoArgs",
+        )
+        assert operand.name == "PDISPLAY"
+
     def test_pioreference_variable(self, expr_metamodel):
-        """$PIOREFERENCE parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$PIOREFERENCE parses correctly (§7.1.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $PRINCIPAL special variable")
+        Note: $PIOREFERENCE is implementation-specific, but the parser
+        accepts it via the generic special variable pattern.
+        """
+        model = expr_metamodel.model_from_str("$PIOREFERENCE", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        # May parse as SpecialVariable or IntrinsicFunctionNoArgs
+        assert operand.__class__.__name__ in (
+            "SpecialVariable",
+            "IntrinsicFunctionNoArgs",
+        )
+        assert operand.name == "PIOREFERENCE"
+
     def test_principal_variable(self, expr_metamodel):
         """$PRINCIPAL parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$PRINCIPAL", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "PRINCIPAL"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QUIT special variable")
     def test_quit_variable(self, expr_metamodel):
         """$QUIT parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$QUIT", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "QUIT"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $REFERENCE special variable")
     def test_reference_variable(self, expr_metamodel):
-        """$REFERENCE parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$REFERENCE parses correctly (§7.1.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $STACK special variable")
+        Note: $REFERENCE is implementation-specific (Caché), but the parser
+        accepts it via the generic special variable pattern.
+        """
+        model = expr_metamodel.model_from_str("$REFERENCE", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        # May parse as SpecialVariable or IntrinsicFunctionNoArgs
+        assert operand.__class__.__name__ in (
+            "SpecialVariable",
+            "IntrinsicFunctionNoArgs",
+        )
+        assert operand.name == "REFERENCE"
+
     def test_stack_variable(self, expr_metamodel):
-        """$STACK parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$STACK parses correctly (§7.1.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $SYSTEM special variable")
+        Note: As a special variable (no args), $STACK returns current stack level.
+        With args like $STACK(level), it becomes the $STACK function.
+        """
+        model = expr_metamodel.model_from_str("$STACK", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "STACK"
+
     def test_system_variable(self, expr_metamodel):
         """$SYSTEM parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$SYSTEM", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "SYSTEM"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TLEVEL special variable")
     def test_tlevel_variable(self, expr_metamodel):
         """$TLEVEL parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$TLEVEL", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "TLEVEL"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TRESTART special variable")
     def test_trestart_variable(self, expr_metamodel):
         """$TRESTART parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$TRESTART", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "TRESTART"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $Y special variable")
     def test_y_variable(self, expr_metamodel):
         """$Y parses correctly (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$Y", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "Y"
 
 
 @pytest.mark.parser

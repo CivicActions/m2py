@@ -245,13 +245,21 @@
 - This completes all §7.1.5 parser intrinsic function tests (B6+B7 = 24 stubs)
 - Final count: 3138 passed, 110 skipped, 792 xfailed
 
-### Batch B8-B9: Parser Special Variables (17 stubs, Low complexity)
+### Batch B8-B9: Parser Special Variables (17 stubs, Low complexity) ✅ COMPLETE
 
-- [ ] T060 [P] [US1] Research MUMPS spec §7.1.7 special variables in mumps-reference/
-- [ ] T061 [US1] Find special variable examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T062 [US1] Implement 10 special variable tests in tests/unit/parser/s7_expressions/test_s7_1_7_special_variables.py (B8)
-- [ ] T063 [US1] Implement 7 remaining special variable tests in same file (B9)
-- [ ] T064 [US1] Run full test suite and regenerate coverage matrix
+- [X] T060 [P] [US1] Research MUMPS spec §7.1.7 special variables in mumps-reference/
+- [X] T061 [US1] Find special variable examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T062 [US1] Implement 10 special variable tests in tests/unit/parser/s7_expressions/test_s7_1_7_special_variables.py (B8)
+- [X] T063 [US1] Implement 7 remaining special variable tests in same file (B9)
+- [X] T064 [US1] Run full test suite and regenerate coverage matrix
+
+**Additional work completed:**
+- All 17 stubs converted to passing tests
+- Standard special variables: $DEVICE, $ECODE, $ESTACK, $ETRAP, $KEY, $PRINCIPAL, $QUIT, $STACK, $SYSTEM, $TLEVEL, $TRESTART, $Y
+- Implementation-specific: $EREF, $IOREFERENCE, $PDISPLAY, $PIOREFERENCE, $REFERENCE (accept IntrinsicFunctionNoArgs or SpecialVariable)
+- Tests verify: SpecialVariable class with correct name attribute
+- No implementation gaps - parser correctly handles all special variables
+- Final count: 3155 passed, 110 skipped, 775 xfailed
 
 ### Batch B10: Parser Z-Commands (13 stubs, Low complexity)
 
