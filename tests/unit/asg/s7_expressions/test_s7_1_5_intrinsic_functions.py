@@ -5,42 +5,99 @@ Reference: MUMPS 1995 ANSI Standard, Section 7.1.5
 
 import pytest
 
-from m2py.analysis.semantic_analyzer import analyze_statement
+from m2py.analysis.semantic_analyzer import analyze_expression, analyze_statement
 from m2py.asg.expressions import (
     MActualParameter,
     MBinaryOp,
     MDeviceControl,
     MExternalFunction,
+    MGlobal,
     MIndirection,
     MIntrinsicFunction,
     MLiteral,
     MSelectArg,
+    MVariable,
 )
 from m2py.asg.statements import MSetStatement
-from m2py.parser.textx_classes import TextFunction
+from m2py.parser.textx_classes import GlobalVariable, LocalVariable, TextFunction
+from tests.helpers.parsing import parse_expression
 
 
 @pytest.mark.asg
 class TestIntrinsicFunctionsAnalysis:
     """ASG-level tests for intrinsic functions analysis (§7.1.5)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ASCII function")
-    def test_function_ascii(self, analyze_expression):
-        """$ASCII function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_ascii(self):
+        """$ASCII function is correctly analyzed (§7.1.5.1).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $CHAR function")
-    def test_function_char(self, analyze_expression):
-        """$CHAR function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        $ASCII returns the ASCII code of a character in a string.
+        - $A(expr) returns code of first character
+        - $A(expr,pos) returns code of character at position pos
+        """
+        # Basic form - single argument
+        expr = parse_expression('$A("Hello")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "A"
+        assert len(result.arguments) == 1
+        assert isinstance(result.arguments[0], MLiteral)
+        assert result.arguments[0].value == "Hello"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $DATA function")
-    def test_function_data(self, analyze_expression):
-        """$DATA function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        # Two-argument form with position
+        expr = parse_expression('$ASCII("Hello",3)')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "ASCII"
+        assert len(result.arguments) == 2
+        assert result.arguments[1].value == 3
+
+    def test_function_char(self):
+        """$CHAR function is correctly analyzed (§7.1.5.2).
+
+        $CHAR converts ASCII codes to characters.
+        Can take multiple arguments: $C(65,66,67) returns "ABC"
+        """
+        # Single argument
+        expr = parse_expression("$C(65)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "C"
+        assert len(result.arguments) == 1
+        assert isinstance(result.arguments[0], MLiteral)
+        assert result.arguments[0].value == 65
+
+        # Multiple arguments
+        expr = parse_expression("$CHAR(65,66,67)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "CHAR"
+        assert len(result.arguments) == 3
+
+    def test_function_data(self):
+        """$DATA function is correctly analyzed (§7.1.5.3).
+
+        $DATA returns information about variable existence and descendants.
+        Returns: 0=undefined, 1=defined no descendants, 10=undefined with descendants,
+                 11=defined with descendants
+        """
+        # Local variable
+        expr = parse_expression("$D(X)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "D"
+        assert len(result.arguments) == 1
+        assert isinstance(result.arguments[0], (MVariable, LocalVariable))
+        assert result.arguments[0].name == "X"
+
+        # Global variable with subscripts
+        expr = parse_expression("$DATA(^GLOBAL(1,2))")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "DATA"
+        assert len(result.arguments) == 1
+        arg = result.arguments[0]
+        assert isinstance(arg, (MGlobal, GlobalVariable))
+        assert arg.name == "GLOBAL"  # Global name without ^ prefix
 
     @pytest.mark.pre1995
     @pytest.mark.skip(reason="Deprecated: $DEXTRACT is pre-1995")
@@ -54,47 +111,170 @@ class TestIntrinsicFunctionsAnalysis:
         """$DPIECE function is deprecated (§7.1.5)."""
         pass
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $EXTRACT function")
-    def test_function_extract(self, analyze_expression):
-        """$EXTRACT function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_extract(self):
+        """$EXTRACT function is correctly analyzed (§7.1.5.4).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $FIND function")
-    def test_function_find(self, analyze_expression):
-        """$FIND function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        $EXTRACT returns substring(s) from a string.
+        - $E(expr) returns first character
+        - $E(expr,from) returns character at position from
+        - $E(expr,from,to) returns substring from position from to to
+        """
+        # Single argument - first character
+        expr = parse_expression('$E("Hello")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "E"
+        assert len(result.arguments) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $FNUMBER function")
-    def test_function_fnumber(self, analyze_expression):
-        """$FNUMBER function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        # Two arguments - character at position
+        expr = parse_expression("$EXTRACT(X,3)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "EXTRACT"
+        assert len(result.arguments) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $GET function")
-    def test_function_get(self, analyze_expression):
-        """$GET function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        # Three arguments - substring range
+        expr = parse_expression('$E("Hello",2,4)')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "E"
+        assert len(result.arguments) == 3
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $JUSTIFY function")
-    def test_function_justify(self, analyze_expression):
-        """$JUSTIFY function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_find(self):
+        """$FIND function is correctly analyzed (§7.1.5.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $LENGTH function")
-    def test_function_length(self, analyze_expression):
-        """$LENGTH function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        $FIND searches for a substring and returns position after match.
+        - $F(expr,substring) searches from beginning
+        - $F(expr,substring,start) searches from start position
+        """
+        # Two arguments
+        expr = parse_expression('$F("Hello","ll")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "F"
+        assert len(result.arguments) == 2
+        assert isinstance(result.arguments[1], MLiteral)
+        assert result.arguments[1].value == "ll"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $NAME function")
-    def test_function_name(self, analyze_expression):
-        """$NAME function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        # Three arguments with start position
+        expr = parse_expression('$FIND("Hello World","o",5)')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "FIND"
+        assert len(result.arguments) == 3
+
+    def test_function_fnumber(self):
+        """$FNUMBER function is correctly analyzed (§7.1.5.6).
+
+        $FNUMBER formats a number according to formatting codes.
+        - $FN(numexpr,code) formats number
+        - $FN(numexpr,code,decimal) formats with specified decimal places
+        """
+        # Two arguments
+        expr = parse_expression('$FN(1234.5,",")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "FN"
+        assert len(result.arguments) == 2
+
+        # Three arguments with decimal places
+        expr = parse_expression('$FNUMBER(1234.567,",",2)')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "FNUMBER"
+        assert len(result.arguments) == 3
+
+    def test_function_get(self):
+        """$GET function is correctly analyzed (§7.1.5.7).
+
+        $GET returns a variable value or default if undefined.
+        - $G(glvn) returns value or empty string
+        - $G(glvn,default) returns value or default expression
+        """
+        # Single argument - no default
+        expr = parse_expression("$G(X)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "G"
+        assert len(result.arguments) == 1
+        assert isinstance(result.arguments[0], MVariable)
+
+        # Two arguments - with default
+        expr = parse_expression('$GET(^DATA(1),"N/A")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "GET"
+        assert len(result.arguments) == 2
+        assert isinstance(result.arguments[1], MLiteral)
+        assert result.arguments[1].value == "N/A"
+
+    def test_function_justify(self):
+        """$JUSTIFY function is correctly analyzed (§7.1.5.8).
+
+        $JUSTIFY right-justifies a string in a field.
+        - $J(expr,width) right-justifies in field of width
+        - $J(numexpr,width,decimal) also formats decimal places
+        """
+        # Two arguments - string justification
+        expr = parse_expression('$J("Hi",10)')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "J"
+        assert len(result.arguments) == 2
+
+        # Three arguments - numeric formatting
+        expr = parse_expression("$JUSTIFY(123.456,10,2)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "JUSTIFY"
+        assert len(result.arguments) == 3
+
+    def test_function_length(self):
+        """$LENGTH function is correctly analyzed (§7.1.5.9).
+
+        $LENGTH returns length of a string or count of delimited pieces.
+        - $L(expr) returns character count
+        - $L(expr,delim) returns piece count
+        """
+        # Single argument - character count
+        expr = parse_expression('$L("Hello")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "L"
+        assert len(result.arguments) == 1
+
+        # Two arguments - piece count
+        expr = parse_expression('$LENGTH("A:B:C",":")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "LENGTH"
+        assert len(result.arguments) == 2
+        assert isinstance(result.arguments[1], MLiteral)
+        assert result.arguments[1].value == ":"
+
+    def test_function_name(self):
+        """$NAME function is correctly analyzed (§7.1.5.10).
+
+        $NAME returns the name of a variable as a string.
+        - $NA(glvn) returns full name
+        - $NA(glvn,depth) returns name with subscripts up to depth
+        """
+        # Single argument
+        expr = parse_expression("$NA(^X(1,2,3))")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "NA"
+        assert len(result.arguments) == 1
+        assert isinstance(result.arguments[0], (MGlobal, GlobalVariable))
+        assert result.arguments[0].name == "X"  # Global name without ^ prefix
+
+        # Two arguments - with depth limit
+        expr = parse_expression("$NAME(^X(1,2,3),2)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "NAME"
+        assert len(result.arguments) == 2
+        assert result.arguments[1].value == 2
 
     @pytest.mark.pre1995
     @pytest.mark.skip(reason="Deprecated: $NEXT is pre-1995, use $ORDER")
