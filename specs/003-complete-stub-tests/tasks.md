@@ -409,15 +409,32 @@
 - Added MUnaryOp import to test file
 - Final count: 3278 passed, 110 skipped, 651 xfailed
 
-### Batch C3-C6: ASG Math Library Functions (57 stubs, Low complexity)
+### Batch C3-C6: ASG Math Library Functions (57 stubs, Low complexity) ✅
 
-- [ ] T100 [P] [US2] Research MUMPS spec §7.1.6.5 math library semantics in mumps-reference/
-- [ ] T101 [US2] Evaluate ASG quality for math functions using validate_asg.py
-- [ ] T102 [US2] Implement 15 math lib ASG tests in tests/unit/asg/s7_expressions/test_s7_1_6_5_library_functions_math.py (C3)
-- [ ] T103 [US2] Implement 15 more math lib ASG tests in same file (C4)
-- [ ] T104 [US2] Implement 15 more math lib ASG tests in same file (C5)
-- [ ] T105 [US2] Implement 12 remaining math lib ASG tests in same file (C6)
-- [ ] T106 [US2] Run full test suite and regenerate coverage matrix
+- [X] T100 [P] [US2] Research MUMPS spec §7.1.6.5 math library semantics in mumps-reference/
+- [X] T101 [US2] Evaluate ASG quality for math functions using validate_asg.py
+- [X] T102 [US2] Implement 15 math lib ASG tests in tests/unit/asg/s7_expressions/test_s7_1_6_5_library_functions_math.py (C3)
+- [X] T103 [US2] Implement 15 more math lib ASG tests in same file (C4)
+- [X] T104 [US2] Implement 15 more math lib ASG tests in same file (C5)
+- [X] T105 [US2] Implement 12 remaining math lib ASG tests in same file (C6)
+- [X] T106 [US2] Run full test suite and regenerate coverage matrix
+
+**Completion Notes (C3-C6)**:
+- All 57 math library function ASG tests implemented in single batch
+- Functions use $$%FUNC^MATH extrinsic function call syntax
+- All parse to ExtrinsicFunction with:
+  - label = function name (e.g., '%SIN', '%COS', '%MTXADD')
+  - routine = 'MATH'
+  - arguments = list of MActualParameter objects
+- Test categories:
+  - Trigonometric (12): SIN, COS, TAN, COT, SEC, CSC + hyperbolic variants
+  - Inverse Trig (10): ARCSIN, ARCCOS, ARCTAN, ARCCOT, ARCSEC, ARCCSC + hyperbolic
+  - Exponential (8): EXP, LOG, LOG10, E, PI, SQRT, SIGN, ABS
+  - Angle Conversion (4): DEGRAD, RADDEG, DECDMS, DMSDEC
+  - Complex Numbers (12): COMPLEX, CONJUG, CABS, CADD, CSUB, CMUL, CDIV, CEXP, CLOG, CPOWER, CSIN, CCOS
+  - Matrix Operations (11): MTXADD, MTXSUB, MTXMUL, MTXSCA, MTXCOPY, MTXTRP, MTXDET, MTXINV, MTXCOF, MTXEQU, MTXUNIT
+- Added verify_math_function helper for consistent test assertions
+- Final count: 3335 passed, 110 skipped, 594 xfailed
 
 ### Batch C7: ASG Expressions Misc (15 stubs, Medium complexity)
 
