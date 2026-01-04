@@ -116,8 +116,27 @@ class TestReadCommandAnalysis:
         """READ format controls (!, ?, #) are analyzed (§8.2.17)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: READ single character")
-    def test_read_single_character(self, analyze_routine):
+    def test_read_single_character(self):
         """READ *X single character is analyzed (§8.2.17)."""
-        pytest.fail("Stub - implement test")
+        cmds = parse_commands_from_line("R *X")
+        assert len(cmds) == 1
+
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+
+        assert isinstance(stmt, MReadStatement)
+        assert len(stmt.arguments) == 1
+
+        read_target = stmt.arguments[0]
+        assert isinstance(read_target, MReadTarget)
+        assert read_target.is_char_read is True
+        assert isinstance(read_target.variable, MVariable)
+        assert read_target.variable.name == "X"
+
+        # Single char read with timeout
+        cmds2 = parse_commands_from_line("R *X:5")
+        stmt2 = analyzer.analyze(cmds2[0], None)
+        assert isinstance(stmt2, MReadStatement)
+        read_target2 = stmt2.arguments[0]
+        assert read_target2.is_char_read is True
+        assert read_target2.timeout is not None

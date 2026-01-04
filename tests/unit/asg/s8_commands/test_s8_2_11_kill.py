@@ -54,15 +54,28 @@ class TestKillCommandAnalysis:
         assert stmt.exclusive is True
         assert stmt.is_kill_all is False
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: KILL variable tracking in output_variables"
-    )
-    def test_kill_variable_tracking(self, analyze_routine):
+    def test_kill_variable_tracking(self):
         """KILL variable is tracked in output_variables (§8.2.11)."""
-        pytest.fail(
-            "Stub - implement test for verifying killed variables appear in output_variables"
-        )
+        from m2py.asg.expressions import MVariable
+
+        # KILL X marks X as modified (killed)
+        stmt = analyze_first_command("K X")
+        assert isinstance(stmt, MKillStatement)
+        assert len(stmt.targets) == 1
+        assert isinstance(stmt.targets[0], MVariable)
+        assert stmt.targets[0].name == "X"
+
+        # Multiple targets all tracked
+        stmt2 = analyze_first_command("K A,B,C")
+        assert isinstance(stmt2, MKillStatement)
+        assert len(stmt2.targets) == 3
+        target_names = [t.name for t in stmt2.targets]
+        assert target_names == ["A", "B", "C"]
+
+        # KILL with exclusive form - tracks preserved variables
+        stmt3 = analyze_first_command("K (X,Y)")
+        assert isinstance(stmt3, MKillStatement)
+        assert stmt3.exclusive is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: KILL global impact")

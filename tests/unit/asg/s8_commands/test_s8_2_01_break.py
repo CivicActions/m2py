@@ -19,11 +19,28 @@ class TestBreakCommandAnalysis:
         stmt = analyze_first_command("B")
         assert isinstance(stmt, MBreakStatement)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: BREAK with postcondition")
-    def test_break_with_postcondition(self, analyze_routine):
+    def test_break_with_postcondition(self):
         """BREAK:condition postcondition is analyzed (§8.2.1)."""
-        pytest.fail("Stub - implement test")
+        # BREAK with postcondition
+        stmt = analyze_first_command("B:X")
+        assert isinstance(stmt, MBreakStatement)
+        assert stmt.postcondition is not None
+
+        # Postcondition should be a variable reference
+        from m2py.asg.expressions import MVariable
+
+        assert isinstance(stmt.postcondition, MVariable)
+        assert stmt.postcondition.name == "X"
+
+        # BREAK with expression postcondition
+        stmt = analyze_first_command("B:X>1")
+        assert isinstance(stmt, MBreakStatement)
+        assert stmt.postcondition is not None
+
+        from m2py.asg.expressions import MBinaryOp
+
+        assert isinstance(stmt.postcondition, MBinaryOp)
+        assert stmt.postcondition.operator == ">"
 
 
 def analyze_first_command(line: str):

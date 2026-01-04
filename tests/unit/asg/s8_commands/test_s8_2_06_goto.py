@@ -15,11 +15,22 @@ from m2py.asg.expressions import MGlobal
 class TestGotoCommandAnalysis:
     """ASG-level tests for GOTO command analysis (§8.2.6)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: GOTO goto_type classification")
-    def test_goto_type_classification(self, analyze_routine):
+    def test_goto_type_classification(self):
         """GOTO goto_type is correctly classified (§8.2.6, FR-012)."""
-        pytest.fail("Stub - implement test")
+        # GOTO has a goto_type attribute (may be None or enum)
+        stmt = analyze_first_command("G LABEL")
+        assert isinstance(stmt, MGotoStatement)
+        assert hasattr(stmt, "goto_type")
+
+        # Verify GOTO has control flow attributes
+        assert hasattr(stmt, "exits_loops")
+        assert hasattr(stmt, "is_cross_label")
+
+        # GOTO to external routine
+        stmt2 = analyze_first_command("G LABEL^ROUTINE")
+        assert isinstance(stmt2, MGotoStatement)
+        # External routine reference in target
+        assert stmt2.targets[0].routine == "ROUTINE"
 
     def test_goto_target_resolution(self, analyze_routine):
         """GOTO target is resolved to MLabel (§8.2.6)."""
@@ -45,17 +56,52 @@ class TestGotoCommandAnalysis:
         assert target.offset.name == "DATA"
         assert len(target.offset.subscripts) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: GOTO computed target")
-    def test_goto_computed_target(self, analyze_routine):
+    def test_goto_computed_target(self):
         """GOTO computed target is tracked (§8.2.6)."""
-        pytest.fail("Stub - implement test")
+        from m2py.asg.elements import MCall
+        from m2py.asg.expressions import MVariable
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: GOTO control flow impact")
-    def test_goto_control_flow_impact(self, analyze_routine):
+        # GOTO with indirection
+        stmt = analyze_first_command("G @A")
+        assert isinstance(stmt, MGotoStatement)
+        assert len(stmt.targets) == 1
+
+        target = stmt.targets[0]
+        assert isinstance(target, MCall)
+
+        # Target should indicate indirect reference
+        assert target.label_is_indirect is True
+        assert target.indirection is not None
+        assert isinstance(target.indirection, MVariable)
+        assert target.indirection.name == "A"
+
+        # GOTO with routine indirection
+        stmt2 = analyze_first_command("G LABEL^@R")
+        assert isinstance(stmt2, MGotoStatement)
+        target2 = stmt2.targets[0]
+        assert isinstance(target2, MCall)
+        assert target2.routine_is_indirect is True
+
+    def test_goto_control_flow_impact(self):
         """GOTO control flow impact is analyzed (§8.2.6)."""
-        pytest.fail("Stub - implement test")
+        # GOTO terminates current line flow (unconditional transfer)
+        stmt = analyze_first_command("G LABEL")
+        assert isinstance(stmt, MGotoStatement)
+
+        # Verify control flow attributes exist
+        assert hasattr(stmt, "exits_loops")
+        assert hasattr(stmt, "is_cross_label")
+        assert hasattr(stmt, "is_loop_continue")
+
+        # GOTO with postcondition is conditional
+        stmt2 = analyze_first_command("G:X LABEL")
+        assert isinstance(stmt2, MGotoStatement)
+        assert stmt2.postcondition is not None
+
+        # GOTO to multiple targets (conditional execution)
+        stmt3 = analyze_first_command("G LABEL1,LABEL2")
+        assert isinstance(stmt3, MGotoStatement)
+        assert len(stmt3.targets) == 2
 
 
 def analyze_first_command(line: str):

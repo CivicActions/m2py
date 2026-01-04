@@ -55,11 +55,32 @@ class TestDoCommandAnalysis:
         # SET Y=2 should be outside DO block
         assert isinstance(routine.labels[0].body.statements[1], MSetStatement)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: MCall creation")
-    def test_mcall_creation(self, analyze_routine):
+    def test_mcall_creation(self):
         """MCall nodes are created with target links (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        from m2py.asg.elements import MCall
+
+        # Simple DO creates MCall target
+        stmt = analyze_first_command("D LABEL")
+        assert isinstance(stmt, MDoStatement)
+        assert len(stmt.targets) == 1
+        assert isinstance(stmt.targets[0], MCall)
+        assert stmt.targets[0].name == "LABEL"
+
+        # DO with routine creates MCall with routine reference
+        stmt = analyze_first_command("D LABEL^ROUTINE")
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+        assert isinstance(target, MCall)
+        assert target.name == "LABEL"
+        assert target.routine == "ROUTINE"
+
+        # DO with arguments creates MCall with arguments
+        stmt = analyze_first_command("D FUNC(1,2,3)")
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+        assert isinstance(target, MCall)
+        assert target.name == "FUNC"
+        assert len(target.arguments) == 3
 
     def test_external_routine_reference(self):
         """External routine references are tracked (§8.2.3)."""

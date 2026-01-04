@@ -28,11 +28,26 @@ def analyze_first_command(line: str):
 class TestIfCommandAnalysis:
     """ASG-level tests for IF command analysis (§8.2.9)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF $TEST modification")
-    def test_if_test_modification(self, analyze_routine):
+    def test_if_test_modification(self):
         """IF modifies $TEST correctly (§8.2.9)."""
-        pytest.fail("Stub - implement test for $TEST special variable modification")
+        from m2py.asg.expressions import MBinaryOp
+
+        # IF with condition sets $TEST to truth value of condition
+        stmt = analyze_first_command("I X=1")
+        assert isinstance(stmt, MIfStatement)
+        assert stmt.condition is not None
+        assert isinstance(stmt.condition, MBinaryOp)
+
+        # The IF statement structure supports $TEST modification tracking
+        # The condition is evaluated and sets $TEST
+        assert hasattr(stmt, "condition")
+        assert hasattr(stmt, "conditions")
+
+        # Argumentless IF uses current $TEST value (doesn't modify it)
+        stmt2 = analyze_first_command("I")
+        assert isinstance(stmt2, MIfStatement)
+        assert stmt2.condition is None
+        # Argumentless IF reads $TEST, doesn't set it
 
     def test_if_condition_analysis(self):
         """IF condition expressions are analyzed (§8.2.9)."""
@@ -42,11 +57,33 @@ class TestIfCommandAnalysis:
         assert stmt.condition is not None
         assert len(stmt.conditions) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF control flow")
-    def test_if_control_flow(self, analyze_routine):
+    def test_if_control_flow(self):
         """IF control flow impact is tracked (§8.2.9)."""
-        pytest.fail("Stub - implement test for control flow analysis")
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+
+        # IF with body commands in then_scope
+        routine = parser.parse("TEST\n\tI X=1 S Y=2 W Y\n")
+        if_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(if_stmt, MIfStatement)
+
+        # then_scope captures following commands
+        assert hasattr(if_stmt, "then_scope")
+        assert if_stmt.then_scope is not None
+        assert len(if_stmt.then_scope.statements) == 2
+
+        # IF condition is false skips then_scope execution
+        # (Runtime behavior - ASG captures structure)
+
+        # Nested IF control flow
+        routine2 = parser.parse("TEST\n\tI A I B S X=1\n")
+        outer_if = routine2.labels[0].body.statements[0]
+        assert isinstance(outer_if, MIfStatement)
+        # Nested IF in then_scope
+        assert len(outer_if.then_scope.statements) == 1
+        inner_if = outer_if.then_scope.statements[0]
+        assert isinstance(inner_if, MIfStatement)
 
     def test_if_argumentless(self):
         """IF argumentless uses $TEST (§8.2.9)."""

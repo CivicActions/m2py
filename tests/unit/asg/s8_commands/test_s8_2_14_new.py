@@ -43,11 +43,22 @@ class TestNewCommandAnalysis:
             "Stub - implement test for verifying NEW affects variable scope tracking"
         )
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW exclusive form")
-    def test_new_exclusive_form(self, analyze_routine):
+    def test_new_exclusive_form(self):
         """NEW (X,Y) exclusive form is analyzed (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+        # NEW exclusive form preserves only listed variables
+        stmt = analyze_first_command("N (X,Y)")
+        assert isinstance(stmt, MNewStatement)
+        assert stmt.exclusive is True
+
+        # In exclusive form, variables list may be empty (preserved in except_list)
+        # The except_list contains variables to NOT new
+        assert hasattr(stmt, "except_list")
+
+        # Regular NEW is not exclusive
+        stmt2 = analyze_first_command("N A,B")
+        assert isinstance(stmt2, MNewStatement)
+        assert stmt2.exclusive is False
+        assert len(stmt2.variables) == 2
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: NEW scope lifetime")
