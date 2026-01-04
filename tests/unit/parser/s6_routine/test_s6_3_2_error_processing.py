@@ -7,6 +7,9 @@ Reference: MUMPS 1995 ANSI Standard, Section 6.3.2
 
 import pytest
 
+from m2py.asg import MSetStatement
+from m2py.parser.textx_classes import SpecialVariable
+
 
 @pytest.mark.parser
 class TestErrorProcessingParsing:
@@ -15,11 +18,15 @@ class TestErrorProcessingParsing:
     Error processing involves $ETRAP, $ECODE, and related mechanisms.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ETRAP setting")
     def test_etrap_setting(self, parse_line):
         """SET $ETRAP=value parses correctly (§6.3.2)."""
-        pytest.fail("Stub - implement test")
+        result = parse_line(' S $ETRAP="D ERR"')
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MSetStatement)
+        target = stmt.assignments[0].target
+        assert isinstance(target, SpecialVariable)
+        assert target.name == "ETRAP"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: $ECODE reference")

@@ -7,6 +7,9 @@ Reference: MUMPS 1995 ANSI Standard, Section 6.3.1
 
 import pytest
 
+from m2py.asg import IndirectionType
+from m2py.parser.textx_classes import Indirection
+
 
 @pytest.mark.parser
 class TestGenericIndirectionParsing:
@@ -15,11 +18,18 @@ class TestGenericIndirectionParsing:
     The @ operator provides indirection - runtime evaluation of names.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: name indirection")
     def test_name_indirection(self, parse_line):
-        """Name indirection @var parses correctly (§6.3.1)."""
-        pytest.fail("Stub - implement test")
+        """Name indirection @var parses correctly (§6.3.1).
+
+        Name indirection: @VAR evaluates VAR to get a variable name.
+        """
+        result = parse_line(" S @VAR=1")
+        assert result is not None
+        # Get the SET statement target
+        set_stmt = result.labels[0].body.statements[0]
+        target = set_stmt.assignments[0].target
+        assert isinstance(target, Indirection)
+        assert target.indirection_type == IndirectionType.NAME
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: subscript indirection")

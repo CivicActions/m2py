@@ -323,14 +323,22 @@
 - test_s7_2_5_pattern_match.py: 2 tests (basic pattern, pattern codes)
 - Removed invalid stub: extrinsic function label+offset (not supported per MUMPS §8.1.6.2)
 - Updated docs/grammar_overview.md to clarify extrinsic functions use labelref (no offset)
-- Final count: 3213 passed, 110 skipped, 717 xfailed
+- Final count: 3212 passed, 110 skipped, 717 xfailed
 
 ### Batch B15: Parser Routine Misc (10 stubs, Medium complexity)
 
-- [ ] T082 [P] [US1] Research MUMPS spec §6 routine structure in mumps-reference/
-- [ ] T083 [US1] Find routine structure examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T084 [US1] Implement 10 routine structure tests in tests/unit/parser/s6_routine/
-- [ ] T085 [US1] Run full test suite and regenerate coverage matrix
+- [X] T082 [P] [US1] Research MUMPS spec §6 routine structure in mumps-reference/
+- [X] T083 [US1] Find routine structure examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T084 [US1] Implement 10 routine structure tests in tests/unit/parser/s6_routine/
+- [X] T085 [US1] Run full test suite and regenerate coverage matrix
+
+**Completion Notes B15:**
+- test_s6_1_routine_head.py: 3 tests (basic, with_label, name_validation)
+- test_s6_2_routine_body.py: 4 tests (level_line, formal_line, label, label_separator)
+- test_s6_3_1_indirection.py: 1 test (name_indirection)
+- test_s6_3_1_transaction.py: 1 test (tstart_basic)
+- test_s6_3_2_error_processing.py: 1 test (etrap_setting)
+- Final count: 3222 passed, 110 skipped, 707 xfailed
 
 ### Batch B16: Parser Commands Misc (15 stubs, Low complexity)
 

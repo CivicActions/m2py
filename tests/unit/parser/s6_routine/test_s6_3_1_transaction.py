@@ -7,6 +7,8 @@ Reference: MUMPS 1995 ANSI Standard, Section 6.3.1
 
 import pytest
 
+from m2py.asg import MTStartStatement
+
 
 @pytest.mark.parser
 class TestTransactionProcessingParsing:
@@ -16,11 +18,12 @@ class TestTransactionProcessingParsing:
     Cross-references: test_s8_2_19_tcommit.py, test_s8_2_22_tstart.py, etc.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: TSTART basic form")
     def test_tstart_basic(self, parse_line):
         """TSTART parses correctly (§6.3.1 Transaction processing)."""
-        pytest.fail("Stub - implement test")
+        result = parse_line(" TSTART")
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MTStartStatement)
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: nested transactions")
