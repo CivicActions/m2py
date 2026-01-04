@@ -355,12 +355,18 @@
 - test_s8_2_26_xecute.py: 4 tests (expression, with_postcondition, multiple, abbreviated)
 - Final count: 3247 passed, 110 skipped, 682 xfailed
 
-### Batch B17: Parser Character Set (10 stubs, Low complexity)
+### Batch B17: Parser Character Set (10 stubs, Low complexity) ✅
 
-- [ ] T090 [P] [US1] Research MUMPS spec §9 character set in mumps-reference/
-- [ ] T091 [US1] Find character set examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T092 [US1] Implement 10 character set tests in tests/unit/parser/s9_charset/
-- [ ] T093 [US1] Run full test suite and regenerate coverage matrix
+- [X] T090 [P] [US1] Research MUMPS spec §9 character set in mumps-reference/
+- [X] T091 [US1] Find character set examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T092 [US1] Implement 10 character set tests in tests/unit/parser/s9_charset/
+- [X] T093 [US1] Run full test suite and regenerate coverage matrix
+
+**Completion Notes (B17)**:
+- Commit: `1b40466` - test(parser): Complete character set tests (B17)
+- test_s9_1_definitions.py: 4 tests (ascii_characters, control_characters, graphic_characters, special_characters)
+- test_s9_character_set.py: 6 tests (graphic_characters, ascii_subset, character_collation, control_characters, char_function_values, ascii_function_values)
+- Final count: 3257 passed, 110 skipped, 672 xfailed
 
 **Checkpoint**: Phase 3 complete - 172 parser stubs converted, parser coverage at 95%+
 
