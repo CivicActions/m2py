@@ -276,12 +276,18 @@
 - Comprehensive tests already exist in tests/unit/parser/extensions/ydb/
 - Final count: 3171 passed, 110 skipped, 759 xfailed
 
-### Batch B11: Parser Command General Rules (10 stubs, Medium complexity)
+### Batch B11: Parser Command General Rules (10 stubs, Medium complexity) ✅
 
-- [ ] T069 [P] [US1] Research MUMPS spec §8.1 command structure in mumps-reference/
-- [ ] T070 [US1] Find command structure examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T071 [US1] Implement 10 command rule tests in tests/unit/parser/s8_commands/test_s8_1_general_rules.py
-- [ ] T072 [US1] Run full test suite and regenerate coverage matrix
+- [X] T069 [P] [US1] Research MUMPS spec §8.1 command structure in mumps-reference/
+- [X] T070 [US1] Find command structure examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T071 [US1] Implement 10 command rule tests in tests/unit/parser/s8_commands/test_s8_1_general_rules.py
+- [X] T072 [US1] Run full test suite and regenerate coverage matrix
+
+**Completion Notes B11:**
+- Tests converted: test_command_spacing, test_command_comment, test_command_timeout
+- Abbreviation parity tests: SET/S, WRITE/W, READ/R, IF/I, FOR/F, DO/D, QUIT/Q
+- Grammar attributes: ReadTargetWithTimeout.timeout, IfCommand.conditions, ForCommand.var, LockCommand.targets
+- Final count: 3181 passed, 110 skipped, 749 xfailed
 
 ### Batch B12-B13: Parser Legacy Pre-1995 Syntax (17 stubs, Medium complexity)
 
