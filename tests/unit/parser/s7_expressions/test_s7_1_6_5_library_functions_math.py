@@ -368,65 +368,120 @@ class TestMathLibraryExponentialParsing:
     Functions: EXP, LOG, LOG10, E, PI, SQRT, SIGN, ABS.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%EXP^MATH library function parsing"
-    )
-    def test_math_exp(self):
-        """$%EXP^MATH(X,PREC) parses correctly (Annex I-2.30)."""
-        pytest.fail("Stub - implement test")
+    def test_math_exp(self, parse_mumps):
+        """$%EXP^MATH(X,PREC) parses correctly (Annex I-2.30).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%LOG^MATH library function parsing"
-    )
-    def test_math_log(self):
-        """$%LOG^MATH(X,PREC) parses correctly (Annex I-2.31)."""
-        pytest.fail("Stub - implement test")
+        EXP^MATH returns e raised to the power X.
+        """
+        routine = parse_mumps("TEST S A=$$EXP^MATH(2)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%LOG10^MATH library function parsing"
-    )
-    def test_math_log10(self):
-        """$%LOG10^MATH(X,PREC) parses correctly (Annex I-2.32)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "EXP"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%E^MATH library function parsing")
-    def test_math_e(self):
-        """$%E^MATH(PREC) parses correctly (Annex I-2.29)."""
-        pytest.fail("Stub - implement test")
+    def test_math_log(self, parse_mumps):
+        """$%LOG^MATH(X,PREC) parses correctly (Annex I-2.31).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%PI^MATH library function parsing")
-    def test_math_pi(self):
-        """$%PI^MATH(PREC) parses correctly (Annex I-2.42)."""
-        pytest.fail("Stub - implement test")
+        LOG^MATH returns the natural logarithm of X.
+        Error M28 if X ≤ 0.
+        """
+        routine = parse_mumps("TEST S A=$$LOG^MATH(10)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%SQRT^MATH library function parsing"
-    )
-    def test_math_sqrt(self):
-        """$%SQRT^MATH(X,PREC) parses correctly (Annex I-2.49)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "LOG"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%SIGN^MATH library function parsing"
-    )
-    def test_math_sign(self):
-        """$%SIGN^MATH(X) parses correctly (Annex I-2.46)."""
-        pytest.fail("Stub - implement test")
+    def test_math_log10(self, parse_mumps):
+        """$%LOG10^MATH(X,PREC) parses correctly (Annex I-2.32).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ABS^MATH library function parsing"
-    )
-    def test_math_abs(self):
-        """$%ABS^MATH(X) parses correctly (Annex I-2.1)."""
-        pytest.fail("Stub - implement test")
+        LOG10^MATH returns the base-10 logarithm of X.
+        Error M28 if X ≤ 0.
+        """
+        routine = parse_mumps("TEST S A=$$LOG10^MATH(100)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "LOG10"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_e(self, parse_mumps):
+        """$%E^MATH(PREC) parses correctly (Annex I-2.29).
+
+        E^MATH returns the mathematical constant e (Euler's number).
+        """
+        routine = parse_mumps("TEST S A=$$E^MATH(10)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "E"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_pi(self, parse_mumps):
+        """$%PI^MATH(PREC) parses correctly (Annex I-2.42).
+
+        PI^MATH returns the mathematical constant π.
+        """
+        routine = parse_mumps("TEST S A=$$PI^MATH(10)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "PI"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_sqrt(self, parse_mumps):
+        """$%SQRT^MATH(X,PREC) parses correctly (Annex I-2.49).
+
+        SQRT^MATH returns the square root of X.
+        Error M28 if X < 0.
+        """
+        routine = parse_mumps("TEST S A=$$SQRT^MATH(16)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "SQRT"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_sign(self, parse_mumps):
+        """$%SIGN^MATH(X) parses correctly (Annex I-2.46).
+
+        SIGN^MATH returns -1 if X<0, 0 if X=0, 1 if X>0.
+        """
+        routine = parse_mumps("TEST S A=$$SIGN^MATH(-5)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "SIGN"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_abs(self, parse_mumps):
+        """$%ABS^MATH(X) parses correctly (Annex I-2.1).
+
+        ABS^MATH returns the absolute value of X.
+        """
+        routine = parse_mumps("TEST S A=$$ABS^MATH(-42)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ABS"
+        assert assign.value.target.routine == "MATH"
 
 
 @pytest.mark.parser

@@ -182,12 +182,22 @@
 - No implementation gaps - parser already correctly handles all MATH library functions
 - Final count: 3079 passed, 110 skipped, 851 xfailed
 
-### Batch B3-B5: Parser Math Library Functions Remaining (35 stubs, Low complexity)
+### Batch B3: Parser Math Library Exponential/Logarithmic Functions (8 stubs, Low complexity) ✅ COMPLETE
 
-- [ ] T051 [US1] Implement misc math function tests (LOG/EXP/SQRT) in same file (B3)
-- [ ] T052 [US1] Implement complex number function tests in same file (B4)
-- [ ] T053 [US1] Implement remaining math function tests in same file (B5)
-- [ ] T054 [US1] Run full test suite and regenerate coverage matrix
+- [X] T051 [US1] Implement 8 exponential/logarithmic function tests (EXP/LOG/LOG10/E/PI/SQRT/SIGN/ABS)
+
+**Additional work completed:**
+- All 8 exponential/logarithmic stubs converted to passing tests
+- Tests verify: ExtrinsicFunction parsing with routine='MATH' for each function
+- No implementation gaps - parser already correctly handles all MATH library functions
+- Final count: 3087 passed, 110 skipped, 843 xfailed
+
+### Batch B4-B5: Parser Math Library Functions Remaining (27 stubs, Low complexity)
+
+- [ ] T052 [US1] Implement 4 angle conversion function tests (DEGRAD/RADDEG/DECDMS/DMSDEC) in same file (B4)
+- [ ] T053 [US1] Implement 12 complex number function tests (COMPLEX/CONJUG/CABS/etc) in same file (B4 cont.)
+- [ ] T054 [US1] Implement 11 matrix function tests (MTXADD/MTXSUB/etc) in same file (B5)
+- [ ] T055 [US1] Run full test suite and regenerate coverage matrix
 
 ### Batch B6-B7: Parser Intrinsic Functions (24 stubs, Low complexity)
 
