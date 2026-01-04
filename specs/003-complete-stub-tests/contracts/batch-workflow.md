@@ -42,8 +42,8 @@ Use validate_asg.py to assess if the **current ASG meets quality requirements fo
 # Create temp test file with example from Step 2
 echo "TESTLAB^TEST\n S X=1" > /tmp/test.m
 
-# Validate ASG
-uv run python utils/validate_asg.py /tmp/test.m --compact
+# Validate ASG (full detail - read output carefully)
+uv run python utils/validate_asg.py /tmp/test.m
 
 # CRITICAL: Developer must READ the ASG output and evaluate:
 # 1. Does the ASG capture ALL semantic information from the source?

@@ -20,12 +20,12 @@
 
 **Purpose**: Tooling enhancements for efficient test development workflow
 
-- [ ] T001 [US4] Enhance utils/validate_asg.py to accept M code from stdin (FR-012)
-- [ ] T002 [US4] Enhance utils/validate_asg.py to accept M code from command-line argument (FR-012)
-- [ ] T003 [US4] Verify utils/audit_tests.py correctly identifies xfail stubs vs implemented tests
-- [ ] T004 [US4] Regenerate baseline coverage matrix in docs/coverage-matrix.md
+- [x] T001 [US4] Enhance utils/validate_asg.py to accept M code from stdin (FR-012)
+- [x] T002 [US4] Enhance utils/validate_asg.py to accept M code from command-line argument (FR-012)
+- [x] T003 [US4] Verify utils/audit_tests.py correctly identifies xfail stubs vs implemented tests
+- [x] T004 [US4] Regenerate baseline coverage matrix in docs/coverage-matrix.md
 
-**Checkpoint**: Tooling ready for batch implementation
+**Checkpoint**: ✅ Tooling ready for batch implementation
 
 ---
 

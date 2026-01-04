@@ -70,8 +70,8 @@ SSVNTEST ;Test SSVNs
  Q
 EOF
 
-# Validate ASG
-uv run python utils/validate_asg.py /tmp/ssvn_test.m --compact
+# Validate ASG (full detail for thorough review)
+uv run python utils/validate_asg.py /tmp/ssvn_test.m
 
 # READ the output and ask:
 # 1. Does the ASG capture ALL semantic information from source?

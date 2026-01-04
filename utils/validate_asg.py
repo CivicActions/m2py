@@ -569,14 +569,25 @@ Examples:
   # Validate multiple files
   uv run python utils/validate_asg.py tests/functional/mugj/inref/V1*.m
   
-  # Compact mode - concise ASG output for validation review
-  uv run python utils/validate_asg.py tests/functional/mugj/inref/V1BOA.m
-  
-  # Show only summary
+  # Show only summary (no ASG structure)
   uv run python utils/validate_asg.py --summary tests/functional/mugj/inref/RESTORE.m
+  
+  # Compact mode - useful for large files or codegen review
+  uv run python utils/validate_asg.py tests/functional/mugj/inref/V1BOA.m --compact
+  
+  # Read M code from stdin (use - as filename)
+  echo "TEST ; test\n S X=1" | uv run python utils/validate_asg.py -
+  
+  # Pass M code directly as argument
+  uv run python utils/validate_asg.py --code "TEST ; test\n S X=1"
         """,
     )
-    parser.add_argument("files", nargs="+", help="MUMPS files to validate")
+    parser.add_argument(
+        "files", nargs="*", default=[], help="MUMPS files to validate (use - for stdin)"
+    )
+    parser.add_argument(
+        "--code", "-c", type=str, help="M code to validate directly (instead of file)"
+    )
     parser.add_argument(
         "--summary", action="store_true", help="Show only summary, not full ASG"
     )
@@ -591,6 +602,10 @@ Examples:
 
     args = parser.parse_args()
 
+    # Validate that we have input (files, stdin, or --code)
+    if not args.files and not args.code:
+        parser.error("Must provide files, use - for stdin, or use --code")
+
     # Import here to avoid issues if m2py not installed
     try:
         from m2py.parser import MUMPSParser
@@ -601,23 +616,46 @@ Examples:
 
     parser_obj = MUMPSParser()
 
+    # Build list of (source_name, source_code) tuples to process
+    sources_to_process: list[tuple[str, str]] = []
+
+    # Handle --code argument (T002)
+    if args.code:
+        # Interpret escape sequences like \n
+        code = args.code.replace("\\n", "\n").replace("\\t", "\t")
+        sources_to_process.append(("<code>", code))
+
+    # Handle file arguments (including stdin as -)
     for file_path_str in args.files:
-        filepath = Path(file_path_str)
+        if file_path_str == "-":
+            # Read from stdin (T001)
+            stdin_code = sys.stdin.read()
+            sources_to_process.append(("<stdin>", stdin_code))
+        else:
+            filepath = Path(file_path_str)
+            if not filepath.exists():
+                print(f"ERROR: File not found: {filepath}")
+                continue
+            sources_to_process.append((str(filepath), filepath.read_text()))
 
-        if not filepath.exists():
-            print(f"ERROR: File not found: {filepath}")
-            continue
-
+    # Process each source
+    for source_name, source_code in sources_to_process:
         print("\n" + "█" * 80)
-        print(f"VALIDATING: {filepath.name}")
+        print(f"VALIDATING: {source_name}")
         print("█" * 80 + "\n")
 
         # Display source
-        display_source(filepath)
+        print("=" * 80)
+        print(f"SOURCE: {source_name}")
+        print("=" * 80)
+        source_lines = source_code.split("\n")
+        for i, line in enumerate(source_lines, 1):
+            print(f"{i:3}: {line}")
+        print()
 
         # Parse and display ASG
         try:
-            routine = parser_obj.parse_file(str(filepath))
+            routine = parser_obj.parse(source_code, filename=source_name)
             # Run reference resolution so DO/GOTO calls show resolved targets
             parser_obj.resolve_references(routine)
             # Run GOTO classification to populate goto_type, exits_loops, and FOR analysis fields
@@ -635,7 +673,6 @@ Examples:
                 display_asg(routine)
 
             # Analyze completeness
-            source_lines = filepath.read_text().split("\n")
             analysis = analyze_completeness(routine, source_lines)
 
             print("=" * 80)
@@ -656,7 +693,7 @@ Examples:
             print()
 
         except Exception as e:
-            print(f"ERROR: Failed to parse {filepath.name}: {e}")
+            print(f"ERROR: Failed to parse {source_name}: {e}")
             import traceback
 
             traceback.print_exc()
