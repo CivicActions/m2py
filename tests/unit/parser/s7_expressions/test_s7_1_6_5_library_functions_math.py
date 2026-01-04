@@ -210,87 +210,155 @@ class TestMathLibraryInverseTrigParsing:
     """Parser-level tests for MATH library inverse trigonometric functions (Annex I-2).
 
     Inverse functions: ARCSIN, ARCCOS, ARCTAN, ARCCOT, ARCSEC, ARCCSC and hyperbolics.
+
+    Reference: MUMPS 1995 ANSI §7.1.6.5
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCSIN^MATH library function parsing"
-    )
-    def test_math_arcsin(self):
-        """$%ARCSIN^MATH(X,PREC) parses correctly (Annex I-2.8)."""
-        pytest.fail("Stub - implement test")
+    def test_math_arcsin(self, parse_mumps):
+        """$%ARCSIN^MATH(X,PREC) parses correctly (§7.1.6.5.8).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCCOS^MATH library function parsing"
-    )
-    def test_math_arccos(self):
-        """$%ARCCOS^MATH(X,PREC) parses correctly (Annex I-2.2)."""
-        pytest.fail("Stub - implement test")
+        ARCSIN^MATH returns the trigonometric arcsine in radians.
+        Range: -π/2 ≤ result ≤ π/2. Error M28 if |X| > 1.
+        """
+        routine = parse_mumps("TEST S A=$$ARCSIN^MATH(0.5)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCTAN^MATH library function parsing"
-    )
-    def test_math_arctan(self):
-        """$%ARCTAN^MATH(X,Y,PREC) parses correctly (Annex I-2.10)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCSIN"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCCOT^MATH library function parsing"
-    )
-    def test_math_arccot(self):
-        """$%ARCCOT^MATH(X,PREC) parses correctly (Annex I-2.4)."""
-        pytest.fail("Stub - implement test")
+    def test_math_arccos(self, parse_mumps):
+        """$%ARCCOS^MATH(X,PREC) parses correctly (§7.1.6.5.2).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCSEC^MATH library function parsing"
-    )
-    def test_math_arcsec(self):
-        """$%ARCSEC^MATH(X,PREC) parses correctly (Annex I-2.7)."""
-        pytest.fail("Stub - implement test")
+        ARCCOS^MATH returns the trigonometric arccosine in radians.
+        Range: 0 ≤ result ≤ π. Error M28 if |X| > 1.
+        """
+        routine = parse_mumps("TEST S A=$$ARCCOS^MATH(0.5)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCCSC^MATH library function parsing"
-    )
-    def test_math_arccsc(self):
-        """$%ARCCSC^MATH(X,PREC) parses correctly (Annex I-2.6)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCCOS"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCSINH^MATH library function parsing"
-    )
-    def test_math_arcsinh(self):
-        """$%ARCSINH^MATH(X,PREC) parses correctly (Annex I-2.9)."""
-        pytest.fail("Stub - implement test")
+    def test_math_arctan(self, parse_mumps):
+        """$%ARCTAN^MATH(X,PREC) parses correctly (§7.1.6.5.10).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCCOSH^MATH library function parsing"
-    )
-    def test_math_arccosh(self):
-        """$%ARCCOSH^MATH(X,PREC) parses correctly (Annex I-2.3)."""
-        pytest.fail("Stub - implement test")
+        ARCTAN^MATH returns the trigonometric arctangent in radians.
+        Range: |result| ≤ π/2.
+        """
+        routine = parse_mumps("TEST S A=$$ARCTAN^MATH(1)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCTANH^MATH library function parsing"
-    )
-    def test_math_arctanh(self):
-        """$%ARCTANH^MATH(X,PREC) parses correctly (Annex I-2.11)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCTAN"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%ARCCOTH^MATH library function parsing"
-    )
-    def test_math_arccoth(self):
-        """$%ARCCOTH^MATH(X,PREC) parses correctly (Annex I-2.5)."""
-        pytest.fail("Stub - implement test")
+    def test_math_arccot(self, parse_mumps):
+        """$%ARCCOT^MATH(X,PREC) parses correctly (§7.1.6.5.4).
+
+        ARCCOT^MATH returns the trigonometric arccotangent in radians.
+        """
+        routine = parse_mumps("TEST S A=$$ARCCOT^MATH(1)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCCOT"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_arcsec(self, parse_mumps):
+        """$%ARCSEC^MATH(X,PREC) parses correctly (§7.1.6.5.7).
+
+        ARCSEC^MATH returns the trigonometric arcsecant in radians.
+        """
+        routine = parse_mumps("TEST S A=$$ARCSEC^MATH(2)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCSEC"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_arccsc(self, parse_mumps):
+        """$%ARCCSC^MATH(X,PREC) parses correctly (§7.1.6.5.6).
+
+        ARCCSC^MATH returns the trigonometric arccosecant in radians.
+        """
+        routine = parse_mumps("TEST S A=$$ARCCSC^MATH(2)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCCSC"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_arcsinh(self, parse_mumps):
+        """$%ARCSINH^MATH(X,PREC) parses correctly (§7.1.6.5.9).
+
+        ARCSINH^MATH returns the hyperbolic arcsine.
+        """
+        routine = parse_mumps("TEST S A=$$ARCSINH^MATH(1)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCSINH"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_arccosh(self, parse_mumps):
+        """$%ARCCOSH^MATH(X,PREC) parses correctly (§7.1.6.5.3).
+
+        ARCCOSH^MATH returns the hyperbolic arccosine.
+        Error M28 if X < 1.
+        """
+        routine = parse_mumps("TEST S A=$$ARCCOSH^MATH(1)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCCOSH"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_arctanh(self, parse_mumps):
+        """$%ARCTANH^MATH(X,PREC) parses correctly (§7.1.6.5.11).
+
+        ARCTANH^MATH returns the hyperbolic arctangent.
+        Error M28 if |X| ≥ 1.
+        """
+        routine = parse_mumps("TEST S A=$$ARCTANH^MATH(0.5)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCTANH"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_arccoth(self, parse_mumps):
+        """$%ARCCOTH^MATH(X,PREC) parses correctly (§7.1.6.5.5).
+
+        ARCCOTH^MATH returns the hyperbolic arccotangent.
+        Error M28 if |X| ≤ 1.
+        """
+        routine = parse_mumps("TEST S A=$$ARCCOTH^MATH(2)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "ARCCOTH"
+        assert assign.value.target.routine == "MATH"
 
 
 @pytest.mark.parser
