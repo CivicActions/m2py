@@ -41,14 +41,30 @@ class TestNewCommandParsing:
         model = command_metamodel.model_from_str("N (X)", "NewCommand")
         assert model.exclusive is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW argumentless")
-    def test_new_argumentless(self, parse_line):
-        """NEW without argument parses correctly (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+    def test_new_argumentless(self, parse_mumps):
+        """NEW without argument parses correctly (§8.2.14).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW abbreviated")
-    def test_new_abbreviated(self, parse_line):
-        """N abbreviation parses correctly (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+        Argumentless NEW saves all local variables for later restoration.
+        """
+        from m2py.asg import MNewStatement
+
+        result = parse_mumps("TEST\n N\n Q")
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MNewStatement)
+        # Argumentless NEW has empty variables list
+        assert stmt.variables == []
+        assert stmt.exclusive is False
+
+    def test_new_abbreviated(self, parse_mumps):
+        """N abbreviation parses correctly (§8.2.14).
+
+        N is the standard abbreviation for NEW.
+        """
+        from m2py.asg import MNewStatement
+
+        result = parse_mumps("TEST\n N X,Y\n Q")
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MNewStatement)
+        assert len(stmt.variables) == 2

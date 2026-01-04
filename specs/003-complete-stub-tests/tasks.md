@@ -342,10 +342,18 @@
 
 ### Batch B16: Parser Commands Misc (15 stubs, Low complexity)
 
-- [ ] T086 [P] [US1] Research MUMPS spec §8 commands in mumps-reference/
-- [ ] T087 [US1] Find command examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T088 [US1] Implement 15 misc command tests in tests/unit/parser/s8_commands/
-- [ ] T089 [US1] Run full test suite and regenerate coverage matrix
+- [X] T086 [P] [US1] Research MUMPS spec §8 commands in mumps-reference/
+- [X] T087 [US1] Find command examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T088 [US1] Implement 15 misc command tests in tests/unit/parser/s8_commands/
+- [X] T089 [US1] Run full test suite and regenerate coverage matrix
+
+**Completion Notes B16:**
+- test_s8_2_04_else.py: 3 tests (basic, abbreviated, with_commands)
+- test_s8_2_23_use.py: 4 tests (basic, with_parameters, with_mnemonic, abbreviated)
+- test_s8_2_14_new.py: 2 tests (argumentless, abbreviated)
+- test_s8_2_07_halt.py: 2 tests (abbreviated, with_postcondition)
+- test_s8_2_26_xecute.py: 4 tests (expression, with_postcondition, multiple, abbreviated)
+- Final count: 3247 passed, 110 skipped, 682 xfailed
 
 ### Batch B17: Parser Character Set (10 stubs, Low complexity)
 

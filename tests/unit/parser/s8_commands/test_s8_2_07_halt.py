@@ -31,14 +31,28 @@ class TestHaltCommandParsing:
         model = command_metamodel.model_from_str("HALT", "HaltCommand")
         assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: HALT abbreviated")
-    def test_halt_abbreviated(self, parse_line):
-        """H abbreviation (without argument) parses correctly (§8.2.7)."""
-        pytest.fail("Stub - implement test")
+    def test_halt_abbreviated(self, parse_mumps):
+        """H abbreviation (without argument) parses correctly (§8.2.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: HALT with postcondition")
-    def test_halt_with_postcondition(self, parse_line):
-        """HALT:condition parses correctly (§8.2.7)."""
-        pytest.fail("Stub - implement test")
+        H is the standard abbreviation for HALT. Note: H with an argument
+        is HANG, not HALT.
+        """
+        from m2py.asg import MHaltStatement
+
+        result = parse_mumps("TEST\n H\n Q")
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MHaltStatement)
+
+    def test_halt_with_postcondition(self, parse_mumps):
+        """HALT:condition parses correctly (§8.2.7).
+
+        Postcondition controls whether HALT executes.
+        """
+        from m2py.asg import MHaltStatement
+
+        result = parse_mumps("TEST\n H:X=1\n Q")
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MHaltStatement)
+        assert stmt.postcondition is not None

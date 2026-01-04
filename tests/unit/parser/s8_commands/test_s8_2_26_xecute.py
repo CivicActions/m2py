@@ -31,26 +31,54 @@ class TestXecuteCommandParsing:
         model = command_metamodel.model_from_str('X "S X=1"', "XecuteCommand")
         assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: XECUTE expression")
-    def test_xecute_expression(self, parse_line):
-        """XECUTE expr parses correctly (§8.2.26)."""
-        pytest.fail("Stub - implement test")
+    def test_xecute_expression(self, parse_mumps):
+        """XECUTE expr parses correctly (§8.2.26).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: XECUTE with postcondition")
-    def test_xecute_with_postcondition(self, parse_line):
-        """XECUTE expr:condition parses correctly (§8.2.26)."""
-        pytest.fail("Stub - implement test")
+        XECUTE can take a variable containing code.
+        """
+        from m2py.asg import MXecuteStatement
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: XECUTE multiple")
-    def test_xecute_multiple(self, parse_line):
-        """XECUTE expr1,expr2 multiple expressions parses correctly (§8.2.26)."""
-        pytest.fail("Stub - implement test")
+        result = parse_mumps("TEST\n X CMD\n Q")
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MXecuteStatement)
+        assert len(stmt.code_expressions) == 1
+        assert stmt.is_constant is False
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: XECUTE abbreviated")
-    def test_xecute_abbreviated(self, parse_line):
-        """X abbreviation parses correctly (§8.2.26)."""
-        pytest.fail("Stub - implement test")
+    def test_xecute_with_postcondition(self, parse_mumps):
+        """XECUTE:condition expr parses correctly (§8.2.26).
+
+        Postcondition controls whether XECUTE runs.
+        """
+        from m2py.asg import MXecuteStatement
+
+        result = parse_mumps('TEST\n X:X=1 "S Y=2"\n Q')
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MXecuteStatement)
+        assert stmt.postcondition is not None
+
+    def test_xecute_multiple(self, parse_mumps):
+        """XECUTE expr1,expr2 multiple expressions parses correctly (§8.2.26).
+
+        Multiple code strings can be executed.
+        """
+        from m2py.asg import MXecuteStatement
+
+        result = parse_mumps('TEST\n X "S A=1","S B=2"\n Q')
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MXecuteStatement)
+        assert len(stmt.code_expressions) == 2
+
+    def test_xecute_abbreviated(self, parse_mumps):
+        """X abbreviation parses correctly (§8.2.26).
+
+        X is the standard abbreviation for XECUTE.
+        """
+        from m2py.asg import MXecuteStatement
+
+        result = parse_mumps('TEST\n X "S X=1"\n Q')
+        assert result is not None
+        stmt = result.labels[0].body.statements[0]
+        assert isinstance(stmt, MXecuteStatement)
