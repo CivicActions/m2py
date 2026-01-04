@@ -38,11 +38,11 @@ class TestIfCommandParsing:
         model = command_metamodel.model_from_str("I", "IfCommand")
         assert len(model.conditions) == 0
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF with multiple conditions")
     def test_if_multiple_conditions(self, command_metamodel):
         """IF cond1,cond2 comma-separated conditions parses correctly (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("I X=1,Y=2", "IfCommand")
+        assert model is not None
+        assert len(model.conditions) == 2
 
     def test_if_abbreviated(self, command_metamodel):
         """IF X=1 full keyword parses same as I X=1 (§8.2.9)."""
@@ -50,11 +50,21 @@ class TestIfCommandParsing:
         assert model.conditions is not None
         assert len(model.conditions) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF followed by commands")
-    def test_if_followed_by_commands(self, command_metamodel):
+    def test_if_followed_by_commands(self):
         """IF condition followed by commands parses correctly (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+        from m2py.parser import MUMPSParser
+        from m2py.asg import MRoutine
+        from m2py.asg.statements import MIfStatement, MSetStatement, MWriteStatement
+
+        parser = MUMPSParser()
+        routine = parser.parse("LBL\tI X=1 S Y=2 W Y\n")
+
+        assert isinstance(routine, MRoutine)
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MIfStatement)
+        assert len(stmt.then_scope.statements) == 2
+        assert isinstance(stmt.then_scope.statements[0], MSetStatement)
+        assert isinstance(stmt.then_scope.statements[1], MWriteStatement)
 
 
 @pytest.mark.parser

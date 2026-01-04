@@ -18,6 +18,13 @@ from m2py.asg.expressions import (
 from m2py.asg.enums import LiteralType
 
 
+def analyze_first_command(line: str):
+    """Helper to parse a line and analyze the first command."""
+    cmds = parse_commands_from_line(line)
+    assert len(cmds) >= 1, f"No commands parsed from: {line}"
+    return analyze_command(cmds[0])
+
+
 @pytest.mark.asg
 class TestSetCommandAnalysis:
     """ASG-level tests for SET command analysis (§8.2.18)."""
@@ -26,44 +33,64 @@ class TestSetCommandAnalysis:
     @pytest.mark.xfail(reason="Not yet implemented: SET variable tracking")
     def test_set_variable_tracking(self, analyze_routine):
         """SET variable is tracked in output_variables (§8.2.18, FR-014)."""
-        pytest.fail("Stub - implement test")
+        pytest.fail(
+            "Stub - implement test for output_variables tracking at label/routine level"
+        )
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: SET multiple targets")
-    def test_set_multiple_targets(self, analyze_routine):
+    def test_set_multiple_targets(self):
         """SET (X,Y)=value multiple targets is analyzed (§8.2.18)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("S (A,B,C)=1")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: SET global")
-    def test_set_global(self, analyze_routine):
+        assert isinstance(stmt, MSetStatement)
+        # Should have 3 assignments, one for each target
+        assert len(stmt.assignments) == 3
+
+        # Each assignment has a single target (not a list)
+        for i, name in enumerate(["A", "B", "C"]):
+            assign = stmt.assignments[i]
+            assert isinstance(assign.target, MVariable)
+            assert assign.target.name == name
+            # Value should be a literal 1
+            assert isinstance(assign.value, MLiteral)
+            assert assign.value.value == 1
+
+    def test_set_global(self):
         """SET ^GLOBAL global assignment is tracked (§8.2.18)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("S ^DATA=100")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: SET $PIECE")
-    def test_set_piece(self, analyze_routine):
+        assert isinstance(stmt, MSetStatement)
+        target = stmt.assignments[0].target
+        assert isinstance(target, MGlobal)
+        assert target.name == "DATA"
+
+    def test_set_piece(self):
         """SET $PIECE form is analyzed (§8.2.18)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command('S $P(X,"^")="D"')
+
+        assert isinstance(stmt, MSetStatement)
+        assert len(stmt.assignments) == 1
+
+        # Target should be MIntrinsicFunction for $PIECE
+        target = stmt.assignments[0].target
+        assert isinstance(target, MIntrinsicFunction)
+        assert target.name.upper() in ("P", "PIECE")
+
+        # Value should be the string "D"
+        value = stmt.assignments[0].value
+        assert isinstance(value, MLiteral)
+        assert value.value == "D"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: SET $EXTRACT")
     def test_set_extract(self, analyze_routine):
         """SET $EXTRACT form is analyzed (§8.2.18)."""
-        pytest.fail("Stub - implement test")
+        pytest.fail("Stub - implement test for SET $EXTRACT left-hand side")
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: SET indirection")
     def test_set_indirection(self, analyze_routine):
         """SET @var indirection is analyzed (§8.2.18)."""
-        pytest.fail("Stub - implement test")
-
-
-def analyze_first_command(line: str):
-    """Helper to parse a line and analyze the first command."""
-    cmds = parse_commands_from_line(line)
-    assert len(cmds) >= 1, f"No commands parsed from: {line}"
-    return analyze_command(cmds[0])
+        pytest.fail("Stub - implement test for SET with indirection target")
 
 
 @pytest.mark.asg

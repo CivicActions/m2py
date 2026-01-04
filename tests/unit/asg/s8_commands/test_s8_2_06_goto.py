@@ -21,11 +21,29 @@ class TestGotoCommandAnalysis:
         """GOTO goto_type is correctly classified (§8.2.6, FR-012)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: GOTO target resolution")
     def test_goto_target_resolution(self, analyze_routine):
         """GOTO target is resolved to MLabel (§8.2.6)."""
-        pytest.fail("Stub - implement test")
+        # Simple GOTO
+        stmt = analyze_first_command("G LABEL")
+        assert isinstance(stmt, MGotoStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+
+        # GOTO with routine
+        stmt = analyze_first_command("G LABEL^ROUTINE")
+        assert isinstance(stmt, MGotoStatement)
+        assert stmt.targets[0].name == "LABEL"
+        assert stmt.targets[0].routine == "ROUTINE"
+
+        # GOTO with offset
+        stmt = analyze_first_command("G LABEL+^DATA(1)^ROUTINE")
+        assert isinstance(stmt, MGotoStatement)
+        target = stmt.targets[0]
+        assert target.name == "LABEL"
+        assert target.routine == "ROUTINE"
+        assert isinstance(target.offset, MGlobal)
+        assert target.offset.name == "DATA"
+        assert len(target.offset.subscripts) == 1
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: GOTO computed target")
@@ -45,37 +63,3 @@ def analyze_first_command(line: str):
     cmds = parse_commands_from_line(line)
     assert len(cmds) >= 1, f"No commands parsed from: {line}"
     return analyze_command(cmds[0])
-
-
-@pytest.mark.asg
-class TestGotoStatementAnalysis:
-    """Tests for GOTO command analysis."""
-
-    def test_simple_goto(self):
-        """G LABEL produces MGotoStatement."""
-        stmt = analyze_first_command("G LABEL")
-
-        assert isinstance(stmt, MGotoStatement)
-        assert len(stmt.targets) == 1
-        assert stmt.targets[0].name == "LABEL"
-
-    def test_goto_with_routine(self):
-        """G LABEL^ROUTINE produces target with routine."""
-        stmt = analyze_first_command("G LABEL^ROUTINE")
-
-        assert isinstance(stmt, MGotoStatement)
-        assert stmt.targets[0].name == "LABEL"
-        assert stmt.targets[0].routine == "ROUTINE"
-
-    def test_goto_with_subscripted_global_offset(self):
-        """G LABEL+^DATA(1)^ROUTINE - offset with SubscriptedGlobal becomes MGlobal."""
-        stmt = analyze_first_command("G LABEL+^DATA(1)^ROUTINE")
-
-        assert isinstance(stmt, MGotoStatement)
-        target = stmt.targets[0]
-        assert target.name == "LABEL"
-        assert target.routine == "ROUTINE"
-        # The offset is an MGlobal (converted from SubscriptedGlobal)
-        assert isinstance(target.offset, MGlobal)
-        assert target.offset.name == "DATA"
-        assert len(target.offset.subscripts) == 1

@@ -5,46 +5,74 @@ Reference: MUMPS 1995 ANSI Standard, Section 7.2.5
 
 import pytest
 
+from tests.helpers.parsing import parse_expression
+from m2py.analysis.semantic_analyzer import analyze_expression
+from m2py.asg import MPatternMatch
+from m2py.asg.expressions import MVariable, MBinaryOp
+
 
 @pytest.mark.asg
 class TestPatternMatchAnalysis:
     """ASG-level tests for pattern match analysis (§7.2.5)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern operator")
-    def test_pattern_operator(self, analyze_expression):
+    def test_pattern_operator(self):
         """Pattern match (?) operator is correctly analyzed (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        expr = parse_expression("X?1N")
+        result = analyze_expression(expr)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern codes")
-    def test_pattern_codes(self, analyze_expression):
+        assert isinstance(result, MPatternMatch)
+        assert result.operator == "?"
+        assert isinstance(result.subject, MVariable)
+        assert result.subject.name == "X"
+        assert result.pattern == "1N"
+
+    def test_pattern_codes(self):
         """Pattern codes (N, A, L, U, P, C, E) are correctly analyzed (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        # Test numeric code
+        expr = parse_expression("X?1N")
+        result = analyze_expression(expr)
+        assert isinstance(result, MPatternMatch)
+        assert result.pattern == "1N"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern quantifiers")
-    def test_pattern_quantifiers(self, analyze_expression):
+        # Test alpha code
+        expr = parse_expression("Y?1A")
+        result = analyze_expression(expr)
+        assert isinstance(result, MPatternMatch)
+        assert result.pattern == "1A"
+
+    def test_pattern_quantifiers(self):
         """Pattern quantifiers are correctly analyzed (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        # Indefinite multiplier (zero or more)
+        expr = parse_expression("X?.N")
+        result = analyze_expression(expr)
+        assert isinstance(result, MPatternMatch)
+        assert result.pattern == ".N"
+
+        # Range repcount
+        expr = parse_expression("X?1.3N")
+        result = analyze_expression(expr)
+        assert isinstance(result, MPatternMatch)
+        assert result.pattern == "1.3N"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: pattern alternation")
     def test_pattern_alternation(self, analyze_expression):
         """Pattern alternation is correctly analyzed (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        pytest.fail("Stub - implement test for pattern alternation syntax")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern literal")
-    def test_pattern_literal(self, analyze_expression):
+    def test_pattern_literal(self):
         """Pattern literal strings are correctly analyzed (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        expr = parse_expression('X?1"hello"')
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MPatternMatch)
+        assert result.pattern == '1"hello"'
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: pattern indirection")
     def test_pattern_indirection(self, analyze_expression):
         """Pattern indirection is correctly analyzed (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        pytest.fail("Stub - implement test for pattern indirection @var")
 
 
 @pytest.mark.asg
@@ -154,7 +182,6 @@ class TestPatternMatchASG:
         from tests.helpers.parsing import parse_expression
         from m2py.analysis.semantic_analyzer import analyze_expression
         from m2py.asg import MPatternMatch
-        from m2py.asg.expressions import MBinaryOp
 
         expr = parse_expression("X?.N_Y")
         result = analyze_expression(expr)

@@ -14,17 +14,25 @@ from m2py.asg.statements import MHangStatement, MHaltStatement
 class TestHangCommandAnalysis:
     """ASG-level tests for HANG command analysis (§8.2.8)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: HANG command node")
     def test_hang_command_node(self, analyze_routine):
         """HANG command creates correct ASG node (§8.2.8)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("H 5")
+        assert isinstance(stmt, MHangStatement)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: HANG duration expression")
     def test_hang_duration_expression(self, analyze_routine):
         """HANG duration expression is analyzed (§8.2.8)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("H 5")
+        assert isinstance(stmt, MHangStatement)
+        assert stmt.duration is not None
+
+    def test_hang_vs_halt_disambiguation(self, analyze_routine):
+        """H with argument is HANG, H alone is HALT."""
+        halt_stmt = analyze_first_command("H")
+        hang_stmt = analyze_first_command("H 5")
+
+        assert isinstance(halt_stmt, MHaltStatement)
+        assert isinstance(hang_stmt, MHangStatement)
+        assert hang_stmt.duration is not None
 
 
 def analyze_first_command(line: str):
@@ -32,29 +40,3 @@ def analyze_first_command(line: str):
     cmds = parse_commands_from_line(line)
     assert len(cmds) >= 1, f"No commands parsed from: {line}"
     return analyze_command(cmds[0])
-
-
-@pytest.mark.asg
-class TestHangStatementAnalysis:
-    """Tests for HANG statement analysis."""
-
-    def test_hang(self):
-        """H 5 produces MHangStatement."""
-        stmt = analyze_first_command("H 5")
-
-        assert isinstance(stmt, MHangStatement)
-        assert stmt.duration is not None
-
-    def test_hang_vs_halt_disambiguation(self):
-        """H with argument is HANG, H alone is HALT.
-
-        This tests the grammar's correct disambiguation between:
-        - H (no argument) → HALT
-        - H 5 (with argument) → HANG with duration 5
-        """
-        halt_stmt = analyze_first_command("H")
-        hang_stmt = analyze_first_command("H 5")
-
-        assert isinstance(halt_stmt, MHaltStatement)
-        assert isinstance(hang_stmt, MHangStatement)
-        assert hang_stmt.duration is not None

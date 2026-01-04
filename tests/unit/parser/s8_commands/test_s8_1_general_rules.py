@@ -44,17 +44,23 @@ class TestGeneralCommandRulesParsing:
         """Command followed by comment ; parses correctly (§8.1)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: command postcondition")
-    def test_command_postcondition(self, parse_line):
+    def test_command_postcondition(self, command_metamodel):
         """Command with postcondition CMD:condition arg parses correctly (§8.1)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("G:ERR ERROR", "GotoCommand")
+        assert model.postcond is not None
+        model = command_metamodel.model_from_str("D:OK PROCEED", "DoCommand")
+        assert model.postcond is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: argument postcondition")
-    def test_argument_postcondition(self, parse_line):
+    def test_argument_postcondition(self, command_metamodel):
         """Argument with postcondition CMD arg:condition parses correctly (§8.1)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("G ABC:X=1", "GotoCommand")
+        assert model.targets[0].postcond is not None
+        model = command_metamodel.model_from_str("D LABEL:X=1", "DoCommand")
+        assert model.targets[0].postcond is not None
+        model = command_metamodel.model_from_str('X "S X=1":A>0', "XecuteCommand")
+        assert model.postcond is None  # No command postcondition
+        assert len(model.args) == 1
+        assert model.args[0].postcond is not None
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: command timeout")

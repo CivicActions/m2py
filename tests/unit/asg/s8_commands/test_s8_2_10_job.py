@@ -13,31 +13,8 @@ from m2py.asg import MJobStatement, MDoStatement
 class TestJobCommandAnalysis:
     """ASG-level tests for JOB command analysis (§8.2.10)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: JOB command node")
-    def test_job_command_node(self, analyze_routine):
+    def test_job_command_node(self):
         """JOB command creates correct ASG node (§8.2.10)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: JOB target resolution")
-    def test_job_target_resolution(self, analyze_routine):
-        """JOB target is resolved (§8.2.10)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: JOB process parameters")
-    def test_job_process_parameters(self, analyze_routine):
-        """JOB process parameters are analyzed (§8.2.10)."""
-        pytest.fail("Stub - implement test")
-
-
-@pytest.mark.asg
-class TestJobStatementASG:
-    """Tests for JOB command ASG generation."""
-
-    def test_job_command_simple(self):
-        """Test JOB command with simple label."""
         parser = MUMPSParser()
         routine = parser.parse("TEST\n J LABEL\n")
 
@@ -51,8 +28,8 @@ class TestJobStatementASG:
         assert stmt.targets[0] is not None
         assert stmt.targets[0].call.name == "LABEL"
 
-    def test_job_command_external(self):
-        """Test JOB command with external routine."""
+    def test_job_target_resolution(self):
+        """JOB target is resolved (§8.2.10)."""
         parser = MUMPSParser()
         routine = parser.parse("TEST\n J ^ROUTINE\n")
 
@@ -65,6 +42,28 @@ class TestJobStatementASG:
         assert len(stmt.targets) == 1
         assert stmt.targets[0] is not None
         assert stmt.targets[0].call.routine == "ROUTINE"
+
+    def test_job_process_parameters(self):
+        """JOB process parameters are analyzed (§8.2.10)."""
+        from m2py.asg.expressions import MBinaryOp
+
+        parser = MUMPSParser()
+        routine = parser.parse('TEST\n J LABEL:(IN="/dev/null":OUT="/dev/null")\n')
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assert isinstance(stmt, MJobStatement)
+        assert len(stmt.targets) == 1
+        job_target = stmt.targets[0]
+        assert job_target.call.name == "LABEL"
+        # Should have processparameters - these are expressions like IN="/dev/null"
+        assert len(job_target.processparameters) == 2
+        # Processparams are key=value expressions (MBinaryOp with = operator)
+        assert isinstance(job_target.processparameters[0], MBinaryOp)
+        assert job_target.processparameters[0].operator == "="
+        # No timeout
+        assert job_target.timeout is None
 
 
 @pytest.mark.asg
@@ -189,28 +188,6 @@ class TestJobTimeoutAndProcessParameters:
         assert job_target.timeout.value == 5
         # No processparameters
         assert job_target.processparameters == []
-
-    def test_job_with_processparams_only(self):
-        """JOB with processparameters but no timeout."""
-        from m2py.asg.expressions import MBinaryOp
-
-        parser = MUMPSParser()
-        routine = parser.parse('TEST\n J LABEL:(IN="/dev/null":OUT="/dev/null")\n')
-
-        label = routine.labels[0]
-        stmt = label.body.statements[0]
-
-        assert isinstance(stmt, MJobStatement)
-        assert len(stmt.targets) == 1
-        job_target = stmt.targets[0]
-        assert job_target.call.name == "LABEL"
-        # Should have processparameters - these are expressions like IN="/dev/null"
-        assert len(job_target.processparameters) == 2
-        # Processparams are key=value expressions (MBinaryOp with = operator)
-        assert isinstance(job_target.processparameters[0], MBinaryOp)
-        assert job_target.processparameters[0].operator == "="
-        # No timeout
-        assert job_target.timeout is None
 
     def test_job_with_processparams_and_timeout(self):
         """JOB with both processparameters and timeout."""

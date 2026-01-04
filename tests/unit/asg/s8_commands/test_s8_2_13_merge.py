@@ -13,31 +13,8 @@ from m2py.asg import MMergeStatement, MGlobal
 class TestMergeCommandAnalysis:
     """ASG-level tests for MERGE command analysis (§8.2.13)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: MERGE variable tracking")
-    def test_merge_variable_tracking(self, analyze_routine):
+    def test_merge_variable_tracking(self):
         """MERGE dest variable is tracked (§8.2.13)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: MERGE source analysis")
-    def test_merge_source_analysis(self, analyze_routine):
-        """MERGE source tree is analyzed (§8.2.13)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: MERGE global impact")
-    def test_merge_global_impact(self, analyze_routine):
-        """MERGE ^GLOBAL impact is tracked (§8.2.13)."""
-        pytest.fail("Stub - implement test")
-
-
-@pytest.mark.asg
-class TestMergeStatementASG:
-    """Tests for MERGE command ASG field population."""
-
-    def test_merge_command_simple(self):
-        """MERGE dest=source produces MMergeStatement with both fields."""
         parser = MUMPSParser()
         routine = parser.parse("TEST\n M ^DEST=^SRC\n")
 
@@ -48,7 +25,35 @@ class TestMergeStatementASG:
         assert isinstance(stmt, MMergeStatement)
         assert len(stmt.merges) == 1
         assert stmt.merges[0].destination is not None
+
+    def test_merge_source_analysis(self):
+        """MERGE source tree is analyzed (§8.2.13)."""
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n M ^DEST=^SRC\n")
+
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MMergeStatement)
         assert stmt.merges[0].source is not None
+
+    def test_merge_global_impact(self):
+        """MERGE ^GLOBAL impact is tracked (§8.2.13)."""
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n M ^A=^B,^C=^D\n")
+
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MMergeStatement)
+        assert len(stmt.merges) == 2
+
+        assert isinstance(stmt.merges[0].destination, MGlobal)
+        assert stmt.merges[0].destination.name == "A"
+        assert isinstance(stmt.merges[1].destination, MGlobal)
+        assert stmt.merges[1].destination.name == "C"
+
+
+@pytest.mark.asg
+class TestMergeStatementASG:
+    """Tests for MERGE command ASG field population - additional coverage."""
 
     def test_merge_command_with_postcondition(self):
         """MERGE:condition dest=source handles postcondition."""
@@ -112,20 +117,6 @@ class TestMultiMerge:
         # Second pair: Z=W
         assert stmt.merges[1].destination.name == "Z"
         assert stmt.merges[1].source.name == "W"
-
-    def test_multi_merge_globals(self):
-        """MERGE with multiple global pairs."""
-        parser = MUMPSParser()
-        routine = parser.parse("TEST\n M ^A=^B,^C=^D\n")
-
-        stmt = routine.labels[0].body.statements[0]
-        assert isinstance(stmt, MMergeStatement)
-        assert len(stmt.merges) == 2
-
-        assert isinstance(stmt.merges[0].destination, MGlobal)
-        assert stmt.merges[0].destination.name == "A"
-        assert isinstance(stmt.merges[1].destination, MGlobal)
-        assert stmt.merges[1].destination.name == "C"
 
     def test_vista_ztmon_pattern(self):
         """Test VistA ZTMON.m pattern with two merge pairs.

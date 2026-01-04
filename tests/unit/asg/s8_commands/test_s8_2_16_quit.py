@@ -15,17 +15,27 @@ from m2py.asg.expressions import MVariable, MBinaryOp
 class TestQuitCommandAnalysis:
     """ASG-level tests for QUIT command analysis (§8.2.16)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: QUIT control flow")
-    def test_quit_control_flow(self, analyze_routine):
+    def test_quit_control_flow(self):
         """QUIT terminates current context (§8.2.16)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: QUIT with value")
-    def test_quit_with_value(self, analyze_routine):
+        assert isinstance(stmt, MQuitStatement)
+        assert stmt.return_value is None
+
+    def test_quit_with_value(self):
         """QUIT expr return value is tracked (§8.2.16)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("Q X")
+
+        assert isinstance(stmt, MQuitStatement)
+        assert stmt.return_value is not None
+        assert isinstance(stmt.return_value, MVariable)
+        assert stmt.return_value.name == "X"
+
+        # Also test with expression
+        stmt2 = analyze_first_command("Q X+1")
+        assert isinstance(stmt2, MQuitStatement)
+        assert stmt2.return_value is not None
+        assert isinstance(stmt2.return_value, MBinaryOp)
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: QUIT scope cleanup")
@@ -45,55 +55,6 @@ def analyze_first_command(line: str):
     cmds = parse_commands_from_line(line)
     assert len(cmds) >= 1, f"No commands parsed from: {line}"
     return analyze_command(cmds[0])
-
-
-@pytest.mark.asg
-class TestQuitStatementAnalysis:
-    """Tests for QUIT command analysis."""
-
-    def test_simple_quit(self):
-        """Q produces MQuitStatement with no return value."""
-        stmt = analyze_first_command("Q")
-
-        assert isinstance(stmt, MQuitStatement)
-        assert stmt.return_value is None
-
-    def test_quit_with_value(self):
-        """Q X produces MQuitStatement with return value."""
-        stmt = analyze_first_command("Q X")
-
-        assert isinstance(stmt, MQuitStatement)
-        assert stmt.return_value is not None
-        assert isinstance(stmt.return_value, MVariable)
-        assert stmt.return_value.name == "X"
-
-    def test_quit_with_expression(self):
-        """Q X+1 produces MQuitStatement with binary expression."""
-        stmt = analyze_first_command("Q X+1")
-
-        assert isinstance(stmt, MQuitStatement)
-        assert stmt.return_value is not None
-        assert isinstance(stmt.return_value, MBinaryOp)
-
-
-@pytest.mark.asg
-class TestParseQuitCommand:
-    """Test QUIT command parsing to full-fidelity ASG."""
-
-    def test_simple_quit(self):
-        """Q creates MQuitStatement"""
-        cmds = parse_commands_from_line("Q")
-        stmt = analyze_command(cmds[0])
-        assert stmt is not None
-        assert stmt.return_value is None
-
-    def test_quit_with_value(self):
-        """Q X+1 parses return value"""
-        cmds = parse_commands_from_line("Q X")
-        stmt = analyze_command(cmds[0])
-        assert stmt is not None
-        # Return value should be captured as ASG node
-        assert stmt.return_value is not None
 
 
 @pytest.mark.asg

@@ -14,11 +14,15 @@ from m2py.asg.statements import MHaltStatement
 class TestHaltCommandAnalysis:
     """ASG-level tests for HALT command analysis (§8.2.7)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: HALT command node")
     def test_halt_command_node(self, analyze_routine):
         """HALT command creates correct ASG node (§8.2.7)."""
-        pytest.fail("Stub - implement test")
+        # Full command
+        stmt = analyze_first_command("HALT")
+        assert isinstance(stmt, MHaltStatement)
+
+        # Abbreviated command
+        stmt = analyze_first_command("H")
+        assert isinstance(stmt, MHaltStatement)
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: HALT control flow termination")
@@ -32,24 +36,3 @@ def analyze_first_command(line: str):
     cmds = parse_commands_from_line(line)
     assert len(cmds) >= 1, f"No commands parsed from: {line}"
     return analyze_command(cmds[0])
-
-
-@pytest.mark.asg
-class TestHaltStatementAnalysis:
-    """Tests for HALT statement analysis."""
-
-    def test_halt(self):
-        """HALT produces MHaltStatement."""
-        stmt = analyze_first_command("HALT")
-
-        assert isinstance(stmt, MHaltStatement)
-
-    def test_halt_abbreviation(self):
-        """H alone (no argument) produces MHaltStatement, not MHangStatement.
-
-        Per MUMPS spec, H and HALT are the same command when no argument follows.
-        H followed by an expression is HANG.
-        """
-        stmt = analyze_first_command("H")
-
-        assert isinstance(stmt, MHaltStatement)

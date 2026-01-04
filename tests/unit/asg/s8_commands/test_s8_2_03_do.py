@@ -15,43 +15,25 @@ from m2py.asg.statements import MDoStatement, MSetStatement, MWriteStatement
 class TestDoCommandAnalysis:
     """ASG-level tests for DO command analysis (§8.2.3)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO target resolution")
-    def test_do_target_resolution(self, analyze_routine):
+    def test_do_target_resolution(self):
         """DO command target is resolved to MLabel (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("D LABEL")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO with arguments")
-    def test_do_with_arguments(self, analyze_routine):
+        assert isinstance(stmt, MDoStatement)
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "LABEL"
+
+    def test_do_with_arguments(self):
         """DO command arguments are correctly analyzed (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("D FUNC(1,2)")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO block structure")
-    def test_do_block_structure(self, analyze_routine):
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+        assert target.name == "FUNC"
+        assert len(target.arguments) == 2
+
+    def test_do_block_structure(self):
         """DO argumentless block structure is captured (§8.2.3)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: MCall creation")
-    def test_mcall_creation(self, analyze_routine):
-        """MCall nodes are created with target links (§8.2.3)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: external routine reference")
-    def test_external_routine_reference(self, analyze_routine):
-        """External routine references are tracked (§8.2.3)."""
-        pytest.fail("Stub - implement test")
-
-
-@pytest.mark.asg
-class TestDoBlockBodyPopulation:
-    """Tests for DO block body statement collection (§8.2.3)."""
-
-    def test_do_block_simple(self):
-        """Argumentless DO collects dot-indented lines in body."""
         parser = MUMPSParser()
         source = """TEST\tD
  . S X=1
@@ -72,6 +54,37 @@ class TestDoBlockBodyPopulation:
 
         # SET Y=2 should be outside DO block
         assert isinstance(routine.labels[0].body.statements[1], MSetStatement)
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: MCall creation")
+    def test_mcall_creation(self, analyze_routine):
+        """MCall nodes are created with target links (§8.2.3)."""
+        pytest.fail("Stub - implement test")
+
+    def test_external_routine_reference(self):
+        """External routine references are tracked (§8.2.3)."""
+        parser = MUMPSParser()
+        source = """TEST	;TEST
+	D ^VREPORT
+	Q
+"""
+        routine = parser.parse(source, "test.m")
+
+        # Find the DO statement
+        do_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(do_stmt, MDoStatement)
+
+        # Check the target
+        assert len(do_stmt.targets) == 1
+        target = do_stmt.targets[0]
+        assert target.name == "", f"Expected name='', got name={repr(target.name)}"
+        assert target.name is not None, "name should be '' not None"
+        assert target.routine == "VREPORT"
+
+
+@pytest.mark.asg
+class TestDoBlockBodyPopulation:
+    """Tests for DO block body statement collection (§8.2.3)."""
 
     def test_do_block_nested(self):
         """Nested DO blocks are properly structured."""
@@ -166,50 +179,8 @@ def analyze_first_command(line: str):
 
 
 @pytest.mark.asg
-class TestDoStatementAnalysis:
-    """Tests for DO command analysis."""
-
-    def test_simple_do(self):
-        """D LABEL produces MDoStatement."""
-        stmt = analyze_first_command("D LABEL")
-
-        assert isinstance(stmt, MDoStatement)
-        assert len(stmt.targets) == 1
-        assert stmt.targets[0].name == "LABEL"
-
-    def test_do_with_args(self):
-        """D FUNC(1,2) produces target with arguments."""
-        stmt = analyze_first_command("D FUNC(1,2)")
-
-        assert isinstance(stmt, MDoStatement)
-        target = stmt.targets[0]
-        assert target.name == "FUNC"
-        assert len(target.arguments) == 2
-
-
-@pytest.mark.asg
 class TestExternalRoutineCalls:
     """Test that external routine calls (^ROUTINE syntax) are correctly represented (T373)."""
-
-    def test_do_external_routine_has_empty_name(self):
-        """Test D ^ROUTINE sets name='' not name=None."""
-        parser = MUMPSParser()
-        source = """TEST	;TEST
-	D ^VREPORT
-	Q
-"""
-        routine = parser.parse(source, "test.m")
-
-        # Find the DO statement
-        do_stmt = routine.labels[0].body.statements[0]
-        assert do_stmt.__class__.__name__ == "MDoStatement"
-
-        # Check the target
-        assert len(do_stmt.targets) == 1
-        target = do_stmt.targets[0]
-        assert target.name == "", f"Expected name='', got name={repr(target.name)}"
-        assert target.name is not None, "name should be '' not None"
-        assert target.routine == "VREPORT"
 
     def test_goto_external_routine_has_empty_name(self):
         """Test G ^ROUTINE sets name='' not name=None."""

@@ -14,11 +14,10 @@ from m2py.asg.statements import MBreakStatement
 class TestBreakCommandAnalysis:
     """ASG-level tests for BREAK command analysis (§8.2.1)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: BREAK command node")
     def test_break_command_node(self, analyze_routine):
         """BREAK command creates correct ASG node (§8.2.1)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("B")
+        assert isinstance(stmt, MBreakStatement)
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: BREAK with postcondition")
@@ -32,14 +31,3 @@ def analyze_first_command(line: str):
     cmds = parse_commands_from_line(line)
     assert len(cmds) >= 1, f"No commands parsed from: {line}"
     return analyze_command(cmds[0])
-
-
-@pytest.mark.asg
-class TestBreakStatementAnalysis:
-    """Tests for BREAK statement analysis."""
-
-    def test_break(self):
-        """B produces MBreakStatement."""
-        stmt = analyze_first_command("B")
-
-        assert isinstance(stmt, MBreakStatement)

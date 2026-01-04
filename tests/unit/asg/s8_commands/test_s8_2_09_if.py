@@ -17,6 +17,13 @@ from m2py.asg.statements import (
 )
 
 
+def analyze_first_command(line: str):
+    """Helper to parse a line and analyze the first command."""
+    cmds = parse_commands_from_line(line)
+    assert len(cmds) >= 1, f"No commands parsed from: {line}"
+    return analyze_command(cmds[0])
+
+
 @pytest.mark.asg
 class TestIfCommandAnalysis:
     """ASG-level tests for IF command analysis (§8.2.9)."""
@@ -25,31 +32,41 @@ class TestIfCommandAnalysis:
     @pytest.mark.xfail(reason="Not yet implemented: IF $TEST modification")
     def test_if_test_modification(self, analyze_routine):
         """IF modifies $TEST correctly (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+        pytest.fail("Stub - implement test for $TEST special variable modification")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF condition analysis")
-    def test_if_condition_analysis(self, analyze_routine):
+    def test_if_condition_analysis(self):
         """IF condition expressions are analyzed (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("I X=1")
+
+        assert isinstance(stmt, MIfStatement)
+        assert stmt.condition is not None
+        assert len(stmt.conditions) == 1
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: IF control flow")
     def test_if_control_flow(self, analyze_routine):
         """IF control flow impact is tracked (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+        pytest.fail("Stub - implement test for control flow analysis")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF argumentless")
-    def test_if_argumentless(self, analyze_routine):
+    def test_if_argumentless(self):
         """IF argumentless uses $TEST (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+        stmt = analyze_first_command("I")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF multiple conditions")
-    def test_if_multiple_conditions(self, analyze_routine):
+        assert isinstance(stmt, MIfStatement)
+        assert stmt.condition is None
+        assert len(stmt.conditions) == 0
+
+    def test_if_multiple_conditions(self):
         """IF with multiple comma-separated conditions is analyzed (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+        commands = parse_commands_from_line("I A=1,B=2")
+        assert len(commands) == 1
+
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(commands[0], None)
+
+        assert isinstance(stmt, MIfStatement)
+        assert hasattr(stmt, "conditions") and stmt.conditions is not None
+        assert len(stmt.conditions) == 2
 
 
 @pytest.mark.asg
@@ -120,13 +137,6 @@ class TestIfElseBodyPopulation:
         assert isinstance(for_stmt, MForStatement)
         assert len(for_stmt.body.statements) == 1
         assert isinstance(for_stmt.body.statements[0], MSetStatement)
-
-
-def analyze_first_command(line: str):
-    """Helper to parse a line and analyze the first command."""
-    cmds = parse_commands_from_line(line)
-    assert len(cmds) >= 1, f"No commands parsed from: {line}"
-    return analyze_command(cmds[0])
 
 
 @pytest.mark.asg
