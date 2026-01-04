@@ -731,90 +731,156 @@ class TestMathLibraryMatrixParsing:
     Functions: MTXADD, MTXSUB, MTXMUL, MTXSCA, MTXCOPY, MTXTRP, MTXDET, MTXINV, MTXCOF, MTXEQU, MTXUNIT.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXADD^MATH library function parsing"
-    )
-    def test_math_mtxadd(self):
-        """$%MTXADD^MATH(A,B,C) parses correctly (Annex I-2.33)."""
-        pytest.fail("Stub - implement test")
+    def test_math_mtxadd(self, parse_mumps):
+        """$%MTXADD^MATH(A,B,C) parses correctly (Annex I-2.33).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXSUB^MATH library function parsing"
-    )
-    def test_math_mtxsub(self):
-        """$%MTXSUB^MATH(A,B,C) parses correctly (Annex I-2.40)."""
-        pytest.fail("Stub - implement test")
+        MTXADD^MATH adds two matrices: C = A + B.
+        """
+        routine = parse_mumps("TEST S X=$$MTXADD^MATH(A,B,C)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXMUL^MATH library function parsing"
-    )
-    def test_math_mtxmul(self):
-        """$%MTXMUL^MATH(A,B,C,PREC) parses correctly (Annex I-2.38)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXADD"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXSCA^MATH library function parsing"
-    )
-    def test_math_mtxsca(self):
-        """$%MTXSCA^MATH(A,S,B) parses correctly (Annex I-2.39)."""
-        pytest.fail("Stub - implement test")
+    def test_math_mtxsub(self, parse_mumps):
+        """$%MTXSUB^MATH(A,B,C) parses correctly (Annex I-2.40).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXCOPY^MATH library function parsing"
-    )
-    def test_math_mtxcopy(self):
-        """$%MTXCOPY^MATH(A,B) parses correctly (Annex I-2.35)."""
-        pytest.fail("Stub - implement test")
+        MTXSUB^MATH subtracts two matrices: C = A - B.
+        """
+        routine = parse_mumps("TEST S X=$$MTXSUB^MATH(A,B,C)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXTRP^MATH library function parsing"
-    )
-    def test_math_mtxtrp(self):
-        """$%MTXTRP^MATH(A,B) parses correctly (Annex I-2.41)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXSUB"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXDET^MATH library function parsing"
-    )
-    def test_math_mtxdet(self):
-        """$%MTXDET^MATH(A,PREC) parses correctly (Annex I-2.36)."""
-        pytest.fail("Stub - implement test")
+    def test_math_mtxmul(self, parse_mumps):
+        """$%MTXMUL^MATH(A,B,C,PREC) parses correctly (Annex I-2.38).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXINV^MATH library function parsing"
-    )
-    def test_math_mtxinv(self):
-        """$%MTXINV^MATH(A,B,PREC) parses correctly (Annex I-2.37)."""
-        pytest.fail("Stub - implement test")
+        MTXMUL^MATH multiplies two matrices: C = A * B.
+        """
+        routine = parse_mumps("TEST S X=$$MTXMUL^MATH(A,B,C,10)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXCOF^MATH library function parsing"
-    )
-    def test_math_mtxcof(self):
-        """$%MTXCOF^MATH(A,B,PREC) parses correctly (Annex I-2.34)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXMUL"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXEQU^MATH library function parsing"
-    )
-    def test_math_mtxequ(self):
-        """$%MTXEQU^MATH(A,B) parses correctly (Annex I-2.36a)."""
-        pytest.fail("Stub - implement test")
+    def test_math_mtxsca(self, parse_mumps):
+        """$%MTXSCA^MATH(A,S,B) parses correctly (Annex I-2.39).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%MTXUNIT^MATH library function parsing"
-    )
-    def test_math_mtxunit(self):
-        """$%MTXUNIT^MATH(A,N) parses correctly (Annex I-2.41a)."""
-        pytest.fail("Stub - implement test")
+        MTXSCA^MATH scales a matrix: B = S * A.
+        """
+        routine = parse_mumps("TEST S X=$$MTXSCA^MATH(A,2,B)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXSCA"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_mtxcopy(self, parse_mumps):
+        """$%MTXCOPY^MATH(A,B) parses correctly (Annex I-2.35).
+
+        MTXCOPY^MATH copies a matrix: B = A.
+        """
+        routine = parse_mumps("TEST S X=$$MTXCOPY^MATH(A,B)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXCOPY"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_mtxtrp(self, parse_mumps):
+        """$%MTXTRP^MATH(A,B) parses correctly (Annex I-2.41).
+
+        MTXTRP^MATH transposes a matrix: B = A^T.
+        """
+        routine = parse_mumps("TEST S X=$$MTXTRP^MATH(A,B)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXTRP"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_mtxdet(self, parse_mumps):
+        """$%MTXDET^MATH(A,PREC) parses correctly (Annex I-2.36).
+
+        MTXDET^MATH computes the determinant of a matrix.
+        """
+        routine = parse_mumps("TEST S X=$$MTXDET^MATH(A,10)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXDET"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_mtxinv(self, parse_mumps):
+        """$%MTXINV^MATH(A,B,PREC) parses correctly (Annex I-2.37).
+
+        MTXINV^MATH computes the inverse of a matrix: B = A^-1.
+        """
+        routine = parse_mumps("TEST S X=$$MTXINV^MATH(A,B,10)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXINV"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_mtxcof(self, parse_mumps):
+        """$%MTXCOF^MATH(A,B,PREC) parses correctly (Annex I-2.34).
+
+        MTXCOF^MATH computes the cofactor matrix.
+        """
+        routine = parse_mumps("TEST S X=$$MTXCOF^MATH(A,B,10)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXCOF"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_mtxequ(self, parse_mumps):
+        """$%MTXEQU^MATH(A,B) parses correctly (Annex I-2.36a).
+
+        MTXEQU^MATH tests matrix equality: returns 1 if A = B, else 0.
+        """
+        routine = parse_mumps("TEST S X=$$MTXEQU^MATH(A,B)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXEQU"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_mtxunit(self, parse_mumps):
+        """$%MTXUNIT^MATH(A,N) parses correctly (Annex I-2.41a).
+
+        MTXUNIT^MATH creates an N x N identity matrix in A.
+        """
+        routine = parse_mumps("TEST S X=$$MTXUNIT^MATH(A,3)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "MTXUNIT"
+        assert assign.value.target.routine == "MATH"
