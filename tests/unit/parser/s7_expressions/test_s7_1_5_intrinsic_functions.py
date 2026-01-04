@@ -57,81 +57,117 @@ class TestIntrinsicFunctionsParsing:
         model = expr_metamodel.model_from_str("$L(X)", "Expr")
         assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ASCII function parsing")
     def test_ascii_function(self, expr_metamodel):
         """$ASCII(string) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$ASCII(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ASCII"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $CHAR function parsing")
     def test_char_function(self, expr_metamodel):
         """$CHAR(code) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$CHAR(65)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "CHAR"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $FIND function parsing")
     def test_find_function(self, expr_metamodel):
         """$FIND(string,target) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str('$FIND(STR,"X")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "FIND"
+        assert len(operand.args.args) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $JUSTIFY function parsing")
     def test_justify_function(self, expr_metamodel):
         """$JUSTIFY(expr,width,decimal) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$JUSTIFY(X,10,2)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "JUSTIFY"
+        assert len(operand.args.args) == 3
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $REVERSE function parsing")
     def test_reverse_function(self, expr_metamodel):
         """$REVERSE(string) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$REVERSE(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "REVERSE"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TRANSLATE function parsing")
     def test_translate_function(self, expr_metamodel):
         """$TRANSLATE(string,from,to) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str('$TRANSLATE(X,"abc","ABC")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "TRANSLATE"
+        assert len(operand.args.args) == 3
 
     # ---- Numeric Functions ----
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $FNUMBER function parsing")
     def test_fnumber_function(self, expr_metamodel):
         """$FNUMBER(num,format,digits) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str('$FNUMBER(X,",")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "FNUMBER"
+        assert len(operand.args.args) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $RANDOM function parsing")
     def test_random_function(self, expr_metamodel):
         """$RANDOM(limit) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$RANDOM(100)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "RANDOM"
+        assert len(operand.args.args) == 1
 
     # ---- Data Functions ----
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $DATA function parsing")
     def test_data_function(self, expr_metamodel):
         """$DATA(var) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$DATA(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "DATA"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $GET function parsing")
     def test_get_function(self, expr_metamodel):
         """$GET(var,default) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$GET(X,0)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "GET"
+        assert len(operand.args.args) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ORDER function parsing")
     def test_order_function(self, expr_metamodel):
         """$ORDER(var,direction) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$ORDER(X(I))", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ORDER"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QUERY function parsing")
     def test_query_function(self, expr_metamodel):
         """$QUERY(var) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$QUERY(^DATA(I))", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "QUERY"
+        assert len(operand.args.args) == 1
 
     # ---- Name Functions ----
 

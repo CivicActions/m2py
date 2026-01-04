@@ -215,11 +215,20 @@
 - This completes all MATH library parser tests (57 total across B1-B5)
 - Final count: 3114 passed, 110 skipped, 816 xfailed
 
-### Batch B6-B7: Parser Intrinsic Functions (24 stubs, Low complexity)
+### Batch B6: Parser Intrinsic Functions - String/Numeric/Data (12 stubs, Low complexity) ✅ COMPLETE
 
-- [ ] T055 [P] [US1] Research MUMPS spec §7.1.5 intrinsic functions in mumps-reference/
-- [ ] T056 [US1] Find intrinsic function examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T057 [US1] Implement 12 intrinsic function tests in tests/unit/parser/s7_expressions/test_s7_1_5_intrinsic_functions.py (B6)
+- [X] T055 [P] [US1] Research MUMPS spec §7.1.5 intrinsic functions in mumps-reference/
+- [X] T056 [US1] Find intrinsic function examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T057 [US1] Implement 12 intrinsic function tests in tests/unit/parser/s7_expressions/test_s7_1_5_intrinsic_functions.py (B6)
+
+**Additional work completed:**
+- 12 stubs converted to passing tests: $ASCII, $CHAR, $FIND, $JUSTIFY, $REVERSE, $TRANSLATE (string functions) + $FNUMBER, $RANDOM (numeric) + $DATA, $GET, $ORDER, $QUERY (data functions)
+- Tests verify: IntrinsicFunction parsing with correct name and args count
+- No implementation gaps - parser already correctly handles all standard intrinsic functions
+- Final count: 3126 passed, 110 skipped, 804 xfailed
+
+### Batch B7: Parser Intrinsic Functions - Name/Stack/Text (12 stubs, Low complexity)
+
 - [ ] T058 [US1] Implement 12 remaining intrinsic tests in same file (B7)
 - [ ] T059 [US1] Run full test suite and regenerate coverage matrix
 
