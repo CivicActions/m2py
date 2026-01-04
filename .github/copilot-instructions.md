@@ -20,9 +20,9 @@ Run short Python snippets with pylanceRunCodeSnippet or create a permanent helpe
 ## Key Reference Materials
 
 - `docs/` - **Project documentation** (architecture, ASG reference, examples, codegen strategies)
-- **MUMPS Specification**: https://71.174.62.16/Demo/AnnoStd (local mirror may be available in `mumps-reference/`)
+- **MUMPS Specification**: https://71.174.62.16/Demo/AnnoStd (local mirror in `mumps-reference/` with examples and notes)
 - **textX Documentation**: https://textx.github.io/textX/ (local mirror may be available in `textX-reference/`)
-- `tests/functional/mugj/` - MUGJ functional test suite (authoritative validation)
+- `YDBTest/` - YDB test suite (runtime validation)
 - `.specify/memory/constitution.md` - Project principles and constraints
 
 ## Architecture
@@ -40,6 +40,6 @@ Uses **Speckit** for spec-driven development via `.github/prompts/speckit.*.prom
 ## Core Principles
 
 1. **Semantic Correctness First** - Generated Python must match MUMPS behavior exactly
-2. **Test-Driven Validation** - MUGJ tests are the source of truth
+2. **Test-Driven Validation** - MUMPS reference and YDBTest are the sources of truth
 3. **Multi-Phase Architecture** - Parse → Analyze → Generate (all references resolved before codegen)
 4. **Incremental Validation** - Start simple, prove correct, then add complexity

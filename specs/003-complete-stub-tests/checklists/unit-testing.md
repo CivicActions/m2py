@@ -74,7 +74,7 @@
 - [ ] CHK039 - Is the assumption "parser implementation substantially complete" validated with coverage data? [Assumption, Spec §Assumptions]
 - [ ] CHK040 - Is the assumption "ASG can represent all semantic information" validated? [Assumption, Spec §Assumptions]
 - [ ] CHK041 - Is validate_asg.py's accuracy assumption documented and testable? [Assumption, Spec §Assumptions]
-- [ ] CHK042 - Are MUGJ test dependencies documented (required files, expected behavior)? [Dependency]
+- [ ] CHK042 - Are MUMPS reference dependencies documented (required files, expected behavior)? [Dependency]
 - [ ] CHK043 - Is the mumps-reference/ local mirror currency/completeness documented? [Dependency]
 
 ## Ambiguities & Conflicts - Resolution Tracking

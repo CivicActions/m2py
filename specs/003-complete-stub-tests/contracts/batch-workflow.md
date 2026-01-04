@@ -19,12 +19,12 @@ Read the relevant MUMPS specification section **carefully**:
 
 Search for example code in order of preference. Use these to **validate your understanding** of the spec:
 
-1. **MUGJ tests** (authoritative):
+1. **MUMPS reference examples/notes** (most authoritative):
    ```bash
-   grep -r "PATTERN" YDBTest/mugj/inref/
+   grep -r "PATTERN" mumps-reference/examples__*.md mumps-reference/notes__*.md
    ```
 
-2. **YDB test suite** (fallback 1):
+2. **YDBTest suite** (fallback 1):
    ```bash
    grep -r "PATTERN" YDBTest/*/inref/
    ```
@@ -92,9 +92,19 @@ If tests fail due to missing/incorrect functionality:
 
 1. Document the gap in the test docstring
 2. Implement the fix in `src/m2py/`
-3. Re-run related tests to verify fix
-4. **Commit implementation fix BEFORE test changes** (batch related fixes together)
-5. For high-risk changes (shared code paths), run full test suite mid-batch
+3. **Update documentation** for any changed behavior (see FR-016 scope below)
+4. Re-run related tests to verify fix
+5. **Commit implementation fix BEFORE test changes** (batch related fixes together)
+6. For high-risk changes (shared code paths), run full test suite mid-batch
+
+**Documentation Scope (FR-016)**: When implementation changes affect behavior, update relevant docs:
+- `docs/asg/` - ASG node types, fields, code generation notes
+- `docs/analysis/` - Analysis pass behavior, new fields populated
+- `docs/codegen/` - Translation strategies, Python patterns
+- `docs/examples/` - MUMPS-to-ASG mappings if affected
+- `docs/architecture.md`, `docs/grammar_overview.md`, `docs/limitations.md`, `docs/testing.md` - as applicable
+
+Note: `docs/coverage-matrix.md` is auto-generated in Step 7 (FR-007).
 
 ### Step 7: Verify Batch Complete
 
@@ -125,7 +135,7 @@ Update tasks.md after each batch:
 ```markdown
 ### Batch A1: ASG s7_1_3_ssvns
 - [x] Research SSVN spec (§7.1.3)
-- [x] Find examples in MUGJ
+- [x] Find examples in MUMPS reference
 - [x] Evaluate ASG quality for codegen
 - [x] Check for existing tests
 - [x] Implement 8 tests
@@ -141,22 +151,24 @@ Update tasks.md after each batch:
 1. Document in test with TODO comment
 2. Create minimal reproduction case
 3. Fix parser before completing test
-4. Commit parser fix first, then test
-5. Run full suite if fix touches shared code
+4. **Update documentation** if parser behavior changes (FR-016): `docs/grammar_overview.md`, `docs/limitations.md`
+5. Commit parser fix first, then test
+6. Run full suite if fix touches shared code
 
 ### ASG Analysis Gap
 
 1. Document what ASG field/analysis is missing
 2. Implement in semantic_analyzer.py
 3. Add any needed ASG fields to statements.py or expressions.py
-4. Re-run tests
+4. **Update documentation** (FR-016): `docs/asg/` for new fields, `docs/analysis/` for analyzer changes
+5. Re-run tests
 
 ### Spec Ambiguity
 
-1. Check MUGJ behavior as authoritative reference
-2. Check YDB implementation behavior
+1. Check MUMPS reference examples/notes as authoritative reference
+2. Check YDBTest implementation behavior
 3. Document interpretation in test docstring
-4. Proceed with MUGJ-aligned behavior
+4. Proceed with MUMPS reference-aligned behavior
 
 ### Implementation Fix Causes Regression (Previously-Passing Test Fails)
 
@@ -165,7 +177,7 @@ Update tasks.md after each batch:
 1. **STOP** - Do not immediately change the old test
 2. **Verify new behavior is correct**:
    - Re-read MUMPS reference for the affected construct
-   - Find concrete examples in MUGJ/YDB tests
+   - Find concrete examples in MUMPS reference or YDBTest
    - Confirm the new ASG structure is semantically correct
 3. **Verify new behavior improves codegen quality**:
    - Does the new ASG contain MORE useful information?

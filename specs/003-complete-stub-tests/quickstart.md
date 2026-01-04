@@ -47,10 +47,10 @@ cat mumps-reference/1995__a107XXX.md  # Find correct file
 Search for real-world examples to **validate your understanding** of the spec:
 
 ```bash
-# Search MUGJ (authoritative) first
-grep -r "^\$DEVICE\|^\$IO\|^\$JOB" YDBTest/mugj/inref/ | head -20
+# Search MUMPS reference (authoritative) first
+grep -r "^\$DEVICE\|^\$IO\|^\$JOB" mumps-reference/examples__*.md mumps-reference/notes__*.md | head -20
 
-# Fallback to YDB test suite
+# Fallback to YDBTest suite
 grep -r "pattern" YDBTest/*/inref/ | head -10
 
 # Fallback to VistA
@@ -154,9 +154,17 @@ uv run pytest tests/unit/asg/s7_expressions/test_s7_1_3_ssvns.py -v
 
 # If implementation gaps found:
 # 1. Fix in src/m2py/
-# 2. Commit implementation fix BEFORE test changes
-# 3. Re-run tests
+# 2. Update documentation (see FR-016 scope below)
+# 3. Commit implementation fix BEFORE test changes
+# 4. Re-run tests
 ```
+
+**Documentation Updates (FR-016)**: When implementation changes address test gaps:
+- `docs/asg/` - ASG node types, new fields, code generation notes
+- `docs/analysis/` - Analysis pass behavior changes
+- `docs/codegen/` - Translation strategies affected by changes
+- `docs/examples/` - MUMPS-to-ASG mappings if affected
+- `docs/architecture.md`, `docs/grammar_overview.md`, `docs/limitations.md` - as applicable
 
 ### 8. Verify Batch Complete (FULL SUITE)
 
@@ -188,7 +196,7 @@ If your implementation fix causes a previously-passing test to fail:
 
 1. **STOP** - Don't immediately change the old test
 2. Re-read MUMPS reference for affected construct
-3. Find concrete examples in MUGJ/YDB
+3. Find concrete examples in MUMPS reference (`mumps-reference/examples__*.md`) or YDBTest
 4. Confirm new ASG is semantically correct
 5. Verify new behavior **IMPROVES** codegen quality (not just different)
 6. Only if 100% confident: Update the regressing test

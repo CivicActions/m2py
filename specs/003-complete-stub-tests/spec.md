@@ -19,7 +19,7 @@ As a developer validating the MUMPS parser, I want all parser stub tests to be i
 
 1. **Given** a parser stub test for a MUMPS construct, **When** the test is implemented with proper assertions, **Then** the test validates the parser output matches the expected AST structure
 2. **Given** an existing parser implementation, **When** stubs are converted to real tests, **Then** any parser bugs discovered are fixed and documented
-3. **Given** a MUMPS language feature from the spec, **When** test examples are sourced from MUGJ/YDB/VistA, **Then** the tests use realistic MUMPS code
+3. **Given** a MUMPS language feature from the spec, **When** test examples are sourced from MUMPS reference/YDBTest/VistA, **Then** the tests use realistic MUMPS code
 
 ---
 
@@ -66,7 +66,7 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
 ### Edge Cases
 
 - What happens when a stub test reveals a parser bug? Document and fix the bug, then complete the test.
-- What happens when MUMPS spec is ambiguous? Use MUGJ/YDB behavior as authoritative reference.
+- What happens when MUMPS spec is ambiguous? Use MUMPS reference examples/notes as authoritative reference, then YDBTest behavior.
 - What happens when a test requires unimplemented ASG analysis? Implement the analysis, then complete the test.
 - How do we handle out-of-scope features (event processing, embedded programs)? Mark as skipped with documentation.
 - What happens when existing tests have incorrect assertions? Refine tests based on spec validation.
@@ -78,7 +78,7 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
 - **FR-001**: All parser stub tests MUST be converted to implemented tests with proper assertions
 - **FR-002**: All ASG stub tests MUST be converted to implemented tests validating semantic graph structure
 - **FR-003**: Codegen stub tests are OUT OF SCOPE for this spec (deferred to later work)
-- **FR-004**: Tests MUST use example MUMPS code from authoritative sources (MUGJ, YDB, VistA)
+- **FR-004**: Tests MUST use example MUMPS code from authoritative sources (MUMPS reference, YDBTest, VistA)
 - **FR-005**: Parser bugs discovered MUST be fixed before marking tests as complete
 - **FR-006**: ASG analysis gaps discovered MUST be implemented before marking tests as complete
 - **FR-007**: Coverage matrix MUST be regenerated per-batch (after each batch completion, aligns with FR-010 step 8)
@@ -91,7 +91,7 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
   - Detailed batch sizing determined during planning research phase
 - **FR-010**: Each test implementation MUST follow the MUMPS-spec-driven validation process:
   1. **Research**: Read MUMPS reference (`mumps-reference/`) carefully to understand the spec semantics
-  2. **Find Examples**: Search for example content in order: MUGJ (`YDBTest/mugj/`) → YDB test suite → VistA codebase. Use examples to validate spec understanding.
+  2. **Find Examples**: Search for example content in order: MUMPS reference (`mumps-reference/examples__*.md`, `mumps-reference/notes__*.md`) → YDBTest (`YDBTest/`) → VistA codebase (`VistA-M/`). Use examples to validate spec understanding.
   3. **Evaluate ASG Quality**: Test current parsing/ASG with `validate_asg.py` to assess if ASG meets quality requirements for Python code generation. Use this to understand what the ASG SHOULD contain (which may differ from current output if inadequate).
   4. **Check Existing Tests**: Search for existing test content that may already cover this functionality. Consolidate into spec-aligned test functions rather than duplicating.
   5. **Implement Tests**: Build out parser, ASG, and other unit tests as needed. Tests should specify the CORRECT ASG structure (per step 3 analysis), not just the current behavior.
@@ -103,6 +103,7 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
 - **FR-013**: Parser test assertions MUST validate textX model object structure (node types, attribute values, child node relationships)
 - **FR-014**: Tests MUST be isolated (no shared mutable state) and deterministic (same input produces same result)
 - **FR-015**: Tests MUST support parallel execution via pytest-xdist (already configured in project)
+- **FR-016**: Documentation MUST be updated when implementation changes address test gaps. Scope includes: `docs/asg/` (ASG node documentation), `docs/analysis/` (analysis pass documentation), `docs/codegen/` (code generation strategies), `docs/examples/` (MUMPS-to-ASG examples), `docs/architecture.md`, `docs/grammar_overview.md`, `docs/limitations.md`, and `docs/testing.md`. Auto-generated files (`docs/coverage-matrix.md`) are handled by FR-007.
 
 ### Key Entities
 
@@ -121,7 +122,7 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
 - **SC-003**: Coverage matrix shows ✅ for all in-scope spec sections in Parser and ASG columns
 - **SC-004**: Parser code coverage reaches 95%+ (measured by pytest-cov)
 - **SC-005**: ASG analysis code coverage reaches 95%+ (measured by pytest-cov)
-- **SC-006**: All MUGJ functional tests can be parsed and generate valid ASG (no parsing errors)
+- **SC-006**: All YDBTest functional tests can be parsed and generate valid ASG (no parsing errors)
 - **SC-007**: Each test batch completion is documented in task tracking
 - **SC-008**: No duplicate test implementations - existing tests are refactored into spec-aligned structure
 
@@ -140,12 +141,13 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
 - Q: What test quality requirements should apply (isolation, determinism)? → A: Tests MUST be isolated and deterministic. However, this is largely automatic given the project's unidirectional data flow architecture (parse → analyze → generate) with no shared mutable state or persistent storage.
 - Q: Should tests be designed to run in parallel with pytest-xdist? → A: Tests MUST support parallel execution; pytest-xdist is already implemented and automatically applied. This is enabled by the isolation/determinism properties above.
 - Q: When should the coverage matrix be regenerated? → A: Per-batch - regenerate after completing each batch (aligns with FR-010 step 8). Balances progress visibility with avoiding excessive overhead.
+- Q: Should documentation be updated when implementation changes? → A: Yes - documentation MUST be updated when implementation changes address test gaps. Documentation scope: `docs/asg/` (ASG node types, fields, code generation notes), `docs/analysis/` (analysis pass behavior, new fields), `docs/codegen/` (translation strategies), `docs/examples/` (MUMPS-to-ASG mappings), plus `docs/architecture.md`, `docs/grammar_overview.md`, `docs/limitations.md`, and `docs/testing.md`. Auto-generated `docs/coverage-matrix.md` is handled separately by FR-007.
 
 ## Assumptions
 
 - The existing parser implementation is substantially complete for the 1995 MUMPS spec
 - The existing ASG structure can represent all necessary semantic information
-- MUGJ tests in `tests/functional/mugj/` are the authoritative validation source
+- MUMPS reference (`mumps-reference/`) is the most authoritative source; YDBTest in `YDBTest/` provides runtime validation
 - Out-of-scope features (event processing, embedded programs) remain skipped
 - The validate_asg.py utility accurately assesses ASG quality for Python generation
 - Test batches can be completed incrementally without breaking existing functionality

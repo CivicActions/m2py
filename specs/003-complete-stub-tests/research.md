@@ -152,7 +152,7 @@ Each batch follows the MUMPS-spec-driven validation process. The goal is ensurin
 For each batch:
 
 1. **Research**: Read MUMPS spec section CAREFULLY - understand what semantic information codegen needs
-2. **Find Examples**: Search MUGJ → YDB → VistA for real-world examples to validate spec understanding
+2. **Find Examples**: Search MUMPS reference (`mumps-reference/examples__*.md`, `mumps-reference/notes__*.md`) → YDBTest → VistA for real-world examples to validate spec understanding
 3. **Evaluate ASG Quality**: Use `validate_asg.py` then READ the output with developer judgment. Assess if current ASG meets codegen requirements. Gaps identified become test assertions.
 4. **Check Existing Tests**: Search for existing test content to consolidate rather than duplicate
 5. **Implement**: Write/refine test assertions:
@@ -173,7 +173,7 @@ When fixes cause regressions in existing tests:
 ### Key Resources
 
 - **MUMPS Spec**: `mumps-reference/` (local mirror)
-- **YDB Tests**: `YDBTest/mugj/` (functional validation)
+- **YDB Tests**: `YDBTest/` (functional validation)
 - **ASG Validator**: `utils/validate_asg.py`
 - **Coverage Audit**: `utils/audit_tests.py`
 

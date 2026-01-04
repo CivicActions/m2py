@@ -97,13 +97,14 @@ The following decisions were made during specification clarification:
 9. **Test Quality**: Tests must be isolated and deterministic (automatic given unidirectional architecture)
 10. **Parallel Execution**: Tests must support pytest-xdist (already configured and applied)
 11. **Coverage Matrix Frequency**: Regenerate per-batch (at FR-010 step 8)
+12. **Documentation Updates**: When implementation changes address test gaps, update relevant docs (`docs/asg/`, `docs/analysis/`, `docs/codegen/`, `docs/examples/`, plus standalone docs). Auto-generated `docs/coverage-matrix.md` handled by FR-007.
 
 ## FR-010: MUMPS-Spec-Driven Validation Process
 
 Each test implementation follows this 8-step process (see [batch-workflow.md](./contracts/batch-workflow.md) for details):
 
 1. **Research**: Read MUMPS reference carefully to understand semantics
-2. **Find Examples**: Search MUGJ → YDB → VistA for real-world examples
+2. **Find Examples**: Search MUMPS reference (`mumps-reference/examples__*.md`, `mumps-reference/notes__*.md`) → YDBTest → VistA for real-world examples
 3. **Evaluate ASG Quality**: Use `validate_asg.py` to assess if current ASG meets codegen requirements
 4. **Check Existing Tests**: Consolidate rather than duplicate
 5. **Implement Tests**: Assert CORRECT ASG structure (per step 3 analysis)
@@ -164,7 +165,7 @@ When stub tests reveal implementation gaps:
 
 1. STOP - Do not immediately change the old test
 2. Re-read MUMPS reference for affected construct
-3. Find concrete examples in MUGJ/YDB tests
+3. Find concrete examples in MUMPS reference (`mumps-reference/examples__*.md`) or YDBTest
 4. Confirm new ASG is semantically correct
 5. Verify new behavior IMPROVES codegen quality (not just different)
 6. Only if 100% confident: Update regressing test
