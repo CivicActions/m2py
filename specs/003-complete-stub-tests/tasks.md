@@ -380,11 +380,21 @@
 
 **Independent Test**: `uv run pytest tests/unit/asg/ -v` shows all tests passing with 0 xfails
 
-### Batch C1-C2: ASG Intrinsic Functions (21 stubs, Medium complexity)
+### Batch C1: ASG Intrinsic Functions Part 1 (10 stubs, Medium complexity) ✅
 
-- [ ] T094 [P] [US2] Research MUMPS spec §7.1.5 intrinsic function semantics in mumps-reference/
-- [ ] T095 [US2] Evaluate ASG quality for intrinsic functions using validate_asg.py
-- [ ] T096 [US2] Implement 10 intrinsic function ASG tests in tests/unit/asg/s7_expressions/test_s7_1_5_intrinsic_functions.py (C1)
+- [X] T094 [P] [US2] Research MUMPS spec §7.1.5 intrinsic function semantics in mumps-reference/
+- [X] T095 [US2] Evaluate ASG quality for intrinsic functions using validate_asg.py
+- [X] T096 [US2] Implement 10 intrinsic function ASG tests in tests/unit/asg/s7_expressions/test_s7_1_5_intrinsic_functions.py (C1)
+
+**Completion Notes (C1)**:
+- Commit: `fc93cd8` - test(asg): Complete intrinsic function ASG tests (C1)
+- Tests implemented: $ASCII, $CHAR, $DATA, $EXTRACT, $FIND, $FNUMBER, $GET, $JUSTIFY, $LENGTH, $NAME
+- Verified MIntrinsicFunction node structure with name and arguments
+- Fixed tests to use MGlobal/GlobalVariable for global variable arguments
+- Final count: 3267 passed, 110 skipped, 662 xfailed
+
+### Batch C2: ASG Intrinsic Functions Part 2 (11 stubs, Medium complexity)
+
 - [ ] T097 [US2] Implement 11 remaining intrinsic ASG tests in same file (C2)
 - [ ] T098 [US2] Fix any implementation gaps in src/m2py/
 - [ ] T099 [US2] Run full test suite and regenerate coverage matrix
