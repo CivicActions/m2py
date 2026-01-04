@@ -74,20 +74,40 @@ class TestRoutineBodyParsing:
         assert label.name == "TEST"
         assert len(label.body.statements) >= 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: line body parsing")
     def test_line_body_parsing(self, parse_mumps):
-        """Line body with commands parses correctly (§6.2.5)."""
-        pytest.fail("Stub - implement test")
+        """Line body with commands parses correctly (§6.2.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: multiple commands on line")
+        A line body consists of one or more commands.
+        """
+        result = parse_mumps("TEST\n S X=1\n Q")
+        assert result is not None
+        label = result.labels[0]
+        # Line body contains the statements
+        assert len(label.body.statements) == 2
+        assert isinstance(label.body.statements[0], MSetStatement)
+
     def test_multiple_commands_on_line(self, parse_mumps):
-        """Multiple commands separated by spaces parse correctly (§6.2.5)."""
-        pytest.fail("Stub - implement test")
+        """Multiple commands separated by spaces parse correctly (§6.2.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: comment after commands")
+        MUMPS allows multiple commands on the same line, separated by spaces.
+        """
+        result = parse_mumps("TEST\n S X=1 S Y=2 S Z=3\n Q")
+        assert result is not None
+        label = result.labels[0]
+        # All SET commands from the line plus QUIT
+        assert len(label.body.statements) == 4
+        assert isinstance(label.body.statements[0], MSetStatement)
+        assert isinstance(label.body.statements[1], MSetStatement)
+        assert isinstance(label.body.statements[2], MSetStatement)
+
     def test_comment_after_commands(self, parse_mumps):
-        """Comment (;) after commands parses correctly (§6.2.5)."""
-        pytest.fail("Stub - implement test")
+        """Comment (;) after commands parses correctly (§6.2.5).
+
+        Comments can appear after commands on the same line.
+        """
+        result = parse_mumps("TEST\n S X=1 ; set variable\n Q")
+        assert result is not None
+        label = result.labels[0]
+        # Comments don't create statements - just S X=1 and Q
+        assert len(label.body.statements) == 2
+        assert isinstance(label.body.statements[0], MSetStatement)
