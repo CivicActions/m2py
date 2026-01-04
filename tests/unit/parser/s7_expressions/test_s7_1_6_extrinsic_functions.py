@@ -46,21 +46,21 @@ class TestExtrinsicFunctionsParsing:
         model = expr_metamodel.model_from_str("$$FUNC^ROUTINE(X,Y)", "Expr")
         assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: extrinsic function with label and offset"
-    )
-    def test_extrinsic_function_label_offset(self, expr_metamodel):
-        """$$LABEL+OFFSET^ROUTINE(args) parses correctly (§7.1.6)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: extrinsic function pass by reference"
-    )
     def test_extrinsic_function_by_ref(self, expr_metamodel):
-        """$$FUNC(.var) pass by reference parses correctly (§7.1.6)."""
-        pytest.fail("Stub - implement test")
+        """$$FUNC(.var) pass by reference parses correctly (§7.1.6).
+
+        The .var syntax passes a variable by reference, allowing the
+        extrinsic function to modify the caller's variable.
+        """
+        model = expr_metamodel.model_from_str("$$FUNC(.X)", "Expr")
+        assert model is not None
+        ef = model.left.operand
+        assert ef.__class__.__name__ == "ExtrinsicFunction"
+        # Check the argument is a by-ref argument
+        assert ef.args is not None
+        # First argument should be by-ref
+        first_arg = ef.args.first
+        assert first_arg.byref is not None
 
 
 @pytest.mark.parser

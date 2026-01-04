@@ -107,31 +107,36 @@ class TestBinaryOperators:
         model = expr_metamodel.model_from_str("1+2*3", "Expr")
         assert model is not None
 
-    # ---- Remaining stubs for operators not covered by migrated tests ----
+    # ---- Remaining operators not covered by migrated tests ----
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: contains operator")
     def test_contains_operator(self, expr_metamodel):
         """Contains [ operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("X[Y", "Expr")
+        assert model is not None
+        # Verify binary operator with [ operand
+        assert len(model.tail) == 1
+        assert model.tail[0].op is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: follows operator")
     def test_follows_operator(self, expr_metamodel):
         """Follows ] operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("X]Y", "Expr")
+        assert model is not None
+        assert len(model.tail) == 1
+        assert model.tail[0].op is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: sorts after operator")
     def test_sorts_after_operator(self, expr_metamodel):
         """Sorts after ]] operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("X]]Y", "Expr")
+        assert model is not None
+        assert len(model.tail) == 1
+        assert model.tail[0].op is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: not contains operator")
     def test_not_contains_operator(self, expr_metamodel):
         """Not contains '[ operator parses correctly (§7.2)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("X'[Y", "Expr")
+        assert model is not None
+        assert len(model.tail) == 1
+        assert model.tail[0].op is not None
 
 
 @pytest.mark.parser

@@ -5,7 +5,27 @@ Tests verify the textX grammar correctly captures pattern match syntax.
 Reference: MUMPS 1995 ANSI Standard, Section 7.2.5
 """
 
+from pathlib import Path
+
 import pytest
+from textx import metamodel_from_file
+
+from m2py.parser.textx_classes import get_expression_classes
+
+
+@pytest.fixture(scope="module")
+def expr_metamodel():
+    """Load the expression grammar metamodel with custom classes."""
+    grammar_path = (
+        Path(__file__).parent.parent.parent.parent.parent
+        / "src"
+        / "m2py"
+        / "grammar"
+        / "expressions.tx"
+    )
+    return metamodel_from_file(
+        str(grammar_path), classes=get_expression_classes(), skipws=True
+    )
 
 
 @pytest.mark.parser
@@ -15,17 +35,38 @@ class TestPatternMatchParsing:
     Pattern matching uses the ? operator with pattern atoms.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: basic pattern match")
-    def test_pattern_match_basic(self, parse_expression):
-        """Basic pattern X?3N parses correctly (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+    def test_pattern_match_basic(self, expr_metamodel):
+        """Basic pattern X?3N parses correctly (§7.2.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern with codes")
-    def test_pattern_with_codes(self, parse_expression):
-        """Pattern codes (A, N, P, L, U, C, E) parse correctly (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        Pattern matching tests if a string matches a pattern.
+        '3N' means exactly 3 numeric characters.
+        """
+        model = expr_metamodel.model_from_str("X?3N", "Expr")
+        assert model is not None
+        # Verify pattern match tail exists
+        assert len(model.tail) == 1
+        tail = model.tail[0]
+        assert tail.__class__.__name__ == "PatternMatchTail"
+        assert tail.pattern is not None
+
+    def test_pattern_with_codes(self, expr_metamodel):
+        """Pattern codes (A, N, P, L, U, C, E) parse correctly (§7.2.5).
+
+        MUMPS pattern codes:
+        - A: alphabetic (a-z, A-Z)
+        - N: numeric (0-9)
+        - P: punctuation
+        - L: lowercase (a-z)
+        - U: uppercase (A-Z)
+        - C: control characters
+        - E: any character
+        """
+        # Test multiple pattern codes
+        for code in ["A", "N", "P", "L", "U", "C", "E"]:
+            pattern = f"X?1{code}"
+            model = expr_metamodel.model_from_str(pattern, "Expr")
+            assert model is not None, f"Failed to parse pattern with code {code}"
+            assert model.tail[0].__class__.__name__ == "PatternMatchTail"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: pattern quantifier range")

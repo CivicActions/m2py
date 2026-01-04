@@ -67,8 +67,12 @@ class TestStringLiterals:
         model = expr_metamodel.model_from_str('"say ""hi"""', "Expr")
         assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exponential literal")
     def test_exponential_literal(self, expr_metamodel):
         """Exponential literal 1.23E5 parses correctly (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("1.23E5", "Expr")
+        assert model is not None
+        # Navigate to the NumericLiteral
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "NumericLiteral"
+        # 1.23E5 = 123000.0
+        assert operand.value == 123000.0

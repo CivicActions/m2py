@@ -308,10 +308,22 @@
 
 ### Batch B14: Parser Expressions Misc (15 stubs, Low complexity)
 
-- [ ] T078 [P] [US1] Research MUMPS spec §7 expressions in mumps-reference/
-- [ ] T079 [US1] Find expression examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T080 [US1] Implement 15 misc expression tests (pattern match, operators, ssvns) in tests/unit/parser/s7_expressions/
-- [ ] T081 [US1] Run full test suite and regenerate coverage matrix
+- [X] T078 [P] [US1] Research MUMPS spec §7 expressions in mumps-reference/
+- [X] T079 [US1] Find expression examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T080 [US1] Implement 15 misc expression tests (pattern match, operators, ssvns) in tests/unit/parser/s7_expressions/
+- [X] T081 [US1] Run full test suite and regenerate coverage matrix
+
+**Completion Notes B14:**
+- Implemented 14 expression stubs (values, operators, literals, indirection, extrinsic, pattern match)
+- test_s7_1_1_values.py: 4 tests (numeric, string, variable, function values)
+- test_s7_2_operators.py: 4 tests (contains, follows, sorts-after, not-contains)
+- test_s7_1_4_literals.py: 1 test (exponential literal 1.23E5)
+- test_s7_3_indirection.py: 2 tests (subscript/pattern indirection)
+- test_s7_1_6_extrinsic_functions.py: 1 test (by-reference passing)
+- test_s7_2_5_pattern_match.py: 2 tests (basic pattern, pattern codes)
+- Removed invalid stub: extrinsic function label+offset (not supported per MUMPS §8.1.6.2)
+- Updated docs/grammar_overview.md to clarify extrinsic functions use labelref (no offset)
+- Final count: 3213 passed, 110 skipped, 717 xfailed
 
 ### Batch B15: Parser Routine Misc (10 stubs, Medium complexity)
 

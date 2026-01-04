@@ -281,17 +281,38 @@ class TestIndirectionParsing:
         assert ind.expr.__class__.__name__ == "Indirection"
         assert ind.expr.expr.__class__.__name__ == "Indirection"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: subscript indirection")
-    def test_subscript_indirection(self, parse_expression):
-        """Subscript indirection @var@(sub) parses correctly (§7.3)."""
-        pytest.fail("Stub - implement test")
+    def test_subscript_indirection(self, command_metamodel):
+        """Subscript indirection A(@B) parses correctly (§7.3).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern indirection")
-    def test_pattern_indirection(self, parse_expression):
-        """Pattern indirection X?@pattern parses correctly (§7.3)."""
-        pytest.fail("Stub - implement test")
+        When @ appears in subscript position, the expression is evaluated
+        and used as the subscript value.
+        """
+        model = command_metamodel.model_from_str("S A(@B)=1", "SetCommand")
+        assert model is not None
+        # Assignment uses 'targets' attribute (single target in this case)
+        target = model.assignments[0].targets
+        assert target.__class__.__name__ == "LocalVariable"
+        assert target.name == "A"
+        # Subscript is an Indirection
+        assert len(target.subscripts) == 1
+        assert target.subscripts[0].__class__.__name__ == "Indirection"
+
+    def test_pattern_indirection(self, command_metamodel):
+        """Pattern indirection X?@PAT parses correctly (§7.3).
+
+        The pattern for a match operation can be indirect.
+        """
+        model = command_metamodel.model_from_str("S X=Y?@PAT", "SetCommand")
+        assert model is not None
+        # The value is an Expr with pattern match
+        value = model.assignments[0].value
+        assert value is not None
+        # Verify the pattern match has an indirect pattern
+        assert hasattr(value, "tail") and len(value.tail) == 1
+        tail = value.tail[0]
+        assert tail.__class__.__name__ == "PatternMatchTail"
+        # indirect_expr should be set (not pattern)
+        assert tail.indirect_expr is not None
 
 
 @pytest.fixture(scope="module")

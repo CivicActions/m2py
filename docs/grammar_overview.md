@@ -379,14 +379,18 @@ ByRefArg:
 User-defined functions are called with `$$`:
 
 ```textx
+// Extrinsic functions use labelref, NOT entryref (per MUMPS 1995 §8.1.6.2)
+// The +intexpr offset form is NOT permitted when parameters are passed
 ExtrinsicFunction:
-    '$$' target=CallTarget args=ActualList?
-;
-
-CallTarget:
-    name=LABEL_NAME ('+' offset=OffsetExpr)? ('^' routine=ROUTINE_NAME)?
+    '$$' label=TEXTLABELNAME? ('^' (routineIndirect=Indirection | routine=VARNAME))? args=FunctionArgs?
 ;
 ```
+
+**Note:** Unlike DO/GOTO/JOB commands which use `entryref` (with optional offset),
+extrinsic functions use `labelref` which does NOT support label+offset syntax.
+Per MUMPS 1995 spec §8.1.6.2: "When the Do or Job commands or exfunc or exvar
+include parameters to be passed to the specified routine, the +intexpr form of
+entryref is NOT permitted."
 
 ### External Functions ($&)
 
