@@ -261,12 +261,20 @@
 - No implementation gaps - parser correctly handles all special variables
 - Final count: 3155 passed, 110 skipped, 775 xfailed
 
-### Batch B10: Parser Z-Commands (13 stubs, Low complexity)
+### Batch B10: Parser Z-Commands (13 stubs, Low complexity) ✅ COMPLETE
 
-- [ ] T065 [P] [US1] Research YDB Z-command extensions
-- [ ] T066 [US1] Find Z-command examples in YDBTest/
-- [ ] T067 [US1] Implement 13 Z-command tests in tests/unit/parser/s8_commands/ or tests/unit/parser/extensions/
-- [ ] T068 [US1] Run full test suite and regenerate coverage matrix
+- [X] T065 [P] [US1] Research YDB Z-command extensions
+- [X] T066 [US1] Find Z-command examples in YDBTest/
+- [X] T067 [US1] Implement 13 Z-command tests in tests/unit/parser/s8_commands/ or tests/unit/parser/extensions/
+- [X] T068 [US1] Run full test suite and regenerate coverage matrix
+
+**Additional work completed:**
+- Found 13 stubs in test_s8_z_commands.py and 3 stubs in test_s8_2_27_zcommand.py (16 total)
+- Converted all 16 stubs to passing tests using command_metamodel fixture
+- Z-commands tested: ZCONTINUE, ZHALT, ZWRITE, ZBREAK, ZKILL, ZLINK, ZMESSAGE, ZPRINT, ZSHOW, ZSTEP, ZSYSTEM, ZTSTART, ZTCOMMIT
+- Generic Z-command tests verify basic form, with arguments, and with postcondition
+- Comprehensive tests already exist in tests/unit/parser/extensions/ydb/
+- Final count: 3171 passed, 110 skipped, 759 xfailed
 
 ### Batch B11: Parser Command General Rules (10 stubs, Medium complexity)
 
