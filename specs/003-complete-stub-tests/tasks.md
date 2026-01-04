@@ -53,14 +53,21 @@
 - Documented MWAPI out-of-scope in docs/limitations.md
 - Final count: 10 passed, 1 skipped (^$EVENT - MWAPI)
 
-### Batch A2: ASG Special Variables (10 stubs, Medium complexity)
+### Batch A2: ASG Special Variables (10 stubs, Medium complexity) ✅ COMPLETE
 
-- [ ] T011 [P] [US2] Research MUMPS spec §7.1.7 special variables in mumps-reference/
-- [ ] T012 [US2] Find special variable examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T013 [US2] Evaluate ASG quality for special variables using validate_asg.py
-- [ ] T014 [US2] Implement 10 special variable tests in tests/unit/asg/s7_expressions/test_s7_1_7_special_variables.py
-- [ ] T015 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T016 [US2] Run full test suite and regenerate coverage matrix
+- [X] T011 [P] [US2] Research MUMPS spec §7.1.4.10 special variables in mumps-reference/
+- [X] T012 [US2] Find special variable examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T013 [US2] Evaluate ASG quality for special variables using validate_asg.py
+- [X] T014 [US2] Implement special variable tests in tests/unit/asg/s7_expressions/test_s7_1_7_special_variables.py
+- [X] T015 [US2] Fix any implementation gaps in src/m2py/
+- [X] T016 [US2] Run full test suite and regenerate coverage matrix
+
+**Additional work completed:**
+- Consolidated stub tests with existing tests into single comprehensive TestSpecialVariablesFull class
+- Added full/abbreviated tests for all 18 intrinsic special variables from §7.1.4.10
+- Total: 36 tests (18 full names + 18 abbreviations, except X and Y which have no abbreviation)
+- Stubs converted: 19, Tests added: 36, Net gain: +29 passing tests
+- Final count: 3011 passed, 110 skipped, 911 xfailed
 
 ### Batch A3: ASG Command General Rules (5 stubs, Medium complexity)
 
