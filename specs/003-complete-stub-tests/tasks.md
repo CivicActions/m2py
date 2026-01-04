@@ -69,14 +69,19 @@
 - Stubs converted: 19, Tests added: 36, Net gain: +29 passing tests
 - Final count: 3011 passed, 110 skipped, 911 xfailed
 
-### Batch A3: ASG Command General Rules (5 stubs, Medium complexity)
+### Batch A3: ASG Command General Rules (5 stubs, Medium complexity) ✅ COMPLETE
 
-- [ ] T017 [P] [US2] Research MUMPS spec §8.1 command general rules in mumps-reference/
-- [ ] T018 [US2] Find command examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T019 [US2] Evaluate ASG quality for commands using validate_asg.py
-- [ ] T020 [US2] Implement 5 command rule tests in tests/unit/asg/s8_commands/test_s8_1_general_rules.py
-- [ ] T021 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T022 [US2] Run full test suite and regenerate coverage matrix
+- [X] T017 [P] [US2] Research MUMPS spec §8.1 command general rules in mumps-reference/
+- [X] T018 [US2] Find command examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T019 [US2] Evaluate ASG quality for commands using validate_asg.py
+- [X] T020 [US2] Implement 5 command rule tests in tests/unit/asg/s8_commands/test_s8_1_general_rules.py
+- [X] T021 [US2] Fix any implementation gaps in src/m2py/
+- [X] T022 [US2] Run full test suite and regenerate coverage matrix
+
+**Additional work completed:**
+- Tests verify ASG captures: postconditions, timeouts, line references, parameter passing modes, abbreviation normalization
+- All 5 stubs converted to passing tests
+- Final count: 3016 passed, 110 skipped, 906 xfailed
 
 ### Batch A4: ASG Operators (10 stubs, Medium complexity)
 
