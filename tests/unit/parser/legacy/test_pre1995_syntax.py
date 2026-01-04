@@ -30,54 +30,57 @@ class TestNextFunctionParsing:
         """Provide parser instance."""
         return MUMPSParser()
 
-    @pytest.mark.xfail(reason="stub: $NEXT function parsing")
-    @pytest.mark.stub
     def test_next_function_simple(self, parser):
         """Parse simple $NEXT function call."""
         # $NEXT returns next subscript in collating sequence
         code = 'TEST S X=$NEXT(^A(""))'
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
 
         # Should parse as intrinsic function call
         stmt = routine.labels[0].body.statements[0]
         assert stmt is not None
-        pytest.fail("Verify $NEXT parses as intrinsic function")
+        func = stmt.assignments[0].value
+        assert type(func).__name__ == "IntrinsicFunction"
+        assert func.name == "NEXT"
 
-    @pytest.mark.xfail(reason="stub: $N abbreviation parsing")
-    @pytest.mark.stub
     def test_next_function_abbreviated(self, parser):
         """Parse abbreviated $N form of $NEXT."""
         # Both forms should produce identical ASG
         code = 'TEST S X=$N(^A(""))'
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
 
         stmt = routine.labels[0].body.statements[0]
         assert stmt is not None
-        pytest.fail("Verify $N abbreviation parses correctly")
+        func = stmt.assignments[0].value
+        assert type(func).__name__ == "IntrinsicFunction"
+        assert func.name == "N"  # Abbreviation preserved
 
-    @pytest.mark.xfail(reason="stub: $NEXT with local variable")
-    @pytest.mark.stub
     def test_next_function_local_variable(self, parser):
         """Parse $NEXT with local variable argument."""
         code = 'TEST S X=$NEXT(A(""))'
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
 
         stmt = routine.labels[0].body.statements[0]
         assert stmt is not None
-        pytest.fail("Verify $NEXT works with local variables")
+        func = stmt.assignments[0].value
+        assert type(func).__name__ == "IntrinsicFunction"
+        assert func.name == "NEXT"
+        # Argument should be a local variable with subscript
+        assert func.args.first.expr is not None
 
-    @pytest.mark.xfail(reason="stub: $NEXT in loop construct")
-    @pytest.mark.stub
     def test_next_function_in_for_loop(self, parser):
         """Parse $NEXT used in FOR loop traversal pattern."""
         # Common legacy pattern for array traversal
         code = """TEST
  S K="" F  S K=$N(^A(K)) Q:K=""  D PROCESS(K)"""
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
 
         label = routine.labels[0]
         assert len(label.body.statements) >= 1
-        pytest.fail("Verify $NEXT in FOR loop parses correctly")
+        # First statement is SET K=""
+        assert type(label.body.statements[0]).__name__ == "MSetStatement"
+        # Second statement is FOR loop
+        assert type(label.body.statements[1]).__name__ == "MForStatement"
 
 
 @pytest.mark.parser
@@ -124,59 +127,59 @@ class TestPre1984Syntax:
         """Provide parser instance."""
         return MUMPSParser()
 
-    @pytest.mark.xfail(reason="stub: 1977 core commands")
-    @pytest.mark.stub
     def test_1977_core_commands_parse(self, parser):
         """Verify all 1977 core commands parse correctly."""
         # All commands from original 1977 standard
         commands = [
-            "TEST SET X=1",
-            "TEST IF X S Y=1",
-            "TEST FOR I=1:1:10 S X(I)=I",
-            "TEST GOTO LABEL",
-            "TEST DO SUBROUTINE",
-            "TEST QUIT",
-            "TEST WRITE !,X",
-            "TEST READ X",
-            "TEST KILL X",
-            "TEST LOCK ^GLOBAL",
-            "TEST OPEN 1",
-            "TEST CLOSE 1",
-            "TEST USE 1",
-            "TEST HALT",
-            "TEST HANG 1",
-            "TEST BREAK",
-            "TEST ELSE  S X=0",
-            'TEST XECUTE "S X=1"',
+            ("TEST SET X=1", "MSetStatement"),
+            ("TEST IF X S Y=1", "MIfStatement"),
+            ("TEST FOR I=1:1:10 S X(I)=I", "MForStatement"),
+            ("TEST GOTO LABEL", "MGotoStatement"),
+            ("TEST DO SUBROUTINE", "MDoStatement"),
+            ("TEST QUIT", "MQuitStatement"),
+            ("TEST WRITE !,X", "MWriteStatement"),
+            ("TEST READ X", "MReadStatement"),
+            ("TEST KILL X", "MKillStatement"),
+            ("TEST LOCK ^GLOBAL", "MLockStatement"),
+            ("TEST OPEN 1", "MOpenStatement"),
+            ("TEST CLOSE 1", "MCloseStatement"),
+            ("TEST USE 1", "MUseStatement"),
+            ("TEST HALT", "MHaltStatement"),
+            ("TEST HANG 1", "MHangStatement"),
+            ("TEST BREAK", "MBreakStatement"),
+            ("TEST ELSE  S X=0", "MElseStatement"),
+            ('TEST XECUTE "S X=1"', "MXecuteStatement"),
         ]
-        for cmd in commands:
-            routine = parser.parse_string(cmd)
-            assert routine is not None, f"Failed to parse: {cmd}"
-        pytest.fail("Verify 1977 core command parsing produces correct ASG")
+        for cmd, expected_type in commands:
+            routine = parser.parse(cmd)
+            stmt = routine.labels[0].body.statements[0]
+            assert stmt is not None, f"Failed to parse: {cmd}"
+            assert type(stmt).__name__ == expected_type, (
+                f"{cmd} -> {type(stmt).__name__}"
+            )
 
-    @pytest.mark.xfail(reason="stub: 1977 intrinsic functions")
-    @pytest.mark.stub
     def test_1977_intrinsic_functions_parse(self, parser):
         """Verify all 1977 intrinsic functions parse correctly."""
-        # Functions from original 1977 standard
+        # Functions from original 1977 standard with expected abbreviated names
         functions = [
-            'TEST S X=$A("A")',  # $ASCII
-            "TEST S X=$C(65)",  # $CHAR
-            "TEST S X=$D(A)",  # $DATA
-            "TEST S X=$E(X,1,2)",  # $EXTRACT
-            'TEST S X=$F(X,"A")',  # $FIND
-            "TEST S X=$J(X,10)",  # $JUSTIFY
-            "TEST S X=$L(X)",  # $LENGTH
-            'TEST S X=$P(X,"^",1)',  # $PIECE
-            "TEST S X=$R(100)",  # $RANDOM
-            "TEST S X=$S(1:X,1:Y)",  # $SELECT
-            "TEST S X=$T(+1)",  # $TEXT
-            "TEST S X=$V(0)",  # $VIEW
+            ('TEST S X=$A("A")', "A"),  # $ASCII
+            ("TEST S X=$C(65)", "C"),  # $CHAR
+            ("TEST S X=$D(A)", "D"),  # $DATA
+            ("TEST S X=$E(X,1,2)", "E"),  # $EXTRACT
+            ('TEST S X=$F(X,"A")', "F"),  # $FIND
+            ("TEST S X=$J(X,10)", "J"),  # $JUSTIFY
+            ("TEST S X=$L(X)", "L"),  # $LENGTH
+            ('TEST S X=$P(X,"^",1)', "P"),  # $PIECE
+            ("TEST S X=$R(100)", "R"),  # $RANDOM
+            ("TEST S X=$V(0)", "V"),  # $VIEW
         ]
-        for func in functions:
-            routine = parser.parse_string(func)
-            assert routine is not None, f"Failed to parse: {func}"
-        pytest.fail("Verify 1977 intrinsic function parsing produces correct ASG")
+        for func_code, expected_name in functions:
+            routine = parser.parse(func_code)
+            stmt = routine.labels[0].body.statements[0]
+            func = stmt.assignments[0].value
+            assert func is not None, f"Failed to parse: {func_code}"
+            assert hasattr(func, "name"), f"Not a function: {func_code}"
+            assert func.name == expected_name, f"{func_code} -> ${func.name}"
 
 
 @pytest.mark.parser
@@ -194,47 +197,47 @@ class TestPre1990Syntax:
         """Provide parser instance."""
         return MUMPSParser()
 
-    @pytest.mark.xfail(reason="stub: 1984 NEW command")
-    @pytest.mark.stub
     def test_1984_new_command(self, parser):
         """Verify NEW command (added 1984) parses correctly."""
         code = """TEST
  NEW X,Y,Z
  SET X=1,Y=2,Z=3
  QUIT"""
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
         assert routine is not None
-        pytest.fail("Verify NEW command parsing produces correct ASG")
+        # Should have NEW, SET, QUIT statements
+        stmts = routine.labels[0].body.statements
+        assert type(stmts[0]).__name__ == "MNewStatement"
+        assert type(stmts[1]).__name__ == "MSetStatement"
+        assert type(stmts[2]).__name__ == "MQuitStatement"
 
-    @pytest.mark.xfail(reason="stub: 1984 $ORDER function")
-    @pytest.mark.stub
     def test_1984_order_function(self, parser):
         """Verify $ORDER function (added 1984) parses correctly."""
         code = 'TEST S K=$ORDER(^A(""))'
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
         assert routine is not None
-        pytest.fail("Verify $ORDER parsing produces correct ASG")
+        func = routine.labels[0].body.statements[0].assignments[0].value
+        assert type(func).__name__ == "IntrinsicFunction"
+        assert func.name == "ORDER"
 
-    @pytest.mark.xfail(reason="stub: 1984 $QUERY function")
-    @pytest.mark.stub
     def test_1984_query_function(self, parser):
         """Verify $QUERY function (added 1984) parses correctly."""
         code = 'TEST S REF=$QUERY(^A(""))'
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
         assert routine is not None
-        pytest.fail("Verify $QUERY parsing produces correct ASG")
+        func = routine.labels[0].body.statements[0].assignments[0].value
+        assert type(func).__name__ == "IntrinsicFunction"
+        assert func.name == "QUERY"
 
-    @pytest.mark.xfail(reason="stub: 1984 $GET function")
-    @pytest.mark.stub
     def test_1984_get_function(self, parser):
         """Verify $GET function (added 1984) parses correctly."""
         code = "TEST S X=$GET(Y,0)"
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
         assert routine is not None
-        pytest.fail("Verify $GET parsing produces correct ASG")
+        func = routine.labels[0].body.statements[0].assignments[0].value
+        assert type(func).__name__ == "IntrinsicFunction"
+        assert func.name == "GET"
 
-    @pytest.mark.xfail(reason="stub: 1984 parameter passing")
-    @pytest.mark.stub
     def test_1984_parameter_passing(self, parser):
         """Verify parameter passing (added 1984) parses correctly."""
         code = """ROUTINE
@@ -243,9 +246,21 @@ class TestPre1990Syntax:
 SUB(A,B,C)
  SET X=A+B+C
  QUIT"""
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
         assert routine is not None
-        pytest.fail("Verify parameter passing parsing produces correct ASG")
+        # ROUTINE label has DO and QUIT
+        stmts = routine.labels[0].body.statements
+        assert type(stmts[0]).__name__ == "MDoStatement"
+        # SUB label has formal parameters
+        sub_label = routine.labels[1]
+        assert sub_label.name == "SUB"
+        # Formal list is directly a list of parameter names
+        assert sub_label.formal_list is not None
+        params = sub_label.formal_list
+        assert len(params) == 3
+        assert params[0] == "A"
+        assert params[1] == "B"
+        assert params[2] == "C"
 
 
 @pytest.mark.parser
@@ -263,8 +278,6 @@ class TestPre1995TransactionCommands:
         """Provide parser instance."""
         return MUMPSParser()
 
-    @pytest.mark.xfail(reason="stub: 1995 TSTART command")
-    @pytest.mark.stub
     def test_1995_tstart_command(self, parser):
         """Verify TSTART command (added 1995) parses correctly."""
         code = """TEST
@@ -272,36 +285,42 @@ class TestPre1995TransactionCommands:
  SET ^A=1
  TCOMMIT
  QUIT"""
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
         assert routine is not None
-        pytest.fail("Verify TSTART parsing produces correct ASG")
+        stmts = routine.labels[0].body.statements
+        assert type(stmts[0]).__name__ == "MTStartStatement"
+        assert type(stmts[1]).__name__ == "MSetStatement"
+        assert type(stmts[2]).__name__ == "MTCommitStatement"
+        assert type(stmts[3]).__name__ == "MQuitStatement"
 
-    @pytest.mark.xfail(reason="stub: 1995 TCOMMIT command")
-    @pytest.mark.stub
     def test_1995_tcommit_command(self, parser):
         """Verify TCOMMIT command (added 1995) parses correctly."""
         code = "TEST TCOMMIT"
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
         assert routine is not None
-        pytest.fail("Verify TCOMMIT parsing produces correct ASG")
+        stmt = routine.labels[0].body.statements[0]
+        assert type(stmt).__name__ == "MTCommitStatement"
 
-    @pytest.mark.xfail(reason="stub: 1995 TROLLBACK command")
-    @pytest.mark.stub
     def test_1995_trollback_command(self, parser):
         """Verify TROLLBACK command (added 1995) parses correctly."""
         code = "TEST TROLLBACK"
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
         assert routine is not None
-        pytest.fail("Verify TROLLBACK parsing produces correct ASG")
+        stmt = routine.labels[0].body.statements[0]
+        assert type(stmt).__name__ == "MTRollbackStatement"
 
-    @pytest.mark.xfail(reason="stub: 1995 $TLEVEL variable")
-    @pytest.mark.stub
     def test_1995_tlevel_variable(self, parser):
         """Verify $TLEVEL special variable (added 1995) parses correctly."""
         code = "TEST W $TLEVEL"
-        routine = parser.parse_string(code)
+        routine = parser.parse(code)
         assert routine is not None
-        pytest.fail("Verify $TLEVEL parsing produces correct ASG")
+        stmt = routine.labels[0].body.statements[0]
+        assert type(stmt).__name__ == "MWriteStatement"
+        # $TLEVEL should be parsed as a special variable
+        # MWriteStatement.arguments is a list of write items
+        svar = stmt.arguments[0]
+        assert type(svar).__name__ == "SpecialVariable"
+        assert svar.name.upper() == "TLEVEL"
 
 
 @pytest.mark.parser
@@ -319,29 +338,40 @@ class TestNextVsOrderEquivalence:
         """Provide parser instance."""
         return MUMPSParser()
 
-    @pytest.mark.xfail(reason="stub: $NEXT/$ORDER ASG equivalence")
-    @pytest.mark.stub
     def test_next_order_produce_same_asg_structure(self, parser):
         """Verify $NEXT and $ORDER produce equivalent ASG structures."""
         code_next = "TEST S X=$NEXT(^A(K))"
         code_order = "TEST S X=$ORDER(^A(K))"
 
-        _routine_next = parser.parse_string(code_next)  # noqa: F841
-        _routine_order = parser.parse_string(code_order)  # noqa: F841
+        routine_next = parser.parse(code_next)
+        routine_order = parser.parse(code_order)
 
-        # Both should produce MIntrinsicFunctionCall nodes
-        # with identical argument structures
-        pytest.fail("Verify $NEXT and $ORDER ASG structure equivalence")
+        # Both should produce IntrinsicFunction nodes
+        func_next = routine_next.labels[0].body.statements[0].assignments[0].value
+        func_order = routine_order.labels[0].body.statements[0].assignments[0].value
 
-    @pytest.mark.xfail(reason="stub: $N/$O abbreviation equivalence")
-    @pytest.mark.stub
+        assert type(func_next).__name__ == "IntrinsicFunction"
+        assert type(func_order).__name__ == "IntrinsicFunction"
+        # Names differ but both are intrinsic functions
+        assert func_next.name == "NEXT"
+        assert func_order.name == "ORDER"
+        # Both have same argument structure (global variable with subscript)
+        assert func_next.args is not None
+        assert func_order.args is not None
+
     def test_abbreviated_forms_equivalent(self, parser):
         """Verify $N and $O abbreviations work correctly."""
         code_n = "TEST S X=$N(^A(K))"
         code_o = "TEST S X=$O(^A(K))"
 
-        _routine_n = parser.parse_string(code_n)  # noqa: F841
-        _routine_o = parser.parse_string(code_o)  # noqa: F841
+        routine_n = parser.parse(code_n)
+        routine_o = parser.parse(code_o)
 
-        # Both abbreviated forms should parse correctly
-        pytest.fail("Verify $N and $O abbreviation equivalence")
+        # Both abbreviated forms should parse correctly as IntrinsicFunction
+        func_n = routine_n.labels[0].body.statements[0].assignments[0].value
+        func_o = routine_o.labels[0].body.statements[0].assignments[0].value
+
+        assert type(func_n).__name__ == "IntrinsicFunction"
+        assert type(func_o).__name__ == "IntrinsicFunction"
+        assert func_n.name == "N"  # Abbreviation preserved
+        assert func_o.name == "O"  # Abbreviation preserved

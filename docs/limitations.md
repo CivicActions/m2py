@@ -73,3 +73,9 @@ listed above are also part of the MWAPI event model.
 
 **Note**: The parser *can* parse `^$EVENT` syntax (it's valid SSVN syntax), but the
 semantics require MWAPI runtime support which is not available in YottaDB.
+
+## $DEXTRACT and $DPIECE (Never Standardized)
+
+These functions were proposed for the 1984/1990 standards but never included in the final ANSI standard.
+
+**M2PY Behavior**: Not supported; raises parse error.

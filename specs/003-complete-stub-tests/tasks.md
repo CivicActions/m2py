@@ -289,13 +289,22 @@
 - Grammar attributes: ReadTargetWithTimeout.timeout, IfCommand.conditions, ForCommand.var, LockCommand.targets
 - Final count: 3181 passed, 110 skipped, 749 xfailed
 
-### Batch B12-B13: Parser Legacy Pre-1995 Syntax (17 stubs, Medium complexity)
+### Batch B12-B13: Parser Legacy Pre-1995 Syntax (17 stubs, Medium complexity) ✅
 
-- [ ] T073 [P] [US1] Research pre-1995 MUMPS syntax differences
-- [ ] T074 [US1] Find legacy syntax examples in VistA-M/
-- [ ] T075 [US1] Implement 10 legacy syntax tests in tests/unit/parser/legacy/test_pre1995_syntax.py (B12)
-- [ ] T076 [US1] Implement 7 remaining legacy tests in same file (B13)
-- [ ] T077 [US1] Run full test suite and regenerate coverage matrix
+- [X] T073 [P] [US1] Research pre-1995 MUMPS syntax differences
+- [X] T074 [US1] Find legacy syntax examples in YDBTest/ or VistA-M/
+- [X] T075 [US1] Implement 10 legacy syntax tests in tests/unit/parser/legacy/test_pre1995_syntax.py (B12)
+- [X] T076 [US1] Implement 7 remaining legacy tests in same file (B13)
+- [X] T077 [US1] Run full test suite and regenerate coverage matrix
+
+**Completion Notes B12-B13:**
+- $NEXT function tests: simple, abbreviated ($N), local variable, FOR loop pattern
+- 1977 core commands (18): SET, IF, FOR, GOTO, DO, QUIT, WRITE, READ, KILL, LOCK, OPEN, CLOSE, USE, HALT, HANG, BREAK, ELSE, XECUTE
+- 1977 intrinsic functions (10): $ASCII, $CHAR, $DATA, $EXTRACT, $FIND, $JUSTIFY, $LENGTH, $PIECE, $RANDOM, $VIEW
+- 1984 features: NEW command, $ORDER, $QUERY, $GET, parameter passing
+- 1995 features: TSTART, TCOMMIT, TROLLBACK, $TLEVEL
+- $NEXT/$ORDER equivalence tests verifying both parse as IntrinsicFunction
+- Final count: 3198 passed, 110 skipped, 732 xfailed
 
 ### Batch B14: Parser Expressions Misc (15 stubs, Low complexity)
 
