@@ -116,14 +116,21 @@
 - No implementation gaps - ASG already correctly captures routine body structure
 - Final count: 3044 passed, 110 skipped, 879 xfailed
 
-### Batch A6: ASG Transaction Processing (3 stubs, High complexity)
+### Batch A6: ASG Transaction Processing (3 stubs, High complexity) ✅ COMPLETE
 
-- [ ] T035 [P] [US2] Research MUMPS spec §6.3.1 transactions (TSTART/TCOMMIT) in mumps-reference/
-- [ ] T036 [US2] Find transaction examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T037 [US2] Evaluate ASG quality for transactions using validate_asg.py
-- [ ] T038 [US2] Implement 3 transaction tests in tests/unit/asg/s6_routine/test_s6_3_1_transaction.py
-- [ ] T039 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T040 [US2] Run full test suite and regenerate coverage matrix
+- [X] T035 [P] [US2] Research MUMPS spec §6.3.1 transactions (TSTART/TCOMMIT) in mumps-reference/
+- [X] T036 [US2] Find transaction examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T037 [US2] Evaluate ASG quality for transactions using validate_asg.py
+- [X] T038 [US2] Implement 3 transaction tests in tests/unit/asg/s6_routine/test_s6_3_1_transaction.py
+- [X] T039 [US2] Fix any implementation gaps in src/m2py/
+- [X] T040 [US2] Run full test suite and regenerate coverage matrix
+
+**Additional work completed:**
+- Researched §6.3.1 spec (MDC__a106011.md): transaction boundaries, $TLEVEL tracking, variable isolation
+- All 3 stubs converted + 4 additional tests for comprehensive coverage
+- Tests verify: TSTART/TCOMMIT boundaries, nested transactions, restart vars, TSTART *, parameters, TROLLBACK, TRESTART
+- No implementation gaps - ASG already correctly captures all transaction semantics
+- Final count: 3051 passed, 110 skipped, 876 xfailed
 
 ### Batch A7: ASG Error Processing (3 stubs, High complexity)
 
