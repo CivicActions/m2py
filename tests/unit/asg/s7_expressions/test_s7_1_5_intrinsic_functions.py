@@ -16,10 +16,16 @@ from m2py.asg.expressions import (
     MIntrinsicFunction,
     MLiteral,
     MSelectArg,
+    MUnaryOp,
     MVariable,
 )
 from m2py.asg.statements import MSetStatement
-from m2py.parser.textx_classes import GlobalVariable, LocalVariable, TextFunction
+from m2py.parser.textx_classes import (
+    GlobalVariable,
+    LocalVariable,
+    SelectFunction,
+    TextFunction,
+)
 from tests.helpers.parsing import parse_expression
 
 
@@ -282,71 +288,268 @@ class TestIntrinsicFunctionsAnalysis:
         """$NEXT function is deprecated (§7.1.5)."""
         pass
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ORDER function")
-    def test_function_order(self, analyze_expression):
-        """$ORDER function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_order(self):
+        """$ORDER function is correctly analyzed (§7.1.5.11).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $PIECE function")
-    def test_function_piece(self, analyze_expression):
-        """$PIECE function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        $ORDER returns the next subscript in collation order.
+        - $O(glvn) returns next subscript at same level
+        - $O(glvn,direction) returns next/previous based on direction
+        """
+        # Single argument - forward order
+        expr = parse_expression("$O(^X(1))")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "O"
+        assert len(result.arguments) == 1
+        assert isinstance(result.arguments[0], (MGlobal, GlobalVariable))
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QLENGTH function")
-    def test_function_qlength(self, analyze_expression):
-        """$QLENGTH function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        # Two arguments - with direction
+        expr = parse_expression("$ORDER(^X(1),-1)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "ORDER"
+        assert len(result.arguments) == 2
+        # -1 is parsed as unary negation of 1
+        direction_arg = result.arguments[1]
+        assert isinstance(direction_arg, MUnaryOp)
+        assert direction_arg.operator == "-"
+        assert direction_arg.operand.value == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QSUBSCRIPT function")
-    def test_function_qsubscript(self, analyze_expression):
-        """$QSUBSCRIPT function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_piece(self):
+        """$PIECE function is correctly analyzed (§7.1.5.12).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QUERY function")
-    def test_function_query(self, analyze_expression):
-        """$QUERY function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        $PIECE extracts delimited pieces from a string.
+        - $P(str,delim) returns first piece
+        - $P(str,delim,from) returns piece at position
+        - $P(str,delim,from,to) returns pieces from-to concatenated
+        """
+        # Two arguments - first piece
+        expr = parse_expression('$P(X,",")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "P"
+        assert len(result.arguments) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $RANDOM function")
-    def test_function_random(self, analyze_expression):
-        """$RANDOM function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        # Three arguments - specific piece
+        expr = parse_expression('$PIECE(X,":",3)')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "PIECE"
+        assert len(result.arguments) == 3
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $REVERSE function")
-    def test_function_reverse(self, analyze_expression):
-        """$REVERSE function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        # Four arguments - range of pieces
+        expr = parse_expression('$P(X,",",2,5)')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "P"
+        assert len(result.arguments) == 4
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $SELECT function")
-    def test_function_select(self, analyze_expression):
-        """$SELECT function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_qlength(self):
+        """$QLENGTH function is correctly analyzed (§7.1.5.13).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $STACK function")
-    def test_function_stack(self, analyze_expression):
-        """$STACK function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        $QLENGTH returns the number of subscripts in a name value.
+        """
+        expr = parse_expression('$QL("^X(1,2,3)")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "QL"
+        assert len(result.arguments) == 1
+        assert isinstance(result.arguments[0], MLiteral)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT function")
-    def test_function_text(self, analyze_expression):
-        """$TEXT function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        # Full name
+        expr = parse_expression('$QLENGTH("^GLOBAL(A,B)")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "QLENGTH"
+        assert len(result.arguments) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TRANSLATE function")
-    def test_function_translate(self, analyze_expression):
-        """$TRANSLATE function is correctly analyzed (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_qsubscript(self):
+        """$QSUBSCRIPT function is correctly analyzed (§7.1.5.14).
+
+        $QSUBSCRIPT returns a specific subscript from a name value.
+        - $QS(namevalue,position) returns subscript at position
+        - Position 0 returns the variable name, -1 returns environment
+        """
+        # Get subscript at position 2
+        expr = parse_expression('$QS("^X(1,2,3)",2)')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "QS"
+        assert len(result.arguments) == 2
+        assert result.arguments[1].value == 2
+
+        # Full name with variable position
+        expr = parse_expression("$QSUBSCRIPT(NAME,I)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "QSUBSCRIPT"
+        assert len(result.arguments) == 2
+
+    def test_function_query(self):
+        """$QUERY function is correctly analyzed (§7.1.5.15).
+
+        $QUERY returns the next subscripted variable in collation order.
+        Returns a name value containing the full reference.
+        """
+        # Local variable
+        expr = parse_expression("$Q(X(1))")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "Q"
+        assert len(result.arguments) == 1
+
+        # Global variable
+        expr = parse_expression("$QUERY(^DATA(A,B))")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "QUERY"
+        assert len(result.arguments) == 1
+
+    def test_function_random(self):
+        """$RANDOM function is correctly analyzed (§7.1.5.16).
+
+        $RANDOM returns a random integer from 0 to range-1.
+        """
+        expr = parse_expression("$R(100)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "R"
+        assert len(result.arguments) == 1
+        assert isinstance(result.arguments[0], MLiteral)
+        assert result.arguments[0].value == 100
+
+        # Full name with variable
+        expr = parse_expression("$RANDOM(N)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "RANDOM"
+        assert len(result.arguments) == 1
+
+    def test_function_reverse(self):
+        """$REVERSE function is correctly analyzed (§7.1.5.17).
+
+        $REVERSE returns a string with characters in reverse order.
+        """
+        expr = parse_expression('$RE("Hello")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "RE"
+        assert len(result.arguments) == 1
+        assert isinstance(result.arguments[0], MLiteral)
+        assert result.arguments[0].value == "Hello"
+
+        # Full name
+        expr = parse_expression("$REVERSE(X)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "REVERSE"
+        assert len(result.arguments) == 1
+
+    def test_function_select(self):
+        """$SELECT function is correctly analyzed (§7.1.5.18).
+
+        $SELECT evaluates condition:value pairs and returns the value
+        of the first true condition. Returns SelectFunction with MSelectArg.
+        """
+
+        # Two condition:value pairs
+        expr = parse_expression('$S(A=1:"Yes",1:"No")')
+        result = analyze_expression(expr)
+        assert isinstance(result, SelectFunction)
+        assert result.name == "S"
+        assert len(result.arguments) == 2
+        # Each argument is an MSelectArg with condition and value
+        assert isinstance(result.arguments[0], MSelectArg)
+        assert isinstance(result.arguments[1], MSelectArg)
+
+        # Check first arg structure
+        first_arg = result.arguments[0]
+        assert isinstance(first_arg.condition, MBinaryOp)
+        assert first_arg.condition.operator == "="
+        assert isinstance(first_arg.value, MLiteral)
+        assert first_arg.value.value == "Yes"
+
+        # Full name
+        expr = parse_expression("$SELECT(X>0:X,1:0)")
+        result = analyze_expression(expr)
+        assert isinstance(result, SelectFunction)
+        assert result.name == "SELECT"
+
+    def test_function_stack(self):
+        """$STACK function is correctly analyzed (§7.1.5.19).
+
+        $STACK returns information about the execution stack.
+        - $ST(level) returns entry reference at level
+        - $ST(level,code) returns specific stack info
+        """
+        # Single argument - stack level
+        expr = parse_expression("$ST(0)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "ST"
+        assert len(result.arguments) == 1
+        assert result.arguments[0].value == 0
+
+        # Two arguments - with info code
+        expr = parse_expression('$STACK(-1,"ECODE")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "STACK"
+        assert len(result.arguments) == 2
+        assert result.arguments[1].value == "ECODE"
+
+    def test_function_text(self):
+        """$TEXT function is correctly analyzed (§7.1.5.20).
+
+        $TEXT returns the source text of a routine line.
+        Returns TextFunction with line_ref dictionary.
+        """
+        # Simple label reference
+        expr = parse_expression("$T(LABEL)")
+        result = analyze_expression(expr)
+        assert isinstance(result, TextFunction)
+        assert result.name == "T"
+        assert hasattr(result, "line_ref")
+        assert result.line_ref["label"] == "LABEL"
+
+        # Label with offset
+        expr = parse_expression("$TEXT(LABEL+5)")
+        result = analyze_expression(expr)
+        assert isinstance(result, TextFunction)
+        assert result.name == "TEXT"
+        assert result.line_ref["label"] == "LABEL"
+        assert isinstance(result.line_ref["offset"], MLiteral)
+        assert result.line_ref["offset"].value == 5
+
+        # Label with routine
+        expr = parse_expression("$T(LABEL^ROUTINE)")
+        result = analyze_expression(expr)
+        assert isinstance(result, TextFunction)
+        assert result.line_ref["label"] == "LABEL"
+        assert result.line_ref["routine"] == "ROUTINE"
+
+    def test_function_translate(self):
+        """$TRANSLATE function is correctly analyzed (§7.1.5.21).
+
+        $TRANSLATE replaces or removes characters in a string.
+        - $TR(str,from) removes characters in 'from'
+        - $TR(str,from,to) replaces characters
+        """
+        # Two arguments - remove characters
+        expr = parse_expression('$TR("Hello","aeiou")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "TR"
+        assert len(result.arguments) == 2
+
+        # Three arguments - replace characters
+        expr = parse_expression('$TRANSLATE("Hello","aeiou","AEIOU")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "TRANSLATE"
+        assert len(result.arguments) == 3
+        assert result.arguments[1].value == "aeiou"
+        assert result.arguments[2].value == "AEIOU"
 
     @pytest.mark.skip(reason="Implementation-defined: $VIEW function")
     def test_function_view(self):

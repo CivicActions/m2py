@@ -393,11 +393,21 @@
 - Fixed tests to use MGlobal/GlobalVariable for global variable arguments
 - Final count: 3267 passed, 110 skipped, 662 xfailed
 
-### Batch C2: ASG Intrinsic Functions Part 2 (11 stubs, Medium complexity)
+### Batch C2: ASG Intrinsic Functions Part 2 (11 stubs, Medium complexity) ✅
 
-- [ ] T097 [US2] Implement 11 remaining intrinsic ASG tests in same file (C2)
-- [ ] T098 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T099 [US2] Run full test suite and regenerate coverage matrix
+- [X] T097 [US2] Implement 11 remaining intrinsic ASG tests in same file (C2)
+- [X] T098 [US2] Fix any implementation gaps in src/m2py/
+- [X] T099 [US2] Run full test suite and regenerate coverage matrix
+
+**Completion Notes (C2)**:
+- Tests implemented: $ORDER, $PIECE, $QLENGTH, $QSUBSCRIPT, $QUERY, $RANDOM, $REVERSE, $SELECT, $STACK, $TEXT, $TRANSLATE
+- Special type handling:
+  - $SELECT → SelectFunction with MSelectArg condition/value pairs
+  - $TEXT → TextFunction with line_ref dictionary (label, offset, routine)
+  - Most functions → MIntrinsicFunction with name and arguments
+- Fixed MUnaryOp handling for negative direction in $ORDER(-1)
+- Added MUnaryOp import to test file
+- Final count: 3278 passed, 110 skipped, 651 xfailed
 
 ### Batch C3-C6: ASG Math Library Functions (57 stubs, Low complexity)
 
