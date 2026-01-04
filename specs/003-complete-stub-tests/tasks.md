@@ -100,14 +100,21 @@
 - No implementation gaps - ASG already correct
 - Final count: 3036 passed, 110 skipped, 886 xfailed
 
-### Batch A5: ASG Routine Body (7 stubs, High complexity)
+### Batch A5: ASG Routine Body (7 stubs, High complexity) ✅ COMPLETE
 
-- [ ] T029 [P] [US2] Research MUMPS spec §6.2 routine body in mumps-reference/
-- [ ] T030 [US2] Find routine body examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T031 [US2] Evaluate ASG quality for routine structure using validate_asg.py
-- [ ] T032 [US2] Implement 7 routine body tests in tests/unit/asg/s6_routine/test_s6_2_routine_body.py
-- [ ] T033 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T034 [US2] Run full test suite and regenerate coverage matrix
+- [X] T029 [P] [US2] Research MUMPS spec §6.2 routine body in mumps-reference/
+- [X] T030 [US2] Find routine body examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T031 [US2] Evaluate ASG quality for routine structure using validate_asg.py
+- [X] T032 [US2] Implement 7 routine body tests in tests/unit/asg/s6_routine/test_s6_2_routine_body.py
+- [X] T033 [US2] Fix any implementation gaps in src/m2py/
+- [X] T034 [US2] Run full test suite and regenerate coverage matrix
+
+**Additional work completed:**
+- Researched §6.2 spec files: level lines, formal lines, labels, label separator, line body
+- All 7 stubs converted + 1 new test (test_formal_line_empty_params)
+- Tests verify: level lines with dot blocks, formal parameters, block nesting, comments, label references
+- No implementation gaps - ASG already correctly captures routine body structure
+- Final count: 3044 passed, 110 skipped, 879 xfailed
 
 ### Batch A6: ASG Transaction Processing (3 stubs, High complexity)
 
