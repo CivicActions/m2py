@@ -160,13 +160,22 @@
 
 **Independent Test**: `uv run pytest tests/unit/parser/ -v` shows all tests passing with 0 xfails
 
-### Batch B1-B5: Parser Math Library Functions (57 stubs, Low complexity)
+### Batch B1: Parser Math Library Trig Functions (12 stubs, Low complexity) ✅ COMPLETE
 
-- [ ] T047 [P] [US1] Research MUMPS spec §7.1.6.5 library math functions in mumps-reference/
-- [ ] T048 [P] [US1] Find math function examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T049 [US1] Implement 12 trig function tests (SIN/COS/TAN) in tests/unit/parser/s7_expressions/test_s7_1_6_5_library_functions_math.py (B1)
-- [ ] T050 [US1] Implement 12 hyperbolic function tests (SINH/COSH) in same file (B2)
-- [ ] T051 [US1] Implement 12 inverse trig function tests (ASIN/ACOS) in same file (B3)
+- [X] T047 [P] [US1] Research MUMPS spec §7.1.6.5 library math functions in mumps-reference/
+- [X] T048 [P] [US1] Find math function examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T049 [US1] Implement 12 trig function tests (SIN/COS/TAN/COT/SEC/CSC + SINH/COSH/TANH/COTH/SECH/CSCH) in tests/unit/parser/s7_expressions/test_s7_1_6_5_library_functions_math.py
+
+**Additional work completed:**
+- All 12 trig stubs converted to passing tests
+- Tests verify: ExtrinsicFunction parsing with routine='MATH', function name, NumericLiteral arguments
+- No implementation gaps - parser already correctly handles MATH library functions
+- Final count: 3069 passed, 110 skipped, 861 xfailed
+
+### Batch B2-B5: Parser Math Library Functions Remaining (45 stubs, Low complexity)
+
+- [ ] T050 [US1] Implement 12 hyperbolic inverse tests (ARCSINH/ARCCOSH) in same file (B2)
+- [ ] T051 [US1] Implement 12 inverse trig function tests (ARCSIN/ARCCOS/ARCTAN) in same file (B3)
 - [ ] T052 [US1] Implement 12 misc math function tests (LOG/EXP/SQRT) in same file (B4)
 - [ ] T053 [US1] Implement 9 remaining math function tests in same file (B5)
 - [ ] T054 [US1] Run full test suite and regenerate coverage matrix

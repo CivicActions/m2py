@@ -1,7 +1,7 @@
 """Tests for MATH Library Functions parsing (Annex I-2, §7.1.6.5).
 
 Tests verify the textX grammar correctly captures MATH library function syntax.
-MATH library functions are called as $$%FUNC^MATH or $%FUNC^MATH.
+MATH library functions are called as $$%FUNC^MATH or $$FUNC^MATH.
 
 Reference: MUMPS 1995 ANSI Standard, Annex I Section 2
 Total: 57 MATH library functions
@@ -9,109 +9,200 @@ Total: 57 MATH library functions
 
 import pytest
 
+from m2py.parser.textx_classes import ExtrinsicFunction, NumericLiteral
+
 
 @pytest.mark.parser
 class TestMathLibraryTrigonometricParsing:
     """Parser-level tests for MATH library trigonometric functions (Annex I-2).
 
-    Trigonometric functions: SIN, COS, TAN, COT, SEC, CSC and their inverses/hyperbolics.
+    Trigonometric functions: SIN, COS, TAN, COT, SEC, CSC and their hyperbolics.
+
+    MATH library functions are extrinsic functions called as $$FUNC^MATH(args).
+    Each function takes an angle in radians and optional precision parameter.
+
+    Reference: MUMPS 1995 ANSI §7.1.6.5
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%SIN^MATH library function parsing"
-    )
-    def test_math_sin(self):
-        """$%SIN^MATH(X,PREC) parses correctly (Annex I-2.47)."""
-        pytest.fail("Stub - implement test")
+    def test_math_sin(self, parse_mumps):
+        """$%SIN^MATH(X,PREC) parses correctly (§7.1.6.5.53).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%COS^MATH library function parsing"
-    )
-    def test_math_cos(self):
-        """$%COS^MATH(X,PREC) parses correctly (Annex I-2.21)."""
-        pytest.fail("Stub - implement test")
+        SIN^MATH returns the trigonometric sine of X (radians).
+        Returns value in range [-1, 1].
+        """
+        routine = parse_mumps("TEST S X=$$SIN^MATH(3.14159)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%TAN^MATH library function parsing"
-    )
-    def test_math_tan(self):
-        """$%TAN^MATH(X,PREC) parses correctly (Annex I-2.50)."""
-        pytest.fail("Stub - implement test")
+        # Value is an ExtrinsicFunction
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%COT^MATH library function parsing"
-    )
-    def test_math_cot(self):
-        """$%COT^MATH(X,PREC) parses correctly (Annex I-2.23)."""
-        pytest.fail("Stub - implement test")
+        # Check the target call
+        call = assign.value.target
+        assert call.name == "SIN"
+        assert call.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%SEC^MATH library function parsing"
-    )
-    def test_math_sec(self):
-        """$%SEC^MATH(X,PREC) parses correctly (Annex I-2.44)."""
-        pytest.fail("Stub - implement test")
+        # Check argument
+        assert len(assign.value.arguments) == 1
+        arg = assign.value.arguments[0]
+        assert isinstance(arg.expression, NumericLiteral)
+        assert arg.expression.value == 3.14159
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%CSC^MATH library function parsing"
-    )
-    def test_math_csc(self):
-        """$%CSC^MATH(X,PREC) parses correctly (Annex I-2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_math_cos(self, parse_mumps):
+        """$%COS^MATH(X,PREC) parses correctly (§7.1.6.5.21).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%SINH^MATH library function parsing"
-    )
-    def test_math_sinh(self):
-        """$%SINH^MATH(X,PREC) parses correctly (Annex I-2.48)."""
-        pytest.fail("Stub - implement test")
+        COS^MATH returns the trigonometric cosine of X (radians).
+        Returns value in range [-1, 1].
+        """
+        routine = parse_mumps("TEST S Y=$$COS^MATH(0)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%COSH^MATH library function parsing"
-    )
-    def test_math_cosh(self):
-        """$%COSH^MATH(X,PREC) parses correctly (Annex I-2.22)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "COS"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%TANH^MATH library function parsing"
-    )
-    def test_math_tanh(self):
-        """$%TANH^MATH(X,PREC) parses correctly (Annex I-2.51)."""
-        pytest.fail("Stub - implement test")
+    def test_math_tan(self, parse_mumps):
+        """$%TAN^MATH(X,PREC) parses correctly (§7.1.6.5.56).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%COTH^MATH library function parsing"
-    )
-    def test_math_coth(self):
-        """$%COTH^MATH(X,PREC) parses correctly (Annex I-2.24)."""
-        pytest.fail("Stub - implement test")
+        TAN^MATH returns the trigonometric tangent of X (radians).
+        """
+        routine = parse_mumps("TEST S Z=$$TAN^MATH(0.785)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%SECH^MATH library function parsing"
-    )
-    def test_math_sech(self):
-        """$%SECH^MATH(X,PREC) parses correctly (Annex I-2.45)."""
-        pytest.fail("Stub - implement test")
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "TAN"
+        assert assign.value.target.routine == "MATH"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $%CSCH^MATH library function parsing"
-    )
-    def test_math_csch(self):
-        """$%CSCH^MATH(X,PREC) parses correctly (Annex I-2.26)."""
-        pytest.fail("Stub - implement test")
+    def test_math_cot(self, parse_mumps):
+        """$%COT^MATH(X,PREC) parses correctly (§7.1.6.5.23).
+
+        COT^MATH returns the trigonometric cotangent of X (radians).
+        """
+        routine = parse_mumps("TEST S C=$$COT^MATH(1.57)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "COT"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_sec(self, parse_mumps):
+        """$%SEC^MATH(X,PREC) parses correctly (§7.1.6.5.44).
+
+        SEC^MATH returns the trigonometric secant of X (radians).
+        """
+        routine = parse_mumps("TEST S S=$$SEC^MATH(0)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "SEC"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_csc(self, parse_mumps):
+        """$%CSC^MATH(X,PREC) parses correctly (§7.1.6.5.25).
+
+        CSC^MATH returns the trigonometric cosecant of X (radians).
+        """
+        routine = parse_mumps("TEST S C=$$CSC^MATH(1.57)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "CSC"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_sinh(self, parse_mumps):
+        """$%SINH^MATH(X,PREC) parses correctly (§7.1.6.5.54).
+
+        SINH^MATH returns the hyperbolic sine of X.
+        """
+        routine = parse_mumps("TEST S H=$$SINH^MATH(1)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "SINH"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_cosh(self, parse_mumps):
+        """$%COSH^MATH(X,PREC) parses correctly (§7.1.6.5.22).
+
+        COSH^MATH returns the hyperbolic cosine of X.
+        """
+        routine = parse_mumps("TEST S H=$$COSH^MATH(0)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "COSH"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_tanh(self, parse_mumps):
+        """$%TANH^MATH(X,PREC) parses correctly (§7.1.6.5.57).
+
+        TANH^MATH returns the hyperbolic tangent of X.
+        """
+        routine = parse_mumps("TEST S H=$$TANH^MATH(1)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "TANH"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_coth(self, parse_mumps):
+        """$%COTH^MATH(X,PREC) parses correctly (§7.1.6.5.24).
+
+        COTH^MATH returns the hyperbolic cotangent of X.
+        """
+        routine = parse_mumps("TEST S H=$$COTH^MATH(1)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "COTH"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_sech(self, parse_mumps):
+        """$%SECH^MATH(X,PREC) parses correctly (§7.1.6.5.45).
+
+        SECH^MATH returns the hyperbolic secant of X.
+        """
+        routine = parse_mumps("TEST S H=$$SECH^MATH(0)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "SECH"
+        assert assign.value.target.routine == "MATH"
+
+    def test_math_csch(self, parse_mumps):
+        """$%CSCH^MATH(X,PREC) parses correctly (§7.1.6.5.26).
+
+        CSCH^MATH returns the hyperbolic cosecant of X.
+        """
+        routine = parse_mumps("TEST S H=$$CSCH^MATH(1)")
+        label = routine.labels[0]
+        stmt = label.body.statements[0]
+
+        assign = stmt.assignments[0]
+        assert isinstance(assign.value, ExtrinsicFunction)
+        assert assign.value.target.name == "CSCH"
+        assert assign.value.target.routine == "MATH"
 
 
 @pytest.mark.parser

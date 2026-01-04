@@ -13,9 +13,9 @@ uv add <package>                 # Add dependencies
 uv sync                          # Sync environment
 ```
 
-Never use bare `python`, `pip`, or `pytest` commands.
-
-Run short Python snippets with pylanceRunCodeSnippet or create a permanent helper script in `/utils`. *Don't* use `uv python -c` or cat to /tmp files.
+- Never use bare `python`, `pip`, or `pytest` commands.
+- Run short Python snippets with pylanceRunCodeSnippet or create a permanent helper script in `/utils`. *Don't* use `uv python -c` or cat to /tmp files.
+- Avoid `2> /dev/null` and `&> /dev/null` redirection.
 
 ## Key Reference Materials
 
