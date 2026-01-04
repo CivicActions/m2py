@@ -436,13 +436,23 @@
 - Added verify_math_function helper for consistent test assertions
 - Final count: 3335 passed, 110 skipped, 594 xfailed
 
-### Batch C7: ASG Expressions Misc (15 stubs, Medium complexity)
+### Batch C7: ASG Expressions Misc (17 stubs, Medium complexity)
 
-- [ ] T107 [P] [US2] Research MUMPS spec §7 expression semantics (literals, variables, strings)
-- [ ] T108 [US2] Evaluate ASG quality for expressions using validate_asg.py
-- [ ] T109 [US2] Implement 15 expression ASG tests in tests/unit/asg/s7_expressions/
-- [ ] T110 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T111 [US2] Run full test suite and regenerate coverage matrix
+- [X] T107 [P] [US2] Research MUMPS spec §7 expression semantics (literals, variables, strings)
+- [X] T108 [US2] Evaluate ASG quality for expressions using validate_asg.py
+- [X] T109 [US2] Implement 17 expression ASG tests in tests/unit/asg/s7_expressions/
+- [X] T110 [US2] Fix any implementation gaps in src/m2py/
+- [X] T111 [US2] Run full test suite and regenerate coverage matrix
+
+**Completion Notes (C7):**
+- Commit: (pending)
+- Implemented 17 tests across 3 files:
+  - test_s7_1_1_values.py (4 tests): value_type_inference, string_value_representation, numeric_value_representation, empty_string_representation
+  - test_s7_1_2_variables.py (6 tests): local_variable_resolution, global_variable_resolution, naked_global_reference, variable_scope_analysis, subscripted_variable, glvn_unification
+  - test_s7_1_4_literals.py (7 tests): integer_literal, decimal_literal, string_literal, escaped_quotes, numeric_string_literal, empty_string_literal, scientific_notation
+- Key imports: m2py.parser.textx_classes (StringLiteral, NumericLiteral, LocalVariable, GlobalVariable, NakedGlobal), m2py.asg.expressions (LiteralType)
+- Uses analyze_set_command helper pattern from test_s7_2_operators.py (parse_commands_from_line + analyze_command)
+- Final count: 3352 passed, 110 skipped, 577 xfailed
 
 ### Batch C8: ASG Commands Misc (15 stubs, Medium complexity)
 
