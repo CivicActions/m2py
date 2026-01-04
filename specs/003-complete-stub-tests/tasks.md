@@ -227,10 +227,23 @@
 - No implementation gaps - parser already correctly handles all standard intrinsic functions
 - Final count: 3126 passed, 110 skipped, 804 xfailed
 
-### Batch B7: Parser Intrinsic Functions - Name/Stack/Text (12 stubs, Low complexity)
+### Batch B7: Parser Intrinsic Functions - Name/Stack/Text (12 stubs, Low complexity) ✅ COMPLETE
 
-- [ ] T058 [US1] Implement 12 remaining intrinsic tests in same file (B7)
-- [ ] T059 [US1] Run full test suite and regenerate coverage matrix
+- [X] T058 [US1] Implement 12 remaining intrinsic tests in same file (B7)
+- [X] T059 [US1] Run full test suite and regenerate coverage matrix
+
+**Additional work completed:**
+- 12 stubs converted to passing tests:
+  - Name functions: $NAME, $QLENGTH, $QSUBSCRIPT
+  - Stack function: $STACK
+  - Text function: $TEXT (uses TextFunction grammar, line_ref dict)
+  - Misc functions: $TYPE, $MUMPS, $HOROLOG (special variable)
+  - Deprecated (pre-1995): $NEXT, $DEXTRACT, $DPIECE
+  - Implementation-defined: $Z... functions ($ZDATE, $ZCONVERT)
+- Tests verify: IntrinsicFunction/TextFunction/SpecialVariable parsing with correct type
+- No implementation gaps - parser correctly handles all intrinsic function forms
+- This completes all §7.1.5 parser intrinsic function tests (B6+B7 = 24 stubs)
+- Final count: 3138 passed, 110 skipped, 792 xfailed
 
 ### Batch B8-B9: Parser Special Variables (17 stubs, Low complexity)
 

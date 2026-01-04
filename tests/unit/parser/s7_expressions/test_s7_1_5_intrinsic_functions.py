@@ -171,63 +171,93 @@ class TestIntrinsicFunctionsParsing:
 
     # ---- Name Functions ----
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $NAME function parsing")
     def test_name_function(self, expr_metamodel):
         """$NAME(var,level) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$NAME(^DATA(I,J))", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "NAME"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QLENGTH function parsing")
     def test_qlength_function(self, expr_metamodel):
         """$QLENGTH(name) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str('$QLENGTH("^DATA(1,2)")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "QLENGTH"
+        assert len(operand.args.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QSUBSCRIPT function parsing")
     def test_qsubscript_function(self, expr_metamodel):
         """$QSUBSCRIPT(name,position) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str('$QSUBSCRIPT("^DATA(1,2)",1)', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "QSUBSCRIPT"
+        assert len(operand.args.args) == 2
 
     # ---- Stack Functions ----
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $STACK function parsing")
     def test_stack_function(self, expr_metamodel):
         """$STACK(level,code) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str('$STACK(0,"PLACE")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "STACK"
+        assert len(operand.args.args) == 2
 
     # ---- Text Function ----
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT function parsing")
     def test_text_function(self, expr_metamodel):
         """$TEXT(label+offset^routine) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        # $TEXT uses TextFunction grammar rule, not IntrinsicFunction
+        model = expr_metamodel.model_from_str("$TEXT(LABEL^ROUTINE)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "TextFunction"
+        # line_ref is a dict with label and routine keys
+        assert operand.line_ref["label"] == "LABEL"
+        assert operand.line_ref["routine"] == "ROUTINE"
 
     # ---- Type Function ----
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TYPE function parsing")
     def test_type_function(self, expr_metamodel):
         """$TYPE(value) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$TYPE(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "TYPE"
+        assert len(operand.args.args) == 1
 
     # ---- MUMPS Function ----
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $MUMPS function parsing")
     def test_mumps_function(self, expr_metamodel):
         """$MUMPS(code) parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str('$MUMPS("1.1")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "MUMPS"
+        assert len(operand.args.args) == 1
 
     # ---- HOROLOG Function Form ----
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $HOROLOG function form parsing")
     def test_horolog_function_form(self, expr_metamodel):
-        """$HOROLOG function form parses correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        """$HOROLOG parses correctly (§7.1.5).
+
+        $HOROLOG is a special variable that returns date/time in MUMPS format.
+        The parser recognizes it as a SpecialVariable.
+        """
+        model = expr_metamodel.model_from_str("$HOROLOG", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        # $HOROLOG is a special variable, not a function
+        assert operand.__class__.__name__ == "SpecialVariable"
+        assert operand.name == "HOROLOG"
 
 
 @pytest.mark.parser
@@ -235,25 +265,42 @@ class TestDeprecatedFunctions:
     """Deprecated intrinsic functions (pre-1995)."""
 
     @pytest.mark.pre1995
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $NEXT deprecated function")
     def test_next_function_deprecated(self, expr_metamodel):
         """$NEXT(var) parses correctly - deprecated, use $ORDER (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        model = expr_metamodel.model_from_str("$NEXT(X(I))", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "NEXT"
+        assert len(operand.args.args) == 1
 
     @pytest.mark.pre1995
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $DEXTRACT deprecated function")
     def test_dextract_function_deprecated(self, expr_metamodel):
-        """$DEXTRACT parses correctly - deprecated (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        """$DEXTRACT parses correctly - deprecated (§7.1.5).
+
+        Note: $DEXTRACT is rarely seen in the wild. The parser should
+        accept it as a generic intrinsic function.
+        """
+        model = expr_metamodel.model_from_str("$DEXTRACT(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "DEXTRACT"
+        assert len(operand.args.args) == 1
 
     @pytest.mark.pre1995
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $DPIECE deprecated function")
     def test_dpiece_function_deprecated(self, expr_metamodel):
-        """$DPIECE parses correctly - deprecated (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        """$DPIECE parses correctly - deprecated (§7.1.5).
+
+        Note: $DPIECE is rarely seen in the wild. The parser should
+        accept it as a generic intrinsic function.
+        """
+        model = expr_metamodel.model_from_str('$DPIECE(X,",")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "DPIECE"
+        assert len(operand.args.args) == 2
 
 
 @pytest.mark.parser
@@ -431,13 +478,28 @@ class TestImplementationDefinedFunctions:
         """$VIEW is implementation-defined."""
         pass
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $Z... implementation-defined functions"
-    )
-    def test_z_functions(self, parse_expression):
-        """$Z... implementation-defined functions parse correctly (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_z_functions(self, expr_metamodel):
+        """$Z... implementation-defined functions parse correctly (§7.1.5).
+
+        $Z-prefixed functions are implementation-defined. The parser accepts
+        them via the generic IntrinsicFunction pattern. Common examples include
+        $ZDATE, $ZTIME, $ZCONVERT (Caché/YDB).
+        """
+        # $ZDATE - common date formatting function
+        model = expr_metamodel.model_from_str("$ZDATE(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZDATE"
+        assert len(operand.args.args) == 1
+
+        # $ZCONVERT - character set conversion
+        model = expr_metamodel.model_from_str('$ZCONVERT(X,"U")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZCONVERT"
+        assert len(operand.args.args) == 2
 
 
 @pytest.mark.parser
