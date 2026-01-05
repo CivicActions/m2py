@@ -708,15 +708,105 @@
 
 **Purpose**: Final verification and documentation updates
 
-- [ ] T171 [US4] Regenerate final coverage matrix in docs/coverage-matrix.md
-- [ ] T172 [US4] Verify SC-002 success command passes with 0 xfails
+- [X] T171 [US4] Regenerate final coverage matrix in docs/coverage-matrix.md
+- [X] T172 [US4] Verify SC-002 success command passes with 0 xfails → **FAILED: 153 xfails remain (see Phase 7)**
 - [ ] T173 [US4] Verify SC-004 parser code coverage reaches 95%+
 - [ ] T174 [US4] Verify SC-005 ASG analysis code coverage reaches 95%+
 - [ ] T175 [US4] Verify SC-006 all YDBTest functional tests parse successfully
 - [ ] T176 Run quickstart.md validation workflow
 - [ ] T177 Update README.md test status documentation if needed
 
-**Checkpoint**: Feature complete - 687 stubs converted to implemented tests
+**Phase 6 Findings**:
+- SC-002 verification: 1613 passed, 91 skipped, **153 xfailed** (should be 0)
+- Skipped tests: Properly documented per FR-055 + need 3 additions to limitations.md
+- Created Phase 7 with 23 tasks to address gaps
+
+**Checkpoint**: Phase 6 verification complete - gaps identified, Phase 7 created
+
+---
+
+## Phase 7: Remaining Stub Implementation (GAPS FOUND)
+
+**Purpose**: Address remaining 153 parser/ASG stubs that should be 0 per SC-001/SC-002
+
+**Workflow**: Each batch follows FR-010 validation process (see [batch-workflow.md](./contracts/batch-workflow.md))
+
+**Note**: Original SC-001 count was 687 stubs. Phases 2-5 converted 534 stubs; Phase 7 addresses the 153 remaining.
+
+**Status**: Phase 6 verification found 153 remaining xfails in parser/ASG tests
+- Parser stubs: 71 (SSVNs: 8, library functions: 11, pattern match: 6, commands: 46)
+- ASG stubs: 82 (routine: 7, expressions: 28, commands: 44, charset: 3)
+
+### Batch E1: Parser SSVNs (8 stubs)
+
+- [X] T178 [US1] Implement 8 SSVN parser tests in tests/unit/parser/s7_expressions/test_s7_1_3_ssvns.py
+
+**Completion Notes (E1)**:
+- Converted 8 stubs to 9 passing tests (added ^$Y test for completeness)
+- Extended grammar SSVNAME regex to support ^$Z and ^$Y implementation-defined SSVNs
+- Tests: ^$JOB, ^$ROUTINE, ^$GLOBAL, ^$LOCK, ^$DEVICE, ^$CHARACTER, ^$SYSTEM, ^$ZJOB, ^$YTEST
+- Grammar file: src/m2py/grammar/expressions.tx - added Z[A-Za-z]* and Y[A-Za-z]* patterns
+- Final parser count: 762 passed, 65 skipped, 63 xfailed
+
+### Batch E2: Parser Library Functions (11 stubs)
+
+- [ ] T179 [US1] Implement 5 CHARACTER library function tests in test_s7_1_6_5_library_functions_character.py
+- [ ] T180 [US1] Implement 6 STRING library function tests in test_s7_1_6_5_library_functions_string.py
+
+### Batch E3: Parser Pattern Match (6 stubs)
+
+- [ ] T181 [US1] Implement 6 pattern match parser tests in test_s7_2_5_pattern_match.py
+
+### Batch E4: Parser Commands (46 stubs, split into sub-batches)
+
+- [ ] T182 [US1] Implement BREAK, CLOSE, DO, GOTO, HANG parser stubs (11 tests)
+  - Files: test_s8_2_01_break.py, test_s8_2_02_close.py, test_s8_2_03_do.py, test_s8_2_06_goto.py, test_s8_2_08_hang.py
+- [ ] T183 [US1] Implement JOB, KILL, LOCK, MERGE parser stubs (10 tests)
+  - Files: test_s8_2_10_job.py, test_s8_2_11_kill.py, test_s8_2_12_lock.py, test_s8_2_13_merge.py
+- [ ] T184 [US1] Implement OPEN, QUIT, READ, VIEW, WRITE parser stubs (12 tests)
+  - Files: test_s8_2_15_open.py, test_s8_2_16_quit.py, test_s8_2_17_read.py, test_s8_2_24_view.py, test_s8_2_25_write.py
+- [ ] T185 [US1] Implement device params, ksubscripts, kvalue parser stubs (13 tests)
+  - Files: test_s8_3_device_params.py, test_s8_ksubscripts.py, test_s8_kvalue.py
+
+### Batch E5: ASG Routine (7 stubs)
+
+- [ ] T186 [US2] Implement routine head and indirection ASG tests (7 tests)
+
+### Batch E6: ASG Expressions (28 stubs)
+
+- [ ] T187 [US2] Implement library functions ASG tests (11 tests)
+- [ ] T188 [US2] Implement extrinsic functions ASG tests (5 tests)
+- [ ] T189 [US2] Implement pattern match ASG tests (5 tests)
+- [ ] T190 [US2] Implement indirection ASG tests (7 tests)
+
+### Batch E7: ASG Commands (44 stubs)
+
+- [ ] T191 [US2] Implement KILL, NEW, QUIT, READ, SET ASG stubs (12 tests)
+- [ ] T192 [US2] Implement transaction (TSTART/TCOMMIT/TROLLBACK) ASG stubs (10 tests)
+- [ ] T193 [US2] Implement USE, WRITE, XECUTE, ZCOMMAND ASG stubs (12 tests)
+- [ ] T194 [US2] Implement device params, ksubscripts, kvalue ASG stubs (10 tests)
+
+### Batch E8: ASG Charset (3 stubs)
+
+- [ ] T195 [US2] Implement 3 charset ASG tests in test_s9_1_definitions.py
+
+### Implementation Gap Fixes (per FR-005/FR-006)
+
+- [ ] T196 [US1] Fix any parser implementation gaps discovered during E1-E4 (src/m2py/parser/)
+- [ ] T197 [US2] Fix any ASG implementation gaps discovered during E5-E8 (src/m2py/analysis/)
+
+### Documentation Updates
+
+- [ ] T198 [US4] Add VIEW command to limitations.md (implementation-defined)
+- [ ] T199 [US4] Add $NEXT function to limitations.md (deprecated pre-1995)
+- [ ] T200 [US4] Add extended character sets to limitations.md (implementation-defined)
+
+### Final Verification
+
+- [ ] T201 [US4] Run SC-002 success command and verify 0 xfails in parser/ASG
+- [ ] T202 [US4] Regenerate final coverage matrix
+
+**Checkpoint**: All parser/ASG stubs implemented - 0 xfails remaining
 
 ---
 
@@ -730,6 +820,7 @@
 - **Phase 4 (ASG Medium)**: Can start after Phase 2
 - **Phase 5 (Cross-Cutting)**: Can start after Phase 4 (complex tests may need earlier ASG work)
 - **Phase 6 (Polish)**: Depends on all phases complete
+- **Phase 7 (Gap Remediation)**: Depends on Phase 6 verification identifying gaps
 
 ### User Story Independence
 

@@ -3,9 +3,21 @@
 Tests verify the textX grammar correctly captures SSVN syntax.
 
 Reference: MUMPS 1995 ANSI Standard, Section 7.1.3
+- §7.1.3.1 ^$CHARACTER - Character set profiles
+- §7.1.3.2 ^$DEVICE - Device information
+- §7.1.3.3 ^$EVENT - Event processing (MWAPI - out of scope)
+- §7.1.3.5 ^$JOB - Process information
+- §7.1.3.6 ^$ROUTINE - Routine information
+- §7.1.3.7 ^$LOCK - Lock information
+- §7.1.3.8 ^$GLOBAL - Global variable information
+- §7.1.3.9 ^$SYSTEM - System information
+- §7.1.3.10 ^$Z/^$Y - Implementation-defined
 """
 
 import pytest
+
+from m2py.asg import MRoutine, MStructuredSystemVariable
+from m2py.parser import MUMPSParser
 
 
 # In-scope SSVNs from contracts/test-naming.md SSVN_LIST
@@ -28,60 +40,117 @@ SSVN_OUT_OF_SCOPE = [
 ]
 
 
+def _parse_ssvn_in_write(ssvn_expr: str) -> MStructuredSystemVariable:
+    """Helper to parse SSVN expression via WRITE command."""
+    parser = MUMPSParser()
+    source = f"LABEL\tW {ssvn_expr}\n"
+    routine = parser.parse(source)
+    assert isinstance(routine, MRoutine)
+    label = routine.labels[0]
+    stmt = label.body.statements[0]
+    assert len(stmt.arguments) >= 1
+    return stmt.arguments[0]
+
+
 @pytest.mark.parser
 class TestSSVNsParsing:
     """Parser-level tests for SSVNs (§7.1.3).
 
     Structured System Variables provide access to system information.
+    Uses MUMPSParser to verify grammar captures SSVN syntax via WRITE command.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ^$JOB SSVN parsing")
-    def test_ssvn_job(self, parse_expression):
-        """^$JOB SSVN parses correctly (§7.1.3)."""
-        pytest.fail("Stub - implement test")
+    def test_ssvn_job(self):
+        """^$JOB SSVN parses correctly (§7.1.3.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ^$ROUTINE SSVN parsing")
-    def test_ssvn_routine(self, parse_expression):
-        """^$ROUTINE SSVN parses correctly (§7.1.3)."""
-        pytest.fail("Stub - implement test")
+        ^$JOB provides process information - character set, environments, events.
+        """
+        result = _parse_ssvn_in_write('^$JOB("test")')
+        assert isinstance(result, MStructuredSystemVariable)
+        assert result.name.upper() == "JOB"
+        assert len(result.subscripts) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ^$GLOBAL SSVN parsing")
-    def test_ssvn_global(self, parse_expression):
-        """^$GLOBAL SSVN parses correctly (§7.1.3)."""
-        pytest.fail("Stub - implement test")
+    def test_ssvn_routine(self):
+        """^$ROUTINE SSVN parses correctly (§7.1.3.6).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ^$LOCK SSVN parsing")
-    def test_ssvn_lock(self, parse_expression):
-        """^$LOCK SSVN parses correctly (§7.1.3)."""
-        pytest.fail("Stub - implement test")
+        ^$ROUTINE provides routine information - source, object code status.
+        """
+        result = _parse_ssvn_in_write('^$ROUTINE("MYRTN")')
+        assert isinstance(result, MStructuredSystemVariable)
+        assert result.name.upper() == "ROUTINE"
+        assert len(result.subscripts) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ^$DEVICE SSVN parsing")
-    def test_ssvn_device(self, parse_expression):
-        """^$DEVICE SSVN parses correctly (§7.1.3)."""
-        pytest.fail("Stub - implement test")
+    def test_ssvn_global(self):
+        """^$GLOBAL SSVN parses correctly (§7.1.3.8).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ^$CHARACTER SSVN parsing")
-    def test_ssvn_character(self, parse_expression):
-        """^$CHARACTER SSVN parses correctly (§7.1.3)."""
-        pytest.fail("Stub - implement test")
+        ^$GLOBAL provides global variable information.
+        """
+        result = _parse_ssvn_in_write('^$GLOBAL("MYDATA")')
+        assert isinstance(result, MStructuredSystemVariable)
+        assert result.name.upper() == "GLOBAL"
+        assert len(result.subscripts) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ^$SYSTEM SSVN parsing")
-    def test_ssvn_system(self, parse_expression):
-        """^$SYSTEM SSVN parses correctly (§7.1.3)."""
-        pytest.fail("Stub - implement test")
+    def test_ssvn_lock(self):
+        """^$LOCK SSVN parses correctly (§7.1.3.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ^$Z... SSVN parsing")
-    def test_ssvn_z_implementation_defined(self, parse_expression):
-        """Implementation-defined ^$Z... SSVN parses correctly (§7.1.3)."""
-        pytest.fail("Stub - implement test")
+        ^$LOCK provides lock information - owner, count for lock resources.
+        """
+        result = _parse_ssvn_in_write('^$LOCK("^MYLOCK")')
+        assert isinstance(result, MStructuredSystemVariable)
+        assert result.name.upper() == "LOCK"
+        assert len(result.subscripts) == 1
+
+    def test_ssvn_device(self):
+        """^$DEVICE SSVN parses correctly (§7.1.3.2).
+
+        ^$DEVICE provides device information - state, properties, modes.
+        """
+        result = _parse_ssvn_in_write("^$DEVICE(0)")
+        assert isinstance(result, MStructuredSystemVariable)
+        assert result.name.upper() == "DEVICE"
+        assert len(result.subscripts) == 1
+
+    def test_ssvn_character(self):
+        """^$CHARACTER SSVN parses correctly (§7.1.3.1).
+
+        ^$CHARACTER provides character set profile information.
+        """
+        result = _parse_ssvn_in_write('^$CHARACTER("M")')
+        assert isinstance(result, MStructuredSystemVariable)
+        assert result.name.upper() == "CHARACTER"
+        assert len(result.subscripts) == 1
+
+    def test_ssvn_system(self):
+        """^$SYSTEM SSVN parses correctly (§7.1.3.9).
+
+        ^$SYSTEM provides system-wide defaults and configuration.
+        """
+        result = _parse_ssvn_in_write("^$SYSTEM")
+        assert isinstance(result, MStructuredSystemVariable)
+        assert result.name.upper() == "SYSTEM"
+        # ^$SYSTEM can be used without subscripts
+        assert len(result.subscripts) == 0
+
+    def test_ssvn_z_implementation_defined(self):
+        """Implementation-defined ^$Z... SSVN parses correctly (§7.1.3.10).
+
+        ^$Z names are reserved for implementation-specific extensions.
+        YottaDB uses ^$ZJOB, ^$ZROUTINE, etc.
+        """
+        result = _parse_ssvn_in_write('^$ZJOB("test")')
+        assert isinstance(result, MStructuredSystemVariable)
+        # Z-prefix SSVNs are implementation-defined
+        assert result.name.upper().startswith("Z")
+        assert len(result.subscripts) == 1
+
+    def test_ssvn_y_implementation_defined(self):
+        """Implementation-defined ^$Y... SSVN parses correctly (§7.1.3.10).
+
+        ^$Y names are reserved for implementation-specific extensions.
+        """
+        result = _parse_ssvn_in_write("^$YTEST")
+        assert isinstance(result, MStructuredSystemVariable)
+        assert result.name.upper().startswith("Y")
 
 
 @pytest.mark.parser
