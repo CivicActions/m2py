@@ -967,14 +967,26 @@ Pattern match operator (?) parsing tests.
 
 ---
 
-### Batch F6: ASG Routine & Simple (8 stubs) - Medium Complexity
+### Batch F6: ASG Routine & Simple (10 stubs) - Medium Complexity ✅ COMPLETE
 
-Routine head structure and transaction restart.
+Routine head structure, transaction restart, and pattern match operators.
 
-- [ ] T221 [US2] **Research**: Review MUMPS reference §6.1 (routine structure), §8.2.20 (TRESTART). Check docs/asg/ for routine node documentation.
-- [ ] T222 [US2] Implement ASG stubs: routine_head (3), TRESTART (2) - 5 stubs
-- [ ] T223 [US2] Implement ASG stubs: pattern_match operators (3), pattern_match s7_2_5 (2) - 5 stubs
-- [ ] T224 [US4] Regenerate coverage matrix
+- [X] T221 [US2] **Research**: Review MUMPS reference §6.1 (routine structure), §8.2.20 (TRESTART). Check docs/asg/ for routine node documentation.
+- [X] T222 [US2] Implement ASG stubs: routine_head (3), TRESTART (2) - 5 stubs
+- [X] T223 [US2] Implement ASG stubs: pattern_match operators (3), pattern_match s7_2_5 (2) - 5 stubs
+- [X] T224 [US4] Regenerate coverage matrix
+
+**Completion Notes (F6)**:
+- Researched §6.1 (routine head), §8.2.20 (TRESTART), §7.2.5 (pattern match)
+- All 10 stubs converted to passing tests:
+  - test_s6_1_routine_head.py (3): routine_name_extraction, formal_parameter_list, routine_metadata
+  - test_s8_2_20_trestart.py (2): trestart_command_node, trestart_control_flow
+  - test_s7_2_operators_pattern_match.py (3): pattern_alternation, pattern_literal, pattern_indirection
+  - test_s7_2_5_pattern_match.py (2): pattern_alternation, pattern_indirection
+- Key ASG classes: MRoutine (labels), MLabel (name, formal_list, body), MTRestartStatement, MPatternMatch
+- Fixed import: MTRestartStatement from m2py.asg.statements (not commands)
+- Removed 3 xfail markers from tests that unexpectedly passed
+- Final count: 3632 passed, 109 skipped, 320 xfailed
 
 ### Batch F7: ASG Library Functions (11 stubs) - Medium Complexity
 
