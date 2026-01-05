@@ -783,7 +783,7 @@
 
 - [X] T191 [US2] Implement KILL, NEW, QUIT, READ, SET ASG stubs (11 tests)
 - [X] T192 [US2] Implement transaction (TSTART/TCOMMIT/TROLLBACK) ASG stubs (9 tests)
-- [ ] T193 [US2] Implement USE, WRITE, XECUTE, ZCOMMAND ASG stubs (12 tests)
+- [X] T193 [US2] Implement USE, WRITE, XECUTE, ZCOMMAND ASG stubs (12 tests)
 - [ ] T194 [US2] Implement device params, ksubscripts, kvalue ASG stubs (10 tests)
 
 ### Batch E8: ASG Charset (3 stubs)

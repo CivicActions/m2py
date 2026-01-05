@@ -30,6 +30,8 @@ Command:
     NewCommand |
     ZWithdrawCommand |
     ZKillCommand |
+    KSubscriptsCommand |
+    KValueCommand |
     KillCommand |
     ZHelpCommand |
     ZHaltCommand |
@@ -482,6 +484,28 @@ NewVar:
 // K<space>VAR means kill VAR. K<space><space>CMD means kill all then CMD.
 KillCommand:
     /([Kk][Ii][Ll][Ll]|[Kk])(?![A-Za-z])/ postcond=Postcondition? (' ' args+=KillArgument[/,/])?
+;
+
+// KSUBSCRIPTS command: KS[UBSCRIPTS] killarglist
+// Kills only the subscripts (descendants) of a variable, preserving its value.
+// Reference: MUMPS 1995 ANSI Standard, Section 8.2.20
+// Examples:
+//   KS X - kills X(1), X(1,2), etc. but preserves X's value
+//   KS (A,B) - exclusive kill of subscripts except A and B
+//   KS - kills all local variable subscripts
+KSubscriptsCommand:
+    /[Kk][Ss]([Uu][Bb][Ss][Cc][Rr][Ii][Pp][Tt][Ss])?(?![A-Za-z])/ postcond=Postcondition? (' ' args+=KillArgument[/,/])?
+;
+
+// KVALUE command: KV[ALUE] killarglist
+// Kills only the value of a variable, preserving its subscripts (descendants).
+// Reference: MUMPS 1995 ANSI Standard, Section 8.2.21
+// Examples:
+//   KV X - kills X's value but preserves X(1), X(1,2), etc.
+//   KV (A,B) - exclusive kill of values except A and B
+//   KV - kills all local variable values
+KValueCommand:
+    /[Kk][Vv]([Aa][Ll][Uu][Ee])?(?![A-Za-z])/ postcond=Postcondition? (' ' args+=KillArgument[/,/])?
 ;
 
 KillArgument:

@@ -56,6 +56,8 @@ from m2py.asg.statements import (
     MQuitStatement,
     MNewStatement,
     MKillStatement,
+    MKSubscriptsStatement,
+    MKValueStatement,
     MHangStatement,
     MHaltStatement,
     MBreakStatement,
@@ -1378,6 +1380,96 @@ class SemanticAnalyzer:
                     stmt.except_list = sorted(list(result))
 
             # Add selective targets (these are killed AFTER exclusive processing)
+            stmt.targets = selective_targets
+
+        return stmt
+
+    def _analyze_KSubscriptsCommand(
+        self, cmd: Any, parent: Any
+    ) -> MKSubscriptsStatement:
+        """Analyze KSUBSCRIPTS command into MKSubscriptsStatement.
+
+        KSUBSCRIPTS kills only subscripts (descendants), preserving values.
+        Reference: MUMPS 1995 ANSI Standard, Section 8.2.20
+
+        Handles same argument patterns as KILL:
+        - KS (no args) - kill all local subscripts
+        - KS X,Y - selective kill of X and Y subscripts
+        - KS (X,Y) - exclusive kill (keep only X,Y subscripts)
+        """
+        stmt = MKSubscriptsStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            exclusive_groups = []
+            selective_targets = []
+
+            for arg in cmd.args:
+                if hasattr(arg, "exclusive") and arg.exclusive:
+                    except_list = getattr(arg, "except", None) or getattr(
+                        arg, "except_", None
+                    )
+                    if except_list:
+                        exclusive_groups.append(list(except_list))
+                elif hasattr(arg, "target") and arg.target:
+                    selective_targets.append(self.analyze(arg.target, stmt))
+
+            if exclusive_groups:
+                stmt.exclusive = True
+                stmt.except_groups = exclusive_groups
+                if len(exclusive_groups) == 1:
+                    stmt.except_list = exclusive_groups[0]
+                else:
+                    result = set(exclusive_groups[0])
+                    for group in exclusive_groups[1:]:
+                        result &= set(group)
+                    stmt.except_list = sorted(list(result))
+
+            stmt.targets = selective_targets
+
+        return stmt
+
+    def _analyze_KValueCommand(self, cmd: Any, parent: Any) -> MKValueStatement:
+        """Analyze KVALUE command into MKValueStatement.
+
+        KVALUE kills only values, preserving subscripts (descendants).
+        Reference: MUMPS 1995 ANSI Standard, Section 8.2.21
+
+        Handles same argument patterns as KILL:
+        - KV (no args) - kill all local values
+        - KV X,Y - selective kill of X and Y values
+        - KV (X,Y) - exclusive kill (keep only X,Y values)
+        """
+        stmt = MKValueStatement()
+        object.__setattr__(stmt, "parent", parent)
+        self._analyze_postcondition(cmd, stmt)
+
+        if hasattr(cmd, "args") and cmd.args:
+            exclusive_groups = []
+            selective_targets = []
+
+            for arg in cmd.args:
+                if hasattr(arg, "exclusive") and arg.exclusive:
+                    except_list = getattr(arg, "except", None) or getattr(
+                        arg, "except_", None
+                    )
+                    if except_list:
+                        exclusive_groups.append(list(except_list))
+                elif hasattr(arg, "target") and arg.target:
+                    selective_targets.append(self.analyze(arg.target, stmt))
+
+            if exclusive_groups:
+                stmt.exclusive = True
+                stmt.except_groups = exclusive_groups
+                if len(exclusive_groups) == 1:
+                    stmt.except_list = exclusive_groups[0]
+                else:
+                    result = set(exclusive_groups[0])
+                    for group in exclusive_groups[1:]:
+                        result &= set(group)
+                    stmt.except_list = sorted(list(result))
+
             stmt.targets = selective_targets
 
         return stmt

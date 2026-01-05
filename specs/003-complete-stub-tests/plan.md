@@ -148,6 +148,18 @@ See [research.md](./research.md) for detailed batch breakdown (C1-C10).
 
 See [research.md](./research.md) for detailed batch breakdown (D1-D19).
 
+### Phase E: Gap Remediation (Added after Phase 6 verification)
+
+8 batches, 153 stubs - remaining parser/ASG stubs discovered during Phase 6 SC-002 verification
+
+These stubs were not converted during Phases 2-5 and represent:
+- Parser stubs: 71 (SSVNs, library functions, pattern match, commands)
+- ASG stubs: 82 (routine, expressions, commands, charset)
+
+Note: The original 687 stubs (SC-001) were reduced to 153 through Phases 2-5. Phase E addresses the remainder.
+
+See [tasks.md](./tasks.md) Phase 7 for detailed batch breakdown (E1-E8).
+
 ## Handling Implementation Changes
 
 When stub tests reveal implementation gaps:

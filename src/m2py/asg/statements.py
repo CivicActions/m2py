@@ -349,6 +349,58 @@ class MKillStatement(MStatement):
         return not self.targets and not self.exclusive
 
 
+@dataclass
+class MKSubscriptsStatement(MStatement):
+    """KSUBSCRIPTS command - delete variable subscripts only.
+
+    Kills only the subscripts (descendants) of a variable, preserving its value:
+    - KS (no args) - kill subscripts of ALL local variables (is_kill_all=True)
+    - KS X - kills X(1), X(1,2), etc. but preserves X's value
+    - KS (X,Y) - exclusive kill of subscripts (keep X,Y subscripts)
+
+    Reference: MUMPS 1995 ANSI Standard, Section 8.2.20
+    After KS X: $DATA(X) is 0 or 1 (not 10 or 11)
+    """
+
+    targets: List[Union["MVariable", "MGlobal", "MIndirection"]] = field(
+        default_factory=list
+    )
+    exclusive: bool = False
+    except_list: List[str] = field(default_factory=list)
+    except_groups: List[List[str]] = field(default_factory=list)
+
+    @property
+    def is_kill_all(self) -> bool:
+        """Return True if this is KSUBSCRIPTS with no arguments."""
+        return not self.targets and not self.exclusive
+
+
+@dataclass
+class MKValueStatement(MStatement):
+    """KVALUE command - delete variable value only.
+
+    Kills only the value of a variable, preserving its subscripts (descendants):
+    - KV (no args) - kill values of ALL local variables (is_kill_all=True)
+    - KV X - kills X's value but preserves X(1), X(1,2), etc.
+    - KV (X,Y) - exclusive kill of values (keep X,Y values)
+
+    Reference: MUMPS 1995 ANSI Standard, Section 8.2.21
+    After KV X: $DATA(X) is 0 or 10 (not 1 or 11)
+    """
+
+    targets: List[Union["MVariable", "MGlobal", "MIndirection"]] = field(
+        default_factory=list
+    )
+    exclusive: bool = False
+    except_list: List[str] = field(default_factory=list)
+    except_groups: List[List[str]] = field(default_factory=list)
+
+    @property
+    def is_kill_all(self) -> bool:
+        """Return True if this is KVALUE with no arguments."""
+        return not self.targets and not self.exclusive
+
+
 # =============================================================================
 # Merge Statement
 # =============================================================================
