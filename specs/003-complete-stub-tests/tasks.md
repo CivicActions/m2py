@@ -587,16 +587,30 @@
 - Used parse_expression + analyze_expression for intrinsic function testing
 - Final count: 1654 passed, 110 skipped, 496 xfailed
 
-### Batch D9-D11: Postcondition Tests (21 stubs, Medium complexity)
+### Batch D9-D11: Postcondition Tests (21 stubs, Medium complexity) ✅ COMPLETE
 
-- [ ] T145 [US2] Research MUMPS spec postconditions (:) in mumps-reference/
-- [ ] T146 [US2] Find postcondition examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T147 [US2] Evaluate ASG quality for postconditions using validate_asg.py
-- [ ] T148 [US2] Implement 7 conditional gate tests in tests/unit/cross_cutting/test_postconditions.py (D9)
-- [ ] T149 [US2] Implement 7 argument postcondition tests in same file (D10)
-- [ ] T150 [US2] Implement 7 ASG postcondition tests in same file (D11)
-- [ ] T151 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T152 [US2] Run full test suite and regenerate coverage matrix
+- [X] T145 [US2] Research MUMPS spec postconditions (:) in mumps-reference/
+- [X] T146 [US2] Find postcondition examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T147 [US2] Evaluate ASG quality for postconditions using validate_asg.py
+- [X] T148 [US2] Implement 7 conditional gate tests in tests/unit/cross_cutting/test_postconditions.py (D9)
+- [X] T149 [US2] Implement 7 argument postcondition tests in same file (D10)
+- [X] T150 [US2] Implement 7 ASG postcondition tests in same file (D11)
+- [X] T151 [US2] No implementation gaps found - ASG correctly handles all postcondition types
+- [X] T152 [US2] Run full test suite and regenerate coverage matrix
+
+**Completion notes:**
+- 23 tests implemented, 5 xfailed (codegen stubs)
+- MUMPS spec reference: §8.1.4 (1995__a108005.md, notes__a108005.md)
+- Command postconditions: All commands EXCEPT Else, For, If
+- Argument postconditions: Only Do, Goto, Xecute support arg-level postconditions
+- Key test patterns:
+  - TestCommandPostconditionsParser (7 tests): SET, WRITE, DO, KILL, complex expr, function, QUIT
+  - TestArgumentPostconditionsParser (7 tests): DO, GOTO, XECUTE, expr, mixed, routine, params
+  - TestMixedPostconditionsParser (2 tests): command+arg on DO and GOTO
+  - TestPostconditionsASG (7 tests): command, arg, expr, combined, negation, function, numeric
+  - TestPostconditionsCodegen (5 xfail): runtime execution stubs
+- MUMPS left-to-right parsing confirmed: X>0&Y<10 parses as ((X>0)&Y)<10
+- Final count: 3460 passed, 110 skipped, 480 xfailed
 
 ### Batch D12-D14: Timeout Tests (27 stubs, Medium complexity)
 
