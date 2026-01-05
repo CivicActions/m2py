@@ -5,28 +5,67 @@ Reference: MUMPS 1995 ANSI Standard, Section 8.2.26
 
 import pytest
 
+from m2py.parser.line_parser import parse_commands_from_line
+from m2py.analysis.semantic_analyzer import analyze_command
+from m2py.asg.statements import MXecuteStatement
+
+
+def analyze_first_command(line: str):
+    """Helper to parse a line and analyze the first command."""
+    cmds = parse_commands_from_line(line)
+    assert len(cmds) >= 1, f"No commands parsed from: {line}"
+    return analyze_command(cmds[0])
+
 
 @pytest.mark.asg
 class TestXecuteCommandAnalysis:
     """ASG-level tests for XECUTE command analysis (§8.2.26)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: XECUTE command node")
-    def test_xecute_command_node(self, analyze_routine):
-        """XECUTE command creates correct ASG node (§8.2.26)."""
-        pytest.fail("Stub - implement test")
+    def test_xecute_command_node(self):
+        """XECUTE command creates correct ASG node (§8.2.26).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: XECUTE static analysis limitation")
-    def test_xecute_static_analysis_limitation(self, analyze_routine):
-        """XECUTE limits static analysis (§8.2.26)."""
-        pytest.fail("Stub - implement test")
+        Verifies that XECUTE command produces MXecuteStatement.
+        """
+        # Simple XECUTE with literal
+        stmt = analyze_first_command('X "S X=1"')
+        assert isinstance(stmt, MXecuteStatement)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: XECUTE postcondition")
-    def test_xecute_postcondition(self, analyze_routine):
-        """XECUTE expr:condition is analyzed (§8.2.26)."""
-        pytest.fail("Stub - implement test")
+        # XECUTE with variable
+        stmt2 = analyze_first_command("X CODE")
+        assert isinstance(stmt2, MXecuteStatement)
+
+        # XECUTE with multiple expressions
+        stmt3 = analyze_first_command('X "S X=1","S Y=2"')
+        assert isinstance(stmt3, MXecuteStatement)
+
+    def test_xecute_static_analysis_limitation(self):
+        """XECUTE limits static analysis (§8.2.26).
+
+        Verifies that XECUTE captures is_constant flag to indicate
+        whether static analysis is possible.
+        """
+        # Constant XECUTE - can be statically analyzed
+        stmt = analyze_first_command('X "S X=1"')
+        assert isinstance(stmt, MXecuteStatement)
+        assert stmt.is_constant is True
+        assert stmt.constant_values == ["S X=1"]
+
+        # Variable XECUTE - cannot be statically analyzed
+        stmt2 = analyze_first_command("X CODE")
+        assert isinstance(stmt2, MXecuteStatement)
+        assert stmt2.is_constant is False
+        assert stmt2.constant_values == []
+
+    def test_xecute_postcondition(self):
+        """XECUTE expr:condition is analyzed (§8.2.26).
+
+        Verifies that XECUTE captures postcondition on command.
+        """
+        # XECUTE with command postcondition
+        stmt = analyze_first_command('X:flag "S X=1"')
+        assert isinstance(stmt, MXecuteStatement)
+        # Command-level postcondition
+        assert stmt.postcondition is not None
 
 
 @pytest.mark.asg
