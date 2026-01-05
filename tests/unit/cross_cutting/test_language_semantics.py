@@ -17,6 +17,7 @@ from m2py.parser import MUMPSParser
 from m2py.parser.line_parser import parse_commands_from_line
 from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.asg.expressions import MBinaryOp
+from m2py.asg.statements import MNewStatement
 from m2py.parser.textx_classes import NumericLiteral
 
 
@@ -307,23 +308,56 @@ class TestExclusiveNewParser:
     Reference: §8.2.14
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exclusive NEW syntax")
     def test_exclusive_new_parsed(self):
-        """NEW (X,Y) parses exclusive NEW form (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+        """NEW (X,Y) parses exclusive NEW form (§8.2.14).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exclusive NEW multiple vars")
+        Exclusive NEW syntax uses parentheses around the variable list.
+        This form keeps listed variables visible and creates new scope
+        for all other variables.
+
+        Reference: 1995__a108042.md, examples__a108042.md
+        """
+        parser = MUMPSParser()
+        source = "LABEL\tN (X,Y)\n"
+        routine = parser.parse(source)
+
+        new_stmt = routine.labels[0].body.statements[0]
+        assert new_stmt.__class__.__name__ == "MNewStatement"
+        # Parser captures exclusive form
+        assert new_stmt.exclusive is True
+
     def test_exclusive_new_multiple_vars_parsed(self):
-        """NEW (A,B,C,D) parses with multiple variables (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+        """NEW (A,B,C,D) parses with multiple variables (§8.2.14).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exclusive vs regular NEW")
+        Exclusive NEW can protect any number of variables.
+        """
+        cmds = parse_commands_from_line("N (A,B,C,D)")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MNewStatement)
+        assert stmt.exclusive is True
+        assert len(stmt.except_list) == 4
+        assert set(stmt.except_list) == {"A", "B", "C", "D"}
+
     def test_exclusive_vs_regular_new_distinction(self):
-        """Parser distinguishes NEW X from NEW (X) (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+        """Parser distinguishes NEW X from NEW (X) (§8.2.14).
+
+        Regular NEW creates new scope for listed variables.
+        Exclusive NEW creates new scope for all EXCEPT listed variables.
+        """
+        # Regular NEW
+        cmds = parse_commands_from_line("N X,Y")
+        regular = analyze_command(cmds[0])
+        assert isinstance(regular, MNewStatement)
+        assert regular.exclusive is False
+        assert len(regular.variables) == 2
+
+        # Exclusive NEW
+        cmds = parse_commands_from_line("N (X,Y)")
+        exclusive = analyze_command(cmds[0])
+        assert isinstance(exclusive, MNewStatement)
+        assert exclusive.exclusive is True
+        assert len(exclusive.except_list) == 2
 
 
 @pytest.mark.asg
@@ -334,17 +368,43 @@ class TestExclusiveNewASG:
     Reference: §8.2.14, FR-048
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exclusive NEW classification")
     def test_exclusive_new_classified(self):
-        """Exclusive NEW has is_exclusive=True in ASG (§8.2.14, FR-048)."""
-        pytest.fail("Stub - implement test")
+        """Exclusive NEW has exclusive=True in ASG (§8.2.14, FR-048).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: protected variables tracked")
+        The ASG must distinguish exclusive NEW from regular NEW so that
+        codegen can implement inverse scoping behavior.
+        """
+        cmds = parse_commands_from_line("N (X,Y)")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MNewStatement)
+        assert stmt.exclusive is True
+
+        # Verify regular NEW is not exclusive
+        cmds = parse_commands_from_line("N X,Y")
+        stmt = analyze_command(cmds[0])
+        assert stmt.exclusive is False
+
     def test_protected_variables_tracked(self):
-        """Protected variable list tracked in ASG (§8.2.14, FR-048)."""
-        pytest.fail("Stub - implement test")
+        """Protected variable list tracked in ASG (§8.2.14, FR-048).
+
+        The except_list contains variables that should NOT be NEWed,
+        i.e., they remain visible from outer scope.
+        """
+        cmds = parse_commands_from_line("N (A,B,C)")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MNewStatement)
+        assert hasattr(stmt, "except_list")
+        assert len(stmt.except_list) == 3
+        assert "A" in stmt.except_list
+        assert "B" in stmt.except_list
+        assert "C" in stmt.except_list
+
+        # Regular NEW has empty except_list
+        cmds = parse_commands_from_line("N X")
+        stmt = analyze_command(cmds[0])
+        assert stmt.except_list == []
 
 
 @pytest.mark.codegen

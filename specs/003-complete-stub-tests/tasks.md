@@ -647,7 +647,7 @@
 - [X] T163 [US2] Evaluate ASG quality for language semantics using validate_asg.py
 - [X] T164 [US2] Implement 7 $TEST tracking tests in tests/unit/cross_cutting/test_language_semantics.py (D15)
 - [X] T165 [US2] Implement 7 evaluation order tests in same file (D16)
-- [ ] T166 [US2] Implement 7 NEW scoping tests in same file (D17)
+- [X] T166 [US2] Implement 7 NEW scoping tests in same file (D17)
 - [ ] T167 [US2] Implement 7 transaction semantics tests in same file (D18)
 - [ ] T168 [US2] Implement 7 misc semantics tests in same file (D19)
 - [ ] T169 [US2] Fix any implementation gaps in src/m2py/
@@ -667,6 +667,14 @@
 - Existing test: test_s7_2_operators.py::test_left_to_right_evaluation covers same behavior
 - D16 tests (7 total): 2 passing (parser/ASG), 5 xfail stubs (codegen runtime)
 - Final count: 3489 passed, 110 skipped, 454 xfailed
+
+**T166 completion notes:**
+- MUMPS spec ref: §8.2.14 (1995__a108042.md - NEW command, exclusive form)
+- Examples: examples__a108042.md - NEW (A,B,C) syntax, scoping behavior
+- ASG quality: MNewStatement has exclusive=True, except_list=['X','Y'] for NEW (X,Y)
+- Existing test: test_s8_2_14_new.py::test_new_exclusive_form covers basic ASG
+- D17 tests (8 total): 5 passing (3 parser, 2 ASG), 3 xfail stubs (codegen runtime)
+- Final count: 3494 passed, 110 skipped, 449 xfailed
 
 **Checkpoint**: Phase 5 complete - 133 cross-cutting stubs converted
 
