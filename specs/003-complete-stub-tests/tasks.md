@@ -479,21 +479,53 @@
 - Note: ELSE postcondition parsing not implemented - test documents existing structure
 - Final count: 3367 passed, 110 skipped, 562 xfailed
 
-### Batch C9: ASG YDB Extensions (15 stubs, Medium complexity)
+### Batch C9: ASG YDB Extensions (15 stubs, Medium complexity) ✅
 
-- [ ] T117 [P] [US2] Research YDB Z-command semantics
-- [ ] T118 [US2] Evaluate ASG quality for Z-commands using validate_asg.py
-- [ ] T119 [US2] Implement 15 Z-command ASG tests in tests/unit/asg/extensions/
-- [ ] T120 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T121 [US2] Run full test suite and regenerate coverage matrix
+- [X] T117 [P] [US2] Research YDB Z-command semantics
+- [X] T118 [US2] Evaluate ASG quality for Z-commands using validate_asg.py
+- [X] T119 [US2] Implement 15 Z-command ASG tests in tests/unit/asg/extensions/
+- [X] T120 [US2] Fix any implementation gaps in src/m2py/
+- [X] T121 [US2] Run full test suite and regenerate coverage matrix
 
-### Batch C10: ASG Legacy Pre-1995 (5 stubs, Medium complexity)
+**Completion Notes (C9)**:
+- Commit: `95e4d85`
+- Implemented 18 stubs across 10 test files → 24 passing tests:
+  - test_zallocate.py: 2 tests (lockop, targets)
+  - test_zbreak.py: 2 tests (MZBreakArg location/action)
+  - test_zedit.py: 1 test (args with StringLiteral)
+  - test_zgoto.py: 3 tests (level, target, MCall)
+  - test_zhalt.py: 2 tests (exitcode attribute)
+  - test_zkill.py: 2 tests (MZKillStatement/MZWithdrawStatement)
+  - test_zlink.py: 2 tests (args with routine name)
+  - test_ztrigger.py: 1 test (GlobalVariable targets)
+  - test_zwrite.py: 2 tests (MZWriteArg with target)
+  - test_zhelp.py: 3 tests (node creation, topic, topic+library)
+- ZHELP Implementation (new command support):
+  - Grammar: Added ZHelpCommand rule with ZHE[LP] syntax
+  - ASG: Added MZHelpStatement and MZHelpArg classes
+  - Semantic analyzer: Added _analyze_ZHelpCommand handler
+  - Parser tests: 4 new tests
+- Grammar ordering fix: ZHelpCommand precedes ZHaltCommand (ZH abbreviation conflict)
+- Final count: 1608 passed, 110 skipped, 542 xfailed
 
-- [ ] T122 [P] [US2] Research pre-1995 semantic differences
-- [ ] T123 [US2] Evaluate ASG quality for legacy constructs using validate_asg.py
-- [ ] T124 [US2] Implement 5 legacy ASG tests in tests/unit/asg/legacy/
-- [ ] T125 [US2] Fix any implementation gaps in src/m2py/
-- [ ] T126 [US2] Run full test suite and regenerate coverage matrix
+### Batch C10: ASG Legacy Pre-1995 (5 stubs, Medium complexity) ✅
+
+- [X] T122 [P] [US2] Research pre-1995 semantic differences
+- [X] T123 [US2] Evaluate ASG quality for legacy constructs using validate_asg.py
+- [X] T124 [US2] Implement 5 legacy ASG tests in tests/unit/asg/legacy/
+- [X] T125 [US2] Fix any implementation gaps in src/m2py/
+- [X] T126 [US2] Run full test suite and regenerate coverage matrix
+
+**Completion Notes (C10)**:
+- All 5 stubs converted to passing tests in test_pre1995_semantics.py:
+  - test_next_function_asg_structure: $NEXT produces IntrinsicFunction ASG node
+  - test_next_function_variable_tracking: K, X tracked in ScopeVariables.reads/writes
+  - test_next_function_traversal_pattern: FOR loop classified as ARGUMENTLESS, $N parsed
+  - test_legacy_variable_scoping: Pre-NEW pattern with KILL tracked as write
+  - test_legacy_array_copy_pattern: Pre-MERGE $ORDER traversal pattern works
+- Key imports: ForLoopType from m2py.asg.enums, IntrinsicFunction/GlobalVariable from textx_classes
+- ScopeVariables uses: reads, writes, newed (not read, written, killed)
+- Final count: 1613 passed, 110 skipped, 537 xfailed
 
 **Checkpoint**: Phase 4 complete - 128 ASG stubs converted, ASG coverage at 95%+
 
