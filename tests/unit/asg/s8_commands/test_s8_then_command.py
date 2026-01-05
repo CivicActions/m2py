@@ -1,19 +1,10 @@
-"""Tests for THEN command ASG analysis (§8.2.32).
+"""THEN command ASG analysis (§8.2.32) - not applicable.
 
-THEN is out of scope per FR-055 (zero real-world usage).
-Reference: MUMPS 1995 ANSI Standard, Section 8.2.32
+THEN is a parser limitation per LIM-002.
+This command is not parsed, so no ASG is generated.
+
+Parser tests: tests/unit/parser/s8_commands/test_s8_then_command.py
+Limitation: docs/limitations.md - LIM-002: THEN Command
 """
 
-import pytest
-
-
-@pytest.mark.asg
-class TestThenCommandAnalysis:
-    """ASG-level tests for THEN command (§8.2.32)."""
-
-    @pytest.mark.skip(
-        reason="Out of scope per FR-055: THEN command has zero real-world usage"
-    )
-    def test_then_out_of_scope(self):
-        """THEN command is out of scope (§8.2.32)."""
-        pass
+# No tests - syntax is not parsed, no ASG to analyze.

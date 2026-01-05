@@ -195,8 +195,8 @@ For changes to shared code paths (semantic_analyzer.py, textx_classes.py):
 # Final success command (from spec SC-002)
 uv run pytest tests/unit/parser/ tests/unit/asg/ tests/unit/analysis/ tests/unit/meta/ tests/unit/cross_cutting/ -v
 
-# Expected result: ~1876 passed, 93 skipped, 0 xfailed
-# (687 stubs converted to passing tests)
+# Expected result: ~1984 passed, 0 skipped, 0 xfailed
+# (687 stubs + 108 skips converted to passing tests)
 
 # Full suite verification at batch completion
 uv run pytest

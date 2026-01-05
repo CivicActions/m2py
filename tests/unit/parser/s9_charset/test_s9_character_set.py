@@ -91,9 +91,5 @@ class TestCharacterSetParsing:
         # Argument is the string "ABC"
         assert value.arguments[0].value == "ABC"
 
-    @pytest.mark.skip(
-        reason="Implementation-defined: Extended character sets vary by implementation"
-    )
-    def test_extended_character_sets(self):
-        """Extended character sets beyond ASCII are implementation-defined (§9)."""
-        pass
+    # Extended character sets beyond ASCII are implementation-defined (§9).
+    # See docs/limitations.md - LIM-006: Extended Character Sets

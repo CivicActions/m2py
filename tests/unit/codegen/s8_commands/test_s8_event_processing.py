@@ -1,29 +1,10 @@
-"""Tests for event processing command code generation.
+"""Event processing commands codegen - not applicable.
 
-These commands are out of scope per FR-055.
-Reference: MUMPS 1995 ANSI Standard, various sections
+Event processing commands (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER)
+are parser limitations per LIM-001. They produce parse errors, so no code is generated.
+
+Parser tests: tests/unit/parser/s8_commands/test_s8_event_processing.py
+Limitation: docs/limitations.md - LIM-001: Event Processing Commands
 """
 
-import pytest
-
-
-@pytest.mark.codegen
-@pytest.mark.skip(reason="Out of scope: event processing per FR-055")
-class TestEventProcessingCodegen:
-    """Event processing commands are out of scope (FR-055)."""
-
-    def test_ablock_aunblock_codegen(self, generate_python):
-        """ABLOCK/AUNBLOCK event processing not in scope."""
-        pass
-
-    def test_astart_astop_codegen(self, generate_python):
-        """ASTART/ASTOP event processing not in scope."""
-        pass
-
-    def test_estart_estop_codegen(self, generate_python):
-        """ESTART/ESTOP event processing not in scope."""
-        pass
-
-    def test_etrigger_codegen(self, generate_python):
-        """ETRIGGER event processing not in scope."""
-        pass
+# No tests - syntax is not parsed, no code to generate.

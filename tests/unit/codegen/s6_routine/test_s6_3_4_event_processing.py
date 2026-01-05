@@ -1,16 +1,10 @@
-"""Tests for Event Processing code generation (§6.3.4).
+"""Event processing codegen (§6.3.4) - not applicable.
 
-Reference: MUMPS 1995 ANSI Standard, Section 6.3.4
+Event processing is a parser limitation per LIM-001.
+Commands produce parse errors, so no code is generated.
+
+Parser tests: tests/unit/parser/s6_routine/test_s6_3_4_event_processing.py
+Limitation: docs/limitations.md - LIM-001: Event Processing Commands
 """
 
-import pytest
-
-
-@pytest.mark.codegen
-class TestEventProcessingCodegen:
-    """Codegen-level tests for event processing code generation (§6.3.4)."""
-
-    @pytest.mark.skip(reason="Out of scope: Event processing (§6.3.4) per FR-055")
-    def test_event_processing(self):
-        """Event processing is out of scope (§6.3.4)."""
-        pass
+# No tests - syntax is not parsed, no code to generate.

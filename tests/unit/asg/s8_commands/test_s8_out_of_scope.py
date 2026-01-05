@@ -1,37 +1,14 @@
-"""Tests for out-of-scope commands ASG analysis.
+"""Out-of-scope commands ASG analysis - not applicable.
 
-These commands are part of the ANSI spec but are explicitly out of scope
-for the M2PY transpiler project.
+These commands are parser limitations - they produce parse errors,
+so no ASG is generated:
+- Event processing: LIM-001
+- THEN command: LIM-002
+- ASSIGN command: LIM-013
+- RLOAD/RSAVE: LIM-009
+
+Parser tests verify parse error behavior in tests/unit/parser/s8_commands/.
+See docs/limitations.md for full limitation details.
 """
 
-import pytest
-
-
-@pytest.mark.asg
-class TestOutOfScopeCommandsAnalysis:
-    """ASG-level tests for commands that are out of scope."""
-
-    @pytest.mark.skip(reason="Out of scope: Event processing commands per FR-055")
-    def test_event_processing_commands(self):
-        """ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER are out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope: THEN command per FR-055")
-    def test_then_command(self):
-        """THEN command (§8.2.32) is out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope: ASSIGN command per FR-055")
-    def test_assign_command(self):
-        """ASSIGN command is out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope: RLOAD command per FR-055")
-    def test_rload_command(self):
-        """RLOAD command is out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope: RSAVE command per FR-055")
-    def test_rsave_command(self):
-        """RSAVE command is out of scope."""
-        pass
+# No tests - these syntaxes are not parsed, no ASG to analyze.

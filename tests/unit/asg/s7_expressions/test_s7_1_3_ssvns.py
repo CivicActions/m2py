@@ -200,15 +200,8 @@ class TestSsvnsAnalysis:
         assert arg.name.upper() == "LI"
         assert len(arg.subscripts) == 1
 
-    @pytest.mark.skip(
-        reason="Out of scope: ^$EVENT requires MWAPI (X11.6) which YottaDB does not implement. "
-        "See docs/limitations.md#mwapi-windowing-api---out-of-scope"
-    )
-    def test_ssvn_event(self):
-        """^$EVENT SSVN is out of scope - requires MWAPI windowing support.
-
-        ^$EVENT is valid MUMPS 1995 syntax (§7.1.3.3) but its semantics require
-        the MWAPI windowing runtime (X11.6) which YottaDB does not implement.
-        VistA uses this in ZISG*.m files for GUI interfaces.
-        """
-        pass
+    # ^$EVENT SSVN is out of scope - requires MWAPI windowing support.
+    # ^$EVENT is valid MUMPS 1995 syntax (§7.1.3.3) but its semantics require
+    # the MWAPI windowing runtime (X11.6) which YottaDB does not implement.
+    # VistA uses this in ZISG*.m files for GUI interfaces.
+    # See docs/limitations.md - LIM-003: MWAPI.

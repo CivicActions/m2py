@@ -1,17 +1,10 @@
-"""Tests for RLOAD command ASG analysis.
+"""RLOAD command ASG analysis (§8.2.28) - not applicable.
 
-RLOAD is out of scope per FR-055.
-Reference: MUMPS 1995 ANSI Standard
+RLOAD is a parser limitation per LIM-009.
+This command is not parsed, so no ASG is generated.
+
+Parser tests: tests/unit/parser/s8_commands/test_s8_2_28_rload.py
+Limitation: docs/limitations.md - LIM-009: RLOAD/RSAVE
 """
 
-import pytest
-
-
-@pytest.mark.asg
-class TestRloadCommandAnalysis:
-    """ASG-level tests for RLOAD command."""
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: RLOAD command not supported")
-    def test_rload_out_of_scope(self):
-        """RLOAD command is out of scope."""
-        pass
+# No tests - syntax is not parsed, no ASG to analyze.

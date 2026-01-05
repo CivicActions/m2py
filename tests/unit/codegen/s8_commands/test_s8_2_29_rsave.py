@@ -1,17 +1,10 @@
-"""Tests for RSAVE command code generation (§8.2.29).
+"""RSAVE command codegen (§8.2.29) - not applicable.
 
-Out of scope per FR-055.
-Reference: MUMPS 1995 ANSI Standard, Section 8.2.29
+RSAVE is a parser limitation per LIM-009.
+This command is not parsed, so no code is generated.
+
+Parser tests: tests/unit/parser/s8_commands/test_s8_2_29_rsave.py
+Limitation: docs/limitations.md - LIM-009: RLOAD/RSAVE
 """
 
-import pytest
-
-
-@pytest.mark.codegen
-@pytest.mark.skip(reason="Out of scope: RSAVE command per FR-055")
-class TestRsaveCommandCodegen:
-    """RSAVE command is out of scope (FR-055)."""
-
-    def test_rsave_codegen(self, generate_python):
-        """RSAVE command not in scope."""
-        pass
+# No tests - syntax is not parsed, no code to generate.

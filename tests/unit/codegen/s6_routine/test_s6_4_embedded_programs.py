@@ -1,16 +1,10 @@
-"""Tests for Embedded Programs code generation (§6.4).
+"""Embedded programs codegen (§6.4) - not applicable.
 
-Reference: MUMPS 1995 ANSI Standard, Section 6.4
+Embedded programs are a parser limitation per LIM-008.
+This syntax is not parsed, so no code is generated.
+
+Parser tests: tests/unit/parser/s6_routine/test_s6_4_embedded_programs.py
+Limitation: docs/limitations.md - LIM-008: Embedded Programs
 """
 
-import pytest
-
-
-@pytest.mark.codegen
-class TestEmbeddedProgramsCodegen:
-    """Codegen-level tests for embedded programs code generation (§6.4)."""
-
-    @pytest.mark.skip(reason="Out of scope: Embedded programs (§6.4) per FR-055")
-    def test_embedded_programs(self):
-        """Embedded programs are out of scope (§6.4)."""
-        pass
+# No tests - syntax is not parsed, no code to generate.

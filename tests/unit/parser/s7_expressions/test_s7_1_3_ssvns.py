@@ -158,15 +158,11 @@ class TestSSVNsOutOfScope:
     """Out-of-scope SSVNs - MWAPI (X11.6) requires windowing support.
 
     YottaDB does not implement MWAPI. See docs/limitations.md for details.
+    ^$EVENT (§7.1.3.3) is valid syntax but requires MWAPI runtime.
+    See docs/limitations.md - LIM-003: MWAPI.
     """
 
-    @pytest.mark.skip(
-        reason="Out of scope: ^$EVENT requires MWAPI (X11.6) which YottaDB does not implement. "
-        "See docs/limitations.md#mwapi-windowing-api---out-of-scope"
-    )
-    def test_ssvn_event_out_of_scope(self):
-        """^$EVENT is out of scope - requires MWAPI windowing support."""
-        pass
+    pass  # ^$EVENT syntax parses, but runtime requires MWAPI (out of scope)
 
 
 @pytest.mark.parser

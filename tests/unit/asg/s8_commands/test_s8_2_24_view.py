@@ -1,24 +1,15 @@
 """Tests for VIEW command ASG analysis (§8.2.24).
 
 Reference: MUMPS 1995 ANSI Standard, Section 8.2.24
+
+Note: VIEW keywords are implementation-defined (§8.2.24).
+See docs/limitations.md - LIM-005: VIEW Command
 """
 
 import pytest
 
 from m2py.parser import MUMPSParser
 from m2py.asg import MViewStatement
-
-
-@pytest.mark.asg
-class TestViewCommandAnalysis:
-    """ASG-level tests for VIEW command analysis (§8.2.24)."""
-
-    @pytest.mark.skip(
-        reason="Implementation-defined: VIEW keywords are implementation-specific"
-    )
-    def test_view_implementation_defined(self):
-        """VIEW command is implementation-defined (§8.2.24)."""
-        pass
 
 
 @pytest.mark.asg

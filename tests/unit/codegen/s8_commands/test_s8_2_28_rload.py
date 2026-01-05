@@ -1,17 +1,10 @@
-"""Tests for RLOAD command code generation (§8.2.28).
+"""RLOAD command codegen (§8.2.28) - not applicable.
 
-Out of scope per FR-055.
-Reference: MUMPS 1995 ANSI Standard, Section 8.2.28
+RLOAD is a parser limitation per LIM-009.
+This command is not parsed, so no code is generated.
+
+Parser tests: tests/unit/parser/s8_commands/test_s8_2_28_rload.py
+Limitation: docs/limitations.md - LIM-009: RLOAD/RSAVE
 """
 
-import pytest
-
-
-@pytest.mark.codegen
-@pytest.mark.skip(reason="Out of scope: RLOAD command per FR-055")
-class TestRloadCommandCodegen:
-    """RLOAD command is out of scope (FR-055)."""
-
-    def test_rload_codegen(self, generate_python):
-        """RLOAD command not in scope."""
-        pass
+# No tests - syntax is not parsed, no code to generate.

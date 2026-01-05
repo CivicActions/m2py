@@ -9,14 +9,27 @@ import pytest
 
 @pytest.mark.codegen
 @pytest.mark.ydb
-@pytest.mark.skip(reason="Implementation-defined: Z-functions per FR-017")
 class TestZfunctionsCodegen:
     """Codegen-level tests for Z-functions (YDB implementation-defined).
 
     All Z-functions are implementation-defined per FR-017.
-    This file documents their existence for coverage tracking.
+    Parser and ASG tests pass - codegen is not yet implemented.
     """
 
-    def test_zfunctions_placeholder(self, generate_python):
-        """Placeholder for Z-function codegen tests."""
-        pass
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: Z-function codegen")
+    def test_zdate_codegen(self, generate_python):
+        """$ZDATE generates runtime call."""
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: Z-function codegen")
+    def test_zmessage_codegen(self, generate_python):
+        """$ZMESSAGE generates runtime call."""
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: Z-function codegen")
+    def test_zwidth_codegen(self, generate_python):
+        """$ZWIDTH generates runtime call."""
+        pytest.fail("Stub - implement test")

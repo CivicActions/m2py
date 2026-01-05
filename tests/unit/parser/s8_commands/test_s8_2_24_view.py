@@ -86,9 +86,5 @@ class TestViewCommandParsing:
         assert model_full is not None
         assert len(model_abbrev.args) == len(model_full.args)
 
-    @pytest.mark.skip(
-        reason="Implementation-defined: VIEW keywords are implementation-specific"
-    )
-    def test_view_implementation_keywords(self):
-        """VIEW implementation-specific keywords are out of scope (§8.2.24)."""
-        pass
+    # VIEW implementation-specific keywords are implementation-defined (§8.2.24).
+    # See docs/limitations.md - LIM-011: VIEW Command

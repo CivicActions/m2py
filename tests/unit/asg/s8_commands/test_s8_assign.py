@@ -1,17 +1,10 @@
-"""Tests for ASSIGN command ASG analysis.
+"""ASSIGN command ASG analysis - not applicable.
 
-ASSIGN is out of scope per FR-055.
-Reference: MUMPS 1995 ANSI Standard
+ASSIGN is a parser limitation per LIM-013.
+This command is not parsed, so no ASG is generated.
+
+Parser tests: tests/unit/parser/s8_commands/test_s8_assign.py
+Limitation: docs/limitations.md - LIM-013: ASSIGN Command
 """
 
-import pytest
-
-
-@pytest.mark.asg
-class TestAssignCommandAnalysis:
-    """ASG-level tests for ASSIGN command."""
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: ASSIGN command not supported")
-    def test_assign_out_of_scope(self):
-        """ASSIGN command is out of scope."""
-        pass
+# No tests - syntax is not parsed, no ASG to analyze.

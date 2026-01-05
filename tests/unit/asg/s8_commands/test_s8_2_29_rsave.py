@@ -1,17 +1,10 @@
-"""Tests for RSAVE command ASG analysis.
+"""RSAVE command ASG analysis (§8.2.29) - not applicable.
 
-RSAVE is out of scope per FR-055.
-Reference: MUMPS 1995 ANSI Standard
+RSAVE is a parser limitation per LIM-009.
+This command is not parsed, so no ASG is generated.
+
+Parser tests: tests/unit/parser/s8_commands/test_s8_2_29_rsave.py
+Limitation: docs/limitations.md - LIM-009: RLOAD/RSAVE
 """
 
-import pytest
-
-
-@pytest.mark.asg
-class TestRsaveCommandAnalysis:
-    """ASG-level tests for RSAVE command."""
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: RSAVE command not supported")
-    def test_rsave_out_of_scope(self):
-        """RSAVE command is out of scope."""
-        pass
+# No tests - syntax is not parsed, no ASG to analyze.

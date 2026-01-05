@@ -252,195 +252,308 @@ class TestZFunctionsAndISVs:
 
 @pytest.mark.parser
 @pytest.mark.ydb
-class TestZfunctionsStubs:
-    """Stub tests for other Z-functions not yet covered (YDB implementation-defined)."""
+class TestZfunctionsAdditional:
+    """Additional Z-function parsing tests (YDB implementation-defined).
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITAND per FR-017")
+    These Z-functions are all supported by the parser. Per FR-017, all $Z...
+    function names are accepted by the grammar as implementation-defined.
+    """
+
     def test_zbitand(self, expr_metamodel):
-        """$ZBITAND parsing."""
-        pass
+        """$ZBITAND parsing - bitwise AND."""
+        model = expr_metamodel.model_from_str("$ZBITAND(A,B)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZBITAND"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITCOUNT per FR-017")
     def test_zbitcount(self, expr_metamodel):
-        """$ZBITCOUNT parsing."""
-        pass
+        """$ZBITCOUNT parsing - count set bits."""
+        model = expr_metamodel.model_from_str("$ZBITCOUNT(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZBITCOUNT"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITFIND per FR-017")
     def test_zbitfind(self, expr_metamodel):
-        """$ZBITFIND parsing."""
-        pass
+        """$ZBITFIND parsing - find bit."""
+        model = expr_metamodel.model_from_str("$ZBITFIND(X,1)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZBITFIND"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITGET per FR-017")
     def test_zbitget(self, expr_metamodel):
-        """$ZBITGET parsing."""
-        pass
+        """$ZBITGET parsing - get bit value."""
+        model = expr_metamodel.model_from_str("$ZBITGET(X,5)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZBITGET"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITNOT per FR-017")
     def test_zbitnot(self, expr_metamodel):
-        """$ZBITNOT parsing."""
-        pass
+        """$ZBITNOT parsing - bitwise NOT."""
+        model = expr_metamodel.model_from_str("$ZBITNOT(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZBITNOT"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITOR per FR-017")
     def test_zbitor(self, expr_metamodel):
-        """$ZBITOR parsing."""
-        pass
+        """$ZBITOR parsing - bitwise OR."""
+        model = expr_metamodel.model_from_str("$ZBITOR(A,B)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZBITOR"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITSET per FR-017")
     def test_zbitset(self, expr_metamodel):
-        """$ZBITSET parsing."""
-        pass
+        """$ZBITSET parsing - set bit value."""
+        model = expr_metamodel.model_from_str("$ZBITSET(X,5,1)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZBITSET"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITSTR per FR-017")
     def test_zbitstr(self, expr_metamodel):
-        """$ZBITSTR parsing."""
-        pass
+        """$ZBITSTR parsing - create bit string."""
+        model = expr_metamodel.model_from_str("$ZBITSTR(8)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZBITSTR"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZBITXOR per FR-017")
     def test_zbitxor(self, expr_metamodel):
-        """$ZBITXOR parsing."""
-        pass
+        """$ZBITXOR parsing - bitwise XOR."""
+        model = expr_metamodel.model_from_str("$ZBITXOR(A,B)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZBITXOR"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZCOLLATE per FR-017")
     def test_zcollate(self, expr_metamodel):
-        """$ZCOLLATE parsing."""
-        pass
+        """$ZCOLLATE parsing - collation function."""
+        model = expr_metamodel.model_from_str("$ZCOLLATE(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZCOLLATE"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZDATA per FR-017")
     def test_zdata(self, expr_metamodel):
-        """$ZDATA parsing."""
-        pass
+        """$ZDATA parsing - extended data function."""
+        model = expr_metamodel.model_from_str("$ZDATA(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZDATA"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZDATE per FR-017")
     def test_zdate(self, expr_metamodel):
-        """$ZDATE parsing."""
-        pass
+        """$ZDATE parsing - date formatting."""
+        model = expr_metamodel.model_from_str("$ZDATE(123)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZDATE"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZDIRECTORY per FR-017")
     def test_zdirectory(self, expr_metamodel):
-        """$ZDIRECTORY parsing."""
-        pass
+        """$ZDIRECTORY parsing - directory path (read-only ISV)."""
+        model = expr_metamodel.model_from_str("$ZDIRECTORY", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        # May parse as IntrinsicFunctionNoArgs or SpecialVariable
+        assert operand.name == "ZDIRECTORY"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZEDIT per FR-017")
     def test_zedit(self, expr_metamodel):
-        """$ZEDIT parsing."""
-        pass
+        """$ZEDIT parsing - edit distance."""
+        model = expr_metamodel.model_from_str('$ZEDIT("abc","abd")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZEDIT"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZFF per FR-017")
     def test_zff(self, expr_metamodel):
-        """$ZFF parsing."""
-        pass
+        """$ZFF parsing - form feed (read-only ISV)."""
+        model = expr_metamodel.model_from_str("$ZFF", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.name == "ZFF"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZINCR per FR-017")
     def test_zincr(self, expr_metamodel):
-        """$ZINCR parsing."""
-        pass
+        """$ZINCR parsing - increment function."""
+        model = expr_metamodel.model_from_str("$ZINCR(X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZINCR"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZIO per FR-017")
     def test_zio(self, expr_metamodel):
-        """$ZIO parsing."""
-        pass
+        """$ZIO parsing - I/O device (read-only ISV)."""
+        model = expr_metamodel.model_from_str("$ZIO", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.name == "ZIO"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZJOBEXAM per FR-017")
     def test_zjobexam(self, expr_metamodel):
-        """$ZJOBEXAM parsing."""
-        pass
+        """$ZJOBEXAM parsing - job examination."""
+        model = expr_metamodel.model_from_str("$ZJOBEXAM()", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZJOBEXAM"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZMESSAGE per FR-017")
     def test_zmessage(self, expr_metamodel):
-        """$ZMESSAGE parsing."""
-        pass
+        """$ZMESSAGE parsing - error message."""
+        model = expr_metamodel.model_from_str("$ZMESSAGE(123)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZMESSAGE"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZMODE per FR-017")
     def test_zmode(self, expr_metamodel):
-        """$ZMODE parsing."""
-        pass
+        """$ZMODE parsing - mode (read-only ISV)."""
+        model = expr_metamodel.model_from_str("$ZMODE", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.name == "ZMODE"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZNAME per FR-017")
     def test_zname(self, expr_metamodel):
-        """$ZNAME parsing."""
-        pass
+        """$ZNAME parsing - name validation."""
+        model = expr_metamodel.model_from_str('$ZNAME("varname")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZNAME"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZNEXT per FR-017")
     def test_znext(self, expr_metamodel):
-        """$ZNEXT parsing."""
-        pass
+        """$ZNEXT parsing - next subscript (deprecated)."""
+        model = expr_metamodel.model_from_str("$ZNEXT(^X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZNEXT"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZORDER per FR-017")
     def test_zorder(self, expr_metamodel):
-        """$ZORDER parsing."""
-        pass
+        """$ZORDER parsing - order function."""
+        model = expr_metamodel.model_from_str("$ZORDER(^X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZORDER"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZPEEK per FR-017")
     def test_zpeek(self, expr_metamodel):
-        """$ZPEEK parsing."""
-        pass
+        """$ZPEEK parsing - memory peek."""
+        model = expr_metamodel.model_from_str('$ZPEEK("region",0)', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZPEEK"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZPID per FR-017")
     def test_zpid(self, expr_metamodel):
-        """$ZPID parsing."""
-        pass
+        """$ZPID parsing - process ID."""
+        model = expr_metamodel.model_from_str("$ZPID(0)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZPID"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZPREFERREDLANG per FR-017")
     def test_zpreferredlang(self, expr_metamodel):
-        """$ZPREFERREDLANG parsing."""
-        pass
+        """$ZPREFERREDLANG parsing - preferred language (read-only ISV)."""
+        model = expr_metamodel.model_from_str("$ZPREFERREDLANG", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.name == "ZPREFERREDLANG"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZPRINT per FR-017")
     def test_zprint(self, expr_metamodel):
-        """$ZPRINT parsing."""
-        pass
+        """$ZPRINT parsing - print routine."""
+        model = expr_metamodel.model_from_str('$ZPRINT("routine")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZPRINT"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZQGBLMOD per FR-017")
     def test_zqgblmod(self, expr_metamodel):
-        """$ZQGBLMOD parsing."""
-        pass
+        """$ZQGBLMOD parsing - global modification count."""
+        model = expr_metamodel.model_from_str("$ZQGBLMOD(^X)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZQGBLMOD"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZQSUB per FR-017")
     def test_zqsub(self, expr_metamodel):
-        """$ZQSUB parsing."""
-        pass
+        """$ZQSUB parsing - subscript query."""
+        model = expr_metamodel.model_from_str("$ZQSUB(X,1)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZQSUB"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZSOCKET per FR-017")
     def test_zsocket(self, expr_metamodel):
-        """$ZSOCKET parsing."""
-        pass
+        """$ZSOCKET parsing - socket information."""
+        model = expr_metamodel.model_from_str('$ZSOCKET(dev,"SOCKETHANDLE")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZSOCKET"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZSUB per FR-017")
     def test_zsub(self, expr_metamodel):
-        """$ZSUB parsing."""
-        pass
+        """$ZSUB parsing - subscript function."""
+        model = expr_metamodel.model_from_str("$ZSUB(X,1)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZSUB"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZSUFFIX per FR-017")
     def test_zsuffix(self, expr_metamodel):
-        """$ZSUFFIX parsing."""
-        pass
+        """$ZSUFFIX parsing - suffix function."""
+        model = expr_metamodel.model_from_str('$ZSUFFIX("file.txt")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZSUFFIX"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZSUPERMASK per FR-017")
     def test_zsupermask(self, expr_metamodel):
-        """$ZSUPERMASK parsing."""
-        pass
+        """$ZSUPERMASK parsing - supermask function."""
+        model = expr_metamodel.model_from_str("$ZSUPERMASK(X,Y)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZSUPERMASK"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZSYSLOG per FR-017")
     def test_zsyslog(self, expr_metamodel):
-        """$ZSYSLOG parsing."""
-        pass
+        """$ZSYSLOG parsing - system log."""
+        model = expr_metamodel.model_from_str('$ZSYSLOG("message")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZSYSLOG"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZTRIGGER per FR-017")
     def test_ztrigger(self, expr_metamodel):
-        """$ZTRIGGER parsing."""
-        pass
+        """$ZTRIGGER parsing - trigger function."""
+        model = expr_metamodel.model_from_str('$ZTRIGGER("FILE",file)', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZTRIGGER"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZTRNLNM per FR-017")
     def test_ztrnlnm(self, expr_metamodel):
-        """$ZTRNLNM parsing."""
-        pass
+        """$ZTRNLNM parsing - translate logical name."""
+        model = expr_metamodel.model_from_str('$ZTRNLNM("logname")', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZTRNLNM"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZVERSION per FR-017")
     def test_zversion(self, expr_metamodel):
-        """$ZVERSION parsing."""
-        pass
+        """$ZVERSION parsing - version string (read-only ISV)."""
+        model = expr_metamodel.model_from_str("$ZVERSION", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.name == "ZVERSION"
 
-    @pytest.mark.skip(reason="Implementation-defined: $ZWIDTH per FR-017")
     def test_zwidth(self, expr_metamodel):
-        """$ZWIDTH parsing."""
-        pass
+        """$ZWIDTH parsing - display width."""
+        model = expr_metamodel.model_from_str("$ZWIDTH(STR)", "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "IntrinsicFunction"
+        assert operand.name == "ZWIDTH"

@@ -89,8 +89,9 @@ class TestDeprecatedFunctionsParsing:
     """
     Test parsing of deprecated intrinsic functions.
 
-    Note: $DEXTRACT and $DPIECE were proposed but never standardized.
-    M2PY does NOT support these - they should raise parse errors.
+    Note: $DEXTRACT and $DPIECE were proposed but never standardized (LIM-004).
+    The parser accepts them as valid function syntax, but runtime behavior is undefined.
+    See docs/limitations.md - LIM-004: Deprecated Functions
     """
 
     @pytest.fixture
@@ -98,17 +99,35 @@ class TestDeprecatedFunctionsParsing:
         """Provide parser instance."""
         return MUMPSParser()
 
-    @pytest.mark.skip(reason="out-of-scope: $DEXTRACT never standardized per FR-055")
-    def test_dextract_not_supported(self, parser):
-        """Verify $DEXTRACT is not supported (never standardized)."""
-        # $DEXTRACT was proposed but never included in ANSI standard
-        pass
+    def test_dextract_parses(self, parser):
+        """Verify $DEXTRACT parses (proposed but never standardized). See LIM-004.
 
-    @pytest.mark.skip(reason="out-of-scope: $DPIECE never standardized per FR-055")
-    def test_dpiece_not_supported(self, parser):
-        """Verify $DPIECE is not supported (never standardized)."""
-        # $DPIECE was proposed but never included in ANSI standard
-        pass
+        $DEXTRACT was proposed but never included in ANSI standard.
+        The grammar accepts it as a function call (same as implementation-defined).
+        Runtime behavior is undefined.
+        """
+        # Parser accepts $DEXTRACT as a valid function name
+        code = 'TEST S X=$DEXTRACT("abc")'
+        routine = parser.parse(code)
+        stmt = routine.labels[0].body.statements[0]
+        func = stmt.assignments[0].value
+        assert type(func).__name__ == "IntrinsicFunction"
+        assert func.name == "DEXTRACT"
+
+    def test_dpiece_parses(self, parser):
+        """Verify $DPIECE parses (proposed but never standardized). See LIM-004.
+
+        $DPIECE was proposed but never included in ANSI standard.
+        The grammar accepts it as a function call (same as implementation-defined).
+        Runtime behavior is undefined.
+        """
+        # Parser accepts $DPIECE as a valid function name
+        code = 'TEST S X=$DPIECE("a:b",":",1)'
+        routine = parser.parse(code)
+        stmt = routine.labels[0].body.statements[0]
+        func = stmt.assignments[0].value
+        assert type(func).__name__ == "IntrinsicFunction"
+        assert func.name == "DPIECE"
 
 
 @pytest.mark.parser

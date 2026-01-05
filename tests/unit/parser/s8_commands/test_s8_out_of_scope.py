@@ -1,51 +1,49 @@
 """Tests for out-of-scope commands parsing.
 
-These commands are part of the ANSI spec but are explicitly out of scope
-for the M2PY transpiler project.
+These commands are part of the ANSI spec but are not implemented.
+Each test verifies that parse errors are raised correctly.
+
+See docs/limitations.md for limitation IDs:
+- LIM-001: Event Processing Commands (ESTART, ESTOP, ETRIGGER)
+- LIM-009: RLOAD/RSAVE Commands
 """
 
 import pytest
 
+from m2py.asg.elements import MParseError
+from m2py.parser.line_parser import parse_line_content
+
 
 @pytest.mark.parser
 class TestOutOfScopeCommands:
-    """Parser-level tests for commands that are out of scope."""
+    """Parser-level tests for commands that are not implemented."""
 
-    @pytest.mark.skip(reason="Out of scope: ESTART is primarily for embedded MUMPS")
-    def test_estart_command(self):
-        """ESTART command is out of scope (§8.3)."""
-        pass
+    def test_estart_raises_parse_error(self):
+        """ESTART command raises parse error. See LIM-001."""
+        result = parse_line_content("ESTART")
+        assert isinstance(result, MParseError)
+        assert "Unknown command" in result.message
 
-    @pytest.mark.skip(reason="Out of scope: ESTOP is primarily for embedded MUMPS")
-    def test_estop_command(self):
-        """ESTOP command is out of scope (§8.3)."""
-        pass
+    def test_estop_raises_parse_error(self):
+        """ESTOP command raises parse error. See LIM-001."""
+        result = parse_line_content("ESTOP")
+        assert isinstance(result, MParseError)
+        assert "Unknown command" in result.message
 
-    @pytest.mark.skip(reason="Out of scope: ETRIGGER is primarily for embedded MUMPS")
-    def test_etrigger_command(self):
-        """ETRIGGER command is out of scope (§8.3)."""
-        pass
+    def test_etrigger_raises_parse_error(self):
+        """ETRIGGER command raises parse error. See LIM-001."""
+        result = parse_line_content("ETRIGGER")
+        assert isinstance(result, MParseError)
+        assert "Unknown command" in result.message
 
-    @pytest.mark.skip(
-        reason="Out of scope: RLOAD is primarily for binary routine loading"
-    )
-    def test_rload_command(self):
-        """RLOAD command is out of scope (§8.3)."""
-        pass
+    def test_rload_raises_parse_error(self):
+        """RLOAD command raises parse error. See LIM-009."""
+        result = parse_line_content("RLOAD ^RTN")
+        assert isinstance(result, MParseError)
+        assert "Unknown command" in result.message or "RLOAD" in result.message
 
-    @pytest.mark.skip(
-        reason="Out of scope: RSAVE is primarily for binary routine saving"
-    )
-    def test_rsave_command(self):
-        """RSAVE command is out of scope (§8.3)."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope: ZALLOCATE is implementation-defined")
-    def test_zallocate_command(self):
-        """ZALLOCATE command is out of scope (Z-command)."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope: ZDEALLOCATE is implementation-defined")
-    def test_zdeallocate_command(self):
-        """ZDEALLOCATE command is out of scope (Z-command)."""
-        pass
+    def test_rsave_raises_parse_error(self):
+        """RSAVE command raises parse error. See LIM-009."""
+        result = parse_line_content("RSAVE ^RTN")
+        assert isinstance(result, MParseError)
+        assert "Unknown command" in result.message or "RSAVE" in result.message

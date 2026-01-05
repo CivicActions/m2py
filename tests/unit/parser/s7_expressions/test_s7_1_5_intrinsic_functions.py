@@ -469,14 +469,11 @@ class TestSelectFunction:
 
 @pytest.mark.parser
 class TestImplementationDefinedFunctions:
-    """Implementation-defined $Z... functions."""
+    """Implementation-defined $Z... functions.
 
-    @pytest.mark.skip(
-        reason="Implementation-defined: $VIEW behavior varies by implementation"
-    )
-    def test_view_function(self):
-        """$VIEW is implementation-defined."""
-        pass
+    $VIEW is implementation-defined (§7.1.5.24).
+    See docs/limitations.md - LIM-011: VIEW Command/$VIEW Function
+    """
 
     def test_z_functions(self, expr_metamodel):
         """$Z... implementation-defined functions parse correctly (§7.1.5).

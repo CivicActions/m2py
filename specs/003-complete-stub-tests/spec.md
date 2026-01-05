@@ -63,12 +63,29 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
 
 ---
 
+### User Story 5 - Convert Limitation Skips to Parse Error Tests (Priority: P2)
+
+As a developer maintaining test quality, I want all skipped tests converted to passing tests that verify parse errors or document behavior, so that we have zero skipped tests and clear traceability between limitations and tests.
+
+**Why this priority**: Skipped tests reduce confidence in the test suite. Converting them to active tests that verify expected behavior (parse errors for unsupported syntax) provides actual validation rather than silent omission.
+
+**Independent Test**: Can be tested by running `uv run pytest tests/unit/ -v` and verifying 0 skipped tests.
+
+**Acceptance Scenarios**:
+
+1. **Given** a limitation in `docs/limitations.md`, **When** the limitation is documented, **Then** it has a unique ID (LIM-XXX) and clear description
+2. **Given** a skipped test for unsupported syntax, **When** the test is converted, **Then** it verifies the parser raises an appropriate error
+3. **Given** a skipped test for informational content (e.g., §5 BNF), **When** the test is converted, **Then** it becomes a passing documentation test
+4. **Given** the limitation management workflow, **When** a developer needs to add a new limitation, **Then** `docs/limitations.md` documents the process
+
+---
+
 ### Edge Cases
 
 - What happens when a stub test reveals a parser bug? Document and fix the bug, then complete the test.
 - What happens when MUMPS spec is ambiguous? Use MUMPS reference examples/notes as authoritative reference, then YDBTest behavior.
 - What happens when a test requires unimplemented ASG analysis? Implement the analysis, then complete the test.
-- How do we handle out-of-scope features (event processing, embedded programs)? Mark as skipped with documentation.
+- How do we handle out-of-scope features (event processing, embedded programs)? Convert skipped tests to passing tests that verify parse errors, with reference to limitation ID in `docs/limitations.md`.
 - What happens when existing tests have incorrect assertions? Refine tests based on spec validation.
 
 ## Requirements *(mandatory)*
@@ -104,6 +121,9 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
 - **FR-014**: Tests MUST be isolated (no shared mutable state) and deterministic (same input produces same result)
 - **FR-015**: Tests MUST support parallel execution via pytest-xdist (already configured in project)
 - **FR-016**: Documentation MUST be updated when implementation changes address test gaps. Scope includes: `docs/asg/` (ASG node documentation), `docs/analysis/` (analysis pass documentation), `docs/codegen/` (code generation strategies), `docs/examples/` (MUMPS-to-ASG examples), `docs/architecture.md`, `docs/grammar_overview.md`, `docs/limitations.md`, and `docs/testing.md`. Auto-generated files (`docs/coverage-matrix.md`) are handled by FR-007.
+- **FR-017**: Each limitation in `docs/limitations.md` MUST have a unique ID (format: LIM-XXX) for traceability
+- **FR-018**: All skipped tests MUST be converted to passing tests that either: (a) verify parse errors for unsupported syntax, or (b) document informational/implementation-defined behavior. Tests MUST reference the corresponding limitation ID.
+- **FR-019**: The limitation management workflow MUST be documented in `docs/limitations.md` including: how to add new limitations, test requirements, and cross-referencing guidelines
 
 ### Key Entities
 
@@ -118,7 +138,7 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
 ### Measurable Outcomes
 
 - **SC-001**: All parser and ASG stub tests converted to implemented tests (687 xfail stubs → 0 xfails; codegen deferred)
-- **SC-002**: **Concrete success command**: `uv run pytest tests/unit/parser/ tests/unit/asg/ tests/unit/analysis/ tests/unit/meta/ tests/unit/cross_cutting/ -v` passes with 0 failures and 0 xfail markers (currently: 1,189 passed, 93 skipped, 687 xfailed)
+- **SC-002**: **Concrete success command**: `uv run pytest tests/unit/parser/ tests/unit/asg/ tests/unit/analysis/ tests/unit/meta/ tests/unit/cross_cutting/ -v` passes with 0 failures, 0 xfail markers, and 0 skipped tests (target: ~1984 passed, 0 skipped, 0 xfailed)
 - **SC-003**: Coverage matrix shows ✅ for all in-scope spec sections in Parser and ASG columns
 - **SC-004**: Parser code coverage reaches 95%+ (measured by pytest-cov)
 - **SC-005**: ASG analysis code coverage reaches 95%+ (measured by pytest-cov)
@@ -148,6 +168,7 @@ As a project maintainer, I want the coverage matrix to accurately reflect test c
 - The existing parser implementation is substantially complete for the 1995 MUMPS spec
 - The existing ASG structure can represent all necessary semantic information
 - MUMPS reference (`mumps-reference/`) is the most authoritative source; YDBTest in `YDBTest/` provides runtime validation
-- Out-of-scope features (event processing, embedded programs) remain skipped
+- Out-of-scope features are converted to parse error tests (not left as skipped)
 - The validate_asg.py utility accurately assesses ASG quality for Python generation
 - Test batches can be completed incrementally without breaking existing functionality
+- Limitations are documented with unique IDs and cross-referenced to tests

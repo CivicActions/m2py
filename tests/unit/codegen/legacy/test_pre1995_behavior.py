@@ -8,16 +8,16 @@ MUMPS Spec Reference:
 - $NEXT function: Deprecated in 1995 §7.1.5, replaced by $ORDER
 - For complete evolution table, see: specs/002-spec-unit-test-organization/research.md
 
-NOTE: These tests depend on m2py.codegen module which may not be implemented yet.
-They use xfail(reason="stub") to mark pending implementation.
+NOTE: These tests depend on m2py.codegen module which is not yet implemented.
+All tests are marked xfail until codegen is available.
 """
 
 import pytest
 
 from m2py.parser import MUMPSParser
 
-# Skip entire module if codegen not available
-pytest.importorskip("m2py.codegen", reason="codegen module not yet implemented")
+# Mark entire module as xfail since codegen not yet implemented
+pytestmark = pytest.mark.xfail(reason="codegen module not yet implemented")
 
 
 @pytest.mark.codegen

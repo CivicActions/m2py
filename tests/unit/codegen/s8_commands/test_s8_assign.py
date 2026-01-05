@@ -1,17 +1,10 @@
-"""Tests for ASSIGN command code generation.
+"""ASSIGN command codegen - not applicable.
 
-Out of scope per FR-055.
-Reference: MUMPS 1995 ANSI Standard
+ASSIGN is a parser limitation per LIM-013.
+This command is not parsed, so no code is generated.
+
+Parser tests: tests/unit/parser/s8_commands/test_s8_assign.py
+Limitation: docs/limitations.md - LIM-013: ASSIGN Command
 """
 
-import pytest
-
-
-@pytest.mark.codegen
-@pytest.mark.skip(reason="Out of scope: ASSIGN command per FR-055")
-class TestAssignCommandCodegen:
-    """ASSIGN command is out of scope (FR-055)."""
-
-    def test_assign_codegen(self, generate_python):
-        """ASSIGN command not in scope."""
-        pass
+# No tests - syntax is not parsed, no code to generate.

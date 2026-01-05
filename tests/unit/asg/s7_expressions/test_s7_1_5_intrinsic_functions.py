@@ -124,16 +124,30 @@ class TestIntrinsicFunctionsAnalysis:
         assert isinstance(func.arguments[0], MNakedGlobal)
 
     @pytest.mark.pre1995
-    @pytest.mark.skip(reason="Deprecated: $DEXTRACT is pre-1995")
     def test_function_dextract(self):
-        """$DEXTRACT function is deprecated (§7.1.5)."""
-        pass
+        """$DEXTRACT function parses as implementation-defined (§7.1.5).
+
+        $DEXTRACT was proposed but never standardized. The parser accepts it
+        as a valid function name (same as implementation-defined functions).
+        Runtime behavior is undefined.
+        """
+        expr = parse_expression('$DEXTRACT("abc")')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "DEXTRACT"
 
     @pytest.mark.pre1995
-    @pytest.mark.skip(reason="Deprecated: $DPIECE is pre-1995")
     def test_function_dpiece(self):
-        """$DPIECE function is deprecated (§7.1.5)."""
-        pass
+        """$DPIECE function parses as implementation-defined (§7.1.5).
+
+        $DPIECE was proposed but never standardized. The parser accepts it
+        as a valid function name (same as implementation-defined functions).
+        Runtime behavior is undefined.
+        """
+        expr = parse_expression('$DPIECE("a:b",":",1)')
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "DPIECE"
 
     def test_function_extract(self):
         """$EXTRACT function is correctly analyzed (§7.1.5.4).
@@ -617,10 +631,16 @@ class TestIntrinsicFunctionsAnalysis:
         assert result.arguments[1].value == "aeiou"
         assert result.arguments[2].value == "AEIOU"
 
-    @pytest.mark.skip(reason="Implementation-defined: $VIEW function")
     def test_function_view(self):
-        """$VIEW function is implementation-defined (§7.1.5)."""
-        pass
+        """$VIEW function is implementation-defined (§7.1.5).
+
+        $VIEW is implementation-defined. The parser accepts it as a valid
+        function. Behavior varies by implementation (e.g., YDB).
+        """
+        expr = parse_expression("$VIEW(0)")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "VIEW"
 
 
 @pytest.mark.asg

@@ -95,7 +95,10 @@ class TestIntrinsicFunctionsCodegen:
         pytest.fail("Stub - implement test")
 
     @pytest.mark.pre1995
-    @pytest.mark.skip(reason="Deprecated: $NEXT is pre-1995")
-    def test_function_next(self):
-        """$NEXT function is deprecated (§7.1.5)."""
-        pass
+    @pytest.mark.stub
+    @pytest.mark.xfail(
+        reason="Not yet implemented: $NEXT codegen (deprecated but supported)"
+    )
+    def test_function_next(self, generate_python):
+        """$NEXT function generates $ORDER equivalent (§7.1.5, pre-1995)."""
+        pytest.fail("Stub - implement test")

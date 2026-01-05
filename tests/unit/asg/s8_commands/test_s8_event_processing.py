@@ -1,48 +1,11 @@
-"""Tests for event processing commands ASG analysis.
+"""Event processing commands ASG analysis - not applicable.
 
 Event processing commands (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER)
-are out of scope per FR-055.
-Reference: MUMPS 1995 ANSI Standard
+are parser limitations per LIM-001. They produce parse errors, so no ASG is generated.
+
+Parser tests: tests/unit/parser/s8_commands/test_s8_event_processing.py
+Limitation: docs/limitations.md - LIM-001: Event Processing Commands
 """
 
-import pytest
-
-
-@pytest.mark.asg
-class TestEventProcessingCommandsAnalysis:
-    """ASG-level tests for event processing commands."""
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: ABLOCK not supported")
-    def test_ablock_out_of_scope(self):
-        """ABLOCK command is out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: AUNBLOCK not supported")
-    def test_aunblock_out_of_scope(self):
-        """AUNBLOCK command is out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: ASTART not supported")
-    def test_astart_out_of_scope(self):
-        """ASTART command is out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: ASTOP not supported")
-    def test_astop_out_of_scope(self):
-        """ASTOP command is out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: ESTART not supported")
-    def test_estart_out_of_scope(self):
-        """ESTART command is out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: ESTOP not supported")
-    def test_estop_out_of_scope(self):
-        """ESTOP command is out of scope."""
-        pass
-
-    @pytest.mark.skip(reason="Out of scope per FR-055: ETRIGGER not supported")
-    def test_etrigger_out_of_scope(self):
-        """ETRIGGER command is out of scope."""
-        pass
+# No tests - syntax is not parsed, no ASG to analyze.
+# See parser tests for parse error verification.

@@ -1,23 +1,10 @@
-"""Tests for Embedded Programs parsing (§6.4).
+"""Embedded Programs parsing (§6.4) - not applicable.
 
-This section is out of scope per FR-055.
+Embedded programs are out of scope per LIM-008.
+This syntax is not supported in m2py.
 
 Reference: MUMPS 1995 ANSI Standard, Section 6.4
+Limitation: docs/limitations.md - LIM-008: Embedded Programs
 """
 
-import pytest
-
-
-@pytest.mark.parser
-@pytest.mark.skip(
-    reason="Out of scope: §6.4 Embedded Programs. See docs/limitations.md"
-)
-class TestEmbeddedProgramsParsing:
-    """Tests for Embedded Programs (§6.4).
-
-    Embedded programs are out of scope per FR-055.
-    """
-
-    def test_embedded_programs_out_of_scope(self):
-        """§6.4 Embedded Programs is out of scope."""
-        pass
+# No tests - §6.4 embedded programs are out of scope.

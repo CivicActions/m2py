@@ -34,12 +34,10 @@ class TestSsvnsCodegen:
         """^$ROUTINE generates routine info access (§7.1.3)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.skip(reason="Out of scope: ^$LIBRARY SSVN per FR-055")
-    def test_ssvn_library(self):
-        """^$LIBRARY SSVN is out of scope (§7.1.3)."""
-        pass
 
-    @pytest.mark.skip(reason="Out of scope: ^$EVENT SSVN per FR-055")
-    def test_ssvn_event(self):
-        """^$EVENT SSVN is out of scope (§7.1.3)."""
-        pass
+# Out-of-scope SSVNs - "Parses OK" limitations.
+# These parse and analyze correctly but runtime semantics are undefined.
+# Parser/ASG tests exist to verify parsing works. No codegen tests needed.
+#
+# - ^$EVENT, ^$WINDOW, ^$DISPLAY: LIM-003 (MWAPI SSVNs)
+# - ^$LIBRARY: LIM-011 (zero real-world usage)

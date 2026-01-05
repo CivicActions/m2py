@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Coverage audit script for spec-aligned unit tests.
+"""Rebuild auto-generated documentation files.
 
-Scans test files in tests/unit/{parser,asg,codegen}/ and reports coverage status
-against MUMPS 1995 ANSI spec sections (§5-§9).
+Generates:
+- docs/coverage-matrix.md - Test coverage status against MUMPS spec sections
+- docs/limitations.md - Parser limitations documentation
 
 Usage:
-    uv run python utils/audit_tests.py                          # Full report
-    uv run python utils/audit_tests.py --section s7             # Filter by section
-    uv run python utils/audit_tests.py --section s8_2_18        # Filter by subsection
-    uv run python utils/audit_tests.py --output docs/coverage-matrix.md  # Save report
+    uv run python utils/rebuild_docs.py                    # Rebuild all docs
+    uv run python utils/rebuild_docs.py --coverage-only    # Only coverage matrix
+    uv run python utils/rebuild_docs.py --limitations-only # Only limitations doc
+    uv run python utils/rebuild_docs.py --section s7       # Filter coverage by section
 
 Exit codes:
-    0 - All sections have test files
-    1 - One or more sections missing test files
+    0 - Success
+    1 - Error or missing test files
 """
 
 from __future__ import annotations
@@ -23,6 +24,14 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+
+# Add src to path for importing limitations
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from m2py.limitations import (
+    LimitationType,
+    generate_limitations_md,
+    get_limitation_for_section,
+)
 
 
 # =============================================================================
@@ -320,14 +329,15 @@ def parse_test_markers(file_path: Path) -> list[TestInfo]:
         print(f"Warning: Could not parse {file_path}: {e}", file=sys.stderr)
         return tests
 
-    # Walk AST looking for test functions and methods
-    for node in ast.walk(tree):
+    # Look at top-level items only (not using ast.walk to avoid duplicates)
+    for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Top-level test function
             if node.name.startswith("test_"):
                 test_info = _extract_test_info(node)
                 tests.append(test_info)
         elif isinstance(node, ast.ClassDef):
-            # Look for test methods in classes
+            # Test class - look for test methods in class body
             for item in node.body:
                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     if item.name.startswith("test_"):
@@ -435,9 +445,34 @@ def count_test_status(files: dict[TestCategory, dict[str, FileInfo]]) -> None:
 # =============================================================================
 
 
-def _format_cell(file_info: FileInfo | None) -> str:
-    """Format a cell value for a file's test status."""
+def _format_cell(
+    file_info: FileInfo | None,
+    section_id: str,
+    category: TestCategory,
+) -> str:
+    """Format a cell value for a file's test status.
+
+    Args:
+        file_info: Test file information (None if missing)
+        section_id: Section ID for limitation lookup
+        category: Test category (parser, asg, codegen)
+
+    Returns:
+        Formatted status string with emoji
+    """
+    limitation = get_limitation_for_section(section_id)
+
+    # Handle missing files
     if file_info is None:
+        # Check if missing is expected based on limitation type
+        if limitation:
+            if limitation.type == LimitationType.INFORMATIVE:
+                # Informative: no tests expected for any category
+                return f"— {limitation.id}"
+            elif limitation.type == LimitationType.PARSE_ERROR:
+                # Parse Error: parser tests required, ASG/codegen can be missing
+                if category in ("asg", "codegen"):
+                    return f"— {limitation.id}"
         return "❌ Missing"
 
     total = file_info.total_count
@@ -446,7 +481,18 @@ def _format_cell(file_info: FileInfo | None) -> str:
     xfail = file_info.xfail_count
     skipped = file_info.skipped_count
 
+    # Handle empty files - check if expected based on limitation
     if total == 0:
+        if limitation:
+            if limitation.type == LimitationType.INFORMATIVE:
+                # Informative: empty is expected for all categories
+                return f"✅ {limitation.id}"
+            elif limitation.type == LimitationType.PARSE_ERROR:
+                # Parse Error: empty is expected for ASG/codegen only
+                if category in ("asg", "codegen"):
+                    return f"✅ {limitation.id}"
+                # Parser should have tests (parse error tests)
+                return "⚠️ Empty"
         return "⚠️ Empty"
 
     # All skipped = out of scope
@@ -472,19 +518,12 @@ def _format_cell(file_info: FileInfo | None) -> str:
 
 
 def _get_section_notes(section_id: str) -> str:
-    """Get notes for a section based on its characteristics."""
-    if "out-of-scope" in section_id or section_id in (
-        "s5_1_bnf_notation",
-        "s6_3_4_event_processing",
-        "s6_4_embedded_programs",
-        "s8_event_processing",
-        "s8_then_command",
-        "s8_assign",
-        "s8_2_28_rload",
-        "s8_2_29_rsave",
-    ):
-        return "Out of scope"
+    """Get notes for a section based on limitation data."""
+    limitation = get_limitation_for_section(section_id)
+    if limitation:
+        return f"{limitation.id}: {limitation.category}"
 
+    # Fallback for sections without explicit limitations
     if "implementation-defined" in section_id or section_id in (
         "s8_2_24_view",
         "zfunctions",
@@ -517,11 +556,15 @@ def generate_report(
     lines.append("## Legend")
     lines.append("")
     lines.append("- ✅ Implemented (tests pass)")
+    lines.append(
+        "- ✅ LIM-XXX (empty expected per limitation, see [limitations.md](limitations.md))"
+    )
     lines.append("- 🚧 Stub (xfail, pending implementation)")
     lines.append("- ⚠️ XFail (needs investigation)")
     lines.append("- ⏭️ Skipped (out of scope or implementation-defined)")
     lines.append("- ❌ Missing (no test file)")
     lines.append("- ⚠️ Empty (file exists but no tests)")
+    lines.append("- — N/A (not applicable for this category)")
     lines.append("")
 
     # Standard spec sections
@@ -540,9 +583,9 @@ def generate_report(
             asg_info = files["asg"].get(section_id)
             codegen_info = files["codegen"].get(section_id)
 
-            parser_cell = _format_cell(parser_info)
-            asg_cell = _format_cell(asg_info)
-            codegen_cell = _format_cell(codegen_info)
+            parser_cell = _format_cell(parser_info, section_id, "parser")
+            asg_cell = _format_cell(asg_info, section_id, "asg")
+            codegen_cell = _format_cell(codegen_info, section_id, "codegen")
             notes = _get_section_notes(section_id)
 
             lines.append(
@@ -568,13 +611,13 @@ def generate_report(
             asg_info = files["asg"].get(full_id)
             codegen_info = files["codegen"].get(full_id)
 
-            parser_cell = _format_cell(parser_info)
+            parser_cell = _format_cell(parser_info, full_id, "parser")
             # ASG only expects certain extensions - show N/A for others
             if cmd_id in EXTENSION_ASG:
-                asg_cell = _format_cell(asg_info)
+                asg_cell = _format_cell(asg_info, full_id, "asg")
             else:
                 asg_cell = "— N/A"
-            codegen_cell = _format_cell(codegen_info)
+            codegen_cell = _format_cell(codegen_info, full_id, "codegen")
             notes = _get_section_notes(cmd_id)
 
             lines.append(
@@ -658,48 +701,52 @@ def check_coverage(
 # =============================================================================
 
 
-def main() -> int:
-    """Main entry point for the audit script."""
-    parser = argparse.ArgumentParser(
-        description="Audit test coverage against MUMPS spec sections",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    parser.add_argument(
-        "--section",
-        metavar="FILTER",
-        help="Filter by section (e.g., s7, s8_2_18, extensions/ydb)",
-    )
-    parser.add_argument(
-        "--output",
-        metavar="FILE",
-        help="Write report to file (e.g., docs/coverage-matrix.md)",
-    )
-    parser.add_argument(
-        "--quiet",
-        "-q",
-        action="store_true",
-        help="Suppress report output, only return exit code",
-    )
-    parser.add_argument(
-        "--check-only",
-        action="store_true",
-        help="Only check coverage, don't generate report",
-    )
+def rebuild_limitations(project_root: Path, quiet: bool = False) -> bool:
+    """Rebuild docs/limitations.md from limitations.py.
 
-    args = parser.parse_args()
+    Args:
+        project_root: Path to project root
+        quiet: Suppress output
 
-    # Determine base directory
-    script_dir = Path(__file__).parent
-    project_root = script_dir.parent
+    Returns:
+        True on success
+    """
+    output_path = project_root / "docs" / "limitations.md"
+    content = generate_limitations_md()
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    if not quiet:
+        print(f"Generated {output_path}")
+
+    return True
+
+
+def rebuild_coverage_matrix(
+    project_root: Path,
+    section_filter: str | None = None,
+    quiet: bool = False,
+) -> bool:
+    """Rebuild docs/coverage-matrix.md from test files.
+
+    Args:
+        project_root: Path to project root
+        section_filter: Optional section filter
+        quiet: Suppress output
+
+    Returns:
+        True if all sections covered, False otherwise
+    """
     base_dir = project_root / "tests" / "unit"
 
     if not base_dir.exists():
         print(f"Error: Test directory not found: {base_dir}", file=sys.stderr)
-        return 1
+        return False
 
     # Scan test files
-    files = scan_test_files(base_dir, args.section)
+    files = scan_test_files(base_dir, section_filter)
 
     # Parse markers and count test status
     count_test_status(files)
@@ -707,32 +754,95 @@ def main() -> int:
     # Check coverage
     all_covered, missing = check_coverage(files)
 
+    # Generate report
+    report = generate_report(files, section_filter)
+
+    # Write output
+    output_path = project_root / "docs" / "coverage-matrix.md"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(report)
+
+    if not quiet:
+        print(f"Generated {output_path}")
+        if not all_covered:
+            print(f"Warning: {len(missing)} missing test files", file=sys.stderr)
+
+    return all_covered
+
+
+def main() -> int:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Rebuild auto-generated documentation files",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "--section",
+        metavar="FILTER",
+        help="Filter coverage by section (e.g., s7, s8_2_18, extensions/ydb)",
+    )
+    parser.add_argument(
+        "--coverage-only",
+        action="store_true",
+        help="Only rebuild coverage-matrix.md",
+    )
+    parser.add_argument(
+        "--limitations-only",
+        action="store_true",
+        help="Only rebuild limitations.md",
+    )
+    parser.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress output messages",
+    )
+    parser.add_argument(
+        "--check-only",
+        action="store_true",
+        help="Only check coverage, don't write files",
+    )
+
+    args = parser.parse_args()
+
+    # Determine project root
+    script_dir = Path(__file__).parent
+    project_root = script_dir.parent
+
+    success = True
+
+    # Check-only mode
     if args.check_only:
+        base_dir = project_root / "tests" / "unit"
+        if not base_dir.exists():
+            print(f"Error: Test directory not found: {base_dir}", file=sys.stderr)
+            return 1
+
+        files = scan_test_files(base_dir, args.section)
+        count_test_status(files)
+        all_covered, missing = check_coverage(files)
+
         if not all_covered:
             print("Missing test files:", file=sys.stderr)
-            for m in sorted(missing)[:20]:  # Show first 20
+            for m in sorted(missing)[:20]:
                 print(f"  - {m}", file=sys.stderr)
             if len(missing) > 20:
                 print(f"  ... and {len(missing) - 20} more", file=sys.stderr)
             return 1
         return 0
 
-    # Generate report
-    report = generate_report(files, args.section)
+    # Rebuild limitations.md
+    if not args.coverage_only:
+        rebuild_limitations(project_root, args.quiet)
 
-    # Output report
-    if args.output:
-        output_path = Path(args.output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(report)
-        if not args.quiet:
-            print(f"Report written to {output_path}")
-    elif not args.quiet:
-        print(report)
+    # Rebuild coverage-matrix.md
+    if not args.limitations_only:
+        if not rebuild_coverage_matrix(project_root, args.section, args.quiet):
+            success = False
 
-    # Return exit code based on coverage
-    return 0 if all_covered else 1
+    return 0 if success else 1
 
 
 if __name__ == "__main__":
