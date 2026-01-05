@@ -803,10 +803,226 @@
 
 ### Final Verification
 
-- [ ] T201 [US4] Run SC-002 success command and verify 0 xfails in parser/ASG
-- [ ] T202 [US4] Regenerate final coverage matrix
+- [X] T201 [US4] Run SC-002 success command and verify xfail status
+  - **Result**: 3563 passed, 109 skipped, 389 xfailed
+  - **Gap Found**: 136 non-codegen stubs remain (59 parser, 37 ASG, 40 cross-cutting)
+  - Skipped tests: All properly documented in limitations.md ✓
+  - See Phase 8 for remediation tasks
 
-**Checkpoint**: All parser/ASG stubs implemented - 0 xfails remaining
+- [X] T202 [US4] Regenerate final coverage matrix
+
+**Checkpoint**: Phase 7 complete - gaps identified, Phase 8 created for remediation
+
+---
+
+## Phase 8: Stub Test Remediation (Post-Audit)
+
+**Discovery**: T201 audit revealed 136 stub tests outside codegen that were never implemented.
+These are marked with `@pytest.mark.xfail` and contain `pytest.fail("Stub - implement test")`.
+
+**Batch Sizing Strategy** (per FR-009, complexity-adjusted):
+- **High complexity** (indirection, language semantics, extrinsics): 3-5 stubs max
+- **Medium complexity** (pattern match, timeouts, library functions): 6-10 stubs
+- **Lower complexity** (I/O commands, flow control, data ops): 10-15 stubs
+
+### Summary of Remaining Stubs
+
+| Category | File | Stubs | Complexity |
+|----------|------|-------|------------|
+| **Parser (59 total)** | | | |
+| Library Functions | test_s7_1_6_5_library_functions_string.py | 6 | Medium |
+| Library Functions | test_s7_1_6_5_library_functions_character.py | 5 | Medium |
+| Pattern Match | test_s7_2_5_pattern_match.py | 6 | Medium |
+| VIEW | test_s8_2_24_view.py | 2 | Low |
+| QUIT | test_s8_2_16_quit.py | 2 | Low |
+| DO | test_s8_2_03_do.py | 1 | Low |
+| LOCK | test_s8_2_12_lock.py | 3 | Low |
+| KILL | test_s8_2_11_kill.py | 3 | Low |
+| Device Params | test_s8_3_device_params.py | 4 | Low |
+| GOTO | test_s8_2_06_goto.py | 1 | Low |
+| WRITE | test_s8_2_25_write.py | 1 | Low |
+| CLOSE | test_s8_2_02_close.py | 3 | Low |
+| JOB | test_s8_2_10_job.py | 5 | Medium |
+| READ | test_s8_2_17_read.py | 2 | Low |
+| OPEN | test_s8_2_15_open.py | 5 | Low |
+| HANG | test_s8_2_08_hang.py | 3 | Low |
+| MERGE | test_s8_2_13_merge.py | 4 | Low |
+| BREAK | test_s8_2_01_break.py | 3 | Low |
+| **ASG (37 total)** | | | |
+| Routine Head | test_s6_1_routine_head.py | 3 | Medium |
+| Indirection (s6) | test_s6_3_1_indirection.py | 4 | **High** |
+| Library Functions | test_s7_1_6_5_library_functions_string.py | 6 | Medium |
+| Indirection (s7) | test_s7_3_indirection.py | 7 | **High** |
+| Library Functions | test_s7_1_6_5_library_functions_character.py | 5 | Medium |
+| Pattern Match | test_s7_2_operators_pattern_match.py | 3 | Medium |
+| Extrinsic Functions | test_s7_1_6_extrinsic_functions.py | 5 | **High** |
+| Pattern Match | test_s7_2_5_pattern_match.py | 2 | Medium |
+| TRESTART | test_s8_2_20_trestart.py | 2 | Medium |
+| **Cross-Cutting (40 total)** | | | |
+| Naked References | test_naked_references.py | 2 | Medium |
+| Indirection | test_indirection.py | 5 | **High** |
+| Timeouts | test_timeouts.py | 8 | Medium |
+| Postconditions | test_postconditions.py | 5 | Medium |
+| Language Semantics | test_language_semantics.py | 20 | **High** |
+
+---
+
+### Batch F1: Parser I/O Commands (15 stubs) - Low Complexity
+
+I/O-related commands: OPEN, CLOSE, READ, WRITE, VIEW, device parameters.
+
+- [ ] T203 [US1] **Research**: Review MUMPS reference §8.2.2 (CLOSE), §8.2.15 (OPEN), §8.2.17 (READ), §8.2.25 (WRITE), §8.2.24 (VIEW), §8.3 (device params). Check mumps-reference/examples__*.md for I/O patterns.
+- [ ] T204 [US1] Implement parser stubs: OPEN (5), CLOSE (3), READ (2), WRITE (1), VIEW (2) - 13 stubs
+- [ ] T205 [US1] Implement parser stubs: device_params (4 stubs) - completes I/O batch
+- [ ] T206 [US4] Regenerate coverage matrix
+
+### Batch F2: Parser Flow Control Commands (14 stubs) - Low Complexity
+
+Execution flow commands: DO, GOTO, QUIT, BREAK, HANG, JOB.
+
+- [ ] T207 [US1] **Research**: Review MUMPS reference §8.2.1 (BREAK), §8.2.3 (DO), §8.2.6 (GOTO), §8.2.8 (HANG), §8.2.10 (JOB), §8.2.16 (QUIT). Check YDBTest/ for flow control examples.
+- [ ] T208 [US1] Implement parser stubs: DO (1), GOTO (1), QUIT (2), BREAK (3), HANG (3) - 10 stubs
+- [ ] T209 [US1] Implement parser stubs: JOB (5 stubs) - process spawning, medium complexity
+- [ ] T210 [US4] Regenerate coverage matrix
+
+### Batch F3: Parser Data Commands (10 stubs) - Low Complexity
+
+Data manipulation commands: KILL, LOCK, MERGE.
+
+- [ ] T211 [US1] **Research**: Review MUMPS reference §8.2.11 (KILL), §8.2.12 (LOCK), §8.2.13 (MERGE). Check mumps-reference/notes__*.md for data operation semantics.
+- [ ] T212 [US1] Implement parser stubs: KILL (3), LOCK (3), MERGE (4) - 10 stubs
+- [ ] T213 [US4] Regenerate coverage matrix
+
+### Batch F4: Parser Library Functions (11 stubs) - Medium Complexity
+
+String and character library functions ($PIECE, $EXTRACT, $CHAR, $ASCII, etc.).
+
+- [ ] T214 [US1] **Research**: Review MUMPS reference §7.1.6.5 for library functions. Search mumps-reference/ for $PIECE, $EXTRACT, $CHAR, $ASCII examples. Check VistA-M/ for real-world usage.
+- [ ] T215 [US1] Implement parser stubs: library_functions_string (6 stubs)
+- [ ] T216 [US1] Implement parser stubs: library_functions_character (5 stubs)
+- [ ] T217 [US4] Regenerate coverage matrix
+
+### Batch F5: Parser Pattern Match (6 stubs) - Medium Complexity
+
+Pattern match operator (?) parsing tests.
+
+- [ ] T218 [US1] **Research**: Review MUMPS reference §7.2.5 (pattern match). Check mumps-reference/notes__pattern*.md for pattern syntax examples.
+- [ ] T219 [US1] Implement parser stubs: pattern_match (6 stubs)
+- [ ] T220 [US4] Regenerate coverage matrix
+
+---
+
+### Batch F6: ASG Routine & Simple (8 stubs) - Medium Complexity
+
+Routine head structure and transaction restart.
+
+- [ ] T221 [US2] **Research**: Review MUMPS reference §6.1 (routine structure), §8.2.20 (TRESTART). Check docs/asg/ for routine node documentation.
+- [ ] T222 [US2] Implement ASG stubs: routine_head (3), TRESTART (2) - 5 stubs
+- [ ] T223 [US2] Implement ASG stubs: pattern_match operators (3), pattern_match s7_2_5 (2) - 5 stubs
+- [ ] T224 [US4] Regenerate coverage matrix
+
+### Batch F7: ASG Library Functions (11 stubs) - Medium Complexity
+
+String and character function ASG tests.
+
+- [ ] T225 [US2] **Research**: Review docs/asg/function-call.md for function ASG structure. Check how $PIECE, $EXTRACT map to ASG nodes.
+- [ ] T226 [US2] Implement ASG stubs: library_functions_string (6 stubs)
+- [ ] T227 [US2] Implement ASG stubs: library_functions_character (5 stubs)
+- [ ] T228 [US4] Regenerate coverage matrix
+
+### Batch F8: ASG Extrinsic Functions (5 stubs) - High Complexity
+
+User-defined extrinsic function calls ($$label^routine).
+
+- [ ] T229 [US2] **Research**: Review MUMPS reference §7.1.6 (extrinsic functions). Check docs/asg/ for call semantics. Search YDBTest/ for $$ usage patterns.
+- [ ] T230 [US2] Implement ASG stubs: extrinsic_functions (5 stubs)
+- [ ] T231 [US4] Regenerate coverage matrix
+
+### Batch F9: ASG Indirection s6 (4 stubs) - High Complexity
+
+Name indirection at routine/line level (@name).
+
+- [ ] T232 [US2] **Research**: Review MUMPS reference §6.3.1 (indirection). Check mumps-reference/notes__indirection*.md. Study existing tests/unit/asg/s6_routine/ for patterns.
+- [ ] T233 [US2] Implement ASG stubs: s6_3_1_indirection (4 stubs)
+- [ ] T234 [US4] Regenerate coverage matrix
+
+### Batch F10: ASG Indirection s7 (7 stubs) - High Complexity
+
+Expression-level indirection (@expr for subscripts, arguments).
+
+- [ ] T235 [US2] **Research**: Review MUMPS reference §7.3 (expression indirection). Check how indirection affects ASG node construction. Review validate_asg.py output for indirection cases.
+- [ ] T236 [US2] Implement ASG stubs: s7_3_indirection (4 stubs) - first half
+- [ ] T237 [US2] Implement ASG stubs: s7_3_indirection (3 stubs) - second half
+- [ ] T238 [US4] Regenerate coverage matrix
+
+---
+
+### Batch F11: Cross-Cutting Simple (7 stubs) - Medium Complexity
+
+Naked references and postconditions.
+
+- [ ] T239 [US2] **Research**: Review MUMPS reference for naked references (§7.1.2.2) and postconditions (§8.1). Check existing cross_cutting tests for patterns.
+- [ ] T240 [US2] Implement cross-cutting stubs: naked_references (2 stubs)
+- [ ] T241 [US2] Implement cross-cutting stubs: postconditions (5 stubs)
+- [ ] T242 [US4] Regenerate coverage matrix
+
+### Batch F12: Cross-Cutting Indirection (5 stubs) - High Complexity
+
+Cross-cutting indirection behavior tests.
+
+- [ ] T243 [US2] **Research**: Review how indirection interacts across parser/ASG layers. Check test_indirection.py stub docstrings for specific scenarios.
+- [ ] T244 [US2] Implement cross-cutting stubs: indirection (5 stubs)
+- [ ] T245 [US4] Regenerate coverage matrix
+
+### Batch F13: Cross-Cutting Timeouts (8 stubs) - Medium Complexity
+
+Timeout handling in READ, LOCK, JOB, OPEN commands.
+
+- [ ] T246 [US2] **Research**: Review MUMPS reference timeout syntax (:timeout) in §8.2.10 (JOB), §8.2.12 (LOCK), §8.2.15 (OPEN), §8.2.17 (READ). Check YDBTest/ for timeout behavior.
+- [ ] T247 [US2] Implement cross-cutting stubs: timeouts (8 stubs)
+- [ ] T248 [US4] Regenerate coverage matrix
+
+### Batch F14: Cross-Cutting Language Semantics A (5 stubs) - High Complexity
+
+First batch of language semantics tests (most foundational).
+
+- [ ] T249 [US2] **Research**: Review test_language_semantics.py stub docstrings to understand specific semantic scenarios. Identify first 5 by reading stub names/docs.
+- [ ] T250 [US2] Implement cross-cutting stubs: language_semantics (5 stubs - batch 1)
+- [ ] T251 [US4] Regenerate coverage matrix
+
+### Batch F15: Cross-Cutting Language Semantics B (5 stubs) - High Complexity
+
+Second batch of language semantics tests.
+
+- [ ] T252 [US2] **Research**: Continue language_semantics stub analysis. Cross-reference with MUMPS reference for specific semantics.
+- [ ] T253 [US2] Implement cross-cutting stubs: language_semantics (5 stubs - batch 2)
+- [ ] T254 [US4] Regenerate coverage matrix
+
+### Batch F16: Cross-Cutting Language Semantics C (5 stubs) - High Complexity
+
+Third batch of language semantics tests.
+
+- [ ] T255 [US2] **Research**: Continue language_semantics stub analysis. Check for edge cases in MUMPS reference.
+- [ ] T256 [US2] Implement cross-cutting stubs: language_semantics (5 stubs - batch 3)
+- [ ] T257 [US4] Regenerate coverage matrix
+
+### Batch F17: Cross-Cutting Language Semantics D (5 stubs) - High Complexity
+
+Final batch of language semantics tests.
+
+- [ ] T258 [US2] **Research**: Final language_semantics stubs. Verify all 20 are accounted for across batches.
+- [ ] T259 [US2] Implement cross-cutting stubs: language_semantics (5 stubs - batch 4)
+- [ ] T260 [US4] Regenerate coverage matrix
+
+---
+
+### Final Verification (Phase 8)
+
+- [ ] T261 [US4] Re-run verification: confirm 0 non-codegen xfails
+- [ ] T262 [US4] Regenerate final coverage matrix
+- [ ] T263 [US4] Update docs/limitations.md with any new findings
+
+**Checkpoint**: All parser/ASG/cross-cutting stubs implemented - only codegen xfails remaining
 
 ---
 
@@ -821,6 +1037,7 @@
 - **Phase 5 (Cross-Cutting)**: Can start after Phase 4 (complex tests may need earlier ASG work)
 - **Phase 6 (Polish)**: Depends on all phases complete
 - **Phase 7 (Gap Remediation)**: Depends on Phase 6 verification identifying gaps
+- **Phase 8 (Stub Remediation)**: Depends on Phase 7 audit identifying remaining stubs
 
 ### User Story Independence
 
