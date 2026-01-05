@@ -1047,14 +1047,18 @@ Name indirection at routine/line level (@name).
 - Key ASG classes: Indirection (textx_classes), IndirectionType (enums), MPatternMatch
 - Final count: 3652 passed (+4), 109 skipped, 300 xfailed (-4)
 
-### Batch F10: ASG Indirection s7 (7 stubs) - High Complexity
+### Batch F10: ASG Indirection s7 (7 stubs) - High Complexity ✅
 
 Expression-level indirection (@expr for subscripts, arguments).
 
-- [ ] T235 [US2] **Research**: Review MUMPS reference §7.3 (expression indirection). Check how indirection affects ASG node construction. Review validate_asg.py output for indirection cases.
-- [ ] T236 [US2] Implement ASG stubs: s7_3_indirection (4 stubs) - first half
-- [ ] T237 [US2] Implement ASG stubs: s7_3_indirection (3 stubs) - second half
-- [ ] T238 [US4] Regenerate coverage matrix
+- [X] T235 [US2] **Research**: Review MUMPS reference §7.3 (expression indirection). Check how indirection affects ASG node construction. Review validate_asg.py output for indirection cases.
+  - **Completed**: Read 1995__a901027.md - 5 types of indirection (name, subscript, argument, pattern, generic). ASG captures via Indirection node with indirection_type enum.
+- [X] T236 [US2] Implement ASG stubs: s7_3_indirection (4 stubs) - first half
+  - **Completed**: test_name_indirection, test_subscript_indirection, test_argument_indirection, test_indirection_in_set
+- [X] T237 [US2] Implement ASG stubs: s7_3_indirection (3 stubs) - second half
+  - **Completed**: test_indirection_limitations, test_nested_indirection, test_indirection_side_effects
+- [X] T238 [US4] Regenerate coverage matrix
+  - **Completed**: Coverage matrix updated. Key pattern: use parse_expression() before analyze_expression().
 
 ---
 

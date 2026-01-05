@@ -5,52 +5,139 @@ Reference: MUMPS 1995 ANSI Standard, Section 7.3
 
 import pytest
 
+from m2py.asg.enums import IndirectionType
+from m2py.asg.statements import MSetStatement
+from m2py.parser.textx_classes import Indirection, LocalVariable
+from tests.helpers.parsing import parse_expression
+
 
 @pytest.mark.asg
 class TestIndirectionAnalysis:
     """ASG-level tests for indirection in expressions analysis (§7.3)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: name indirection")
     def test_name_indirection(self, analyze_expression):
-        """Name indirection (@var) is correctly analyzed (§7.3)."""
-        pytest.fail("Stub - implement test")
+        """Name indirection (@var) is correctly analyzed (§7.3).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: subscript indirection")
+        Per 1995__a901027.md: "Set X='ABC' IF 123+@X=456"
+        Name indirection creates an Indirection node with IndirectionType.NAME
+        and the dereferenced variable in expression.
+        """
+        expr = parse_expression("@X")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, Indirection)
+        assert result.indirection_type == IndirectionType.NAME
+        assert isinstance(result.expression, LocalVariable)
+        assert result.expression.name == "X"
+
     def test_subscript_indirection(self, analyze_expression):
-        """Subscript indirection (@var@(subs)) is correctly analyzed (§7.3)."""
-        pytest.fail("Stub - implement test")
+        """Subscript indirection (@var@(subs)) is correctly analyzed (§7.3).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: argument indirection")
+        Per 1984 addition (1995__a901027.md): @ARRAY@(1,2,3) resolves ARRAY
+        to a name, then appends subscripts. Captured in name_indirection_subscripts.
+        """
+        expr = parse_expression("@X@(1,2)")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, Indirection)
+        assert isinstance(result.expression, LocalVariable)
+        assert result.expression.name == "X"
+        # Subscripts are captured in name_indirection_subscripts
+        assert result.name_indirection_subscripts is not None
+        assert len(result.name_indirection_subscripts) == 1  # One subscript list
+        assert len(result.name_indirection_subscripts[0]) == 2  # Two subscripts
+
     def test_argument_indirection(self, analyze_expression):
-        """Argument indirection is correctly analyzed (§7.3)."""
-        pytest.fail("Stub - implement test")
+        """Argument indirection is correctly analyzed (§7.3).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: indirection in SET")
+        Per 1995__a901027.md: "Write @$Select(ENOUGH:SPACE,1:PAGE)"
+        Argument indirection uses @ where the expression evaluates to
+        command arguments. In expressions, this is still an Indirection node.
+        """
+        expr = parse_expression("@ARGS")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, Indirection)
+        assert result.indirection_type == IndirectionType.NAME
+        assert isinstance(result.expression, LocalVariable)
+        assert result.expression.name == "ARGS"
+
     def test_indirection_in_set(self, analyze_routine):
-        """Indirection in SET command is correctly analyzed (§7.3)."""
-        pytest.fail("Stub - implement test")
+        """Indirection in SET command is correctly analyzed (§7.3).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: indirection limitations")
+        The target of SET can be an indirection that resolves to a variable name.
+        Per 1995__a901027.md: "Set @X1='HELLO' will be executed as: Set Y='HELLO'"
+        """
+        routine = analyze_routine("TEST\n S @VAR=1\n Q")
+
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MSetStatement)
+
+        target = stmt.assignments[0].target
+        assert isinstance(target, Indirection)
+        assert target.indirection_type == IndirectionType.NAME
+        assert isinstance(target.expression, LocalVariable)
+        assert target.expression.name == "VAR"
+
     def test_indirection_limitations(self, analyze_routine):
-        """Indirection static analysis limitations are tracked (§7.3)."""
-        pytest.fail("Stub - implement test")
+        """Indirection static analysis limitations are tracked (§7.3).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: nested indirection")
+        Indirection generally requires runtime evaluation and cannot be
+        statically resolved unless the expression is a constant.
+        """
+        routine = analyze_routine("TEST\n S X=@A\n Q")
+
+        stmt = routine.labels[0].body.statements[0]
+        value = stmt.assignments[0].value
+
+        assert isinstance(value, Indirection)
+        # Indirection requires runtime evaluation by default
+        assert value.requires_runtime_eval is True
+        # Cannot resolve statically without constant propagation
+        assert value.can_resolve_statically is False
+        assert value.resolved_value is None
+
     def test_nested_indirection(self, analyze_expression):
-        """Nested indirection is correctly analyzed (§7.3)."""
-        pytest.fail("Stub - implement test")
+        """Nested indirection is correctly analyzed (§7.3).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: indirection side effects")
+        Per YDBTest/indirection/inref/indlcl.m: "set @@variable='PASSED'"
+        Nested indirection is dereferenced twice at runtime.
+        """
+        expr = parse_expression("@@X")
+        result = analyze_expression(expr)
+
+        # Outer indirection
+        assert isinstance(result, Indirection)
+        assert result.indirection_type == IndirectionType.NAME
+        # Inner indirection
+        assert isinstance(result.expression, Indirection)
+        assert result.expression.indirection_type == IndirectionType.NAME
+        # Innermost is the variable X
+        assert isinstance(result.expression.expression, LocalVariable)
+        assert result.expression.expression.name == "X"
+
     def test_indirection_side_effects(self, analyze_routine):
-        """Indirection side effects are tracked (§7.3)."""
-        pytest.fail("Stub - implement test")
+        """Indirection side effects are tracked (§7.3).
+
+        When indirection is used as a SET target, the routine cannot
+        determine statically which variable is modified.
+        """
+        routine = analyze_routine("TEST\n S @VAR=1,Y=2\n Q")
+
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MSetStatement)
+        assert len(stmt.assignments) == 2
+
+        # First assignment uses indirection
+        first = stmt.assignments[0]
+        assert isinstance(first.target, Indirection)
+        # Indirection target requires runtime eval
+        assert first.target.requires_runtime_eval is True
+
+        # Second assignment is a direct variable
+        second = stmt.assignments[1]
+        assert isinstance(second.target, LocalVariable)
+        assert second.target.name == "Y"
 
 
 @pytest.mark.asg
