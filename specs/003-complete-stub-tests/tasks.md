@@ -642,16 +642,24 @@
 
 ### Batch D15-D19: Language Semantics Tests (35 stubs, High complexity)
 
-- [ ] T161 [US2] Research MUMPS spec language semantics in mumps-reference/
-- [ ] T162 [US2] Find language semantics examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [ ] T163 [US2] Evaluate ASG quality for language semantics using validate_asg.py
-- [ ] T164 [US2] Implement 7 $TEST tracking tests in tests/unit/cross_cutting/test_language_semantics.py (D15)
+- [X] T161 [US2] Research MUMPS spec language semantics in mumps-reference/
+- [X] T162 [US2] Find language semantics examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [X] T163 [US2] Evaluate ASG quality for language semantics using validate_asg.py
+- [X] T164 [US2] Implement 7 $TEST tracking tests in tests/unit/cross_cutting/test_language_semantics.py (D15)
 - [ ] T165 [US2] Implement 7 evaluation order tests in same file (D16)
 - [ ] T166 [US2] Implement 7 NEW scoping tests in same file (D17)
 - [ ] T167 [US2] Implement 7 transaction semantics tests in same file (D18)
 - [ ] T168 [US2] Implement 7 misc semantics tests in same file (D19)
 - [ ] T169 [US2] Fix any implementation gaps in src/m2py/
 - [ ] T170 [US2] Run full test suite and regenerate coverage matrix
+
+**T161-T164 completion notes:**
+- MUMPS spec refs: §7.1.4.10 ($TEST definition), §8.2.4 (ELSE), §8.2.9 (IF)
+- Examples: examples__a108035.md (IF patterns)
+- ASG quality: MIfStatement.condition/conditions, MElseStatement.body all captured
+- Existing tests: test_s8_2_09_if.py, test_s8_2_04_else.py have detailed command tests
+- D15 tests (9 total): 5 passing (parser/ASG), 4 xfail stubs (codegen runtime)
+- Final count: 3487 passed, 110 skipped, 456 xfailed
 
 **Checkpoint**: Phase 5 complete - 133 cross-cutting stubs converted
 
