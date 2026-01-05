@@ -446,12 +446,11 @@ class TestNakedReferenceEdgeCases:
         assert isinstance(target, MNakedGlobal)
         assert len(target.subscripts) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="MERGE command may not fully support naked ASG yet")
     def test_merge_with_naked(self):
         """MERGE ^(dest)=^SRC uses naked for destination (§7.1.2.4).
 
         MERGE copies tree structures and can use naked references.
+        The destination is captured as MNakedGlobal in ASG.
         """
         from m2py.asg.statements import MMergeStatement
 
@@ -459,15 +458,19 @@ class TestNakedReferenceEdgeCases:
 
         assert isinstance(stmt, MMergeStatement)
         assert len(stmt.merges) == 1
-        dest = stmt.merges[0].dest
+        dest = stmt.merges[0].destination
         assert isinstance(dest, MNakedGlobal)
+        assert len(dest.subscripts) == 1
+        # Source should be a full global
+        source = stmt.merges[0].source
+        assert isinstance(source, MGlobal)
+        assert source.name == "SRC"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="LOCK command may not fully support naked ASG yet")
     def test_lock_with_naked(self):
         """LOCK ^(sub) uses naked reference (§7.1.2.4).
 
         LOCK controls access to resources including naked references.
+        Lock targets are returned as dicts with 'lockop' and 'target' keys.
         """
         from m2py.asg.statements import MLockStatement
 
@@ -475,11 +478,9 @@ class TestNakedReferenceEdgeCases:
 
         assert isinstance(stmt, MLockStatement)
         assert len(stmt.targets) >= 1
-        # Lock targets may be wrapped differently
-        target = stmt.targets[0]
-        # Depending on implementation, this could be the naked global directly
-        # or wrapped in a lock target structure
-        if hasattr(target, "target"):
-            assert isinstance(target.target, MNakedGlobal)
-        else:
-            assert isinstance(target, MNakedGlobal)
+        # Lock targets are dicts with 'lockop' and 'target' keys
+        target_dict = stmt.targets[0]
+        assert isinstance(target_dict, dict)
+        assert "target" in target_dict
+        assert isinstance(target_dict["target"], MNakedGlobal)
+        assert len(target_dict["target"].subscripts) == 1

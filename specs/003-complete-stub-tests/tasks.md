@@ -1062,14 +1062,18 @@ Expression-level indirection (@expr for subscripts, arguments).
 
 ---
 
-### Batch F11: Cross-Cutting Simple (7 stubs) - Medium Complexity
+### Batch F11: Cross-Cutting Simple (7 stubs) - Medium Complexity ✅
 
 Naked references and postconditions.
 
-- [ ] T239 [US2] **Research**: Review MUMPS reference for naked references (§7.1.2.2) and postconditions (§8.1). Check existing cross_cutting tests for patterns.
-- [ ] T240 [US2] Implement cross-cutting stubs: naked_references (2 stubs)
-- [ ] T241 [US2] Implement cross-cutting stubs: postconditions (5 stubs)
-- [ ] T242 [US4] Regenerate coverage matrix
+- [X] T239 [US2] **Research**: Review MUMPS reference for naked references (§7.1.2.2) and postconditions (§8.1). Check existing cross_cutting tests for patterns.
+  - **Completed**: Read 1977__a107011.md (naked indicator), 1995__a108005.md (postconditions). ASG already captures both correctly.
+- [X] T240 [US2] Implement cross-cutting stubs: naked_references (2 stubs)
+  - **Completed**: test_merge_with_naked (destination=NakedGlobal), test_lock_with_naked (dict with target=NakedGlobal)
+- [X] T241 [US2] Implement cross-cutting stubs: postconditions (5 stubs)
+  - **Completed**: Converted codegen stubs to ASG structure verification tests. All 5 verify ASG captures correct postcondition patterns for codegen.
+- [X] T242 [US4] Regenerate coverage matrix
+  - **Completed**: Coverage matrix updated.
 
 ### Batch F12: Cross-Cutting Indirection (5 stubs) - High Complexity
 
