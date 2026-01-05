@@ -930,14 +930,22 @@ Data manipulation commands: KILL, LOCK, MERGE.
 - All tests verified against command_metamodel
 - Final count: 3605 passed, 109 skipped, 347 xfailed
 
-### Batch F4: Parser Library Functions (11 stubs) - Medium Complexity
+### Batch F4: Parser Library Functions (11 stubs) - Medium Complexity ✅
 
-String and character library functions ($PIECE, $EXTRACT, $CHAR, $ASCII, etc.).
+String and character library functions (Annex I §1-3).
 
-- [ ] T214 [US1] **Research**: Review MUMPS reference §7.1.6.5 for library functions. Search mumps-reference/ for $PIECE, $EXTRACT, $CHAR, $ASCII examples. Check VistA-M/ for real-world usage.
-- [ ] T215 [US1] Implement parser stubs: library_functions_string (6 stubs)
-- [ ] T216 [US1] Implement parser stubs: library_functions_character (5 stubs)
-- [ ] T217 [US4] Regenerate coverage matrix
+- [X] T214 [US1] **Research**: Review MUMPS reference §7.1.6.5 for library functions. STRING/CHARACTER functions parse as ExtrinsicFunction.
+- [X] T215 [US1] Implement parser stubs: library_functions_string (6 stubs)
+- [X] T216 [US1] Implement parser stubs: library_functions_character (5 stubs)
+- [X] T217 [US4] Regenerate coverage matrix
+
+**Completion Notes (F4)**:
+- All 11 library function parser stubs converted to passing tests
+- STRING (Annex I-3): CRC16, CRC32, CRCCCITT (CRC functions), FORMAT, PRODUCE, REPLACE (string functions)
+- CHARACTER (Annex I-1): COLLATE, COMPARE (character comparison), plus LOWER, PATCODE, UPPER (in ^STRING)
+- All functions parse as ExtrinsicFunction with target.name and target.routine attributes
+- Tests verify: function name, routine name, argument count and types
+- Final count: 3616 passed, 109 skipped, 336 xfailed
 
 ### Batch F5: Parser Pattern Match (6 stubs) - Medium Complexity
 
