@@ -646,7 +646,7 @@
 - [X] T162 [US2] Find language semantics examples in mumps-reference/ (examples__*.md, notes__*.md)
 - [X] T163 [US2] Evaluate ASG quality for language semantics using validate_asg.py
 - [X] T164 [US2] Implement 7 $TEST tracking tests in tests/unit/cross_cutting/test_language_semantics.py (D15)
-- [ ] T165 [US2] Implement 7 evaluation order tests in same file (D16)
+- [X] T165 [US2] Implement 7 evaluation order tests in same file (D16)
 - [ ] T166 [US2] Implement 7 NEW scoping tests in same file (D17)
 - [ ] T167 [US2] Implement 7 transaction semantics tests in same file (D18)
 - [ ] T168 [US2] Implement 7 misc semantics tests in same file (D19)
@@ -660,6 +660,13 @@
 - Existing tests: test_s8_2_09_if.py, test_s8_2_04_else.py have detailed command tests
 - D15 tests (9 total): 5 passing (parser/ASG), 4 xfail stubs (codegen runtime)
 - Final count: 3487 passed, 110 skipped, 456 xfailed
+
+**T165 completion notes:**
+- MUMPS spec ref: §7.2 (1995__a107190 - Expression tail, left-to-right evaluation)
+- ASG structure verified: 2+3*4 becomes ((2+3)*4) with * at top, + on left branch
+- Existing test: test_s7_2_operators.py::test_left_to_right_evaluation covers same behavior
+- D16 tests (7 total): 2 passing (parser/ASG), 5 xfail stubs (codegen runtime)
+- Final count: 3489 passed, 110 skipped, 454 xfailed
 
 **Checkpoint**: Phase 5 complete - 133 cross-cutting stubs converted
 
