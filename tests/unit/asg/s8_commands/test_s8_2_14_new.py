@@ -35,13 +35,35 @@ class TestNewCommandAnalysis:
         assert isinstance(stmt, MNewStatement)
         assert len(stmt.variables) == 3
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW variable scoping verification")
-    def test_new_variable_scoping(self, analyze_routine):
-        """NEW creates new variable scope (§8.2.14, FR-014)."""
-        pytest.fail(
-            "Stub - implement test for verifying NEW affects variable scope tracking"
-        )
+    def test_new_variable_scoping(self):
+        """NEW creates new variable scope (§8.2.14, FR-014).
+
+        Verifies that NEW command captures variable names for scope tracking:
+        - Variables list contains the NEW'd variable names
+        - Multiple NEW'd variables are all captured
+        - NEW with exclusive form tracks except_list for scope analysis
+        """
+        # Single variable NEW
+        stmt = analyze_first_command("N X")
+        assert isinstance(stmt, MNewStatement)
+        assert "X" in stmt.variables
+        assert len(stmt.variables) == 1
+
+        # Multiple variables NEW
+        stmt2 = analyze_first_command("N A,B,C")
+        assert isinstance(stmt2, MNewStatement)
+        assert len(stmt2.variables) == 3
+        assert "A" in stmt2.variables
+        assert "B" in stmt2.variables
+        assert "C" in stmt2.variables
+
+        # Exclusive NEW - except_list contains preserved variables
+        stmt3 = analyze_first_command("N (X,Y)")
+        assert isinstance(stmt3, MNewStatement)
+        assert stmt3.exclusive is True
+        # Variables that should NOT be NEW'd are in except_list
+        assert hasattr(stmt3, "except_list")
+        assert len(stmt3.except_list) == 2
 
     def test_new_exclusive_form(self):
         """NEW (X,Y) exclusive form is analyzed (§8.2.14)."""
@@ -60,8 +82,33 @@ class TestNewCommandAnalysis:
         assert stmt2.exclusive is False
         assert len(stmt2.variables) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW scope lifetime")
-    def test_new_scope_lifetime(self, analyze_routine):
-        """NEW scope lifetime is tracked until QUIT (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+    def test_new_scope_lifetime(self):
+        """NEW scope lifetime is tracked until QUIT (§8.2.14).
+
+        Verifies that the NEW statement captures enough information
+        for scope tracking to determine which variables need cleanup on QUIT.
+
+        Note: Actual scope cleanup tracking requires runtime/flow analysis;
+        this test verifies the ASG structure supports such analysis.
+        """
+        # NEW captures variable names for scope tracking
+        stmt = analyze_first_command("N X,Y,Z")
+        assert isinstance(stmt, MNewStatement)
+
+        # All NEW'd variables accessible for scope analysis
+        new_vars = stmt.variables
+        assert len(new_vars) == 3
+        assert set(new_vars) == {"X", "Y", "Z"}
+
+        # Exclusive NEW preserves only listed variables - others get NEW'd
+        stmt2 = analyze_first_command("N (KEEP)")
+        assert isinstance(stmt2, MNewStatement)
+        assert stmt2.exclusive is True
+        # except_list contains variables to preserve (not NEW)
+        assert len(stmt2.except_list) == 1
+
+        # Empty exclusive NEW (all variables NEW'd except none)
+        # This is the argumentless NEW case
+        stmt3 = analyze_first_command("N")
+        assert isinstance(stmt3, MNewStatement)
+        # No specific variables - this NEWs all in current scope

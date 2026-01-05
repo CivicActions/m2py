@@ -77,14 +77,75 @@ class TestKillCommandAnalysis:
         assert isinstance(stmt3, MKillStatement)
         assert stmt3.exclusive is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL global impact")
-    def test_kill_global_impact(self, analyze_routine):
-        """KILL ^GLOBAL impact is tracked (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+    def test_kill_global_impact(self):
+        """KILL ^GLOBAL impact is tracked (§8.2.11).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL subscripted")
-    def test_kill_subscripted(self, analyze_routine):
-        """KILL arr(sub) subscripted kill is analyzed (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+        Verifies that KILL with global variable targets produces correct ASG:
+        - MGlobal target with correct name and subscripts
+        - Multiple global kills tracked separately
+        """
+        from m2py.asg.expressions import MGlobal, MLiteral
+
+        # Simple global KILL
+        stmt = analyze_first_command("K ^GLOBAL")
+        assert isinstance(stmt, MKillStatement)
+        assert len(stmt.targets) == 1
+        target = stmt.targets[0]
+        assert isinstance(target, MGlobal)
+        assert target.name == "GLOBAL"
+
+        # Global KILL with subscripts
+        stmt2 = analyze_first_command("K ^DATA(1,2)")
+        assert isinstance(stmt2, MKillStatement)
+        assert len(stmt2.targets) == 1
+        target2 = stmt2.targets[0]
+        assert isinstance(target2, MGlobal)
+        assert target2.name == "DATA"
+        assert len(target2.subscripts) == 2
+        assert isinstance(target2.subscripts[0], MLiteral)
+        assert target2.subscripts[0].value == 1
+
+        # Multiple globals
+        stmt3 = analyze_first_command("K ^A,^B,^C")
+        assert isinstance(stmt3, MKillStatement)
+        assert len(stmt3.targets) == 3
+        for i, name in enumerate(["A", "B", "C"]):
+            assert isinstance(stmt3.targets[i], MGlobal)
+            assert stmt3.targets[i].name == name
+
+    def test_kill_subscripted(self):
+        """KILL arr(sub) subscripted kill is analyzed (§8.2.11).
+
+        Verifies that KILL with subscripted local variables produces correct ASG:
+        - MVariable target with correct subscripts
+        - Subscripts can be literals or expressions
+        """
+        from m2py.asg.expressions import MVariable, MLiteral
+
+        # Single subscript
+        stmt = analyze_first_command("K arr(1)")
+        assert isinstance(stmt, MKillStatement)
+        assert len(stmt.targets) == 1
+        target = stmt.targets[0]
+        assert isinstance(target, MVariable)
+        assert target.name == "arr"
+        assert len(target.subscripts) == 1
+        assert isinstance(target.subscripts[0], MLiteral)
+        assert target.subscripts[0].value == 1
+
+        # Multiple subscripts
+        stmt2 = analyze_first_command("K data(1,2,3)")
+        assert isinstance(stmt2, MKillStatement)
+        target2 = stmt2.targets[0]
+        assert isinstance(target2, MVariable)
+        assert target2.name == "data"
+        assert len(target2.subscripts) == 3
+
+        # Variable subscript
+        stmt3 = analyze_first_command("K arr(x)")
+        target3 = stmt3.targets[0]
+        assert isinstance(target3, MVariable)
+        assert target3.name == "arr"
+        assert len(target3.subscripts) == 1
+        assert isinstance(target3.subscripts[0], MVariable)
+        assert target3.subscripts[0].name == "x"

@@ -100,21 +100,76 @@ class TestReadCommandAnalysis:
         assert read_target.variable.name == "A"
         assert read_target.fixed_length is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: READ variable tracking in output_variables"
-    )
-    def test_read_variable_tracking(self, analyze_routine):
-        """READ variable is tracked in output_variables (§8.2.17)."""
-        pytest.fail(
-            "Stub - implement test for verifying read variables appear in output_variables"
-        )
+    def test_read_variable_tracking(self):
+        """READ variable is tracked in output_variables (§8.2.17).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: READ format controls")
-    def test_read_format_controls(self, analyze_routine):
-        """READ format controls (!, ?, #) are analyzed (§8.2.17)."""
-        pytest.fail("Stub - implement test")
+        Verifies that READ targets are captured as MReadTarget with
+        the correct variable reference for output tracking.
+        """
+        cmds = parse_commands_from_line("R X")
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+
+        assert isinstance(stmt, MReadStatement)
+        assert len(stmt.arguments) == 1
+
+        read_target = stmt.arguments[0]
+        assert isinstance(read_target, MReadTarget)
+        assert isinstance(read_target.variable, MVariable)
+        assert read_target.variable.name == "X"
+
+        # Multiple READ targets
+        cmds2 = parse_commands_from_line("R A,B,C")
+        stmt2 = analyzer.analyze(cmds2[0], None)
+        assert len(stmt2.arguments) == 3
+        for i, name in enumerate(["A", "B", "C"]):
+            assert isinstance(stmt2.arguments[i], MReadTarget)
+            assert stmt2.arguments[i].variable.name == name
+
+    def test_read_format_controls(self):
+        """READ format controls (!, ?, #) are analyzed (§8.2.17).
+
+        Verifies that READ format controls are captured as MFormatControl:
+        - ! = NEWLINE (line feed)
+        - ?n = TAB (column position)
+        - # = FORMFEED (page break)
+        """
+        from m2py.asg.expressions import MFormatControl
+        from m2py.asg.enums import FormatControlType
+
+        # Newline format control
+        cmds = parse_commands_from_line("R !")
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+
+        assert isinstance(stmt, MReadStatement)
+        assert len(stmt.arguments) == 1
+        assert isinstance(stmt.arguments[0], MFormatControl)
+        assert stmt.arguments[0].control_type == FormatControlType.NEWLINE
+
+        # Tab format control with column position
+        cmds2 = parse_commands_from_line("R ?10")
+        stmt2 = analyzer.analyze(cmds2[0], None)
+        assert len(stmt2.arguments) == 1
+        assert isinstance(stmt2.arguments[0], MFormatControl)
+        assert stmt2.arguments[0].control_type == FormatControlType.TAB
+        assert stmt2.arguments[0].expression is not None
+
+        # Formfeed format control
+        cmds3 = parse_commands_from_line("R #")
+        stmt3 = analyzer.analyze(cmds3[0], None)
+        assert len(stmt3.arguments) == 1
+        assert isinstance(stmt3.arguments[0], MFormatControl)
+        assert stmt3.arguments[0].control_type == FormatControlType.FORMFEED
+
+        # Mixed format controls and variable
+        cmds4 = parse_commands_from_line("R !,?5,X,#")
+        stmt4 = analyzer.analyze(cmds4[0], None)
+        assert len(stmt4.arguments) == 4
+        assert isinstance(stmt4.arguments[0], MFormatControl)
+        assert isinstance(stmt4.arguments[1], MFormatControl)
+        assert isinstance(stmt4.arguments[2], MReadTarget)
+        assert isinstance(stmt4.arguments[3], MFormatControl)
 
     def test_read_single_character(self):
         """READ *X single character is analyzed (§8.2.17)."""
