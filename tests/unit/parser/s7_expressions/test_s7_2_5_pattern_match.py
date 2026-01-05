@@ -68,41 +68,146 @@ class TestPatternMatchParsing:
             assert model is not None, f"Failed to parse pattern with code {code}"
             assert model.tail[0].__class__.__name__ == "PatternMatchTail"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern quantifier range")
-    def test_pattern_quantifier_range(self, parse_expression):
-        """Pattern quantifier range 1.5N parses correctly (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+    def test_pattern_quantifier_range(self, expr_metamodel):
+        """Pattern quantifier range 1.5N parses correctly (§7.2.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern quantifier unlimited")
-    def test_pattern_quantifier_unlimited(self, parse_expression):
-        """Pattern quantifier unlimited .N parses correctly (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        Range repetition 'min.maxCODE' matches min to max occurrences.
+        '1.5N' means 1 to 5 numeric characters.
+        """
+        model = expr_metamodel.model_from_str("X?1.5N", "Expr")
+        assert model is not None
+        tail = model.tail[0]
+        assert tail.__class__.__name__ == "PatternMatchTail"
+        assert tail.pattern is not None
+        # Verify range repcount structure
+        atom = tail.pattern.atoms[0]
+        repcount = atom.repcount
+        assert repcount.__class__.__name__ == "RangeRepCount"
+        assert repcount.min == "1"  # textX stores as string
+        assert repcount.max == "5"  # textX stores as string
+        # Verify pattern code
+        assert atom.patcode is not None
+        assert atom.patcode.codes == "N"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern with literal string")
-    def test_pattern_with_literal(self, parse_expression):
-        """Pattern with literal \"ABC\" parses correctly (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+    def test_pattern_quantifier_unlimited(self, expr_metamodel):
+        """Pattern quantifier unlimited .N parses correctly (§7.2.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern alternation")
-    def test_pattern_alternation(self, parse_expression):
-        """Pattern alternation (A,N) parses correctly (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        Unlimited repetition '.CODE' (or '0.CODE') matches zero or more.
+        '.N' means any number of numeric characters.
+        """
+        model = expr_metamodel.model_from_str("X?.N", "Expr")
+        assert model is not None
+        tail = model.tail[0]
+        assert tail.__class__.__name__ == "PatternMatchTail"
+        assert tail.pattern is not None
+        # Verify unlimited range repcount
+        atom = tail.pattern.atoms[0]
+        repcount = atom.repcount
+        assert repcount.__class__.__name__ == "RangeRepCount"
+        # Unlimited: min and max are both None
+        assert repcount.min is None
+        assert repcount.max is None
+        assert atom.patcode is not None
+        assert atom.patcode.codes == "N"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern indirection")
-    def test_pattern_indirection(self, parse_expression):
-        """Pattern indirection X?@pattern parses correctly (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+    def test_pattern_with_literal(self, expr_metamodel):
+        """Pattern with literal "ABC" parses correctly (§7.2.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: complex pattern")
-    def test_complex_pattern(self, parse_expression):
-        """Complex pattern 1A.E1\"-\"3N parses correctly (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+        Literal strings in patterns match exact character sequences.
+        '1"ABC"' means exactly one occurrence of "ABC".
+        """
+        model = expr_metamodel.model_from_str('X?1"ABC"', "Expr")
+        assert model is not None
+        tail = model.tail[0]
+        assert tail.__class__.__name__ == "PatternMatchTail"
+        assert tail.pattern is not None
+        # Verify literal string atom
+        atom = tail.pattern.atoms[0]
+        repcount = atom.repcount
+        assert repcount.__class__.__name__ == "ExactRepCount"
+        assert repcount.exact == "1"  # textX stores as string
+        # strlit is stored as a raw string (not an object)
+        assert atom.strlit == '"ABC"'
+        assert atom.patcode is None  # literal, not pattern code
+
+    def test_pattern_alternation(self, expr_metamodel):
+        """Pattern alternation (A,N) parses correctly (§7.2.5).
+
+        Alternation allows matching one of several patterns.
+        '1(1A,1N)' matches one alphabetic OR one numeric character.
+        """
+        model = expr_metamodel.model_from_str("X?1(1A,1N)", "Expr")
+        assert model is not None
+        tail = model.tail[0]
+        assert tail.__class__.__name__ == "PatternMatchTail"
+        assert tail.pattern is not None
+        # Verify alternation structure
+        atom = tail.pattern.atoms[0]
+        assert atom.alternation is not None
+        assert len(atom.alternation) == 2
+        # Each alternative is a PatternAlternative with atoms
+        alt0 = atom.alternation[0]
+        alt1 = atom.alternation[1]
+        assert alt0.__class__.__name__ == "PatternAlternative"
+        assert alt1.__class__.__name__ == "PatternAlternative"
+        # First alternative: 1A
+        assert len(alt0.atoms) == 1
+        assert alt0.atoms[0].patcode.codes == "A"
+        # Second alternative: 1N
+        assert len(alt1.atoms) == 1
+        assert alt1.atoms[0].patcode.codes == "N"
+
+    def test_pattern_indirection(self, expr_metamodel):
+        """Pattern indirection X?@pattern parses correctly (§7.2.5).
+
+        Indirect pattern uses a variable containing pattern at runtime.
+        'X?@PAT' matches X against the pattern stored in variable PAT.
+        """
+        model = expr_metamodel.model_from_str("X?@PAT", "Expr")
+        assert model is not None
+        tail = model.tail[0]
+        assert tail.__class__.__name__ == "PatternMatchTail"
+        # Indirection uses indirect_expr, not pattern
+        assert tail.pattern is None
+        assert tail.indirect_expr is not None
+        # indirect_expr is a UnaryExpr wrapping the indirection
+        assert tail.indirect_expr.__class__.__name__ == "UnaryExpr"
+        # The operand is the variable being dereferenced
+        operand = tail.indirect_expr.operand
+        assert operand.name == "PAT"
+
+    def test_complex_pattern(self, expr_metamodel):
+        """Complex pattern 1A.E1"-"3N parses correctly (§7.2.5).
+
+        Complex patterns combine multiple atoms sequentially.
+        '1A.E1"-"3N' means: 1 alpha, 0+ any, literal "-", 3 numeric.
+        """
+        model = expr_metamodel.model_from_str('X?1A.E1"-"3N', "Expr")
+        assert model is not None
+        tail = model.tail[0]
+        assert tail.__class__.__name__ == "PatternMatchTail"
+        assert tail.pattern is not None
+        # Should have 4 atoms: 1A, .E, 1"-", 3N
+        atoms = tail.pattern.atoms
+        assert len(atoms) == 4
+        # Atom 0: 1A (exact repcount)
+        assert atoms[0].repcount.__class__.__name__ == "ExactRepCount"
+        assert atoms[0].repcount.exact == "1"  # textX stores as string
+        assert atoms[0].patcode.codes == "A"
+        # Atom 1: .E (unlimited range)
+        assert atoms[1].repcount.__class__.__name__ == "RangeRepCount"
+        assert atoms[1].repcount.min is None
+        assert atoms[1].repcount.max is None
+        assert atoms[1].patcode.codes == "E"
+        # Atom 2: 1"-" (literal with exact repcount)
+        assert atoms[2].repcount.__class__.__name__ == "ExactRepCount"
+        assert atoms[2].repcount.exact == "1"  # textX stores as string
+        assert atoms[2].strlit == '"-"'
+        assert atoms[2].patcode is None
+        # Atom 3: 3N (exact repcount)
+        assert atoms[3].repcount.__class__.__name__ == "ExactRepCount"
+        assert atoms[3].repcount.exact == "3"  # textX stores as string
+        assert atoms[3].patcode.codes == "N"
 
 
 @pytest.mark.parser
