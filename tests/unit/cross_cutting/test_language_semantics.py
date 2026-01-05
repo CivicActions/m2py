@@ -22,6 +22,8 @@ from m2py.asg.statements import (
     MTStartStatement,
     MTCommitStatement,
     MTRollbackStatement,
+    MDoStatement,
+    MQuitStatement,
 )
 from m2py.parser.textx_classes import NumericLiteral
 
@@ -620,4 +622,123 @@ class TestTransactionNestingCodegen:
     @pytest.mark.xfail(reason="Not yet implemented: $TRESTART tracking")
     def test_trestart_tracking(self):
         """$TRESTART counts restart attempts (§7.1.7, FR-051)."""
+        pytest.fail("Stub - implement test")
+
+
+# =============================================================================
+# Misc Semantics Tests (D19)
+# =============================================================================
+
+
+@pytest.mark.parser
+class TestMiscSemanticsParser:
+    """Parser tests for misc cross-cutting semantics.
+
+    Tests for argumentless commands, block structure, and return values.
+    Reference: §6.3, §8.2.3, §8.2.16
+    """
+
+    def test_argumentless_do_parsed(self):
+        """Argumentless DO creates block structure (§6.3, §8.2.3).
+
+        Argumentless DO increases execution level by one.
+        Lines with higher LEVEL are part of the DO block.
+        """
+        parser = MUMPSParser()
+        source = "LABEL\tD\n"
+        routine = parser.parse(source)
+
+        do_stmt = routine.labels[0].body.statements[0]
+        assert do_stmt.__class__.__name__ == "MDoStatement"
+        # Argumentless DO has no targets
+        assert len(do_stmt.targets) == 0
+
+    def test_quit_with_return_value_parsed(self):
+        """QUIT with return value parses correctly (§8.2.16).
+
+        QUIT expr returns a value from an extrinsic function.
+        Required when returning from $$func calls.
+        """
+        cmds = parse_commands_from_line("Q 1+2")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MQuitStatement)
+        assert stmt.return_value is not None
+
+    def test_argumentless_quit_parsed(self):
+        """Argumentless QUIT exits block without value (§8.2.16).
+
+        Argumentless QUIT exits the current block/routine.
+        """
+        cmds = parse_commands_from_line("Q")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MQuitStatement)
+        assert stmt.return_value is None
+
+
+@pytest.mark.asg
+class TestMiscSemanticsASG:
+    """ASG tests for misc cross-cutting semantics.
+
+    Reference: §6.3, §8.2.3, §8.2.16
+    """
+
+    def test_argumentless_do_asg_structure(self):
+        """Argumentless DO has empty targets and body scope (§8.2.3).
+
+        The body scope captures the nested block at higher LEVEL.
+        """
+        cmds = parse_commands_from_line("D")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MDoStatement)
+        assert stmt.targets == []
+        # Body scope exists for nested statements
+        assert hasattr(stmt, "body")
+
+    def test_quit_return_value_captured(self):
+        """QUIT return value is captured in ASG (§8.2.16).
+
+        The return_value attribute holds the expression to return.
+        """
+        cmds = parse_commands_from_line("Q X+1")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MQuitStatement)
+        assert stmt.return_value is not None
+        # Return value should be a binary expression
+        assert isinstance(stmt.return_value, MBinaryOp)
+
+
+@pytest.mark.codegen
+class TestMiscSemanticsCodegen:
+    """Codegen tests for misc cross-cutting semantics.
+
+    Generated Python must correctly implement block structure
+    and return value handling.
+    Reference: §6.3, §8.2.3, §8.2.16
+    """
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: block execution level")
+    def test_do_block_execution_level(self):
+        """Argumentless DO increases execution level (§6.3).
+
+        D  ; Starts block at LEVEL+1
+        . S X=1  ; Executed at LEVEL+1
+        . Q
+        S Y=2  ; Back to original LEVEL
+        """
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: extrinsic return value")
+    def test_extrinsic_function_return(self):
+        """Extrinsic function returns QUIT value (§7.1.6).
+
+        S X=$$FUNC
+        ...
+        FUNC Q 42  ; Returns 42 to caller
+        """
         pytest.fail("Stub - implement test")

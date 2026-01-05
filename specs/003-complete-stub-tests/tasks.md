@@ -642,14 +642,14 @@
 
 ### Batch D15-D19: Language Semantics Tests (35 stubs, High complexity)
 
-- [X] T161 [US2] Research MUMPS spec language semantics in mumps-reference/
-- [X] T162 [US2] Find language semantics examples in mumps-reference/ (examples__*.md, notes__*.md)
-- [X] T163 [US2] Evaluate ASG quality for language semantics using validate_asg.py
+- [ ] T161 [US2] Research MUMPS spec language semantics in mumps-reference/
+- [ ] T162 [US2] Find language semantics examples in mumps-reference/ (examples__*.md, notes__*.md)
+- [ ] T163 [US2] Evaluate ASG quality for language semantics using validate_asg.py
 - [X] T164 [US2] Implement 7 $TEST tracking tests in tests/unit/cross_cutting/test_language_semantics.py (D15)
 - [X] T165 [US2] Implement 7 evaluation order tests in same file (D16)
 - [X] T166 [US2] Implement 7 NEW scoping tests in same file (D17)
 - [X] T167 [US2] Implement 7 transaction semantics tests in same file (D18)
-- [ ] T168 [US2] Implement 7 misc semantics tests in same file (D19)
+- [X] T168 [US2] Implement 7 misc semantics tests in same file (D19)
 - [ ] T169 [US2] Fix any implementation gaps in src/m2py/
 - [ ] T170 [US2] Run full test suite and regenerate coverage matrix
 
@@ -684,6 +684,13 @@
 - Existing tests: test_s8_2_22_tstart.py stubs focus on individual command aspects
 - D18 tests (10 total): 5 passing (3 parser, 2 ASG), 5 xfail stubs (codegen $TLEVEL runtime)
 - Final count: 3499 passed, 110 skipped, 444 xfailed
+
+**T168 completion notes:**
+- MUMPS spec refs: §6.3 (block structure), §8.2.3 (DO), §8.2.16 (QUIT)
+- Topics: Argumentless commands, QUIT return values, block execution levels
+- ASG quality: MDoStatement (body, targets), MQuitStatement (return_value or None)
+- D19 tests (7 total): 5 passing (3 parser, 2 ASG), 2 xfail stubs (codegen runtime)
+- Final count: 3504 passed, 110 skipped, 446 xfailed
 
 **Checkpoint**: Phase 5 complete - 133 cross-cutting stubs converted
 
