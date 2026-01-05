@@ -988,14 +988,23 @@ Routine head structure, transaction restart, and pattern match operators.
 - Removed 3 xfail markers from tests that unexpectedly passed
 - Final count: 3632 passed, 109 skipped, 320 xfailed
 
-### Batch F7: ASG Library Functions (11 stubs) - Medium Complexity
+### Batch F7: ASG Library Functions (11 stubs) - Medium Complexity ✅ COMPLETE
 
 String and character function ASG tests.
 
-- [ ] T225 [US2] **Research**: Review docs/asg/function-call.md for function ASG structure. Check how $PIECE, $EXTRACT map to ASG nodes.
-- [ ] T226 [US2] Implement ASG stubs: library_functions_string (6 stubs)
-- [ ] T227 [US2] Implement ASG stubs: library_functions_character (5 stubs)
-- [ ] T228 [US4] Regenerate coverage matrix
+- [X] T225 [US2] **Research**: Review docs/asg/function-call.md for function ASG structure. Check how $PIECE, $EXTRACT map to ASG nodes.
+- [X] T226 [US2] Implement ASG stubs: library_functions_string (6 stubs)
+- [X] T227 [US2] Implement ASG stubs: library_functions_character (5 stubs)
+- [X] T228 [US4] Regenerate coverage matrix
+
+**Completion Notes (F7)**:
+- Researched Annex I-1 (CHARACTER), I-3 (STRING) library function specs
+- All 11 stubs converted to passing tests:
+  - test_s7_1_6_5_library_functions_string.py (6): CRC16, CRC32, CRCCCITT, FORMAT, PRODUCE, REPLACE
+  - test_s7_1_6_5_library_functions_character.py (5): COLLATE, COMPARE (^CHARACTER), LOWER, PATCODE, UPPER (^STRING)
+- ASG structure: ExtrinsicFunction with label, routine, and MActualParameter arguments
+- Created verify_string_function() and verify_library_function() helpers
+- Final count: 3643 passed (+11), 109 skipped, 309 xfailed (-11)
 
 ### Batch F8: ASG Extrinsic Functions (5 stubs) - High Complexity
 
