@@ -57,11 +57,12 @@ class TestDoCommandParsing:
         model = command_metamodel.model_from_str("D", "DoCommand")
         assert model.targets is None or len(model.targets) == 0
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO with postcondition")
     def test_do_with_postcondition(self, command_metamodel):
         """D:condition LABEL parses correctly (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("D:X LABEL", "DoCommand")
+        assert model.postcond is not None
+        assert len(model.targets) == 1
+        assert model.targets[0].label.label == "LABEL"
 
     def test_do_pass_by_reference(self, command_metamodel):
         """D LABEL(.VAR) parses DO with pass by reference (§8.2.3)."""

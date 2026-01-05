@@ -44,11 +44,12 @@ class TestGotoCommandParsing:
         target = model.targets[0]
         assert target.label.offset is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: GOTO with postcondition")
     def test_goto_with_postcondition(self, command_metamodel):
         """G:condition LABEL parses correctly (§8.2.6)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("G:X LABEL", "GotoCommand")
+        assert model.postcond is not None
+        assert len(model.targets) == 1
+        assert model.targets[0].label.label == "LABEL"
 
     def test_goto_abbreviated(self, command_metamodel):
         """G LABEL parses abbreviated form (§8.2.6)."""

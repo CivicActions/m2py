@@ -31,20 +31,20 @@ class TestBreakCommandParsing:
         model = command_metamodel.model_from_str("B", "BreakCommand")
         assert model is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: BREAK argumentless")
-    def test_break_argumentless(self, parse_line):
+    def test_break_argumentless(self, command_metamodel):
         """BREAK without arguments parses correctly (§8.2.1)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("BREAK", "BreakCommand")
+        assert model is not None
+        assert model.postcond is None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: BREAK abbreviated")
-    def test_break_abbreviated(self, parse_line):
+    def test_break_abbreviated(self, command_metamodel):
         """B abbreviation parses correctly (§8.2.1)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("B", "BreakCommand")
+        assert model is not None
+        assert model.postcond is None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: BREAK with postcondition")
-    def test_break_with_postcondition(self, parse_line):
+    def test_break_with_postcondition(self, command_metamodel):
         """BREAK:condition parses correctly (§8.2.1)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("B:X", "BreakCommand")
+        assert model is not None
+        assert model.postcond is not None

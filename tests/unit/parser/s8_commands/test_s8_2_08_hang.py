@@ -57,20 +57,18 @@ class TestHangCommandParsing:
         assert model.postcond is not None
         assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: HANG abbreviated")
-    def test_hang_abbreviated(self, parse_line):
+    def test_hang_abbreviated(self, command_metamodel):
         """H seconds abbreviation parses correctly (§8.2.8)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("H 5", "HangCommand")
+        assert len(model.args) == 1
+        assert model.postcond is None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: HANG with decimal")
-    def test_hang_with_decimal(self, parse_line):
+    def test_hang_with_decimal(self, command_metamodel):
         """HANG 0.5 decimal seconds parses correctly (§8.2.8)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("HANG 0.5", "HangCommand")
+        assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: HANG with expression")
-    def test_hang_with_expression(self, parse_line):
+    def test_hang_with_expression(self, command_metamodel):
         """HANG X+Y expression parses correctly (§8.2.8)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("H X+Y", "HangCommand")
+        assert len(model.args) == 1

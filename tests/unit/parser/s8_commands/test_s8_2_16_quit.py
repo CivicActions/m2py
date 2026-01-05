@@ -42,17 +42,20 @@ class TestQuitCommandParsing:
         model = command_metamodel.model_from_str("Q", "QuitCommand")
         assert model.value is None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: QUIT with postcondition")
     def test_quit_with_postcondition(self, command_metamodel):
         """Q:condition parses correctly (§8.2.16)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("Q:X", "QuitCommand")
+        assert model.postcond is not None
+        assert model.value is None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: QUIT followed by command")
     def test_quit_followed_by_command(self, command_metamodel):
         """Q followed by another command on same line parses correctly (§8.2.16)."""
-        pytest.fail("Stub - implement test")
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q W 1")
+        assert len(cmds) == 2
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[1].__class__.__name__ == "WriteCommand"
 
     def test_quit_with_string_value(self, command_metamodel):
         """Q "result" parses QUIT with string return value (§8.2.16)."""
