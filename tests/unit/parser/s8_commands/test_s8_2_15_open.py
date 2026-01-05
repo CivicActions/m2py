@@ -10,35 +10,93 @@ import pytest
 class TestOpenCommandParsing:
     """Parser-level tests for OPEN command (§8.2.15)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: OPEN basic form")
     def test_open_basic(self, parse_line):
-        """OPEN device parses correctly (§8.2.15)."""
-        pytest.fail("Stub - implement test")
+        """OPEN device parses correctly (§8.2.15).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: OPEN with parameters")
+        Per MUMPS spec §8.2.15: OPEN command obtains ownership of a device.
+        Basic form: O[PEN] device
+        """
+        from m2py.asg import MOpenStatement
+
+        result = parse_line(" O DEV")
+        label = result.labels[0]
+        assert len(label.body.statements) >= 1
+
+        stmt = label.body.statements[0]
+        assert isinstance(stmt, MOpenStatement)
+        assert len(stmt.devices) == 1
+        assert stmt.devices[0].device_expr.name == "DEV"
+
     def test_open_with_parameters(self, parse_line):
-        """OPEN device:(params) parses correctly (§8.2.15)."""
-        pytest.fail("Stub - implement test")
+        """OPEN device:(params) parses correctly (§8.2.15).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: OPEN with timeout")
+        Per MUMPS spec: OPEN device:(deviceparameters)
+        Device parameters specify how the device should be opened.
+        """
+        from m2py.asg import MOpenStatement
+
+        result = parse_line(' O DEV:("RW")')
+        stmt = result.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MOpenStatement)
+        assert len(stmt.devices) == 1
+        assert stmt.devices[0].device_expr.name == "DEV"
+        assert len(stmt.devices[0].parameters) == 1
+
     def test_open_with_timeout(self, parse_line):
-        """OPEN device::timeout parses correctly (§8.2.15)."""
-        pytest.fail("Stub - implement test")
+        """OPEN device::timeout parses correctly (§8.2.15).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: OPEN with mnemonic space")
+        Per MUMPS spec: timeout specifies max wait time in seconds.
+        Double colon (::) means no parameters, just timeout.
+        If timeout present, $TEST is affected by success of ownership.
+        """
+        from m2py.asg import MOpenStatement
+
+        result = parse_line(" O DEV::30")
+        stmt = result.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MOpenStatement)
+        assert len(stmt.devices) == 1
+        assert stmt.devices[0].device_expr.name == "DEV"
+        assert stmt.devices[0].timeout is not None
+        assert stmt.devices[0].timeout.value == 30
+        # Double colon means no parameters
+        assert stmt.devices[0].parameters == []
+
     def test_open_with_mnemonic(self, parse_line):
-        """OPEN device:(params):timeout:\"SOCKET\" parses correctly (§8.2.15)."""
-        pytest.fail("Stub - implement test")
+        """OPEN device:(params):timeout:mnemonicspace parses correctly (§8.2.15).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: OPEN multiple devices")
+        Per MUMPS spec: mnemonicspace specifies controlmnemonics set
+        for subsequent Read/Write commands. Format:
+        OPEN device:(params):timeout:mnemonicspec
+        """
+        from m2py.asg import MOpenStatement
+
+        result = parse_line(" O DEV:(PARAMS):10:MNE")
+        stmt = result.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MOpenStatement)
+        assert len(stmt.devices) == 1
+        assert stmt.devices[0].device_expr.name == "DEV"
+        assert stmt.devices[0].timeout is not None
+        assert stmt.devices[0].timeout.value == 10
+
     def test_open_multiple(self, parse_line):
-        """OPEN dev1,dev2 multiple devices parses correctly (§8.2.15)."""
-        pytest.fail("Stub - implement test")
+        """OPEN dev1,dev2 multiple devices parses correctly (§8.2.15).
+
+        Per MUMPS spec: OPEN accepts comma-separated list of devices.
+        Each openargument is processed in left-to-right order.
+        """
+        from m2py.asg import MOpenStatement
+
+        result = parse_line(" O DEV1,DEV2,DEV3")
+        stmt = result.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MOpenStatement)
+        assert len(stmt.devices) == 3
+        assert stmt.devices[0].device_expr.name == "DEV1"
+        assert stmt.devices[1].device_expr.name == "DEV2"
+        assert stmt.devices[2].device_expr.name == "DEV3"
 
 
 @pytest.mark.parser

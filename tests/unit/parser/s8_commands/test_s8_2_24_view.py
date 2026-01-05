@@ -60,17 +60,31 @@ class TestViewCommandParsing:
         )
         assert len(model.args) == 2
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: VIEW with arguments")
-    def test_view_with_arguments(self, parse_line):
-        """VIEW keyword:args parses correctly (§8.2.24)."""
-        pytest.fail("Stub - implement test")
+    def test_view_with_arguments(self, command_metamodel):
+        """VIEW keyword:args parses correctly (§8.2.24).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: VIEW abbreviated")
-    def test_view_abbreviated(self, parse_line):
-        """V abbreviation parses correctly (§8.2.24)."""
-        pytest.fail("Stub - implement test")
+        Per MUMPS spec §8.2.24: VIEW makes available mechanism for
+        examining machine-dependent information. Arguments are
+        implementation-defined.
+        """
+        # VIEW with keyword and value
+        model = command_metamodel.model_from_str('VIEW "OPTION":1', "ViewCommand")
+        assert len(model.args) == 1
+        assert hasattr(model.args[0], "values")
+        assert len(model.args[0].values) == 1
+
+    def test_view_abbreviated(self, command_metamodel):
+        """V abbreviation parses correctly (§8.2.24).
+
+        Per MUMPS spec: V[IEW] - command abbreviation is V.
+        """
+        # V abbreviation should parse same as VIEW
+        model_abbrev = command_metamodel.model_from_str("V 0", "ViewCommand")
+        model_full = command_metamodel.model_from_str("VIEW 0", "ViewCommand")
+
+        assert model_abbrev is not None
+        assert model_full is not None
+        assert len(model_abbrev.args) == len(model_full.args)
 
     @pytest.mark.skip(
         reason="Implementation-defined: VIEW keywords are implementation-specific"

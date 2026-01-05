@@ -95,15 +95,22 @@ class TestWriteCommandParsing:
         model = command_metamodel.model_from_str("W #", "WriteCommand")
         assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE argumentless")
     def test_write_argumentless(self, command_metamodel):
         """WRITE without argument parses correctly (§8.2.25).
 
-        Note: WRITE without arguments is not a standard MUMPS pattern but
-        should still parse. This is left as stub pending clarification.
+        Per MUMPS spec §8.2.25: WRITE command syntax is:
+        W[RITE] postcond SP L writeargument
+
+        Argumentless WRITE is not explicitly specified in the standard,
+        but should be accepted by the parser (may have no effect at runtime).
+        Note: Some implementations use argumentless WRITE to flush buffers.
         """
-        pytest.fail("Stub - implement test or confirm argumentless WRITE behavior")
+        # Test that WRITE without arguments parses (may have no args)
+        # The grammar accepts WriteCommand with empty args list
+        model = command_metamodel.model_from_str("W", "WriteCommand")
+        assert model is not None
+        # Argumentless write should have empty args list
+        assert len(model.args) == 0
 
     def test_write_abbreviated(self, command_metamodel):
         """W abbreviation parses correctly (§8.2.25)."""

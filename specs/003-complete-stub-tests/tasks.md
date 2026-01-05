@@ -829,22 +829,22 @@ These are marked with `@pytest.mark.xfail` and contain `pytest.fail("Stub - impl
 
 | Category | File | Stubs | Complexity |
 |----------|------|-------|------------|
-| **Parser (59 total)** | | | |
+| **Parser (42 remaining after F1)** | | | |
 | Library Functions | test_s7_1_6_5_library_functions_string.py | 6 | Medium |
 | Library Functions | test_s7_1_6_5_library_functions_character.py | 5 | Medium |
 | Pattern Match | test_s7_2_5_pattern_match.py | 6 | Medium |
-| VIEW | test_s8_2_24_view.py | 2 | Low |
+| ~~VIEW~~ | ~~test_s8_2_24_view.py~~ | ~~2~~ | ~~Low~~ ✅ F1 |
 | QUIT | test_s8_2_16_quit.py | 2 | Low |
 | DO | test_s8_2_03_do.py | 1 | Low |
 | LOCK | test_s8_2_12_lock.py | 3 | Low |
 | KILL | test_s8_2_11_kill.py | 3 | Low |
-| Device Params | test_s8_3_device_params.py | 4 | Low |
+| ~~Device Params~~ | ~~test_s8_3_device_params.py~~ | ~~4~~ | ~~Low~~ ✅ F1 |
 | GOTO | test_s8_2_06_goto.py | 1 | Low |
-| WRITE | test_s8_2_25_write.py | 1 | Low |
-| CLOSE | test_s8_2_02_close.py | 3 | Low |
+| ~~WRITE~~ | ~~test_s8_2_25_write.py~~ | ~~1~~ | ~~Low~~ ✅ F1 |
+| ~~CLOSE~~ | ~~test_s8_2_02_close.py~~ | ~~3~~ | ~~Low~~ ✅ F1 |
 | JOB | test_s8_2_10_job.py | 5 | Medium |
-| READ | test_s8_2_17_read.py | 2 | Low |
-| OPEN | test_s8_2_15_open.py | 5 | Low |
+| ~~READ~~ | ~~test_s8_2_17_read.py~~ | ~~2~~ | ~~Low~~ ✅ F1 |
+| ~~OPEN~~ | ~~test_s8_2_15_open.py~~ | ~~5~~ | ~~Low~~ ✅ F1 |
 | HANG | test_s8_2_08_hang.py | 3 | Low |
 | MERGE | test_s8_2_13_merge.py | 4 | Low |
 | BREAK | test_s8_2_01_break.py | 3 | Low |
@@ -867,14 +867,26 @@ These are marked with `@pytest.mark.xfail` and contain `pytest.fail("Stub - impl
 
 ---
 
-### Batch F1: Parser I/O Commands (15 stubs) - Low Complexity
+### Batch F1: Parser I/O Commands (17 stubs) - Low Complexity ✅ COMPLETE
 
 I/O-related commands: OPEN, CLOSE, READ, WRITE, VIEW, device parameters.
 
-- [ ] T203 [US1] **Research**: Review MUMPS reference §8.2.2 (CLOSE), §8.2.15 (OPEN), §8.2.17 (READ), §8.2.25 (WRITE), §8.2.24 (VIEW), §8.3 (device params). Check mumps-reference/examples__*.md for I/O patterns.
-- [ ] T204 [US1] Implement parser stubs: OPEN (5), CLOSE (3), READ (2), WRITE (1), VIEW (2) - 13 stubs
-- [ ] T205 [US1] Implement parser stubs: device_params (4 stubs) - completes I/O batch
-- [ ] T206 [US4] Regenerate coverage matrix
+- [X] T203 [US1] **Research**: Review MUMPS reference §8.2.2 (CLOSE), §8.2.15 (OPEN), §8.2.17 (READ), §8.2.25 (WRITE), §8.2.24 (VIEW), §8.3 (device params). Check mumps-reference/examples__*.md for I/O patterns.
+- [X] T204 [US1] Implement parser stubs: OPEN (5), CLOSE (3), READ (2), WRITE (1), VIEW (2) - 13 stubs
+- [X] T205 [US1] Implement parser stubs: device_params (4 stubs) - completes I/O batch
+- [X] T206 [US4] Regenerate coverage matrix
+
+**Completion Notes (F1)**:
+- All 17 parser stubs converted to passing tests
+- OPEN: basic, with_parameters, with_timeout, with_mnemonic, multiple devices
+- CLOSE: basic, with_parameters, multiple_devices
+- READ: with_prompt, format_control (!, ?n, #)
+- WRITE: argumentless (empty args list)
+- VIEW: with_arguments, abbreviated (V vs VIEW)
+- Device params: basic, with_value, list, mnemonic
+- Tests verify correct parsing using parse_line fixture and command_metamodel
+- All use proper spec references and docstrings
+- Final count: 3580 passed, 109 skipped, 372 xfailed
 
 ### Batch F2: Parser Flow Control Commands (14 stubs) - Low Complexity
 

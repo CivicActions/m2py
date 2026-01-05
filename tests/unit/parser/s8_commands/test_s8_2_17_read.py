@@ -33,11 +33,20 @@ class TestReadCommandParsing:
         assert model is not None
         assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: READ with prompt")
     def test_read_with_prompt(self, command_metamodel):
-        """READ \"prompt\",X parses correctly (§8.2.17)."""
-        pytest.fail("Stub - implement test")
+        """READ \"prompt\",X parses correctly (§8.2.17).
+
+        Per MUMPS spec §8.2.17: strlit form causes output to current device.
+        Prompt strings are commonly used before reading input.
+        """
+        model = command_metamodel.model_from_str('R "Enter: ",X', "ReadCommand")
+        assert model is not None
+        # Should have 2 args: the prompt string and the variable
+        assert len(model.args) == 2
+        # First arg should be the string literal prompt
+        assert model.args[0].arg.__class__.__name__ == "StringLiteral"
+        # Second arg should have a target variable
+        assert model.args[1].arg.target is not None
 
     def test_read_fixed_length(self, command_metamodel):
         """R X#5 reads exactly 5 characters (§8.2.17)."""
@@ -57,11 +66,24 @@ class TestReadCommandParsing:
         model = command_metamodel.model_from_str("R *X", "ReadCommand")
         assert len(model.args) == 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: READ format control")
     def test_read_format_control(self, command_metamodel):
-        """READ !,?10,# format controls parse correctly (§8.2.17)."""
-        pytest.fail("Stub - implement test")
+        """READ !,?10,# format controls parse correctly (§8.2.17).
+
+        Per MUMPS spec §8.2.17: format forms cause output operations.
+        ! = newline, ?n = tab to column n, # = form feed.
+        These are output operations before/between read targets.
+        """
+        # Newline format control
+        model = command_metamodel.model_from_str("R !", "ReadCommand")
+        assert len(model.args) == 1
+
+        # Tab to column format control
+        model = command_metamodel.model_from_str("R ?10", "ReadCommand")
+        assert len(model.args) == 1
+
+        # Mixed format controls with variable
+        model = command_metamodel.model_from_str("R !,?10,X", "ReadCommand")
+        assert len(model.args) == 3
 
     def test_read_multiple_targets(self, command_metamodel):
         """R X,Y,Z reads multiple variables (§8.2.17)."""
