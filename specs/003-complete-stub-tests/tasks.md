@@ -914,13 +914,21 @@ Execution flow commands: DO, GOTO, QUIT, BREAK, HANG, JOB.
 - All tests verified against command_metamodel
 - Final count: 3595 passed, 109 skipped, 357 xfailed
 
-### Batch F3: Parser Data Commands (10 stubs) - Low Complexity
+### Batch F3: Parser Data Commands (10 stubs) - Low Complexity ✅
 
 Data manipulation commands: KILL, LOCK, MERGE.
 
-- [ ] T211 [US1] **Research**: Review MUMPS reference §8.2.11 (KILL), §8.2.12 (LOCK), §8.2.13 (MERGE). Check mumps-reference/notes__*.md for data operation semantics.
-- [ ] T212 [US1] Implement parser stubs: KILL (3), LOCK (3), MERGE (4) - 10 stubs
-- [ ] T213 [US4] Regenerate coverage matrix
+- [X] T211 [US1] **Research**: Review MUMPS reference §8.2.11 (KILL), §8.2.12 (LOCK), §8.2.13 (MERGE). Check mumps-reference/notes__*.md for data operation semantics.
+- [X] T212 [US1] Implement parser stubs: KILL (3), LOCK (3), MERGE (4) - 10 stubs
+- [X] T213 [US4] Regenerate coverage matrix
+
+**Completion Notes (F3)**:
+- All 10 data command parser stubs converted to passing tests
+- KILL (§8.2.11): test_kill_multiple_variables (K X,Y,Z), test_kill_subscripted (K arr(1)), test_kill_argumentless (K)
+- LOCK (§8.2.12): test_lock_with_timeout (L ^GLOBAL:5), test_lock_multiple (L (^A,^B)), test_lock_argumentless (L)
+- MERGE (§8.2.13): test_merge_global_to_local (M local=^GLOBAL), test_merge_local_to_global (M ^GLOBAL=local), test_merge_with_subscripts (M arr(1)=src(2)), test_merge_multiple (M a=b,c=d)
+- All tests verified against command_metamodel
+- Final count: 3605 passed, 109 skipped, 347 xfailed
 
 ### Batch F4: Parser Library Functions (11 stubs) - Medium Complexity
 

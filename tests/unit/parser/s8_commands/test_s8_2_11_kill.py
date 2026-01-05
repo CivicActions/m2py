@@ -33,17 +33,20 @@ class TestKillCommandParsing:
         assert model.args[0].target is not None
         assert not model.args[0].exclusive  # False when not exclusive
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL multiple variables")
-    def test_kill_multiple_variables(self, parse_line):
+    def test_kill_multiple_variables(self, command_metamodel):
         """KILL X,Y,Z multiple variables parses correctly (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("K X,Y,Z", "KillCommand")
+        assert len(model.args) == 3
+        assert model.args[0].target.name == "X"
+        assert model.args[1].target.name == "Y"
+        assert model.args[2].target.name == "Z"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL subscripted variable")
-    def test_kill_subscripted(self, parse_line):
+    def test_kill_subscripted(self, command_metamodel):
         """KILL arr(1) subscripted variable parses correctly (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("K arr(1)", "KillCommand")
+        assert len(model.args) == 1
+        assert model.args[0].target.name == "arr"
+        assert len(model.args[0].target.subscripts) == 1
 
     def test_kill_global(self, command_metamodel):
         """K ^GLOBAL parses correctly (§8.2.11)."""
@@ -76,8 +79,7 @@ class TestKillCommandParsing:
         assert getattr(model.args[0], "except") == ["X", "W"]
         assert model.args[1].target is not None
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL argumentless")
-    def test_kill_argumentless(self, parse_line):
+    def test_kill_argumentless(self, command_metamodel):
         """KILL without argument parses correctly (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+        model = command_metamodel.model_from_str("K", "KillCommand")
+        assert len(model.args) == 0
