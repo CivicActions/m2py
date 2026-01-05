@@ -474,80 +474,26 @@ class TestPostconditionsASG:
         assert isinstance(stmt2.postcondition, NumericLiteral)
         assert stmt2.postcondition.value == 0
 
+    def test_postcondition_string_literal(self):
+        """Postcondition with string literal works (§8.1.4).
 
-# =============================================================================
-# Postcondition Tests (Codegen Level) - ASG structure for runtime semantics
-# =============================================================================
-
-
-@pytest.mark.codegen
-class TestPostconditionsCodegen:
-    """Codegen tests for postcondition execution.
-
-    These tests verify ASG captures correct structure for codegen to
-    implement postcondition semantics: command-level gates all arguments,
-    argument-level is independent per argument.
-
-    Reference: §8.1.4
-    """
-
-    def test_command_postcondition_gates_all_arguments(self):
-        """Command postcondition ASG captures gating pattern (§8.1.4).
-
-        SET:0 X=1,Y=2 - ASG must have postcondition=0 and both assignments
-        so codegen can implement gating (neither X nor Y set when 0 is false).
+        Non-empty string is truthy, empty string is falsy.
         """
-        stmt = analyze_first_command("S:0 X=1,Y=2")
+        # Truthy: non-empty string
+        stmt1 = analyze_first_command('W:"YES" X')
+        assert stmt1.postcondition is not None
+        assert stmt1.postcondition.value == "YES"
 
-        assert isinstance(stmt, MSetStatement)
-        # Command-level postcondition is captured
-        assert stmt.postcondition is not None
-        assert stmt.postcondition.value == 0  # The gating condition
-        # All assignments are captured (codegen will gate them)
-        assert len(stmt.assignments) == 2
-        assert stmt.assignments[0].target.name == "X"
-        assert stmt.assignments[1].target.name == "Y"
+        # Falsy: empty string
+        stmt2 = analyze_first_command('W:"" X')
+        assert stmt2.postcondition is not None
+        assert stmt2.postcondition.value == ""
 
-    def test_argument_postconditions_independent(self):
-        """Argument postconditions ASG captures independence (§8.1.4).
-
-        DO L1:0,L2:1 - ASG must have per-argument postconditions
-        so codegen can execute each independently (FR-049).
-        """
-        stmt = analyze_first_command("D L1:0,L2:1")
-
-        assert isinstance(stmt, MDoStatement)
-        assert stmt.postcondition is None  # No command-level
-        assert len(stmt.targets) == 2
-
-        # Each target has independent postcondition
-        assert stmt.targets[0].postcondition is not None
-        assert stmt.targets[0].postcondition.value == 0  # L1 won't execute
-        assert stmt.targets[1].postcondition is not None
-        assert stmt.targets[1].postcondition.value == 1  # L2 will execute
-
-    def test_postcondition_evaluation_order(self):
-        """Command postcondition ASG captures hierarchy (§8.1.4).
-
-        DO:0 L1:1,L2:1 - ASG must have command postcondition=0
-        plus argument postconditions, enabling codegen to gate command first.
-        """
-        stmt = analyze_first_command("D:0 L1:1,L2:1")
-
-        assert isinstance(stmt, MDoStatement)
-        # Command-level postcondition
-        assert stmt.postcondition is not None
-        assert stmt.postcondition.value == 0  # Gates entire command
-        # Argument postconditions also captured
-        assert len(stmt.targets) == 2
-        assert stmt.targets[0].postcondition.value == 1
-        assert stmt.targets[1].postcondition.value == 1
-
-    def test_postcondition_side_effects(self):
-        """Extrinsic function postcondition ASG captures call (§8.1.4).
+    def test_postcondition_extrinsic_function(self):
+        """Postcondition with extrinsic function call (§8.1.4).
 
         SET:$$INC^RT() Y=1 - postcondition is extrinsic function call
-        that may have side effects. ASG must capture for codegen.
+        that may have side effects.
         """
         from m2py.parser.textx_classes import ExtrinsicFunction
 
@@ -561,26 +507,66 @@ class TestPostconditionsCodegen:
         assert stmt.postcondition.target.name == "INC"
         assert stmt.postcondition.target.routine == "RT"
 
-    def test_postcondition_truthiness(self):
-        """Postcondition ASG captures truthiness values (§8.1.4).
 
-        ASG captures literal values for codegen to apply MUMPS truthiness:
-        non-zero/non-empty = true, zero/empty = false.
+# =============================================================================
+# Postcondition Tests (Codegen Level) - Runtime execution behavior
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestPostconditionsCodegen:
+    """Codegen tests for postcondition execution.
+
+    Generated Python must correctly implement postcondition
+    semantics: command-level gates all arguments, argument-level
+    is independent per argument.
+
+    Reference: §8.1.4
+    """
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Codegen not yet implemented: postcondition runtime gate")
+    def test_command_postcondition_gates_all_arguments(self):
+        """False command postcondition skips all arguments (§8.1.4).
+
+        SET:0 X=1,Y=2  # Neither X nor Y should be set
         """
-        # Truthy: non-zero
-        stmt1 = analyze_first_command("S:1 X=1")
-        assert stmt1.postcondition.value == 1
+        pytest.fail("Stub - requires codegen runtime execution")
 
-        # Falsy: zero
-        stmt2 = analyze_first_command("S:0 X=1")
-        assert stmt2.postcondition.value == 0
+    @pytest.mark.stub
+    @pytest.mark.xfail(
+        reason="Codegen not yet implemented: argument postcondition independence"
+    )
+    def test_argument_postconditions_independent(self):
+        """Argument postconditions are evaluated independently (§8.1.4).
 
-        # Truthy: non-empty string (parses as postcondition expression)
-        stmt3 = analyze_first_command('W:"YES" X')
-        assert stmt3.postcondition is not None
-        assert stmt3.postcondition.value == "YES"
+        DO L1:0,L2:1  # Only L2 should execute (FR-049)
+        """
+        pytest.fail("Stub - requires codegen runtime execution")
 
-        # Falsy: empty string
-        stmt4 = analyze_first_command('W:"" X')
-        assert stmt4.postcondition is not None
-        assert stmt4.postcondition.value == ""
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Codegen not yet implemented: postcondition eval order")
+    def test_postcondition_evaluation_order(self):
+        """Command postcondition evaluated before argument postconditions (§8.1.4).
+
+        DO:0 L1:1,L2:1  # Neither should execute (command gates first)
+        """
+        pytest.fail("Stub - requires codegen runtime execution")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Codegen not yet implemented: postcondition side effects")
+    def test_postcondition_side_effects(self):
+        """Postcondition expressions can have side effects (§8.1.4).
+
+        SET X=0 SET:$$INC^RT() Y=1  # X may be modified by postcondition
+        """
+        pytest.fail("Stub - requires codegen runtime execution")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Codegen not yet implemented: postcondition truthiness")
+    def test_postcondition_truthiness(self):
+        """Postcondition truthiness follows MUMPS rules (§8.1.4).
+
+        Non-zero/non-empty = true, zero/empty = false
+        """
+        pytest.fail("Stub - requires codegen runtime execution")

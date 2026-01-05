@@ -149,3 +149,18 @@ class TestKillCommandAnalysis:
         assert len(target3.subscripts) == 1
         assert isinstance(target3.subscripts[0], MVariable)
         assert target3.subscripts[0].name == "x"
+
+    def test_kill_naked_global(self):
+        """KILL ^(sub) uses naked global reference (§7.1.2.4).
+
+        Naked references can be used as KILL targets.
+        """
+        from m2py.asg.expressions import MNakedGlobal
+
+        stmt = analyze_first_command("K ^(1)")
+
+        assert isinstance(stmt, MKillStatement)
+        assert len(stmt.targets) == 1
+        target = stmt.targets[0]
+        assert isinstance(target, MNakedGlobal)
+        assert len(target.subscripts) == 1

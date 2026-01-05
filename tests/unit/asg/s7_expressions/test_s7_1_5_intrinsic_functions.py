@@ -105,6 +105,24 @@ class TestIntrinsicFunctionsAnalysis:
         assert isinstance(arg, (MGlobal, GlobalVariable))
         assert arg.name == "GLOBAL"  # Global name without ^ prefix
 
+    def test_function_data_naked_global(self):
+        """$DATA(^(1)) uses naked reference as argument (§7.1.2.4).
+
+        $DATA can take naked global references as arguments.
+        """
+        from m2py.asg.expressions import MNakedGlobal
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import analyze_command
+
+        cmds = parse_commands_from_line("S X=$D(^(1))")
+        stmt = analyze_command(cmds[0])
+        func = stmt.assignments[0].value
+
+        assert isinstance(func, MIntrinsicFunction)
+        assert func.name.upper() in ("D", "DATA")
+        assert len(func.arguments) >= 1
+        assert isinstance(func.arguments[0], MNakedGlobal)
+
     @pytest.mark.pre1995
     @pytest.mark.skip(reason="Deprecated: $DEXTRACT is pre-1995")
     def test_function_dextract(self):
@@ -345,6 +363,23 @@ class TestIntrinsicFunctionsAnalysis:
         assert isinstance(direction_arg, MUnaryOp)
         assert direction_arg.operator == "-"
         assert direction_arg.operand.value == 1
+
+    def test_function_order_naked_global(self):
+        """$ORDER(^(sub)) uses naked reference as argument (§7.1.2.4).
+
+        $ORDER can navigate using naked global references.
+        """
+        from m2py.asg.expressions import MNakedGlobal
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import analyze_command
+
+        cmds = parse_commands_from_line('S X=$O(^(""))')
+        stmt = analyze_command(cmds[0])
+        func = stmt.assignments[0].value
+
+        assert isinstance(func, MIntrinsicFunction)
+        assert func.name.upper() in ("O", "ORDER")
+        assert isinstance(func.arguments[0], MNakedGlobal)
 
     def test_function_piece(self):
         """$PIECE function is correctly analyzed (§7.1.5.12).

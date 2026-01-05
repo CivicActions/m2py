@@ -63,3 +63,25 @@ class TestLockCommandAnalysis:
 
         assert isinstance(stmt, MLockStatement)
         assert stmt.targets == []
+
+    def test_lock_naked_global(self):
+        """LOCK ^(sub) uses naked global reference (§7.1.2.4).
+
+        Lock targets can use naked references. Lock targets are returned
+        as dicts with 'lockop' and 'target' keys.
+        """
+        from m2py.asg.expressions import MNakedGlobal
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import analyze_command
+
+        cmds = parse_commands_from_line("L ^(1)")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MLockStatement)
+        assert len(stmt.targets) >= 1
+        # Lock targets are dicts with 'lockop' and 'target' keys
+        target_dict = stmt.targets[0]
+        assert isinstance(target_dict, dict)
+        assert "target" in target_dict
+        assert isinstance(target_dict["target"], MNakedGlobal)
+        assert len(target_dict["target"].subscripts) == 1

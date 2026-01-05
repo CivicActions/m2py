@@ -1062,7 +1062,7 @@ Expression-level indirection (@expr for subscripts, arguments).
 
 ---
 
-### Batch F11: Cross-Cutting Simple (7 stubs) - Medium Complexity ✅
+### Batch F11: Cross-Cutting Simple (7 stubs) - REVISED (2 stubs completed, 5 codegen preserved)
 
 Naked references and postconditions.
 
@@ -1070,26 +1070,33 @@ Naked references and postconditions.
   - **Completed**: Read 1977__a107011.md (naked indicator), 1995__a108005.md (postconditions). ASG already captures both correctly.
 - [X] T240 [US2] Implement cross-cutting stubs: naked_references (2 stubs)
   - **Completed**: test_merge_with_naked (destination=NakedGlobal), test_lock_with_naked (dict with target=NakedGlobal)
-- [X] T241 [US2] Implement cross-cutting stubs: postconditions (5 stubs)
-  - **Completed**: Converted codegen stubs to ASG structure verification tests. All 5 verify ASG captures correct postcondition patterns for codegen.
+- [X] T241 [US2] ~~Implement cross-cutting stubs: postconditions (5 stubs)~~ **REVISED**
+  - **Original**: Incorrectly converted codegen runtime stubs to ASG structure tests
+  - **Fixed**: Restored 5 codegen stubs (require runtime execution to verify truthiness/gating)
+  - **Added**: 2 new ASG tests - test_postcondition_string_literal, test_postcondition_extrinsic_function
+  - **Note**: Codegen stubs test that SET:0 X=1 doesn't execute, etc. - requires runtime
 - [X] T242 [US4] Regenerate coverage matrix
   - **Completed**: Coverage matrix updated.
 
-### Batch F12: Cross-Cutting Indirection (5 stubs) - High Complexity
+### Batch F12: Cross-Cutting Indirection (5 stubs) - SKIPPED (Codegen Required)
 
-Cross-cutting indirection behavior tests.
+Cross-cutting indirection behavior tests - **requires runtime execution**.
 
-- [ ] T243 [US2] **Research**: Review how indirection interacts across parser/ASG layers. Check test_indirection.py stub docstrings for specific scenarios.
-- [ ] T244 [US2] Implement cross-cutting stubs: indirection (5 stubs)
-- [ ] T245 [US4] Regenerate coverage matrix
+- [X] T243 [US2] **Research**: Review how indirection interacts across parser/ASG layers. Check test_indirection.py stub docstrings for specific scenarios.
+  - **Completed**: Read §6.3.1, §7.3, 1995__a901027.md. ASG correctly captures all 5 indirection types.
+- [ ] T244 [US2] ~Implement cross-cutting stubs: indirection (5 stubs)~~ **SKIPPED - ONLY codegen stubs found**
+- [ ] T245 [US4] ~~Regenerate coverage matrix~~ **N/A** (no changes made)
 
-### Batch F13: Cross-Cutting Timeouts (8 stubs) - Medium Complexity
+### Batch F13: Cross-Cutting Timeouts (8 stubs) - SKIPPED (Codegen Required)
 
-Timeout handling in READ, LOCK, JOB, OPEN commands.
+Timeout handling in READ, LOCK, JOB, OPEN commands - **requires runtime execution**.
 
-- [ ] T246 [US2] **Research**: Review MUMPS reference timeout syntax (:timeout) in §8.2.10 (JOB), §8.2.12 (LOCK), §8.2.15 (OPEN), §8.2.17 (READ). Check YDBTest/ for timeout behavior.
-- [ ] T247 [US2] Implement cross-cutting stubs: timeouts (8 stubs)
-- [ ] T248 [US4] Regenerate coverage matrix
+- [X] T246 [US2] **Research**: Review MUMPS reference timeout syntax (:timeout) in §8.2.10 (JOB), §8.2.12 (LOCK), §8.2.15 (OPEN), §8.2.17 (READ). Check YDBTest/ for timeout behavior.
+  - **Completed**: All 8 stubs are `@pytest.mark.codegen` tests that verify $TEST modification on timeout success/failure. Parser (15 tests) and ASG (7 tests) already pass - total 22 passing tests.
+- [ ] T247 [US2] ~~Implement cross-cutting stubs: timeouts (8 stubs)~~ **SKIPPED - ONLY codegen stubs found**
+  - All 8 stubs test runtime behavior ($TEST=0 on timeout, $TEST=1 on success)
+  - These require actual code execution to verify
+- [ ] T248 [US4] ~~Regenerate coverage matrix~~ **N/A** (no changes made)
 
 ### Batch F14: Cross-Cutting Language Semantics A (5 stubs) - High Complexity
 

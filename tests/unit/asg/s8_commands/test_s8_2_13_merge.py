@@ -140,3 +140,26 @@ class TestMultiMerge:
         # Second merge: ZTC("L")=^ZTS("LOADA")
         assert stmt.merges[1].destination.name == "ZTC"
         assert stmt.merges[1].source.name == "ZTS"
+
+    def test_merge_naked_global_destination(self):
+        """MERGE ^(dest)=^SRC uses naked reference for destination (§7.1.2.4).
+
+        MERGE can use naked global references as destination.
+        """
+        from m2py.asg.expressions import MNakedGlobal
+
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n M ^(1)=^SRC\n")
+
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MMergeStatement)
+        assert len(stmt.merges) == 1
+
+        dest = stmt.merges[0].destination
+        assert isinstance(dest, MNakedGlobal)
+        assert len(dest.subscripts) == 1
+
+        # Source should be a full global
+        source = stmt.merges[0].source
+        assert isinstance(source, MGlobal)
+        assert source.name == "SRC"

@@ -23,7 +23,6 @@ from m2py.asg.expressions import (
     MLiteral,
     MGlobal,
     MNakedGlobal,
-    MIntrinsicFunction,
 )
 from m2py.asg.statements import MSetStatement, MKillStatement
 
@@ -240,101 +239,65 @@ class TestNakedReferenceASG:
 class TestNakedStateTransitions:
     """Codegen tests for naked indicator state transitions.
 
-    These tests verify ASG structure for multi-statement naked reference
-    patterns that would require codegen tracking at runtime.
+    These tests verify RUNTIME behavior of naked reference resolution.
+    The naked indicator must be tracked at runtime to resolve ^(sub) references.
     Reference: §7.1.2.4, FR-046
     """
 
+    @pytest.mark.stub
+    @pytest.mark.xfail(
+        reason="Not yet implemented: SET establishes indicator at runtime"
+    )
     def test_set_establishes_naked_indicator(self):
         """SET ^DATA(1)=X establishes naked indicator to ^DATA (§7.1.2.4).
 
-        SET ^DATA(1)=X followed by SET ^(2)=Y should produce:
-        - First: MGlobal with name="DATA"
-        - Second: MNakedGlobal (will use DATA at runtime)
+        SET ^DATA(1)=X
+        SET ^(2)=Y  ; Should access ^DATA(2) at runtime
         """
-        stmts = analyze_all_commands("S ^DATA(1)=X S ^(2)=Y")
+        pytest.fail("Stub - requires codegen runtime execution")
 
-        assert len(stmts) == 2
-        # First SET establishes the indicator
-        target1 = stmts[0].assignments[0].target
-        assert isinstance(target1, MGlobal)
-        assert target1.name == "DATA"
-
-        # Second SET uses naked reference
-        target2 = stmts[1].assignments[0].target
-        assert isinstance(target2, MNakedGlobal)
-
+    @pytest.mark.stub
+    @pytest.mark.xfail(
+        reason="Not yet implemented: READ establishes indicator at runtime"
+    )
     def test_read_establishes_naked_indicator(self):
         """SET X=^DATA(1) establishes naked indicator to ^DATA (§7.1.2.4).
 
-        Reading a global also sets the naked indicator.
-        SET X=^DATA(1) followed by SET Y=^(2) should work.
+        SET X=^DATA(1)
+        SET Y=^(2)  ; Should access ^DATA(2) at runtime
         """
-        stmts = analyze_all_commands("S X=^DATA(1) S Y=^(2)")
+        pytest.fail("Stub - requires codegen runtime execution")
 
-        assert len(stmts) == 2
-        # First SET reads ^DATA(1), establishing indicator
-        value1 = stmts[0].assignments[0].value
-        assert isinstance(value1, MGlobal)
-        assert value1.name == "DATA"
-
-        # Second SET uses naked reference as value
-        value2 = stmts[1].assignments[0].value
-        assert isinstance(value2, MNakedGlobal)
-
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: subscript chaining at runtime")
     def test_naked_reference_subscript_chaining(self):
         """Naked reference replaces last subscript, chains others (§7.1.2.4).
 
-        SET ^DATA(1,2)=X establishes indicator as ^DATA(1
-        SET ^(3)=Y should access ^DATA(1,3) at runtime
+        SET ^DATA(1,2)=X  ; Indicator = ^DATA(1
+        SET ^(3)=Y        ; Should access ^DATA(1,3) at runtime
         """
-        stmts = analyze_all_commands("S ^DATA(1,2)=X S ^(3)=Y")
+        pytest.fail("Stub - requires codegen runtime execution")
 
-        assert len(stmts) == 2
-        # First: ^DATA(1,2) - indicator becomes ^DATA(1
-        target1 = stmts[0].assignments[0].target
-        assert isinstance(target1, MGlobal)
-        assert target1.name == "DATA"
-        assert len(target1.subscripts) == 2
-
-        # Second: ^(3) - at runtime resolves to ^DATA(1,3)
-        target2 = stmts[1].assignments[0].target
-        assert isinstance(target2, MNakedGlobal)
-        assert len(target2.subscripts) == 1
-
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: multiple subscripts at runtime")
     def test_naked_reference_multiple_subscripts(self):
         """Naked with multiple subscripts extends from indicator (§7.1.2.4).
 
-        SET ^DATA(1)=X establishes indicator as ^DATA
-        SET ^(2,3)=Y should access ^DATA(2,3) at runtime
+        SET ^DATA(1)=X   ; Indicator = ^DATA
+        SET ^(2,3)=Y     ; Should access ^DATA(2,3) at runtime
         """
-        stmts = analyze_all_commands("S ^DATA(1)=X S ^(2,3)=Y")
+        pytest.fail("Stub - requires codegen runtime execution")
 
-        assert len(stmts) == 2
-        # First: ^DATA(1) - indicator becomes ^DATA
-        target1 = stmts[0].assignments[0].target
-        assert isinstance(target1, MGlobal)
-        assert len(target1.subscripts) == 1
-
-        # Second: ^(2,3) has two subscripts
-        target2 = stmts[1].assignments[0].target
-        assert isinstance(target2, MNakedGlobal)
-        assert len(target2.subscripts) == 2
-
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: naked updates indicator at runtime")
     def test_naked_reference_updates_indicator(self):
         """Naked reference itself updates the indicator (§7.1.2.4).
 
-        After ^DATA(1)=X, indicator is ^DATA
-        After ^(2)=Y, indicator is ^DATA( (stripped last sub)
-        After ^(3)=Z, should access ^DATA(3)
+        SET ^DATA(1)=X   ; Indicator = ^DATA
+        SET ^(2)=Y       ; Access ^DATA(2), indicator = ^DATA(
+        SET ^(3)=Z       ; Should access ^DATA(3) at runtime
         """
-        stmts = analyze_all_commands("S ^DATA(1)=X S ^(2)=Y S ^(3)=Z")
-
-        assert len(stmts) == 3
-        # All three have the expected types
-        assert isinstance(stmts[0].assignments[0].target, MGlobal)
-        assert isinstance(stmts[1].assignments[0].target, MNakedGlobal)
-        assert isinstance(stmts[2].assignments[0].target, MNakedGlobal)
+        pytest.fail("Stub - requires codegen runtime execution")
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: different global changes indicator")
@@ -375,22 +338,15 @@ class TestNakedReferenceErrors:
         """
         pytest.fail("Stub - requires codegen runtime execution for M1 error")
 
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: naked indicator scope at runtime")
     def test_naked_indicator_scope(self):
         """Naked indicator scope within routine execution (§7.1.2.4).
 
         The naked indicator persists across statements within same execution.
-        This test verifies ASG captures the sequence for codegen analysis.
+        SET ^DATA(1)=1 S X=^(2) S ^(3)=X  ; All reference ^DATA at runtime
         """
-        # Multiple statements in sequence - naked indicator carries through
-        stmts = analyze_all_commands("S ^DATA(1)=1 S X=^(2) S ^(3)=X")
-
-        assert len(stmts) == 3
-        # First: full global sets indicator
-        assert isinstance(stmts[0].assignments[0].target, MGlobal)
-        # Second: naked reference as value
-        assert isinstance(stmts[1].assignments[0].value, MNakedGlobal)
-        # Third: naked reference as target
-        assert isinstance(stmts[2].assignments[0].target, MNakedGlobal)
+        pytest.fail("Stub - requires codegen runtime execution")
 
 
 # =============================================================================
@@ -402,85 +358,57 @@ class TestNakedReferenceErrors:
 class TestNakedReferenceEdgeCases:
     """Codegen tests for naked reference edge cases.
 
-    Naked references can appear in various contexts beyond simple SET.
+    These tests verify RUNTIME behavior of naked references in various contexts.
+    ASG parsing tests for these are in the respective command test files.
     Reference: §7.1.2.4, FR-046
     """
 
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: $DATA with naked at runtime")
     def test_data_function_with_naked(self):
-        """$DATA(^(1)) uses naked reference as argument (§7.1.2.4).
+        """$DATA(^(1)) uses naked reference at runtime (§7.1.2.4).
 
-        $DATA on a naked reference should parse correctly.
+        ASG parsing is tested in test_s7_1_5_intrinsic_functions.py.
+        This tests runtime resolution of the naked reference.
         """
-        stmt = analyze_first_command("S X=$D(^(1))")
-        assert isinstance(stmt, MSetStatement)
-        func = stmt.assignments[0].value
-        assert isinstance(func, MIntrinsicFunction)
-        assert func.name.upper() in ("D", "DATA")
-        # First argument should be naked global
-        assert len(func.arguments) >= 1
-        assert isinstance(func.arguments[0], MNakedGlobal)
+        pytest.fail("Stub - requires codegen runtime execution")
 
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: $ORDER with naked at runtime")
     def test_order_function_with_naked(self):
-        """$ORDER(^(sub)) uses naked reference as argument (§7.1.2.4).
+        """$ORDER(^(sub)) uses naked reference at runtime (§7.1.2.4).
 
-        $ORDER navigates globals and can use naked references.
+        ASG parsing is tested in test_s7_1_5_intrinsic_functions.py.
+        This tests runtime resolution of the naked reference.
         """
-        stmt = analyze_first_command('S X=$O(^(""))')
-        assert isinstance(stmt, MSetStatement)
-        func = stmt.assignments[0].value
-        assert isinstance(func, MIntrinsicFunction)
-        assert func.name.upper() in ("O", "ORDER")
-        # First argument should be naked global
-        assert isinstance(func.arguments[0], MNakedGlobal)
+        pytest.fail("Stub - requires codegen runtime execution")
 
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: KILL with naked at runtime")
     def test_kill_with_naked(self):
-        """KILL ^(sub) uses naked reference (§7.1.2.4).
+        """KILL ^(sub) uses naked reference at runtime (§7.1.2.4).
 
-        KILL can target naked references.
+        ASG parsing is tested in test_s8_2_11_kill.py.
+        This tests runtime resolution of the naked reference.
         """
-        stmt = analyze_first_command("K ^(1)")
+        pytest.fail("Stub - requires codegen runtime execution")
 
-        assert isinstance(stmt, MKillStatement)
-        assert len(stmt.targets) == 1
-        target = stmt.targets[0]
-        assert isinstance(target, MNakedGlobal)
-        assert len(target.subscripts) == 1
-
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: MERGE with naked at runtime")
     def test_merge_with_naked(self):
-        """MERGE ^(dest)=^SRC uses naked for destination (§7.1.2.4).
+        """MERGE ^(dest)=^SRC uses naked at runtime (§7.1.2.4).
 
-        MERGE copies tree structures and can use naked references.
-        The destination is captured as MNakedGlobal in ASG.
+        ASG parsing is tested in test_s8_2_13_merge.py.
+        This tests runtime resolution of the naked reference.
         """
-        from m2py.asg.statements import MMergeStatement
+        pytest.fail("Stub - requires codegen runtime execution")
 
-        stmt = analyze_first_command("M ^(1)=^SRC")
-
-        assert isinstance(stmt, MMergeStatement)
-        assert len(stmt.merges) == 1
-        dest = stmt.merges[0].destination
-        assert isinstance(dest, MNakedGlobal)
-        assert len(dest.subscripts) == 1
-        # Source should be a full global
-        source = stmt.merges[0].source
-        assert isinstance(source, MGlobal)
-        assert source.name == "SRC"
-
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: LOCK with naked at runtime")
     def test_lock_with_naked(self):
-        """LOCK ^(sub) uses naked reference (§7.1.2.4).
+        """LOCK ^(sub) uses naked reference at runtime (§7.1.2.4).
 
-        LOCK controls access to resources including naked references.
-        Lock targets are returned as dicts with 'lockop' and 'target' keys.
+        ASG parsing is tested in test_s8_2_12_lock.py.
+        This tests runtime resolution of the naked reference.
         """
-        from m2py.asg.statements import MLockStatement
-
-        stmt = analyze_first_command("L ^(1)")
-
-        assert isinstance(stmt, MLockStatement)
-        assert len(stmt.targets) >= 1
-        # Lock targets are dicts with 'lockop' and 'target' keys
-        target_dict = stmt.targets[0]
-        assert isinstance(target_dict, dict)
-        assert "target" in target_dict
-        assert isinstance(target_dict["target"], MNakedGlobal)
-        assert len(target_dict["target"].subscripts) == 1
+        pytest.fail("Stub - requires codegen runtime execution")
