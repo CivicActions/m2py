@@ -899,7 +899,7 @@ TRollbackCommand:
 // TRollbackLevel: only matches expressions starting with numbers, $, (, +, -
 // This prevents consuming single-letter commands like 's' as a level argument
 TRollbackLevel:
-    /[0-9$\(\+\-]/ rest=/[^ \t\n]*/
+    first=/[0-9$\(\+\-]/ rest=/[^ \t\n]*/
 ;
 
 // ZTSTART command: ZTS[TART] - GT.M/YDB journaled transaction start

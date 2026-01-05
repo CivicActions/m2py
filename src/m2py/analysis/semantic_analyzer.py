@@ -2015,9 +2015,10 @@ class SemanticAnalyzer:
             end = level._tx_position_end
             full_text = input_text[start:end]
         else:
-            # Fallback: combine captured parts
+            # Fallback: combine captured parts (first + rest)
+            first = getattr(level, "first", "") or ""
             rest = getattr(level, "rest", "") or ""
-            full_text = rest  # Best effort
+            full_text = first + rest
         return MLiteral(value=full_text, literal_type=LiteralType.STRING)
 
     def _analyze_ZTStartCommand(self, cmd: Any, parent: Any) -> MZTStartStatement:
