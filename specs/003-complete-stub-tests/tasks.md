@@ -894,8 +894,8 @@ Execution flow commands: DO, GOTO, QUIT, BREAK, HANG, JOB.
 
 - [X] T207 [US1] **Research**: Review MUMPS reference §8.2.1 (BREAK), §8.2.3 (DO), §8.2.6 (GOTO), §8.2.8 (HANG), §8.2.10 (JOB), §8.2.16 (QUIT). Check YDBTest/ for flow control examples.
 - [X] T208 [US1] Implement parser stubs: DO (1), GOTO (1), QUIT (2), BREAK (3), HANG (3) - 10 stubs
-- [ ] T209 [US1] Implement parser stubs: JOB (5 stubs) - process spawning, medium complexity
-- [ ] T210 [US4] Regenerate coverage matrix
+- [X] T209 [US1] Implement parser stubs: JOB (5 stubs) - process spawning, medium complexity
+- [X] T210 [US4] Regenerate coverage matrix
 
 **Completion Notes (F2 - T207/T208)**:
 - All 10 flow control parser stubs converted to passing tests
@@ -906,6 +906,13 @@ Execution flow commands: DO, GOTO, QUIT, BREAK, HANG, JOB.
 - QUIT: with_postcondition (Q:X), followed_by_command (Q W 1)
 - All tests verified against command_metamodel and line_parser
 - Final count: 3590 passed, 109 skipped, 362 xfailed
+
+**Completion Notes (F2 - T209)**:
+- All 5 JOB parser stubs converted to passing tests
+- JOB: basic (J ^ROUTINE), with_label (JOB LABEL^ROUTINE), with_arguments (J LABEL(args))
+- JOB: with_timeout (J ^ROUTINE::5), with_process_params (J ^ROUTINE:(params):10)
+- All tests verified against command_metamodel
+- Final count: 3595 passed, 109 skipped, 357 xfailed
 
 ### Batch F3: Parser Data Commands (10 stubs) - Low Complexity
 
