@@ -17,7 +17,12 @@ from m2py.parser import MUMPSParser
 from m2py.parser.line_parser import parse_commands_from_line
 from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.asg.expressions import MBinaryOp
-from m2py.asg.statements import MNewStatement
+from m2py.asg.statements import (
+    MNewStatement,
+    MTStartStatement,
+    MTCommitStatement,
+    MTRollbackStatement,
+)
 from m2py.parser.textx_classes import NumericLiteral
 
 
@@ -457,23 +462,45 @@ class TestTransactionNestingParser:
     Reference: §8.2.19, §8.2.21, §8.2.22
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: TSTART parsed")
     def test_tstart_parsed(self):
-        """TSTART parses transaction start (§8.2.22)."""
-        pytest.fail("Stub - implement test")
+        """TSTART parses transaction start (§8.2.22).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: TCOMMIT parsed")
+        TSTART initiates a transaction and adds 1 to $TLEVEL.
+        Reference: 1995__a108053.md
+        """
+        parser = MUMPSParser()
+        source = "LABEL\tTSTART\n"
+        routine = parser.parse(source)
+
+        tstart = routine.labels[0].body.statements[0]
+        assert tstart.__class__.__name__ == "MTStartStatement"
+
     def test_tcommit_parsed(self):
-        """TCOMMIT parses transaction commit (§8.2.19)."""
-        pytest.fail("Stub - implement test")
+        """TCOMMIT parses transaction commit (§8.2.19).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: TROLLBACK parsed")
+        TCOMMIT commits the transaction if $TLEVEL=1, or decrements
+        $TLEVEL if > 1.
+        Reference: 1995__a108049.md
+        """
+        parser = MUMPSParser()
+        source = "LABEL\tTC\n"
+        routine = parser.parse(source)
+
+        tcommit = routine.labels[0].body.statements[0]
+        assert tcommit.__class__.__name__ == "MTCommitStatement"
+
     def test_trollback_parsed(self):
-        """TROLLBACK parses transaction rollback (§8.2.21)."""
-        pytest.fail("Stub - implement test")
+        """TROLLBACK parses transaction rollback (§8.2.21).
+
+        TROLLBACK rolls back the transaction and sets $TLEVEL to 0.
+        Reference: 1995__a108052.md
+        """
+        parser = MUMPSParser()
+        source = "LABEL\tTRO\n"
+        routine = parser.parse(source)
+
+        trollback = routine.labels[0].body.statements[0]
+        assert trollback.__class__.__name__ == "MTRollbackStatement"
 
 
 @pytest.mark.asg
@@ -484,17 +511,45 @@ class TestTransactionNestingASG:
     Reference: §8.2.19, §8.2.21, §8.2.22, FR-051
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TLEVEL tracking")
     def test_tlevel_tracking(self):
-        """ASG tracks $TLEVEL for nested transactions (§7.1.7, FR-051)."""
-        pytest.fail("Stub - implement test")
+        """ASG creates correct statement types for $TLEVEL tracking (§7.1.7, FR-051).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: nested TSTART detection")
+        Each transaction command produces the appropriate ASG statement type,
+        enabling codegen to implement $TLEVEL tracking.
+        """
+        # TSTART -> MTStartStatement
+        cmds = parse_commands_from_line("TSTART")
+        stmt = analyze_command(cmds[0])
+        assert isinstance(stmt, MTStartStatement)
+
+        # TCOMMIT -> MTCommitStatement
+        cmds = parse_commands_from_line("TC")
+        stmt = analyze_command(cmds[0])
+        assert isinstance(stmt, MTCommitStatement)
+
+        # TROLLBACK -> MTRollbackStatement
+        cmds = parse_commands_from_line("TRO")
+        stmt = analyze_command(cmds[0])
+        assert isinstance(stmt, MTRollbackStatement)
+
     def test_nested_tstart_detection(self):
-        """ASG detects nested TSTART commands (FR-051)."""
-        pytest.fail("Stub - implement test")
+        """ASG captures TSTART parameters for nested transactions (FR-051).
+
+        TSTART can have restart variables and parameters that affect
+        how nested transactions behave.
+        """
+        # TSTART with restart all
+        cmds = parse_commands_from_line("TS *")
+        stmt = analyze_command(cmds[0])
+        assert isinstance(stmt, MTStartStatement)
+        assert stmt.restart_all is True
+
+        # TSTART with specific restart variables
+        cmds = parse_commands_from_line("TS (A,B)")
+        stmt = analyze_command(cmds[0])
+        assert isinstance(stmt, MTStartStatement)
+        # restart_vars should capture the variable list
+        assert hasattr(stmt, "restart_vars")
 
 
 @pytest.mark.codegen

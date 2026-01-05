@@ -648,7 +648,7 @@
 - [X] T164 [US2] Implement 7 $TEST tracking tests in tests/unit/cross_cutting/test_language_semantics.py (D15)
 - [X] T165 [US2] Implement 7 evaluation order tests in same file (D16)
 - [X] T166 [US2] Implement 7 NEW scoping tests in same file (D17)
-- [ ] T167 [US2] Implement 7 transaction semantics tests in same file (D18)
+- [X] T167 [US2] Implement 7 transaction semantics tests in same file (D18)
 - [ ] T168 [US2] Implement 7 misc semantics tests in same file (D19)
 - [ ] T169 [US2] Fix any implementation gaps in src/m2py/
 - [ ] T170 [US2] Run full test suite and regenerate coverage matrix
@@ -675,6 +675,15 @@
 - Existing test: test_s8_2_14_new.py::test_new_exclusive_form covers basic ASG
 - D17 tests (8 total): 5 passing (3 parser, 2 ASG), 3 xfail stubs (codegen runtime)
 - Final count: 3494 passed, 110 skipped, 449 xfailed
+
+**T167 completion notes:**
+- MUMPS spec refs: §8.2.19 (TCOMMIT), §8.2.21 (TROLLBACK), §8.2.22 (TSTART)
+- Examples: examples__a108053.md - TSTART/TCOMMIT/TROLLBACK transaction examples
+- ASG quality: MTStartStatement, MTCommitStatement, MTRollbackStatement all working
+- ASG captures: restart_all, restart_vars for TSTART parameters
+- Existing tests: test_s8_2_22_tstart.py stubs focus on individual command aspects
+- D18 tests (10 total): 5 passing (3 parser, 2 ASG), 5 xfail stubs (codegen $TLEVEL runtime)
+- Final count: 3499 passed, 110 skipped, 444 xfailed
 
 **Checkpoint**: Phase 5 complete - 133 cross-cutting stubs converted
 
