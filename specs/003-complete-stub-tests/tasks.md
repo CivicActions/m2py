@@ -998,6 +998,7 @@ String and character function ASG tests.
 - [X] T228 [US4] Regenerate coverage matrix
 
 **Completion Notes (F7)**:
+- Commit: `80af874`
 - Researched Annex I-1 (CHARACTER), I-3 (STRING) library function specs
 - All 11 stubs converted to passing tests:
   - test_s7_1_6_5_library_functions_string.py (6): CRC16, CRC32, CRCCCITT, FORMAT, PRODUCE, REPLACE
@@ -1006,21 +1007,45 @@ String and character function ASG tests.
 - Created verify_string_function() and verify_library_function() helpers
 - Final count: 3643 passed (+11), 109 skipped, 309 xfailed (-11)
 
-### Batch F8: ASG Extrinsic Functions (5 stubs) - High Complexity
+### Batch F8: ASG Extrinsic Functions (5 stubs) - High Complexity ✅ COMPLETE
 
 User-defined extrinsic function calls ($$label^routine).
 
-- [ ] T229 [US2] **Research**: Review MUMPS reference §7.1.6 (extrinsic functions). Check docs/asg/ for call semantics. Search YDBTest/ for $$ usage patterns.
-- [ ] T230 [US2] Implement ASG stubs: extrinsic_functions (5 stubs)
-- [ ] T231 [US4] Regenerate coverage matrix
+- [X] T229 [US2] **Research**: Review MUMPS reference §7.1.6 (extrinsic functions). Check docs/asg/ for call semantics. Search YDBTest/ for $$ usage patterns.
+- [X] T230 [US2] Implement ASG stubs: extrinsic_functions (5 stubs)
+- [X] T231 [US4] Regenerate coverage matrix
 
-### Batch F9: ASG Indirection s6 (4 stubs) - High Complexity
+**Completion Notes (F8)**:
+- Commit: `1135a25`
+- Researched §7.1.4.8 (exfunc), §7.1.4.9 (exvar), §8.1.7 (parameter passing)
+- All 5 stubs in TestExtrinsicFunctionsAnalysis converted to passing tests:
+  - test_extrinsic_function_resolution: $$label^routine target resolution
+  - test_extrinsic_function_arguments: by-value/by-reference argument handling
+  - test_extrinsic_function_return: QUIT return value tracking with formal params
+  - test_extrinsic_special_variable: $$x (exvar) form without parentheses
+  - test_external_routine_reference: cross-routine ^ROUTINE references
+- ASG structure: ExtrinsicFunction with target (MCall), arguments (list of MActualParameter)
+- PassingMode enum: BY_VALUE (1), BY_REFERENCE for .variable syntax
+- Final count: 3648 passed (+5), 109 skipped, 304 xfailed (-5)
+
+### Batch F9: ASG Indirection s6 (4 stubs) - High Complexity ✅ COMPLETE
 
 Name indirection at routine/line level (@name).
 
-- [ ] T232 [US2] **Research**: Review MUMPS reference §6.3.1 (indirection). Check mumps-reference/notes__indirection*.md. Study existing tests/unit/asg/s6_routine/ for patterns.
-- [ ] T233 [US2] Implement ASG stubs: s6_3_1_indirection (4 stubs)
-- [ ] T234 [US4] Regenerate coverage matrix
+- [X] T232 [US2] **Research**: Review MUMPS reference §6.3.1 (indirection). Check mumps-reference/notes__indirection*.md. Study existing tests/unit/asg/s6_routine/ for patterns.
+- [X] T233 [US2] Implement ASG stubs: s6_3_1_indirection (4 stubs)
+- [X] T234 [US4] Regenerate coverage matrix
+
+**Completion Notes (F9)**:
+- Researched §6.3.1 (1995__a106010.md): generic indirection, @expritem replacement
+- Checked cross_cutting/test_indirection.py - extensive coverage already exists
+- All 4 stubs in TestIndirectionAnalysis converted to passing tests:
+  - test_name_indirection_resolution: @VAR creates Indirection with IndirectionType.NAME
+  - test_argument_indirection_resolution: @VAR@(1,2) captures name_indirection_subscripts
+  - test_pattern_indirection_resolution: X?@PAT creates MPatternMatch with pattern_indirect
+  - test_indirection_static_analysis: requires_runtime_eval=True, can_resolve_statically=False
+- Key ASG classes: Indirection (textx_classes), IndirectionType (enums), MPatternMatch
+- Final count: 3652 passed (+4), 109 skipped, 300 xfailed (-4)
 
 ### Batch F10: ASG Indirection s7 (7 stubs) - High Complexity
 

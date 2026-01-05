@@ -5,31 +5,91 @@ Reference: MUMPS 1995 ANSI Standard, Section 6.3.1
 
 import pytest
 
+from m2py.asg.enums import IndirectionType
+from m2py.asg.expressions import MPatternMatch
+from m2py.asg.statements import MSetStatement
+from m2py.parser.textx_classes import Indirection, LocalVariable
+
 
 @pytest.mark.asg
 class TestIndirectionAnalysis:
     """ASG-level tests for indirection analysis (§6.3.1)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: name indirection resolution")
     def test_name_indirection_resolution(self, analyze_routine):
-        """Name indirection (@var) is correctly represented in ASG (§6.3.1)."""
-        pytest.fail("Stub - implement test")
+        """Name indirection (@var) is correctly represented in ASG (§6.3.1).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: argument indirection resolution")
+        Per 1995__a106010.md: "If the evaluation of a command or any of the
+        arguments of a command encounters an indirect expression of the form
+        @expritem which cannot be resolved using the syntax or metatalanguage
+        defined for the command..."
+
+        At ASG level, name indirection creates an Indirection node with
+        indirection_type=NAME and the dereferenced variable in expression.
+        """
+        routine = analyze_routine("TEST\n S @VAR=1\n Q")
+
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MSetStatement)
+
+        target = stmt.assignments[0].target
+        assert isinstance(target, Indirection)
+        assert target.indirection_type == IndirectionType.NAME
+        assert isinstance(target.expression, LocalVariable)
+        assert target.expression.name == "VAR"
+
     def test_argument_indirection_resolution(self, analyze_routine):
-        """Argument indirection (@var@(args)) is correctly represented (§6.3.1)."""
-        pytest.fail("Stub - implement test")
+        """Argument indirection (@var@(args)) is correctly represented (§6.3.1).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern indirection resolution")
+        Per 1984 addition: @VAR@(subs) resolves VAR to a name, then appends
+        the subscripts. The ASG captures this with name_indirection_subscripts.
+        """
+        routine = analyze_routine("TEST\n S Y=@X@(1,2)\n Q")
+
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MSetStatement)
+
+        value = stmt.assignments[0].value
+        assert isinstance(value, Indirection)
+        assert isinstance(value.expression, LocalVariable)
+        assert value.expression.name == "X"
+
+        # Subscripts are captured in name_indirection_subscripts
+        assert value.name_indirection_subscripts is not None
+        assert len(value.name_indirection_subscripts) == 1  # One subscript list
+        assert len(value.name_indirection_subscripts[0]) == 2  # Two subscripts (1, 2)
+
     def test_pattern_indirection_resolution(self, analyze_routine):
-        """Pattern indirection (@patvar) is correctly represented (§6.3.1)."""
-        pytest.fail("Stub - implement test")
+        """Pattern indirection (@patvar) is correctly represented (§6.3.1).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: indirection static analysis")
+        Pattern indirection uses @ in the pattern position of the pattern
+        match operator (?). The pattern is resolved at runtime.
+        The ASG captures this with pattern='' and pattern_indirect set.
+        """
+        routine = analyze_routine("TEST\n I X?@PAT W 1\n Q")
+
+        stmt = routine.labels[0].body.statements[0]
+        # First condition of IF statement
+        condition = stmt.conditions[0]
+
+        assert isinstance(condition, MPatternMatch)
+        assert condition.pattern == ""  # Empty pattern string
+        assert condition.pattern_indirect is not None  # Indirect expression
+        assert isinstance(condition.pattern_indirect, LocalVariable)
+        assert condition.pattern_indirect.name == "PAT"
+
     def test_indirection_static_analysis(self, analyze_routine):
-        """Indirection impact on static analysis is tracked (§6.3.1)."""
-        pytest.fail("Stub - implement test")
+        """Indirection impact on static analysis is tracked (§6.3.1).
+
+        Indirection nodes have properties that indicate static analysis
+        characteristics: can_resolve_statically, requires_runtime_eval.
+        """
+        routine = analyze_routine("TEST\n S @VAR=1\n Q")
+
+        stmt = routine.labels[0].body.statements[0]
+        target = stmt.assignments[0].target
+
+        assert isinstance(target, Indirection)
+        # Indirection requires runtime evaluation by default
+        assert target.requires_runtime_eval is True
+        # Cannot resolve statically without constant propagation
+        assert target.can_resolve_statically is False
