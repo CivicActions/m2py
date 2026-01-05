@@ -792,14 +792,14 @@
 
 ### Implementation Gap Fixes (per FR-005/FR-006)
 
-- [ ] T196 [US1] Fix any parser implementation gaps discovered during E1-E4 (src/m2py/parser/)
-- [ ] T197 [US2] Fix any ASG implementation gaps discovered during E5-E8 (src/m2py/analysis/)
+- [X] T196 [US1] Fix any parser implementation gaps discovered during E1-E4 (src/m2py/parser/)
+- [X] T197 [US2] Fix any ASG implementation gaps discovered during E5-E8 (src/m2py/analysis/)
 
 ### Documentation Updates
 
-- [ ] T198 [US4] Add VIEW command to limitations.md (implementation-defined)
-- [ ] T199 [US4] Add $NEXT function to limitations.md (deprecated pre-1995)
-- [ ] T200 [US4] Add extended character sets to limitations.md (implementation-defined)
+- [X] T198 [US4] Add VIEW command to limitations.md (implementation-defined)
+- [X] T199 [US4] Add $NEXT function to limitations.md (deprecated pre-1995)
+- [X] T200 [US4] Add extended character sets to limitations.md (implementation-defined)
 
 ### Final Verification
 

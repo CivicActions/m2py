@@ -283,10 +283,41 @@ class TestIntrinsicFunctionsAnalysis:
         assert result.arguments[1].value == 2
 
     @pytest.mark.pre1995
-    @pytest.mark.skip(reason="Deprecated: $NEXT is pre-1995, use $ORDER")
     def test_function_next(self):
-        """$NEXT function is deprecated (§7.1.5)."""
-        pass
+        """$NEXT function is correctly analyzed (§7.1.5 - deprecated).
+
+        $NEXT returns the next subscript using -1 as sentinel.
+        Deprecated since 1990, retained for backward compatibility.
+        Used in ~58 VistA files, ~213 total usages.
+
+        Key differences from $ORDER:
+        - Uses -1 (not "") as starting/ending sentinel
+        - Returns ambiguous results for arrays with negative numeric subscripts
+        - $N(glvn) where last subscript is -1 returns first subscript
+
+        From spec (1990__a107099): "$N[EXT]( glvn ) is included for backward
+        compatibility. The use of $Order instead of $Next is strongly encouraged."
+        """
+        # Basic $NEXT call with -1 sentinel (start iteration)
+        expr = parse_expression("$N(^A(-1))")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "N"
+        assert len(result.arguments) == 1
+
+        # Full form $NEXT
+        expr = parse_expression("$NEXT(^DATA(X))")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "NEXT"
+
+        # $NEXT with local variable
+        expr = parse_expression("$N(A(K))")
+        result = analyze_expression(expr)
+        assert isinstance(result, MIntrinsicFunction)
+        assert result.name == "N"
+        # Argument should be subscripted local
+        assert len(result.arguments) == 1
 
     def test_function_order(self):
         """$ORDER function is correctly analyzed (§7.1.5.11).
