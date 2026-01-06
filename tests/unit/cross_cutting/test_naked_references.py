@@ -10,11 +10,6 @@ Key behaviors (FR-046):
 - Naked indicator is sequence-dependent (order matters)
 - Invalid if no prior global reference exists
 
-NOTE: Basic naked reference PARSING tests are consolidated in:
-- tests/unit/asg/s7_expressions/test_s7_1_2_variables.py
-  - test_naked_global_reference (basic parsing)
-  - test_naked_reference_sequence_dependency (sequence tracking)
-
 This file focuses on:
 - Cross-cutting behavior across multiple commands
 - Codegen/runtime behavior requiring execution
@@ -51,7 +46,6 @@ def analyze_all_commands(line: str):
 
 # =============================================================================
 # Naked Reference Syntax Tests (Parser Level)
-# NOTE: Basic naked reference tests moved to test_s7_1_2_variables.py
 # These tests cover multi-subscript and expression subscript edge cases.
 # =============================================================================
 
@@ -77,19 +71,6 @@ class TestNakedReferenceParser:
         assert isinstance(target.subscripts[0], MLiteral)
         assert target.subscripts[0].value == 1
 
-    def test_naked_reference_multiple_subscripts(self):
-        """^(1,2,3) parses as naked reference with subscripts (§7.1.2.4)."""
-        stmt = analyze_first_command("S ^(1,2,3)=100")
-
-        assert isinstance(stmt, MSetStatement)
-        target = stmt.assignments[0].target
-        assert isinstance(target, MNakedGlobal)
-        assert len(target.subscripts) == 3
-        # Check all subscripts are literals
-        for i, sub in enumerate(target.subscripts, start=1):
-            assert isinstance(sub, MLiteral)
-            assert sub.value == i
-
     def test_naked_reference_expression_subscript(self):
         """^(X+1) parses as naked reference with expression (§7.1.2.4)."""
         stmt = analyze_first_command("S ^(X+1)=100")
@@ -106,22 +87,6 @@ class TestNakedReferenceParser:
         # If fully analyzed to ASG, would be MBinaryOp; otherwise textX Expr
         # For cross-cutting tests, we verify presence not deep analysis
         # Deep analysis belongs in s7_expressions tests
-
-    def test_naked_vs_full_global_distinction(self):
-        """Parser distinguishes ^(1) from ^DATA(1) (§7.1.2.4)."""
-        # Parse naked reference
-        stmt_naked = analyze_first_command("S ^(1)=100")
-        target_naked = stmt_naked.assignments[0].target
-        assert isinstance(target_naked, MNakedGlobal)
-
-        # Parse full global reference
-        stmt_full = analyze_first_command("S ^DATA(1)=100")
-        target_full = stmt_full.assignments[0].target
-        assert isinstance(target_full, MGlobal)
-        assert target_full.name == "DATA"
-
-        # Verify they are different types
-        assert type(target_naked) is not type(target_full)
 
 
 # =============================================================================
@@ -218,9 +183,6 @@ class TestNakedReferenceASG:
         # Verify subscript values
         assert target.subscripts[0].value == "a"
         assert target.subscripts[1].value == "b"
-
-    # NOTE: test_sequence_dependency_detected moved to:
-    # tests/unit/asg/s7_expressions/test_s7_1_2_variables.py::TestVariablesAnalysis::test_naked_reference_sequence_dependency
 
 
 # =============================================================================

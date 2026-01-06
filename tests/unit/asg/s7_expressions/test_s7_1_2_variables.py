@@ -65,6 +65,34 @@ class TestVariablesAnalysis:
         assert isinstance(target.subscripts[0], StringLiteral)
         assert target.subscripts[0].value == "key"
 
+    def test_naked_reference_multiple_subscripts(self):
+        """^(1,2,3) parses as naked reference with multiple subscripts (§7.1.2.4)."""
+        stmt = analyze_set_command("S ^(1,2,3)=100")
+        target = stmt.assignments[0].target
+
+        assert isinstance(target, NakedGlobal)
+        assert len(target.subscripts) == 3
+        # Check all subscripts are numeric literals
+        for i, sub in enumerate(target.subscripts, start=1):
+            assert isinstance(sub, NumericLiteral)
+            assert sub.value == i
+
+    def test_naked_vs_full_global_distinction(self):
+        """Parser distinguishes ^(1) from ^DATA(1) (§7.1.2.4)."""
+        # Parse naked reference
+        stmt_naked = analyze_set_command("S ^(1)=100")
+        target_naked = stmt_naked.assignments[0].target
+        assert isinstance(target_naked, NakedGlobal)
+
+        # Parse full global reference
+        stmt_full = analyze_set_command("S ^DATA(1)=100")
+        target_full = stmt_full.assignments[0].target
+        assert isinstance(target_full, GlobalVariable)
+        assert target_full.name == "DATA"
+
+        # Verify they are different types
+        assert type(target_naked) is not type(target_full)
+
     def test_variable_scope_analysis(self):
         """Variable scope (input/output) is correctly analyzed (§7.1.2).
 
@@ -115,8 +143,6 @@ class TestVariablesAnalysis:
         SET ^DATA(1)=X,^(2)=Y produces one MGlobal followed by MNakedGlobal.
         The sequence matters for runtime resolution - the full global
         establishes the naked indicator that the naked reference uses.
-
-        Note: Consolidated from cross_cutting/test_naked_references.py
         """
         stmt = analyze_set_command("S ^DATA(1)=X,^(2)=Y")
 

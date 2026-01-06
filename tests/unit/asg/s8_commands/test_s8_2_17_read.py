@@ -34,10 +34,7 @@ class TestReadCommandAnalysis:
         assert read_target.timeout is None
 
     def test_read_simple_timeout(self):
-        """R X:5 produces MReadTarget with timeout only (§8.2.17).
-
-        Consolidated from cross_cutting/test_timeouts.py - simple timeout without fixed_length.
-        """
+        """R X:5 produces MReadTarget with timeout only (§8.2.17)."""
         cmds = parse_commands_from_line("R X:5")
         assert len(cmds) == 1
 
@@ -216,3 +213,22 @@ class TestReadCommandAnalysis:
         read_target2 = stmt2.arguments[0]
         assert read_target2.is_char_read is True
         assert read_target2.timeout is not None
+
+    def test_read_timeout_expression_analyzed(self):
+        """READ timeout expression is fully analyzed (§8.2.17).
+
+        Timeout can be a complex expression like T*2.
+        """
+        from m2py.asg.expressions import MBinaryOp
+
+        cmds = parse_commands_from_line("R X:T*2")
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+
+        assert isinstance(stmt, MReadStatement)
+        read_target = stmt.arguments[0]
+        assert isinstance(read_target, MReadTarget)
+        assert read_target.timeout is not None
+        # Expression type is MBinaryOp for T*2
+        assert isinstance(read_target.timeout, MBinaryOp)
+        assert read_target.timeout.operator == "*"

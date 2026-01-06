@@ -103,8 +103,6 @@ class TestIndirectionAnalysis:
 
         After signature analysis via compute_all_signatures, the label's
         requires_runtime_scope and routine's requires_runtime_eval will be True.
-
-        Note: Consolidated from cross_cutting/test_indirection.py
         """
         from m2py.analysis.variables import compute_all_signatures
         from m2py.parser import MUMPSParser
@@ -133,8 +131,6 @@ class TestIndirectionAnalysis:
         XECUTE always requires runtime evaluation. The statement itself
         has requires_runtime_eval=True. With indirection, even the code
         string is not known until runtime.
-
-        Note: Consolidated from cross_cutting/test_indirection.py
         """
         from m2py.asg.statements import MXecuteStatement
         from m2py.parser import MUMPSParser

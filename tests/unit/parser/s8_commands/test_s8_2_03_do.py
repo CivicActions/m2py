@@ -115,3 +115,26 @@ class TestDoCommandParsing:
         """DO routine(.@IX,.Y,Z) - mixed args (§8.2.3)."""
         model = command_metamodel.model_from_str("DO routine(.@IX,.Y,Z)", "DoCommand")
         assert model is not None
+
+    def test_do_with_routine_and_postcondition(self, command_metamodel):
+        """D PROC^UTIL:OK - routine reference with postcondition (§8.1.4).
+
+        Postcondition can follow full label^routine reference.
+        """
+        model = command_metamodel.model_from_str("D PROC^UTIL:OK", "DoCommand")
+        target = model.targets[0]
+        assert target.label.label == "PROC"
+        assert target.label.routine == "UTIL"
+        assert target.postcond is not None
+
+    def test_do_with_params_and_postcondition(self, command_metamodel):
+        """D PROC(A,B):READY - parameters with postcondition (§8.1.4).
+
+        Postcondition follows the parameter list.
+        """
+        model = command_metamodel.model_from_str("D PROC(A,B):READY", "DoCommand")
+        target = model.targets[0]
+        assert target.label.label == "PROC"
+        assert target.args is not None
+        assert len(target.args.args) == 2
+        assert target.postcond is not None

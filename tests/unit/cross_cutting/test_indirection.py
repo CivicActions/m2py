@@ -1,13 +1,7 @@
 """Cross-cutting tests for indirection RUNTIME behavior (Section 6.3.1, 7.3).
 
-This file contains ONLY tests for cross-cutting indirection behavior that:
-1. Cannot be tested in isolation by section-specific tests
-2. Test codegen/runtime behavior requiring execution
-
-PARSER/ASG tests for indirection are consolidated in spec-aligned files:
-- tests/unit/asg/s7_expressions/test_s7_3_indirection.py (§7.3 expression indirection)
-- tests/unit/asg/s6_routine/test_s6_3_1_indirection.py (§6.3.1 routine-level indirection)
-- tests/unit/asg/s7_expressions/test_s7_2_5_pattern_match.py (pattern indirection)
+This file contains tests for cross-cutting indirection behavior that
+test codegen/runtime behavior requiring execution.
 
 From MUMPS 1995 ANSI Standard and spec reference 1995__a901027.md:
 

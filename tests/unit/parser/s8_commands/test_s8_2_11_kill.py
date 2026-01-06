@@ -83,3 +83,12 @@ class TestKillCommandParsing:
         """KILL without argument parses correctly (§8.2.11)."""
         model = command_metamodel.model_from_str("K", "KillCommand")
         assert len(model.args) == 0
+
+    def test_kill_with_postcondition(self, command_metamodel):
+        """K:CLEANUP X parses command-level postcondition (§8.1.4).
+
+        KILL can have postcondition, allowing conditional variable cleanup.
+        """
+        model = command_metamodel.model_from_str("K:CLEANUP X", "KillCommand")
+        assert model.postcond is not None
+        assert len(model.args) == 1

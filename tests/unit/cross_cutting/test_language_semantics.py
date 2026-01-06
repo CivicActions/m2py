@@ -205,10 +205,6 @@ class TestLeftToRightParser:
         assert assignment.value is not None
 
 
-# NOTE: TestLeftToRightASG.test_mixed_operators_asg_structure moved to:
-# tests/unit/asg/s7_expressions/test_s7_2_operators.py::TestOperatorsAnalysis::test_left_to_right_evaluation
-
-
 @pytest.mark.codegen
 class TestLeftToRightCodegen:
     """Codegen tests for expression evaluation.

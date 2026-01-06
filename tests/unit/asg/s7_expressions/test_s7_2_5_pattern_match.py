@@ -98,8 +98,6 @@ class TestPatternMatchAnalysis:
 
         X?@PAT(1) uses the value of subscripted variable PAT(1) as pattern.
         The pattern_indirect should capture the subscripted variable.
-
-        Note: Consolidated from cross_cutting/test_indirection.py
         """
         expr = parse_expression("X?@PAT(1)")
         result = analyze_expression(expr)
