@@ -14,110 +14,12 @@ See also: FR-046-051 (language semantic requirements)
 import pytest
 
 from m2py.parser import MUMPSParser
-from m2py.parser.line_parser import parse_commands_from_line
-from m2py.analysis.semantic_analyzer import analyze_command
-from m2py.asg.expressions import MBinaryOp
-from m2py.asg.statements import (
-    MNewStatement,
-    MTStartStatement,
-    MTCommitStatement,
-    MTRollbackStatement,
-    MDoStatement,
-    MQuitStatement,
-)
 
 
 # =============================================================================
-# $TEST Special Variable Tests
+# $TEST Special Variable Tests - Codegen Only
+# Parser/ASG tests are in tests/unit/asg/s8_commands/test_s8_2_09_if.py
 # =============================================================================
-
-
-@pytest.mark.parser
-class TestTestVariableParser:
-    """Parser tests for commands that affect $TEST.
-
-    $TEST is modified by: IF with argument, and timeout commands
-    (OPEN, READ, JOB, LOCK with timeouts).
-    Reference: §7.1.4.10, §8.2.9, FR-047
-
-    Note: Detailed IF/ELSE parser tests in tests/unit/parser/s8_commands/
-    These tests verify cross-cutting $TEST behavior.
-    """
-
-    def test_argumentless_if_parsed(self):
-        """Argumentless IF reads $TEST (§8.2.9)."""
-        parser = MUMPSParser()
-        source = "LABEL\tI\n"
-        routine = parser.parse(source)
-
-        if_stmt = routine.labels[0].body.statements[0]
-        assert if_stmt.__class__.__name__ == "MIfStatement"
-        # Argumentless IF has no condition - reads $TEST
-        assert if_stmt.condition is None
-        assert len(if_stmt.conditions) == 0
-
-    def test_if_with_argument_parsed(self):
-        """IF with argument sets $TEST (§8.2.9)."""
-        parser = MUMPSParser()
-        source = "LABEL\tI X=1\n"
-        routine = parser.parse(source)
-
-        if_stmt = routine.labels[0].body.statements[0]
-        assert if_stmt.__class__.__name__ == "MIfStatement"
-        # IF with argument has condition that sets $TEST
-        assert if_stmt.condition is not None
-        assert len(if_stmt.conditions) == 1
-
-
-@pytest.mark.asg
-class TestTestVariableASG:
-    """ASG tests for $TEST tracking.
-
-    ASG analysis must track which commands read and modify $TEST.
-    Reference: §7.1.4.10, §8.2.4, §8.2.9, FR-047
-
-    Note: Detailed IF/ELSE ASG tests in tests/unit/asg/s8_commands/
-    These tests verify cross-cutting $TEST state transitions.
-    """
-
-    def test_if_modifies_test(self):
-        """IF with argument modifies $TEST (§8.2.9, FR-047)."""
-        from m2py.asg.statements import MIfStatement
-
-        parser = MUMPSParser()
-        source = "LABEL\tI X=1\n"
-        routine = parser.parse(source)
-
-        if_stmt = routine.labels[0].body.statements[0]
-        assert isinstance(if_stmt, MIfStatement)
-        # IF with condition sets $TEST to truth value
-        assert if_stmt.condition is not None
-
-    def test_argumentless_if_reads_test(self):
-        """Argumentless IF reads $TEST (§8.2.9, FR-047)."""
-        from m2py.asg.statements import MIfStatement
-
-        parser = MUMPSParser()
-        source = "LABEL\tI\n"
-        routine = parser.parse(source)
-
-        if_stmt = routine.labels[0].body.statements[0]
-        assert isinstance(if_stmt, MIfStatement)
-        # Argumentless IF reads $TEST (condition is None)
-        assert if_stmt.condition is None
-
-    def test_else_reads_test(self):
-        """ELSE command reads $TEST (§8.2.4, FR-047)."""
-        from m2py.asg.statements import MElseStatement
-
-        parser = MUMPSParser()
-        source = "LABEL\tE  S X=1\n"
-        routine = parser.parse(source)
-
-        else_stmt = routine.labels[0].body.statements[0]
-        assert isinstance(else_stmt, MElseStatement)
-        # ELSE reads $TEST - executes when $TEST=0
-        assert else_stmt.body is not None
 
 
 @pytest.mark.codegen
@@ -260,115 +162,9 @@ class TestLeftToRightCodegen:
 
 
 # =============================================================================
-# Exclusive NEW Tests
+# Exclusive NEW Tests - Codegen Only
+# Parser/ASG tests are in tests/unit/asg/s8_commands/test_s8_2_14_new.py
 # =============================================================================
-
-
-@pytest.mark.parser
-class TestExclusiveNewParser:
-    """Parser tests for Exclusive NEW syntax.
-
-    NEW (var1,var2,...) protects listed variables, makes all others NEW.
-    Reference: §8.2.14
-    """
-
-    def test_exclusive_new_parsed(self):
-        """NEW (X,Y) parses exclusive NEW form (§8.2.14).
-
-        Exclusive NEW syntax uses parentheses around the variable list.
-        This form keeps listed variables visible and creates new scope
-        for all other variables.
-
-        Reference: 1995__a108042.md, examples__a108042.md
-        """
-        parser = MUMPSParser()
-        source = "LABEL\tN (X,Y)\n"
-        routine = parser.parse(source)
-
-        new_stmt = routine.labels[0].body.statements[0]
-        assert new_stmt.__class__.__name__ == "MNewStatement"
-        # Parser captures exclusive form
-        assert new_stmt.exclusive is True
-
-    def test_exclusive_new_multiple_vars_parsed(self):
-        """NEW (A,B,C,D) parses with multiple variables (§8.2.14).
-
-        Exclusive NEW can protect any number of variables.
-        """
-        cmds = parse_commands_from_line("N (A,B,C,D)")
-        stmt = analyze_command(cmds[0])
-
-        assert isinstance(stmt, MNewStatement)
-        assert stmt.exclusive is True
-        assert len(stmt.except_list) == 4
-        assert set(stmt.except_list) == {"A", "B", "C", "D"}
-
-    def test_exclusive_vs_regular_new_distinction(self):
-        """Parser distinguishes NEW X from NEW (X) (§8.2.14).
-
-        Regular NEW creates new scope for listed variables.
-        Exclusive NEW creates new scope for all EXCEPT listed variables.
-        """
-        # Regular NEW
-        cmds = parse_commands_from_line("N X,Y")
-        regular = analyze_command(cmds[0])
-        assert isinstance(regular, MNewStatement)
-        assert regular.exclusive is False
-        assert len(regular.variables) == 2
-
-        # Exclusive NEW
-        cmds = parse_commands_from_line("N (X,Y)")
-        exclusive = analyze_command(cmds[0])
-        assert isinstance(exclusive, MNewStatement)
-        assert exclusive.exclusive is True
-        assert len(exclusive.except_list) == 2
-
-
-@pytest.mark.asg
-class TestExclusiveNewASG:
-    """ASG tests for Exclusive NEW analysis.
-
-    ASG must identify exclusive NEW and track protected variables.
-    Reference: §8.2.14, FR-048
-    """
-
-    def test_exclusive_new_classified(self):
-        """Exclusive NEW has exclusive=True in ASG (§8.2.14, FR-048).
-
-        The ASG must distinguish exclusive NEW from regular NEW so that
-        codegen can implement inverse scoping behavior.
-        """
-        cmds = parse_commands_from_line("N (X,Y)")
-        stmt = analyze_command(cmds[0])
-
-        assert isinstance(stmt, MNewStatement)
-        assert stmt.exclusive is True
-
-        # Verify regular NEW is not exclusive
-        cmds = parse_commands_from_line("N X,Y")
-        stmt = analyze_command(cmds[0])
-        assert stmt.exclusive is False
-
-    def test_protected_variables_tracked(self):
-        """Protected variable list tracked in ASG (§8.2.14, FR-048).
-
-        The except_list contains variables that should NOT be NEWed,
-        i.e., they remain visible from outer scope.
-        """
-        cmds = parse_commands_from_line("N (A,B,C)")
-        stmt = analyze_command(cmds[0])
-
-        assert isinstance(stmt, MNewStatement)
-        assert hasattr(stmt, "except_list")
-        assert len(stmt.except_list) == 3
-        assert "A" in stmt.except_list
-        assert "B" in stmt.except_list
-        assert "C" in stmt.except_list
-
-        # Regular NEW has empty except_list
-        cmds = parse_commands_from_line("N X")
-        stmt = analyze_command(cmds[0])
-        assert stmt.except_list == []
 
 
 @pytest.mark.codegen
@@ -409,106 +205,11 @@ class TestExclusiveNewCodegen:
 
 
 # =============================================================================
-# Transaction Nesting Tests
+# Transaction Nesting Tests - Codegen Only
+# Parser/ASG tests are in tests/unit/asg/s8_commands/test_s8_2_19_tcommit.py,
+# test_s8_2_21_trollback.py, test_s8_2_22_tstart.py, and
+# tests/unit/asg/s6_routine/test_s6_3_1_transaction.py
 # =============================================================================
-
-
-@pytest.mark.parser
-class TestTransactionNestingParser:
-    """Parser tests for transaction command syntax.
-
-    TSTART/TCOMMIT/TROLLBACK support nesting.
-    Reference: §8.2.19, §8.2.21, §8.2.22
-    """
-
-    def test_tstart_parsed(self):
-        """TSTART parses transaction start (§8.2.22).
-
-        TSTART initiates a transaction and adds 1 to $TLEVEL.
-        Reference: 1995__a108053.md
-        """
-        parser = MUMPSParser()
-        source = "LABEL\tTSTART\n"
-        routine = parser.parse(source)
-
-        tstart = routine.labels[0].body.statements[0]
-        assert tstart.__class__.__name__ == "MTStartStatement"
-
-    def test_tcommit_parsed(self):
-        """TCOMMIT parses transaction commit (§8.2.19).
-
-        TCOMMIT commits the transaction if $TLEVEL=1, or decrements
-        $TLEVEL if > 1.
-        Reference: 1995__a108049.md
-        """
-        parser = MUMPSParser()
-        source = "LABEL\tTC\n"
-        routine = parser.parse(source)
-
-        tcommit = routine.labels[0].body.statements[0]
-        assert tcommit.__class__.__name__ == "MTCommitStatement"
-
-    def test_trollback_parsed(self):
-        """TROLLBACK parses transaction rollback (§8.2.21).
-
-        TROLLBACK rolls back the transaction and sets $TLEVEL to 0.
-        Reference: 1995__a108052.md
-        """
-        parser = MUMPSParser()
-        source = "LABEL\tTRO\n"
-        routine = parser.parse(source)
-
-        trollback = routine.labels[0].body.statements[0]
-        assert trollback.__class__.__name__ == "MTRollbackStatement"
-
-
-@pytest.mark.asg
-class TestTransactionNestingASG:
-    """ASG tests for transaction analysis.
-
-    ASG must track transaction nesting level ($TLEVEL).
-    Reference: §8.2.19, §8.2.21, §8.2.22, FR-051
-    """
-
-    def test_tlevel_tracking(self):
-        """ASG creates correct statement types for $TLEVEL tracking (§7.1.7, FR-051).
-
-        Each transaction command produces the appropriate ASG statement type,
-        enabling codegen to implement $TLEVEL tracking.
-        """
-        # TSTART -> MTStartStatement
-        cmds = parse_commands_from_line("TSTART")
-        stmt = analyze_command(cmds[0])
-        assert isinstance(stmt, MTStartStatement)
-
-        # TCOMMIT -> MTCommitStatement
-        cmds = parse_commands_from_line("TC")
-        stmt = analyze_command(cmds[0])
-        assert isinstance(stmt, MTCommitStatement)
-
-        # TROLLBACK -> MTRollbackStatement
-        cmds = parse_commands_from_line("TRO")
-        stmt = analyze_command(cmds[0])
-        assert isinstance(stmt, MTRollbackStatement)
-
-    def test_nested_tstart_detection(self):
-        """ASG captures TSTART parameters for nested transactions (FR-051).
-
-        TSTART can have restart variables and parameters that affect
-        how nested transactions behave.
-        """
-        # TSTART with restart all
-        cmds = parse_commands_from_line("TS *")
-        stmt = analyze_command(cmds[0])
-        assert isinstance(stmt, MTStartStatement)
-        assert stmt.restart_all is True
-
-        # TSTART with specific restart variables
-        cmds = parse_commands_from_line("TS (A,B)")
-        stmt = analyze_command(cmds[0])
-        assert isinstance(stmt, MTStartStatement)
-        # restart_vars should capture the variable list
-        assert hasattr(stmt, "restart_vars")
 
 
 @pytest.mark.codegen
@@ -583,89 +284,10 @@ class TestTransactionNestingCodegen:
 
 
 # =============================================================================
-# Misc Semantics Tests (D19)
+# Misc Semantics Tests - Codegen Only
+# Parser/ASG tests are in tests/unit/asg/s8_commands/test_s8_2_03_do.py and
+# test_s8_2_16_quit.py
 # =============================================================================
-
-
-@pytest.mark.parser
-class TestMiscSemanticsParser:
-    """Parser tests for misc cross-cutting semantics.
-
-    Tests for argumentless commands, block structure, and return values.
-    Reference: §6.3, §8.2.3, §8.2.16
-    """
-
-    def test_argumentless_do_parsed(self):
-        """Argumentless DO creates block structure (§6.3, §8.2.3).
-
-        Argumentless DO increases execution level by one.
-        Lines with higher LEVEL are part of the DO block.
-        """
-        parser = MUMPSParser()
-        source = "LABEL\tD\n"
-        routine = parser.parse(source)
-
-        do_stmt = routine.labels[0].body.statements[0]
-        assert do_stmt.__class__.__name__ == "MDoStatement"
-        # Argumentless DO has no targets
-        assert len(do_stmt.targets) == 0
-
-    def test_quit_with_return_value_parsed(self):
-        """QUIT with return value parses correctly (§8.2.16).
-
-        QUIT expr returns a value from an extrinsic function.
-        Required when returning from $$func calls.
-        """
-        cmds = parse_commands_from_line("Q 1+2")
-        stmt = analyze_command(cmds[0])
-
-        assert isinstance(stmt, MQuitStatement)
-        assert stmt.return_value is not None
-
-    def test_argumentless_quit_parsed(self):
-        """Argumentless QUIT exits block without value (§8.2.16).
-
-        Argumentless QUIT exits the current block/routine.
-        """
-        cmds = parse_commands_from_line("Q")
-        stmt = analyze_command(cmds[0])
-
-        assert isinstance(stmt, MQuitStatement)
-        assert stmt.return_value is None
-
-
-@pytest.mark.asg
-class TestMiscSemanticsASG:
-    """ASG tests for misc cross-cutting semantics.
-
-    Reference: §6.3, §8.2.3, §8.2.16
-    """
-
-    def test_argumentless_do_asg_structure(self):
-        """Argumentless DO has empty targets and body scope (§8.2.3).
-
-        The body scope captures the nested block at higher LEVEL.
-        """
-        cmds = parse_commands_from_line("D")
-        stmt = analyze_command(cmds[0])
-
-        assert isinstance(stmt, MDoStatement)
-        assert stmt.targets == []
-        # Body scope exists for nested statements
-        assert hasattr(stmt, "body")
-
-    def test_quit_return_value_captured(self):
-        """QUIT return value is captured in ASG (§8.2.16).
-
-        The return_value attribute holds the expression to return.
-        """
-        cmds = parse_commands_from_line("Q X+1")
-        stmt = analyze_command(cmds[0])
-
-        assert isinstance(stmt, MQuitStatement)
-        assert stmt.return_value is not None
-        # Return value should be a binary expression
-        assert isinstance(stmt.return_value, MBinaryOp)
 
 
 @pytest.mark.codegen
