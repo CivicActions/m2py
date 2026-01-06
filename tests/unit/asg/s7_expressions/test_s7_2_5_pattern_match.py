@@ -93,6 +93,23 @@ class TestPatternMatchAnalysis:
         assert result.pattern_indirect is not None
         assert result.pattern_indirect.name == "PAT"
 
+    def test_pattern_indirection_with_subscript(self):
+        """Pattern indirection with subscripted variable is analyzed (§7.2.5).
+
+        X?@PAT(1) uses the value of subscripted variable PAT(1) as pattern.
+        The pattern_indirect should capture the subscripted variable.
+
+        Note: Consolidated from cross_cutting/test_indirection.py
+        """
+        expr = parse_expression("X?@PAT(1)")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MPatternMatch)
+        assert result.pattern_indirect is not None
+        # The indirect pattern is PAT(1) - a subscripted variable
+        assert result.pattern_indirect.name == "PAT"
+        assert len(result.pattern_indirect.subscripts) == 1
+
 
 @pytest.mark.asg
 class TestPatternMatchASG:

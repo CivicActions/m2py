@@ -109,6 +109,29 @@ class TestVariablesAnalysis:
         assert isinstance(global_target.subscripts[0], StringLiteral)
         assert global_target.subscripts[0].value == "sub"
 
+    def test_naked_reference_sequence_dependency(self):
+        """Naked reference sequence is captured in ASG (§7.1.2.4, FR-046).
+
+        SET ^DATA(1)=X,^(2)=Y produces one MGlobal followed by MNakedGlobal.
+        The sequence matters for runtime resolution - the full global
+        establishes the naked indicator that the naked reference uses.
+
+        Note: Consolidated from cross_cutting/test_naked_references.py
+        """
+        stmt = analyze_set_command("S ^DATA(1)=X,^(2)=Y")
+
+        assert len(stmt.assignments) == 2
+
+        # First assignment establishes naked indicator
+        target1 = stmt.assignments[0].target
+        assert isinstance(target1, GlobalVariable)
+        assert target1.name == "DATA"
+
+        # Second assignment uses naked reference
+        target2 = stmt.assignments[1].target
+        assert isinstance(target2, NakedGlobal)
+        # At runtime, ^(2) would resolve to ^DATA(2)
+
     def test_glvn_unification(self):
         """GLVN (local or global) is unified in ASG (§7.1.2).
 

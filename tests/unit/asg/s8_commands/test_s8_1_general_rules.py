@@ -102,6 +102,60 @@ class TestCommandGeneralRulesAnalysis:
         assert isinstance(param2, MActualParameter)
         assert param2.passing_mode == PassingMode.BY_VALUE
 
+    def test_argument_postcondition_in_do(self, analyze_routine):
+        """Argument postconditions on DO targets are analyzed (§8.1.4).
+
+        Per 1995__a108005.md: "The postcond may also be used to conditionalize
+        the arguments of Do, Goto, and Xecute."
+        Each MCall target has its own postcondition field.
+
+        Note: Consolidated from cross_cutting/test_postconditions.py (FR-049)
+        """
+        from m2py.parser.textx_classes import LocalVariable
+
+        routine = analyze_routine("TEST\n D L1:A,L2:B")
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MDoStatement)
+        assert stmt.postcondition is None  # No command-level postcondition
+        assert len(stmt.targets) == 2
+
+        # Each target has its own argument postcondition
+        assert stmt.targets[0].postcondition is not None
+        assert isinstance(stmt.targets[0].postcondition, LocalVariable)
+        assert stmt.targets[0].postcondition.name == "A"
+
+        assert stmt.targets[1].postcondition is not None
+        assert isinstance(stmt.targets[1].postcondition, LocalVariable)
+        assert stmt.targets[1].postcondition.name == "B"
+
+    def test_combined_command_and_argument_postconditions(self, analyze_routine):
+        """Both command and argument postconditions are captured (§8.1.4).
+
+        DO:CMD L1:ARG1,L2:ARG2 has command-level postcondition that gates
+        all execution, plus independent argument-level postconditions.
+
+        Note: Consolidated from cross_cutting/test_postconditions.py (FR-049)
+        """
+        from m2py.parser.textx_classes import LocalVariable
+
+        routine = analyze_routine("TEST\n D:READY PROC1:A,PROC2:B")
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MDoStatement)
+
+        # Command postcondition
+        assert stmt.postcondition is not None
+        assert isinstance(stmt.postcondition, LocalVariable)
+        assert stmt.postcondition.name == "READY"
+
+        # Argument postconditions on MCall objects
+        assert len(stmt.targets) == 2
+        assert stmt.targets[0].name == "PROC1"
+        assert stmt.targets[0].postcondition.name == "A"
+        assert stmt.targets[1].name == "PROC2"
+        assert stmt.targets[1].postcondition.name == "B"
+
     def test_command_abbreviation_normalization(self, analyze_routine):
         """Command abbreviations are normalized in ASG (§8.1).
 
