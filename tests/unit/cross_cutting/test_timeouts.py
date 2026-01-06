@@ -1,4 +1,4 @@
-"""Cross-cutting tests for timeout syntax (§8.2.10, §8.2.12, §8.2.15, §8.2.17).
+"""Cross-cutting tests for timeout RUNTIME behavior (§8.2.10, §8.2.12, §8.2.15, §8.2.17).
 
 Timeouts are a language feature that spans multiple commands:
 - OPEN device:timeout - device open timeout
@@ -10,192 +10,18 @@ All timeout commands modify $TEST on timeout (§7.1.4.10):
 - Success: $TEST=1
 - Timeout: $TEST=0
 
+Parser/ASG tests are in the respective command test files:
+- tests/unit/asg/s8_commands/test_s8_2_10_job.py
+- tests/unit/asg/s8_commands/test_s8_2_12_lock.py
+- tests/unit/asg/s8_commands/test_s8_2_15_open.py
+- tests/unit/asg/s8_commands/test_s8_2_17_read.py
+
 Reference: MUMPS 1995 ANSI Standard, Sections 8.2.10, 8.2.12, 8.2.15, 8.2.17
 See also: FR-005 (cross-cutting features need dedicated tests)
          FR-047 ($TEST modification by timeout commands)
 """
 
 import pytest
-
-from m2py.parser import MUMPSParser
-
-
-# =============================================================================
-# OPEN Timeout Tests (Parser Level)
-# =============================================================================
-
-
-@pytest.mark.parser
-class TestOpenTimeoutParser:
-    """Parser tests for OPEN command timeout syntax.
-
-    OPEN device:timeout or OPEN device:(params):timeout format.
-    Reference: §8.2.15
-    """
-
-    def test_open_without_timeout(self):
-        """OPEN DEV parses without timeout (§8.2.15)."""
-        parser = MUMPSParser()
-        source = "LABEL\tO DEV\n"
-        routine = parser.parse(source)
-
-        open_stmt = routine.labels[0].body.statements[0]
-        assert open_stmt.__class__.__name__ == "MOpenStatement"
-        assert len(open_stmt.devices) == 1
-        assert open_stmt.devices[0].timeout is None
-
-
-# =============================================================================
-# READ Timeout Tests (Parser Level)
-# =============================================================================
-
-
-@pytest.mark.parser
-class TestReadTimeoutParser:
-    """Parser tests for READ command timeout syntax.
-
-    READ var:timeout format.
-    Reference: §8.2.17
-    """
-
-    def test_read_with_timeout_expression(self):
-        """READ X:T parses timeout expression (§8.2.17)."""
-        parser = MUMPSParser()
-        source = "LABEL\tR X:T\n"
-        routine = parser.parse(source)
-
-        read_stmt = routine.labels[0].body.statements[0]
-        target = read_stmt.arguments[0]
-        assert target.timeout is not None
-        # Variable name in timeout expression
-        assert target.timeout.name == "T"
-
-    def test_read_without_timeout(self):
-        """READ X parses without timeout (§8.2.17)."""
-        parser = MUMPSParser()
-        source = "LABEL\tR X\n"
-        routine = parser.parse(source)
-
-        read_stmt = routine.labels[0].body.statements[0]
-        target = read_stmt.arguments[0]
-        assert target.timeout is None
-
-
-# =============================================================================
-# JOB Timeout Tests (Parser Level)
-# =============================================================================
-
-
-@pytest.mark.parser
-class TestJobTimeoutParser:
-    """Parser tests for JOB command timeout syntax.
-
-    JOB entry:(params):timeout format (double colon ::timeout for timeout only).
-    Reference: §8.2.10
-    """
-
-    def test_job_with_timeout(self):
-        """JOB ROUTINE::5 parses timeout (§8.2.10)."""
-        parser = MUMPSParser()
-        # JOB uses :: for timeout when no process params
-        source = "LABEL\tJ ROUTINE::5\n"
-        routine = parser.parse(source)
-
-        job_stmt = routine.labels[0].body.statements[0]
-        assert job_stmt.__class__.__name__ == "MJobStatement"
-
-    def test_job_with_params_and_timeout(self):
-        """JOB ROUTINE:(params):10 parses params and timeout (§8.2.10)."""
-        parser = MUMPSParser()
-        source = 'LABEL\tJ ROUTINE:("STACK=4096"):10\n'
-        routine = parser.parse(source)
-
-        job_stmt = routine.labels[0].body.statements[0]
-        assert job_stmt.__class__.__name__ == "MJobStatement"
-
-    def test_job_without_timeout(self):
-        """JOB ROUTINE parses without timeout (§8.2.10)."""
-        parser = MUMPSParser()
-        source = "LABEL\tJ ROUTINE\n"
-        routine = parser.parse(source)
-
-        job_stmt = routine.labels[0].body.statements[0]
-        assert job_stmt.__class__.__name__ == "MJobStatement"
-
-
-# =============================================================================
-# LOCK Timeout Tests (Parser Level)
-# =============================================================================
-
-
-@pytest.mark.parser
-class TestLockTimeoutParser:
-    """Parser tests for LOCK command timeout syntax.
-
-    LOCK name:timeout format.
-    Reference: §8.2.12
-
-    Note: MLockStatement.targets is a list of dicts with keys:
-    - 'target' or 'indirection'
-    - 'timeout' (optional)
-    - 'lockop' (optional - '+' or '-')
-    """
-
-    def test_lock_with_timeout_expression(self):
-        """LOCK ^DATA:T parses timeout expression (§8.2.12)."""
-        parser = MUMPSParser()
-        source = "LABEL\tL ^DATA:T\n"
-        routine = parser.parse(source)
-
-        lock_stmt = routine.labels[0].body.statements[0]
-        target = lock_stmt.targets[0]
-        assert target.get("timeout") is not None
-        assert target["timeout"].name == "T"
-
-    def test_lock_parenthesized_with_timeout(self):
-        """LOCK (^A,^B):5 parses list lock with timeout (§8.2.12)."""
-        parser = MUMPSParser()
-        source = "LABEL\tL (^A,^B):5\n"
-        routine = parser.parse(source)
-
-        lock_stmt = routine.labels[0].body.statements[0]
-        # MLockStatement.timeout stores parenthesized list timeout
-        assert lock_stmt.timeout is not None
-        assert lock_stmt.timeout.value == 5
-
-    def test_lock_without_timeout(self):
-        """LOCK ^DATA parses without timeout (§8.2.12)."""
-        parser = MUMPSParser()
-        source = "LABEL\tL ^DATA\n"
-        routine = parser.parse(source)
-
-        lock_stmt = routine.labels[0].body.statements[0]
-        target = lock_stmt.targets[0]
-        assert target.get("timeout") is None
-
-
-# =============================================================================
-# Timeout Tests (ASG Level)
-# =============================================================================
-
-
-@pytest.mark.asg
-class TestTimeoutsASG:
-    """ASG tests for timeout semantic analysis.
-
-    ASG analysis must identify timeout expressions and track
-    that command modifies $TEST.
-    Reference: §8.2.10, §8.2.12, §8.2.15, §8.2.17
-    """
-
-    def test_job_parses_with_timeout(self):
-        """JOB with timeout parses to MJobStatement (§8.2.10)."""
-        parser = MUMPSParser()
-        source = "LABEL\tJ ROUTINE::5\n"
-        routine = parser.parse(source)
-
-        job_stmt = routine.labels[0].body.statements[0]
-        assert job_stmt.__class__.__name__ == "MJobStatement"
 
 
 # =============================================================================

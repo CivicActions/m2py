@@ -56,6 +56,19 @@ class TestLockCommandAnalysis:
         assert target.get("timeout") is not None
         assert target["timeout"].value == 5
 
+    def test_lock_parenthesized_with_timeout(self):
+        """LOCK (^A,^B):5 parses list lock with timeout (§8.2.12)."""
+        parser = MUMPSParser()
+        source = "LABEL\tL (^A,^B):5\n"
+        routine = parser.parse(source)
+
+        lock_stmt = routine.labels[0].body.statements[0]
+        # MLockStatement.timeout stores parenthesized list timeout
+        assert lock_stmt.timeout is not None
+        assert lock_stmt.timeout.value == 5
+        # Should also have targets
+        assert len(lock_stmt.targets) == 2
+
     def test_lock_release_all(self, analyze_routine):
         """LOCK without arguments releases all locks."""
         parser = MUMPSParser()

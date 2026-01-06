@@ -191,6 +191,24 @@ class TestMActualParameterAnalysis:
         assert isinstance(arg.expression, MVariable)
         assert arg.expression.parent is arg
 
+    def test_do_with_expression_postcondition(self):
+        """DO LABEL:X>0 parses expression postcondition (§8.1.4).
+
+        Argument postconditions can be complex expressions.
+        Only Do, Goto, and Xecute support argument postconditions.
+        """
+        from m2py.asg.expressions import MBinaryOp
+
+        stmt = analyze_first_command("D PROC:N>0")
+
+        assert isinstance(stmt, MDoStatement)
+        assert len(stmt.targets) == 1
+        target = stmt.targets[0]
+
+        assert target.postcondition is not None
+        assert isinstance(target.postcondition, MBinaryOp)
+        assert target.postcondition.operator == ">"
+
 
 def analyze_first_command(line: str):
     """Helper to parse a line and analyze the first command."""

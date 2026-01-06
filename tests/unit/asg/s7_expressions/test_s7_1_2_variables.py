@@ -77,6 +77,17 @@ class TestVariablesAnalysis:
             assert isinstance(sub, NumericLiteral)
             assert sub.value == i
 
+    def test_naked_reference_expression_subscript(self):
+        """^(X+1) parses as naked reference with expression subscript (§7.1.2.4)."""
+        stmt = analyze_set_command("S ^(X+1)=100")
+        target = stmt.assignments[0].target
+
+        assert isinstance(target, NakedGlobal)
+        assert len(target.subscripts) == 1
+        # Subscript should be an expression (not a simple literal)
+        subscript = target.subscripts[0]
+        assert subscript is not None
+
     def test_naked_vs_full_global_distinction(self):
         """Parser distinguishes ^(1) from ^DATA(1) (§7.1.2.4)."""
         # Parse naked reference

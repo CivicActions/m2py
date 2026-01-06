@@ -158,6 +158,54 @@ class TestCommandGeneralRulesAnalysis:
         assert isinstance(stmt.postcondition, MIntrinsicFunction)
         assert stmt.postcondition.name.upper() in ("D", "DATA")
 
+    def test_postcondition_left_to_right_evaluation(self, analyze_routine):
+        """W:X>0&Y<10 DATA - postcondition with left-to-right evaluation (§8.1.4).
+
+        MUMPS uses strict left-to-right evaluation (no operator precedence),
+        so X>0&Y<10 parses as ((X>0)&Y)<10.
+        """
+        from m2py.asg.statements import MWriteStatement
+        from m2py.parser.textx_classes import NumericLiteral
+
+        routine = analyze_routine("TEST\n W:X>0&Y<10 DATA")
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MWriteStatement)
+        pc = stmt.postcondition
+        assert pc is not None
+
+        # Due to left-to-right evaluation: ((X>0)&Y)<10
+        # Top level: < operator
+        assert isinstance(pc, MBinaryOp)
+        assert pc.operator == "<"
+        # Right side: 10
+        assert isinstance(pc.right, NumericLiteral)
+        assert pc.right.value == 10
+        # Left side: (X>0)&Y
+        assert isinstance(pc.left, MBinaryOp)
+        assert pc.left.operator == "&"
+
+    def test_postcondition_function_in_comparison(self, analyze_routine):
+        """S:$L(X)>0 Y=X - intrinsic function in comparison postcondition (§8.1.4).
+
+        $LENGTH in a comparison expression - tests nested function calls.
+        """
+        from m2py.asg.expressions import MIntrinsicFunction
+
+        routine = analyze_routine("TEST\n S:$L(X)>0 Y=X")
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MSetStatement)
+        pc = stmt.postcondition
+        assert pc is not None
+
+        # Should be MBinaryOp: $L(X) > 0
+        assert isinstance(pc, MBinaryOp)
+        assert pc.operator == ">"
+        # Left side is the function call
+        assert isinstance(pc.left, MIntrinsicFunction)
+        assert pc.left.name.upper() in ("L", "LENGTH")
+
     def test_combined_command_and_argument_postconditions(self, analyze_routine):
         """Both command and argument postconditions are captured (§8.1.4).
 

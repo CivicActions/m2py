@@ -67,6 +67,19 @@ class TestXecuteCommandAnalysis:
         # Command-level postcondition
         assert stmt.postcondition is not None
 
+    def test_xecute_with_argument_postconditions(self):
+        """XECUTE CODE1:C1,CODE2:C2 parses argument postconditions (§8.1.4).
+
+        XECUTE can have multiple code strings with postconditions.
+        Only Do, Goto, and Xecute support argument postconditions.
+        """
+        stmt = analyze_first_command('X "S A=1":X,"S B=2":Y')
+
+        assert isinstance(stmt, MXecuteStatement)
+        assert stmt.postcondition is None  # No command postcondition
+        # XECUTE has code_expressions with postconditions
+        assert len(stmt.code_expressions) == 2
+
 
 @pytest.mark.asg
 class TestXecuteConstantDetection:
