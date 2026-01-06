@@ -47,30 +47,8 @@ def analyze_first_command(line: str):
 
 @pytest.mark.asg
 @pytest.mark.ydb
-class TestZallocateStatementAnalysis:
-    """Tests for ZALLOCATE statement analysis."""
-
-    def test_zallocate(self):
-        """za X produces MZAllocateStatement with incremental lock."""
-        stmt = analyze_first_command("za X")
-
-        assert isinstance(stmt, MZAllocateStatement)
-        assert len(stmt.targets) == 1
-        assert stmt.targets[0]["lockop"] == "+"
-
-
-@pytest.mark.asg
-@pytest.mark.ydb
-class TestZdeallocateStatementAnalysis:
-    """Tests for ZDEALLOCATE statement analysis."""
-
-    def test_zdeallocate(self):
-        """zd X produces MZDeallocateStatement with decremental unlock."""
-        stmt = analyze_first_command("zd X")
-
-        assert isinstance(stmt, MZDeallocateStatement)
-        assert len(stmt.targets) == 1
-        assert stmt.targets[0]["lockop"] == "-"
+class TestZdeallocatePostcondition:
+    """Tests for ZDEALLOCATE with postcondition."""
 
     def test_zdeallocate_with_postcondition(self):
         """Zdeallocate:'(i#2) X produces MZDeallocateStatement with postcondition."""

@@ -111,56 +111,13 @@ class TestPatternMatchAnalysis:
 
 @pytest.mark.asg
 class TestPatternMatchASG:
-    """Test MPatternMatch ASG node structure.
+    """Test MPatternMatch ASG node structure edge cases.
 
     Pattern match expressions parse as MPatternMatch nodes with:
     - subject: the left-hand expression being matched
     - pattern: string representation of the pattern specification
     - operator: either "?" or "'?" for negated match
     """
-
-    def test_pattern_match_as_pattern_match(self):
-        """Pattern match X?1N parses as MPatternMatch."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg import MPatternMatch
-        from m2py.asg.expressions import MVariable
-
-        expr = parse_expression("X?1N")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MPatternMatch)
-        assert result.operator == "?"
-        assert isinstance(result.subject, MVariable)
-        assert result.subject.name == "X"
-        assert result.pattern == "1N"
-
-    def test_pattern_match_recognizable(self):
-        """Pattern match can be identified by MPatternMatch type."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg import MPatternMatch
-
-        expr = parse_expression("Y?1A")
-        result = analyze_expression(expr)
-
-        # Can identify pattern match by type
-        assert isinstance(result, MPatternMatch)
-        assert result.operator == "?"
-        assert result.pattern == "1A"
-
-    def test_pattern_match_indefinite_multiplier(self):
-        """Indefinite multiplier .N parses correctly (zero or more)."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg import MPatternMatch
-
-        expr = parse_expression("X?.N")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MPatternMatch)
-        assert result.operator == "?"
-        assert result.pattern == ".N"
 
     def test_pattern_match_negated(self):
         """Negated pattern match X'?1A parses correctly."""
@@ -175,18 +132,6 @@ class TestPatternMatchASG:
         assert result.operator == "'?"
         assert result.pattern == "1A"
 
-    def test_pattern_match_range_repcount(self):
-        """Range repcount like 1.3N parses correctly."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg import MPatternMatch
-
-        expr = parse_expression("X?1.3N")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MPatternMatch)
-        assert result.pattern == "1.3N"
-
     def test_pattern_match_multiple_atoms(self):
         """Multiple pattern atoms like 1N.A parses correctly."""
         from tests.helpers.parsing import parse_expression
@@ -198,18 +143,6 @@ class TestPatternMatchASG:
 
         assert isinstance(result, MPatternMatch)
         assert result.pattern == "1N.A"
-
-    def test_pattern_match_with_string(self):
-        """Pattern with string literal like 1"hello" parses correctly."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg import MPatternMatch
-
-        expr = parse_expression('X?1"hello"')
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MPatternMatch)
-        assert result.pattern == '1"hello"'
 
     def test_pattern_match_followed_by_concat(self):
         """Pattern match followed by concatenation X?.N_Y parses correctly."""

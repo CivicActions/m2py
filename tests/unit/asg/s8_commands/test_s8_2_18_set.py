@@ -170,46 +170,10 @@ class TestSetCommandAnalysis:
 
 @pytest.mark.asg
 class TestSetStatementAnalysis:
-    """Tests for SET command analysis."""
-
-    def test_simple_set(self):
-        """SET X=1 produces MSetStatement with one assignment."""
-        stmt = analyze_first_command("S X=1")
-
-        assert isinstance(stmt, MSetStatement)
-        assert len(stmt.assignments) == 1
-
-        # Check target
-        target = stmt.assignments[0].target
-        assert isinstance(target, MVariable)
-        assert target.name == "X"
-
-        # Check value - should be an expression (MLiteral or unwrapped)
-        value = stmt.assignments[0].value
-        assert isinstance(value, MLiteral)
-        assert value.value == 1
-
-    def test_multiple_assignments(self):
-        """SET X=1,Y=2 produces two assignments."""
-        stmt = analyze_first_command("S X=1,Y=2")
-
-        assert isinstance(stmt, MSetStatement)
-        assert len(stmt.assignments) == 2
-
-        assert stmt.assignments[0].target.name == "X"
-        assert stmt.assignments[1].target.name == "Y"
-
-    def test_set_with_global(self):
-        """SET ^GLOBAL=value produces MGlobal target."""
-        stmt = analyze_first_command("S ^DATA=100")
-
-        assert isinstance(stmt, MSetStatement)
-        target = stmt.assignments[0].target
-        assert isinstance(target, MGlobal)
-        assert target.name == "DATA"
+    """Tests for SET command analysis edge cases (T526, T537, T567 fixes)."""
 
     def test_set_string_literal(self):
-        """SET X="hello" produces string literal."""
+        """SET X="hello" produces string literal with STRING type."""
         stmt = analyze_first_command('S X="hello"')
 
         value = stmt.assignments[0].value
@@ -254,30 +218,6 @@ class TestSetStatementAnalysis:
         assert isinstance(target2, MNakedGlobal)
         assert len(target2.subscripts) == 1
 
-    def test_set_parenthesized_multi_target_expansion(self):
-        """SET (A,B,C)=1 expands into 3 separate MAssignment objects (T537 fix).
-
-        Per data-model.md, MAssignment.target should be a single expression,
-        not a list. Multi-assignment with parenthesized targets should expand
-        into separate assignments with the same value.
-        """
-        stmt = analyze_first_command("S (A,B,C)=1")
-
-        assert isinstance(stmt, MSetStatement)
-        # Should have 3 assignments, one for each target
-        assert len(stmt.assignments) == 3
-
-        # Each assignment has a single target (not a list)
-        for i, name in enumerate(["A", "B", "C"]):
-            assign = stmt.assignments[i]
-            assert isinstance(assign.target, MVariable), (
-                f"Assignment {i} target should be MVariable, got {type(assign.target)}"
-            )
-            assert assign.target.name == name
-            # Value should be a literal 1
-            assert isinstance(assign.value, MLiteral)
-            assert assign.value.value == 1
-
     def test_set_parenthesized_with_globals(self):
         """SET (A,^B,C)=X expands to 3 assignments with mixed types (T537 fix)."""
         stmt = analyze_first_command("S (A,^B,C)=X")
@@ -315,27 +255,6 @@ class TestSetStatementAnalysis:
         assert stmt.assignments[2].target.name == "C"
         assert stmt.assignments[2].value.value == 2
 
-    def test_set_left_hand_piece_simple(self):
-        """SET $P(X,"^")="D" - left-hand $PIECE as assignment target (T567 fix).
-
-        MUMPS allows $PIECE on the left side of an assignment to modify
-        a specific piece of a string variable.
-        """
-        stmt = analyze_first_command('S $P(X,"^")="D"')
-
-        assert isinstance(stmt, MSetStatement)
-        assert len(stmt.assignments) == 1
-
-        # Target should be MIntrinsicFunction for $PIECE
-        target = stmt.assignments[0].target
-        assert isinstance(target, MIntrinsicFunction)
-        assert target.name.upper() in ("P", "PIECE")
-
-        # Value should be the string "D"
-        value = stmt.assignments[0].value
-        assert isinstance(value, MLiteral)
-        assert value.value == "D"
-
     def test_set_left_hand_piece_with_positions(self):
         """SET $P(X,"^",2,3)="D" - left-hand $PIECE with position args (T567 fix)."""
         stmt = analyze_first_command('S $P(X,"^",2,3)="D"')
@@ -361,30 +280,3 @@ class TestSetStatementAnalysis:
         # Second assignment is left-hand $PIECE
         assert isinstance(stmt.assignments[1].target, MIntrinsicFunction)
         assert stmt.assignments[1].target.name.upper() in ("P", "PIECE")
-
-
-@pytest.mark.asg
-class TestParseSetCommand:
-    """Test SET command parsing to full-fidelity ASG."""
-
-    def test_simple_set(self):
-        """S X=1 creates MSetStatement"""
-        cmds = parse_commands_from_line("S X=1")
-        stmt = analyze_command(cmds[0])
-        assert stmt is not None
-        assert len(stmt.assignments) == 1
-        assert stmt.assignments[0].target.name == "X"
-
-    def test_set_multiple(self):
-        """S X=1,Y=2 creates two assignments"""
-        cmds = parse_commands_from_line("S X=1,Y=2")
-        stmt = analyze_command(cmds[0])
-        assert stmt is not None
-        assert len(stmt.assignments) == 2
-
-    def test_set_global(self):
-        """S ^GLOBAL=1 parses global variable"""
-        cmds = parse_commands_from_line("S ^GLOBAL=1")
-        stmt = analyze_command(cmds[0])
-        assert stmt is not None
-        assert isinstance(stmt.assignments[0].target, MGlobal)
