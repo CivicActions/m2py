@@ -112,3 +112,19 @@ class TestNewCommandAnalysis:
         stmt3 = analyze_first_command("N")
         assert isinstance(stmt3, MNewStatement)
         # No specific variables - this NEWs all in current scope
+
+    def test_exclusive_new_many_variables(self):
+        """NEW (A,B,C,D) with many variables tracks all in except_list (§8.2.14)."""
+        stmt = analyze_first_command("N (A,B,C,D)")
+
+        assert isinstance(stmt, MNewStatement)
+        assert stmt.exclusive is True
+        assert len(stmt.except_list) == 4
+        assert set(stmt.except_list) == {"A", "B", "C", "D"}
+
+    def test_except_list_empty_for_regular_new(self):
+        """Regular NEW has empty except_list (§8.2.14)."""
+        stmt = analyze_first_command("N X")
+
+        assert isinstance(stmt, MNewStatement)
+        assert stmt.except_list == []
