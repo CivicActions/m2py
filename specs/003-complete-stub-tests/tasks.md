@@ -1241,11 +1241,245 @@ Each batch completion provides value:
 
 ---
 
+## Phase 10: Coverage Gap Analysis
+
+**Purpose**: Analyze remaining code coverage gaps and determine appropriate action (dead code removal vs test additions)
+
+**Status**: 🔍 ANALYSIS COMPLETE - Ready for implementation decisions
+
+**Coverage Summary** (as of Jan 2025): 80% (3976 statements, 620 missed)
+
+### Gap Analysis Findings
+
+#### GAP-001: `dead_code_analysis.py` - 95% UNCOVERED (36/39 lines)
+
+**Classification**: ❌ **DEAD CODE - Remove**
+
+**Analysis**: 
+- The `detect_unreachable_code()` function is **never called** by the parser pipeline
+- Unreachable code detection is already implemented in `semantic_analyzer.py` during ASG construction
+- The tests in `test_unreachable_code.py` test the semantic analyzer's `is_unreachable` property, NOT this function
+- This module was created during spec-001 but never integrated
+
+**Evidence**:
+- `grep -r "detect_unreachable_code" src/` shows function is only defined, never called
+- Tests use `stmt.is_unreachable` which is set by semantic_analyzer.py lines 136-165
+
+**Recommendation**: Delete `src/m2py/analysis/dead_code_analysis.py` and its import from `__init__.py`
+
+**Priority**: Low (cleanup, no functional impact)
+
+---
+
+#### GAP-002: `limitations.py` - 100% UNCOVERED (78/78 lines)
+
+**Classification**: ⏭️ **EXPECTED - No action needed**
+
+**Analysis**: 
+- This file defines limitation constants (LIM-001 through LIM-013)
+- It's used by `utils/rebuild_docs.py` to generate documentation, not by runtime code
+- Test coverage tools don't run utils scripts
+
+**Evidence**:
+- File contains only dataclass definitions and constant dictionaries
+- Used for documentation generation, not runtime parsing
+
+**Recommendation**: Add to `.coveragerc` exclude or document as expected uncovered
+
+**Priority**: Low (documentation infrastructure)
+
+---
+
+#### GAP-003: `semantic_analyzer.py` - 289 missed lines (various handlers)
+
+**Classification**: Mixed - some dead code, some testing gaps
+
+**Sub-gaps analyzed**:
+
+##### GAP-003a: Lines 896-898 (`_analyze_ReadCommand` unknown arg fallback)
+**Classification**: 🛡️ **Defensive code** - Low priority
+- Fallback for unknown READ argument types
+- May never be hit with current grammar
+
+##### GAP-003b: Lines 938-939, 944 (`_analyze_IfCommand` edge cases)  
+**Classification**: ✅ **Testing gap** - Low priority
+- Handles edge case of IF with no conditions
+- Grammar may prevent this case
+
+##### GAP-003c: Lines 1002-1008 (`_simple_var_to_asg` string handling)
+**Classification**: 🛡️ **Defensive code** - Low priority
+- Handles FOR loop variable as raw string
+- Grammar typically produces objects, not strings
+
+##### GAP-003d: Lines 1033-1054 (`_convert_loop_var_subscripts`)
+**Classification**: ✅ **Testing gap** - Medium priority
+- Handles subscripted loop variables: `FOR ^GLOBAL(1)=...`
+- Valid MUMPS syntax per §8.2.5.4
+
+##### GAP-003e: Lines 1228-1271 (`_analyze_IndirectChain` multi-level)
+**Classification**: ✅ **Testing gap** - Medium priority
+- Handles `@@VAR` (double indirection) and `@@@VAR` (triple)
+- Valid MUMPS syntax per §7.3.4
+
+##### GAP-003f: Lines 1377-1380, 1424-1427, 1468-1471 (KILL exclusive lists)
+**Classification**: ✅ **Testing gap** - Medium priority
+- Handles `KILL (A,B),(C,D)` with multiple exclusive groups
+- Valid MUMPS syntax per §8.2.12
+
+##### GAP-003g: Lines 1613-1618, 1648-1653 (LOCK indirection)
+**Classification**: ✅ **Testing gap** - Medium priority  
+- Handles `LOCK @VAR`, `LOCK @@VAR` indirection in lock targets
+- Valid MUMPS syntax per §8.2.14
+
+##### GAP-003h: Lines 1993-1994, 2006, 2014-2016 (TSTART params)
+**Classification**: ✅ **Testing gap** - Medium priority
+- Handles TSTART compound params: `(serial:t="BA")`
+- Valid MUMPS syntax per §6.3.1
+
+##### GAP-003i: Lines 2205-2263 (ZWRITE patterns/ranges)
+**Classification**: ✅ **Testing gap** - Medium priority
+- Handles ZWRITE subscript ranges and global patterns
+- Valid YottaDB extension syntax
+
+##### GAP-003j: Lines 2473-2608 (Z-commands: ZPRINT, ZSYSTEM, ZMESSAGE, etc.)
+**Classification**: ✅ **Testing gap** - Low priority
+- YottaDB Z-command handlers with complex argument parsing
+- Not in ANSI spec, YDB-specific
+
+##### GAP-003k: Lines 2692-2760 (ZGoto handlers)
+**Classification**: ✅ **Testing gap** - Low priority
+- ZGOTO argument parsing
+- YottaDB extension
+
+##### GAP-003l: Lines 2840-2890 (`analyze_statement`, `unwrap_expression`)
+**Classification**: 🛡️ **Defensive code / utility** - Low priority
+- Utility functions for ad-hoc parsing
+- May be unused or only used by external tools
+
+---
+
+#### GAP-004: `textx_classes.py` - 48 missed lines
+
+**Classification**: Mixed defensive code and edge cases
+
+##### GAP-004a: Lines 130-167 (`_get_function_arg_list` new format)
+**Classification**: 🛡️ **Defensive code** - Low priority
+- Handles alternative function argument formats
+- May be grammar evolution fallback
+
+##### GAP-004b: Lines 423-439 (ZWRITE subscript handling)
+**Classification**: ✅ **Testing gap** - Medium priority
+- Handles ZWRITE subscript range expressions
+- Same as GAP-003i
+
+---
+
+#### GAP-005: `variables.py` - 31 missed lines
+
+**Classification**: ✅ **Testing gap** - Medium-High priority
+
+##### GAP-005a: Lines 593-619 (expression variable extraction edge cases)
+**Classification**: ✅ **Testing gap** - Medium priority
+- Handles MActualParameter, MSelectArg variable extraction
+- Used by variable analysis
+
+##### GAP-005b: Lines 917-923 (`bind_parameters` loop)
+**Classification**: ✅ **Testing gap** - High priority
+- Parameter binding for function calls
+- Critical for by-reference semantics
+
+##### GAP-005c: Lines 1172-1178 (`compute_transitive_outputs`)
+**Classification**: ✅ **Testing gap** - High priority
+- Transitive output computation through call chains
+- Critical for accurate scope analysis
+
+---
+
+#### GAP-006: `pattern_compiler.py` - 25 missed lines
+
+**Classification**: ✅ **Testing gap** - Medium priority
+
+##### GAP-006a: Lines 276-315 (pattern alternation parsing)
+**Classification**: ✅ **Testing gap** - Medium priority
+- Handles pattern alternation: `1(1N,1A)` matching digit OR letter
+- Valid MUMPS syntax per §7.3.6.5
+
+##### GAP-006b: Lines 299-315 (nested alternation, quoted strings in patterns)
+**Classification**: ✅ **Testing gap** - Medium priority
+- Complex pattern cases with nested parens and quotes
+- Edge cases in pattern matching
+
+---
+
+#### GAP-007: `resolver.py` - 13 missed lines
+
+**Classification**: ✅ **Testing gap** - Low priority
+
+- Lines 133-135, 184-187: External routine handling
+- Lines 209-212: Global collection in external refs
+- Edge cases for cross-routine references
+
+---
+
+#### GAP-008: `for_analysis.py` - 22 missed lines
+
+**Classification**: Mixed
+
+##### GAP-008a: Lines 84-86, 152-154, 177-179, 291-294
+**Classification**: ✅ **Testing gap** - Medium priority
+- FOR loop classification edge cases
+- Handles complex FOR patterns
+
+##### GAP-008b: Lines 326-327
+**Classification**: 🛡️ **Defensive code** - Low priority
+- Fallback handling
+
+---
+
+#### GAP-009: `goto_analysis.py` - 12 missed lines
+
+**Classification**: ✅ **Testing gap** - Medium priority
+
+- Lines 166-167, 181-182, 272-278: Multi-loop exit detection
+- Complex GOTO patterns that exit nested loops
+
+---
+
+### Priority Summary
+
+| Priority | Category | Gaps | Action |
+|----------|----------|------|--------|
+| **Critical** | - | - | None identified |
+| **High** | Variable Analysis | GAP-005b, GAP-005c | Add unit tests |
+| **Medium** | ASG Edge Cases | GAP-003d,e,f,g,h,i, GAP-004b, GAP-005a, GAP-006, GAP-008a, GAP-009 | Add unit tests |
+| **Low** | Defensive Code | GAP-003a,b,c,j,k,l, GAP-004a, GAP-007, GAP-008b | Leave or simplify |
+| **Remove** | Dead Code | GAP-001 | Delete module |
+| **Ignore** | Expected | GAP-002 | Exclude from coverage |
+
+### Recommended Next Steps
+
+1. **T300** [US4] Delete `dead_code_analysis.py` and update `__init__.py` (GAP-001)
+2. **T301** [US4] Add `limitations.py` to coverage exclusions (GAP-002)
+3. **T302** [US2] Add tests for `bind_parameters` in variable analysis (GAP-005b) - **HIGH**
+4. **T303** [US2] Add tests for `compute_transitive_outputs` (GAP-005c) - **HIGH**
+5. **T304** [US2] Add tests for subscripted FOR loop variables (GAP-003d) - **MEDIUM**
+6. **T305** [US2] Add tests for multi-level indirection `@@VAR` (GAP-003e) - **MEDIUM**
+7. **T306** [US2] Add tests for KILL multiple exclusive groups (GAP-003f) - **MEDIUM**
+8. **T307** [US2] Add tests for LOCK indirection (GAP-003g) - **MEDIUM**
+9. **T308** [US2] Add tests for TSTART compound params (GAP-003h) - **MEDIUM**
+10. **T309** [US2] Add tests for ZWRITE ranges/patterns (GAP-003i, GAP-004b) - **MEDIUM**
+11. **T310** [US2] Add tests for pattern alternation (GAP-006) - **MEDIUM**
+12. **T311** [US2] Add tests for multi-loop GOTO exits (GAP-009) - **MEDIUM**
+
+**Estimated Impact**: Implementing T300-T303 would raise coverage from 80% to ~82%. Completing all T300-T311 would reach ~85%.
+
+---
+
 ## Success Command
 
 ```bash
 # Final success verification
 uv run pytest --tb=no -q
 
-# Current: 3722 passed, 311 xfailed (all xfails are codegen stubs)
+# Current: 1783 passed, 311 xfailed (all xfails are codegen stubs)
 ```
