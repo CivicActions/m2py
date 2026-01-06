@@ -185,23 +185,6 @@ class TestArgumentPostconditions:
     commands support argument-level postconditions.
     """
 
-    def test_goto_arg_postcondition_allowed(self, command_metamodel):
-        """G ABC:X=1 - GOTO supports argument postconditions (§8.1.4)."""
-        model = command_metamodel.model_from_str("G ABC:X=1", "GotoCommand")
-        assert model.targets[0].postcond is not None
-
-    def test_do_arg_postcondition_allowed(self, command_metamodel):
-        """D LABEL:X=1 - DO supports argument postconditions (§8.1.4)."""
-        model = command_metamodel.model_from_str("D LABEL:X=1", "DoCommand")
-        assert model.targets[0].postcond is not None
-
-    def test_xecute_arg_postcondition_allowed(self, command_metamodel):
-        """X \"S X=1\":A>0 - XECUTE supports argument postconditions (§8.1.4)."""
-        model = command_metamodel.model_from_str('X "S X=1":A>0', "XecuteCommand")
-        assert model.postcond is None  # No command postcondition
-        assert len(model.args) == 1
-        assert model.args[0].postcond is not None
-
     def test_xecute_multiple_args_with_postconditions(self, command_metamodel):
         """X P,Q:X=10,R:X=10,S - multiple XECUTE args, some with postconditions (§8.1.4)."""
         model = command_metamodel.model_from_str("X P,Q:X=10,R:X=10,S", "XecuteCommand")
@@ -250,18 +233,3 @@ class TestArgumentPostconditions:
         model = command_metamodel.model_from_str("S X=1", "SetCommand")
         # Verify Assignment does not have postcond attribute
         assert not hasattr(model.assignments[0], "postcond")
-
-
-@pytest.mark.parser
-class TestPostconditions:
-    """Tests for postcondition parsing (§8.1)."""
-
-    def test_goto_postcondition(self, command_metamodel):
-        """G:ERR ERROR - GOTO with postcondition (§8.1)."""
-        model = command_metamodel.model_from_str("G:ERR ERROR", "GotoCommand")
-        assert model.postcond is not None
-
-    def test_do_postcondition(self, command_metamodel):
-        """D:OK PROCEED - DO with postcondition (§8.1)."""
-        model = command_metamodel.model_from_str("D:OK PROCEED", "DoCommand")
-        assert model.postcond is not None

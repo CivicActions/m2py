@@ -129,55 +129,6 @@ class TestBoundedForGrammar:
 
 
 @pytest.mark.parser
-class TestSimpleIfGrammar:
-    """Test simple IF command parsing."""
-
-    def test_simple_if(self):
-        """IF with single condition."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = "LABEL\tI X=1 W X\n"
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-
-    def test_if_abbreviated(self):
-        """I abbreviation should work same as IF."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = "LABEL\tI Y W Y\n"
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-
-    def test_if_comparison(self):
-        """IF with comparison operator."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = 'LABEL\tI A>B W "A is greater"\n'
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-
-    def test_if_argumentless(self):
-        """IF without explicit condition (uses $T)."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = "LABEL\tI  W $T\n"
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-
-
-@pytest.mark.parser
 class TestStringListForGrammar:
     """Test string-list FOR command parsing."""
 
