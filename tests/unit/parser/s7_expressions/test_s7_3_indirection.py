@@ -426,101 +426,20 @@ class TestExpressionIndirection:
 
 @pytest.mark.parser
 class TestIndirectionGrammar:
-    """Test indirection parsing via MUMPSParser."""
+    """Test indirection parsing via MUMPSParser.
 
-    def test_simple_indirection(self):
-        """@variable indirection should parse."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = "LABEL\tS @VAR=1\n"
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-
-    def test_subscripted_indirection(self):
-        """@variable(subscripts) should parse."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = "LABEL\tS @VAR@(1,2)=3\n"
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-
-    def test_name_indirection(self):
-        """@"varname" string indirection should parse."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = 'LABEL\tS @"X"=1\n'
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-
-    def test_do_indirection(self):
-        """D @ROUTINE indirection should parse."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = "LABEL\tD @ROUTINE\n"
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-
-    def test_goto_indirection(self):
-        """G @LABEL indirection should parse."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = "LABEL\tG @TARGET\n"
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-
-    def test_name_indirection_single_subscript(self):
-        """@X@(1) name indirection with single subscript should parse."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = "LABEL\tS @X@(1)=2\n"
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-        label = routine.labels[0]
-        stmt = label.body.statements[0]
-        assert stmt.__class__.__name__ == "MSetStatement"
-        # Verify target is an indirection with name_indirection_subscripts
-        target = stmt.assignments[0].target
-        # Could be 'Indirection' (textX class) or 'MIndirection' (ASG class)
-        assert "Indirection" in target.__class__.__name__
-        assert target.name_indirection_subscripts is not None
-        assert len(target.name_indirection_subscripts) == 1
-
-    def test_name_indirection_multiple_subscripts(self):
-        """@X@(1,2,3) name indirection with multiple subscripts should parse."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MRoutine
-
-        parser = MUMPSParser()
-        source = "LABEL\tS @X@(1,2,3)=4\n"
-        routine = parser.parse(source)
-
-        assert isinstance(routine, MRoutine)
-        label = routine.labels[0]
-        target = label.body.statements[0].assignments[0].target
-        assert target.name_indirection_subscripts is not None
-        assert len(target.name_indirection_subscripts) == 1
-        assert len(target.name_indirection_subscripts[0]) == 3
+    Note: Simple indirection parsing is tested in TestIndirectionParsing and
+    TestExpressionIndirection using direct grammar access. This class focuses
+    on full parser pipeline integration tests for complex scenarios not
+    covered elsewhere.
+    """
 
     def test_name_indirection_chained(self):
-        """@X@(1)@(2) chained name indirection should parse."""
+        """@X@(1)@(2) chained name indirection should parse.
+
+        Chained subscript indirection is more complex than single subscript
+        and tests the parser's handling of multiple @() chains.
+        """
         from m2py.parser import MUMPSParser
         from m2py.asg import MRoutine
 
@@ -535,7 +454,10 @@ class TestIndirectionGrammar:
         assert len(target.name_indirection_subscripts) == 2
 
     def test_name_indirection_with_double_indirection(self):
-        """@@X@(1) double indirection with name subscripts should parse."""
+        """@@X@(1) double indirection with name subscripts should parse.
+
+        This complex pattern combines double indirection with subscripts.
+        """
         from m2py.parser import MUMPSParser
         from m2py.asg import MRoutine
 
@@ -546,7 +468,11 @@ class TestIndirectionGrammar:
         assert isinstance(routine, MRoutine)
 
     def test_name_indirection_global(self):
-        """@^VV@(1) global variable name indirection should parse."""
+        """@^VV@(1) global variable name indirection should parse.
+
+        Tests indirection on global variables, which have a different
+        grammar rule path.
+        """
         from m2py.parser import MUMPSParser
         from m2py.asg import MRoutine
 
@@ -557,7 +483,11 @@ class TestIndirectionGrammar:
         assert isinstance(routine, MRoutine)
 
     def test_name_indirection_complex_mugj_pattern(self):
-        """Complex MUGJ pattern @@X@(1,2)@(5,6) should parse."""
+        """Complex MUGJ pattern @@X@(1,2)@(5,6) should parse.
+
+        This pattern from MUGJ tests combines all indirection features:
+        double indirection, subscripted variable, chained subscripts.
+        """
         from m2py.parser import MUMPSParser
         from m2py.asg import MRoutine
 
