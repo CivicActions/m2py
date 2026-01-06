@@ -160,26 +160,8 @@ class TestArgumentPostconditionsParser:
     Reference: §8.1.4
     """
 
-    def test_do_with_argument_postconditions(self):
-        """DO L1:C1,L2:C2 parses argument-level postconditions (§8.1.4).
-
-        Per 1995__a108005.md: "The postcond may also be used to conditionalize
-        the arguments of Do, Goto, and Xecute."
-        """
-        stmt = analyze_first_command("D L1:X,L2:Y")
-
-        assert isinstance(stmt, MDoStatement)
-        assert stmt.postcondition is None  # No command-level postcondition
-        assert len(stmt.targets) == 2
-
-        # Each target (MCall) has its own postcondition
-        assert stmt.targets[0].postcondition is not None
-        assert isinstance(stmt.targets[0].postcondition, LocalVariable)
-        assert stmt.targets[0].postcondition.name == "X"
-
-        assert stmt.targets[1].postcondition is not None
-        assert isinstance(stmt.targets[1].postcondition, LocalVariable)
-        assert stmt.targets[1].postcondition.name == "Y"
+    # NOTE: test_do_with_argument_postconditions moved to:
+    # tests/unit/asg/s8_commands/test_s8_1_general_rules.py::TestCommandGeneralRulesAnalysis::test_argument_postcondition_in_do
 
     def test_goto_with_argument_postconditions(self):
         """GOTO L1:C1,L2:C2 parses argument-level postconditions (§8.1.4).
@@ -287,25 +269,8 @@ class TestMixedPostconditionsParser:
     Reference: §8.1.4
     """
 
-    def test_command_and_argument_postconditions(self):
-        """DO:CMD L1:ARG1,L2:ARG2 parses both levels (§8.1.4).
-
-        Command postcondition gates all; argument postconditions are independent.
-        """
-        stmt = analyze_first_command("D:OK PROC1:X,PROC2:Y")
-
-        assert isinstance(stmt, MDoStatement)
-        # Command-level postcondition
-        assert stmt.postcondition is not None
-        assert isinstance(stmt.postcondition, LocalVariable)
-        assert stmt.postcondition.name == "OK"
-
-        # Argument-level postconditions
-        assert len(stmt.targets) == 2
-        assert stmt.targets[0].postcondition is not None
-        assert stmt.targets[0].postcondition.name == "X"
-        assert stmt.targets[1].postcondition is not None
-        assert stmt.targets[1].postcondition.name == "Y"
+    # NOTE: test_command_and_argument_postconditions moved to:
+    # tests/unit/asg/s8_commands/test_s8_1_general_rules.py::TestCommandGeneralRulesAnalysis::test_combined_command_and_argument_postconditions
 
     def test_goto_command_and_argument_postconditions(self):
         """GOTO:CMD L1:A,L2:B parses both levels (§8.1.4)."""

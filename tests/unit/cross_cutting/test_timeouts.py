@@ -46,17 +46,8 @@ class TestOpenTimeoutParser:
         assert open_stmt.devices[0].timeout is not None
         assert open_stmt.devices[0].timeout.value == 5
 
-    def test_open_with_params_and_timeout(self):
-        """OPEN DEV:(params):30 parses with params and timeout (§8.2.15)."""
-        parser = MUMPSParser()
-        source = 'LABEL\tO DEV:("RW"):30\n'
-        routine = parser.parse(source)
-
-        open_stmt = routine.labels[0].body.statements[0]
-        assert open_stmt.__class__.__name__ == "MOpenStatement"
-        assert len(open_stmt.devices) == 1
-        assert open_stmt.devices[0].timeout is not None
-        assert open_stmt.devices[0].timeout.value == 30
+    # NOTE: test_open_with_params_and_timeout moved to:
+    # tests/unit/asg/s8_commands/test_s8_2_15_open.py::TestOpenCommandAnalysis::test_open_with_params_and_timeout
 
     def test_open_without_timeout(self):
         """OPEN DEV parses without timeout (§8.2.15)."""
@@ -83,18 +74,8 @@ class TestReadTimeoutParser:
     Reference: §8.2.17
     """
 
-    def test_read_with_timeout(self):
-        """READ X:5 parses timeout (§8.2.17)."""
-        parser = MUMPSParser()
-        source = "LABEL\tR X:5\n"
-        routine = parser.parse(source)
-
-        read_stmt = routine.labels[0].body.statements[0]
-        assert read_stmt.__class__.__name__ == "MReadStatement"
-        assert len(read_stmt.arguments) == 1
-        target = read_stmt.arguments[0]
-        assert target.timeout is not None
-        assert target.timeout.value == 5
+    # NOTE: test_read_with_timeout moved to:
+    # tests/unit/asg/s8_commands/test_s8_2_17_read.py::TestReadCommandAnalysis::test_read_timeout
 
     def test_read_with_timeout_expression(self):
         """READ X:T parses timeout expression (§8.2.17)."""
@@ -204,19 +185,8 @@ class TestLockTimeoutParser:
     - 'lockop' (optional - '+' or '-')
     """
 
-    def test_lock_with_timeout(self):
-        """LOCK ^DATA:5 parses timeout (§8.2.12)."""
-        parser = MUMPSParser()
-        source = "LABEL\tL ^DATA:5\n"
-        routine = parser.parse(source)
-
-        lock_stmt = routine.labels[0].body.statements[0]
-        assert lock_stmt.__class__.__name__ == "MLockStatement"
-        # Lock targets are dicts
-        assert len(lock_stmt.targets) == 1
-        target = lock_stmt.targets[0]
-        assert target.get("timeout") is not None
-        assert target["timeout"].value == 5
+    # NOTE: test_lock_with_timeout moved to:
+    # tests/unit/asg/s8_commands/test_s8_2_12_lock.py::TestLockCommandAnalysis::test_lock_timeout
 
     def test_lock_with_timeout_expression(self):
         """LOCK ^DATA:T parses timeout expression (§8.2.12)."""

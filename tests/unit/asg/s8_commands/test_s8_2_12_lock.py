@@ -52,6 +52,10 @@ class TestLockCommandAnalysis:
 
         assert isinstance(stmt, MLockStatement)
         assert len(stmt.targets) >= 1
+        # Verify timeout value is captured (consolidated from cross_cutting/test_timeouts.py)
+        target = stmt.targets[0]
+        assert target.get("timeout") is not None
+        assert target["timeout"].value == 5
 
     def test_lock_release_all(self, analyze_routine):
         """LOCK without arguments releases all locks."""
