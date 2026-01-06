@@ -37,11 +37,13 @@ class TestIndirectionAnalysis:
         assert isinstance(target.expression, LocalVariable)
         assert target.expression.name == "VAR"
 
-    def test_argument_indirection_resolution(self, analyze_routine):
-        """Argument indirection (@var@(args)) is correctly represented (§6.3.1).
+    def test_argument_indirection_in_set_value(self, analyze_routine):
+        """Argument indirection in SET value context is correctly analyzed (§6.3.1).
 
         Per 1984 addition: @VAR@(subs) resolves VAR to a name, then appends
-        the subscripts. The ASG captures this with name_indirection_subscripts.
+        subscripts. The expression-level analysis is in s7_expressions/test_s7_3.
+
+        This test verifies the SET statement correctly carries the indirection.
         """
         routine = analyze_routine("TEST\n S Y=@X@(1,2)\n Q")
 
@@ -50,32 +52,24 @@ class TestIndirectionAnalysis:
 
         value = stmt.assignments[0].value
         assert isinstance(value, Indirection)
-        assert isinstance(value.expression, LocalVariable)
-        assert value.expression.name == "X"
+        # Detailed expression checks are in s7_expressions/test_s7_3_indirection
 
-        # Subscripts are captured in name_indirection_subscripts
-        assert value.name_indirection_subscripts is not None
-        assert len(value.name_indirection_subscripts) == 1  # One subscript list
-        assert len(value.name_indirection_subscripts[0]) == 2  # Two subscripts (1, 2)
-
-    def test_pattern_indirection_resolution(self, analyze_routine):
-        """Pattern indirection (@patvar) is correctly represented (§6.3.1).
+    def test_pattern_indirection_in_if_context(self, analyze_routine):
+        """Pattern indirection in IF condition context is correctly analyzed (§6.3.1).
 
         Pattern indirection uses @ in the pattern position of the pattern
-        match operator (?). The pattern is resolved at runtime.
-        The ASG captures this with pattern='' and pattern_indirect set.
+        match operator (?). The expression-level analysis is in s7_expressions.
+
+        This test verifies the IF statement correctly carries the pattern match.
         """
         routine = analyze_routine("TEST\n I X?@PAT W 1\n Q")
 
         stmt = routine.labels[0].body.statements[0]
-        # First condition of IF statement
+        # First condition of IF statement should be a pattern match
         condition = stmt.conditions[0]
 
         assert isinstance(condition, MPatternMatch)
-        assert condition.pattern == ""  # Empty pattern string
-        assert condition.pattern_indirect is not None  # Indirect expression
-        assert isinstance(condition.pattern_indirect, LocalVariable)
-        assert condition.pattern_indirect.name == "PAT"
+        # Detailed pattern_indirect checks are in s7_expressions/test_s7_2_5_pattern_match
 
     def test_indirection_static_analysis(self, analyze_routine):
         """Indirection impact on static analysis is tracked (§6.3.1).
