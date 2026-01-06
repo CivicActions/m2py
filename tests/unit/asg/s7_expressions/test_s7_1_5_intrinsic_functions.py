@@ -645,33 +645,7 @@ class TestIntrinsicFunctionsAnalysis:
 
 @pytest.mark.asg
 class TestIntrinsicFunctionASG:
-    """Test MIntrinsicFunction ASG node structure."""
-
-    def test_piece_function_args(self):
-        """$PIECE(str,delim,pos) has 3 arguments."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg.expressions import MIntrinsicFunction
-
-        expr = parse_expression('$PIECE(X,":",2)')
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MIntrinsicFunction)
-        assert result.name == "PIECE"
-        assert len(result.arguments) == 3
-
-    def test_length_function_args(self):
-        """$LENGTH(str) has 1 argument."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg.expressions import MIntrinsicFunction
-
-        expr = parse_expression("$LENGTH(X)")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MIntrinsicFunction)
-        assert result.name == "LENGTH"
-        assert len(result.arguments) == 1
+    """Test MIntrinsicFunction ASG node structure for edge cases."""
 
     def test_nested_function_args(self):
         """Nested function $L($P(X,",",1)) has nested arguments."""

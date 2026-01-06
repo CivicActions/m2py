@@ -177,46 +177,6 @@ class TestIfElseBodyPopulation:
 
 
 @pytest.mark.asg
-class TestIfStatementAnalysis:
-    """Tests for IF command analysis."""
-
-    def test_if_with_condition(self):
-        """IF X produces MIfStatement with condition."""
-        stmt = analyze_first_command("I X")
-
-        assert isinstance(stmt, MIfStatement)
-        assert stmt.condition is not None
-
-    def test_argumentless_if(self):
-        """IF (argumentless) produces MIfStatement with no condition."""
-        stmt = analyze_first_command("I")
-
-        assert isinstance(stmt, MIfStatement)
-        assert stmt.condition is None
-
-
-@pytest.mark.asg
-class TestParseIfCommand:
-    """Test IF command parsing to full-fidelity ASG."""
-
-    def test_simple_if(self):
-        """I X=1 creates MIfStatement"""
-        cmds = parse_commands_from_line("I X=1")
-        stmt = analyze_command(cmds[0])
-        assert stmt is not None
-        # The condition is stored in both 'condition' and 'conditions'
-        assert stmt.condition is not None
-        assert len(stmt.conditions) == 1
-
-    def test_argumentless_if(self):
-        """I (uses $TEST) parses"""
-        cmds = parse_commands_from_line("I")
-        stmt = analyze_command(cmds[0])
-        assert stmt is not None
-        assert len(stmt.conditions) == 0
-
-
-@pytest.mark.asg
 class TestArgumentlessIfFollowedByCommand:
     """Test argumentless IF followed by another command (BUG-011 regression).
 

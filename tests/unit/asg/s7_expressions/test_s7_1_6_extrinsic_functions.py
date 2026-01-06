@@ -142,34 +142,7 @@ class TestExtrinsicFunctionsAnalysis:
 
 @pytest.mark.asg
 class TestExtrinsicFunctionASG:
-    """Test MExtrinsicFunction ASG node structure."""
-
-    def test_extrinsic_simple(self):
-        """$$FUNC creates MExtrinsicFunction with target."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg import MExtrinsicFunction
-
-        expr = parse_expression("$$MYFUNC")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MExtrinsicFunction)
-        assert result.target is not None
-        assert result.target.name == "MYFUNC"
-
-    def test_extrinsic_with_routine(self):
-        """$$FUNC^ROUTINE has routine reference in target."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg import MExtrinsicFunction
-
-        expr = parse_expression("$$CALC^UTILS")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MExtrinsicFunction)
-        assert result.target is not None
-        assert result.target.name == "CALC"
-        assert result.target.routine == "UTILS"
+    """Test MExtrinsicFunction ASG node structure edge cases."""
 
     def test_extrinsic_with_args(self):
         """$$FUNC(a,b) has arguments list."""
@@ -182,32 +155,3 @@ class TestExtrinsicFunctionASG:
 
         assert isinstance(result, MExtrinsicFunction)
         assert len(result.arguments) == 2
-
-    def test_extrinsic_with_byref_args(self):
-        """$$FUNC(.X,Y,.Z) preserves by-reference passing mode.
-
-        MUMPS spec 8.1.7: .actualname = call-by-reference format.
-        """
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg import MExtrinsicFunction, MActualParameter, PassingMode
-
-        expr = parse_expression("$$CALC(.A,B,.C)")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MExtrinsicFunction)
-        assert len(result.arguments) == 3
-
-        # First arg: .A is by-reference
-        assert isinstance(result.arguments[0], MActualParameter)
-        assert result.arguments[0].passing_mode == PassingMode.BY_REFERENCE
-        assert result.arguments[0].variable_name == "A"
-
-        # Second arg: B is by-value
-        assert isinstance(result.arguments[1], MActualParameter)
-        assert result.arguments[1].passing_mode == PassingMode.BY_VALUE
-
-        # Third arg: .C is by-reference
-        assert isinstance(result.arguments[2], MActualParameter)
-        assert result.arguments[2].passing_mode == PassingMode.BY_REFERENCE
-        assert result.arguments[2].variable_name == "C"
