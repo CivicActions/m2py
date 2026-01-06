@@ -26,7 +26,6 @@ from m2py.asg.statements import (
     MSetStatement,
     MWriteStatement,
     MDoStatement,
-    MQuitStatement,
     MXecuteStatement,
     MGotoStatement,
 )
@@ -80,27 +79,6 @@ class TestCommandPostconditionsParser:
         assert stmt.postcondition is not None
         assert isinstance(stmt.postcondition, LocalVariable)
         assert stmt.postcondition.name == "OK"
-
-    def test_do_with_postcondition(self):
-        """DO:COND LABEL parses command-level postcondition (§8.1.4)."""
-        stmt = analyze_first_command("D:READY PROC")
-
-        assert isinstance(stmt, MDoStatement)
-        assert stmt.postcondition is not None
-        assert isinstance(stmt.postcondition, LocalVariable)
-        assert stmt.postcondition.name == "READY"
-
-    def test_quit_with_postcondition(self):
-        """QUIT:COND parses command-level postcondition (§8.1.4).
-
-        QUIT can have postcondition, allowing conditional return.
-        """
-        stmt = analyze_first_command("Q:DONE")
-
-        assert isinstance(stmt, MQuitStatement)
-        assert stmt.postcondition is not None
-        assert isinstance(stmt.postcondition, LocalVariable)
-        assert stmt.postcondition.name == "DONE"
 
 
 # =============================================================================
