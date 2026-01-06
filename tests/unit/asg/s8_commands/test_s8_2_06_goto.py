@@ -103,6 +103,24 @@ class TestGotoCommandAnalysis:
         assert isinstance(stmt3, MGotoStatement)
         assert len(stmt3.targets) == 2
 
+    def test_goto_with_argument_postconditions(self):
+        """G L1:C1,L2:C2,L3 parses argument-level postconditions (§8.1.4).
+
+        Computed GOTO pattern - first true postcondition wins.
+        Only Do, Goto, and Xecute support argument postconditions.
+        """
+        stmt = analyze_first_command("G L1:X=1,L2:X=2,L3")
+
+        assert isinstance(stmt, MGotoStatement)
+        assert stmt.postcondition is None  # No command postcondition
+        assert len(stmt.targets) == 3
+
+        # First two have postconditions
+        assert stmt.targets[0].postcondition is not None
+        assert stmt.targets[1].postcondition is not None
+        # Third has no postcondition (default/fallback)
+        assert stmt.targets[2].postcondition is None
+
 
 def analyze_first_command(line: str):
     """Helper to parse a line and analyze the first command."""

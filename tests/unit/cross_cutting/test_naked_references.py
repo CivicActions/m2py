@@ -1,4 +1,4 @@
-"""Cross-cutting tests for naked global references (§7.1.2.4).
+"""Cross-cutting tests for naked global references RUNTIME behavior (§7.1.2.4).
 
 Naked references are a language feature that affects all global variable
 access. A naked reference uses ^(subscripts) where the global name is
@@ -10,9 +10,7 @@ Key behaviors (FR-046):
 - Naked indicator is sequence-dependent (order matters)
 - Invalid if no prior global reference exists
 
-This file focuses on:
-- Cross-cutting behavior across multiple commands
-- Codegen/runtime behavior requiring execution
+Parser/ASG tests are in tests/unit/asg/s7_expressions/test_s7_1_2_variables.py
 
 Reference: MUMPS 1995 ANSI Standard, Section 7.1.2.4
 See also: FR-005 (cross-cutting features need dedicated tests)
@@ -20,123 +18,6 @@ See also: FR-005 (cross-cutting features need dedicated tests)
 """
 
 import pytest
-
-from m2py.parser.line_parser import parse_commands_from_line
-from m2py.analysis.semantic_analyzer import analyze_command
-from m2py.asg.expressions import (
-    MLiteral,
-    MGlobal,
-    MNakedGlobal,
-)
-from m2py.asg.statements import MSetStatement
-
-
-def analyze_first_command(line: str):
-    """Helper to parse a line and analyze the first command."""
-    cmds = parse_commands_from_line(line)
-    assert len(cmds) >= 1, f"No commands parsed from: {line}"
-    return analyze_command(cmds[0])
-
-
-def analyze_all_commands(line: str):
-    """Helper to parse and analyze all commands from a line."""
-    cmds = parse_commands_from_line(line)
-    return [analyze_command(cmd) for cmd in cmds]
-
-
-# =============================================================================
-# Naked Reference Syntax Tests (Parser Level)
-# These tests cover multi-subscript and expression subscript edge cases.
-# =============================================================================
-
-
-@pytest.mark.parser
-class TestNakedReferenceParser:
-    """Parser tests for naked reference syntax.
-
-    Naked reference format: ^(subscripts)
-    The global name portion is empty.
-    Reference: §7.1.2.4
-    """
-
-    def test_naked_reference_basic(self):
-        """^(1) parses as naked reference (§7.1.2.4)."""
-        stmt = analyze_first_command("S ^(1)=100")
-
-        assert isinstance(stmt, MSetStatement)
-        target = stmt.assignments[0].target
-        assert isinstance(target, MNakedGlobal)
-        assert len(target.subscripts) == 1
-        # First subscript should be literal 1
-        assert isinstance(target.subscripts[0], MLiteral)
-        assert target.subscripts[0].value == 1
-
-    def test_naked_reference_expression_subscript(self):
-        """^(X+1) parses as naked reference with expression (§7.1.2.4)."""
-        stmt = analyze_first_command("S ^(X+1)=100")
-
-        assert isinstance(stmt, MSetStatement)
-        target = stmt.assignments[0].target
-        assert isinstance(target, MNakedGlobal)
-        assert len(target.subscripts) == 1
-        # First subscript should be an expression (MBinaryOp or MExpr type)
-        # The exact ASG type depends on analysis depth - verify it exists
-        subscript = target.subscripts[0]
-        # At minimum, verify we have a subscript with structure
-        assert subscript is not None
-        # If fully analyzed to ASG, would be MBinaryOp; otherwise textX Expr
-        # For cross-cutting tests, we verify presence not deep analysis
-        # Deep analysis belongs in s7_expressions tests
-
-
-# =============================================================================
-# Naked Indicator State Tests (Parser Level)
-# =============================================================================
-
-
-@pytest.mark.parser
-class TestNakedIndicatorParser:
-    """Parser tests for full global references that set naked indicator.
-
-    Any full global reference (read or write) sets the naked indicator.
-    Reference: §7.1.2.4
-    """
-
-    def test_read_global_parsed(self):
-        """SET X=^DATA(1) parses full global reference (§7.1.2.4)."""
-        stmt = analyze_first_command("S X=^DATA(1)")
-
-        assert isinstance(stmt, MSetStatement)
-        value = stmt.assignments[0].value
-        assert isinstance(value, MGlobal)
-        assert value.name == "DATA"
-        assert len(value.subscripts) == 1
-
-
-# =============================================================================
-# Naked Reference Tests (ASG Level)
-# =============================================================================
-
-
-@pytest.mark.asg
-class TestNakedReferenceASG:
-    """ASG tests for naked reference analysis.
-
-    ASG analysis must track which globals set the naked indicator
-    and which use naked references.
-    Reference: §7.1.2.4, FR-046
-    """
-
-    def test_naked_reference_subscripts_tracked(self):
-        """Naked reference subscripts are tracked in ASG (§7.1.2.4)."""
-        stmt = analyze_first_command('S ^("a","b")=100')
-
-        target = stmt.assignments[0].target
-        assert isinstance(target, MNakedGlobal)
-        assert len(target.subscripts) == 2
-        # Verify subscript values
-        assert target.subscripts[0].value == "a"
-        assert target.subscripts[1].value == "b"
 
 
 # =============================================================================

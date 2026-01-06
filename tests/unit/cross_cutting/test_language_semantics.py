@@ -13,8 +13,6 @@ See also: FR-046-051 (language semantic requirements)
 
 import pytest
 
-from m2py.parser import MUMPSParser
-
 
 # =============================================================================
 # $TEST Special Variable Tests - Codegen Only
@@ -72,39 +70,9 @@ class TestTestVariableCodegen:
 
 
 # =============================================================================
-# Left-to-Right Evaluation Tests
+# Left-to-Right Evaluation Tests - Codegen Only
+# Parser/ASG tests are in tests/unit/asg/s7_expressions/test_s7_2_operators.py
 # =============================================================================
-
-
-@pytest.mark.parser
-class TestLeftToRightParser:
-    """Parser tests for operator expressions.
-
-    MUMPS has no operator precedence - strict left-to-right.
-    Reference: §7.2
-    """
-
-    def test_mixed_operators_parsed(self):
-        """2+3*4 parses as (2+3)*4 not 2+(3*4) (§7.2).
-
-        MUMPS evaluates strictly left-to-right with no operator precedence.
-        The parser must capture the expression structure correctly for ASG
-        analysis to maintain left-to-right semantics.
-
-        Reference: 1995__a107190 (§7.2 - Expression tail)
-        """
-        parser = MUMPSParser()
-        source = "LABEL\tS X=2+3*4\n"
-        routine = parser.parse(source)
-
-        set_stmt = routine.labels[0].body.statements[0]
-        assert set_stmt.__class__.__name__ == "MSetStatement"
-
-        # The expression structure is captured for ASG analysis
-        assignment = set_stmt.assignments[0]
-        assert assignment.target.name == "X"
-        # Value expression exists (structure verified in ASG tests)
-        assert assignment.value is not None
 
 
 @pytest.mark.codegen
