@@ -310,3 +310,116 @@ HELPER	W "Test"
         target = do_stmt.targets[0]
         assert target.name == "HELPER"
         assert target.routine is None
+
+
+@pytest.mark.asg
+class TestDoRoutineIndirection:
+    """Tests for DO with routine indirection (GAP-011c).
+
+    Per MUMPS 1995 §8.1.6, entryrefs allow indirection of both
+    label and routinename: D LABEL^@ROUTINEVAR, D @VAR^@ROUTINE
+    """
+
+    def test_do_routine_indirection(self):
+        """DO LABEL^@ROUTINEVAR - routine name is indirect.
+
+        The routine name comes from a variable at runtime.
+        """
+        stmt = analyze_first_command("D LABEL^@R")
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+
+        # Label is literal, routine is indirect
+        assert target.name == "LABEL"
+        assert target.routine_is_indirect is True
+        assert target.routine_indirection is not None
+        assert target.routine_indirection.name == "R"
+
+    def test_do_indirect_label_and_routine(self):
+        """DO @LABELVAR^@ROUTINEVAR - both label and routine indirect.
+
+        Full indirection: D @L^@R means evaluate L for label, R for routine.
+        """
+        stmt = analyze_first_command("D @L^@R")
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+
+        # Label is indirect
+        assert target.label_is_indirect is True
+        assert target.indirection is not None
+        assert target.indirection.name == "L"
+
+        # Routine is indirect
+        assert target.routine_is_indirect is True
+        assert target.routine_indirection is not None
+        assert target.routine_indirection.name == "R"
+
+    def test_do_indirect_with_offset_and_routine(self):
+        """DO @VAR+offset^@ROUTINE - indirection with offset and routine.
+
+        Complex form combining indirection, offset, and routine indirection.
+        """
+        stmt = analyze_first_command("D @A+5^@R")
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+
+        # Label indirection
+        assert target.label_is_indirect is True
+        assert target.indirection.name == "A"
+
+        # Offset expression
+        assert target.offset is not None
+        assert target.offset.value == 5
+
+        # Routine indirection
+        assert target.routine_is_indirect is True
+        assert target.routine_indirection.name == "R"
+
+
+@pytest.mark.asg
+class TestDoOffsetExpressions:
+    """Tests for DO with offset expressions (GAP-011e).
+
+    Per MUMPS 1995 §8.1.6, entryrefs allow integer offsets: LABEL+5^ROUTINE
+    """
+
+    def test_do_label_with_offset(self):
+        """DO LABEL+5 - label with numeric offset.
+
+        References the 5th line after LABEL.
+        """
+        stmt = analyze_first_command("D LABEL+5")
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+
+        assert target.name == "LABEL"
+        assert target.offset is not None
+        assert target.offset.value == 5
+
+    def test_do_label_offset_routine(self):
+        """DO LABEL+3^ROUTINE - label+offset in external routine.
+
+        Full entryref with label, offset, and routine.
+        """
+        stmt = analyze_first_command("D LABEL+3^ROUTINE")
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+
+        assert target.name == "LABEL"
+        assert target.offset is not None
+        assert target.offset.value == 3
+        assert target.routine == "ROUTINE"
+
+    def test_do_label_variable_offset(self):
+        """DO LABEL+N^ROUTINE - offset is a variable.
+
+        Offset can be any expression, including variables.
+        """
+        stmt = analyze_first_command("D LABEL+N^ROUTINE")
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+
+        assert target.name == "LABEL"
+        assert target.offset is not None
+        assert target.offset.name == "N"
+        assert target.routine == "ROUTINE"

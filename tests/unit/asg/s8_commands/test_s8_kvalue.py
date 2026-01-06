@@ -76,3 +76,52 @@ class TestKValueAnalysis:
         assert isinstance(stmt3, MKValueStatement)
         assert len(stmt3.targets) == 1
         assert len(stmt3.targets[0].subscripts) == 2
+
+
+@pytest.mark.asg
+class TestKValueMultipleExclusiveGroups:
+    """Tests for KVALUE with multiple exclusive groups (GAP-011d).
+
+    KVALUE supports multiple exclusive groups: KV (A,B),(C,D)
+    The intersection of all groups determines which variables are kept.
+    """
+
+    def test_kvalue_multiple_exclusive_groups(self):
+        """KV (A,B),(B,C) - multiple exclusive groups intersect.
+
+        Only variables in ALL groups are preserved (intersection).
+        In this case, only B is in both groups.
+        """
+        stmt = analyze_first_command("KV (A,B),(B,C)")
+        assert isinstance(stmt, MKValueStatement)
+        assert stmt.exclusive is True
+
+        # except_groups captures all groups
+        assert len(stmt.except_groups) == 2
+        assert "A" in stmt.except_groups[0]
+        assert "B" in stmt.except_groups[0]
+        assert "B" in stmt.except_groups[1]
+        assert "C" in stmt.except_groups[1]
+
+        # except_list is the intersection
+        assert stmt.except_list == ["B"]
+
+    def test_kvalue_three_exclusive_groups(self):
+        """KV (A,B,C),(B,C,D),(C,D,E) - three groups intersect to C only."""
+        stmt = analyze_first_command("KV (A,B,C),(B,C,D),(C,D,E)")
+        assert isinstance(stmt, MKValueStatement)
+        assert stmt.exclusive is True
+
+        assert len(stmt.except_groups) == 3
+        # Intersection of all three is only C
+        assert stmt.except_list == ["C"]
+
+    def test_kvalue_exclusive_groups_empty_intersection(self):
+        """KV (A,B),(C,D) - disjoint groups have empty intersection."""
+        stmt = analyze_first_command("KV (A,B),(C,D)")
+        assert isinstance(stmt, MKValueStatement)
+        assert stmt.exclusive is True
+
+        assert len(stmt.except_groups) == 2
+        # No common elements - empty intersection
+        assert stmt.except_list == []

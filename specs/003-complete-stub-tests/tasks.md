@@ -1477,12 +1477,295 @@ Each batch completion provides value:
 
 ---
 
+## Phase 11: Coverage Gap Analysis - Final Review
+
+**Purpose**: Deep analysis of remaining 417 uncovered statements to identify dead code vs actual testing gaps
+
+**Current Coverage**: 85% (3858 statements, 417 missed, 1956 branches, 312 branch misses)
+
+### Analysis Methodology
+
+1. Examined each uncovered line range against MUMPS 1995 ANSI spec and YDB documentation
+2. Checked if code paths are reachable via grammar/parser rules
+3. Categorized as: Dead Code, Defensive Code, or Testing Gap with priority rating
+
+---
+
+### GAP-011: `semantic_analyzer.py` - 242 missed lines (77% covered)
+
+#### GAP-011a: Z-Command Handlers with No ASG Tests
+
+**Lines**: 2473-2492 (ZPRINT), 2504-2528 (ZSYSTEM, ZMESSAGE), 2554-2564 (ZTRIGGER), 2590-2608 (ZBREAK helpers)
+
+**Classification**: ✅ **Testing gap** - LOW priority
+
+**MUMPS Reference Check**:
+- ZPRINT: YDB §ZPRINT - "displays source code lines selected by its argument"
+- ZMESSAGE: YDB §ZMESSAGE - "raises an exception condition based on the specified message code"  
+- ZSYSTEM: YDB §ZSYSTEM - "executes shell command"
+- ZTRIGGER: YDB §ZTRIGGER - "invokes triggers associated with global references"
+
+**Analysis**: Parser tests exist but ASG tests are missing. These are all valid YDB Z-commands.
+However, these are low-priority debugging/system commands rarely used in production MUMPS code.
+
+**Recommendation**: Add ASG tests only if coverage target >90% is desired. Current 85% is sufficient.
+
+---
+
+#### GAP-011b: Defensive Null Checks and Fallback Branches
+
+**Lines**: 197, 213, 261, 308-309, 514, 522, 613, 626, 696, 1036, 1046-1049, 1102, 1106, 1331, 1527, 1569, 1607, 1644, 1779, 1843, 1952, 1980, 2006, 2055, 2139, 2243, 2283, 2614, 2633, 2635, 2653, 2671, 2765, 2840, 2850, 2877
+
+**Classification**: 🛡️ **Defensive code** - NOT A GAP
+
+**Analysis**: These are all safety checks for:
+- `if X is None: ...` null guards
+- `hasattr(obj, 'attr')` existence checks before access
+- `else: ...` fallback branches that handle unexpected input
+
+**MUMPS Reference Check**: N/A - These are defensive programming patterns, not MUMPS language features.
+
+**Recommendation**: Add to `.coveragerc` exclusions or leave as-is. Defensive code coverage is acceptable <100%.
+
+---
+
+#### GAP-011c: Routine Indirection Paths
+
+**Lines**: 1111-1115, 1204-1208, 1258-1265, 1310-1314, 1320-1321, 1870-1874, 1893-1897
+
+**Classification**: ✅ **Testing gap** - MEDIUM priority
+
+**MUMPS Reference Check**: 
+- MUMPS 1995 §7.3 Indirection: "The indirection operator, @, permits the construction of an expression whose value is a variable reference"
+- Routine indirection: `@routineVar` in DO, GOTO targets
+
+**Analysis**: These handle `routineIndirect` paths where the routine name itself is indirect (e.g., `DO LABEL^@ROUTINEVAR`).
+Parser supports this but semantic analyzer paths are untested.
+
+**Recommendation**: Add 2-3 tests for routine indirection in DO/GOTO/XECUTE commands.
+
+---
+
+#### GAP-011d: KVALUE Command Handler
+
+**Lines**: 1457-1471 (KValueCommand analysis)
+
+**Classification**: ✅ **Testing gap** - LOW priority
+
+**MUMPS Reference Check**:
+- KVALUE (ZKILL in YDB): "kills only values, preserving subscripts (descendants)"
+- §8.2.21 KVALUE: "removes the value of a local or global variable while preserving its descendants"
+
+**Analysis**: KVALUE/ZKILL is a valid MUMPS command. Parser tests exist but ASG-level test is missing.
+
+**Recommendation**: Add 1 test if coverage target >87% desired.
+
+---
+
+#### GAP-011e: DO/GOTO with Offset Expressions
+
+**Lines**: 1102 (DO offset), 1211 (GOTO offset)
+
+**Classification**: ✅ **Testing gap** - MEDIUM priority
+
+**MUMPS Reference Check**:
+- MUMPS 1995 §8.2.3 DO: "DO label+offset^routine"
+- §8.2.6 GOTO: "GOTO label+offset^routine"
+
+**Analysis**: Offset expressions like `DO LABEL+5^ROUTINE` are valid MUMPS but untested at ASG level.
+
+**Recommendation**: Add 1 test for offset expressions in DO/GOTO.
+
+---
+
+### GAP-012: `variables.py` - 20 missed lines (91% covered)
+
+#### GAP-012a: Walk Expression Edge Cases
+
+**Lines**: 593-594, 617-619, 842-843, 845-847, 859-860
+
+**Classification**: 🛡️ **Defensive code** - NOT A GAP
+
+**Analysis**: These are fallback branches in `walk_expressions()` and `_extract_expression_variables()` that handle unexpected node types. Already at 91% coverage.
+
+**Recommendation**: Leave as-is. These are safety nets.
+
+---
+
+#### GAP-012b: Dataclass Field Iteration
+
+**Lines**: 878 (early exit in dataclass field walk)
+
+**Classification**: 🛡️ **Defensive code** - NOT A GAP
+
+**Analysis**: Edge case in dataclass field enumeration. Not reachable under normal parsing.
+
+**Recommendation**: Leave as-is.
+
+---
+
+### GAP-013: `textx_classes.py` - 41 missed lines (83% covered)
+
+#### GAP-013a: By-Reference Argument Extraction
+
+**Lines**: 130-133, 161-167
+
+**Classification**: ✅ **Testing gap** - MEDIUM priority
+
+**MUMPS Reference Check**:
+- MUMPS 1995 §6.3.1.1: "The period (.) preceding a name in an actuallist indicates that the corresponding parameter name is to be passed by reference"
+
+**Analysis**: By-reference arguments `.VAR` in function calls. Parser supports but textx_classes extraction untested.
+
+**Recommendation**: Covered by existing DO by-ref tests. May need explicit textx_classes unit test.
+
+---
+
+#### GAP-013b: ZWRITE Subscript Edge Cases
+
+**Lines**: 430-439
+
+**Classification**: ✅ **Testing gap** - LOW priority (partially covered in Phase 10)
+
+**Analysis**: Edge cases in ZWRITE subscript unwrapping. Main paths covered in T309.
+
+**Recommendation**: Leave as-is unless specific bugs found.
+
+---
+
+#### GAP-013c: Empty/Null Argument Handling
+
+**Lines**: 482-483, 521-522, 683-684, 732
+
+**Classification**: 🛡️ **Defensive code** - NOT A GAP
+
+**Analysis**: Null checks for empty argument lists. Defensive programming.
+
+**Recommendation**: Leave as-is.
+
+---
+
+### GAP-014: `parser.py` - 32 missed lines (88% covered)
+
+#### GAP-014a: Parser Initialization Edge Cases
+
+**Lines**: 63, 137-138, 145-146, 153-154, 160, 189
+
+**Classification**: 🛡️ **Defensive code** - NOT A GAP
+
+**Analysis**: Error handling paths in parser initialization, grammar loading. Unlikely to hit in normal operation.
+
+**Recommendation**: Leave as-is.
+
+---
+
+#### GAP-014b: Routine File Loading
+
+**Lines**: 264-268, 463-464, 466-468, 480-482, 538-539, 541-543
+
+**Classification**: ⚠️ **Testing gap** - LOW priority
+
+**Analysis**: File I/O error paths when loading .m files. Would require mocking file system errors.
+
+**Recommendation**: Skip - too much effort for low value.
+
+---
+
+### GAP-015: `for_analysis.py` - 22 missed lines (80% covered)
+
+**Lines**: 28, 84-86, 111, 142, 152-154, 177-179, 188-189, 225, 280, 288, 291-294, 298, 326-327
+
+**Classification**: Mixed - 🛡️ Defensive + ✅ Testing gaps (LOW)
+
+**MUMPS Reference Check**: FOR loop classification handles many edge cases from §8.2.5.
+
+**Recommendation**: Current 80% coverage acceptable. Remaining lines are edge cases and defensive code.
+
+---
+
+### Priority Summary - Phase 11
+
+| Priority | Gap ID | Description | Lines | Action |
+|----------|--------|-------------|-------|--------|
+| **Medium** | GAP-011c | Routine indirection in DO/GOTO | ~14 | Add 2-3 tests |
+| **Medium** | GAP-011e | DO/GOTO offset expressions | ~2 | Add 1 test |
+| **Medium** | GAP-013a | By-ref argument extraction | ~10 | Verify existing coverage |
+| **Low** | GAP-011a | Z-command ASG handlers | ~60 | Skip unless >90% target |
+| **Low** | GAP-011d | KVALUE command ASG | ~15 | Skip unless >87% target |
+| **Low** | GAP-014b | File I/O error paths | ~20 | Skip - low value |
+| **Defensive** | GAP-011b, GAP-012a/b, GAP-013b/c, GAP-014a, GAP-015 | Safety checks | ~150 | Leave as-is |
+
+### Recommendations
+
+1. **Current 85% coverage is acceptable** for a transpiler project
+2. **High-value gaps already addressed** in Phases 1-10
+3. **Remaining gaps are mostly**:
+   - Defensive null checks (expected to be uncovered)
+   - YDB Z-command edge cases (low production usage)
+   - Error handling paths (require mocking)
+
+4. **Optional Phase 12 tasks** (if >87% target desired):
+   - [X] T400: Add routine indirection tests (DO LABEL^@ROUTINEVAR) - MEDIUM ✅
+   - [X] T401: Add DO/GOTO offset expression tests - MEDIUM ✅
+   - [X] T402: Add KVALUE multiple exclusive groups test - LOW ✅
+
+**Checkpoint**: ✅ Phase 11 analysis complete. No critical gaps found. Coverage at 85% is appropriate.
+
+---
+
+## Phase 12: Final Coverage Gap Tests
+
+**Purpose**: Address medium-priority testing gaps identified in Phase 11
+
+**Coverage Before**: 85% (3858 statements, 417 missed)
+**Coverage After**: 85% (3858 statements, 408 missed) - 9 more lines covered
+
+### T400: Routine Indirection Tests ✅ COMPLETE
+
+Added to `test_s8_2_03_do.py` - TestDoRoutineIndirection class:
+- test_do_routine_indirection: `D LABEL^@R` - routine name from variable
+- test_do_indirect_label_and_routine: `D @L^@R` - both label and routine indirect
+- test_do_indirect_with_offset_and_routine: `D @A+5^@R` - full complex form
+
+Added to `test_s8_2_06_goto.py` - TestGotoRoutineIndirection class:
+- test_goto_routine_indirection: `G LABEL^@R`
+- test_goto_double_indirection_routine: `G LABEL^@@R`
+
+**MUMPS Reference**: §8.1.6 confirms entryref allows indirection of routinename
+
+### T401: DO/GOTO Offset Expression Tests ✅ COMPLETE
+
+Added to `test_s8_2_03_do.py` - TestDoOffsetExpressions class:
+- test_do_label_with_offset: `D LABEL+5`
+- test_do_label_offset_routine: `D LABEL+3^ROUTINE`
+- test_do_label_variable_offset: `D LABEL+N^ROUTINE`
+
+Added to `test_s8_2_06_goto.py` - TestGotoOffsetExpressions class:
+- test_goto_label_with_offset: `G LABEL+5`
+- test_goto_label_offset_routine: `G LABEL+3^ROUTINE`
+- test_goto_global_offset: `G LABEL+^DATA(1)^ROUTINE`
+
+**MUMPS Reference**: §8.1.6 confirms label+offset syntax (e.g., LOOP+5)
+
+### T402: KVALUE Multiple Exclusive Groups ✅ COMPLETE
+
+Added to `test_s8_kvalue.py` - TestKValueMultipleExclusiveGroups class:
+- test_kvalue_multiple_exclusive_groups: `KV (A,B),(B,C)` - intersection is [B]
+- test_kvalue_three_exclusive_groups: `KV (A,B,C),(B,C,D),(C,D,E)` - intersection is [C]
+- test_kvalue_exclusive_groups_empty_intersection: `KV (A,B),(C,D)` - empty intersection
+
+**MUMPS Reference**: §8.2.21 KVALUE supports exclusive form
+
+**Checkpoint**: ✅ Phase 12 complete. 14 new tests added. Coverage stable at 85%.
+
+---
+
 ## Success Command
 
 ```bash
 # Final success verification
 uv run pytest --tb=no -q
 
-# Current: 3601 passed, 311 xfailed (all xfails are codegen stubs)
-# Coverage: 85%
+# Current: 1832 passed, 311 xfailed (all xfails are codegen stubs)
+# Coverage: 85% (3858 statements, 408 missed)
 ```
