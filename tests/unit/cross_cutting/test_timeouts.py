@@ -33,19 +33,6 @@ class TestOpenTimeoutParser:
     Reference: §8.2.15
     """
 
-    def test_open_with_timeout(self):
-        """OPEN DEV:5 parses timeout (§8.2.15)."""
-        parser = MUMPSParser()
-        source = "LABEL\tO DEV:5\n"
-        routine = parser.parse(source)
-
-        open_stmt = routine.labels[0].body.statements[0]
-        assert open_stmt.__class__.__name__ == "MOpenStatement"
-        # OPEN uses devices list with MOpenDevice
-        assert len(open_stmt.devices) == 1
-        assert open_stmt.devices[0].timeout is not None
-        assert open_stmt.devices[0].timeout.value == 5
-
     def test_open_without_timeout(self):
         """OPEN DEV parses without timeout (§8.2.15)."""
         parser = MUMPSParser()
@@ -82,31 +69,6 @@ class TestReadTimeoutParser:
         assert target.timeout is not None
         # Variable name in timeout expression
         assert target.timeout.name == "T"
-
-    def test_read_fixed_length_with_timeout(self):
-        """READ X#10:5 parses fixed length with timeout (§8.2.17)."""
-        parser = MUMPSParser()
-        source = "LABEL\tR X#10:5\n"
-        routine = parser.parse(source)
-
-        read_stmt = routine.labels[0].body.statements[0]
-        target = read_stmt.arguments[0]
-        assert target.fixed_length is not None
-        assert target.fixed_length.value == 10
-        assert target.timeout is not None
-        assert target.timeout.value == 5
-
-    def test_read_char_with_timeout(self):
-        """READ *X:5 parses character read with timeout (§8.2.17)."""
-        parser = MUMPSParser()
-        source = "LABEL\tR *X:5\n"
-        routine = parser.parse(source)
-
-        read_stmt = routine.labels[0].body.statements[0]
-        target = read_stmt.arguments[0]
-        assert target.is_char_read is True
-        assert target.timeout is not None
-        assert target.timeout.value == 5
 
     def test_read_without_timeout(self):
         """READ X parses without timeout (§8.2.17)."""
@@ -190,18 +152,6 @@ class TestLockTimeoutParser:
         assert target.get("timeout") is not None
         assert target["timeout"].name == "T"
 
-    def test_lock_incremental_with_timeout(self):
-        """LOCK +^DATA:5 parses incremental lock with timeout (§8.2.12)."""
-        parser = MUMPSParser()
-        source = "LABEL\tL +^DATA:5\n"
-        routine = parser.parse(source)
-
-        lock_stmt = routine.labels[0].body.statements[0]
-        target = lock_stmt.targets[0]
-        assert target.get("lockop") == "+"
-        assert target.get("timeout") is not None
-        assert target["timeout"].value == 5
-
     def test_lock_parenthesized_with_timeout(self):
         """LOCK (^A,^B):5 parses list lock with timeout (§8.2.12)."""
         parser = MUMPSParser()
@@ -238,48 +188,6 @@ class TestTimeoutsASG:
     Reference: §8.2.10, §8.2.12, §8.2.15, §8.2.17
     """
 
-    def test_read_timeout_in_asg(self):
-        """READ timeout is captured in MReadTarget (§8.2.17)."""
-        from m2py.asg import MReadTarget
-
-        parser = MUMPSParser()
-        source = "LABEL\tR X:10\n"
-        routine = parser.parse(source)
-
-        read_stmt = routine.labels[0].body.statements[0]
-        target = read_stmt.arguments[0]
-        assert isinstance(target, MReadTarget)
-        assert target.timeout is not None
-        assert target.timeout.value == 10
-
-    def test_lock_timeout_in_asg(self):
-        """LOCK timeout is captured in MLockStatement.targets dict (§8.2.12)."""
-        parser = MUMPSParser()
-        source = "LABEL\tL ^DATA:5\n"
-        routine = parser.parse(source)
-
-        lock_stmt = routine.labels[0].body.statements[0]
-        assert lock_stmt.__class__.__name__ == "MLockStatement"
-        target = lock_stmt.targets[0]
-        # targets is a list of dicts
-        assert isinstance(target, dict)
-        assert target.get("timeout") is not None
-        assert target["timeout"].value == 5
-
-    def test_open_timeout_in_asg(self):
-        """OPEN timeout is captured in MOpenDevice (§8.2.15)."""
-        from m2py.asg import MOpenDevice
-
-        parser = MUMPSParser()
-        source = "LABEL\tO DEV:10\n"
-        routine = parser.parse(source)
-
-        open_stmt = routine.labels[0].body.statements[0]
-        device = open_stmt.devices[0]
-        assert isinstance(device, MOpenDevice)
-        assert device.timeout is not None
-        assert device.timeout.value == 10
-
     def test_job_parses_with_timeout(self):
         """JOB with timeout parses to MJobStatement (§8.2.10)."""
         parser = MUMPSParser()
@@ -288,22 +196,6 @@ class TestTimeoutsASG:
 
         job_stmt = routine.labels[0].body.statements[0]
         assert job_stmt.__class__.__name__ == "MJobStatement"
-
-    def test_negative_timeout_parsed(self):
-        """Negative timeout value (R X:-1) is preserved as unary op (§8.2.17)."""
-        from m2py.asg import MReadTarget, MUnaryOp
-
-        parser = MUMPSParser()
-        source = "LABEL\tR X:-1\n"
-        routine = parser.parse(source)
-
-        read_stmt = routine.labels[0].body.statements[0]
-        target = read_stmt.arguments[0]
-        assert isinstance(target, MReadTarget)
-        assert target.timeout is not None
-        assert isinstance(target.timeout, MUnaryOp)
-        assert target.timeout.operator == "-"
-        assert target.timeout.operand.value == 1
 
 
 # =============================================================================

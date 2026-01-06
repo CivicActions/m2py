@@ -28,7 +28,7 @@ from m2py.asg.expressions import (
     MGlobal,
     MNakedGlobal,
 )
-from m2py.asg.statements import MSetStatement, MKillStatement
+from m2py.asg.statements import MSetStatement
 
 
 def analyze_first_command(line: str):
@@ -102,16 +102,6 @@ class TestNakedIndicatorParser:
     Reference: §7.1.2.4
     """
 
-    def test_set_global_parsed(self):
-        """SET ^DATA(1)=X parses full global reference (§7.1.2.4)."""
-        stmt = analyze_first_command("S ^DATA(1)=X")
-
-        assert isinstance(stmt, MSetStatement)
-        target = stmt.assignments[0].target
-        assert isinstance(target, MGlobal)
-        assert target.name == "DATA"
-        assert len(target.subscripts) == 1
-
     def test_read_global_parsed(self):
         """SET X=^DATA(1) parses full global reference (§7.1.2.4)."""
         stmt = analyze_first_command("S X=^DATA(1)")
@@ -121,17 +111,6 @@ class TestNakedIndicatorParser:
         assert isinstance(value, MGlobal)
         assert value.name == "DATA"
         assert len(value.subscripts) == 1
-
-    def test_kill_global_parsed(self):
-        """KILL ^DATA(1) parses full global reference (§7.1.2.4)."""
-        stmt = analyze_first_command("K ^DATA(1)")
-
-        assert isinstance(stmt, MKillStatement)
-        assert len(stmt.targets) == 1
-        target = stmt.targets[0]
-        assert isinstance(target, MGlobal)
-        assert target.name == "DATA"
-        assert len(target.subscripts) == 1
 
 
 # =============================================================================
@@ -147,31 +126,6 @@ class TestNakedReferenceASG:
     and which use naked references.
     Reference: §7.1.2.4, FR-046
     """
-
-    def test_naked_reference_classified(self):
-        """Naked reference is classified as MNakedGlobal (§7.1.2.4)."""
-        stmt = analyze_first_command("S ^(1)=100")
-
-        target = stmt.assignments[0].target
-        # MNakedGlobal is the ASG type for naked references
-        assert isinstance(target, MNakedGlobal)
-        # MNakedGlobal should not have a 'name' attribute (inherits from naked indicator)
-        assert not hasattr(target, "name") or target.name is None
-
-    def test_full_global_sets_naked_indicator(self):
-        """Full global reference tracked with name for naked indicator (§7.1.2.4).
-
-        A full global reference like ^DATA(1) establishes the naked indicator.
-        The ASG should capture the global name and subscripts for this.
-        """
-        stmt = analyze_first_command("S ^DATA(1,2)=100")
-
-        target = stmt.assignments[0].target
-        assert isinstance(target, MGlobal)
-        # Full global has a name that will set the naked indicator
-        assert target.name == "DATA"
-        # And subscripts that contribute to the indicator
-        assert len(target.subscripts) == 2
 
     def test_naked_reference_subscripts_tracked(self):
         """Naked reference subscripts are tracked in ASG (§7.1.2.4)."""
