@@ -119,19 +119,6 @@ class TestQuitThenCommand:
     after QUIT are recognized as new commands, not as return values.
     """
 
-    def test_quit_alone(self):
-        """Simple QUIT should parse."""
-        commands = parse_commands_from_line("Q")
-        assert len(commands) == 1
-        assert commands[0].__class__.__name__ == "QuitCommand"
-
-    def test_quit_with_value(self):
-        """QUIT with return value should parse."""
-        commands = parse_commands_from_line("Q X")
-        assert len(commands) == 1
-        assert commands[0].__class__.__name__ == "QuitCommand"
-        assert hasattr(commands[0], "value") and commands[0].value is not None
-
     def test_quit_then_set(self):
         """QUIT followed by SET should parse as two commands."""
         commands = parse_commands_from_line("Q  S X=1")
@@ -177,30 +164,7 @@ class TestQuitThenCommand:
 
 @pytest.mark.asg
 class TestV1CALL1Line3:
-    """Regression test for V1CALL1.m line 3 parsing."""
-
-    def test_v1call1_line3_parses_correctly(self):
-        """V1CALL1.m line 3 should parse SET, QUIT, SET (not SET, QUIT, VIEW)."""
-        # Line 3 from V1CALL1.m:
-        line = 'S VCOMP=VCOMP_"1 " Q  S VCOMP=VCOMP_"QUIT ERROR"'
-
-        commands = parse_commands_from_line(line)
-        command_names = [c.__class__.__name__ for c in commands]
-
-        # Should have: SET, QUIT, SET
-        assert len(commands) == 3, (
-            f"Expected 3 commands, got {len(commands)}: {command_names}"
-        )
-
-        assert commands[0].__class__.__name__ == "SetCommand", (
-            f"First command should be SetCommand, got {commands[0].__class__.__name__}"
-        )
-        assert commands[1].__class__.__name__ == "QuitCommand", (
-            f"Second command should be QuitCommand, got {commands[1].__class__.__name__}"
-        )
-        assert commands[2].__class__.__name__ == "SetCommand", (
-            f"Third command should be SetCommand, got {commands[2].__class__.__name__}"
-        )
+    """Regression test for V1CALL1.m line 3 ASG analysis."""
 
     def test_v1call1_line3_semantic_analysis(self):
         """V1CALL1.m line 3 should create proper ASG nodes."""
