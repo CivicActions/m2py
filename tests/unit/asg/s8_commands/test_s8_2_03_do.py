@@ -102,6 +102,46 @@ class TestDoCommandAnalysis:
         assert target.name is not None, "name should be '' not None"
         assert target.routine == "VREPORT"
 
+    def test_do_with_empty_parens(self):
+        """DO label^routine() - empty parens indicate parameter passing semantics."""
+        stmt = analyze_first_command("D LABEL^routine()")
+        assert isinstance(stmt, MDoStatement)
+        assert len(stmt.targets) == 1
+        target = stmt.targets[0]
+        # Verify MCall structure for empty parens
+        from m2py.asg.elements import MCall
+
+        assert isinstance(target, MCall)
+        assert target.name == "LABEL"
+        assert target.routine == "routine"
+        assert target.arguments == []
+
+    def test_do_with_empty_parens_no_routine(self):
+        """DO label() - empty parens with just label."""
+        stmt = analyze_first_command("D LABEL()")
+        assert isinstance(stmt, MDoStatement)
+        target = stmt.targets[0]
+        from m2py.asg.elements import MCall
+
+        assert isinstance(target, MCall)
+        assert target.name == "LABEL"
+        assert target.arguments == []
+
+    def test_do_with_empty_args(self):
+        """DO command with empty arguments (§8.2.3)."""
+        # DO select^routine(,begin)
+        stmt = analyze_first_command("DO select^routine(,begin)")
+        target = stmt.targets[0]
+        # In ASG arguments list, empty position should be None or empty string or similar?
+        # TextX might put empty string or None.
+        # Assuming list length is preserved.
+        assert len(target.arguments) == 2
+
+        # DO routine(,,,val)
+        stmt2 = analyze_first_command("DO routine(,,,val)")
+        target2 = stmt2.targets[0]
+        assert len(target2.arguments) == 4
+
 
 @pytest.mark.asg
 class TestDoBlockBodyPopulation:

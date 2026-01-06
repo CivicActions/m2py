@@ -101,6 +101,48 @@ class TestParseErrorCollection:
         for error in routine.parse_errors:
             assert hasattr(error, "line") or "line" in str(error).lower()
 
+
+class TestUnknownCommand:
+    """Tests for unknown command detection (Phase 101)."""
+
+    def test_unknown_command_raises_error(self):
+        """Unknown command like FOOBAR should raise MUMPSUnknownCommandError."""
+        from m2py.parser.textx_classes import UnknownCommand
+        from m2py.parser.exceptions import MUMPSUnknownCommandError
+
+        with pytest.raises(MUMPSUnknownCommandError) as exc_info:
+            UnknownCommand(word="FOOBAR", rest=" X=1")
+        assert exc_info.value.command == "FOOBAR"
+        assert "Unknown command 'FOOBAR'" in str(exc_info.value)
+
+    def test_unknown_command_preserved_in_parse_error(self):
+        """parse_line_content should convert unknown command error to MParseError."""
+        from m2py.parser.line_parser import parse_line_content
+        from m2py.asg.elements import MParseError
+
+        result = parse_line_content("FOOBAR X=1")
+        assert isinstance(result, MParseError)
+        assert "FOOBAR" in result.message
+        assert "Unknown command" in result.message
+
+    def test_unknown_command_various_patterns(self):
+        """Various unknown commands should be caught."""
+        from m2py.parser.line_parser import parse_line_content
+        from m2py.asg.elements import MParseError
+
+        unknown_commands = [
+            "SETUP",  # Not SET (has more letters)
+            "WRITEMORE",  # Not WRITE
+            "GOSUB",  # Not GO/GOTO
+            "ROUTINE",  # Not a command
+            "UNKNOWN",
+        ]
+
+        for cmd in unknown_commands:
+            result = parse_line_content(cmd)
+            assert isinstance(result, MParseError), f"Expected MParseError for '{cmd}'"
+            assert "Unknown command" in result.message or "Expected" in result.message
+
     def test_multiple_errors_collected(self):
         """Multiple errors should all be collected in parse_errors."""
         parser = MUMPSParser()
