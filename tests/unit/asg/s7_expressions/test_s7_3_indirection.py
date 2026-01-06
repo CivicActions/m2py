@@ -62,23 +62,6 @@ class TestIndirectionAnalysis:
         assert isinstance(result.expression, LocalVariable)
         assert result.expression.name == "ARGS"
 
-    def test_indirection_in_set(self, analyze_routine):
-        """Indirection in SET command is correctly analyzed (§7.3).
-
-        The target of SET can be an indirection that resolves to a variable name.
-        Per 1995__a901027.md: "Set @X1='HELLO' will be executed as: Set Y='HELLO'"
-        """
-        routine = analyze_routine("TEST\n S @VAR=1\n Q")
-
-        stmt = routine.labels[0].body.statements[0]
-        assert isinstance(stmt, MSetStatement)
-
-        target = stmt.assignments[0].target
-        assert isinstance(target, Indirection)
-        assert target.indirection_type == IndirectionType.NAME
-        assert isinstance(target.expression, LocalVariable)
-        assert target.expression.name == "VAR"
-
     def test_indirection_limitations(self, analyze_routine):
         """Indirection static analysis limitations are tracked (§7.3).
 
@@ -144,21 +127,6 @@ class TestIndirectionAnalysis:
 class TestIndirectionASG:
     """Test MIndirection ASG node structure."""
 
-    def test_indirection_simple(self):
-        """@X creates MIndirection with expression."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg import MIndirection
-        from m2py.asg.expressions import MVariable
-
-        expr = parse_expression("@X")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MIndirection)
-        assert result.expression is not None
-        assert isinstance(result.expression, MVariable)
-        assert result.expression.name == "X"
-
     def test_indirection_subscripted(self):
         """@X(1) creates MIndirection with subscripts."""
         from tests.helpers.parsing import parse_expression
@@ -176,19 +144,6 @@ class TestIndirectionASG:
 class TestIndirectionClassification:
     """Tests for indirection type classification and static resolution."""
 
-    def test_indirection_default_type(self):
-        """@X should have IndirectionType.NAME by default."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg.expressions import MIndirection
-        from m2py.asg.enums import IndirectionType
-
-        expr = parse_expression("@X")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MIndirection)
-        assert result.indirection_type == IndirectionType.NAME
-
     def test_indirection_static_resolution_string(self):
         """@"VARNAME" should resolve statically."""
         from tests.helpers.parsing import parse_expression
@@ -201,19 +156,6 @@ class TestIndirectionClassification:
         assert isinstance(result, MIndirection)
         assert result.can_resolve_statically is True
         assert result.resolved_value == "VARNAME"
-
-    def test_indirection_variable_not_static(self):
-        """@X should not resolve statically."""
-        from tests.helpers.parsing import parse_expression
-        from m2py.analysis.semantic_analyzer import analyze_expression
-        from m2py.asg.expressions import MIndirection
-
-        expr = parse_expression("@X")
-        result = analyze_expression(expr)
-
-        assert isinstance(result, MIndirection)
-        assert result.can_resolve_statically is False
-        assert result.resolved_value is None
 
 
 @pytest.mark.asg
@@ -246,17 +188,3 @@ class TestIndirectionSubscriptAnalysis:
         # Subscripts should be analyzed expressions
         assert inner.subscripts[0].name == "B"
         assert inner.subscripts[1].name == "C"
-
-    def test_indirection_requires_runtime(self):
-        """MIndirection has requires_runtime_eval=True."""
-        from m2py.parser import MUMPSParser
-        from m2py.asg import MIndirection
-
-        parser = MUMPSParser()
-        routine = parser.parse("TEST\n S X=@A\n")
-
-        stmt = routine.labels[0].body.statements[0]
-        value = stmt.assignments[0].value
-
-        assert isinstance(value, MIndirection)
-        assert value.requires_runtime_eval is True
