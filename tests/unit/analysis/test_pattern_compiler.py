@@ -203,6 +203,59 @@ class TestAlternation:
         assert re.fullmatch(regex, "A")
         assert not re.fullmatch(regex, " ")
 
+    def test_three_way_alternation(self):
+        """Test three-way alternation (1(1N,1A,1P)) - digit, letter, or punct.
+
+        GAP-006: Coverage gap for lines 276-295 in pattern_compiler.py.
+        """
+        regex = compile_pattern_to_regex("1(1N,1A,1P)")
+        assert re.fullmatch(regex, "5")
+        assert re.fullmatch(regex, "A")
+        assert re.fullmatch(regex, " ")
+        assert re.fullmatch(regex, "!")
+
+    def test_nested_alternation(self):
+        """Test nested alternation (1(1(1N,1A),1P)) - nested parens.
+
+        GAP-006: Coverage gap for nested paren tracking in pattern_compiler.py.
+        """
+        regex = compile_pattern_to_regex("1(1(1N,1A),1P)")
+        assert re.fullmatch(regex, "5")
+        assert re.fullmatch(regex, "A")
+        assert re.fullmatch(regex, " ")
+
+    def test_alternation_with_quoted_string(self):
+        """Test alternation containing quoted string with comma.
+
+        Pattern like 1("YES","NO") should match YES or NO, not treat
+        the comma inside quotes as an alternation separator.
+
+        GAP-006: Coverage gap for lines 299-315 in pattern_compiler.py.
+        """
+        regex = compile_pattern_to_regex('1("YES","NO")')
+        assert re.fullmatch(regex, "YES")
+        assert re.fullmatch(regex, "NO")
+        assert not re.fullmatch(regex, "MAYBE")
+
+    def test_alternation_with_escaped_quote(self):
+        """Test alternation with escaped quote in string literal.
+
+        Pattern like 1("a""b","c") should handle the "" escape properly.
+        """
+        regex = compile_pattern_to_regex('1("a""b","c")')
+        assert re.fullmatch(regex, 'a"b')
+        assert re.fullmatch(regex, "c")
+
+    def test_alternation_with_multiple_atoms(self):
+        """Test alternation where alternatives have multiple atoms.
+
+        Pattern like 1(2N"-"4N,8N) - SSN format OR 8-digit number.
+        """
+        regex = compile_pattern_to_regex('1(3N"-"4N,8N)')
+        assert re.fullmatch(regex, "123-4567")
+        assert re.fullmatch(regex, "12345678")
+        assert not re.fullmatch(regex, "12-4567")
+
 
 # =============================================================================
 # Real-World Patterns

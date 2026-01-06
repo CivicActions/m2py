@@ -167,3 +167,70 @@ class TestForBodyPopulation:
         assert inner_for.loop_var.name == "J"
         assert len(inner_for.body.statements) == 1
         assert isinstance(inner_for.body.statements[0], MSetStatement)
+
+
+@pytest.mark.asg
+class TestForSubscriptedLoopVariable:
+    """Tests for subscripted FOR loop variables (§8.2.5, GAP-003d).
+
+    MUMPS spec §8.2.5 says: "Any expressions occurring in lvn, such as
+    might occur in subscripts or indirection, are evaluated once per
+    execution of the For, prior to the first execution of any forparameter."
+
+    This tests the _convert_loop_var_subscripts path in semantic_analyzer.py.
+    """
+
+    def test_for_local_subscripted_variable(self):
+        """FOR with subscripted local variable (§8.2.5).
+
+        Example: FOR X(I)=1:1:10 stores results in array X.
+        """
+        stmt = analyze_first_command("F X(1)=1:1:10")
+
+        assert isinstance(stmt, MForStatement)
+        assert stmt.loop_var.name == "X"
+        assert len(stmt.loop_var.subscripts) == 1
+        # Subscript should be converted to ASG expression
+        assert stmt.loop_var.subscripts[0].value == 1
+
+    def test_for_local_multiple_subscripts(self):
+        """FOR with multiple subscripted local variable (§8.2.5).
+
+        Example: FOR A(I,J)=1:1:10
+        """
+        stmt = analyze_first_command("F A(1,2)=1:1:3")
+
+        assert isinstance(stmt, MForStatement)
+        assert stmt.loop_var.name == "A"
+        assert len(stmt.loop_var.subscripts) == 2
+        assert stmt.loop_var.subscripts[0].value == 1
+        assert stmt.loop_var.subscripts[1].value == 2
+
+    def test_for_local_expression_subscript(self):
+        """FOR with expression subscript in loop variable (§8.2.5).
+
+        Example: FOR X(I+1)=1:1:10
+        """
+        from m2py.asg.expressions import MBinaryOp
+
+        stmt = analyze_first_command("F X(I+1)=1:1:10")
+
+        assert isinstance(stmt, MForStatement)
+        assert stmt.loop_var.name == "X"
+        assert len(stmt.loop_var.subscripts) == 1
+        # Expression subscript should be analyzed
+        assert isinstance(stmt.loop_var.subscripts[0], MBinaryOp)
+        assert stmt.loop_var.subscripts[0].operator == "+"
+
+    def test_for_local_variable_subscript(self):
+        """FOR with variable subscript in loop variable (§8.2.5).
+
+        Example: FOR X(J)=1:1:10 - J is evaluated each iteration.
+        """
+        stmt = analyze_first_command("F X(J)=1:1:10")
+
+        assert isinstance(stmt, MForStatement)
+        assert stmt.loop_var.name == "X"
+        assert len(stmt.loop_var.subscripts) == 1
+        # Variable subscript
+        assert stmt.loop_var.subscripts[0].name == "J"

@@ -12,6 +12,7 @@ from m2py.analysis import (
     resolve_references,
     classify_gotos,
     get_loop_exiting_gotos,
+    get_gotos_by_type,
 )
 from m2py.asg.elements import MRoutine, MLabel, MScope, MCall
 from m2py.asg.statements import (
@@ -239,6 +240,167 @@ class TestGetLoopExitingGotos:
         result = get_loop_exiting_gotos(routine)
         assert len(result) == 1
         assert result[0] is goto_stmt
+
+
+class TestGetGotosByType:
+    """Test get_gotos_by_type function for filtering GOTOs by their classification.
+
+    MUMPS 1995 Reference: §8.2.6 GOTO command
+    Coverage target: Lines 272-278 in goto_analysis.py
+    """
+
+    def test_get_multi_loop_exit_gotos(self):
+        """Filter nested loop exits with get_gotos_by_type(MULTI_LOOP_EXIT).
+
+        MUMPS: `FOR I=1:1:10 FOR J=1:1:10 GOTO EXIT` exits both loops.
+        """
+        routine = MRoutine(name="TEST")
+
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+
+        # Nested FOR loops with GOTO
+        outer_for = MForStatement()
+        outer_for.loop_var = "I"
+        outer_for.loop_type = ForLoopType.BOUNDED
+        outer_for.body = MScope()
+
+        inner_for = MForStatement()
+        inner_for.loop_var = "J"
+        inner_for.loop_type = ForLoopType.BOUNDED
+        inner_for.body = MScope()
+
+        goto_stmt = MGotoStatement()
+        call = MCall(name="EXIT")
+        goto_stmt.targets.append(call)
+        inner_for.body.add_statement(goto_stmt)
+
+        outer_for.body.add_statement(inner_for)
+        label.body.add_statement(outer_for)
+        routine.add_label(label)
+
+        # Target label outside loops
+        target = MLabel(name="EXIT")
+        target.body = MScope()
+        routine.add_label(target)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        result = get_gotos_by_type(routine, GotoType.MULTI_LOOP_EXIT)
+        assert len(result) == 1
+        assert result[0] is goto_stmt
+        assert result[0].goto_type == GotoType.MULTI_LOOP_EXIT
+
+    def test_get_loop_exit_excludes_multi_loop(self):
+        """get_gotos_by_type(LOOP_EXIT) excludes MULTI_LOOP_EXIT gotos.
+
+        Single loop exit should be LOOP_EXIT, not MULTI_LOOP_EXIT.
+        """
+        routine = MRoutine(name="TEST")
+
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+
+        # Single FOR with GOTO
+        for_stmt = MForStatement()
+        for_stmt.loop_var = "I"
+        for_stmt.loop_type = ForLoopType.BOUNDED
+        for_stmt.body = MScope()
+
+        goto_stmt = MGotoStatement()
+        call = MCall(name="EXIT")
+        goto_stmt.targets.append(call)
+        for_stmt.body.add_statement(goto_stmt)
+
+        label.body.add_statement(for_stmt)
+        routine.add_label(label)
+
+        target = MLabel(name="EXIT")
+        target.body = MScope()
+        routine.add_label(target)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        loop_exits = get_gotos_by_type(routine, GotoType.LOOP_EXIT)
+        multi_exits = get_gotos_by_type(routine, GotoType.MULTI_LOOP_EXIT)
+        assert len(loop_exits) == 1
+        assert len(multi_exits) == 0
+        assert loop_exits[0].goto_type == GotoType.LOOP_EXIT
+
+    def test_get_forward_jump_gotos(self):
+        """Filter forward jumps with get_gotos_by_type(FORWARD_JUMP).
+
+        MUMPS: `GOTO LABEL2` from LABEL1 to later LABEL2 is a forward jump.
+        """
+        routine = MRoutine(name="TEST")
+
+        label1 = MLabel(name="LABEL1")
+        label1.body = MScope()
+
+        goto_stmt = MGotoStatement()
+        call = MCall(name="LABEL2")
+        goto_stmt.targets.append(call)
+        label1.body.add_statement(goto_stmt)
+        routine.add_label(label1)
+
+        label2 = MLabel(name="LABEL2")
+        label2.body = MScope()
+        routine.add_label(label2)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        result = get_gotos_by_type(routine, GotoType.FORWARD_JUMP)
+        assert len(result) == 1
+        assert result[0] is goto_stmt
+
+    def test_get_gotos_by_type_returns_empty_for_no_matches(self):
+        """get_gotos_by_type returns empty list when no gotos match type."""
+        routine = MRoutine(name="TEST")
+
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+
+        # GOTO to external routine
+        goto_stmt = MGotoStatement()
+        call = MCall(name="LABEL", routine="OTHERROUTINE")
+        goto_stmt.targets.append(call)
+        label.body.add_statement(goto_stmt)
+        routine.add_label(label)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # No LOOP_EXIT gotos exist
+        result = get_gotos_by_type(routine, GotoType.LOOP_EXIT)
+        assert len(result) == 0
+
+    def test_same_routine_explicit_missing_label_is_unresolved(self):
+        """GOTO MISSING^SAMEROUTINE where MISSING doesn't exist should be UNRESOLVED.
+
+        MUMPS: When a GOTO explicitly references the same routine with ^ROUTINENAME
+        but the target label doesn't exist, it should be UNRESOLVED.
+        Coverage target: Lines 166-167 in goto_analysis.py
+        """
+        routine = MRoutine(name="TEST")
+
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+
+        # GOTO MISSING^TEST where MISSING label doesn't exist
+        goto_stmt = MGotoStatement()
+        call = MCall(name="MISSING", routine="TEST")  # Same routine, missing label
+        goto_stmt.targets.append(call)
+        label.body.add_statement(goto_stmt)
+        routine.add_label(label)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Should be UNRESOLVED since MISSING label doesn't exist
+        assert goto_stmt.goto_type == GotoType.UNRESOLVED
 
 
 @pytest.mark.analysis

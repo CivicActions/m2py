@@ -1311,6 +1311,56 @@ class TestParameterBindingAdvanced:
         assert bindings[0].passing_mode == PassingMode.BY_REFERENCE
         assert bindings[0].caller_var_name == "X"
 
+    def test_bind_parameters_explicit_none_omitted(self):
+        """D CALC(,B) - explicit None in arguments for omitted param.
+
+        MUMPS allows omitting params in middle: D SUB(,B)
+        This should bind the first formal to OMITTED mode.
+        Coverage target: Lines 1172-1173 in variables.py
+        """
+        from m2py.analysis.variables import bind_parameters
+        from m2py.asg.enums import PassingMode
+
+        # Create target label CALC(X,Y)
+        target_label = MLabel(name="CALC", formal_list=["X", "Y"], body=MScope())
+
+        # Create call D CALC(,B) - first arg is None (omitted), second is B
+        var_b = MVariable(name="B", subscripts=[])
+        call = MCall(name="CALC", routine=None, arguments=[None, var_b])
+
+        bindings = bind_parameters(call, target_label)
+
+        assert len(bindings) == 2
+        assert bindings[0].formal_name == "X"
+        assert bindings[0].passing_mode == PassingMode.OMITTED
+        assert bindings[1].formal_name == "Y"
+        assert bindings[1].passing_mode == PassingMode.BY_VALUE
+
+    def test_bind_parameters_expression_arg(self):
+        """D CALC(A+B) - expression argument passed by value.
+
+        MUMPS: Expressions (not simple variables) are passed by value.
+        Coverage target: Lines 1175-1178 in variables.py
+        """
+        from m2py.analysis.variables import bind_parameters
+        from m2py.asg.enums import PassingMode
+
+        # Create target label CALC(X)
+        target_label = MLabel(name="CALC", formal_list=["X"], body=MScope())
+
+        # Create call D CALC(A+B) - expression argument
+        var_a = MVariable(name="A", subscripts=[])
+        var_b = MVariable(name="B", subscripts=[])
+        expr = MBinaryOp(operator="+", left=var_a, right=var_b)
+        call = MCall(name="CALC", routine=None, arguments=[expr])
+
+        bindings = bind_parameters(call, target_label)
+
+        assert len(bindings) == 1
+        assert bindings[0].formal_name == "X"
+        assert bindings[0].passing_mode == PassingMode.BY_VALUE
+        assert bindings[0].actual_expr is expr
+
 
 class TestSignatureComputation:
     """Advanced tests for function signature computation (Phase 58e-f)."""

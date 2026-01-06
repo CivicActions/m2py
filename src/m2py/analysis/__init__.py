@@ -28,11 +28,6 @@ from m2py.parser.line_parser import (
     detect_quit_after_for,
 )
 
-# Dead code analysis
-from m2py.analysis.dead_code_analysis import (
-    detect_unreachable_code,
-)
-
 # Semantic analysis
 from m2py.analysis.semantic_analyzer import (
     analyze_command,
@@ -70,7 +65,6 @@ __all__ = [
     "extract_for_commands",
     "classify_for_command",
     "detect_quit_after_for",
-    "detect_unreachable_code",
     # Semantic analysis
     "analyze_command",
     "analyze_expression",

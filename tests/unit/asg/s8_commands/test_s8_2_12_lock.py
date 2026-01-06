@@ -101,3 +101,66 @@ class TestLockCommandAnalysis:
         assert "target" in target_dict
         assert isinstance(target_dict["target"], MNakedGlobal)
         assert len(target_dict["target"].subscripts) == 1
+
+    def test_lock_indirection(self):
+        """L @VAR uses indirection for lock target (§8.2.12 + §7.3).
+
+        Lock targets can use indirection. The indirect expression is
+        resolved at runtime to determine the actual lock name.
+
+        GAP-003g: Coverage gap for lines 1613-1618 in semantic_analyzer.py.
+        """
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import analyze_command
+
+        cmds = parse_commands_from_line("L @A")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MLockStatement)
+        assert len(stmt.targets) >= 1
+        target_dict = stmt.targets[0]
+        assert isinstance(target_dict, dict)
+        # Check indirection flag is set
+        assert target_dict.get("is_indirect") is True
+        assert "indirection" in target_dict
+
+    def test_lock_double_indirection(self):
+        """L @@VAR uses double indirection for lock target (§8.2.12 + §7.3).
+
+        Double indirection dereferences the variable twice at runtime.
+        """
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import analyze_command
+
+        cmds = parse_commands_from_line("L @@A")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MLockStatement)
+        assert len(stmt.targets) >= 1
+        target_dict = stmt.targets[0]
+        assert isinstance(target_dict, dict)
+        assert target_dict.get("is_indirect") is True
+        # Double indirection has 2 levels
+        assert target_dict.get("indirection_levels") == 2
+
+    def test_lock_parenthesized_with_indirection(self):
+        """L (@A,^B) uses indirection in parenthesized list (§8.2.12 + §7.3).
+
+        Parenthesized lock lists can contain indirect items.
+        """
+        from m2py.parser.line_parser import parse_commands_from_line
+        from m2py.analysis.semantic_analyzer import analyze_command
+
+        cmds = parse_commands_from_line("L (@A,^B)")
+        stmt = analyze_command(cmds[0])
+
+        assert isinstance(stmt, MLockStatement)
+        assert len(stmt.targets) >= 2
+        # First target should be indirect
+        target1 = stmt.targets[0]
+        assert isinstance(target1, dict)
+        assert target1.get("is_indirect") is True
+        # Second target should be direct global
+        target2 = stmt.targets[1]
+        assert isinstance(target2, dict)
+        assert "target" in target2 or target2.get("is_indirect") is False

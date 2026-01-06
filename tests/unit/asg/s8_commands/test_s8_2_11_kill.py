@@ -164,3 +164,55 @@ class TestKillCommandAnalysis:
         target = stmt.targets[0]
         assert isinstance(target, MNakedGlobal)
         assert len(target.subscripts) == 1
+
+    def test_kill_multiple_exclusive_groups(self):
+        """K (A,B),(C,D) with multiple exclusive groups computes intersection (§8.2.11).
+
+        Per MUMPS semantics, when multiple exclusive groups are given, only variables
+        that appear in ALL groups are preserved (intersection). This is a valid but
+        rare syntax: K (A,B),(C,D) means "kill all except those in BOTH lists".
+
+        GAP-003f: Coverage gap for lines 1377-1380 in semantic_analyzer.py.
+        """
+        stmt = analyze_first_command("K (A,B),(B,C)")
+
+        assert isinstance(stmt, MKillStatement)
+        assert stmt.exclusive is True
+        # Should have two exclusive groups
+        assert len(stmt.except_groups) == 2
+        assert stmt.except_groups[0] == ["A", "B"]
+        assert stmt.except_groups[1] == ["B", "C"]
+        # Intersection: only B is in both groups
+        assert stmt.except_list == ["B"]
+
+    def test_kill_multiple_exclusive_groups_no_overlap(self):
+        """K (A,B),(C,D) with no overlap results in empty except_list (§8.2.11).
+
+        When exclusive groups have no common variables, the intersection is empty,
+        which effectively kills all locals (like K with no args).
+        """
+        stmt = analyze_first_command("K (A,B),(C,D)")
+
+        assert isinstance(stmt, MKillStatement)
+        assert stmt.exclusive is True
+        assert len(stmt.except_groups) == 2
+        # No intersection - empty list
+        assert stmt.except_list == []
+
+    def test_kill_exclusive_then_selective(self):
+        """K (A,B),Z is mixed exclusive + selective kill (§8.2.11).
+
+        Per ydb-mumps-guide: "K (a,b),^AB(a,b)" - first argument is exclusive,
+        second is a selective target. The exclusive kills all except A,B,
+        then Z is also killed.
+        """
+        stmt = analyze_first_command("K (A,B),Z")
+
+        assert isinstance(stmt, MKillStatement)
+        assert stmt.exclusive is True
+        # One exclusive group
+        assert len(stmt.except_groups) == 1
+        assert stmt.except_groups[0] == ["A", "B"]
+        # Plus one selective target Z
+        assert len(stmt.targets) == 1
+        assert stmt.targets[0].name == "Z"

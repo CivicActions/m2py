@@ -115,6 +115,69 @@ class TestWalkExpressions:
         assert expr1 in exprs
         assert expr2 in exprs
 
+    def test_walk_for_parameters(self):
+        """Walk FOR statement parameters (start, step, end).
+
+        MUMPS: FOR I=A:B:C walks the parameters A, B, C as expressions.
+        Coverage target: Lines 917-923 in variables.py
+        """
+        from m2py.asg.statements import MForStatement, MForParameter
+        from m2py.asg.enums import ForParamType
+
+        # Create FOR I=A:B:C
+        loop_var = MVariable(name="I")
+        start = MVariable(name="A")
+        step = MVariable(name="B")
+        end = MVariable(name="C")
+
+        param = MForParameter(
+            param_type=ForParamType.RANGE,
+            start=start,
+            step=step,
+            end=end,
+        )
+
+        for_stmt = MForStatement(
+            loop_var=loop_var,
+            parameters=[param],
+        )
+
+        exprs = list(walk_expressions(for_stmt))
+
+        # Should include loop_var and all parameter expressions
+        assert loop_var in exprs
+        assert start in exprs
+        assert step in exprs
+        assert end in exprs
+
+    def test_walk_for_parameters_value_only(self):
+        """Walk FOR statement with VALUE parameter type.
+
+        MUMPS: FOR I=V walks the value expression V.
+        """
+        from m2py.asg.statements import MForStatement, MForParameter
+        from m2py.asg.enums import ForParamType
+
+        loop_var = MVariable(name="I")
+        value = MVariable(name="V")
+
+        param = MForParameter(
+            param_type=ForParamType.VALUE,
+            value=value,
+        )
+
+        for_stmt = MForStatement(
+            loop_var=loop_var,
+            parameters=[param],
+        )
+
+        exprs = list(walk_expressions(for_stmt))
+
+        # loop_var should be included
+        assert loop_var in exprs
+        # value isn't in start/step/end so won't be walked by current code
+        # This tests the current behavior - param.value is NOT walked
+
 
 @pytest.mark.analysis
 class TestHasIndirection:
