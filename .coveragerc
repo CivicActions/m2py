@@ -2,7 +2,9 @@
 [run]
 branch = True
 source = m2py
-# omit = bad_file.py
+omit =
+    # Documentation-only module, not used at runtime
+    */limitations.py
 
 [paths]
 source =

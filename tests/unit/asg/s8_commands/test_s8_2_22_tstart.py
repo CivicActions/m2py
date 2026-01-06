@@ -95,3 +95,83 @@ class TestTstartCommandAnalysis:
             (p for p in stmt2.parameters if p.name.upper() in ("S", "SERIAL")), None
         )
         assert serial_param is not None
+
+
+@pytest.mark.asg
+class TestTstartCompoundParams:
+    """Tests for TSTART compound parenthesized parameters (§8.2.22, GAP-003h).
+
+    TSTART supports compound parameter forms where multiple params are
+    grouped in parentheses separated by colons: (serial:t="BA")
+
+    This tests the _analyze_TStartParamInner path in semantic_analyzer.py.
+    """
+
+    def test_tstart_compound_serial_transactionid(self):
+        """TSTART with compound (serial:t=value) parameter form.
+
+        Example: TS ():(serial:t="BA") - both serial and transaction ID in one paren.
+        """
+        stmt = analyze_first_command('TS ():(serial:t="BA")')
+
+        assert isinstance(stmt, MTStartStatement)
+        assert len(stmt.parameters) == 2
+
+        # First param should be SERIAL
+        param_names = [p.name.upper() for p in stmt.parameters]
+        assert "SERIAL" in param_names or "S" in param_names
+
+        # Second param should be T with value
+        t_param = next(
+            (p for p in stmt.parameters if p.name.upper() in ("T", "TRANSACTIONID")),
+            None,
+        )
+        assert t_param is not None
+        assert t_param.value is not None
+        assert t_param.value.value == "BA"
+
+    def test_tstart_compound_abbreviated(self):
+        """TSTART with abbreviated compound parameters.
+
+        Example: TS ():(s:t="X") - abbreviated serial and transaction ID.
+        """
+        stmt = analyze_first_command('TS ():(s:t="X")')
+
+        assert isinstance(stmt, MTStartStatement)
+        assert len(stmt.parameters) == 2
+
+        # Check both params are captured
+        param_names = [p.name.lower() for p in stmt.parameters]
+        assert "s" in param_names
+        assert "t" in param_names
+
+    def test_tstart_single_parenthesized_param(self):
+        """TSTART with single parenthesized parameter.
+
+        Example: TS ():(serial) - single param in parens.
+        """
+        stmt = analyze_first_command("TS ():(serial)")
+
+        assert isinstance(stmt, MTStartStatement)
+        assert len(stmt.parameters) == 1
+        assert stmt.parameters[0].name.upper() in ("SERIAL", "S")
+
+    def test_tstart_compound_with_restart_vars(self):
+        """TSTART with restart vars and compound params.
+
+        Example: TS (A,B):(s:t="ID1")
+        """
+        stmt = analyze_first_command('TS (A,B):(s:t="ID1")')
+
+        assert isinstance(stmt, MTStartStatement)
+        # Restart vars
+        assert len(stmt.restart_vars) == 2
+        var_names = [v.name for v in stmt.restart_vars]
+        assert "A" in var_names
+        assert "B" in var_names
+
+        # Compound params
+        assert len(stmt.parameters) == 2
+        param_names = [p.name.lower() for p in stmt.parameters]
+        assert "s" in param_names
+        assert "t" in param_names

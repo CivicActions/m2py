@@ -99,6 +99,30 @@ class TestIndirectionAnalysis:
         assert isinstance(result.expression.expression, LocalVariable)
         assert result.expression.expression.name == "X"
 
+    def test_triple_indirection(self, analyze_expression):
+        """Triple indirection @@@X is correctly analyzed (§7.3).
+
+        Triple indirection dereferences the variable three times at runtime.
+        This is rare but valid MUMPS syntax.
+
+        GAP-003e: Coverage gap for lines 1268-1271 in semantic_analyzer.py.
+        """
+        expr = parse_expression("@@@X")
+        result = analyze_expression(expr)
+
+        # Outer indirection
+        assert isinstance(result, Indirection)
+        assert result.indirection_type == IndirectionType.NAME
+        # Middle indirection
+        assert isinstance(result.expression, Indirection)
+        assert result.expression.indirection_type == IndirectionType.NAME
+        # Inner indirection
+        assert isinstance(result.expression.expression, Indirection)
+        assert result.expression.expression.indirection_type == IndirectionType.NAME
+        # Innermost is the variable X
+        assert isinstance(result.expression.expression.expression, LocalVariable)
+        assert result.expression.expression.expression.name == "X"
+
     def test_indirection_side_effects(self, analyze_routine):
         """Indirection side effects are tracked (§7.3).
 

@@ -913,8 +913,8 @@ def walk_expressions(node: Any) -> Iterator[MExpr]:
         # FOR statement has loop variable and params
         if hasattr(node, "loop_var"):
             yield from walk_expressions(getattr(node, "loop_var"))
-        if hasattr(node, "for_params"):
-            for param in getattr(node, "for_params") or []:
+        if hasattr(node, "parameters"):
+            for param in getattr(node, "parameters") or []:
                 if hasattr(param, "start"):
                     yield from walk_expressions(param.start)
                 if hasattr(param, "end"):
