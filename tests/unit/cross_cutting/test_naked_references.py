@@ -219,26 +219,8 @@ class TestNakedReferenceASG:
         assert target.subscripts[0].value == "a"
         assert target.subscripts[1].value == "b"
 
-    def test_sequence_dependency_detected(self):
-        """ASG captures sequence of global and naked references (FR-046).
-
-        SET ^DATA(1)=X,^(2)=Y should produce one MGlobal followed by MNakedGlobal.
-        The sequence matters for runtime resolution.
-        """
-        stmt = analyze_first_command("S ^DATA(1)=X,^(2)=Y")
-
-        assert isinstance(stmt, MSetStatement)
-        assert len(stmt.assignments) == 2
-
-        # First assignment establishes naked indicator
-        target1 = stmt.assignments[0].target
-        assert isinstance(target1, MGlobal)
-        assert target1.name == "DATA"
-
-        # Second assignment uses naked reference
-        target2 = stmt.assignments[1].target
-        assert isinstance(target2, MNakedGlobal)
-        # At runtime, ^(2) would resolve to ^DATA(2)
+    # NOTE: test_sequence_dependency_detected moved to:
+    # tests/unit/asg/s7_expressions/test_s7_1_2_variables.py::TestVariablesAnalysis::test_naked_reference_sequence_dependency
 
 
 # =============================================================================

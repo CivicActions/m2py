@@ -33,6 +33,27 @@ class TestReadCommandAnalysis:
         assert read_target.fixed_length.value == 5
         assert read_target.timeout is None
 
+    def test_read_simple_timeout(self):
+        """R X:5 produces MReadTarget with timeout only (§8.2.17).
+
+        Consolidated from cross_cutting/test_timeouts.py - simple timeout without fixed_length.
+        """
+        cmds = parse_commands_from_line("R X:5")
+        assert len(cmds) == 1
+
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+
+        assert isinstance(stmt, MReadStatement)
+        assert len(stmt.arguments) == 1
+
+        read_target = stmt.arguments[0]
+        assert isinstance(read_target, MReadTarget)
+        assert read_target.variable.name == "X"
+        assert read_target.fixed_length is None  # No fixed length
+        assert read_target.timeout is not None
+        assert read_target.timeout.value == 5
+
     def test_read_timeout(self):
         """READ timeout expression is analyzed (§8.2.17)."""
         cmds = parse_commands_from_line("R X#5:10")

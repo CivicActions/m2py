@@ -25,7 +25,6 @@ from m2py.asg.statements import (
     MDoStatement,
     MQuitStatement,
 )
-from m2py.parser.textx_classes import NumericLiteral
 
 
 # =============================================================================
@@ -206,46 +205,8 @@ class TestLeftToRightParser:
         assert assignment.value is not None
 
 
-@pytest.mark.asg
-class TestLeftToRightASG:
-    """ASG tests for expression structure.
-
-    ASG must represent left-to-right grouping.
-    Reference: §7.2, FR-050
-    """
-
-    def test_mixed_operators_asg_structure(self):
-        """2+3*4 has correct left-to-right ASG structure (§7.2, FR-050).
-
-        The ASG must represent expressions with left-to-right grouping.
-        2+3*4 becomes ((2+3)*4), so:
-        - Top-level operator is * (last operation in left-to-right order)
-        - Left child is the + operation (2+3)
-        - Right child is the literal 4
-
-        Reference: 1995__a107190 (§7.2 - All operators same precedence)
-        """
-        cmds = parse_commands_from_line("S X=2+3*4")
-        stmt = analyze_command(cmds[0])
-        expr = stmt.assignments[0].value
-
-        # Top-level should be multiplication (last operation)
-        assert isinstance(expr, MBinaryOp)
-        assert expr.operator == "*"
-
-        # Left side should be the addition (2+3)
-        assert isinstance(expr.left, MBinaryOp)
-        assert expr.left.operator == "+"
-
-        # Right side is the literal 4
-        assert isinstance(expr.right, NumericLiteral)
-        assert expr.right.value == 4
-
-        # Verify the nested addition operands
-        assert isinstance(expr.left.left, NumericLiteral)
-        assert expr.left.left.value == 2
-        assert isinstance(expr.left.right, NumericLiteral)
-        assert expr.left.right.value == 3
+# NOTE: TestLeftToRightASG.test_mixed_operators_asg_structure moved to:
+# tests/unit/asg/s7_expressions/test_s7_2_operators.py::TestOperatorsAnalysis::test_left_to_right_evaluation
 
 
 @pytest.mark.codegen
