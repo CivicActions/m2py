@@ -80,3 +80,27 @@ class TestGotoCommandParsing:
         assert model.postcond is None  # Command postcond is None
         assert model.targets[0].postcond is not None  # Target postcond is set
         assert model.targets[0].label.label == "ABC"
+
+    def test_goto_mixed_postconditions(self, command_metamodel):
+        """G L1,L2:C,L3 - some targets with postconditions (§8.2.6).
+
+        Not all arguments need postconditions.
+        """
+        model = command_metamodel.model_from_str("G L1,L2:COND,L3", "GotoCommand")
+        assert len(model.targets) == 3
+        # Only middle argument has postcondition
+        assert model.targets[0].postcond is None
+        assert model.targets[1].postcond is not None
+        assert model.targets[2].postcond is None
+
+    def test_goto_command_and_argument_postconditions(self, command_metamodel):
+        """G:CMD L1:A,L2:B - both command and argument postconditions (§8.1.4)."""
+        model = command_metamodel.model_from_str(
+            "G:PROCEED L1:X=1,L2:X=2", "GotoCommand"
+        )
+        # Command postcondition
+        assert model.postcond is not None
+        # Argument postconditions
+        assert len(model.targets) == 2
+        assert model.targets[0].postcond is not None
+        assert model.targets[1].postcond is not None

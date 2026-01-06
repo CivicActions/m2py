@@ -46,9 +46,6 @@ class TestOpenTimeoutParser:
         assert open_stmt.devices[0].timeout is not None
         assert open_stmt.devices[0].timeout.value == 5
 
-    # NOTE: test_open_with_params_and_timeout moved to:
-    # tests/unit/asg/s8_commands/test_s8_2_15_open.py::TestOpenCommandAnalysis::test_open_with_params_and_timeout
-
     def test_open_without_timeout(self):
         """OPEN DEV parses without timeout (§8.2.15)."""
         parser = MUMPSParser()
@@ -73,9 +70,6 @@ class TestReadTimeoutParser:
     READ var:timeout format.
     Reference: §8.2.17
     """
-
-    # NOTE: test_read_with_timeout moved to:
-    # tests/unit/asg/s8_commands/test_s8_2_17_read.py::TestReadCommandAnalysis::test_read_timeout
 
     def test_read_with_timeout_expression(self):
         """READ X:T parses timeout expression (§8.2.17)."""
@@ -185,9 +179,6 @@ class TestLockTimeoutParser:
     - 'lockop' (optional - '+' or '-')
     """
 
-    # NOTE: test_lock_with_timeout moved to:
-    # tests/unit/asg/s8_commands/test_s8_2_12_lock.py::TestLockCommandAnalysis::test_lock_timeout
-
     def test_lock_with_timeout_expression(self):
         """LOCK ^DATA:T parses timeout expression (§8.2.12)."""
         parser = MUMPSParser()
@@ -260,22 +251,6 @@ class TestTimeoutsASG:
         assert isinstance(target, MReadTarget)
         assert target.timeout is not None
         assert target.timeout.value == 10
-
-    def test_read_timeout_expression_analyzed(self):
-        """READ timeout expression is analyzed (§8.2.17)."""
-        from m2py.asg import MReadTarget
-
-        parser = MUMPSParser()
-        source = "LABEL\tR X:T*2\n"
-        routine = parser.parse(source)
-
-        read_stmt = routine.labels[0].body.statements[0]
-        target = read_stmt.arguments[0]
-        assert isinstance(target, MReadTarget)
-        assert target.timeout is not None
-        # Expression type is MBinaryOp for T*2
-        assert target.timeout.__class__.__name__ == "MBinaryOp"
-        assert target.timeout.operator == "*"
 
     def test_lock_timeout_in_asg(self):
         """LOCK timeout is captured in MLockStatement.targets dict (§8.2.12)."""

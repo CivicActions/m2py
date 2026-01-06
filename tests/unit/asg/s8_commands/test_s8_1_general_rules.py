@@ -108,8 +108,6 @@ class TestCommandGeneralRulesAnalysis:
         Per 1995__a108005.md: "The postcond may also be used to conditionalize
         the arguments of Do, Goto, and Xecute."
         Each MCall target has its own postcondition field.
-
-        Note: Consolidated from cross_cutting/test_postconditions.py (FR-049)
         """
         from m2py.parser.textx_classes import LocalVariable
 
@@ -129,13 +127,42 @@ class TestCommandGeneralRulesAnalysis:
         assert isinstance(stmt.targets[1].postcondition, LocalVariable)
         assert stmt.targets[1].postcondition.name == "B"
 
+    def test_complex_postcondition_expression(self, analyze_routine):
+        """SET:(X>0)&(Y<10) Z=1 parses complex postcondition (§8.1.4).
+
+        Postcondition can be any truthvalue expression (tvexpr).
+        Complex boolean expressions with & (AND) are allowed.
+        """
+        routine = analyze_routine("TEST\n S:(X>0)&(Y<10) Z=1")
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MSetStatement)
+        assert stmt.postcondition is not None
+        # Complex expression should be MBinaryOp with & operator
+        assert isinstance(stmt.postcondition, MBinaryOp)
+        assert stmt.postcondition.operator == "&"
+
+    def test_postcondition_with_intrinsic_function(self, analyze_routine):
+        """SET:$D(X) Y=X parses postcondition with intrinsic function (§8.1.4).
+
+        $DATA returns 0 if variable doesn't exist, non-zero otherwise.
+        This is a common pattern to check if variable is defined.
+        """
+        from m2py.asg.expressions import MIntrinsicFunction
+
+        routine = analyze_routine("TEST\n S:$D(X) Y=X")
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MSetStatement)
+        assert stmt.postcondition is not None
+        assert isinstance(stmt.postcondition, MIntrinsicFunction)
+        assert stmt.postcondition.name.upper() in ("D", "DATA")
+
     def test_combined_command_and_argument_postconditions(self, analyze_routine):
         """Both command and argument postconditions are captured (§8.1.4).
 
         DO:CMD L1:ARG1,L2:ARG2 has command-level postcondition that gates
         all execution, plus independent argument-level postconditions.
-
-        Note: Consolidated from cross_cutting/test_postconditions.py (FR-049)
         """
         from m2py.parser.textx_classes import LocalVariable
 
@@ -176,3 +203,81 @@ class TestCommandGeneralRulesAnalysis:
         assert len(stmt_abbrev.assignments) == len(stmt_full.assignments)
         assert stmt_abbrev.assignments[0].target.name == "X"
         assert stmt_full.assignments[0].target.name == "X"
+
+    def test_postcondition_with_negation(self, analyze_routine):
+        """Q:'DONE - postcondition with NOT operator (§8.1.4).
+
+        Negated conditions use unary NOT (').
+        """
+        from m2py.asg.expressions import MUnaryOp
+        from m2py.asg.statements import MQuitStatement
+
+        routine = analyze_routine("TEST\n Q:'DONE")
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MQuitStatement)
+        pc = stmt.postcondition
+        assert pc is not None
+        # Should be MUnaryOp with NOT operator
+        assert isinstance(pc, MUnaryOp)
+        assert pc.operator == "'"
+
+    def test_postcondition_numeric_literal(self, analyze_routine):
+        """SET:1 X=1 and SET:0 X=1 - numeric literal postconditions (§8.1.4).
+
+        SET:1 X=1 always executes (1 is truthy).
+        SET:0 X=1 never executes (0 is falsy).
+        """
+        # Truthy postcondition
+        routine1 = analyze_routine("TEST\n S:1 X=1")
+        stmt1 = routine1.labels[0].body.statements[0]
+        assert isinstance(stmt1, MSetStatement)
+        assert stmt1.postcondition is not None
+        assert stmt1.postcondition.value == 1
+
+        # Falsy postcondition
+        routine2 = analyze_routine("TEST\n S:0 X=1")
+        stmt2 = routine2.labels[0].body.statements[0]
+        assert isinstance(stmt2, MSetStatement)
+        assert stmt2.postcondition is not None
+        assert stmt2.postcondition.value == 0
+
+    def test_postcondition_string_literal(self, analyze_routine):
+        """W:\"YES\" X and W:\"\" X - string literal postconditions (§8.1.4).
+
+        Non-empty string is truthy, empty string is falsy.
+
+        """
+        from m2py.asg.statements import MWriteStatement
+
+        # Truthy: non-empty string
+        routine1 = analyze_routine('TEST\n W:"YES" X')
+        stmt1 = routine1.labels[0].body.statements[0]
+        assert isinstance(stmt1, MWriteStatement)
+        assert stmt1.postcondition is not None
+        assert stmt1.postcondition.value == "YES"
+
+        # Falsy: empty string
+        routine2 = analyze_routine('TEST\n W:"" X')
+        stmt2 = routine2.labels[0].body.statements[0]
+        assert isinstance(stmt2, MWriteStatement)
+        assert stmt2.postcondition is not None
+        assert stmt2.postcondition.value == ""
+
+    def test_postcondition_extrinsic_function(self, analyze_routine):
+        """SET:$$INC^RT() Y=1 - extrinsic function in postcondition (§8.1.4).
+
+        Postcondition is extrinsic function call that may have side effects.
+        """
+        from m2py.parser.textx_classes import ExtrinsicFunction
+
+        routine = analyze_routine("TEST\n S:$$INC^RT() Y=1")
+        stmt = routine.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MSetStatement)
+        assert stmt.postcondition is not None
+        # Postcondition is an extrinsic function call
+        assert isinstance(stmt.postcondition, ExtrinsicFunction)
+        # ExtrinsicFunction wraps an MCall target with name and routine
+        assert stmt.postcondition.target.name == "INC"
+        assert stmt.postcondition.target.routine == "RT"

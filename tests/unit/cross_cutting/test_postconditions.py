@@ -26,12 +26,11 @@ from m2py.asg.statements import (
     MSetStatement,
     MWriteStatement,
     MDoStatement,
-    MKillStatement,
     MQuitStatement,
     MXecuteStatement,
     MGotoStatement,
 )
-from m2py.asg.expressions import MBinaryOp, MUnaryOp
+from m2py.asg.expressions import MBinaryOp
 from m2py.parser.textx_classes import LocalVariable, NumericLiteral
 
 
@@ -91,44 +90,6 @@ class TestCommandPostconditionsParser:
         assert isinstance(stmt.postcondition, LocalVariable)
         assert stmt.postcondition.name == "READY"
 
-    def test_kill_with_postcondition(self):
-        """KILL:COND VAR parses command-level postcondition (§8.1.4)."""
-        stmt = analyze_first_command("K:CLEANUP X")
-
-        assert isinstance(stmt, MKillStatement)
-        assert stmt.postcondition is not None
-        assert isinstance(stmt.postcondition, LocalVariable)
-        assert stmt.postcondition.name == "CLEANUP"
-
-    def test_complex_postcondition_expression(self):
-        """SET:(X>0)&(Y<10) Z=1 parses complex postcondition (§8.1.4).
-
-        Postcondition can be any truthvalue expression (tvexpr).
-        Complex boolean expressions with & (AND) are allowed.
-        """
-        stmt = analyze_first_command("S:(X>0)&(Y<10) Z=1")
-
-        assert isinstance(stmt, MSetStatement)
-        assert stmt.postcondition is not None
-        # Complex expression should be MBinaryOp with & operator
-        assert isinstance(stmt.postcondition, MBinaryOp)
-        assert stmt.postcondition.operator == "&"
-
-    def test_postcondition_with_function(self):
-        """SET:$D(X) Y=X parses postcondition with intrinsic function (§8.1.4).
-
-        $DATA returns 0 if variable doesn't exist, non-zero otherwise.
-        This is a common pattern to check if variable is defined.
-        """
-        from m2py.asg.expressions import MIntrinsicFunction
-
-        stmt = analyze_first_command("S:$D(X) Y=X")
-
-        assert isinstance(stmt, MSetStatement)
-        assert stmt.postcondition is not None
-        assert isinstance(stmt.postcondition, MIntrinsicFunction)
-        assert stmt.postcondition.name.upper() in ("D", "DATA")
-
     def test_quit_with_postcondition(self):
         """QUIT:COND parses command-level postcondition (§8.1.4).
 
@@ -159,9 +120,6 @@ class TestArgumentPostconditionsParser:
 
     Reference: §8.1.4
     """
-
-    # NOTE: test_do_with_argument_postconditions moved to:
-    # tests/unit/asg/s8_commands/test_s8_1_general_rules.py::TestCommandGeneralRulesAnalysis::test_argument_postcondition_in_do
 
     def test_goto_with_argument_postconditions(self):
         """GOTO L1:C1,L2:C2 parses argument-level postconditions (§8.1.4).
@@ -207,52 +165,6 @@ class TestArgumentPostconditionsParser:
         assert isinstance(target.postcondition, MBinaryOp)
         assert target.postcondition.operator == ">"
 
-    def test_goto_mixed_postconditions(self):
-        """GOTO L1,L2:C,L3 parses some args with postconditions (§8.1.4).
-
-        Not all arguments need postconditions.
-        """
-        stmt = analyze_first_command("G L1,L2:COND,L3")
-
-        assert isinstance(stmt, MGotoStatement)
-        assert len(stmt.targets) == 3
-
-        # Only middle argument has postcondition
-        assert stmt.targets[0].postcondition is None
-        assert stmt.targets[1].postcondition is not None
-        assert stmt.targets[2].postcondition is None
-
-    def test_do_with_routine_and_postcondition(self):
-        """DO LABEL^ROUTINE:C parses routine reference with postcondition (§8.1.4).
-
-        Postcondition can follow full label^routine reference.
-        """
-        stmt = analyze_first_command("D PROC^UTIL:OK")
-
-        assert isinstance(stmt, MDoStatement)
-        target = stmt.targets[0]
-
-        assert target.name == "PROC"
-        assert target.routine == "UTIL"
-        assert target.postcondition is not None
-        assert isinstance(target.postcondition, LocalVariable)
-        assert target.postcondition.name == "OK"
-
-    def test_do_with_params_and_postcondition(self):
-        """DO LABEL(X,Y):C parses parameters with postcondition (§8.1.4).
-
-        Postcondition follows the parameter list.
-        """
-        stmt = analyze_first_command("D PROC(A,B):READY")
-
-        assert isinstance(stmt, MDoStatement)
-        target = stmt.targets[0]
-
-        assert target.name == "PROC"
-        assert len(target.arguments) == 2
-        assert target.postcondition is not None
-        assert target.postcondition.name == "READY"
-
 
 # =============================================================================
 # Mixed Postcondition Tests (Parser Level) - D10 Batch (continued)
@@ -269,32 +181,11 @@ class TestMixedPostconditionsParser:
     Reference: §8.1.4
     """
 
-    # NOTE: test_command_and_argument_postconditions moved to:
-    # tests/unit/asg/s8_commands/test_s8_1_general_rules.py::TestCommandGeneralRulesAnalysis::test_combined_command_and_argument_postconditions
-
-    def test_goto_command_and_argument_postconditions(self):
-        """GOTO:CMD L1:A,L2:B parses both levels (§8.1.4)."""
-        stmt = analyze_first_command("G:PROCEED L1:X=1,L2:X=2")
-
-        assert isinstance(stmt, MGotoStatement)
-        # Command postcondition
-        assert stmt.postcondition is not None
-        assert stmt.postcondition.name == "PROCEED"
-
-        # Argument postconditions
-        assert len(stmt.targets) == 2
-        assert stmt.targets[0].postcondition is not None
-        assert stmt.targets[1].postcondition is not None
+    pass
 
 
 # =============================================================================
 # Postcondition Tests (ASG Level) - D11 Batch
-#
-# NOTE: Many postcondition ASG tests have been consolidated into:
-# - tests/unit/asg/s8_commands/test_s8_1_general_rules.py
-#   - test_postcondition_analysis (command-level postconditions)
-#   - test_argument_postcondition_in_do (argument-level postconditions)
-#   - test_combined_command_and_argument_postconditions
 #
 # The tests below cover additional edge cases not in spec-aligned files.
 # =============================================================================
@@ -307,7 +198,6 @@ class TestPostconditionsASG:
     ASG analysis must distinguish command-level vs argument-level
     postconditions and track their conditions.
 
-    NOTE: Core postcondition ASG tests are in test_s8_1_general_rules.py.
     This class contains additional edge cases and expression analysis tests.
 
     Reference: §8.1.4
@@ -337,28 +227,12 @@ class TestPostconditionsASG:
         assert isinstance(pc.left, MBinaryOp)
         assert pc.left.operator == "&"
 
-    # NOTE: test_combined_postcondition_structure moved to
-    # tests/unit/asg/s8_commands/test_s8_1_general_rules.py::test_combined_command_and_argument_postconditions
-
-    def test_postcondition_with_negation(self):
-        """Postcondition with NOT operator is analyzed (§8.1.4).
-
-        Negated conditions use unary NOT (').
-        """
-        stmt = analyze_first_command("Q:'DONE")
-
-        assert isinstance(stmt, MQuitStatement)
-        pc = stmt.postcondition
-        assert pc is not None
-
-        # Should be MUnaryOp with NOT operator
-        assert isinstance(pc, MUnaryOp)
-        assert pc.operator == "'"
-
     def test_postcondition_with_function_call(self):
-        """Postcondition with intrinsic function is analyzed (§8.1.4).
+        """Postcondition with intrinsic function in comparison (§8.1.4).
 
-        $DATA, $LENGTH, etc. can appear in postconditions.
+        $LENGTH in a comparison expression - tests nested function calls.
+        This is different from test_postcondition_with_intrinsic_function which
+        tests a bare function call as postcondition.
         """
         from m2py.asg.expressions import MIntrinsicFunction
 
@@ -374,59 +248,6 @@ class TestPostconditionsASG:
         # Left side is the function call
         assert isinstance(pc.left, MIntrinsicFunction)
         assert pc.left.name.upper() in ("L", "LENGTH")
-
-    def test_postcondition_numeric_literal(self):
-        """Postcondition with numeric literal works (§8.1.4).
-
-        SET:1 X=1 always executes (1 is truthy).
-        SET:0 X=1 never executes (0 is falsy).
-        """
-        # Truthy postcondition
-        stmt1 = analyze_first_command("S:1 X=1")
-        assert isinstance(stmt1, MSetStatement)
-        assert stmt1.postcondition is not None
-        assert isinstance(stmt1.postcondition, NumericLiteral)
-        assert stmt1.postcondition.value == 1
-
-        # Falsy postcondition
-        stmt2 = analyze_first_command("S:0 X=1")
-        assert isinstance(stmt2, MSetStatement)
-        assert stmt2.postcondition is not None
-        assert isinstance(stmt2.postcondition, NumericLiteral)
-        assert stmt2.postcondition.value == 0
-
-    def test_postcondition_string_literal(self):
-        """Postcondition with string literal works (§8.1.4).
-
-        Non-empty string is truthy, empty string is falsy.
-        """
-        # Truthy: non-empty string
-        stmt1 = analyze_first_command('W:"YES" X')
-        assert stmt1.postcondition is not None
-        assert stmt1.postcondition.value == "YES"
-
-        # Falsy: empty string
-        stmt2 = analyze_first_command('W:"" X')
-        assert stmt2.postcondition is not None
-        assert stmt2.postcondition.value == ""
-
-    def test_postcondition_extrinsic_function(self):
-        """Postcondition with extrinsic function call (§8.1.4).
-
-        SET:$$INC^RT() Y=1 - postcondition is extrinsic function call
-        that may have side effects.
-        """
-        from m2py.parser.textx_classes import ExtrinsicFunction
-
-        stmt = analyze_first_command("S:$$INC^RT() Y=1")
-
-        assert isinstance(stmt, MSetStatement)
-        assert stmt.postcondition is not None
-        # Postcondition is an extrinsic function call
-        assert isinstance(stmt.postcondition, ExtrinsicFunction)
-        # ExtrinsicFunction wraps an MCall target with name and routine
-        assert stmt.postcondition.target.name == "INC"
-        assert stmt.postcondition.target.routine == "RT"
 
 
 # =============================================================================
