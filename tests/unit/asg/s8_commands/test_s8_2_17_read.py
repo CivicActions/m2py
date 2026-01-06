@@ -232,3 +232,15 @@ class TestReadCommandAnalysis:
         # Expression type is MBinaryOp for T*2
         assert isinstance(read_target.timeout, MBinaryOp)
         assert read_target.timeout.operator == "*"
+
+    def test_read_char_into_global(self):
+        """R *^VV("M") - READ single char into global variable (§8.2.17)."""
+        cmds = parse_commands_from_line('R *^VV("M")')
+        analyzer = SemanticAnalyzer()
+        stmt = analyzer.analyze(cmds[0], None)
+
+        assert isinstance(stmt, MReadStatement)
+        read_target = stmt.arguments[0]
+        assert isinstance(read_target, MReadTarget)
+        assert read_target.is_char_read is True
+        assert read_target.variable.name == "VV"

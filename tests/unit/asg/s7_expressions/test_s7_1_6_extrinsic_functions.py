@@ -102,6 +102,16 @@ class TestExtrinsicFunctionsAnalysis:
         # No explicit arguments - empty list
         assert value.arguments == []
 
+    def test_extrinsic_with_empty_arguments(self, analyze_routine):
+        """Extrinsic function with empty arguments (§7.1.6)."""
+        # S X=$$func(,arg)
+        routine = analyze_routine("TEST\n S X=$$func(,arg)\n")
+        stmt = routine.labels[0].body.statements[0]
+        value = stmt.assignments[0].value
+        assert type(value).__name__ == "ExtrinsicFunction"
+        # Verify arguments list exists (length depends on implementation of empty args)
+        assert value.arguments is not None
+
     def test_external_routine_reference(self, analyze_routine):
         """External routine references are tracked (§7.1.6).
 

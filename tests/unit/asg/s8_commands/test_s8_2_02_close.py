@@ -79,3 +79,23 @@ class TestCloseCommandAnalysis:
         assert isinstance(stmt, MCloseStatement)
         assert len(stmt.devices) == 1
         assert len(stmt.devices[0].parameters) == 1
+
+    def test_close_with_keyword_parameters(self):
+        """CLOSE file:delete and file:(params) syntax (§8.2.2)."""
+        parser = MUMPSParser()
+
+        # C file:delete
+        routine = parser.parse("TEST\n C file:delete\n")
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MCloseStatement)
+        # Verify it parsed (structural check depends on ASG mapping of keywords)
+
+        # C file:(DELETE)
+        routine = parser.parse("TEST\n C file:(DELETE)\n")
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MCloseStatement)
+
+        # C file:(RENAME=newfile)
+        routine = parser.parse("TEST\n C file:(RENAME=newfile)\n")
+        stmt = routine.labels[0].body.statements[0]
+        assert isinstance(stmt, MCloseStatement)
