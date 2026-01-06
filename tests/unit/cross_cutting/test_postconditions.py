@@ -324,6 +324,14 @@ class TestMixedPostconditionsParser:
 
 # =============================================================================
 # Postcondition Tests (ASG Level) - D11 Batch
+#
+# NOTE: Many postcondition ASG tests have been consolidated into:
+# - tests/unit/asg/s8_commands/test_s8_1_general_rules.py
+#   - test_postcondition_analysis (command-level postconditions)
+#   - test_argument_postcondition_in_do (argument-level postconditions)
+#   - test_combined_command_and_argument_postconditions
+#
+# The tests below cover additional edge cases not in spec-aligned files.
 # =============================================================================
 
 
@@ -334,45 +342,11 @@ class TestPostconditionsASG:
     ASG analysis must distinguish command-level vs argument-level
     postconditions and track their conditions.
 
+    NOTE: Core postcondition ASG tests are in test_s8_1_general_rules.py.
+    This class contains additional edge cases and expression analysis tests.
+
     Reference: §8.1.4
     """
-
-    def test_command_postcondition_in_asg(self):
-        """Command postcondition is stored in ASG node (§8.1.4).
-
-        The postcondition expression should be fully analyzed.
-        """
-        stmt = analyze_first_command("S:X=1 Y=2")
-
-        assert isinstance(stmt, MSetStatement)
-        assert stmt.postcondition is not None
-        # Postcondition is analyzed as MBinaryOp
-        assert isinstance(stmt.postcondition, MBinaryOp)
-        assert stmt.postcondition.operator == "="
-        assert isinstance(stmt.postcondition.left, LocalVariable)
-        assert stmt.postcondition.left.name == "X"
-
-    def test_argument_postcondition_in_asg(self):
-        """Argument postconditions are stored per-argument (§8.1.4).
-
-        Each MCall in DO targets has its own postcondition.
-        """
-        stmt = analyze_first_command("D L1:A=1,L2:B=2")
-
-        assert isinstance(stmt, MDoStatement)
-        assert len(stmt.targets) == 2
-
-        # First target postcondition
-        pc1 = stmt.targets[0].postcondition
-        assert pc1 is not None
-        assert isinstance(pc1, MBinaryOp)
-        assert pc1.left.name == "A"
-
-        # Second target postcondition
-        pc2 = stmt.targets[1].postcondition
-        assert pc2 is not None
-        assert isinstance(pc2, MBinaryOp)
-        assert pc2.left.name == "B"
 
     def test_postcondition_expression_analyzed(self):
         """Postcondition expression is fully analyzed (§8.1.4).
@@ -398,26 +372,8 @@ class TestPostconditionsASG:
         assert isinstance(pc.left, MBinaryOp)
         assert pc.left.operator == "&"
 
-    def test_combined_postcondition_structure(self):
-        """Combined postconditions have correct ASG structure (§8.1.4).
-
-        Both command and argument postconditions are captured.
-        """
-        stmt = analyze_first_command("D:READY PROC1:A,PROC2:B")
-
-        assert isinstance(stmt, MDoStatement)
-
-        # Command postcondition
-        assert stmt.postcondition is not None
-        assert isinstance(stmt.postcondition, LocalVariable)
-        assert stmt.postcondition.name == "READY"
-
-        # Argument postconditions on MCall objects
-        assert len(stmt.targets) == 2
-        assert stmt.targets[0].name == "PROC1"
-        assert stmt.targets[0].postcondition.name == "A"
-        assert stmt.targets[1].name == "PROC2"
-        assert stmt.targets[1].postcondition.name == "B"
+    # NOTE: test_combined_postcondition_structure moved to
+    # tests/unit/asg/s8_commands/test_s8_1_general_rules.py::test_combined_command_and_argument_postconditions
 
     def test_postcondition_with_negation(self):
         """Postcondition with NOT operator is analyzed (§8.1.4).

@@ -93,3 +93,62 @@ class TestIndirectionAnalysis:
         assert target.requires_runtime_eval is True
         # Cannot resolve statically without constant propagation
         assert target.can_resolve_statically is False
+
+    def test_do_indirection_requires_runtime(self, analyze_routine):
+        """DO @VAR has indirect call detected and marked for runtime (§6.3.1).
+
+        Since the target is determined at runtime, the call cannot be
+        statically resolved. The MCall should have label_is_indirect=True
+        and indirection set to the variable.
+
+        After signature analysis via compute_all_signatures, the label's
+        requires_runtime_scope and routine's requires_runtime_eval will be True.
+
+        Note: Consolidated from cross_cutting/test_indirection.py
+        """
+        from m2py.analysis.variables import compute_all_signatures
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        result = parser.parse("TEST\n D @X")
+
+        # The specific call should have indirection detected
+        stmt = result.labels[0].body.statements[0]
+        call = stmt.targets[0]
+        assert call.label_is_indirect is True
+        assert call.indirection is not None
+        assert call.indirection_levels == 1
+        # Indirection expression should be the variable X
+        assert isinstance(call.indirection, LocalVariable)
+        assert call.indirection.name == "X"
+
+        # After signature analysis, routine-level flag is set
+        signatures = compute_all_signatures(result)
+        assert signatures["TEST"].requires_runtime_scope is True
+        assert result.requires_runtime_eval is True
+
+    def test_xecute_indirection_detection(self, analyze_routine):
+        """XECUTE @VAR has indirection and requires runtime eval (§6.3.1).
+
+        XECUTE always requires runtime evaluation. The statement itself
+        has requires_runtime_eval=True. With indirection, even the code
+        string is not known until runtime.
+
+        Note: Consolidated from cross_cutting/test_indirection.py
+        """
+        from m2py.asg.statements import MXecuteStatement
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        result = parser.parse("TEST\n X @X")
+        stmt = result.labels[0].body.statements[0]
+
+        assert isinstance(stmt, MXecuteStatement)
+        # XECUTE statement requires runtime evaluation
+        assert stmt.requires_runtime_eval is True
+        # The code_expressions should contain the indirection
+        assert len(stmt.code_expressions) >= 1
+        expr = stmt.code_expressions[0]
+        assert isinstance(expr, Indirection)
+        assert isinstance(expr.expression, LocalVariable)
+        assert expr.expression.name == "X"

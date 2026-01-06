@@ -10,6 +10,15 @@ Key behaviors (FR-046):
 - Naked indicator is sequence-dependent (order matters)
 - Invalid if no prior global reference exists
 
+NOTE: Basic naked reference PARSING tests are consolidated in:
+- tests/unit/asg/s7_expressions/test_s7_1_2_variables.py
+  - test_naked_global_reference (basic parsing)
+  - test_naked_reference_sequence_dependency (sequence tracking)
+
+This file focuses on:
+- Cross-cutting behavior across multiple commands
+- Codegen/runtime behavior requiring execution
+
 Reference: MUMPS 1995 ANSI Standard, Section 7.1.2.4
 See also: FR-005 (cross-cutting features need dedicated tests)
          FR-046 (naked reference state tracking)
@@ -42,6 +51,8 @@ def analyze_all_commands(line: str):
 
 # =============================================================================
 # Naked Reference Syntax Tests (Parser Level)
+# NOTE: Basic naked reference tests moved to test_s7_1_2_variables.py
+# These tests cover multi-subscript and expression subscript edge cases.
 # =============================================================================
 
 
