@@ -21,6 +21,8 @@ IF X=1,Y=2 S Z=1    ; Execute SET only if both X=1 AND Y=2
 
 **Python Translation:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 if x == 1 and y == 2:
     z = 1
 ```
@@ -47,6 +49,8 @@ I  S Y=3        ; Argumentless IF also uses current $TEST
 
 **Python Translation** requires tracking:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 _test = (x == 1)
 if _test:
     y = 1
@@ -140,6 +144,8 @@ K (X,Y),Z         ; Mixed - exclusive kill, then also kill Z
 
 **Detection:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 if len(kill_stmt.targets) == 0 and not kill_stmt.exclusive:
     # Kill All
 elif kill_stmt.exclusive:
@@ -204,6 +210,8 @@ F I=1:1 Q:I>10 W I    ; Loop until QUIT
 
 Requires `while True:` with break:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 i = 1
 while True:
     if i > 10:
@@ -326,6 +334,8 @@ S X=$S(A=1:"ONE",A=2:"TWO",1:"OTHER")  ; Select based on conditions
 
 **Python Translation:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x = "ONE" if a == 1 else ("TWO" if a == 2 else "OTHER")
 ```
 
@@ -351,6 +361,8 @@ S $E(X,1,3)="ABC"      ; Replace first 3 characters
 
 **Python Translation:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 # $P(X,"^",2)="NEW" 
 pieces = x.split("^")
 pieces[1] = "NEW"  # 0-indexed
@@ -440,6 +452,8 @@ Some MUMPS constructs are not fully supported:
 MUMPS source files may use different character encodings:
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 # Parser tries UTF-8 first, falls back to Latin-1
 with open(filepath, 'r', encoding='utf-8') as f:
     source = f.read()

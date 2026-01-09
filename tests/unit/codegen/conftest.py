@@ -119,3 +119,73 @@ def validate_python_syntax():
         return True
 
     return _validate
+
+
+@pytest.fixture
+def execute_expr(execute_mumps):
+    """Fixture for executing a single MUMPS expression/command.
+
+    Auto-wraps the code in a routine label, reducing boilerplate for simple tests.
+    Ideal for testing expressions, operators, and single commands.
+
+    Usage:
+        def test_addition(execute_expr):
+            assert execute_expr('W 1+2') == "3"
+
+        @pytest.mark.parametrize("expr,expected", [
+            ("1+2", "3"),
+            ('"A"_"B"', "AB"),
+        ])
+        def test_expressions(execute_expr, expr, expected):
+            assert execute_expr(f'W {expr}') == expected
+    """
+
+    def _execute_expr(code: str) -> str:
+        """Execute a single MUMPS command and return output.
+
+        Args:
+            code: A single MUMPS command (e.g., 'W 1+2' or 'S X=1 W X')
+
+        Returns:
+            The output string (stripped of trailing whitespace)
+        """
+        # Wrap in minimal routine: label + code + quit
+        source = f"_EXPR\n {code}\n Q\n"
+        result = execute_mumps(source)
+        return result.output.rstrip()
+
+    return _execute_expr
+
+
+@pytest.fixture
+def eval_mumps(execute_mumps):
+    """Fixture for evaluating a MUMPS expression and returning its value.
+
+    Unlike execute_expr which captures WRITE output, this evaluates an expression
+    and returns the result as a Python value. Useful for testing expression
+    evaluation without needing WRITE.
+
+    Usage:
+        def test_arithmetic(eval_mumps):
+            assert eval_mumps('1+2') == "3"
+            assert eval_mumps('$L("ABC")') == "3"
+
+        def test_string_concat(eval_mumps):
+            assert eval_mumps('"Hello"_" "_"World"') == "Hello World"
+    """
+
+    def _eval_mumps(expr: str) -> str:
+        """Evaluate a MUMPS expression and return its value.
+
+        Args:
+            expr: A MUMPS expression (e.g., '1+2', '$L("ABC")', '"A"_"B"')
+
+        Returns:
+            The expression result as a string (MUMPS canonical form)
+        """
+        # Use % as temp variable, write it, return via QUIT
+        source = f"_EVAL\n S %=({expr})\n W %\n Q\n"
+        result = execute_mumps(source)
+        return result.output.rstrip()
+
+    return _eval_mumps

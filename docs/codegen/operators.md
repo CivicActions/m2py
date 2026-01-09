@@ -16,6 +16,8 @@ In Python: `2+3*4 = 14` (multiplication first)
 **Always generate parentheses in Python:**
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x = ((2 + 3) * 4)  # Force left-to-right
 ```
 
@@ -38,6 +40,8 @@ S X=7\2     ; X=3
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x = 7 // 2  # x=3
 ```
 
@@ -48,6 +52,8 @@ S X=7#3     ; X=1
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x = 7 % 3   # x=1
 ```
 
@@ -59,6 +65,8 @@ S Z=+A      ; Numeric coercion
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x = -y
 z = float(a) if isinstance(a, str) else a  # Coerce to number
 ```
@@ -72,6 +80,8 @@ S X=A_B_C
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x = str(a) + str(b) + str(c)
 ```
 
@@ -95,6 +105,8 @@ I X'<10     ; If X is not less than 10 (i.e., >= 10)
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 if x >= 10:
 ```
 
@@ -109,6 +121,8 @@ I A[B       ; True if A contains B
 **Note operand order reversal in Python:**
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 if b in a:  # B in A
 ```
 
@@ -119,6 +133,8 @@ I A]B       ; True if A collates after B
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 if a > b:   # String comparison
 ```
 
@@ -148,6 +164,8 @@ I A&B
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 if a and b:
 ```
 
@@ -158,6 +176,8 @@ I A!B
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 if a or b:
 ```
 
@@ -169,6 +189,8 @@ I '(A&B)
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 if not x:
 if not (a and b):
 ```
@@ -180,6 +202,8 @@ I X?1A.N
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 import re
 if re.fullmatch(r"[A-Za-z][0-9]*", x):
 ```
@@ -193,6 +217,8 @@ I X'?1N
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 if not re.fullmatch(r"[0-9]", x):
 ```
 
@@ -207,6 +233,8 @@ S X=A+B*C-D/E
 Evaluates as: `((((A+B)*C)-D)/E)`
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x = ((((a + b) * c) - d) / e)
 ```
 
@@ -219,6 +247,8 @@ S X=A+(B*C)
 This changes order: `A+(B*C)`
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x = a + (b * c)  # Parentheses preserved
 ```
 
@@ -237,6 +267,8 @@ I 0.001     ; True (non-zero)
 
 Python needs explicit coercion:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def mumps_bool(value):
     if isinstance(value, str):
         # Try to extract leading number
@@ -257,6 +289,8 @@ S Y="ABC"+1     ; Y=1 (ABC coerces to 0)
 
 Python helper:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def mumps_num(value):
     if isinstance(value, (int, float)):
         return value
@@ -270,6 +304,8 @@ def mumps_num(value):
 ## Code Generation Pattern
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def generate_binary_op(op_node):
     left = generate_expr(op_node.left)
     right = generate_expr(op_node.right)

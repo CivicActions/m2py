@@ -69,6 +69,78 @@ class TestTestVariableCodegen:
         pytest.fail("Stub - implement test")
 
 
+@pytest.mark.codegen
+class TestTestStackSemanticsCodegen:
+    """Codegen tests for $TEST stacking behavior.
+
+    $TEST is stacked (saved/restored) for argumentless DO and extrinsic
+    calls, but NOT stacked for DO with arguments or XECUTE. This is
+    critical for ELSE chains that span DO calls.
+
+    Reference: §7.1.4.10, §8.2.3
+    """
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: $TEST stacked for argumentless DO")
+    def test_test_stacked_for_argumentless_do(self):
+        """Argumentless DO stacks $TEST, restored on QUIT.
+
+        IF 1           ; $TEST=1
+        D              ; Stacks $TEST (NEW $TEST)
+        . IF 0         ; $TEST=0 inside block
+        . Q
+        ELSE W "NO"    ; Should NOT execute - $TEST restored to 1
+        """
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: $TEST stacked for extrinsic")
+    def test_test_stacked_for_extrinsic(self):
+        """Extrinsic calls stack $TEST, restored on QUIT.
+
+        IF 1           ; $TEST=1
+        S X=$$FUNC     ; Stacks $TEST for extrinsic call
+        ELSE W "NO"    ; Should NOT execute if FUNC sets $TEST=0
+        """
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: $TEST not stacked for DO with args")
+    def test_test_not_stacked_for_do_with_args(self):
+        """DO with arguments does NOT stack $TEST.
+
+        IF 1           ; $TEST=1
+        D SUB(1)       ; Does NOT stack $TEST
+        ; If SUB sets $TEST=0, it affects caller
+        ELSE W "NO"    ; May execute depending on SUB
+        """
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: $TEST not stacked for XECUTE")
+    def test_test_not_stacked_for_xecute(self):
+        """XECUTE does NOT stack $TEST.
+
+        IF 1                ; $TEST=1
+        X "IF 0"            ; $TEST=0, visible to caller
+        ELSE W "NO"         ; Should execute - $TEST is 0
+        """
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(
+        reason="Not yet implemented: postcondition does not update $TEST"
+    )
+    def test_postcondition_does_not_update_test(self):
+        """Postconditions do NOT update $TEST.
+
+        IF 1           ; $TEST=1
+        S:0 X=1        ; Postcondition is false, but $TEST stays 1
+        ELSE W "NO"    ; Should NOT execute - $TEST is still 1
+        """
+        pytest.fail("Stub - implement test")
+
+
 # =============================================================================
 # Left-to-Right Evaluation Tests - Codegen Only
 # Parser/ASG tests are in tests/unit/asg/s7_expressions/test_s7_2_operators.py

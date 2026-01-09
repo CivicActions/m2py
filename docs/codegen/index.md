@@ -17,6 +17,8 @@ M2PY aims for **semantic-preserving translation**, not line-by-line conversion:
 The analysis pipeline populates fields that guide code generation:
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 from m2py import MUMPSParser
 
 parser = MUMPSParser()

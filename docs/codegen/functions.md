@@ -19,6 +19,8 @@ $E(X,2,5)   ; Characters 2 through 5
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x[0]        # First character (0-indexed)
 x[1]        # Second character
 x[1:5]      # Characters 2-5 (adjust indices)
@@ -26,6 +28,8 @@ x[1:5]      # Characters 2-5 (adjust indices)
 
 **Full translation:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def mumps_extract(string, start=1, end=None):
     if end is None:
         end = start
@@ -42,12 +46,16 @@ $P(X,"^",2,4)   ; Pieces 2 through 4
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x.split("^")[1]  # Second piece (0-indexed)
 "^".join(x.split("^")[1:4])  # Pieces 2-4
 ```
 
 **Full translation:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def mumps_piece(string, delim, start=1, end=None):
     pieces = string.split(delim)
     if end is None:
@@ -65,6 +73,8 @@ $L(X,"^")       ; Number of pieces
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 len(x)          # String length
 x.count("^") + 1  # Piece count
 ```
@@ -79,6 +89,8 @@ $F(X,"AB",5)    ; Start searching at position 5
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def mumps_find(string, target, start=1):
     pos = string.find(target, start-1)
     if pos == -1:
@@ -96,6 +108,8 @@ $TR(X,"aeiou")       ; Remove vowels (no replacement)
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x.translate(str.maketrans("abc", "ABC"))  # With replacement
 x.translate(str.maketrans("", "", "aeiou"))  # Deletion
 ```
@@ -110,6 +124,8 @@ $J(X,10,2)      ; Format number with 2 decimals in 10 chars
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 f"{x:>10}"      # Right-justify
 f"{x:>10.2f}"   # With decimals
 ```
@@ -125,6 +141,8 @@ $R(100)         ; Random 0-99
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 import random
 random.randint(0, 99)
 ```
@@ -139,6 +157,8 @@ $A(X,3)         ; ASCII of third char
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 ord(x[0])       # First char
 ord(x[2])       # Third char (0-indexed)
 ```
@@ -153,6 +173,8 @@ $C(65,66,67)    ; "ABC"
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 chr(65)         # "A"
 "".join(chr(c) for c in [65, 66, 67])  # "ABC"
 ```
@@ -168,11 +190,15 @@ $S(X=1:"one",X=2:"two",1:"other")
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 "one" if x == 1 else "two" if x == 2 else "other"
 ```
 
 Or using match (Python 3.10+):
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 match x:
     case 1: result = "one"
     case 2: result = "two"
@@ -190,6 +216,8 @@ $D(X)           ; 0=undefined, 1=value, 10=descendants, 11=both
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def mumps_data(var_dict, name):
     has_value = name in var_dict
     has_descendants = any(k.startswith(name + "(") for k in var_dict)
@@ -206,6 +234,8 @@ $G(X,"default") ; X or "default" if undefined
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 var_dict.get("X", "")       # Default empty
 var_dict.get("X", "default")  # Custom default
 ```
@@ -220,6 +250,8 @@ $O(^DATA(KEY),-1)   ; Previous key
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def mumps_order(data_dict, prefix, current, direction=1):
     keys = sorted(k for k in data_dict if k.startswith(prefix))
     try:
@@ -253,6 +285,8 @@ $P($H,",",2)    ; Seconds since midnight
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 from datetime import datetime, date
 
 def mumps_horolog():
@@ -284,6 +318,8 @@ The ASG preserves function names exactly as written in the source (`$p`, `$PIECE
 Code generators should normalize to uppercase when mapping to runtime functions:
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def generate_intrinsic(node: MIntrinsicFunction) -> str:
     func_name = FUNCTION_MAP.get(node.name.upper())  # Normalize here
     # ...
@@ -293,6 +329,8 @@ This design allows case-sensitive source preservation for debugging and error me
 while ensuring correct function dispatch regardless of source casing.
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 FUNCTION_MAP = {
     "E": "mumps_extract",
     "EXTRACT": "mumps_extract",
@@ -329,6 +367,8 @@ def generate_intrinsic(node):
 Many functions need runtime library implementations:
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 # mumps_runtime.py
 def piece(string, delim, start, end=None):
     ...
@@ -342,5 +382,7 @@ def order(collection, current, direction=1):
 
 Then generate:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 from mumps_runtime import piece, extract, order
 ```

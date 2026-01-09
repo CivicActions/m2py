@@ -30,6 +30,8 @@ F I=1:1:10 W I
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 for i in range(1, 11):  # Adjust for MUMPS inclusive end
     print(i)
 ```
@@ -41,6 +43,8 @@ F I=10:-2:0 W I
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 for i in range(10, -1, -2):  # Negative step
     print(i)
 ```
@@ -52,6 +56,8 @@ F I=1:1:100 Q:I>50 W I
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 for i in range(1, 101):
     if i > 50:
         break
@@ -67,6 +73,8 @@ F I=1:1 Q:I>10 W I
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 i = 1
 while True:
     if i > 10:
@@ -77,6 +85,8 @@ while True:
 
 Alternative using `itertools`:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 from itertools import count
 for i in count(1):
     if i > 10:
@@ -91,6 +101,8 @@ F  R X Q:X=""
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 while True:
     x = input()
     if x == "":
@@ -104,6 +116,8 @@ F I="A","B","C" W I
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 for i in ["A", "B", "C"]:
     print(i)
 ```
@@ -115,6 +129,8 @@ F I=1:1:3,"X",10:2:20 D WORK
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 from itertools import chain
 
 def value_range(start, step, end):
@@ -138,6 +154,8 @@ F I=1:1:10 D
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 # WRONG - Python resets i each iteration
 for i in range(1, 11):
     i = i + 5  # Ignored by for loop
@@ -164,6 +182,8 @@ ERROR W "Error!"
 
 **Single Loop Exit:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 for i in range(1, 101):
     if err:
         break
@@ -173,6 +193,8 @@ print("Error!")
 
 **If code continues after ERROR label:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 exited_via_error = False
 for i in range(1, 101):
     if err:
@@ -194,6 +216,8 @@ ALLDONE W "Done"
 
 **Exception Pattern:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 class LoopExit(Exception):
     pass
 
@@ -209,6 +233,8 @@ print("Done")
 
 **Flag Pattern:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 exit_all = False
 for i in range(1, 11):
     for j in range(1, 11):
@@ -223,6 +249,8 @@ print("Done")
 ## Decision Matrix
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def generate_for_loop(for_stmt):
     if for_stmt.loop_type == ForLoopType.ARGUMENTLESS:
         return generate_while_true(for_stmt)
@@ -253,6 +281,8 @@ F I=1:0:10 Q:X W I
 
 Step=0 never advances, creating infinite loop:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 i = 1
 while True:  # Never naturally exits
     if x:
@@ -269,6 +299,8 @@ F I=10:1:5 W I
 
 Start > End with positive step executes zero times:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 # range(10, 6, 1) is empty
 for i in range(10, 6, 1):  # Skipped
     print(i)
@@ -282,6 +314,8 @@ F I=1:1:10
 
 Valid MUMPS but does nothing useful:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 for i in range(1, 11):
     pass
 ```

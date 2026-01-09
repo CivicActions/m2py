@@ -43,6 +43,8 @@ W @NAME       ; Don't know NAME at compile time
 
 **Runtime Variable Access:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 class MUMPSRuntime:
     def __init__(self):
         self.variables = {}
@@ -74,6 +76,8 @@ X "S X=1"     ; Known at compile time
 
 Can inline the code directly:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 x = 1
 ```
 
@@ -86,6 +90,8 @@ X CMD         ; Unknown code
 
 **Runtime Execution:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def execute_mumps(runtime, code_string):
     """Parse and execute MUMPS code at runtime."""
     # Parse the code string
@@ -107,6 +113,8 @@ S ^(3)=2      ; Actually ^A(1,3)
 
 **Runtime Tracking:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 class MUMPSRuntime:
     def __init__(self):
         self.last_global_name = ""
@@ -137,6 +145,8 @@ D UTIL^LIBRARY
 
 **Module System:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 # library.py (generated from LIBRARY.m)
 def util():
     ...
@@ -148,6 +158,8 @@ library.util()
 
 **Or with runtime:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 runtime.call_external("LIBRARY", "UTIL")
 ```
 
@@ -161,6 +173,8 @@ S X=$T(+1)    ; First line of routine
 
 **Runtime Access:**
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 class MUMPSRuntime:
     def __init__(self):
         self.source_lines = {}  # routine -> list of lines
@@ -182,6 +196,8 @@ N (A,B)       ; NEW all except A and B
 
 Cannot enumerate all variables at compile time:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def exclusive_new(runtime, except_list):
     """Save all current variables except those in except_list."""
     saved = {}
@@ -204,6 +220,8 @@ K             ; Kill all local variables
 
 Similar to exclusive NEW - cannot enumerate:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def kill_all(runtime):
     runtime.variables.clear()
 ```
@@ -217,6 +235,8 @@ S $ETRAP="G ERROR^HANDLER"
 
 Requires runtime error handling infrastructure:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 class MUMPSRuntime:
     def __init__(self):
         self.ecode = ""
@@ -231,6 +251,8 @@ class MUMPSRuntime:
 ## Runtime Library Structure
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 # mumps_runtime.py
 
 class MUMPSRuntime:
@@ -266,6 +288,8 @@ class MUMPSRuntime:
 ## Code Generation Strategy
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def generate_routine(routine):
     if routine.requires_runtime_eval:
         return generate_with_runtime(routine)

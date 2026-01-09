@@ -29,6 +29,8 @@ After `analyze_variables()`, each MLabel has:
 ### FunctionSignature Structure
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 @dataclass
 class FunctionSignature:
     formal_params: List[str]      # From label(A,B)
@@ -69,6 +71,8 @@ ADD(A,B)
 
 All variables are local (formal params + NEWed):
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def add(a, b):
     r = a + b
     return r
@@ -84,6 +88,8 @@ INIT   S X=1
 
 X and Y are outputs (visible to caller):
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def init():
     global x, y
     x = 1
@@ -92,6 +98,8 @@ def init():
 
 Or with explicit return:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def init():
     return {"X": 1, "Y": 2}
 ```
@@ -111,6 +119,8 @@ Analysis:
 - `output_variables = {"Y"}` (written, not NEWed)
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def calc(a, x):
     b = a + x
     y = b * 2
@@ -132,6 +142,8 @@ SWAP(X,Y)
 If called with `.X,.Y`, the caller's variables are modified:
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def swap(x, y):
     return y, x  # Return swapped values
 
@@ -140,6 +152,8 @@ def swap(x, y):
 
 Or with mutable container:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def swap(refs):
     refs["X"], refs["Y"] = refs["Y"], refs["X"]
 ```
@@ -157,6 +171,8 @@ PROC   N X,Y
 
 Variables X and Y are shadowed:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def proc():
     x = 1  # Local to this function
     y = 2
@@ -173,6 +189,8 @@ PROC   N (A,B)
 
 This defeats static analysis - cannot enumerate affected variables:
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def proc(a, b):
     # Requires runtime scope management
     runtime.exclusive_new(["A", "B"])
@@ -199,6 +217,8 @@ After transitive analysis:
 - MAIN sees X modified by calling OUTER
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def main():
     outer()
     print(x)  # x was set by inner()
@@ -216,6 +236,8 @@ def inner():
 The `scope_strategy` classification uses `byref_outputs` to determine optimal code generation:
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 sig = label.signature
 
 if sig.scope_strategy == ScopeStrategy.PURE_FUNCTION:
@@ -278,6 +300,8 @@ SWAP(X,Y)
 ```
 
 ```python
+# Illustrative code - do not use this as a design reference
+# TODO: Update with final design/syntax when ready
 def swap(x, y):
     return y, x  # Return both modified params
 
