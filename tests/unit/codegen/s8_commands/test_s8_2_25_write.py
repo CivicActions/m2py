@@ -10,11 +10,22 @@ import pytest
 class TestWriteCommandCodegen:
     """Codegen-level tests for WRITE command code generation (§8.2.25)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE to print")
     def test_write_to_print(self, generate_python):
-        """WRITE generates print statement (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+        """WRITE generates _rt.write() call (§8.2.25)."""
+        code = generate_python('TEST\n W "HELLO"\n Q\n')
+        assert "_rt.write" in code
+
+    def test_write_string_literal(self, execute_mumps):
+        """WRITE outputs string literal directly (§8.2.25).
+
+        User Story 1 acceptance scenario 2:
+        Given: TEST W "PASS" Q
+        When: generated and executed
+        Then: output is "PASS"
+        """
+        result = execute_mumps('TEST\n W "PASS"\n Q\n')
+        assert result.output == "PASS"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: WRITE format controls")

@@ -85,10 +85,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T024 [US1] Add `ast.parse()` validation in `generate_python()` to ensure valid Python
-- [ ] T025 [US1] Test: `TEST S X=1 W X Q` → generates Python → outputs "1"
-- [ ] T026 [US1] Test: `TEST W "PASS" Q` → outputs "PASS"
-- [ ] T027 [US1] Test: `TEST W 2+3 Q` → outputs "5"
+- [X] T024 [US1] Add `ast.parse()` validation in `generate_python()` to ensure valid Python
+- [X] T025 [US1] Test: `TEST S X=1 W X Q` → generates Python → outputs "1"
+- [X] T026 [US1] Test: `TEST W "PASS" Q` → outputs "PASS"
+- [X] T027 [US1] Test: `TEST W 2+3 Q` → outputs "5"
 
 **Checkpoint**: User Story 1 complete - can generate and execute simple routines
 

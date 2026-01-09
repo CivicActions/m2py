@@ -10,11 +10,22 @@ import pytest
 class TestSetCommandCodegen:
     """Codegen-level tests for SET command code generation (§8.2.18)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: SET to assignment")
     def test_set_to_assignment(self, generate_python):
         """SET generates assignment statement (§8.2.18)."""
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST\n S X=1\n Q\n")
+        assert "X = " in code or "X=" in code
+
+    def test_set_and_write_variable(self, execute_mumps):
+        """SET assigns value, WRITE outputs it (§8.2.18).
+
+        User Story 1 acceptance scenario 1:
+        Given: TEST S X=1 W X Q
+        When: generated and executed
+        Then: output is "1"
+        """
+        result = execute_mumps("TEST\n S X=1\n W X\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: SET multiple targets")

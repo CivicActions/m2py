@@ -10,17 +10,23 @@ import pytest
 class TestOperatorsCodegen:
     """Codegen-level tests for operators code generation (§7.2)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: addition")
-    def test_addition(self, generate_python):
-        """Addition generates Python + with numeric coercion (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_addition(self, execute_mumps):
+        """Addition generates Python + with numeric coercion (§7.2).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: subtraction")
-    def test_subtraction(self, generate_python):
+        User Story 1 acceptance scenario 3:
+        Given: TEST W 2+3 Q
+        When: generated and executed
+        Then: output is "5"
+        """
+        result = execute_mumps("TEST\n W 2+3\n Q\n")
+        assert result.output == "5"
+        assert result.success is True
+
+    def test_subtraction(self, execute_mumps):
         """Subtraction generates Python - with numeric coercion (§7.2)."""
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST\n W 5-3\n Q\n")
+        assert result.output == "2"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: multiplication")
