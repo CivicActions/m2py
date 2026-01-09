@@ -102,11 +102,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T028 [US2] Handle `MIfStatement` in `generate_statement()` - emit `_test = m_truth(cond); if _test:`
-- [ ] T029 [US2] Handle `MElseStatement` in `generate_statement()` - emit `if not _test:`
-- [ ] T030 [US2] Test: `S X=5 I X>3 W "GT" E W "LE"` → outputs "GT"
-- [ ] T031 [US2] Test: `S X=1 I X>3 W "GT" E W "LE"` → outputs "LE"
-- [ ] T032 [US2] Test: `S X=0 I X W "TRUE" E W "FALSE"` → outputs "FALSE" (zero is false)
+- [X] T028 [US2] Handle `MIfStatement` in `generate_statement()` - emit `_test = m_truth(cond); if _test:`
+- [X] T029 [US2] Handle `MElseStatement` in `generate_statement()` - emit `if not _test:`
+- [X] T030 [US2] Test: `S X=5 I X>3 W "GT" E W "LE"` → outputs "GT"
+- [X] T031 [US2] Test: `S X=1 I X>3 W "GT" E W "LE"` → outputs "LE"
+- [X] T032 [US2] Test: `S X=0 I X W "TRUE" E W "FALSE"` → outputs "FALSE" (zero is false)
 
 **Checkpoint**: User Story 2 complete - IF/ELSE control flow works
 
