@@ -69,7 +69,7 @@ As a developer, I need FOR loops with literal start:increment:stop parameters to
 
 1. **Given** `F I=1:1:3 W I`, **When** executed, **Then** output is "123"
 2. **Given** `F I="A","B","C" W I`, **When** executed, **Then** output is "ABC"
-3. **Given** `F I=1:1 Q:I>3 W I`, **When** executed, **Then** output is "123"
+3. **Given** `F I=3:-1:1 W I`, **When** executed, **Then** output is "321" (negative increment)
 
 ---
 
@@ -126,7 +126,6 @@ As a developer, I need label and variable names translated to valid Python ident
 - What happens with negative loop increment? → `F I=3:-1:1` should count down (output: "321")
 - What happens with left-to-right evaluation? → `2+3*4` should be 20, not 14 (requires `*` operator)
 - What happens with empty string in comparison? → `"" < 1` uses numeric coercion (0 < 1 = true)
-- What about postcondition on QUIT in FOR? → `Q:I>3` is needed for open-ended FOR loops
 
 ## Requirements
 
@@ -140,20 +139,17 @@ As a developer, I need label and variable names translated to valid Python ident
 - **FR-006**: System MUST translate SET to Python assignment
 - **FR-007**: System MUST translate WRITE to output operation (print or buffer)
 - **FR-008**: System MUST translate QUIT to function return
-- **FR-008a**: System MUST translate QUIT with postcondition (`Q:cond`) for FOR loop exit
 - **FR-009**: System MUST translate IF conditions using `m_truth()`
 - **FR-010**: System MUST translate ELSE based on prior IF result
 - **FR-011**: System MUST translate bounded FOR (`F I=1:1:10`) to Python loop
 - **FR-012**: System MUST translate string-list FOR (`F I="A","B"`) to Python iteration
-- **FR-013**: System MUST translate open-ended FOR (`F I=1:1`) to while loop with increment
-- **FR-014**: System MUST translate argumentless FOR to infinite loop (while True)
-- **FR-015**: System MUST translate DO label to function call
-- **FR-016**: System MUST translate GOTO label to control flow transfer
-- **FR-017**: System MUST translate MUMPS names with `%` prefix to valid Python identifiers
-- **FR-018**: System MUST translate pure numeric labels to valid Python identifiers
-- **FR-019**: System MUST preserve case distinction in name translation (FOO ≠ foo)
-- **FR-019a**: System MUST translate Python reserved words to valid identifiers (for → _m_for)
-- **FR-020**: System MUST evaluate expressions left-to-right without operator precedence
+- **FR-013**: System MUST translate DO label to function call
+- **FR-014**: System MUST translate GOTO label to control flow transfer
+- **FR-015**: System MUST translate MUMPS names with `%` prefix to valid Python identifiers
+- **FR-016**: System MUST translate pure numeric labels to valid Python identifiers
+- **FR-017**: System MUST preserve case distinction in name translation (FOO ≠ foo)
+- **FR-017a**: System MUST translate Python reserved words to valid identifiers (for → _m_for)
+- **FR-018**: System MUST evaluate expressions left-to-right without operator precedence
 
 ### Key Entities
 
@@ -198,8 +194,6 @@ The following outputs were verified against YDB and serve as acceptance criteria
 | `F I=1:1:3 W I` | `123` |
 | `F I=3:-1:1 W I` | `321` |
 | `F I="A","B","C" W I` | `ABC` |
-| `F I=1:1 Q:I>3 W I` | `123` |
-| `S I=0 F S I=I+1 Q:I>3 W I` | `123` |
 | `D SUB W "After" ... SUB W "Sub " Q` | `Sub After` |
 | `S X=1 G DONE S X=2 ... DONE W X` | `1` |
 
@@ -212,13 +206,14 @@ The following outputs were verified against YDB and serve as acceptance criteria
 - Local variables - simple names only (`X`, `I`, `COUNT`)
 - Comparison operators: `=`, `<`, `>`
 - Arithmetic operators: `+`, `-`, `*` (multiplication needed for left-to-right validation)
-- Statements: SET (single assignment), WRITE (single value), QUIT (with/without value, with postcondition for FOR exit), DO (label call), IF, ELSE, FOR, GOTO (label only)
+- Statements: SET (single assignment), WRITE (single value), QUIT (with/without value), DO (label call), IF, ELSE, FOR (bounded and string-list only), GOTO (label only)
 - Left-to-right evaluation with parentheses
 - M coercion helpers: `m_num()`, `m_truth()`, `m_compare()`
 - Name translation for labels and variables
 
 ### Explicitly Deferred
 
+- Open-ended FOR (`F I=1:1`), argumentless FOR, and QUIT postcondition (`Q:cond`) → Spec 005
 - Intrinsic functions ($PIECE, $LENGTH, $GET, etc.) → Spec 008
 - Global variables (^name) → Spec 007/008
 - READ command → Spec 008
@@ -229,7 +224,7 @@ The following outputs were verified against YDB and serve as acceptance criteria
 - Negated comparisons ('=, '<, '>') → Spec 008
 - Multiple assignments (S X=1,Y=2) → Spec 008
 - Format controls (!, #, ?n) → Spec 008
-- Postconditions on most commands (S:cond X=1) → Spec 008 (exception: Q:cond in FOR is in scope)
+- Postconditions on other commands (S:cond X=1) → Spec 008
 - Extrinsic functions ($$func) → Spec 005
 - Subscripted variables → Spec 008
 - DO/GOTO with offsets → Spec 008

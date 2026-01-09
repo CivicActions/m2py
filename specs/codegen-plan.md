@@ -142,17 +142,22 @@ Control flow testing doesn't need computation—just path verification. We outpu
 
 3. **Operators (Comparison + Basic Arithmetic)**
    - Comparison: `=`, `<`, `>`
-   - Arithmetic: `+`, `-` (for loop increments)
-   - Left-to-right with parenthesization
+   - Arithmetic: `+`, `-`, `*` (for loop increments and left-to-right validation)
+   - Left-to-right with parenthesization (e.g., `2+3*4` = 20, not 14)
 
 4. **Statements (Minimal Set)**
    - `SET` - single assignment only (`S X=1`)
    - `WRITE` - single value only (`W X` or `W "text"`)
-   - `QUIT` - with and without value
+   - `QUIT` - with and without value (no postconditions)
    - `DO` - label call within same routine (no offset)
    - `IF` / `ELSE` - basic condition
-   - `FOR` - all loop types with **literal parameters** (e.g., `F I=1:1:10`, `F I="A","B"`)
+   - `FOR` - bounded and string-list types with **literal parameters** (e.g., `F I=1:1:10`, `F I="A","B"`)
    - `GOTO` - label targets only, **no offsets** (e.g., `G LABEL`, not `G LABEL+5`)
+
+### Explicitly Deferred to Spec 005
+
+- Open-ended FOR (`F I=1:1`) and argumentless FOR (`F`)
+- QUIT postcondition (`Q:cond`) for loop exit
 
 ### Explicitly Deferred to Spec 008
 
@@ -166,7 +171,7 @@ Control flow testing doesn't need computation—just path verification. We outpu
 - Negated comparisons ('=, '<, '>)
 - Multiple assignments (S X=1,Y=2)
 - Format controls (!, #, ?n)
-- Postconditions (S:cond X=1)
+- Postconditions on other commands (S:cond X=1)
 - Extrinsic functions ($$func)
 - Subscripted variables
 - **DO/GOTO with offsets** (`G LABEL+5`, `D SUB+N`)
@@ -250,6 +255,8 @@ class TestForwardGoto:
 
 **Generating known-good output with YDB**:
 
+The ydb Docker image is already available locally - no need to pull.
+
 Run a file: `docker run --rm -v "$(pwd):/workspace" ydb HELLO.m` → outputs Hello World
 
 Run from stdin: `echo -e 'STDIN\n write "Hello from stdin",!' | docker run --rm -i ydb` → outputs Hello from stdin
@@ -308,7 +315,7 @@ Minimal, well-understood subset. Just implement and validate against YDB.
 1. **IF/ELSE with $TEST tracking**
    - Track `_test` variable for ELSE and argumentless IF
    - Comma-separated conditions (AND semantics)
-   - **Note**: Postconditions (deferred to Spec 008) do NOT update $TEST - document this behavior now
+   - Postconditions (Spec 008) do NOT update $TEST
    
 2. **$TEST Stack Semantics**
    - **Argumentless DO**: `$TEST` is stacked (NEW $TEST), restored on QUIT
@@ -318,13 +325,14 @@ Minimal, well-understood subset. Just implement and validate against YDB.
    
    This is critical for ELSE chains that span DO calls.
 
-3. **FOR Loop Variations**
-   - `ForLoopType.OPEN_ENDED` → `while True:` with increment
-   - `ForLoopType.ARGUMENTLESS` → `while True:`
+3. **FOR Loop Variations** (all types including open-ended and argumentless)
+   - `ForLoopType.OPEN_ENDED` (`F I=1:1`) → `while True:` with increment
+   - `ForLoopType.ARGUMENTLESS` (`F`) → `while True:`
    - `ForLoopType.STRING_LIST` → `for x in [...]`
    - `ForLoopType.MIXED` → `itertools.chain` or unrolling
    - `loop_var_modified_in_body=True` → `while` loop
    - `has_internal_quit=True` → add `break` support
+   - QUIT postcondition (`Q:cond`) for loop exit → `if cond: break`
 
 4. **Intra-Label GOTO** (`is_cross_label=False`)
    - Forward jumps → restructure to if/else
