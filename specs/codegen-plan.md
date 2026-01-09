@@ -357,7 +357,7 @@ MUMPS names are **case-sensitive** and allow patterns that would be invalid Pyth
 
 ### Test Strategy: Embedded Unit Tests
 
-**Do NOT use `.m` files or YDB/MUGJ tests** - they require I/O overhead and additional syntax.
+**Do NOT use `.m` files or YDB/MUGJ tests directly yet** - they require I/O overhead and additional syntax.
 
 Use embedded strings in pytest, matching existing codegen test patterns in `tests/unit/codegen/`:
 
