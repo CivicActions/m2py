@@ -15,8 +15,8 @@
 
 **Purpose**: Create module structure and stub files
 
-- [ ] T001 Create `src/m2py/codegen/__init__.py` with `generate_python()` stub
-- [ ] T002 [P] Create `src/m2py/runtime/__init__.py` with empty module structure
+- [X] T001 Create `src/m2py/codegen/__init__.py` with `generate_python()` stub
+- [X] T002 [P] Create `src/m2py/runtime/__init__.py` with empty module structure
 
 ---
 
