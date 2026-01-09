@@ -5,6 +5,11 @@ Provides the public API for generating executable Python code from MUMPS source.
 
 from __future__ import annotations
 
+import ast
+
+from m2py.parser import MUMPSParser
+from m2py.codegen.routine import RoutineGenerator
+
 
 class CodegenError(Exception):
     """Base exception for code generation errors."""
@@ -51,7 +56,28 @@ def generate_python(
         from m2py.codegen.helpers import m_num, m_truth, m_compare
         ...
     """
-    raise NotImplementedError("generate_python() will be implemented in Phase 2")
+    # Parse MUMPS source
+    parser = MUMPSParser()
+    routine = parser.parse(source, filename=routine_name)
+
+    # Set routine name if provided
+    if routine_name:
+        routine.name = routine_name
+
+    # Generate Python code
+    generator = RoutineGenerator(routine)
+    python_code = generator.generate()
+
+    # Validate if requested
+    if validate:
+        try:
+            ast.parse(python_code)
+        except SyntaxError as e:
+            raise SyntaxError(
+                f"Generated Python code is invalid: {e}\n\nGenerated code:\n{python_code}"
+            ) from e
+
+    return python_code
 
 
 __all__ = [

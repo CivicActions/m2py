@@ -28,50 +28,50 @@
 
 ### Value Model Helpers
 
-- [ ] T003 Implement `m_num()` in `src/m2py/codegen/helpers.py` (ANSI 7.1.4.5 numeric coercion)
-- [ ] T004 Implement `m_truth()` in `src/m2py/codegen/helpers.py` (truth evaluation: 0=false, else true)
-- [ ] T005 Implement `m_compare()` in `src/m2py/codegen/helpers.py` (comparison with coercion)
+- [X] T003 Implement `m_num()` in `src/m2py/codegen/helpers.py` (ANSI 7.1.4.5 numeric coercion)
+- [X] T004 Implement `m_truth()` in `src/m2py/codegen/helpers.py` (truth evaluation: 0=false, else true)
+- [X] T005 Implement `m_compare()` in `src/m2py/codegen/helpers.py` (comparison with coercion)
 
 ### Name Translation
 
-- [ ] T006 Implement `NameTranslator` class in `src/m2py/codegen/names.py`
+- [X] T006 Implement `NameTranslator` class in `src/m2py/codegen/names.py`
   - `translate()`: Handle %, numeric, reserved words, case preservation
   - `reverse()`: Recover original MUMPS name from Python name
 
 ### Minimal Runtime
 
-- [ ] T007 Implement `MUMPSRuntime` class in `src/m2py/runtime/__init__.py`
+- [X] T007 Implement `MUMPSRuntime` class in `src/m2py/runtime/__init__.py`
   - `write(value)`: Capture output
   - `get_output()`: Return accumulated output
   - `execute()`: Run generated Python code
-- [ ] T008 Implement `ExecutionResult` dataclass in `src/m2py/runtime/__init__.py`
+- [X] T008 Implement `ExecutionResult` dataclass in `src/m2py/runtime/__init__.py`
 
 ### Expression Generator
 
-- [ ] T009 Create `src/m2py/codegen/expressions.py` with `generate_expr()` function
-- [ ] T010 Handle `MLiteral` (INTEGER, STRING) in `generate_expr()`
-- [ ] T011 Handle `MVariable` with name translation in `generate_expr()`
-- [ ] T012 Handle `MBinaryOp` (+, -, =, <, >) in `generate_expr()`
-- [ ] T013 Handle `MUnaryOp` (-) in `generate_expr()`
+- [X] T009 Create `src/m2py/codegen/expressions.py` with `generate_expr()` function
+- [X] T010 Handle `MLiteral` (INTEGER, STRING) in `generate_expr()`
+- [X] T011 Handle `MVariable` with name translation in `generate_expr()`
+- [X] T012 Handle `MBinaryOp` (+, -, =, <, >) in `generate_expr()`
+- [X] T013 Handle `MUnaryOp` (-) in `generate_expr()`
 
 ### Statement Generator Base
 
-- [ ] T014 Create `src/m2py/codegen/statements.py` with `generate_statement()` function
-- [ ] T015 Handle `MSetStatement` (single assignment) in `generate_statement()`
-- [ ] T016 Handle `MWriteStatement` (single value) in `generate_statement()`
-- [ ] T017 Handle `MQuitStatement` (without value) in `generate_statement()`
+- [X] T014 Create `src/m2py/codegen/statements.py` with `generate_statement()` function
+- [X] T015 Handle `MSetStatement` (single assignment) in `generate_statement()`
+- [X] T016 Handle `MWriteStatement` (single value) in `generate_statement()`
+- [X] T017 Handle `MQuitStatement` (without value) in `generate_statement()`
 
 ### Routine Generator
 
-- [ ] T018 Create `src/m2py/codegen/routine.py` with `RoutineGenerator` class
-- [ ] T019 Implement label → Python function generation in `RoutineGenerator`
-- [ ] T020 Add module preamble generation (imports, _rt, _test) in `RoutineGenerator`
-- [ ] T021 Wire `generate_python()` in `__init__.py` to parser + RoutineGenerator
+- [X] T018 Create `src/m2py/codegen/routine.py` with `RoutineGenerator` class
+- [X] T019 Implement label → Python function generation in `RoutineGenerator`
+- [X] T020 Add module preamble generation (imports, _rt, _test) in `RoutineGenerator`
+- [X] T021 Wire `generate_python()` in `__init__.py` to parser + RoutineGenerator
 
 ### Test Infrastructure
 
-- [ ] T022 Implement `generate_python` fixture in `tests/unit/codegen/conftest.py`
-- [ ] T023 Implement `execute_mumps` fixture in `tests/unit/codegen/conftest.py`
+- [X] T022 Implement `generate_python` fixture in `tests/unit/codegen/conftest.py`
+- [X] T023 Implement `execute_mumps` fixture in `tests/unit/codegen/conftest.py`
 
 **Checkpoint**: Foundation ready - user story implementation can begin
 
