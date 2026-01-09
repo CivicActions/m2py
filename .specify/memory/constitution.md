@@ -1,24 +1,30 @@
 <!--
   SYNC IMPACT REPORT
   ==================
-  Version Change: N/A → 1.0.0 (initial ratification)
+  Version Change: 1.0.0 → 1.1.0
   
-  Modified Principles: N/A (initial version)
+  Modified Principles:
+  - III. Multi-Phase Architecture → III. Strict Layer Separation (expanded with codegen boundary rules)
+  - V. Incremental Validation → V. Foundational Correctness (reframed for "complexity first" approach)
   
   Added Sections:
-  - Core Principles (5 principles)
-  - Technical Constraints
-  - Governance
+  - II. YDB as Reference Implementation (new principle, formerly implicit in Test-Driven)
+  - VI. Cross-Cutting Semantics (new principle for M value model, $TEST, etc.)
   
-  Removed Sections: N/A
+  Removed Sections: None
   
   Templates Status:
   - plan-template.md: ✅ Compatible (Constitution Check section exists)
   - spec-template.md: ✅ Compatible (requirements align with principles)
-  - tasks-template.md: ✅ Compatible (phase structure supports incremental validation)
+  - tasks-template.md: ✅ Compatible (phase structure supports foundational-first)
   - checklist-template.md: ✅ Compatible (generic structure)
   
   Follow-up TODOs: None
+  
+  Rationale: Entering code generation phase requires explicit principles for:
+  (1) layer boundaries that prevent codegen from doing parsing/analysis work,
+  (2) YDB validation as the authoritative reference,
+  (3) foundational M semantics that must be correct from earliest spec.
 -->
 
 # M2PY Constitution
@@ -41,56 +47,79 @@ The primary goal is 100% correct translation of MUMPS logic to Python. Idiomatic
 - When uncertain, consult the MUMPS specification at https://71.174.62.16/Demo/AnnoStd
 - Mark uncertain translations explicitly for later review
 
-### II. Test-Driven Validation
+### II. YDB as Reference Implementation
 
-Testing is the source of truth for correctness. External test suites (e.g., `tests/functional/`)
-provide authoritative validation.
+YottaDB (YDB) is the authoritative reference for validating MUMPS behavior. When the
+ANSI specification is ambiguous or implementation-defined, YDB behavior is correct.
 
-- Tests MUST pass before adding new complexity
-- New features MUST have corresponding tests
-- Integration tests compare transpiled output against MUMPS reference output
+- Generated Python MUST match YDB output for equivalent MUMPS input
+- Test expected outputs SHOULD be generated from YDB execution
+- Edge cases MUST be validated against YDB before assuming correctness
+- Use `docker run --rm -v "$(pwd):/workspace" ydb <file.m>` for validation
 
-### III. Multi-Phase Architecture
+### III. Strict Layer Separation
 
-The transpiler MUST separate parsing, semantic analysis, and code generation into
-distinct phases. Complete semantic understanding MUST be achieved before generating
-target code.
+The transpiler uses distinct phases: parsing, semantic analysis, and code generation.
+Each phase has clear responsibilities and boundaries.
 
-- All references (labels, variables, jump targets) MUST be resolved before code generation
-- Scopes and control structures MUST be explicitly modeled
-- Each phase MUST be independently testable
+- **Parsing**: Produces CST from MUMPS source using textX grammar
+- **Semantic Analysis**: Transforms CST → ASG, resolves all references, classifies control flow
+- **Code Generation**: Translates complete, resolved ASG to Python—nothing else
+
+**Critical boundary**: If code generation discovers missing ASG nodes, unresolved
+references, or analysis gaps, fix them in parser or analysis—NEVER build parse-like
+or generic analysis code into codegen. Codegen receives a complete ASG and emits Python.
 
 ### IV. Explicit Over Implicit
 
 MUMPS has many implicit behaviors that differ from Python. These MUST be made explicit
-in generated code.
+in generated code through helper functions and runtime support.
 
 - Undefined variables return empty string (not exception)
-- All values are strings; numeric operations require explicit coercion
+- All values are strings; numeric operations require explicit coercion via `m_num()`
+- Truth evaluation uses numeric interpretation via `m_truth()`
 - Left-to-right evaluation with no operator precedence
+- Comparisons use M semantics via `m_compare()`
 
-### V. Incremental Validation
+### V. Foundational Correctness
 
-Build complexity incrementally, validating at each step. Never skip ahead to advanced
-features before foundational patterns are solid.
+Solve hard structural problems early while the codebase is small. Foundational semantics
+must be correct from the earliest spec to avoid painful refactors later.
 
-- Start with the simplest constructs and prove them correct
-- Add complexity only after simpler features pass tests
-- Each increment depends on validated previous work
+- Tackle cross-label GOTO, variable scoping, and control flow restructuring before simpler features
+- Each spec builds on validated foundational infrastructure
+- Complexity is front-loaded; later specs benefit from solid foundations
+- Validate each foundational piece before building upon it
+
+**Contrast with "incremental"**: We still validate incrementally, but the *order* prioritizes
+hard problems over easy ones. Simple constructs are added after structural patterns are proven.
+
+### VI. Cross-Cutting Semantics
+
+Certain M semantics affect nearly all generated code and must be correct from the start.
+These are "day one" requirements, not incremental additions.
+
+- **Value Model**: Numeric coercion rules (ANSI 7.1.4.5), truth evaluation (ANSI 1.2.4)
+- **$TEST Variable**: Postconditions do NOT update $TEST; $TEST stacking for argumentless DO
+- **Array Model**: Sparse trees where nodes can have both value AND children
+- **Variable Scoping**: Default visibility to callees, NEW creates local scope, by-reference aliasing
+
+These semantics MUST be implemented in shared helpers/runtime, not duplicated per-command.
 
 ## Technical Constraints
 
 - **Python Version**: 3.10+
-- **Parser**: TextX for grammar definition
-- **Testing**: pytest
+- **Parser**: textX for grammar definition
+- **Testing**: pytest with YDB validation
+- **Package Management**: uv exclusively (never bare python, pip, or pytest)
 
 ## Governance
 
 This constitution supersedes all other practices for M2PY development.
 
 - All changes MUST verify compliance with these principles
-- Complexity MUST be justified against the incremental validation principle
+- Layer boundary violations MUST be fixed in the correct layer, not worked around
 - Amendments require documentation of rationale and impact assessment
 - Version follows semantic versioning: MAJOR (breaking principle changes), MINOR (additions), PATCH (clarifications)
 
-**Version**: 1.0.0 | **Ratified**: 2025-12-19 | **Last Amended**: 2025-12-19
+**Version**: 1.1.0 | **Ratified**: 2025-12-19 | **Last Amended**: 2026-01-08
