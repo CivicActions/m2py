@@ -13,6 +13,43 @@
 3. **Complexity first** - Solve hard structural problems early while codebase is small
 4. **Incremental validation** - Each spec should produce testable output against YDB
 5. **Layer separation** - If codegen discovers missing AST nodes, unresolved references, or analysis gaps, fix them in the parser or ASG analysis layer—never build parse-like or generic analysis code into codegen. Codegen should only translate a complete, resolved ASG to Python.
+6. **Minimize runtime surface** - Prefer inline Python over runtime calls. The runtime exists for truly dynamic cases (globals, indirection, XECUTE). For statically analyzable patterns, emit direct Python code even if slightly verbose. Every runtime call is a refactoring barrier.
+
+### Runtime vs Inline Decision Guide
+
+**Use runtime for:**
+| Feature | Why Runtime Required |
+|---------|---------------------|
+| Global variables (`^name`) | Database persistence, tree structure |
+| Special variables (`$TEST`, `$HOROLOG`) | Process-wide state |
+| XECUTE / Indirection | Truly dynamic, defeats static analysis |
+| `REQUIRES_RUNTIME` scope strategy | Analysis explicitly gave up |
+| Naked global references | Runtime naked indicator tracking |
+
+**Emit inline Python for:**
+| Feature | Python Translation |
+|---------|--------------------|  
+| Local variables | `x = value` (Python locals) |
+| Parameters | `def foo(a, b):` |
+| By-ref outputs | Return tuple: `return (x, y)` |
+| FOR loops | `for i in range(...)` or `while` |
+| Value coercion | Inline `m_num()` calls (pure helper) |
+| Comparisons | Inline `m_compare()` calls (pure helper) |
+
+**Heuristic**: If Rope could refactor it → emit Python variables/functions. If the value depends on runtime state → use runtime.
+
+---
+
+## Research Resources
+
+Each spec has a Research Phase with specific files to review. Common resources:
+
+- **`docs/`**: ASG structure (`docs/asg/`), analysis passes (`docs/analysis/`), codegen strategies (`docs/codegen/`)
+- **`validate_asg.py`**: Dump ASG for any M code to understand structure before generating Python
+  - File: `uv run python utils/validate_asg.py --compact path/to/file.m`
+  - Inline: `uv run python utils/validate_asg.py --compact -c "TEST S X=1 W X Q"`
+  - Full detail: omit `--compact` flag
+- **MUMPS spec**: https://71.174.62.16/Demo/AnnoStd (local mirror in `mumps-reference/`) - remember to keep scope in mind after reading this, we are implementing in phases!
 
 ---
 
@@ -93,6 +130,83 @@ MUMPS variable scoping is unusual and affects nearly all code generation decisio
 
 **Cross-label variable visibility** complicates GOTO translation since variables may be visible across labels without explicit passing. The strategy chosen in Spec 006 must account for this.
 
+### Code Generation Architecture
+
+**Approach**: Section-based Builder/Emitter pattern with `CodeEmitter` class.
+
+#### Why Not Alternatives?
+
+| Approach | Pros | Cons | Verdict |
+|----------|------|------|---------|
+| **String concatenation** | Simple | No indent tracking, error-prone | ❌ |
+| **Python `ast` module** | Guaranteed valid AST | Very verbose, hard to read output | ❌ |
+| **LibCST** | Preserves formatting | Extremely verbose, overkill | ❌ |
+| **Jinja2 templates** | Readable templates | Logic gets messy, indent issues | ❌ |
+| **Builder/Emitter** | Clean API, indent-aware | Slightly more setup | ✅ |
+
+#### CodeEmitter Design
+
+Core API (see `src/m2py/codegen/emitter.py` for implementation):
+
+```python
+class CodeEmitter:
+    def line(self, code: str): ...      # Emit at current indent
+    def blank(self): ...                 # Emit empty line
+    def indented(self): ...              # Context manager: with emit.indented():
+    def append(self, other): ...         # Merge another emitter (re-indented)
+    def get_code(self) -> str: ...       # Return final string
+```
+
+**Usage pattern**:
+```python
+def generate_if(emit: CodeEmitter, stmt: MIfStatement, ctx: GeneratorContext):
+    emit.line(f"if m_truth({generate_expr(stmt.condition, ctx)}):")
+    with emit.indented():
+        for substmt in stmt.then_scope.statements:
+            generate_statement(emit, substmt, ctx)  # Correct indent automatically!
+```
+
+#### Section-Based Generation
+
+For late additions (imports), collect during generation, emit at end:
+```python
+class RoutineGenerator:
+    imports: set[str] = set()  # Populated during _generate_body()
+    body = CodeEmitter()
+    
+    def generate(self) -> str:
+        self._generate_body()  # Phase 1: body + imports collected
+        result = CodeEmitter()
+        for imp in sorted(self.imports): result.line(imp)
+        result.append(self.body)  # Phase 2: compose
+        return result.get_code()
+```
+
+#### Key Benefits
+
+1. **Correct nesting at any depth**: `with emit.indented()` tracks indent automatically
+2. **No string splitting**: Nested generators write directly to shared emitter
+3. **Late additions**: Imports, declarations collected during generation, emitted at end
+4. **Debuggable output**: Generated code is human-readable, easy to inspect
+5. **Validation**: Call `ast.parse(result)` at end to catch syntax errors
+
+#### Structural Decisions Before Emission
+
+For patterns like GOTO (Spec 006), analyze ASG structure **before** emitting any code:
+
+```python
+def generate_routine(routine: MRoutine) -> str:
+    # Analyze which labels are GOTO targets (already in ASG)
+    goto_targets = routine.control_flow.goto_targets
+    
+    if goto_targets:
+        return generate_with_state_machine(routine, goto_targets)
+    else:
+        return generate_linear(routine)
+```
+
+The structural decision (state machine vs. linear) is made from ASG analysis, not discovered mid-generation.
+
 ### Line Mapping Infrastructure (for Computed Offsets)
 
 Computed offsets like `G LABEL+expr` require line-indexed execution at runtime.
@@ -129,6 +243,16 @@ Computed offsets like `G LABEL+expr` require line-indexed execution at runtime.
 **Goal**: Absolute minimum to validate control flow in specs 005/006
 
 Control flow testing doesn't need computation—just path verification. We output markers to show which branches executed.
+
+### Research Phase
+
+Review before coding:
+- **Docs**: `docs/asg/expressions.md`, `docs/asg/statements.md`, `docs/codegen/index.md`
+- **Expressions**: `asg/expressions.py` → `MLiteral`, `MVariable`, `MBinaryOp`, `MUnaryOp`
+- **Statements**: `asg/statements.py` → `MSetStatement`, `MWriteStatement`, `MIfStatement`, `MForStatement`, `MGotoStatement`
+- **Structure**: `asg/elements.py` → `MLabel.body.statements`, `MRoutine.labels`
+- **Scope**: `analysis/variables.py` → `ScopeStrategy`, `FunctionSignature.scope_strategy`
+- **ASG dump**: `uv run python utils/validate_asg.py --compact -c "TEST S X=1 W X Q"`
 
 ### Scope (Minimal)
 
@@ -210,6 +334,26 @@ MUMPS names are **case-sensitive** and allow patterns that would be invalid Pyth
   - Tests: `TestRoutineHeadCodegen`, `TestRoutineBodyCodegen` in [s6_routine/](../tests/unit/codegen/s6_routine/)
 - [ ] `MUMPSRuntime` class with `_test` tracking for IF/ELSE
   - Tests: `TestTestVariableCodegen` in [test_language_semantics.py](../tests/unit/cross_cutting/test_language_semantics.py)
+
+### Implementation Notes
+
+**Local Variables → Python Locals (NOT runtime)**:
+- `S X=5` → `x = 5` (Python assignment)
+- `W X` → `print(x)` or `_output.append(str(x))`
+- Do NOT use `_rt.get("X")` / `_rt.set("X", value)` for local variables
+- Use `NameTranslator` to convert M names to Python identifiers
+
+**Runtime reserved for**:
+- Global variables (`^name`) - deferred to Spec 008
+- `$TEST` special variable - needs process-wide state
+- Output accumulation (`_rt.write()`) - for test harness capture
+
+**Why this matters**: Using runtime for locals would:
+1. Bypass all the `ScopeVariables`/`FunctionSignature` analysis work
+2. Make Rope refactoring impossible (`_rt.get("X")` is opaque)
+3. Turn the transpiler into a MUMPS interpreter
+
+**Scope strategy check**: Even in Spec 004, verify `FunctionSignature.scope_strategy` is `PURE_FUNCTION` or similar before emitting Python locals. If `REQUIRES_RUNTIME`, use runtime scope access.
 
 ### Test Strategy: Embedded Unit Tests
 
@@ -302,6 +446,17 @@ Minimal, well-understood subset. Just implement and validate against YDB.
 ## Spec 005: Structured Control Flow
 
 **Goal**: Handle common control flow patterns that map cleanly to Python
+
+### Research Phase
+
+Review before coding:
+- **Docs**: `docs/analysis/for_analysis.md`, `docs/analysis/goto_analysis.md`, `docs/codegen/for_loops.md`
+- **$TEST**: Where is $TEST represented? When stack/restore?
+- **FOR analysis**: `analysis/for_analysis.py` → `ForLoopType`, `loop_var_modified_in_body`, `has_internal_quit`
+- **GOTO**: `analysis/goto_analysis.py` → `GotoType`, `is_cross_label`, `is_loop_continue`
+- **Scope**: `analysis/variables.py` → `FunctionSignature`, `ScopeStrategy`, `input_variables`, `output_variables`
+- **QUIT**: `asg/statements.py` → `MQuitStatement.exits_for`, `.exits_do_block`, `.return_value`
+- **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1FOR*.m`
 
 ### Scope
 
@@ -407,6 +562,18 @@ Minimal, well-understood subset. Just implement and validate against YDB.
 
 This is the **highest complexity** area. The ASG provides classification but translation strategy is TBD.
 
+### Research Phase
+Review before coding:
+- **Docs**: `docs/analysis/goto_analysis.md`, `docs/codegen/goto_handling.md`, `docs/analysis/variable_analysis.md`
+- **Cross-label detection**: `analysis/goto_analysis.py` → `is_cross_label`, classification
+- **Routine flags**: `asg/elements.py` (`MRoutine`) → `has_unstructured_goto`, targets
+- **Variable visibility**: `analysis/variables.py` → `input_variables`, `output_variables` per label
+- **Line numbers**: `MLabel.line_number`, `MStatement.line_number` → populated?
+- **CFG analysis**: Predecessors, successors, dominators → does it exist?
+- **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1GO1.m`
+
+**Output**: Decision criteria for labels-as-functions vs state machine.
+
 ### Scope
 
 1. **Cross-Label Forward Jump** (`FORWARD_JUMP` + `is_cross_label=True`)
@@ -460,73 +627,40 @@ G 388+$L($E(VCOMP,5,99))       ; Needs intrinsic function evaluation
 
 ### Strategy Candidates
 
-#### Option A: Labels-as-Functions with Shared State
+#### Option A: Labels-as-Functions with Trampoline
 
 ```python
-class RoutineState:
-    """Shared state for cross-label variable visibility."""
+class RoutineState:  # Shared variables across labels
     x: int = 0
-    y: str = ""
 
-def label_A(state: RoutineState) -> Optional[str]:
+def label_A(state) -> str | None:
     state.x = 1
-    if condition:
-        return "B"  # Transfer to label B
-    return None  # Fall through / exit
+    return "B" if condition else None  # Return next label or None to exit
 
-def label_B(state: RoutineState) -> Optional[str]:
-    state.y = str(state.x)  # x visible from label A
-    return "A"  # Loop back
-
-# Trampoline dispatcher (REQUIRED - prevents RecursionError)
-# Labels RETURN next label, never CALL next label directly
-state = RoutineState()
-labels = {"A": label_A, "B": label_B}
+# Trampoline (REQUIRED - prevents RecursionError)
 next_label = "A"
 while next_label:
     next_label = labels[next_label](state)
 ```
-
-**Pros**: Refactorable, each label is a unit, Rope-friendly  
-**Cons**: State class overhead, return values need threading  
-**CRITICAL**: Must use trampoline pattern - direct function calls would hit Python's 1000-frame recursion limit
+**Pros**: Refactorable, Rope-friendly | **Cons**: State class overhead
 
 #### Option B: State Machine (Match-Case)
 
 ```python
-state = "A"
-# All variables in outer scope - naturally visible across states
-x = 0
-y = ""
+state, x = "A", 0  # Variables in outer scope
 while True:
     match state:
-        case "A":
-            x = 1
-            if condition:
-                state = "B"
-                continue
-            break
-        case "B":
-            y = str(x)  # x naturally visible
-            state = "A"
-            continue
+        case "A": x = 1; state = "B" if condition else None
+        case "B": state = "A"
+    if state is None: break
 ```
+**Pros**: Simple, natural variable visibility | **Cons**: Not refactorable
 
-**Pros**: Simple, handles any pattern, natural variable visibility  
-**Cons**: Not refactorable, large match blocks
+#### Selection Criteria
 
-#### Option C: Hybrid
-
-- Use structured translation when `has_unstructured_goto=False`
-- Fall back to state machine only when truly irreducible
-- State machine handles variable visibility naturally; labels-as-functions needs state class
-
-**Strategy Selection Criteria**:
 - `has_unstructured_goto=True` → State Machine (required)
-- Label is target of computed offset (`G LABEL+expr` from anywhere) → State Machine (required for line-level dispatch)
+- Computed offset target (`G LABEL+expr`) → State Machine (line dispatch)
 - Otherwise → Labels-as-Functions (preferred)
-
-Note: Computed offsets can only target LEVEL 1 lines (MUMPS semantics), so "jumping into blocks" isn't possible. But state machine is still simpler for computed offset dispatch since it naturally supports `goto_line(n)`.
 
 ### Deliverables
 
@@ -573,6 +707,18 @@ Note: Computed offsets can only target LEVEL 1 lines (MUMPS semantics), so "jump
 
 **Goal**: Handle dynamic code patterns pervasive in VistA
 
+### Research Phase
+Review before coding:
+- **Docs**: `docs/asg/expressions.md` (indirection section), `docs/codegen/runtime_requirements.md`
+- **Indirection ASG**: `asg/expressions.py` → `MIndirection`, types (name/argument/subscript)
+- **Static detection**: `analysis/` → constant propagation? Compile-time resolvable?
+- **XECUTE structure**: `asg/statements.py` → `MXecuteStatement` argument representation
+- **`^%ZOSF` patterns**: Research VistA node values for lookup table
+- **`REQUIRES_RUNTIME`**: `analysis/variables.py` → what triggers this scope?
+- **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1XECA.m`
+
+**Output**: Document static optimizations vs must-use-runtime patterns.
+
 ### Scope
 
 1. **Runtime Infrastructure**
@@ -580,23 +726,7 @@ Note: Computed offsets can only target LEVEL 1 lines (MUMPS semantics), so "jump
    Build the shared runtime that manages M semantics at execution time.
    **Note**: Basic global variable support (`^VAR`, `^VAR(sub)`) is included here so XECUTE/indirection tests can use realistic VistA patterns (e.g., `^%ZOSF`). Spec 008 adds extended global features (naked refs, complex subscripting).
    
-   ```python
-   class MUMPSRuntime:
-       variables: dict      # Local scope
-       globals: dict        # ^globals (basic support)
-       test: bool          # $TEST
-       
-       def execute(self, mumps_code: str) -> Any:
-           """Translate and execute MUMPS at runtime"""
-           python_code = m2py.translate(mumps_code)
-           exec(python_code, self._context())
-       
-       def get_global(self, name: str, *subscripts) -> Any:
-           """Read ^name(sub1,sub2,...) - basic support"""
-       
-       def set_global(self, name: str, value: Any, *subscripts) -> None:
-           """Write ^name(sub1,sub2,...) = value - basic support"""
-   ```
+   Core `MUMPSRuntime` API: `variables: dict`, `globals: dict`, `test: bool`, `execute(mumps_code)`, `get_global(name, *subs)`, `set_global(name, value, *subs)`
 
 2. **Static Indirection** (resolvable at compile time)
    - `S NAME="X" W @NAME` → inline as `print(x)`
@@ -655,6 +785,19 @@ Note: Computed offsets can only target LEVEL 1 lines (MUMPS semantics), so "jump
 **Goal**: Complete the simple constructs deferred from Spec 004
 
 Now that control flow is solid, add the rest of the straightforward language features.
+
+### Research Phase
+Review before coding:
+- **Docs**: `docs/asg/expressions.md`, `docs/codegen/functions.md`, `docs/codegen/operators.md`
+- **Intrinsic functions**: `asg/expressions.py` → `MFunctionCall`, intrinsic vs extrinsic
+- **Global variables**: `asg/expressions.py` → `MGlobalRef`, naked ref (`^(sub)`) vs full
+- **LHS functions**: Parser/ASG → `MLhsFunctionCall` for SET $P()/$E()?
+- **Pattern match**: `asg/` → pattern codes (1N, .A) fully represented?
+- **Computed offsets**: `asg/elements.py` → `MCall.offset`, `G LABEL+expr` structure
+- **Statement line numbers**: Check if `MStatement.line_number` populated during parsing
+- **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1FN*.m`
+
+**Output**: List of ASG gaps needing parser/analysis work before codegen.
 
 ### Scope
 
@@ -737,25 +880,9 @@ Now that control flow is solid, add the rest of the straightforward language fea
    
    **⚠️ Parser extension needed**: Statement line numbers require enhancing textX model classes to capture source positions during parsing.
    
-   **Code generation approach**:
-   ```python
-   # At routine initialization, build line map
-   _line_map = {
-       1: _line_1,    # First executable line
-       5: _line_5,    # Label START
-       6: _line_6,    # Next statement
-       # ...
-   }
+   **Code generation approach**: Build `_line_map: Dict[int, Callable]` at routine init. For `G LABEL+expr`, evaluate `target_line = label_line + int(expr)`, dispatch via `_line_map[target_line]`. Error if line not in map.
    
-   # For: G LABEL+expr
-   def _goto_with_offset(label_line: int, offset_expr):
-       target_line = label_line + int(eval_expr(offset_expr))
-       if target_line not in _line_map:
-           raise MUMPSError(f"Invalid line offset: {target_line}")
-       return _line_dispatch(target_line)
-   ```
-   
-   **Non-executable lines**: Comment-only lines and blank lines are NOT in `_line_map`. Per MUMPS semantics, `G LABEL+n` where n lands on a non-executable line should either error (strict) or skip to next executable (lenient). Validate actual YDB behavior.
+   **Non-executable lines**: Comment-only and blank lines are NOT in `_line_map`. Per MUMPS semantics, `G LABEL+n` landing on non-executable line should error (strict) or skip (lenient). Validate actual YDB behavior.
 
 ### Deliverables
 
@@ -856,129 +983,54 @@ Patterns are understood, just require careful implementation of runtime infrastr
 
 ## Test Infrastructure (Cross-Cutting)
 
-**Primary approach**: Embedded strings in pytest (no file I/O overhead).
+Tests live in `tests/unit/codegen/` using embedded strings (no file I/O).
 
-Tests live in `tests/unit/codegen/` organized by ANSI standard section.
+### Fixtures (from `conftest.py`)
 
-### Test Fixtures
-
-From `tests/unit/codegen/conftest.py`:
-
-| Fixture | Use Case | Example |
-|---------|----------|---------|
-| `generate_python(source)` | Inspect generated Python code | `assert "X = " in generate_python("TEST\n S X=1\n Q")` |
-| `execute_mumps(source)` | Full routine execution | `assert execute_mumps("TEST\n S X=1\n W X\n Q").output == "1"` |
-| `execute_expr(code)` | Single command (auto-wrapped) | `assert execute_expr('W 1+2') == "3"` |
-| `eval_mumps(expr)` | Expression value (no WRITE) | `assert eval_mumps('$L("ABC")') == "3"` |
-
-**When to use each**:
-- `execute_mumps`: Multi-line routines, control flow, label interactions
-- `execute_expr`: Simple commands, operators, single statements
-- `eval_mumps`: Expression evaluation tests (arithmetic, functions, concatenation)
-- `generate_python`: Code structure inspection, pattern validation
+| Fixture | Use Case |
+|---------|----------|
+| `execute_mumps(source)` | Full routine execution |
+| `execute_expr(code)` | Single command (auto-wrapped in label) |
+| `eval_mumps(expr)` | Expression value (no WRITE needed) |
+| `generate_python(source)` | Inspect generated code structure |
 
 ```python
-# Full routine (execute_mumps)
-def test_set_executes(execute_mumps):
-    result = execute_mumps("TEST\n S X=1\n W X\n Q")
-    assert result.output == "1"
-
-# One-liner (execute_expr) - auto-wrapped in label
 def test_addition(execute_expr):
     assert execute_expr('W 1+2') == "3"
 
-# Expression eval (eval_mumps) - returns value without WRITE
-def test_length(eval_mumps):
-    assert eval_mumps('$L("ABC")') == "3"
-
-# Parametrized tests are clean with one-liner fixtures
-@pytest.mark.parametrize("expr,expected", [
-    ("1+2", "3"),
-    ('"A"_"B"', "AB"),
-    ("$L(\"ABC\")", "3"),
-])
+@pytest.mark.parametrize("expr,expected", [("1+2", "3"), ("$L(\"ABC\")", "3")])
 def test_expressions(execute_expr, expr, expected):
     assert execute_expr(f'W {expr}') == expected
 ```
 
-### Test Stub Guidelines
+### Guidelines
 
-**Before implementing each spec, audit test stubs for overlap**:
-- New test classes (e.g., `TestNumericCoercionCodegen`) may overlap with existing classes (e.g., `TestValuesCodegen`)
-- Prefer adding tests to existing classes when the concept is already covered
-- Create new test classes only for genuinely new concepts not represented
-
-**Generate expected outputs at phase start, not upfront**:
-- Run YDB to get reference outputs when implementing each test
-- Avoids generating 300+ outputs that may need revision
-- Exception: Generate spike reference outputs before starting spikes
-
-**YDB validation** (for complex cases only):
-
-```bash
-# When debugging discrepancies
-echo 'D ^TEST' | ydb  # Get reference output from YDB
-```
-
-### Coverage Metrics
-
-**Goal: Maintain ≥85% overall test coverage** throughout development.
-
-**Quick check** (both metrics):
-```bash
-uv run python utils/coverage_check.py
-```
-
-**Individual metrics**:
-```bash
-uv run python utils/coverage_check.py overall   # Must stay ≥85%
-uv run python utils/coverage_check.py transpile # Progress toward full transpilation
-```
-
-**Transpilation Readiness**: Measures parser/asg/analysis coverage when running *only* codegen tests. Normalized to 0-100% progress (15% baseline = 0%, 85% target = 100%).
-
-| Milestone | Transpilation Coverage | Notes |
-|-----------|----------------------|-------|
-| Baseline (stubs only) | 15% | Import overhead only |
-| Spec 004 complete | TBD | Basic control flow |
-| Spec 005 complete | TBD | Structured control flow |
-| Spec 006 complete | TBD | Cross-label GOTO |
-| Spec 007 complete | TBD | Indirection/XECUTE |
-| Spec 008 complete | TBD | Core language |
-| Spec 009 complete | TBD |  |
-
-**Interpreting the gap**: Low coverage in specific files reveals codegen implementation gaps:
-- `for_analysis.py` at 5% → FOR loop codegen incomplete
-- `goto_analysis.py` at 6% → GOTO codegen incomplete
-- `variables.py` at 7% → Scope strategy codegen incomplete
+- **Generate expected outputs at phase start** using YDB, not upfront
+- **Audit stubs before implementing** - prefer extending existing test classes
+- **Coverage goal**: Maintain ≥85% overall (`uv run python utils/coverage_check.py`)
 
 ### Validation Progression
 
-| Spec | Test Approach | Focus |
-|------|---------------|-------|
-| 004 | Embedded pytest tests | Basic syntax for control flow |
-| 005 | Embedded pytest tests | FOR/IF/scope strategies, by-ref patterns |
-| 006 | Embedded pytest + V1GO1 (spike) | Cross-label GOTO, variable visibility |
-| 007 | MUGJ files: V1ID*, V1XEC* | Indirection/XECUTE (need full syntax) |
-| 008 | MUGJ files: V1SET, V1WR, V1FN*, V1GO2 | Full language, computed offsets |
-| 009 | Full MUGJ + VistA Kernel | Production readiness |
+| Spec | Test Approach |
+|------|---------------|
+| 004-006 | Embedded pytest |
+| 007-008 | MUGJ files (V1ID*, V1XEC*, V1GO2) |
+| 009 | Full MUGJ + VistA Kernel |
 
 ---
 
 ## Risk Register
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| Cross-label GOTO strategy fails | Medium | High | Spike bake-off before committing |
-| Variable visibility across labels | Medium | High | State class or match-case scope; analysis provides input/output vars |
-| Computed offsets require line-indexed model | High | Medium | Existing `MLabel.line_number`; build statement line map in 008 |
-| eval/exec too slow | Low | Medium | Cache translated code |
-| Indirection patterns more complex than expected | Medium | Medium | Start with static cases |
-| VistA has patterns not in MUGJ | Medium | High | Validate against real VistA early |
-| Rope can't handle generated code | Low | Medium | Simplify output patterns |
-| By-ref parameter handling awkward | Medium | Medium | Use return-value pattern; `byref_outputs` tells which params modified |
-| Duplicate test stubs waste effort | Medium | Low | Audit new stubs vs existing classes before implementing each spec |
-| Coverage regression during development | Low | Medium | Maintain ≥85% overall; track transpilation readiness per spec |
+| Risk | L/I | Mitigation |
+|------|-----|------------|
+| Cross-label GOTO strategy fails | M/H | Spike bake-off before committing |
+| Variable visibility across labels | M/H | State class or match-case; analysis provides input/output vars |
+| Computed offsets need line-indexed model | H/M | `MLabel.line_number` exists; build statement map in 008 |
+| eval/exec too slow | L/M | Cache translated code |
+| Indirection patterns complex | M/M | Start with static cases |
+| VistA patterns not in MUGJ | M/H | Validate against real VistA early |
+| By-ref handling awkward | M/M | Return-value pattern; `byref_outputs` tracks modified params |
+| Duplicate test stubs | M/L | Audit stubs vs existing classes before each spec |
 
 ---
 
