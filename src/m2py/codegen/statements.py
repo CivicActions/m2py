@@ -1,16 +1,18 @@
 """Statement code generation for MUMPS-to-Python transpilation.
 
 Generates Python statements from MUMPS ASG statement nodes.
-Handles SET, WRITE, QUIT, IF, ELSE, and other basic commands.
+Handles SET, WRITE, QUIT, IF, ELSE, FOR, and other basic commands.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from m2py.asg.enums import ForParamType
 from m2py.asg.expressions import MExpr, MVariable
 from m2py.asg.statements import (
     MElseStatement,
+    MForStatement,
     MIfStatement,
     MQuitStatement,
     MSetStatement,
@@ -33,6 +35,7 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     - MQuitStatement → return
     - MIfStatement → if block with _test tracking
     - MElseStatement → if not _test block
+    - MForStatement → for loop
 
     Args:
         stmt: ASG statement node
@@ -51,6 +54,8 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_if(stmt, ctx)
     elif isinstance(stmt, MElseStatement):
         _generate_else(stmt, ctx)
+    elif isinstance(stmt, MForStatement):
+        _generate_for(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -185,6 +190,85 @@ def _generate_else(stmt: MElseStatement, ctx: "GeneratorContext") -> None:
                 generate_statement(body_stmt, ctx)
         else:
             ctx.emitter.line("pass")
+
+
+def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python for loop from MForStatement.
+
+    Handles bounded ranges (FOR I=1:1:10) and value lists (FOR I="A","B","C").
+    MUMPS FOR is end-inclusive; Python range is end-exclusive, so we adjust.
+
+    Args:
+        stmt: MForStatement node
+        ctx: Generator context
+    """
+    # Get loop variable name
+    if isinstance(stmt.loop_var, str):
+        loop_var = translate_name(stmt.loop_var)
+    elif isinstance(stmt.loop_var, MVariable):
+        loop_var = translate_name(stmt.loop_var.name)
+    else:
+        raise NotImplementedError(
+            f"Unsupported FOR loop variable type: {type(stmt.loop_var).__name__}"
+        )
+
+    # Collect all values from parameters (for list iteration)
+    # or generate range for bounded loops
+    values: list[str] = []
+
+    for param in stmt.parameters:
+        if param.param_type == ForParamType.VALUE:
+            # Single value - add to list
+            if param.value is not None:
+                values.append(generate_expr(param.value, ctx))
+        elif param.param_type == ForParamType.RANGE:
+            # Bounded range - generate Python range
+            if param.start is None or param.step is None or param.end is None:
+                raise NotImplementedError("Incomplete FOR range parameters")
+
+            start_expr = generate_expr(param.start, ctx)
+            step_expr = generate_expr(param.step, ctx)
+            end_expr = generate_expr(param.end, ctx)
+
+            # MUMPS FOR is end-inclusive, Python range is end-exclusive
+            # For positive step: range(start, end + 1, step)
+            # For negative step: range(start, end - 1, step)
+            # We need runtime check for step sign, so use a helper expression
+            # For simplicity in Phase 5, we generate code that handles both cases
+            ctx.emitter.line(f"_for_step = m_num({step_expr})")
+            ctx.emitter.line(
+                f"_for_end = m_num({end_expr}) + (1 if _for_step > 0 else -1)"
+            )
+            ctx.emitter.line(
+                f"for {loop_var} in range(m_num({start_expr}), _for_end, _for_step):"
+            )
+
+            with ctx.emitter.indented():
+                if stmt.body and stmt.body.statements:
+                    for body_stmt in stmt.body.statements:
+                        generate_statement(body_stmt, ctx)
+                else:
+                    ctx.emitter.line("pass")
+            return
+        elif param.param_type == ForParamType.OPEN_RANGE:
+            raise NotImplementedError("Open-ended FOR loops not yet supported")
+
+    # If we have values (string list or mixed), generate for-in loop
+    if values:
+        values_str = ", ".join(values)
+        ctx.emitter.line(f"for {loop_var} in [{values_str}]:")
+
+        with ctx.emitter.indented():
+            if stmt.body and stmt.body.statements:
+                for body_stmt in stmt.body.statements:
+                    generate_statement(body_stmt, ctx)
+            else:
+                ctx.emitter.line("pass")
+        return
+
+    # Argumentless FOR (infinite loop) - not supported in Phase 5
+    if not stmt.parameters:
+        raise NotImplementedError("Argumentless FOR loops not yet supported")
 
 
 __all__ = ["generate_statement"]

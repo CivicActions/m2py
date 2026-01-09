@@ -120,12 +120,12 @@
 
 ### Implementation for User Story 3
 
-- [ ] T033 [US3] Handle `MForStatement` bounded range in `generate_statement()` - emit `for i in range(...)`
-- [ ] T034 [US3] Handle end-inclusive semantics (MUMPS includes end, Python excludes)
-- [ ] T035 [US3] Handle `MForStatement` string list in `generate_statement()` - emit `for i in [...]`
-- [ ] T036 [US3] Test: `F I=1:1:3 W I` → outputs "123"
-- [ ] T037 [US3] Test: `F I=5:-1:3 W I` → outputs "543" (negative step)
-- [ ] T038 [US3] Test: `F I="A","B","C" W I` → outputs "ABC"
+- [X] T033 [US3] Handle `MForStatement` bounded range in `generate_statement()` - emit `for i in range(...)`
+- [X] T034 [US3] Handle end-inclusive semantics (MUMPS includes end, Python excludes)
+- [X] T035 [US3] Handle `MForStatement` string list in `generate_statement()` - emit `for i in [...]`
+- [X] T036 [US3] Test: `F I=1:1:3 W I` → outputs "123"
+- [X] T037 [US3] Test: `F I=5:-1:3 W I` → outputs "543" (negative step)
+- [X] T038 [US3] Test: `F I="A","B","C" W I` → outputs "ABC"
 
 **Checkpoint**: User Story 3 complete - FOR loops iterate correctly
 
