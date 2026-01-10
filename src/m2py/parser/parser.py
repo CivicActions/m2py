@@ -108,53 +108,78 @@ def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MState
     return result
 
 
-def _find_last_argumentless_do(stmt: MStatement) -> Optional[MDoStatement]:
-    """Find the last argumentless DO in a statement's nested scopes.
+def _find_argumentless_do_for_dot_lines(stmt: MStatement) -> Optional[MDoStatement]:
+    """Find an argumentless DO that should capture following dot-lines.
 
-    Recursively searches through then_scope, else_scope, and body
-    to find the trailing argumentless DO that should capture dot-lines.
+    In MUMPS, dot-indented lines following a line with an argumentless DO
+    belong to that DO's block, regardless of what commands follow the DO
+    on the same line.
+
+    For example, in:
+        F  D  Q:X=0
+        . S X=X-1
+
+    The dot line belongs to the D, not the Q. The execution order is:
+    1. FOR loops
+    2. D executes the dot block (increasing execution level)
+    3. Q:X=0 is checked after D returns
+
+    This function searches for an argumentless DO that doesn't yet have
+    any body statements (i.e., hasn't been given its dot-lines yet).
 
     Args:
         stmt: Statement to search
 
     Returns:
-        The last argumentless DO found, or None
+        An argumentless DO without body statements, or None
     """
-    # Check nested scopes in order: then_scope, else_scope, body
-    # Return the DO from the deepest/last position
+    # For a FOR statement, search all body statements for an argumentless DO
+    if isinstance(stmt, MForStatement) and stmt.body and stmt.body.statements:
+        for body_stmt in stmt.body.statements:
+            # Check if this statement itself is an argumentless DO without body
+            if (
+                isinstance(body_stmt, MDoStatement)
+                and not body_stmt.targets
+                and not body_stmt.body.statements
+            ):
+                return body_stmt
+            # Recursively check nested structures
+            nested = _find_argumentless_do_for_dot_lines(body_stmt)
+            if nested:
+                return nested
 
+    # For IF statement, check then_scope
     if (
         isinstance(stmt, MIfStatement)
         and stmt.then_scope
         and stmt.then_scope.statements
     ):
-        last = stmt.then_scope.statements[-1]
-        # Recursively search in the last statement
-        nested = _find_last_argumentless_do(last)
-        if nested:
-            return nested
-        # Check if last statement itself is argumentless DO
-        if isinstance(last, MDoStatement) and not last.targets:
-            return last
+        for body_stmt in stmt.then_scope.statements:
+            if (
+                isinstance(body_stmt, MDoStatement)
+                and not body_stmt.targets
+                and not body_stmt.body.statements
+            ):
+                return body_stmt
+            nested = _find_argumentless_do_for_dot_lines(body_stmt)
+            if nested:
+                return nested
 
+    # For ELSE statement, check body
     if isinstance(stmt, MElseStatement) and stmt.body and stmt.body.statements:
-        last = stmt.body.statements[-1]
-        nested = _find_last_argumentless_do(last)
-        if nested:
-            return nested
-        if isinstance(last, MDoStatement) and not last.targets:
-            return last
+        for body_stmt in stmt.body.statements:
+            if (
+                isinstance(body_stmt, MDoStatement)
+                and not body_stmt.targets
+                and not body_stmt.body.statements
+            ):
+                return body_stmt
+            nested = _find_argumentless_do_for_dot_lines(body_stmt)
+            if nested:
+                return nested
 
-    if isinstance(stmt, MForStatement) and stmt.body and stmt.body.statements:
-        last = stmt.body.statements[-1]
-        nested = _find_last_argumentless_do(last)
-        if nested:
-            return nested
-        if isinstance(last, MDoStatement) and not last.targets:
-            return last
-
-    # Direct check for argumentless DO
-    if isinstance(stmt, MDoStatement) and not stmt.targets:
+    # Direct check for argumentless DO without body
+    if isinstance(stmt, MDoStatement) and not stmt.targets and not stmt.body.statements:
         return stmt
 
     return None
@@ -248,7 +273,7 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
 
             if block_stmts:
                 # Find the argumentless DO inside this statement's nested scopes
-                target_do = _find_last_argumentless_do(stmt)
+                target_do = _find_argumentless_do_for_dot_lines(stmt)
                 if target_do:
                     # Attach the dot-statements to this DO's body
                     target_do.body.statements = _structure_do_blocks(block_stmts)

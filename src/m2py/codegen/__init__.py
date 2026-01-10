@@ -64,6 +64,14 @@ def generate_python(
     if routine_name:
         routine.name = routine_name
 
+    # Run analysis passes required for code generation
+    # Order matters: references first, then GOTO, FOR, variables
+    parser.resolve_references(routine)
+    parser.classify_gotos(routine)
+    parser.analyze_for_loops(routine)
+    parser.analyze_variables(routine, compute_transitive=True)
+    parser.compute_signatures(routine)
+
     # Generate Python code
     generator = RoutineGenerator(routine)
     python_code = generator.generate()

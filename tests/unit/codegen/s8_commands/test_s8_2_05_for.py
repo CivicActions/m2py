@@ -58,23 +58,73 @@ class TestForCommandCodegen:
         assert result.output == "ABC"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: FOR infinite to while")
-    def test_for_infinite_to_while(self, generate_python):
-        """FOR infinite generates while True (§8.2.5)."""
-        pytest.fail("Stub - implement test")
+    def test_for_open_ended_with_quit(self, generate_python):
+        """FOR open-ended generates itertools.count loop with QUIT (§8.2.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: FOR with QUIT")
-    def test_for_with_quit(self, generate_python):
-        """FOR with QUIT generates break (§8.2.5)."""
-        pytest.fail("Stub - implement test")
+        T023: Open-ended FOR with QUIT
+        Given: F I=1:1 W I Q:I=5
+        When: generated
+        Then: uses itertools.count and has conditional exit
+        """
+        code = generate_python("TEST\n F I=1:1 D\n . W I\n . I I=5 Q\n Q\n")
+        assert "from itertools import" in code
+        assert "count(" in code
+        assert "for I in count(" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: FOR nested")
-    def test_for_nested(self, generate_python):
+    def test_for_argumentless_with_do_block(self, generate_python):
+        """FOR argumentless generates while True loop (§8.2.5).
+
+        T024: Argumentless FOR with DO block
+        Given: F  D ... (with dot-indented body)
+        When: generated
+        Then: uses while True pattern
+        """
+        code = generate_python(
+            "TEST\n S X=3\n F  D\n . S X=X-1\n . W X\n . I X=0 Q\n Q\n"
+        )
+        assert "while True:" in code
+
+    def test_for_mixed_parameters(self, execute_mumps):
+        """FOR mixed parameters iterates all in order (§8.2.5).
+
+        T025: Mixed parameter FOR
+        Given: F I=1:1:3,"X",10:2:14 W I
+        When: generated and executed
+        Then: output is "123X101214"
+        """
+        result = execute_mumps('TEST\n F I=1:1:3,"X",10:2:14 W I\n Q\n')
+        assert result.output == "123X101214"
+        assert result.success is True
+
+    def test_for_loop_var_modification(self, execute_mumps):
+        """FOR with modified loop var uses while pattern (§8.2.5).
+
+        T026: FOR with loop var modification
+        Given: F I=1:1:10 S I=I+2 W I I I>8 Q
+        When: generated and executed
+        Then: output is "369" (I=1, set I=3, write, next I=4, set I=6, write, I=7, set I=9, write, I>8 quit)
+        """
+        result = execute_mumps("TEST\n F I=1:1:10 S I=I+2 W I I I>8 Q\n Q\n")
+        assert result.output == "369"
+        assert result.success is True
+
+    def test_for_negative_step_bounds(self, execute_mumps):
+        """FOR negative step iterates correctly (§8.2.5).
+
+        T027: Negative step FOR bounds
+        Given: F I=10:-2:2 W I
+        When: generated and executed
+        Then: output is "108642" (inclusive end)
+        """
+        result = execute_mumps("TEST\n F I=10:-2:2 W I\n Q\n")
+        assert result.output == "108642"
+        assert result.success is True
+
+    def test_for_nested(self, execute_mumps):
         """Nested FOR generates nested Python loops (§8.2.5)."""
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST\n F I=1:1:2 F J=1:1:2 W I,J\n Q\n")
+        assert result.output == "11122122"
+        assert result.success is True
 
 
 @pytest.mark.codegen

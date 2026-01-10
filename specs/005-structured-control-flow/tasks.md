@@ -91,16 +91,16 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 ### Implementation for User Story 3
 
-- [ ] T018 [US3] Refactor _generate_for() to dispatch based on loop_type in src/m2py/codegen/statements.py
-- [ ] T019 [US3] Implement _generate_for_open_ended() using itertools.count in src/m2py/codegen/statements.py
-- [ ] T020 [US3] Implement _generate_for_argumentless() using while True in src/m2py/codegen/statements.py
-- [ ] T021 [US3] Implement _generate_for_mixed() using itertools.chain in src/m2py/codegen/statements.py
-- [ ] T022 [US3] Implement _generate_for_while() for loop_var_modified_in_body=True in src/m2py/codegen/statements.py
-- [ ] T023 [US3] Add test: open-ended FOR with QUIT in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
-- [ ] T024 [US3] Add test: argumentless FOR with DO block in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
-- [ ] T025 [US3] Add test: mixed parameter FOR in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
-- [ ] T026 [US3] Add test: FOR with loop var modification in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
-- [ ] T027 [US3] Add test: negative step FOR bounds in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [X] T018 [US3] Refactor _generate_for() to dispatch based on loop_type in src/m2py/codegen/statements.py
+- [X] T019 [US3] Implement _generate_for_open_ended() using itertools.count in src/m2py/codegen/statements.py
+- [X] T020 [US3] Implement _generate_for_argumentless() using while True in src/m2py/codegen/statements.py
+- [X] T021 [US3] Implement _generate_for_mixed() using itertools.chain in src/m2py/codegen/statements.py
+- [X] T022 [US3] Implement _generate_for_while() for loop_var_modified_in_body=True in src/m2py/codegen/statements.py
+- [X] T023 [US3] Add test: open-ended FOR with QUIT in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [X] T024 [US3] Add test: argumentless FOR with DO block in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [X] T025 [US3] Add test: mixed parameter FOR in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [X] T026 [US3] Add test: FOR with loop var modification in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [X] T027 [US3] Add test: negative step FOR bounds in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
 
 **Checkpoint**: All FOR loop types generate correct Python patterns
 

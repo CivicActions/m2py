@@ -359,7 +359,12 @@ def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
 
 
 def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
-    """Generate return statement from MQuitStatement.
+    """Generate break or return statement from MQuitStatement.
+
+    MUMPS QUIT has context-dependent behavior:
+    - Inside a FOR loop: exits the FOR loop (Python: break)
+    - Inside a DO block: returns from the block (Python: return)
+    - With return value: returns value from extrinsic (Python: return value)
 
     Args:
         stmt: MQuitStatement node
@@ -369,8 +374,11 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         # QUIT with return value (extrinsic function return)
         value_expr = generate_expr(stmt.return_value, ctx)
         ctx.emitter.line(f"return {value_expr}")
+    elif ctx.loop_stack:
+        # Inside a FOR loop - QUIT exits the innermost FOR
+        ctx.emitter.line("break")
     else:
-        # Plain QUIT - just return
+        # Plain QUIT outside FOR - return from function/block
         ctx.emitter.line("return")
 
 
@@ -448,80 +456,270 @@ def _generate_else(stmt: MElseStatement, ctx: "GeneratorContext") -> None:
 def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     """Generate Python for loop from MForStatement.
 
-    Handles bounded ranges (FOR I=1:1:10) and value lists (FOR I="A","B","C").
-    MUMPS FOR is end-inclusive; Python range is end-exclusive, so we adjust.
+    Dispatches based on loop_type and analysis flags to generate
+    the appropriate Python pattern:
+    - BOUNDED: for loop with range() or while loop if loop var modified
+    - OPEN_ENDED: for loop with itertools.count()
+    - ARGUMENTLESS: while True
+    - STRING_LIST: for loop with list
+    - MIXED: for loop with itertools.chain()
 
     Args:
         stmt: MForStatement node
         ctx: Generator context
     """
-    # Get loop variable name
-    if isinstance(stmt.loop_var, str):
-        loop_var = translate_name(stmt.loop_var)
-    elif isinstance(stmt.loop_var, MVariable):
-        loop_var = translate_name(stmt.loop_var.name)
-    else:
-        raise NotImplementedError(
-            f"Unsupported FOR loop variable type: {type(stmt.loop_var).__name__}"
-        )
+    # Use ForGenContext for analysis-based dispatch
+    for_ctx = ForGenContext.from_statement(stmt)
 
-    # Collect all values from parameters (for list iteration)
-    # or generate range for bounded loops
-    values: list[str] = []
+    # Dispatch based on loop type and analysis flags
+    if for_ctx.loop_type == ForLoopType.ARGUMENTLESS:
+        _generate_for_argumentless(stmt, for_ctx, ctx)
+    elif for_ctx.loop_type == ForLoopType.OPEN_ENDED:
+        _generate_for_open_ended(stmt, for_ctx, ctx)
+    elif for_ctx.loop_type == ForLoopType.MIXED:
+        _generate_for_mixed(stmt, for_ctx, ctx)
+    elif for_ctx.use_while:
+        # BOUNDED or STRING_LIST with loop var modification needs while loop
+        _generate_for_while(stmt, for_ctx, ctx)
+    elif for_ctx.loop_type == ForLoopType.STRING_LIST:
+        _generate_for_string_list(stmt, for_ctx, ctx)
+    else:
+        # BOUNDED - standard for loop with range
+        _generate_for_bounded(stmt, for_ctx, ctx)
+
+
+def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
+    """Generate the body of a FOR loop.
+
+    Manages the loop_stack to track FOR loop nesting for QUIT generation.
+
+    Args:
+        stmt: MForStatement node
+        ctx: Generator context
+    """
+    # Push this FOR onto the loop stack
+    ctx.loop_stack.append(stmt)
+    try:
+        if stmt.body and stmt.body.statements:
+            for body_stmt in stmt.body.statements:
+                generate_statement(body_stmt, ctx)
+        else:
+            ctx.emitter.line("pass")
+    finally:
+        # Pop the loop stack
+        ctx.loop_stack.pop()
+
+
+def _generate_for_bounded(
+    stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
+) -> None:
+    """Generate Python for loop from bounded FOR (F I=1:1:10).
+
+    Uses range() with adjusted end for MUMPS end-inclusive semantics.
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        ctx: Generator context
+    """
+    # Get the single range parameter
+    if not stmt.parameters or stmt.parameters[0].param_type != ForParamType.RANGE:
+        raise NotImplementedError("Expected RANGE parameter for bounded FOR")
+
+    param = stmt.parameters[0]
+    if param.start is None or param.step is None or param.end is None:
+        raise NotImplementedError("Incomplete FOR range parameters")
+
+    start_expr = generate_expr(param.start, ctx)
+    step_expr = generate_expr(param.step, ctx)
+    end_expr = generate_expr(param.end, ctx)
+
+    # MUMPS FOR is end-inclusive, Python range is end-exclusive
+    # For positive step: range(start, end + 1, step)
+    # For negative step: range(start, end - 1, step)
+    ctx.emitter.line(f"_for_step = m_num({step_expr})")
+    ctx.emitter.line(f"_for_end = m_num({end_expr}) + (1 if _for_step > 0 else -1)")
+    ctx.emitter.line(
+        f"for {for_ctx.loop_var} in range(m_num({start_expr}), _for_end, _for_step):"
+    )
+
+    with ctx.emitter.indented():
+        _generate_for_body(stmt, ctx)
+
+
+def _generate_for_string_list(
+    stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
+) -> None:
+    """Generate Python for loop from string list FOR (F I="A","B","C").
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        ctx: Generator context
+    """
+    values = []
+    for param in stmt.parameters:
+        if param.param_type == ForParamType.VALUE and param.value is not None:
+            values.append(generate_expr(param.value, ctx))
+
+    if not values:
+        raise NotImplementedError("Empty string list FOR")
+
+    values_str = ", ".join(values)
+    ctx.emitter.line(f"for {for_ctx.loop_var} in [{values_str}]:")
+
+    with ctx.emitter.indented():
+        _generate_for_body(stmt, ctx)
+
+
+def _generate_for_open_ended(
+    stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
+) -> None:
+    """Generate Python for loop from open-ended FOR (F I=1:1).
+
+    Uses itertools.count() for unbounded iteration.
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        ctx: Generator context
+    """
+    # Get the open range parameter
+    open_param = None
+    for param in stmt.parameters:
+        if param.param_type == ForParamType.OPEN_RANGE:
+            open_param = param
+            break
+
+    if open_param is None or open_param.start is None or open_param.step is None:
+        raise NotImplementedError("Invalid open-ended FOR parameters")
+
+    start_expr = generate_expr(open_param.start, ctx)
+    step_expr = generate_expr(open_param.step, ctx)
+
+    ctx.emitter.line(
+        f"for {for_ctx.loop_var} in count(m_num({start_expr}), m_num({step_expr})):"
+    )
+
+    with ctx.emitter.indented():
+        _generate_for_body(stmt, ctx)
+
+
+def _generate_for_argumentless(
+    stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
+) -> None:
+    """Generate Python while True from argumentless FOR (F).
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        ctx: Generator context
+    """
+    ctx.emitter.line("while True:")
+
+    with ctx.emitter.indented():
+        _generate_for_body(stmt, ctx)
+
+
+def _generate_for_mixed(
+    stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
+) -> None:
+    """Generate Python for loop from mixed FOR (F I=1:1:3,"X",10:2:14).
+
+    Uses itertools.chain() to combine multiple iterables.
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        ctx: Generator context
+    """
+    # Build list of iterables to chain together
+    iterables = []
 
     for param in stmt.parameters:
         if param.param_type == ForParamType.VALUE:
-            # Single value - add to list
             if param.value is not None:
-                values.append(generate_expr(param.value, ctx))
+                # Single value as a list
+                value_expr = generate_expr(param.value, ctx)
+                iterables.append(f"[{value_expr}]")
         elif param.param_type == ForParamType.RANGE:
-            # Bounded range - generate Python range
             if param.start is None or param.step is None or param.end is None:
-                raise NotImplementedError("Incomplete FOR range parameters")
-
+                raise NotImplementedError("Incomplete FOR range in mixed loop")
             start_expr = generate_expr(param.start, ctx)
             step_expr = generate_expr(param.step, ctx)
             end_expr = generate_expr(param.end, ctx)
-
-            # MUMPS FOR is end-inclusive, Python range is end-exclusive
-            # For positive step: range(start, end + 1, step)
-            # For negative step: range(start, end - 1, step)
-            # We need runtime check for step sign, so use a helper expression
-            # For simplicity in Phase 5, we generate code that handles both cases
-            ctx.emitter.line(f"_for_step = m_num({step_expr})")
-            ctx.emitter.line(
-                f"_for_end = m_num({end_expr}) + (1 if _for_step > 0 else -1)"
+            # Generate range with adjusted end for MUMPS end-inclusive semantics
+            # We need to evaluate step to determine direction
+            iterables.append(
+                f"range(m_num({start_expr}), "
+                f"m_num({end_expr}) + (1 if m_num({step_expr}) > 0 else -1), "
+                f"m_num({step_expr}))"
             )
-            ctx.emitter.line(
-                f"for {loop_var} in range(m_num({start_expr}), _for_end, _for_step):"
-            )
-
-            with ctx.emitter.indented():
-                if stmt.body and stmt.body.statements:
-                    for body_stmt in stmt.body.statements:
-                        generate_statement(body_stmt, ctx)
-                else:
-                    ctx.emitter.line("pass")
-            return
         elif param.param_type == ForParamType.OPEN_RANGE:
-            raise NotImplementedError("Open-ended FOR loops not yet supported")
+            if param.start is None or param.step is None:
+                raise NotImplementedError("Incomplete open range in mixed loop")
+            start_expr = generate_expr(param.start, ctx)
+            step_expr = generate_expr(param.step, ctx)
+            iterables.append(f"count(m_num({start_expr}), m_num({step_expr}))")
 
-    # If we have values (string list or mixed), generate for-in loop
-    if values:
-        values_str = ", ".join(values)
-        ctx.emitter.line(f"for {loop_var} in [{values_str}]:")
+    if not iterables:
+        raise NotImplementedError("Empty mixed FOR parameters")
 
-        with ctx.emitter.indented():
-            if stmt.body and stmt.body.statements:
-                for body_stmt in stmt.body.statements:
-                    generate_statement(body_stmt, ctx)
-            else:
-                ctx.emitter.line("pass")
-        return
+    chain_args = ", ".join(iterables)
+    ctx.emitter.line(f"for {for_ctx.loop_var} in chain({chain_args}):")
 
-    # Argumentless FOR (infinite loop) - not supported in Phase 5
+    with ctx.emitter.indented():
+        _generate_for_body(stmt, ctx)
+
+
+def _generate_for_while(
+    stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
+) -> None:
+    """Generate Python while loop for FOR with modified loop variable.
+
+    When the loop variable is modified inside the body, we can't use
+    Python's for loop because it would overwrite the modification.
+    Instead we use a while loop with explicit stepping.
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        ctx: Generator context
+    """
+    # Currently supports single RANGE parameter only
     if not stmt.parameters:
-        raise NotImplementedError("Argumentless FOR loops not yet supported")
+        raise NotImplementedError("While loop requires FOR parameters")
+
+    param = stmt.parameters[0]
+    if param.param_type != ForParamType.RANGE:
+        raise NotImplementedError(
+            "While loop for modified loop var only supports RANGE"
+        )
+
+    if param.start is None or param.step is None or param.end is None:
+        raise NotImplementedError("Incomplete FOR range parameters for while loop")
+
+    start_expr = generate_expr(param.start, ctx)
+    step_expr = generate_expr(param.step, ctx)
+    end_expr = generate_expr(param.end, ctx)
+
+    # Initialize loop variable
+    ctx.emitter.line(f"{for_ctx.loop_var} = m_num({start_expr})")
+    ctx.emitter.line(f"_for_step = m_num({step_expr})")
+    ctx.emitter.line(f"_for_end = m_num({end_expr})")
+
+    # While condition: check bounds based on step direction
+    # Positive step: loop_var <= end
+    # Negative step: loop_var >= end
+    ctx.emitter.line(
+        f"while (_for_step > 0 and {for_ctx.loop_var} <= _for_end) or "
+        f"(_for_step < 0 and {for_ctx.loop_var} >= _for_end):"
+    )
+
+    with ctx.emitter.indented():
+        _generate_for_body(stmt, ctx)
+        # Increment loop variable at end of iteration
+        ctx.emitter.line(f"{for_ctx.loop_var} = {for_ctx.loop_var} + _for_step")
 
 
 def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
