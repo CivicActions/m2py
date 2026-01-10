@@ -46,6 +46,26 @@ class TestNumericCoercionCodegen:
     Reference: §7.1.4.5
     """
 
+    def test_empty_string_returns_zero(self):
+        """Empty string coerces to 0.
+
+        User Story 6 acceptance scenario (T049):
+        m_num("") returns 0 per MUMPS semantics.
+        """
+        from m2py.codegen.helpers import m_num
+
+        assert m_num("") == 0
+
+    def test_leading_zeros_canonicalized(self):
+        """Leading zeros are stripped (canonicalized) during numeric coercion.
+
+        User Story 6 acceptance scenario (T050):
+        m_num("007") returns 7 (not 7 as octal, just strip leading zeros).
+        """
+        from m2py.codegen.helpers import m_num
+
+        assert m_num("007") == 7
+
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: numeric prefix extraction")
     def test_numeric_prefix_extraction(self, generate_python):

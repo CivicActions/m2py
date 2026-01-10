@@ -171,12 +171,12 @@
 
 ### Implementation for User Story 6
 
-- [ ] T045 [US6] Test: `I "0" W "TRUE" E W "FALSE"` → "FALSE" (string "0" is falsy)
-- [ ] T046 [US6] Test: `I "1A" W "TRUE" E W "FALSE"` → "TRUE" (numeric prefix 1 ≠ 0)
-- [ ] T047 [US6] Test: `I "A" W "TRUE" E W "FALSE"` → "FALSE" (no prefix = 0)
-- [ ] T048 [US6] Test: `I "3A"<5 W "YES" E W "NO"` → "YES" (coerces to 3)
-- [ ] T049 [US6] Test: `m_num("")` returns `0`
-- [ ] T050 [US6] Test: `m_num("007")` returns `7`
+- [X] T045 [US6] Test: `I "0" W "TRUE" E W "FALSE"` → "FALSE" (string "0" is falsy)
+- [X] T046 [US6] Test: `I "1A" W "TRUE" E W "FALSE"` → "TRUE" (numeric prefix 1 ≠ 0)
+- [X] T047 [US6] Test: `I "A" W "TRUE" E W "FALSE"` → "FALSE" (no prefix = 0)
+- [X] T048 [US6] Test: `I "3A"<5 W "YES" E W "NO"` → "YES" (coerces to 3)
+- [X] T049 [US6] Test: `m_num("")` returns `0`
+- [X] T050 [US6] Test: `m_num("007")` returns `7`
 
 **Checkpoint**: User Story 6 complete - coercion matches MUMPS semantics
 
