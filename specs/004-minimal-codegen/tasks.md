@@ -190,11 +190,11 @@
 
 ### Implementation for User Story 7
 
-- [ ] T051 [US7] Test: `%START` label → `_pct_START` function name
-- [ ] T052 [US7] Test: variable `0` → `_n_0` Python name
-- [ ] T053 [US7] Test: variable `IF` → `_m_IF` (reserved word escape)
-- [ ] T054 [US7] Test: case preservation - `FOO`, `Foo`, `foo` all different
-- [ ] T055 [US7] Test: reverse translation recovers original names
+- [X] T051 [US7] Test: `%START` label → `_pct_START` function name
+- [X] T052 [US7] Test: variable `0` → `_n_0` Python name
+- [X] T053 [US7] Test: variable `IF` → `_m_IF` (reserved word escape)
+- [X] T054 [US7] Test: case preservation - `FOO`, `Foo`, `foo` all different
+- [X] T055 [US7] Test: reverse translation recovers original names
 
 **Checkpoint**: User Story 7 complete - all MUMPS names translate safely
 

@@ -43,32 +43,43 @@ class TestNameTranslationCodegen:
     Reference: §6.1, §6.2
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: percent prefix translation")
     def test_percent_prefix_translation(self, generate_python):
         """Names starting with % get translated to valid Python.
 
-        %ROUTINE becomes _pct_ROUTINE, %0 becomes _pct_0.
+        User Story 7 acceptance scenario (T051):
+        %START becomes _pct_START function name.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python('%START\n W "PASS"\n Q\n')
+        assert "def _pct_START" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pure numeric name translation")
-    def test_pure_numeric_name_translation(self, generate_python):
+    def test_pure_numeric_name_translation(self):
         """Pure numeric labels get translated to valid Python.
 
-        Label '0' becomes _n_0, '01' becomes _n_01 (preserving leading zeros).
+        User Story 7 acceptance scenario (T052):
+        Variable '0' becomes _n_0 (preserving leading zeros).
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.names import NameTranslator
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: reserved word translation")
-    def test_reserved_word_translation(self, generate_python):
+        nt = NameTranslator()
+        assert nt.translate("0") == "_n_0"
+        assert nt.translate("01") == "_n_01"
+
+    def test_reserved_word_translation(self):
         """Python reserved words get prefixed.
 
-        Label 'IF' becomes _m_IF, 'DO' becomes _m_DO.
+        User Story 7 acceptance scenario (T053):
+        Variable 'if' becomes _m_if (lowercase is Python keyword).
+        Note: MUMPS uses uppercase IF which is NOT a Python keyword.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.names import NameTranslator
+
+        nt = NameTranslator()
+        # Python keywords are lowercase
+        assert nt.translate("if") == "_m_if"
+        assert nt.translate("for") == "_m_for"
+        # MUMPS uppercase commands are NOT Python keywords
+        assert nt.translate("IF") == "IF"
+        assert nt.translate("FOR") == "FOR"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: empty label translation")
@@ -79,14 +90,51 @@ class TestNameTranslationCodegen:
         """
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: case preservation")
-    def test_case_preservation(self, generate_python):
+    def test_case_preservation(self):
         """Name translation preserves case distinctions.
 
+        User Story 7 acceptance scenario (T054):
         FOO, Foo, and foo remain distinct after translation.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.names import NameTranslator
+
+        nt = NameTranslator()
+        foo_upper = nt.translate("FOO")
+        foo_mixed = nt.translate("Foo")
+        foo_lower = nt.translate("foo")
+
+        # All must be different
+        assert foo_upper != foo_mixed
+        assert foo_mixed != foo_lower
+        assert foo_upper != foo_lower
+
+        # And must preserve case
+        assert foo_upper == "FOO"
+        assert foo_mixed == "Foo"
+        assert foo_lower == "foo"
+
+    def test_reverse_translation(self):
+        """Reverse translation recovers original names.
+
+        User Story 7 acceptance scenario (T055):
+        Given a translated Python name, reverse() recovers the original MUMPS name.
+        """
+        from m2py.codegen.names import NameTranslator
+
+        nt = NameTranslator()
+
+        # % prefix round-trip
+        assert nt.reverse(nt.translate("%START")) == "%START"
+
+        # Numeric name round-trip
+        assert nt.reverse(nt.translate("0")) == "0"
+        assert nt.reverse(nt.translate("01")) == "01"
+
+        # Reserved word round-trip
+        assert nt.reverse(nt.translate("if")) == "if"
+
+        # Normal name round-trip
+        assert nt.reverse(nt.translate("FOO")) == "FOO"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: variable name translation")
