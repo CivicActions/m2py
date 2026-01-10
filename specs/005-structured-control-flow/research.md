@@ -14,30 +14,41 @@ This document consolidates research findings for implementing structured control
 ### Decision: Save/Restore Pattern via Local Variable
 
 **Rationale**: After analyzing the options from the spec's research phase, the save/restore pattern is the cleanest approach that:
-- Maintains semantic correctness (callee's $TEST doesn't leak to caller)
+- Maintains semantic correctness (block's $TEST doesn't leak to caller)
 - Requires no runtime infrastructure (avoids principle VII violations)
 - Is explicit and traceable
 
-**Two Distinct Cases Per MUMPS Spec**:
+### $TEST Stacking Semantics (verified against YottaDB)
 
-1. **Argumentless DO**: $TEST IS stacked - caller's $TEST preserved
-2. **DO with arguments**: $TEST is NOT stacked - callee's $TEST visible to caller
-3. **Extrinsic functions ($$label)**: $TEST IS stacked - caller's $TEST preserved
+| Pattern | $TEST Stacked? | Behavior |
+|---------|---------------|----------|
+| `D SUB` (label call) | **NO** | Callee's $TEST visible to caller |
+| `D SUB()` (empty args) | **NO** | Callee's $TEST visible to caller |
+| `D SUB(X)` (with args) | **NO** | Callee's $TEST visible to caller |
+| `D` (DO block with dots) | **YES** | Caller's $TEST restored after block |
+| `$$FUNC` (extrinsic) | **YES** | Caller's $TEST restored after call |
+
+**Key Terminology**: The term "argumentless DO" can be ambiguous:
+- A **label call** without args (`D SUB`) does NOT stack $TEST
+- A **DO block** (`D` followed by dot-indented lines) DOES stack $TEST
+
+Only **DO blocks** and **extrinsic functions** stack $TEST.
+All label calls (D SUB, D SUB(), D SUB(X)) share $TEST with the caller.
 
 **Implementation Approach**:
 ```python
-# Argumentless DO - save/restore $TEST:
+# Label calls (D SUB, D SUB(), D SUB(X)) - NO save/restore:
+def caller():
+    global _test
+    SUB()  # Callee's $TEST changes ARE visible
+    # No restoration - callee's _test value persists
+
+# DO block (D followed by dot-indented lines) - save/restore:
 def caller():
     global _test
     _saved_test = _test
-    SUB()  # Argumentless DO
-    _test = _saved_test  # Restore after call
-
-# DO with arguments - NO save/restore:
-def caller():
-    global _test
-    SUB(arg1, arg2)  # $TEST changes from callee ARE visible
-    # No restoration - callee's _test value persists
+    # ... block body (dot-indented statements) ...
+    _test = _saved_test  # Restore after block
 
 # Extrinsic function call - save/restore:
 _saved_test = _test
@@ -50,11 +61,29 @@ _test = _saved_test
 2. **Context manager**: Syntactic overhead, harder to trace
 3. **Pass as hidden parameter**: Changes all function signatures, complex
 
-### Key Insight from MUMPS Spec
+### YottaDB Validation Evidence
 
-Per MDC 7.1.2.3: $TEST is set by IF command conditions. The stacking behavior differs:
-- Argumentless DO and extrinsic functions create isolated $TEST context
-- DO with arguments shares $TEST with callee (intentional for communication)
+```mumps
+; Test 1: D SUB (label call) - $TEST NOT stacked
+TEST S X=1 I X W "After I X: $T=",$T,!
+ D SUB
+ W "After D SUB: $T=",$T,!   ; Shows $T=0 (callee's value)
+ E  W "ELSE executed",!       ; ELSE DOES execute
+ Q
+SUB I 0 Q
+
+; Output: After I X: $T=1, After D SUB: $T=0, ELSE executed
+
+; Test 2: D block - $TEST IS stacked
+TEST S Y=1 I Y W "After I Y: $T=",$T,!
+ D
+ . I 0 W "Inside block: $T=",$T,!
+ W "After block: $T=",$T,!    ; Shows $T=1 (restored)
+ E  W "ELSE2 executed",!      ; ELSE does NOT execute
+ Q
+
+; Output: After I Y: $T=1, After block: $T=1
+```
 
 ---
 

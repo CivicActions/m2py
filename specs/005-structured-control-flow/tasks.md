@@ -37,36 +37,47 @@
 
 ---
 
-## Phase 3: User Story 1 - $TEST Stack for Argumentless DO (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - $TEST Stack for DO Blocks (Priority: P1) 🎯 MVP
 
-**Goal**: Save/restore $TEST around argumentless DO calls so ELSE sees correct value
+**$TEST Stacking Rules** (verified against YottaDB):
+- Label calls (D SUB, D SUB(), D SUB(X)) do NOT stack $TEST - callee's $TEST IS visible
+- Only DO blocks (D + dot-indented lines) stack $TEST
+- Extrinsic functions ($$func) stack $TEST
 
-**Independent Test**: Execute IF/DO/ELSE sequences and verify $TEST restoration
+**Goal**: Save/restore $TEST around DO blocks (D with dot lines) so ELSE sees correct value
+
+**Independent Test**: Execute DO blocks that modify $TEST, verify restoration
 
 ### Implementation for User Story 1
 
-- [X] T009 [US1] Add _is_argumentless_do() helper to detect DO without arguments in src/m2py/codegen/statements.py
-- [X] T010 [US1] Modify _generate_do() to emit _saved_test save before argumentless DO in src/m2py/codegen/statements.py
-- [X] T011 [US1] Modify _generate_do() to emit _test restore after argumentless DO in src/m2py/codegen/statements.py
-- [X] T012 [US1] Add test: argumentless DO restores $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [X] T013 [US1] Add test: nested argumentless DO restores correctly in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [X] T014 [US1] Add test: ELSE after argumentless DO uses restored $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T009 [US1] Add _is_do_block() helper to detect DO blocks in src/m2py/codegen/statements.py (renamed from _is_argumentless_do)
+- [X] T010 [US1] Modify _generate_do() to emit _saved_test save before DO blocks in src/m2py/codegen/statements.py
+- [X] T011 [US1] Modify _generate_do() to emit _test restore after DO blocks in src/m2py/codegen/statements.py
+- [X] T012 [US1] Add test: label calls do NOT save/restore $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T013 [US1] Add test: label call $TEST visible to caller in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T014 [US1] Add test: _is_do_block helper in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
 
-**Checkpoint**: $TEST stack semantics for argumentless DO working
+**Checkpoint**: $TEST semantics correct - label calls share $TEST, DO blocks stack it
 
 ---
 
-## Phase 4: User Story 2 - $TEST NOT Stacked for DO with Arguments (Priority: P1)
+## Phase 4: User Story 2 - Label Calls Share $TEST (Priority: P1)
 
-**Goal**: DO calls with arguments do NOT save/restore $TEST - callee mutations visible
+**Note**: All label calls (D SUB, D SUB(), D SUB(X)) have identical $TEST behavior - none stack it.
+This phase verifies the implementation and adds argument passing support.
 
-**Independent Test**: Execute DO(args) where callee sets $TEST, verify caller sees it
+**Goal**: Verify all label call forms share $TEST with caller and implement argument codegen
+
+**Independent Test**: Execute D SUB(args) where callee sets $TEST, verify caller sees it
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Ensure _generate_do() does NOT emit save/restore for DO with arguments in src/m2py/codegen/statements.py
-- [ ] T016 [US2] Add test: DO with args does NOT restore $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [ ] T017 [US2] Add test: ELSE after DO(args) sees callee's $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T015 [US2] Ensure _generate_do() does NOT emit save/restore for DO with arguments in src/m2py/codegen/statements.py
+- [X] T016 [US2] Add test: DO with args does NOT restore $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T017 [US2] Add test: ELSE after DO(args) sees callee's $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+
+**Note**: T015-T017 completed 2026-01-10. Added _generate_call_arguments() helper and tests.
+Full formal parameter support requires Phase 9 (US7) - deferred test marked xfail.
 
 **Checkpoint**: $TEST behavior differs correctly between argumentless DO and DO with arguments
 

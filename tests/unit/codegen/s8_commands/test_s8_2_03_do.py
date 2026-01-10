@@ -45,11 +45,10 @@ class TestDoCommandCodegen:
         assert result.output == "B"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO with args")
     def test_do_with_args(self, generate_python):
         """DO with arguments generates parameterized call (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST\n D SUB(1,2)\n Q\nSUB(A,B)\n W A+B\n Q\n")
+        assert "SUB(1, 2)" in code
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: DO block codegen")
@@ -66,88 +65,66 @@ class TestDoCommandCodegen:
 
 @pytest.mark.codegen
 class TestTestStackArgumentlessDo:
-    """Codegen tests for $TEST stacking with argumentless DO (Spec 005 US1).
+    """Codegen tests for $TEST with label calls vs DO blocks (Spec 005).
 
-    Argumentless DO (D SUB without arguments) saves $TEST before the call
-    and restores it after QUIT. This ensures subsequent ELSE statements
-    see the caller's $TEST value, not the callee's.
+    $TEST Stacking Rules (verified against YottaDB):
+    - Label calls (D SUB, D SUB(), D SUB(X)) do NOT stack $TEST
+    - Only DO blocks (D followed by dot lines) stack $TEST
+    - Extrinsic functions ($$func) stack $TEST
 
-    Reference: §8.2.3, MUMPS 1995 ANSI Standard 7.1.2.3
+    Note: "Argumentless DO" can be ambiguous - it can mean either a label
+    call without args (D SUB) or a DO block. Only the latter stacks $TEST.
+
+    Reference: §8.2.3, verified against YottaDB
     """
 
-    def test_argumentless_do_saves_test(self, generate_python):
-        """Argumentless DO generates _saved_test = _test before call (T009/T010).
+    def test_label_call_no_test_save(self, generate_python):
+        """D SUB (label call) does NOT generate _saved_test (T009/T010).
 
-        User Story 1 acceptance scenario:
-        Given: D SUB
-        When: generated
-        Then: code contains _saved_test = _test before SUB()
+        Label calls do NOT stack $TEST - callee's changes are visible.
         """
         code = generate_python("TEST\n D SUB\n Q\nSUB\n I 0\n Q\n")
-        assert "_saved_test = _test" in code
+        # Should NOT have save/restore for label calls
+        assert "_saved_test = _test" not in code
         assert "SUB()" in code
 
-    def test_argumentless_do_restores_test(self, generate_python):
-        """Argumentless DO generates _test = _saved_test after call (T011).
+    def test_label_call_callee_test_visible(self, execute_mumps):
+        """ELSE after label call sees callee's $TEST (T012).
 
-        User Story 1 acceptance scenario:
-        Given: D SUB
-        When: generated
-        Then: code contains _test = _saved_test after SUB()
-        """
-        code = generate_python("TEST\n D SUB\n Q\nSUB\n I 0\n Q\n")
-        # Verify restore appears after call
-        save_pos = code.find("_saved_test = _test")
-        call_pos = code.find("SUB()")
-        restore_pos = code.find("_test = _saved_test")
-        assert save_pos < call_pos < restore_pos
-
-    def test_argumentless_do_else_sees_original_test(self, execute_mumps):
-        """ELSE after argumentless DO sees original $TEST (T012).
-
-        User Story 1 acceptance scenario 1:
-        Given: TEST I 1 D SUB E W "BAD" Q SUB I 0 Q
+        Given: TEST I 1 D SUB E W "ELSE" Q SUB I 0 Q
         When: generated and executed
-        Then: output is empty (ELSE should NOT execute because $TEST
-              was 1 before DO, restored after even though SUB sets $TEST=0)
+        Then: output is "ELSE" because callee set $TEST=0 and that's visible
         """
-        result = execute_mumps('TEST\n I 1\n D SUB\n E  W "BAD"\n Q\nSUB\n I 0\n Q\n')
+        result = execute_mumps('TEST\n I 1\n D SUB\n E  W "ELSE"\n Q\nSUB\n I 0\n Q\n')
+        assert result.output == "ELSE"
+        assert result.success is True
+
+    def test_label_call_else_on_true(self, execute_mumps):
+        """ELSE after label call does NOT execute if callee set $TEST=1.
+
+        Given: TEST I 0 D SUB E W "ELSE" Q SUB I 1 Q
+        When: generated and executed
+        Then: output is empty because callee set $TEST=1
+        """
+        result = execute_mumps('TEST\n I 0\n D SUB\n E  W "ELSE"\n Q\nSUB\n I 1\n Q\n')
         assert result.output == ""
         assert result.success is True
 
-    def test_argumentless_do_else_executes_on_false(self, execute_mumps):
-        """ELSE after argumentless DO executes if original $TEST was 0 (T012).
+    def test_nested_label_calls_no_stacking(self, execute_mumps):
+        """Nested label calls do NOT create isolated $TEST context.
 
-        User Story 1 acceptance scenario 2:
-        Given: TEST I 0 D SUB E W "GOOD" Q SUB I 0 Q
-        When: generated and executed
-        Then: output is "GOOD" (ELSE executes because $TEST was 0
-              before DO, restored after)
-        """
-        result = execute_mumps('TEST\n I 0\n D SUB\n E  W "GOOD"\n Q\nSUB\n I 0\n Q\n')
-        assert result.output == "GOOD"
-        assert result.success is True
-
-    def test_nested_argumentless_do_restores_correctly(self, execute_mumps):
-        """Nested argumentless DO preserves outer $TEST (T013).
-
-        User Story 1 acceptance scenario 3:
         Given: TEST I 1 D A E W "OUTER" Q A D B Q B I 0 Q
         When: generated and executed
-        Then: output is empty (outer ELSE sees restored $TEST=1,
-              not B's $TEST=0)
+        Then: output is "OUTER" because B's $TEST=0 is visible to TEST
         """
         result = execute_mumps(
             'TEST\n I 1\n D A\n E  W "OUTER"\n Q\nA\n D B\n Q\nB\n I 0\n Q\n'
         )
-        assert result.output == ""
+        assert result.output == "OUTER"
         assert result.success is True
 
-    def test_nested_argumentless_do_inner_sees_correct_test(self, execute_mumps):
-        """Inner subroutine operates on its own $TEST context (T013).
-
-        Each level of argumentless DO has its own $TEST stack frame.
-        """
+    def test_inner_else_sees_own_test(self, execute_mumps):
+        """Inner subroutine's ELSE sees its own $TEST, not caller's."""
         # TEST sets $TEST=1, calls A which sets $TEST=0, A has ELSE that should fire
         result = execute_mumps('TEST\n I 1\n D A\n Q\nA\n I 0\n E  W "A-ELSE"\n Q\n')
         assert result.output == "A-ELSE"
@@ -156,16 +133,17 @@ class TestTestStackArgumentlessDo:
 
 @pytest.mark.codegen
 class TestTestStackDoWithArgs:
-    """Codegen tests for $TEST NOT stacked with DO with arguments (Spec 005 US2).
+    """Codegen tests for $TEST with DO with arguments (Spec 005 US2).
 
     DO with arguments (D SUB(X) or D SUB()) does NOT save/restore $TEST.
     Changes made by the callee ARE visible to the caller.
 
-    Reference: §8.2.3, MUMPS 1995 ANSI Standard 7.1.2.3
+    This is the SAME behavior as D SUB (label call without args).
+    All label calls have the same $TEST semantics.
+
+    Reference: §8.2.3, verified against YottaDB
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO with args codegen")
     def test_do_with_args_no_test_save(self, generate_python):
         """DO with args does NOT generate _saved_test (T015).
 
@@ -174,10 +152,11 @@ class TestTestStackDoWithArgs:
         When: generated
         Then: code does NOT contain _saved_test pattern
         """
-        pytest.fail("Stub - implement in Phase 4 (US2)")
+        code = generate_python("TEST\n D SUB(1)\n Q\nSUB(X)\n W X\n Q\n")
+        # Should NOT have save/restore for label calls with args
+        assert "_saved_test = _test" not in code
+        assert "SUB(1)" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO with args $TEST visibility")
     def test_do_with_args_callee_test_visible(self, execute_mumps):
         """Callee's $TEST changes visible to caller after DO with args (T016).
 
@@ -185,60 +164,195 @@ class TestTestStackDoWithArgs:
         Given: TEST I 1 D SUB(1) E W "ELSE" Q SUB(X) I 0 Q
         When: generated and executed
         Then: output is "ELSE" ($TEST=0 from callee IS visible)
+
+        Note: This test requires Phase 9 (US7) for proper formal parameter
+        generation in function signatures.
         """
-        pytest.fail("Stub - implement in Phase 4 (US2)")
+        # For now, test with a label that doesn't need formal params
+        # Full test deferred to Phase 9
+        result = execute_mumps('TEST\n I 1\n D SUB\n E  W "ELSE"\n Q\nSUB\n I 0\n Q\n')
+        assert result.output == "ELSE"
+        assert result.success is True
+
+    @pytest.mark.xfail(reason="Depends on Phase 9 (US7) for formal parameter support")
+    def test_do_with_args_callee_test_visible_full(self, execute_mumps):
+        """Full test for DO with args $TEST visibility (requires Phase 9)."""
+        result = execute_mumps(
+            'TEST\n I 1\n D SUB(1)\n E  W "ELSE"\n Q\nSUB(X)\n I 0\n Q\n'
+        )
+        assert result.output == "ELSE"
+        assert result.success is True
+
+    def test_do_with_empty_args_no_test_save(self, generate_python):
+        """D SUB() does NOT generate _saved_test (T017).
+
+        Empty args still a label call, not a DO block.
+        """
+        code = generate_python("TEST\n D SUB()\n Q\nSUB()\n I 0\n Q\n")
+        # Should NOT have save/restore for label calls with empty args
+        assert "_saved_test = _test" not in code
+        assert "SUB()" in code
+
+    def test_do_with_empty_args_callee_test_visible(self, execute_mumps):
+        """D SUB() - callee's $TEST visible to caller.
+
+        Same as D SUB - NOT a DO block.
+        """
+        result = execute_mumps(
+            'TEST\n I 1\n D SUB()\n E  W "ELSE"\n Q\nSUB()\n I 0\n Q\n'
+        )
+        assert result.output == "ELSE"
+        assert result.success is True
 
 
 @pytest.mark.codegen
-class TestIsArgumentlessDoHelper:
-    """Tests for _is_argumentless_do() helper function (T009)."""
+class TestIsDoBlockHelper:
+    """Tests for _is_do_block() helper function.
 
-    def test_is_argumentless_do_no_args(self):
-        """D SUB is argumentless (no argument list)."""
+    This helper detects DO blocks (D followed by dot-indented lines),
+    which is the ONLY form of DO that stacks $TEST.
+    """
+
+    def test_is_do_block_with_body(self):
+        """DO block with statements returns True."""
+        from m2py.asg.statements import MDoStatement, MScope, MSetStatement
+        from m2py.codegen.statements import _is_do_block
+
+        # DO block has no targets but has body
+        body_stmt = MSetStatement(assignments=[])
+        stmt = MDoStatement(targets=[], body=MScope(statements=[body_stmt]))
+
+        assert _is_do_block(stmt) is True
+
+    def test_is_do_block_empty_body(self):
+        """DO block without statements returns False."""
+        from m2py.asg.statements import MDoStatement, MScope
+        from m2py.codegen.statements import _is_do_block
+
+        stmt = MDoStatement(targets=[], body=MScope(statements=[]))
+
+        assert _is_do_block(stmt) is False
+
+    def test_is_do_block_label_call(self):
+        """D SUB (label call) returns False - NOT a block."""
         from m2py.asg.elements import MCall
         from m2py.asg.statements import MDoStatement
-        from m2py.codegen.statements import _is_argumentless_do
+        from m2py.codegen.statements import _is_do_block
 
         target = MCall(name="SUB")
-        # Default arguments is empty list - which means argumentless
         stmt = MDoStatement(targets=[target])
 
-        assert _is_argumentless_do(stmt) is True
+        assert _is_do_block(stmt) is False
 
-    def test_is_argumentless_do_empty_args(self):
-        """D SUB() with empty args list is still argumentless for MCall."""
-        from m2py.asg.elements import MCall
-        from m2py.asg.statements import MDoStatement
-        from m2py.codegen.statements import _is_argumentless_do
-
-        target = MCall(name="SUB", arguments=[])
-        stmt = MDoStatement(targets=[target])
-
-        # Empty arguments list = still argumentless
-        assert _is_argumentless_do(stmt) is True
-
-    def test_is_argumentless_do_with_args(self):
-        """D SUB(X) is NOT argumentless (has arguments)."""
+    def test_is_do_block_label_call_with_args(self):
+        """D SUB(X) returns False - NOT a block."""
         from m2py.asg.elements import MCall
         from m2py.asg.expressions import MActualParameter, MVariable
         from m2py.asg.statements import MDoStatement
-        from m2py.codegen.statements import _is_argumentless_do
+        from m2py.codegen.statements import _is_do_block
 
-        # Create an actual parameter
         param = MActualParameter(expression=MVariable(name="X"))
         target = MCall(name="SUB", arguments=[param])
         stmt = MDoStatement(targets=[target])
 
-        assert _is_argumentless_do(stmt) is False
+        assert _is_do_block(stmt) is False
 
-    def test_is_argumentless_do_block(self):
-        """DO block (no targets) returns False."""
-        from m2py.asg.statements import MDoStatement, MScope
-        from m2py.codegen.statements import _is_argumentless_do
 
-        stmt = MDoStatement(targets=[], body=MScope(statements=[]))
+@pytest.mark.codegen
+class TestGenerateCallArgumentsHelper:
+    """Tests for _generate_call_arguments() helper function.
 
-        assert _is_argumentless_do(stmt) is False
+    This helper generates Python argument strings from MUMPS call arguments.
+    """
+
+    def test_empty_arguments(self):
+        """Empty arguments returns empty string."""
+        from m2py.codegen.statements import _generate_call_arguments
+
+        result = _generate_call_arguments([], None)
+        assert result == ""
+
+    def test_single_literal_argument(self):
+        """Single literal argument generates value."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import LiteralType, PassingMode
+        from m2py.asg.expressions import MActualParameter, MLiteral
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg = MActualParameter(
+            passing_mode=PassingMode.BY_VALUE,
+            expression=MLiteral(value="1", literal_type=LiteralType.INTEGER),
+        )
+
+        result = _generate_call_arguments([arg], ctx)
+        assert result == "1"
+
+    def test_multiple_arguments(self):
+        """Multiple arguments generates comma-separated list."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import LiteralType, PassingMode
+        from m2py.asg.expressions import MActualParameter, MLiteral
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg1 = MActualParameter(
+            passing_mode=PassingMode.BY_VALUE,
+            expression=MLiteral(value="1", literal_type=LiteralType.INTEGER),
+        )
+        arg2 = MActualParameter(
+            passing_mode=PassingMode.BY_VALUE,
+            expression=MLiteral(value="2", literal_type=LiteralType.INTEGER),
+        )
+
+        result = _generate_call_arguments([arg1, arg2], ctx)
+        assert result == "1, 2"
+
+    def test_omitted_argument(self):
+        """Omitted argument generates None."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import PassingMode
+        from m2py.asg.expressions import MActualParameter
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg = MActualParameter(passing_mode=PassingMode.OMITTED)
+
+        result = _generate_call_arguments([arg], ctx)
+        assert result == "None"
+
+    def test_byref_with_variable_name(self):
+        """By-reference with variable_name uses translated name."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import PassingMode
+        from m2py.asg.expressions import MActualParameter
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg = MActualParameter(passing_mode=PassingMode.BY_REFERENCE, variable_name="X")
+
+        result = _generate_call_arguments([arg], ctx)
+        assert result == "X"  # translate_name preserves case
+
+    def test_byref_with_expression(self):
+        """By-reference with expression generates expression."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import PassingMode
+        from m2py.asg.expressions import MActualParameter, MVariable
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg = MActualParameter(
+            passing_mode=PassingMode.BY_REFERENCE, expression=MVariable(name="X")
+        )
+
+        result = _generate_call_arguments([arg], ctx)
+        assert result == "X"  # translate_name preserves case
 
 
 @pytest.mark.codegen

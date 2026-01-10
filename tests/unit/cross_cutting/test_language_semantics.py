@@ -73,20 +73,25 @@ class TestTestVariableCodegen:
 class TestTestStackSemanticsCodegen:
     """Codegen tests for $TEST stacking behavior.
 
-    $TEST is stacked (saved/restored) for argumentless DO and extrinsic
-    calls, but NOT stacked for DO with arguments or XECUTE. This is
-    critical for ELSE chains that span DO calls.
+    $TEST Stacking Rules (verified against YottaDB):
+    - Label calls (D SUB, D SUB(), D SUB(X)) do NOT stack $TEST
+    - DO blocks (D followed by dot lines) DO stack $TEST
+    - Extrinsic calls ($$func) DO stack $TEST
+    - XECUTE does NOT stack $TEST
 
-    Reference: §7.1.4.10, §8.2.3
+    Note: "Argumentless DO" can be ambiguous - it means DO blocks (with dots),
+    NOT label calls without arguments.
+
+    Reference: §7.1.4.10, §8.2.3, verified against YottaDB
     """
 
     @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEST stacked for argumentless DO")
-    def test_test_stacked_for_argumentless_do(self):
-        """Argumentless DO stacks $TEST, restored on QUIT.
+    @pytest.mark.xfail(reason="Not yet implemented: DO block $TEST stacking")
+    def test_test_stacked_for_do_block(self):
+        """DO blocks stack $TEST, restored on block exit.
 
         IF 1           ; $TEST=1
-        D              ; Stacks $TEST (NEW $TEST)
+        D              ; Starts DO block - stacks $TEST
         . IF 0         ; $TEST=0 inside block
         . Q
         ELSE W "NO"    ; Should NOT execute - $TEST restored to 1
@@ -105,14 +110,28 @@ class TestTestStackSemanticsCodegen:
         pytest.fail("Stub - implement test")
 
     @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEST not stacked for DO with args")
-    def test_test_not_stacked_for_do_with_args(self):
-        """DO with arguments does NOT stack $TEST.
+    @pytest.mark.xfail(reason="Not yet implemented: label call $TEST visibility")
+    def test_test_not_stacked_for_label_call(self):
+        """Label calls do NOT stack $TEST - callee changes visible.
 
         IF 1           ; $TEST=1
-        D SUB(1)       ; Does NOT stack $TEST
+        D SUB          ; Does NOT stack $TEST
+        ; SUB sets $TEST=0, it IS visible to caller
+        ELSE W "YES"   ; DOES execute because SUB set $TEST=0
+        """
+        pytest.fail("Stub - implement test")
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(
+        reason="Not yet implemented: label call with args $TEST visibility"
+    )
+    def test_test_not_stacked_for_do_with_args(self):
+        """DO with arguments does NOT stack $TEST (same as D SUB).
+
+        IF 1           ; $TEST=1
+        D SUB(1)       ; Does NOT stack $TEST (same behavior as D SUB)
         ; If SUB sets $TEST=0, it affects caller
-        ELSE W "NO"    ; May execute depending on SUB
+        ELSE W "YES"   ; DOES execute because SUB set $TEST=0
         """
         pytest.fail("Stub - implement test")
 
@@ -123,7 +142,7 @@ class TestTestStackSemanticsCodegen:
 
         IF 1                ; $TEST=1
         X "IF 0"            ; $TEST=0, visible to caller
-        ELSE W "NO"         ; Should execute - $TEST is 0
+        ELSE W "YES"        ; DOES execute - $TEST is 0
         """
         pytest.fail("Stub - implement test")
 

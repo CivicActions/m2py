@@ -38,6 +38,22 @@ Core implementation in `src/m2py/`. Feature specs in `specs/<number>-<name>/`.
 
 Uses **Speckit** for spec-driven development via `.github/prompts/speckit.*.prompt.md` agents.
 
+## Validation Utility
+
+The `utils/validate.py` script compares m2py output against YottaDB for runtime verification:
+
+```bash
+# Compare output against YottaDB (requires Docker)
+uv run python utils/validate.py --code 'TEST W "Hello" Q'
+uv run python utils/validate.py myprogram.m
+
+# Debug mode: show AST and generated Python
+uv run python utils/validate.py --debug --code 'TEST S X=1 W X Q'
+
+# Skip YottaDB comparison (m2py only)
+uv run python utils/validate.py --no-ydb --code 'TEST W 1+2 Q'
+```
+
 ## Core Principles
 
 1. **Semantic Correctness First** - Generated Python must match MUMPS behavior exactly

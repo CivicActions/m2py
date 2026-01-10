@@ -34,34 +34,41 @@ The following infrastructure is now available:
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - $TEST Stack Semantics for Argumentless DO (Priority: P1)
+### User Story 1 - $TEST Stack Semantics for DO Blocks (Priority: P1)
 
-As a developer, when I generate Python from MUMPS code with argumentless DO calls, the `$TEST` special variable is correctly saved before the call and restored after QUIT, so that subsequent ELSE statements see the correct condition value.
+As a developer, when I generate Python from MUMPS code with DO blocks (D followed by dot-indented lines), the `$TEST` special variable is correctly saved before the block and restored after, so that subsequent ELSE statements see the caller's original condition value.
 
-**Why this priority**: $TEST semantics are fundamental to correct IF/ELSE behavior across subroutine boundaries. Getting this wrong breaks any code that checks ELSE after a DO call. This is the highest risk area because many real M programs depend on this behavior.
+**Why this priority**: $TEST semantics are fundamental to correct IF/ELSE behavior. Getting this wrong breaks any code that checks ELSE after a DO block. This is the highest risk area because many real M programs depend on this behavior.
 
-**Independent Test**: Can be tested by generating and executing code with IF/DO/ELSE sequences that rely on $TEST restoration.
+**$TEST Stacking Rules** (verified against YottaDB):
+- **DO blocks** (D followed by dot-indented lines) stack $TEST - caller's value restored
+- **Extrinsic functions** ($$func) stack $TEST - caller's value restored  
+- **Label calls** (D SUB, D SUB(), D SUB(X)) do NOT stack $TEST - see User Story 2
+
+**Independent Test**: Can be tested by generating and executing code with DO blocks that modify $TEST.
 
 **Acceptance Scenarios**:
 
-1. **Given** `TEST I 1 D SUB E W "BAD" Q SUB I 0 Q`, **When** generated and executed, **Then** output is empty (ELSE should NOT execute because $TEST was 1 before DO, restored after)
-2. **Given** `TEST I 0 D SUB E W "GOOD" Q SUB I 0 Q`, **When** generated and executed, **Then** output is "GOOD" (ELSE executes because $TEST was 0 before DO, restored after)
-3. **Given** nested calls `TEST I 1 D A E W "OUTER" Q A D B Q B I 0 Q`, **When** generated, **Then** outer ELSE sees restored $TEST=1 (not B's $TEST=0)
+1. **Given** DO block that sets $TEST=0: `TEST I 1 W "IF" D` / `. I 0` / `E W "ELSE"`, **When** generated and executed, **Then** output is "IF" (ELSE NOT executed because DO block restores $TEST=1)
+2. **Given** nested DO blocks, **When** generated and executed, **Then** inner block's $TEST isolated from outer
 
 ---
 
-### User Story 2 - $TEST NOT Stacked for DO with Arguments (Priority: P1)
+### User Story 2 - $TEST Shared for Label Calls (Priority: P1)
 
-As a developer, when I generate Python from MUMPS code with DO calls that pass arguments, the `$TEST` changes made by the callee are visible to the caller, following MUMPS semantics.
+As a developer, when I generate Python from MUMPS code with DO label calls (D SUB, D SUB(), D SUB(X)), the `$TEST` changes made by the callee are visible to the caller, following MUMPS semantics.
 
-**Why this priority**: This is the critical distinction from argumentless DO. Many VistA patterns use DO with arguments specifically to communicate $TEST state back to the caller. Getting this wrong inverts the expected behavior.
+**Key Insight**: ALL label calls share $TEST with the caller - there is no distinction between label calls with or without arguments. They all behave identically: callee's $TEST changes ARE visible to the caller.
+
+**Why this priority**: This affects ALL subroutine calls. Many VistA patterns check ELSE after a DO call expecting to see the callee's $TEST value.
 
 **Independent Test**: Can be tested by generating and executing code where the called routine sets $TEST and the caller uses ELSE afterward.
 
 **Acceptance Scenarios**:
 
-1. **Given** `TEST I 1 D SUB(1) E W "ELSE" Q SUB(X) I 0 Q`, **When** generated and executed, **Then** output is "ELSE" ($TEST=0 from callee IS visible to caller)
-2. **Given** `TEST I 0 D SUB(1) E W "ELSE" Q SUB(X) I 1 Q`, **When** generated and executed, **Then** output is empty ($TEST=1 from callee, ELSE doesn't execute)
+1. **Given** `TEST I 1 D SUB E W "ELSE" Q SUB I 0 Q`, **When** generated and executed, **Then** output is "ELSE" ($TEST=0 from callee IS visible to caller)
+2. **Given** `TEST I 1 D SUB(1) E W "ELSE" Q SUB(X) I 0 Q`, **When** generated and executed, **Then** output is "ELSE" (same behavior - callee $TEST visible)
+3. **Given** `TEST I 0 D SUB E W "ELSE" Q SUB I 1 Q`, **When** generated and executed, **Then** output is empty ($TEST=1 from callee, ELSE doesn't execute)
 
 ---
 
