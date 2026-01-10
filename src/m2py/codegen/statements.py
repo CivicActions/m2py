@@ -34,6 +34,42 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
+def _is_argumentless_do(stmt: MDoStatement) -> bool:
+    """Check if this is an argumentless DO (label call without parameters).
+
+    Argumentless DO calls have $TEST stacking semantics - the caller's $TEST
+    is saved before the call and restored after. This differs from DO with
+    arguments where $TEST changes are visible to the caller.
+
+    This function detects DO calls where the target has no argument list,
+    NOT the argumentless DO block (which has no targets at all).
+
+    Per MUMPS spec:
+    - D SUB      -> argumentless (no args, $TEST stacked)
+    - D SUB()    -> with empty args ($TEST NOT stacked)
+    - D SUB(X)   -> with args ($TEST NOT stacked)
+    - D          -> DO block (different handling, body not empty)
+
+    Args:
+        stmt: The MDoStatement to check
+
+    Returns:
+        True if this is an argumentless DO label call
+    """
+    # DO block (body populated) is handled separately
+    if not stmt.targets:
+        return False
+
+    # Check first target for arguments
+    for target in stmt.targets:
+        # If target has an argument list (even empty), it's NOT argumentless
+        # MCall uses 'arguments' field, not 'args'
+        if target.arguments:
+            return False
+
+    return True
+
+
 @dataclass
 class ForGenContext:
     """Context for FOR loop code generation decisions.
@@ -498,6 +534,15 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     DO calls a subroutine and returns to the caller.
     Unlike GOTO, control continues after DO returns.
 
+    For argumentless DO (no args), $TEST is saved before and restored after:
+        _saved_test = _test
+        SUB()
+        _test = _saved_test
+
+    For DO with arguments, $TEST changes in callee ARE visible to caller:
+        SUB(arg1, arg2)
+        # No save/restore - callee's _test persists
+
     Example: D SUB → SUB()
 
     Args:
@@ -507,9 +552,16 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     Raises:
         NotImplementedError: For unsupported DO patterns
     """
-    # Check for argumentless DO (inline block)
+    # Check for argumentless DO block (inline block with body)
     if not stmt.targets:
         raise NotImplementedError("Argumentless DO blocks not yet supported")
+
+    # Check if this is an argumentless DO label call ($TEST stacked)
+    is_argumentless = _is_argumentless_do(stmt)
+
+    # For argumentless DO, save $TEST before all calls
+    if is_argumentless:
+        ctx.emitter.line("_saved_test = _test")
 
     # Handle each target (multiple targets allowed: D A,B,C)
     for target in stmt.targets:
@@ -527,5 +579,14 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         # Generate function call (no return - control continues after DO)
         ctx.emitter.line(f"{label_name}()")
 
+    # For argumentless DO, restore $TEST after all calls
+    if is_argumentless:
+        ctx.emitter.line("_test = _saved_test")
 
-__all__ = ["generate_statement", "ForGenContext", "GotoGenContext"]
+
+__all__ = [
+    "generate_statement",
+    "ForGenContext",
+    "GotoGenContext",
+    "_is_argumentless_do",
+]

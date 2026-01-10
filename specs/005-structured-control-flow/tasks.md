@@ -45,12 +45,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Add _is_argumentless_do() helper to detect DO without arguments in src/m2py/codegen/statements.py
-- [ ] T010 [US1] Modify _generate_do() to emit _saved_test save before argumentless DO in src/m2py/codegen/statements.py
-- [ ] T011 [US1] Modify _generate_do() to emit _test restore after argumentless DO in src/m2py/codegen/statements.py
-- [ ] T012 [US1] Add test: argumentless DO restores $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [ ] T013 [US1] Add test: nested argumentless DO restores correctly in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [ ] T014 [US1] Add test: ELSE after argumentless DO uses restored $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T009 [US1] Add _is_argumentless_do() helper to detect DO without arguments in src/m2py/codegen/statements.py
+- [X] T010 [US1] Modify _generate_do() to emit _saved_test save before argumentless DO in src/m2py/codegen/statements.py
+- [X] T011 [US1] Modify _generate_do() to emit _test restore after argumentless DO in src/m2py/codegen/statements.py
+- [X] T012 [US1] Add test: argumentless DO restores $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T013 [US1] Add test: nested argumentless DO restores correctly in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T014 [US1] Add test: ELSE after argumentless DO uses restored $TEST in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
 
 **Checkpoint**: $TEST stack semantics for argumentless DO working
 
