@@ -6,9 +6,10 @@ Handles SET, WRITE, QUIT, IF, ELSE, FOR, and other basic commands.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, List
 
-from m2py.asg.enums import ForParamType
+from m2py.asg.enums import ForLoopType, ForParamType
 from m2py.asg.expressions import MExpr, MVariable
 from m2py.asg.statements import (
     MDoStatement,
@@ -26,6 +27,180 @@ from m2py.codegen.names import translate_name
 if TYPE_CHECKING:
     from m2py.asg.statements import MStatement
     from m2py.codegen.routine import GeneratorContext
+
+
+# =============================================================================
+# Spec 005: Code Generation Context Helpers
+# =============================================================================
+
+
+@dataclass
+class ForGenContext:
+    """Context for FOR loop code generation decisions.
+
+    Aggregates analysis results from MForStatement to guide
+    which Python pattern to generate.
+
+    Attributes:
+        stmt: The MForStatement being generated
+        loop_var: Translated Python name for loop variable
+        use_while: True if loop_var_modified_in_body requires while loop
+        needs_break: True if has_internal_quit or exit GOTOs need break
+        is_infinite: True for argumentless FOR (F)
+        loop_type: Classification from analysis for pattern selection
+    """
+
+    stmt: MForStatement
+    loop_var: str
+    use_while: bool  # True if loop_var_modified_in_body
+    needs_break: bool  # True if has_internal_quit or has_internal_goto
+    is_infinite: bool
+    loop_type: ForLoopType
+
+    @classmethod
+    def from_statement(cls, stmt: MForStatement) -> "ForGenContext":
+        """Create ForGenContext from an MForStatement.
+
+        Args:
+            stmt: The FOR statement to analyze
+
+        Returns:
+            ForGenContext with analysis results
+        """
+        # Get loop variable name
+        if isinstance(stmt.loop_var, str):
+            loop_var = translate_name(stmt.loop_var) if stmt.loop_var else "_"
+        elif isinstance(stmt.loop_var, MVariable):
+            loop_var = translate_name(stmt.loop_var.name)
+        else:
+            loop_var = "_"  # Fallback for complex expressions
+
+        # Determine if we need a while loop (loop var modified in body)
+        use_while = getattr(stmt, "loop_var_modified_in_body", False)
+
+        # Determine if we need break statements
+        needs_break = getattr(stmt, "has_internal_quit", False) or getattr(
+            stmt, "has_internal_goto", False
+        )
+
+        # Check if this is an infinite/argumentless loop
+        is_infinite = getattr(stmt, "is_infinite", False) or not stmt.parameters
+
+        # Get loop type from analysis (default to BOUNDED if not set)
+        loop_type = getattr(stmt, "loop_type", None)
+        if loop_type is None:
+            # Infer from parameters if not analyzed
+            if not stmt.parameters:
+                loop_type = ForLoopType.ARGUMENTLESS
+            elif len(stmt.parameters) == 1:
+                param = stmt.parameters[0]
+                if param.param_type == ForParamType.VALUE:
+                    loop_type = ForLoopType.STRING_LIST
+                elif param.param_type == ForParamType.RANGE:
+                    loop_type = ForLoopType.BOUNDED
+                elif param.param_type == ForParamType.OPEN_RANGE:
+                    loop_type = ForLoopType.OPEN_ENDED
+                else:
+                    loop_type = ForLoopType.BOUNDED
+            else:
+                loop_type = ForLoopType.MIXED
+
+        return cls(
+            stmt=stmt,
+            loop_var=loop_var,
+            use_while=use_while,
+            needs_break=needs_break,
+            is_infinite=is_infinite,
+            loop_type=loop_type,
+        )
+
+
+@dataclass
+class GotoGenContext:
+    """Context for GOTO code generation decisions.
+
+    Aggregates analysis results from MGotoStatement to determine
+    which Python pattern to generate.
+
+    Attributes:
+        stmt: The MGotoStatement being generated
+        in_for_loop: True if GOTO is inside a FOR loop
+        enclosing_loops: Stack of FOR loops containing this GOTO
+        target_label: Translated Python name for target label
+        pattern: Code pattern to generate:
+            - 'continue': Loop continuation
+            - 'break': Single loop exit
+            - 'multi_break': Multiple loop exit (exception)
+            - 'forward': Forward jump restructuring
+            - 'function_call': Simple function call with return
+            - 'unsupported': Cannot be transpiled statically
+    """
+
+    stmt: MGotoStatement
+    in_for_loop: bool
+    enclosing_loops: List[MForStatement]
+    target_label: str
+    pattern: str  # 'continue' | 'break' | 'multi_break' | 'forward' | 'function_call' | 'unsupported'
+
+    @classmethod
+    def from_statement(
+        cls, stmt: MGotoStatement, loop_stack: List[MForStatement]
+    ) -> "GotoGenContext":
+        """Create GotoGenContext from an MGotoStatement.
+
+        Args:
+            stmt: The GOTO statement to analyze
+            loop_stack: Current stack of enclosing FOR loops
+
+        Returns:
+            GotoGenContext with analysis results
+        """
+        in_for_loop = len(loop_stack) > 0
+        enclosing_loops = list(loop_stack)
+
+        # Get target label name
+        target_label = ""
+        if stmt.targets:
+            target = stmt.targets[0]
+            target_label = translate_name(target.name) if target.name else ""
+
+        # Determine pattern based on analysis fields
+        pattern = "function_call"  # Default: simple GOTO to label
+
+        # Check for loop-related patterns
+        is_loop_continue = getattr(stmt, "is_loop_continue", False)
+        exits_loops = getattr(stmt, "exits_loops", [])
+        goto_type = getattr(stmt, "goto_type", None)
+        is_cross_label = getattr(stmt, "is_cross_label", False)
+
+        if is_loop_continue and in_for_loop:
+            pattern = "continue"
+        elif exits_loops:
+            if len(exits_loops) == 1:
+                pattern = "break"
+            else:
+                pattern = "multi_break"
+        elif goto_type is not None:
+            # Analysis has run - check goto_type for pattern
+            from m2py.asg.enums import GotoType
+
+            if goto_type in (GotoType.EXTERNAL, GotoType.UNRESOLVED):
+                pattern = "unsupported"
+            elif goto_type == GotoType.BACKWARD_JUMP:
+                # Backward jumps are unsupported in Spec 005
+                pattern = "unsupported"
+            elif goto_type == GotoType.FORWARD_JUMP and not is_cross_label:
+                # Intra-label forward jump - can be restructured
+                pattern = "forward"
+            # else: function_call (cross-label or other analyzed patterns)
+
+        return cls(
+            stmt=stmt,
+            in_for_loop=in_for_loop,
+            enclosing_loops=enclosing_loops,
+            target_label=target_label,
+            pattern=pattern,
+        )
 
 
 def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
@@ -353,4 +528,4 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"{label_name}()")
 
 
-__all__ = ["generate_statement"]
+__all__ = ["generate_statement", "ForGenContext", "GotoGenContext"]

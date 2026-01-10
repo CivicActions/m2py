@@ -75,3 +75,100 @@ class TestForCommandCodegen:
     def test_for_nested(self, generate_python):
         """Nested FOR generates nested Python loops (§8.2.5)."""
         pytest.fail("Stub - implement test")
+
+
+@pytest.mark.codegen
+class TestForGenContextCodegen:
+    """Tests for ForGenContext helper dataclass (Spec 005)."""
+
+    def test_for_gen_context_from_bounded_statement(self):
+        """ForGenContext correctly analyzes bounded FOR loop."""
+        from m2py.asg.enums import ForLoopType, ForParamType
+        from m2py.asg.statements import MForParameter, MForStatement
+        from m2py.asg.elements import MScope
+        from m2py.asg.expressions import MLiteral
+        from m2py.codegen.statements import ForGenContext
+
+        # Create a bounded FOR: F I=1:1:10
+        param = MForParameter(
+            param_type=ForParamType.RANGE,
+            start=MLiteral(value=1),
+            step=MLiteral(value=1),
+            end=MLiteral(value=10),
+        )
+        stmt = MForStatement(
+            loop_var="I",
+            parameters=[param],
+            body=MScope(statements=[]),
+        )
+
+        ctx = ForGenContext.from_statement(stmt)
+        assert ctx.loop_var == "I"
+        assert ctx.loop_type == ForLoopType.BOUNDED
+        assert ctx.is_infinite is False
+
+    def test_for_gen_context_from_string_list(self):
+        """ForGenContext correctly analyzes string list FOR loop."""
+        from m2py.asg.enums import ForLoopType, ForParamType
+        from m2py.asg.statements import MForParameter, MForStatement
+        from m2py.asg.elements import MScope
+        from m2py.asg.expressions import MLiteral
+        from m2py.codegen.statements import ForGenContext
+
+        # Create a string list FOR: F I="A","B"
+        param = MForParameter(
+            param_type=ForParamType.VALUE,
+            value=MLiteral(value="A"),
+        )
+        stmt = MForStatement(
+            loop_var="I",
+            parameters=[param],
+            body=MScope(statements=[]),
+        )
+
+        ctx = ForGenContext.from_statement(stmt)
+        assert ctx.loop_var == "I"
+        assert ctx.loop_type == ForLoopType.STRING_LIST
+
+    def test_for_gen_context_from_argumentless(self):
+        """ForGenContext correctly analyzes argumentless FOR loop."""
+        from m2py.asg.enums import ForLoopType
+        from m2py.asg.statements import MForStatement
+        from m2py.asg.elements import MScope
+        from m2py.codegen.statements import ForGenContext
+
+        # Create argumentless FOR: F (no parameters)
+        stmt = MForStatement(
+            loop_var="",
+            parameters=[],
+            body=MScope(statements=[]),
+        )
+
+        ctx = ForGenContext.from_statement(stmt)
+        assert ctx.loop_type == ForLoopType.ARGUMENTLESS
+        assert ctx.is_infinite is True
+
+    def test_for_gen_context_detects_modified_loop_var(self):
+        """ForGenContext detects loop variable modification from analysis."""
+        from m2py.asg.enums import ForParamType
+        from m2py.asg.statements import MForParameter, MForStatement
+        from m2py.asg.elements import MScope
+        from m2py.asg.expressions import MLiteral
+        from m2py.codegen.statements import ForGenContext
+
+        param = MForParameter(
+            param_type=ForParamType.RANGE,
+            start=MLiteral(value=1),
+            step=MLiteral(value=1),
+            end=MLiteral(value=10),
+        )
+        stmt = MForStatement(
+            loop_var="I",
+            parameters=[param],
+            body=MScope(statements=[]),
+        )
+        # Set analysis flag
+        stmt.loop_var_modified_in_body = True
+
+        ctx = ForGenContext.from_statement(stmt)
+        assert ctx.use_while is True

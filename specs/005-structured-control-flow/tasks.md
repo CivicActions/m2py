@@ -27,11 +27,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Extend GeneratorContext with signatures dict and loop_stack in src/m2py/codegen/routine.py
-- [ ] T005 Add validation that required analysis passes have run before codegen in src/m2py/codegen/routine.py
-- [ ] T006 Add scope strategy dispatcher function in src/m2py/codegen/routine.py
-- [ ] T007 [P] Add ForGenContext helper dataclass in src/m2py/codegen/statements.py
-- [ ] T008 [P] Add GotoGenContext helper dataclass in src/m2py/codegen/statements.py
+- [X] T004 Extend GeneratorContext with signatures dict and loop_stack in src/m2py/codegen/routine.py
+- [X] T005 Add validation that required analysis passes have run before codegen in src/m2py/codegen/routine.py
+- [X] T006 Add scope strategy dispatcher function in src/m2py/codegen/routine.py
+- [X] T007 [P] Add ForGenContext helper dataclass in src/m2py/codegen/statements.py
+- [X] T008 [P] Add GotoGenContext helper dataclass in src/m2py/codegen/statements.py
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 

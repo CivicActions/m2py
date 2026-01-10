@@ -101,6 +101,188 @@ class TestIntraLabelGotoCodegen:
 
 
 @pytest.mark.codegen
+class TestGotoGenContextCodegen:
+    """Tests for GotoGenContext helper dataclass (Spec 005)."""
+
+    def test_goto_gen_context_from_simple_statement(self):
+        """GotoGenContext correctly analyzes simple GOTO."""
+        from m2py.asg.elements import MCall
+        from m2py.asg.statements import MGotoStatement
+        from m2py.codegen.statements import GotoGenContext
+
+        target = MCall(name="DONE")
+        stmt = MGotoStatement(targets=[target])
+
+        ctx = GotoGenContext.from_statement(stmt, loop_stack=[])
+        assert ctx.target_label == "DONE"
+        assert ctx.in_for_loop is False
+        assert ctx.pattern == "function_call"
+
+    def test_goto_gen_context_in_for_loop(self):
+        """GotoGenContext detects GOTO inside FOR loop."""
+        from m2py.asg.elements import MCall, MScope
+        from m2py.asg.enums import ForParamType
+        from m2py.asg.expressions import MLiteral
+        from m2py.asg.statements import MForParameter, MForStatement, MGotoStatement
+        from m2py.codegen.statements import GotoGenContext
+
+        # Create a FOR statement
+        param = MForParameter(
+            param_type=ForParamType.RANGE,
+            start=MLiteral(value=1),
+            step=MLiteral(value=1),
+            end=MLiteral(value=10),
+        )
+        for_stmt = MForStatement(
+            loop_var="I",
+            parameters=[param],
+            body=MScope(statements=[]),
+        )
+
+        target = MCall(name="DONE")
+        stmt = MGotoStatement(targets=[target])
+
+        ctx = GotoGenContext.from_statement(stmt, loop_stack=[for_stmt])
+        assert ctx.in_for_loop is True
+        assert len(ctx.enclosing_loops) == 1
+
+    def test_goto_gen_context_loop_continue(self):
+        """GotoGenContext detects loop continue pattern."""
+        from m2py.asg.elements import MCall, MScope
+        from m2py.asg.enums import ForParamType
+        from m2py.asg.expressions import MLiteral
+        from m2py.asg.statements import MForParameter, MForStatement, MGotoStatement
+        from m2py.codegen.statements import GotoGenContext
+
+        # Create a FOR statement
+        param = MForParameter(
+            param_type=ForParamType.RANGE,
+            start=MLiteral(value=1),
+            step=MLiteral(value=1),
+            end=MLiteral(value=10),
+        )
+        for_stmt = MForStatement(
+            loop_var="I",
+            parameters=[param],
+            body=MScope(statements=[]),
+        )
+
+        target = MCall(name="NEXT")
+        stmt = MGotoStatement(targets=[target])
+        # Set analysis flag for loop continue
+        stmt.is_loop_continue = True
+
+        ctx = GotoGenContext.from_statement(stmt, loop_stack=[for_stmt])
+        assert ctx.pattern == "continue"
+
+    def test_goto_gen_context_single_loop_exit(self):
+        """GotoGenContext detects single loop exit pattern."""
+        from m2py.asg.elements import MCall, MScope
+        from m2py.asg.enums import ForParamType
+        from m2py.asg.expressions import MLiteral
+        from m2py.asg.statements import MForParameter, MForStatement, MGotoStatement
+        from m2py.codegen.statements import GotoGenContext
+
+        # Create a FOR statement
+        param = MForParameter(
+            param_type=ForParamType.RANGE,
+            start=MLiteral(value=1),
+            step=MLiteral(value=1),
+            end=MLiteral(value=10),
+        )
+        for_stmt = MForStatement(
+            loop_var="I",
+            parameters=[param],
+            body=MScope(statements=[]),
+        )
+
+        target = MCall(name="DONE")
+        stmt = MGotoStatement(targets=[target])
+        # Set analysis flag for loop exit
+        stmt.exits_loops = [for_stmt]
+
+        ctx = GotoGenContext.from_statement(stmt, loop_stack=[for_stmt])
+        assert ctx.pattern == "break"
+
+    def test_goto_gen_context_multi_loop_exit(self):
+        """GotoGenContext detects multi-loop exit pattern."""
+        from m2py.asg.elements import MCall, MScope
+        from m2py.asg.enums import ForParamType
+        from m2py.asg.expressions import MLiteral
+        from m2py.asg.statements import MForParameter, MForStatement, MGotoStatement
+        from m2py.codegen.statements import GotoGenContext
+
+        # Create two FOR statements
+        param = MForParameter(
+            param_type=ForParamType.RANGE,
+            start=MLiteral(value=1),
+            step=MLiteral(value=1),
+            end=MLiteral(value=10),
+        )
+        outer_for = MForStatement(
+            loop_var="I",
+            parameters=[param],
+            body=MScope(statements=[]),
+        )
+        inner_for = MForStatement(
+            loop_var="J",
+            parameters=[param],
+            body=MScope(statements=[]),
+        )
+
+        target = MCall(name="DONE")
+        stmt = MGotoStatement(targets=[target])
+        # Set analysis flag for multi-loop exit
+        stmt.exits_loops = [inner_for, outer_for]
+
+        ctx = GotoGenContext.from_statement(stmt, loop_stack=[outer_for, inner_for])
+        assert ctx.pattern == "multi_break"
+
+    def test_goto_gen_context_unsupported_external(self):
+        """GotoGenContext detects unsupported external GOTO."""
+        from m2py.asg.elements import MCall
+        from m2py.asg.enums import GotoType
+        from m2py.asg.statements import MGotoStatement
+        from m2py.codegen.statements import GotoGenContext
+
+        target = MCall(name="EXTERNAL^ROUTINE")
+        stmt = MGotoStatement(targets=[target])
+        stmt.goto_type = GotoType.EXTERNAL
+
+        ctx = GotoGenContext.from_statement(stmt, loop_stack=[])
+        assert ctx.pattern == "unsupported"
+
+    def test_goto_gen_context_unsupported_backward(self):
+        """GotoGenContext detects unsupported backward jump."""
+        from m2py.asg.elements import MCall
+        from m2py.asg.enums import GotoType
+        from m2py.asg.statements import MGotoStatement
+        from m2py.codegen.statements import GotoGenContext
+
+        target = MCall(name="START")
+        stmt = MGotoStatement(targets=[target])
+        stmt.goto_type = GotoType.BACKWARD_JUMP
+
+        ctx = GotoGenContext.from_statement(stmt, loop_stack=[])
+        assert ctx.pattern == "unsupported"
+
+    def test_goto_gen_context_forward_intra_label(self):
+        """GotoGenContext detects intra-label forward jump."""
+        from m2py.asg.elements import MCall
+        from m2py.asg.enums import GotoType
+        from m2py.asg.statements import MGotoStatement
+        from m2py.codegen.statements import GotoGenContext
+
+        target = MCall(name="SKIP")
+        stmt = MGotoStatement(targets=[target])
+        stmt.goto_type = GotoType.FORWARD_JUMP
+        stmt.is_cross_label = False
+
+        ctx = GotoGenContext.from_statement(stmt, loop_stack=[])
+        assert ctx.pattern == "forward"
+
+
+@pytest.mark.codegen
 class TestCrossLabelGotoCodegen:
     """Codegen tests for cross-label GOTO (between different labels).
 
