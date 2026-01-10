@@ -32,4 +32,5 @@ markers = [
     "codegen: marks code generation tests",
     "stub: marks stub tests pending implementation",
     "analysis: marks analysis module tests",
+    "runtime: marks runtime module tests",
 ]

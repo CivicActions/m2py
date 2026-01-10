@@ -21,8 +21,8 @@ IF X=1,Y=2 S Z=1    ; Execute SET only if both X=1 AND Y=2
 
 **Python Translation:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if x == 1 and y == 2:
     z = 1
 ```
@@ -47,36 +47,54 @@ I  S Y=3        ; Argumentless IF also uses current $TEST
 - Argumentless IF (`I ` with no condition) tests current `$TEST` value
 - Must be tracked across statements for correct ELSE behavior
 
-**Python Translation** requires tracking:
+**Python Translation** uses a module-level `_test` variable:
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
-_test = (x == 1)
-if _test:
-    y = 1
-if not _test:
-    y = 2
-if _test:  # Argumentless IF
-    y = 3
+from m2py.codegen.helpers import m_truth
+
+_test = False  # Module-level $TEST tracking
+
+def EXAMPLE():
+    global _test
+    _test = m_truth(X == 1)
+    if _test:
+        Y = 1
+    if not _test:  # ELSE
+        Y = 2
+    if _test:  # Argumentless IF
+        Y = 3
 ```
+
+Each generated function declares `global _test` to share state across labels.
 
 ---
 
 ## Label Naming Rules
 
-MUMPS allows label names that would be invalid identifiers in Python:
+MUMPS allows label names that would be invalid identifiers in Python. The `NameTranslator` class in `src/m2py/codegen/names.py` handles these translations:
 
 | Pattern | Example | Python Equivalent |
 |---------|---------|-------------------|
-| `%` prefix | `%ROUTINE`, `%0`, `%` | `_percent_routine`, `_percent_0` |
-| Pure numeric | `0`, `01`, `012`, `00000` | `label_0`, `label_01`, `label_012` |
-| Reserved words | `DO`, `IF`, `QUIT`, `SET` | `do_`, `if_`, `quit_`, `set_` |
-| Leading underscore | `_1A`, `_BCDEFGH` | `__1A`, `__BCDEFGH` |
+| `%` prefix | `%ROUTINE`, `%0` | `_pct_ROUTINE`, `_pct_0` |
+| Pure numeric | `0`, `01`, `012` | `_n_0`, `_n_01`, `_n_012` |
+| Reserved words | `if`, `for`, `class` | `_m_if`, `_m_for`, `_m_class` |
 
 **Key points:**
-- Leading zeros are significant: `01` ≠ `1`
+- **Case-preserving**: `FOO`, `foo`, and `Foo` remain distinct
+- **Reversible**: `NameTranslator.reverse()` recovers original MUMPS name
+- Leading zeros are significant: `01` ≠ `1` (both get `_n_` prefix but preserve value)
 - Labels starting with `%` are common for utility routines
 - Reserved word labels are parsed as labels (not commands) at line start
+
+**Usage:**
+```python
+from m2py.codegen.names import NameTranslator
+
+nt = NameTranslator()
+nt.translate("%START")  # "_pct_START"
+nt.translate("01")      # "_n_01"
+nt.translate("if")      # "_m_if"
+nt.reverse("_pct_FOO")  # "%FOO"
+```
 
 **Source:** MUGJ V1DO1.m, V1LL1.m, V1LL2.m tests
 
@@ -144,8 +162,8 @@ K (X,Y),Z         ; Mixed - exclusive kill, then also kill Z
 
 **Detection:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if len(kill_stmt.targets) == 0 and not kill_stmt.exclusive:
     # Kill All
 elif kill_stmt.exclusive:
@@ -210,8 +228,8 @@ F I=1:1 Q:I>10 W I    ; Loop until QUIT
 
 Requires `while True:` with break:
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 i = 1
 while True:
     if i > 10:
@@ -334,8 +352,8 @@ S X=$S(A=1:"ONE",A=2:"TWO",1:"OTHER")  ; Select based on conditions
 
 **Python Translation:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 x = "ONE" if a == 1 else ("TWO" if a == 2 else "OTHER")
 ```
 
@@ -361,8 +379,8 @@ S $E(X,1,3)="ABC"      ; Replace first 3 characters
 
 **Python Translation:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 # $P(X,"^",2)="NEW" 
 pieces = x.split("^")
 pieces[1] = "NEW"  # 0-indexed
@@ -452,8 +470,8 @@ Some MUMPS constructs are not fully supported:
 MUMPS source files may use different character encodings:
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 # Parser tries UTF-8 first, falls back to Latin-1
 with open(filepath, 'r', encoding='utf-8') as f:
     source = f.read()

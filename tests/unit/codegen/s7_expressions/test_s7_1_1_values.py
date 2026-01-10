@@ -46,6 +46,26 @@ class TestNumericCoercionCodegen:
     Reference: §7.1.4.5
     """
 
+    def test_empty_string_returns_zero(self):
+        """Empty string coerces to 0.
+
+        User Story 6 acceptance scenario (T049):
+        m_num("") returns 0 per MUMPS semantics.
+        """
+        from m2py.codegen.helpers import m_num
+
+        assert m_num("") == 0
+
+    def test_leading_zeros_canonicalized(self):
+        """Leading zeros are stripped (canonicalized) during numeric coercion.
+
+        User Story 6 acceptance scenario (T050):
+        m_num("007") returns 7 (not 7 as octal, just strip leading zeros).
+        """
+        from m2py.codegen.helpers import m_num
+
+        assert m_num("007") == 7
+
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: numeric prefix extraction")
     def test_numeric_prefix_extraction(self, generate_python):
@@ -64,23 +84,47 @@ class TestNumericCoercionCodegen:
         """
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: sign canonicalization")
-    def test_sign_canonicalization(self, generate_python):
+    def test_sign_canonicalization(self):
         """Numeric coercion canonicalizes signs.
 
-        '  +42' coerces to 42, '--5' may need special handling.
+        Phase 10 validation: Test sign handling edge cases.
+        '  +42' coerces to 42, '--5' coerces to 5, '+-5' coerces to -5.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.helpers import m_num
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: decimal handling")
-    def test_decimal_handling(self, generate_python):
+        # Positive sign
+        assert m_num("+42") == 42
+        # Double negative
+        assert m_num("--5") == 5
+        # Mixed signs
+        assert m_num("+-5") == -5
+        assert m_num("-+5") == -5
+        # Leading whitespace with sign
+        assert m_num("  +42") == 42
+        # Just signs (no digits)
+        assert m_num("++") == 0
+        assert m_num("-") == 0
+
+    def test_decimal_handling(self):
         """Numeric coercion handles decimals correctly.
 
-        '3.14ABC' coerces to 3.14.
+        Phase 10 validation: Test decimal number parsing.
+        '3.14ABC' coerces to 3.14, '.5' coerces to 0.5.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.helpers import m_num
+
+        # Decimal with trailing text
+        assert m_num("3.14ABC") == 3.14
+        # Leading decimal
+        assert m_num(".5") == 0.5
+        # Integer that looks like float
+        assert m_num("3.0") == 3  # Returns int when possible
+        # Lone decimal point
+        assert m_num(".") == 0
+        # Already numeric (float pass-through)
+        assert m_num(3.14) == 3.14
+        # Already numeric (int pass-through)
+        assert m_num(42) == 42
 
 
 @pytest.mark.codegen
@@ -93,23 +137,30 @@ class TestTruthValueCodegen:
     Reference: §1.2.4
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: zero is false")
-    def test_zero_is_false(self, generate_python):
+    def test_zero_is_false(self):
         """Numeric 0 evaluates to false.
 
-        '0', '', 'A' all coerce to 0 → false.
+        Phase 10 validation: '0', '', 'A' all coerce to 0 → false.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.helpers import m_truth
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: nonzero is true")
-    def test_nonzero_is_true(self, generate_python):
+        assert m_truth(0) is False
+        assert m_truth("0") is False
+        assert m_truth("") is False
+        assert m_truth("A") is False
+
+    def test_nonzero_is_true(self):
         """Any nonzero numeric evaluates to true.
 
-        '1', '3.14', '1A', '-5' all coerce to nonzero → true.
+        Phase 10 validation: '1', '3.14', '1A', '-5' all coerce to nonzero → true.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.helpers import m_truth
+
+        assert m_truth(1) is True
+        assert m_truth("1") is True
+        assert m_truth("3.14") is True
+        assert m_truth("1A") is True
+        assert m_truth("-5") is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: string with leading number")
@@ -131,20 +182,36 @@ class TestComparisonCodegen:
     Reference: §7.2
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: numeric comparison")
-    def test_numeric_comparison(self, generate_python):
+    def test_numeric_comparison(self):
         """Less-than/greater-than use numeric coercion.
 
-        '3' < '10' is true (3 < 10), but 'A' < 'B' compares 0 < 0.
+        Phase 10 validation: '3' < '10' is true (3 < 10), 'A' < 'B' compares 0 < 0.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.helpers import m_compare
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: string equality")
-    def test_string_equality(self, generate_python):
+        assert m_compare("3", "<", "10") is True
+        assert m_compare("3", ">", "10") is False
+        assert m_compare("A", "<", "B") is False  # 0 < 0 is false
+        assert m_compare("3A", "<", 5) is True  # 3 < 5
+
+    def test_string_equality(self):
         """Equality compares string values directly.
 
-        '3' = '03' is false (string comparison), but '3' = 3 needs coercion.
+        Phase 10 validation: '3' = '03' is false (string comparison).
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.helpers import m_compare
+
+        assert m_compare("3", "=", "3") is True
+        assert m_compare("3", "=", "03") is False  # String comparison
+        assert m_compare(3, "=", 3) is True
+
+    def test_invalid_operator_raises(self):
+        """Invalid comparison operator raises ValueError.
+
+        Phase 10 validation: Cover error path.
+        """
+        import pytest
+        from m2py.codegen.helpers import m_compare
+
+        with pytest.raises(ValueError, match="Unsupported comparison operator"):
+            m_compare(1, "!=", 2)

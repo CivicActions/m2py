@@ -7,23 +7,23 @@ This document describes the high-level architecture of the M2PY MUMPS-to-Python 
 M2PY uses a multi-phase architecture to parse MUMPS source code and produce an Abstract Semantic Graph (ASG) that can be used for Python code generation.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Data Flow                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  MUMPS Source    textX Parser    Semantic      Analysis       Annotated     │
-│  (.m file)   ──▶ + Custom    ──▶ Analyzer  ──▶ Passes     ──▶ ASG           │
-│                   Classes         (CST→ASG)                                  │
-│                                                                              │
-│                      │               │              │              │         │
-│                      ▼               ▼              ▼              ▼         │
-│                   ┌──────┐      ┌──────┐      ┌──────────┐    ┌─────────┐   │
-│                   │ CST  │      │ ASG  │      │ Resolved │    │ Ready   │   │
-│                   │      │      │      │      │ ASG      │    │ for     │   │
-│                   │      │      │      │      │          │    │ codegen │   │
-│                   └──────┘      └──────┘      └──────────┘    └─────────┘   │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│                                       Data Flow                                          │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                          │
+│  MUMPS Source    textX Parser    Semantic      Analysis       Annotated      Python     │
+│  (.m file)   ──▶ + Custom    ──▶ Analyzer  ──▶ Passes     ──▶ ASG       ──▶ Code        │
+│                   Classes         (CST→ASG)                                              │
+│                                                                                          │
+│                      │               │              │              │           │         │
+│                      ▼               ▼              ▼              ▼           ▼         │
+│                   ┌──────┐      ┌──────┐      ┌──────────┐    ┌─────────┐  ┌──────┐     │
+│                   │ CST  │      │ ASG  │      │ Resolved │    │ Ready   │  │ .py  │     │
+│                   │      │      │      │      │ ASG      │    │ for     │  │ file │     │
+│                   │      │      │      │      │          │    │ codegen │  │      │     │
+│                   └──────┘      └──────┘      └──────────┘    └─────────┘  └──────┘     │
+│                                                                                          │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Two-Layer Architecture
@@ -76,14 +76,24 @@ src/m2py/
 │   ├── line_parser.py       # Line content parsing via textX
 │   ├── textx_classes.py     # Custom classes for textX instantiation
 │   └── exceptions.py        # MUMPSSyntaxError
-└── analysis/                # ASG analysis passes
-    ├── semantic_analyzer.py # CST → ASG transformation
-    ├── dead_code_analysis.py # Unreachable code detection
-    ├── resolver.py          # Reference resolution
-    ├── goto_analysis.py     # GOTO classification
-    ├── for_analysis.py      # FOR loop analysis
-    ├── variables.py         # Variable scope analysis
-    └── pattern_compiler.py  # Pattern to regex compilation
+├── analysis/                # ASG analysis passes
+│   ├── semantic_analyzer.py # CST → ASG transformation
+│   ├── dead_code_analysis.py # Unreachable code detection
+│   ├── resolver.py          # Reference resolution
+│   ├── goto_analysis.py     # GOTO classification
+│   ├── for_analysis.py      # FOR loop analysis
+│   ├── variables.py         # Variable scope analysis
+│   └── pattern_compiler.py  # Pattern to regex compilation
+├── codegen/                 # Python code generation
+│   ├── __init__.py          # Public API: generate_python()
+│   ├── helpers.py           # Runtime helpers: m_num(), m_truth(), m_compare()
+│   ├── names.py             # NameTranslator for identifier translation
+│   ├── emitter.py           # CodeEmitter for indented output
+│   ├── routine.py           # RoutineGenerator for module structure
+│   ├── statements.py        # Statement code generation
+│   └── expressions.py       # Expression code generation
+└── runtime/                 # Execution runtime
+    └── __init__.py          # MUMPSRuntime, ExecutionResult
 ```
 
 ## Processing Pipeline
@@ -153,6 +163,35 @@ parser.analyze_variables(routine)
 - Builds `FunctionSignature` for each label
 
 See: [`src/m2py/analysis/variables.py`](../src/m2py/analysis/variables.py)
+
+### Phase 6: Code Generation
+
+```python
+from m2py.codegen import generate_python
+
+python_code = generate_python(source, routine_name="example", validate=True)
+```
+
+- Translates ASG to executable Python code
+- Generates module structure with imports and runtime initialization
+- Translates labels to Python functions with `global _test` declarations
+- Uses `NameTranslator` to convert MUMPS names to valid Python identifiers
+- Validates generated code with `ast.parse()` when `validate=True`
+
+See: [`src/m2py/codegen/`](../src/m2py/codegen/)
+
+**Generated code structure:**
+```python
+from m2py.codegen.helpers import m_num, m_truth, m_compare
+from m2py.runtime import MUMPSRuntime
+
+_rt = MUMPSRuntime()
+_test = False
+
+def LABEL():
+    global _test
+    # ... translated statements
+```
 
 ## Design Decisions
 

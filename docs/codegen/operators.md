@@ -2,6 +2,26 @@
 
 How to translate MUMPS operators to Python.
 
+## Helper Functions
+
+The `m2py.codegen.helpers` module provides functions that implement MUMPS semantics:
+
+| Helper | Purpose |
+|--------|---------|
+| `m_num(value)` | Numeric coercion (ANSI 7.1.4.5) |
+| `m_truth(value)` | Truth evaluation (ANSI 1.2.4) |
+| `m_compare(a, b, op)` | Comparison with appropriate coercion |
+
+```python
+from m2py.codegen.helpers import m_num, m_truth, m_compare
+
+m_num("3.14ABC")   # 3.14 (extract numeric prefix)
+m_num("+-5")       # -5 (sign chain processing)
+m_truth("")        # False (empty string is falsy)
+m_truth("0.0")     # False (numeric zero is falsy)
+m_compare("7", 7, "=")  # True (numeric comparison)
+```
+
 ## Critical: No Operator Precedence
 
 **MUMPS evaluates strictly left-to-right with no precedence rules.**
@@ -16,8 +36,8 @@ In Python: `2+3*4 = 14` (multiplication first)
 **Always generate parentheses in Python:**
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 x = ((2 + 3) * 4)  # Force left-to-right
 ```
 
@@ -40,8 +60,8 @@ S X=7\2     ; X=3
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 x = 7 // 2  # x=3
 ```
 
@@ -52,8 +72,8 @@ S X=7#3     ; X=1
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 x = 7 % 3   # x=1
 ```
 
@@ -65,8 +85,8 @@ S Z=+A      ; Numeric coercion
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 x = -y
 z = float(a) if isinstance(a, str) else a  # Coerce to number
 ```
@@ -80,8 +100,8 @@ S X=A_B_C
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 x = str(a) + str(b) + str(c)
 ```
 
@@ -98,6 +118,21 @@ Note: MUMPS implicitly converts to string. Python may need explicit `str()`.
 | `'<` | `>=` | Not less than |
 | `'>` | `<=` | Not greater than |
 
+**MUMPS comparison semantics** differ from Python. Use the `m_compare()` helper:
+
+```python
+from m2py.codegen.helpers import m_compare
+
+# m_compare handles numeric vs string comparison
+m_compare(a, b, "=")   # True if a equals b (type-aware)
+m_compare(a, b, "<")   # True if a < b (numeric coercion)
+m_compare(a, b, ">")   # True if a > b (numeric coercion)
+```
+
+For equality (`=`), `m_compare` checks if both operands look numeric. If so, 
+it compares numerically (so `"007" = 7` is true). For `<` and `>`, it always 
+coerces both sides to numbers via `m_num()`.
+
 ### Negated Comparisons
 
 ```mumps
@@ -105,8 +140,8 @@ I X'<10     ; If X is not less than 10 (i.e., >= 10)
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if x >= 10:
 ```
 
@@ -121,8 +156,8 @@ I A[B       ; True if A contains B
 **Note operand order reversal in Python:**
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if b in a:  # B in A
 ```
 
@@ -133,8 +168,8 @@ I A]B       ; True if A collates after B
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if a > b:   # String comparison
 ```
 
@@ -164,8 +199,8 @@ I A&B
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if a and b:
 ```
 
@@ -176,8 +211,8 @@ I A!B
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if a or b:
 ```
 
@@ -189,8 +224,8 @@ I '(A&B)
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if not x:
 if not (a and b):
 ```
@@ -202,8 +237,8 @@ I X?1A.N
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 import re
 if re.fullmatch(r"[A-Za-z][0-9]*", x):
 ```
@@ -217,8 +252,8 @@ I X'?1N
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if not re.fullmatch(r"[0-9]", x):
 ```
 
@@ -233,8 +268,8 @@ S X=A+B*C-D/E
 Evaluates as: `((((A+B)*C)-D)/E)`
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 x = ((((a + b) * c) - d) / e)
 ```
 
@@ -247,8 +282,8 @@ S X=A+(B*C)
 This changes order: `A+(B*C)`
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 x = a + (b * c)  # Parentheses preserved
 ```
 
@@ -267,8 +302,8 @@ I 0.001     ; True (non-zero)
 
 Python needs explicit coercion:
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 def mumps_bool(value):
     if isinstance(value, str):
         # Try to extract leading number
@@ -289,8 +324,8 @@ S Y="ABC"+1     ; Y=1 (ABC coerces to 0)
 
 Python helper:
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 def mumps_num(value):
     if isinstance(value, (int, float)):
         return value
@@ -304,8 +339,8 @@ def mumps_num(value):
 ## Code Generation Pattern
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 def generate_binary_op(op_node):
     left = generate_expr(op_node.left)
     right = generate_expr(op_node.right)

@@ -4,6 +4,18 @@ M2PY is a MUMPS-to-Python transpiler that uses [textX](https://textx.github.io/t
 
 ## Quick Start
 
+### Code Generation
+
+```python
+from m2py.codegen import generate_python
+
+# Generate Python from MUMPS source
+python_code = generate_python('TEST S X=1 W X Q')
+print(python_code)
+```
+
+### Parsing and Analysis
+
 ```python
 from m2py import MUMPSParser
 

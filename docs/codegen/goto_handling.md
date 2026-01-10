@@ -32,8 +32,8 @@ DONE   W "Finished"
 
 **If/Elif Pattern:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if x == 1:
     pass  # Skip to DONE
 else:
@@ -53,8 +53,8 @@ OTHER  W "Other"
 ```
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if x == 1:
     print("One")
 elif x == 2:
@@ -77,8 +77,8 @@ LOOP   S X=X+1
 
 **While Loop:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 x = 0
 while True:
     x = x + 1
@@ -101,8 +101,8 @@ ERROR W "Exited"
 
 **Break Pattern:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 for i in range(1, 101):
     if err:
         break
@@ -124,8 +124,8 @@ SUCCESS W "Success!"
 
 **Flag Pattern:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 exit_type = None
 for i in range(1, 101):
     if err:
@@ -155,8 +155,8 @@ LOOP   F I=1:1:10 D
 
 **Continue Pattern:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 for i in range(1, 11):
     if i % 2 == 0:
         continue
@@ -184,8 +184,8 @@ ALLDONE W "Jumped out!"
 ### Exception Pattern
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 class LoopExit(Exception):
     pass
 
@@ -203,8 +203,8 @@ except LoopExit:
 ### Nested Flag Pattern
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 exit_outer = False
 for i in range(1, 11):
     for j in range(1, 11):
@@ -229,8 +229,8 @@ G LABEL^OTHERROUTINE
 
 **Module Call:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 import otherroutine
 otherroutine.label()
 # No return - control transfers permanently
@@ -238,8 +238,8 @@ otherroutine.label()
 
 Or with return value if needed:
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 return otherroutine.label()  # If in a function context
 ```
 
@@ -251,8 +251,8 @@ G:CONDITION TARGET
 
 **Conditional Break/Call:**
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if condition:
     break  # or return, or function_call()
 ```
@@ -273,8 +273,8 @@ LABEL4 W "Four"
 ### State Machine Pattern
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 state = "LABEL1"
 while True:
     if state == "LABEL1":
@@ -301,8 +301,8 @@ while True:
 The routine-level flag indicates complex GOTO patterns that cannot be easily translated to structured Python:
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 if routine.has_unstructured_goto:
     return generate_state_machine(routine)
 else:
@@ -322,8 +322,8 @@ else:
 ## Analysis Fields Used
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 goto_stmt.goto_type          # Classification
 goto_stmt.postcondition      # Conditional GOTO
 goto_stmt.exits_loops        # List of FOR loops exited
@@ -337,8 +337,8 @@ for_stmt.exit_points         # List of exiting GOTOs
 ## Decision Algorithm
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
+# Conceptual Python equivalent
+
 def translate_goto(goto_stmt, context):
     match goto_stmt.goto_type:
         case GotoType.FORWARD_JUMP:

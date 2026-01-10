@@ -1,30 +1,28 @@
 <!--
   SYNC IMPACT REPORT
   ==================
-  Version Change: 1.0.0 → 1.1.0
+  Version Change: 1.1.0 → 1.2.0
   
-  Modified Principles:
-  - III. Multi-Phase Architecture → III. Strict Layer Separation (expanded with codegen boundary rules)
-  - V. Incremental Validation → V. Foundational Correctness (reframed for "complexity first" approach)
+  Modified Principles: None
   
   Added Sections:
-  - II. YDB as Reference Implementation (new principle, formerly implicit in Test-Driven)
-  - VI. Cross-Cutting Semantics (new principle for M value model, $TEST, etc.)
+  - VII. Minimize Runtime Surface (new principle for inline Python preference)
+  - VIII. Research Before Implementation (new principle for structured research phases)
   
   Removed Sections: None
   
   Templates Status:
   - plan-template.md: ✅ Compatible (Constitution Check section exists)
   - spec-template.md: ✅ Compatible (requirements align with principles)
-  - tasks-template.md: ✅ Compatible (phase structure supports foundational-first)
+  - tasks-template.md: ⚠ Consider adding Research Phase before Phase 1
   - checklist-template.md: ✅ Compatible (generic structure)
   
-  Follow-up TODOs: None
+  Follow-up TODOs:
+  - tasks-template.md: Consider adding explicit Research Phase section
   
-  Rationale: Entering code generation phase requires explicit principles for:
-  (1) layer boundaries that prevent codegen from doing parsing/analysis work,
-  (2) YDB validation as the authoritative reference,
-  (3) foundational M semantics that must be correct from earliest spec.
+  Rationale: Codegen plan introduces two additional principles:
+  (1) Runtime minimization enables Rope refactoring of generated code,
+  (2) Research phases ensure understanding of ASG structure before implementation.
 -->
 
 # M2PY Constitution
@@ -106,6 +104,41 @@ These are "day one" requirements, not incremental additions.
 
 These semantics MUST be implemented in shared helpers/runtime, not duplicated per-command.
 
+### VII. Minimize Runtime Surface
+
+Prefer inline Python over runtime calls. The runtime exists for truly dynamic cases;
+statically analyzable patterns MUST emit direct Python code.
+
+**Use runtime for:**
+- Global variables (`^name`) — database persistence, tree structure
+- Special variables (`$TEST`, `$HOROLOG`) — process-wide state
+- XECUTE / Indirection — truly dynamic, defeats static analysis
+- `REQUIRES_RUNTIME` scope strategy — analysis explicitly gave up
+
+**Emit inline Python for:**
+- Local variables → `x = value` (Python locals)
+- Parameters → `def foo(a, b):`
+- By-ref outputs → return tuple pattern
+- FOR loops → `for`/`while` constructs
+- Value coercion → inline `m_num()` calls (pure helper)
+
+**Heuristic**: If Rope could refactor it → emit Python variables/functions. If the value
+depends on runtime state → use runtime. Every runtime call is a refactoring barrier.
+
+### VIII. Research Before Implementation
+
+Each implementation phase MUST begin with structured research to understand existing
+infrastructure before writing code.
+
+- Review relevant `docs/` sections (ASG structure, analysis passes, codegen strategies)
+- Examine ASG node definitions for the constructs being generated
+- Use `validate_asg.py` to inspect actual ASG output for test cases
+- Identify what analysis infrastructure already exists vs. needs building
+- Document findings before implementation begins
+
+**Why this matters**: The ASG and analysis layers are substantial. Rediscovering their
+structure mid-implementation wastes time and risks building redundant code.
+
 ## Technical Constraints
 
 - **Python Version**: 3.10+
@@ -122,4 +155,4 @@ This constitution supersedes all other practices for M2PY development.
 - Amendments require documentation of rationale and impact assessment
 - Version follows semantic versioning: MAJOR (breaking principle changes), MINOR (additions), PATCH (clarifications)
 
-**Version**: 1.1.0 | **Ratified**: 2025-12-19 | **Last Amended**: 2026-01-08
+**Version**: 1.2.0 | **Ratified**: 2025-12-19 | **Last Amended**: 2026-01-09
