@@ -10,11 +10,29 @@ import pytest
 class TestGotoCommandCodegen:
     """Codegen-level tests for GOTO command code generation (§8.2.6)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: GOTO to function call")
     def test_goto_to_function_call(self, generate_python):
-        """Simple GOTO generates function call with return (§8.2.6)."""
-        pytest.fail("Stub - implement test")
+        """Simple GOTO generates function call with return (§8.2.6).
+
+        User Story 4 acceptance scenario (T040):
+        Given: G DONE
+        When: generated
+        Then: output contains DONE() and return
+        """
+        code = generate_python('TEST\n G DONE\n Q\nDONE\n W "END"\n Q\n')
+        assert "DONE()" in code
+        assert "return" in code
+
+    def test_goto_transfers_control(self, execute_mumps):
+        """GOTO transfers control to target label.
+
+        User Story 4 acceptance scenario (T041):
+        Given: TEST G END Q END W "END" Q
+        When: generated and executed
+        Then: output is "END"
+        """
+        result = execute_mumps('TEST\n G END\n Q\nEND\n W "END"\n Q\n')
+        assert result.output == "END"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: GOTO computed")

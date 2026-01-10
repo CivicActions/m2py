@@ -13,6 +13,7 @@ from m2py.asg.expressions import MExpr, MVariable
 from m2py.asg.statements import (
     MElseStatement,
     MForStatement,
+    MGotoStatement,
     MIfStatement,
     MQuitStatement,
     MSetStatement,
@@ -56,6 +57,8 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_else(stmt, ctx)
     elif isinstance(stmt, MForStatement):
         _generate_for(stmt, ctx)
+    elif isinstance(stmt, MGotoStatement):
+        _generate_goto(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -269,6 +272,46 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     # Argumentless FOR (infinite loop) - not supported in Phase 5
     if not stmt.parameters:
         raise NotImplementedError("Argumentless FOR loops not yet supported")
+
+
+def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
+    """Generate function call with return from MGotoStatement.
+
+    GOTO transfers control to a label. In Spec 004, we handle simple
+    intra-routine GOTO by generating a function call followed by return.
+
+    Example: G DONE → DONE(); return
+
+    Args:
+        stmt: MGotoStatement node
+        ctx: Generator context
+
+    Raises:
+        NotImplementedError: For unsupported GOTO patterns
+    """
+    if not stmt.targets:
+        raise NotImplementedError("Argumentless GOTO not supported")
+
+    if len(stmt.targets) > 1:
+        raise NotImplementedError("Multiple GOTO targets not yet supported")
+
+    target = stmt.targets[0]
+
+    # Check for external routine reference
+    if target.routine:
+        raise NotImplementedError("External routine GOTO not yet supported")
+
+    # Check for indirection
+    if target.label_is_indirect or target.indirection:
+        raise NotImplementedError("Indirect GOTO not yet supported")
+
+    # Get the label name and translate it
+    label_name = translate_name(target.name)
+
+    # Generate: label(); return
+    # The return ensures control doesn't continue after GOTO
+    ctx.emitter.line(f"{label_name}()")
+    ctx.emitter.line("return")
 
 
 __all__ = ["generate_statement"]

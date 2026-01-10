@@ -139,9 +139,9 @@
 
 ### Implementation for User Story 4
 
-- [ ] T039 [US4] Handle `MGotoStatement` in `generate_statement()` - emit `label(); return`
-- [ ] T040 [US4] Test: `G DONE` generates `DONE(); return`
-- [ ] T041 [US4] Test: `TEST G END Q END W "END" Q` → outputs "END"
+- [X] T039 [US4] Handle `MGotoStatement` in `generate_statement()` - emit `label(); return`
+- [X] T040 [US4] Test: `G DONE` generates `DONE(); return`
+- [X] T041 [US4] Test: `TEST G END Q END W "END" Q` → outputs "END"
 
 **Checkpoint**: User Story 4 complete - GOTO transfers control
 
