@@ -80,6 +80,7 @@ class RoutineGenerator:
             ctx: Generator context
         """
         # Imports
+        ctx.emitter.line("from itertools import chain, count")
         ctx.emitter.line("from m2py.codegen.helpers import m_num, m_truth, m_compare")
         ctx.emitter.line("from m2py.runtime import MUMPSRuntime")
         ctx.emitter.blank()
