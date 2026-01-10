@@ -114,7 +114,7 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 ### Implementation for User Story 4
 
-- [ ] T028 [US4] Add _is_restructurable_goto() to check is_cross_label=False and FORWARD_JUMP in src/m2py/codegen/statements.py
+- [X] T028 [US4] Add _is_restructurable_goto() to check is_cross_label=False and FORWARD_JUMP in src/m2py/codegen/statements.py
 - [ ] T029 [US4] Implement _restructure_forward_goto() to generate if/else structure in src/m2py/codegen/statements.py
 - [ ] T030 [US4] Modify _generate_goto() to dispatch to restructure for intra-label forward jumps in src/m2py/codegen/statements.py
 - [ ] T031 [US4] Add UnsupportedFeatureError for backward intra-label GOTO in src/m2py/codegen/statements.py

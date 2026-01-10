@@ -275,6 +275,46 @@ class GotoGenContext:
         )
 
 
+def _is_restructurable_goto(stmt: MGotoStatement) -> bool:
+    """Check if a GOTO statement can be restructured to if/else.
+
+    A GOTO is restructurable when:
+    1. It is an intra-label jump (is_cross_label=False) - same label
+    2. It is a forward jump (goto_type=FORWARD_JUMP) - not backward
+
+    Intra-label forward GOTOs can be restructured by wrapping subsequent
+    statements in if/else blocks, eliminating the need for actual jumps.
+
+    Example:
+        MUMPS:  S X=1 I X=1 G SKIP S X=2
+                SKIP W X Q
+
+        Python: X = 1
+                if m_truth(m_compare(X, "=", 1)):
+                    pass  # GOTO SKIP - skip X=2
+                else:
+                    X = 2
+                _rt.write(str(X))
+                return
+
+    Backward intra-label GOTOs (G LABEL without offset) create implicit loops
+    and are NOT restructurable - they require different handling (Spec 006).
+
+    Args:
+        stmt: The MGotoStatement to check
+
+    Returns:
+        True if the GOTO can be restructured to if/else
+    """
+    from m2py.asg.enums import GotoType
+
+    goto_type = getattr(stmt, "goto_type", None)
+    is_cross_label = getattr(stmt, "is_cross_label", True)  # Default to cross-label
+
+    # Restructurable: intra-label (same label) forward jump
+    return goto_type == GotoType.FORWARD_JUMP and not is_cross_label
+
+
 def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     """Generate Python statement from ASG statement node.
 
@@ -825,5 +865,6 @@ __all__ = [
     "ForGenContext",
     "GotoGenContext",
     "_is_do_block",
+    "_is_restructurable_goto",
     "_generate_call_arguments",
 ]

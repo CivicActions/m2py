@@ -283,6 +283,102 @@ class TestGotoGenContextCodegen:
 
 
 @pytest.mark.codegen
+class TestIsRestructurableGoto:
+    """Tests for _is_restructurable_goto() helper (Spec 005, T028).
+
+    This helper determines if a GOTO can be restructured to if/else.
+    """
+
+    def test_intra_label_forward_is_restructurable(self):
+        """Intra-label forward GOTO is restructurable.
+
+        When: is_cross_label=False AND goto_type=FORWARD_JUMP
+        Then: Returns True - can be restructured to if/else
+        """
+        from m2py.asg.elements import MCall
+        from m2py.asg.enums import GotoType
+        from m2py.asg.statements import MGotoStatement
+        from m2py.codegen.statements import _is_restructurable_goto
+
+        target = MCall(name="SKIP")
+        stmt = MGotoStatement(targets=[target])
+        stmt.goto_type = GotoType.FORWARD_JUMP
+        stmt.is_cross_label = False
+
+        assert _is_restructurable_goto(stmt) is True
+
+    def test_intra_label_backward_not_restructurable(self):
+        """Intra-label backward GOTO is NOT restructurable.
+
+        When: is_cross_label=False AND goto_type=BACKWARD_JUMP
+        Then: Returns False - creates implicit loop, needs Spec 006
+        """
+        from m2py.asg.elements import MCall
+        from m2py.asg.enums import GotoType
+        from m2py.asg.statements import MGotoStatement
+        from m2py.codegen.statements import _is_restructurable_goto
+
+        target = MCall(name="START")
+        stmt = MGotoStatement(targets=[target])
+        stmt.goto_type = GotoType.BACKWARD_JUMP
+        stmt.is_cross_label = False
+
+        assert _is_restructurable_goto(stmt) is False
+
+    def test_cross_label_forward_not_restructurable(self):
+        """Cross-label forward GOTO is NOT restructurable.
+
+        When: is_cross_label=True AND goto_type=FORWARD_JUMP
+        Then: Returns False - different label, needs function call pattern
+        """
+        from m2py.asg.elements import MCall
+        from m2py.asg.enums import GotoType
+        from m2py.asg.statements import MGotoStatement
+        from m2py.codegen.statements import _is_restructurable_goto
+
+        target = MCall(name="OTHER")
+        stmt = MGotoStatement(targets=[target])
+        stmt.goto_type = GotoType.FORWARD_JUMP
+        stmt.is_cross_label = True
+
+        assert _is_restructurable_goto(stmt) is False
+
+    def test_loop_exit_not_restructurable(self):
+        """LOOP_EXIT GOTO is NOT restructurable (uses break instead).
+
+        When: goto_type=LOOP_EXIT
+        Then: Returns False - should generate break, not if/else
+        """
+        from m2py.asg.elements import MCall
+        from m2py.asg.enums import GotoType
+        from m2py.asg.statements import MGotoStatement
+        from m2py.codegen.statements import _is_restructurable_goto
+
+        target = MCall(name="DONE")
+        stmt = MGotoStatement(targets=[target])
+        stmt.goto_type = GotoType.LOOP_EXIT
+        stmt.is_cross_label = False
+
+        assert _is_restructurable_goto(stmt) is False
+
+    def test_unanalyzed_goto_not_restructurable(self):
+        """GOTO without analysis is NOT restructurable.
+
+        When: goto_type is None (analysis not run)
+        Then: Returns False - unknown, default to function call
+        """
+        from m2py.asg.elements import MCall
+        from m2py.asg.statements import MGotoStatement
+        from m2py.codegen.statements import _is_restructurable_goto
+
+        target = MCall(name="UNKNOWN")
+        stmt = MGotoStatement(targets=[target])
+        # No goto_type or is_cross_label set
+
+        assert _is_restructurable_goto(stmt) is False
+
+
+@pytest.mark.codegen
 class TestCrossLabelGotoCodegen:
     """Codegen tests for cross-label GOTO (between different labels).
 
