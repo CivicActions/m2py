@@ -12,13 +12,42 @@ M2PY aims for **semantic-preserving translation**, not line-by-line conversion:
 - Use structured constructs where possible
 - Fall back to runtime support only when necessary
 
+### Public API
+
+The `generate_python()` function is the primary entry point for code generation:
+
+```python
+from m2py.codegen import generate_python
+
+# Generate Python from MUMPS source
+python_code = generate_python(
+    'TEST S X=1 W X Q',
+    routine_name="example",
+    validate=True  # Runs ast.parse() to verify output
+)
+print(python_code)
+```
+
+Output:
+```python
+from m2py.codegen.helpers import m_num, m_truth, m_compare
+from m2py.runtime import MUMPSRuntime
+
+_rt = MUMPSRuntime()
+
+_test = False
+
+def TEST():
+    global _test
+    X = 1
+    _rt.write(str(X))
+```
+
 ### Using Analysis Flags
 
 The analysis pipeline populates fields that guide code generation:
 
 ```python
-# Illustrative code - do not use this as a design reference
-# TODO: Update with final design/syntax when ready
 from m2py import MUMPSParser
 
 parser = MUMPSParser()
