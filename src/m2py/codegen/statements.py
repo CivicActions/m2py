@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from m2py.asg.enums import ForParamType
 from m2py.asg.expressions import MExpr, MVariable
 from m2py.asg.statements import (
+    MDoStatement,
     MElseStatement,
     MForStatement,
     MGotoStatement,
@@ -59,6 +60,8 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_for(stmt, ctx)
     elif isinstance(stmt, MGotoStatement):
         _generate_goto(stmt, ctx)
+    elif isinstance(stmt, MDoStatement):
+        _generate_do(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -312,6 +315,42 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     # The return ensures control doesn't continue after GOTO
     ctx.emitter.line(f"{label_name}()")
     ctx.emitter.line("return")
+
+
+def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
+    """Generate function call from MDoStatement.
+
+    DO calls a subroutine and returns to the caller.
+    Unlike GOTO, control continues after DO returns.
+
+    Example: D SUB → SUB()
+
+    Args:
+        stmt: MDoStatement node
+        ctx: Generator context
+
+    Raises:
+        NotImplementedError: For unsupported DO patterns
+    """
+    # Check for argumentless DO (inline block)
+    if not stmt.targets:
+        raise NotImplementedError("Argumentless DO blocks not yet supported")
+
+    # Handle each target (multiple targets allowed: D A,B,C)
+    for target in stmt.targets:
+        # Check for external routine reference
+        if target.routine:
+            raise NotImplementedError("External routine DO not yet supported")
+
+        # Check for indirection
+        if target.label_is_indirect or target.indirection:
+            raise NotImplementedError("Indirect DO not yet supported")
+
+        # Get the label name and translate it
+        label_name = translate_name(target.name)
+
+        # Generate function call (no return - control continues after DO)
+        ctx.emitter.line(f"{label_name}()")
 
 
 __all__ = ["generate_statement"]

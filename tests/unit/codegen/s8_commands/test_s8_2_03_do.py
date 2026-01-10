@@ -10,11 +10,40 @@ import pytest
 class TestDoCommandCodegen:
     """Codegen-level tests for DO command code generation (§8.2.3)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO call codegen")
     def test_do_call_codegen(self, generate_python):
-        """DO generates function call (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        """DO generates function call (§8.2.3).
+
+        User Story 5 acceptance scenario (T042/T043):
+        Given: D SUB
+        When: generated
+        Then: output contains SUB() function call
+        """
+        code = generate_python('TEST\n D SUB\n Q\nSUB\n W "SUB"\n Q\n')
+        assert "SUB()" in code
+
+    def test_do_call_and_return(self, execute_mumps):
+        """DO calls subroutine and returns to caller.
+
+        User Story 5 acceptance scenario (T043):
+        Given: TEST D SUB W "END" Q SUB W "SUB" Q
+        When: generated and executed
+        Then: output is "SUBEND" (SUB writes, then returns, then END writes)
+        """
+        result = execute_mumps('TEST\n D SUB\n W "END"\n Q\nSUB\n W "SUB"\n Q\n')
+        assert result.output == "SUBEND"
+        assert result.success is True
+
+    def test_do_nested_calls(self, execute_mumps):
+        """Nested DO calls work correctly.
+
+        User Story 5 acceptance scenario (T044):
+        Given: TEST D A Q A D B Q B W "B" Q
+        When: generated and executed
+        Then: output is "B" (TEST→A→B, B writes)
+        """
+        result = execute_mumps('TEST\n D A\n Q\nA\n D B\n Q\nB\n W "B"\n Q\n')
+        assert result.output == "B"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: DO with args")

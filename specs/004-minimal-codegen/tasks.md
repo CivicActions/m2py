@@ -155,9 +155,9 @@
 
 ### Implementation for User Story 5
 
-- [ ] T042 [US5] Handle `MDoStatement` in `generate_statement()` - emit `label()`
-- [ ] T043 [US5] Test: `TEST D SUB W "END" Q SUB W "SUB" Q` → outputs "SUBEND"
-- [ ] T044 [US5] Test: `TEST D A Q A D B Q B W "B" Q` → outputs "B" (nested)
+- [X] T042 [US5] Handle `MDoStatement` in `generate_statement()` - emit `label()`
+- [X] T043 [US5] Test: `TEST D SUB W "END" Q SUB W "SUB" Q` → outputs "SUBEND"
+- [X] T044 [US5] Test: `TEST D A Q A D B Q B W "B" Q` → outputs "B" (nested)
 
 **Checkpoint**: User Story 5 complete - DO calls and returns work
 
