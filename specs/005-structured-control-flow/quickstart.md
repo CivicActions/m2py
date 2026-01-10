@@ -235,11 +235,18 @@ def decide_for_pattern(stmt: MForStatement) -> str:
 
 ```python
 def decide_goto_pattern(stmt: MGotoStatement) -> str:
+    # First check for backward jumps - always unsupported in Spec 005
+    if stmt.goto_type == GotoType.BACKWARD_JUMP:
+        # Both intra-label (G LABEL without offset) and cross-label backward
+        # Intra-label backward creates implicit loops, cross-label needs state machine
+        return "unsupported"  # Spec 006
+    
     if stmt.is_cross_label:
         if stmt.goto_type == GotoType.LOOP_EXIT:
             return "break_and_call"  # break + function call
-        return "unsupported"  # Spec 006
+        return "unsupported"  # Spec 006 (cross-label forward)
     
+    # Intra-label patterns (is_cross_label=False)
     if stmt.is_loop_continue:
         return "continue"
     elif stmt.goto_type == GotoType.LOOP_EXIT:

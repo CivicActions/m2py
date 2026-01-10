@@ -259,26 +259,31 @@ G LABEL1,LABEL2:COND
 | `is_cross_label` | `bool` | True if target is in a different label |
 | `is_loop_continue` | `bool` | True if GOTO simulates `continue` |
 
-**is_cross_label**: Set to True when the GOTO target is in a different label than the GOTO source. This is orthogonal to the direction (forward/backward) and loop-exit status. Code generators can use this to determine whether simple if/else suffices or function-call-based control flow is needed.
+**is_cross_label**: Set to True when the GOTO target is in a different label than the GOTO source. Set to False when the GOTO targets the same label it's contained in (intra-label). Code generators can use this to determine whether simple control flow restructuring suffices or function-call-based control flow is needed.
 
 **is_loop_continue**: Set to True when a GOTO inside a FOR loop jumps back to the label containing that FOR loop. This pattern is equivalent to Python's `continue` statement - it exits the current iteration and starts the next one.
 
 **GotoType values**:
-- `FORWARD_JUMP` - Jump ahead (check `is_cross_label` for scope)
-- `BACKWARD_JUMP` - Jump back (creates loop)
+- `FORWARD_JUMP` - Jump ahead (intra-label with offset ahead, or cross-label to later label)
+- `BACKWARD_JUMP` - Jump back (intra-label without offset, intra-label with offset behind, or cross-label to earlier label)
 - `LOOP_EXIT` - Exits single FOR loop
 - `MULTI_LOOP_EXIT` - Exits multiple nested FORs
 - `EXTERNAL` - Jumps to external routine
 - `UNRESOLVED` - Cannot determine statically
 - `CROSS_LABEL` - **Deprecated**: use `is_cross_label` flag instead
 
+**Intra-label GOTO classification**:
+- `G LABEL` (no offset) from within `LABEL`: Always `BACKWARD_JUMP` - jumps to start of label
+- `G LABEL+n` (with offset) from within `LABEL`: `FORWARD_JUMP` if offset ahead, `BACKWARD_JUMP` if offset behind
+
 **Code Generation by goto_type + is_cross_label**:
 - `LOOP_EXIT` with `is_loop_continue=True`: `continue`
 - `LOOP_EXIT` with `is_loop_continue=False`: `break`
 - `MULTI_LOOP_EXIT`: Exception or state machine
-- `FORWARD_JUMP` + `is_cross_label=False`: If/elif chain
+- `FORWARD_JUMP` + `is_cross_label=False`: If/elif chain (restructurable)
 - `FORWARD_JUMP` + `is_cross_label=True`: Function call with return
-- `BACKWARD_JUMP`: While loop wrapper
+- `BACKWARD_JUMP` + `is_cross_label=False`: Implicit loop (deferred to Spec 006)
+- `BACKWARD_JUMP` + `is_cross_label=True`: While loop wrapper or state machine
 
 ---
 

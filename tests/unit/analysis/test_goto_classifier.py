@@ -422,8 +422,13 @@ class TestClassifyGotosAdvanced:
 
         return routine
 
-    def test_goto_same_label_is_forward_jump(self):
-        """GOTO to same label should be FORWARD_JUMP (intra-label)."""
+    def test_goto_same_label_is_backward_jump(self):
+        """GOTO to same label (without offset) should be BACKWARD_JUMP.
+
+        G LABEL from within LABEL always jumps to the start of the label,
+        which is backward from any position within the label's body.
+        This pattern creates an implicit loop.
+        """
         routine = MRoutine(name="TEST")
 
         # Create a single label with GOTO to itself
@@ -432,7 +437,7 @@ class TestClassifyGotosAdvanced:
         label.body.parent = label
         routine.add_label(label)
 
-        # Add GOTO MAIN in MAIN (jumps to same label)
+        # Add GOTO MAIN in MAIN (jumps to same label = backward to start)
         goto_stmt = MGotoStatement()
         call = MCall(name="MAIN")
         goto_stmt.targets.append(call)
@@ -441,8 +446,9 @@ class TestClassifyGotosAdvanced:
         resolve_references(routine)
         classify_gotos(routine)
 
-        # GOTO to same label is FORWARD_JUMP (within label scope)
-        assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
+        # GOTO to same label without offset = backward to label start
+        assert goto_stmt.goto_type == GotoType.BACKWARD_JUMP
+        assert goto_stmt.is_cross_label is False
 
     def test_goto_cross_label_forward(self):
         """GOTO to later label should be FORWARD_JUMP with is_cross_label=True."""

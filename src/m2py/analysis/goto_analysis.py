@@ -184,20 +184,48 @@ def _classify_single_goto(
         target_label_idx = label_positions.get(target_label.name, -1)
 
         # Determine base goto type based on target location
-        # Same label = forward or backward within label (intra-label jump)
         if target_label.name == current_label.name:
-            # Intra-label jump: both source and target are within the same label.
-            # Determining forward vs. backward direction would require tracking
-            # statement order within the label, which isn't currently available.
-            # Classification: Default to FORWARD_JUMP since the more important
-            # signal for code generation is is_cross_label=False, which indicates
-            # the jump stays within local scope and can typically be translated
-            # to structured control flow (if/elif/continue).
-            _source_line = (
-                stmt.line_number or 0
-            )  # Reserved for future direction analysis
-            stmt.goto_type = GotoType.FORWARD_JUMP
+            # Intra-label jump: GOTO targets the same label it's contained in.
+            # Direction depends on offset:
+            # - G LABEL (no offset): jumps to start of label = backward
+            # - G LABEL+n: jumps to label+n lines, direction depends on n vs current position
             stmt.is_cross_label = False
+
+            # Check for offset to determine direction
+            target_offset = call.offset
+            if target_offset is None:
+                # No offset: G LABEL = backward to label start
+                # This pattern creates an implicit loop: code executes, then jumps
+                # back to the label start. Example:
+                #   TEST S X=X+1 W X I X<10 G TEST Q
+                stmt.goto_type = GotoType.BACKWARD_JUMP
+            else:
+                # Has offset: G LABEL+n
+                # Try to determine direction if offset is a literal AND we have line info
+                from m2py.asg.expressions import MLiteral
+
+                if (
+                    isinstance(target_offset, MLiteral)
+                    and target_offset.value is not None
+                    and stmt.line_number is not None
+                    and target_label.line_number is not None
+                ):
+                    # Static offset with line info - compare positions
+                    goto_line_offset = stmt.line_number - target_label.line_number
+                    target_line_offset = int(target_offset.value)
+
+                    if target_line_offset > goto_line_offset:
+                        # Target is ahead of GOTO position = forward
+                        stmt.goto_type = GotoType.FORWARD_JUMP
+                    else:
+                        # Target is at or before GOTO position = backward
+                        stmt.goto_type = GotoType.BACKWARD_JUMP
+                else:
+                    # Cannot determine direction statically (dynamic offset or missing line info)
+                    # Default to FORWARD_JUMP since:
+                    # 1. G LABEL+n is typically used to skip ahead (forward)
+                    # 2. Codegen will handle conservatively if it can't restructure
+                    stmt.goto_type = GotoType.FORWARD_JUMP
         else:
             # Different label = cross-label jump
             # Set is_cross_label flag to indicate label boundary crossing

@@ -183,7 +183,7 @@ class GotoGenContext:
     in_for_loop: bool
     enclosing_loops: List[MForStatement]
     target_label: str
-    pattern: str  # 'continue' | 'break' | 'multi_break' | 'forward' | 'unsupported'
+    pattern: str  # 'continue' | 'break' | 'multi_break' | 'forward' | 'function_call' | 'unsupported'
 ```
 
 ---
@@ -250,8 +250,17 @@ break
 # MULTI_LOOP_EXIT
 raise _LoopExit()
 
-# FORWARD_JUMP (intra-label)
+# FORWARD_JUMP (intra-label, is_cross_label=False)
 # Restructure to if/else - no explicit goto
+
+# FORWARD_JUMP (cross-label, is_cross_label=True)
+# Function call pattern (deferred to Spec 006 for full support)
+return target_label()
+
+# BACKWARD_JUMP (any)
+# Unsupported in Spec 005 - raises UnsupportedFeatureError
+# Intra-label backward (G LABEL without offset) creates implicit loops
+# Cross-label backward requires state machine - deferred to Spec 006
 ```
 
 ### 4.4 QUIT Patterns
@@ -291,8 +300,12 @@ def validate_for_codegen(routine: MRoutine) -> List[str]:
             if isinstance(stmt, MGotoStatement):
                 if stmt.is_cross_label and stmt.goto_type != GotoType.LOOP_EXIT:
                     errors.append(f"Cross-label GOTO to {stmt.targets[0].name} not supported (Spec 006)")
-                if stmt.goto_type == GotoType.BACKWARD_JUMP and stmt.is_cross_label:
-                    errors.append(f"Backward cross-label GOTO not supported (Spec 006)")
+                if stmt.goto_type == GotoType.BACKWARD_JUMP:
+                    # All backward jumps (cross-label and intra-label) are unsupported in Spec 005
+                    # Intra-label backward (G LABEL without offset) creates implicit loops
+                    # Cross-label backward requires state machine
+                    label_type = "cross-label" if stmt.is_cross_label else "intra-label"
+                    errors.append(f"Backward {label_type} GOTO not supported (Spec 006)")
     
     return errors
 ```

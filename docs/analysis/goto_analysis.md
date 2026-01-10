@@ -48,9 +48,10 @@ for label in routine.labels:
 
 The `is_cross_label` boolean field on `MGotoStatement` indicates whether the target is in a different label than the source. This is orthogonal to direction:
 
-- **`FORWARD_JUMP` + `is_cross_label=False`**: GOTO within the same label (intra-label). Can be translated to if/elif chains.
-- **`FORWARD_JUMP` + `is_cross_label=True`**: GOTO to a later label (inter-label). Typically requires converting labels to functions.
-- **`BACKWARD_JUMP` + `is_cross_label=True`**: GOTO to an earlier label. Creates implicit loop requiring state machine.
+- **`FORWARD_JUMP` + `is_cross_label=False`**: Intra-label forward jump (e.g., `G LABEL+n` with offset ahead). Can be translated to if/elif chains.
+- **`BACKWARD_JUMP` + `is_cross_label=False`**: Intra-label backward jump (e.g., `G LABEL` without offset, or `G LABEL+n` with offset behind). Creates implicit loop.
+- **`FORWARD_JUMP` + `is_cross_label=True`**: Cross-label forward jump to a later label. Typically requires converting labels to functions.
+- **`BACKWARD_JUMP` + `is_cross_label=True`**: Cross-label backward jump to an earlier label. Creates implicit loop requiring state machine.
 - **`LOOP_EXIT` + `is_cross_label=True`**: Exit FOR and jump to different label. Requires break + dispatch.
 
 ## What Gets Populated
@@ -87,18 +88,22 @@ EARLY  ; Position 0
 MIDDLE ; Position 1
        G EARLY    ; BACKWARD_JUMP, is_cross_label=True (1 → 0)
        G LATER    ; FORWARD_JUMP, is_cross_label=True (1 → 2)
-       G MIDDLE   ; FORWARD_JUMP, is_cross_label=False (same label)
+       G MIDDLE   ; BACKWARD_JUMP, is_cross_label=False (same label, no offset = backward to start)
+       G MIDDLE+3 ; FORWARD_JUMP, is_cross_label=False (same label, offset ahead)
 LATER  ; Position 2
        Q
 ```
 
 The analyzer builds a label position map and compares indices.
 
-**Intra-Label Jumps**: When source and target are in the same label (`is_cross_label=False`),
-the analyzer defaults to `FORWARD_JUMP` since determining forward vs. backward direction
-would require tracking statement order within the label. The `is_cross_label=False` flag
-is the key signal for code generation, indicating the jump stays within local scope and
-can typically be translated to structured control flow.
+**Intra-Label Jumps** (`is_cross_label=False`): When GOTO targets the same label it's contained in:
+
+- **Without offset** (`G LABEL`): Always `BACKWARD_JUMP` - jumps to start of label, creating an implicit loop
+- **With offset** (`G LABEL+n`): Direction depends on whether offset `n` is ahead or behind current position
+  - If line number info available: Compare target offset vs GOTO position
+  - If line number unavailable: Defaults to `FORWARD_JUMP` (conservative assumption)
+
+The `is_cross_label=False` flag indicates the jump stays within local scope.
 
 ### Loop Exit Detection
 
