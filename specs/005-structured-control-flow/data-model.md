@@ -50,6 +50,10 @@ class MGotoStatement:
     is_cross_label: bool = False
     is_loop_continue: bool = False
     exits_loops: List[MForStatement] = field(default_factory=list)
+    
+    # For intra-label forward GOTOs (is_cross_label=False, FORWARD_JUMP):
+    # Index of target statement in the label body, computed from LABEL+n offset
+    target_stmt_index: Optional[int] = None
 ```
 
 ### 1.3 MQuitStatement
@@ -251,7 +255,12 @@ break
 raise _LoopExit()
 
 # FORWARD_JUMP (intra-label, is_cross_label=False)
-# Restructure to if/else - no explicit goto
+# Restructure to inverted if/else using target_stmt_index
+# Statements between IF and target go in "if not _test:" block
+_test = m_truth(cond)
+if not _test:
+    # statements to skip...
+# target statement continues here
 
 # FORWARD_JUMP (cross-label, is_cross_label=True)
 # Function call pattern (deferred to Spec 006 for full support)

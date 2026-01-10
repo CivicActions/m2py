@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List
 
-from m2py.asg.enums import ForLoopType, ForParamType, PassingMode
+from m2py.asg.enums import ForLoopType, ForParamType, GotoType, PassingMode
 from m2py.asg.expressions import MActualParameter, MExpr, MVariable
 from m2py.asg.statements import (
     MDoStatement,
@@ -27,6 +27,21 @@ from m2py.codegen.names import translate_name
 if TYPE_CHECKING:
     from m2py.asg.statements import MStatement
     from m2py.codegen.routine import GeneratorContext
+
+
+# =============================================================================
+# Exceptions (imported locally to avoid circular import)
+# =============================================================================
+
+
+class UnsupportedFeatureError(Exception):
+    """Raised when attempting to generate code for unsupported feature.
+
+    Note: This is a local definition to avoid circular import.
+    The canonical definition is in m2py.codegen.__init__.py.
+    """
+
+    pass
 
 
 # =============================================================================
@@ -313,6 +328,142 @@ def _is_restructurable_goto(stmt: MGotoStatement) -> bool:
 
     # Restructurable: intra-label (same label) forward jump
     return goto_type == GotoType.FORWARD_JUMP and not is_cross_label
+
+
+def _find_forward_goto_in_if(if_stmt: MIfStatement) -> "MGotoStatement | None":
+    """Find a restructurable forward GOTO in an IF's then_scope.
+
+    Only checks the first statement (immediate GOTO pattern).
+    More complex patterns could be supported in the future.
+
+    Args:
+        if_stmt: The MIfStatement to check
+
+    Returns:
+        The MGotoStatement if found and restructurable, None otherwise
+    """
+    if not if_stmt.then_scope or not if_stmt.then_scope.statements:
+        return None
+
+    # Check if there's a GOTO as the only/first statement
+    for stmt in if_stmt.then_scope.statements:
+        if isinstance(stmt, MGotoStatement) and _is_restructurable_goto(stmt):
+            return stmt
+
+    return None
+
+
+def _restructure_forward_goto(
+    if_stmt: MIfStatement,
+    if_index: int,
+    statements: List["MStatement"],
+    goto: MGotoStatement,
+    ctx: "GeneratorContext",
+) -> int:
+    """Generate restructured code for forward GOTO in an IF statement.
+
+    Transforms:
+        IF cond GOTO target       ; if_index
+        ... statements to skip ... ; if_index+1 to target_idx-1
+        target_statement           ; target_idx
+
+    Into:
+        _test = m_truth(cond)
+        if not _test:
+            ... statements to skip ...
+        target_statement  # continues at same level
+
+    The transformation inverts the IF condition so that statements between
+    the IF and the GOTO target are executed only when the condition is FALSE.
+    When the condition is TRUE, those statements are skipped (the original
+    GOTO behavior).
+
+    Args:
+        if_stmt: The MIfStatement containing the GOTO
+        if_index: Index of the IF statement in the statement list
+        statements: Full list of statements at this scope level
+        goto: The MGotoStatement being restructured
+        ctx: Generator context
+
+    Returns:
+        The next statement index to continue generation from (skip consumed statements)
+    """
+    # Get target statement index from analysis
+    target_idx = getattr(goto, "target_stmt_index", None)
+
+    if target_idx is None:
+        # Fall back to generating the IF normally
+        _generate_if(if_stmt, ctx)
+        return if_index + 1
+
+    # Statements to skip are between IF (exclusive) and target (exclusive)
+    skip_stmts = statements[if_index + 1 : target_idx]
+
+    # Generate condition check and set _test
+    # Handle single vs multiple conditions
+    if if_stmt.condition is not None:
+        cond_expr = generate_expr(if_stmt.condition, ctx)
+        ctx.emitter.line(f"_test = m_truth({cond_expr})")
+    elif if_stmt.conditions:
+        cond_parts = [generate_expr(c, ctx) for c in if_stmt.conditions]
+        cond_expr = " and ".join(f"m_truth({c})" for c in cond_parts)
+        ctx.emitter.line(f"_test = {cond_expr}")
+    else:
+        # Argumentless IF - use existing _test (GOTO executes if _test is true)
+        pass  # _test already set
+
+    # Generate the restructured if/else
+    # Skipped statements go in "if not _test:" (execute when GOTO doesn't fire)
+    if skip_stmts:
+        ctx.emitter.line("if not _test:")
+        with ctx.emitter.indented():
+            for stmt in skip_stmts:
+                generate_statement(stmt, ctx)
+
+    # Return the target index - generation continues from there
+    return target_idx
+
+
+def generate_scope_statements(
+    statements: List["MStatement"],
+    ctx: "GeneratorContext",
+) -> None:
+    """Generate statements for a scope, handling forward GOTO restructuring.
+
+    This function should be used when generating a sequence of statements
+    (e.g., label body, DO block body) to properly handle intra-label forward
+    GOTOs by restructuring them to if/else blocks.
+
+    The restructuring transforms:
+        I cond G SKIP
+        W "skipped"
+        SKIP W "target"
+
+    Into:
+        _test = m_truth(cond)
+        if not _test:
+            _rt.write("skipped")
+        _rt.write("target")
+
+    Args:
+        statements: List of statements to generate
+        ctx: Generator context
+    """
+    i = 0
+    while i < len(statements):
+        stmt = statements[i]
+
+        # Check for IF with restructurable forward GOTO
+        if isinstance(stmt, MIfStatement):
+            goto = _find_forward_goto_in_if(stmt)
+            if goto:
+                # Restructure and skip consumed statements
+                i = _restructure_forward_goto(stmt, i, statements, goto, ctx)
+                continue
+
+        # Normal statement generation
+        generate_statement(stmt, ctx)
+        i += 1
 
 
 def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
@@ -776,6 +927,7 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
 
     Raises:
         NotImplementedError: For unsupported GOTO patterns
+        UnsupportedFeatureError: For backward intra-label GOTO (requires Spec 006)
     """
     if not stmt.targets:
         raise NotImplementedError("Argumentless GOTO not supported")
@@ -792,6 +944,17 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     # Check for indirection
     if target.label_is_indirect or target.indirection:
         raise NotImplementedError("Indirect GOTO not yet supported")
+
+    # Check for backward intra-label GOTO (creates implicit loops)
+    # These cannot be restructured to simple if/else and require Spec 006
+    goto_type = getattr(stmt, "goto_type", None)
+    is_cross_label = getattr(stmt, "is_cross_label", True)
+
+    if goto_type == GotoType.BACKWARD_JUMP and not is_cross_label:
+        raise UnsupportedFeatureError(
+            "Backward intra-label GOTO creates implicit loop - not yet supported. "
+            "See Spec 006 for loop detection patterns."
+        )
 
     # Get the label name and translate it
     label_name = translate_name(target.name)
@@ -862,6 +1025,7 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
 
 __all__ = [
     "generate_statement",
+    "generate_scope_statements",
     "ForGenContext",
     "GotoGenContext",
     "_is_do_block",

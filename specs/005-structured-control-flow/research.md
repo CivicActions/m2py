@@ -287,22 +287,59 @@ except _LoopExit:
 
 **Decision**: Define `_LoopExit` in generated module, not in helpers.
 
-### Forward Jump Restructuring
+### Forward Jump Restructuring (Intra-Label Only)
 
-```mumps
-       I X=1 G SKIP
-       W "Not skipped"
-SKIP   W "After"
-```
+Forward intra-label GOTOs use an inverted if/else pattern. The condition is evaluated
+and the statements between the IF and the target are wrapped in `if not _test:`.
 
-Becomes:
+**MUMPS Offset Semantics**: `LABEL+n` refers to the line that is `n` lines after the
+LABEL line. For example, if TEST is at line 1:
+- `G TEST+0` targets line 1 (the label line itself)
+- `G TEST+4` targets line 5
+
+**Implementation**: The analysis pass (`classify_gotos`) computes `target_stmt_index`:
 ```python
-if not m_truth(X == 1):
-    print("Not skipped")
-print("After")
+# In goto_analysis.py
+target_line = target_label.line_number + target_line_offset
+stmt.target_stmt_index = _find_stmt_index_for_line(label.body.statements, target_line)
 ```
 
-**Limitation**: Only handles single-level forward jumps in Spec 005. Complex patterns deferred to Spec 006.
+**Parser Support**: Line numbers are propagated to nested statements (IF then_scope,
+FOR body) via `_set_line_number_recursive()` to ensure accurate index lookup.
+
+**Example**:
+```mumps
+TEST I 1 G TEST+4       ; Line 1 - if true, skip to line 5
+     W "A",!            ; Line 2 - skipped when GOTO fires
+     W "B",!            ; Line 3 - skipped when GOTO fires
+     W "C",!            ; Line 4 - skipped when GOTO fires
+     W "D",!            ; Line 5 - target (TEST+4)
+     Q
+```
+
+Generated Python:
+```python
+def TEST():
+    global _test
+    _test = m_truth(1)
+    if not _test:
+        _rt.write(str("A"))
+        _rt.write(str("\n"))
+        _rt.write(str("B"))
+        _rt.write(str("\n"))
+        _rt.write(str("C"))
+        _rt.write(str("\n"))
+    _rt.write(str("D"))
+    _rt.write(str("\n"))
+```
+
+**Key Functions**:
+- `_find_forward_goto_in_if()` - Detects restructurable GOTOs inside IF statements
+- `_restructure_forward_goto()` - Generates the inverted if/else structure
+- `generate_scope_statements()` - Scope-level generator that handles restructuring
+
+**Limitation**: Only handles intra-label forward jumps where `is_cross_label=False`.
+Backward intra-label GOTOs and all cross-label GOTOs are deferred to Spec 006.
 
 ---
 

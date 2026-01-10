@@ -115,11 +115,18 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 ### Implementation for User Story 4
 
 - [X] T028 [US4] Add _is_restructurable_goto() to check is_cross_label=False and FORWARD_JUMP in src/m2py/codegen/statements.py
-- [ ] T029 [US4] Implement _restructure_forward_goto() to generate if/else structure in src/m2py/codegen/statements.py
-- [ ] T030 [US4] Modify _generate_goto() to dispatch to restructure for intra-label forward jumps in src/m2py/codegen/statements.py
-- [ ] T031 [US4] Add UnsupportedFeatureError for backward intra-label GOTO in src/m2py/codegen/statements.py
-- [ ] T032 [US4] Add test: forward jump restructures to if/else in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
-- [ ] T033 [US4] Add test: backward intra-label GOTO raises error in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [X] T029 [US4] Implement _restructure_forward_goto() to generate if/else structure in src/m2py/codegen/statements.py
+- [X] T030 [US4] Add generate_scope_statements() to handle forward GOTO restructuring at scope level in src/m2py/codegen/statements.py
+- [X] T031 [US4] Add UnsupportedFeatureError for backward intra-label GOTO in src/m2py/codegen/statements.py
+- [X] T032 [US4] Add test: forward jump restructures to if/else in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [X] T033 [US4] Add test: backward intra-label GOTO raises error in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+
+**Implementation Notes** (Phase 6 Complete):
+- MUMPS offset semantics: `LABEL+n` targets line n from LABEL (e.g., TEST+4 from TEST at line 1 targets line 5)
+- `target_stmt_index` computed in `classify_gotos()` via `_find_stmt_index_for_line()`
+- Line numbers propagated to nested statements via `_set_line_number_recursive()` in parser
+- `generate_scope_statements()` replaces direct statement loop in `_generate_label()`
+- Backward intra-label GOTOs raise `UnsupportedFeatureError` pointing to Spec 006
 
 **Checkpoint**: Intra-label forward GOTO restructures to Python control flow
 

@@ -258,6 +258,12 @@ G LABEL1,LABEL2:COND
 | `exits_loops` | `List[MForStatement]` | FOR loops exited |
 | `is_cross_label` | `bool` | True if target is in a different label |
 | `is_loop_continue` | `bool` | True if GOTO simulates `continue` |
+| `target_stmt_index` | `Optional[int]` | Statement index for intra-label forward restructuring |
+
+**target_stmt_index**: For intra-label forward GOTOs (`is_cross_label=False`, `goto_type=FORWARD_JUMP`),
+this field contains the index of the target statement in the label body. Computed from MUMPS offset
+semantics: `LABEL+n` targets line n from the label. Used by code generation to restructure the GOTO
+to an if/else block.
 
 **is_cross_label**: Set to True when the GOTO target is in a different label than the GOTO source. Set to False when the GOTO targets the same label it's contained in (intra-label). Code generators can use this to determine whether simple control flow restructuring suffices or function-call-based control flow is needed.
 

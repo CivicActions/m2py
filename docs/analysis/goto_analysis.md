@@ -67,7 +67,20 @@ class MGotoStatement(MStatement):
     is_cross_label: bool = False  # True if target in different label
     exits_loops: List[MForStatement] = field(default_factory=list)
     is_loop_continue: bool = False  # True if continue semantics
+    target_stmt_index: Optional[int] = None  # For intra-label forward restructuring
 ```
+
+### target_stmt_index
+
+For intra-label forward GOTOs (`is_cross_label=False`, `goto_type=FORWARD_JUMP`), this field
+contains the index of the target statement in the label body. Used by code generation to
+restructure the GOTO to an if/else block.
+
+**MUMPS Offset Semantics**: `LABEL+n` targets line n from LABEL (0-indexed).
+For example, `G TEST+4` from TEST at line 1 targets line 5.
+
+The value is computed by `_find_stmt_index_for_line()` which maps the target line number
+to a statement index in the label body.
 
 ### On MForStatement (back-references)
 

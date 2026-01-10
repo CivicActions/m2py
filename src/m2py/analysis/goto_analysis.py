@@ -9,12 +9,33 @@ These functions operate on ASG nodes (MRoutine, MGotoStatement, MForStatement)
 and do not perform any text parsing.
 """
 
-from typing import List
+from typing import List, Optional
 
 from ..asg.elements import MLabel, MRoutine, MScope
 from ..asg.enums import GotoType
-from ..asg.statements import MForStatement, MGotoStatement
+from ..asg.statements import MForStatement, MGotoStatement, MStatement
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
+
+
+def _find_stmt_index_for_line(
+    statements: List[MStatement], target_line: int
+) -> Optional[int]:
+    """Find the statement index for a given line number.
+
+    Scans the statement list for the first statement at or after the target line.
+    This handles cases where there may be gaps in line numbers.
+
+    Args:
+        statements: List of statements from a label body
+        target_line: The line number to find
+
+    Returns:
+        Index of the statement at/after target_line, or None if not found
+    """
+    for i, stmt in enumerate(statements):
+        if stmt.line_number is not None and stmt.line_number >= target_line:
+            return i
+    return None
 
 
 def classify_gotos(routine: MRoutine) -> None:
@@ -217,6 +238,16 @@ def _classify_single_goto(
                     if target_line_offset > goto_line_offset:
                         # Target is ahead of GOTO position = forward
                         stmt.goto_type = GotoType.FORWARD_JUMP
+                        # Compute target statement index for restructuring
+                        # target_stmt_index = offset (since LABEL+n refers to line n)
+                        # But we need to map line to statement index in the label body
+                        # For simple cases where each line is one statement:
+                        # target_line = label.line_number + offset
+                        # We need to find which statement is at that line
+                        target_line = target_label.line_number + target_line_offset
+                        stmt.target_stmt_index = _find_stmt_index_for_line(
+                            current_label.body.statements, target_line
+                        )
                     else:
                         # Target is at or before GOTO position = backward
                         stmt.goto_type = GotoType.BACKWARD_JUMP

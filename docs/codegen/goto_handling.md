@@ -22,7 +22,48 @@ After `classify_gotos()`, each MGotoStatement has a `goto_type`:
 
 ## Forward Jump
 
-### Simple Forward
+### Intra-Label Forward (is_cross_label=False)
+
+When a GOTO targets a line within the same label, the code generator restructures
+it to an inverted if/else block. This is handled by `generate_scope_statements()`
+which detects restructurable GOTOs and transforms them.
+
+**MUMPS Offset Semantics**: `LABEL+n` targets line n from LABEL (0-indexed).
+For example, `G TEST+4` from TEST at line 1 targets line 5.
+
+```mumps
+TEST   I 1 G TEST+4    ; Line 1 - if true, skip to line 5
+       W "A",!         ; Line 2 - skipped when GOTO fires
+       W "B",!         ; Line 3 - skipped when GOTO fires
+       W "C",!         ; Line 4 - skipped when GOTO fires
+       W "D",!         ; Line 5 - target (TEST+4)
+       Q
+```
+
+**Generated Python (Spec 005):**
+```python
+def TEST():
+    global _test
+    _test = m_truth(1)
+    if not _test:
+        _rt.write(str("A"))
+        _rt.write(str("\n"))
+        _rt.write(str("B"))
+        _rt.write(str("\n"))
+        _rt.write(str("C"))
+        _rt.write(str("\n"))
+    _rt.write(str("D"))
+    _rt.write(str("\n"))
+```
+
+**Implementation Details**:
+- `_find_forward_goto_in_if()` detects restructurable GOTOs inside IF statements
+- `_restructure_forward_goto()` generates the inverted if/else structure
+- `target_stmt_index` (computed in `classify_gotos()`) identifies which statements to wrap
+
+### Cross-Label Forward (is_cross_label=True)
+
+Forward jumps to a different label use function call pattern (Spec 006):
 
 ```mumps
 START  I X=1 G DONE
@@ -30,15 +71,14 @@ START  I X=1 G DONE
 DONE   W "Finished"
 ```
 
-**If/Elif Pattern:**
+**Conceptual Python (Spec 006):**
 ```python
-# Conceptual Python equivalent
-
 if x == 1:
-    pass  # Skip to DONE
-else:
-    print("X is not 1")
-print("Finished")
+    return DONE()  # Function call + return
+print("X is not 1")
+
+def DONE():
+    print("Finished")
 ```
 
 ### Multiple Forwards (If/Elif Chain)
@@ -322,16 +362,17 @@ else:
 ## Analysis Fields Used
 
 ```python
-# Conceptual Python equivalent
+goto_stmt.goto_type            # Classification (GotoType enum)
+goto_stmt.postcondition        # Conditional GOTO expression
+goto_stmt.exits_loops          # List of FOR loops exited
+goto_stmt.is_cross_label       # True if target is different label
+goto_stmt.is_loop_continue     # True if simulates continue
+goto_stmt.target_stmt_index    # Statement index for intra-label forward (Spec 005)
+goto_stmt.targets[0].target    # Resolved MLabel
+goto_stmt.targets[0].routine   # External routine name
 
-goto_stmt.goto_type          # Classification
-goto_stmt.postcondition      # Conditional GOTO
-goto_stmt.exits_loops        # List of FOR loops exited
-goto_stmt.targets[0].target  # Resolved MLabel
-goto_stmt.targets[0].routine # External routine name
-
-for_stmt.has_internal_goto   # Has GOTO in body
-for_stmt.exit_points         # List of exiting GOTOs
+for_stmt.has_internal_goto     # Has GOTO in body
+for_stmt.exit_points           # List of exiting GOTOs
 ```
 
 ## Decision Algorithm

@@ -41,6 +41,36 @@ from m2py.asg.type_helpers import get_body_scope
 from m2py.parser.exceptions import MUMPSSyntaxError
 
 
+def _set_line_number_recursive(stmt: MStatement, line_number: int) -> None:
+    """Set line_number on a statement and all its nested statements.
+
+    This ensures that statements inside IF/FOR/ELSE blocks have the same
+    line_number as their parent, which is needed for GOTO analysis.
+
+    Args:
+        stmt: The statement to set line_number on
+        line_number: The source line number
+    """
+    stmt.line_number = line_number
+
+    # Recursively set on nested scopes
+    # Use getattr to access optional scope attributes
+    then_scope = getattr(stmt, "then_scope", None)
+    if then_scope is not None:
+        for child in then_scope.statements:
+            _set_line_number_recursive(child, line_number)
+
+    body = getattr(stmt, "body", None)
+    if body is not None:
+        for child in body.statements:
+            _set_line_number_recursive(child, line_number)
+
+    else_scope = getattr(stmt, "else_scope", None)
+    if else_scope is not None:
+        for child in else_scope.statements:
+            _set_line_number_recursive(child, line_number)
+
+
 def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MStatement]:
     """Structure a flat list of statements into proper control flow nesting.
 
@@ -698,6 +728,9 @@ class MUMPSParser:
             structured_statements = _structure_commands_with_bodies(flat_statements)
             for stmt in structured_statements:
                 stmt.scope = label.body
+                # Track source line number for GOTO analysis and error reporting
+                # Propagate to all nested statements (IF then_scope, FOR body, etc.)
+                _set_line_number_recursive(stmt, line_number)
                 # Store the nesting level for later analysis
                 if dot_level > 0:
                     stmt._dot_level = dot_level
@@ -779,6 +812,9 @@ class MUMPSParser:
             structured_statements = _structure_commands_with_bodies(flat_statements)
             for stmt in structured_statements:
                 stmt.scope = label.body
+                # Track source line number for GOTO analysis and error reporting
+                # Propagate to all nested statements (IF then_scope, FOR body, etc.)
+                _set_line_number_recursive(stmt, line_number)
                 # Mark with dot level if this is a dot-indented labeled line
                 if label._dot_level is not None:
                     stmt._dot_level = label._dot_level

@@ -110,20 +110,26 @@ uv run pytest tests/unit/codegen/test_for_loops.py -v
 
 ### Phase 2: GOTO Patterns
 
-**Goal**: Generate break, continue, and multi-loop exit patterns.
+**Goal**: Generate break, continue, multi-loop exit, and forward restructuring patterns.
 
 **Files to modify**:
-- `src/m2py/codegen/statements.py` - `_generate_goto()`
+- `src/m2py/codegen/statements.py` - `_generate_goto()` and new helper functions
 
 **Key changes**:
 1. Check `is_loop_continue` → generate `continue`
 2. Check `goto_type == LOOP_EXIT` → generate `break`
 3. Check `goto_type == MULTI_LOOP_EXIT` → generate exception pattern
-4. Handle `is_cross_label=False` forward jumps (if/else restructuring)
+4. Handle `is_cross_label=False` forward jumps via `generate_scope_statements()`:
+   - `_find_forward_goto_in_if()` detects restructurable GOTOs
+   - `_restructure_forward_goto()` generates inverted if/else using `target_stmt_index`
+   - `generate_scope_statements()` replaces direct statement loop in label generation
+
+**MUMPS Offset Semantics**: `LABEL+n` targets line n from LABEL (e.g., TEST+4 from TEST at line 1 targets line 5).
+The `classify_gotos()` analysis pass computes `target_stmt_index` by mapping line numbers to statement indices.
 
 **Test with**:
 ```bash
-uv run pytest tests/unit/codegen/test_goto_patterns.py -v
+uv run pytest tests/unit/codegen/s8_commands/test_s8_2_06_goto.py -v
 ```
 
 ### Phase 3: QUIT Context

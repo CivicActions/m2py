@@ -611,21 +611,26 @@ The following infrastructure is now available:
 - `NameTranslator` for variable/label name translation
 - `MUMPSRuntime.execute()` with isolated namespace injection
 
-### Key Implementation Questions (To Answer in Research Phase)
+### Key Implementation Decisions (Resolved)
 
-1. **$TEST stacking for argumentless DO**: Current `_test` is module-level. Options:
-   - Pass `_test` as hidden parameter, restore on return
-   - Use thread-local stack for $TEST values
-   - Use context manager pattern: `with _test_context(): DO_LABEL()`
+1. **$TEST stacking for DO blocks**: Use save/restore pattern via local variable.
+   - `_saved_test = _test` before block, `_test = _saved_test` after
+   - Only DO blocks (D + dot-indented lines) and extrinsics stack $TEST
+   - Label calls (D SUB, D SUB(), D SUB(X)) do NOT stack - callee's $TEST visible
 
-2. **By-reference parameters**: Current functions take no parameters. Options:
-   - Return-tuple pattern: `A, B = SWAP(A, B)` 
-   - Mutable wrapper: `class Ref: val = None`
-   - This affects `FunctionSignature.byref_outputs` handling
+2. **By-reference parameters**: Return-tuple pattern.
+   - `A, B = SWAP(A, B)` - callee returns modified values
+   - Call site destructures result back to original variables
+   - Uses `FunctionSignature.byref_outputs` from analysis
 
-3. **FOR loop variable modification**: When `loop_var_modified_in_body=True`:
-   - Must use `while` loop, not `for i in range()`
+3. **FOR loop variable modification**: Use `while` loop when `loop_var_modified_in_body=True`.
    - Track current value and step explicitly
+   - `for` loop only when loop var unmodified
+
+4. **Intra-label forward GOTO**: Inverted if/else restructuring.
+   - Uses `target_stmt_index` computed from MUMPS offset semantics (LABEL+n)
+   - `generate_scope_statements()` handles restructuring at scope level
+   - Statements between IF and target go in `if not _test:` block
 
 ### Research Phase
 
@@ -646,12 +651,13 @@ Review before coding:
    - **Note**: Postconditions (deferred to Spec 008) do NOT update $TEST - document this behavior now
    
 2. **$TEST Stack Semantics**
-   - **Argumentless DO**: `$TEST` is stacked (NEW $TEST), restored on QUIT
-   - **Extrinsic calls** (`$$label`): `$TEST` is stacked, restored on QUIT  
-   - **DO with arguments**: `$TEST` NOT stacked - callee mutations visible to caller
+   - **DO block** (D + dot-indented lines): `$TEST` is stacked, restored after block
+   - **Extrinsic calls** (`$$label`): `$TEST` is stacked, restored on return  
+   - **Label calls** (D SUB, D SUB(), D SUB(X)): `$TEST` NOT stacked - callee mutations visible to caller
    - **XECUTE**: `$TEST` NOT stacked - mutations visible to caller
    
-   This is critical for ELSE chains that span DO calls.
+   Note: The term "argumentless DO" is ambiguous. A label call without args (`D SUB`) does NOT stack,
+   but a DO block (`D` followed by dot-indented lines) DOES stack.
 
 3. **FOR Loop Variations**
    - `ForLoopType.OPEN_ENDED` → `while True:` with increment
@@ -696,24 +702,33 @@ Review before coding:
 
 ### Deliverables
 
-- [ ] $TEST tracking infrastructure with stack/restore for argumentless DO and extrinsics
-  - Tests: `TestTestStackSemanticsCodegen` → [test_language_semantics.py](../tests/unit/cross_cutting/test_language_semantics.py)
-- [ ] $TEST NOT stacked for DO with arguments (explicit test)
-  - Tests: `test_do_with_arguments_mutates_test` → TestTestStackSemanticsCodegen
-- [ ] Postconditions do NOT update $TEST (explicit test)
-  - Tests: `TestPostconditionsCodegen` → [test_postconditions.py](../tests/unit/cross_cutting/test_postconditions.py)
-- [ ] FOR loop strategy selector based on analysis flags
+- [x] $TEST tracking infrastructure with stack/restore for DO blocks (dot-indented)
+  - Tests: `TestDoBlockTestRestore` → [test_s8_2_03_do.py](../tests/unit/codegen/s8_commands/test_s8_2_03_do.py)
+  - Note: Only DO blocks (not label calls) stack $TEST
+- [x] $TEST NOT stacked for label calls (D SUB, D SUB(), D SUB(X))
+  - Tests: `test_label_call_*_test_visible` → test_s8_2_03_do.py
+- [x] FOR loop strategy selector based on analysis flags
   - Tests: `TestForLoopCodegen` → [test_s8_2_05_for.py](../tests/unit/codegen/s8_commands/test_s8_2_05_for.py)
-- [ ] Intra-label GOTO restructuring
-  - Tests: `TestIntraLabelGotoCodegen` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
-- [ ] Loop exit translation (break, exception)
-  - Tests: `TestForLoopCodegen.test_quit_in_for_loop_*` → test_s8_2_05_for.py
+  - Patterns: BOUNDED, OPEN_ENDED (itertools.count), ARGUMENTLESS (while True), STRING_LIST, MIXED (chain)
+- [x] Intra-label forward GOTO restructuring
+  - Tests: `test_forward_jump_restructures_*` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
+  - Implementation: `_find_forward_goto_in_if()`, `_restructure_forward_goto()`, `generate_scope_statements()`
+  - Uses `target_stmt_index` computed from MUMPS offset semantics (LABEL+n)
+- [x] Backward intra-label GOTO raises UnsupportedFeatureError
+  - Tests: `test_backward_intra_label_goto_raises_error` → test_s8_2_06_goto.py
+  - Deferred to Spec 006 for proper loop restructuring
+- [ ] Loop exit translation (break, exception) for GOTO
+  - Tests: `test_*_loop_exit_*` → test_s8_2_06_goto.py
 - [ ] QUIT context-aware code generation
   - Tests: `TestQuitCommandCodegen` → [test_s8_2_16_quit.py](../tests/unit/codegen/s8_commands/test_s8_2_16_quit.py)
 - [ ] Scope strategy code generation (PURE_FUNCTION, SUBROUTINE, etc.)
-  - Tests: `TestScopeStrategyCodegen` → [test_s8_2_03_do.py](../tests/unit/codegen/s8_commands/test_s8_2_03_do.py)
+  - Tests: `TestScopeStrategyCodegen` → test_s8_2_03_do.py
 - [ ] By-reference parameter return value pattern
   - Tests: `TestByRefParameterCodegen` → test_s8_2_03_do.py
+- [ ] Extrinsic function $TEST stacking
+  - Tests: `test_extrinsic_*_test_restore` → [test_s7_1_1_values.py](../tests/unit/codegen/s7_expressions/test_s7_1_1_values.py)
+- [ ] Postconditions do NOT update $TEST (explicit test)
+  - Tests: `TestPostconditionsCodegen` → [test_postconditions.py](../tests/unit/cross_cutting/test_postconditions.py)
 - [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
   - Update codegen-plan.md: mark deliverables complete, add implementation notes
   - Update docs/codegen/ with actual patterns used

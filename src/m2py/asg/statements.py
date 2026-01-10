@@ -252,6 +252,10 @@ class MGotoStatement(MStatement):
     is_cross_label: bool = False  # True if target is in a different label
     is_loop_continue: bool = False
 
+    # For intra-label forward GOTOs: index of target statement in label body
+    # Set during classify_gotos() when goto_type=FORWARD_JUMP and is_cross_label=False
+    target_stmt_index: Optional[int] = None
+
 
 # =============================================================================
 # Subroutine Statements

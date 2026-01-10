@@ -15,7 +15,7 @@ from m2py.asg.statements import MForStatement
 from m2py.analysis.variables import FunctionSignature
 from m2py.codegen.emitter import CodeEmitter
 from m2py.codegen.names import NameTranslator, translate_name
-from m2py.codegen.statements import generate_statement
+from m2py.codegen.statements import generate_scope_statements
 
 if TYPE_CHECKING:
     pass
@@ -174,10 +174,10 @@ class RoutineGenerator:
             # Declare global _test
             ctx.emitter.line("global _test")
 
-            # Generate body statements
+            # Generate body statements using scope-aware generator
+            # This handles forward GOTO restructuring automatically
             if label.body and label.body.statements:
-                for stmt in label.body.statements:
-                    generate_statement(stmt, ctx)
+                generate_scope_statements(label.body.statements, ctx)
             else:
                 # Empty function needs pass
                 ctx.emitter.line("pass")

@@ -56,17 +56,92 @@ class TestIntraLabelGotoCodegen:
     Reference: §8.2.6
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: forward jump to if/else")
-    def test_forward_jump_to_if_else(self, generate_python):
-        """Forward GOTO within label restructures to if/else.
+    def test_forward_jump_restructures_to_if_else(self, generate_python, execute_mumps):
+        """Forward GOTO within label restructures to if/else (T032).
 
-        LABEL S X=1
-              G DONE
-              S X=2  ; skipped
-        DONE  Q X
+        Verifies that intra-label forward GOTOs are transformed into
+        if/else blocks rather than recursive function calls.
+
+        MUMPS:  I 1 G TEST+4  ; if true, skip to W "D"
+                W "C"          ; skipped when GOTO fires
+                W "D"          ; target
+                Q
+
+        Python: _test = m_truth(1)
+                if not _test:
+                    _rt.write(str("C"))  # only when condition false
+                _rt.write(str("D"))  # always executed
         """
-        pytest.fail("Stub - implement test")
+        code = 'TEST W "A"\n W "B"\n I 1 G TEST+4\n W "C"\n W "D"\n Q\n'
+        python_code = generate_python(code)
+
+        # Should NOT contain recursive TEST() call inside the function body
+        # The function definition "def TEST():" is expected, but no TEST() calls
+        lines = python_code.split("\n")
+        in_test_body = False
+        for line in lines:
+            if "def TEST():" in line:
+                in_test_body = True
+                continue
+            if in_test_body and line.strip().startswith("def "):
+                # Hit another function definition, exit TEST body
+                break
+            if in_test_body:
+                assert "TEST()" not in line, f"Found recursive call in: {line}"
+
+        # Should contain the negated condition pattern
+        assert "if not _test:" in python_code
+
+        # Verify execution produces correct output
+        result = execute_mumps(code)
+        assert result.output == "ABD"  # C is skipped
+        assert result.success is True
+
+    def test_forward_jump_skips_multiple_statements(
+        self, generate_python, execute_mumps
+    ):
+        """Forward GOTO can skip multiple statements.
+
+        Verifies that multiple statements between GOTO and target
+        are all wrapped in the if/else block.
+        """
+        code = 'TEST W "A"\n I 1 G TEST+5\n W "B"\n W "C"\n W "D"\n Q\n'
+        python_code = generate_python(code)
+
+        # Should contain negated condition
+        assert "if not _test:" in python_code
+
+        # Verify execution - all of B, C, D skipped
+        result = execute_mumps(code)
+        assert result.output == "A"  # B, C, D skipped, then QUIT
+        assert result.success is True
+
+    def test_forward_jump_condition_false_executes_skipped(
+        self, generate_python, execute_mumps
+    ):
+        """When condition is false, GOTO doesn't fire and skipped statements execute.
+
+        Verifies that the restructuring correctly handles the false case.
+        """
+        code = 'TEST W "A"\n W "B"\n I 0 G TEST+4\n W "C"\n W "D"\n Q\n'
+        _python_code = generate_python(code)  # noqa: F841 - verify generation succeeds
+
+        # Verify execution - condition false means C is NOT skipped
+        result = execute_mumps(code)
+        assert result.output == "ABCD"  # C is executed when condition is false
+        assert result.success is True
+
+    def test_backward_intra_label_goto_raises_error(self, generate_python):
+        """Backward intra-label GOTO raises UnsupportedFeatureError (T033).
+
+        Backward GOTOs within a label create implicit loops that cannot
+        be restructured to simple if/else. These require Spec 006.
+        """
+        from m2py.codegen.statements import UnsupportedFeatureError
+
+        code = 'TEST W "A"\n I 1 G TEST\n W "B"\n Q\n'
+        with pytest.raises(UnsupportedFeatureError, match="Backward intra-label GOTO"):
+            generate_python(code)
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: loop continue")
