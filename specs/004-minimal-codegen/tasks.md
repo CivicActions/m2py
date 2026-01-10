@@ -204,11 +204,11 @@
 
 **Purpose**: Final validation and cleanup
 
-- [ ] T056 Run all 7 user story acceptance scenarios against YDB reference
-- [ ] T057 Verify `ast.parse()` succeeds for all generated code
-- [ ] T058 Run `uv run pytest tests/unit/codegen/` - all tests pass
-- [ ] T059 Check coverage ≥85% on codegen module
-- [ ] T060 Validate quickstart.md examples work
+- [X] T056 Run all 7 user story acceptance scenarios against YDB reference
+- [X] T057 Verify `ast.parse()` succeeds for all generated code
+- [X] T058 Run `uv run pytest tests/unit/codegen/` - all tests pass
+- [X] T059 Check coverage ≥85% on codegen module
+- [X] T060 Validate quickstart.md examples work
 
 ---
 
