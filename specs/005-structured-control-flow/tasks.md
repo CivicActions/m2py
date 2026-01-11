@@ -294,6 +294,42 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 ---
 
+## Phase 13: Gap Fixes (Post-Review)
+
+**Purpose**: Fix gaps identified during review - FR-018 compliance, test cleanup
+
+### Gap 1: FR-018 - Target Code After Loop Exit
+
+**Issue**: When GOTO exits a loop, the target label code is not executed.
+- Single loop exit (`G DONE` inside FOR) outputs `12345` instead of `12345!`
+- Multi-loop exit outputs `1112132122` instead of `1112132122X`
+
+- [ ] T075 [US5] Modify loop exit GOTO to call target label after break in src/m2py/codegen/statements.py
+- [ ] T076 [US5] Modify multi-loop exit to call target label after except _LoopExit in src/m2py/codegen/statements.py
+- [ ] T077 [US5] Add execution test: single loop exit calls target label in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [ ] T078 [US5] Add execution test: multi-loop exit calls target label in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+
+### Gap 2: Update xfail Markers
+
+**Issue**: Some tests are marked xfail but the features work.
+
+- [ ] T079 [P] Remove xfail from test_do_block_codegen or implement actual test in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [ ] T080 [P] Remove xfail from test_test_stacked_for_do_block in tests/unit/cross_cutting/test_language_semantics.py
+
+### Gap 3: Missing Edge Case Tests
+
+- [ ] T081 [P] Add test: Zero step FOR (`F I=1:0`) uses count(1, 0) in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [ ] T082 [P] Add test: Empty FOR body compiles correctly in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [ ] T083 [P] Add test: Nested DO blocks $TEST isolation in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+
+### Validation
+
+- [ ] T084 Run full test suite and verify no regressions
+- [ ] T085 Re-run quickstart.md validation with loop exit scenarios
+- [ ] T086 Update tasks.md with implementation notes
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -306,6 +342,7 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 - **Phase 10 (US8)**: Depends on Phase 9 (scope strategy) - needs signature infrastructure
 - **Phase 11**: Depends on Phase 3 (US1 $TEST pattern)
 - **Phase 12 (Polish)**: Depends on all user stories
+- **Phase 13 (Gap Fixes)**: Depends on Phase 12 - post-review fixes
 
 ### User Story Dependencies
 
@@ -331,6 +368,9 @@ Within Phase 9 (US7):
 
 Within Phase 12:
 - T069, T070, T071 can run in parallel (different files)
+
+Within Phase 13:
+- T079, T080, T081, T082, T083 can run in parallel (different test files)
 
 ---
 

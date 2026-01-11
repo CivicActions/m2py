@@ -82,10 +82,12 @@ As a developer, the code generator correctly handles all FOR loop types by consu
 
 **Acceptance Scenarios**:
 
-1. **Given** `TEST F I=1:1 W I Q:I=5`, **When** generated and executed, **Then** output is "12345" (open-ended with QUIT)
-2. **Given** `TEST S X=3 F D Q:X=0 . S X=X-1 . W X`, **When** generated and executed, **Then** output is "210" (argumentless with DO block)
+1. **Given** `TEST F I=1:1 D` / `. W I` / `. I I=5 Q` / `Q`, **When** generated and executed, **Then** output is "12345" (open-ended with QUIT via IF)
+2. **Given** `TEST S X=3 F D` / `. S X=X-1 W X` / `. I X=0 Q` / `Q`, **When** generated and executed, **Then** output is "210" (argumentless with DO block)
 3. **Given** `TEST F I=1:1:3,"X",10:2:14 W I`, **When** generated and executed, **Then** output is "123X101214" (mixed parameters)
-4. **Given** `TEST F I=1:1:10 S I=I+2 W I Q:I>8`, **When** generated and executed, **Then** output is "369" (loop var modified -> while loop)
+4. **Given** `TEST F I=1:1:10 S I=I+2 W I I I>8 Q` / `Q`, **When** generated and executed, **Then** output is "369" (loop var modified -> while loop)
+
+**Note**: Acceptance scenarios use `I cond Q` pattern. Postconditioned QUIT (`Q:cond`) codegen is deferred to Spec 008.
 
 ---
 
@@ -297,9 +299,11 @@ The following are explicitly **out of scope** for Spec 005:
 - **Global variables** (`^name`) -> Spec 008
 - **Intrinsic functions** ($PIECE, $LENGTH, etc.) -> Spec 008
 - **Full extrinsic function support** ($$label^routine, parameter semantics) -> Spec 008
-- **External routine calls** (D LABEL^ROUTINE) -> Spec 009
+- **External routine calls** (D LABEL^ROUTINE, G LABEL^ROUTINE) -> Spec 009
 - **NEW / KILL commands** -> Spec 008
-- **Postconditions** (S:cond X=1) - parsing exists, codegen deferred -> Spec 008
+- **Postconditions** (S:cond X=1, Q:cond) - parsing exists, codegen deferred -> Spec 008
+- **Multiple GOTO targets** (`G A,B`) - rarely used, sequential execution -> Spec 006
+- **Argumentless GOTO** (`G`) - special case, returns to caller -> Spec 006
 
 ## Research Phase
 

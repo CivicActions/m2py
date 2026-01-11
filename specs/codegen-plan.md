@@ -869,6 +869,24 @@ Review before coding:
    
    This prepares for computed offsets (`G LABEL+expr`) without major refactoring.
 
+6. **Multiple GOTO Targets** (`G A,B`)
+   
+   Sequential execution of multiple labels. YDB executes label A, then continues to label B.
+   The trampoline/state machine infrastructure handles this naturally as a target sequence.
+   
+   ```mumps
+   G END,FIN    ; Execute END, then FIN
+   ```
+
+7. **Argumentless GOTO** (`G`)
+   
+   Special case that acts as a return/quit from current execution context.
+   Per ANSI standard, argumentless GOTO returns control to caller.
+   
+   ```mumps
+   G            ; Return to caller (similar to QUIT)
+   ```
+
 ### DEFERRED to Spec 008: Computed Offsets
 
 Computed offsets like `G LABEL+expr` are deferred because they require full expression evaluation:
@@ -939,6 +957,10 @@ while True:
   - Tests: `TestLineDispatchCodegen` → test_s8_2_06_goto.py
 - [ ] Variable visibility handling for both strategies
   - Tests: `TestCrossLabelGotoCodegen.test_cross_label_goto_variable_visibility` → test_s8_2_06_goto.py
+- [ ] Multiple GOTO targets (`G A,B`) - sequential label execution
+  - Tests: `TestMultipleGotoTargetsCodegen` → test_s8_2_06_goto.py
+- [ ] Argumentless GOTO (`G`) - return to caller semantics
+  - Tests: `TestArgumentlessGotoCodegen` → test_s8_2_06_goto.py
 - [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
   - Update codegen-plan.md: mark deliverables complete, add implementation notes
   - Update docs/codegen/goto_handling.md with actual strategy patterns

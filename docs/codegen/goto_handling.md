@@ -204,13 +204,13 @@ if _test:
 
 The following GOTO patterns raise `NotImplementedError` or `UnsupportedFeatureError`:
 
-| Pattern | Example | Reason |
-|---------|---------|--------|
-| Backward intra-label | `G LOOP` (where LOOP is earlier) | Creates implicit loops (Spec 006) |
-| External routine | `G LABEL^OTHER` | Requires module import handling |
-| Multiple targets | `G A,B` | Rarely used |
-| Indirect | `G @VAR` | Runtime dispatch needed |
-| Argumentless | `G` | Special case |
+| Pattern | Example | Reason | Spec |
+|---------|---------|--------|------|
+| Backward intra-label | `G LOOP` (where LOOP is earlier) | Creates implicit loops | 006 |
+| External routine | `G LABEL^OTHER` | Requires module import handling | 009 |
+| Multiple targets | `G A,B` | Sequential label execution | 006 |
+| Indirect | `G @VAR` | Runtime dispatch needed | 007 |
+| Argumentless | `G` | Returns to caller | 006 |
 
 ## Analysis Fields
 
