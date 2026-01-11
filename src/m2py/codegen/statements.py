@@ -580,24 +580,43 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
     """Generate break or return statement from MQuitStatement.
 
     MUMPS QUIT has context-dependent behavior:
-    - Inside a FOR loop: exits the FOR loop (Python: break)
-    - Inside a DO block: returns from the block (Python: return)
     - With return value: returns value from extrinsic (Python: return value)
+    - Inside a FOR loop: exits the FOR loop (Python: break)
+    - Inside a DO block: exits the DO block only (Python: break from while True)
+    - Otherwise: returns from label/routine (Python: return)
+
+    Priority order (checked first to last):
+    1. return_value -> return <expr>
+    2. exits_for (from ASG) or loop_stack (runtime) -> break
+    3. do_block_depth > 0 -> break (exit DO block's while True)
+    4. default -> return
 
     Args:
         stmt: MQuitStatement node
         ctx: Generator context
     """
+    # T045: QUIT with return value (extrinsic function return)
     if stmt.return_value is not None:
-        # QUIT with return value (extrinsic function return)
         value_expr = generate_expr(stmt.return_value, ctx)
         ctx.emitter.line(f"return {value_expr}")
-    elif ctx.loop_stack:
+        return
+
+    # T042-T043: Check exits_for flag from analysis, or use loop_stack as fallback
+    exits_for = getattr(stmt, "exits_for", None)
+    if exits_for is not None or ctx.loop_stack:
         # Inside a FOR loop - QUIT exits the innermost FOR
         ctx.emitter.line("break")
-    else:
-        # Plain QUIT outside FOR - return from function/block
-        ctx.emitter.line("return")
+        return
+
+    # T044: Check exits_do_block flag from analysis, or use do_block_depth as fallback
+    exits_do_block = getattr(stmt, "exits_do_block", None)
+    if exits_do_block is not None or ctx.do_block_depth > 0:
+        # Inside a DO block - QUIT exits only the block (break from while True)
+        ctx.emitter.line("break")
+        return
+
+    # Plain QUIT outside FOR/DO block - return from function/routine
+    ctx.emitter.line("return")
 
 
 def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
@@ -1065,9 +1084,21 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     if _is_do_block(stmt):
         # Save $TEST before block
         ctx.emitter.line("_saved_test = _test")
-        # Generate block body
-        for body_stmt in stmt.body.statements:
-            generate_statement(body_stmt, ctx)
+
+        # Wrap in while True: so QUIT can use break to exit only the block
+        # This is a single-iteration "loop" used for early exit support
+        ctx.emitter.line("while True:  # DO block")
+        ctx.do_block_depth += 1
+        try:
+            with ctx.emitter.indented():
+                # Generate block body
+                for body_stmt in stmt.body.statements:
+                    generate_statement(body_stmt, ctx)
+                # Always break at end to ensure single iteration
+                ctx.emitter.line("break")
+        finally:
+            ctx.do_block_depth -= 1
+
         # Restore $TEST after block
         ctx.emitter.line("_test = _saved_test")
         return

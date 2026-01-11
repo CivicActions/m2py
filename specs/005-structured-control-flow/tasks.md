@@ -170,13 +170,21 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 ### Implementation for User Story 6
 
-- [ ] T042 [US6] Modify _generate_quit() to check exits_for flag in src/m2py/codegen/statements.py
-- [ ] T043 [US6] Generate break when exits_for=True in src/m2py/codegen/statements.py
-- [ ] T044 [US6] Generate return when exits_do_block=True in src/m2py/codegen/statements.py
-- [ ] T045 [US6] Generate return <expr> when return_value present in src/m2py/codegen/statements.py
-- [ ] T046 [US6] Add test: QUIT in FOR generates break in tests/unit/codegen/s8_commands/test_s8_2_16_quit.py
-- [ ] T047 [US6] Add test: QUIT in DO block generates return in tests/unit/codegen/s8_commands/test_s8_2_16_quit.py
-- [ ] T048 [US6] Add test: QUIT with value generates return expr in tests/unit/codegen/s8_commands/test_s8_2_16_quit.py
+- [X] T042 [US6] Modify _generate_quit() to check exits_for flag in src/m2py/codegen/statements.py
+- [X] T043 [US6] Generate break when exits_for=True in src/m2py/codegen/statements.py
+- [X] T044 [US6] Generate return when exits_do_block=True in src/m2py/codegen/statements.py
+- [X] T045 [US6] Generate return <expr> when return_value present in src/m2py/codegen/statements.py
+- [X] T046 [US6] Add test: QUIT in FOR generates break in tests/unit/codegen/s8_commands/test_s8_2_16_quit.py
+- [X] T047 [US6] Add test: QUIT in DO block generates return in tests/unit/codegen/s8_commands/test_s8_2_16_quit.py
+- [X] T048 [US6] Add test: QUIT with value generates return expr in tests/unit/codegen/s8_commands/test_s8_2_16_quit.py
+
+**Implementation Notes** (Phase 8 Complete):
+- QUIT in FOR loop generates `break` (checked via `loop_stack` or `exits_for` flag)
+- QUIT in DO block generates `break` from `while True:` wrapper (checked via `do_block_depth` or `exits_do_block` flag)
+- QUIT with return value generates `return <expr>`
+- Plain QUIT generates `return`
+- DO blocks now use `while True:` pattern with break at end to enable early exit via break
+- Added `do_block_depth` counter to GeneratorContext for runtime context tracking
 
 **Checkpoint**: QUIT context-aware code generation working
 

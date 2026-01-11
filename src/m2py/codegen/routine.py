@@ -41,6 +41,9 @@ class GeneratorContext:
     # Spec 005: Track nested FOR loops for break/continue generation
     loop_stack: List[MForStatement] = field(default_factory=list)
 
+    # Spec 005: Track nested DO blocks for QUIT -> break generation
+    do_block_depth: int = 0
+
     # Spec 005: Flag for $TEST save/restore in extrinsic calls
     in_extrinsic_call: bool = False
 
