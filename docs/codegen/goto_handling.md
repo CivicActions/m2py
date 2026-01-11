@@ -182,32 +182,59 @@ elif exit_type == "success":
     print("Success!")
 ```
 
-## Loop Continue (is_loop_continue=True)
+## Skip-Iteration Patterns (NOT via GOTO)
 
-When `is_loop_continue=True`, the GOTO simulates Python's `continue` statement:
+**Important**: GOTO cannot create Python `continue` semantics. Per MDC 3.6.5, GOTO terminates
+all FOR loops on the line containing the GOTO.
+
+### Correct MUMPS Pattern: Conditional Execution
+
+To skip to the next iteration, use conditional execution:
 
 ```mumps
-LOOP   F I=1:1:10 D
-       . I I#2=0 G LOOP    ; Skip even numbers
-       . W I,!
-       Q
+F I=1:1:10 I I'=5 W I
 ```
 
-**Continue Pattern:**
+This outputs "1234678910" - only writes when I is not 5.
+
+**Generated Python:**
 ```python
-# Conceptual Python equivalent
-
 for i in range(1, 11):
-    if i % 2 == 0:
-        continue
-    print(i)
+    if i != 5:
+        print(i)
 ```
 
-The analyzer sets `is_loop_continue=True` when:
-1. GOTO is inside a FOR loop
-2. GOTO target is the same label containing the FOR
+### Correct MUMPS Pattern: QUIT from DO Block
 
-This is a common MUMPS idiom for skipping to the next iteration without exiting the loop.
+```mumps
+F I=1:1:10 D
+. I I=5 Q        ; QUIT exits DO block, not FOR
+. W I
+```
+
+This outputs "1234678910" - QUIT from DO block continues the FOR.
+
+**Generated Python:**
+```python
+for i in range(1, 11):
+    if i == 5:
+        pass  # QUIT exits the DO block scope
+    else:
+        print(i)
+```
+
+### Why GOTO Cannot Create Continue
+
+```mumps
+LOOP F I=1:1:10 I I=5 G LOOP
+     W I
+     Q
+```
+
+This creates an **infinite loop** in YDB, not "continue" behavior:
+- When I=5, `G LOOP` transfers to LOOP label
+- LOOP restarts the entire FOR from I=1
+- Creates infinite recursion/restart, not skip-iteration
 
 ## Multi-Loop Exit
 
@@ -366,7 +393,6 @@ goto_stmt.goto_type            # Classification (GotoType enum)
 goto_stmt.postcondition        # Conditional GOTO expression
 goto_stmt.exits_loops          # List of FOR loops exited
 goto_stmt.is_cross_label       # True if target is different label
-goto_stmt.is_loop_continue     # True if simulates continue
 goto_stmt.target_stmt_index    # Statement index for intra-label forward (Spec 005)
 goto_stmt.targets[0].target    # Resolved MLabel
 goto_stmt.targets[0].routine   # External routine name

@@ -8,7 +8,7 @@
 This guide covers implementing structured control flow code generation for the MUMPS-to-Python transpiler. By the end of Spec 005, the system will generate Python code for:
 
 - FOR loop variations (bounded, open-ended, argumentless, value-list)
-- Intra-label GOTO **forward jumps only** (continue, break, multi-loop exit)
+- Intra-label GOTO **forward jumps only** (break, multi-loop exit, if/else restructuring)
 - Context-aware QUIT (in FOR vs. in DO)
 - By-reference parameter return tuples
 - $TEST stack semantics for argumentless DO and extrinsic functions
@@ -110,16 +110,19 @@ uv run pytest tests/unit/codegen/test_for_loops.py -v
 
 ### Phase 2: GOTO Patterns
 
-**Goal**: Generate break, continue, multi-loop exit, and forward restructuring patterns.
+**Goal**: Generate break, multi-loop exit, and forward restructuring patterns.
+
+**MUMPS Semantic Note (MDC 3.6.5)**: GOTO terminates all FOR loops on the line containing the GOTO.
+GOTO cannot create Python `continue` semantics. For skip-iteration patterns, use conditional execution
+(`I cond <commands>`) or QUIT from DO blocks.
 
 **Files to modify**:
 - `src/m2py/codegen/statements.py` - `_generate_goto()` and new helper functions
 
 **Key changes**:
-1. Check `is_loop_continue` → generate `continue`
-2. Check `goto_type == LOOP_EXIT` → generate `break`
-3. Check `goto_type == MULTI_LOOP_EXIT` → generate exception pattern
-4. Handle `is_cross_label=False` forward jumps via `generate_scope_statements()`:
+1. Check `goto_type == LOOP_EXIT` → generate `break`
+2. Check `goto_type == MULTI_LOOP_EXIT` → generate exception pattern
+3. Handle `is_cross_label=False` forward jumps via `generate_scope_statements()`:
    - `_find_forward_goto_in_if()` detects restructurable GOTOs
    - `_restructure_forward_goto()` generates inverted if/else using `target_stmt_index`
    - `generate_scope_statements()` replaces direct statement loop in label generation
@@ -253,9 +256,8 @@ def decide_goto_pattern(stmt: MGotoStatement) -> str:
         return "unsupported"  # Spec 006 (cross-label forward)
     
     # Intra-label patterns (is_cross_label=False)
-    if stmt.is_loop_continue:
-        return "continue"
-    elif stmt.goto_type == GotoType.LOOP_EXIT:
+    # Note: GOTO cannot create 'continue' - use conditional execution instead (MDC 3.6.5)
+    if stmt.goto_type == GotoType.LOOP_EXIT:
         return "break"
     elif stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
         return "exception"
@@ -306,9 +308,9 @@ print(f"Expected: {result}")
 - [ ] FOR open-ended loops generate `while` or `itertools.count`
 - [ ] FOR argumentless loops generate `while True`
 - [ ] FOR loops with QUIT generate `break`
-- [ ] GOTO loop-continue generates `continue`
 - [ ] GOTO loop-exit generates `break`
 - [ ] GOTO multi-loop-exit generates exception pattern
+- [ ] GOTO forward jump (intra-label) generates if/else restructuring
 - [ ] QUIT in FOR generates `break`
 - [ ] QUIT in DO generates `return`
 - [ ] QUIT with value generates `return expr`

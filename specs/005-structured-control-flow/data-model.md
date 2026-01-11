@@ -48,12 +48,14 @@ class MGotoStatement:
     # Analysis fields (populated by goto_analysis.py)
     goto_type: GotoType = GotoType.FORWARD_JUMP
     is_cross_label: bool = False
-    is_loop_continue: bool = False
     exits_loops: List[MForStatement] = field(default_factory=list)
     
     # For intra-label forward GOTOs (is_cross_label=False, FORWARD_JUMP):
     # Index of target statement in the label body, computed from LABEL+n offset
     target_stmt_index: Optional[int] = None
+    
+    # Note: GOTO cannot create Python 'continue' semantics (MDC 3.6.5).
+    # GOTO terminates all FOR loops on the line containing the GOTO.
 ```
 
 ### 1.3 MQuitStatement
@@ -187,7 +189,8 @@ class GotoGenContext:
     in_for_loop: bool
     enclosing_loops: List[MForStatement]
     target_label: str
-    pattern: str  # 'continue' | 'break' | 'multi_break' | 'forward' | 'function_call' | 'unsupported'
+    # Note: 'continue' not included - GOTO cannot create continue semantics (MDC 3.6.5)
+    pattern: str  # 'break' | 'multi_break' | 'forward' | 'function_call' | 'unsupported'
 ```
 
 ---
@@ -245,13 +248,10 @@ for loop_var in [val1, val2, val3]:
 ### 4.3 GOTO Patterns
 
 ```python
-# LOOP_EXIT with is_loop_continue=True
-continue
-
-# LOOP_EXIT 
+# LOOP_EXIT (single loop)
 break
 
-# MULTI_LOOP_EXIT
+# MULTI_LOOP_EXIT (nested loops)
 raise _LoopExit()
 
 # FORWARD_JUMP (intra-label, is_cross_label=False)
@@ -268,6 +268,13 @@ return target_label()
 
 # BACKWARD_JUMP (any)
 # Unsupported in Spec 005 - raises UnsupportedFeatureError
+
+# Note: GOTO cannot create 'continue' semantics (MDC 3.6.5).
+# For skip-iteration, MUMPS uses conditional execution:
+#   F I=1:1:10 I I'=5 W I  ; outputs "1234678910" (skips I=5)
+# Or QUIT from DO block:
+#   F I=1:1:10 D
+#   . I I=5 Q  ; QUIT exits DO block, FOR continues
 # Intra-label backward (G LABEL without offset) creates implicit loops
 # Cross-label backward requires state machine - deferred to Spec 006
 ```

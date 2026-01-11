@@ -143,18 +143,21 @@ class TestIntraLabelGotoCodegen:
         with pytest.raises(UnsupportedFeatureError, match="Backward intra-label GOTO"):
             generate_python(code)
 
-    def test_loop_continue_pattern(self, generate_python):
-        """GOTO that continues loop generates continue statement (T039).
+    def test_goto_cannot_create_continue_pattern(self, generate_python):
+        """GOTO cannot create Python continue pattern (T039 - updated).
 
-        When is_loop_continue=True is set by analysis, the GOTO should
-        generate a 'continue' statement to skip to the next iteration.
+        Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
+        termination of all FORs in the line containing the GOTO."
 
-        This pattern occurs when a GOTO inside a FOR loop jumps back
-        to the same label containing the loop.
+        A GOTO to the same label from inside a FOR loop:
+        1. Terminates the FOR loop
+        2. Jumps to the label (function call/recursion)
+
+        There is NO "continue" pattern via GOTO - use conditional execution
+        (I cond <commands>) or QUIT from a DO block for skip-iteration behavior.
         """
-        # Create test MUMPS code: FOR loop with conditional skip
-        # I I#2=0 G TEST means "if I mod 2 is 0, skip to label (continue)"
-        # This effectively skips even numbers
+        # This GOTO exits the FOR loop and calls TEST - it does NOT continue
+        # In YDB, this creates infinite recursion until stack overflow
         code = """TEST S X=""
  F I=1:1:5 D
  . I I#2=0 G TEST
@@ -164,8 +167,11 @@ class TestIntraLabelGotoCodegen:
 """
         python_code = generate_python(code)
 
-        # The GOTO with is_loop_continue should generate 'continue'
-        assert "continue" in python_code
+        # The GOTO should generate break (exits loop) not continue
+        # The generated code should have 'break' or function call pattern
+        assert "continue" not in python_code
+        # The FOR loop should still have break support for the GOTO exit
+        assert "break" in python_code
 
     def test_loop_exit_generates_break(self, generate_python):
         """GOTO that exits loop generates break statement (T040).
@@ -259,8 +265,12 @@ class TestGotoGenContextCodegen:
         assert ctx.in_for_loop is True
         assert len(ctx.enclosing_loops) == 1
 
-    def test_goto_gen_context_loop_continue(self):
-        """GotoGenContext detects loop continue pattern."""
+    def test_goto_gen_context_no_continue_pattern(self):
+        """GotoGenContext does not detect continue pattern (doesn't exist).
+
+        Per MUMPS spec, GOTO cannot create continue semantics - it always
+        terminates all FOR loops on the line containing the GOTO.
+        """
         from m2py.asg.elements import MCall, MScope
         from m2py.asg.enums import ForParamType
         from m2py.asg.expressions import MLiteral
@@ -282,11 +292,13 @@ class TestGotoGenContextCodegen:
 
         target = MCall(name="NEXT")
         stmt = MGotoStatement(targets=[target])
-        # Set analysis flag for loop continue
-        stmt.is_loop_continue = True
+        # Note: There is no is_loop_continue flag - GOTO cannot create continue
 
         ctx = GotoGenContext.from_statement(stmt, loop_stack=[for_stmt])
-        assert ctx.pattern == "continue"
+        # Without exits_loops set, it's just a function call
+        assert ctx.pattern == "function_call"
+        # Verify "continue" is not a valid pattern
+        assert ctx.pattern != "continue"
 
     def test_goto_gen_context_single_loop_exit(self):
         """GotoGenContext detects single loop exit pattern."""

@@ -285,11 +285,10 @@ def _classify_single_goto(
                 if stmt not in for_stmt.exit_points:
                     for_stmt.exit_points.append(stmt)
 
-            # Check for "continue" pattern: GOTO jumps back to the label containing
-            # the innermost FOR loop. This is equivalent to Python's "continue".
-            # The GOTO target must be the same label we're currently in.
-            if target_label.name == current_label.name:
-                stmt.is_loop_continue = True
+            # Note: There is no "continue" pattern in MUMPS via GOTO.
+            # Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
+            # termination of all FORs in the line containing the GOTO."
+            # A GOTO to the same label creates a function call/recursion, not continue.
 
         # If jumping to different label while inside FOR, it's a cross-label exit
         if enclosing_fors and target_label.name != current_label.name:

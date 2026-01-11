@@ -242,6 +242,10 @@ class MGotoStatement(MStatement):
 
     Transfers control to a label:
     G label, G label^routine, G label:condition
+
+    Note: GOTO cannot create a Python 'continue' pattern. Per MUMPS spec (MDC 3.6.5):
+    "Execution of GOTO effects the immediate termination of all FORs in the line
+    containing the GOTO." A GOTO to the same label creates a function call/recursion.
     """
 
     targets: List["MCall"] = field(default_factory=list)
@@ -250,7 +254,6 @@ class MGotoStatement(MStatement):
     goto_type: Optional[GotoType] = None
     exits_loops: List["MForStatement"] = field(default_factory=list, repr=False)
     is_cross_label: bool = False  # True if target is in a different label
-    is_loop_continue: bool = False
 
     # For intra-label forward GOTOs: index of target statement in label body
     # Set during classify_gotos() when goto_type=FORWARD_JUMP and is_cross_label=False

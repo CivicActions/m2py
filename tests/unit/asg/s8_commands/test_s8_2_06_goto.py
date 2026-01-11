@@ -91,7 +91,7 @@ class TestGotoCommandAnalysis:
         # Verify control flow attributes exist
         assert hasattr(stmt, "exits_loops")
         assert hasattr(stmt, "is_cross_label")
-        assert hasattr(stmt, "is_loop_continue")
+        # Note: is_loop_continue was removed - GOTO cannot create continue semantics
 
         # GOTO with postcondition is conditional
         stmt2 = analyze_first_command("G:X LABEL")

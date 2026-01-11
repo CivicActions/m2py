@@ -91,16 +91,18 @@ As a developer, the code generator correctly handles all FOR loop types by consu
 
 ### User Story 4 - Intra-Label GOTO Restructuring (Priority: P2)
 
-As a developer, when I generate Python from MUMPS code containing GOTO statements within the same label, the code generator restructures them to if/else chains or continue statements rather than using function calls.
+As a developer, when I generate Python from MUMPS code containing forward GOTO statements within the same label, the code generator restructures them to if/else chains rather than using function calls.
 
-**Why this priority**: Intra-label GOTOs are common for early exit and skip patterns. Using function calls for these adds unnecessary overhead and prevents local Python optimizations. Restructuring to native control flow produces cleaner, faster Python.
+**Why this priority**: Intra-label forward GOTOs are common for early exit and skip patterns. Using function calls for these adds unnecessary overhead and prevents local Python optimizations. Restructuring to native control flow produces cleaner, faster Python.
+
+**MUMPS Semantic Note**: Per MDC 3.6.5, GOTO terminates all FOR loops on the line containing the GOTO. GOTO cannot create Python `continue` semantics. For skip-iteration patterns, MUMPS uses conditional execution (`I cond <commands>`) or QUIT from DO blocks.
 
 **Independent Test**: Can be tested by verifying generated Python uses if/elif/else instead of function calls for same-label jumps.
 
 **Acceptance Scenarios**:
 
 1. **Given** `TEST S X=1 I X=1 G SKIP . W "A" SKIP W "B" Q` (forward jump within label), **When** generated, **Then** Python uses if/else structure (not function call)
-2. **Given** `TEST F I=1:1:10 I I=5 G LOOP . W I LOOP Q` (continue to loop start), **When** generated and executed, **Then** output is "1234678910" (5 skipped via continue)
+2. **Given** `TEST F I=1:1:10 I I'=5 W I Q` (conditional execution, not GOTO), **When** generated and executed, **Then** output is "1234678910" (5 skipped via conditional, not GOTO)
 
 ---
 

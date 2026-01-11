@@ -8,7 +8,7 @@
 Implement Python code generation for MUMPS structured control flow constructs. This spec extends the basic codegen from Spec 004 to handle:
 
 - **FOR loop variations**: Bounded, open-ended, argumentless, value-list, and mixed parameter loops with proper break/while handling when loop variables are modified
-- **Intra-label GOTO (forward only)**: Generate `continue`, `break`, and exception patterns for loop exits; restructure forward jumps to if/else. Backward intra-label GOTO deferred to Spec 006
+- **Intra-label GOTO (forward only)**: Generate `break` and exception patterns for loop exits; restructure forward jumps to if/else. Backward intra-label GOTO deferred to Spec 006. Note: GOTO cannot create Python `continue` semantics (MDC 3.6.5) - use conditional execution for skip-iteration patterns.
 - **Context-aware QUIT**: Generate `break` in FOR context, `return` in DO context
 - **By-reference parameters**: Generate return tuples and call-site destructuring for modified by-ref params
 - **$TEST stack**: Save/restore $TEST around argumentless DO and extrinsic function calls

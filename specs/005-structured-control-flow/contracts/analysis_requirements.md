@@ -30,13 +30,16 @@ The following analysis passes must be run in order:
 |-------|------|--------------|--------------|
 | `goto_type` | `GotoType` | `classify_gotos` | Pattern selection |
 | `is_cross_label` | `bool` | `classify_gotos` | Scope determination |
-| `is_loop_continue` | `bool` | `classify_gotos` | Continue generation |
 | `exits_loops` | `List[MForStatement]` | `classify_gotos` | Break/exception |
 | `target_stmt_index` | `Optional[int]` | `classify_gotos` | Forward restructuring |
 
 **Note on `target_stmt_index`**: For intra-label forward GOTOs (`is_cross_label=False`, `FORWARD_JUMP`),
 this field contains the index of the target statement in the label body. Computed from MUMPS offset
 semantics: `LABEL+n` targets line n from the label, mapped to statement index via `_find_stmt_index_for_line()`.
+
+**Note on GOTO semantics (MDC 3.6.5)**: GOTO terminates all FOR loops on the line containing the GOTO.
+GOTO cannot create Python `continue` semantics. For skip-iteration patterns, MUMPS uses conditional
+execution (`I cond <commands>`) or QUIT from DO blocks.
 
 ### MQuitStatement Requirements
 

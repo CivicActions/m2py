@@ -252,7 +252,9 @@ class GotoGenContext:
     in_for_loop: bool
     enclosing_loops: List[MForStatement]
     target_label: str
-    pattern: str  # 'continue' | 'break' | 'multi_break' | 'forward' | 'function_call' | 'unsupported'
+    pattern: (
+        str  # 'break' | 'multi_break' | 'forward' | 'function_call' | 'unsupported'
+    )
 
     @classmethod
     def from_statement(
@@ -280,14 +282,14 @@ class GotoGenContext:
         pattern = "function_call"  # Default: simple GOTO to label
 
         # Check for loop-related patterns
-        is_loop_continue = getattr(stmt, "is_loop_continue", False)
+        # Note: There is no "continue" pattern - GOTO cannot create continue semantics.
+        # Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
+        # termination of all FORs in the line containing the GOTO."
         exits_loops = getattr(stmt, "exits_loops", [])
         goto_type = getattr(stmt, "goto_type", None)
         is_cross_label = getattr(stmt, "is_cross_label", False)
 
-        if is_loop_continue and in_for_loop:
-            pattern = "continue"
-        elif exits_loops:
+        if exits_loops:
             if len(exits_loops) == 1:
                 pattern = "break"
             else:
@@ -958,15 +960,18 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     """Generate code from MGotoStatement.
 
     GOTO transfers control to a label. The generated Python depends on context:
-    - Loop continue: generate `continue`
     - Single loop exit: generate `break`
     - Multi-loop exit: generate `raise _LoopExit()`
     - Cross-label jump: generate function call + return
 
+    Note: There is no "continue" pattern. Per MUMPS spec (MDC 3.6.5):
+    "Execution of GOTO effects the immediate termination of all FORs
+    in the line containing the GOTO." A GOTO to the same label creates
+    a function call/recursion, not continue semantics.
+
     Example patterns:
     - G DONE (cross-label) → DONE(); return
-    - G LABEL+n (intra-label, inside FOR, is_loop_continue) → continue
-    - G DONE (inside FOR) → break
+    - G DONE (inside FOR, exiting loop) → break
     - G DONE (inside nested FOR) → raise _LoopExit()
 
     Args:
@@ -997,7 +1002,6 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     # These cannot be restructured to simple if/else and require Spec 006
     goto_type = getattr(stmt, "goto_type", None)
     is_cross_label = getattr(stmt, "is_cross_label", True)
-    is_loop_continue = getattr(stmt, "is_loop_continue", False)
     exits_loops = getattr(stmt, "exits_loops", [])
 
     if goto_type == GotoType.BACKWARD_JUMP and not is_cross_label:
@@ -1007,13 +1011,11 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
         )
 
     # Phase 7 (US5): Loop exit patterns
+    # Note: There is no "continue" pattern - GOTO cannot create continue semantics.
+    # Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
+    # termination of all FORs in the line containing the GOTO."
     # Check if this GOTO is inside a FOR loop (from loop_stack)
     in_for_loop = len(ctx.loop_stack) > 0
-
-    # T034: is_loop_continue=True generates continue
-    if is_loop_continue and in_for_loop:
-        ctx.emitter.line("continue")
-        return
 
     # T035/T037: exits_loops determines break vs raise _LoopExit()
     if exits_loops and in_for_loop:

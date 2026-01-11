@@ -257,7 +257,6 @@ G LABEL1,LABEL2:COND
 | `goto_type` | `GotoType` | Direction/behavior classification |
 | `exits_loops` | `List[MForStatement]` | FOR loops exited |
 | `is_cross_label` | `bool` | True if target is in a different label |
-| `is_loop_continue` | `bool` | True if GOTO simulates `continue` |
 | `target_stmt_index` | `Optional[int]` | Statement index for intra-label forward restructuring |
 
 **target_stmt_index**: For intra-label forward GOTOs (`is_cross_label=False`, `goto_type=FORWARD_JUMP`),
@@ -267,7 +266,9 @@ to an if/else block.
 
 **is_cross_label**: Set to True when the GOTO target is in a different label than the GOTO source. Set to False when the GOTO targets the same label it's contained in (intra-label). Code generators can use this to determine whether simple control flow restructuring suffices or function-call-based control flow is needed.
 
-**is_loop_continue**: Set to True when a GOTO inside a FOR loop jumps back to the label containing that FOR loop. This pattern is equivalent to Python's `continue` statement - it exits the current iteration and starts the next one.
+**MUMPS Semantic Note (MDC 3.6.5)**: GOTO terminates all FOR loops on the line containing the GOTO.
+GOTO cannot create Python `continue` semantics. To skip to the next iteration in MUMPS, use
+conditional execution (`I cond <commands>`) or QUIT from within a DO block.
 
 **GotoType values**:
 - `FORWARD_JUMP` - Jump ahead (intra-label with offset ahead, or cross-label to later label)
@@ -283,8 +284,7 @@ to an if/else block.
 - `G LABEL+n` (with offset) from within `LABEL`: `FORWARD_JUMP` if offset ahead, `BACKWARD_JUMP` if offset behind
 
 **Code Generation by goto_type + is_cross_label**:
-- `LOOP_EXIT` with `is_loop_continue=True`: `continue`
-- `LOOP_EXIT` with `is_loop_continue=False`: `break`
+- `LOOP_EXIT`: `break`
 - `MULTI_LOOP_EXIT`: Exception or state machine
 - `FORWARD_JUMP` + `is_cross_label=False`: If/elif chain (restructurable)
 - `FORWARD_JUMP` + `is_cross_label=True`: Function call with return

@@ -108,7 +108,6 @@ class GotoGenerator(Protocol):
         Pre-conditions:
             - stmt.goto_type is set
             - stmt.is_cross_label is set
-            - stmt.is_loop_continue is set
             - stmt.exits_loops is populated (if applicable)
             - ctx.loop_stack reflects current nesting
 
@@ -118,7 +117,6 @@ class GotoGenerator(Protocol):
             - Control flow matches MUMPS behavior
 
         Supported patterns (Spec 005):
-            - is_loop_continue=True: generate `continue`
             - LOOP_EXIT + is_cross_label=False: generate `break`
             - MULTI_LOOP_EXIT: generate exception raise
             - FORWARD_JUMP + is_cross_label=False: if/else restructure
@@ -128,6 +126,10 @@ class GotoGenerator(Protocol):
             - BACKWARD_JUMP + is_cross_label=True
             - EXTERNAL
             - UNRESOLVED
+
+        Note: GOTO cannot create Python `continue` semantics (MDC 3.6.5).
+        GOTO terminates all FOR loops on the line containing the GOTO.
+        For skip-iteration patterns, MUMPS uses conditional execution.
         """
         ...
 
@@ -136,7 +138,7 @@ class GotoGenerator(Protocol):
 class GotoGenResult:
     """Result contract for GOTO generation."""
 
-    pattern_used: str  # "continue", "break", "exception", "restructure", "unsupported"
+    pattern_used: str  # "break", "exception", "restructure", "unsupported"
     target_label: Optional[str]
     loops_exited: int
 
@@ -285,14 +287,15 @@ def validate_goto_analysis_complete(stmt: "MGotoStatement") -> List[str]:
     """Validate GOTO statement has all required analysis data.
 
     Returns list of missing fields.
+
+    Note: is_loop_continue is NOT validated - GOTO cannot create continue
+    semantics per MDC 3.6.5 (GOTO terminates all FOR loops on the line).
     """
     errors = []
     if not hasattr(stmt, "goto_type") or stmt.goto_type is None:
         errors.append("goto_type not set")
     if not hasattr(stmt, "is_cross_label"):
         errors.append("is_cross_label not set")
-    if not hasattr(stmt, "is_loop_continue"):
-        errors.append("is_loop_continue not set")
     return errors
 
 
