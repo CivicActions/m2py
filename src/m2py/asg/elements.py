@@ -283,6 +283,9 @@ class MRoutine(ASGElement):
     requires_runtime_eval: bool = False  # Has unresolvable indirection
     global_refs: List[str] = field(default_factory=list)  # Names of ^GLOBAL references
 
+    # T102: Pre-computed codegen hint (populated by classify_gotos)
+    needs_loop_exit_exception: bool = False  # True if any MULTI_LOOP_EXIT GOTO exists
+
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.
 

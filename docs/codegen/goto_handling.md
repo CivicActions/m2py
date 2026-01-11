@@ -133,7 +133,7 @@ _rt.write(str("Done"))
 ```
 
 **Implementation Details**:
-- `_routine_needs_loop_exit_exception()` checks if any GOTO has `len(exits_loops) > 1`
+- `MRoutine.needs_loop_exit_exception` field (set by analysis) indicates if any GOTO has `GotoType.MULTI_LOOP_EXIT`
 - The `_LoopExit` class is generated in the module preamble only when needed
 - `_for_needs_loop_exit_wrapper()` determines which FOR loop gets the try/except wrapper
 
@@ -234,4 +234,9 @@ The following GOTO patterns raise `NotImplementedError` or `UnsupportedFeatureEr
 | `_restructure_forward_goto()` | Generate inverted if/else structure |
 | `generate_scope_statements()` | Statement generation with GOTO restructuring |
 | `_for_needs_loop_exit_wrapper()` | Check if FOR needs try/except |
-| `_routine_needs_loop_exit_exception()` | Check if routine needs _LoopExit class |
+
+## ASG Fields for Codegen
+
+| Field | Purpose |
+|-------|---------|
+| `MRoutine.needs_loop_exit_exception` | True if routine needs `_LoopExit` class (set by `classify_gotos()`) |

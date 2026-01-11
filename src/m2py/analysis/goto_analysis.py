@@ -74,6 +74,9 @@ def classify_gotos(routine: MRoutine) -> None:
     # - Cross-label jumps not inside FOR loops (can't use break, need restructuring)
     routine.has_unstructured_goto = _has_unstructured_gotos(routine)
 
+    # T103: Set needs_loop_exit_exception if any MULTI_LOOP_EXIT GOTO exists
+    routine.needs_loop_exit_exception = _needs_loop_exit_exception(routine)
+
 
 def _classify_gotos_in_scope(
     scope: MScope,
@@ -436,4 +439,26 @@ def _has_unstructured_gotos(routine: MRoutine) -> bool:
             if stmt.is_cross_label and not stmt.exits_loops:
                 return True
 
+    return False
+
+
+def _needs_loop_exit_exception(routine: MRoutine) -> bool:
+    """Check if the routine needs the _LoopExit exception class.
+
+    The _LoopExit exception is needed when there are MULTI_LOOP_EXIT GOTOs
+    that need to exit multiple nested FOR loops.
+
+    Args:
+        routine: The routine to check
+
+    Returns:
+        True if _LoopExit exception class should be generated
+    """
+    for label in routine.labels:
+        if label.body is None:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
+                    return True
     return False
