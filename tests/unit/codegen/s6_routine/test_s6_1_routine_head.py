@@ -235,11 +235,16 @@ class TestScopeStrategyGeneration:
     def test_subroutine_generates_no_explicit_return(self, generate_python):
         """SUBROUTINE generates no explicit return value (T056).
 
-        A subroutine that modifies state but has no return value
+        A subroutine that does NOT modify its formal parameters
         should generate plain `return` or implicit None.
+
+        Note: SUBROUTINEs with byref_outputs (like INCR(N)) now return
+        modified params for by-ref call semantics (T059). This test
+        uses a subroutine without byref outputs.
         """
-        code = generate_python("INCR(N) S N=N+1 Q\n")
-        assert "def INCR(N):" in code
+        # Use a subroutine that sets a local but doesn't modify formals
+        code = generate_python("PRINT(MSG) W MSG Q\n")
+        assert "def PRINT(MSG):" in code
         # Should have plain return (not return <expr>)
         # Find lines that are just 'return' without a value
         lines = code.split("\n")

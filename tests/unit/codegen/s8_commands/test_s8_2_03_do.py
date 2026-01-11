@@ -403,7 +403,7 @@ class TestScopeStrategyCodegen:
 
 @pytest.mark.codegen
 class TestByRefParameterCodegen:
-    """Codegen tests for by-reference parameter handling.
+    """Codegen tests for by-reference parameter handling (Spec 005 Phase 10).
 
     When caller uses .X, the callee can modify X. Generated code uses
     a return-tuple pattern to propagate modified values back.
@@ -411,29 +411,111 @@ class TestByRefParameterCodegen:
     Reference: §6.3, §8.2.3
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: byref call generates tuple unpack")
-    def test_byref_call_generates_tuple_unpack(self, generate_python):
-        """By-reference call generates tuple unpacking at call site.
+    def test_incr_single_byref_param(self, generate_python):
+        """INCR pattern with single by-ref param (T064).
 
-        D SWAP(.A,.B) generates: a, b = swap(a, b)
+        D INCR(.X) generates: X = INCR(X)
+        Callee returns the modified value.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: byref callee returns modified")
-    def test_byref_callee_returns_modified(self, generate_python):
-        """By-reference callee returns modified values.
+        # Callee returns modified param
+        assert "def INCR(N):" in code
+        assert "return N" in code
 
-        Callee returns tuple of byref_outputs values.
+        # Call site destructures the return
+        assert "X = INCR(X)" in code
+
+    def test_incr_single_byref_runtime(self, execute_mumps):
+        """INCR pattern executes correctly with by-ref (T064).
+
+        Given: X=5, D INCR(.X), W X
+        When: executed
+        Then: output is "6" (X was incremented)
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
+        assert result.output == "6"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: mixed byref and value params")
-    def test_mixed_byref_and_value_params(self, generate_python):
-        """Mixed by-ref and by-value parameters handled correctly.
+    def test_swap_two_byref_params(self, generate_python):
+        """SWAP pattern with two by-ref params (T063).
 
-        D SUB(A,.B,C) - only B is by-reference.
+        D SWAP(.A,.B) generates: A, B = SWAP(A, B)
+        Callee returns both modified values as tuple.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python(
+            "TEST S A=1,B=2 D SWAP(.A,.B) W A,B Q\nSWAP(X,Y) S T=X,X=Y,Y=T Q\n"
+        )
+
+        # Callee returns both modified params
+        assert "def SWAP(X, Y):" in code
+        # Check for tuple return (order may vary based on set ordering)
+        assert "return X, Y" in code or "return Y, X" in code
+
+        # Call site destructures both
+        assert "A, B = SWAP(A, B)" in code or "B, A = SWAP(A, B)" in code
+
+    def test_swap_two_byref_runtime(self, execute_mumps):
+        """SWAP pattern executes correctly with two by-refs (T063).
+
+        Given: A=1, B=2, D SWAP(.A,.B), W A,B
+        When: executed
+        Then: output is "21" (values swapped)
+        """
+        result = execute_mumps(
+            "TEST S A=1,B=2 D SWAP(.A,.B) W A,B Q\nSWAP(X,Y) S T=X,X=Y,Y=T Q\n"
+        )
+        assert result.output == "21"
+        assert result.success is True
+
+    def test_multiple_byref_calls_accumulate(self, generate_python):
+        """Multiple by-ref calls accumulate changes (T065).
+
+        D INCR(.X),INCR(.X) generates two separate assignments.
+        """
+        code = generate_python(
+            "TEST S X=1 D INCR(.X),INCR(.X),INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n"
+        )
+
+        # Should have three separate calls with destructuring
+        assert code.count("X = INCR(X)") == 3
+
+    def test_multiple_byref_calls_runtime(self, execute_mumps):
+        """Multiple by-ref calls accumulate correctly (T065).
+
+        Given: X=1, D INCR(.X),INCR(.X),INCR(.X), W X
+        When: executed
+        Then: output is "4" (incremented 3 times)
+        """
+        result = execute_mumps(
+            "TEST S X=1 D INCR(.X),INCR(.X),INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n"
+        )
+        assert result.output == "4"
+        assert result.success is True
+
+    def test_byvalue_call_no_destructure(self, generate_python):
+        """By-value call does not destructure even if callee has byref_outputs.
+
+        D INCR(X) (no dot) passes by value - caller's X unchanged.
+        """
+        code = generate_python("TEST S X=5 D INCR(X) W X Q\nINCR(N) S N=N+1 Q\n")
+
+        # By-value call should not destructure
+        # The call is just INCR(X), not X = INCR(X)
+        lines = [line.strip() for line in code.split("\n")]
+        # Find the line that calls INCR in TEST function
+        # It should be just "INCR(X)" not "X = INCR(X)"
+        incr_lines = [line for line in lines if "INCR(X)" in line]
+        # Should have INCR(X) without assignment
+        assert any(line == "INCR(X)" for line in incr_lines)
+
+    def test_byvalue_call_runtime(self, execute_mumps):
+        """By-value call does not modify caller's variable.
+
+        Given: X=5, D INCR(X) (no dot), W X
+        When: executed
+        Then: output is "5" (X unchanged, N was a copy)
+        """
+        result = execute_mumps("TEST S X=5 D INCR(X) W X Q\nINCR(N) S N=N+1 Q\n")
+        assert result.output == "5"
+        assert result.success is True

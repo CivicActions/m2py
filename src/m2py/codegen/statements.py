@@ -615,6 +615,21 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("break")
         return
 
+    # T059: Plain QUIT with by-ref outputs - return modified params as tuple
+    # Check if current label has byref_outputs that need to be returned
+    if (
+        ctx.current_label
+        and ctx.current_label.signature
+        and ctx.current_label.signature.byref_outputs
+    ):
+        byref_outputs = ctx.current_label.signature.byref_outputs
+        # Return byref params in formal_params order (for consistent tuple unpacking)
+        formal_params = ctx.current_label.signature.formal_params
+        return_vars = [translate_name(p) for p in formal_params if p in byref_outputs]
+        if return_vars:
+            ctx.emitter.line(f"return {', '.join(return_vars)}")
+            return
+
     # Plain QUIT outside FOR/DO block - return from function/routine
     ctx.emitter.line("return")
 
@@ -1124,8 +1139,45 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         # Generate arguments if any
         args = _generate_call_arguments(target.arguments, ctx)
 
-        # Generate function call (no return - control continues after DO)
-        ctx.emitter.line(f"{label_name}({args})")
+        # T060-T062: Check callee signature for byref_outputs and generate destructuring
+        callee_signature = None
+        if hasattr(target, "target") and target.target:
+            callee_label = target.target
+            if hasattr(callee_label, "signature") and callee_label.signature:
+                callee_signature = callee_label.signature
+
+        if callee_signature and callee_signature.byref_outputs:
+            # Map byref formal params to actual variables passed by reference
+            # The callee returns byref params in formal_params order
+            formal_params = callee_signature.formal_params
+            byref_outputs = callee_signature.byref_outputs
+            actual_args = target.arguments or []
+
+            # Build list of caller variables that receive returned values
+            # Only include params that are both:
+            # 1. In byref_outputs (callee modifies them)
+            # 2. Passed by reference at call site (.VAR syntax)
+            return_vars = []
+            for i, formal_name in enumerate(formal_params):
+                if formal_name in byref_outputs:
+                    # Check if corresponding actual was passed by reference
+                    if i < len(actual_args):
+                        actual = actual_args[i]
+                        if actual.passing_mode == PassingMode.BY_REFERENCE:
+                            # Get the caller's variable name
+                            if actual.variable_name:
+                                return_vars.append(translate_name(actual.variable_name))
+
+            if return_vars:
+                # Generate tuple destructuring: X = INCR(X) or A, B = SWAP(A, B)
+                lhs = ", ".join(return_vars)
+                ctx.emitter.line(f"{lhs} = {label_name}({args})")
+            else:
+                # No by-ref params at call site - just call
+                ctx.emitter.line(f"{label_name}({args})")
+        else:
+            # No byref_outputs - simple call
+            ctx.emitter.line(f"{label_name}({args})")
 
 
 __all__ = [

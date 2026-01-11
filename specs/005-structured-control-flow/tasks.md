@@ -230,13 +230,22 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 ### Implementation for User Story 8
 
-- [ ] T059 [US8] Add byref_outputs to return tuple in _generate_label() in src/m2py/codegen/routine.py
-- [ ] T060 [US8] Modify _generate_do() to check callee signature for byref_outputs in src/m2py/codegen/statements.py
-- [ ] T061 [US8] Generate tuple destructuring at DO call site when byref_outputs non-empty in src/m2py/codegen/statements.py
-- [ ] T062 [US8] Handle mixed by-ref and by-value parameters in argument mapping in src/m2py/codegen/statements.py
-- [ ] T063 [US8] Add test: SWAP pattern with two by-ref params in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [ ] T064 [US8] Add test: INCR pattern with single by-ref param in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [ ] T065 [US8] Add test: multiple by-ref calls accumulate in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T059 [US8] Add byref_outputs to return tuple in _generate_quit() in src/m2py/codegen/statements.py
+- [X] T060 [US8] Modify _generate_do() to check callee signature for byref_outputs in src/m2py/codegen/statements.py
+- [X] T061 [US8] Generate tuple destructuring at DO call site when byref_outputs non-empty in src/m2py/codegen/statements.py
+- [X] T062 [US8] Handle mixed by-ref and by-value parameters in argument mapping in src/m2py/codegen/statements.py
+- [X] T063 [US8] Add test: SWAP pattern with two by-ref params in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T064 [US8] Add test: INCR pattern with single by-ref param in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T065 [US8] Add test: multiple by-ref calls accumulate in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+
+**Implementation Notes** (Phase 10 Complete):
+- By-ref return values: `_generate_quit()` now checks `ctx.current_label.signature.byref_outputs`
+  and generates `return N` or `return X, Y` for modified by-ref params (in formal_params order)
+- Call site destructuring: `_generate_do()` checks callee's `target.target.signature.byref_outputs`
+  and generates `X = INCR(X)` or `A, B = SWAP(A, B)` when actual args passed by reference
+- By-value calls to byref functions: Only generates destructuring when actual uses `.VAR` syntax
+- Mixed params: Only by-ref actuals at call site receive returned values
+- Validated against YottaDB for INCR, SWAP, and multiple-call patterns
 
 **Checkpoint**: By-reference parameters work via return tuple pattern
 
