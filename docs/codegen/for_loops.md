@@ -12,14 +12,19 @@ MUMPS FOR loops translate to different Python patterns based on:
 
 ## Analysis Fields
 
-| Field | Purpose |
-|-------|---------|
-| `loop_type` | Classification of loop structure |
-| `is_infinite` | Cannot exit naturally |
-| `has_internal_quit` | QUIT in body → `break` |
-| `has_internal_goto` | GOTO exits loop |
-| `loop_var_modified_in_body` | Uses `while` instead of `for` |
-| `exit_points` | GOTOs that exit this loop |
+These fields are populated by analysis passes before code generation:
+
+| Field | Purpose | Populated By |
+|-------|---------|-------------|
+| `loop_type` | Classification of loop structure | `analyze_for_loops` |
+| `is_infinite` | Cannot exit naturally | `analyze_for_loops` |
+| `has_internal_quit` | QUIT in body → `break` | `analyze_for_loops` |
+| `has_internal_goto` | GOTO exits loop | `classify_gotos` |
+| `loop_var_modified_in_body` | Uses `while` instead of `for` | `analyze_for_loops` |
+| `exit_points` | GOTOs that exit this loop | `classify_gotos` |
+| `has_cross_label_exit` | Exit jumps to different label | `classify_gotos` |
+| `needs_exception_wrapper` | Wrap in try/except for multi-loop exit | `classify_gotos` |
+| `exit_target` | Target label name (MUMPS name) | `classify_gotos` |
 
 ## Bounded FOR
 

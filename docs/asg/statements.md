@@ -203,16 +203,19 @@ F I="A",1:1:3 W I,!        ; MIXED
 | `parameters` | `List[MForParameter]` | Loop parameters |
 | `body` | `MScope` | Loop body statements |
 
-**Analysis fields** (populated by `analyze_for_loops`):
+**Analysis fields** (populated by `analyze_for_loops` and `classify_gotos`):
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `loop_type` | `ForLoopType` | Classification |
-| `is_infinite` | `bool` | True for step=0 or ARGUMENTLESS |
-| `has_internal_quit` | `bool` | QUIT directly in body |
-| `has_internal_goto` | `bool` | GOTO inside loop body |
-| `exit_points` | `List[MStatement]` | Exit statements (QUIT/GOTO) |
-| `loop_var_modified_in_body` | `bool` | SET of loop var |
+| Field | Type | Populated By | Description |
+|-------|------|--------------|-------------|
+| `loop_type` | `ForLoopType` | `analyze_for_loops` | Classification |
+| `is_infinite` | `bool` | `analyze_for_loops` | True for step=0 or ARGUMENTLESS |
+| `has_internal_quit` | `bool` | `analyze_for_loops` | QUIT directly in body |
+| `has_internal_goto` | `bool` | `classify_gotos` | GOTO inside loop body |
+| `exit_points` | `List[MStatement]` | `classify_gotos` | Exit statements (QUIT/GOTO) |
+| `loop_var_modified_in_body` | `bool` | `analyze_for_loops` | SET of loop var |
+| `has_cross_label_exit` | `bool` | `classify_gotos` | Exit GOTO targets different label |
+| `needs_exception_wrapper` | `bool` | `classify_gotos` | Outermost FOR for multi-loop exit |
+| `exit_target` | `Optional[str]` | `classify_gotos` | Target label name (MUMPS name) |
 
 **MForParameter** structure:
 

@@ -82,14 +82,24 @@ For example, `G TEST+4` from TEST at line 1 targets line 5.
 The value is computed by `_find_stmt_index_for_line()` which maps the target line number
 to a statement index in the label body.
 
-### On MForStatement (back-references)
+### On MForStatement (back-references and codegen hints)
 
 ```python
 @dataclass
 class MForStatement(MStatement):
+    # Back-references
     has_internal_goto: bool = False
     exit_points: List[MGotoStatement] = field(default_factory=list)
+    
+    # Pre-computed codegen hints
+    has_cross_label_exit: bool = False  # Exit GOTO targets different label
+    needs_exception_wrapper: bool = False  # Outermost FOR for multi-loop exit
+    exit_target: Optional[str] = None  # Target label name (MUMPS name)
 ```
+
+The codegen hint fields are populated during `classify_gotos()` to avoid recomputing
+this information during code generation. The `exit_target` stores the raw MUMPS name;
+code generation translates it to a valid Python identifier when needed.
 
 ## Classification Logic
 
