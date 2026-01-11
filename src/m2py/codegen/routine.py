@@ -6,6 +6,7 @@ Handles module structure, imports, labels as functions, and $TEST tracking.
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional
 
@@ -158,7 +159,17 @@ class RoutineGenerator:
         for label in self._routine.labels:
             self._generate_label(label, ctx)
 
-        return self._emitter.get_code()
+        code = self._emitter.get_code()
+
+        # Validate generated Python is syntactically correct
+        try:
+            ast.parse(code)
+        except SyntaxError as e:
+            raise SyntaxError(
+                f"Generated Python has syntax error: {e}\n\nGenerated code:\n{code}"
+            ) from e
+
+        return code
 
     def _generate_preamble(self, ctx: GeneratorContext) -> None:
         """Generate module imports and initialization.

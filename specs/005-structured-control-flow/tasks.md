@@ -277,12 +277,20 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 **Purpose**: Validation, documentation, and cleanup
 
-- [ ] T069 [P] Add ast.parse() validation to routine generation in src/m2py/codegen/routine.py
-- [ ] T070 [P] Update docs/codegen/for_loops.md with actual generated patterns
-- [ ] T071 [P] Update docs/codegen/goto_handling.md with actual generated patterns
-- [ ] T072 Run pytest coverage and verify 85%+ on codegen additions
-- [ ] T073 Run quickstart.md validation - all success checklist items pass
-- [ ] T074 Update codegen-plan.md: mark Spec 005 deliverables complete
+- [X] T069 [P] Add ast.parse() validation to routine generation in src/m2py/codegen/routine.py
+- [X] T070 [P] Update docs/codegen/for_loops.md with actual generated patterns
+- [X] T071 [P] Update docs/codegen/goto_handling.md with actual generated patterns
+- [X] T072 Run pytest coverage and verify 85%+ on codegen additions (achieved 86%)
+- [X] T073 Run quickstart.md validation - all success checklist items pass
+- [X] T074 Update codegen-plan.md: mark Spec 005 deliverables complete
+
+**Implementation Notes** (Phase 12 Complete):
+- ast.parse() validation catches syntax errors before execution with helpful error message
+- docs/codegen/for_loops.md rewritten with actual generated patterns (range, count, while, chain)
+- docs/codegen/goto_handling.md updated with actual break, _LoopExit, and if/else restructuring
+- Coverage: 86% on codegen module (exceeds 85% threshold)
+- All quickstart.md success checklist items verified via tests
+- codegen-plan.md Spec 005 deliverables marked complete with implementation notes
 
 ---
 

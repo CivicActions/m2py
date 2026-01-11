@@ -1,35 +1,30 @@
 # GOTO Handling Strategies
 
-How to translate MUMPS GOTO into structured Python code.
+Python code generation for MUMPS GOTO statements.
 
 ## Overview
 
-GOTO is MUMPS's primary control flow mechanism. The challenge is mapping it to Python's structured constructs.
+GOTO is MUMPS's primary control flow mechanism. The code generator translates it to Python's structured constructs.
 
 ## GOTO Classifications
 
 After `classify_gotos()`, each MGotoStatement has a `goto_type`:
 
-| GotoType | Meaning | Strategy |
-|----------|---------|----------|
-| `FORWARD_JUMP` | To later code | If/elif chain |
-| `BACKWARD_JUMP` | To earlier code | Loop |
+| GotoType | Meaning | Python Strategy |
+|----------|---------|-----------------|
+| `FORWARD_JUMP` | To later code (same label) | Inverted if/else |
 | `LOOP_EXIT` | Out of one FOR | `break` |
-| `MULTI_LOOP_EXIT` | Out of nested FORs | Exception |
+| `MULTI_LOOP_EXIT` | Out of nested FORs | `raise _LoopExit()` |
 | `CROSS_LABEL` | To different label | Function call + return |
-| `EXTERNAL` | To other routine | Module import + call |
-| `UNRESOLVED` | Dynamic target | Runtime dispatch |
+| `BACKWARD_JUMP` | To earlier code | Not yet supported |
+| `EXTERNAL` | To other routine | Not yet supported |
+| `UNRESOLVED` | Dynamic target | Not yet supported |
 
-## Forward Jump
+## Intra-Label Forward Jump
 
-### Intra-Label Forward (is_cross_label=False)
+When a GOTO targets a line within the same label, `generate_scope_statements()` restructures it to an inverted if/else block.
 
-When a GOTO targets a line within the same label, the code generator restructures
-it to an inverted if/else block. This is handled by `generate_scope_statements()`
-which detects restructurable GOTOs and transforms them.
-
-**MUMPS Offset Semantics**: `LABEL+n` targets line n from LABEL (0-indexed).
-For example, `G TEST+4` from TEST at line 1 targets line 5.
+**MUMPS Offset Semantics**: `LABEL+n` targets line n from LABEL (0-indexed). For example, `G TEST+4` from TEST at line 1 targets line 5.
 
 ```mumps
 TEST   I 1 G TEST+4    ; Line 1 - if true, skip to line 5
@@ -40,7 +35,6 @@ TEST   I 1 G TEST+4    ; Line 1 - if true, skip to line 5
        Q
 ```
 
-**Generated Python (Spec 005):**
 ```python
 def TEST():
     global _test
@@ -57,173 +51,99 @@ def TEST():
 ```
 
 **Implementation Details**:
+- `_is_restructurable_goto()` checks if GOTO is intra-label forward
 - `_find_forward_goto_in_if()` detects restructurable GOTOs inside IF statements
 - `_restructure_forward_goto()` generates the inverted if/else structure
 - `target_stmt_index` (computed in `classify_gotos()`) identifies which statements to wrap
 
-### Cross-Label Forward (is_cross_label=True)
+## Cross-Label Jump
 
-Forward jumps to a different label use function call pattern (Spec 006):
+Cross-label GOTOs transfer control to a different label function:
 
 ```mumps
 START  I X=1 G DONE
-       W "X is not 1"
-DONE   W "Finished"
+       W "Not 1"
+       Q
+DONE   W "Done"
 ```
 
-**Conceptual Python (Spec 006):**
 ```python
-if x == 1:
-    return DONE()  # Function call + return
-print("X is not 1")
+def START():
+    global _test
+    _test = m_truth(m_compare(X, "=", 1))
+    if _test:
+        DONE()
+        return
+    _rt.write(str("Not 1"))
 
 def DONE():
-    print("Finished")
+    _rt.write(str("Done"))
 ```
 
-### Multiple Forwards (If/Elif Chain)
+The `return` after the call ensures control doesn't continue past the GOTO.
 
-```mumps
-       I X=1 G ONE
-       I X=2 G TWO
-       G OTHER
-ONE    W "One" Q
-TWO    W "Two" Q
-OTHER  W "Other"
-```
+## Single Loop Exit
 
-```python
-# Conceptual Python equivalent
-
-if x == 1:
-    print("One")
-elif x == 2:
-    print("Two")
-else:
-    print("Other")
-```
-
-## Backward Jump
-
-Creates a loop structure:
-
-```mumps
-START  S X=0
-LOOP   S X=X+1
-       W X
-       I X<10 G LOOP
-       W "Done"
-```
-
-**While Loop:**
-```python
-# Conceptual Python equivalent
-
-x = 0
-while True:
-    x = x + 1
-    print(x)
-    if x >= 10:
-        break
-print("Done")
-```
-
-## Loop Exit
-
-### Single Loop
+When a GOTO exits exactly one FOR loop, it generates `break`:
 
 ```mumps
 F I=1:1:100 D
-. I ERR G ERROR
+. I ERR G DONE
 . D WORK
-ERROR W "Exited"
+DONE W "Exited"
 ```
 
-**Break Pattern:**
 ```python
-# Conceptual Python equivalent
-
-for i in range(1, 101):
-    if err:
+for I in range(1, 101):
+    _test = m_truth(ERR)
+    if _test:
         break
-    work()
-print("Exited")
+    WORK()
+# Label DONE continues here
+_rt.write(str("Exited"))
 ```
 
-### With Distinct Exit Points
+The `exits_loops` attribute (computed by analysis) contains exactly one loop.
 
-```mumps
-F I=1:1:100 D
-. I ERR G ERROR
-. I DONE G SUCCESS
-. D WORK
-ERROR W "Error!"
-Q
-SUCCESS W "Success!"
-```
+## Multi-Loop Exit
 
-**Flag Pattern:**
-```python
-# Conceptual Python equivalent
-
-exit_type = None
-for i in range(1, 101):
-    if err:
-        exit_type = "error"
-        break
-    if done:
-        exit_type = "success"
-        break
-    work()
-
-if exit_type == "error":
-    print("Error!")
-elif exit_type == "success":
-    print("Success!")
-```
-
-## Skip-Iteration Patterns (NOT via GOTO)
-
-**Important**: GOTO cannot create Python `continue` semantics. Per MDC 3.6.5, GOTO terminates
-all FOR loops on the line containing the GOTO.
-
-### Correct MUMPS Pattern: Conditional Execution
-
-To skip to the next iteration, use conditional execution:
-
-```mumps
-F I=1:1:10 I I'=5 W I
-```
-
-This outputs "1234678910" - only writes when I is not 5.
-
-**Generated Python:**
-```python
-for i in range(1, 11):
-    if i != 5:
-        print(i)
-```
-
-### Correct MUMPS Pattern: QUIT from DO Block
+When a GOTO exits multiple nested FOR loops, it generates `raise _LoopExit()`:
 
 ```mumps
 F I=1:1:10 D
-. I I=5 Q        ; QUIT exits DO block, not FOR
-. W I
+. F J=1:1:10 D
+. . I X=Y G ALLDONE
+ALLDONE W "Done"
 ```
 
-This outputs "1234678910" - QUIT from DO block continues the FOR.
-
-**Generated Python:**
 ```python
-for i in range(1, 11):
-    if i == 5:
-        pass  # QUIT exits the DO block scope
-    else:
-        print(i)
+class _LoopExit(Exception):
+    pass
+
+try:
+    for I in range(1, 11):
+        for J in range(1, 11):
+            _test = m_truth(m_compare(X, "=", Y))
+            if _test:
+                raise _LoopExit()
+except _LoopExit:
+    pass  # Multi-loop exit completed
+# Label ALLDONE continues here
+_rt.write(str("Done"))
 ```
 
-### Why GOTO Cannot Create Continue
+**Implementation Details**:
+- `_routine_needs_loop_exit_exception()` checks if any GOTO has `len(exits_loops) > 1`
+- The `_LoopExit` class is generated in the module preamble only when needed
+- `_for_needs_loop_exit_wrapper()` determines which FOR loop gets the try/except wrapper
+
+## No Continue Semantics
+
+**Important**: GOTO cannot create Python `continue` semantics. Per MDC 3.6.5:
+
+> "Execution of GOTO effects the immediate termination of all FORs in the line containing the GOTO."
+
+A GOTO to the same label creates recursion, not skip-iteration:
 
 ```mumps
 LOOP F I=1:1:10 I I=5 G LOOP
@@ -231,202 +151,87 @@ LOOP F I=1:1:10 I I=5 G LOOP
      Q
 ```
 
-This creates an **infinite loop** in YDB, not "continue" behavior:
-- When I=5, `G LOOP` transfers to LOOP label
-- LOOP restarts the entire FOR from I=1
-- Creates infinite recursion/restart, not skip-iteration
+This creates an **infinite loop** in YDB - when I=5, `G LOOP` transfers to LOOP label and restarts the entire FOR from I=1.
 
-## Multi-Loop Exit
+### Skip-Iteration Alternatives
+
+Use conditional execution:
+
+```mumps
+F I=1:1:10 I I'=5 W I
+```
+
+```python
+for I in range(1, 11):
+    _test = m_truth(m_compare(I, "'=", 5))
+    if _test:
+        _rt.write(str(I))
+```
+
+Or QUIT from DO block:
 
 ```mumps
 F I=1:1:10 D
-. F J=1:1:10 D
-. . I X=Y G ALLDONE
+. I I=5 Q
 . W I
-W "After outer"
-Q
-ALLDONE W "Jumped out!"
 ```
-
-### Exception Pattern
 
 ```python
-# Conceptual Python equivalent
-
-class LoopExit(Exception):
-    pass
-
-try:
-    for i in range(1, 11):
-        for j in range(1, 11):
-            if x == y:
-                raise LoopExit()
-        print(i)
-    print("After outer")
-except LoopExit:
-    print("Jumped out!")
-```
-
-### Nested Flag Pattern
-
-```python
-# Conceptual Python equivalent
-
-exit_outer = False
-for i in range(1, 11):
-    for j in range(1, 11):
-        if x == y:
-            exit_outer = True
-            break
-    if exit_outer:
-        break
-    print(i)
-
-if exit_outer:
-    print("Jumped out!")
-else:
-    print("After outer")
-```
-
-## External GOTO
-
-```mumps
-G LABEL^OTHERROUTINE
-```
-
-**Module Call:**
-```python
-# Conceptual Python equivalent
-
-import otherroutine
-otherroutine.label()
-# No return - control transfers permanently
-```
-
-Or with return value if needed:
-```python
-# Conceptual Python equivalent
-
-return otherroutine.label()  # If in a function context
+for I in range(1, 11):
+    _test = m_truth(m_compare(I, "=", 5))
+    if _test:
+        pass  # QUIT exits DO block, not FOR
+    else:
+        _rt.write(str(I))
 ```
 
 ## Conditional GOTO
 
-```mumps
-G:CONDITION TARGET
-```
-
-**Conditional Break/Call:**
-```python
-# Conceptual Python equivalent
-
-if condition:
-    break  # or return, or function_call()
-```
-
-## Unstructured GOTO
-
-When GOTOs create irreducible control flow (not mappable to structured constructs):
+Postcondition syntax `G:cond target` generates conditional code:
 
 ```mumps
-LABEL1 I X=1 G LABEL3
-LABEL2 W "Two"
-       G LABEL4
-LABEL3 W "Three"
-       I Y=2 G LABEL2
-LABEL4 W "Four"
+G:X=1 DONE
 ```
-
-### State Machine Pattern
 
 ```python
-# Conceptual Python equivalent
-
-state = "LABEL1"
-while True:
-    if state == "LABEL1":
-        if x == 1:
-            state = "LABEL3"
-        else:
-            state = "LABEL2"
-    elif state == "LABEL2":
-        print("Two")
-        state = "LABEL4"
-    elif state == "LABEL3":
-        print("Three")
-        if y == 2:
-            state = "LABEL2"
-        else:
-            state = "LABEL4"
-    elif state == "LABEL4":
-        print("Four")
-        break
+_test = m_truth(m_compare(X, "=", 1))
+if _test:
+    DONE()
+    return
 ```
 
-## Detection: has_unstructured_goto
+## Not Yet Supported
 
-The routine-level flag indicates complex GOTO patterns that cannot be easily translated to structured Python:
+The following GOTO patterns raise `NotImplementedError` or `UnsupportedFeatureError`:
 
-```python
-# Conceptual Python equivalent
+| Pattern | Example | Reason |
+|---------|---------|--------|
+| Backward intra-label | `G LOOP` (where LOOP is earlier) | Creates implicit loops (Spec 006) |
+| External routine | `G LABEL^OTHER` | Requires module import handling |
+| Multiple targets | `G A,B` | Rarely used |
+| Indirect | `G @VAR` | Runtime dispatch needed |
+| Argumentless | `G` | Special case |
 
-if routine.has_unstructured_goto:
-    return generate_state_machine(routine)
-else:
-    return generate_structured(routine)
-```
+## Analysis Fields
 
-**Patterns that set `has_unstructured_goto=True`:**
-- `BACKWARD_JUMP`: Cross-label backward jump creates implicit loops
-- `UNRESOLVED`: Target unknown at compile time, needs runtime dispatch
-- Cross-label `FORWARD_JUMP` not inside a FOR loop: Can't use simple break
+| Field | Purpose |
+|-------|---------|
+| `goto_stmt.goto_type` | Classification (GotoType enum) |
+| `goto_stmt.postcondition` | Conditional GOTO expression |
+| `goto_stmt.exits_loops` | List of FOR loops exited |
+| `goto_stmt.is_cross_label` | True if target is different label |
+| `goto_stmt.target_stmt_index` | Statement index for intra-label forward |
+| `for_stmt.has_internal_goto` | Has GOTO in body |
+| `for_stmt.exit_points` | List of exiting GOTOs |
 
-**Patterns that remain structured (`has_unstructured_goto=False`):**
-- `LOOP_EXIT` / `MULTI_LOOP_EXIT`: Translates to break or exception
-- `FORWARD_JUMP` within same label: Translates to if/else
-- `EXTERNAL`: Translates to function call to another module
+## Code Generator Functions
 
-## Analysis Fields Used
-
-```python
-goto_stmt.goto_type            # Classification (GotoType enum)
-goto_stmt.postcondition        # Conditional GOTO expression
-goto_stmt.exits_loops          # List of FOR loops exited
-goto_stmt.is_cross_label       # True if target is different label
-goto_stmt.target_stmt_index    # Statement index for intra-label forward (Spec 005)
-goto_stmt.targets[0].target    # Resolved MLabel
-goto_stmt.targets[0].routine   # External routine name
-
-for_stmt.has_internal_goto     # Has GOTO in body
-for_stmt.exit_points           # List of exiting GOTOs
-```
-
-## Decision Algorithm
-
-```python
-# Conceptual Python equivalent
-
-def translate_goto(goto_stmt, context):
-    match goto_stmt.goto_type:
-        case GotoType.FORWARD_JUMP:
-            if can_restructure_as_if(goto_stmt, context):
-                return generate_if_branch(goto_stmt)
-            return generate_forward_call(goto_stmt)
-        
-        case GotoType.BACKWARD_JUMP:
-            return generate_loop_structure(goto_stmt, context)
-        
-        case GotoType.LOOP_EXIT:
-            if len(goto_stmt.exits_loops) == 1:
-                return generate_break(goto_stmt)
-            return generate_multi_exit(goto_stmt)
-        
-        case GotoType.MULTI_LOOP_EXIT:
-            return generate_exception_exit(goto_stmt)
-        
-        case GotoType.EXTERNAL:
-            return generate_module_call(goto_stmt)
-        
-        case GotoType.UNRESOLVED:
-            return generate_runtime_dispatch(goto_stmt)
-```
+| Function | Purpose |
+|----------|---------|
+| `_generate_goto()` | Main GOTO dispatch in statements.py |
+| `_is_restructurable_goto()` | Check if GOTO can become if/else |
+| `_find_forward_goto_in_if()` | Find restructurable GOTO in IF |
+| `_restructure_forward_goto()` | Generate inverted if/else structure |
+| `generate_scope_statements()` | Statement generation with GOTO restructuring |
+| `_for_needs_loop_exit_wrapper()` | Check if FOR needs try/except |
+| `_routine_needs_loop_exit_exception()` | Check if routine needs _LoopExit class |

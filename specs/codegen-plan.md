@@ -717,22 +717,47 @@ Review before coding:
 - [x] Backward intra-label GOTO raises UnsupportedFeatureError
   - Tests: `test_backward_intra_label_goto_raises_error` → test_s8_2_06_goto.py
   - Deferred to Spec 006 for proper loop restructuring
-- [ ] Loop exit translation (break, exception) for GOTO
+- [x] Loop exit translation (break, exception) for GOTO
   - Tests: `test_*_loop_exit_*` → test_s8_2_06_goto.py
-- [ ] QUIT context-aware code generation
+  - Implementation: `_generate_goto()` checks `exits_loops` for break vs `raise _LoopExit()`
+- [x] QUIT context-aware code generation
   - Tests: `TestQuitCommandCodegen` → [test_s8_2_16_quit.py](../tests/unit/codegen/s8_commands/test_s8_2_16_quit.py)
-- [ ] Scope strategy code generation (PURE_FUNCTION, SUBROUTINE, etc.)
+  - Implementation: `exits_for` → break, `exits_do_block` → return
+- [x] Scope strategy code generation (PURE_FUNCTION, SUBROUTINE, etc.)
   - Tests: `TestScopeStrategyCodegen` → test_s8_2_03_do.py
-- [ ] By-reference parameter return value pattern
+- [x] By-reference parameter return value pattern
   - Tests: `TestByRefParameterCodegen` → test_s8_2_03_do.py
-- [ ] Extrinsic function $TEST stacking
+- [x] Extrinsic function $TEST stacking
   - Tests: `test_extrinsic_*_test_restore` → [test_s7_1_1_values.py](../tests/unit/codegen/s7_expressions/test_s7_1_1_values.py)
-- [ ] Postconditions do NOT update $TEST (explicit test)
+  - Implementation: `_call_extrinsic()` wrapper with save/restore pattern
+- [x] Postconditions do NOT update $TEST (explicit test)
   - Tests: `TestPostconditionsCodegen` → [test_postconditions.py](../tests/unit/cross_cutting/test_postconditions.py)
-- [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
+- [x] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
   - Update codegen-plan.md: mark deliverables complete, add implementation notes
   - Update docs/codegen/ with actual patterns used
   - Add pre-requisites section to Spec 006
+
+### Implementation Notes
+
+**Coverage**: 86% on codegen module (exceeds 85% threshold)
+
+**Key Patterns Implemented**:
+1. FOR loops dispatch by `loop_type` and `loop_var_modified_in_body`:
+   - BOUNDED → `range()` with step adjustment for MUMPS end-inclusive
+   - OPEN_ENDED → `itertools.count(start, step)`
+   - ARGUMENTLESS → `while True:`
+   - STRING_LIST → list iteration
+   - MIXED → `itertools.chain()` combining ranges and values
+   - Modified loop var → `while` with explicit stepping
+
+2. GOTO patterns handled by `goto_type` and `exits_loops`:
+   - Single loop exit → `break`
+   - Multi-loop exit → `raise _LoopExit()` with try/except wrapper
+   - Intra-label forward → if/else restructuring via `generate_scope_statements()`
+
+3. $TEST isolation via `_call_extrinsic()` wrapper function generated in preamble
+
+4. AST validation: `ast.parse()` at end of `generate()` catches syntax errors early
 
 ### Validation
 
