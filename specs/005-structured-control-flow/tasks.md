@@ -140,14 +140,23 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 ### Implementation for User Story 5
 
-- [ ] T034 [US5] Implement is_loop_continue=True GOTO as continue in src/m2py/codegen/statements.py
-- [ ] T035 [US5] Implement LOOP_EXIT GOTO as break in src/m2py/codegen/statements.py
-- [ ] T036 [US5] Add _LoopExit exception class generation in module preamble in src/m2py/codegen/routine.py
-- [ ] T037 [US5] Implement MULTI_LOOP_EXIT GOTO as raise _LoopExit() in src/m2py/codegen/statements.py
-- [ ] T038 [US5] Generate try/except wrapper for FOR loops with exit_points in src/m2py/codegen/statements.py
-- [ ] T039 [US5] Add test: GOTO continue pattern in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
-- [ ] T040 [US5] Add test: single loop exit becomes break in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
-- [ ] T041 [US5] Add test: multi-loop exit uses exception in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [X] T034 [US5] Implement is_loop_continue=True GOTO as continue in src/m2py/codegen/statements.py
+- [X] T035 [US5] Implement LOOP_EXIT GOTO as break in src/m2py/codegen/statements.py
+- [X] T036 [US5] Add _LoopExit exception class generation in module preamble in src/m2py/codegen/routine.py
+- [X] T037 [US5] Implement MULTI_LOOP_EXIT GOTO as raise _LoopExit() in src/m2py/codegen/statements.py
+- [X] T038 [US5] Generate try/except wrapper for FOR loops with exit_points in src/m2py/codegen/statements.py
+- [X] T039 [US5] Add test: GOTO continue pattern in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [X] T040 [US5] Add test: single loop exit becomes break in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [X] T041 [US5] Add test: multi-loop exit uses exception in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+
+**Implementation Notes** (Phase 7 Complete):
+- `is_loop_continue=True` generates `continue` in `_generate_goto()`
+- Single loop exit (`exits_loops` has 1 entry) generates `break`
+- Multi-loop exit (`exits_loops` has 2+ entries) generates `raise _LoopExit()`
+- `_LoopExit` exception class generated in preamble when needed via `_routine_needs_loop_exit_exception()`
+- Outermost FOR loop wrapped in `try:/except _LoopExit:` via `_for_needs_loop_exit_wrapper()`
+- Added `indent()`/`dedent()` methods to CodeEmitter for non-context-manager indentation control
+- Note: `is_loop_continue` analysis may have bugs (G LABEL creates recursive call, not continue) - out of Phase 7 scope
 
 **Checkpoint**: Loop exits translate to idiomatic Python patterns
 

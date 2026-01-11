@@ -49,6 +49,22 @@ class CodeEmitter:
         """Emit a blank line (no indentation)."""
         self._lines.append("")
 
+    def indent(self) -> None:
+        """Increase indent level by one.
+
+        Use this with dedent() for non-context-manager indentation control.
+        Prefer indented() context manager when possible.
+        """
+        self._level += 1
+
+    def dedent(self) -> None:
+        """Decrease indent level by one.
+
+        Use this with indent() for non-context-manager indentation control.
+        Prefer indented() context manager when possible.
+        """
+        self._level -= 1
+
     @contextmanager
     def indented(self) -> Iterator[None]:
         """Context manager that increases indent level.

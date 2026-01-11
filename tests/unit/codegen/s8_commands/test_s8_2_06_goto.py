@@ -143,36 +143,74 @@ class TestIntraLabelGotoCodegen:
         with pytest.raises(UnsupportedFeatureError, match="Backward intra-label GOTO"):
             generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: loop continue")
     def test_loop_continue_pattern(self, generate_python):
-        """GOTO that continues loop generates continue statement.
+        """GOTO that continues loop generates continue statement (T039).
 
-        F I=1:1:10 I I#2 G NEXT S X=I
-        NEXT ; loop continues here
+        When is_loop_continue=True is set by analysis, the GOTO should
+        generate a 'continue' statement to skip to the next iteration.
+
+        This pattern occurs when a GOTO inside a FOR loop jumps back
+        to the same label containing the loop.
         """
-        pytest.fail("Stub - implement test")
+        # Create test MUMPS code: FOR loop with conditional skip
+        # I I#2=0 G TEST means "if I mod 2 is 0, skip to label (continue)"
+        # This effectively skips even numbers
+        code = """TEST S X=""
+ F I=1:1:5 D
+ . I I#2=0 G TEST
+ . S X=X_I
+ W X
+ Q
+"""
+        python_code = generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: loop exit")
+        # The GOTO with is_loop_continue should generate 'continue'
+        assert "continue" in python_code
+
     def test_loop_exit_generates_break(self, generate_python):
-        """GOTO that exits loop generates break statement.
+        """GOTO that exits loop generates break statement (T040).
 
-        F I=1:1:100 I X>10 G DONE
-        DONE ; after loop
+        When a GOTO inside a single FOR loop targets a label after
+        the loop, it should generate 'break' to exit the loop.
         """
-        pytest.fail("Stub - implement test")
+        # MUMPS: exit loop when I > 5, then write I
+        code = """TEST F I=1:1:100 I I>5 G DONE
+DONE W I
+ Q
+"""
+        python_code = generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: multi-loop exit")
+        # The loop exit GOTO should generate 'break'
+        assert "break" in python_code
+        # Look for the break in the context of the loop (after the if statement)
+        # The TEST function should contain 'break', not 'DONE()'
+        test_func = python_code.split("def TEST():")[1].split("def DONE():")[0]
+        assert "break" in test_func
+        # The TEST function should NOT call DONE() - it should break instead
+        assert "DONE()" not in test_func
+
     def test_multi_loop_exit_generates_exception(self, generate_python):
-        """GOTO exiting multiple loops generates exception pattern.
+        """GOTO exiting multiple loops generates exception pattern (T041).
 
-        F I=1:1:10 F J=1:1:10 I X>50 G DONE
-        ; exits both loops
-        DONE ; after both loops
+        When a GOTO inside nested FOR loops needs to exit both loops,
+        it should generate 'raise _LoopExit()' and the outermost loop
+        should be wrapped in try/except _LoopExit.
         """
-        pytest.fail("Stub - implement test")
+        # MUMPS: exit both loops when I*J > 15
+        code = """TEST S X=0
+ F I=1:1:10 F J=1:1:10 I I*J>15 G DONE
+DONE W I*J
+ Q
+"""
+        python_code = generate_python(code)
+
+        # Should generate the _LoopExit exception class
+        assert "class _LoopExit" in python_code
+        # The multi-loop exit GOTO should generate raise
+        assert "raise _LoopExit()" in python_code
+        # Outer loop should have try/except wrapper
+        assert "try:" in python_code
+        assert "except _LoopExit:" in python_code
 
 
 @pytest.mark.codegen

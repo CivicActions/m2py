@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from m2py.asg.elements import MLabel, MRoutine
-from m2py.asg.enums import ScopeStrategy
-from m2py.asg.statements import MForStatement
+from m2py.asg.enums import GotoType, ScopeStrategy
+from m2py.asg.statements import MForStatement, MGotoStatement
 from m2py.analysis.variables import FunctionSignature
 from m2py.codegen.emitter import CodeEmitter
 from m2py.codegen.names import NameTranslator, translate_name
@@ -93,6 +93,29 @@ def get_scope_strategy_pattern(strategy: ScopeStrategy) -> str:
     return patterns.get(strategy, "# Unknown strategy")
 
 
+def _routine_needs_loop_exit_exception(routine: MRoutine) -> bool:
+    """Check if the routine needs the _LoopExit exception class.
+
+    The _LoopExit exception is needed when there are MULTI_LOOP_EXIT GOTOs
+    that need to exit multiple nested FOR loops.
+
+    Args:
+        routine: The routine to check
+
+    Returns:
+        True if _LoopExit exception class should be generated
+    """
+    for label in routine.labels:
+        if label.body is None:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                goto_type = getattr(stmt, "goto_type", None)
+                if goto_type == GotoType.MULTI_LOOP_EXIT:
+                    return True
+    return False
+
+
 class RoutineGenerator:
     """Generates Python code for a complete MUMPS routine.
 
@@ -153,6 +176,15 @@ class RoutineGenerator:
         # $TEST tracking
         ctx.emitter.line("_test = False")
         ctx.emitter.blank()
+
+        # T036: _LoopExit exception for multi-loop exits
+        # Only generate if the routine has MULTI_LOOP_EXIT GOTOs
+        if _routine_needs_loop_exit_exception(self._routine):
+            ctx.emitter.line("class _LoopExit(Exception):")
+            with ctx.emitter.indented():
+                ctx.emitter.line('"""Exception for multi-loop exit via GOTO."""')
+                ctx.emitter.line("pass")
+            ctx.emitter.blank()
 
     def _generate_label(self, label: MLabel, ctx: GeneratorContext) -> None:
         """Generate Python function from MUMPS label.

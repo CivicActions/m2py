@@ -202,6 +202,31 @@ class ForGenContext:
         )
 
 
+def _for_needs_loop_exit_wrapper(stmt: MForStatement) -> bool:
+    """Check if a FOR loop needs a try/except _LoopExit wrapper.
+
+    T038: The wrapper is needed when this FOR is the outermost target
+    of a MULTI_LOOP_EXIT GOTO. The GOTO raises _LoopExit() and the
+    outermost FOR catches it to exit all nested loops.
+
+    Args:
+        stmt: The MForStatement to check
+
+    Returns:
+        True if this FOR needs try/except _LoopExit wrapper
+    """
+    exit_points = getattr(stmt, "exit_points", [])
+    for exit_stmt in exit_points:
+        if isinstance(exit_stmt, MGotoStatement):
+            goto_type = getattr(exit_stmt, "goto_type", None)
+            if goto_type == GotoType.MULTI_LOOP_EXIT:
+                # Check if this FOR is the outermost (first in exits_loops)
+                exits_loops = getattr(exit_stmt, "exits_loops", [])
+                if exits_loops and exits_loops[0] is stmt:
+                    return True
+    return False
+
+
 @dataclass
 class GotoGenContext:
     """Context for GOTO code generation decisions.
@@ -655,10 +680,20 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     - STRING_LIST: for loop with list
     - MIXED: for loop with itertools.chain()
 
+    T038: If this FOR is the outermost target of a MULTI_LOOP_EXIT GOTO,
+    wrap the entire loop in try/except _LoopExit.
+
     Args:
         stmt: MForStatement node
         ctx: Generator context
     """
+    # T038: Check if this FOR needs try/except wrapper for multi-loop exit
+    needs_wrapper = _for_needs_loop_exit_wrapper(stmt)
+
+    if needs_wrapper:
+        ctx.emitter.line("try:")
+        ctx.emitter.indent()
+
     # Use ForGenContext for analysis-based dispatch
     for_ctx = ForGenContext.from_statement(stmt)
 
@@ -677,6 +712,12 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     else:
         # BOUNDED - standard for loop with range
         _generate_for_bounded(stmt, for_ctx, ctx)
+
+    if needs_wrapper:
+        ctx.emitter.dedent()
+        ctx.emitter.line("except _LoopExit:")
+        with ctx.emitter.indented():
+            ctx.emitter.line("pass  # Multi-loop exit completed")
 
 
 def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
@@ -914,12 +955,19 @@ def _generate_for_while(
 
 
 def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
-    """Generate function call with return from MGotoStatement.
+    """Generate code from MGotoStatement.
 
-    GOTO transfers control to a label. In Spec 004, we handle simple
-    intra-routine GOTO by generating a function call followed by return.
+    GOTO transfers control to a label. The generated Python depends on context:
+    - Loop continue: generate `continue`
+    - Single loop exit: generate `break`
+    - Multi-loop exit: generate `raise _LoopExit()`
+    - Cross-label jump: generate function call + return
 
-    Example: G DONE → DONE(); return
+    Example patterns:
+    - G DONE (cross-label) → DONE(); return
+    - G LABEL+n (intra-label, inside FOR, is_loop_continue) → continue
+    - G DONE (inside FOR) → break
+    - G DONE (inside nested FOR) → raise _LoopExit()
 
     Args:
         stmt: MGotoStatement node
@@ -949,6 +997,8 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     # These cannot be restructured to simple if/else and require Spec 006
     goto_type = getattr(stmt, "goto_type", None)
     is_cross_label = getattr(stmt, "is_cross_label", True)
+    is_loop_continue = getattr(stmt, "is_loop_continue", False)
+    exits_loops = getattr(stmt, "exits_loops", [])
 
     if goto_type == GotoType.BACKWARD_JUMP and not is_cross_label:
         raise UnsupportedFeatureError(
@@ -956,6 +1006,28 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
             "See Spec 006 for loop detection patterns."
         )
 
+    # Phase 7 (US5): Loop exit patterns
+    # Check if this GOTO is inside a FOR loop (from loop_stack)
+    in_for_loop = len(ctx.loop_stack) > 0
+
+    # T034: is_loop_continue=True generates continue
+    if is_loop_continue and in_for_loop:
+        ctx.emitter.line("continue")
+        return
+
+    # T035/T037: exits_loops determines break vs raise _LoopExit()
+    if exits_loops and in_for_loop:
+        if len(exits_loops) == 1:
+            # Single loop exit - generate break
+            ctx.emitter.line("break")
+            return
+        else:
+            # Multi-loop exit - generate raise _LoopExit()
+            # The exception will be caught by the outermost FOR loop
+            ctx.emitter.line("raise _LoopExit()")
+            return
+
+    # Default: cross-label GOTO as function call
     # Get the label name and translate it
     label_name = translate_name(target.name)
 
