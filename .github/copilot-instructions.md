@@ -54,6 +54,16 @@ uv run python utils/validate.py --debug --code 'TEST S X=1 W X Q'
 uv run python utils/validate.py --no-ydb --code 'TEST W 1+2 Q'
 ```
 
+## Generating YDB Reference Output
+
+```bash
+# Run MUMPS file through YDB
+docker run --rm -v "$(pwd):/workspace" ydb routine.m
+
+# Run inline MUMPS
+echo -e 'TEST\n write 1+2,!' | docker run --rm -i ydb
+```
+
 ## Core Principles
 
 1. **Semantic Correctness First** - Generated Python must match MUMPS behavior exactly

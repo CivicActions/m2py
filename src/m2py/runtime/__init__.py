@@ -137,18 +137,23 @@ class MUMPSRuntime:
             )
 
     def _find_first_function(self, python_code: str) -> str | None:
-        """Find the name of the first function defined in the code.
+        """Find the name of the first user function defined in the code.
+
+        Skips helper functions (those starting with _) to find the first
+        MUMPS label function.
 
         Args:
             python_code: Python source code
 
         Returns:
-            Name of first function, or None if no functions found
+            Name of first user function, or None if no functions found
         """
-        # Look for "def FUNCNAME(" pattern
-        match = re.search(r"^def\s+(\w+)\s*\(", python_code, re.MULTILINE)
-        if match:
-            return match.group(1)
+        # Look for all "def FUNCNAME(" patterns
+        for match in re.finditer(r"^def\s+(\w+)\s*\(", python_code, re.MULTILINE):
+            func_name = match.group(1)
+            # Skip helper functions (prefixed with _)
+            if not func_name.startswith("_"):
+                return func_name
         return None
 
 

@@ -1,15 +1,24 @@
 """Expression code generation for MUMPS-to-Python transpilation.
 
 Generates Python expression strings from MUMPS ASG expression nodes.
-Handles literals, variables, binary operations, and unary operations.
+Handles literals, variables, binary operations, unary operations, and extrinsic functions.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
-from m2py.asg.enums import LiteralType
-from m2py.asg.expressions import MBinaryOp, MExpr, MLiteral, MUnaryOp, MVariable
+from m2py.asg.enums import LiteralType, PassingMode
+from m2py.asg.expressions import (
+    MActualParameter,
+    MBinaryOp,
+    MExpr,
+    MExtrinsicFunction,
+    MLiteral,
+    MSpecialVariable,
+    MUnaryOp,
+    MVariable,
+)
 from m2py.codegen.names import translate_name
 
 if TYPE_CHECKING:
@@ -24,6 +33,7 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     - MVariable → translated variable name
     - MBinaryOp → operation with coercion
     - MUnaryOp → unary operation
+    - MExtrinsicFunction → function call with $TEST save/restore
 
     Args:
         expr: ASG expression node
@@ -43,6 +53,10 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_binary_op(expr, ctx)
     elif isinstance(expr, MUnaryOp):
         return _generate_unary_op(expr, ctx)
+    elif isinstance(expr, MExtrinsicFunction):
+        return _generate_extrinsic(expr, ctx)
+    elif isinstance(expr, MSpecialVariable):
+        return _generate_special_variable(expr, ctx)
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -88,6 +102,33 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
         raise NotImplementedError("Subscripted variables not yet supported")
 
     return python_name
+
+
+def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -> str:
+    """Generate Python expression for MUMPS special variable.
+
+    Currently supported:
+    - $TEST ($T): Returns int(_test) for MUMPS-style 0/1 output
+
+    Args:
+        var: MSpecialVariable node (name without $ prefix)
+        ctx: Generator context
+
+    Returns:
+        Python expression string
+
+    Raises:
+        NotImplementedError: For unsupported special variables
+    """
+    name = var.name.upper()  # Normalize to uppercase
+
+    # $TEST / $T - returns the _test global as integer (0 or 1)
+    # MUMPS $TEST is always 0 or 1, not Python True/False
+    if name in ("TEST", "T"):
+        return "int(_test)"
+
+    # Add other special variables as needed
+    raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 
 
 def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
@@ -153,6 +194,89 @@ def _generate_unary_op(op: MUnaryOp, ctx: "GeneratorContext") -> str:
         return f"(not m_truth({operand}))"
     else:
         raise NotImplementedError(f"Unsupported unary operator: {op.operator}")
+
+
+def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python extrinsic function call from MExtrinsicFunction.
+
+    T066: Extrinsic functions ($$label) require $TEST save/restore semantics.
+    Per MUMPS spec, the caller's $TEST is saved before the call and restored
+    after, so the callee's $TEST changes don't leak back.
+
+    Generated pattern:
+        _call_extrinsic(LABEL, arg1, arg2)
+
+    The _call_extrinsic helper handles save/restore of _test.
+
+    Args:
+        expr: MExtrinsicFunction node
+        ctx: Generator context
+
+    Returns:
+        Python expression string
+
+    Raises:
+        NotImplementedError: For external routine calls (Spec 008)
+    """
+    # Get the target label
+    if expr.target is None:
+        raise NotImplementedError("Extrinsic function without target not supported")
+
+    label_name = expr.target.name
+    if not label_name:
+        raise NotImplementedError("Extrinsic function with empty label not supported")
+
+    # Check for external routine reference (deferred to Spec 008)
+    if expr.target.routine:
+        raise NotImplementedError(
+            f"External routine extrinsic ($$label^routine) not yet supported. "
+            f"Target: {label_name}^{expr.target.routine}"
+        )
+
+    # Translate label name to Python function name
+    func_name = translate_name(label_name)
+
+    # Generate arguments
+    args = _generate_extrinsic_arguments(expr.arguments, ctx)
+
+    # Generate: _call_extrinsic(FUNC, arg1, arg2)
+    if args:
+        return f"_call_extrinsic({func_name}, {args})"
+    else:
+        return f"_call_extrinsic({func_name})"
+
+
+def _generate_extrinsic_arguments(
+    arguments: List[MActualParameter], ctx: "GeneratorContext"
+) -> str:
+    """Generate Python arguments for extrinsic function call.
+
+    Note: By-reference parameters in extrinsic functions would need special
+    handling (similar to DO calls in Phase 10), but for Spec 005 we just
+    pass values. Full by-ref support for extrinsics is Spec 008.
+
+    Args:
+        arguments: List of MActualParameter
+        ctx: Generator context
+
+    Returns:
+        Comma-separated argument string
+    """
+    if not arguments:
+        return ""
+
+    parts = []
+    for arg in arguments:
+        if arg.passing_mode == PassingMode.OMITTED:
+            parts.append("None")
+        elif arg.expression:
+            parts.append(generate_expr(arg.expression, ctx))
+        elif arg.variable_name:
+            parts.append(translate_name(arg.variable_name))
+        else:
+            parts.append("None")
+
+    return ", ".join(parts)
 
 
 __all__ = ["generate_expr"]

@@ -259,9 +259,15 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 ### Implementation
 
-- [ ] T066 [US1] Implement $TEST save/restore for extrinsic function calls in src/m2py/codegen/expressions.py
-- [ ] T067 [US1] Add test: extrinsic function isolates $TEST in tests/unit/codegen/s7_expressions/test_s7_1_1_values.py
-- [ ] T068 [US1] Add test: postconditions do NOT update $TEST in tests/unit/cross_cutting/test_language_semantics.py
+- [X] T066 [US1] Implement $TEST save/restore for extrinsic function calls in src/m2py/codegen/expressions.py
+- [X] T067 [US1] Add test: extrinsic function isolates $TEST in tests/unit/codegen/s7_expressions/test_s7_1_1_values.py
+- [X] T068 [US1] Add test: postconditions do NOT update $TEST in tests/unit/cross_cutting/test_language_semantics.py
+
+**Implementation Notes** (T066 Complete):
+- Added MSpecialVariable support to generate_expr() for $TEST/$T reading
+- $TEST returns int(_test) to ensure MUMPS-style 0/1 output (not Python True/False)
+- Extrinsic functions use _call_extrinsic() helper which saves/restores _test in try/finally
+- Verified against YottaDB: extrinsic's IF 0 sets $TEST=0 inside, but caller sees $TEST=1 after
 
 **Checkpoint**: Full $TEST stack semantics implemented (argumentless DO + extrinsics)
 

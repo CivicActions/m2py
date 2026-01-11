@@ -98,16 +98,28 @@ class TestTestStackSemanticsCodegen:
         """
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEST stacked for extrinsic")
-    def test_test_stacked_for_extrinsic(self):
+    def test_test_stacked_for_extrinsic(self, execute_mumps):
         """Extrinsic calls stack $TEST, restored on QUIT.
 
+        T067: Extrinsic function $TEST changes don't leak to caller.
+        Validated against YottaDB: output is '111' (1 before, 1 return, 1 after).
+
         IF 1           ; $TEST=1
-        S X=$$FUNC     ; Stacks $TEST for extrinsic call
-        ELSE W "NO"    ; Should NOT execute if FUNC sets $TEST=0
+        W $T,$$FUNC,$T ; Stacks $TEST for extrinsic call
+        ; FUNC sets $TEST=0 internally but caller's $TEST is restored
         """
-        pytest.fail("Stub - implement test")
+        # Multi-line routine: FUNC contains IF 0 to set $TEST=0 internally
+        source = """TEST I 1 W $T,$$FUNC(),$T Q
+FUNC()
+ I 0
+ Q 1"""
+        result = execute_mumps(source)
+
+        # Output should be "111":
+        # - First $T is 1 (from IF 1)
+        # - $$FUNC() returns 1
+        # - Second $T is 1 (restored, even though FUNC did IF 0)
+        assert result.output == "111"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: label call $TEST visibility")
@@ -146,18 +158,21 @@ class TestTestStackSemanticsCodegen:
         """
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: postcondition does not update $TEST"
-    )
-    def test_postcondition_does_not_update_test(self):
+    def test_postcondition_does_not_update_test(self, execute_mumps):
         """Postconditions do NOT update $TEST.
+
+        T068: Postconditions evaluate their condition but don't set $TEST.
+        Validated against YottaDB: output is '1' ($TEST still 1).
 
         IF 1           ; $TEST=1
         S:0 X=1        ; Postcondition is false, but $TEST stays 1
-        ELSE W "NO"    ; Should NOT execute - $TEST is still 1
+        W $T           ; Should output 1
         """
-        pytest.fail("Stub - implement test")
+        source = "TEST I 1 S:0 X=1 W $T Q"
+        result = execute_mumps(source)
+
+        # $TEST should still be 1 (postcondition didn't change it)
+        assert result.output == "1"
 
 
 # =============================================================================

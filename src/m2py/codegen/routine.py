@@ -180,6 +180,21 @@ class RoutineGenerator:
         ctx.emitter.line("_test = False")
         ctx.emitter.blank()
 
+        # T066: Extrinsic function helper - saves/restores $TEST
+        ctx.emitter.blank()
+        ctx.emitter.line("def _call_extrinsic(_ef, *args):")
+        with ctx.emitter.indented():
+            ctx.emitter.line('"""Call extrinsic function with $TEST save/restore."""')
+            ctx.emitter.line("global _test")
+            ctx.emitter.line("_saved = _test")
+            ctx.emitter.line("try:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("return _ef(*args)")
+            ctx.emitter.line("finally:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("_test = _saved")
+        ctx.emitter.blank()
+
         # T036: _LoopExit exception for multi-loop exits
         # Only generate if the routine has MULTI_LOOP_EXIT GOTOs
         if _routine_needs_loop_exit_exception(self._routine):
