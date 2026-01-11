@@ -161,7 +161,7 @@ i = 11  # Set to termination value
 | Module | Status | Key Exports Used in Spec 005 |
 |--------|--------|------------------------------|
 | `for_analysis.py` | ✅ Complete | `ForLoopType`, `loop_var_modified_in_body`, `has_internal_quit`, `has_internal_goto` |
-| `goto_analysis.py` | ✅ Complete | `GotoType`, `is_cross_label`, `is_loop_continue`, `exits_loops` |
+| `goto_analysis.py` | ✅ Complete | `GotoType`, `is_cross_label`, `exits_loops` |
 | `variables.py` | ✅ Complete | `FunctionSignature`, `ScopeStrategy`, `byref_outputs`, `compute_all_signatures()` |
 
 ### Codegen Modules - PARTIAL
@@ -189,7 +189,6 @@ exit_points: List[MGotoStatement]# ✅ Populated
 # MGotoStatement (from goto_analysis.py)
 goto_type: GotoType              # ✅ Populated
 is_cross_label: bool             # ✅ Populated
-is_loop_continue: bool           # ✅ Populated
 exits_loops: List[MForStatement] # ✅ Populated
 
 # MQuitStatement (from parser)
@@ -252,10 +251,11 @@ while True:
 
 | Pattern | GOTO Type | Generated Code |
 |---------|-----------|----------------|
-| Loop continue | `LOOP_EXIT` + `is_loop_continue=True` | `continue` |
 | Single loop exit | `LOOP_EXIT` | `break` |
 | Multi-loop exit | `MULTI_LOOP_EXIT` | Exception pattern |
 | Forward in label | `FORWARD_JUMP` + `is_cross_label=False` | If/else restructuring |
+
+**Note**: GOTO cannot create Python `continue` semantics per MDC 3.6.5. For skip-iteration, use conditional execution (`I cond <commands>`) or QUIT from DO block.
 
 ### Out-of-Scope Patterns (raise UnsupportedFeatureError)
 

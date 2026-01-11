@@ -116,8 +116,8 @@ As a developer, when I generate Python from MUMPS GOTO statements that exit FOR 
 
 **Acceptance Scenarios**:
 
-1. **Given** `TEST F I=1:1:100 I I=5 G DONE . W I DONE W "!" Q`, **When** generated and executed, **Then** output is "1234!" (single loop exit -> break)
-2. **Given** nested `TEST F I=1:1:3 F J=1:1:3 I I=2,J=2 G OUT . W I,J OUT W "X" Q`, **When** generated and executed, **Then** output is "1112X" (multi-loop exit -> exception pattern)
+1. **Given** `TEST F I=1:1:10 W I I I=5 G DONE` / `DONE W "!" Q`, **When** generated and executed, **Then** output is "12345!" (single loop exit -> break)
+2. **Given** `TEST F I=1:1:3 F J=1:1:3 W I,J I I=2,J=2 G OUT` / `OUT W "X" Q`, **When** generated and executed, **Then** output is "1112132122X" (multi-loop exit -> exception pattern, GOTO terminates both FORs when on FOR line)
 
 ---
 
@@ -131,8 +131,8 @@ As a developer, the code generator correctly interprets QUIT statements based on
 
 **Acceptance Scenarios**:
 
-1. **Given** `TEST F I=1:1:10 Q:I=3 W I Q`, **When** generated and executed, **Then** output is "12" (QUIT with exits_for=True -> break)
-2. **Given** `TEST D . W "A" . Q . W "B" W "C" Q`, **When** generated and executed, **Then** output is "AC" (QUIT with exits_do_block=True -> return from nested scope)
+1. **Given** `TEST F I=1:1:10 W I I I=3 Q` / ` Q`, **When** generated and executed, **Then** output is "123" (QUIT with exits_for=True -> break)
+2. **Given** `TEST D` / ` . W "A"` / ` . Q` / ` . W "B"` / ` W "C" Q`, **When** generated and executed, **Then** output is "AC" (QUIT with exits_do_block=True -> return from nested scope)
 3. **Given** `TEST S R=$$ADD(2,3) W R Q ADD(A,B) Q A+B`, **When** generated and executed, **Then** output is "5" (QUIT with return_value -> return expression)
 
 **Note**: This tests basic extrinsic return mechanics. Full extrinsic function support ($$label^routine, external calls) is Spec 008.
@@ -212,7 +212,7 @@ As a developer, when I generate Python from MUMPS code that passes variables by 
 #### Intra-Label GOTO
 
 - **FR-013**: System MUST restructure **forward** jumps within same label (`is_cross_label=False`, `goto_type=FORWARD_JUMP`) to if/else chains
-- **FR-014**: System MUST translate `is_loop_continue=True` GOTO to Python `continue` statement
+- **FR-014**: ~~REMOVED~~ - GOTO cannot create Python `continue` semantics per MDC 3.6.5. Use conditional execution (`I cond <commands>`) or QUIT from DO block for skip-iteration patterns.
 - **FR-014b**: System MUST raise UnsupportedFeatureError for backward intra-label GOTO (`goto_type=BACKWARD_JUMP`, `is_cross_label=False`) - deferred to Spec 006
 - **FR-015**: Intra-label restructuring MUST preserve execution order of intermediate statements
 
@@ -256,7 +256,6 @@ As a developer, when I generate Python from MUMPS code that passes variables by 
 - **MForStatement.exit_points**: List of MGotoStatements that exit this loop
 - **MGotoStatement.goto_type**: GotoType enum - classification of jump
 - **MGotoStatement.is_cross_label**: Boolean - True if target in different label
-- **MGotoStatement.is_loop_continue**: Boolean - True for continue semantics
 - **MGotoStatement.exits_loops**: List of MForStatements exited by this GOTO
 - **FunctionSignature.scope_strategy**: ScopeStrategy enum
 - **FunctionSignature.byref_outputs**: Set of formal params actually modified
@@ -308,7 +307,7 @@ Review before implementing:
 
 - **Docs**: `docs/analysis/for_analysis.md`, `docs/analysis/goto_analysis.md`, `docs/codegen/for_loops.md`, `docs/analysis/variable_analysis.md`
 - **FOR analysis**: `analysis/for_analysis.py` -> `ForLoopType`, `loop_var_modified_in_body`, `has_internal_quit`
-- **GOTO analysis**: `analysis/goto_analysis.py` -> `GotoType`, `is_cross_label`, `is_loop_continue`
+- **GOTO analysis**: `analysis/goto_analysis.py` -> `GotoType`, `is_cross_label`, `exits_loops`
 - **Scope**: `analysis/variables.py` -> `FunctionSignature`, `ScopeStrategy`, `input_variables`, `output_variables`, `byref_outputs`
 - **QUIT**: `asg/statements.py` -> `MQuitStatement.exits_for`, `.exits_do_block`, `.return_value`
 - **Current $TEST**: `codegen/statements.py` and `codegen/routine.py` -> current `_test` handling
