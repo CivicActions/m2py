@@ -12,7 +12,7 @@ and do not perform any text parsing.
 from typing import List, Optional
 
 from ..asg.elements import MLabel, MRoutine, MScope
-from ..asg.enums import GotoType
+from ..asg.enums import GotoCodegenPattern, GotoType
 from ..asg.statements import MForStatement, MGotoStatement, MStatement
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
@@ -320,6 +320,41 @@ def _classify_single_goto(
             else:
                 stmt.goto_type = GotoType.LOOP_EXIT
             stmt.exits_loops = list(enclosing_fors)
+
+    # T096-T099: Compute is_restructurable and codegen_pattern after all classification
+    _compute_codegen_fields(stmt)
+
+
+def _compute_codegen_fields(stmt: MGotoStatement) -> None:
+    """Compute is_restructurable and codegen_pattern for a GOTO statement.
+
+    This must be called after goto_type, is_cross_label, and exits_loops are set.
+
+    Args:
+        stmt: The MGotoStatement to update
+    """
+    # is_restructurable: intra-label forward jump
+    stmt.is_restructurable = (
+        stmt.goto_type == GotoType.FORWARD_JUMP and not stmt.is_cross_label
+    )
+
+    # Determine codegen_pattern based on analysis results
+    if stmt.exits_loops:
+        if len(stmt.exits_loops) == 1:
+            stmt.codegen_pattern = GotoCodegenPattern.BREAK
+        else:
+            stmt.codegen_pattern = GotoCodegenPattern.MULTI_BREAK
+    elif stmt.goto_type in (GotoType.EXTERNAL, GotoType.UNRESOLVED):
+        stmt.codegen_pattern = GotoCodegenPattern.UNSUPPORTED
+    elif stmt.goto_type == GotoType.BACKWARD_JUMP:
+        # Backward jumps are unsupported in Spec 005
+        stmt.codegen_pattern = GotoCodegenPattern.UNSUPPORTED
+    elif stmt.goto_type == GotoType.FORWARD_JUMP and not stmt.is_cross_label:
+        # Intra-label forward jump - can be restructured
+        stmt.codegen_pattern = GotoCodegenPattern.FORWARD
+    else:
+        # Cross-label forward jump or other cases - function call
+        stmt.codegen_pattern = GotoCodegenPattern.FUNCTION_CALL
 
 
 def get_loop_exiting_gotos(routine: MRoutine) -> List[MGotoStatement]:

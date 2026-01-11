@@ -68,7 +68,36 @@ class MGotoStatement(MStatement):
     exits_loops: List[MForStatement] = field(default_factory=list)
     is_loop_continue: bool = False  # True if continue semantics
     target_stmt_index: Optional[int] = None  # For intra-label forward restructuring
+    
+    # Pre-computed codegen hints (Phase 14)
+    is_restructurable: bool = False  # True if can become if/else
+    codegen_pattern: Optional[GotoCodegenPattern] = None  # Pattern for codegen
 ```
+
+### is_restructurable Field
+
+The `is_restructurable` boolean indicates whether a GOTO can be restructured to an
+if/else block instead of requiring function calls or other patterns. This is set to
+`True` when:
+- `goto_type == FORWARD_JUMP`
+- `is_cross_label == False` (intra-label forward jump)
+
+This field is populated by `_compute_codegen_fields()` during `classify_gotos()`.
+
+### codegen_pattern Field
+
+The `codegen_pattern` field (type `GotoCodegenPattern`) provides a pre-computed hint
+for code generation. This eliminates pattern computation at codegen time:
+
+| Pattern | When Set | Python Code |
+|---------|----------|-------------|
+| `BREAK` | Single loop exit | `break` |
+| `MULTI_BREAK` | Exits 2+ nested FOR loops | `raise LoopExit()` |
+| `FORWARD` | Intra-label forward (`is_restructurable=True`) | if/else restructuring |
+| `FUNCTION_CALL` | Cross-label forward jump | `label_func(); return` |
+| `UNSUPPORTED` | External, unresolved, or backward | Error/limitation |
+
+This field is populated by `_compute_codegen_fields()` during `classify_gotos()`.
 
 ### target_stmt_index
 

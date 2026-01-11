@@ -68,6 +68,29 @@ Classification of GOTO statement behavior. Determines control flow translation s
 
 ---
 
+## GotoCodegenPattern
+
+Pre-computed code generation pattern for GOTO statements. This enum is populated
+during the `classify_gotos()` analysis pass and read by codegen, avoiding pattern
+recomputation at generation time.
+
+| Value | Description | Python Code |
+|-------|-------------|-------------|
+| `BREAK` | Single loop exit | `break` |
+| `MULTI_BREAK` | Exit 2+ nested FOR loops | `raise LoopExit()` |
+| `FORWARD` | Intra-label forward jump | if/else restructuring |
+| `FUNCTION_CALL` | Cross-label forward jump | `label_func(); return` |
+| `UNSUPPORTED` | Cannot transpile statically | Error/limitation |
+
+**Relationship to other fields**:
+- `BREAK` is set when `exits_loops` has exactly 1 loop
+- `MULTI_BREAK` is set when `exits_loops` has 2+ loops
+- `FORWARD` is set when `is_restructurable=True` (intra-label forward)
+- `FUNCTION_CALL` is set for cross-label forward jumps
+- `UNSUPPORTED` is set for `BACKWARD_JUMP`, `EXTERNAL`, or `UNRESOLVED`
+
+---
+
 ## CallType
 
 Type of subroutine call or reference. Classifies DO, GOTO, and extrinsic calls.

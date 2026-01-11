@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 from m2py.asg.elements import ASGElement, MScope
-from m2py.asg.enums import ForLoopType, ForParamType, GotoType
+from m2py.asg.enums import ForLoopType, ForParamType, GotoCodegenPattern, GotoType
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MCall
@@ -265,6 +265,10 @@ class MGotoStatement(MStatement):
     # For intra-label forward GOTOs: index of target statement in label body
     # Set during classify_gotos() when goto_type=FORWARD_JUMP and is_cross_label=False
     target_stmt_index: Optional[int] = None
+
+    # T096-T098: Pre-computed codegen fields (populated by classify_gotos)
+    is_restructurable: bool = False  # True if can be restructured to if/else
+    codegen_pattern: Optional[GotoCodegenPattern] = None  # Pattern for code generation
 
 
 # =============================================================================

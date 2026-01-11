@@ -66,6 +66,25 @@ class GotoType(Enum):
     UNRESOLVED = auto()
 
 
+class GotoCodegenPattern(Enum):
+    """Pre-computed code generation pattern for GOTO statements.
+
+    Determined during classify_gotos() analysis, used by codegen to select
+    the Python pattern to generate:
+    - BREAK: Single loop exit - generates 'break'
+    - MULTI_BREAK: Multi-loop exit - generates 'raise _LoopExit()'
+    - FORWARD: Intra-label forward jump - restructure to if/else
+    - FUNCTION_CALL: Cross-label jump - generates 'label(); return'
+    - UNSUPPORTED: Cannot be transpiled statically
+    """
+
+    BREAK = auto()
+    MULTI_BREAK = auto()
+    FORWARD = auto()
+    FUNCTION_CALL = auto()
+    UNSUPPORTED = auto()
+
+
 class CallType(Enum):
     """Type of subroutine call or reference.
 

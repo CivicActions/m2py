@@ -213,7 +213,6 @@ class GotoGenContext:
         enclosing_loops: Stack of FOR loops containing this GOTO
         target_label: Translated Python name for target label
         pattern: Code pattern to generate:
-            - 'continue': Loop continuation
             - 'break': Single loop exit
             - 'multi_break': Multiple loop exit (exception)
             - 'forward': Forward jump restructuring
@@ -251,35 +250,23 @@ class GotoGenContext:
             target = stmt.targets[0]
             target_label = translate_name(target.name) if target.name else ""
 
-        # Determine pattern based on analysis fields
-        pattern = "function_call"  # Default: simple GOTO to label
+        # T101: Read pre-computed codegen_pattern from analysis instead of recomputing
+        # Map GotoCodegenPattern enum to string pattern for backward compatibility
+        from m2py.asg.enums import GotoCodegenPattern
 
-        # Check for loop-related patterns
-        # Note: There is no "continue" pattern - GOTO cannot create continue semantics.
-        # Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
-        # termination of all FORs in the line containing the GOTO."
-        exits_loops = getattr(stmt, "exits_loops", [])
-        goto_type = getattr(stmt, "goto_type", None)
-        is_cross_label = getattr(stmt, "is_cross_label", False)
+        pattern_map = {
+            GotoCodegenPattern.BREAK: "break",
+            GotoCodegenPattern.MULTI_BREAK: "multi_break",
+            GotoCodegenPattern.FORWARD: "forward",
+            GotoCodegenPattern.FUNCTION_CALL: "function_call",
+            GotoCodegenPattern.UNSUPPORTED: "unsupported",
+        }
 
-        if exits_loops:
-            if len(exits_loops) == 1:
-                pattern = "break"
-            else:
-                pattern = "multi_break"
-        elif goto_type is not None:
-            # Analysis has run - check goto_type for pattern
-            from m2py.asg.enums import GotoType
-
-            if goto_type in (GotoType.EXTERNAL, GotoType.UNRESOLVED):
-                pattern = "unsupported"
-            elif goto_type == GotoType.BACKWARD_JUMP:
-                # Backward jumps are unsupported in Spec 005
-                pattern = "unsupported"
-            elif goto_type == GotoType.FORWARD_JUMP and not is_cross_label:
-                # Intra-label forward jump - can be restructured
-                pattern = "forward"
-            # else: function_call (cross-label or other analyzed patterns)
+        if stmt.codegen_pattern is not None:
+            pattern = pattern_map.get(stmt.codegen_pattern, "function_call")
+        else:
+            # Fallback for GOTOs where analysis hasn't run (shouldn't happen)
+            pattern = "function_call"
 
         return cls(
             stmt=stmt,
@@ -290,44 +277,8 @@ class GotoGenContext:
         )
 
 
-def _is_restructurable_goto(stmt: MGotoStatement) -> bool:
-    """Check if a GOTO statement can be restructured to if/else.
-
-    A GOTO is restructurable when:
-    1. It is an intra-label jump (is_cross_label=False) - same label
-    2. It is a forward jump (goto_type=FORWARD_JUMP) - not backward
-
-    Intra-label forward GOTOs can be restructured by wrapping subsequent
-    statements in if/else blocks, eliminating the need for actual jumps.
-
-    Example:
-        MUMPS:  S X=1 I X=1 G SKIP S X=2
-                SKIP W X Q
-
-        Python: X = 1
-                if m_truth(m_compare(X, "=", 1)):
-                    pass  # GOTO SKIP - skip X=2
-                else:
-                    X = 2
-                _rt.write(str(X))
-                return
-
-    Backward intra-label GOTOs (G LABEL without offset) create implicit loops
-    and are NOT restructurable - they require different handling (Spec 006).
-
-    Args:
-        stmt: The MGotoStatement to check
-
-    Returns:
-        True if the GOTO can be restructured to if/else
-    """
-    from m2py.asg.enums import GotoType
-
-    goto_type = getattr(stmt, "goto_type", None)
-    is_cross_label = getattr(stmt, "is_cross_label", True)  # Default to cross-label
-
-    # Restructurable: intra-label (same label) forward jump
-    return goto_type == GotoType.FORWARD_JUMP and not is_cross_label
+# T100: Removed _is_restructurable_goto() - now using pre-computed
+# MGotoStatement.is_restructurable field populated by classify_gotos()
 
 
 def _find_forward_goto_in_if(if_stmt: MIfStatement) -> "MGotoStatement | None":
@@ -346,8 +297,9 @@ def _find_forward_goto_in_if(if_stmt: MIfStatement) -> "MGotoStatement | None":
         return None
 
     # Check if there's a GOTO as the only/first statement
+    # T100: Use pre-computed is_restructurable field instead of helper function
     for stmt in if_stmt.then_scope.statements:
-        if isinstance(stmt, MGotoStatement) and _is_restructurable_goto(stmt):
+        if isinstance(stmt, MGotoStatement) and stmt.is_restructurable:
             return stmt
 
     return None
@@ -1190,6 +1142,5 @@ __all__ = [
     "ForGenContext",
     "GotoGenContext",
     "_is_do_block",
-    "_is_restructurable_goto",
     "_generate_call_arguments",
 ]

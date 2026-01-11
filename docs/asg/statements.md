@@ -261,6 +261,16 @@ G LABEL1,LABEL2:COND
 | `exits_loops` | `List[MForStatement]` | FOR loops exited |
 | `is_cross_label` | `bool` | True if target is in a different label |
 | `target_stmt_index` | `Optional[int]` | Statement index for intra-label forward restructuring |
+| `is_restructurable` | `bool` | True if can be restructured to if/else |
+| `codegen_pattern` | `Optional[GotoCodegenPattern]` | Pre-computed pattern for codegen |
+
+**Pre-computed codegen fields** (Phase 14 refactoring):
+
+The `is_restructurable` and `codegen_pattern` fields are populated during analysis
+to avoid recomputing at code generation time:
+
+- `is_restructurable`: True when `goto_type=FORWARD_JUMP` and `is_cross_label=False`
+- `codegen_pattern`: One of `BREAK`, `MULTI_BREAK`, `FORWARD`, `FUNCTION_CALL`, `UNSUPPORTED`
 
 **target_stmt_index**: For intra-label forward GOTOs (`is_cross_label=False`, `goto_type=FORWARD_JUMP`),
 this field contains the index of the target statement in the label body. Computed from MUMPS offset
