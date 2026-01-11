@@ -422,8 +422,13 @@ class TestClassifyGotosAdvanced:
 
         return routine
 
-    def test_goto_same_label_is_forward_jump(self):
-        """GOTO to same label should be FORWARD_JUMP (intra-label)."""
+    def test_goto_same_label_is_backward_jump(self):
+        """GOTO to same label (without offset) should be BACKWARD_JUMP.
+
+        G LABEL from within LABEL always jumps to the start of the label,
+        which is backward from any position within the label's body.
+        This pattern creates an implicit loop.
+        """
         routine = MRoutine(name="TEST")
 
         # Create a single label with GOTO to itself
@@ -432,7 +437,7 @@ class TestClassifyGotosAdvanced:
         label.body.parent = label
         routine.add_label(label)
 
-        # Add GOTO MAIN in MAIN (jumps to same label)
+        # Add GOTO MAIN in MAIN (jumps to same label = backward to start)
         goto_stmt = MGotoStatement()
         call = MCall(name="MAIN")
         goto_stmt.targets.append(call)
@@ -441,8 +446,9 @@ class TestClassifyGotosAdvanced:
         resolve_references(routine)
         classify_gotos(routine)
 
-        # GOTO to same label is FORWARD_JUMP (within label scope)
-        assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
+        # GOTO to same label without offset = backward to label start
+        assert goto_stmt.goto_type == GotoType.BACKWARD_JUMP
+        assert goto_stmt.is_cross_label is False
 
     def test_goto_cross_label_forward(self):
         """GOTO to later label should be FORWARD_JUMP with is_cross_label=True."""
@@ -598,8 +604,15 @@ class TestClassifyGotosAdvanced:
         assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
         assert goto_stmt.is_cross_label is True
 
-    def test_is_loop_continue_when_goto_back_to_label_in_for(self):
-        """GOTO back to same label from inside FOR should set is_loop_continue."""
+    def test_goto_to_same_label_in_for_is_loop_exit_not_continue(self):
+        """GOTO to same label from inside FOR exits loop, does not continue.
+
+        Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
+        termination of all FORs in the line containing the GOTO."
+
+        A GOTO to the same label exits the FOR loop and creates a function
+        call/recursion, NOT a continue pattern. This is verified against YDB.
+        """
         routine = MRoutine(name="TEST")
 
         # Create MAIN label with FOR loop containing GOTO MAIN
@@ -614,7 +627,7 @@ class TestClassifyGotosAdvanced:
         for_stmt.loop_type = ForLoopType.BOUNDED
         for_stmt.body = MScope()
 
-        # GOTO MAIN inside the FOR - this is a "continue" pattern
+        # GOTO MAIN inside the FOR - this exits the loop, then calls MAIN
         goto_stmt = MGotoStatement()
         call = MCall(name="MAIN")
         goto_stmt.targets.append(call)
@@ -625,12 +638,13 @@ class TestClassifyGotosAdvanced:
         resolve_references(routine)
         classify_gotos(routine)
 
-        # Should be marked as loop continue
-        assert goto_stmt.is_loop_continue is True
-        assert goto_stmt.goto_type == GotoType.LOOP_EXIT  # Still exits the loop
+        # GOTO inside FOR loop exits the loop
+        assert goto_stmt.goto_type == GotoType.LOOP_EXIT
+        assert goto_stmt.exits_loops == [for_stmt]
+        # Note: There is no is_loop_continue flag - GOTO cannot create continue semantics
 
-    def test_is_loop_continue_false_for_cross_label_exit(self):
-        """GOTO to different label from inside FOR should NOT set is_loop_continue."""
+    def test_goto_to_different_label_exits_loop(self):
+        """GOTO to different label from inside FOR exits loop."""
         routine = MRoutine(name="TEST")
 
         # Create MAIN and TARGET labels
@@ -660,12 +674,12 @@ class TestClassifyGotosAdvanced:
         resolve_references(routine)
         classify_gotos(routine)
 
-        # Should NOT be marked as loop continue (exits to different label)
-        assert goto_stmt.is_loop_continue is False
+        # Exits loop to different label
         assert goto_stmt.goto_type == GotoType.LOOP_EXIT
+        assert goto_stmt.is_cross_label is True
 
-    def test_is_loop_continue_false_when_not_in_for(self):
-        """GOTO not inside FOR should have is_loop_continue=False."""
+    def test_goto_outside_for_not_loop_exit(self):
+        """GOTO not inside FOR is not marked as loop exit."""
         routine = MRoutine(name="TEST")
 
         main_label = MLabel(name="MAIN")
@@ -682,8 +696,9 @@ class TestClassifyGotosAdvanced:
         resolve_references(routine)
         classify_gotos(routine)
 
-        # Should NOT be marked as loop continue (not in a FOR loop)
-        assert goto_stmt.is_loop_continue is False
+        # Not in FOR loop, so not a loop exit - classified as backward jump
+        assert goto_stmt.goto_type == GotoType.BACKWARD_JUMP
+        assert goto_stmt.exits_loops == []
 
 
 @pytest.mark.analysis

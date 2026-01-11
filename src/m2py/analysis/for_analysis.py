@@ -12,7 +12,7 @@ and do not perform any text parsing.
 from typing import TYPE_CHECKING, Dict, Optional, Union
 
 from ..asg.elements import MCall, MRoutine, MScope
-from ..asg.enums import PassingMode
+from ..asg.enums import ForLoopType, ForParamType, PassingMode
 from ..asg.expressions import MActualParameter, MVariable
 from ..asg.statements import (
     MDoStatement,
@@ -26,6 +26,47 @@ from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
 if TYPE_CHECKING:
     from .variables import FunctionSignature
+
+
+def _classify_for_loop_type(stmt: MForStatement) -> ForLoopType:
+    """Classify the loop type based on FOR parameters.
+
+    Determines which Python pattern to use for code generation:
+    - ARGUMENTLESS: No parameters (F) - while True
+    - BOUNDED: Single range with start:step:end (F I=1:1:10) - for with range()
+    - OPEN_ENDED: Single open range with start:step (F I=1:1) - for with count()
+    - STRING_LIST: Single values (F I="A","B","C") - for with list
+    - MIXED: Multiple parameters of different types - for with chain()
+
+    Args:
+        stmt: The MForStatement to classify
+
+    Returns:
+        ForLoopType enum value
+    """
+    if not stmt.parameters:
+        return ForLoopType.ARGUMENTLESS
+
+    if len(stmt.parameters) == 1:
+        param = stmt.parameters[0]
+        if param.param_type == ForParamType.VALUE:
+            return ForLoopType.STRING_LIST
+        elif param.param_type == ForParamType.RANGE:
+            return ForLoopType.BOUNDED
+        elif param.param_type == ForParamType.OPEN_RANGE:
+            return ForLoopType.OPEN_ENDED
+        else:
+            return ForLoopType.BOUNDED  # Default fallback
+
+    # Multiple parameters - check if all same type for potential optimization
+    param_types = {p.param_type for p in stmt.parameters}
+    if len(param_types) == 1:
+        # All same type
+        single_type = next(iter(param_types))
+        if single_type == ForParamType.VALUE:
+            return ForLoopType.STRING_LIST
+        # Multiple ranges are still MIXED (need chain)
+    return ForLoopType.MIXED
 
 
 def analyze_for_loops(
@@ -69,6 +110,9 @@ def _analyze_fors_in_scope(
     """
     for stmt in scope.statements:
         if isinstance(stmt, MForStatement):
+            # T087: Always set loop_type during analysis
+            stmt.loop_type = _classify_for_loop_type(stmt)
+
             # Analyze this FOR's body for loop var modification and internal QUIT
             if stmt.body:
                 if stmt.loop_var:
@@ -330,3 +374,74 @@ def _check_quit_in_scope(scope: MScope) -> bool:
         # Also don't recurse into DO blocks - separate scope
 
     return False
+
+
+def analyze_quit_context(routine: MRoutine) -> None:
+    """Analyze QUIT statement context for all QUITs in a routine.
+
+    This function walks through all statements and sets the context fields
+    on each MQuitStatement:
+    - exits_for: Set to enclosing MForStatement if QUIT is inside a FOR loop
+    - exits_do_block: Set to enclosing MDoStatement if QUIT is inside an inline DO block
+
+    This enables codegen to use ASG fields directly instead of runtime tracking.
+
+    Args:
+        routine: The MRoutine to analyze
+
+    Side Effects:
+        - Sets MQuitStatement.exits_for for QUITs inside FOR loops
+        - Sets MQuitStatement.exits_do_block for QUITs inside DO blocks
+    """
+    for label in routine.labels:
+        _analyze_quit_context_in_scope(
+            label.body, enclosing_for=None, enclosing_do_block=None
+        )
+
+
+def _analyze_quit_context_in_scope(
+    scope: MScope,
+    enclosing_for: Optional[MForStatement],
+    enclosing_do_block: Optional[MDoStatement],
+) -> None:
+    """Recursively analyze QUIT context in a scope.
+
+    Args:
+        scope: The scope to analyze
+        enclosing_for: The innermost enclosing FOR loop, if any
+        enclosing_do_block: The innermost enclosing DO block, if any
+    """
+    for stmt in scope.statements:
+        if isinstance(stmt, MQuitStatement):
+            # A QUIT inside a FOR exits that FOR (takes priority over DO block)
+            if enclosing_for is not None:
+                stmt.exits_for = enclosing_for
+            elif enclosing_do_block is not None:
+                stmt.exits_do_block = enclosing_do_block
+            # Otherwise exits_for and exits_do_block remain None (plain return)
+
+        elif isinstance(stmt, MForStatement):
+            # FOR body: QUIT inside exits this FOR
+            if stmt.body:
+                _analyze_quit_context_in_scope(
+                    stmt.body, enclosing_for=stmt, enclosing_do_block=None
+                )
+
+        elif isinstance(stmt, MDoStatement) and stmt.is_inline_block:
+            # Inline DO block: QUIT inside exits this block
+            if stmt.body:
+                _analyze_quit_context_in_scope(
+                    stmt.body, enclosing_for=None, enclosing_do_block=stmt
+                )
+
+        # Recurse into IF/ELSE scopes - they don't change the QUIT context
+        then_scope = get_then_scope(stmt)
+        if then_scope is not None:
+            _analyze_quit_context_in_scope(
+                then_scope, enclosing_for, enclosing_do_block
+            )
+        else_scope = get_else_scope(stmt)
+        if else_scope is not None:
+            _analyze_quit_context_in_scope(
+                else_scope, enclosing_for, enclosing_do_block
+            )

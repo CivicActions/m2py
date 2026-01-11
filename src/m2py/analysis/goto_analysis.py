@@ -9,12 +9,33 @@ These functions operate on ASG nodes (MRoutine, MGotoStatement, MForStatement)
 and do not perform any text parsing.
 """
 
-from typing import List
+from typing import List, Optional
 
 from ..asg.elements import MLabel, MRoutine, MScope
-from ..asg.enums import GotoType
-from ..asg.statements import MForStatement, MGotoStatement
+from ..asg.enums import GotoCodegenPattern, GotoType
+from ..asg.statements import MForStatement, MGotoStatement, MStatement
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
+
+
+def _find_stmt_index_for_line(
+    statements: List[MStatement], target_line: int
+) -> Optional[int]:
+    """Find the statement index for a given line number.
+
+    Scans the statement list for the first statement at or after the target line.
+    This handles cases where there may be gaps in line numbers.
+
+    Args:
+        statements: List of statements from a label body
+        target_line: The line number to find
+
+    Returns:
+        Index of the statement at/after target_line, or None if not found
+    """
+    for i, stmt in enumerate(statements):
+        if stmt.line_number is not None and stmt.line_number >= target_line:
+            return i
+    return None
 
 
 def classify_gotos(routine: MRoutine) -> None:
@@ -52,6 +73,9 @@ def classify_gotos(routine: MRoutine) -> None:
     # - UNRESOLVED (target unknown at compile time)
     # - Cross-label jumps not inside FOR loops (can't use break, need restructuring)
     routine.has_unstructured_goto = _has_unstructured_gotos(routine)
+
+    # T103: Set needs_loop_exit_exception if any MULTI_LOOP_EXIT GOTO exists
+    routine.needs_loop_exit_exception = _needs_loop_exit_exception(routine)
 
 
 def _classify_gotos_in_scope(
@@ -184,20 +208,58 @@ def _classify_single_goto(
         target_label_idx = label_positions.get(target_label.name, -1)
 
         # Determine base goto type based on target location
-        # Same label = forward or backward within label (intra-label jump)
         if target_label.name == current_label.name:
-            # Intra-label jump: both source and target are within the same label.
-            # Determining forward vs. backward direction would require tracking
-            # statement order within the label, which isn't currently available.
-            # Classification: Default to FORWARD_JUMP since the more important
-            # signal for code generation is is_cross_label=False, which indicates
-            # the jump stays within local scope and can typically be translated
-            # to structured control flow (if/elif/continue).
-            _source_line = (
-                stmt.line_number or 0
-            )  # Reserved for future direction analysis
-            stmt.goto_type = GotoType.FORWARD_JUMP
+            # Intra-label jump: GOTO targets the same label it's contained in.
+            # Direction depends on offset:
+            # - G LABEL (no offset): jumps to start of label = backward
+            # - G LABEL+n: jumps to label+n lines, direction depends on n vs current position
             stmt.is_cross_label = False
+
+            # Check for offset to determine direction
+            target_offset = call.offset
+            if target_offset is None:
+                # No offset: G LABEL = backward to label start
+                # This pattern creates an implicit loop: code executes, then jumps
+                # back to the label start. Example:
+                #   TEST S X=X+1 W X I X<10 G TEST Q
+                stmt.goto_type = GotoType.BACKWARD_JUMP
+            else:
+                # Has offset: G LABEL+n
+                # Try to determine direction if offset is a literal AND we have line info
+                from m2py.asg.expressions import MLiteral
+
+                if (
+                    isinstance(target_offset, MLiteral)
+                    and target_offset.value is not None
+                    and stmt.line_number is not None
+                    and target_label.line_number is not None
+                ):
+                    # Static offset with line info - compare positions
+                    goto_line_offset = stmt.line_number - target_label.line_number
+                    target_line_offset = int(target_offset.value)
+
+                    if target_line_offset > goto_line_offset:
+                        # Target is ahead of GOTO position = forward
+                        stmt.goto_type = GotoType.FORWARD_JUMP
+                        # Compute target statement index for restructuring
+                        # target_stmt_index = offset (since LABEL+n refers to line n)
+                        # But we need to map line to statement index in the label body
+                        # For simple cases where each line is one statement:
+                        # target_line = label.line_number + offset
+                        # We need to find which statement is at that line
+                        target_line = target_label.line_number + target_line_offset
+                        stmt.target_stmt_index = _find_stmt_index_for_line(
+                            current_label.body.statements, target_line
+                        )
+                    else:
+                        # Target is at or before GOTO position = backward
+                        stmt.goto_type = GotoType.BACKWARD_JUMP
+                else:
+                    # Cannot determine direction statically (dynamic offset or missing line info)
+                    # Default to FORWARD_JUMP since:
+                    # 1. G LABEL+n is typically used to skip ahead (forward)
+                    # 2. Codegen will handle conservatively if it can't restructure
+                    stmt.goto_type = GotoType.FORWARD_JUMP
         else:
             # Different label = cross-label jump
             # Set is_cross_label flag to indicate label boundary crossing
@@ -226,11 +288,33 @@ def _classify_single_goto(
                 if stmt not in for_stmt.exit_points:
                     for_stmt.exit_points.append(stmt)
 
-            # Check for "continue" pattern: GOTO jumps back to the label containing
-            # the innermost FOR loop. This is equivalent to Python's "continue".
-            # The GOTO target must be the same label we're currently in.
-            if target_label.name == current_label.name:
-                stmt.is_loop_continue = True
+            # T088-T091: Pre-compute FOR fields for codegen
+            # Set has_cross_label_exit if this GOTO crosses label boundary
+            if stmt.is_cross_label:
+                # For LOOP_EXIT, the single enclosing FOR needs the flag
+                # For MULTI_LOOP_EXIT, all enclosing FORs need the flag
+                for for_stmt in enclosing_fors:
+                    for_stmt.has_cross_label_exit = True
+
+                # Get target label name for exit_target (raw MUMPS name - codegen translates)
+                target_name = stmt.targets[0].name if stmt.targets else None
+
+                # Set needs_exception_wrapper on outermost FOR for MULTI_LOOP_EXIT
+                if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
+                    outermost_for = enclosing_fors[0]
+                    outermost_for.needs_exception_wrapper = True
+                    # Set exit_target on outermost FOR (for calling after except)
+                    if target_name:
+                        outermost_for.exit_target = target_name
+                elif stmt.goto_type == GotoType.LOOP_EXIT:
+                    # For single loop exit, set exit_target on that FOR
+                    if target_name:
+                        enclosing_fors[0].exit_target = target_name
+
+            # Note: There is no "continue" pattern in MUMPS via GOTO.
+            # Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
+            # termination of all FORs in the line containing the GOTO."
+            # A GOTO to the same label creates a function call/recursion, not continue.
 
         # If jumping to different label while inside FOR, it's a cross-label exit
         if enclosing_fors and target_label.name != current_label.name:
@@ -239,6 +323,41 @@ def _classify_single_goto(
             else:
                 stmt.goto_type = GotoType.LOOP_EXIT
             stmt.exits_loops = list(enclosing_fors)
+
+    # T096-T099: Compute is_restructurable and codegen_pattern after all classification
+    _compute_codegen_fields(stmt)
+
+
+def _compute_codegen_fields(stmt: MGotoStatement) -> None:
+    """Compute is_restructurable and codegen_pattern for a GOTO statement.
+
+    This must be called after goto_type, is_cross_label, and exits_loops are set.
+
+    Args:
+        stmt: The MGotoStatement to update
+    """
+    # is_restructurable: intra-label forward jump
+    stmt.is_restructurable = (
+        stmt.goto_type == GotoType.FORWARD_JUMP and not stmt.is_cross_label
+    )
+
+    # Determine codegen_pattern based on analysis results
+    if stmt.exits_loops:
+        if len(stmt.exits_loops) == 1:
+            stmt.codegen_pattern = GotoCodegenPattern.BREAK
+        else:
+            stmt.codegen_pattern = GotoCodegenPattern.MULTI_BREAK
+    elif stmt.goto_type in (GotoType.EXTERNAL, GotoType.UNRESOLVED):
+        stmt.codegen_pattern = GotoCodegenPattern.UNSUPPORTED
+    elif stmt.goto_type == GotoType.BACKWARD_JUMP:
+        # Backward jumps are unsupported in Spec 005
+        stmt.codegen_pattern = GotoCodegenPattern.UNSUPPORTED
+    elif stmt.goto_type == GotoType.FORWARD_JUMP and not stmt.is_cross_label:
+        # Intra-label forward jump - can be restructured
+        stmt.codegen_pattern = GotoCodegenPattern.FORWARD
+    else:
+        # Cross-label forward jump or other cases - function call
+        stmt.codegen_pattern = GotoCodegenPattern.FUNCTION_CALL
 
 
 def get_loop_exiting_gotos(routine: MRoutine) -> List[MGotoStatement]:
@@ -320,4 +439,26 @@ def _has_unstructured_gotos(routine: MRoutine) -> bool:
             if stmt.is_cross_label and not stmt.exits_loops:
                 return True
 
+    return False
+
+
+def _needs_loop_exit_exception(routine: MRoutine) -> bool:
+    """Check if the routine needs the _LoopExit exception class.
+
+    The _LoopExit exception is needed when there are MULTI_LOOP_EXIT GOTOs
+    that need to exit multiple nested FOR loops.
+
+    Args:
+        routine: The routine to check
+
+    Returns:
+        True if _LoopExit exception class should be generated
+    """
+    for label in routine.labels:
+        if label.body is None:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
+                    return True
     return False

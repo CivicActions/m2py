@@ -73,46 +73,81 @@ class TestTestVariableCodegen:
 class TestTestStackSemanticsCodegen:
     """Codegen tests for $TEST stacking behavior.
 
-    $TEST is stacked (saved/restored) for argumentless DO and extrinsic
-    calls, but NOT stacked for DO with arguments or XECUTE. This is
-    critical for ELSE chains that span DO calls.
+    $TEST Stacking Rules (verified against YottaDB):
+    - Label calls (D SUB, D SUB(), D SUB(X)) do NOT stack $TEST
+    - DO blocks (D followed by dot lines) DO stack $TEST
+    - Extrinsic calls ($$func) DO stack $TEST
+    - XECUTE does NOT stack $TEST
 
-    Reference: §7.1.4.10, §8.2.3
+    Note: "Argumentless DO" can be ambiguous - it means DO blocks (with dots),
+    NOT label calls without arguments.
+
+    Reference: §7.1.4.10, §8.2.3, verified against YottaDB
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEST stacked for argumentless DO")
-    def test_test_stacked_for_argumentless_do(self):
-        """Argumentless DO stacks $TEST, restored on QUIT.
+    def test_test_stacked_for_do_block(self, execute_mumps):
+        """DO blocks stack $TEST, restored on block exit.
+
+        T080: DO blocks preserve caller's $TEST value.
 
         IF 1           ; $TEST=1
-        D              ; Stacks $TEST (NEW $TEST)
+        D              ; Starts DO block - stacks $TEST
         . IF 0         ; $TEST=0 inside block
-        . Q
-        ELSE W "NO"    ; Should NOT execute - $TEST restored to 1
+        W $T           ; Should output 1 - $TEST restored after DO block
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST I 1 D  W $T Q
+ . I 0"""
+        result = execute_mumps(source)
+        # After DO block, $TEST should be restored to 1 (from IF 1)
+        assert result.output == "1"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEST stacked for extrinsic")
-    def test_test_stacked_for_extrinsic(self):
+    def test_test_stacked_for_extrinsic(self, execute_mumps):
         """Extrinsic calls stack $TEST, restored on QUIT.
 
+        T067: Extrinsic function $TEST changes don't leak to caller.
+        Validated against YottaDB: output is '111' (1 before, 1 return, 1 after).
+
         IF 1           ; $TEST=1
-        S X=$$FUNC     ; Stacks $TEST for extrinsic call
-        ELSE W "NO"    ; Should NOT execute if FUNC sets $TEST=0
+        W $T,$$FUNC,$T ; Stacks $TEST for extrinsic call
+        ; FUNC sets $TEST=0 internally but caller's $TEST is restored
+        """
+        # Multi-line routine: FUNC contains IF 0 to set $TEST=0 internally
+        source = """TEST I 1 W $T,$$FUNC(),$T Q
+FUNC()
+ I 0
+ Q 1"""
+        result = execute_mumps(source)
+
+        # Output should be "111":
+        # - First $T is 1 (from IF 1)
+        # - $$FUNC() returns 1
+        # - Second $T is 1 (restored, even though FUNC did IF 0)
+        assert result.output == "111"
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="Not yet implemented: label call $TEST visibility")
+    def test_test_not_stacked_for_label_call(self):
+        """Label calls do NOT stack $TEST - callee changes visible.
+
+        IF 1           ; $TEST=1
+        D SUB          ; Does NOT stack $TEST
+        ; SUB sets $TEST=0, it IS visible to caller
+        ELSE W "YES"   ; DOES execute because SUB set $TEST=0
         """
         pytest.fail("Stub - implement test")
 
     @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEST not stacked for DO with args")
+    @pytest.mark.xfail(
+        reason="Not yet implemented: label call with args $TEST visibility"
+    )
     def test_test_not_stacked_for_do_with_args(self):
-        """DO with arguments does NOT stack $TEST.
+        """DO with arguments does NOT stack $TEST (same as D SUB).
 
         IF 1           ; $TEST=1
-        D SUB(1)       ; Does NOT stack $TEST
+        D SUB(1)       ; Does NOT stack $TEST (same behavior as D SUB)
         ; If SUB sets $TEST=0, it affects caller
-        ELSE W "NO"    ; May execute depending on SUB
+        ELSE W "YES"   ; DOES execute because SUB set $TEST=0
         """
         pytest.fail("Stub - implement test")
 
@@ -123,22 +158,25 @@ class TestTestStackSemanticsCodegen:
 
         IF 1                ; $TEST=1
         X "IF 0"            ; $TEST=0, visible to caller
-        ELSE W "NO"         ; Should execute - $TEST is 0
+        ELSE W "YES"        ; DOES execute - $TEST is 0
         """
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: postcondition does not update $TEST"
-    )
-    def test_postcondition_does_not_update_test(self):
+    def test_postcondition_does_not_update_test(self, execute_mumps):
         """Postconditions do NOT update $TEST.
+
+        T068: Postconditions evaluate their condition but don't set $TEST.
+        Validated against YottaDB: output is '1' ($TEST still 1).
 
         IF 1           ; $TEST=1
         S:0 X=1        ; Postcondition is false, but $TEST stays 1
-        ELSE W "NO"    ; Should NOT execute - $TEST is still 1
+        W $T           ; Should output 1
         """
-        pytest.fail("Stub - implement test")
+        source = "TEST I 1 S:0 X=1 W $T Q"
+        result = execute_mumps(source)
+
+        # $TEST should still be 1 (postcondition didn't change it)
+        assert result.output == "1"
 
 
 # =============================================================================

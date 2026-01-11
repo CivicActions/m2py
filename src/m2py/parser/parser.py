@@ -19,6 +19,7 @@ from m2py.parser.line_parser import (
     parse_line_content,
 )
 from m2py.analysis.for_analysis import analyze_for_loops as _analyze_for_loops
+from m2py.analysis.for_analysis import analyze_quit_context as _analyze_quit_context
 from m2py.analysis.goto_analysis import classify_gotos as _classify_gotos
 from m2py.analysis.resolver import resolve_references as _resolve_references
 from m2py.analysis.semantic_analyzer import analyze_command
@@ -39,6 +40,36 @@ from m2py.asg.statements import (
 )
 from m2py.asg.type_helpers import get_body_scope
 from m2py.parser.exceptions import MUMPSSyntaxError
+
+
+def _set_line_number_recursive(stmt: MStatement, line_number: int) -> None:
+    """Set line_number on a statement and all its nested statements.
+
+    This ensures that statements inside IF/FOR/ELSE blocks have the same
+    line_number as their parent, which is needed for GOTO analysis.
+
+    Args:
+        stmt: The statement to set line_number on
+        line_number: The source line number
+    """
+    stmt.line_number = line_number
+
+    # Recursively set on nested scopes
+    # Use getattr to access optional scope attributes
+    then_scope = getattr(stmt, "then_scope", None)
+    if then_scope is not None:
+        for child in then_scope.statements:
+            _set_line_number_recursive(child, line_number)
+
+    body = getattr(stmt, "body", None)
+    if body is not None:
+        for child in body.statements:
+            _set_line_number_recursive(child, line_number)
+
+    else_scope = getattr(stmt, "else_scope", None)
+    if else_scope is not None:
+        for child in else_scope.statements:
+            _set_line_number_recursive(child, line_number)
 
 
 def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MStatement]:
@@ -108,53 +139,78 @@ def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MState
     return result
 
 
-def _find_last_argumentless_do(stmt: MStatement) -> Optional[MDoStatement]:
-    """Find the last argumentless DO in a statement's nested scopes.
+def _find_argumentless_do_for_dot_lines(stmt: MStatement) -> Optional[MDoStatement]:
+    """Find an argumentless DO that should capture following dot-lines.
 
-    Recursively searches through then_scope, else_scope, and body
-    to find the trailing argumentless DO that should capture dot-lines.
+    In MUMPS, dot-indented lines following a line with an argumentless DO
+    belong to that DO's block, regardless of what commands follow the DO
+    on the same line.
+
+    For example, in:
+        F  D  Q:X=0
+        . S X=X-1
+
+    The dot line belongs to the D, not the Q. The execution order is:
+    1. FOR loops
+    2. D executes the dot block (increasing execution level)
+    3. Q:X=0 is checked after D returns
+
+    This function searches for an argumentless DO that doesn't yet have
+    any body statements (i.e., hasn't been given its dot-lines yet).
 
     Args:
         stmt: Statement to search
 
     Returns:
-        The last argumentless DO found, or None
+        An argumentless DO without body statements, or None
     """
-    # Check nested scopes in order: then_scope, else_scope, body
-    # Return the DO from the deepest/last position
+    # For a FOR statement, search all body statements for an argumentless DO
+    if isinstance(stmt, MForStatement) and stmt.body and stmt.body.statements:
+        for body_stmt in stmt.body.statements:
+            # Check if this statement itself is an argumentless DO without body
+            if (
+                isinstance(body_stmt, MDoStatement)
+                and not body_stmt.targets
+                and not body_stmt.body.statements
+            ):
+                return body_stmt
+            # Recursively check nested structures
+            nested = _find_argumentless_do_for_dot_lines(body_stmt)
+            if nested:
+                return nested
 
+    # For IF statement, check then_scope
     if (
         isinstance(stmt, MIfStatement)
         and stmt.then_scope
         and stmt.then_scope.statements
     ):
-        last = stmt.then_scope.statements[-1]
-        # Recursively search in the last statement
-        nested = _find_last_argumentless_do(last)
-        if nested:
-            return nested
-        # Check if last statement itself is argumentless DO
-        if isinstance(last, MDoStatement) and not last.targets:
-            return last
+        for body_stmt in stmt.then_scope.statements:
+            if (
+                isinstance(body_stmt, MDoStatement)
+                and not body_stmt.targets
+                and not body_stmt.body.statements
+            ):
+                return body_stmt
+            nested = _find_argumentless_do_for_dot_lines(body_stmt)
+            if nested:
+                return nested
 
+    # For ELSE statement, check body
     if isinstance(stmt, MElseStatement) and stmt.body and stmt.body.statements:
-        last = stmt.body.statements[-1]
-        nested = _find_last_argumentless_do(last)
-        if nested:
-            return nested
-        if isinstance(last, MDoStatement) and not last.targets:
-            return last
+        for body_stmt in stmt.body.statements:
+            if (
+                isinstance(body_stmt, MDoStatement)
+                and not body_stmt.targets
+                and not body_stmt.body.statements
+            ):
+                return body_stmt
+            nested = _find_argumentless_do_for_dot_lines(body_stmt)
+            if nested:
+                return nested
 
-    if isinstance(stmt, MForStatement) and stmt.body and stmt.body.statements:
-        last = stmt.body.statements[-1]
-        nested = _find_last_argumentless_do(last)
-        if nested:
-            return nested
-        if isinstance(last, MDoStatement) and not last.targets:
-            return last
-
-    # Direct check for argumentless DO
-    if isinstance(stmt, MDoStatement) and not stmt.targets:
+    # Direct check for argumentless DO without body
+    if isinstance(stmt, MDoStatement) and not stmt.targets and not stmt.body.statements:
         return stmt
 
     return None
@@ -223,6 +279,8 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
                 stmt.body.statements = _structure_do_blocks(block_stmts)
                 for child in stmt.body.statements:
                     child.scope = stmt.body
+                # Mark this as an inline block now that it has body statements
+                stmt.is_inline_block = True
 
             result.append(stmt)
             i = j  # Skip past the block statements
@@ -248,12 +306,14 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
 
             if block_stmts:
                 # Find the argumentless DO inside this statement's nested scopes
-                target_do = _find_last_argumentless_do(stmt)
+                target_do = _find_argumentless_do_for_dot_lines(stmt)
                 if target_do:
                     # Attach the dot-statements to this DO's body
                     target_do.body.statements = _structure_do_blocks(block_stmts)
                     for child in target_do.body.statements:
                         child.scope = target_do.body
+                    # Mark this as an inline block now that it has body statements
+                    target_do.is_inline_block = True
                     result.append(stmt)
                     i = j  # Skip past the block statements
                 else:
@@ -673,6 +733,9 @@ class MUMPSParser:
             structured_statements = _structure_commands_with_bodies(flat_statements)
             for stmt in structured_statements:
                 stmt.scope = label.body
+                # Track source line number for GOTO analysis and error reporting
+                # Propagate to all nested statements (IF then_scope, FOR body, etc.)
+                _set_line_number_recursive(stmt, line_number)
                 # Store the nesting level for later analysis
                 if dot_level > 0:
                     stmt._dot_level = dot_level
@@ -754,6 +817,9 @@ class MUMPSParser:
             structured_statements = _structure_commands_with_bodies(flat_statements)
             for stmt in structured_statements:
                 stmt.scope = label.body
+                # Track source line number for GOTO analysis and error reporting
+                # Propagate to all nested statements (IF then_scope, FOR body, etc.)
+                _set_line_number_recursive(stmt, line_number)
                 # Mark with dot level if this is a dot-indented labeled line
                 if label._dot_level is not None:
                     stmt._dot_level = label._dot_level
@@ -931,6 +997,25 @@ class MUMPSParser:
             - Sets MForStatement.loop_var_modified_in_body for each FOR
         """
         _analyze_for_loops(routine, signatures)
+
+    def analyze_quit_context(self, routine: MRoutine) -> None:
+        """Analyze QUIT statement context for all QUITs in a routine.
+
+        This method walks through all statements and sets context fields
+        on each MQuitStatement:
+        - exits_for: Set to enclosing MForStatement if QUIT is inside a FOR loop
+        - exits_do_block: Set to enclosing MDoStatement if QUIT is inside an inline DO block
+
+        This enables codegen to use ASG fields directly instead of runtime tracking.
+
+        Args:
+            routine: The MRoutine to analyze
+
+        Side Effects:
+            - Sets MQuitStatement.exits_for for QUITs inside FOR loops
+            - Sets MQuitStatement.exits_do_block for QUITs inside DO blocks
+        """
+        _analyze_quit_context(routine)
 
     def analyze_variables(
         self, routine: MRoutine, compute_transitive: bool = False

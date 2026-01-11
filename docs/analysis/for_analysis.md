@@ -38,10 +38,10 @@ for label in routine.labels:
 
 | Field | Type | Meaning | Source |
 |-------|------|---------|--------|
+| `loop_type` | `ForLoopType` | Classification (BOUNDED, OPEN_ENDED, etc.) | `for_analysis.py` |
 | `loop_var_modified_in_body` | `bool` | Loop variable SET within body | `for_analysis.py` |
 | `has_internal_quit` | `bool` | QUIT statement in body (not in nested FORs) | `for_analysis.py` |
-| `loop_type` | `ForLoopType` | Classification of loop structure | Parser/Semantic Analyzer |
-| `is_infinite` | `bool` | True for argumentless or step=0 loops | Parser/Semantic Analyzer |
+| `is_infinite` | `bool` | True for argumentless or step=0 loops | `for_analysis.py` |
 
 ### Combined with GOTO Analysis
 
@@ -51,6 +51,21 @@ From `classify_gotos()`:
 |-------|------|---------|
 | `has_internal_goto` | `bool` | GOTO that exits this loop |
 | `exit_points` | `List[MGotoStatement]` | GOTOs that exit this loop |
+| `has_cross_label_exit` | `bool` | Exit GOTO targets different label |
+| `needs_exception_wrapper` | `bool` | Outermost FOR for multi-loop exit |
+| `exit_target` | `Optional[str]` | Target label name (MUMPS name) |
+
+## Loop Type Classification
+
+The `loop_type` field is set based on the FOR parameters:
+
+| Loop Type | Pattern | Criteria |
+|-----------|---------|----------|
+| `ARGUMENTLESS` | `F  body` | No parameters |
+| `BOUNDED` | `F I=1:1:10` | Single RANGE parameter (has end value) |
+| `OPEN_ENDED` | `F I=1:1` | Single OPEN_RANGE parameter |
+| `STRING_LIST` | `F I="A","B"` | All VALUE parameters |
+| `MIXED` | `F I="A",1:1:5` | Multiple parameters of different types |
 
 ## Loop Variable Modification Detection
 

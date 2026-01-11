@@ -33,7 +33,6 @@ for traceability to test files.
 | LIM-011 | ^$LIBRARY SSVN | Parses OK | Zero real-world usage, runtime undefined |
 | LIM-012 | Unknown Z-Extensions | Parse Error | Unknown Z-commands/functions from other implementations |
 | LIM-013 | ASSIGN Command | Parse Error | Part of MWAPI event model |
-| LIM-014 | Inline C++ Code (M2 Interpreter) | Parse Error | M2 compiler inline C++ (lines starting with +) |
 
 ---
 
@@ -248,30 +247,6 @@ variable assignment as part of the MWAPI event model. It has **zero usage**
 in both the YottaDB test suite and VA VistA codebase.
 
 **M2PY Behavior**: Parser raises `MUMPSParseError`.
-
-## LIM-014: Inline C++ Code (M2 Interpreter)
-
-**Type**: Parse Error
-
-The M2 MUMPS compiler by Kevin O'Kane allows embedding C++ code in MUMPS
-source files. Lines beginning with `+` in column 1 are treated as inline
-C++ and passed directly to the C++ compiler.
-
-This feature is specific to the M2 compiler and is not part of ANSI MUMPS
-or any other major MUMPS implementation (YottaDB, GT.M, Caché/IRIS).
-
-**Example M2 syntax (not supported):**
-```
-+	for(int i=0; i < 1000; i++) {
-	write "abc",!
-+	}
-```
-
-See `docs/analysis/m2_interpreter_differences.md` for a full comparison of
-M2 interpreter differences from standard MUMPS.
-
-**M2PY Behavior**: Parser raises `MUMPSSyntaxError` for lines starting with `+`. Files using
-this M2-specific feature cannot be transpiled by M2PY.
 
 ---
 

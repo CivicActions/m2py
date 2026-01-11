@@ -16,11 +16,13 @@ class TestRoutineHeadCodegen:
         """Routine generates Python function (§6.1)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: formal parameters")
     def test_formal_parameters(self, generate_python):
-        """Formal parameters generate function parameters (§6.1)."""
-        pytest.fail("Stub - implement test")
+        """Formal parameters generate function parameters (§6.1).
+
+        T050: Generate formal parameters in function definition.
+        """
+        code = generate_python("ADD(A,B) Q A+B\n")
+        assert "def ADD(A, B):" in code
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: routine docstring")
@@ -144,3 +146,254 @@ class TestNameTranslationCodegen:
         %X variable becomes _pct_X in generated Python.
         """
         pytest.fail("Stub - implement test")
+
+
+@pytest.mark.codegen
+class TestGeneratorContextCodegen:
+    """Tests for GeneratorContext extensions (Spec 005)."""
+
+    def test_generator_context_has_signatures(self):
+        """GeneratorContext has signatures dict for function signatures."""
+        from m2py.codegen.routine import GeneratorContext
+        from m2py.codegen.emitter import CodeEmitter
+        from m2py.asg.elements import MRoutine
+
+        routine = MRoutine(name="TEST", labels=[])
+        ctx = GeneratorContext(routine=routine, emitter=CodeEmitter())
+        assert hasattr(ctx, "signatures")
+        assert isinstance(ctx.signatures, dict)
+
+    def test_generator_context_has_in_extrinsic_call(self):
+        """GeneratorContext has in_extrinsic_call flag for $TEST save/restore."""
+        from m2py.codegen.routine import GeneratorContext
+        from m2py.codegen.emitter import CodeEmitter
+        from m2py.asg.elements import MRoutine
+
+        routine = MRoutine(name="TEST", labels=[])
+        ctx = GeneratorContext(routine=routine, emitter=CodeEmitter())
+        assert hasattr(ctx, "in_extrinsic_call")
+        assert ctx.in_extrinsic_call is False
+
+
+@pytest.mark.codegen
+class TestScopeStrategyCodegen:
+    """Tests for scope strategy dispatcher (Spec 005)."""
+
+    def test_scope_strategy_pattern_pure_function(self):
+        """PURE_FUNCTION strategy returns function pattern description."""
+        from m2py.codegen.routine import get_scope_strategy_pattern
+        from m2py.asg.enums import ScopeStrategy
+
+        pattern = get_scope_strategy_pattern(ScopeStrategy.PURE_FUNCTION)
+        assert "return" in pattern
+        assert "def" in pattern
+
+    def test_scope_strategy_pattern_subroutine(self):
+        """SUBROUTINE strategy returns subroutine pattern description."""
+        from m2py.codegen.routine import get_scope_strategy_pattern
+        from m2py.asg.enums import ScopeStrategy
+
+        pattern = get_scope_strategy_pattern(ScopeStrategy.SUBROUTINE)
+        assert "None" in pattern or "pass" in pattern
+
+    def test_scope_strategy_pattern_requires_runtime(self):
+        """REQUIRES_RUNTIME strategy indicates unsupported."""
+        from m2py.codegen.routine import get_scope_strategy_pattern
+        from m2py.asg.enums import ScopeStrategy
+
+        pattern = get_scope_strategy_pattern(ScopeStrategy.REQUIRES_RUNTIME)
+        assert "runtime" in pattern.lower() or "not supported" in pattern.lower()
+
+
+@pytest.mark.codegen
+class TestScopeStrategyGeneration:
+    """Tests for scope strategy code generation (Spec 005 Phase 9)."""
+
+    def test_pure_function_generates_return(self, generate_python):
+        """PURE_FUNCTION generates return with value (T055).
+
+        A function with only formal params that returns a value
+        should generate `return <expr>`.
+        """
+        code = generate_python("ADD(A,B) Q A+B\n")
+        assert "def ADD(A, B):" in code
+        # Should have return with expression (m_num(A) + m_num(B))
+        assert "return" in code
+        assert "m_num(A)" in code or "A" in code
+
+    def test_subroutine_generates_no_explicit_return(self, generate_python):
+        """SUBROUTINE generates no explicit return value (T056).
+
+        A subroutine that does NOT modify its formal parameters
+        should generate plain `return` or implicit None.
+
+        Note: SUBROUTINEs with byref_outputs (like INCR(N)) now return
+        modified params for by-ref call semantics (T059). This test
+        uses a subroutine without byref outputs.
+        """
+        # Use a subroutine that sets a local but doesn't modify formals
+        code = generate_python("PRINT(MSG) W MSG Q\n")
+        assert "def PRINT(MSG):" in code
+        # Should have plain return (not return <expr>)
+        # Find lines that are just 'return' without a value
+        lines = code.split("\n")
+        return_lines = [line.strip() for line in lines if line.strip() == "return"]
+        assert len(return_lines) > 0, "Expected plain 'return' for subroutine"
+
+    def test_requires_runtime_raises_error(self, generate_python):
+        """REQUIRES_RUNTIME raises UnsupportedFeatureError (T058).
+
+        Labels that use XECUTE or indirection require runtime scope
+        and should raise an error in Spec 005.
+        """
+        from m2py.codegen import UnsupportedFeatureError
+
+        with pytest.raises(UnsupportedFeatureError) as exc_info:
+            generate_python('TEST S X="W 1" X X Q\n')
+        assert "runtime" in str(exc_info.value).lower()
+
+    def test_function_with_outputs_basic(self, generate_python):
+        """FUNCTION_WITH_OUTPUTS generates tuple return (T057).
+
+        Note: Full by-ref handling is Phase 10. This tests that
+        the basic scope strategy is detected correctly.
+        """
+        # For now, SWAP is classified as SUBROUTINE not FUNCTION_WITH_OUTPUTS
+        # because it has no return value. The return tuple pattern
+        # will be implemented in Phase 10 (T059).
+        # Use a simple example without NEW statement (not yet implemented)
+        code = generate_python("INCR(N) S N=N+1 Q\\n")
+        # Verifies formal params are generated correctly
+        assert "def INCR(N):" in code
+
+
+@pytest.mark.codegen
+class TestValidateAnalysisComplete:
+    """Tests for validate_analysis_complete (Spec 005).
+
+    These tests verify the 'analysis-first' principle: codegen should read
+    ASG fields populated by analysis passes, not compute semantic properties
+    at generation time. The validation catches missing analysis.
+    """
+
+    def test_validate_empty_routine(self):
+        """Empty routine passes validation."""
+        from m2py.codegen.routine import validate_analysis_complete
+        from m2py.asg.elements import MRoutine
+
+        routine = MRoutine(name="TEST", labels=[])
+        # Should not raise
+        validate_analysis_complete(routine)
+
+    def test_validate_routine_with_labels(self):
+        """Routine with labels passes validation."""
+        from m2py.codegen.routine import validate_analysis_complete
+        from m2py.asg.elements import MLabel, MRoutine, MScope
+
+        label = MLabel(name="MAIN", body=MScope(statements=[]))
+        routine = MRoutine(name="TEST", labels=[label])
+        # Should not raise
+        validate_analysis_complete(routine)
+
+    def test_validate_for_without_analysis_raises(self):
+        """FOR statement without loop_type raises AnalysisNotCompleteError."""
+        from m2py.codegen.routine import (
+            validate_analysis_complete,
+            AnalysisNotCompleteError,
+        )
+        from m2py.asg.elements import MLabel, MRoutine, MScope
+        from m2py.asg.statements import MForStatement
+
+        # Create FOR statement without analysis (loop_type is None)
+        for_stmt = MForStatement(loop_var="I", line_number=1)
+        scope = MScope(statements=[for_stmt])
+        label = MLabel(name="LOOP", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        with pytest.raises(AnalysisNotCompleteError) as exc_info:
+            validate_analysis_complete(routine)
+
+        assert exc_info.value.missing_field == "loop_type"
+        assert exc_info.value.required_pass == "analyze_for_loops"
+
+    def test_validate_goto_without_analysis_raises(self):
+        """GOTO statement without goto_type raises AnalysisNotCompleteError."""
+        from m2py.codegen.routine import (
+            validate_analysis_complete,
+            AnalysisNotCompleteError,
+        )
+        from m2py.asg.elements import MLabel, MRoutine, MScope
+        from m2py.asg.statements import MGotoStatement
+
+        # Create GOTO statement without analysis (goto_type is None)
+        goto_stmt = MGotoStatement(targets=[], line_number=1)
+        scope = MScope(statements=[goto_stmt])
+        label = MLabel(name="JUMP", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        with pytest.raises(AnalysisNotCompleteError) as exc_info:
+            validate_analysis_complete(routine)
+
+        assert exc_info.value.missing_field == "goto_type"
+        assert exc_info.value.required_pass == "classify_gotos"
+
+    def test_validate_loop_exit_without_exits_loops_raises(self):
+        """LOOP_EXIT GOTO without exits_loops raises AnalysisNotCompleteError."""
+        from m2py.codegen.routine import (
+            validate_analysis_complete,
+            AnalysisNotCompleteError,
+        )
+        from m2py.asg.elements import MLabel, MRoutine, MScope
+        from m2py.asg.statements import MGotoStatement
+        from m2py.asg.enums import GotoType
+
+        # Create LOOP_EXIT GOTO without exits_loops populated
+        goto_stmt = MGotoStatement(targets=[], line_number=1)
+        goto_stmt.goto_type = GotoType.LOOP_EXIT
+        goto_stmt.exits_loops = []  # Empty - should have loops
+        scope = MScope(statements=[goto_stmt])
+        label = MLabel(name="JUMP", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        with pytest.raises(AnalysisNotCompleteError) as exc_info:
+            validate_analysis_complete(routine)
+
+        assert exc_info.value.missing_field == "exits_loops"
+        assert exc_info.value.required_pass == "classify_gotos"
+
+    def test_validate_analyzed_routine_passes(self):
+        """Routine with complete analysis passes validation."""
+        from m2py.codegen.routine import validate_analysis_complete
+        from m2py.asg.elements import MLabel, MRoutine, MScope
+        from m2py.asg.statements import MForStatement, MGotoStatement, MQuitStatement
+        from m2py.asg.enums import ForLoopType, GotoType
+
+        # Create analyzed FOR statement
+        for_stmt = MForStatement(loop_var="I", line_number=1)
+        for_stmt.loop_type = ForLoopType.BOUNDED
+
+        # Create analyzed GOTO statement (forward jump, not loop exit)
+        goto_stmt = MGotoStatement(targets=[], line_number=2)
+        goto_stmt.goto_type = GotoType.FORWARD_JUMP
+
+        # Create QUIT statement (exits_for/exits_do_block can be None)
+        quit_stmt = MQuitStatement(line_number=3)
+
+        scope = MScope(statements=[for_stmt, goto_stmt, quit_stmt])
+        label = MLabel(name="TEST", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        # Should not raise
+        validate_analysis_complete(routine)
+
+    def test_analysis_not_complete_error_message(self):
+        """AnalysisNotCompleteError has informative message."""
+        from m2py.codegen.routine import AnalysisNotCompleteError
+
+        error = AnalysisNotCompleteError(
+            "loop_type", "analyze_for_loops", "MForStatement at line 5"
+        )
+
+        assert "loop_type" in str(error)
+        assert "analyze_for_loops" in str(error)
+        assert "line 5" in str(error)

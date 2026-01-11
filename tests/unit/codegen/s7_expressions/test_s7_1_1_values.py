@@ -215,3 +215,62 @@ class TestComparisonCodegen:
 
         with pytest.raises(ValueError, match="Unsupported comparison operator"):
             m_compare(1, "!=", 2)
+
+
+@pytest.mark.codegen
+class TestExtrinsicFunctionCodegen:
+    """Codegen tests for extrinsic function calls ($$label).
+
+    Extrinsic functions are called with $$ prefix and return values.
+    They also stack $TEST - the caller's $TEST is saved before the call
+    and restored after, so changes to $TEST inside the extrinsic don't
+    leak back to the caller.
+
+    Reference: MUMPS 1995 §8.1.8
+    """
+
+    def test_extrinsic_returns_value(self, execute_mumps):
+        """Extrinsic function returns its QUIT value.
+
+        T066: $$GETVAL returns the value from QUIT.
+        Validated against YottaDB: W $$GETVAL() outputs 42.
+        """
+        source = """TEST I 1 W $$GETVAL() Q
+GETVAL() Q 42"""
+        result = execute_mumps(source)
+
+        assert result.output == "42"
+
+    def test_extrinsic_isolates_test(self, execute_mumps):
+        """Extrinsic function $TEST changes don't leak to caller.
+
+        T067: $TEST stacking for extrinsic functions.
+        Validated against YottaDB: output is '111' (1 before, 1 return, 1 after).
+
+        This verifies that even though SETF contains 'I 0' which sets $TEST=0
+        inside the extrinsic, the caller still sees $TEST=1 after the call.
+        """
+        # Multi-line routine: SETF contains IF 0 to set $TEST=0 internally
+        source = """TEST I 1 W $T,$$SETF(),$T Q
+SETF()
+ I 0
+ Q 1"""
+        result = execute_mumps(source)
+
+        # Output should be "111":
+        # - First $T is 1 (from IF 1)
+        # - $$SETF() returns 1
+        # - Second $T is 1 (restored, even though SETF did IF 0)
+        assert result.output == "111"
+
+    def test_extrinsic_with_arguments(self, execute_mumps):
+        """Extrinsic function receives arguments.
+
+        T066: $$ADD(X,Y) receives arguments by value.
+        Validated against YottaDB.
+        """
+        source = """TEST S A=3,B=4 W $$ADD(A,B) Q
+ADD(X,Y) Q X+Y"""
+        result = execute_mumps(source)
+
+        assert result.output == "7"

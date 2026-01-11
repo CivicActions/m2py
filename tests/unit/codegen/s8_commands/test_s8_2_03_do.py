@@ -45,23 +45,359 @@ class TestDoCommandCodegen:
         assert result.output == "B"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO with args")
     def test_do_with_args(self, generate_python):
         """DO with arguments generates parameterized call (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST\n D SUB(1,2)\n Q\nSUB(A,B)\n W A+B\n Q\n")
+        assert "SUB(1, 2)" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO block codegen")
     def test_do_block_codegen(self, generate_python):
-        """DO block generates indented block (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        """DO block generates indented block with while True wrapper (§8.2.3).
+
+        DO blocks are executed inline, with statements wrapped in
+        while True: break pattern to allow early QUIT.
+        """
+        code = generate_python("TEST\n D\n . W 1\n . W 2\n Q\n")
+        # DO block should generate while True wrapper with break
+        assert "while True:" in code
+        assert "break" in code
+        # Body statements should write 1 and 2
+        assert "_rt.write" in code
+
+    def test_do_block_executes(self, execute_mumps):
+        """DO block executes all dot-indented lines (§8.2.3)."""
+        result = execute_mumps("TEST\n D\n . W 1\n . W 2\n Q\n")
+        assert result.output == "12"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: DO external routine")
     def test_do_external_routine(self, generate_python):
         """DO external routine generates import and call (§8.2.3)."""
         pytest.fail("Stub - implement test")
+
+
+@pytest.mark.codegen
+class TestTestStackArgumentlessDo:
+    """Codegen tests for $TEST with label calls vs DO blocks (Spec 005).
+
+    $TEST Stacking Rules (verified against YottaDB):
+    - Label calls (D SUB, D SUB(), D SUB(X)) do NOT stack $TEST
+    - Only DO blocks (D followed by dot lines) stack $TEST
+    - Extrinsic functions ($$func) stack $TEST
+
+    Note: "Argumentless DO" can be ambiguous - it can mean either a label
+    call without args (D SUB) or a DO block. Only the latter stacks $TEST.
+
+    Reference: §8.2.3, verified against YottaDB
+    """
+
+    def test_label_call_no_test_save(self, generate_python):
+        """D SUB (label call) does NOT generate _saved_test (T009/T010).
+
+        Label calls do NOT stack $TEST - callee's changes are visible.
+        """
+        code = generate_python("TEST\n D SUB\n Q\nSUB\n I 0\n Q\n")
+        # Should NOT have save/restore for label calls
+        assert "_saved_test = _test" not in code
+        assert "SUB()" in code
+
+    def test_label_call_callee_test_visible(self, execute_mumps):
+        """ELSE after label call sees callee's $TEST (T012).
+
+        Given: TEST I 1 D SUB E W "ELSE" Q SUB I 0 Q
+        When: generated and executed
+        Then: output is "ELSE" because callee set $TEST=0 and that's visible
+        """
+        result = execute_mumps('TEST\n I 1\n D SUB\n E  W "ELSE"\n Q\nSUB\n I 0\n Q\n')
+        assert result.output == "ELSE"
+        assert result.success is True
+
+    def test_label_call_else_on_true(self, execute_mumps):
+        """ELSE after label call does NOT execute if callee set $TEST=1.
+
+        Given: TEST I 0 D SUB E W "ELSE" Q SUB I 1 Q
+        When: generated and executed
+        Then: output is empty because callee set $TEST=1
+        """
+        result = execute_mumps('TEST\n I 0\n D SUB\n E  W "ELSE"\n Q\nSUB\n I 1\n Q\n')
+        assert result.output == ""
+        assert result.success is True
+
+    def test_nested_label_calls_no_stacking(self, execute_mumps):
+        """Nested label calls do NOT create isolated $TEST context.
+
+        Given: TEST I 1 D A E W "OUTER" Q A D B Q B I 0 Q
+        When: generated and executed
+        Then: output is "OUTER" because B's $TEST=0 is visible to TEST
+        """
+        result = execute_mumps(
+            'TEST\n I 1\n D A\n E  W "OUTER"\n Q\nA\n D B\n Q\nB\n I 0\n Q\n'
+        )
+        assert result.output == "OUTER"
+        assert result.success is True
+
+    def test_inner_else_sees_own_test(self, execute_mumps):
+        """Inner subroutine's ELSE sees its own $TEST, not caller's."""
+        # TEST sets $TEST=1, calls A which sets $TEST=0, A has ELSE that should fire
+        result = execute_mumps('TEST\n I 1\n D A\n Q\nA\n I 0\n E  W "A-ELSE"\n Q\n')
+        assert result.output == "A-ELSE"
+        assert result.success is True
+
+    def test_nested_do_blocks_test_isolation(self, execute_mumps):
+        """Nested DO blocks maintain independent $TEST stacks (T083).
+
+        Each DO block saves and restores $TEST independently.
+        Inner block changes to $TEST don't affect outer block's $TEST.
+        """
+        # IF 1 sets $TEST=1
+        # DO block starts (saves $TEST=1)
+        # Inner IF 0 sets $TEST=0
+        # DO block ends (restores $TEST=1)
+        # Write $T should output 1
+        source = """TEST I 1 D  W $T Q
+ . I 0"""
+        result = execute_mumps(source)
+        assert result.output == "1"
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestTestStackDoWithArgs:
+    """Codegen tests for $TEST with DO with arguments (Spec 005 US2).
+
+    DO with arguments (D SUB(X) or D SUB()) does NOT save/restore $TEST.
+    Changes made by the callee ARE visible to the caller.
+
+    This is the SAME behavior as D SUB (label call without args).
+    All label calls have the same $TEST semantics.
+
+    Reference: §8.2.3, verified against YottaDB
+    """
+
+    def test_do_with_args_no_test_save(self, generate_python):
+        """DO with args does NOT generate _saved_test (T015).
+
+        User Story 2 scenario:
+        Given: D SUB(1)
+        When: generated
+        Then: code does NOT contain _saved_test pattern
+        """
+        code = generate_python("TEST\n D SUB(1)\n Q\nSUB(X)\n W X\n Q\n")
+        # Should NOT have save/restore for label calls with args
+        assert "_saved_test = _test" not in code
+        assert "SUB(1)" in code
+
+    def test_do_with_args_callee_test_visible(self, execute_mumps):
+        """Callee's $TEST changes visible to caller after DO with args (T016).
+
+        User Story 2 acceptance scenario 1:
+        Given: TEST I 1 D SUB(1) E W "ELSE" Q SUB(X) I 0 Q
+        When: generated and executed
+        Then: output is "ELSE" ($TEST=0 from callee IS visible)
+
+        Note: This test requires Phase 9 (US7) for proper formal parameter
+        generation in function signatures.
+        """
+        # For now, test with a label that doesn't need formal params
+        # Full test deferred to Phase 9
+        result = execute_mumps('TEST\n I 1\n D SUB\n E  W "ELSE"\n Q\nSUB\n I 0\n Q\n')
+        assert result.output == "ELSE"
+        assert result.success is True
+
+    def test_do_with_args_callee_test_visible_full(self, execute_mumps):
+        """Full test for DO with args $TEST visibility (Phase 9 complete)."""
+        result = execute_mumps(
+            'TEST\n I 1\n D SUB(1)\n E  W "ELSE"\n Q\nSUB(X)\n I 0\n Q\n'
+        )
+        assert result.output == "ELSE"
+        assert result.success is True
+
+    def test_do_with_empty_args_no_test_save(self, generate_python):
+        """D SUB() does NOT generate _saved_test (T017).
+
+        Empty args still a label call, not a DO block.
+        """
+        code = generate_python("TEST\n D SUB()\n Q\nSUB()\n I 0\n Q\n")
+        # Should NOT have save/restore for label calls with empty args
+        assert "_saved_test = _test" not in code
+        assert "SUB()" in code
+
+    def test_do_with_empty_args_callee_test_visible(self, execute_mumps):
+        """D SUB() - callee's $TEST visible to caller.
+
+        Same as D SUB - NOT a DO block.
+        """
+        result = execute_mumps(
+            'TEST\n I 1\n D SUB()\n E  W "ELSE"\n Q\nSUB()\n I 0\n Q\n'
+        )
+        assert result.output == "ELSE"
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestIsInlineBlockField:
+    """Tests for MDoStatement.is_inline_block field.
+
+    This field is set by the parser when dot-indented lines are collected
+    into a DO block body. It's the ONLY form of DO that stacks $TEST.
+    """
+
+    def test_is_inline_block_set_by_parser(self):
+        """Parser sets is_inline_block when DO block has body statements."""
+        from m2py import MUMPSParser
+
+        source = """TEST D
+ . S X=1
+ Q
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+
+        # Find the DO statement
+        from m2py.asg.statements import MDoStatement
+
+        do_stmt = None
+        for label in routine.labels:
+            for stmt in label.body.walk_statements():
+                if isinstance(stmt, MDoStatement):
+                    do_stmt = stmt
+                    break
+            if do_stmt:
+                break
+
+        assert do_stmt is not None
+        assert do_stmt.is_inline_block is True
+
+    def test_is_inline_block_false_for_label_call(self):
+        """D SUB (label call) has is_inline_block=False."""
+        from m2py import MUMPSParser
+
+        source = """TEST D SUB
+ Q
+SUB W "Hello"
+ Q
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+
+        # Find the DO statement in TEST label
+        from m2py.asg.statements import MDoStatement
+
+        do_stmt = None
+        for label in routine.labels:
+            if label.name == "TEST":
+                for stmt in label.body.walk_statements():
+                    if isinstance(stmt, MDoStatement):
+                        do_stmt = stmt
+                        break
+                break
+
+        assert do_stmt is not None
+        assert do_stmt.is_inline_block is False
+
+    def test_is_inline_block_default_value(self):
+        """New MDoStatement has is_inline_block=False by default."""
+        from m2py.asg.statements import MDoStatement
+
+        stmt = MDoStatement(targets=[])
+        assert stmt.is_inline_block is False
+
+
+@pytest.mark.codegen
+class TestGenerateCallArgumentsHelper:
+    """Tests for _generate_call_arguments() helper function.
+
+    This helper generates Python argument strings from MUMPS call arguments.
+    """
+
+    def test_empty_arguments(self):
+        """Empty arguments returns empty string."""
+        from m2py.codegen.statements import _generate_call_arguments
+
+        result = _generate_call_arguments([], None)
+        assert result == ""
+
+    def test_single_literal_argument(self):
+        """Single literal argument generates value."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import LiteralType, PassingMode
+        from m2py.asg.expressions import MActualParameter, MLiteral
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg = MActualParameter(
+            passing_mode=PassingMode.BY_VALUE,
+            expression=MLiteral(value="1", literal_type=LiteralType.INTEGER),
+        )
+
+        result = _generate_call_arguments([arg], ctx)
+        assert result == "1"
+
+    def test_multiple_arguments(self):
+        """Multiple arguments generates comma-separated list."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import LiteralType, PassingMode
+        from m2py.asg.expressions import MActualParameter, MLiteral
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg1 = MActualParameter(
+            passing_mode=PassingMode.BY_VALUE,
+            expression=MLiteral(value="1", literal_type=LiteralType.INTEGER),
+        )
+        arg2 = MActualParameter(
+            passing_mode=PassingMode.BY_VALUE,
+            expression=MLiteral(value="2", literal_type=LiteralType.INTEGER),
+        )
+
+        result = _generate_call_arguments([arg1, arg2], ctx)
+        assert result == "1, 2"
+
+    def test_omitted_argument(self):
+        """Omitted argument generates None."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import PassingMode
+        from m2py.asg.expressions import MActualParameter
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg = MActualParameter(passing_mode=PassingMode.OMITTED)
+
+        result = _generate_call_arguments([arg], ctx)
+        assert result == "None"
+
+    def test_byref_with_variable_name(self):
+        """By-reference with variable_name uses translated name."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import PassingMode
+        from m2py.asg.expressions import MActualParameter
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg = MActualParameter(passing_mode=PassingMode.BY_REFERENCE, variable_name="X")
+
+        result = _generate_call_arguments([arg], ctx)
+        assert result == "X"  # translate_name preserves case
+
+    def test_byref_with_expression(self):
+        """By-reference with expression generates expression."""
+        from unittest.mock import MagicMock
+
+        from m2py.asg.enums import PassingMode
+        from m2py.asg.expressions import MActualParameter, MVariable
+        from m2py.codegen.statements import _generate_call_arguments
+
+        ctx = MagicMock()
+        arg = MActualParameter(
+            passing_mode=PassingMode.BY_REFERENCE, expression=MVariable(name="X")
+        )
+
+        result = _generate_call_arguments([arg], ctx)
+        assert result == "X"  # translate_name preserves case
 
 
 @pytest.mark.codegen
@@ -113,7 +449,7 @@ class TestScopeStrategyCodegen:
 
 @pytest.mark.codegen
 class TestByRefParameterCodegen:
-    """Codegen tests for by-reference parameter handling.
+    """Codegen tests for by-reference parameter handling (Spec 005 Phase 10).
 
     When caller uses .X, the callee can modify X. Generated code uses
     a return-tuple pattern to propagate modified values back.
@@ -121,29 +457,111 @@ class TestByRefParameterCodegen:
     Reference: §6.3, §8.2.3
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: byref call generates tuple unpack")
-    def test_byref_call_generates_tuple_unpack(self, generate_python):
-        """By-reference call generates tuple unpacking at call site.
+    def test_incr_single_byref_param(self, generate_python):
+        """INCR pattern with single by-ref param (T064).
 
-        D SWAP(.A,.B) generates: a, b = swap(a, b)
+        D INCR(.X) generates: X = INCR(X)
+        Callee returns the modified value.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: byref callee returns modified")
-    def test_byref_callee_returns_modified(self, generate_python):
-        """By-reference callee returns modified values.
+        # Callee returns modified param
+        assert "def INCR(N):" in code
+        assert "return N" in code
 
-        Callee returns tuple of byref_outputs values.
+        # Call site destructures the return
+        assert "X = INCR(X)" in code
+
+    def test_incr_single_byref_runtime(self, execute_mumps):
+        """INCR pattern executes correctly with by-ref (T064).
+
+        Given: X=5, D INCR(.X), W X
+        When: executed
+        Then: output is "6" (X was incremented)
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
+        assert result.output == "6"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: mixed byref and value params")
-    def test_mixed_byref_and_value_params(self, generate_python):
-        """Mixed by-ref and by-value parameters handled correctly.
+    def test_swap_two_byref_params(self, generate_python):
+        """SWAP pattern with two by-ref params (T063).
 
-        D SUB(A,.B,C) - only B is by-reference.
+        D SWAP(.A,.B) generates: A, B = SWAP(A, B)
+        Callee returns both modified values as tuple.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python(
+            "TEST S A=1,B=2 D SWAP(.A,.B) W A,B Q\nSWAP(X,Y) S T=X,X=Y,Y=T Q\n"
+        )
+
+        # Callee returns both modified params
+        assert "def SWAP(X, Y):" in code
+        # Check for tuple return (order may vary based on set ordering)
+        assert "return X, Y" in code or "return Y, X" in code
+
+        # Call site destructures both
+        assert "A, B = SWAP(A, B)" in code or "B, A = SWAP(A, B)" in code
+
+    def test_swap_two_byref_runtime(self, execute_mumps):
+        """SWAP pattern executes correctly with two by-refs (T063).
+
+        Given: A=1, B=2, D SWAP(.A,.B), W A,B
+        When: executed
+        Then: output is "21" (values swapped)
+        """
+        result = execute_mumps(
+            "TEST S A=1,B=2 D SWAP(.A,.B) W A,B Q\nSWAP(X,Y) S T=X,X=Y,Y=T Q\n"
+        )
+        assert result.output == "21"
+        assert result.success is True
+
+    def test_multiple_byref_calls_accumulate(self, generate_python):
+        """Multiple by-ref calls accumulate changes (T065).
+
+        D INCR(.X),INCR(.X) generates two separate assignments.
+        """
+        code = generate_python(
+            "TEST S X=1 D INCR(.X),INCR(.X),INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n"
+        )
+
+        # Should have three separate calls with destructuring
+        assert code.count("X = INCR(X)") == 3
+
+    def test_multiple_byref_calls_runtime(self, execute_mumps):
+        """Multiple by-ref calls accumulate correctly (T065).
+
+        Given: X=1, D INCR(.X),INCR(.X),INCR(.X), W X
+        When: executed
+        Then: output is "4" (incremented 3 times)
+        """
+        result = execute_mumps(
+            "TEST S X=1 D INCR(.X),INCR(.X),INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n"
+        )
+        assert result.output == "4"
+        assert result.success is True
+
+    def test_byvalue_call_no_destructure(self, generate_python):
+        """By-value call does not destructure even if callee has byref_outputs.
+
+        D INCR(X) (no dot) passes by value - caller's X unchanged.
+        """
+        code = generate_python("TEST S X=5 D INCR(X) W X Q\nINCR(N) S N=N+1 Q\n")
+
+        # By-value call should not destructure
+        # The call is just INCR(X), not X = INCR(X)
+        lines = [line.strip() for line in code.split("\n")]
+        # Find the line that calls INCR in TEST function
+        # It should be just "INCR(X)" not "X = INCR(X)"
+        incr_lines = [line for line in lines if "INCR(X)" in line]
+        # Should have INCR(X) without assignment
+        assert any(line == "INCR(X)" for line in incr_lines)
+
+    def test_byvalue_call_runtime(self, execute_mumps):
+        """By-value call does not modify caller's variable.
+
+        Given: X=5, D INCR(X) (no dot), W X
+        When: executed
+        Then: output is "5" (X unchanged, N was a copy)
+        """
+        result = execute_mumps("TEST S X=5 D INCR(X) W X Q\nINCR(N) S N=N+1 Q\n")
+        assert result.output == "5"
+        assert result.success is True

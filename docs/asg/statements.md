@@ -203,16 +203,19 @@ F I="A",1:1:3 W I,!        ; MIXED
 | `parameters` | `List[MForParameter]` | Loop parameters |
 | `body` | `MScope` | Loop body statements |
 
-**Analysis fields** (populated by `analyze_for_loops`):
+**Analysis fields** (populated by `analyze_for_loops` and `classify_gotos`):
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `loop_type` | `ForLoopType` | Classification |
-| `is_infinite` | `bool` | True for step=0 or ARGUMENTLESS |
-| `has_internal_quit` | `bool` | QUIT directly in body |
-| `has_internal_goto` | `bool` | GOTO inside loop body |
-| `exit_points` | `List[MStatement]` | Exit statements (QUIT/GOTO) |
-| `loop_var_modified_in_body` | `bool` | SET of loop var |
+| Field | Type | Populated By | Description |
+|-------|------|--------------|-------------|
+| `loop_type` | `ForLoopType` | `analyze_for_loops` | Classification |
+| `is_infinite` | `bool` | `analyze_for_loops` | True for step=0 or ARGUMENTLESS |
+| `has_internal_quit` | `bool` | `analyze_for_loops` | QUIT directly in body |
+| `has_internal_goto` | `bool` | `classify_gotos` | GOTO inside loop body |
+| `exit_points` | `List[MStatement]` | `classify_gotos` | Exit statements (QUIT/GOTO) |
+| `loop_var_modified_in_body` | `bool` | `analyze_for_loops` | SET of loop var |
+| `has_cross_label_exit` | `bool` | `classify_gotos` | Exit GOTO targets different label |
+| `needs_exception_wrapper` | `bool` | `classify_gotos` | Outermost FOR for multi-loop exit |
+| `exit_target` | `Optional[str]` | `classify_gotos` | Target label name (MUMPS name) |
 
 **MForParameter** structure:
 
@@ -257,28 +260,49 @@ G LABEL1,LABEL2:COND
 | `goto_type` | `GotoType` | Direction/behavior classification |
 | `exits_loops` | `List[MForStatement]` | FOR loops exited |
 | `is_cross_label` | `bool` | True if target is in a different label |
-| `is_loop_continue` | `bool` | True if GOTO simulates `continue` |
+| `target_stmt_index` | `Optional[int]` | Statement index for intra-label forward restructuring |
+| `is_restructurable` | `bool` | True if can be restructured to if/else |
+| `codegen_pattern` | `Optional[GotoCodegenPattern]` | Pre-computed pattern for codegen |
 
-**is_cross_label**: Set to True when the GOTO target is in a different label than the GOTO source. This is orthogonal to the direction (forward/backward) and loop-exit status. Code generators can use this to determine whether simple if/else suffices or function-call-based control flow is needed.
+**Pre-computed codegen fields** (Phase 14 refactoring):
 
-**is_loop_continue**: Set to True when a GOTO inside a FOR loop jumps back to the label containing that FOR loop. This pattern is equivalent to Python's `continue` statement - it exits the current iteration and starts the next one.
+The `is_restructurable` and `codegen_pattern` fields are populated during analysis
+to avoid recomputing at code generation time:
+
+- `is_restructurable`: True when `goto_type=FORWARD_JUMP` and `is_cross_label=False`
+- `codegen_pattern`: One of `BREAK`, `MULTI_BREAK`, `FORWARD`, `FUNCTION_CALL`, `UNSUPPORTED`
+
+**target_stmt_index**: For intra-label forward GOTOs (`is_cross_label=False`, `goto_type=FORWARD_JUMP`),
+this field contains the index of the target statement in the label body. Computed from MUMPS offset
+semantics: `LABEL+n` targets line n from the label. Used by code generation to restructure the GOTO
+to an if/else block.
+
+**is_cross_label**: Set to True when the GOTO target is in a different label than the GOTO source. Set to False when the GOTO targets the same label it's contained in (intra-label). Code generators can use this to determine whether simple control flow restructuring suffices or function-call-based control flow is needed.
+
+**MUMPS Semantic Note (MDC 3.6.5)**: GOTO terminates all FOR loops on the line containing the GOTO.
+GOTO cannot create Python `continue` semantics. To skip to the next iteration in MUMPS, use
+conditional execution (`I cond <commands>`) or QUIT from within a DO block.
 
 **GotoType values**:
-- `FORWARD_JUMP` - Jump ahead (check `is_cross_label` for scope)
-- `BACKWARD_JUMP` - Jump back (creates loop)
+- `FORWARD_JUMP` - Jump ahead (intra-label with offset ahead, or cross-label to later label)
+- `BACKWARD_JUMP` - Jump back (intra-label without offset, intra-label with offset behind, or cross-label to earlier label)
 - `LOOP_EXIT` - Exits single FOR loop
 - `MULTI_LOOP_EXIT` - Exits multiple nested FORs
 - `EXTERNAL` - Jumps to external routine
 - `UNRESOLVED` - Cannot determine statically
 - `CROSS_LABEL` - **Deprecated**: use `is_cross_label` flag instead
 
+**Intra-label GOTO classification**:
+- `G LABEL` (no offset) from within `LABEL`: Always `BACKWARD_JUMP` - jumps to start of label
+- `G LABEL+n` (with offset) from within `LABEL`: `FORWARD_JUMP` if offset ahead, `BACKWARD_JUMP` if offset behind
+
 **Code Generation by goto_type + is_cross_label**:
-- `LOOP_EXIT` with `is_loop_continue=True`: `continue`
-- `LOOP_EXIT` with `is_loop_continue=False`: `break`
+- `LOOP_EXIT`: `break`
 - `MULTI_LOOP_EXIT`: Exception or state machine
-- `FORWARD_JUMP` + `is_cross_label=False`: If/elif chain
+- `FORWARD_JUMP` + `is_cross_label=False`: If/elif chain (restructurable)
 - `FORWARD_JUMP` + `is_cross_label=True`: Function call with return
-- `BACKWARD_JUMP`: While loop wrapper
+- `BACKWARD_JUMP` + `is_cross_label=False`: Implicit loop (deferred to Spec 006)
+- `BACKWARD_JUMP` + `is_cross_label=True`: While loop wrapper or state machine
 
 ---
 
@@ -300,6 +324,7 @@ D                    ; argumentless - block follows
 |-------|------|-------------|
 | `targets` | `List[MCall]` | Called labels |
 | `body` | `MScope` | For argumentless DO block |
+| `is_inline_block` | `bool` | True for DO blocks with dot-indented body (set by parser) |
 
 
 ### MQuitStatement

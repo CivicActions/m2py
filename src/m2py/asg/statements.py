@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 from m2py.asg.elements import ASGElement, MScope
-from m2py.asg.enums import ForLoopType, ForParamType, GotoType
+from m2py.asg.enums import ForLoopType, ForParamType, GotoCodegenPattern, GotoType
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MCall
@@ -230,6 +230,13 @@ class MForStatement(MStatement):
     is_infinite: bool = False  # True for step=0 or ARGUMENTLESS loops
     loop_var_modified_in_body: bool = False  # True if loop variable is SET inside body
 
+    # T088-T090: Pre-computed fields for codegen (populated by classify_gotos)
+    has_cross_label_exit: bool = False  # True if any exit GOTO targets different label
+    needs_exception_wrapper: bool = False  # True if outermost FOR for MULTI_LOOP_EXIT
+    exit_target: Optional[str] = (
+        None  # Target label name (MUMPS name, codegen translates)
+    )
+
 
 # =============================================================================
 # Control Flow - Jumps
@@ -242,6 +249,10 @@ class MGotoStatement(MStatement):
 
     Transfers control to a label:
     G label, G label^routine, G label:condition
+
+    Note: GOTO cannot create a Python 'continue' pattern. Per MUMPS spec (MDC 3.6.5):
+    "Execution of GOTO effects the immediate termination of all FORs in the line
+    containing the GOTO." A GOTO to the same label creates a function call/recursion.
     """
 
     targets: List["MCall"] = field(default_factory=list)
@@ -250,7 +261,14 @@ class MGotoStatement(MStatement):
     goto_type: Optional[GotoType] = None
     exits_loops: List["MForStatement"] = field(default_factory=list, repr=False)
     is_cross_label: bool = False  # True if target is in a different label
-    is_loop_continue: bool = False
+
+    # For intra-label forward GOTOs: index of target statement in label body
+    # Set during classify_gotos() when goto_type=FORWARD_JUMP and is_cross_label=False
+    target_stmt_index: Optional[int] = None
+
+    # T096-T098: Pre-computed codegen fields (populated by classify_gotos)
+    is_restructurable: bool = False  # True if can be restructured to if/else
+    codegen_pattern: Optional[GotoCodegenPattern] = None  # Pattern for code generation
 
 
 # =============================================================================
@@ -280,6 +298,9 @@ class MDoStatement(MStatement):
 
     targets: List["MCall"] = field(default_factory=list)
     body: MScope = field(default_factory=MScope)  # For argumentless DO block
+
+    # Pre-computed flag set by parser when body is populated with dot-indented lines
+    is_inline_block: bool = False  # True for DO blocks with dot-indented body
 
 
 @dataclass

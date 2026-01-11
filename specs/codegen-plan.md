@@ -13,7 +13,8 @@
 3. **Complexity first** - Solve hard structural problems early while codebase is small
 4. **Incremental validation** - Each spec should produce testable output against YDB
 5. **Layer separation** - If codegen discovers missing AST nodes, unresolved references, or analysis gaps, fix them in the parser or ASG analysis layer—never build parse-like or generic analysis code into codegen. Codegen should only translate a complete, resolved ASG to Python.
-6. **Minimize runtime surface** - Prefer inline Python over runtime calls. The runtime exists for truly dynamic cases (globals, indirection, XECUTE). For statically analyzable patterns, emit direct Python code even if slightly verbose. Every runtime call is a refactoring barrier.
+6. **Analysis-first codegen** - Semantic properties (loop types, goto targets, variable scope) are computed by analysis passes and stored in ASG fields. Codegen reads these fields directly without fallbacks—never uses `getattr(stmt, field, default)` patterns. ASG dataclass fields have defaults; if analysis didn't run, validation catches it before codegen starts.
+7. **Minimize runtime surface** - Prefer inline Python over runtime calls. The runtime exists for truly dynamic cases (globals, indirection, XECUTE). For statically analyzable patterns, emit direct Python code even if slightly verbose. Every runtime call is a refactoring barrier.
 
 ### Runtime vs Inline Decision Guide
 
@@ -611,21 +612,26 @@ The following infrastructure is now available:
 - `NameTranslator` for variable/label name translation
 - `MUMPSRuntime.execute()` with isolated namespace injection
 
-### Key Implementation Questions (To Answer in Research Phase)
+### Key Implementation Decisions (Resolved)
 
-1. **$TEST stacking for argumentless DO**: Current `_test` is module-level. Options:
-   - Pass `_test` as hidden parameter, restore on return
-   - Use thread-local stack for $TEST values
-   - Use context manager pattern: `with _test_context(): DO_LABEL()`
+1. **$TEST stacking for DO blocks**: Use save/restore pattern via local variable.
+   - `_saved_test = _test` before block, `_test = _saved_test` after
+   - Only DO blocks (D + dot-indented lines) and extrinsics stack $TEST
+   - Label calls (D SUB, D SUB(), D SUB(X)) do NOT stack - callee's $TEST visible
 
-2. **By-reference parameters**: Current functions take no parameters. Options:
-   - Return-tuple pattern: `A, B = SWAP(A, B)` 
-   - Mutable wrapper: `class Ref: val = None`
-   - This affects `FunctionSignature.byref_outputs` handling
+2. **By-reference parameters**: Return-tuple pattern.
+   - `A, B = SWAP(A, B)` - callee returns modified values
+   - Call site destructures result back to original variables
+   - Uses `FunctionSignature.byref_outputs` from analysis
 
-3. **FOR loop variable modification**: When `loop_var_modified_in_body=True`:
-   - Must use `while` loop, not `for i in range()`
+3. **FOR loop variable modification**: Use `while` loop when `loop_var_modified_in_body=True`.
    - Track current value and step explicitly
+   - `for` loop only when loop var unmodified
+
+4. **Intra-label forward GOTO**: Inverted if/else restructuring.
+   - Uses `target_stmt_index` computed from MUMPS offset semantics (LABEL+n)
+   - `generate_scope_statements()` handles restructuring at scope level
+   - Statements between IF and target go in `if not _test:` block
 
 ### Research Phase
 
@@ -646,12 +652,13 @@ Review before coding:
    - **Note**: Postconditions (deferred to Spec 008) do NOT update $TEST - document this behavior now
    
 2. **$TEST Stack Semantics**
-   - **Argumentless DO**: `$TEST` is stacked (NEW $TEST), restored on QUIT
-   - **Extrinsic calls** (`$$label`): `$TEST` is stacked, restored on QUIT  
-   - **DO with arguments**: `$TEST` NOT stacked - callee mutations visible to caller
+   - **DO block** (D + dot-indented lines): `$TEST` is stacked, restored after block
+   - **Extrinsic calls** (`$$label`): `$TEST` is stacked, restored on return  
+   - **Label calls** (D SUB, D SUB(), D SUB(X)): `$TEST` NOT stacked - callee mutations visible to caller
    - **XECUTE**: `$TEST` NOT stacked - mutations visible to caller
    
-   This is critical for ELSE chains that span DO calls.
+   Note: The term "argumentless DO" is ambiguous. A label call without args (`D SUB`) does NOT stack,
+   but a DO block (`D` followed by dot-indented lines) DOES stack.
 
 3. **FOR Loop Variations**
    - `ForLoopType.OPEN_ENDED` → `while True:` with increment
@@ -696,28 +703,68 @@ Review before coding:
 
 ### Deliverables
 
-- [ ] $TEST tracking infrastructure with stack/restore for argumentless DO and extrinsics
-  - Tests: `TestTestStackSemanticsCodegen` → [test_language_semantics.py](../tests/unit/cross_cutting/test_language_semantics.py)
-- [ ] $TEST NOT stacked for DO with arguments (explicit test)
-  - Tests: `test_do_with_arguments_mutates_test` → TestTestStackSemanticsCodegen
-- [ ] Postconditions do NOT update $TEST (explicit test)
-  - Tests: `TestPostconditionsCodegen` → [test_postconditions.py](../tests/unit/cross_cutting/test_postconditions.py)
-- [ ] FOR loop strategy selector based on analysis flags
+- [x] $TEST tracking infrastructure with stack/restore for DO blocks (dot-indented)
+  - Tests: `TestDoBlockTestRestore` → [test_s8_2_03_do.py](../tests/unit/codegen/s8_commands/test_s8_2_03_do.py)
+  - Note: Only DO blocks (not label calls) stack $TEST
+- [x] $TEST NOT stacked for label calls (D SUB, D SUB(), D SUB(X))
+  - Tests: `test_label_call_*_test_visible` → test_s8_2_03_do.py
+- [x] FOR loop strategy selector based on analysis flags
   - Tests: `TestForLoopCodegen` → [test_s8_2_05_for.py](../tests/unit/codegen/s8_commands/test_s8_2_05_for.py)
-- [ ] Intra-label GOTO restructuring
-  - Tests: `TestIntraLabelGotoCodegen` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
-- [ ] Loop exit translation (break, exception)
-  - Tests: `TestForLoopCodegen.test_quit_in_for_loop_*` → test_s8_2_05_for.py
-- [ ] QUIT context-aware code generation
+  - Patterns: BOUNDED, OPEN_ENDED (itertools.count), ARGUMENTLESS (while True), STRING_LIST, MIXED (chain)
+- [x] Intra-label forward GOTO restructuring
+  - Tests: `test_forward_jump_restructures_*` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
+  - Implementation: `_find_forward_goto_in_if()`, `_restructure_forward_goto()`, `generate_scope_statements()`
+  - Uses `target_stmt_index` computed from MUMPS offset semantics (LABEL+n)
+- [x] Backward intra-label GOTO raises UnsupportedFeatureError
+  - Tests: `test_backward_intra_label_goto_raises_error` → test_s8_2_06_goto.py
+  - Deferred to Spec 006 for proper loop restructuring
+- [x] Loop exit translation (break, exception) for GOTO
+  - Tests: `test_*_loop_exit_*` → test_s8_2_06_goto.py
+  - Implementation: `_generate_goto()` checks `exits_loops` for break vs `raise _LoopExit()`
+- [x] QUIT context-aware code generation
   - Tests: `TestQuitCommandCodegen` → [test_s8_2_16_quit.py](../tests/unit/codegen/s8_commands/test_s8_2_16_quit.py)
-- [ ] Scope strategy code generation (PURE_FUNCTION, SUBROUTINE, etc.)
-  - Tests: `TestScopeStrategyCodegen` → [test_s8_2_03_do.py](../tests/unit/codegen/s8_commands/test_s8_2_03_do.py)
-- [ ] By-reference parameter return value pattern
+  - Implementation: `exits_for` → break, `exits_do_block` → return
+- [x] Scope strategy code generation (PURE_FUNCTION, SUBROUTINE, etc.)
+  - Tests: `TestScopeStrategyCodegen` → test_s8_2_03_do.py
+- [x] By-reference parameter return value pattern
   - Tests: `TestByRefParameterCodegen` → test_s8_2_03_do.py
-- [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
+- [x] Extrinsic function $TEST stacking
+  - Tests: `test_extrinsic_*_test_restore` → [test_s7_1_1_values.py](../tests/unit/codegen/s7_expressions/test_s7_1_1_values.py)
+  - Implementation: `_call_extrinsic()` wrapper with save/restore pattern
+- [x] Postconditions do NOT update $TEST (explicit test)
+  - Tests: `TestPostconditionsCodegen` → [test_postconditions.py](../tests/unit/cross_cutting/test_postconditions.py)
+- [x] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
   - Update codegen-plan.md: mark deliverables complete, add implementation notes
   - Update docs/codegen/ with actual patterns used
   - Add pre-requisites section to Spec 006
+
+### Implementation Notes
+
+**Coverage**: 86% on codegen module (exceeds 85% threshold)
+
+**Key Patterns Implemented**:
+1. FOR loops dispatch by `loop_type` and `loop_var_modified_in_body`:
+   - BOUNDED → `range()` with step adjustment for MUMPS end-inclusive
+   - OPEN_ENDED → `itertools.count(start, step)`
+   - ARGUMENTLESS → `while True:`
+   - STRING_LIST → list iteration
+   - MIXED → `itertools.chain()` combining ranges and values
+   - Modified loop var → `while` with explicit stepping
+
+2. GOTO patterns handled by `goto_type` and `exits_loops`:
+   - Single loop exit → `break`
+   - Multi-loop exit → `raise _LoopExit()` with try/except wrapper
+   - Intra-label forward → if/else restructuring via `generate_scope_statements()`
+
+3. $TEST isolation via `_call_extrinsic()` wrapper function generated in preamble
+
+4. AST validation: `ast.parse()` at end of `generate()` catches syntax errors early
+
+5. **Architectural extensibility** (validated for 006+):
+   - Labels-as-functions pattern preserved; Spec 006 adds `RoutineState` class for cross-label variable sharing
+   - Current `label(); return` GOTO pattern extended with trampoline wrapper for cyclic GOTOs
+   - Statement dispatcher (`generate_statement()`) works inside match-case for state machine fallback
+   - `GeneratorContext` extensible to track shared vs local variables per routine analysis
 
 ### Validation
 
@@ -779,9 +826,11 @@ NEXT S Y=X+1    ; Needs access to X set in MAIN
 ```
 
 Options:
-1. **State class**: `RoutineState(x=None, y=None)` passed to all labels
+1. **State class**: `RoutineState(x=None, y=None)` passed to all labels ← **preferred, preserves labels-as-functions**
 2. **Outer scope**: All vars in module scope, labels are inner functions
 3. **Runtime**: `_rt.get("X")` - but this undermines local var optimization
+
+**Architectural note**: Spec 005's labels-as-functions pattern is preserved. The `RoutineState` class is an additive extension—variable analysis (`input_variables`, `output_variables`) already computes what's needed for state class generation. Simple routines without cross-label GOTOs keep Python locals.
 
 Spec 006 research spike should evaluate these options.
 
@@ -828,6 +877,24 @@ Review before coding:
    - GOTO targets must be at same execution LEVEL (per ANSI 8.2.6, error M45 if violated)
    
    This prepares for computed offsets (`G LABEL+expr`) without major refactoring.
+
+6. **Multiple GOTO Targets** (`G A,B`)
+   
+   Sequential execution of multiple labels. YDB executes label A, then continues to label B.
+   The trampoline/state machine infrastructure handles this naturally as a target sequence.
+   
+   ```mumps
+   G END,FIN    ; Execute END, then FIN
+   ```
+
+7. **Argumentless GOTO** (`G`)
+   
+   Special case that acts as a return/quit from current execution context.
+   Per ANSI standard, argumentless GOTO returns control to caller.
+   
+   ```mumps
+   G            ; Return to caller (similar to QUIT)
+   ```
 
 ### DEFERRED to Spec 008: Computed Offsets
 
@@ -883,7 +950,19 @@ while True:
 
 - `has_unstructured_goto=True` → State Machine (required)
 - Computed offset target (`G LABEL+expr`) → State Machine (line dispatch)
-- Otherwise → Labels-as-Functions (preferred)
+- Otherwise → Labels-as-Functions with trampoline (preferred)
+
+**Trampoline pattern** (additive to Spec 005):
+```python
+# Labels return next label name instead of calling directly
+def A(state): state.x = 1; return "B"
+def B(state): return "A" if condition else None
+
+# Trampoline prevents stack growth for cyclic GOTOs
+next_label = "A"
+while next_label:
+    next_label = labels[next_label](state)
+```
 
 ### Deliverables
 
@@ -899,6 +978,10 @@ while True:
   - Tests: `TestLineDispatchCodegen` → test_s8_2_06_goto.py
 - [ ] Variable visibility handling for both strategies
   - Tests: `TestCrossLabelGotoCodegen.test_cross_label_goto_variable_visibility` → test_s8_2_06_goto.py
+- [ ] Multiple GOTO targets (`G A,B`) - sequential label execution
+  - Tests: `TestMultipleGotoTargetsCodegen` → test_s8_2_06_goto.py
+- [ ] Argumentless GOTO (`G`) - return to caller semantics
+  - Tests: `TestArgumentlessGotoCodegen` → test_s8_2_06_goto.py
 - [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
   - Update codegen-plan.md: mark deliverables complete, add implementation notes
   - Update docs/codegen/goto_handling.md with actual strategy patterns
@@ -1134,6 +1217,8 @@ Review before coding:
    | Runtime dispatch | — | `_line_dispatch(line_num)` method |
    
    **⚠️ Parser extension needed**: Statement line numbers require enhancing textX model classes to capture source positions during parsing.
+   
+   **Architectural note**: This is the one area requiring parser/analysis enhancement before codegen can proceed. The codegen architecture (dispatchers, emitters, context) is ready—just needs `MStatement.line_number` populated. Can be done incrementally without blocking Spec 006.
    
    **Code generation approach**: Build `_line_map: Dict[int, Callable]` at routine init. For `G LABEL+expr`, evaluate `target_line = label_line + int(expr)`, dispatch via `_line_map[target_line]`. Error if line not in map.
    

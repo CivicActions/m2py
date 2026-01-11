@@ -48,9 +48,10 @@ for label in routine.labels:
 
 The `is_cross_label` boolean field on `MGotoStatement` indicates whether the target is in a different label than the source. This is orthogonal to direction:
 
-- **`FORWARD_JUMP` + `is_cross_label=False`**: GOTO within the same label (intra-label). Can be translated to if/elif chains.
-- **`FORWARD_JUMP` + `is_cross_label=True`**: GOTO to a later label (inter-label). Typically requires converting labels to functions.
-- **`BACKWARD_JUMP` + `is_cross_label=True`**: GOTO to an earlier label. Creates implicit loop requiring state machine.
+- **`FORWARD_JUMP` + `is_cross_label=False`**: Intra-label forward jump (e.g., `G LABEL+n` with offset ahead). Can be translated to if/elif chains.
+- **`BACKWARD_JUMP` + `is_cross_label=False`**: Intra-label backward jump (e.g., `G LABEL` without offset, or `G LABEL+n` with offset behind). Creates implicit loop.
+- **`FORWARD_JUMP` + `is_cross_label=True`**: Cross-label forward jump to a later label. Typically requires converting labels to functions.
+- **`BACKWARD_JUMP` + `is_cross_label=True`**: Cross-label backward jump to an earlier label. Creates implicit loop requiring state machine.
 - **`LOOP_EXIT` + `is_cross_label=True`**: Exit FOR and jump to different label. Requires break + dispatch.
 
 ## What Gets Populated
@@ -66,16 +67,68 @@ class MGotoStatement(MStatement):
     is_cross_label: bool = False  # True if target in different label
     exits_loops: List[MForStatement] = field(default_factory=list)
     is_loop_continue: bool = False  # True if continue semantics
+    target_stmt_index: Optional[int] = None  # For intra-label forward restructuring
+    
+    # Pre-computed codegen hints (Phase 14)
+    is_restructurable: bool = False  # True if can become if/else
+    codegen_pattern: Optional[GotoCodegenPattern] = None  # Pattern for codegen
 ```
 
-### On MForStatement (back-references)
+### is_restructurable Field
+
+The `is_restructurable` boolean indicates whether a GOTO can be restructured to an
+if/else block instead of requiring function calls or other patterns. This is set to
+`True` when:
+- `goto_type == FORWARD_JUMP`
+- `is_cross_label == False` (intra-label forward jump)
+
+This field is populated by `_compute_codegen_fields()` during `classify_gotos()`.
+
+### codegen_pattern Field
+
+The `codegen_pattern` field (type `GotoCodegenPattern`) provides a pre-computed hint
+for code generation. This eliminates pattern computation at codegen time:
+
+| Pattern | When Set | Python Code |
+|---------|----------|-------------|
+| `BREAK` | Single loop exit | `break` |
+| `MULTI_BREAK` | Exits 2+ nested FOR loops | `raise LoopExit()` |
+| `FORWARD` | Intra-label forward (`is_restructurable=True`) | if/else restructuring |
+| `FUNCTION_CALL` | Cross-label forward jump | `label_func(); return` |
+| `UNSUPPORTED` | External, unresolved, or backward | Error/limitation |
+
+This field is populated by `_compute_codegen_fields()` during `classify_gotos()`.
+
+### target_stmt_index
+
+For intra-label forward GOTOs (`is_cross_label=False`, `goto_type=FORWARD_JUMP`), this field
+contains the index of the target statement in the label body. Used by code generation to
+restructure the GOTO to an if/else block.
+
+**MUMPS Offset Semantics**: `LABEL+n` targets line n from LABEL (0-indexed).
+For example, `G TEST+4` from TEST at line 1 targets line 5.
+
+The value is computed by `_find_stmt_index_for_line()` which maps the target line number
+to a statement index in the label body.
+
+### On MForStatement (back-references and codegen hints)
 
 ```python
 @dataclass
 class MForStatement(MStatement):
+    # Back-references
     has_internal_goto: bool = False
     exit_points: List[MGotoStatement] = field(default_factory=list)
+    
+    # Pre-computed codegen hints
+    has_cross_label_exit: bool = False  # Exit GOTO targets different label
+    needs_exception_wrapper: bool = False  # Outermost FOR for multi-loop exit
+    exit_target: Optional[str] = None  # Target label name (MUMPS name)
 ```
+
+The codegen hint fields are populated during `classify_gotos()` to avoid recomputing
+this information during code generation. The `exit_target` stores the raw MUMPS name;
+code generation translates it to a valid Python identifier when needed.
 
 ## Classification Logic
 
@@ -87,18 +140,22 @@ EARLY  ; Position 0
 MIDDLE ; Position 1
        G EARLY    ; BACKWARD_JUMP, is_cross_label=True (1 → 0)
        G LATER    ; FORWARD_JUMP, is_cross_label=True (1 → 2)
-       G MIDDLE   ; FORWARD_JUMP, is_cross_label=False (same label)
+       G MIDDLE   ; BACKWARD_JUMP, is_cross_label=False (same label, no offset = backward to start)
+       G MIDDLE+3 ; FORWARD_JUMP, is_cross_label=False (same label, offset ahead)
 LATER  ; Position 2
        Q
 ```
 
 The analyzer builds a label position map and compares indices.
 
-**Intra-Label Jumps**: When source and target are in the same label (`is_cross_label=False`),
-the analyzer defaults to `FORWARD_JUMP` since determining forward vs. backward direction
-would require tracking statement order within the label. The `is_cross_label=False` flag
-is the key signal for code generation, indicating the jump stays within local scope and
-can typically be translated to structured control flow.
+**Intra-Label Jumps** (`is_cross_label=False`): When GOTO targets the same label it's contained in:
+
+- **Without offset** (`G LABEL`): Always `BACKWARD_JUMP` - jumps to start of label, creating an implicit loop
+- **With offset** (`G LABEL+n`): Direction depends on whether offset `n` is ahead or behind current position
+  - If line number info available: Compare target offset vs GOTO position
+  - If line number unavailable: Defaults to `FORWARD_JUMP` (conservative assumption)
+
+The `is_cross_label=False` flag indicates the jump stays within local scope.
 
 ### Loop Exit Detection
 
