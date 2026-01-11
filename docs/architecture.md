@@ -248,10 +248,14 @@ if stmt.loop_type == ForLoopType.BOUNDED:
 ```
 
 **Key ASG fields populated by analysis**:
-- `MForStatement.loop_type`, `.loop_var_modified_in_body` → `analyze_for_loops()`
-- `MGotoStatement.goto_type`, `.exits_loops` → `classify_gotos()`
+- `MForStatement.loop_type`, `.loop_var_modified_in_body`, `.has_internal_quit`, `.has_internal_goto`, `.is_infinite` → `analyze_for_loops()`
+- `MGotoStatement.goto_type`, `.exits_loops`, `.is_restructurable` → `classify_gotos()`
 - `MQuitStatement.exits_for`, `.exits_do_block` → `analyze_quit_context()`
 - `MLabel.signature` → `compute_signatures()`
+
+**Direct attribute access**: ASG dataclass fields have default values (typically `False` or `None`).
+Codegen accesses these fields directly without `getattr()` fallbacks. If a field isn't populated,
+it retains its default, which is semantically correct (e.g., `has_internal_quit=False` by default).
 
 ### Why Separate Grammar Files?
 

@@ -138,16 +138,10 @@ class ForGenContext:
         else:
             loop_var = "_"  # Fallback for complex expressions
 
-        # Determine if we need a while loop (loop var modified in body)
-        use_while = getattr(stmt, "loop_var_modified_in_body", False)
-
-        # Determine if we need break statements
-        needs_break = getattr(stmt, "has_internal_quit", False) or getattr(
-            stmt, "has_internal_goto", False
-        )
-
-        # Check if this is an infinite/argumentless loop
-        is_infinite = getattr(stmt, "is_infinite", False) or not stmt.parameters
+        # Read analysis results - ASG fields have defaults, analysis passes populate them
+        use_while = stmt.loop_var_modified_in_body
+        needs_break = stmt.has_internal_quit or stmt.has_internal_goto
+        is_infinite = stmt.is_infinite or not stmt.parameters
 
         # T095: loop_type is now always set by analysis - no fallback needed
         loop_type = stmt.loop_type
@@ -314,8 +308,8 @@ def _restructure_forward_goto(
     Returns:
         The next statement index to continue generation from (skip consumed statements)
     """
-    # Get target statement index from analysis
-    target_idx = getattr(goto, "target_stmt_index", None)
+    # Get target statement index from analysis (populated by classify_gotos)
+    target_idx = goto.target_stmt_index
 
     if target_idx is None:
         # Fall back to generating the IF normally
@@ -948,9 +942,10 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
 
     # Check for backward intra-label GOTO (creates implicit loops)
     # These cannot be restructured to simple if/else and require Spec 006
-    goto_type = getattr(stmt, "goto_type", None)
-    is_cross_label = getattr(stmt, "is_cross_label", True)
-    exits_loops = getattr(stmt, "exits_loops", [])
+    # ASG fields populated by classify_gotos() analysis
+    goto_type = stmt.goto_type
+    is_cross_label = stmt.is_cross_label
+    exits_loops = stmt.exits_loops
 
     if goto_type == GotoType.BACKWARD_JUMP and not is_cross_label:
         raise UnsupportedFeatureError(

@@ -13,7 +13,8 @@
 3. **Complexity first** - Solve hard structural problems early while codebase is small
 4. **Incremental validation** - Each spec should produce testable output against YDB
 5. **Layer separation** - If codegen discovers missing AST nodes, unresolved references, or analysis gaps, fix them in the parser or ASG analysis layer—never build parse-like or generic analysis code into codegen. Codegen should only translate a complete, resolved ASG to Python.
-6. **Minimize runtime surface** - Prefer inline Python over runtime calls. The runtime exists for truly dynamic cases (globals, indirection, XECUTE). For statically analyzable patterns, emit direct Python code even if slightly verbose. Every runtime call is a refactoring barrier.
+6. **Analysis-first codegen** - Semantic properties (loop types, goto targets, variable scope) are computed by analysis passes and stored in ASG fields. Codegen reads these fields directly without fallbacks—never uses `getattr(stmt, field, default)` patterns. ASG dataclass fields have defaults; if analysis didn't run, validation catches it before codegen starts.
+7. **Minimize runtime surface** - Prefer inline Python over runtime calls. The runtime exists for truly dynamic cases (globals, indirection, XECUTE). For statically analyzable patterns, emit direct Python code even if slightly verbose. Every runtime call is a refactoring barrier.
 
 ### Runtime vs Inline Decision Guide
 
