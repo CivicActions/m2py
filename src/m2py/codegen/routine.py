@@ -42,30 +42,93 @@ class GeneratorContext:
     in_extrinsic_call: bool = False
 
 
+class AnalysisNotCompleteError(ValueError):
+    """Raised when code generation is attempted without complete analysis.
+
+    This error indicates that required analysis passes have not been run
+    before code generation was attempted. Each analysis pass populates
+    specific ASG fields that codegen depends on.
+
+    The 'analysis-first' principle requires:
+    - resolve_references(): Resolves label and routine references
+    - classify_gotos(): Classifies GOTO patterns and populates exits_loops
+    - analyze_for_loops(): Classifies FOR loops and detects modifications
+    - analyze_quit_context(): Sets exits_for/exits_do_block on QUITs
+    - analyze_variables(): Computes function signatures
+    """
+
+    def __init__(self, missing_field: str, required_pass: str, context: str = ""):
+        ctx_msg = f" in {context}" if context else ""
+        super().__init__(
+            f"Analysis field '{missing_field}' not set{ctx_msg}. "
+            f"Run {required_pass}() before code generation."
+        )
+        self.missing_field = missing_field
+        self.required_pass = required_pass
+
+
 def validate_analysis_complete(routine: MRoutine) -> None:
     """Validate that required analysis passes have run before codegen.
 
-    Checks that FOR loop analysis and GOTO analysis have populated
-    the ASG fields needed for proper code generation.
+    Checks that FOR loop analysis, GOTO analysis, and QUIT context analysis
+    have populated the ASG fields needed for proper code generation. This
+    enforces the 'analysis-first' principle: codegen reads ASG fields, it
+    does not compute semantic properties.
 
     Args:
         routine: The routine to validate
 
     Raises:
-        ValueError: If analysis appears incomplete
+        AnalysisNotCompleteError: If analysis fields are not populated
+
+    Analysis passes and their outputs:
+        - classify_gotos(): MGotoStatement.goto_type, .exits_loops
+        - analyze_for_loops(): MForStatement.loop_type, .loop_var_modified_in_body
+        - analyze_quit_context(): MQuitStatement.exits_for, .exits_do_block
+        - analyze_variables(): MLabel.signature
     """
-    # For now, just check that the routine has labels
-    # More comprehensive validation will be added as we use more analysis fields
+    from m2py.asg.statements import MForStatement, MGotoStatement
+    from m2py.asg.enums import GotoType
+
     if not routine.labels:
         return  # Empty routine is valid
 
-    # Check that labels exist - analysis creates signatures for each
-    # This is a minimal check; full validation happens during generation
     for label in routine.labels:
         if label.body is None:
             continue
-        # The presence of body.statements indicates parsing completed
-        # Analysis populates fields on individual statements
+
+        # Walk all statements and validate analysis fields
+        for stmt in label.body.walk_statements():
+            # Validate FOR statement analysis
+            if isinstance(stmt, MForStatement):
+                if stmt.loop_type is None:
+                    raise AnalysisNotCompleteError(
+                        "loop_type",
+                        "analyze_for_loops",
+                        f"MForStatement at line {stmt.line_number}",
+                    )
+
+            # Validate GOTO statement analysis
+            if isinstance(stmt, MGotoStatement):
+                if stmt.goto_type is None:
+                    raise AnalysisNotCompleteError(
+                        "goto_type",
+                        "classify_gotos",
+                        f"MGotoStatement at line {stmt.line_number}",
+                    )
+                # LOOP_EXIT and MULTI_LOOP_EXIT must have exits_loops populated
+                if stmt.goto_type in (GotoType.LOOP_EXIT, GotoType.MULTI_LOOP_EXIT):
+                    if not stmt.exits_loops:
+                        raise AnalysisNotCompleteError(
+                            "exits_loops",
+                            "classify_gotos",
+                            f"MGotoStatement (loop exit) at line {stmt.line_number}",
+                        )
+
+            # QUIT validation: exits_for/exits_do_block are Optional and may be
+            # None when QUIT is not inside a FOR or DO block. The analysis pass
+            # sets them when appropriate, so we don't raise errors for None here.
+            # The codegen correctly handles None by generating 'return' statements.
 
 
 def get_scope_strategy_pattern(strategy: ScopeStrategy) -> str:
@@ -256,4 +319,5 @@ __all__ = [
     "GeneratorContext",
     "validate_analysis_complete",
     "get_scope_strategy_pattern",
+    "AnalysisNotCompleteError",
 ]

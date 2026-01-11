@@ -223,6 +223,36 @@ MUMPS has complex semantics that cannot be fully analyzed in a single pass:
 
 The multi-phase approach follows **Constitution Principle III**: All references are resolved before code generation.
 
+### Analysis-First Principle
+
+Code generation follows a strict **analysis-first** principle: semantic properties are computed during
+analysis passes and stored as ASG fields, then codegen simply reads those fields. This design provides:
+
+1. **Clean layer separation**: Analysis computes semantics, codegen generates code
+2. **Reusable analysis**: The same ASG annotations can be used by linting, visualization, or other tools
+3. **Faster codegen**: No repeated ASG traversal during code generation
+4. **Easier testing**: Analysis and codegen can be tested independently
+
+**Validation**: The `validate_analysis_complete()` function verifies that required analysis passes have
+run before code generation begins. If analysis fields are missing, it raises `AnalysisNotCompleteError`
+with a message indicating which analysis pass needs to run.
+
+**Example flow**:
+```python
+# Analysis pass sets field
+stmt.loop_type = ForLoopType.BOUNDED  # analyze_for_loops()
+
+# Codegen reads field (never computes)
+if stmt.loop_type == ForLoopType.BOUNDED:
+    emit_for_range(stmt)
+```
+
+**Key ASG fields populated by analysis**:
+- `MForStatement.loop_type`, `.loop_var_modified_in_body` → `analyze_for_loops()`
+- `MGotoStatement.goto_type`, `.exits_loops` → `classify_gotos()`
+- `MQuitStatement.exits_for`, `.exits_do_block` → `analyze_quit_context()`
+- `MLabel.signature` → `compute_signatures()`
+
 ### Why Separate Grammar Files?
 
 The grammar is split into multiple files for maintainability:

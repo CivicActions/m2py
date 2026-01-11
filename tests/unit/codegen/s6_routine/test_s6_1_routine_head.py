@@ -269,7 +269,12 @@ class TestScopeStrategyGeneration:
 
 @pytest.mark.codegen
 class TestValidateAnalysisComplete:
-    """Tests for validate_analysis_complete (Spec 005)."""
+    """Tests for validate_analysis_complete (Spec 005).
+
+    These tests verify the 'analysis-first' principle: codegen should read
+    ASG fields populated by analysis passes, not compute semantic properties
+    at generation time. The validation catches missing analysis.
+    """
 
     def test_validate_empty_routine(self):
         """Empty routine passes validation."""
@@ -289,3 +294,106 @@ class TestValidateAnalysisComplete:
         routine = MRoutine(name="TEST", labels=[label])
         # Should not raise
         validate_analysis_complete(routine)
+
+    def test_validate_for_without_analysis_raises(self):
+        """FOR statement without loop_type raises AnalysisNotCompleteError."""
+        from m2py.codegen.routine import (
+            validate_analysis_complete,
+            AnalysisNotCompleteError,
+        )
+        from m2py.asg.elements import MLabel, MRoutine, MScope
+        from m2py.asg.statements import MForStatement
+
+        # Create FOR statement without analysis (loop_type is None)
+        for_stmt = MForStatement(loop_var="I", line_number=1)
+        scope = MScope(statements=[for_stmt])
+        label = MLabel(name="LOOP", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        with pytest.raises(AnalysisNotCompleteError) as exc_info:
+            validate_analysis_complete(routine)
+
+        assert exc_info.value.missing_field == "loop_type"
+        assert exc_info.value.required_pass == "analyze_for_loops"
+
+    def test_validate_goto_without_analysis_raises(self):
+        """GOTO statement without goto_type raises AnalysisNotCompleteError."""
+        from m2py.codegen.routine import (
+            validate_analysis_complete,
+            AnalysisNotCompleteError,
+        )
+        from m2py.asg.elements import MLabel, MRoutine, MScope
+        from m2py.asg.statements import MGotoStatement
+
+        # Create GOTO statement without analysis (goto_type is None)
+        goto_stmt = MGotoStatement(targets=[], line_number=1)
+        scope = MScope(statements=[goto_stmt])
+        label = MLabel(name="JUMP", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        with pytest.raises(AnalysisNotCompleteError) as exc_info:
+            validate_analysis_complete(routine)
+
+        assert exc_info.value.missing_field == "goto_type"
+        assert exc_info.value.required_pass == "classify_gotos"
+
+    def test_validate_loop_exit_without_exits_loops_raises(self):
+        """LOOP_EXIT GOTO without exits_loops raises AnalysisNotCompleteError."""
+        from m2py.codegen.routine import (
+            validate_analysis_complete,
+            AnalysisNotCompleteError,
+        )
+        from m2py.asg.elements import MLabel, MRoutine, MScope
+        from m2py.asg.statements import MGotoStatement
+        from m2py.asg.enums import GotoType
+
+        # Create LOOP_EXIT GOTO without exits_loops populated
+        goto_stmt = MGotoStatement(targets=[], line_number=1)
+        goto_stmt.goto_type = GotoType.LOOP_EXIT
+        goto_stmt.exits_loops = []  # Empty - should have loops
+        scope = MScope(statements=[goto_stmt])
+        label = MLabel(name="JUMP", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        with pytest.raises(AnalysisNotCompleteError) as exc_info:
+            validate_analysis_complete(routine)
+
+        assert exc_info.value.missing_field == "exits_loops"
+        assert exc_info.value.required_pass == "classify_gotos"
+
+    def test_validate_analyzed_routine_passes(self):
+        """Routine with complete analysis passes validation."""
+        from m2py.codegen.routine import validate_analysis_complete
+        from m2py.asg.elements import MLabel, MRoutine, MScope
+        from m2py.asg.statements import MForStatement, MGotoStatement, MQuitStatement
+        from m2py.asg.enums import ForLoopType, GotoType
+
+        # Create analyzed FOR statement
+        for_stmt = MForStatement(loop_var="I", line_number=1)
+        for_stmt.loop_type = ForLoopType.BOUNDED
+
+        # Create analyzed GOTO statement (forward jump, not loop exit)
+        goto_stmt = MGotoStatement(targets=[], line_number=2)
+        goto_stmt.goto_type = GotoType.FORWARD_JUMP
+
+        # Create QUIT statement (exits_for/exits_do_block can be None)
+        quit_stmt = MQuitStatement(line_number=3)
+
+        scope = MScope(statements=[for_stmt, goto_stmt, quit_stmt])
+        label = MLabel(name="TEST", body=scope)
+        routine = MRoutine(name="TEST", labels=[label])
+
+        # Should not raise
+        validate_analysis_complete(routine)
+
+    def test_analysis_not_complete_error_message(self):
+        """AnalysisNotCompleteError has informative message."""
+        from m2py.codegen.routine import AnalysisNotCompleteError
+
+        error = AnalysisNotCompleteError(
+            "loop_type", "analyze_for_loops", "MForStatement at line 5"
+        )
+
+        assert "loop_type" in str(error)
+        assert "analyze_for_loops" in str(error)
+        assert "line 5" in str(error)

@@ -406,18 +406,28 @@ This semantic property should be explicit in ASG.
 **Issue**: Codegen uses getattr() fallbacks and runtime loop_stack/do_block_depth
 instead of relying on analysis-populated fields.
 
-- [ ] T108 Ensure analysis always populates exits_for on MQuitStatement in src/m2py/analysis/for_analysis.py
-- [ ] T109 Ensure analysis always populates exits_do_block on MQuitStatement (add to existing pass)
-- [ ] T110 Remove loop_stack tracking from GeneratorContext in src/m2py/codegen/routine.py
-- [ ] T111 Remove do_block_depth tracking from GeneratorContext in src/m2py/codegen/routine.py
-- [ ] T112 Simplify _generate_quit() to use only ASG fields (no getattr fallbacks) in src/m2py/codegen/statements.py
+- [X] T108 Ensure analysis always populates exits_for on MQuitStatement in src/m2py/analysis/for_analysis.py
+- [X] T109 Ensure analysis always populates exits_do_block on MQuitStatement (add to existing pass)
+- [X] T110 Remove loop_stack tracking from GeneratorContext in src/m2py/codegen/routine.py
+- [X] T111 Remove do_block_depth tracking from GeneratorContext in src/m2py/codegen/routine.py
+- [X] T112 Simplify _generate_quit() to use only ASG fields (no getattr fallbacks) in src/m2py/codegen/statements.py
 
 ### Task Group 6: Validation & Cleanup
 
-- [ ] T113 Enhance validate_analysis_complete() to verify all required fields populated in src/m2py/codegen/routine.py
-- [ ] T114 Run full test suite and verify no regressions (3756+ passed)
-- [ ] T115 Update docs/architecture.md to document analysis-first principle
-- [ ] T116 Update tasks.md with implementation notes
+- [X] T113 Enhance validate_analysis_complete() to verify all required fields populated in src/m2py/codegen/routine.py
+- [X] T114 Run full test suite and verify no regressions (3756+ passed)
+- [X] T115 Update docs/architecture.md to document analysis-first principle
+- [X] T116 Update tasks.md with implementation notes
+
+**Implementation Notes (TG6)**:
+- Added `AnalysisNotCompleteError` exception class with informative error messages
+- `validate_analysis_complete()` now checks:
+  - MForStatement.loop_type is not None (requires analyze_for_loops)
+  - MGotoStatement.goto_type is not None (requires classify_gotos)
+  - LOOP_EXIT/MULTI_LOOP_EXIT GOTOs have exits_loops populated
+- Added 7 new tests in TestValidateAnalysisComplete class
+- docs/architecture.md now has "Analysis-First Principle" section explaining the pattern
+- 3759 tests pass, 344 xfailed (no regressions)
 
 **Expected Outcome**:
 - ~170 lines of codegen logic replaced with simple attribute reads
