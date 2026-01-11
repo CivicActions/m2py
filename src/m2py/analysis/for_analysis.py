@@ -12,7 +12,7 @@ and do not perform any text parsing.
 from typing import TYPE_CHECKING, Dict, Optional, Union
 
 from ..asg.elements import MCall, MRoutine, MScope
-from ..asg.enums import PassingMode
+from ..asg.enums import ForLoopType, ForParamType, PassingMode
 from ..asg.expressions import MActualParameter, MVariable
 from ..asg.statements import (
     MDoStatement,
@@ -26,6 +26,47 @@ from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
 if TYPE_CHECKING:
     from .variables import FunctionSignature
+
+
+def _classify_for_loop_type(stmt: MForStatement) -> ForLoopType:
+    """Classify the loop type based on FOR parameters.
+
+    Determines which Python pattern to use for code generation:
+    - ARGUMENTLESS: No parameters (F) - while True
+    - BOUNDED: Single range with start:step:end (F I=1:1:10) - for with range()
+    - OPEN_ENDED: Single open range with start:step (F I=1:1) - for with count()
+    - STRING_LIST: Single values (F I="A","B","C") - for with list
+    - MIXED: Multiple parameters of different types - for with chain()
+
+    Args:
+        stmt: The MForStatement to classify
+
+    Returns:
+        ForLoopType enum value
+    """
+    if not stmt.parameters:
+        return ForLoopType.ARGUMENTLESS
+
+    if len(stmt.parameters) == 1:
+        param = stmt.parameters[0]
+        if param.param_type == ForParamType.VALUE:
+            return ForLoopType.STRING_LIST
+        elif param.param_type == ForParamType.RANGE:
+            return ForLoopType.BOUNDED
+        elif param.param_type == ForParamType.OPEN_RANGE:
+            return ForLoopType.OPEN_ENDED
+        else:
+            return ForLoopType.BOUNDED  # Default fallback
+
+    # Multiple parameters - check if all same type for potential optimization
+    param_types = {p.param_type for p in stmt.parameters}
+    if len(param_types) == 1:
+        # All same type
+        single_type = next(iter(param_types))
+        if single_type == ForParamType.VALUE:
+            return ForLoopType.STRING_LIST
+        # Multiple ranges are still MIXED (need chain)
+    return ForLoopType.MIXED
 
 
 def analyze_for_loops(
@@ -69,6 +110,9 @@ def _analyze_fors_in_scope(
     """
     for stmt in scope.statements:
         if isinstance(stmt, MForStatement):
+            # T087: Always set loop_type during analysis
+            stmt.loop_type = _classify_for_loop_type(stmt)
+
             # Analyze this FOR's body for loop var modification and internal QUIT
             if stmt.body:
                 if stmt.loop_var:

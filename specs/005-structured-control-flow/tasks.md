@@ -342,6 +342,91 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 ---
 
+## Phase 14: Codegen-to-Analysis Refactor (Technical Debt Cleanup)
+
+**Purpose**: Move semantic analysis logic from codegen to analysis/ASG layer, simplifying codegen
+and making semantic information more reusable.
+
+**Principle**: Codegen should read ASG fields, not compute semantic properties at generation time.
+
+### Task Group 1: FOR Loop Analysis Fields ✅ COMPLETE
+
+**Issue**: `ForGenContext.from_statement()` re-computes loop_type if analysis didn't set it.
+Codegen also queries exit_points at generation time instead of reading pre-computed flags.
+
+**Implementation Notes**:
+- Added _classify_for_loop_type() in for_analysis.py to set loop_type during analysis
+- Added has_cross_label_exit, needs_exception_wrapper, exit_target fields to MForStatement
+- exit_target stores raw MUMPS name (codegen translates) to avoid circular import
+- Removed ~60 lines of helper functions from codegen
+- Updated ForGenContext to require loop_type (raises ValueError if not set)
+- Updated unit tests to set loop_type when creating MForStatement manually
+
+- [X] T087 [P] Ensure analyze_for_loops() always sets loop_type on every MForStatement in src/m2py/analysis/for_analysis.py
+- [X] T088 [P] Add MForStatement.has_cross_label_exit field in src/m2py/asg/statements.py
+- [X] T089 [P] Add MForStatement.needs_exception_wrapper field in src/m2py/asg/statements.py
+- [X] T090 [P] Add MForStatement.exit_target field (Optional[str]) in src/m2py/asg/statements.py
+- [X] T091 Populate new FOR fields during classify_gotos() in src/m2py/analysis/goto_analysis.py
+- [X] T092 Remove _for_has_cross_label_exit() helper from src/m2py/codegen/statements.py (use field)
+- [X] T093 Remove _for_needs_loop_exit_wrapper() helper from src/m2py/codegen/statements.py (use field)
+- [X] T094 Remove _get_multi_loop_exit_target() helper from src/m2py/codegen/statements.py (use field)
+- [X] T095 Remove loop_type inference fallback from ForGenContext.from_statement() in src/m2py/codegen/statements.py
+
+### Task Group 2: GOTO Analysis Fields
+
+**Issue**: `GotoGenContext.from_statement()` computes the codegen pattern (break/multi_break/forward/unsupported)
+at generation time. `_is_restructurable_goto()` combines two fields that could be pre-computed.
+
+- [ ] T096 Add MGotoStatement.is_restructurable field in src/m2py/asg/statements.py
+- [ ] T097 Add GotoCodegenPattern enum in src/m2py/asg/enums.py (BREAK, MULTI_BREAK, FORWARD, FUNCTION_CALL, UNSUPPORTED)
+- [ ] T098 Add MGotoStatement.codegen_pattern field in src/m2py/asg/statements.py
+- [ ] T099 Populate is_restructurable and codegen_pattern during classify_gotos() in src/m2py/analysis/goto_analysis.py
+- [ ] T100 Remove _is_restructurable_goto() helper from src/m2py/codegen/statements.py (use field)
+- [ ] T101 Simplify GotoGenContext.from_statement() to just read codegen_pattern field in src/m2py/codegen/statements.py
+
+### Task Group 3: Routine-Level Analysis Fields
+
+**Issue**: `_routine_needs_loop_exit_exception()` walks entire routine at codegen time.
+
+- [ ] T102 Add MRoutine.needs_loop_exit_exception field in src/m2py/asg/elements.py
+- [ ] T103 Set needs_loop_exit_exception at end of classify_gotos() in src/m2py/analysis/goto_analysis.py
+- [ ] T104 Remove _routine_needs_loop_exit_exception() helper from src/m2py/codegen/routine.py (use field)
+
+### Task Group 4: DO Block Classification
+
+**Issue**: `_is_do_block()` detects argumentless DO blocks by structural check.
+This semantic property should be explicit in ASG.
+
+- [ ] T105 Add MDoStatement.is_inline_block field in src/m2py/asg/statements.py
+- [ ] T106 Set is_inline_block during parsing or early analysis in src/m2py/parser/parser.py
+- [ ] T107 Remove _is_do_block() helper from src/m2py/codegen/statements.py (use field)
+
+### Task Group 5: QUIT Context Cleanup
+
+**Issue**: Codegen uses getattr() fallbacks and runtime loop_stack/do_block_depth
+instead of relying on analysis-populated fields.
+
+- [ ] T108 Ensure analysis always populates exits_for on MQuitStatement in src/m2py/analysis/for_analysis.py
+- [ ] T109 Ensure analysis always populates exits_do_block on MQuitStatement (add to existing pass)
+- [ ] T110 Remove loop_stack tracking from GeneratorContext in src/m2py/codegen/routine.py
+- [ ] T111 Remove do_block_depth tracking from GeneratorContext in src/m2py/codegen/routine.py
+- [ ] T112 Simplify _generate_quit() to use only ASG fields (no getattr fallbacks) in src/m2py/codegen/statements.py
+
+### Task Group 6: Validation & Cleanup
+
+- [ ] T113 Enhance validate_analysis_complete() to verify all required fields populated in src/m2py/codegen/routine.py
+- [ ] T114 Run full test suite and verify no regressions (3756+ passed)
+- [ ] T115 Update docs/architecture.md to document analysis-first principle
+- [ ] T116 Update tasks.md with implementation notes
+
+**Expected Outcome**:
+- ~170 lines of codegen logic replaced with simple attribute reads
+- Cleaner separation between analysis (compute semantics) and codegen (generate code)
+- Semantic information reusable by other tools (linting, visualization)
+- Faster codegen (no repeated ASG traversal)
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -355,6 +440,7 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 - **Phase 11**: Depends on Phase 3 (US1 $TEST pattern)
 - **Phase 12 (Polish)**: Depends on all user stories
 - **Phase 13 (Gap Fixes)**: Depends on Phase 12 - post-review fixes
+- **Phase 14 (Refactor)**: Depends on Phase 13 - safe refactor after gaps fixed
 
 ### User Story Dependencies
 
@@ -383,6 +469,12 @@ Within Phase 12:
 
 Within Phase 13:
 - T079, T080, T081, T082, T083 can run in parallel (different test files)
+
+Within Phase 14:
+- T087, T088, T089, T090 can run in parallel (different files)
+- T092, T093, T094 can run in parallel (removing different helpers)
+- T096, T097, T098 can run in parallel (adding fields)
+- T110, T111 can run in parallel (removing context fields)
 
 ---
 

@@ -153,6 +153,9 @@ class ForGenContext:
 
         Returns:
             ForGenContext with analysis results
+
+        Raises:
+            ValueError: If loop_type was not set by analysis
         """
         # Get loop variable name
         if isinstance(stmt.loop_var, str):
@@ -173,24 +176,12 @@ class ForGenContext:
         # Check if this is an infinite/argumentless loop
         is_infinite = getattr(stmt, "is_infinite", False) or not stmt.parameters
 
-        # Get loop type from analysis (default to BOUNDED if not set)
-        loop_type = getattr(stmt, "loop_type", None)
+        # T095: loop_type is now always set by analysis - no fallback needed
+        loop_type = stmt.loop_type
         if loop_type is None:
-            # Infer from parameters if not analyzed
-            if not stmt.parameters:
-                loop_type = ForLoopType.ARGUMENTLESS
-            elif len(stmt.parameters) == 1:
-                param = stmt.parameters[0]
-                if param.param_type == ForParamType.VALUE:
-                    loop_type = ForLoopType.STRING_LIST
-                elif param.param_type == ForParamType.RANGE:
-                    loop_type = ForLoopType.BOUNDED
-                elif param.param_type == ForParamType.OPEN_RANGE:
-                    loop_type = ForLoopType.OPEN_ENDED
-                else:
-                    loop_type = ForLoopType.BOUNDED
-            else:
-                loop_type = ForLoopType.MIXED
+            raise ValueError(
+                "MForStatement.loop_type not set - ensure analyze_for_loops() was called"
+            )
 
         return cls(
             stmt=stmt,
@@ -202,75 +193,11 @@ class ForGenContext:
         )
 
 
-def _for_needs_loop_exit_wrapper(stmt: MForStatement) -> bool:
-    """Check if a FOR loop needs a try/except _LoopExit wrapper.
-
-    T038: The wrapper is needed when this FOR is the outermost target
-    of a MULTI_LOOP_EXIT GOTO. The GOTO raises _LoopExit() and the
-    outermost FOR catches it to exit all nested loops.
-
-    Args:
-        stmt: The MForStatement to check
-
-    Returns:
-        True if this FOR needs try/except _LoopExit wrapper
-    """
-    exit_points = getattr(stmt, "exit_points", [])
-    for exit_stmt in exit_points:
-        if isinstance(exit_stmt, MGotoStatement):
-            goto_type = getattr(exit_stmt, "goto_type", None)
-            if goto_type == GotoType.MULTI_LOOP_EXIT:
-                # Check if this FOR is the outermost (first in exits_loops)
-                exits_loops = getattr(exit_stmt, "exits_loops", [])
-                if exits_loops and exits_loops[0] is stmt:
-                    return True
-    return False
-
-
-def _for_has_cross_label_exit(stmt: MForStatement) -> bool:
-    """Check if a FOR loop has cross-label exit points that need target call.
-
-    T075: For single-loop exits with cross-label targets, we need to
-    track which target to call after the loop exits via break.
-
-    Args:
-        stmt: The MForStatement to check
-
-    Returns:
-        True if this FOR has cross-label LOOP_EXIT GOTOs
-    """
-    exit_points = getattr(stmt, "exit_points", [])
-    for exit_stmt in exit_points:
-        if isinstance(exit_stmt, MGotoStatement):
-            goto_type = getattr(exit_stmt, "goto_type", None)
-            is_cross_label = getattr(exit_stmt, "is_cross_label", True)
-            if goto_type == GotoType.LOOP_EXIT and is_cross_label:
-                return True
-    return False
-
-
-def _get_multi_loop_exit_target(stmt: MForStatement) -> str | None:
-    """Get the target label name for multi-loop exit from this FOR.
-
-    T076: For multi-loop exits, we need the target label to call
-    after catching _LoopExit.
-
-    Args:
-        stmt: The MForStatement (should be outermost)
-
-    Returns:
-        Translated Python name of target label, or None if not found
-    """
-    exit_points = getattr(stmt, "exit_points", [])
-    for exit_stmt in exit_points:
-        if isinstance(exit_stmt, MGotoStatement):
-            goto_type = getattr(exit_stmt, "goto_type", None)
-            is_cross_label = getattr(exit_stmt, "is_cross_label", True)
-            if goto_type == GotoType.MULTI_LOOP_EXIT and is_cross_label:
-                # Get the target label name
-                if exit_stmt.targets:
-                    return translate_name(exit_stmt.targets[0].name)
-    return None
+# T092-T094: Removed _for_needs_loop_exit_wrapper(), _for_has_cross_label_exit(),
+# and _get_multi_loop_exit_target() - now using pre-computed ASG fields:
+# - MForStatement.needs_exception_wrapper
+# - MForStatement.has_cross_label_exit
+# - MForStatement.exit_target
 
 
 @dataclass
@@ -772,10 +699,12 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     # T038: Check if this FOR needs try/except wrapper for multi-loop exit
-    needs_wrapper = _for_needs_loop_exit_wrapper(stmt)
+    # T091: Use pre-computed field from analysis instead of helper function
+    needs_wrapper = stmt.needs_exception_wrapper
 
     # FR-018: Check if this FOR has cross-label single-loop exits
-    has_cross_label_exit = _for_has_cross_label_exit(stmt)
+    # T091: Use pre-computed field from analysis instead of helper function
+    has_cross_label_exit = stmt.has_cross_label_exit
 
     # FR-018: Initialize _goto_target before loop if needed
     if has_cross_label_exit and not needs_wrapper:

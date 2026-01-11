@@ -173,6 +173,8 @@ class TestForGenContextCodegen:
             parameters=[param],
             body=MScope(statements=[]),
         )
+        # Set loop_type (normally set by analyze_for_loops())
+        stmt.loop_type = ForLoopType.BOUNDED
 
         ctx = ForGenContext.from_statement(stmt)
         assert ctx.loop_var == "I"
@@ -197,6 +199,8 @@ class TestForGenContextCodegen:
             parameters=[param],
             body=MScope(statements=[]),
         )
+        # Set loop_type (normally set by analyze_for_loops())
+        stmt.loop_type = ForLoopType.STRING_LIST
 
         ctx = ForGenContext.from_statement(stmt)
         assert ctx.loop_var == "I"
@@ -215,6 +219,8 @@ class TestForGenContextCodegen:
             parameters=[],
             body=MScope(statements=[]),
         )
+        # Set loop_type (normally set by analyze_for_loops())
+        stmt.loop_type = ForLoopType.ARGUMENTLESS
 
         ctx = ForGenContext.from_statement(stmt)
         assert ctx.loop_type == ForLoopType.ARGUMENTLESS
@@ -222,7 +228,7 @@ class TestForGenContextCodegen:
 
     def test_for_gen_context_detects_modified_loop_var(self):
         """ForGenContext detects loop variable modification from analysis."""
-        from m2py.asg.enums import ForParamType
+        from m2py.asg.enums import ForLoopType, ForParamType
         from m2py.asg.statements import MForParameter, MForStatement
         from m2py.asg.elements import MScope
         from m2py.asg.expressions import MLiteral
@@ -239,7 +245,8 @@ class TestForGenContextCodegen:
             parameters=[param],
             body=MScope(statements=[]),
         )
-        # Set analysis flag
+        # Set analysis flags (normally set by analysis passes)
+        stmt.loop_type = ForLoopType.BOUNDED
         stmt.loop_var_modified_in_body = True
 
         ctx = ForGenContext.from_statement(stmt)

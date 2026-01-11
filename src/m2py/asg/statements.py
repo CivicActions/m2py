@@ -230,6 +230,13 @@ class MForStatement(MStatement):
     is_infinite: bool = False  # True for step=0 or ARGUMENTLESS loops
     loop_var_modified_in_body: bool = False  # True if loop variable is SET inside body
 
+    # T088-T090: Pre-computed fields for codegen (populated by classify_gotos)
+    has_cross_label_exit: bool = False  # True if any exit GOTO targets different label
+    needs_exception_wrapper: bool = False  # True if outermost FOR for MULTI_LOOP_EXIT
+    exit_target: Optional[str] = (
+        None  # Target label name (MUMPS name, codegen translates)
+    )
+
 
 # =============================================================================
 # Control Flow - Jumps
