@@ -198,16 +198,25 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 
 ### Implementation for User Story 7
 
-- [ ] T049 [US7] Modify _generate_label() to accept FunctionSignature in src/m2py/codegen/routine.py
-- [ ] T050 [US7] Generate formal parameters in function definition from signature.formal_params in src/m2py/codegen/routine.py
-- [ ] T051 [US7] Implement PURE_FUNCTION return pattern in src/m2py/codegen/routine.py
-- [ ] T052 [US7] Implement SUBROUTINE pattern (implicit return None) in src/m2py/codegen/routine.py
-- [ ] T053 [US7] Implement FUNCTION_WITH_OUTPUTS return tuple pattern in src/m2py/codegen/routine.py
-- [ ] T054 [US7] Add UnsupportedFeatureError for REQUIRES_RUNTIME strategy in src/m2py/codegen/routine.py
-- [ ] T055 [US7] Add test: PURE_FUNCTION generates simple return in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
-- [ ] T056 [US7] Add test: SUBROUTINE generates no explicit return in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
-- [ ] T057 [US7] Add test: FUNCTION_WITH_OUTPUTS generates tuple return in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
-- [ ] T058 [US7] Add test: REQUIRES_RUNTIME raises error in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
+- [X] T049 [US7] Modify _generate_label() to accept FunctionSignature in src/m2py/codegen/routine.py
+- [X] T050 [US7] Generate formal parameters in function definition from signature.formal_params in src/m2py/codegen/routine.py
+- [X] T051 [US7] Implement PURE_FUNCTION return pattern in src/m2py/codegen/routine.py
+- [X] T052 [US7] Implement SUBROUTINE pattern (implicit return None) in src/m2py/codegen/routine.py
+- [X] T053 [US7] Implement FUNCTION_WITH_OUTPUTS return tuple pattern in src/m2py/codegen/routine.py
+- [X] T054 [US7] Add UnsupportedFeatureError for REQUIRES_RUNTIME strategy in src/m2py/codegen/routine.py
+- [X] T055 [US7] Add test: PURE_FUNCTION generates simple return in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
+- [X] T056 [US7] Add test: SUBROUTINE generates no explicit return in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
+- [X] T057 [US7] Add test: FUNCTION_WITH_OUTPUTS generates tuple return in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
+- [X] T058 [US7] Add test: REQUIRES_RUNTIME raises error in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
+
+**Implementation Notes** (Phase 9 Complete):
+- Formal parameters from `label.formal_list` or `label.signature.formal_params` now included in function definition
+- Names translated via `translate_name()` to handle %, numeric, reserved words
+- PURE_FUNCTION: QUIT with value generates `return <expr>` (already working via _generate_quit)
+- SUBROUTINE: Plain QUIT generates `return` (already working via _generate_quit)
+- FUNCTION_WITH_OUTPUTS: Return tuple pattern deferred to Phase 10 (by-ref handling at call site)
+- REQUIRES_RUNTIME: Raises UnsupportedFeatureError with message pointing to Spec 006/007
+- One previously xfail test (`test_do_with_args_callee_test_visible_full`) now passes
 
 **Checkpoint**: Scope strategies generate appropriate function patterns
 

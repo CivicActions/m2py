@@ -174,9 +174,8 @@ class TestTestStackDoWithArgs:
         assert result.output == "ELSE"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Depends on Phase 9 (US7) for formal parameter support")
     def test_do_with_args_callee_test_visible_full(self, execute_mumps):
-        """Full test for DO with args $TEST visibility (requires Phase 9)."""
+        """Full test for DO with args $TEST visibility (Phase 9 complete)."""
         result = execute_mumps(
             'TEST\n I 1\n D SUB(1)\n E  W "ELSE"\n Q\nSUB(X)\n I 0\n Q\n'
         )

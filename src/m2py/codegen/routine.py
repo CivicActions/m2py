@@ -192,18 +192,44 @@ class RoutineGenerator:
     def _generate_label(self, label: MLabel, ctx: GeneratorContext) -> None:
         """Generate Python function from MUMPS label.
 
+        Uses FunctionSignature to determine:
+        - Formal parameters for function definition
+        - Return pattern based on scope_strategy
+
         Args:
             label: MLabel ASG node
             ctx: Generator context
+
+        Raises:
+            UnsupportedFeatureError: For REQUIRES_RUNTIME scope strategy
         """
+        from m2py.codegen import UnsupportedFeatureError
+
         ctx.current_label = label
 
         # Translate label name to valid Python identifier
         func_name = translate_name(label.name)
 
-        # Function definition
-        # For now, ignore formal parameters (Phase 2 scope is basic only)
-        ctx.emitter.line(f"def {func_name}():")
+        # Get formal parameters from label or signature
+        formal_params = []
+        if label.formal_list:
+            formal_params = [translate_name(p) for p in label.formal_list]
+        elif label.signature and label.signature.formal_params:
+            formal_params = [translate_name(p) for p in label.signature.formal_params]
+
+        # Check for REQUIRES_RUNTIME strategy
+        if (
+            label.signature
+            and label.signature.scope_strategy == ScopeStrategy.REQUIRES_RUNTIME
+        ):
+            raise UnsupportedFeatureError(
+                f"Label '{label.name}' requires runtime scope (indirection/XECUTE). "
+                "This is not supported in Spec 005. See Spec 006/007."
+            )
+
+        # Generate function definition with formal parameters
+        params_str = ", ".join(formal_params)
+        ctx.emitter.line(f"def {func_name}({params_str}):")
 
         with ctx.emitter.indented():
             # Declare global _test
