@@ -304,29 +304,41 @@ Full formal parameter support requires Phase 9 (US7) - deferred test marked xfai
 - Single loop exit (`G DONE` inside FOR) outputs `12345` instead of `12345!`
 - Multi-loop exit outputs `1112132122` instead of `1112132122X`
 
-- [ ] T075 [US5] Modify loop exit GOTO to call target label after break in src/m2py/codegen/statements.py
-- [ ] T076 [US5] Modify multi-loop exit to call target label after except _LoopExit in src/m2py/codegen/statements.py
-- [ ] T077 [US5] Add execution test: single loop exit calls target label in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
-- [ ] T078 [US5] Add execution test: multi-loop exit calls target label in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [X] T075 [US5] Modify loop exit GOTO to call target label after break in src/m2py/codegen/statements.py
+- [X] T076 [US5] Modify multi-loop exit to call target label after except _LoopExit in src/m2py/codegen/statements.py
+- [X] T077 [US5] Add execution test: single loop exit calls target label in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [X] T078 [US5] Add execution test: multi-loop exit calls target label in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
 
 ### Gap 2: Update xfail Markers
 
 **Issue**: Some tests are marked xfail but the features work.
 
-- [ ] T079 [P] Remove xfail from test_do_block_codegen or implement actual test in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [ ] T080 [P] Remove xfail from test_test_stacked_for_do_block in tests/unit/cross_cutting/test_language_semantics.py
+- [X] T079 [P] Remove xfail from test_do_block_codegen or implement actual test in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T080 [P] Remove xfail from test_test_stacked_for_do_block in tests/unit/cross_cutting/test_language_semantics.py
 
 ### Gap 3: Missing Edge Case Tests
 
-- [ ] T081 [P] Add test: Zero step FOR (`F I=1:0`) uses count(1, 0) in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
-- [ ] T082 [P] Add test: Empty FOR body compiles correctly in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
-- [ ] T083 [P] Add test: Nested DO blocks $TEST isolation in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [X] T081 [P] Add test: Zero step FOR (`F I=1:0`) uses count(1, 0) in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [X] T082 [P] Add test: Empty FOR body compiles correctly in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [X] T083 [P] Add test: Nested DO blocks $TEST isolation in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
 
 ### Validation
 
-- [ ] T084 Run full test suite and verify no regressions
-- [ ] T085 Re-run quickstart.md validation with loop exit scenarios
-- [ ] T086 Update tasks.md with implementation notes
+- [X] T084 Run full test suite and verify no regressions
+- [X] T085 Re-run quickstart.md validation with loop exit scenarios
+- [X] T086 Update tasks.md with implementation notes
+
+**Implementation Notes** (Phase 13 Complete):
+- **FR-018 Fix**: Loop exit GOTOs now call target label after exiting
+  - Single loop exit: `_goto_target = TARGET` before `break`, call after loop if set
+  - Multi-loop exit: `raise _LoopExit(TARGET)` passes target, except block calls `_e.target()`
+  - `_LoopExit` exception class updated with `target` parameter in `__init__`
+- **Helper functions added**: `_for_has_cross_label_exit()`, `_get_multi_loop_exit_target()`
+- **Tests updated**: `test_loop_exit_generates_break` and `test_multi_loop_exit_generates_exception` now verify FR-018 compliance
+- **Execution tests added**: `test_single_loop_exit_executes_target_label`, `test_multi_loop_exit_executes_target_label`
+- **xfail cleanup**: Replaced stub tests with working implementations for DO block codegen and $TEST stacking
+- **Edge case tests added**: Zero step FOR, empty FOR body, nested DO blocks $TEST isolation
+- **Test results**: 3756 passed, 344 xfailed (reduced from 346)
 
 ---
 

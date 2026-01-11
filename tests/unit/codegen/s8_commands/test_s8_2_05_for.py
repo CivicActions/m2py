@@ -126,6 +126,28 @@ class TestForCommandCodegen:
         assert result.output == "11122122"
         assert result.success is True
 
+    def test_for_zero_step(self, execute_mumps):
+        """FOR with zero step iterates infinitely at same value (T081).
+
+        Zero step (F I=1:0) creates an infinite loop staying at I=1.
+        Loop must be terminated by QUIT.
+        """
+        result = execute_mumps("TEST\n S C=0\n F I=1:0 S C=C+1 I C>5 Q\n W C\n Q\n")
+        assert result.output == "6"
+        assert result.success is True
+
+    def test_for_empty_body(self, generate_python):
+        """FOR with no body compiles correctly (T082).
+
+        A FOR loop with an empty body is valid MUMPS (does nothing).
+        This can happen when all commands are postconditioned and false.
+        """
+        code = generate_python("TEST\n F I=1:1:3\n Q\n")
+        # Should compile without error
+        assert "for I in range(" in code
+        # The loop should have pass or minimal body
+        assert "pass" in code or "_for_step" in code
+
 
 @pytest.mark.codegen
 class TestForGenContextCodegen:

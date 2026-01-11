@@ -227,6 +227,52 @@ def _for_needs_loop_exit_wrapper(stmt: MForStatement) -> bool:
     return False
 
 
+def _for_has_cross_label_exit(stmt: MForStatement) -> bool:
+    """Check if a FOR loop has cross-label exit points that need target call.
+
+    T075: For single-loop exits with cross-label targets, we need to
+    track which target to call after the loop exits via break.
+
+    Args:
+        stmt: The MForStatement to check
+
+    Returns:
+        True if this FOR has cross-label LOOP_EXIT GOTOs
+    """
+    exit_points = getattr(stmt, "exit_points", [])
+    for exit_stmt in exit_points:
+        if isinstance(exit_stmt, MGotoStatement):
+            goto_type = getattr(exit_stmt, "goto_type", None)
+            is_cross_label = getattr(exit_stmt, "is_cross_label", True)
+            if goto_type == GotoType.LOOP_EXIT and is_cross_label:
+                return True
+    return False
+
+
+def _get_multi_loop_exit_target(stmt: MForStatement) -> str | None:
+    """Get the target label name for multi-loop exit from this FOR.
+
+    T076: For multi-loop exits, we need the target label to call
+    after catching _LoopExit.
+
+    Args:
+        stmt: The MForStatement (should be outermost)
+
+    Returns:
+        Translated Python name of target label, or None if not found
+    """
+    exit_points = getattr(stmt, "exit_points", [])
+    for exit_stmt in exit_points:
+        if isinstance(exit_stmt, MGotoStatement):
+            goto_type = getattr(exit_stmt, "goto_type", None)
+            is_cross_label = getattr(exit_stmt, "is_cross_label", True)
+            if goto_type == GotoType.MULTI_LOOP_EXIT and is_cross_label:
+                # Get the target label name
+                if exit_stmt.targets:
+                    return translate_name(exit_stmt.targets[0].name)
+    return None
+
+
 @dataclass
 class GotoGenContext:
     """Context for GOTO code generation decisions.
@@ -719,12 +765,21 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     T038: If this FOR is the outermost target of a MULTI_LOOP_EXIT GOTO,
     wrap the entire loop in try/except _LoopExit.
 
+    FR-018: Cross-label loop exits must call the target label after exiting.
+
     Args:
         stmt: MForStatement node
         ctx: Generator context
     """
     # T038: Check if this FOR needs try/except wrapper for multi-loop exit
     needs_wrapper = _for_needs_loop_exit_wrapper(stmt)
+
+    # FR-018: Check if this FOR has cross-label single-loop exits
+    has_cross_label_exit = _for_has_cross_label_exit(stmt)
+
+    # FR-018: Initialize _goto_target before loop if needed
+    if has_cross_label_exit and not needs_wrapper:
+        ctx.emitter.line("_goto_target = None")
 
     if needs_wrapper:
         ctx.emitter.line("try:")
@@ -751,9 +806,20 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
 
     if needs_wrapper:
         ctx.emitter.dedent()
-        ctx.emitter.line("except _LoopExit:")
+        ctx.emitter.line("except _LoopExit as _e:")
         with ctx.emitter.indented():
-            ctx.emitter.line("pass  # Multi-loop exit completed")
+            # FR-018: Call target label if provided
+            ctx.emitter.line("if _e.target is not None:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("_e.target()")
+                ctx.emitter.line("return")
+
+    # FR-018: Call target after single-loop exit if set
+    if has_cross_label_exit and not needs_wrapper:
+        ctx.emitter.line("if _goto_target is not None:")
+        with ctx.emitter.indented():
+            ctx.emitter.line("_goto_target()")
+            ctx.emitter.line("return")
 
 
 def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
@@ -1055,12 +1121,21 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     if exits_loops and in_for_loop:
         if len(exits_loops) == 1:
             # Single loop exit - generate break
+            # FR-018: For cross-label exits, track target so it can be called after loop
+            if is_cross_label and target is not None:
+                label_name = translate_name(target.name)
+                ctx.emitter.line(f"_goto_target = {label_name}")
             ctx.emitter.line("break")
             return
         else:
             # Multi-loop exit - generate raise _LoopExit()
             # The exception will be caught by the outermost FOR loop
-            ctx.emitter.line("raise _LoopExit()")
+            # FR-018: Pass target label name so it can be called in except block
+            if is_cross_label and target is not None:
+                label_name = translate_name(target.name)
+                ctx.emitter.line(f"raise _LoopExit({label_name})")
+            else:
+                ctx.emitter.line("raise _LoopExit()")
             return
 
     # Default: cross-label GOTO as function call

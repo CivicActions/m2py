@@ -56,6 +56,8 @@ uv run python utils/validate.py --no-ydb --code 'TEST W 1+2 Q'
 
 ## Generating YDB Reference Output
 
+DON'T use the yottadb or yottadb-base image directly - use this ydb image or validate.py instead.
+
 ```bash
 # Run MUMPS file through YDB
 docker run --rm -v "$(pwd):/workspace" ydb routine.m

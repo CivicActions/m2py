@@ -208,11 +208,14 @@ class RoutineGenerator:
 
         # T036: _LoopExit exception for multi-loop exits
         # Only generate if the routine has MULTI_LOOP_EXIT GOTOs
+        # FR-018: Accept optional target parameter for cross-label exits
         if _routine_needs_loop_exit_exception(self._routine):
             ctx.emitter.line("class _LoopExit(Exception):")
             with ctx.emitter.indented():
                 ctx.emitter.line('"""Exception for multi-loop exit via GOTO."""')
-                ctx.emitter.line("pass")
+                ctx.emitter.line("def __init__(self, target=None):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("self.target = target")
             ctx.emitter.blank()
 
     def _generate_label(self, label: MLabel, ctx: GeneratorContext) -> None:

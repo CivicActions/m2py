@@ -85,18 +85,22 @@ class TestTestStackSemanticsCodegen:
     Reference: §7.1.4.10, §8.2.3, verified against YottaDB
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO block $TEST stacking")
-    def test_test_stacked_for_do_block(self):
+    def test_test_stacked_for_do_block(self, execute_mumps):
         """DO blocks stack $TEST, restored on block exit.
+
+        T080: DO blocks preserve caller's $TEST value.
 
         IF 1           ; $TEST=1
         D              ; Starts DO block - stacks $TEST
         . IF 0         ; $TEST=0 inside block
-        . Q
-        ELSE W "NO"    ; Should NOT execute - $TEST restored to 1
+        W $T           ; Should output 1 - $TEST restored after DO block
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST I 1 D  W $T Q
+ . I 0"""
+        result = execute_mumps(source)
+        # After DO block, $TEST should be restored to 1 (from IF 1)
+        assert result.output == "1"
+        assert result.success is True
 
     def test_test_stacked_for_extrinsic(self, execute_mumps):
         """Extrinsic calls stack $TEST, restored on QUIT.

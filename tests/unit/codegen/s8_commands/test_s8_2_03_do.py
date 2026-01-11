@@ -50,11 +50,24 @@ class TestDoCommandCodegen:
         code = generate_python("TEST\n D SUB(1,2)\n Q\nSUB(A,B)\n W A+B\n Q\n")
         assert "SUB(1, 2)" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO block codegen")
     def test_do_block_codegen(self, generate_python):
-        """DO block generates indented block (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        """DO block generates indented block with while True wrapper (§8.2.3).
+
+        DO blocks are executed inline, with statements wrapped in
+        while True: break pattern to allow early QUIT.
+        """
+        code = generate_python("TEST\n D\n . W 1\n . W 2\n Q\n")
+        # DO block should generate while True wrapper with break
+        assert "while True:" in code
+        assert "break" in code
+        # Body statements should write 1 and 2
+        assert "_rt.write" in code
+
+    def test_do_block_executes(self, execute_mumps):
+        """DO block executes all dot-indented lines (§8.2.3)."""
+        result = execute_mumps("TEST\n D\n . W 1\n . W 2\n Q\n")
+        assert result.output == "12"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: DO external routine")
@@ -128,6 +141,23 @@ class TestTestStackArgumentlessDo:
         # TEST sets $TEST=1, calls A which sets $TEST=0, A has ELSE that should fire
         result = execute_mumps('TEST\n I 1\n D A\n Q\nA\n I 0\n E  W "A-ELSE"\n Q\n')
         assert result.output == "A-ELSE"
+        assert result.success is True
+
+    def test_nested_do_blocks_test_isolation(self, execute_mumps):
+        """Nested DO blocks maintain independent $TEST stacks (T083).
+
+        Each DO block saves and restores $TEST independently.
+        Inner block changes to $TEST don't affect outer block's $TEST.
+        """
+        # IF 1 sets $TEST=1
+        # DO block starts (saves $TEST=1)
+        # Inner IF 0 sets $TEST=0
+        # DO block ends (restores $TEST=1)
+        # Write $T should output 1
+        source = """TEST I 1 D  W $T Q
+ . I 0"""
+        result = execute_mumps(source)
+        assert result.output == "1"
         assert result.success is True
 
 

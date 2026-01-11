@@ -178,6 +178,8 @@ class TestIntraLabelGotoCodegen:
 
         When a GOTO inside a single FOR loop targets a label after
         the loop, it should generate 'break' to exit the loop.
+
+        FR-018: Cross-label exits must call the target after loop exit.
         """
         # MUMPS: exit loop when I > 5, then write I
         code = """TEST F I=1:1:100 I I>5 G DONE
@@ -189,18 +191,20 @@ DONE W I
         # The loop exit GOTO should generate 'break'
         assert "break" in python_code
         # Look for the break in the context of the loop (after the if statement)
-        # The TEST function should contain 'break', not 'DONE()'
         test_func = python_code.split("def TEST():")[1].split("def DONE():")[0]
         assert "break" in test_func
-        # The TEST function should NOT call DONE() - it should break instead
-        assert "DONE()" not in test_func
+        # FR-018: Cross-label exit should track target and call after loop
+        assert "_goto_target = DONE" in test_func
+        assert "_goto_target()" in test_func
 
     def test_multi_loop_exit_generates_exception(self, generate_python):
         """GOTO exiting multiple loops generates exception pattern (T041).
 
         When a GOTO inside nested FOR loops needs to exit both loops,
-        it should generate 'raise _LoopExit()' and the outermost loop
+        it should generate 'raise _LoopExit(target)' and the outermost loop
         should be wrapped in try/except _LoopExit.
+
+        FR-018: Cross-label exits should pass target label to exception.
         """
         # MUMPS: exit both loops when I*J > 15
         code = """TEST S X=0
@@ -212,11 +216,43 @@ DONE W I*J
 
         # Should generate the _LoopExit exception class
         assert "class _LoopExit" in python_code
-        # The multi-loop exit GOTO should generate raise
-        assert "raise _LoopExit()" in python_code
+        # FR-018: Cross-label multi-loop exit should pass target label
+        assert "raise _LoopExit(DONE)" in python_code
         # Outer loop should have try/except wrapper
         assert "try:" in python_code
-        assert "except _LoopExit:" in python_code
+        assert "except _LoopExit" in python_code
+        # FR-018: except block should call target
+        assert "_e.target()" in python_code
+
+    def test_single_loop_exit_executes_target_label(self, execute_mumps):
+        """FR-018: Single loop exit GOTO calls target label code (T077).
+
+        When GOTO exits a single loop, it should break from the loop
+        AND then call the target label so its code runs.
+        """
+        # MUMPS: exit loop when I > 5, DONE writes "!"
+        result = execute_mumps(
+            'TEST\n F I=1:1:10 W I I I>5 G DONE\n Q\nDONE\n W "!"\n Q\n'
+        )
+        # Should print 1-6 then "!" (not just 1-6)
+        assert result.output == "123456!"
+        assert result.success is True
+
+    def test_multi_loop_exit_executes_target_label(self, execute_mumps):
+        """FR-018: Multi-loop exit GOTO calls target label code (T078).
+
+        When GOTO exits multiple nested loops, it should break from all
+        AND then call the target label so its code runs.
+        """
+        # MUMPS: exit both loops when I*J > 15, OUT writes "X"
+        # With I,J in 1:5, the condition triggers at I=4,J=4 (16>15)
+        result = execute_mumps(
+            'TEST\n F I=1:1:5 F J=1:1:5 W I,J I I*J>15 G OUT\n Q\nOUT\n W "X"\n Q\n'
+        )
+        # All IJ pairs where I*J <= 15 print, then 4*4=16 triggers GOTO to OUT
+        # Pairs: 11,12,13,14,15, 21,22,23,24,25, 31,32,33,34,35, 41,42,43,44 then X
+        assert result.output == "11121314152122232425313233343541424344X"
+        assert result.success is True
 
 
 @pytest.mark.codegen
