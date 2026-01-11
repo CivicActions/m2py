@@ -278,6 +278,8 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
                 stmt.body.statements = _structure_do_blocks(block_stmts)
                 for child in stmt.body.statements:
                     child.scope = stmt.body
+                # Mark this as an inline block now that it has body statements
+                stmt.is_inline_block = True
 
             result.append(stmt)
             i = j  # Skip past the block statements
@@ -309,6 +311,8 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
                     target_do.body.statements = _structure_do_blocks(block_stmts)
                     for child in target_do.body.statements:
                         child.scope = target_do.body
+                    # Mark this as an inline block now that it has body statements
+                    target_do.is_inline_block = True
                     result.append(stmt)
                     i = j  # Skip past the block statements
                 else:

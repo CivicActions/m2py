@@ -299,6 +299,9 @@ class MDoStatement(MStatement):
     targets: List["MCall"] = field(default_factory=list)
     body: MScope = field(default_factory=MScope)  # For argumentless DO block
 
+    # Pre-computed flag set by parser when body is populated with dot-indented lines
+    is_inline_block: bool = False  # True for DO blocks with dot-indented body
+
 
 @dataclass
 class MQuitStatement(MStatement):

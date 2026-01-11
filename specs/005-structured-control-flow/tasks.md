@@ -388,18 +388,18 @@ at generation time. `_is_restructurable_goto()` combines two fields that could b
 
 **Issue**: `_routine_needs_loop_exit_exception()` walks entire routine at codegen time.
 
-- [ ] T102 Add MRoutine.needs_loop_exit_exception field in src/m2py/asg/elements.py
-- [ ] T103 Set needs_loop_exit_exception at end of classify_gotos() in src/m2py/analysis/goto_analysis.py
-- [ ] T104 Remove _routine_needs_loop_exit_exception() helper from src/m2py/codegen/routine.py (use field)
+- [X] T102 Add MRoutine.needs_loop_exit_exception field in src/m2py/asg/elements.py
+- [X] T103 Set needs_loop_exit_exception at end of classify_gotos() in src/m2py/analysis/goto_analysis.py
+- [X] T104 Remove _routine_needs_loop_exit_exception() helper from src/m2py/codegen/routine.py (use field)
 
 ### Task Group 4: DO Block Classification
 
 **Issue**: `_is_do_block()` detects argumentless DO blocks by structural check.
 This semantic property should be explicit in ASG.
 
-- [ ] T105 Add MDoStatement.is_inline_block field in src/m2py/asg/statements.py
-- [ ] T106 Set is_inline_block during parsing or early analysis in src/m2py/parser/parser.py
-- [ ] T107 Remove _is_do_block() helper from src/m2py/codegen/statements.py (use field)
+- [X] T105 Add MDoStatement.is_inline_block field in src/m2py/asg/statements.py
+- [X] T106 Set is_inline_block during parsing or early analysis in src/m2py/parser/parser.py
+- [X] T107 Remove _is_do_block() helper from src/m2py/codegen/statements.py (use field)
 
 ### Task Group 5: QUIT Context Cleanup
 

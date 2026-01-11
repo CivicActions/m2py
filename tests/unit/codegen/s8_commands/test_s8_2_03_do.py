@@ -235,56 +235,72 @@ class TestTestStackDoWithArgs:
 
 
 @pytest.mark.codegen
-class TestIsDoBlockHelper:
-    """Tests for _is_do_block() helper function.
+class TestIsInlineBlockField:
+    """Tests for MDoStatement.is_inline_block field.
 
-    This helper detects DO blocks (D followed by dot-indented lines),
-    which is the ONLY form of DO that stacks $TEST.
+    This field is set by the parser when dot-indented lines are collected
+    into a DO block body. It's the ONLY form of DO that stacks $TEST.
     """
 
-    def test_is_do_block_with_body(self):
-        """DO block with statements returns True."""
-        from m2py.asg.statements import MDoStatement, MScope, MSetStatement
-        from m2py.codegen.statements import _is_do_block
+    def test_is_inline_block_set_by_parser(self):
+        """Parser sets is_inline_block when DO block has body statements."""
+        from m2py import MUMPSParser
 
-        # DO block has no targets but has body
-        body_stmt = MSetStatement(assignments=[])
-        stmt = MDoStatement(targets=[], body=MScope(statements=[body_stmt]))
+        source = """TEST D
+ . S X=1
+ Q
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
 
-        assert _is_do_block(stmt) is True
-
-    def test_is_do_block_empty_body(self):
-        """DO block without statements returns False."""
-        from m2py.asg.statements import MDoStatement, MScope
-        from m2py.codegen.statements import _is_do_block
-
-        stmt = MDoStatement(targets=[], body=MScope(statements=[]))
-
-        assert _is_do_block(stmt) is False
-
-    def test_is_do_block_label_call(self):
-        """D SUB (label call) returns False - NOT a block."""
-        from m2py.asg.elements import MCall
+        # Find the DO statement
         from m2py.asg.statements import MDoStatement
-        from m2py.codegen.statements import _is_do_block
 
-        target = MCall(name="SUB")
-        stmt = MDoStatement(targets=[target])
+        do_stmt = None
+        for label in routine.labels:
+            for stmt in label.body.walk_statements():
+                if isinstance(stmt, MDoStatement):
+                    do_stmt = stmt
+                    break
+            if do_stmt:
+                break
 
-        assert _is_do_block(stmt) is False
+        assert do_stmt is not None
+        assert do_stmt.is_inline_block is True
 
-    def test_is_do_block_label_call_with_args(self):
-        """D SUB(X) returns False - NOT a block."""
-        from m2py.asg.elements import MCall
-        from m2py.asg.expressions import MActualParameter, MVariable
+    def test_is_inline_block_false_for_label_call(self):
+        """D SUB (label call) has is_inline_block=False."""
+        from m2py import MUMPSParser
+
+        source = """TEST D SUB
+ Q
+SUB W "Hello"
+ Q
+"""
+        parser = MUMPSParser()
+        routine = parser.parse(source)
+
+        # Find the DO statement in TEST label
         from m2py.asg.statements import MDoStatement
-        from m2py.codegen.statements import _is_do_block
 
-        param = MActualParameter(expression=MVariable(name="X"))
-        target = MCall(name="SUB", arguments=[param])
-        stmt = MDoStatement(targets=[target])
+        do_stmt = None
+        for label in routine.labels:
+            if label.name == "TEST":
+                for stmt in label.body.walk_statements():
+                    if isinstance(stmt, MDoStatement):
+                        do_stmt = stmt
+                        break
+                break
 
-        assert _is_do_block(stmt) is False
+        assert do_stmt is not None
+        assert do_stmt.is_inline_block is False
+
+    def test_is_inline_block_default_value(self):
+        """New MDoStatement has is_inline_block=False by default."""
+        from m2py.asg.statements import MDoStatement
+
+        stmt = MDoStatement(targets=[])
+        assert stmt.is_inline_block is False
 
 
 @pytest.mark.codegen

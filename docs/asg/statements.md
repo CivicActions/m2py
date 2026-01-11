@@ -324,6 +324,7 @@ D                    ; argumentless - block follows
 |-------|------|-------------|
 | `targets` | `List[MCall]` | Called labels |
 | `body` | `MScope` | For argumentless DO block |
+| `is_inline_block` | `bool` | True for DO blocks with dot-indented body (set by parser) |
 
 
 ### MQuitStatement

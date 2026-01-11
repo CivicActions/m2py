@@ -94,33 +94,6 @@ def _generate_call_arguments(
     return ", ".join(parts)
 
 
-def _is_do_block(stmt: MDoStatement) -> bool:
-    """Check if this is an argumentless DO block (with dot-indented body).
-
-    Only argumentless DO blocks have $TEST stacking semantics - the caller's
-    $TEST is saved before the block and restored after. This is the ONLY
-    case where $TEST is stacked.
-
-    Label calls (D SUB, D SUB(), D SUB(X)) do NOT stack $TEST - callee's
-    $TEST changes are visible to the caller.
-
-    Per MUMPS spec (verified against YottaDB):
-    - D SUB      -> label call ($TEST NOT stacked)
-    - D SUB()    -> label call with empty args ($TEST NOT stacked)
-    - D SUB(X)   -> label call with args ($TEST NOT stacked)
-    - D          -> DO block with dot lines ($TEST IS stacked)
-              . cmd
-
-    Args:
-        stmt: The MDoStatement to check
-
-    Returns:
-        True if this is an argumentless DO block (body populated)
-    """
-    # DO block has no targets but has body statements
-    return not stmt.targets and stmt.body and len(stmt.body.statements) > 0
-
-
 @dataclass
 class ForGenContext:
     """Context for FOR loop code generation decisions.
@@ -1052,7 +1025,8 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     """
     # Check for argumentless DO block (inline block with body)
     # This is the ONLY case where $TEST is stacked
-    if _is_do_block(stmt):
+    # The is_inline_block field is set by the parser when dot-indented lines are collected
+    if stmt.is_inline_block:
         # Save $TEST before block
         ctx.emitter.line("_saved_test = _test")
 
@@ -1141,6 +1115,5 @@ __all__ = [
     "generate_scope_statements",
     "ForGenContext",
     "GotoGenContext",
-    "_is_do_block",
     "_generate_call_arguments",
 ]
