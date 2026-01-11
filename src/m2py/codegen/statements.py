@@ -202,20 +202,21 @@ class GotoGenContext:
     )
 
     @classmethod
-    def from_statement(
-        cls, stmt: MGotoStatement, loop_stack: List[MForStatement]
-    ) -> "GotoGenContext":
+    def from_statement(cls, stmt: MGotoStatement) -> "GotoGenContext":
         """Create GotoGenContext from an MGotoStatement.
+
+        Uses ASG fields populated by classify_gotos() analysis.
 
         Args:
             stmt: The GOTO statement to analyze
-            loop_stack: Current stack of enclosing FOR loops
 
         Returns:
             GotoGenContext with analysis results
         """
-        in_for_loop = len(loop_stack) > 0
-        enclosing_loops = list(loop_stack)
+        # exits_loops is populated by classify_gotos() analysis
+        exits_loops = stmt.exits_loops or []
+        in_for_loop = len(exits_loops) > 0
+        enclosing_loops = list(exits_loops)
 
         # Get target label name
         target_label = ""
@@ -485,8 +486,8 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
 
     Priority order (checked first to last):
     1. return_value -> return <expr>
-    2. exits_for (from ASG) or loop_stack (runtime) -> break
-    3. do_block_depth > 0 -> break (exit DO block's while True)
+    2. exits_for (from ASG) -> break
+    3. exits_do_block (from ASG) -> break (exit DO block's while True)
     4. default -> return
 
     Args:
@@ -499,16 +500,14 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"return {value_expr}")
         return
 
-    # T042-T043: Check exits_for flag from analysis, or use loop_stack as fallback
-    exits_for = getattr(stmt, "exits_for", None)
-    if exits_for is not None or ctx.loop_stack:
+    # T108: exits_for is set by analyze_quit_context() for QUITs inside FOR loops
+    if stmt.exits_for is not None:
         # Inside a FOR loop - QUIT exits the innermost FOR
         ctx.emitter.line("break")
         return
 
-    # T044: Check exits_do_block flag from analysis, or use do_block_depth as fallback
-    exits_do_block = getattr(stmt, "exits_do_block", None)
-    if exits_do_block is not None or ctx.do_block_depth > 0:
+    # T109: exits_do_block is set by analyze_quit_context() for QUITs inside DO blocks
+    if stmt.exits_do_block is not None:
         # Inside a DO block - QUIT exits only the block (break from while True)
         ctx.emitter.line("break")
         return
@@ -679,23 +678,18 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
 def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     """Generate the body of a FOR loop.
 
-    Manages the loop_stack to track FOR loop nesting for QUIT generation.
+    The QUIT context (exits_for) is set by analyze_quit_context() during analysis,
+    so no runtime tracking is needed here.
 
     Args:
         stmt: MForStatement node
         ctx: Generator context
     """
-    # Push this FOR onto the loop stack
-    ctx.loop_stack.append(stmt)
-    try:
-        if stmt.body and stmt.body.statements:
-            for body_stmt in stmt.body.statements:
-                generate_statement(body_stmt, ctx)
-        else:
-            ctx.emitter.line("pass")
-    finally:
-        # Pop the loop stack
-        ctx.loop_stack.pop()
+    if stmt.body and stmt.body.statements:
+        for body_stmt in stmt.body.statements:
+            generate_statement(body_stmt, ctx)
+    else:
+        ctx.emitter.line("pass")
 
 
 def _generate_for_bounded(
@@ -968,8 +962,8 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     # Note: There is no "continue" pattern - GOTO cannot create continue semantics.
     # Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
     # termination of all FORs in the line containing the GOTO."
-    # Check if this GOTO is inside a FOR loop (from loop_stack)
-    in_for_loop = len(ctx.loop_stack) > 0
+    # exits_loops is populated by classify_gotos() analysis
+    in_for_loop = bool(exits_loops)
 
     # T035/T037: exits_loops determines break vs raise _LoopExit()
     if exits_loops and in_for_loop:
@@ -1032,17 +1026,15 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
 
         # Wrap in while True: so QUIT can use break to exit only the block
         # This is a single-iteration "loop" used for early exit support
+        # The exits_do_block field is set by analyze_quit_context() during analysis,
+        # so no runtime depth tracking is needed here.
         ctx.emitter.line("while True:  # DO block")
-        ctx.do_block_depth += 1
-        try:
-            with ctx.emitter.indented():
-                # Generate block body
-                for body_stmt in stmt.body.statements:
-                    generate_statement(body_stmt, ctx)
-                # Always break at end to ensure single iteration
-                ctx.emitter.line("break")
-        finally:
-            ctx.do_block_depth -= 1
+        with ctx.emitter.indented():
+            # Generate block body
+            for body_stmt in stmt.body.statements:
+                generate_statement(body_stmt, ctx)
+            # Always break at end to ensure single iteration
+            ctx.emitter.line("break")
 
         # Restore $TEST after block
         ctx.emitter.line("_test = _saved_test")

@@ -19,6 +19,7 @@ from m2py.parser.line_parser import (
     parse_line_content,
 )
 from m2py.analysis.for_analysis import analyze_for_loops as _analyze_for_loops
+from m2py.analysis.for_analysis import analyze_quit_context as _analyze_quit_context
 from m2py.analysis.goto_analysis import classify_gotos as _classify_gotos
 from m2py.analysis.resolver import resolve_references as _resolve_references
 from m2py.analysis.semantic_analyzer import analyze_command
@@ -996,6 +997,25 @@ class MUMPSParser:
             - Sets MForStatement.loop_var_modified_in_body for each FOR
         """
         _analyze_for_loops(routine, signatures)
+
+    def analyze_quit_context(self, routine: MRoutine) -> None:
+        """Analyze QUIT statement context for all QUITs in a routine.
+
+        This method walks through all statements and sets context fields
+        on each MQuitStatement:
+        - exits_for: Set to enclosing MForStatement if QUIT is inside a FOR loop
+        - exits_do_block: Set to enclosing MDoStatement if QUIT is inside an inline DO block
+
+        This enables codegen to use ASG fields directly instead of runtime tracking.
+
+        Args:
+            routine: The MRoutine to analyze
+
+        Side Effects:
+            - Sets MQuitStatement.exits_for for QUITs inside FOR loops
+            - Sets MQuitStatement.exits_do_block for QUITs inside DO blocks
+        """
+        _analyze_quit_context(routine)
 
     def analyze_variables(
         self, routine: MRoutine, compute_transitive: bool = False

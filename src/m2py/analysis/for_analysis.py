@@ -374,3 +374,74 @@ def _check_quit_in_scope(scope: MScope) -> bool:
         # Also don't recurse into DO blocks - separate scope
 
     return False
+
+
+def analyze_quit_context(routine: MRoutine) -> None:
+    """Analyze QUIT statement context for all QUITs in a routine.
+
+    This function walks through all statements and sets the context fields
+    on each MQuitStatement:
+    - exits_for: Set to enclosing MForStatement if QUIT is inside a FOR loop
+    - exits_do_block: Set to enclosing MDoStatement if QUIT is inside an inline DO block
+
+    This enables codegen to use ASG fields directly instead of runtime tracking.
+
+    Args:
+        routine: The MRoutine to analyze
+
+    Side Effects:
+        - Sets MQuitStatement.exits_for for QUITs inside FOR loops
+        - Sets MQuitStatement.exits_do_block for QUITs inside DO blocks
+    """
+    for label in routine.labels:
+        _analyze_quit_context_in_scope(
+            label.body, enclosing_for=None, enclosing_do_block=None
+        )
+
+
+def _analyze_quit_context_in_scope(
+    scope: MScope,
+    enclosing_for: Optional[MForStatement],
+    enclosing_do_block: Optional[MDoStatement],
+) -> None:
+    """Recursively analyze QUIT context in a scope.
+
+    Args:
+        scope: The scope to analyze
+        enclosing_for: The innermost enclosing FOR loop, if any
+        enclosing_do_block: The innermost enclosing DO block, if any
+    """
+    for stmt in scope.statements:
+        if isinstance(stmt, MQuitStatement):
+            # A QUIT inside a FOR exits that FOR (takes priority over DO block)
+            if enclosing_for is not None:
+                stmt.exits_for = enclosing_for
+            elif enclosing_do_block is not None:
+                stmt.exits_do_block = enclosing_do_block
+            # Otherwise exits_for and exits_do_block remain None (plain return)
+
+        elif isinstance(stmt, MForStatement):
+            # FOR body: QUIT inside exits this FOR
+            if stmt.body:
+                _analyze_quit_context_in_scope(
+                    stmt.body, enclosing_for=stmt, enclosing_do_block=None
+                )
+
+        elif isinstance(stmt, MDoStatement) and stmt.is_inline_block:
+            # Inline DO block: QUIT inside exits this block
+            if stmt.body:
+                _analyze_quit_context_in_scope(
+                    stmt.body, enclosing_for=None, enclosing_do_block=stmt
+                )
+
+        # Recurse into IF/ELSE scopes - they don't change the QUIT context
+        then_scope = get_then_scope(stmt)
+        if then_scope is not None:
+            _analyze_quit_context_in_scope(
+                then_scope, enclosing_for, enclosing_do_block
+            )
+        else_scope = get_else_scope(stmt)
+        if else_scope is not None:
+            _analyze_quit_context_in_scope(
+                else_scope, enclosing_for, enclosing_do_block
+            )

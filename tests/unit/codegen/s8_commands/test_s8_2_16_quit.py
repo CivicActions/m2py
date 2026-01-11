@@ -32,7 +32,7 @@ class TestQuitCommandCodegen:
     def test_quit_in_for(self, generate_python):
         """QUIT in FOR generates break (§8.2.16).
 
-        T046: QUIT with exits_for=True or inside loop_stack generates break.
+        T046: QUIT with exits_for set by analyze_quit_context() generates break.
         """
         source = """TEST F I=1:1:10 Q
  Q"""
@@ -55,7 +55,7 @@ class TestQuitContextAwareness:
     def test_quit_in_for_generates_break(self, generate_python):
         """T046: QUIT inside FOR loop generates break.
 
-        When exits_for flag is set or loop_stack is non-empty,
+        When exits_for is set by analyze_quit_context(),
         QUIT exits the innermost FOR loop.
         """
         source = """TEST F I=1:1:5 W I I I=3 Q

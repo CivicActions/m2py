@@ -268,7 +268,7 @@ class TestGotoGenContextCodegen:
         target = MCall(name="DONE")
         stmt = MGotoStatement(targets=[target])
 
-        ctx = GotoGenContext.from_statement(stmt, loop_stack=[])
+        ctx = GotoGenContext.from_statement(stmt)
         assert ctx.target_label == "DONE"
         assert ctx.in_for_loop is False
         assert ctx.pattern == "function_call"
@@ -296,8 +296,10 @@ class TestGotoGenContextCodegen:
 
         target = MCall(name="DONE")
         stmt = MGotoStatement(targets=[target])
+        # Set exits_loops on stmt (would be set by analysis in real code)
+        stmt.exits_loops = [for_stmt]
 
-        ctx = GotoGenContext.from_statement(stmt, loop_stack=[for_stmt])
+        ctx = GotoGenContext.from_statement(stmt)
         assert ctx.in_for_loop is True
         assert len(ctx.enclosing_loops) == 1
 
@@ -307,30 +309,16 @@ class TestGotoGenContextCodegen:
         Per MUMPS spec, GOTO cannot create continue semantics - it always
         terminates all FOR loops on the line containing the GOTO.
         """
-        from m2py.asg.elements import MCall, MScope
-        from m2py.asg.enums import ForParamType
-        from m2py.asg.expressions import MLiteral
-        from m2py.asg.statements import MForParameter, MForStatement, MGotoStatement
+        from m2py.asg.elements import MCall
+        from m2py.asg.statements import MGotoStatement
         from m2py.codegen.statements import GotoGenContext
-
-        # Create a FOR statement
-        param = MForParameter(
-            param_type=ForParamType.RANGE,
-            start=MLiteral(value=1),
-            step=MLiteral(value=1),
-            end=MLiteral(value=10),
-        )
-        for_stmt = MForStatement(
-            loop_var="I",
-            parameters=[param],
-            body=MScope(statements=[]),
-        )
 
         target = MCall(name="NEXT")
         stmt = MGotoStatement(targets=[target])
         # Note: There is no is_loop_continue flag - GOTO cannot create continue
+        # from_statement() now only takes stmt (loop context comes from ASG fields)
 
-        ctx = GotoGenContext.from_statement(stmt, loop_stack=[for_stmt])
+        ctx = GotoGenContext.from_statement(stmt)
         # Without exits_loops set, it's just a function call
         assert ctx.pattern == "function_call"
         # Verify "continue" is not a valid pattern
@@ -363,7 +351,7 @@ class TestGotoGenContextCodegen:
         stmt.exits_loops = [for_stmt]
         stmt.codegen_pattern = GotoCodegenPattern.BREAK
 
-        ctx = GotoGenContext.from_statement(stmt, loop_stack=[for_stmt])
+        ctx = GotoGenContext.from_statement(stmt)
         assert ctx.pattern == "break"
 
     def test_goto_gen_context_multi_loop_exit(self):
@@ -398,7 +386,7 @@ class TestGotoGenContextCodegen:
         stmt.exits_loops = [inner_for, outer_for]
         stmt.codegen_pattern = GotoCodegenPattern.MULTI_BREAK
 
-        ctx = GotoGenContext.from_statement(stmt, loop_stack=[outer_for, inner_for])
+        ctx = GotoGenContext.from_statement(stmt)
         assert ctx.pattern == "multi_break"
 
     def test_goto_gen_context_unsupported_external(self):
@@ -413,7 +401,7 @@ class TestGotoGenContextCodegen:
         stmt.goto_type = GotoType.EXTERNAL
         stmt.codegen_pattern = GotoCodegenPattern.UNSUPPORTED
 
-        ctx = GotoGenContext.from_statement(stmt, loop_stack=[])
+        ctx = GotoGenContext.from_statement(stmt)
         assert ctx.pattern == "unsupported"
 
     def test_goto_gen_context_unsupported_backward(self):
@@ -428,7 +416,7 @@ class TestGotoGenContextCodegen:
         stmt.goto_type = GotoType.BACKWARD_JUMP
         stmt.codegen_pattern = GotoCodegenPattern.UNSUPPORTED
 
-        ctx = GotoGenContext.from_statement(stmt, loop_stack=[])
+        ctx = GotoGenContext.from_statement(stmt)
         assert ctx.pattern == "unsupported"
 
     def test_goto_gen_context_forward_intra_label(self):
@@ -444,7 +432,7 @@ class TestGotoGenContextCodegen:
         stmt.is_cross_label = False
         stmt.codegen_pattern = GotoCodegenPattern.FORWARD
 
-        ctx = GotoGenContext.from_statement(stmt, loop_stack=[])
+        ctx = GotoGenContext.from_statement(stmt)
         assert ctx.pattern == "forward"
 
 

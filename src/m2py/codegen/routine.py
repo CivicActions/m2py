@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 from m2py.asg.elements import MLabel, MRoutine
 from m2py.asg.enums import ScopeStrategy
-from m2py.asg.statements import MForStatement
 from m2py.analysis.variables import FunctionSignature
 from m2py.codegen.emitter import CodeEmitter
 from m2py.codegen.names import NameTranslator, translate_name
@@ -38,12 +37,6 @@ class GeneratorContext:
 
     # Spec 005: Function signatures for label code generation
     signatures: Dict[str, FunctionSignature] = field(default_factory=dict)
-
-    # Spec 005: Track nested FOR loops for break/continue generation
-    loop_stack: List[MForStatement] = field(default_factory=list)
-
-    # Spec 005: Track nested DO blocks for QUIT -> break generation
-    do_block_depth: int = 0
 
     # Spec 005: Flag for $TEST save/restore in extrinsic calls
     in_extrinsic_call: bool = False

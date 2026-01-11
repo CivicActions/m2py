@@ -163,17 +163,6 @@ class TestGeneratorContextCodegen:
         assert hasattr(ctx, "signatures")
         assert isinstance(ctx.signatures, dict)
 
-    def test_generator_context_has_loop_stack(self):
-        """GeneratorContext has loop_stack for tracking nested FOR loops."""
-        from m2py.codegen.routine import GeneratorContext
-        from m2py.codegen.emitter import CodeEmitter
-        from m2py.asg.elements import MRoutine
-
-        routine = MRoutine(name="TEST", labels=[])
-        ctx = GeneratorContext(routine=routine, emitter=CodeEmitter())
-        assert hasattr(ctx, "loop_stack")
-        assert isinstance(ctx.loop_stack, list)
-
     def test_generator_context_has_in_extrinsic_call(self):
         """GeneratorContext has in_extrinsic_call flag for $TEST save/restore."""
         from m2py.codegen.routine import GeneratorContext
