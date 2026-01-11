@@ -760,6 +760,12 @@ Review before coding:
 
 4. AST validation: `ast.parse()` at end of `generate()` catches syntax errors early
 
+5. **Architectural extensibility** (validated for 006+):
+   - Labels-as-functions pattern preserved; Spec 006 adds `RoutineState` class for cross-label variable sharing
+   - Current `label(); return` GOTO pattern extended with trampoline wrapper for cyclic GOTOs
+   - Statement dispatcher (`generate_statement()`) works inside match-case for state machine fallback
+   - `GeneratorContext` extensible to track shared vs local variables per routine analysis
+
 ### Validation
 
 - Embedded pytest tests (see 004 test strategy)
@@ -820,9 +826,11 @@ NEXT S Y=X+1    ; Needs access to X set in MAIN
 ```
 
 Options:
-1. **State class**: `RoutineState(x=None, y=None)` passed to all labels
+1. **State class**: `RoutineState(x=None, y=None)` passed to all labels ← **preferred, preserves labels-as-functions**
 2. **Outer scope**: All vars in module scope, labels are inner functions
 3. **Runtime**: `_rt.get("X")` - but this undermines local var optimization
+
+**Architectural note**: Spec 005's labels-as-functions pattern is preserved. The `RoutineState` class is an additive extension—variable analysis (`input_variables`, `output_variables`) already computes what's needed for state class generation. Simple routines without cross-label GOTOs keep Python locals.
 
 Spec 006 research spike should evaluate these options.
 
@@ -942,7 +950,19 @@ while True:
 
 - `has_unstructured_goto=True` → State Machine (required)
 - Computed offset target (`G LABEL+expr`) → State Machine (line dispatch)
-- Otherwise → Labels-as-Functions (preferred)
+- Otherwise → Labels-as-Functions with trampoline (preferred)
+
+**Trampoline pattern** (additive to Spec 005):
+```python
+# Labels return next label name instead of calling directly
+def A(state): state.x = 1; return "B"
+def B(state): return "A" if condition else None
+
+# Trampoline prevents stack growth for cyclic GOTOs
+next_label = "A"
+while next_label:
+    next_label = labels[next_label](state)
+```
 
 ### Deliverables
 
@@ -1197,6 +1217,8 @@ Review before coding:
    | Runtime dispatch | — | `_line_dispatch(line_num)` method |
    
    **⚠️ Parser extension needed**: Statement line numbers require enhancing textX model classes to capture source positions during parsing.
+   
+   **Architectural note**: This is the one area requiring parser/analysis enhancement before codegen can proceed. The codegen architecture (dispatchers, emitters, context) is ready—just needs `MStatement.line_number` populated. Can be done incrementally without blocking Spec 006.
    
    **Code generation approach**: Build `_line_map: Dict[int, Callable]` at routine init. For `G LABEL+expr`, evaluate `target_line = label_line + int(expr)`, dispatch via `_line_map[target_line]`. Error if line not in map.
    

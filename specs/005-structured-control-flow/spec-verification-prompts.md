@@ -4,4 +4,4 @@ Double check all of our codegen code systematically one more time and identify i
 
 Validate each approach relative to what is needed for spec 005+
 
-Remove task/T or phase references from comments in code, tests or documentation
+Remove all task/T or phase references from comments in code, tests or documentation
