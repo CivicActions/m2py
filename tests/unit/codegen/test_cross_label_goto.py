@@ -307,7 +307,6 @@ ADD S X=X+10 W X Q"""
         assert result.output == "11"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Subscripted assignments not yet supported")
     def test_subscripted_locals_visibility(self, execute_mumps):
         """T075: Subscripted local variables visible across labels.
 

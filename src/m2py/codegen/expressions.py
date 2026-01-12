@@ -91,19 +91,34 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     Spec 006: When using TRAMPOLINE strategy and the variable is in state_vars,
     access it via `state.VAR` instead of just `VAR`.
 
+    Spec 006 (T075): Handle subscripted variable reads for MArray-backed variables.
+    For array variables, generate: state.A.get(subscripts)
+
     Args:
         var: MVariable node
         ctx: Generator context
 
     Returns:
-        Python variable name (translated if necessary)
+        Python expression string for the variable reference
     """
     # Translate name to valid Python identifier
     python_name = translate_name(var.name)
 
-    # For now, subscripts are not supported (Phase 2 scope)
+    # Spec 006 (T075): Handle subscripted array access
     if var.subscripts:
-        raise NotImplementedError("Subscripted variables not yet supported")
+        # Generate subscript expressions
+        subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+
+        # Determine base variable access
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.array_vars:
+            # MArray in RoutineState: state.A.get(subscripts)
+            base = f"state.{python_name}"
+        else:
+            # Local MArray variable: A.get(subscripts)
+            base = python_name
+
+        # Use .get() for reading - returns value directly (or "" if undefined)
+        return f"{base}.get({', '.join(subscript_exprs)})"
 
     # Spec 006: Check if variable should be accessed via state
     if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.state_vars:

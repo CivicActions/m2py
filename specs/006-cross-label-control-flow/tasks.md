@@ -266,7 +266,7 @@ Tests added in Phase 7 verify existing functionality.
 
 - [X] T073 [US3] Test simple variable: `TEST S X=1 G NEXT Q` / `NEXT W X Q` → "1" (covered by T059)
 - [X] T074 [US3] Test multiple variables: `TEST S A=1,B=2,C=3 G CALC Q` / `CALC W A+B+C Q` → "6" (covered by T061)
-- [X] T075 [US3] Test subscripted locals: `TEST S A(1)=10,A(2)=20 G SUM Q` / `SUM W A(1)+A(2) Q` → "30" (xfail - subscripted assignments not implemented)
+- [X] T075 [US3] Test subscripted locals: `TEST S A(1)=10,A(2)=20 G SUM Q` / `SUM W A(1)+A(2) Q` → "30" ✅
 - [X] T076 [US3] Test modification in target: `TEST S X=1 G ADD Q` / `ADD S X=X+10 W X Q` → "11"
 - [X] T076a [US3] [FR-021] Test NEWed variable isolation: `TEST N X S X=1 G NEXT Q` / `NEXT W X Q` → "" (xfail - NEW command not implemented)
 - [X] T076b [US3] [FR-022] Test formal param isolation: `TEST D SUB(5) Q` / `SUB(X) G SHOW Q` / `SHOW W X Q` → "" (xfail - DO with args has issues)

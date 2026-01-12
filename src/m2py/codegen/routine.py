@@ -49,6 +49,9 @@ class GeneratorContext:
     # Spec 006: Variables stored in RoutineState (for state.VAR access)
     state_vars: set[str] = field(default_factory=set)
 
+    # Spec 006: Array variables (MArray-backed) for subscript access
+    array_vars: set[str] = field(default_factory=set)
+
 
 class AnalysisNotCompleteError(ValueError):
     """Raised when code generation is attempted without complete analysis.
@@ -205,10 +208,12 @@ class RoutineGenerator:
         Returns:
             Python source code as string
         """
-        # Compute state vars for trampoline pattern
+        # Compute state vars and array vars for trampoline pattern
         state_vars: set[str] = set()
+        array_vars: set[str] = set()
         if self._strategy == GotoStrategy.TRAMPOLINE:
             state_vars = self._routine.routine_state_vars or set()
+            array_vars = self._routine.array_vars or set()
 
         ctx = GeneratorContext(
             routine=self._routine,
@@ -216,6 +221,7 @@ class RoutineGenerator:
             name_translator=self._name_translator,
             strategy=self._strategy,
             state_vars=state_vars,
+            array_vars=array_vars,
         )
 
         # Generate module preamble

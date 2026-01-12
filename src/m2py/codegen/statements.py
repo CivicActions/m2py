@@ -447,6 +447,9 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
     Spec 006: When using TRAMPOLINE strategy and the variable is in state_vars,
     assign to `state.VAR` instead of just `VAR`.
 
+    Spec 006 (T075): Handle subscripted assignments for MArray-backed variables.
+    For array variables, generate: state.A[subscripts] = value
+
     Args:
         stmt: MSetStatement node
         ctx: Generator context
@@ -458,16 +461,39 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
         # Get target variable name
         if isinstance(assignment.target, MVariable):
             target_name = translate_name(assignment.target.name)
+            var_name = assignment.target.name
 
-            # Subscripts not supported yet
+            # Spec 006 (T075): Handle subscripted array assignments
             if assignment.target.subscripts:
-                raise NotImplementedError("Subscripted assignments not yet supported")
+                # Generate subscript expressions
+                subscript_exprs = [
+                    generate_expr(sub, ctx) for sub in assignment.target.subscripts
+                ]
+
+                # Determine base variable access
+                if (
+                    ctx.strategy == GotoStrategy.TRAMPOLINE
+                    and var_name in ctx.array_vars
+                ):
+                    # MArray in RoutineState: state.A[subscripts] = value
+                    base = f"state.{target_name}"
+                else:
+                    # Local MArray variable: A[subscripts] = value
+                    base = target_name
+
+                # Format subscripts: single key or tuple
+                if len(subscript_exprs) == 1:
+                    target_expr = f"{base}[{subscript_exprs[0]}]"
+                else:
+                    target_expr = f"{base}[{', '.join(subscript_exprs)}]"
+
+                # Generate value expression and emit assignment
+                value_expr = generate_expr(assignment.value, ctx)
+                ctx.emitter.line(f"{target_expr} = {value_expr}")
+                continue
 
             # Spec 006: Check if variable should be accessed via state
-            if (
-                ctx.strategy == GotoStrategy.TRAMPOLINE
-                and assignment.target.name in ctx.state_vars
-            ):
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
                 target_name = f"state.{target_name}"
         else:
             raise NotImplementedError(
