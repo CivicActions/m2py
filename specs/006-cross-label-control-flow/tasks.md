@@ -307,17 +307,17 @@ Tests added in Phase 7 verify existing functionality.
 
 ### 9.1 Implementation
 
-- [ ] T084 [US5] Verify trampoline structure in generated code
-- [ ] T085 [US5] Verify no Python recursion for cyclic patterns
+- [X] T084 [US5] Verify trampoline structure in generated code (existing tests: test_trampoline_generates_label_dict, test_trampoline_generates_entry_point)
+- [X] T085 [US5] Verify no Python recursion for cyclic patterns (test_trampoline_no_recursion_error_10000_iterations proves this)
 
 ### 9.2 Tests
 
-- [ ] T086 [US5] Test trampoline generated for cross-label: `needs_trampoline=True` → has `while` dispatch
-- [ ] T087 [US5] Test no trampoline for intra-label only: `needs_trampoline=False` → no dispatch loop
-- [ ] T088 [US5] Test trampoline exits correctly on QUIT/None return
-- [ ] T089 [US5] Test 1000+ cyclic iterations without RecursionError (A→B→A pattern)
+- [X] T086 [US5] Test trampoline generated for cross-label: `needs_trampoline=True` → has `while` dispatch (test_trampoline_generates_entry_point)
+- [X] T087 [US5] Test no trampoline for intra-label only: `needs_trampoline=False` → no dispatch loop (test_simple_routine_no_trampoline, test_intra_label_goto_no_trampoline)
+- [X] T088 [US5] Test trampoline exits correctly on QUIT/None return (test_trampoline_exits_on_quit) ✅
+- [X] T089 [US5] Test 1000+ cyclic iterations without RecursionError (test_trampoline_no_recursion_error_1000_iterations, test_trampoline_no_recursion_error_10000_iterations) ✅
 
-**Checkpoint**: User Story 5 complete - trampoline mechanics verified
+**Checkpoint**: User Story 5 complete ✅ - trampoline mechanics verified
 
 ---
 

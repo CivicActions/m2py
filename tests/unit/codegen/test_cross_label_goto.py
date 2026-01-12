@@ -175,6 +175,44 @@ NEXT W X Q"""
         assert "state.X = 1" in code
         assert "state.X)" in code  # Used in write
 
+    def test_trampoline_exits_on_quit(self, execute_mumps):
+        """T088: Trampoline exits correctly when label returns None.
+
+        MUMPS: TEST G A Q / A W "done" Q
+        Expected: "done" (trampoline exits after A returns None)
+        """
+        source = """TEST G A Q
+A W "done" Q"""
+        result = execute_mumps(source)
+        assert result.output == "done"
+        assert result.success is True
+
+    def test_trampoline_no_recursion_error_1000_iterations(self, execute_mumps):
+        """T089: Trampoline handles 1000+ cyclic iterations without RecursionError.
+
+        Pattern: TEST -> LOOP -> LOOP -> ... (1000 times)
+        Uses trampoline dispatch, not Python recursion.
+        """
+        source = """TEST S N=0 G LOOP Q
+LOOP S N=N+1 I N<1000 G LOOP
+ W N Q"""
+        result = execute_mumps(source)
+        assert result.output == "1000"
+        assert result.success is True
+
+    def test_trampoline_no_recursion_error_10000_iterations(self, execute_mumps):
+        """T089 extended: Trampoline handles 10000+ cyclic iterations.
+
+        This would cause RecursionError with naive function calls.
+        Python default recursion limit is ~1000.
+        """
+        source = """TEST S N=0 G LOOP Q
+LOOP S N=N+1 I N<10000 G LOOP
+ W N Q"""
+        result = execute_mumps(source)
+        assert result.output == "10000"
+        assert result.success is True
+
 
 @pytest.mark.codegen
 class TestSimpleFunctionsNotAffected:
