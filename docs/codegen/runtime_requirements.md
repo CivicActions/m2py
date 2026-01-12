@@ -223,6 +223,88 @@ def kill_all(runtime):
     runtime.variables.clear()
 ```
 
+## MArray: Local Subscripted Variables
+
+MUMPS local variables can be subscripted arrays with unique semantics:
+- Each node can have BOTH a value AND children
+- Undefined access returns empty string `""`
+- Numeric and string subscripts follow collation order
+
+```mumps
+S A=1          ; Root value
+S A(1)=2       ; Child (1) has value
+S A(1,2)=3     ; Grandchild (1,2) has value
+W A,A(1),A(1,2)  ; Outputs: 123
+```
+
+The `MArray` class provides these semantics for generated Python:
+
+```python
+from m2py.runtime import MArray
+
+# Create array variable
+A = MArray()
+A.value = 1            # Root value: S A=1
+A[1] = 2               # S A(1)=2
+A[1, 2] = 3            # S A(1,2)=3
+
+# Access
+A.get()                # → 1 (W A)
+A.get(1)               # → 2 (W A(1))
+A.get(1, 2)            # → 3 (W A(1,2))
+A.get(9)               # → "" (undefined returns empty string)
+```
+
+### $DATA Semantics
+
+```python
+A.defined()            # → 11 (has value AND children)
+A.defined(1)           # → 11 (has value AND children)
+A.defined(1, 2)        # → 1  (has value only)
+A.defined(9)           # → 0  (undefined)
+```
+
+| Return | Meaning |
+|--------|---------|
+| 0 | Undefined |
+| 1 | Has value only |
+| 10 | Has children only |
+| 11 | Has value AND children |
+
+### KILL Command
+
+```python
+A.kill(1)              # K A(1) - removes node and all descendants
+A.kill()               # K A - clears entire array
+```
+
+### $ORDER Traversal
+
+```python
+A["alpha"] = 1
+A["beta"] = 2  
+A["gamma"] = 3
+
+A.order("")            # → "alpha" (first subscript)
+A.order("alpha")       # → "beta" (next subscript)
+A.order("gamma")       # → "" (past end)
+```
+
+Numbers sort before strings in MUMPS collation.
+
+### Use in Cross-Label Control Flow
+
+When subscripted variables flow across label boundaries (cross-label GOTOs), they are represented as MArray fields in RoutineState:
+
+```python
+@dataclass
+class RoutineState:
+    X: Any = None                             # Simple variable
+    A: MArray = field(default_factory=MArray) # Subscripted variable
+```
+
+See `src/m2py/codegen/shared_state.py` for RoutineState generation.
+
 ## Error Handling
 
 ```mumps

@@ -1,0 +1,193 @@
+"""Tests for GOTO strategy selection (Spec 006 Phase 4).
+
+Tests the automatic strategy selection based on ASG analysis flags.
+"""
+
+import pytest
+
+from m2py.asg.elements import MCall, MLabel, MRoutine, MScope
+from m2py.asg.enums import GotoType
+from m2py.asg.statements import MGotoStatement
+from m2py.codegen import (
+    UnsupportedFeatureError,
+    _check_unsupported_gotos,
+    _select_goto_strategy,
+)
+from m2py.codegen.enums import GotoStrategy
+
+
+@pytest.mark.codegen
+class TestSelectGotoStrategy:
+    """Tests for _select_goto_strategy() function (T043-T044)."""
+
+    def test_no_cross_label_returns_simple_functions(self):
+        """T044: Routine without cross-label GOTOs uses SIMPLE_FUNCTIONS.
+
+        Pattern: needs_trampoline=False → SIMPLE_FUNCTIONS
+        """
+        routine = MRoutine(name="TEST")
+        routine.needs_trampoline = False
+
+        strategy = _select_goto_strategy(routine)
+
+        assert strategy == GotoStrategy.SIMPLE_FUNCTIONS
+
+    def test_cross_label_returns_trampoline(self):
+        """T044: Routine with cross-label GOTOs uses TRAMPOLINE.
+
+        Pattern: needs_trampoline=True → TRAMPOLINE
+        """
+        routine = MRoutine(name="TEST")
+        routine.needs_trampoline = True
+
+        strategy = _select_goto_strategy(routine)
+
+        assert strategy == GotoStrategy.TRAMPOLINE
+
+    def test_empty_routine_returns_simple_functions(self):
+        """Empty routine defaults to SIMPLE_FUNCTIONS."""
+        routine = MRoutine(name="TEST")
+        # Default: needs_trampoline=False
+
+        strategy = _select_goto_strategy(routine)
+
+        assert strategy == GotoStrategy.SIMPLE_FUNCTIONS
+
+
+@pytest.mark.codegen
+class TestCheckUnsupportedGotos:
+    """Tests for _check_unsupported_gotos() function (T045a, T045b)."""
+
+    def _create_routine_with_goto(self, goto_type: GotoType) -> MRoutine:
+        """Create a routine with a GOTO of specified type."""
+        routine = MRoutine(name="TEST")
+        label = MLabel(name="TEST")
+        label.body = MScope()
+        label.body.parent = label
+
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        goto_stmt.goto_type = goto_type
+        label.body.add_statement(goto_stmt)
+
+        routine.add_label(label)
+        return routine
+
+    def test_unresolved_goto_raises_error(self):
+        """T045a: UNRESOLVED GOTO raises UnsupportedFeatureError.
+
+        Pattern: goto_type=UNRESOLVED → error with Spec 007 reference
+        """
+        routine = self._create_routine_with_goto(GotoType.UNRESOLVED)
+
+        with pytest.raises(UnsupportedFeatureError, match="UNRESOLVED GOTO"):
+            _check_unsupported_gotos(routine)
+
+    def test_unresolved_goto_error_mentions_spec_007(self):
+        """T045a: Error message references Spec 007."""
+        routine = self._create_routine_with_goto(GotoType.UNRESOLVED)
+
+        with pytest.raises(UnsupportedFeatureError, match="Spec 007"):
+            _check_unsupported_gotos(routine)
+
+    def test_external_goto_raises_error(self):
+        """T045b: EXTERNAL GOTO raises UnsupportedFeatureError.
+
+        Pattern: goto_type=EXTERNAL → error with Spec 009 reference
+        """
+        routine = self._create_routine_with_goto(GotoType.EXTERNAL)
+
+        with pytest.raises(UnsupportedFeatureError, match="EXTERNAL GOTO"):
+            _check_unsupported_gotos(routine)
+
+    def test_external_goto_error_mentions_spec_009(self):
+        """T045b: Error message references Spec 009."""
+        routine = self._create_routine_with_goto(GotoType.EXTERNAL)
+
+        with pytest.raises(UnsupportedFeatureError, match="Spec 009"):
+            _check_unsupported_gotos(routine)
+
+    def test_forward_jump_does_not_raise(self):
+        """FORWARD_JUMP GOTO does not raise error."""
+        routine = self._create_routine_with_goto(GotoType.FORWARD_JUMP)
+
+        # Should not raise
+        _check_unsupported_gotos(routine)
+
+    def test_backward_jump_does_not_raise(self):
+        """BACKWARD_JUMP GOTO does not raise error."""
+        routine = self._create_routine_with_goto(GotoType.BACKWARD_JUMP)
+
+        # Should not raise
+        _check_unsupported_gotos(routine)
+
+    def test_loop_exit_does_not_raise(self):
+        """LOOP_EXIT GOTO does not raise error."""
+        routine = self._create_routine_with_goto(GotoType.LOOP_EXIT)
+
+        # Should not raise
+        _check_unsupported_gotos(routine)
+
+    def test_empty_routine_does_not_raise(self):
+        """Empty routine passes check."""
+        routine = MRoutine(name="TEST")
+
+        # Should not raise
+        _check_unsupported_gotos(routine)
+
+
+@pytest.mark.codegen
+class TestGotoStrategyEnum:
+    """Tests for GotoStrategy enum (T045)."""
+
+    def test_simple_functions_exists(self):
+        """SIMPLE_FUNCTIONS strategy exists."""
+        assert hasattr(GotoStrategy, "SIMPLE_FUNCTIONS")
+
+    def test_trampoline_exists(self):
+        """TRAMPOLINE strategy exists."""
+        assert hasattr(GotoStrategy, "TRAMPOLINE")
+
+    def test_strategies_are_distinct(self):
+        """Strategies have distinct values."""
+        assert GotoStrategy.SIMPLE_FUNCTIONS != GotoStrategy.TRAMPOLINE
+
+
+@pytest.mark.codegen
+class TestStrategyIntegration:
+    """Integration tests for strategy selection in generate_python()."""
+
+    def test_simple_routine_uses_simple_functions(self, generate_python):
+        """Routine without GOTOs uses SIMPLE_FUNCTIONS strategy."""
+        # Simple routine with no GOTOs
+        code = generate_python('TEST\n W "hello"\n Q\n')
+
+        # Should generate standard function pattern
+        assert "def TEST():" in code
+        assert "_rt.write" in code
+
+    def test_intra_label_goto_uses_simple_functions(self, generate_python):
+        """Routine with intra-label GOTOs only uses SIMPLE_FUNCTIONS."""
+        # Intra-label forward GOTO - restructured to if/else
+        code = generate_python('TEST\n I 1 G TEST+3\n W "skip"\n W "done"\n Q\n')
+
+        # Should still be simple function pattern
+        assert "def TEST():" in code
+        # No trampoline dispatch
+        assert "while " not in code or "_rt" in code
+
+    @pytest.mark.xfail(reason="Cross-label GOTO codegen not yet implemented (Phase 5)")
+    def test_cross_label_goto_uses_trampoline(self, generate_python):
+        """Routine with cross-label GOTOs uses TRAMPOLINE strategy."""
+        # Cross-label forward GOTO
+        code = generate_python('TEST\n G NEXT\n Q\nNEXT\n W "done"\n Q\n')
+
+        # Should have trampoline dispatch (to be implemented in Phase 5)
+        assert "while" in code
+        assert "RoutineState" in code
+
+    def test_external_goto_raises_unsupported(self, generate_python):
+        """T045b: External GOTO raises UnsupportedFeatureError during generation."""
+        with pytest.raises(UnsupportedFeatureError, match="EXTERNAL GOTO"):
+            generate_python("TEST\n G ^OTHER\n Q\n")

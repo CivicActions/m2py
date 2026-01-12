@@ -152,40 +152,40 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 ---
 
-## Phase 4: Codegen Infrastructure
+## Phase 4: Codegen Infrastructure ✅ COMPLETE
 
 **Purpose**: Build shared infrastructure for all cross-label strategies
 
 ### 4.1 Strategy Selector
 
-- [ ] T043 Create `_select_goto_strategy()` function in src/m2py/codegen/__init__.py
-- [ ] T044 Strategy logic:
+- [X] T043 Create `_select_goto_strategy()` function in src/m2py/codegen/__init__.py
+- [X] T044 Strategy logic:
   - `needs_trampoline=True` → `TRAMPOLINE` with RoutineState
   - `needs_trampoline=False` → `SIMPLE_FUNCTIONS` (current Spec 005 behavior)
-- [ ] T045 Add GotoStrategy enum to src/m2py/codegen/enums.py (TRAMPOLINE, SIMPLE_FUNCTIONS)
-- [ ] T045a Emit `UnsupportedFeatureError("UNRESOLVED GOTO not supported - See Spec 007")` for `goto_type=UNRESOLVED`
-- [ ] T045b Emit `UnsupportedFeatureError("EXTERNAL GOTO not supported - See Spec 009")` for `goto_type=EXTERNAL`
-- [ ] T046 Unit test strategy selection in tests/unit/codegen/test_strategy_selection.py
+- [X] T045 Add GotoStrategy enum to src/m2py/codegen/enums.py (TRAMPOLINE, SIMPLE_FUNCTIONS)
+- [X] T045a Emit `UnsupportedFeatureError("UNRESOLVED GOTO not supported - See Spec 007")` for `goto_type=UNRESOLVED`
+- [X] T045b Emit `UnsupportedFeatureError("EXTERNAL GOTO not supported - See Spec 009")` for `goto_type=EXTERNAL`
+- [X] T046 Unit test strategy selection in tests/unit/codegen/test_strategy_selection.py
 
 **Note**: STATE_MACHINE strategy deferred - trampoline handles all patterns.
 
 ### 4.2 RoutineState Infrastructure
 
-- [ ] T047 Create src/m2py/codegen/shared_state.py
-- [ ] T048 Implement `generate_routine_state_class()` - builds RoutineState dataclass from analysis
+- [X] T047 Create src/m2py/codegen/shared_state.py
+- [X] T048 Implement `generate_routine_state_class()` - builds RoutineState dataclass from analysis
   - Simple variables as typed fields (e.g., `X: Any = None`)
   - Array variables as MArray fields (e.g., `A: MArray = field(default_factory=MArray)`)
-- [ ] T049 Implement `generate_state_initialization()` - creates initial state for routine entry
-- [ ] T050 Unit test state class generation
+- [X] T049 Implement `generate_state_initialization()` - creates initial state for routine entry
+- [X] T050 Unit test state class generation
 
 ### 4.3 MArray Implementation
 
-- [ ] T051 Add MArray class to src/m2py/runtime/__init__.py (port from spikes/marray_spike.py)
-- [ ] T052 Implement `__getitem__`, `__setitem__`, `value` property, `get()`, `defined()`, `kill()`, `order()` methods
-- [ ] T053 Unit test MArray: node value + children, nested access, empty default, $DATA semantics, $ORDER traversal
-- [ ] T054 Integrate MArray with RoutineState class generation
+- [X] T051 Add MArray class to src/m2py/runtime/__init__.py (port from spikes/marray_spike.py)
+- [X] T052 Implement `__getitem__`, `__setitem__`, `value` property, `get()`, `defined()`, `kill()`, `order()` methods
+- [X] T053 Unit test MArray: node value + children, nested access, empty default, $DATA semantics, $ORDER traversal
+- [X] T054 Integrate MArray with RoutineState class generation
 
-**Checkpoint**: Phase 4 complete - infrastructure ready for pattern implementation
+**Checkpoint**: Phase 4 complete ✅ - infrastructure ready for pattern implementation
 
 ---
 

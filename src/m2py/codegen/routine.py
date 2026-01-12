@@ -14,6 +14,7 @@ from m2py.asg.elements import MLabel, MRoutine
 from m2py.asg.enums import ScopeStrategy
 from m2py.analysis.variables import FunctionSignature
 from m2py.codegen.emitter import CodeEmitter
+from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.names import NameTranslator, translate_name
 from m2py.codegen.statements import generate_scope_statements
 
@@ -165,15 +166,25 @@ class RoutineGenerator:
     - Module-level runtime instance (_rt)
     - Module-level $TEST tracking (_test)
     - Labels as Python functions
+
+    Spec 006: Strategy selection determines code generation pattern:
+    - SIMPLE_FUNCTIONS: Labels as simple functions (no cross-label GOTOs)
+    - TRAMPOLINE: Labels with RoutineState, trampoline dispatch
     """
 
-    def __init__(self, routine: MRoutine) -> None:
+    def __init__(
+        self,
+        routine: MRoutine,
+        strategy: GotoStrategy = GotoStrategy.SIMPLE_FUNCTIONS,
+    ) -> None:
         """Initialize generator with parsed routine.
 
         Args:
             routine: MRoutine ASG to generate code from
+            strategy: Code generation strategy for cross-label GOTOs
         """
         self._routine = routine
+        self._strategy = strategy
         self._emitter = CodeEmitter()
         self._name_translator = NameTranslator()
 

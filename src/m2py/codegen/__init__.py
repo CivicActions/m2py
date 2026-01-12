@@ -6,9 +6,14 @@ Provides the public API for generating executable Python code from MUMPS source.
 from __future__ import annotations
 
 import ast
+from typing import TYPE_CHECKING
 
 from m2py.parser import MUMPSParser
 from m2py.codegen.routine import RoutineGenerator
+from m2py.codegen.enums import GotoStrategy
+
+if TYPE_CHECKING:
+    from m2py.asg.elements import MRoutine
 
 
 class CodegenError(Exception):
@@ -27,6 +32,61 @@ class NameTranslationError(CodegenError):
     """Raised when name translation fails."""
 
     pass
+
+
+def _select_goto_strategy(routine: "MRoutine") -> GotoStrategy:
+    """Select code generation strategy based on routine analysis.
+
+    Spec 006 (T043-T044): Automatic strategy selection based on ASG flags.
+    No user configuration needed - strategy is determined by analysis results.
+
+    Args:
+        routine: Analyzed MRoutine with needs_trampoline flag set
+
+    Returns:
+        GotoStrategy indicating which pattern to use
+
+    Strategy Selection:
+        - `needs_trampoline=True` → TRAMPOLINE with RoutineState
+        - `needs_trampoline=False` → SIMPLE_FUNCTIONS (current Spec 005 behavior)
+
+    Note:
+        UNRESOLVED and EXTERNAL GOTOs are checked at statement level during
+        code generation, not at strategy selection. They raise UnsupportedFeatureError.
+    """
+    if routine.needs_trampoline:
+        return GotoStrategy.TRAMPOLINE
+    return GotoStrategy.SIMPLE_FUNCTIONS
+
+
+def _check_unsupported_gotos(routine: "MRoutine") -> None:
+    """Check for unsupported GOTO patterns and raise if found.
+
+    Spec 006 (T045a, T045b): Emit UnsupportedFeatureError for GOTO patterns
+    that are deferred to later specs.
+
+    Args:
+        routine: Analyzed MRoutine
+
+    Raises:
+        UnsupportedFeatureError: If UNRESOLVED or EXTERNAL GOTOs are found
+    """
+    from m2py.asg.enums import GotoType
+    from m2py.asg.statements import MGotoStatement
+
+    for label in routine.labels:
+        if label.body is None:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                if stmt.goto_type == GotoType.UNRESOLVED:
+                    raise UnsupportedFeatureError(
+                        "UNRESOLVED GOTO not supported - See Spec 007"
+                    )
+                if stmt.goto_type == GotoType.EXTERNAL:
+                    raise UnsupportedFeatureError(
+                        "EXTERNAL GOTO not supported - See Spec 009"
+                    )
 
 
 def generate_python(
@@ -73,8 +133,14 @@ def generate_python(
     parser.analyze_variables(routine, compute_transitive=True)
     parser.compute_signatures(routine)
 
+    # Spec 006 (T045a, T045b): Check for unsupported GOTO patterns
+    _check_unsupported_gotos(routine)
+
+    # Spec 006 (T043-T044): Select generation strategy based on analysis
+    strategy = _select_goto_strategy(routine)
+
     # Generate Python code
-    generator = RoutineGenerator(routine)
+    generator = RoutineGenerator(routine, strategy=strategy)
     python_code = generator.generate()
 
     # Validate if requested

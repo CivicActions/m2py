@@ -212,6 +212,90 @@ The following GOTO patterns raise `NotImplementedError` or `UnsupportedFeatureEr
 | Indirect | `G @VAR` | Runtime dispatch needed | 007 |
 | Argumentless | `G` | Returns to caller | 006 |
 
+## Strategy Selection (Spec 006)
+
+The code generator selects a strategy based on ASG analysis:
+
+```python
+from m2py.codegen.enums import GotoStrategy
+
+def _select_goto_strategy(routine: MRoutine) -> GotoStrategy:
+    """Select GOTO code generation strategy based on routine analysis."""
+    if routine.needs_trampoline:
+        return GotoStrategy.TRAMPOLINE
+    return GotoStrategy.SIMPLE_FUNCTIONS
+```
+
+| Strategy | When Used | Description |
+|----------|-----------|-------------|
+| `SIMPLE_FUNCTIONS` | No cross-label GOTOs | Labels become simple functions (current behavior) |
+| `TRAMPOLINE` | Any cross-label GOTOs | Labels return target, dispatcher loop handles control |
+
+Unsupported patterns raise `UnsupportedFeatureError` referencing future specs:
+- `UNRESOLVED` GOTOs → "See Spec 007"
+- `EXTERNAL` GOTOs → "See Spec 009"
+
+## Trampoline Pattern (Spec 006 Phase 5+)
+
+When `needs_trampoline=True`, the code generator produces:
+
+1. **RoutineState dataclass** - Carries variables across label boundaries
+2. **Label functions** - Accept and return state, return next label name
+3. **Trampoline dispatcher** - Loop that calls labels until completion
+
+```python
+@dataclass
+class RoutineState:
+    X: Any = None
+    A: MArray = field(default_factory=MArray)
+
+def _label_START(state: RoutineState) -> tuple[RoutineState, str | None]:
+    state.X = 1
+    return (state, "NEXT")  # GOTO NEXT
+
+def _label_NEXT(state: RoutineState) -> tuple[RoutineState, str | None]:
+    _rt.write(str(state.X))
+    return (state, None)  # End
+
+def START():
+    state = RoutineState()
+    label = "START"
+    while label:
+        state, label = {"START": _label_START, "NEXT": _label_NEXT}[label](state)
+```
+
+## MArray Runtime Support
+
+For subscripted local variables that flow across labels, the `MArray` class provides MUMPS array semantics:
+
+```python
+from m2py.runtime import MArray
+
+# MUMPS: S A=1,A(1)=2,A(1,2)=3
+arr = MArray()
+arr.value = 1        # Root has value
+arr[1] = 2           # And children
+arr[1, 2] = 3        # Nested subscripts
+
+# Access
+arr.get()           # → 1 (root value)
+arr.get(1)          # → 2
+arr.get(1, 2)       # → 3
+
+# $DATA semantics
+arr.defined()       # → 11 (has value AND children)
+arr.defined(1)      # → 11 (has value AND children)
+arr.defined(1, 2)   # → 1  (has value only)
+arr.defined(9)      # → 0  (undefined)
+```
+
+The `MArray` class supports:
+- `__getitem__`, `__setitem__` for subscripted access
+- `value` property for root/node value
+- `defined(*subscripts)` for $DATA semantics (0, 1, 10, 11)
+- `kill(*subscripts)` for KILL command
+- `order(*subscripts)` for $ORDER traversal
+
 ## Analysis Fields
 
 | Field | Purpose |
@@ -223,20 +307,34 @@ The following GOTO patterns raise `NotImplementedError` or `UnsupportedFeatureEr
 | `goto_stmt.target_stmt_index` | Statement index for intra-label forward |
 | `for_stmt.has_internal_goto` | Has GOTO in body |
 | `for_stmt.exit_points` | List of exiting GOTOs |
+| `routine.needs_trampoline` | True if any cross-label GOTOs exist |
+| `routine.routine_state_vars` | Variables that need RoutineState fields |
+| `routine.array_vars` | Variables accessed with subscripts (need MArray) |
 
 ## Code Generator Functions
 
 | Function | Purpose |
 |----------|---------|
 | `_generate_goto()` | Main GOTO dispatch in statements.py |
+| `_select_goto_strategy()` | Select strategy based on ASG flags |
+| `_check_unsupported_gotos()` | Raise errors for UNRESOLVED/EXTERNAL |
 | `_is_restructurable_goto()` | Check if GOTO can become if/else |
 | `_find_forward_goto_in_if()` | Find restructurable GOTO in IF |
 | `_restructure_forward_goto()` | Generate inverted if/else structure |
 | `generate_scope_statements()` | Statement generation with GOTO restructuring |
 | `_for_needs_loop_exit_wrapper()` | Check if FOR needs try/except |
 
+## RoutineState Generator Functions (src/m2py/codegen/shared_state.py)
+
+| Function | Purpose |
+|----------|---------|
+| `generate_routine_state_class()` | Build RoutineState dataclass from routine analysis |
+| `generate_state_initialization()` | Create `state = RoutineState()` call |
+| `generate_state_imports()` | Required imports for RoutineState |
+
 ## ASG Fields for Codegen
 
 | Field | Purpose |
 |-------|---------|
 | `MRoutine.needs_loop_exit_exception` | True if routine needs `_LoopExit` class (set by `classify_gotos()`) |
+| `MRoutine.needs_trampoline` | True if routine has cross-label GOTOs (set by `classify_gotos()`) |
