@@ -62,13 +62,20 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 **Goal**: Determine primary strategy (trampoline vs state machine)
 
-- [ ] T013 Create spike directory: `specs/006-cross-label-control-flow/spikes/`
-- [ ] T014 Implement trampoline prototype in spikes/trampoline_v1go1.py
-- [ ] T015 Implement state machine prototype in spikes/state_machine_v1go1.py
-- [ ] T016 Run both against YDB reference for V1GO1.m patterns
-- [ ] T017 Measure: correctness (% patterns passing), line count, complexity
-- [ ] T018 Test Rope refactorability: can extract/rename functions in each?
-- [ ] T019 Document decision in research.md section R3 with evaluation matrix
+- [X] T013 Create spike directory: `specs/006-cross-label-control-flow/spikes/`
+- [X] T014 Implement trampoline prototype in spikes/trampoline_v1go1.py
+- [X] T015 Implement state machine prototype in spikes/state_machine_v1go1.py
+- [X] T016 Run both against YDB reference for V1GO1.m patterns
+- [X] T017 Measure: correctness (% patterns passing), line count, complexity
+- [X] T018 Test Rope refactorability: can extract/rename functions in each?
+- [X] T019 Document decision in research.md section R3 with evaluation matrix
+
+**Checkpoint**: Phase 2.1 complete ✅
+- Decision: **Trampoline pattern** selected as primary strategy
+- Both prototypes pass 30/30 tests
+- Trampoline: 412 lines, 38 functions, better refactorability
+- State machine: 310 lines, but harder to test/refactor individual labels
+- See research.md R3 for full evaluation
 
 ### 2.2 Shared State Pattern Evaluation
 

@@ -274,14 +274,42 @@ These are state machine-like patterns with error recovery paths.
 
 ### R3: Strategy Bake-off Results
 
-**Status**: ⬜ Not started
+**Status**: ✅ Complete
 
-**Trampoline Pattern Prototype**:
+**Spike Files**:
+- `spikes/trampoline_v1go1.py` - Trampoline pattern implementation
+- `spikes/state_machine_v1go1.py` - State machine pattern implementation
+- `spikes/compare_spikes.py` - Comparison analysis script
+
+#### Trampoline Pattern Prototype
 
 ```python
-# Template - to be filled with actual spike code
-def _trampoline(entry_label, state):
-    """Dispatch loop that prevents stack growth."""
+# Core pattern from spikes/trampoline_v1go1.py
+@dataclass
+class RoutineState:
+    """Shared state passed through all labels."""
+    PASS_COUNT: int = 0
+    FAIL: int = 0
+    # ... other variables
+
+_labels: Dict[str, LabelFunc] = {}  # Label registry
+
+def label(name: str):
+    """Decorator to register a label function."""
+    def decorator(func: LabelFunc) -> LabelFunc:
+        _labels[name] = func
+        return func
+    return decorator
+
+@label("V1GO1")
+def V1GO1(s: RoutineState) -> tuple[Optional[str], RoutineState]:
+    """Entry point."""
+    # ... code ...
+    return ("NEXT_LABEL", s)  # GOTO NEXT_LABEL
+
+def run_trampoline(entry_label: str = "V1GO1") -> RoutineState:
+    """Execute routine via trampoline dispatch loop."""
+    state = RoutineState()
     label = entry_label
     while label is not None:
         func = _labels[label]
@@ -289,39 +317,91 @@ def _trampoline(entry_label, state):
     return state
 ```
 
-**State Machine Pattern Prototype**:
+#### State Machine Pattern Prototype
 
 ```python
-# Template - to be filled with actual spike code
-def _run_routine():
-    """State machine with match-case."""
-    state = "ENTRY"
-    # variables in outer scope
-    while True:
+# Core pattern from spikes/state_machine_v1go1.py
+def V1GO1() -> str:
+    """Execute V1GO1 routine using state machine pattern."""
+    # Shared variables in outer scope
+    PASS_COUNT = 0
+    FAIL = 0
+    # ...
+    
+    def examiner():
+        nonlocal PASS_COUNT, FAIL  # Must declare nonlocal
+        # ...
+    
+    state = "V1GO1"
+    while state is not None:
         match state:
-            case "ENTRY":
-                # code...
-                state = "NEXT"
-            case "NEXT":
-                # code...
-                state = None
-            case None:
-                break
+            case "V1GO1":
+                # ... code ...
+                state = "NEXT_LABEL"  # GOTO NEXT_LABEL
+            case "NEXT_LABEL":
+                # ... code ...
+                state = None  # End
+            case _:
+                raise RuntimeError(f"Unknown state: {state}")
+    
+    return output
 ```
 
-**Evaluation Matrix**:
+#### Evaluation Matrix
 
 | Metric | Trampoline | State Machine | Winner |
 |--------|------------|---------------|--------|
-| Correctness (V1GO1 patterns) | TBD | TBD | TBD |
-| Line count | TBD | TBD | TBD |
-| Rope refactorability | TBD | TBD | TBD |
-| % patterns requiring state machine | N/A | N/A | N/A |
-| Implementation complexity | TBD | TBD | TBD |
+| **Correctness** | 30/30 PASS | 30/30 PASS | Tie |
+| **Lines of code** | 412 | 310 | State Machine |
+| **Functions** | 38 | 3 | - |
+| **Classes** | 1 | 0 | - |
+| **Match cases** | 0 | 33 | - |
+| **Branch statements** | 8 | 7 | Tie |
 
-**Decision**: *To be determined after spike*
+#### Refactorability Analysis
 
-**Rationale**: *To be documented*
+**Trampoline Pattern**:
+- ✅ Each label is separate function - easily extractable
+- ✅ Functions can be renamed independently via Rope
+- ✅ New labels add new functions without touching dispatch
+- ✅ State explicitly passed - easy to test individual labels
+- ❌ More boilerplate (function signatures, decorators)
+
+**State Machine Pattern**:
+- ✅ All logic in single function - simpler scoping
+- ✅ match/case naturally maps to label dispatch
+- ✅ Fewer lines of code overall
+- ❌ Extracting a case to function requires manual refactor
+- ❌ Single large function harder to test in isolation
+- ❌ Variables must use `nonlocal` for nested write access
+
+#### VistA Production Implications
+
+From VistA analysis (R2.5): **47.5% of files have cycles**
+
+Both patterns handle cycles correctly:
+- **Trampoline**: Returns to dispatch loop, no recursion
+- **State machine**: Reassigns state variable, single while loop
+
+Both have bounded stack depth regardless of cycle count.
+
+#### Decision: **TRAMPOLINE PATTERN**
+
+**Rationale**:
+
+1. **Better decomposition**: Labels as functions map naturally to MUMPS routine structure and support IDE navigation (Go to Definition, Find References)
+
+2. **Easier testing**: Individual label functions can be unit tested in isolation with mock state
+
+3. **Better Rope refactorability**: Extract Method, Rename Symbol operations work on individual label functions
+
+4. **Uniform code generation**: Same pattern for each label - generator emits function definition + decorator registration
+
+5. **Acceptable overhead**: 102 extra lines (33%) is acceptable for maintainability benefits, especially for VistA routines with 100+ labels
+
+6. **Cycle handling validated**: VistA analysis confirms 47.5% of routines have cycles; trampoline handles these correctly without state machine complexity
+
+**Note**: State machine pattern may be considered as a future optimization for very simple routines (< 10 labels, no cycles) if code size becomes a concern, but trampoline is the primary strategy for Spec 006.
 
 ---
 
