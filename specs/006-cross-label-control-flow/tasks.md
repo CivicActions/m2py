@@ -329,19 +329,19 @@ Tests added in Phase 7 verify existing functionality.
 
 ### 10.1 Implementation
 
-- [ ] T090 [US6] Verify RoutineState dataclass is generated when `needs_trampoline=True`
-- [ ] T091 [US6] Verify all routine variables appear as typed fields
-- [ ] T092 [US6] Verify MArray fields for subscripted array variables
-- [ ] T093 [US6] Verify label functions accept and return `(next_label, state)` tuple
+- [X] T090 [US6] Verify RoutineState dataclass is generated when `needs_trampoline=True` (test_routinestate_dataclass_generated)
+- [X] T091 [US6] Verify all routine variables appear as typed fields (test_routinestate_simple_variable_types)
+- [X] T092 [US6] Verify MArray fields for subscripted array variables (test_routinestate_array_variable_types)
+- [X] T093 [US6] Verify label functions accept and return `(next_label, state)` tuple (test_label_functions_return_tuple)
 
 ### 10.2 Tests
 
-- [ ] T094 [US6] Test RoutineState generated for cross-label routine
-- [ ] T095 [US6] Test fields have correct types (Any for simple, MArray for arrays)
-- [ ] T096 [US6] Test state passed through trampoline dispatch
-- [ ] T097 [US6] Verify RoutineState uses @dataclass with typed fields (enables IDE autocomplete)
+- [X] T094 [US6] Test RoutineState generated for cross-label routine (test_routinestate_dataclass_generated) ✅
+- [X] T095 [US6] Test fields have correct types (Any for simple, MArray for arrays) (test_routinestate_simple_variable_types, test_routinestate_array_variable_types) ✅
+- [X] T096 [US6] Test state passed through trampoline dispatch (test_state_passed_through_trampoline) ✅
+- [X] T097 [US6] Verify RoutineState uses @dataclass with typed fields (enables IDE autocomplete) (test_routinestate_enables_ide_autocomplete) ✅
 
-**Checkpoint**: User Story 6 complete - RoutineState pattern verified
+**Checkpoint**: User Story 6 complete ✅ - RoutineState pattern verified
 
 ---
 

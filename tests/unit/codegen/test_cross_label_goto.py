@@ -459,3 +459,79 @@ DONE W "I=",I Q"""
         result = execute_mumps(source)
         assert result.output == "I=5"
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestRoutineStateSharedVariables:
+    """Phase 10: RoutineState class maintains variable visibility (T090-T097)."""
+
+    def test_routinestate_dataclass_generated(self):
+        """T090/T094: RoutineState dataclass generated when needs_trampoline=True."""
+        source = """TEST S X=1 G NEXT Q
+NEXT W X Q"""
+        code = generate_python(source)
+
+        assert "@dataclass" in code
+        assert "class RoutineState:" in code
+        assert '"""Shared state for cross-label variable visibility."""' in code
+
+    def test_routinestate_simple_variable_types(self):
+        """T091/T095: Simple variables have Any type with None default."""
+        source = """TEST S X=1,Y=2,Z=3 G NEXT Q
+NEXT W X+Y+Z Q"""
+        code = generate_python(source)
+
+        # Simple variables should be typed as Any with None default
+        assert "X: Any = None" in code
+        assert "Y: Any = None" in code
+        assert "Z: Any = None" in code
+
+    def test_routinestate_array_variable_types(self):
+        """T092/T095: Array variables have MArray type with factory default."""
+        source = """TEST S A(1)=10,B(1,2)=20 G NEXT Q
+NEXT W A(1)+B(1,2) Q"""
+        code = generate_python(source)
+
+        # Array variables should use MArray with field factory
+        assert "A: MArray = field(default_factory=MArray)" in code
+        assert "B: MArray = field(default_factory=MArray)" in code
+        # Should import MArray
+        assert "from m2py.runtime import MArray" in code
+
+    def test_label_functions_return_tuple(self):
+        """T093: Label functions accept state and return (next_label, state) tuple."""
+        source = """TEST S X=1 G NEXT Q
+NEXT W X Q"""
+        code = generate_python(source)
+
+        # Label functions should have correct signature
+        assert "def _TEST(state) -> Tuple[Optional[str], RoutineState]:" in code
+        assert "def _NEXT(state) -> Tuple[Optional[str], RoutineState]:" in code
+        # Should return tuple with None for QUIT
+        assert "return (None, state)" in code
+        # Should return tuple with label name for GOTO
+        assert 'return ("NEXT", state)' in code
+
+    def test_state_passed_through_trampoline(self):
+        """T096: State object passed through trampoline dispatch loop."""
+        source = """TEST S X=1 G NEXT Q
+NEXT W X Q"""
+        code = generate_python(source)
+
+        # Trampoline should initialize state and pass through
+        assert "state = RoutineState()" in code
+        assert "label, state = func(state)" in code
+
+    def test_routinestate_enables_ide_autocomplete(self):
+        """T097: RoutineState uses @dataclass with typed fields for IDE support."""
+        source = """TEST S X=1,A(1)=2 G NEXT Q
+NEXT W X+A(1) Q"""
+        code = generate_python(source)
+
+        # Verify dataclass decorator and proper typing imports
+        assert "from dataclasses import dataclass, field" in code
+        assert "from typing import Any, Optional, Tuple" in code
+        assert "@dataclass" in code
+        # Fields should be properly typed (not just dict keys)
+        assert "X: Any" in code
+        assert "A: MArray" in code
