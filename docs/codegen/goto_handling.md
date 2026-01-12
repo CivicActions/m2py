@@ -15,10 +15,11 @@ After `classify_gotos()`, each MGotoStatement has a `goto_type`:
 | `FORWARD_JUMP` | To later code (same label) | Inverted if/else |
 | `LOOP_EXIT` | Out of one FOR | `break` |
 | `MULTI_LOOP_EXIT` | Out of nested FORs | `raise _LoopExit()` |
-| `CROSS_LABEL` | To different label | Function call + return |
-| `BACKWARD_JUMP` | To earlier code | Not yet supported |
-| `EXTERNAL` | To other routine | Not yet supported |
-| `UNRESOLVED` | Dynamic target | Not yet supported |
+| `FORWARD_JUMP` (cross-label) | To later label | Trampoline: `return (label, state)` |
+| `BACKWARD_JUMP` (intra-label) | To earlier code in same label | `while True:` + `continue` |
+| `BACKWARD_JUMP` (cross-label) | To earlier label | Trampoline: `return (label, state)` |
+| `EXTERNAL` | To other routine | Not yet supported (Spec 009) |
+| `UNRESOLVED` | Dynamic target | Not yet supported (Spec 007) |
 
 ## Intra-Label Forward Jump
 
@@ -206,11 +207,59 @@ The following GOTO patterns raise `NotImplementedError` or `UnsupportedFeatureEr
 
 | Pattern | Example | Reason | Spec |
 |---------|---------|--------|------|
-| Backward intra-label | `G LOOP` (where LOOP is earlier) | Creates implicit loops | 006 |
 | External routine | `G LABEL^OTHER` | Requires module import handling | 009 |
 | Multiple targets | `G A,B` | Sequential label execution | 006 |
 | Indirect | `G @VAR` | Runtime dispatch needed | 007 |
 | Argumentless | `G` | Returns to caller | 006 |
+
+## Backward Intra-Label GOTO (Self-Loop Pattern)
+
+When a label GOTOs to itself (intra-label backward GOTO), it creates an implicit loop. The code generator wraps the label body in `while True:`:
+
+```mumps
+TEST S X=0
+     S X=X+1 W X I X<3 G TEST
+     Q
+```
+
+```python
+def TEST():
+    global _test
+    while True:
+        X = 0
+        X = (m_num(X) + m_num(1))
+        _rt.write(str(X))
+        _test = m_truth(m_compare(X, "<", 3))
+        if _test:
+            continue  # G TEST
+        break  # Q
+```
+
+**Implementation Details**:
+- `MLabel.has_self_loop` field is set by `classify_gotos()` when a backward intra-label GOTO is detected
+- In `_generate_trampoline_label()` and `_generate_label()`, labels with `has_self_loop=True` wrap body in `while True:`
+- Backward GOTO to self becomes `continue`
+- QUIT becomes `break`
+- Implicit `break` at end of body prevents infinite loop if no explicit exit
+
+## Backward Cross-Label GOTO
+
+When a GOTO targets an earlier label (cross-label backward), the trampoline pattern handles it naturally by returning the target label name. The dispatcher loop iterates back to the earlier label.
+
+```mumps
+TEST S X=0 G LOOP
+INC S X=X+1 W X
+LOOP I X<3 G INC
+     Q
+```
+
+The trampoline dispatcher handles the cycle:
+1. `_TEST` sets X=0, returns `("LOOP", state)`
+2. `_LOOP` checks condition, if true returns `("INC", state)` (backward)
+3. `_INC` increments X, falls through to `_LOOP`
+4. Loop continues until condition is false
+
+This pattern prevents stack overflow - no recursion occurs.
 
 ## Strategy Selection (Spec 006)
 
@@ -333,6 +382,7 @@ The `MArray` class supports:
 | `goto_stmt.target_stmt_index` | Statement index for intra-label forward |
 | `for_stmt.has_internal_goto` | Has GOTO in body |
 | `for_stmt.exit_points` | List of exiting GOTOs |
+| `label.has_self_loop` | True if label has backward GOTO to itself |
 | `routine.needs_trampoline` | True if any cross-label GOTOs exist |
 | `routine.routine_state_vars` | Variables that need RoutineState fields |
 | `routine.array_vars` | Variables accessed with subscripts (need MArray) |

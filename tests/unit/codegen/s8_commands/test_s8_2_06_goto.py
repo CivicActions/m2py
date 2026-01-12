@@ -559,41 +559,55 @@ class TestCrossLabelGotoCodegen:
     Reference: §8.2.6
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: cross-label forward jump")
-    def test_cross_label_forward_jump(self, generate_python):
+    def test_cross_label_forward_jump(self, execute_mumps):
         """Cross-label forward GOTO jumps to later label.
 
         LABEL1 S X=1
                G LABEL2  ; jump to different label
                Q
-        LABEL2 S Y=2
+        LABEL2 W X
                Q
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps(
+            """LABEL1 S X=1
+ G LABEL2
+ Q
+LABEL2 W X
+ Q"""
+        )
+        assert result.output == "1"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: cross-label backward jump")
-    def test_cross_label_backward_jump(self, generate_python):
-        """Cross-label backward GOTO creates implicit loop.
+    def test_cross_label_backward_jump(self, execute_mumps):
+        """Cross-label backward GOTO creates implicit loop via trampoline.
 
-        LABEL1 S X=X+1
-               I X<10 G LABEL2
-               Q
-        LABEL2 G LABEL1  ; loop back
+        TEST -> LOOP -> INC -> LOOP (cycle)
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps(
+            """TEST S X=0 G LOOP
+INC S X=X+1 W X
+LOOP I X<3 G INC
+ Q"""
+        )
+        assert result.output == "123"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: variable visibility across labels")
-    def test_variable_visibility_across_labels(self, generate_python):
-        """Variables set in one label visible in another.
+    def test_variable_visibility_across_labels(self, execute_mumps):
+        """Variables set in one label visible in another via RoutineState.
 
         LABEL1 S X=1
                G LABEL2
         LABEL2 W X  ; X should be visible
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps(
+            """LABEL1 S X=1
+ G LABEL2
+ Q
+LABEL2 W X
+ Q"""
+        )
+        assert result.output == "1"
+        assert result.success is True
 
 
 @pytest.mark.codegen
@@ -606,33 +620,49 @@ class TestTrampolinePatternCodegen:
     Reference: §8.2.6
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: trampoline dispatcher")
     def test_trampoline_dispatcher(self, generate_python):
         """Cross-label jumps use trampoline dispatcher.
 
         Labels return next label name, dispatcher loop handles transitions.
         Prevents RecursionError from deep mutual recursion.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python(
+            """TEST G NEXT Q
+NEXT W "done" Q"""
+        )
+        # Entry point with trampoline dispatcher
+        assert "def TEST():" in code
+        assert "while label is not None:" in code
+        assert "func = _labels[label]" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: shared state class")
     def test_shared_state_class(self, generate_python):
         """Labels-as-functions share state via RoutineState class.
 
         Variables visible across labels stored in shared state object.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python(
+            """TEST S X=1 G NEXT Q
+NEXT W X Q"""
+        )
+        # RoutineState class generated with variable fields
+        assert "@dataclass" in code
+        assert "class RoutineState:" in code
+        assert "X: Any = None" in code
+        # State used in label functions
+        assert "state.X = 1" in code
+        assert "state.X)" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: label returns next label")
     def test_label_returns_next_label(self, generate_python):
         """Label function returns name of next label to execute.
 
-        GOTO generates: return 'TARGET_LABEL'
+        GOTO generates: return ("TARGET_LABEL", state)
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python(
+            """TEST G DONE Q
+DONE W "end" Q"""
+        )
+        # GOTO generates return with target label string
+        assert 'return ("DONE", state)' in code
 
 
 @pytest.mark.codegen

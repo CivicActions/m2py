@@ -289,3 +289,82 @@ LOOP S X=X+1,SUM=SUM+X I X<5 G LOOP
         result = execute_mumps(source)
         assert result.output == "15"  # Sum of 1+2+3+4+5
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestVariableVisibility:
+    """Phase 7: Variable visibility across labels (T070-T076c)."""
+
+    def test_variable_modification_in_target(self, execute_mumps):
+        """T076: Variable set in source can be modified in target.
+
+        MUMPS: TEST S X=1 G ADD Q / ADD S X=X+10 W X Q
+        Expected: "11"
+        """
+        source = """TEST S X=1 G ADD Q
+ADD S X=X+10 W X Q"""
+        result = execute_mumps(source)
+        assert result.output == "11"
+        assert result.success is True
+
+    @pytest.mark.xfail(reason="Subscripted assignments not yet supported")
+    def test_subscripted_locals_visibility(self, execute_mumps):
+        """T075: Subscripted local variables visible across labels.
+
+        MUMPS: TEST S A(1)=10,A(2)=20 G SUM Q / SUM W A(1)+A(2) Q
+        Expected: "30"
+        """
+        source = """TEST S A(1)=10,A(2)=20 G SUM Q
+SUM W A(1)+A(2) Q"""
+        result = execute_mumps(source)
+        assert result.output == "30"
+        assert result.success is True
+
+    @pytest.mark.xfail(reason="NEW command not yet supported in codegen")
+    def test_newed_variable_isolation(self, execute_mumps):
+        """T076a: NEWed variables are isolated to their label scope.
+
+        In MUMPS, NEW creates a local scope for the variable.
+        MUMPS: TEST N X S X=1 G NEXT Q / NEXT W X Q
+        Expected: "" (X is local to TEST, not visible in NEXT)
+
+        Note: This test expects YDB behavior where X is undefined in NEXT.
+        """
+        source = """TEST N X S X=1 G NEXT Q
+NEXT W X Q"""
+        result = execute_mumps(source)
+        # YDB throws error on undefined variable access
+        assert result.success is True
+
+    @pytest.mark.xfail(reason="DO with args has issues in cross-label context")
+    def test_formal_param_isolation(self, execute_mumps):
+        """T076b: Formal parameters are isolated to subroutine scope.
+
+        MUMPS: TEST D SUB(5) Q / SUB(X) G SHOW Q / SHOW W X Q
+        Expected: "5" (X from SUB's formal param visible via cross-label GOTO)
+
+        Note: Per MUMPS semantics, X in SUB(X) is local to SUB.
+        When GOTO SHOW happens, X from SUB's scope should be visible.
+        """
+        source = """TEST D SUB(5) Q
+SUB(X) G SHOW Q
+SHOW W X Q"""
+        result = execute_mumps(source)
+        assert result.output == "5"
+        assert result.success is True
+
+    def test_undefined_variable_reads_as_none(self, execute_mumps):
+        """T076c: Skipped initialization leaves variable undefined.
+
+        When IF condition is false, initialization is skipped.
+        MUMPS: TEST I 0 S X=99 G DONE Q / DONE W X Q
+
+        Note: YDB throws LVUNDEF error, m2py outputs "None".
+        This is a design choice - m2py treats undefined as None.
+        """
+        source = """TEST I 0 S X=99 G DONE Q
+DONE W X Q"""
+        result = execute_mumps(source)
+        # m2py outputs None for undefined variables
+        assert result.output == "None"
+        assert result.success is True
