@@ -45,6 +45,7 @@ def classify_gotos(routine: MRoutine) -> None:
     1. Sets the goto_type based on target and context
     2. Populates exits_loops with enclosing FOR loops exited
     3. Sets routine.has_unstructured_goto if any GOTO requires non-structured translation
+    4. Sets routine.needs_trampoline if any cross-label GOTO exists (Spec 006)
 
     Must be called AFTER resolve_references() so MCall.target is populated.
 
@@ -55,6 +56,8 @@ def classify_gotos(routine: MRoutine) -> None:
         - Sets MGotoStatement.goto_type for each GOTO
         - Sets MGotoStatement.exits_loops for loop exits
         - Sets MRoutine.has_unstructured_goto if complex control flow detected
+        - Sets MRoutine.needs_trampoline if cross-label GOTOs exist
+        - Sets MRoutine.needs_loop_exit_exception if MULTI_LOOP_EXIT GOTOs exist
     """
     # Build a position map for labels (for forward/backward detection)
     label_positions = {}
@@ -76,6 +79,10 @@ def classify_gotos(routine: MRoutine) -> None:
 
     # T103: Set needs_loop_exit_exception if any MULTI_LOOP_EXIT GOTO exists
     routine.needs_loop_exit_exception = _needs_loop_exit_exception(routine)
+
+    # Spec 006 (T035-T036): Set needs_trampoline if ANY cross-label GOTOs exist
+    # This is the sole trigger for trampoline pattern with RoutineState
+    routine.needs_trampoline = _detect_cross_label_gotos(routine)
 
 
 def _classify_gotos_in_scope(
@@ -460,5 +467,35 @@ def _needs_loop_exit_exception(routine: MRoutine) -> bool:
         for stmt in label.body.walk_statements():
             if isinstance(stmt, MGotoStatement):
                 if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
+                    return True
+    return False
+
+
+def _detect_cross_label_gotos(routine: MRoutine) -> bool:
+    """Check if the routine has ANY cross-label GOTO statements.
+
+    Spec 006 (T034): Detects cross-label GOTOs that require trampoline pattern.
+    This includes BOTH forward and backward cross-label jumps. The trampoline
+    pattern is required for ALL cross-label GOTOs to:
+    1. Avoid stack growth with repeated cross-label calls
+    2. Handle cyclic patterns (A→B→A) without RecursionError
+    3. Maintain variable visibility across label boundaries via RoutineState
+
+    Note: This is distinct from `has_unstructured_goto` which is a legacy flag.
+    `needs_trampoline` is the sole trigger for trampoline pattern in Spec 006.
+
+    Args:
+        routine: The routine to check
+
+    Returns:
+        True if any cross-label GOTO exists (forward or backward)
+    """
+    for label in routine.labels:
+        if label.body is None:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                # Cross-label GOTOs require trampoline pattern
+                if stmt.is_cross_label:
                     return True
     return False

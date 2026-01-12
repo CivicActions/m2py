@@ -1122,7 +1122,155 @@ def compute_all_signatures(
         sig.requires_runtime_scope for sig in signatures.values()
     )
 
+    # Spec 006 (T039a): Compute routine_state_vars - variables needing RoutineState fields
+    # These are variables that flow between labels (output from one, input to another)
+    routine.routine_state_vars = _compute_routine_state_vars(routine, label_vars)
+
+    # Spec 006 (T039b): Compute array_vars - variables with subscripted access
+    routine.array_vars = _compute_array_vars(routine)
+
     return signatures
+
+
+def _compute_routine_state_vars(
+    routine: MRoutine, label_vars: Dict[str, ScopeVariables]
+) -> Set[str]:
+    """Compute variables that need RoutineState fields for cross-label flow.
+
+    Spec 006 (T039a): Variables that are written in one label and read in
+    another label need to be passed through RoutineState for trampoline pattern.
+
+    Returns:
+        Set of variable names needing RoutineState fields
+    """
+    # Collect all output_variables from all labels
+    all_outputs: Set[str] = set()
+    for label_name, scope_vars in label_vars.items():
+        all_outputs.update(scope_vars.output_variables)
+
+    # Collect all input_variables from all labels
+    all_inputs: Set[str] = set()
+    for label_name, scope_vars in label_vars.items():
+        all_inputs.update(scope_vars.input_variables)
+
+    # Variables that cross label boundaries: written somewhere, read somewhere
+    # These need RoutineState fields
+    return all_outputs & all_inputs
+
+
+def _compute_array_vars(routine: MRoutine) -> Set[str]:
+    """Compute variables that have subscripted access (need MArray fields).
+
+    Spec 006 (T039b): Variables accessed with subscripts need MArray fields
+    in RoutineState to support MUMPS array semantics (value + children at node).
+
+    Returns:
+        Set of variable names with subscripted access
+    """
+
+    array_vars: Set[str] = set()
+
+    for label in routine.labels:
+        if label.body is None:
+            continue
+
+        # Walk all expressions in the label
+        for stmt in label.body.walk_statements():
+            # Check all MVariable instances in the statement
+            _collect_array_vars_from_stmt(stmt, array_vars)
+
+    return array_vars
+
+
+def _collect_array_vars_from_stmt(stmt, array_vars: Set[str]) -> None:
+    """Collect array variables from a statement by inspecting MVariable nodes.
+
+    Args:
+        stmt: Statement to inspect
+        array_vars: Set to add array variable names to
+    """
+    from ..asg.expressions import MVariable
+    from ..asg.statements import (
+        MSetStatement,
+        MWriteStatement,
+        MIfStatement,
+        MForStatement,
+        MKillStatement,
+    )
+
+    # Check SET targets and values
+    if isinstance(stmt, MSetStatement):
+        for assignment in stmt.assignments:
+            if assignment.target:
+                _check_variable_for_subscripts(assignment.target, array_vars)
+            if assignment.value:
+                _collect_array_vars_from_expr(assignment.value, array_vars)
+
+    # Check WRITE arguments
+    elif isinstance(stmt, MWriteStatement):
+        for arg in stmt.arguments:
+            _collect_array_vars_from_expr(arg, array_vars)
+
+    # Check IF condition
+    elif isinstance(stmt, MIfStatement):
+        if stmt.condition:
+            _collect_array_vars_from_expr(stmt.condition, array_vars)
+
+    # Check FOR variable (can be subscripted)
+    elif isinstance(stmt, MForStatement):
+        if isinstance(stmt.loop_var, MVariable):
+            _check_variable_for_subscripts(stmt.loop_var, array_vars)
+
+    # Check KILL targets
+    elif isinstance(stmt, MKillStatement):
+        for target in stmt.targets:
+            _check_variable_for_subscripts(target, array_vars)
+
+
+def _check_variable_for_subscripts(expr, array_vars: Set[str]) -> None:
+    """Check if expression is a subscripted variable and add to array_vars."""
+    from ..asg.expressions import MVariable
+
+    if isinstance(expr, MVariable):
+        if expr.subscripts and len(expr.subscripts) > 0:
+            name = expr.name
+            if name and not name.startswith("^") and not name.startswith("$"):
+                array_vars.add(name)
+
+
+def _collect_array_vars_from_expr(expr, array_vars: Set[str]) -> None:
+    """Recursively collect array variables from an expression."""
+    from ..asg.expressions import (
+        MBinaryOp,
+        MUnaryOp,
+        MIntrinsicFunction,
+        MExtrinsicFunction,
+        MActualParameter,
+    )
+
+    if expr is None:
+        return
+
+    # Check if this is a subscripted variable
+    _check_variable_for_subscripts(expr, array_vars)
+
+    # Recursively check sub-expressions
+    if isinstance(expr, MBinaryOp):
+        _collect_array_vars_from_expr(expr.left, array_vars)
+        _collect_array_vars_from_expr(expr.right, array_vars)
+    elif isinstance(expr, MUnaryOp):
+        _collect_array_vars_from_expr(expr.operand, array_vars)
+    elif isinstance(expr, (MIntrinsicFunction, MExtrinsicFunction)):
+        args = getattr(expr, "args", None)
+        if args is not None:
+            if hasattr(args, "args"):
+                args = args.args
+            if isinstance(args, list):
+                for arg in args:
+                    _collect_array_vars_from_expr(arg, array_vars)
+    elif isinstance(expr, MActualParameter):
+        if expr.expression:
+            _collect_array_vars_from_expr(expr.expression, array_vars)
 
 
 def bind_parameters(call: MCall, target_label: MLabel) -> List[ParameterBinding]:

@@ -113,17 +113,17 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 ---
 
-## Phase 3: ASG Extensions
+## Phase 3: ASG Extensions ✅ COMPLETE
 
 **Purpose**: Add analysis infrastructure before codegen. Per layer separation: codegen must consume complete ASG.
 
 ### 3.1 Add `needs_trampoline` Flag
 
-- [ ] T033 Add `needs_trampoline: bool = False` field to MRoutine in src/m2py/asg/elements.py
-- [ ] T034 Create `_detect_cross_label_gotos()` function in src/m2py/analysis/goto_analysis.py
-- [ ] T035 Set `needs_trampoline=True` if ANY cross-label GOTOs exist (not just cycles)
-- [ ] T036 Call from `classify_gotos()` to set the flag
-- [ ] T037 Add unit tests for cross-label detection in tests/unit/analysis/test_goto_analysis.py:
+- [X] T033 Add `needs_trampoline: bool = False` field to MRoutine in src/m2py/asg/elements.py
+- [X] T034 Create `_detect_cross_label_gotos()` function in src/m2py/analysis/goto_analysis.py
+- [X] T035 Set `needs_trampoline=True` if ANY cross-label GOTOs exist (not just cycles)
+- [X] T036 Call from `classify_gotos()` to set the flag
+- [X] T037 Add unit tests for cross-label detection in tests/unit/analysis/test_goto_classifier.py:
   - Test forward-only intra-label (no cross-label) → `needs_trampoline=False`
   - Test forward cross-label → `needs_trampoline=True`
   - Test backward cross-label → `needs_trampoline=True`
@@ -133,22 +133,22 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 ### 3.2 Verify Variable Flow Analysis
 
-- [ ] T038 Verify `compute_signatures()` in src/m2py/analysis/variables.py populates `input_variables`/`output_variables` for cross-label cases
-- [ ] T039 Add test case: variable set in label A, read in label B after GOTO → should appear in A.output_variables and B.input_variables
-- [ ] T039a Identify all variables needing RoutineState fields from analysis
+- [X] T038 Verify `compute_signatures()` in src/m2py/analysis/variables.py populates `input_variables`/`output_variables` for cross-label cases
+- [X] T039 Add test case: variable set in label A, read in label B after GOTO → should appear in A.output_variables and B.input_variables
+- [X] T039a Identify all variables needing RoutineState fields from analysis
   - Output: Add `MRoutine.routine_state_vars: Set[str]` field in `src/m2py/asg/elements.py`
-  - Populated by `compute_signatures()` in `src/m2py/analysis/variables.py`
-- [ ] T039b Identify which variables are subscripted arrays (need MArray fields)
+  - Populated by `compute_all_signatures()` in `src/m2py/analysis/variables.py`
+- [X] T039b Identify which variables are subscripted arrays (need MArray fields)
   - Output: Add `MRoutine.array_vars: Set[str]` field in `src/m2py/asg/elements.py`
-  - Populated by `compute_signatures()` when subscripted access detected
-- [ ] T040 If gap found: extend variable analysis to track cross-label flow
+  - Populated by `compute_all_signatures()` when subscripted access detected
+- [X] T040 If gap found: extend variable analysis to track cross-label flow (NO GAP - analysis works correctly)
 
 ### 3.3 Update ASG Documentation
 
-- [ ] T041 Update docs/asg/ with new `needs_trampoline` field
-- [ ] T042 Document: `needs_trampoline=True` triggers trampoline pattern with RoutineState
+- [X] T041 Update docs/asg/ with new `needs_trampoline` field
+- [X] T042 Document: `needs_trampoline=True` triggers trampoline pattern with RoutineState
 
-**Checkpoint**: Phase 3 complete - ASG provides all info codegen needs
+**Checkpoint**: Phase 3 complete ✅ - ASG provides all info codegen needs
 
 ---
 

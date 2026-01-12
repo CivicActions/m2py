@@ -286,6 +286,18 @@ class MRoutine(ASGElement):
     # T102: Pre-computed codegen hint (populated by classify_gotos)
     needs_loop_exit_exception: bool = False  # True if any MULTI_LOOP_EXIT GOTO exists
 
+    # Spec 006 (T033): Trampoline pattern flag (populated by classify_gotos)
+    # True if ANY cross-label GOTOs exist - requires trampoline for proper control flow
+    needs_trampoline: bool = False
+
+    # Spec 006 (T039a): Variables needing RoutineState fields (populated by compute_all_signatures)
+    # Union of all label's output_variables that are read by other labels (cross-label flow)
+    routine_state_vars: set = field(default_factory=set, repr=False)
+
+    # Spec 006 (T039b): Variables with subscripted access requiring MArray fields
+    # Populated by compute_all_signatures when subscripted local variable access detected
+    array_vars: set = field(default_factory=set, repr=False)
+
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.
 
