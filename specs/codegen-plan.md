@@ -1186,10 +1186,11 @@ Review before coding:
    - SET with subscripted targets
    - WRITE with format controls (`!`, `#`, `?n`, `*n`)
    - READ (basic, with timeout)
-   - NEW (selective)
+   - NEW (selective) — **includes variable scope isolation deferred from Spec 006 (FR-021: NEWed variables not visible after GOTO)**
    - KILL (selective)
    - MERGE (copy array subtrees: `M dest=src`)
    - Postconditions on all commands (`S:cond X=1`)
+   - **DO with arguments in cross-label context** — formal parameter isolation (FR-022 from Spec 006)
 
 4. **Intrinsic Functions**
    - String: $PIECE, $LENGTH, $EXTRACT, $FIND, $TRANSLATE, $JUSTIFY
@@ -1282,7 +1283,10 @@ Review before coding:
 ### Validation
 
 - MUGJ: V1SET, V1WR, V1NUM, V1FN* series
-- MUGJ: V1GO2.m (computed offset patterns)
+- MUGJ: V1GO2.m (computed offset patterns - literal offsets)
+- MVTS: V1GO3.m (computed offset patterns - complex expressions including globals, functions, arithmetic)
+  - **Note**: V1GO3.m was deferred from Spec 006 validation because it's entirely about computed offsets (`G LABEL+expr`)
+  - Contains patterns like: `G STAR+^V1A`, `G 388+$L($E(VCOMP,5,99))`, `G NOTES+C+(D*2)+E=29.3+3`
 - YDBTest: basic/* suite
 
 ### No Spikes Needed

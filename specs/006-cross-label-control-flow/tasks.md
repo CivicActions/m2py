@@ -462,6 +462,36 @@ Added bonus tests:
 
 ---
 
+## Phase 14: Edge Case Test Coverage (Polish)
+
+**Goal**: Add explicit tests for edge cases listed in spec.md that were not explicitly covered
+
+**Scope**: 4 low-effort edge case tests (~2 hours total)
+
+### 14.1 Edge Case Tests
+
+- [X] T125 [P] Test GOTO to labelless preamble
+  - MUMPS: `G _preamble` equivalent (entry before first label)
+  - File: tests/unit/codegen/test_cross_label_goto.py
+  - Expected: Trampoline handles `_preamble` as valid target
+  - Test: `test_preamble_included_in_trampoline_labels` verifies preamble in _labels dict
+- [X] T126 [P] Test GOTO target label with empty body
+  - MUMPS: `G EMPTY` where EMPTY label has no statements
+  - Expected: Transitions cleanly to next label (fall-through)
+  - Test: `test_empty_label_falls_through`, `test_empty_label_with_quit_only`
+- [X] T127 [P] Test self-referential GOTO (`L1 G L1`)
+  - MUMPS pattern creates infinite loop
+  - Expected: Trampoline handles without stack overflow (verify with limit)
+  - Test: `test_self_referential_goto_no_stack_overflow` (100 iterations)
+- [X] T128 [P] Test GOTO as only command in label body
+  - MUMPS: `LABEL G NEXT` (no other statements)
+  - Expected: Generates clean trampoline transition
+  - Test: `test_goto_as_only_command`, `test_goto_only_chain` (5 labels)
+
+**Checkpoint**: All edge cases from spec.md explicitly tested ✅
+
+---
+
 ## Dependencies & Execution Order
 
 ```
@@ -508,12 +538,13 @@ Loop Exit               Trampoline              RoutineState
 | US6 | Phase 10 | RoutineState Shared Variables | P2 |
 | US7 | Phase 11 | Multiple GOTO Targets | P3 |
 | US8 | Phase 12 | Strategy Selection | P2 |
+| — | Phase 14 | Edge Case Test Coverage | P3 |
 
 ## Summary
 
 | Metric | Count |
 |--------|-------|
-| Total Tasks | 130 |
-| Phase 1-2 (Complete) | 32 |
-| Phase 3-13 (Pending) | 98 |
-| Parallel Opportunities | 7 tasks marked [P] |
+| Total Tasks | 134 |
+| Phase 1-13 (Complete) | 130 |
+| Phase 14 (Pending) | 4 |
+| Parallel Opportunities | 11 tasks marked [P] |

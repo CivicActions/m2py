@@ -624,3 +624,102 @@ B W "2" Q
 C W "3" Q"""
         result = execute_mumps(source)
         assert result.output == "12"
+
+
+@pytest.mark.codegen
+class TestEdgeCaseCoverage:
+    """Phase 14: Edge case test coverage (T125-T128).
+
+    Tests for edge cases listed in spec.md that were not explicitly covered:
+    - Preamble code with trampoline
+    - Empty label bodies
+    - Self-referential GOTO stack safety
+    - GOTO as only command
+    """
+
+    def test_preamble_included_in_trampoline_labels(self, generate_python):
+        """T125: Preamble is included in _labels dict when trampoline is used.
+
+        When routine has preamble code AND cross-label GOTOs, the preamble
+        should be in the _labels dictionary (keyed by empty string).
+
+        Note: You can't GOTO to preamble in MUMPS (no label name), but the
+        infrastructure should handle it for completeness.
+        """
+        source = """ W "preamble"
+TEST S X=1 G NEXT Q
+NEXT W X Q"""
+        code = generate_python(source)
+
+        # Preamble should be in labels dict
+        assert "_labels = {" in code
+        assert '"": ' in code or "'': " in code  # Empty string key for preamble
+        assert "__preamble" in code or "_preamble" in code
+
+    def test_empty_label_falls_through(self, execute_mumps):
+        """T126: GOTO to empty label falls through to next label.
+
+        MUMPS: TEST G EMPTY W "after" Q / EMPTY / NEXT W "next" Q
+        Expected: "next" (EMPTY has no code, falls through to NEXT)
+        """
+        source = """TEST G EMPTY W "after" Q
+EMPTY
+NEXT W "next" Q"""
+        result = execute_mumps(source)
+        assert result.output == "next"
+        assert result.success is True
+
+    def test_self_referential_goto_no_stack_overflow(self, execute_mumps):
+        """T127: Self-referential GOTO (L1 G L1) handles many iterations.
+
+        Pattern creates implicit loop at same label. Should NOT cause
+        RecursionError because self-loop uses while True pattern.
+        Uses cross-label GOTO to trigger trampoline mode.
+        """
+        source = """TEST S X=0 G LOOP Q
+LOOP S X=X+1 W X I X<100 G LOOP
+ Q"""
+        result = execute_mumps(source)
+        # Should output 1-100 concatenated
+        expected = "".join(str(i) for i in range(1, 101))
+        assert result.output == expected
+        assert result.success is True
+
+    def test_goto_as_only_command(self, execute_mumps):
+        """T128: Label with GOTO as only command generates clean transition.
+
+        MUMPS: TEST G MID W "after" Q / MID G END / END W "end" Q
+        Expected: "end" (MID has only GOTO, transitions to END)
+        """
+        source = """TEST G MID W "after" Q
+MID G END
+END W "end" Q"""
+        result = execute_mumps(source)
+        assert result.output == "end"
+        assert result.success is True
+
+    def test_goto_only_chain(self, execute_mumps):
+        """Chain of labels where each has only GOTO.
+
+        Stress test for clean transitions through multiple GOTO-only labels.
+        """
+        source = """TEST G A Q
+A G B
+B G C
+C G D
+D W "done" Q"""
+        result = execute_mumps(source)
+        assert result.output == "done"
+        assert result.success is True
+
+    def test_empty_label_with_quit_only(self, execute_mumps):
+        """GOTO to label with only QUIT exits cleanly.
+
+        MUMPS: TEST G EMPTY W "after" Q / EMPTY Q
+        Expected: "" (EMPTY has only Q, exits routine)
+        """
+        source = """TEST G EMPTY W "after" Q
+EMPTY Q"""
+        result = execute_mumps(source)
+        assert result.output == ""
+        assert result.success is True
