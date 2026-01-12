@@ -26,6 +26,7 @@ from m2py.codegen.expressions import generate_expr
 from m2py.codegen.names import translate_name
 
 if TYPE_CHECKING:
+    from m2py.asg.elements import MCall
     from m2py.asg.statements import MStatement
     from m2py.codegen.routine import GeneratorContext
 
@@ -982,6 +983,12 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     - Cross-label jump (SIMPLE_FUNCTIONS): generate function call + return
     - Cross-label jump (TRAMPOLINE): generate return (label_name, state)
 
+    Multiple targets (Phase 11):
+    - Targets evaluated left-to-right
+    - If target has postcondition and it's false, try next target
+    - If postcondition is true or no postcondition, go to that target
+    - If all postconditions false, no jump (continue to next command)
+
     Note: There is no "continue" pattern. Per MUMPS spec (MDC 3.6.5):
     "Execution of GOTO effects the immediate termination of all FORs
     in the line containing the GOTO." A GOTO to the same label creates
@@ -990,6 +997,8 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     Example patterns:
     - G DONE (cross-label, SIMPLE) → DONE(); return
     - G DONE (cross-label, TRAMPOLINE) → return ("DONE", state)
+    - G A,B → go to A (targets evaluated left-to-right)
+    - G A:cond,B → if cond: go to A, else: go to B
     - G DONE (inside FOR, exiting loop) → break
     - G DONE (inside nested FOR) → raise _LoopExit()
 
@@ -1004,11 +1013,27 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     if not stmt.targets:
         raise NotImplementedError("Argumentless GOTO not supported")
 
+    # Phase 11 (T098-T100): Handle multiple targets
     if len(stmt.targets) > 1:
-        raise NotImplementedError("Multiple GOTO targets not yet supported")
+        _generate_multi_target_goto(stmt, ctx)
+        return
 
     target = stmt.targets[0]
+    _generate_single_target_goto(target, stmt, ctx)
 
+
+def _generate_single_target_goto(
+    target: "MCall", stmt: MGotoStatement, ctx: "GeneratorContext"
+) -> None:
+    """Generate GOTO code for a single target.
+
+    This handles all single-target cases including loop exits and cross-label jumps.
+
+    Args:
+        target: The MCall target to jump to
+        stmt: The parent MGotoStatement (for classification info)
+        ctx: Generator context
+    """
     # Check for external routine reference
     if target.routine:
         raise NotImplementedError("External routine GOTO not yet supported")
@@ -1083,6 +1108,109 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
 
         # Generate: label(); return
         # The return ensures control doesn't continue after GOTO
+        ctx.emitter.line(f"{label_name}()")
+        ctx.emitter.line("return")
+
+
+def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
+    """Generate GOTO code for multiple targets (Phase 11).
+
+    Multiple targets are evaluated left-to-right:
+    - If target has no postcondition, jump to it unconditionally
+    - If target has postcondition and it's true, jump to it
+    - If postcondition is false, try next target
+    - If all postconditions are false, no jump (fall through)
+
+    Generated pattern (for G A:cond1,B:cond2,C):
+        if m_truth(cond1):
+            return ("A", state)
+        elif m_truth(cond2):
+            return ("B", state)
+        else:
+            return ("C", state)
+
+    Args:
+        stmt: MGotoStatement with multiple targets
+        ctx: Generator context
+    """
+    targets = stmt.targets
+
+    # Check for unsupported patterns in multi-target GOTO
+    for target in targets:
+        if target.routine:
+            raise NotImplementedError(
+                "External routine in multi-target GOTO not supported"
+            )
+        if target.label_is_indirect or target.indirection:
+            raise NotImplementedError(
+                "Indirect target in multi-target GOTO not supported"
+            )
+
+    # Check if any targets have postconditions
+    has_postconditions = any(t.postcondition is not None for t in targets)
+
+    if not has_postconditions:
+        # No postconditions: just go to first target
+        # This is semantically equivalent to single-target GOTO
+        first_target = targets[0]
+        _generate_single_target_goto(first_target, stmt, ctx)
+        return
+
+    # Generate if/elif chain for postconditioned targets
+    first = True
+    last_unconditional = None
+
+    for i, target in enumerate(targets):
+        if target.postcondition is not None:
+            # Generate condition check
+            cond_expr = generate_expr(target.postcondition, ctx)
+
+            if first:
+                ctx.emitter.line(f"if m_truth({cond_expr}):")
+                first = False
+            else:
+                ctx.emitter.line(f"elif m_truth({cond_expr}):")
+
+            # Generate jump inside condition block
+            with ctx.emitter.indented():
+                _generate_goto_jump(target, ctx)
+        else:
+            # Unconditional target (no postcondition) - save for else block
+            # This should be the last one if there are conditional targets before it
+            last_unconditional = target
+
+    # If there's an unconditional target at the end, it goes in else block
+    if last_unconditional is not None:
+        if first:
+            # No conditions at all - just jump (shouldn't happen, but handle it)
+            _generate_goto_jump(last_unconditional, ctx)
+        else:
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
+                _generate_goto_jump(last_unconditional, ctx)
+    elif not first:
+        # All targets had postconditions - need to handle "no match" case
+        # This means no GOTO taken, execution continues
+        # We need a pass to make the if/elif syntactically correct, but
+        # actually we don't need an else at all - just let it fall through
+        pass
+
+
+def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
+    """Generate the actual jump code for a GOTO target.
+
+    This generates just the jump statement without any condition checks.
+    For trampoline: return (label_name, state)
+    For simple functions: function_call(); return
+
+    Args:
+        target: The MCall target to jump to
+        ctx: Generator context
+    """
+    if ctx.strategy == GotoStrategy.TRAMPOLINE:
+        ctx.emitter.line(f'return ("{target.name}", state)')
+    else:
+        label_name = translate_name(target.name)
         ctx.emitter.line(f"{label_name}()")
         ctx.emitter.line("return")
 

@@ -345,7 +345,7 @@ Tests added in Phase 7 verify existing functionality.
 
 ---
 
-## Phase 11: User Story 7 - Multiple GOTO Targets (Priority: P3)
+## Phase 11: User Story 7 - Multiple GOTO Targets (Priority: P3) ✅ COMPLETE
 
 **Goal**: Sequential execution of multiple targets: `G A,B,C`
 
@@ -353,17 +353,29 @@ Tests added in Phase 7 verify existing functionality.
 
 ### 11.1 Implementation
 
-- [ ] T098 [US7] Modify `_generate_goto()` to handle multiple targets
-- [ ] T099 [US7] Generate sequential calls within single trampoline iteration
-- [ ] T100 [US7] Handle early exit if any target QUITs
+- [X] T098 [US7] Modify `_generate_goto()` to handle multiple targets
+  - Added `_generate_multi_target_goto()` for multiple targets
+  - Added `_generate_single_target_goto()` for code reuse
+  - Added `_generate_goto_jump()` for postconditioned targets
+- [X] T099 [US7] Generate sequential calls within single trampoline iteration
+  - Multiple targets without postconditions: go to first target
+  - With postconditions: generate if/elif chain
+- [X] T100 [US7] Handle early exit if any target QUITs
+  - Natural via fall-through semantics - QUIT stops execution
 
 ### 11.2 Tests
 
-- [ ] T101 [US7] Test early QUIT stops sequence: `TEST G A,B Q` / `A W "A" Q` / `B W "B" Q` → "A"
-- [ ] T102 [US7] Test fall-through: `TEST G A,B Q` / `A W "A"` / `B W "B" Q` → "AB"
-- [ ] T103 [US7] Test three targets all execute: `TEST G A,B,C Q` / `A W "1"` / `B W "2"` / `C W "3" Q` → "123"
+- [X] T101 [US7] Test early QUIT stops sequence: `TEST G A,B Q` / `A W "A" Q` / `B W "B" Q` → "A" ✅
+- [X] T102 [US7] Test fall-through: `TEST G A,B Q` / `A W "A"` / `B W "B" Q` → "AB" ✅
+- [X] T103 [US7] Test three targets all execute: `TEST G A,B,C Q` / `A W "1"` / `B W "2"` / `C W "3" Q` → "123" ✅
 
-**Checkpoint**: User Story 7 complete - multiple targets work
+Added bonus tests:
+- test_postconditioned_first_target_true: G A:X,B where X=1 → "A"
+- test_postconditioned_first_target_false: G A:X,B where X=0 → "B"
+- test_all_postconditions_false: G A:0,B:0 W "done" → "done"
+- test_middle_target_quits: G A,B,C / A W "1" / B W "2" Q / C W "3" Q → "12"
+
+**Checkpoint**: User Story 7 complete ✅ - multiple targets work
 
 ---
 

@@ -201,6 +201,47 @@ if _test:
     return
 ```
 
+## Multiple GOTO Targets
+
+MUMPS supports multiple GOTO targets: `G A,B,C`. The semantics depend on postconditions:
+
+### Without Postconditions
+
+`G A,B,C` simply goes to the first target (A). The subsequent targets only matter if all preceding targets have false postconditions.
+
+```mumps
+TEST G A,B,C  ; Same as G A - just goes to A
+```
+
+### With Postconditions
+
+Each target can have a postcondition. Targets are evaluated left-to-right, and the first target with a true (or missing) postcondition is taken:
+
+```mumps
+TEST G A:X,B:Y,C  ; If X true -> A; else if Y true -> B; else -> C
+```
+
+If all postconditions are false, no GOTO is performed and execution continues to the next command:
+
+```mumps
+TEST G A:0,B:0 W "no goto"  ; Outputs "no goto"
+```
+
+### Generated Code Pattern
+
+For multiple targets with postconditions, an if/elif chain is generated:
+
+```python
+if X:
+    return ("A", state)  # Cross-label jump
+elif Y:
+    return ("B", state)
+else:
+    return ("C", state)
+```
+
+For targets without postconditions (unconditional), processing stops at that target since subsequent targets can never be reached.
+
 ## Not Yet Supported
 
 The following GOTO patterns raise `NotImplementedError` or `UnsupportedFeatureError`:
@@ -208,7 +249,6 @@ The following GOTO patterns raise `NotImplementedError` or `UnsupportedFeatureEr
 | Pattern | Example | Reason | Spec |
 |---------|---------|--------|------|
 | External routine | `G LABEL^OTHER` | Requires module import handling | 009 |
-| Multiple targets | `G A,B` | Sequential label execution | 006 |
 | Indirect | `G @VAR` | Runtime dispatch needed | 007 |
 | Argumentless | `G` | Returns to caller | 006 |
 

@@ -535,3 +535,92 @@ NEXT W X+A(1) Q"""
         # Fields should be properly typed (not just dict keys)
         assert "X: Any" in code
         assert "A: MArray" in code
+
+
+@pytest.mark.codegen
+class TestMultipleGotoTargets:
+    """Phase 11: Multiple GOTO targets (T098-T103).
+
+    Multiple targets in GOTO are evaluated left-to-right:
+    - No postconditions: go to the first target
+    - With postconditions: evaluate each, go to first true one
+    - If target QUITs, sequence stops
+    - If target falls through, continues naturally in code
+    """
+
+    def test_multiple_targets_early_quit(self, execute_mumps):
+        """T101: Early QUIT stops sequence - only first target executes.
+
+        MUMPS: TEST G A,B Q / A W "A" Q / B W "B" Q
+        Expected: "A" (A quits, B never reached)
+
+        Note: Multiple targets without postconditions just means
+        "go to first target". The ,B is redundant unless A has a
+        postcondition that could be false.
+        """
+        source = """TEST G A,B Q
+A W "A" Q
+B W "B" Q"""
+        result = execute_mumps(source)
+        assert result.output == "A"
+
+    def test_multiple_targets_fall_through(self, execute_mumps):
+        """T102: Fall-through continues to consecutive label.
+
+        MUMPS: TEST G A,B Q / A W "A" / B W "B" Q
+        Expected: "AB" (A falls through to B)
+
+        Note: Since A and B are consecutive, A's fall-through
+        naturally goes to B. Same behavior as "G A".
+        """
+        source = """TEST G A,B Q
+A W "A"
+B W "B" Q"""
+        result = execute_mumps(source)
+        assert result.output == "AB"
+
+    def test_three_targets_all_execute(self, execute_mumps):
+        """T103: Three consecutive targets with fall-through.
+
+        MUMPS: TEST G A,B,C Q / A W "1" / B W "2" / C W "3" Q
+        Expected: "123" (A->B->C via fall-through)
+        """
+        source = """TEST G A,B,C Q
+A W "1"
+B W "2"
+C W "3" Q"""
+        result = execute_mumps(source)
+        assert result.output == "123"
+
+    def test_postconditioned_first_target_true(self, execute_mumps):
+        """Postconditioned GOTO: first target taken when condition true."""
+        source = """TEST S X=1 G A:X,B Q
+A W "A" Q
+B W "B" Q"""
+        result = execute_mumps(source)
+        assert result.output == "A"
+
+    def test_postconditioned_first_target_false(self, execute_mumps):
+        """Postconditioned GOTO: second target taken when first is false."""
+        source = """TEST S X=0 G A:X,B Q
+A W "A" Q
+B W "B" Q"""
+        result = execute_mumps(source)
+        assert result.output == "B"
+
+    def test_all_postconditions_false(self, execute_mumps):
+        """All postconditions false: no GOTO taken, continue to next command."""
+        source = """TEST G A:0,B:0 W "done" Q
+A W "A" Q
+B W "B" Q"""
+        result = execute_mumps(source)
+        assert result.output == "done"
+
+    def test_middle_target_quits(self, execute_mumps):
+        """Middle target QUITs, last target not reached."""
+        source = """TEST G A,B,C Q
+A W "1"
+B W "2" Q
+C W "3" Q"""
+        result = execute_mumps(source)
+        assert result.output == "12"
