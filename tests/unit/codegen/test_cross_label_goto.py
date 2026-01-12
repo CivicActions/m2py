@@ -202,3 +202,90 @@ class TestSimpleFunctionsNotAffected:
         assert "def TEST():" in code
         # No trampoline
         assert "_labels" not in code
+
+
+@pytest.mark.codegen
+class TestBackwardCrossLabelGoto:
+    """Phase 6: Backward cross-label GOTO patterns (T063-T069)."""
+
+    def test_backward_cross_label_goto(self, execute_mumps):
+        """T066: Backward GOTO creates implicit loop via trampoline.
+
+        Pattern: TEST -> LOOP -> INC -> LOOP creates cycle
+        """
+        source = """TEST S X=0 G LOOP
+INC S X=X+1 W X
+LOOP I X<3 G INC
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_backward_cross_label_variable_preserved(self, execute_mumps):
+        """T068: Variables preserved across backward iterations."""
+        source = """TEST S X=0,SUM=0 G LOOP
+LOOP S X=X+1,SUM=SUM+X I X<10 G LOOP
+ W SUM Q"""
+        result = execute_mumps(source)
+        assert result.output == "55"  # Sum of 1+2+...+10
+        assert result.success is True
+
+    def test_nested_label_cycle(self, execute_mumps):
+        """T069: Nested labels with backward A->B->C->A pattern."""
+        source = """TEST S N=0 G A
+A S N=N+1 W "A"
+ G B
+B W "B"
+ G C
+C W "C"
+ I N<3 G A
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "ABCABCABC"
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestSelfLoopPattern:
+    """Phase 6: Self-loop patterns (T069a/T069b)."""
+
+    def test_self_loop_generates_while_pattern(self, generate_python):
+        """T069b: Self-loop generates while True pattern, not trampoline."""
+        # Single label that GOTOs itself
+        source = """TEST S X=0
+ S X=X+1 W X I X<3 G TEST
+ Q"""
+        code = generate_python(source)
+
+        # Should generate while True: pattern
+        assert "while True:" in code
+        # Self-loop GOTO becomes continue
+        assert "continue" in code
+        # QUIT becomes break
+        assert "break" in code
+
+    def test_self_loop_with_cross_label_entry(self, execute_mumps):
+        """T069a: Self-loop with cross-label entry works correctly.
+
+        Pattern: TEST -> LOOP (with self-loop in LOOP)
+        """
+        source = """TEST S X=0 G LOOP
+LOOP S X=X+1 W X I X<3 G LOOP
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_self_loop_preserves_variables(self, execute_mumps):
+        """Self-loop preserves variable state across iterations.
+
+        Note: The self-loop must NOT initialize variables inside the loop,
+        or they'll reset each iteration. We use a cross-label entry pattern.
+        """
+        # TEST initializes, then jumps to LOOP which has the self-loop
+        source = """TEST S X=0,SUM=0 G LOOP
+LOOP S X=X+1,SUM=SUM+X I X<5 G LOOP
+ W SUM Q"""
+        result = execute_mumps(source)
+        assert result.output == "15"  # Sum of 1+2+3+4+5
+        assert result.success is True

@@ -132,17 +132,23 @@ class TestIntraLabelGotoCodegen:
         assert result.output == "ABCD"  # C is executed when condition is false
         assert result.success is True
 
-    def test_backward_intra_label_goto_raises_error(self, generate_python):
-        """Backward intra-label GOTO raises UnsupportedFeatureError (T033).
+    def test_backward_intra_label_goto_generates_while_loop(self, generate_python):
+        """Backward intra-label GOTO generates while True pattern (T069a/b).
 
-        Backward GOTOs within a label create implicit loops that cannot
-        be restructured to simple if/else. These require Spec 006.
+        Spec 006 Phase 6: Self-loop patterns where a label GOTOs to itself
+        are now supported. The label body is wrapped in `while True:` and
+        the GOTO becomes `continue`.
         """
-        from m2py.codegen.statements import UnsupportedFeatureError
-
+        # Self-loop pattern: LOOP GOTOs back to itself
         code = 'TEST W "A"\n I 1 G TEST\n W "B"\n Q\n'
-        with pytest.raises(UnsupportedFeatureError, match="Backward intra-label GOTO"):
-            generate_python(code)
+        python_code = generate_python(code)
+
+        # Should generate while True: pattern for self-loop
+        assert "while True:" in python_code
+        # GOTO TEST from within TEST should become continue
+        assert "continue" in python_code
+        # QUIT at end should become break
+        assert "break" in python_code
 
     def test_goto_cannot_create_continue_pattern(self, generate_python):
         """GOTO cannot create Python continue pattern (T039 - updated).

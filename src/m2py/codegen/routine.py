@@ -317,6 +317,11 @@ class RoutineGenerator:
         - Formal parameters for function definition
         - Return pattern based on scope_strategy
 
+        Spec 006 (T069a): Labels with has_self_loop=True wrap body in while True:
+        - Self-loop GOTOs become continue
+        - QUIT becomes break (implicit at end of body)
+        - Other exits (cross-label GOTO) use return
+
         Args:
             label: MLabel ASG node
             ctx: Generator context
@@ -356,13 +361,27 @@ class RoutineGenerator:
             # Declare global _test
             ctx.emitter.line("global _test")
 
-            # Generate body statements using scope-aware generator
-            # This handles forward GOTO restructuring automatically
-            if label.body and label.body.statements:
-                generate_scope_statements(label.body.statements, ctx)
+            # Spec 006 (T069a): Check for self-loop pattern
+            if label.has_self_loop:
+                # Wrap body in while True: for self-loop pattern
+                ctx.emitter.line("while True:")
+                with ctx.emitter.indented():
+                    if label.body and label.body.statements:
+                        generate_scope_statements(label.body.statements, ctx)
+                    else:
+                        ctx.emitter.line("pass")
+                    # If no explicit exit, add break to prevent infinite loop
+                    # This handles fall-through at end of label
+                    if not label.has_explicit_exit:
+                        ctx.emitter.line("break")
             else:
-                # Empty function needs pass
-                ctx.emitter.line("pass")
+                # Generate body statements using scope-aware generator
+                # This handles forward GOTO restructuring automatically
+                if label.body and label.body.statements:
+                    generate_scope_statements(label.body.statements, ctx)
+                else:
+                    # Empty function needs pass
+                    ctx.emitter.line("pass")
 
         ctx.emitter.blank()
         ctx.current_label = None
@@ -481,13 +500,27 @@ class RoutineGenerator:
             # Declare global _test
             ctx.emitter.line("global _test")
 
-            # Generate body statements using scope-aware generator
-            # This handles forward GOTO restructuring automatically
-            if label.body and label.body.statements:
-                generate_scope_statements(label.body.statements, ctx)
+            # Spec 006 (T069a/T069b): Self-loop labels wrap body in while True:
+            # Self-loop GOTOs become continue, QUIT becomes break
+            if label.has_self_loop:
+                ctx.emitter.line("while True:")
+                with ctx.emitter.indented():
+                    # Generate body statements
+                    if label.body and label.body.statements:
+                        generate_scope_statements(label.body.statements, ctx)
+                    else:
+                        ctx.emitter.line("pass")
+                    # Implicit break at end if no explicit exit (to prevent infinite loop)
+                    if not label.has_explicit_exit:
+                        ctx.emitter.line("break")
             else:
-                # Empty function needs pass
-                ctx.emitter.line("pass")
+                # Generate body statements using scope-aware generator
+                # This handles forward GOTO restructuring automatically
+                if label.body and label.body.statements:
+                    generate_scope_statements(label.body.statements, ctx)
+                else:
+                    # Empty function needs pass
+                    ctx.emitter.line("pass")
 
             # Fall-through: return next label or None if last label
             # This handles labels that don't end with explicit GOTO or QUIT

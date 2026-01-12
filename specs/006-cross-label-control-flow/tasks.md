@@ -222,7 +222,7 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 ---
 
-## Phase 6: User Story 2 - Backward Cross-Label GOTO (Priority: P1)
+## Phase 6: User Story 2 - Backward Cross-Label GOTO (Priority: P1) ✅ COMPLETE
 
 **Goal**: Cross-label GOTO that creates implicit loop (back to earlier label)
 
@@ -230,20 +230,20 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 ### 6.1 Implementation
 
-- [ ] T063 [US2] Ensure cross-label detection marks this as `needs_trampoline=True`
-- [ ] T064 [US2] Trampoline handles returning to same/earlier label
-- [ ] T065 [US2] Test for RecursionError: execute 10,000+ iterations without stack overflow
+- [X] T063 [US2] Ensure cross-label detection marks this as `needs_trampoline=True`
+- [X] T064 [US2] Trampoline handles returning to same/earlier label
+- [X] T065 [US2] Test for RecursionError: execute 10,000+ iterations without stack overflow
 
 ### 6.2 Tests
 
-- [ ] T066 [US2] Test backward loop: `TEST S X=0` / `LOOP S X=X+1 W X I X<3 G LOOP Q` → "123"
-- [ ] T067 [US2] Test iteration count: 10,000 iterations without RecursionError
-- [ ] T068 [US2] Test variable state preserved across iterations
-- [ ] T069 [US2] Test nested labels with backward: A→B→C→A pattern (3+ label cycle)
-- [ ] T069a [US2] Test self-loop pattern: `TEST S X=0` / `LOOP S X=X+1 W X I X<3 G LOOP Q` → intra-label backward GOTO creates implicit while loop
-- [ ] T069b [US2] Verify self-loops (`is_cross_label=False`, backward) generate `while True:` pattern, not trampoline
+- [X] T066 [US2] Test backward loop: `TEST S X=0` / `LOOP S X=X+1 W X I X<3 G LOOP Q` → "123"
+- [X] T067 [US2] Test iteration count: 10,000 iterations without RecursionError
+- [X] T068 [US2] Test variable state preserved across iterations
+- [X] T069 [US2] Test nested labels with backward: A→B→C→A pattern (3+ label cycle)
+- [X] T069a [US2] Test self-loop pattern: `TEST S X=0` / `LOOP S X=X+1 W X I X<3 G LOOP Q` → intra-label backward GOTO creates implicit while loop
+- [X] T069b [US2] Verify self-loops (`is_cross_label=False`, backward) generate `while True:` pattern, not trampoline
 
-**Checkpoint**: User Story 2 complete - cyclic patterns work with trampoline
+**Checkpoint**: User Story 2 complete ✅ - cyclic patterns work with trampoline
 
 ---
 

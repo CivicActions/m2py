@@ -230,6 +230,8 @@ def _classify_single_goto(
                 # back to the label start. Example:
                 #   TEST S X=X+1 W X I X<10 G TEST Q
                 stmt.goto_type = GotoType.BACKWARD_JUMP
+                # Spec 006 (T069a): Mark label as having self-loop for while True: generation
+                current_label.has_self_loop = True
             else:
                 # Has offset: G LABEL+n
                 # Try to determine direction if offset is a literal AND we have line info
@@ -261,6 +263,8 @@ def _classify_single_goto(
                     else:
                         # Target is at or before GOTO position = backward
                         stmt.goto_type = GotoType.BACKWARD_JUMP
+                        # Spec 006 (T069a): Mark label as having self-loop for while True: generation
+                        current_label.has_self_loop = True
                 else:
                     # Cannot determine direction statically (dynamic offset or missing line info)
                     # Default to FORWARD_JUMP since:

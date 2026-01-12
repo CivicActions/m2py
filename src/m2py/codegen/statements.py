@@ -533,6 +533,11 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("break")
         return
 
+    # Spec 006 (T069a): Self-loop pattern - QUIT exits the while True: loop
+    if ctx.current_label and ctx.current_label.has_self_loop:
+        ctx.emitter.line("break")
+        return
+
     # T059: Plain QUIT with by-ref outputs - return modified params as tuple
     # Check if current label has byref_outputs that need to be returned
     if (
@@ -992,11 +997,13 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     is_cross_label = stmt.is_cross_label
     exits_loops = stmt.exits_loops
 
+    # Spec 006 (T069a): Self-loop pattern - backward intra-label GOTO
+    # When label has has_self_loop=True, body is wrapped in while True:
+    # and this GOTO becomes continue to restart the loop
     if goto_type == GotoType.BACKWARD_JUMP and not is_cross_label:
-        raise UnsupportedFeatureError(
-            "Backward intra-label GOTO creates implicit loop - not yet supported. "
-            "See Spec 006 for loop detection patterns."
-        )
+        # Self-loop: generate continue to restart the while True: loop
+        ctx.emitter.line("continue")
+        return
 
     # Phase 7 (US5): Loop exit patterns
     # Note: There is no "continue" pattern - GOTO cannot create continue semantics.

@@ -216,6 +216,10 @@ class MLabel(ASGElement):
     # Function signature (populated by compute_signatures)
     signature: Optional[Any] = field(default=None, repr=False)  # FunctionSignature
 
+    # Spec 006 (T069a): Self-loop flag (populated by classify_gotos)
+    # True if label contains intra-label backward GOTO to itself (creates while True: pattern)
+    has_self_loop: bool = False
+
     # Parser internal: stores unparsed line content and parsed results
     _line_rest: Optional[str] = field(default=None, repr=False)
     _parsed_content: Optional[Any] = field(default=None, repr=False)
