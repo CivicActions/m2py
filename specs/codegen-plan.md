@@ -639,7 +639,7 @@ Review before coding:
 - **Docs**: `docs/analysis/for_analysis.md`, `docs/analysis/goto_analysis.md`, `docs/codegen/for_loops.md`
 - **$TEST**: Where is $TEST represented? When stack/restore?
 - **FOR analysis**: `analysis/for_analysis.py` → `ForLoopType`, `loop_var_modified_in_body`, `has_internal_quit`
-- **GOTO**: `analysis/goto_analysis.py` → `GotoType`, `is_cross_label`, `is_loop_continue`
+- **GOTO**: `analysis/goto_analysis.py` → `GotoType`, `is_cross_label`, `exits_loops`
 - **Scope**: `analysis/variables.py` → `FunctionSignature`, `ScopeStrategy`, `input_variables`, `output_variables`
 - **QUIT**: `asg/statements.py` → `MQuitStatement.exits_for`, `.exits_do_block`, `.return_value`
 - **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1FOR*.m`
@@ -670,7 +670,8 @@ Review before coding:
 
 4. **Intra-Label GOTO** (`is_cross_label=False`)
    - Forward jumps → restructure to if/else
-   - `is_loop_continue=True` → `continue`
+
+   **Note**: GOTO cannot create `continue` semantics (MDC 3.6.5 - GOTO terminates all enclosing FOR loops)
 
 5. **Loop Exits**
    - `GotoType.LOOP_EXIT` → `break`
