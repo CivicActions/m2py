@@ -249,13 +249,54 @@ if stmt.loop_type == ForLoopType.BOUNDED:
 
 **Key ASG fields populated by analysis**:
 - `MForStatement.loop_type`, `.loop_var_modified_in_body`, `.has_internal_quit`, `.has_internal_goto`, `.is_infinite` → `analyze_for_loops()`
-- `MGotoStatement.goto_type`, `.exits_loops`, `.is_restructurable` → `classify_gotos()`
+- `MGotoStatement.goto_type`, `.exits_loops`, `.is_restructurable`, `.is_cross_label` → `classify_gotos()`
 - `MQuitStatement.exits_for`, `.exits_do_block` → `analyze_quit_context()`
 - `MLabel.signature` → `compute_signatures()`
+- `MRoutine.needs_trampoline`, `.routine_state_vars`, `.array_vars` → `classify_gotos()`, `compute_all_signatures()`
 
 **Direct attribute access**: ASG dataclass fields have default values (typically `False` or `None`).
 Codegen accesses these fields directly without `getattr()` fallbacks. If a field isn't populated,
 it retains its default, which is semantically correct (e.g., `has_internal_quit=False` by default).
+
+### Cross-Label Control Flow (Trampoline Pattern)
+
+When a routine contains cross-label GOTOs (`needs_trampoline=True`), codegen uses a trampoline pattern
+instead of direct function calls. This prevents Python stack overflow for cyclic GOTOs.
+
+**Key Components:**
+
+1. **RoutineState dataclass**: Carries variables across label boundaries
+   ```python
+   @dataclass
+   class RoutineState:
+       X: Any = None        # Simple variables
+       A: MArray = field(default_factory=MArray)  # Subscripted arrays
+   ```
+
+2. **Trampoline dispatcher**: Iterative `while` loop replaces recursive calls
+   ```python
+   _labels = {"TEST": TEST, "NEXT": NEXT}
+   label = "TEST"
+   state = RoutineState()
+   while label:
+       label, state = _labels[label](state)
+   ```
+
+3. **Label functions**: Return `(next_label, state)` tuple for cross-label jumps
+   ```python
+   def TEST(state: RoutineState) -> tuple[str | None, RoutineState]:
+       state.X = 1
+       return ("NEXT", state)  # Cross-label GOTO
+   ```
+
+**Strategy Selection**: `_select_goto_strategy()` in `codegen/__init__.py` chooses:
+- `SIMPLE_FUNCTIONS`: For routines with only intra-label GOTOs (no RoutineState needed)
+- `TRAMPOLINE`: For routines with any cross-label GOTOs (RoutineState + dispatcher)
+
+**MArray class**: Provides MUMPS array semantics where each node can have both a value
+and children. Located in `runtime/__init__.py`.
+
+See: [goto_handling.md](codegen/goto_handling.md) for detailed patterns.
 
 ### Why Separate Grammar Files?
 
