@@ -379,7 +379,7 @@ Added bonus tests:
 
 ---
 
-## Phase 12: User Story 8 - Strategy Selection (Priority: P2)
+## Phase 12: User Story 8 - Strategy Selection (Priority: P2) ✅ COMPLETE
 
 **Goal**: Automatic strategy selection with no manual flags
 
@@ -387,18 +387,25 @@ Added bonus tests:
 
 ### 12.1 Implementation
 
-- [ ] T104 [US8] Verify strategy selection uses only ASG flags (no user input)
-- [ ] T105 [US8] Document selection logic in code comments
+- [X] T104 [US8] Verify strategy selection uses only ASG flags (no user input)
+  - `_select_goto_strategy()` uses only `routine.needs_trampoline` flag
+  - No user configuration required - fully automatic
+- [X] T105 [US8] Document selection logic in code comments
+  - Comprehensive docstring already in `_select_goto_strategy()`
+  - Explains SIMPLE_FUNCTIONS vs TRAMPOLINE selection
 
 ### 12.2 Tests
 
-- [ ] T106 [US8] Test routine with only intra-label GOTOs → SIMPLE_FUNCTIONS
-- [ ] T107 [US8] Test routine with cross-label GOTOs → TRAMPOLINE
-- [ ] T108 [US8] Test routine with cyclic cross-label GOTOs → TRAMPOLINE
+- [X] T106 [US8] Test routine with only intra-label GOTOs → SIMPLE_FUNCTIONS
+  - `test_intra_label_goto_uses_simple_functions` in test_strategy_selection.py
+- [X] T107 [US8] Test routine with cross-label GOTOs → TRAMPOLINE
+  - `test_cross_label_goto_uses_trampoline` in test_strategy_selection.py
+- [X] T108 [US8] Test routine with cyclic cross-label GOTOs → TRAMPOLINE
+  - Added `test_cyclic_cross_label_goto_uses_trampoline` for A→B→A cycle pattern
 
 **Note**: STATE_MACHINE strategy deferred - all patterns use TRAMPOLINE or SIMPLE_FUNCTIONS.
 
-**Checkpoint**: User Story 8 complete - automatic strategy selection
+**Checkpoint**: User Story 8 complete ✅ - automatic strategy selection verified
 
 ---
 

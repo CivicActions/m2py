@@ -187,6 +187,21 @@ class TestStrategyIntegration:
         assert "RoutineState" in code
         assert "_labels" in code
 
+    def test_cyclic_cross_label_goto_uses_trampoline(self, generate_python):
+        """T108: Routine with cyclic cross-label GOTOs uses TRAMPOLINE strategy.
+
+        Pattern: A→B→A cycle should use trampoline to avoid stack overflow.
+        """
+        # Create a cycle: TEST → NEXT → TEST (with counter to stop)
+        code = generate_python(
+            "TEST\n S X=0\n G NEXT\n Q\nNEXT\n S X=X+1\n W X\n I X<3 G TEST\n Q\n"
+        )
+
+        # Should have trampoline dispatch
+        assert "while" in code
+        assert "RoutineState" in code
+        assert "_labels" in code
+
     def test_external_goto_raises_unsupported(self, generate_python):
         """T045b: External GOTO raises UnsupportedFeatureError during generation."""
         with pytest.raises(UnsupportedFeatureError, match="EXTERNAL GOTO"):
