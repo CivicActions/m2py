@@ -21,10 +21,12 @@ from m2py.asg.statements import (
     MSetStatement,
     MWriteStatement,
 )
+from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.expressions import generate_expr
 from m2py.codegen.names import translate_name
 
 if TYPE_CHECKING:
+    from m2py.asg.elements import MCall
     from m2py.asg.statements import MStatement
     from m2py.codegen.routine import GeneratorContext
 
@@ -118,11 +120,16 @@ class ForGenContext:
     loop_type: ForLoopType
 
     @classmethod
-    def from_statement(cls, stmt: MForStatement) -> "ForGenContext":
+    def from_statement(
+        cls,
+        stmt: MForStatement,
+        ctx: "GeneratorContext | None" = None,
+    ) -> "ForGenContext":
         """Create ForGenContext from an MForStatement.
 
         Args:
             stmt: The FOR statement to analyze
+            ctx: Optional generator context for strategy-aware naming
 
         Returns:
             ForGenContext with analysis results
@@ -132,11 +139,22 @@ class ForGenContext:
         """
         # Get loop variable name
         if isinstance(stmt.loop_var, str):
-            loop_var = translate_name(stmt.loop_var) if stmt.loop_var else "_"
+            var_name = stmt.loop_var if stmt.loop_var else "_"
+            loop_var = translate_name(var_name)
         elif isinstance(stmt.loop_var, MVariable):
-            loop_var = translate_name(stmt.loop_var.name)
+            var_name = stmt.loop_var.name
+            loop_var = translate_name(var_name)
         else:
+            var_name = "_"
             loop_var = "_"  # Fallback for complex expressions
+
+        # Spec 006: Check if loop var should use state for trampoline
+        if (
+            ctx
+            and ctx.strategy == GotoStrategy.TRAMPOLINE
+            and var_name in ctx.state_vars
+        ):
+            loop_var = f"state.{translate_name(var_name)}"
 
         # Read analysis results - ASG fields have defaults, analysis passes populate them
         use_while = stmt.loop_var_modified_in_body
@@ -252,8 +270,8 @@ class GotoGenContext:
 def _find_forward_goto_in_if(if_stmt: MIfStatement) -> "MGotoStatement | None":
     """Find a restructurable forward GOTO in an IF's then_scope.
 
-    Only checks the first statement (immediate GOTO pattern).
-    More complex patterns could be supported in the future.
+    Uses pre-computed MIfStatement.restructurable_goto field set by
+    classify_gotos() analysis. Avoids scanning at codegen time.
 
     Args:
         if_stmt: The MIfStatement to check
@@ -261,16 +279,7 @@ def _find_forward_goto_in_if(if_stmt: MIfStatement) -> "MGotoStatement | None":
     Returns:
         The MGotoStatement if found and restructurable, None otherwise
     """
-    if not if_stmt.then_scope or not if_stmt.then_scope.statements:
-        return None
-
-    # Check if there's a GOTO as the only/first statement
-    # T100: Use pre-computed is_restructurable field instead of helper function
-    for stmt in if_stmt.then_scope.statements:
-        if isinstance(stmt, MGotoStatement) and stmt.is_restructurable:
-            return stmt
-
-    return None
+    return if_stmt.restructurable_goto
 
 
 def _restructure_forward_goto(
@@ -427,6 +436,12 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
 def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
     """Generate Python assignment from MSetStatement.
 
+    Spec 006: When using TRAMPOLINE strategy and the variable is in state_vars,
+    assign to `state.VAR` instead of just `VAR`.
+
+    Spec 006 (T075): Handle subscripted assignments for MArray-backed variables.
+    For array variables, generate: state.A[subscripts] = value
+
     Args:
         stmt: MSetStatement node
         ctx: Generator context
@@ -438,10 +453,40 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
         # Get target variable name
         if isinstance(assignment.target, MVariable):
             target_name = translate_name(assignment.target.name)
+            var_name = assignment.target.name
 
-            # Subscripts not supported yet
+            # Spec 006 (T075): Handle subscripted array assignments
             if assignment.target.subscripts:
-                raise NotImplementedError("Subscripted assignments not yet supported")
+                # Generate subscript expressions
+                subscript_exprs = [
+                    generate_expr(sub, ctx) for sub in assignment.target.subscripts
+                ]
+
+                # Determine base variable access
+                if (
+                    ctx.strategy == GotoStrategy.TRAMPOLINE
+                    and var_name in ctx.array_vars
+                ):
+                    # MArray in RoutineState: state.A[subscripts] = value
+                    base = f"state.{target_name}"
+                else:
+                    # Local MArray variable: A[subscripts] = value
+                    base = target_name
+
+                # Format subscripts: single key or tuple
+                if len(subscript_exprs) == 1:
+                    target_expr = f"{base}[{subscript_exprs[0]}]"
+                else:
+                    target_expr = f"{base}[{', '.join(subscript_exprs)}]"
+
+                # Generate value expression and emit assignment
+                value_expr = generate_expr(assignment.value, ctx)
+                ctx.emitter.line(f"{target_expr} = {value_expr}")
+                continue
+
+            # Spec 006: Check if variable should be accessed via state
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+                target_name = f"state.{target_name}"
         else:
             raise NotImplementedError(
                 f"Unsupported SET target type: {type(assignment.target).__name__}"
@@ -464,8 +509,9 @@ def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
     for arg in stmt.arguments:
         if isinstance(arg, MExpr):
             # Generate expression and write it
+            # Runtime handles None -> empty string conversion (MUMPS undefined semantics)
             expr = generate_expr(arg, ctx)
-            ctx.emitter.line(f"_rt.write(str({expr}))")
+            ctx.emitter.line(f"_rt.write({expr})")
         # Skip format controls for now (!, #, ?n) - Phase 2 scope is basic only
 
 
@@ -476,13 +522,13 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
     - With return value: returns value from extrinsic (Python: return value)
     - Inside a FOR loop: exits the FOR loop (Python: break)
     - Inside a DO block: exits the DO block only (Python: break from while True)
-    - Otherwise: returns from label/routine (Python: return)
+    - Otherwise: returns from label/routine (Python: return or return (None, state))
 
     Priority order (checked first to last):
     1. return_value -> return <expr>
     2. exits_for (from ASG) -> break
     3. exits_do_block (from ASG) -> break (exit DO block's while True)
-    4. default -> return
+    4. default -> return (or return (None, state) for trampoline)
 
     Args:
         stmt: MQuitStatement node
@@ -506,6 +552,11 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("break")
         return
 
+    # Spec 006 (T069a): Self-loop pattern - QUIT exits the while True: loop
+    if ctx.current_label and ctx.current_label.has_self_loop:
+        ctx.emitter.line("break")
+        return
+
     # T059: Plain QUIT with by-ref outputs - return modified params as tuple
     # Check if current label has byref_outputs that need to be returned
     if (
@@ -520,6 +571,11 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         if return_vars:
             ctx.emitter.line(f"return {', '.join(return_vars)}")
             return
+
+    # Spec 006: Trampoline pattern - return (None, state) to signal exit
+    if ctx.strategy == GotoStrategy.TRAMPOLINE:
+        ctx.emitter.line("return (None, state)")
+        return
 
     # Plain QUIT outside FOR/DO block - return from function/routine
     ctx.emitter.line("return")
@@ -624,16 +680,19 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     # T091: Use pre-computed field from analysis instead of helper function
     has_cross_label_exit = stmt.has_cross_label_exit
 
-    # FR-018: Initialize _goto_target before loop if needed
+    # FR-018: Initialize goto tracking before loop if needed
     if has_cross_label_exit and not needs_wrapper:
-        ctx.emitter.line("_goto_target = None")
+        if ctx.strategy == GotoStrategy.TRAMPOLINE:
+            ctx.emitter.line("_goto_label = None")
+        else:
+            ctx.emitter.line("_goto_target = None")
 
     if needs_wrapper:
         ctx.emitter.line("try:")
         ctx.emitter.indent()
 
     # Use ForGenContext for analysis-based dispatch
-    for_ctx = ForGenContext.from_statement(stmt)
+    for_ctx = ForGenContext.from_statement(stmt, ctx)
 
     # Dispatch based on loop type and analysis flags
     if for_ctx.loop_type == ForLoopType.ARGUMENTLESS:
@@ -655,18 +714,26 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.dedent()
         ctx.emitter.line("except _LoopExit as _e:")
         with ctx.emitter.indented():
-            # FR-018: Call target label if provided
+            # FR-018: Call/return to target label if provided
             ctx.emitter.line("if _e.target is not None:")
             with ctx.emitter.indented():
-                ctx.emitter.line("_e.target()")
-                ctx.emitter.line("return")
+                if ctx.strategy == GotoStrategy.TRAMPOLINE:
+                    ctx.emitter.line("return (_e.target, state)")
+                else:
+                    ctx.emitter.line("_e.target()")
+                    ctx.emitter.line("return")
 
-    # FR-018: Call target after single-loop exit if set
+    # FR-018: Handle target after single-loop exit if set
     if has_cross_label_exit and not needs_wrapper:
-        ctx.emitter.line("if _goto_target is not None:")
-        with ctx.emitter.indented():
-            ctx.emitter.line("_goto_target()")
-            ctx.emitter.line("return")
+        if ctx.strategy == GotoStrategy.TRAMPOLINE:
+            ctx.emitter.line("if _goto_label is not None:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("return (_goto_label, state)")
+        else:
+            ctx.emitter.line("if _goto_target is not None:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("_goto_target()")
+                ctx.emitter.line("return")
 
 
 def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
@@ -904,7 +971,14 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     GOTO transfers control to a label. The generated Python depends on context:
     - Single loop exit: generate `break`
     - Multi-loop exit: generate `raise _LoopExit()`
-    - Cross-label jump: generate function call + return
+    - Cross-label jump (SIMPLE_FUNCTIONS): generate function call + return
+    - Cross-label jump (TRAMPOLINE): generate return (label_name, state)
+
+    Multiple targets (Phase 11):
+    - Targets evaluated left-to-right
+    - If target has postcondition and it's false, try next target
+    - If postcondition is true or no postcondition, go to that target
+    - If all postconditions false, no jump (continue to next command)
 
     Note: There is no "continue" pattern. Per MUMPS spec (MDC 3.6.5):
     "Execution of GOTO effects the immediate termination of all FORs
@@ -912,7 +986,10 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     a function call/recursion, not continue semantics.
 
     Example patterns:
-    - G DONE (cross-label) → DONE(); return
+    - G DONE (cross-label, SIMPLE) → DONE(); return
+    - G DONE (cross-label, TRAMPOLINE) → return ("DONE", state)
+    - G A,B → go to A (targets evaluated left-to-right)
+    - G A:cond,B → if cond: go to A, else: go to B
     - G DONE (inside FOR, exiting loop) → break
     - G DONE (inside nested FOR) → raise _LoopExit()
 
@@ -927,11 +1004,27 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     if not stmt.targets:
         raise NotImplementedError("Argumentless GOTO not supported")
 
+    # Phase 11 (T098-T100): Handle multiple targets
     if len(stmt.targets) > 1:
-        raise NotImplementedError("Multiple GOTO targets not yet supported")
+        _generate_multi_target_goto(stmt, ctx)
+        return
 
     target = stmt.targets[0]
+    _generate_single_target_goto(target, stmt, ctx)
 
+
+def _generate_single_target_goto(
+    target: "MCall", stmt: MGotoStatement, ctx: "GeneratorContext"
+) -> None:
+    """Generate GOTO code for a single target.
+
+    This handles all single-target cases including loop exits and cross-label jumps.
+
+    Args:
+        target: The MCall target to jump to
+        stmt: The parent MGotoStatement (for classification info)
+        ctx: Generator context
+    """
     # Check for external routine reference
     if target.routine:
         raise NotImplementedError("External routine GOTO not yet supported")
@@ -947,11 +1040,13 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     is_cross_label = stmt.is_cross_label
     exits_loops = stmt.exits_loops
 
+    # Spec 006 (T069a): Self-loop pattern - backward intra-label GOTO
+    # When label has has_self_loop=True, body is wrapped in while True:
+    # and this GOTO becomes continue to restart the loop
     if goto_type == GotoType.BACKWARD_JUMP and not is_cross_label:
-        raise UnsupportedFeatureError(
-            "Backward intra-label GOTO creates implicit loop - not yet supported. "
-            "See Spec 006 for loop detection patterns."
-        )
+        # Self-loop: generate continue to restart the while True: loop
+        ctx.emitter.line("continue")
+        return
 
     # Phase 7 (US5): Loop exit patterns
     # Note: There is no "continue" pattern - GOTO cannot create continue semantics.
@@ -966,8 +1061,13 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
             # Single loop exit - generate break
             # FR-018: For cross-label exits, track target so it can be called after loop
             if is_cross_label and target is not None:
-                label_name = translate_name(target.name)
-                ctx.emitter.line(f"_goto_target = {label_name}")
+                if ctx.strategy == GotoStrategy.TRAMPOLINE:
+                    # Trampoline: store label name as string
+                    ctx.emitter.line(f'_goto_label = "{target.name}"')
+                else:
+                    # Simple functions: store function reference
+                    label_name = translate_name(target.name)
+                    ctx.emitter.line(f"_goto_target = {label_name}")
             ctx.emitter.line("break")
             return
         else:
@@ -975,20 +1075,135 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
             # The exception will be caught by the outermost FOR loop
             # FR-018: Pass target label name so it can be called in except block
             if is_cross_label and target is not None:
-                label_name = translate_name(target.name)
-                ctx.emitter.line(f"raise _LoopExit({label_name})")
+                if ctx.strategy == GotoStrategy.TRAMPOLINE:
+                    # Trampoline: pass label name as string
+                    ctx.emitter.line(f'raise _LoopExit("{target.name}")')
+                else:
+                    # Simple functions: pass function reference
+                    label_name = translate_name(target.name)
+                    ctx.emitter.line(f"raise _LoopExit({label_name})")
             else:
                 ctx.emitter.line("raise _LoopExit()")
             return
 
-    # Default: cross-label GOTO as function call
-    # Get the label name and translate it
-    label_name = translate_name(target.name)
+    # Cross-label GOTO: pattern depends on strategy
+    # Spec 006 (T055): Check strategy and generate appropriate pattern
+    if ctx.strategy == GotoStrategy.TRAMPOLINE:
+        # Trampoline pattern: return (label_name, state) tuple
+        # The trampoline dispatcher will call the target label
+        ctx.emitter.line(f'return ("{target.name}", state)')
+    else:
+        # SIMPLE_FUNCTIONS pattern: function call + return
+        # Get the label name and translate it
+        label_name = translate_name(target.name)
 
-    # Generate: label(); return
-    # The return ensures control doesn't continue after GOTO
-    ctx.emitter.line(f"{label_name}()")
-    ctx.emitter.line("return")
+        # Generate: label(); return
+        # The return ensures control doesn't continue after GOTO
+        ctx.emitter.line(f"{label_name}()")
+        ctx.emitter.line("return")
+
+
+def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
+    """Generate GOTO code for multiple targets (Phase 11).
+
+    Multiple targets are evaluated left-to-right:
+    - If target has no postcondition, jump to it unconditionally
+    - If target has postcondition and it's true, jump to it
+    - If postcondition is false, try next target
+    - If all postconditions are false, no jump (fall through)
+
+    Generated pattern (for G A:cond1,B:cond2,C):
+        if m_truth(cond1):
+            return ("A", state)
+        elif m_truth(cond2):
+            return ("B", state)
+        else:
+            return ("C", state)
+
+    Args:
+        stmt: MGotoStatement with multiple targets
+        ctx: Generator context
+    """
+    targets = stmt.targets
+
+    # Check for unsupported patterns in multi-target GOTO
+    for target in targets:
+        if target.routine:
+            raise NotImplementedError(
+                "External routine in multi-target GOTO not supported"
+            )
+        if target.label_is_indirect or target.indirection:
+            raise NotImplementedError(
+                "Indirect target in multi-target GOTO not supported"
+            )
+
+    # Check if any targets have postconditions
+    has_postconditions = any(t.postcondition is not None for t in targets)
+
+    if not has_postconditions:
+        # No postconditions: just go to first target
+        # This is semantically equivalent to single-target GOTO
+        first_target = targets[0]
+        _generate_single_target_goto(first_target, stmt, ctx)
+        return
+
+    # Generate if/elif chain for postconditioned targets
+    first = True
+    last_unconditional = None
+
+    for i, target in enumerate(targets):
+        if target.postcondition is not None:
+            # Generate condition check
+            cond_expr = generate_expr(target.postcondition, ctx)
+
+            if first:
+                ctx.emitter.line(f"if m_truth({cond_expr}):")
+                first = False
+            else:
+                ctx.emitter.line(f"elif m_truth({cond_expr}):")
+
+            # Generate jump inside condition block
+            with ctx.emitter.indented():
+                _generate_goto_jump(target, ctx)
+        else:
+            # Unconditional target (no postcondition) - save for else block
+            # This should be the last one if there are conditional targets before it
+            last_unconditional = target
+
+    # If there's an unconditional target at the end, it goes in else block
+    if last_unconditional is not None:
+        if first:
+            # No conditions at all - just jump (shouldn't happen, but handle it)
+            _generate_goto_jump(last_unconditional, ctx)
+        else:
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
+                _generate_goto_jump(last_unconditional, ctx)
+    elif not first:
+        # All targets had postconditions - need to handle "no match" case
+        # This means no GOTO taken, execution continues
+        # We need a pass to make the if/elif syntactically correct, but
+        # actually we don't need an else at all - just let it fall through
+        pass
+
+
+def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
+    """Generate the actual jump code for a GOTO target.
+
+    This generates just the jump statement without any condition checks.
+    For trampoline: return (label_name, state)
+    For simple functions: function_call(); return
+
+    Args:
+        target: The MCall target to jump to
+        ctx: Generator context
+    """
+    if ctx.strategy == GotoStrategy.TRAMPOLINE:
+        ctx.emitter.line(f'return ("{target.name}", state)')
+    else:
+        label_name = translate_name(target.name)
+        ctx.emitter.line(f"{label_name}()")
+        ctx.emitter.line("return")
 
 
 def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:

@@ -66,13 +66,14 @@ class MGotoStatement(MStatement):
     goto_type: GotoType = GotoType.FORWARD_JUMP
     is_cross_label: bool = False  # True if target in different label
     exits_loops: List[MForStatement] = field(default_factory=list)
-    is_loop_continue: bool = False  # True if continue semantics
     target_stmt_index: Optional[int] = None  # For intra-label forward restructuring
     
-    # Pre-computed codegen hints (Phase 14)
+    # Pre-computed codegen hints
     is_restructurable: bool = False  # True if can become if/else
     codegen_pattern: Optional[GotoCodegenPattern] = None  # Pattern for codegen
 ```
+
+**Note**: There is no `is_loop_continue` field. Per MDC 3.6.5, GOTO terminates all enclosing FOR loops—it cannot create Python `continue` semantics.
 
 ### is_restructurable Field
 
@@ -110,6 +111,22 @@ For example, `G TEST+4` from TEST at line 1 targets line 5.
 
 The value is computed by `_find_stmt_index_for_line()` which maps the target line number
 to a statement index in the label body.
+
+### On MIfStatement
+
+```python
+@dataclass
+class MIfStatement(MStatement):
+    # Back-reference for intra-label forward GOTO restructuring
+    restructurable_goto: Optional[MGotoStatement] = None
+```
+
+The `restructurable_goto` field provides a direct back-reference from an IF statement to
+the restructurable GOTO inside its then-branch. This allows code generation to quickly find
+the GOTO without scanning the IF body.
+
+**When set**: The field is populated by `_compute_codegen_fields()` during `classify_gotos()`
+when a GOTO with `is_restructurable=True` is found inside an IF statement's then-scope.
 
 ### On MForStatement (back-references and codegen hints)
 
@@ -162,7 +179,6 @@ The `is_cross_label=False` flag indicates the jump stays within local scope.
 ```mumps
 LOOP   F I=1:1:10 D
        . I X=5 G DONE    ; LOOP_EXIT - exits the FOR
-       . I X=3 G LOOP    ; LOOP_EXIT + is_loop_continue=True (continue pattern)
        Q
 DONE   Q
 ```
@@ -171,27 +187,8 @@ The analyzer tracks enclosing FOR loops during traversal. When a GOTO is found i
 - `goto_type` is set to `LOOP_EXIT` or `MULTI_LOOP_EXIT`
 - `exits_loops` is populated with enclosing FORs
 - `has_internal_goto` is set on the FOR statements
-- `is_loop_continue` is set to True if the GOTO target is the same label containing the FOR (continue semantics)
 
-### is_loop_continue Pattern
-
-When a GOTO inside a FOR loop jumps back to the label containing that FOR loop, it simulates Python's `continue` statement - skipping to the next iteration:
-
-```mumps
-LOOP   F I=1:1:10 D
-       . I I#2=0 G LOOP  ; Skip even numbers (is_loop_continue=True)
-       . W I,!
-       Q
-```
-
-This translates to:
-
-```python
-for i in range(1, 11):
-    if i % 2 == 0:
-        continue  # Generated from GOTO with is_loop_continue=True
-    print(i)
-```
+**Note**: GOTO always terminates enclosing FOR loops per MDC 3.6.5. There is no `continue` pattern—GOTO cannot skip to the next loop iteration.
 
 ### External vs Same-Routine
 

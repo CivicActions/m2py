@@ -1,13 +1,264 @@
 """Minimal runtime for executing generated MUMPS code.
 
 Provides output capture and execution support for generated Python code.
+Includes MArray class for MUMPS array semantics.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict
+
+
+class MArray:
+    """MUMPS array with hierarchical subscript support.
+
+    Spec 006 (T051-T052): Implements MUMPS sparse array semantics where
+    each node can have BOTH a value AND children. This is different from
+    Python dicts where a key maps to a single value.
+
+    Example MUMPS:
+        S A=1           ; Root node has value 1
+        S A(1)=2        ; A(1) has value 2
+        S A(1,2)=3      ; A(1,2) has value 3
+        ; All three coexist - A's value doesn't prevent A(1) from existing
+
+    Usage:
+        arr = MArray()
+        arr.value = 1           # S A=1
+        arr[1].value = 2        # S A(1)=2
+        arr[1, 2].value = 3     # S A(1,2)=3
+
+        # Alternative syntax for setting
+        arr[1] = 2              # S A(1)=2
+        arr[1, 2] = 3           # S A(1,2)=3
+
+        # Access
+        print(arr.value)        # 1
+        print(arr.get(1))       # 2
+        print(arr.get(1, 2))    # 3
+
+        # $DATA semantics
+        arr.defined()           # Returns 0, 1, 10, or 11
+    """
+
+    def __init__(self, value: Any = None):
+        """Initialize array node.
+
+        Args:
+            value: Initial value at this node (None = undefined)
+        """
+        self._value: Any = value
+        self._children: Dict[Any, "MArray"] = {}
+
+    @property
+    def value(self) -> Any:
+        """Get value at this node (empty string if undefined).
+
+        MUMPS semantics: undefined variables return empty string.
+        """
+        return self._value if self._value is not None else ""
+
+    @value.setter
+    def value(self, val: Any) -> None:
+        """Set value at this node."""
+        self._value = val
+
+    def __getitem__(self, key: Any) -> "MArray":
+        """Get child node, creating if needed.
+
+        Supports both single and tuple keys:
+            arr[1]      -> arr._children[1]
+            arr[1, 2]   -> arr._children[1]._children[2]
+
+        Args:
+            key: Subscript (single value or tuple of values)
+
+        Returns:
+            MArray node at that subscript (created if doesn't exist)
+        """
+        if isinstance(key, tuple):
+            node = self
+            for k in key:
+                node = node[k]
+            return node
+
+        if key not in self._children:
+            self._children[key] = MArray()
+        return self._children[key]
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        """Set value at subscript.
+
+        Supports both single and tuple keys:
+            arr[1] = 10         -> arr._children[1]._value = 10
+            arr[1, 2] = 20      -> arr._children[1]._children[2]._value = 20
+
+        Args:
+            key: Subscript (single value or tuple of values)
+            value: Value to set at that subscript
+        """
+        if isinstance(key, tuple):
+            node = self
+            for k in key[:-1]:
+                node = node[k]
+            node[key[-1]] = value
+        else:
+            if key not in self._children:
+                self._children[key] = MArray()
+            self._children[key]._value = value
+
+    def get(self, *subscripts: Any) -> Any:
+        """Get value at subscripts (empty string if undefined).
+
+        Args:
+            *subscripts: Path to the value (empty for root)
+
+        Returns:
+            Value at subscripts, or empty string if undefined
+
+        Examples:
+            arr.get()       -> arr.value (root value)
+            arr.get(1)      -> arr[1].value
+            arr.get(1, 2)   -> arr[1, 2].value
+        """
+        if not subscripts:
+            return self.value
+
+        node = self
+        for sub in subscripts:
+            if sub not in node._children:
+                return ""  # Undefined subscript
+            node = node._children[sub]
+        return node.value
+
+    def set(self, *args: Any, value: Any = None) -> None:
+        """Set value at subscripts.
+
+        Args:
+            *args: Subscript path (empty for root value)
+            value: Value to set (must be keyword argument)
+
+        Raises:
+            ValueError: If value= not provided
+
+        Examples:
+            arr.set(value=10)           -> arr.value = 10
+            arr.set(1, value=10)        -> arr[1].value = 10
+            arr.set(1, 2, value=10)     -> arr[1, 2].value = 10
+        """
+        if value is None:
+            raise ValueError("Must provide value= keyword argument")
+
+        if not args:
+            self._value = value
+        else:
+            self[args].value = value
+
+    def defined(self, *subscripts: Any) -> int:
+        """Check if node is defined ($DATA equivalent).
+
+        MUMPS $DATA returns:
+            0 - Not defined (no value, no children)
+            1 - Has value only
+            10 - Has children only (no value at this node)
+            11 - Has both value and children
+
+        Args:
+            *subscripts: Path to check (empty for root)
+
+        Returns:
+            Integer 0, 1, 10, or 11 per MUMPS $DATA semantics
+        """
+        if not subscripts:
+            node = self
+        else:
+            node = self
+            for sub in subscripts:
+                if sub not in node._children:
+                    return 0  # Path doesn't exist
+                node = node._children[sub]
+
+        has_value = node._value is not None
+        has_children = bool(node._children)
+
+        if has_value and has_children:
+            return 11
+        elif has_children:
+            return 10
+        elif has_value:
+            return 1
+        else:
+            return 0
+
+    def kill(self, *subscripts: Any) -> None:
+        """Delete node and all descendants (KILL command).
+
+        Args:
+            *subscripts: Path to kill (empty kills entire array)
+        """
+        if not subscripts:
+            self._value = None
+            self._children.clear()
+        else:
+            parent = self
+            for sub in subscripts[:-1]:
+                if sub not in parent._children:
+                    return  # Path doesn't exist
+                parent = parent._children[sub]
+
+            last = subscripts[-1]
+            if last in parent._children:
+                del parent._children[last]
+
+    def order(self, *subscripts: Any, start: Any = "") -> Any:
+        """Get next subscript ($ORDER equivalent).
+
+        Returns the next subscript after 'start' in collation order.
+        MUMPS collation: numbers before strings, sorted within type.
+
+        Args:
+            *subscripts: Path to the array level to search
+            start: Starting point (empty string = first subscript)
+
+        Returns:
+            Next subscript, or empty string if no more
+        """
+        if not subscripts:
+            children = self._children
+        else:
+            node = self
+            for sub in subscripts:
+                if sub not in node._children:
+                    return ""
+                node = node._children[sub]
+            children = node._children
+
+        # Get sorted keys (MUMPS collation: numbers before strings)
+        keys = sorted(children.keys(), key=lambda x: (isinstance(x, str), x))
+
+        if start == "":
+            return keys[0] if keys else ""
+
+        try:
+            idx = keys.index(start)
+            return keys[idx + 1] if idx + 1 < len(keys) else ""
+        except ValueError:
+            # Start not found, return first key greater than start
+            for k in keys:
+                if (isinstance(start, str), start) < (isinstance(k, str), k):
+                    return k
+            return ""
+
+    def __repr__(self) -> str:
+        """String representation for debugging."""
+        parts = []
+        if self._value is not None:
+            parts.append(f"value={self._value!r}")
+        if self._children:
+            parts.append(f"children={list(self._children.keys())}")
+        return f"MArray({', '.join(parts)})"
 
 
 @dataclass
@@ -40,17 +291,20 @@ class MUMPSRuntime:
         """Initialize runtime with empty state."""
         self._output: list[str] = []
 
-    def write(self, value: str) -> None:
+    def write(self, value: Any) -> None:
         """Capture WRITE output.
 
         Args:
-            value: String value to write
+            value: Value to write (converted to string)
 
         Note:
             Does not add newlines automatically (MUMPS WRITE doesn't either).
-            Non-string values should be converted to string by caller.
+            None values are treated as empty string (MUMPS undefined semantics).
         """
-        self._output.append(value)
+        if value is None:
+            self._output.append("")
+        else:
+            self._output.append(str(value))
 
     def get_output(self) -> str:
         """Return accumulated WRITE output.
@@ -157,4 +411,4 @@ class MUMPSRuntime:
         return None
 
 
-__all__ = ["MUMPSRuntime", "ExecutionResult"]
+__all__ = ["MUMPSRuntime", "ExecutionResult", "MArray"]

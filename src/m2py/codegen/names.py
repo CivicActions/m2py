@@ -51,9 +51,12 @@ class NameTranslator:
             '_n_01'
             >>> nt.translate("if")
             '_m_if'
+            >>> nt.translate("")
+            '_preamble'
         """
+        # Rule 0: Empty label (labelless preamble)
         if not mumps_name:
-            return mumps_name
+            return "_preamble"
 
         # Rule 1: % prefix
         if mumps_name.startswith("%"):
@@ -89,7 +92,13 @@ class NameTranslator:
             '01'
             >>> nt.reverse("_m_if")
             'if'
+            >>> nt.reverse("_preamble")
+            ''
         """
+        # Reverse rule 0: _preamble → empty (labelless preamble)
+        if python_name == "_preamble":
+            return ""
+
         if not python_name:
             return python_name
 

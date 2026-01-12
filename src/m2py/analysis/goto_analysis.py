@@ -13,7 +13,7 @@ from typing import List, Optional
 
 from ..asg.elements import MLabel, MRoutine, MScope
 from ..asg.enums import GotoCodegenPattern, GotoType
-from ..asg.statements import MForStatement, MGotoStatement, MStatement
+from ..asg.statements import MForStatement, MGotoStatement, MIfStatement, MStatement
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
 
@@ -45,6 +45,7 @@ def classify_gotos(routine: MRoutine) -> None:
     1. Sets the goto_type based on target and context
     2. Populates exits_loops with enclosing FOR loops exited
     3. Sets routine.has_unstructured_goto if any GOTO requires non-structured translation
+    4. Sets routine.needs_trampoline if any cross-label GOTO exists (Spec 006)
 
     Must be called AFTER resolve_references() so MCall.target is populated.
 
@@ -55,6 +56,8 @@ def classify_gotos(routine: MRoutine) -> None:
         - Sets MGotoStatement.goto_type for each GOTO
         - Sets MGotoStatement.exits_loops for loop exits
         - Sets MRoutine.has_unstructured_goto if complex control flow detected
+        - Sets MRoutine.needs_trampoline if cross-label GOTOs exist
+        - Sets MRoutine.needs_loop_exit_exception if MULTI_LOOP_EXIT GOTOs exist
     """
     # Build a position map for labels (for forward/backward detection)
     label_positions = {}
@@ -77,6 +80,10 @@ def classify_gotos(routine: MRoutine) -> None:
     # T103: Set needs_loop_exit_exception if any MULTI_LOOP_EXIT GOTO exists
     routine.needs_loop_exit_exception = _needs_loop_exit_exception(routine)
 
+    # Spec 006 (T035-T036): Set needs_trampoline if ANY cross-label GOTOs exist
+    # This is the sole trigger for trampoline pattern with RoutineState
+    routine.needs_trampoline = _detect_cross_label_gotos(routine)
+
 
 def _classify_gotos_in_scope(
     scope: MScope,
@@ -85,8 +92,9 @@ def _classify_gotos_in_scope(
     label_positions: dict,
     routine: MRoutine,
     enclosing_fors: List[MForStatement],
+    enclosing_if: Optional[MIfStatement] = None,
 ) -> None:
-    """Classify GOTOs within a scope, tracking enclosing FORs.
+    """Classify GOTOs within a scope, tracking enclosing FORs and IF.
 
     Args:
         scope: The scope to scan for GOTOs
@@ -95,6 +103,7 @@ def _classify_gotos_in_scope(
         label_positions: Label name -> position mapping
         routine: The containing routine
         enclosing_fors: Stack of enclosing FOR loops (innermost last)
+        enclosing_if: The MIfStatement containing this scope (for then_scope only)
     """
     for stmt in scope.statements:
         if isinstance(stmt, MGotoStatement):
@@ -105,9 +114,11 @@ def _classify_gotos_in_scope(
                 label_positions,
                 routine,
                 enclosing_fors,
+                enclosing_if,
             )
         elif isinstance(stmt, MForStatement):
             # Recurse into FOR body with this FOR added to enclosing stack
+            # No enclosing_if - GOTOs inside FOR are not restructurable to if/else
             if stmt.body:
                 _classify_gotos_in_scope(
                     stmt.body,
@@ -116,6 +127,19 @@ def _classify_gotos_in_scope(
                     label_positions,
                     routine,
                     enclosing_fors + [stmt],
+                    None,  # Clear enclosing_if inside FOR
+                )
+        elif isinstance(stmt, MIfStatement):
+            # Recurse into IF then_scope with this IF as enclosing
+            if stmt.then_scope is not None:
+                _classify_gotos_in_scope(
+                    stmt.then_scope,
+                    current_label_idx,
+                    current_label,
+                    label_positions,
+                    routine,
+                    enclosing_fors,
+                    stmt,  # Pass this IF as enclosing_if
                 )
         # Recurse into other nested scopes using type-safe helpers
         else:
@@ -128,6 +152,7 @@ def _classify_gotos_in_scope(
                     label_positions,
                     routine,
                     enclosing_fors,
+                    None,  # Only direct MIfStatement sets enclosing_if
                 )
             else_scope = get_else_scope(stmt)
             if else_scope is not None:
@@ -138,6 +163,7 @@ def _classify_gotos_in_scope(
                     label_positions,
                     routine,
                     enclosing_fors,
+                    None,  # ELSE doesn't get restructurable GOTOs
                 )
             body = get_body_scope(stmt)
             if body is not None:
@@ -148,6 +174,7 @@ def _classify_gotos_in_scope(
                     label_positions,
                     routine,
                     enclosing_fors,
+                    None,  # Other bodies don't get restructurable GOTOs
                 )
 
 
@@ -158,6 +185,7 @@ def _classify_single_goto(
     label_positions: dict,
     routine: MRoutine,
     enclosing_fors: List[MForStatement],
+    enclosing_if: Optional[MIfStatement] = None,
 ) -> None:
     """Classify a single GOTO statement.
 
@@ -173,6 +201,7 @@ def _classify_single_goto(
         label_positions: Label name -> position mapping
         routine: The containing routine
         enclosing_fors: Stack of enclosing FOR loops
+        enclosing_if: The MIfStatement containing this GOTO (for restructurable back-ref)
     """
     # Check each target (usually just one, but GOTO can have multiple)
     for call in stmt.targets:
@@ -223,6 +252,8 @@ def _classify_single_goto(
                 # back to the label start. Example:
                 #   TEST S X=X+1 W X I X<10 G TEST Q
                 stmt.goto_type = GotoType.BACKWARD_JUMP
+                # Spec 006 (T069a): Mark label as having self-loop for while True: generation
+                current_label.has_self_loop = True
             else:
                 # Has offset: G LABEL+n
                 # Try to determine direction if offset is a literal AND we have line info
@@ -254,6 +285,8 @@ def _classify_single_goto(
                     else:
                         # Target is at or before GOTO position = backward
                         stmt.goto_type = GotoType.BACKWARD_JUMP
+                        # Spec 006 (T069a): Mark label as having self-loop for while True: generation
+                        current_label.has_self_loop = True
                 else:
                     # Cannot determine direction statically (dynamic offset or missing line info)
                     # Default to FORWARD_JUMP since:
@@ -325,21 +358,28 @@ def _classify_single_goto(
             stmt.exits_loops = list(enclosing_fors)
 
     # T096-T099: Compute is_restructurable and codegen_pattern after all classification
-    _compute_codegen_fields(stmt)
+    _compute_codegen_fields(stmt, enclosing_if)
 
 
-def _compute_codegen_fields(stmt: MGotoStatement) -> None:
+def _compute_codegen_fields(
+    stmt: MGotoStatement, enclosing_if: Optional[MIfStatement] = None
+) -> None:
     """Compute is_restructurable and codegen_pattern for a GOTO statement.
 
     This must be called after goto_type, is_cross_label, and exits_loops are set.
 
     Args:
         stmt: The MGotoStatement to update
+        enclosing_if: The MIfStatement containing this GOTO (for restructurable back-ref)
     """
     # is_restructurable: intra-label forward jump
     stmt.is_restructurable = (
         stmt.goto_type == GotoType.FORWARD_JUMP and not stmt.is_cross_label
     )
+
+    # Set back-reference on enclosing IF if this GOTO is restructurable
+    if stmt.is_restructurable and enclosing_if is not None:
+        enclosing_if.restructurable_goto = stmt
 
     # Determine codegen_pattern based on analysis results
     if stmt.exits_loops:
@@ -460,5 +500,35 @@ def _needs_loop_exit_exception(routine: MRoutine) -> bool:
         for stmt in label.body.walk_statements():
             if isinstance(stmt, MGotoStatement):
                 if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
+                    return True
+    return False
+
+
+def _detect_cross_label_gotos(routine: MRoutine) -> bool:
+    """Check if the routine has ANY cross-label GOTO statements.
+
+    Spec 006 (T034): Detects cross-label GOTOs that require trampoline pattern.
+    This includes BOTH forward and backward cross-label jumps. The trampoline
+    pattern is required for ALL cross-label GOTOs to:
+    1. Avoid stack growth with repeated cross-label calls
+    2. Handle cyclic patterns (A→B→A) without RecursionError
+    3. Maintain variable visibility across label boundaries via RoutineState
+
+    Note: This is distinct from `has_unstructured_goto` which is a legacy flag.
+    `needs_trampoline` is the sole trigger for trampoline pattern in Spec 006.
+
+    Args:
+        routine: The routine to check
+
+    Returns:
+        True if any cross-label GOTO exists (forward or backward)
+    """
+    for label in routine.labels:
+        if label.body is None:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                # Cross-label GOTOs require trampoline pattern
+                if stmt.is_cross_label:
                     return True
     return False

@@ -2069,3 +2069,232 @@ class TestRoutineRequiresRuntimeEval:
         compute_all_signatures(routine)
 
         assert routine.requires_runtime_eval is True
+
+
+class TestCrossLabelVariableFlow:
+    """Test cross-label variable visibility for Spec 006 (T039)."""
+
+    def test_variable_set_in_a_read_in_b(self):
+        """T039: Variable set in label A, read in label B.
+
+        Pattern: TEST S X=1 G NEXT Q / NEXT W X Q
+        - X should be in TEST.output_variables
+        - X should be in NEXT.input_variables
+        """
+        # Label A: Sets X
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(
+            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
+        )
+        scope_a = MScope(statements=[set_stmt])
+        label_a = MLabel(name="TEST", body=scope_a)
+        scope_a.parent = label_a
+
+        # Label B: Reads X
+        write_stmt = MWriteStatement(arguments=[MVariable(name="X", subscripts=[])])
+        scope_b = MScope(statements=[write_stmt])
+        label_b = MLabel(name="NEXT", body=scope_b)
+        scope_b.parent = label_b
+
+        routine = MRoutine(name="TEST", labels=[label_a, label_b])
+
+        analyze_variables(routine)
+
+        # X should be output from TEST (written, not newed)
+        assert "X" in label_a.output_variables
+        # X should be input to NEXT (read before write, not newed)
+        assert "X" in label_b.input_variables
+
+    def test_multiple_vars_cross_label(self):
+        """Test multiple variables across label boundary.
+
+        Pattern: A sets X, Y, Z; B reads X, Y (but not Z)
+        """
+        # Label A: Sets X, Y, Z
+        set_stmt = MSetStatement(
+            assignments=[
+                MAssignment(
+                    target=MVariable(name="X", subscripts=[]), value=MLiteral(value="1")
+                ),
+                MAssignment(
+                    target=MVariable(name="Y", subscripts=[]), value=MLiteral(value="2")
+                ),
+                MAssignment(
+                    target=MVariable(name="Z", subscripts=[]), value=MLiteral(value="3")
+                ),
+            ]
+        )
+        scope_a = MScope(statements=[set_stmt])
+        label_a = MLabel(name="SETA", body=scope_a)
+        scope_a.parent = label_a
+
+        # Label B: Reads X and Y only
+        write_stmt = MWriteStatement(
+            arguments=[
+                MVariable(name="X", subscripts=[]),
+                MVariable(name="Y", subscripts=[]),
+            ]
+        )
+        scope_b = MScope(statements=[write_stmt])
+        label_b = MLabel(name="READB", body=scope_b)
+        scope_b.parent = label_b
+
+        routine = MRoutine(name="TEST", labels=[label_a, label_b])
+
+        analyze_variables(routine)
+
+        # All three should be outputs from SETA
+        assert {"X", "Y", "Z"} == label_a.output_variables
+        # Only X and Y should be inputs to READB
+        assert {"X", "Y"} == label_b.input_variables
+
+    def test_newed_variable_not_in_input(self):
+        """Test that NEWed variables don't appear in input_variables.
+
+        Pattern: B has NEW X, then reads X - X should NOT be input
+        """
+        # Label A: Sets X
+        set_stmt = MSetStatement(
+            assignments=[
+                MAssignment(
+                    target=MVariable(name="X", subscripts=[]), value=MLiteral(value="1")
+                )
+            ]
+        )
+        scope_a = MScope(statements=[set_stmt])
+        label_a = MLabel(name="SETA", body=scope_a)
+        scope_a.parent = label_a
+
+        # Label B: NEW X, then read X - X is local, not from caller
+        new_stmt = MNewStatement(variables=["X"])
+        write_stmt = MWriteStatement(arguments=[MVariable(name="X", subscripts=[])])
+        scope_b = MScope(statements=[new_stmt, write_stmt])
+        label_b = MLabel(name="NEWB", body=scope_b)
+        scope_b.parent = label_b
+
+        routine = MRoutine(name="TEST", labels=[label_a, label_b])
+
+        analyze_variables(routine)
+
+        # X should NOT be input to NEWB (it's NEWed locally)
+        assert "X" not in label_b.input_variables
+        assert "X" in label_b.variables_newed
+
+
+class TestRoutineStateVars:
+    """Test routine_state_vars population for Spec 006 (T039a)."""
+
+    def test_cross_label_var_in_routine_state(self):
+        """T039a: Variable set in A, read in B should be in routine_state_vars."""
+        from m2py.analysis.variables import compute_all_signatures
+
+        # Label A: Sets X
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(
+            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
+        )
+        scope_a = MScope(statements=[set_stmt])
+        label_a = MLabel(name="TEST", body=scope_a)
+        scope_a.parent = label_a
+
+        # Label B: Reads X
+        write_stmt = MWriteStatement(arguments=[MVariable(name="X", subscripts=[])])
+        scope_b = MScope(statements=[write_stmt])
+        label_b = MLabel(name="NEXT", body=scope_b)
+        scope_b.parent = label_b
+
+        routine = MRoutine(name="TEST", labels=[label_a, label_b])
+
+        label_vars = analyze_variables(routine)
+        compute_all_signatures(routine, label_vars)
+
+        # X should be in routine_state_vars (cross-label flow)
+        assert "X" in routine.routine_state_vars
+
+    def test_same_label_var_not_in_routine_state(self):
+        """Variable only read/written in same label not in routine_state_vars."""
+        from m2py.analysis.variables import compute_all_signatures
+
+        # Label A: Sets and reads X (same label)
+        var_x_write = MVariable(name="X", subscripts=[])
+        var_x_read = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(
+            assignments=[MAssignment(target=var_x_write, value=MLiteral(value="1"))]
+        )
+        write_stmt = MWriteStatement(arguments=[var_x_read])
+        scope = MScope(statements=[set_stmt, write_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+
+        label_vars = analyze_variables(routine)
+        compute_all_signatures(routine, label_vars)
+
+        # X should NOT be in routine_state_vars (no cross-label flow)
+        assert "X" not in routine.routine_state_vars
+
+
+class TestArrayVars:
+    """Test array_vars population for Spec 006 (T039b)."""
+
+    def test_subscripted_var_in_array_vars(self):
+        """T039b: Variable with subscript access should be in array_vars."""
+        from m2py.analysis.variables import compute_all_signatures
+
+        # S A(1)=10 - subscripted variable
+        var_a = MVariable(name="A", subscripts=[MLiteral(value="1")])
+        set_stmt = MSetStatement(
+            assignments=[MAssignment(target=var_a, value=MLiteral(value="10"))]
+        )
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+
+        label_vars = analyze_variables(routine)
+        compute_all_signatures(routine, label_vars)
+
+        # A should be in array_vars (subscripted access)
+        assert "A" in routine.array_vars
+
+    def test_nonsubscripted_var_not_in_array_vars(self):
+        """Variable without subscript should NOT be in array_vars."""
+        from m2py.analysis.variables import compute_all_signatures
+
+        # S X=1 - non-subscripted variable
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(
+            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
+        )
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+
+        label_vars = analyze_variables(routine)
+        compute_all_signatures(routine, label_vars)
+
+        # X should NOT be in array_vars (no subscripts)
+        assert "X" not in routine.array_vars
+
+    def test_read_subscripted_var_in_array_vars(self):
+        """Reading a subscripted variable should add it to array_vars."""
+        from m2py.analysis.variables import compute_all_signatures
+
+        # W A(1) - reading subscripted variable
+        var_a = MVariable(name="A", subscripts=[MLiteral(value="1")])
+        write_stmt = MWriteStatement(arguments=[var_a])
+        scope = MScope(statements=[write_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+
+        label_vars = analyze_variables(routine)
+        compute_all_signatures(routine, label_vars)
+
+        # A should be in array_vars (subscripted read)
+        assert "A" in routine.array_vars

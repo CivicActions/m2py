@@ -839,3 +839,201 @@ class TestHasUnstructuredGoto:
 
         assert goto_stmt.goto_type == GotoType.UNRESOLVED
         assert routine.has_unstructured_goto is True
+
+
+class TestNeedsTrampoline:
+    """Test needs_trampoline flag for Spec 006 cross-label GOTOs (T037)."""
+
+    def _create_test_routine(self):
+        """Create a basic two-label routine for testing."""
+        routine = MRoutine(name="TEST")
+
+        # MAIN label
+        main_label = MLabel(name="MAIN")
+        main_label.body = MScope()
+        main_label.body.parent = main_label
+        routine.add_label(main_label)
+
+        # TARGET label
+        target_label = MLabel(name="TARGET")
+        target_label.body = MScope()
+        target_label.body.parent = target_label
+        routine.add_label(target_label)
+
+        return routine
+
+    def test_intra_label_forward_no_trampoline(self):
+        """Intra-label forward GOTO does NOT require trampoline (T037 case 1).
+
+        Pattern: GOTO within same label uses if/else restructuring,
+        not trampoline pattern.
+        """
+        routine = MRoutine(name="TEST")
+
+        # Single label with intra-label forward GOTO
+        label = MLabel(name="MAIN", line_number=1)
+        label.body = MScope()
+        label.body.parent = label
+
+        # Create a GOTO that targets same label with offset (intra-label forward)
+        # G MAIN+5 from within MAIN
+        from m2py.asg.expressions import MLiteral
+
+        goto_stmt = MGotoStatement(line_number=2)
+        call = MCall(name="MAIN")
+        call.offset = MLiteral(value=10)  # Forward to line 10
+        goto_stmt.targets.append(call)
+        label.body.add_statement(goto_stmt)
+
+        routine.add_label(label)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Should be intra-label (is_cross_label=False)
+        assert goto_stmt.is_cross_label is False
+        # No trampoline needed for intra-label GOTO
+        assert routine.needs_trampoline is False
+
+    def test_forward_cross_label_needs_trampoline(self):
+        """Forward cross-label GOTO requires trampoline (T037 case 2).
+
+        Pattern: G TARGET from MAIN where TARGET is a different label.
+        """
+        routine = self._create_test_routine()
+
+        # Add forward cross-label GOTO in MAIN
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        routine.labels[0].body.add_statement(goto_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Forward jump to different label
+        assert goto_stmt.goto_type == GotoType.FORWARD_JUMP
+        assert goto_stmt.is_cross_label is True
+        # Cross-label requires trampoline
+        assert routine.needs_trampoline is True
+
+    def test_backward_cross_label_needs_trampoline(self):
+        """Backward cross-label GOTO requires trampoline (T037 case 3).
+
+        Pattern: G MAIN from TARGET where TARGET comes after MAIN.
+        """
+        routine = self._create_test_routine()
+
+        # Add backward cross-label GOTO in TARGET
+        goto_stmt = MGotoStatement()
+        call = MCall(name="MAIN")
+        goto_stmt.targets.append(call)
+        routine.labels[1].body.add_statement(goto_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Backward jump to earlier label
+        assert goto_stmt.goto_type == GotoType.BACKWARD_JUMP
+        assert goto_stmt.is_cross_label is True
+        # Cross-label requires trampoline
+        assert routine.needs_trampoline is True
+
+    def test_cycle_needs_trampoline(self):
+        """Cyclic GOTO pattern A→B→A requires trampoline (T037 case 4).
+
+        Pattern: MAIN→TARGET and TARGET→MAIN creates a cycle.
+        """
+        routine = self._create_test_routine()
+
+        # Add GOTO TARGET in MAIN
+        goto_main_to_target = MGotoStatement()
+        call1 = MCall(name="TARGET")
+        goto_main_to_target.targets.append(call1)
+        routine.labels[0].body.add_statement(goto_main_to_target)
+
+        # Add GOTO MAIN in TARGET (creates cycle)
+        goto_target_to_main = MGotoStatement()
+        call2 = MCall(name="MAIN")
+        goto_target_to_main.targets.append(call2)
+        routine.labels[1].body.add_statement(goto_target_to_main)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Both are cross-label
+        assert goto_main_to_target.is_cross_label is True
+        assert goto_target_to_main.is_cross_label is True
+        # Cycle requires trampoline
+        assert routine.needs_trampoline is True
+
+    def test_intra_label_backward_no_trampoline(self):
+        """Intra-label backward GOTO does NOT require trampoline.
+
+        Pattern: G MAIN from within MAIN (no offset) creates while loop,
+        not trampoline.
+        """
+        routine = MRoutine(name="TEST")
+
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+        label.body.parent = label
+
+        # GOTO same label (backward intra-label)
+        goto_stmt = MGotoStatement()
+        call = MCall(name="MAIN")
+        goto_stmt.targets.append(call)
+        label.body.add_statement(goto_stmt)
+
+        routine.add_label(label)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Intra-label backward (creates implicit while loop)
+        assert goto_stmt.is_cross_label is False
+        assert goto_stmt.goto_type == GotoType.BACKWARD_JUMP
+        # No trampoline for intra-label (use while True pattern)
+        assert routine.needs_trampoline is False
+
+    def test_loop_exit_cross_label_needs_trampoline(self):
+        """Cross-label GOTO from inside FOR loop needs trampoline.
+
+        Pattern: FOR I=1:1:10 G TARGET (where TARGET is different label)
+        """
+        routine = self._create_test_routine()
+
+        # Add FOR loop with cross-label GOTO in MAIN
+        for_stmt = MForStatement()
+        for_stmt.body = MScope()
+        for_stmt.body.parent = for_stmt
+
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        for_stmt.body.add_statement(goto_stmt)
+
+        routine.labels[0].body.add_statement(for_stmt)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        # Loop exit AND cross-label
+        assert goto_stmt.goto_type == GotoType.LOOP_EXIT
+        assert goto_stmt.is_cross_label is True
+        # Cross-label requires trampoline even with loop exit
+        assert routine.needs_trampoline is True
+
+    def test_no_goto_no_trampoline(self):
+        """Routine without GOTO doesn't need trampoline."""
+        routine = MRoutine(name="TEST")
+
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+        label.body.parent = label
+        routine.add_label(label)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        assert routine.needs_trampoline is False

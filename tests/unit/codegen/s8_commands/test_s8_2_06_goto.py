@@ -11,15 +11,16 @@ class TestGotoCommandCodegen:
     """Codegen-level tests for GOTO command code generation (§8.2.6)."""
 
     def test_goto_to_function_call(self, generate_python):
-        """Simple GOTO generates function call with return (§8.2.6).
+        """Simple cross-label GOTO generates trampoline pattern (§8.2.6).
 
         User Story 4 acceptance scenario (T040):
-        Given: G DONE
+        Given: G DONE (cross-label)
         When: generated
-        Then: output contains DONE() and return
+        Then: output contains return ("DONE", state) for trampoline pattern
         """
         code = generate_python('TEST\n G DONE\n Q\nDONE\n W "END"\n Q\n')
-        assert "DONE()" in code
+        # Cross-label GOTO uses trampoline pattern with label string
+        assert 'return ("DONE", state)' in code
         assert "return" in code
 
     def test_goto_transfers_control(self, execute_mumps):
@@ -131,17 +132,23 @@ class TestIntraLabelGotoCodegen:
         assert result.output == "ABCD"  # C is executed when condition is false
         assert result.success is True
 
-    def test_backward_intra_label_goto_raises_error(self, generate_python):
-        """Backward intra-label GOTO raises UnsupportedFeatureError (T033).
+    def test_backward_intra_label_goto_generates_while_loop(self, generate_python):
+        """Backward intra-label GOTO generates while True pattern (T069a/b).
 
-        Backward GOTOs within a label create implicit loops that cannot
-        be restructured to simple if/else. These require Spec 006.
+        Spec 006 Phase 6: Self-loop patterns where a label GOTOs to itself
+        are now supported. The label body is wrapped in `while True:` and
+        the GOTO becomes `continue`.
         """
-        from m2py.codegen.statements import UnsupportedFeatureError
-
+        # Self-loop pattern: LOOP GOTOs back to itself
         code = 'TEST W "A"\n I 1 G TEST\n W "B"\n Q\n'
-        with pytest.raises(UnsupportedFeatureError, match="Backward intra-label GOTO"):
-            generate_python(code)
+        python_code = generate_python(code)
+
+        # Should generate while True: pattern for self-loop
+        assert "while True:" in python_code
+        # GOTO TEST from within TEST should become continue
+        assert "continue" in python_code
+        # QUIT at end should become break
+        assert "break" in python_code
 
     def test_goto_cannot_create_continue_pattern(self, generate_python):
         """GOTO cannot create Python continue pattern (T039 - updated).
@@ -190,12 +197,15 @@ DONE W I
 
         # The loop exit GOTO should generate 'break'
         assert "break" in python_code
-        # Look for the break in the context of the loop (after the if statement)
-        test_func = python_code.split("def TEST():")[1].split("def DONE():")[0]
+        # Look for the break in the context of the _TEST function (trampoline label function)
+        test_func = python_code.split("def _TEST(state)")[1].split("def _DONE(state)")[
+            0
+        ]
         assert "break" in test_func
-        # FR-018: Cross-label exit should track target and call after loop
-        assert "_goto_target = DONE" in test_func
-        assert "_goto_target()" in test_func
+        # FR-018: Cross-label exit should track target label as string
+        assert '_goto_label = "DONE"' in test_func
+        # FR-018: After loop, return to trampoline with target label
+        assert "return (_goto_label, state)" in test_func
 
     def test_multi_loop_exit_generates_exception(self, generate_python):
         """GOTO exiting multiple loops generates exception pattern (T041).
@@ -204,7 +214,7 @@ DONE W I
         it should generate 'raise _LoopExit(target)' and the outermost loop
         should be wrapped in try/except _LoopExit.
 
-        FR-018: Cross-label exits should pass target label to exception.
+        FR-018: Cross-label exits should pass target label string to exception.
         """
         # MUMPS: exit both loops when I*J > 15
         code = """TEST S X=0
@@ -216,13 +226,13 @@ DONE W I*J
 
         # Should generate the _LoopExit exception class
         assert "class _LoopExit" in python_code
-        # FR-018: Cross-label multi-loop exit should pass target label
-        assert "raise _LoopExit(DONE)" in python_code
+        # FR-018: Cross-label multi-loop exit should pass target label string
+        assert 'raise _LoopExit("DONE")' in python_code
         # Outer loop should have try/except wrapper
         assert "try:" in python_code
         assert "except _LoopExit" in python_code
-        # FR-018: except block should call target
-        assert "_e.target()" in python_code
+        # FR-018: except block should return target to trampoline
+        assert "return (_e.target, state)" in python_code
 
     def test_single_loop_exit_executes_target_label(self, execute_mumps):
         """FR-018: Single loop exit GOTO calls target label code (T077).
@@ -538,6 +548,65 @@ class TestIsRestructurableField:
 
         assert stmt.is_restructurable is False
 
+    def test_if_statement_restructurable_goto_backref(self):
+        """MIfStatement.restructurable_goto is set by classify_gotos.
+
+        When an IF statement contains a restructurable forward GOTO in its
+        then_scope, the back-reference is set during analysis to avoid
+        scanning at codegen time.
+        """
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # IF with forward GOTO that can be restructured
+        code = 'TEST W "A"\n I 1 G TEST+3\n W "B"\n Q\n'
+        routine = parser.parse(code)
+        parser.resolve_references(routine)
+        parser.classify_gotos(routine)
+
+        # Find the IF statement
+        label = routine.labels[0]
+        if_stmt = None
+        for stmt in label.body.statements:
+            from m2py.asg.statements import MIfStatement
+
+            if isinstance(stmt, MIfStatement):
+                if_stmt = stmt
+                break
+
+        assert if_stmt is not None, "IF statement not found"
+        assert if_stmt.restructurable_goto is not None
+        assert if_stmt.restructurable_goto.is_restructurable is True
+
+    def test_if_statement_no_backref_for_cross_label_goto(self):
+        """MIfStatement.restructurable_goto is None for cross-label GOTOs.
+
+        Cross-label GOTOs are not restructurable to if/else, so the
+        back-reference should not be set.
+        """
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # IF with cross-label GOTO (to different label)
+        code = 'TEST I 1 G DONE\n Q\nDONE W "X"\n Q\n'
+        routine = parser.parse(code)
+        parser.resolve_references(routine)
+        parser.classify_gotos(routine)
+
+        # Find the IF statement
+        label = routine.labels[0]
+        if_stmt = None
+        for stmt in label.body.statements:
+            from m2py.asg.statements import MIfStatement
+
+            if isinstance(stmt, MIfStatement):
+                if_stmt = stmt
+                break
+
+        assert if_stmt is not None, "IF statement not found"
+        # Cross-label GOTO is not restructurable, so no back-reference
+        assert if_stmt.restructurable_goto is None
+
 
 @pytest.mark.codegen
 class TestCrossLabelGotoCodegen:
@@ -549,41 +618,55 @@ class TestCrossLabelGotoCodegen:
     Reference: §8.2.6
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: cross-label forward jump")
-    def test_cross_label_forward_jump(self, generate_python):
+    def test_cross_label_forward_jump(self, execute_mumps):
         """Cross-label forward GOTO jumps to later label.
 
         LABEL1 S X=1
                G LABEL2  ; jump to different label
                Q
-        LABEL2 S Y=2
+        LABEL2 W X
                Q
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps(
+            """LABEL1 S X=1
+ G LABEL2
+ Q
+LABEL2 W X
+ Q"""
+        )
+        assert result.output == "1"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: cross-label backward jump")
-    def test_cross_label_backward_jump(self, generate_python):
-        """Cross-label backward GOTO creates implicit loop.
+    def test_cross_label_backward_jump(self, execute_mumps):
+        """Cross-label backward GOTO creates implicit loop via trampoline.
 
-        LABEL1 S X=X+1
-               I X<10 G LABEL2
-               Q
-        LABEL2 G LABEL1  ; loop back
+        TEST -> LOOP -> INC -> LOOP (cycle)
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps(
+            """TEST S X=0 G LOOP
+INC S X=X+1 W X
+LOOP I X<3 G INC
+ Q"""
+        )
+        assert result.output == "123"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: variable visibility across labels")
-    def test_variable_visibility_across_labels(self, generate_python):
-        """Variables set in one label visible in another.
+    def test_variable_visibility_across_labels(self, execute_mumps):
+        """Variables set in one label visible in another via RoutineState.
 
         LABEL1 S X=1
                G LABEL2
         LABEL2 W X  ; X should be visible
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps(
+            """LABEL1 S X=1
+ G LABEL2
+ Q
+LABEL2 W X
+ Q"""
+        )
+        assert result.output == "1"
+        assert result.success is True
 
 
 @pytest.mark.codegen
@@ -596,33 +679,49 @@ class TestTrampolinePatternCodegen:
     Reference: §8.2.6
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: trampoline dispatcher")
     def test_trampoline_dispatcher(self, generate_python):
         """Cross-label jumps use trampoline dispatcher.
 
         Labels return next label name, dispatcher loop handles transitions.
         Prevents RecursionError from deep mutual recursion.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python(
+            """TEST G NEXT Q
+NEXT W "done" Q"""
+        )
+        # Entry point with trampoline dispatcher
+        assert "def TEST():" in code
+        assert "while label is not None:" in code
+        assert "func = _labels[label]" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: shared state class")
     def test_shared_state_class(self, generate_python):
         """Labels-as-functions share state via RoutineState class.
 
         Variables visible across labels stored in shared state object.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python(
+            """TEST S X=1 G NEXT Q
+NEXT W X Q"""
+        )
+        # RoutineState class generated with variable fields
+        assert "@dataclass" in code
+        assert "class RoutineState:" in code
+        assert "X: Any = None" in code
+        # State used in label functions
+        assert "state.X = 1" in code
+        assert "state.X)" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: label returns next label")
     def test_label_returns_next_label(self, generate_python):
         """Label function returns name of next label to execute.
 
-        GOTO generates: return 'TARGET_LABEL'
+        GOTO generates: return ("TARGET_LABEL", state)
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python(
+            """TEST G DONE Q
+DONE W "end" Q"""
+        )
+        # GOTO generates return with target label string
+        assert 'return ("DONE", state)' in code
 
 
 @pytest.mark.codegen

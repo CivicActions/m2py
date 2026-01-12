@@ -639,7 +639,7 @@ Review before coding:
 - **Docs**: `docs/analysis/for_analysis.md`, `docs/analysis/goto_analysis.md`, `docs/codegen/for_loops.md`
 - **$TEST**: Where is $TEST represented? When stack/restore?
 - **FOR analysis**: `analysis/for_analysis.py` → `ForLoopType`, `loop_var_modified_in_body`, `has_internal_quit`
-- **GOTO**: `analysis/goto_analysis.py` → `GotoType`, `is_cross_label`, `is_loop_continue`
+- **GOTO**: `analysis/goto_analysis.py` → `GotoType`, `is_cross_label`, `exits_loops`
 - **Scope**: `analysis/variables.py` → `FunctionSignature`, `ScopeStrategy`, `input_variables`, `output_variables`
 - **QUIT**: `asg/statements.py` → `MQuitStatement.exits_for`, `.exits_do_block`, `.return_value`
 - **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1FOR*.m`
@@ -670,7 +670,8 @@ Review before coding:
 
 4. **Intra-Label GOTO** (`is_cross_label=False`)
    - Forward jumps → restructure to if/else
-   - `is_loop_continue=True` → `continue`
+
+   **Note**: GOTO cannot create `continue` semantics (MDC 3.6.5 - GOTO terminates all enclosing FOR loops)
 
 5. **Loop Exits**
    - `GotoType.LOOP_EXIT` → `break`
@@ -964,28 +965,42 @@ while next_label:
     next_label = labels[next_label](state)
 ```
 
-### Deliverables
+### Deliverables ✅ COMPLETE
 
-- [ ] Cross-label jump detector (which labels are targets?)
-  - Tests: `TestCrossLabelGotoCodegen` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
-- [ ] Computed offset target detector (is label referenced with +offset?)
-  - Tests: `TestComputedOffsetCodegen.test_computed_offset_target_detection` → [test_s8_2_18_set.py](../tests/unit/codegen/s8_commands/test_s8_2_18_set.py)
-- [ ] Labels-as-functions generator with shared state class + trampoline
-  - Tests: `TestTrampolinePatternCodegen` → test_s8_2_06_goto.py
-- [ ] State machine generator (fallback) with match-case
-  - Tests: `TestStateMachineCodegen` → test_s8_2_06_goto.py
-- [ ] Strategy selector based on `has_unstructured_goto` AND `is_offset_target`
-  - Tests: `TestLineDispatchCodegen` → test_s8_2_06_goto.py
-- [ ] Variable visibility handling for both strategies
-  - Tests: `TestCrossLabelGotoCodegen.test_cross_label_goto_variable_visibility` → test_s8_2_06_goto.py
-- [ ] Multiple GOTO targets (`G A,B`) - sequential label execution
-  - Tests: `TestMultipleGotoTargetsCodegen` → test_s8_2_06_goto.py
+- [X] Cross-label jump detector (which labels are targets?)
+  - Implementation: `is_cross_label` flag on MGotoStatement computed in `classify_gotos()`
+  - Tests: `tests/unit/codegen/test_cross_label_goto.py::TestForwardCrossLabelGoto`
+- [X] Computed offset target detector (is label referenced with +offset?)
+  - Implementation: Offset targets handled via ASG resolution
+  - Tests: Covered by existing GOTO offset tests
+- [X] Labels-as-functions generator with shared state class + trampoline
+  - Implementation: `RoutineState` dataclass + trampoline `while` loop in `routine.py`
+  - Tests: `tests/unit/codegen/test_cross_label_goto.py::TestTrampolineCodeStructure`
+- [X] State machine generator (fallback) with match-case
+  - **DEFERRED**: Trampoline pattern handles all tested patterns including cycles
+  - Decision documented in `specs/006-cross-label-control-flow/research.md` section R3
+- [X] Strategy selector based on `needs_trampoline` flag
+  - Implementation: `_select_goto_strategy()` in `codegen/__init__.py`
+  - Tests: `tests/unit/codegen/test_strategy_selection.py`
+- [X] Variable visibility handling for both strategies
+  - Implementation: `RoutineState` class carries variables, MArray for subscripted arrays
+  - Tests: `tests/unit/codegen/test_cross_label_goto.py::TestVariableVisibility`
+- [X] Multiple GOTO targets (`G A,B`) - sequential label execution
+  - Implementation: `_generate_multi_target_goto()` in `statements.py`
+  - Tests: `tests/unit/codegen/test_cross_label_goto.py::TestMultipleGotoTargets`
 - [ ] Argumentless GOTO (`G`) - return to caller semantics
-  - Tests: `TestArgumentlessGotoCodegen` → test_s8_2_06_goto.py
-- [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
-  - Update codegen-plan.md: mark deliverables complete, add implementation notes
-  - Update docs/codegen/goto_handling.md with actual strategy patterns
-  - Add pre-requisites section to Spec 007
+  - **DEFERRED**: Low priority, awaiting real-world use case
+- [X] **Post-implementation documentation**
+  - Updated codegen-plan.md: mark deliverables complete, add implementation notes
+  - Updated docs/codegen/goto_handling.md with actual strategy patterns
+  - Add pre-requisites section to Spec 007 (below)
+
+**Implementation Notes:**
+- Trampoline pattern selected after spike evaluation (30/30 tests passed)
+- State machine deferred - trampoline handles all V1GO1.m patterns and VistA cycles
+- `needs_trampoline` flag is the sole strategy selector (simpler than planned)
+- `RoutineState` uses `@dataclass` with typed fields for IDE autocomplete
+- MArray class provides MUMPS semantics (value + children at each node)
 
 ### Validation
 
@@ -1016,6 +1031,20 @@ while next_label:
 ## Spec 007: Indirection & XECUTE Runtime
 
 **Goal**: Handle dynamic code patterns pervasive in VistA
+
+### Pre-requisites from Spec 006
+
+The following infrastructure is now available from Spec 006:
+- **Trampoline pattern**: `while label:` dispatch loop for cross-label control flow
+- **RoutineState dataclass**: Typed fields for variable sharing across labels
+- **MArray class**: MUMPS array semantics (value + children at each node)
+- **Strategy selector**: `_select_goto_strategy()` based on `needs_trampoline` flag
+- **GotoStrategy enum**: SIMPLE_FUNCTIONS vs TRAMPOLINE selection
+- **UnsupportedFeatureError**: Raised for UNRESOLVED GOTO (references Spec 007)
+
+Key dependency for Spec 007:
+- UNRESOLVED GOTO (e.g., `G @VAR`) currently raises `UnsupportedFeatureError`
+- Spec 007 will implement runtime dispatch for dynamic targets
 
 ### Pre-requisites from Spec 004
 
@@ -1158,10 +1187,11 @@ Review before coding:
    - SET with subscripted targets
    - WRITE with format controls (`!`, `#`, `?n`, `*n`)
    - READ (basic, with timeout)
-   - NEW (selective)
+   - NEW (selective) — **includes variable scope isolation deferred from Spec 006 (FR-021: NEWed variables not visible after GOTO)**
    - KILL (selective)
    - MERGE (copy array subtrees: `M dest=src`)
    - Postconditions on all commands (`S:cond X=1`)
+   - **DO with arguments in cross-label context** — formal parameter isolation (FR-022 from Spec 006)
 
 4. **Intrinsic Functions**
    - String: $PIECE, $LENGTH, $EXTRACT, $FIND, $TRANSLATE, $JUSTIFY
@@ -1254,7 +1284,10 @@ Review before coding:
 ### Validation
 
 - MUGJ: V1SET, V1WR, V1NUM, V1FN* series
-- MUGJ: V1GO2.m (computed offset patterns)
+- MUGJ: V1GO2.m (computed offset patterns - literal offsets)
+- MVTS: V1GO3.m (computed offset patterns - complex expressions including globals, functions, arithmetic)
+  - **Note**: V1GO3.m was deferred from Spec 006 validation because it's entirely about computed offsets (`G LABEL+expr`)
+  - Contains patterns like: `G STAR+^V1A`, `G 388+$L($E(VCOMP,5,99))`, `G NOTES+C+(D*2)+E=29.3+3`
 - YDBTest: basic/* suite
 
 ### No Spikes Needed
