@@ -98,11 +98,18 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 **Goal**: Validate MArray approach for cross-label array visibility
 
-- [ ] T025 Create MArray prototype in spikes/marray_spike.py
-- [ ] T026 Test case: `S A(1)=10,A(2)=20 G SUM` / `SUM W A(1)+A(2)` → expect "30"
-- [ ] T027 Test nested subscripts: `S A=1,A(1)=2,A(1,2)=3` (each node has value AND children)
-- [ ] T028 Validate MArray integrates with chosen shared state pattern
-- [ ] T029 Document decision in research.md section R5
+- [X] T025 Create MArray prototype in spikes/marray_spike.py
+- [X] T026 Test case: `S A(1)=10,A(2)=20 G SUM` / `SUM W A(1)+A(2)` → expect "30"
+- [X] T027 Test nested subscripts: `S A=1,A(1)=2,A(1,2)=3` (each node has value AND children)
+- [X] T028 Validate MArray integrates with chosen shared state pattern
+- [X] T029 Document decision in research.md section R5
+
+**Checkpoint**: Phase 2.3 complete ✅
+- Decision: **MArray class pattern** selected
+- Cross-label array access verified (T026)
+- Nested subscripts with value at each level work (T027)
+- Integrates cleanly with RoutineState dataclass (T028)
+- See research.md R5 for full evaluation
 
 ---
 

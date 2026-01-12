@@ -522,58 +522,139 @@ def ENTRY(rt: Runtime) -> tuple[Optional[str], Runtime]:
 
 ### R5: Subscripted Locals Spike
 
-**Status**: ⬜ Not started
+**Status**: ✅ Complete
 
-**Test Case**: 
+**Spike File**: `spikes/marray_spike.py`
+
+#### Test Results
+
+**T026: Cross-Label Array Access** ✅ PASS
 ```mumps
 S A(1)=10,A(2)=20 G SUM Q
 SUM W A(1)+A(2) Q
 ```
-Expected output: `30`
+Expected output: `30` - Array values set in one label are visible after GOTO to another label.
 
-**MArray Class Approach**:
+**T027: Nested Subscripts** ✅ PASS
+```mumps
+S A=1,A(1)=2,A(1,2)=3
+```
+Each node can have both a value AND children:
+- `A` = 1, `$D(A)` = 11 (has value AND children)
+- `A(1)` = 2, `$D(A,1)` = 11 (has value AND children)
+- `A(1,2)` = 3, `$D(A,1,2)` = 1 (has value only)
+
+**T028: Integration with RoutineState** ✅ PASS
+- MArray instances as dataclass fields work correctly
+- Multiple arrays are independent
+- Arrays survive through trampoline dispatch
+
+#### MArray Implementation
 
 ```python
-# Template
 class MArray:
-    """MUMPS array with value AND children at each node."""
-    def __init__(self, value=None):
-        self._value = value
-        self._children = {}
+    """MUMPS array with hierarchical subscript support."""
     
-    def __getitem__(self, key):
-        # Returns MArray node at key
-        pass
-    
-    def __setitem__(self, key, value):
-        # Sets value at key (creates path if needed)
-        pass
+    def __init__(self, value: Any = None):
+        self._value: Any = value
+        self._children: Dict[Any, "MArray"] = {}
     
     @property
-    def value(self):
+    def value(self) -> Any:
+        """Get value at this node (empty string if undefined)."""
         return self._value if self._value is not None else ""
+    
+    @value.setter
+    def value(self, val: Any) -> None:
+        self._value = val
+    
+    def __getitem__(self, key: Any) -> "MArray":
+        """Get child node: arr[1] or arr[1, 2]"""
+        if isinstance(key, tuple):
+            node = self
+            for k in key:
+                node = node[k]
+            return node
+        if key not in self._children:
+            self._children[key] = MArray()
+        return self._children[key]
+    
+    def __setitem__(self, key: Any, value: Any) -> None:
+        """Set value at subscript: arr[1] = 10 or arr[1, 2] = 20"""
+        # ... implementation in spike
+    
+    def get(self, *subscripts: Any) -> Any:
+        """Get value at subscripts (empty string if undefined)."""
+        # ... implementation in spike
+    
+    def defined(self, *subscripts: Any) -> int:
+        """$DATA equivalent: 0, 1, 10, or 11"""
+        # ... implementation in spike
+    
+    def kill(self, *subscripts: Any) -> None:
+        """KILL command - delete node and descendants"""
+        # ... implementation in spike
 ```
 
-**Nested Dict Approach**:
+#### Integration with RoutineState
 
 ```python
-# Template
-A = {"_value": None}
-A[1] = {"_value": 10}
-A[2] = {"_value": 20}
-# Access: A[1]["_value"] + A[2]["_value"]
+@dataclass
+class RoutineState:
+    """Shared state with MArray support for subscripted variables."""
+    # Simple variables
+    X: Any = None
+    Y: Any = None
+    
+    # Array variables (MArray instances)
+    A: MArray = field(default_factory=MArray)
+    B: MArray = field(default_factory=MArray)
+    
+    # Output buffer
+    _output: io.StringIO = field(default_factory=io.StringIO)
 ```
 
-**Evaluation**:
+**Usage in label functions**:
+```python
+@label("ENTRY")
+def ENTRY(s: RoutineState) -> tuple[Optional[str], RoutineState]:
+    s.A[1] = 10           # S A(1)=10
+    s.A[2] = 20           # S A(2)=20
+    return ("SUM", s)
 
-| Criteria | MArray | Nested Dict |
-|----------|--------|-------------|
-| MUMPS semantics match | TBD | TBD |
-| Integration with shared state | TBD | TBD |
-| Code clarity | TBD | TBD |
-| Implementation effort | TBD | TBD |
+@label("SUM")
+def SUM(s: RoutineState) -> tuple[Optional[str], RoutineState]:
+    result = s.A.get(1) + s.A.get(2)  # A(1)+A(2)
+    s.write(result)
+    return (None, s)
+```
 
-**Decision**: *To be determined after spike*
+#### Evaluation Matrix
+
+| Criteria | MArray Class | Nested Dict |
+|----------|-------------|-------------|
+| **MUMPS semantics** | ✅ Perfect | ⚠️ Awkward `["_value"]` access |
+| **Integration** | ✅ Natural dataclass field | ❌ Requires manual management |
+| **Code clarity** | ✅ `arr[1, 2]` syntax | ❌ `arr[1]["_value"]` |
+| **IDE support** | ✅ Type hints work | ❌ Dynamic dict |
+| **$DATA support** | ✅ Built-in `defined()` | ❌ Manual implementation |
+| **KILL support** | ✅ Built-in `kill()` | ❌ Manual implementation |
+
+#### Decision: **MARRAY CLASS PATTERN**
+
+**Rationale**:
+
+1. **Perfect MUMPS semantics**: Each node can have value AND children simultaneously
+
+2. **Clean Python syntax**: `arr[1, 2]` for access, `arr.get(1, 2)` for safe access
+
+3. **Integrates with RoutineState**: MArray fields work seamlessly with dataclass pattern
+
+4. **Built-in MUMPS operations**: `defined()` for $DATA, `kill()` for KILL, `order()` for $ORDER
+
+5. **Cross-label visibility verified**: Arrays set in one label are visible after GOTO to another
+
+6. **IDE/Rope support**: Type hints on MArray class enable autocomplete and static analysis
 
 ---
 
