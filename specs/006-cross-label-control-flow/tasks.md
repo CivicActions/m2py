@@ -1,9 +1,20 @@
 # Tasks: Cross-Label Control Flow (Spec 006)
 
 **Input**: Design documents from `/specs/006-cross-label-control-flow/`  
-**Prerequisites**: plan.md (complete), spec.md (complete), research.md, data-model.md, quickstart.md
+**Prerequisites**: plan.md (complete), spec.md (complete), research.md (complete)
 
 **Organization**: Tasks are grouped by phase, following the spike-first approach from plan.md. User stories map to implementation tasks after spike decisions.
+
+## Architecture Decisions (Phase 2 Complete ✅)
+
+| Decision | Selected | Rationale |
+|----------|----------|-----------|
+| **Execution** | Trampoline pattern | Handles ALL cross-label GOTOs including cycles |
+| **Shared State** | RoutineState dataclass | Best Rope refactorability, IDE support |
+| **Arrays** | MArray class | MUMPS semantics (value + children at node) |
+| **State Machine** | DEFERRED | Trampoline handles all patterns |
+| **Loop Exit** | Reuse Spec 005 `_LoopExit` | Import from existing infrastructure |
+| **Flag Usage** | `needs_trampoline` only | `has_unstructured_goto` ignored in Spec 006 (legacy) |
 
 ## Format: `[ID] [P?] Description`
 
@@ -50,17 +61,15 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 **Key Findings**: V1GO1.m (0% cycles) is NOT representative of VistA (47.5% files with cycles). Trampoline pattern is REQUIRED for correctness, not just an optimization.
 
-**Checkpoint**: Phase 1 complete - all research documented, spike can proceed ✅
+**Checkpoint**: Phase 1 complete ✅
 
 ---
 
-## Phase 2: Spikes (Decision Phase)
+## Phase 2: Spikes (Decision Phase) ✅ COMPLETE
 
-**Purpose**: Prototype strategies, make architecture decisions. This IS implementation - spike code may become production code.
+**Purpose**: Prototype strategies, make architecture decisions. Spike code may become production code.
 
-### 2.1 V1GO1.m Strategy Bake-off (REQUIRED)
-
-**Goal**: Determine primary strategy (trampoline vs state machine)
+### 2.1 V1GO1.m Strategy Bake-off
 
 - [X] T013 Create spike directory: `specs/006-cross-label-control-flow/spikes/`
 - [X] T014 Implement trampoline prototype in spikes/trampoline_v1go1.py
@@ -70,16 +79,9 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 - [X] T018 Test Rope refactorability: can extract/rename functions in each?
 - [X] T019 Document decision in research.md section R3 with evaluation matrix
 
-**Checkpoint**: Phase 2.1 complete ✅
-- Decision: **Trampoline pattern** selected as primary strategy
-- Both prototypes pass 30/30 tests
-- Trampoline: 412 lines, 38 functions, better refactorability
-- State machine: 310 lines, but harder to test/refactor individual labels
-- See research.md R3 for full evaluation
+**Decision**: **Trampoline pattern** - 30/30 tests, better refactorability (see R3)
 
 ### 2.2 Shared State Pattern Evaluation
-
-**Goal**: Choose variable visibility approach for labels-as-functions
 
 - [X] T020 [P] Test RoutineState class approach in spikes/shared_state_class.py
 - [X] T021 [P] Test outer-scope variables approach in spikes/shared_state_outer.py
@@ -87,16 +89,9 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 - [X] T023 Evaluate each for: Rope compatibility, clarity, name collision risk
 - [X] T024 Document decision in research.md section R4
 
-**Checkpoint**: Phase 2.2 complete ✅
-- Decision: **RoutineState class pattern** selected
-- Best Rope refactorability (Rename, Extract, Find References)
-- IDE autocomplete catches errors at edit time
-- Clean syntax: `s.X` vs `rt.get("X")`
-- See research.md R4 for full evaluation
+**Decision**: **RoutineState class** - best Rope support, IDE autocomplete (see R4)
 
-### 2.3 Subscripted Locals Mini-Spike (REQUIRED)
-
-**Goal**: Validate MArray approach for cross-label array visibility
+### 2.3 Subscripted Locals Mini-Spike
 
 - [X] T025 Create MArray prototype in spikes/marray_spike.py
 - [X] T026 Test case: `S A(1)=10,A(2)=20 G SUM` / `SUM W A(1)+A(2)` → expect "30"
@@ -104,40 +99,379 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 - [X] T028 Validate MArray integrates with chosen shared state pattern
 - [X] T029 Document decision in research.md section R5
 
-**Checkpoint**: Phase 2.3 complete ✅
-- Decision: **MArray class pattern** selected
-- Cross-label array access verified (T026)
-- Nested subscripts with value at each level work (T027)
-- Integrates cleanly with RoutineState dataclass (T028)
-- See research.md R5 for full evaluation
+**Decision**: **MArray class** - MUMPS semantics, clean integration (see R5)
+
+### 2.4 Extension Analysis
+
+- [X] T030 Analyze extensibility to deferred features (Specs 007-009)
+- [X] T031 Document findings in research.md section R6
+- [X] T032 Confirm no additional spikes needed
+
+**Decision**: Selected patterns extend well to future specs (see R6)
+
+**Checkpoint**: Phase 2 complete ✅
 
 ---
 
-## Next Steps After Phase 2
+## Phase 3: ASG Extensions
 
-After completing Phase 2 spikes and updating spec/plan with final decisions:
+**Purpose**: Add analysis infrastructure before codegen. Per layer separation: codegen must consume complete ASG.
 
-1. **If architecture matches provisional tasks**: Merge relevant sections from [tasks-phase3-provisional.md](tasks-phase3-provisional.md)
-2. **If architecture changes significantly**: Regenerate implementation tasks with `/speckit.tasks`
+### 3.1 Add `needs_trampoline` Flag
 
-See [tasks-phase3-provisional.md](tasks-phase3-provisional.md) for detailed Phase 3-13 task breakdown (contingent on spike outcomes).
+- [ ] T033 Add `needs_trampoline: bool = False` field to MRoutine in src/m2py/asg/elements.py
+- [ ] T034 Create `_detect_cross_label_gotos()` function in src/m2py/analysis/goto_analysis.py
+- [ ] T035 Set `needs_trampoline=True` if ANY cross-label GOTOs exist (not just cycles)
+- [ ] T036 Call from `classify_gotos()` to set the flag
+- [ ] T037 Add unit tests for cross-label detection in tests/unit/analysis/test_goto_analysis.py:
+  - Test forward-only intra-label (no cross-label) → `needs_trampoline=False`
+  - Test forward cross-label → `needs_trampoline=True`
+  - Test backward cross-label → `needs_trampoline=True`
+  - Test A→B→A cycle → `needs_trampoline=True`
+
+**Note**: Cycle detection is useful for optimization but not required for strategy selection.
+
+### 3.2 Verify Variable Flow Analysis
+
+- [ ] T038 Verify `compute_signatures()` in src/m2py/analysis/variables.py populates `input_variables`/`output_variables` for cross-label cases
+- [ ] T039 Add test case: variable set in label A, read in label B after GOTO → should appear in A.output_variables and B.input_variables
+- [ ] T039a Identify all variables needing RoutineState fields from analysis
+  - Output: Add `MRoutine.routine_state_vars: Set[str]` field in `src/m2py/asg/elements.py`
+  - Populated by `compute_signatures()` in `src/m2py/analysis/variables.py`
+- [ ] T039b Identify which variables are subscripted arrays (need MArray fields)
+  - Output: Add `MRoutine.array_vars: Set[str]` field in `src/m2py/asg/elements.py`
+  - Populated by `compute_signatures()` when subscripted access detected
+- [ ] T040 If gap found: extend variable analysis to track cross-label flow
+
+### 3.3 Update ASG Documentation
+
+- [ ] T041 Update docs/asg/ with new `needs_trampoline` field
+- [ ] T042 Document: `needs_trampoline=True` triggers trampoline pattern with RoutineState
+
+**Checkpoint**: Phase 3 complete - ASG provides all info codegen needs
 
 ---
+
+## Phase 4: Codegen Infrastructure
+
+**Purpose**: Build shared infrastructure for all cross-label strategies
+
+### 4.1 Strategy Selector
+
+- [ ] T043 Create `_select_goto_strategy()` function in src/m2py/codegen/__init__.py
+- [ ] T044 Strategy logic:
+  - `needs_trampoline=True` → `TRAMPOLINE` with RoutineState
+  - `needs_trampoline=False` → `SIMPLE_FUNCTIONS` (current Spec 005 behavior)
+- [ ] T045 Add GotoStrategy enum to src/m2py/codegen/enums.py (TRAMPOLINE, SIMPLE_FUNCTIONS)
+- [ ] T045a Emit `UnsupportedFeatureError("UNRESOLVED GOTO not supported - See Spec 007")` for `goto_type=UNRESOLVED`
+- [ ] T045b Emit `UnsupportedFeatureError("EXTERNAL GOTO not supported - See Spec 009")` for `goto_type=EXTERNAL`
+- [ ] T046 Unit test strategy selection in tests/unit/codegen/test_strategy_selection.py
+
+**Note**: STATE_MACHINE strategy deferred - trampoline handles all patterns.
+
+### 4.2 RoutineState Infrastructure
+
+- [ ] T047 Create src/m2py/codegen/shared_state.py
+- [ ] T048 Implement `generate_routine_state_class()` - builds RoutineState dataclass from analysis
+  - Simple variables as typed fields (e.g., `X: Any = None`)
+  - Array variables as MArray fields (e.g., `A: MArray = field(default_factory=MArray)`)
+- [ ] T049 Implement `generate_state_initialization()` - creates initial state for routine entry
+- [ ] T050 Unit test state class generation
+
+### 4.3 MArray Implementation
+
+- [ ] T051 Add MArray class to src/m2py/runtime/__init__.py (port from spikes/marray_spike.py)
+- [ ] T052 Implement `__getitem__`, `__setitem__`, `value` property, `get()`, `defined()`, `kill()`, `order()` methods
+- [ ] T053 Unit test MArray: node value + children, nested access, empty default, $DATA semantics, $ORDER traversal
+- [ ] T054 Integrate MArray with RoutineState class generation
+
+**Checkpoint**: Phase 4 complete - infrastructure ready for pattern implementation
+
+---
+
+## Phase 5: User Story 1 - Forward Cross-Label GOTO (Priority: P1) 🎯 MVP
+
+**Goal**: Simple cross-label GOTO from one label to a later label
+
+**Independent Test**: `TEST S X=1 G NEXT Q` / `NEXT W X Q` → outputs "1"
+
+### 5.1 Implementation
+
+- [ ] T055 [US1] Modify `_generate_goto()` in src/m2py/codegen/statements.py:
+  - Remove cross-label restriction (currently raises NotImplementedError)
+  - Generate return with state tuple for trampoline pattern
+- [ ] T055a [US1] [FR-005] Handle cross-label GOTO from inside IF/ELSE blocks:
+  - Verify condition state is not corrupted by GOTO
+  - Test: `TEST I 1 G PASS G FAIL Q` / `PASS W "P" Q` / `FAIL W "F" Q` → "P"
+- [ ] T056 [US1] Implement trampoline wrapper in src/m2py/codegen/routine.py:
+  - `_labels` dict mapping label name → function
+  - Trampoline while loop for dispatch
+- [ ] T057 [US1] Implement label functions to receive/return state
+- [ ] T058 [US1] Update `generate_routine()` to select pattern and emit appropriate code
+
+### 5.2 Tests
+
+- [ ] T059 [US1] Test forward cross-label: `TEST S X=1 G NEXT Q` / `NEXT W X Q` → "1"
+- [ ] T060 [US1] Test skipped code: `TEST G END W "skip" Q` / `END W "end" Q` → "end"
+- [ ] T061 [US1] Test variable visibility: `TEST S A=10,B=20 G SUM Q` / `SUM W A+B Q` → "30"
+- [ ] T062 [US1] Test multiple labels: `TEST G A Q` / `A G B Q` / `B W "done" Q` → "done"
+- [ ] T062a [US1] [FR-005] Test cross-label from IF branch: `TEST I 1 G PASS W "mid" Q` / `PASS W "P" Q` → "P" (mid skipped)
+- [ ] T062b [US1] [FR-005] Test cross-label from ELSE branch: `TEST I 0 G PASS E  G FAIL Q` / `PASS W "P" Q` / `FAIL W "F" Q` → "F"
+
+**Checkpoint**: User Story 1 complete - simple forward cross-label works
+
+---
+
+## Phase 6: User Story 2 - Backward Cross-Label GOTO (Priority: P1)
+
+**Goal**: Cross-label GOTO that creates implicit loop (back to earlier label)
+
+**Independent Test**: `TEST S X=0` / `LOOP S X=X+1 W X I X<3 G LOOP Q` → "123"
+
+### 6.1 Implementation
+
+- [ ] T063 [US2] Ensure cross-label detection marks this as `needs_trampoline=True`
+- [ ] T064 [US2] Trampoline handles returning to same/earlier label
+- [ ] T065 [US2] Test for RecursionError: execute 10,000+ iterations without stack overflow
+
+### 6.2 Tests
+
+- [ ] T066 [US2] Test backward loop: `TEST S X=0` / `LOOP S X=X+1 W X I X<3 G LOOP Q` → "123"
+- [ ] T067 [US2] Test iteration count: 10,000 iterations without RecursionError
+- [ ] T068 [US2] Test variable state preserved across iterations
+- [ ] T069 [US2] Test nested labels with backward: A→B→C→A pattern (3+ label cycle)
+- [ ] T069a [US2] Test self-loop pattern: `TEST S X=0` / `LOOP S X=X+1 W X I X<3 G LOOP Q` → intra-label backward GOTO creates implicit while loop
+- [ ] T069b [US2] Verify self-loops (`is_cross_label=False`, backward) generate `while True:` pattern, not trampoline
+
+**Checkpoint**: User Story 2 complete - cyclic patterns work with trampoline
+
+---
+
+## Phase 7: User Story 3 - Variable Visibility (Priority: P1)
+
+**Goal**: Variables set in one label visible in target label after GOTO
+
+**Independent Test**: `TEST S A(1)=10,A(2)=20 G SUM Q` / `SUM W A(1)+A(2) Q` → "30"
+
+### 7.1 Implementation
+
+- [ ] T070 [US3] State class includes all cross-label variables (use `routine_state_vars` from T039a and `array_vars` from T039b)
+- [ ] T071 [US3] Variables from source label packed into state on GOTO
+- [ ] T072 [US3] Variables unpacked in target label
+
+### 7.2 Tests
+
+- [ ] T073 [US3] Test simple variable: `TEST S X=1 G NEXT Q` / `NEXT W X Q` → "1"
+- [ ] T074 [US3] Test multiple variables: `TEST S A=1,B=2,C=3 G CALC Q` / `CALC W A+B+C Q` → "6"
+- [ ] T075 [US3] Test subscripted locals: `TEST S A(1)=10,A(2)=20 G SUM Q` / `SUM W A(1)+A(2) Q` → "30"
+- [ ] T076 [US3] Test modification in target: `TEST S X=1 G ADD Q` / `ADD S X=X+10 W X Q` → "11"
+- [ ] T076a [US3] [FR-021] Test NEWed variable isolation: `TEST N X S X=1 G NEXT Q` / `NEXT W X Q` → "" (X not visible)
+- [ ] T076b [US3] [FR-022] Test formal param isolation: `TEST D SUB(5) Q` / `SUB(X) G SHOW Q` / `SHOW W X Q` → "" (X local to SUB)
+- [ ] T076c [US3] [Edge Case] Test undefined variable on skipped init: `TEST I 0 S X=99 G DONE Q` / `DONE W X Q` → ""
+
+**Checkpoint**: User Story 3 complete - variable visibility works
+
+---
+
+## Phase 8: User Story 4 - Cross-Label Loop Exit (Priority: P2)
+
+**Goal**: GOTO from inside FOR loops to label outside FOR
+
+**Independent Test**: `TEST F I=1:1:10 I I=3 G DONE W I` / `DONE W "done" Q` → "12done"
+
+### 8.1 Implementation
+
+- [ ] T077 [US4] [FR-004] Integrate with existing loop exit infrastructure from Spec 005
+- [ ] T078 [US4] Cross-label exit: break from FOR, then transfer to target label
+- [ ] T079 [US4] Multi-loop cross-label exit: raise _LoopExit, catch, transfer
+
+### 8.2 Tests
+
+- [ ] T080 [US4] Test single FOR exit: `TEST F I=1:1:10 I I=3 G DONE W I` / `DONE W "done" Q` → "12done"
+- [ ] T081 [US4] Test nested FOR exit: `TEST F I=1:1:3 F J=1:1:2 W I,J I I=2,J=1 G OUT Q` / `OUT W "!" Q` → "111221!"
+- [ ] T082 [US4] Test triple nested exit: `TEST F I=1:1:2 F J=1:1:2 F K=1:1:2 I I=1,J=2,K=1 G OUT W I,J,K Q` / `OUT W "!" Q` → "111112121!"
+- [ ] T083 [US4] Test exit target variable access (loop var visible in target)
+
+**Checkpoint**: User Story 4 complete - loop exits to labels work
+
+---
+
+## Phase 9: User Story 5 - Trampoline Pattern (Priority: P2)
+
+**Goal**: Explicit test of trampoline mechanics for cyclic GOTOs
+
+**Independent Test**: Generated Python uses `while label:` dispatch loop
+
+### 9.1 Implementation
+
+- [ ] T084 [US5] Verify trampoline structure in generated code
+- [ ] T085 [US5] Verify no Python recursion for cyclic patterns
+
+### 9.2 Tests
+
+- [ ] T086 [US5] Test trampoline generated for cross-label: `needs_trampoline=True` → has `while` dispatch
+- [ ] T087 [US5] Test no trampoline for intra-label only: `needs_trampoline=False` → no dispatch loop
+- [ ] T088 [US5] Test trampoline exits correctly on QUIT/None return
+- [ ] T089 [US5] Test 1000+ cyclic iterations without RecursionError (A→B→A pattern)
+
+**Checkpoint**: User Story 5 complete - trampoline mechanics verified
+
+---
+
+## Phase 10: User Story 6 - RoutineState Shared Variables (Priority: P2)
+
+**Goal**: Verify RoutineState class maintains variable visibility across label boundaries
+
+**Independent Test**: Variables set in ENTRY label are accessible in NEXT label via RoutineState
+
+### 10.1 Implementation
+
+- [ ] T090 [US6] Verify RoutineState dataclass is generated when `needs_trampoline=True`
+- [ ] T091 [US6] Verify all routine variables appear as typed fields
+- [ ] T092 [US6] Verify MArray fields for subscripted array variables
+- [ ] T093 [US6] Verify label functions accept and return `(next_label, state)` tuple
+
+### 10.2 Tests
+
+- [ ] T094 [US6] Test RoutineState generated for cross-label routine
+- [ ] T095 [US6] Test fields have correct types (Any for simple, MArray for arrays)
+- [ ] T096 [US6] Test state passed through trampoline dispatch
+- [ ] T097 [US6] Verify RoutineState uses @dataclass with typed fields (enables IDE autocomplete)
+
+**Checkpoint**: User Story 6 complete - RoutineState pattern verified
+
+---
+
+## Phase 11: User Story 7 - Multiple GOTO Targets (Priority: P3)
+
+**Goal**: Sequential execution of multiple targets: `G A,B,C`
+
+**Independent Test**: `TEST G A,B Q` / `A W "A"` / `B W "B" Q` → "AB" (A has no QUIT)
+
+### 11.1 Implementation
+
+- [ ] T098 [US7] Modify `_generate_goto()` to handle multiple targets
+- [ ] T099 [US7] Generate sequential calls within single trampoline iteration
+- [ ] T100 [US7] Handle early exit if any target QUITs
+
+### 11.2 Tests
+
+- [ ] T101 [US7] Test early QUIT stops sequence: `TEST G A,B Q` / `A W "A" Q` / `B W "B" Q` → "A"
+- [ ] T102 [US7] Test fall-through: `TEST G A,B Q` / `A W "A"` / `B W "B" Q` → "AB"
+- [ ] T103 [US7] Test three targets all execute: `TEST G A,B,C Q` / `A W "1"` / `B W "2"` / `C W "3" Q` → "123"
+
+**Checkpoint**: User Story 7 complete - multiple targets work
+
+---
+
+## Phase 12: User Story 8 - Strategy Selection (Priority: P2)
+
+**Goal**: Automatic strategy selection with no manual flags
+
+**Independent Test**: Strategy chosen automatically based on ASG analysis
+
+### 12.1 Implementation
+
+- [ ] T104 [US8] Verify strategy selection uses only ASG flags (no user input)
+- [ ] T105 [US8] Document selection logic in code comments
+
+### 12.2 Tests
+
+- [ ] T106 [US8] Test routine with only intra-label GOTOs → SIMPLE_FUNCTIONS
+- [ ] T107 [US8] Test routine with cross-label GOTOs → TRAMPOLINE
+- [ ] T108 [US8] Test routine with cyclic cross-label GOTOs → TRAMPOLINE
+
+**Note**: STATE_MACHINE strategy deferred - all patterns use TRAMPOLINE or SIMPLE_FUNCTIONS.
+
+**Checkpoint**: User Story 8 complete - automatic strategy selection
+
+---
+
+## Phase 13: Validation & Documentation
+
+**Purpose**: Full validation against YDB, update documentation
+
+### 13.1 V1GO1.m Validation
+
+- [ ] T109 Generate Python for all V1GO1.m patterns
+- [ ] T110 Run generated code against YDB reference: `uv run python utils/validate.py tests/functional/mugj/inref/V1GO1.m`
+- [ ] T111 Document any patterns requiring manual review or deferral
+
+### 13.2 Success Criteria Verification
+
+- [ ] T112 SC-001: 100% of cross-label test cases match YDB
+- [ ] T113 SC-002: 10,000+ iteration test passes (no RecursionError)
+- [ ] T114 SC-003: Trampoline handles all cross-label patterns including cycles
+- [ ] T115 SC-004: Run `ast.parse()` on all generated Python files
+- [ ] T116 SC-005: Variable visibility tests pass 100%
+- [ ] T117 SC-006: Strategy selection is automatic (no manual flags)
+- [ ] T118 SC-007: Multiple targets execute in sequence with correct QUIT handling
+- [ ] T119 SC-008: Code coverage ≥85% on new codegen additions
+
+### 13.3 Documentation Updates
+
+- [ ] T120 [P] Update docs/codegen/goto_handling.md with cross-label patterns
+- [ ] T121 [P] Update docs/limitations.md with Spec 006 deferrals (007, 008, 009, state machine)
+- [ ] T122 [P] Update docs/architecture.md with trampoline/RoutineState/MArray patterns
+- [ ] T123 Update specs/codegen-plan.md: mark Spec 006 deliverables complete
+- [ ] T124 Add pre-requisites section to Spec 007 in codegen-plan.md
+
+**Checkpoint**: All validation passes, documentation complete
+
+---
+
+## Dependencies & Execution Order
+
+```
+Phase 1-2 (Research & Spikes) ✅ COMPLETE
+                            │
+                            ▼
+Phase 3 (ASG Extensions) ───┐
+                            ▼
+Phase 4 (Codegen Infra) ────┐
+                            ▼
+    ┌───────────────────────┼───────────────────────┐
+    ▼                       ▼                       ▼
+Phase 5 (US1)           Phase 6 (US2)           Phase 7 (US3)
+Forward GOTO            Backward GOTO           Variable Visibility
+    │                       │                       │
+    └───────────────────────┼───────────────────────┘
+                            ▼
+    ┌───────────────────────┼───────────────────────┐
+    ▼                       ▼                       ▼
+Phase 8 (US4)           Phase 9 (US5)           Phase 10 (US6)
+Loop Exit               Trampoline              RoutineState
+    │                       │                       │
+    └───────────────────────┼───────────────────────┘
+                            ▼
+        ┌───────────────────┴───────────────────┐
+        ▼                                       ▼
+    Phase 11 (US7)                         Phase 12 (US8)
+    Multiple Targets                        Strategy Selection
+        │                                       │
+        └───────────────────┬───────────────────┘
+                            ▼
+                    Phase 13 (Validation)
+```
+
+## User Story Mapping
+
+| Spec US | Phase | Description | Priority |
+|---------|-------|-------------|----------|
+| US1 | Phase 5 | Forward Cross-Label GOTO | P1 |
+| US2 | Phase 6 | Backward Cross-Label GOTO | P1 |
+| US3 | Phase 7 | Variable Visibility | P1 |
+| US4 | Phase 8 | Cross-Label Loop Exit | P2 |
+| US5 | Phase 9 | Trampoline Pattern | P2 |
+| US6 | Phase 10 | RoutineState Shared Variables | P2 |
+| US7 | Phase 11 | Multiple GOTO Targets | P3 |
+| US8 | Phase 12 | Strategy Selection | P2 |
 
 ## Summary
 
 | Metric | Count |
 |--------|-------|
-| Total Tasks (Phases 1-2) | 36 |
-| Phase 1 (Setup + Research) | 16 |
-| Phase 2 (Spikes) | 20 |
+| Total Tasks | 130 |
+| Phase 1-2 (Complete) | 32 |
+| Phase 3-13 (Pending) | 98 |
 | Parallel Opportunities | 7 tasks marked [P] |
-
-### Decision Gate
-
-After Phase 2, update:
-- `research.md` - Document spike findings and decisions
-- `plan.md` - Finalize architecture based on spike results
-- `spec.md` - Amend if significant scope changes needed
-
-Then proceed to implementation phases.

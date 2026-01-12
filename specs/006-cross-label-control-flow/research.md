@@ -2,11 +2,11 @@
 
 **Spec**: 006-cross-label-control-flow  
 **Date**: 2026-01-11  
-**Status**: In Progress
+**Status**: ✅ Complete
 
 ## Overview
 
-This document captures research findings for Spec 006. All NEEDS CLARIFICATION items from the plan should be resolved here before Phase 1 design.
+This document captures research findings for Spec 006. All research tasks and spikes are complete with decisions documented.
 
 ## Research Tasks
 
@@ -655,6 +655,149 @@ def SUM(s: RoutineState) -> tuple[Optional[str], RoutineState]:
 5. **Cross-label visibility verified**: Arrays set in one label are visible after GOTO to another
 
 6. **IDE/Rope support**: Type hints on MArray class enable autocomplete and static analysis
+
+---
+
+### R6: Extension Analysis for Deferred GOTO Features
+
+**Status**: ✅ Complete
+
+**Questions to answer**:
+1. Can selected patterns extend to computed offsets (G LABEL+expr)?
+2. Can selected patterns extend to external routine GOTO (G LABEL^ROUTINE)?
+3. Can selected patterns extend to indirect GOTO (G @VAR)?
+4. Is another spike needed before committing to the selected approach?
+
+**Context**: Before finalizing our Phase 2 architecture decisions, we evaluated whether the selected patterns (Trampoline + RoutineState + MArray) can accommodate deferred GOTO features planned for future specs:
+- Spec 007: Indirect GOTO (`G @VAR`)
+- Spec 008: Computed offsets (`G LABEL+expr`)
+- Spec 009: External routine GOTO (`G LABEL^ROUTINE`)
+
+#### Existing ASG Infrastructure
+
+The ASG already has fields for all deferred features:
+
+```python
+# MCall (src/m2py/asg/elements.py)
+@dataclass
+class MCall:
+    offset: Optional["MExpr"] = None          # For LABEL+offset
+    routine: Optional[str] = None              # For ^ROUTINE
+    indirection: Optional["MExpr"] = None      # For @VAR
+    routine_indirection: Optional["MExpr"] = None  # For @VAR^@RTN
+    label_is_indirect: bool = False
+    routine_is_indirect: bool = False
+
+# GotoType enum includes
+class GotoType(Enum):
+    EXTERNAL = auto()      # For ^routine
+    UNRESOLVED = auto()    # For indirection
+```
+
+#### Feature 1: Indirect GOTO (`G @VAR`) → Spec 007
+
+**MUMPS Semantics**:
+- `G @VAR` evaluates VAR at runtime to get label name
+- `G @VAR^@ROUTINE`: both label and routine from variables
+- Target is completely dynamic
+
+**Trampoline Extension**: **NATURALLY SUPPORTED** ✅
+
+The trampoline already uses string-based dispatch:
+```python
+# Current pattern
+return ('STATIC_LABEL', state)
+
+# Extended pattern (no dispatch changes needed!)
+label_name = evaluate(s.INDIRECT_VAR)  # Runtime evaluation
+return (label_name, state)             # Dynamic dispatch
+
+# Dispatcher already does string lookup:
+while label is not None:
+    func = _labels[label]  # String key lookup - works with dynamic labels
+    label, state = func(state)
+```
+
+**Verdict**: This is the BEST case for trampoline - just need runtime evaluation of @VAR expression.
+
+#### Feature 2: Computed Offsets (`G LABEL+expr`) → Spec 008
+
+**MUMPS Semantics**:
+- `G LABEL+3` jumps to 3 lines after LABEL
+- `G LABEL+N` where N is computed at runtime
+- Target may not be a labeled line
+
+**Trampoline Extension Options**:
+
+| Approach | Description | Complexity |
+|----------|-------------|------------|
+| **Static offsets** | Analyze at compile time, pre-compute target label | Low |
+| **Statement indexing** | Index every statement, dispatch to any | Medium |
+| **Hybrid (recommended)** | Static for constants, runtime for dynamic | Medium |
+
+**Verdict**: FEASIBLE with extensions. Static offsets work naturally; dynamic requires finer-grained dispatch.
+
+#### Feature 3: External Routine GOTO (`G LABEL^ROUTINE`) → Spec 009
+
+**MUMPS Semantics**:
+- `G LABEL^ROUTINE` transfers control to another routine entirely
+- Current stack is unwound (caller doesn't continue)
+- Different from `DO LABEL^ROUTINE` (which returns)
+
+**Trampoline Extension Options**:
+
+| Approach | Description | Pros/Cons |
+|----------|-------------|-----------|
+| **Exception-based** | Raise `GotoExternal(routine, label)` | Clean stack unwinding ✅ |
+| **Return sentinel** | Return `('__EXTERNAL__', 'RTN^LABEL', state)` | Requires checking every iteration |
+| **Unified dispatcher** | Global registry routes across routines | Most flexible |
+
+**State Considerations**:
+- External GOTO may need to pass state to other routine
+- RoutineState may need shared/global state layer for cross-routine variables
+- Or serialization for state transfer
+
+**Verdict**: FEASIBLE with architectural extension. Exception-based is cleanest for stack unwinding.
+
+#### Extension Feasibility Matrix
+
+| Feature | Trampoline | RoutineState | Effort |
+|---------|------------|--------------|--------|
+| Computed static (`G LABEL+3`) | ✅ Easy | N/A | Low |
+| Computed dynamic (`G LABEL+N`) | ⚠️ Possible | N/A | Medium |
+| External (`G LABEL^ROUTINE`) | ⚠️ Possible | ⚠️ Extend | Medium |
+| Indirect (`G @VAR`) | ✅ Natural | N/A | Low |
+| Indirect external (`G @VAR^@RTN`) | ⚠️ Possible | ⚠️ Extend | Medium |
+
+#### Comparison: State Machine Alternative
+
+If we had chosen state machine instead of trampoline:
+
+| Feature | State Machine | Trampoline |
+|---------|--------------|------------|
+| Computed offsets | Equally complex | Equally complex |
+| External routines | Same problem (per-routine) | Same problem |
+| Indirect GOTO | Works equally well | Works equally well |
+
+**Conclusion**: Both patterns have similar extension capabilities. Trampoline wins on modularity (labels as functions) without sacrificing extensibility.
+
+#### Decision: **PROCEED WITH SELECTED PATTERNS**
+
+**Rationale**:
+
+1. **Indirect GOTO is naturally supported**: String-based dispatch requires no changes
+
+2. **External GOTO is architecturally feasible**: Exception-based transfer is clean
+
+3. **Computed offsets are tractable**: Static resolution handles common case; dynamic is deferrable
+
+4. **No additional spike needed**: Implementation details can be addressed in their respective specs
+
+5. **ASG infrastructure already exists**: All required fields are in place
+
+**Optional Architecture Prep** (can defer):
+- Consider making label registry global vs per-routine (for external GOTOs)
+- Consider `GotoExternal` exception class skeleton
 
 ---
 
