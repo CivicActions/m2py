@@ -270,7 +270,7 @@ Tests added in Phase 7 verify existing functionality.
 - [X] T076 [US3] Test modification in target: `TEST S X=1 G ADD Q` / `ADD S X=X+10 W X Q` → "11"
 - [X] T076a [US3] [FR-021] Test NEWed variable isolation: `TEST N X S X=1 G NEXT Q` / `NEXT W X Q` → "" (xfail - NEW command not implemented)
 - [X] T076b [US3] [FR-022] Test formal param isolation: `TEST D SUB(5) Q` / `SUB(X) G SHOW Q` / `SHOW W X Q` → "" (xfail - DO with args has issues)
-- [X] T076c [US3] [Edge Case] Test undefined variable on skipped init: `TEST I 0 S X=99 G DONE Q` / `DONE W X Q` → "None" (m2py treats undefined as None)
+- [X] T076c [US3] [Edge Case] Test undefined variable on skipped init: `TEST I 0 S X=99 G DONE Q` / `DONE W X Q` → "" (m2py treats undefined as empty string, consistent with MArray.value)
 
 **Checkpoint**: User Story 3 complete ✅ - variable visibility works for simple variables
 

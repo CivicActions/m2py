@@ -352,18 +352,19 @@ SHOW W X Q"""
         assert result.output == "5"
         assert result.success is True
 
-    def test_undefined_variable_reads_as_none(self, execute_mumps):
+    def test_undefined_variable_reads_as_empty_string(self, execute_mumps):
         """T076c: Skipped initialization leaves variable undefined.
 
         When IF condition is false, initialization is skipped.
         MUMPS: TEST I 0 S X=99 G DONE Q / DONE W X Q
 
-        Note: YDB throws LVUNDEF error, m2py outputs "None".
-        This is a design choice - m2py treats undefined as None.
+        Note: YDB throws LVUNDEF error for undefined variables.
+        m2py treats undefined as empty string (consistent with MArray.value).
+        This allows code to continue without runtime errors.
         """
         source = """TEST I 0 S X=99 G DONE Q
 DONE W X Q"""
         result = execute_mumps(source)
-        # m2py outputs None for undefined variables
-        assert result.output == "None"
+        # m2py outputs empty string for undefined variables (MUMPS semantics)
+        assert result.output == ""
         assert result.success is True

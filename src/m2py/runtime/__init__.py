@@ -291,17 +291,20 @@ class MUMPSRuntime:
         """Initialize runtime with empty state."""
         self._output: list[str] = []
 
-    def write(self, value: str) -> None:
+    def write(self, value: Any) -> None:
         """Capture WRITE output.
 
         Args:
-            value: String value to write
+            value: Value to write (converted to string)
 
         Note:
             Does not add newlines automatically (MUMPS WRITE doesn't either).
-            Non-string values should be converted to string by caller.
+            None values are treated as empty string (MUMPS undefined semantics).
         """
-        self._output.append(value)
+        if value is None:
+            self._output.append("")
+        else:
+            self._output.append(str(value))
 
     def get_output(self) -> str:
         """Return accumulated WRITE output.

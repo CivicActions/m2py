@@ -517,8 +517,9 @@ def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
     for arg in stmt.arguments:
         if isinstance(arg, MExpr):
             # Generate expression and write it
+            # Runtime handles None -> empty string conversion (MUMPS undefined semantics)
             expr = generate_expr(arg, ctx)
-            ctx.emitter.line(f"_rt.write(str({expr}))")
+            ctx.emitter.line(f"_rt.write({expr})")
         # Skip format controls for now (!, #, ?n) - Phase 2 scope is basic only
 
 
