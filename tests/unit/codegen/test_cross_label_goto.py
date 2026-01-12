@@ -1,0 +1,204 @@
+"""Tests for cross-label GOTO code generation (Spec 006 Phase 5).
+
+Tests forward cross-label GOTO with trampoline pattern:
+- Variable visibility across labels
+- Multiple label chains
+- IF/ELSE branch handling
+"""
+
+import pytest
+
+from m2py.codegen import generate_python
+from m2py.runtime import MUMPSRuntime
+
+
+@pytest.fixture
+def runtime():
+    """Provide a fresh runtime instance for each test."""
+    return MUMPSRuntime()
+
+
+def execute_mumps(source: str, runtime: MUMPSRuntime) -> str:
+    """Generate and execute MUMPS code, return output."""
+    code = generate_python(source)
+    result = runtime.execute(code)
+    if not result.success:
+        raise RuntimeError(f"Execution failed: {result.error}")
+    return result.output
+
+
+@pytest.mark.codegen
+class TestForwardCrossLabelGoto:
+    """Tests for forward cross-label GOTO (T059-T062)."""
+
+    def test_forward_cross_label_variable_visibility(self, runtime):
+        """T059: Variables set in source label visible in target label.
+
+        MUMPS: TEST S X=1 G NEXT Q / NEXT W X Q
+        Expected: "1"
+        """
+        source = """TEST S X=1 G NEXT Q
+NEXT W X Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "1"
+
+    def test_forward_cross_label_skipped_code(self, runtime):
+        """T060: Code after GOTO on same line is not executed.
+
+        MUMPS: TEST G END W "skip" Q / END W "end" Q
+        Expected: "end"
+        """
+        source = """TEST G END W "skip" Q
+END W "end" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "end"
+
+    def test_forward_cross_label_multiple_variables(self, runtime):
+        """T061: Multiple variables visible in target label.
+
+        MUMPS: TEST S A=10,B=20 G SUM Q / SUM W A+B Q
+        Expected: "30"
+        """
+        source = """TEST S A=10,B=20 G SUM Q
+SUM W A+B Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "30"
+
+    def test_forward_cross_label_chain(self, runtime):
+        """T062: Multiple GOTOs form a chain across labels.
+
+        MUMPS: TEST G A Q / A G B Q / B W "done" Q
+        Expected: "done"
+        """
+        source = """TEST G A Q
+A G B Q
+B W "done" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "done"
+
+
+@pytest.mark.codegen
+class TestCrossLabelFromIfElse:
+    """Tests for cross-label GOTO from IF/ELSE branches (T055a, T062a-b)."""
+
+    def test_cross_label_from_if_true_branch(self, runtime):
+        """T062a: Cross-label GOTO from IF true branch skips rest of line.
+
+        MUMPS: TEST I 1 G PASS W "mid" Q / PASS W "P" Q
+        Expected: "P" (W "mid" Q is skipped due to GOTO)
+        """
+        source = """TEST I 1 G PASS W "mid" Q
+PASS W "P" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "P"
+
+    def test_cross_label_from_else_branch(self, runtime):
+        """T062b: Cross-label GOTO from ELSE branch (on separate line).
+
+        Note: In MUMPS, ELSE on same line as IF is skipped when IF is false.
+        ELSE must be on separate line to execute when $TEST is false.
+
+        MUMPS: TEST I 0 G PASS / E G FAIL / Q / PASS W "P" Q / FAIL W "F" Q
+        Expected: "F"
+        """
+        source = """TEST I 0 G PASS
+ E  G FAIL
+ Q
+PASS W "P" Q
+FAIL W "F" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "F"
+
+    def test_cross_label_from_if_false_fallthrough(self, runtime):
+        """When IF is false, rest of line is skipped including ELSE.
+
+        MUMPS: TEST I 0 G PASS E G FAIL Q / PASS W "P" Q / FAIL W "F" Q
+        Expected: "P" (entire line after I 0 is skipped, falls through to PASS)
+        """
+        source = """TEST I 0 G PASS E  G FAIL Q
+PASS W "P" Q
+FAIL W "F" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "P"
+
+
+@pytest.mark.codegen
+class TestTrampolineCodeStructure:
+    """Tests for trampoline pattern code generation structure."""
+
+    def test_trampoline_generates_label_dict(self):
+        """Trampoline pattern generates _labels dictionary."""
+        source = """TEST G NEXT Q
+NEXT W "done" Q"""
+        code = generate_python(source)
+
+        assert "_labels = {" in code
+        assert '"TEST": _TEST' in code
+        assert '"NEXT": _NEXT' in code
+
+    def test_trampoline_generates_entry_point(self):
+        """Trampoline pattern generates entry point function."""
+        source = """TEST G NEXT Q
+NEXT W "done" Q"""
+        code = generate_python(source)
+
+        # Entry point should be named after first label
+        assert "def TEST():" in code
+        assert "while label is not None:" in code
+        assert "func = _labels[label]" in code
+
+    def test_trampoline_generates_state_class(self):
+        """Trampoline pattern generates RoutineState class."""
+        source = """TEST S X=1 G NEXT Q
+NEXT W X Q"""
+        code = generate_python(source)
+
+        assert "@dataclass" in code
+        assert "class RoutineState:" in code
+        assert "X: Any = None" in code
+
+    def test_trampoline_label_functions_prefixed(self):
+        """Label functions are prefixed with _ in trampoline pattern."""
+        source = """TEST G NEXT Q
+NEXT W "done" Q"""
+        code = generate_python(source)
+
+        assert "def _TEST(state)" in code
+        assert "def _NEXT(state)" in code
+
+    def test_trampoline_state_variable_access(self):
+        """Variables are accessed via state object in trampoline pattern."""
+        source = """TEST S X=1 G NEXT Q
+NEXT W X Q"""
+        code = generate_python(source)
+
+        assert "state.X = 1" in code
+        assert "state.X)" in code  # Used in write
+
+
+@pytest.mark.codegen
+class TestSimpleFunctionsNotAffected:
+    """Tests that SIMPLE_FUNCTIONS pattern still works."""
+
+    def test_simple_routine_no_trampoline(self):
+        """Routine without cross-label GOTO uses simple functions."""
+        source = 'TEST W "hello" Q'
+        code = generate_python(source)
+
+        # No trampoline machinery
+        assert "RoutineState" not in code
+        assert "_labels" not in code
+        assert "def TEST():" in code
+        assert "def _TEST(" not in code
+
+    def test_intra_label_goto_no_trampoline(self):
+        """Intra-label forward GOTO doesn't trigger trampoline."""
+        source = """TEST I 1 G TEST+3
+ W "skip"
+ W "done" Q"""
+        code = generate_python(source)
+
+        # Should be simple function pattern with if/else restructuring
+        assert "def TEST():" in code
+        # No trampoline
+        assert "_labels" not in code

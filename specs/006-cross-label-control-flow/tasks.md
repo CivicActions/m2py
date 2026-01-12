@@ -197,28 +197,28 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 ### 5.1 Implementation
 
-- [ ] T055 [US1] Modify `_generate_goto()` in src/m2py/codegen/statements.py:
+- [X] T055 [US1] Modify `_generate_goto()` in src/m2py/codegen/statements.py:
   - Remove cross-label restriction (currently raises NotImplementedError)
   - Generate return with state tuple for trampoline pattern
-- [ ] T055a [US1] [FR-005] Handle cross-label GOTO from inside IF/ELSE blocks:
+- [X] T055a [US1] [FR-005] Handle cross-label GOTO from inside IF/ELSE blocks:
   - Verify condition state is not corrupted by GOTO
   - Test: `TEST I 1 G PASS G FAIL Q` / `PASS W "P" Q` / `FAIL W "F" Q` → "P"
-- [ ] T056 [US1] Implement trampoline wrapper in src/m2py/codegen/routine.py:
+- [X] T056 [US1] Implement trampoline wrapper in src/m2py/codegen/routine.py:
   - `_labels` dict mapping label name → function
   - Trampoline while loop for dispatch
-- [ ] T057 [US1] Implement label functions to receive/return state
-- [ ] T058 [US1] Update `generate_routine()` to select pattern and emit appropriate code
+- [X] T057 [US1] Implement label functions to receive/return state
+- [X] T058 [US1] Update `generate_routine()` to select pattern and emit appropriate code
 
 ### 5.2 Tests
 
-- [ ] T059 [US1] Test forward cross-label: `TEST S X=1 G NEXT Q` / `NEXT W X Q` → "1"
-- [ ] T060 [US1] Test skipped code: `TEST G END W "skip" Q` / `END W "end" Q` → "end"
-- [ ] T061 [US1] Test variable visibility: `TEST S A=10,B=20 G SUM Q` / `SUM W A+B Q` → "30"
-- [ ] T062 [US1] Test multiple labels: `TEST G A Q` / `A G B Q` / `B W "done" Q` → "done"
-- [ ] T062a [US1] [FR-005] Test cross-label from IF branch: `TEST I 1 G PASS W "mid" Q` / `PASS W "P" Q` → "P" (mid skipped)
-- [ ] T062b [US1] [FR-005] Test cross-label from ELSE branch: `TEST I 0 G PASS E  G FAIL Q` / `PASS W "P" Q` / `FAIL W "F" Q` → "F"
+- [X] T059 [US1] Test forward cross-label: `TEST S X=1 G NEXT Q` / `NEXT W X Q` → "1"
+- [X] T060 [US1] Test skipped code: `TEST G END W "skip" Q` / `END W "end" Q` → "end"
+- [X] T061 [US1] Test variable visibility: `TEST S A=10,B=20 G SUM Q` / `SUM W A+B Q` → "30"
+- [X] T062 [US1] Test multiple labels: `TEST G A Q` / `A G B Q` / `B W "done" Q` → "done"
+- [X] T062a [US1] [FR-005] Test cross-label from IF branch: `TEST I 1 G PASS W "mid" Q` / `PASS W "P" Q` → "P" (mid skipped)
+- [X] T062b [US1] [FR-005] Test cross-label from ELSE branch: `TEST I 0 G PASS E  G FAIL Q` / `PASS W "P" Q` / `FAIL W "F" Q` → "F"
 
-**Checkpoint**: User Story 1 complete - simple forward cross-label works
+**Checkpoint**: User Story 1 complete ✅ - simple forward cross-label works
 
 ---
 

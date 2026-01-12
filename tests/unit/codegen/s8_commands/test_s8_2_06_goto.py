@@ -11,15 +11,16 @@ class TestGotoCommandCodegen:
     """Codegen-level tests for GOTO command code generation (§8.2.6)."""
 
     def test_goto_to_function_call(self, generate_python):
-        """Simple GOTO generates function call with return (§8.2.6).
+        """Simple cross-label GOTO generates trampoline pattern (§8.2.6).
 
         User Story 4 acceptance scenario (T040):
-        Given: G DONE
+        Given: G DONE (cross-label)
         When: generated
-        Then: output contains DONE() and return
+        Then: output contains return ("DONE", state) for trampoline pattern
         """
         code = generate_python('TEST\n G DONE\n Q\nDONE\n W "END"\n Q\n')
-        assert "DONE()" in code
+        # Cross-label GOTO uses trampoline pattern with label string
+        assert 'return ("DONE", state)' in code
         assert "return" in code
 
     def test_goto_transfers_control(self, execute_mumps):
@@ -190,12 +191,15 @@ DONE W I
 
         # The loop exit GOTO should generate 'break'
         assert "break" in python_code
-        # Look for the break in the context of the loop (after the if statement)
-        test_func = python_code.split("def TEST():")[1].split("def DONE():")[0]
+        # Look for the break in the context of the _TEST function (trampoline label function)
+        test_func = python_code.split("def _TEST(state)")[1].split("def _DONE(state)")[
+            0
+        ]
         assert "break" in test_func
-        # FR-018: Cross-label exit should track target and call after loop
-        assert "_goto_target = DONE" in test_func
-        assert "_goto_target()" in test_func
+        # FR-018: Cross-label exit should track target label as string
+        assert '_goto_label = "DONE"' in test_func
+        # FR-018: After loop, return to trampoline with target label
+        assert "return (_goto_label, state)" in test_func
 
     def test_multi_loop_exit_generates_exception(self, generate_python):
         """GOTO exiting multiple loops generates exception pattern (T041).
@@ -204,7 +208,7 @@ DONE W I
         it should generate 'raise _LoopExit(target)' and the outermost loop
         should be wrapped in try/except _LoopExit.
 
-        FR-018: Cross-label exits should pass target label to exception.
+        FR-018: Cross-label exits should pass target label string to exception.
         """
         # MUMPS: exit both loops when I*J > 15
         code = """TEST S X=0
@@ -216,13 +220,13 @@ DONE W I*J
 
         # Should generate the _LoopExit exception class
         assert "class _LoopExit" in python_code
-        # FR-018: Cross-label multi-loop exit should pass target label
-        assert "raise _LoopExit(DONE)" in python_code
+        # FR-018: Cross-label multi-loop exit should pass target label string
+        assert 'raise _LoopExit("DONE")' in python_code
         # Outer loop should have try/except wrapper
         assert "try:" in python_code
         assert "except _LoopExit" in python_code
-        # FR-018: except block should call target
-        assert "_e.target()" in python_code
+        # FR-018: except block should return target to trampoline
+        assert "return (_e.target, state)" in python_code
 
     def test_single_loop_exit_executes_target_label(self, execute_mumps):
         """FR-018: Single loop exit GOTO calls target label code (T077).

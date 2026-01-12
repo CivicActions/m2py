@@ -177,15 +177,15 @@ class TestStrategyIntegration:
         # No trampoline dispatch
         assert "while " not in code or "_rt" in code
 
-    @pytest.mark.xfail(reason="Cross-label GOTO codegen not yet implemented (Phase 5)")
     def test_cross_label_goto_uses_trampoline(self, generate_python):
         """Routine with cross-label GOTOs uses TRAMPOLINE strategy."""
         # Cross-label forward GOTO
         code = generate_python('TEST\n G NEXT\n Q\nNEXT\n W "done"\n Q\n')
 
-        # Should have trampoline dispatch (to be implemented in Phase 5)
+        # Should have trampoline dispatch
         assert "while" in code
         assert "RoutineState" in code
+        assert "_labels" in code
 
     def test_external_goto_raises_unsupported(self, generate_python):
         """T045b: External GOTO raises UnsupportedFeatureError during generation."""

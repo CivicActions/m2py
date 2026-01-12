@@ -19,6 +19,7 @@ from m2py.asg.expressions import (
     MUnaryOp,
     MVariable,
 )
+from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.names import translate_name
 
 if TYPE_CHECKING:
@@ -87,6 +88,9 @@ def _generate_literal(lit: MLiteral) -> str:
 def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     """Generate Python variable reference from MVariable.
 
+    Spec 006: When using TRAMPOLINE strategy and the variable is in state_vars,
+    access it via `state.VAR` instead of just `VAR`.
+
     Args:
         var: MVariable node
         ctx: Generator context
@@ -100,6 +104,10 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     # For now, subscripts are not supported (Phase 2 scope)
     if var.subscripts:
         raise NotImplementedError("Subscripted variables not yet supported")
+
+    # Spec 006: Check if variable should be accessed via state
+    if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.state_vars:
+        return f"state.{python_name}"
 
     return python_name
 

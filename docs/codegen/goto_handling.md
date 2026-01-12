@@ -240,29 +240,55 @@ Unsupported patterns raise `UnsupportedFeatureError` referencing future specs:
 When `needs_trampoline=True`, the code generator produces:
 
 1. **RoutineState dataclass** - Carries variables across label boundaries
-2. **Label functions** - Accept and return state, return next label name
-3. **Trampoline dispatcher** - Loop that calls labels until completion
+2. **Label functions** - Prefixed with `_`, accept state parameter, return `(next_label, state)` tuple
+3. **Entry point function** - Named after first label, creates state and runs trampoline dispatcher
+4. **Labels dictionary** - Maps label names to their functions
 
 ```python
+from dataclasses import dataclass, field
+from typing import Any, Optional, Tuple
+
 @dataclass
 class RoutineState:
+    """Shared state for cross-label variable visibility."""
     X: Any = None
-    A: MArray = field(default_factory=MArray)
 
-def _label_START(state: RoutineState) -> tuple[RoutineState, str | None]:
-    state.X = 1
-    return (state, "NEXT")  # GOTO NEXT
+def _TEST(state) -> Tuple[Optional[str], RoutineState]:
+    """Label function receives/returns state."""
+    global _test
+    state.X = m_num(1)
+    return ("NEXT", state)  # Cross-label GOTO
 
-def _label_NEXT(state: RoutineState) -> tuple[RoutineState, str | None]:
+def _NEXT(state) -> Tuple[Optional[str], RoutineState]:
+    global _test
     _rt.write(str(state.X))
-    return (state, None)  # End
+    return (None, state)  # End execution
 
-def START():
+_labels = {
+    "TEST": _TEST,
+    "NEXT": _NEXT,
+}
+
+def TEST():
+    """Trampoline dispatcher for routine execution."""
     state = RoutineState()
-    label = "START"
-    while label:
-        state, label = {"START": _label_START, "NEXT": _label_NEXT}[label](state)
+    label = "TEST"
+
+    while label is not None:
+        func = _labels[label]
+        label, state = func(state)
+
+    return state
 ```
+
+**Key Implementation Details:**
+
+- Label functions are prefixed with `_` (e.g., `_TEST`) to distinguish from entry point
+- The entry point (`TEST()`) has the original label name for external callers
+- Cross-label GOTOs return the target label as a string: `return ("NEXT", state)`
+- QUIT returns `(None, state)` to exit the trampoline loop
+- Fall-through to next label returns that label's name instead of `None`
+- FOR loop variables in state use `state.VAR` for loop counter when cross-label visible
 
 ## MArray Runtime Support
 
