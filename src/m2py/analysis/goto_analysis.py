@@ -13,7 +13,7 @@ from typing import List, Optional
 
 from ..asg.elements import MLabel, MRoutine, MScope
 from ..asg.enums import GotoCodegenPattern, GotoType
-from ..asg.statements import MForStatement, MGotoStatement, MStatement
+from ..asg.statements import MForStatement, MGotoStatement, MIfStatement, MStatement
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
 
@@ -92,8 +92,9 @@ def _classify_gotos_in_scope(
     label_positions: dict,
     routine: MRoutine,
     enclosing_fors: List[MForStatement],
+    enclosing_if: Optional[MIfStatement] = None,
 ) -> None:
-    """Classify GOTOs within a scope, tracking enclosing FORs.
+    """Classify GOTOs within a scope, tracking enclosing FORs and IF.
 
     Args:
         scope: The scope to scan for GOTOs
@@ -102,6 +103,7 @@ def _classify_gotos_in_scope(
         label_positions: Label name -> position mapping
         routine: The containing routine
         enclosing_fors: Stack of enclosing FOR loops (innermost last)
+        enclosing_if: The MIfStatement containing this scope (for then_scope only)
     """
     for stmt in scope.statements:
         if isinstance(stmt, MGotoStatement):
@@ -112,9 +114,11 @@ def _classify_gotos_in_scope(
                 label_positions,
                 routine,
                 enclosing_fors,
+                enclosing_if,
             )
         elif isinstance(stmt, MForStatement):
             # Recurse into FOR body with this FOR added to enclosing stack
+            # No enclosing_if - GOTOs inside FOR are not restructurable to if/else
             if stmt.body:
                 _classify_gotos_in_scope(
                     stmt.body,
@@ -123,6 +127,19 @@ def _classify_gotos_in_scope(
                     label_positions,
                     routine,
                     enclosing_fors + [stmt],
+                    None,  # Clear enclosing_if inside FOR
+                )
+        elif isinstance(stmt, MIfStatement):
+            # Recurse into IF then_scope with this IF as enclosing
+            if stmt.then_scope is not None:
+                _classify_gotos_in_scope(
+                    stmt.then_scope,
+                    current_label_idx,
+                    current_label,
+                    label_positions,
+                    routine,
+                    enclosing_fors,
+                    stmt,  # Pass this IF as enclosing_if
                 )
         # Recurse into other nested scopes using type-safe helpers
         else:
@@ -135,6 +152,7 @@ def _classify_gotos_in_scope(
                     label_positions,
                     routine,
                     enclosing_fors,
+                    None,  # Only direct MIfStatement sets enclosing_if
                 )
             else_scope = get_else_scope(stmt)
             if else_scope is not None:
@@ -145,6 +163,7 @@ def _classify_gotos_in_scope(
                     label_positions,
                     routine,
                     enclosing_fors,
+                    None,  # ELSE doesn't get restructurable GOTOs
                 )
             body = get_body_scope(stmt)
             if body is not None:
@@ -155,6 +174,7 @@ def _classify_gotos_in_scope(
                     label_positions,
                     routine,
                     enclosing_fors,
+                    None,  # Other bodies don't get restructurable GOTOs
                 )
 
 
@@ -165,6 +185,7 @@ def _classify_single_goto(
     label_positions: dict,
     routine: MRoutine,
     enclosing_fors: List[MForStatement],
+    enclosing_if: Optional[MIfStatement] = None,
 ) -> None:
     """Classify a single GOTO statement.
 
@@ -180,6 +201,7 @@ def _classify_single_goto(
         label_positions: Label name -> position mapping
         routine: The containing routine
         enclosing_fors: Stack of enclosing FOR loops
+        enclosing_if: The MIfStatement containing this GOTO (for restructurable back-ref)
     """
     # Check each target (usually just one, but GOTO can have multiple)
     for call in stmt.targets:
@@ -336,21 +358,28 @@ def _classify_single_goto(
             stmt.exits_loops = list(enclosing_fors)
 
     # T096-T099: Compute is_restructurable and codegen_pattern after all classification
-    _compute_codegen_fields(stmt)
+    _compute_codegen_fields(stmt, enclosing_if)
 
 
-def _compute_codegen_fields(stmt: MGotoStatement) -> None:
+def _compute_codegen_fields(
+    stmt: MGotoStatement, enclosing_if: Optional[MIfStatement] = None
+) -> None:
     """Compute is_restructurable and codegen_pattern for a GOTO statement.
 
     This must be called after goto_type, is_cross_label, and exits_loops are set.
 
     Args:
         stmt: The MGotoStatement to update
+        enclosing_if: The MIfStatement containing this GOTO (for restructurable back-ref)
     """
     # is_restructurable: intra-label forward jump
     stmt.is_restructurable = (
         stmt.goto_type == GotoType.FORWARD_JUMP and not stmt.is_cross_label
     )
+
+    # Set back-reference on enclosing IF if this GOTO is restructurable
+    if stmt.is_restructurable and enclosing_if is not None:
+        enclosing_if.restructurable_goto = stmt
 
     # Determine codegen_pattern based on analysis results
     if stmt.exits_loops:

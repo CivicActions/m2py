@@ -169,6 +169,11 @@ class MIfStatement(MStatement):
     )  # Multiple conditions (comma-separated)
     then_scope: MScope = field(default_factory=MScope)
 
+    # Analysis: Pre-computed reference to restructurable GOTO in then_scope
+    # Set by classify_gotos() when IF contains an intra-label forward GOTO
+    # that can be restructured to if/else pattern. Avoids scanning at codegen time.
+    restructurable_goto: Optional["MGotoStatement"] = field(default=None, repr=False)
+
 
 @dataclass
 class MElseStatement(MStatement):

@@ -270,8 +270,8 @@ class GotoGenContext:
 def _find_forward_goto_in_if(if_stmt: MIfStatement) -> "MGotoStatement | None":
     """Find a restructurable forward GOTO in an IF's then_scope.
 
-    Only checks the first statement (immediate GOTO pattern).
-    More complex patterns could be supported in the future.
+    Uses pre-computed MIfStatement.restructurable_goto field set by
+    classify_gotos() analysis. Avoids scanning at codegen time.
 
     Args:
         if_stmt: The MIfStatement to check
@@ -279,16 +279,7 @@ def _find_forward_goto_in_if(if_stmt: MIfStatement) -> "MGotoStatement | None":
     Returns:
         The MGotoStatement if found and restructurable, None otherwise
     """
-    if not if_stmt.then_scope or not if_stmt.then_scope.statements:
-        return None
-
-    # Check if there's a GOTO as the only/first statement
-    # T100: Use pre-computed is_restructurable field instead of helper function
-    for stmt in if_stmt.then_scope.statements:
-        if isinstance(stmt, MGotoStatement) and stmt.is_restructurable:
-            return stmt
-
-    return None
+    return if_stmt.restructurable_goto
 
 
 def _restructure_forward_goto(

@@ -548,6 +548,65 @@ class TestIsRestructurableField:
 
         assert stmt.is_restructurable is False
 
+    def test_if_statement_restructurable_goto_backref(self):
+        """MIfStatement.restructurable_goto is set by classify_gotos.
+
+        When an IF statement contains a restructurable forward GOTO in its
+        then_scope, the back-reference is set during analysis to avoid
+        scanning at codegen time.
+        """
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # IF with forward GOTO that can be restructured
+        code = 'TEST W "A"\n I 1 G TEST+3\n W "B"\n Q\n'
+        routine = parser.parse(code)
+        parser.resolve_references(routine)
+        parser.classify_gotos(routine)
+
+        # Find the IF statement
+        label = routine.labels[0]
+        if_stmt = None
+        for stmt in label.body.statements:
+            from m2py.asg.statements import MIfStatement
+
+            if isinstance(stmt, MIfStatement):
+                if_stmt = stmt
+                break
+
+        assert if_stmt is not None, "IF statement not found"
+        assert if_stmt.restructurable_goto is not None
+        assert if_stmt.restructurable_goto.is_restructurable is True
+
+    def test_if_statement_no_backref_for_cross_label_goto(self):
+        """MIfStatement.restructurable_goto is None for cross-label GOTOs.
+
+        Cross-label GOTOs are not restructurable to if/else, so the
+        back-reference should not be set.
+        """
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # IF with cross-label GOTO (to different label)
+        code = 'TEST I 1 G DONE\n Q\nDONE W "X"\n Q\n'
+        routine = parser.parse(code)
+        parser.resolve_references(routine)
+        parser.classify_gotos(routine)
+
+        # Find the IF statement
+        label = routine.labels[0]
+        if_stmt = None
+        for stmt in label.body.statements:
+            from m2py.asg.statements import MIfStatement
+
+            if isinstance(stmt, MIfStatement):
+                if_stmt = stmt
+                break
+
+        assert if_stmt is not None, "IF statement not found"
+        # Cross-label GOTO is not restructurable, so no back-reference
+        assert if_stmt.restructurable_goto is None
+
 
 @pytest.mark.codegen
 class TestCrossLabelGotoCodegen:

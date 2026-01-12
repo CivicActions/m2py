@@ -52,8 +52,9 @@ def TEST():
 ```
 
 **Implementation Details**:
-- `_is_restructurable_goto()` checks if GOTO is intra-label forward
-- `_find_forward_goto_in_if()` detects restructurable GOTOs inside IF statements
+- `is_restructurable` field (set by `classify_gotos()`) identifies intra-label forward GOTOs
+- `MIfStatement.restructurable_goto` field (set by `classify_gotos()`) provides direct back-reference
+- `_find_forward_goto_in_if()` returns the pre-computed back-reference (no scanning needed)
 - `_restructure_forward_goto()` generates the inverted if/else structure
 - `target_stmt_index` (computed in `classify_gotos()`) identifies which statements to wrap
 
@@ -420,6 +421,8 @@ The `MArray` class supports:
 | `goto_stmt.exits_loops` | List of FOR loops exited |
 | `goto_stmt.is_cross_label` | True if target is different label |
 | `goto_stmt.target_stmt_index` | Statement index for intra-label forward |
+| `goto_stmt.is_restructurable` | True if GOTO can be restructured to if/else |
+| `if_stmt.restructurable_goto` | Back-reference to restructurable GOTO inside IF |
 | `for_stmt.has_internal_goto` | Has GOTO in body |
 | `for_stmt.exit_points` | List of exiting GOTOs |
 | `label.has_self_loop` | True if label has backward GOTO to itself |
@@ -434,11 +437,9 @@ The `MArray` class supports:
 | `_generate_goto()` | Main GOTO dispatch in statements.py |
 | `_select_goto_strategy()` | Select strategy based on ASG flags |
 | `_check_unsupported_gotos()` | Raise errors for UNRESOLVED/EXTERNAL |
-| `_is_restructurable_goto()` | Check if GOTO can become if/else |
-| `_find_forward_goto_in_if()` | Find restructurable GOTO in IF |
+| `_find_forward_goto_in_if()` | Return pre-computed restructurable GOTO from IF |
 | `_restructure_forward_goto()` | Generate inverted if/else structure |
 | `generate_scope_statements()` | Statement generation with GOTO restructuring |
-| `_for_needs_loop_exit_wrapper()` | Check if FOR needs try/except |
 
 ## RoutineState Generator Functions (src/m2py/codegen/shared_state.py)
 
