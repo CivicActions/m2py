@@ -280,22 +280,22 @@ Tests added in Phase 7 verify existing functionality.
 
 **Goal**: GOTO from inside FOR loops to label outside FOR
 
-**Independent Test**: `TEST F I=1:1:10 I I=3 G DONE W I` / `DONE W "done" Q` → "12done"
+**Independent Test**: `TEST F I=1:1:10 W I I I=3 G DONE Q` / `DONE W "done" Q` → "123done"
 
 ### 8.1 Implementation
 
-- [ ] T077 [US4] [FR-004] Integrate with existing loop exit infrastructure from Spec 005
-- [ ] T078 [US4] Cross-label exit: break from FOR, then transfer to target label
-- [ ] T079 [US4] Multi-loop cross-label exit: raise _LoopExit, catch, transfer
+- [X] T077 [US4] [FR-004] Integrate with existing loop exit infrastructure from Spec 005 (already working via trampoline)
+- [X] T078 [US4] Cross-label exit: break from FOR, then transfer to target label (works via trampoline return)
+- [X] T079 [US4] Multi-loop cross-label exit: raise _LoopExit, catch, transfer (works via trampoline for all nesting levels)
 
 ### 8.2 Tests
 
-- [ ] T080 [US4] Test single FOR exit: `TEST F I=1:1:10 I I=3 G DONE W I` / `DONE W "done" Q` → "12done"
-- [ ] T081 [US4] Test nested FOR exit: `TEST F I=1:1:3 F J=1:1:2 W I,J I I=2,J=1 G OUT Q` / `OUT W "!" Q` → "111221!"
-- [ ] T082 [US4] Test triple nested exit: `TEST F I=1:1:2 F J=1:1:2 F K=1:1:2 I I=1,J=2,K=1 G OUT W I,J,K Q` / `OUT W "!" Q` → "111112121!"
-- [ ] T083 [US4] Test exit target variable access (loop var visible in target)
+- [X] T080 [US4] Test single FOR exit: `TEST F I=1:1:10 W I I I=3 G DONE Q` / `DONE W "done" Q` → "123done" ✅
+- [X] T081 [US4] Test nested FOR exit: `TEST F I=1:1:3 F J=1:1:2 W I,J I I=2,J=1 G OUT Q` / `OUT W "!" Q` → "111221!" ✅
+- [X] T082 [US4] Test triple nested exit: `TEST F I=1:1:2 F J=1:1:2 F K=1:1:2 W I,J,K I I=1,J=2,K=1 G OUT Q` / `OUT W "!" Q` → "111112121!" ✅
+- [X] T083 [US4] Test exit target variable access (loop var visible in target): `TEST F I=1:1:10 I I=5 G DONE Q` / `DONE W "I=",I Q` → "I=5" ✅
 
-**Checkpoint**: User Story 4 complete - loop exits to labels work
+**Checkpoint**: User Story 4 complete ✅ - loop exits to labels work via trampoline pattern
 
 ---
 

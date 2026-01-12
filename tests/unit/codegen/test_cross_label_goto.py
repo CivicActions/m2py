@@ -368,3 +368,56 @@ DONE W X Q"""
         # m2py outputs empty string for undefined variables (MUMPS semantics)
         assert result.output == ""
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestCrossLabelLoopExit:
+    """Phase 8: Cross-label GOTO from inside FOR loops (T077-T083)."""
+
+    def test_single_for_exit_to_label(self, execute_mumps):
+        """T080: Single FOR loop exit via cross-label GOTO.
+
+        MUMPS: TEST F I=1:1:10 W I I I=3 G DONE Q / DONE W "done" Q
+        Expected: "123done" (write 1,2,3 then exit to DONE)
+        """
+        source = """TEST F I=1:1:10 W I I I=3 G DONE Q
+DONE W "done" Q"""
+        result = execute_mumps(source)
+        assert result.output == "123done"
+        assert result.success is True
+
+    def test_nested_for_exit_to_label(self, execute_mumps):
+        """T081: Nested FOR loop exit via cross-label GOTO.
+
+        MUMPS: TEST F I=1:1:3 F J=1:1:2 W I,J I I=2,J=1 G OUT Q / OUT W "!" Q
+        Expected: "111221!" (writes I,J pairs until I=2,J=1 then exits both loops)
+        """
+        source = """TEST F I=1:1:3 F J=1:1:2 W I,J I I=2,J=1 G OUT Q
+OUT W "!" Q"""
+        result = execute_mumps(source)
+        assert result.output == "111221!"
+        assert result.success is True
+
+    def test_triple_nested_for_exit(self, execute_mumps):
+        """T082: Triple nested FOR loop exit via cross-label GOTO.
+
+        MUMPS: TEST F I=1:1:2 F J=1:1:2 F K=1:1:2 W I,J,K I I=1,J=2,K=1 G OUT Q / OUT W "!" Q
+        Expected: "111112121!" (writes until I=1,J=2,K=1 then exits all three loops)
+        """
+        source = """TEST F I=1:1:2 F J=1:1:2 F K=1:1:2 W I,J,K I I=1,J=2,K=1 G OUT Q
+OUT W "!" Q"""
+        result = execute_mumps(source)
+        assert result.output == "111112121!"
+        assert result.success is True
+
+    def test_loop_variable_visible_in_target(self, execute_mumps):
+        """T083: Loop variable is visible in target label after exit.
+
+        MUMPS: TEST F I=1:1:10 I I=5 G DONE Q / DONE W "I=",I Q
+        Expected: "I=5" (I is accessible in DONE label via RoutineState)
+        """
+        source = """TEST F I=1:1:10 I I=5 G DONE Q
+DONE W "I=",I Q"""
+        result = execute_mumps(source)
+        assert result.output == "I=5"
+        assert result.success is True
