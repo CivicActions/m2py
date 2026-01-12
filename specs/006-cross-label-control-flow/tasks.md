@@ -81,11 +81,18 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
 
 **Goal**: Choose variable visibility approach for labels-as-functions
 
-- [ ] T020 [P] Test RoutineState class approach in spikes/shared_state_class.py
-- [ ] T021 [P] Test outer-scope variables approach in spikes/shared_state_outer.py
-- [ ] T022 [P] Test runtime dict approach in spikes/shared_state_runtime.py
-- [ ] T023 Evaluate each for: Rope compatibility, clarity, name collision risk
-- [ ] T024 Document decision in research.md section R4
+- [X] T020 [P] Test RoutineState class approach in spikes/shared_state_class.py
+- [X] T021 [P] Test outer-scope variables approach in spikes/shared_state_outer.py
+- [X] T022 [P] Test runtime dict approach in spikes/shared_state_runtime.py
+- [X] T023 Evaluate each for: Rope compatibility, clarity, name collision risk
+- [X] T024 Document decision in research.md section R4
+
+**Checkpoint**: Phase 2.2 complete ✅
+- Decision: **RoutineState class pattern** selected
+- Best Rope refactorability (Rename, Extract, Find References)
+- IDE autocomplete catches errors at edit time
+- Clean syntax: `s.X` vs `rt.get("X")`
+- See research.md R4 for full evaluation
 
 ### 2.3 Subscripted Locals Mini-Spike (REQUIRED)
 

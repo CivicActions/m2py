@@ -407,57 +407,116 @@ Both have bounded stack depth regardless of cycle count.
 
 ### R4: Shared State Pattern Evaluation
 
-**Status**: ⬜ Not started
+**Status**: ✅ Complete
 
-**RoutineState Class**:
+**Spike Files**:
+- `spikes/shared_state_class.py` - RoutineState dataclass approach
+- `spikes/shared_state_outer.py` - Outer-scope variables with nonlocal
+- `spikes/shared_state_runtime.py` - Runtime dict with get/set methods
+- `spikes/compare_shared_state.py` - Comparison analysis script
 
-```python
-# Template
-class _State:
-    def __init__(self):
-        self.x = None
-        self.y = None
-```
+#### Pattern Comparison
 
-Pros:
-- TBD
-
-Cons:
-- TBD
-
-**Outer-Scope Variables**:
+**1. RoutineState Class**:
 
 ```python
-# Template
-x = None
-y = None
+@dataclass
+class RoutineState:
+    X: Any = None
+    Y: Any = None
 
-def LABEL():
-    global x, y
-    x = 1
+@label("ENTRY")
+def ENTRY(s: RoutineState) -> tuple[Optional[str], RoutineState]:
+    s.X = 10
+    return ("NEXT", s)
 ```
 
-Pros:
-- TBD
-
-Cons:
-- TBD
-
-**Runtime Dict**:
+**2. Outer-Scope Variables**:
 
 ```python
-# Template
-_rt.set("x", 1)
-val = _rt.get("x")
+X = None
+Y = None
+
+@label("ENTRY")
+def ENTRY() -> Optional[str]:
+    nonlocal X  # MUST declare for writes!
+    X = 10
+    return "NEXT"
 ```
 
-Pros:
-- TBD
+**3. Runtime Dict**:
 
-Cons:
-- TBD
+```python
+@label("ENTRY")
+def ENTRY(rt: Runtime) -> tuple[Optional[str], Runtime]:
+    rt.set("X", 10)  # String-based access
+    return ("NEXT", rt)
+```
 
-**Decision**: *To be determined after spike*
+#### Evaluation Matrix
+
+| Criterion | Class | Outer-Scope | Runtime | Winner |
+|-----------|-------|-------------|---------|--------|
+| **Rope: Rename Symbol** | GOOD | MODERATE | POOR | Class |
+| **Rope: Extract Method** | GOOD | POOR | GOOD | Class |
+| **Rope: Find References** | GOOD | MODERATE | POOR | Class |
+| **IDE Autocomplete** | GOOD | GOOD | POOR | Tie |
+| **Type Checking** | GOOD | MODERATE | POOR | Class |
+| **Dynamic Variables** | POOR | POOR | GOOD | Runtime |
+| **Name Collision Risk** | LOW | LOW | HIGH | Tie |
+| **Subscript Support** | NEEDS WORK | NEEDS WORK | NATURAL | Runtime |
+| **MUMPS Semantics Match** | MODERATE | MODERATE | GOOD | Runtime |
+
+#### Detailed Analysis
+
+**RoutineState Class - RECOMMENDED**:
+- ✅ Best IDE/Rope support (symbols, autocomplete, type hints)
+- ✅ Fields are explicit and documented
+- ✅ Easy to pass state to helper functions
+- ✅ Natural fit with trampoline pattern (state passed through)
+- ❌ Must pre-declare all variables (analysis pass provides this)
+- ❌ Subscripted variables need MArray integration
+
+**Outer-Scope Variables - NOT RECOMMENDED**:
+- ✅ Natural Python variable syntax
+- ✅ No class boilerplate for simple routines
+- ❌ Must declare `nonlocal` for EVERY write in EVERY label
+- ❌ Forgetting `nonlocal` creates silent bugs (new local instead of modifying outer)
+- ❌ Hard to extract helper functions (scope issues)
+- ❌ Code gen must track which vars each label writes
+
+**Runtime Dict - ALTERNATIVE**:
+- ✅ Perfect MUMPS semantics (dynamic creation, undefined=empty string)
+- ✅ Natural fit for subscripted variables (nested dicts)
+- ✅ Easy to implement NEW/KILL commands
+- ❌ No IDE support (strings not symbols)
+- ❌ Typos in variable names not caught at edit time
+- ❌ Verbose syntax: `rt.get("X")` vs `s.X`
+
+#### Decision: **ROUTINESTATE CLASS PATTERN**
+
+**Rationale**:
+
+1. **Best Rope refactorability**: Rename Symbol, Extract Method, Find References all work correctly on dataclass fields
+
+2. **IDE autocomplete**: Catches variable name errors at edit time, not runtime
+
+3. **Type hints**: Enable static analysis with pyright/mypy
+
+4. **Clean syntax**: `s.X = 10` vs `rt.set("X", 10)`
+
+5. **Consistent with trampoline**: State naturally passed through label functions
+
+6. **Analysis pass provides variable list**: Code gen knows all variables from ASG, so pre-declaration is not a burden
+
+**For subscripted variables**:
+- Add MArray instances as RoutineState fields: `A: MArray = field(default_factory=MArray)`
+- Access via: `s.A[1, 2]` or `s.A.get(1, 2)`
+- Combines class-level organization with dict-like subscript semantics
+
+**Hybrid fallback for edge cases**:
+- If routine has truly dynamic variable creation (rare), add: `_vars: Dict[str, Any] = field(default_factory=dict)`
+- Access via: `s._vars["DYNAMIC_NAME"]`
 
 ---
 
