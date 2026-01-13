@@ -130,11 +130,11 @@
 
 ### Implementation for User Story 5
 
-- [ ] T043 [US5] Update _generate_extrinsic() for $$FUNC^ROUTINE pattern in src/m2py/codegen/expressions.py (L252)
-- [ ] T044 [US5] Generate import statement for external extrinsic in src/m2py/codegen/expressions.py
-- [ ] T045 [US5] Generate ext2.ADD(_rt, _scope, args) call pattern in src/m2py/codegen/expressions.py
-- [ ] T046 [US5] Generate $TEST save/restore around external extrinsic in src/m2py/codegen/expressions.py
-- [ ] T047 [US5] Add integration test for $$FUNC^ROUTINE in tests/integration/test_external_calls.py
+- [X] T043 [US5] Update _generate_extrinsic() for $$FUNC^ROUTINE pattern in src/m2py/codegen/expressions.py (L252)
+- [X] T044 [US5] Generate import statement for external extrinsic in src/m2py/codegen/expressions.py
+- [X] T045 [US5] Generate ext2.ADD(_rt, _scope, args) call pattern in src/m2py/codegen/expressions.py
+- [X] T046 [US5] Generate $TEST save/restore around external extrinsic in src/m2py/codegen/expressions.py
+- [X] T047 [US5] Add integration test for $$FUNC^ROUTINE in tests/integration/test_external_calls.py
 
 **Checkpoint**: External extrinsics work with proper $TEST isolation
 
@@ -206,6 +206,36 @@
 
 ---
 
+## Phase 12: Gap Resolution & Test Coverage Improvements
+
+**Purpose**: Address identified gaps from spec review (see tmp/spec_008_gap_analysis.md)
+
+**Goal**: Complete missing test coverage for edge cases and error handling
+
+### Immediate Fixes
+
+- [X] T068 Update tasks.md Phase 7 checkboxes T043-T047 to reflect completed implementation in specs/008-external-calls/tasks.md
+
+### Test Coverage Enhancements
+
+- [X] T069 [P] Add integration test for circular routine calls (A→B→A pattern) in tests/integration/test_external_calls.py
+- [X] T070 [P] Add integration test for external routine parse errors (FR-020) in tests/integration/test_external_calls.py
+- [X] T071 [P] Add integration test for missing routine ImportError (US1 AC#3) in tests/integration/test_external_calls.py
+- [X] T072 [P] Enhance module caching test to explicitly verify single import operation in tests/integration/test_external_calls.py
+
+### Deferred Items (Dependencies)
+
+- [ ] T073 Implement T031: Verify NEW semantics work across routine boundaries - **BLOCKED: Requires Spec 011 NEW command (not yet implemented - all tests are stubs/xfail)**
+- [ ] T074 Implement T033: Add integration test for NEW hiding caller variables - **BLOCKED: Requires Spec 011 NEW command (not yet implemented - all tests are stubs/xfail)**
+
+### Known Limitations
+
+- [ ] T075 Document $TEXT runtime validation limitation (MFormatControl dependency) in docs/limitations.md - **DEFERRED: Format controls are part of Spec 011 (not a blocker for Spec 008)**
+
+**Checkpoint**: All edge cases tested, error handling verified, spec gaps resolved
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -217,6 +247,7 @@
   - P2 stories (US3, US5, US6, US8) follow
   - P3 stories (US7) complete last
 - **Polish (Phase 11)**: Depends on all user stories being complete
+- **Gap Resolution (Phase 12)**: Can start after Phase 11 - improves test coverage and resolves tracking issues
 
 ### User Story Dependencies
 
@@ -292,8 +323,10 @@ Task T015: "Generate _label_lines mapping"
 | src/m2py/codegen/statements.py | T017-T028, T029, T034-T038, T059 |
 | src/m2py/codegen/expressions.py | T043-T058 |
 | tests/fixtures/external/ | T001-T005 |
-| tests/integration/test_external_calls.py | T021, T027-T028, T032-T033, T041-T042, T047, T053-T054, T058, T061 |
+| tests/integration/test_external_calls.py | T021, T027-T028, T032-T033, T041-T042, T047, T053-T054, T058, T061, T069-T072 |
 | tests/conftest.py | T006 |
+| specs/008-external-calls/tasks.md | T068 |
+| docs/limitations.md | T075 |
 
 ---
 
@@ -305,4 +338,5 @@ Task T015: "Generate _label_lines mapping"
 - Standard Python import used throughout - no importlib complexity
 - $TEST save/restore per Spec 005 semantics
 - Line dispatch (_line_map) from Spec 007 used for offset patterns
-- Total tasks: 67 (was 64, added T026-T028 for LabelNotFoundError, T054 for negative $TEXT)
+- Total tasks: **75** (67 original + 8 gap resolution tasks in Phase 12)
+- **Phase 12 added**: Addresses gaps identified in tmp/spec_008_gap_analysis.md

@@ -1148,7 +1148,10 @@ def _generate_single_target_goto(
             ctx.emitter.line(f"_target = {label_line} + _offset_val")
             ctx.emitter.line("if _target not in _line_map:")
             with ctx.emitter.indented():
-                # Find next executable line after target
+                # Spec 007: Find next executable line after target (inline)
+                # When offset lands on comment/blank line, continue to next executable.
+                # This inline logic is equivalent to find_next_executable() but simpler
+                # to generate and performs better (no function call overhead).
                 ctx.emitter.line(
                     "_next = min((ln for ln in _line_map if ln > _target), default=None)"
                 )
@@ -1481,7 +1484,9 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                 ctx.emitter.line(f"_target = {label_line} + _offset_val")
                 ctx.emitter.line("if _target not in _line_map:")
                 with ctx.emitter.indented():
-                    # Find next executable line after target
+                    # Spec 007: Find next executable line after target (inline)
+                    # When offset lands on comment/blank line, continue to next executable.
+                    # This inline logic is equivalent to find_next_executable() but simpler.
                     ctx.emitter.line(
                         "_next = min((ln for ln in _line_map if ln > _target), "
                         "default=None)"

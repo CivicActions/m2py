@@ -3,7 +3,6 @@
 Tests the foundational infrastructure for computed offsets:
 - Line map generation from MRoutine
 - Offset call detection
-- Next executable line finding
 - Line map code generation
 """
 
@@ -14,7 +13,6 @@ from m2py.codegen.line_dispatch import (
     has_offset_calls,
     generate_line_map,
     generate_line_map_code,
-    find_next_executable,
 )
 from m2py.codegen.emitter import CodeEmitter
 
@@ -187,39 +185,6 @@ class TestGenerateLineMapCode:
         assert '1: ("TEST", 0),' in lines[1]
         assert '2: ("TEST", 1),' in lines[2]
         assert '3: ("NEXT", 0),' in lines[3]
-
-
-@pytest.mark.codegen
-class TestFindNextExecutable:
-    """Tests for find_next_executable (T008)."""
-
-    def test_exact_match(self):
-        """Target line exists in line map."""
-        line_map = {1: ("TEST", 0), 2: ("TEST", 1), 3: ("TEST", 2)}
-        assert find_next_executable(2, line_map) == 2
-
-    def test_next_line(self):
-        """Target line not in map, find next available."""
-        # Lines 1, 3, 5 are executable (2, 4 are comments/blanks)
-        line_map = {1: ("TEST", 0), 3: ("TEST", 1), 5: ("TEST", 2)}
-        assert find_next_executable(2, line_map) == 3
-        assert find_next_executable(4, line_map) == 5
-
-    def test_no_next_executable(self):
-        """No executable line after target returns None."""
-        line_map = {1: ("TEST", 0), 2: ("TEST", 1)}
-        assert find_next_executable(3, line_map) is None
-        assert find_next_executable(100, line_map) is None
-
-    def test_first_line_target(self):
-        """Target is before first executable line."""
-        line_map = {5: ("TEST", 0), 6: ("TEST", 1)}
-        # Line 1-4 don't exist, should find line 5
-        assert find_next_executable(1, line_map) == 5
-
-    def test_empty_line_map(self):
-        """Empty line map returns None for any target."""
-        assert find_next_executable(1, {}) is None
 
 
 @pytest.mark.codegen

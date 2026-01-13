@@ -3,7 +3,6 @@
 This module provides:
 - Line map generation: builds `_line_map` from source lines to (label, offset) tuples
 - Offset detection: checks if a routine contains offset calls
-- Next executable finding: handles non-executable line targets
 
 The line map enables GOTO/DO with computed offsets (e.g., `G LABEL+N`) by
 mapping source line numbers to label entry points with offset positions.
@@ -11,7 +10,7 @@ mapping source line numbers to label entry points with offset positions.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Tuple
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MRoutine
@@ -126,31 +125,3 @@ def generate_line_map_code(
             label_name, offset = line_map[line_num]
             emitter.line(f'{line_num}: ("{label_name}", {offset}),')
     emitter.line("}")
-
-
-def find_next_executable(
-    target_line: int, line_map: Dict[int, Tuple[str, int]]
-) -> Optional[int]:
-    """Find the next executable line at or after target_line.
-
-    When an offset calculation lands on a non-executable line (comment
-    or blank), MUMPS semantics say to continue to the next executable
-    line.
-
-    Args:
-        target_line: The line number to start searching from
-        line_map: The line map to search in
-
-    Returns:
-        The next executable line number, or None if no executable
-        line exists at or after target_line
-    """
-    if target_line in line_map:
-        return target_line
-
-    # Find the next line number greater than target_line
-    for line_num in sorted(line_map.keys()):
-        if line_num > target_line:
-            return line_num
-
-    return None
