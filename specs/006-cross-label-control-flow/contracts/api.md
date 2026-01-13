@@ -259,9 +259,9 @@ class UnsupportedGotoPatternError(Exception):
     """Raised for GOTO patterns not supported in current spec.
     
     Examples:
-        - Computed offset: G LABEL+expr (Spec 008)
-        - External: G LABEL^ROUTINE (Spec 009)
-        - Indirect: G @VAR (Spec 007)
+        - Computed offset: G LABEL+expr (Spec 007)
+        - External: G LABEL^ROUTINE (Spec 008)
+        - Indirect: G @VAR (Spec 012)
     """
     pass
 ```

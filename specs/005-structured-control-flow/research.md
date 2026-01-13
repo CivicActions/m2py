@@ -264,8 +264,8 @@ while True:
 | Cross-label forward | `FORWARD_JUMP` + `is_cross_label=True` | Spec 006 |
 | Cross-label backward | `BACKWARD_JUMP` + `is_cross_label=True` | Spec 006 |
 | Backward intra-label | `BACKWARD_JUMP` + `is_cross_label=False` | Spec 006 (creates implicit loops) |
-| External routine | `EXTERNAL` | Spec 009 |
-| Unresolved/dynamic | `UNRESOLVED` | Spec 007 |
+| External routine | `EXTERNAL` | Spec 008 |
+| Unresolved/dynamic | `UNRESOLVED` | Spec 012 |
 
 ### Exception Pattern for Multi-Loop Exit
 

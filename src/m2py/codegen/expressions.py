@@ -276,7 +276,7 @@ def _generate_extrinsic_arguments(
 
     Note: By-reference parameters in extrinsic functions would need special
     handling (similar to DO calls in Phase 10), but for Spec 005 we just
-    pass values. Full by-ref support for extrinsics is Spec 008.
+    pass values. Full by-ref support for extrinsics is Spec 010.
 
     Args:
         arguments: List of MActualParameter

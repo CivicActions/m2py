@@ -13,8 +13,7 @@
 3. **Complexity first** - Solve hard structural problems early while codebase is small
 4. **Incremental validation** - Each spec should produce testable output against YDB
 5. **Layer separation** - If codegen discovers missing AST nodes, unresolved references, or analysis gaps, fix them in the parser or ASG analysis layer—never build parse-like or generic analysis code into codegen. Codegen should only translate a complete, resolved ASG to Python.
-6. **Analysis-first codegen** - Semantic properties (loop types, goto targets, variable scope) are computed by analysis passes and stored in ASG fields. Codegen reads these fields directly without fallbacks—never uses `getattr(stmt, field, default)` patterns. ASG dataclass fields have defaults; if analysis didn't run, validation catches it before codegen starts.
-7. **Minimize runtime surface** - Prefer inline Python over runtime calls. The runtime exists for truly dynamic cases (globals, indirection, XECUTE). For statically analyzable patterns, emit direct Python code even if slightly verbose. Every runtime call is a refactoring barrier.
+6. **Minimize runtime surface** - Prefer inline Python over runtime calls. The runtime exists for truly dynamic cases (globals, indirection, XECUTE). For statically analyzable patterns, emit direct Python code even if slightly verbose. Every runtime call is a refactoring barrier.
 
 ### Runtime vs Inline Decision Guide
 
@@ -51,45 +50,6 @@ Each spec has a Research Phase with specific files to review. Common resources:
   - Inline: `uv run python utils/validate_asg.py --compact -c "TEST S X=1 W X Q"`
   - Full detail: omit `--compact` flag
 - **MUMPS spec**: https://71.174.62.16/Demo/AnnoStd (local mirror in `mumps-reference/`) - remember to keep scope in mind after reading this, we are implementing in phases!
-
----
-
-## Post-Implementation Documentation
-
-After completing each spec, update documentation with concrete implementation details:
-
-### This File (codegen-plan.md)
-
-1. **Mark deliverables complete**: Change `- [ ]` to `- [x]` for all completed items
-2. **Add Implementation Notes section**: Document actual patterns used, key decisions made, and lessons learned
-3. **Update subsequent specs**: Add "Pre-requisites from Spec N" sections documenting:
-   - Infrastructure now available
-   - Key implementation questions answered
-   - Patterns that work well (or don't)
-
-### docs/codegen/ Updates
-
-1. **Update illustrative code examples** with actual generated code patterns
-2. **Add helper function documentation** (e.g., `m_num()`, `m_truth()` after Spec 004)
-3. **Update runtime_requirements.md** with actual `MUMPSRuntime` API
-4. **Document name translation** in mumps_gotchas.md with actual `NameTranslator` prefixes
-
-### docs/architecture.md Updates
-
-1. **Update directory structure** to include new modules (e.g., `codegen/`, `runtime/`)
-2. **Add new pipeline phases** (e.g., Phase 6: Code Generation)
-3. **Update data flow diagram** if architecture changes
-
-### docs/README.md Updates
-
-1. **Add Quick Start examples** for new public APIs (e.g., `generate_python()`)
-
-### Why This Matters
-
-- Future specs build on prior work; concrete details prevent re-learning
-- Documentation reflects actual state, not planned state
-- Test fixtures and patterns can be reused across specs
-- Avoids "change" language and spec references that become stale
 
 ---
 
@@ -258,7 +218,7 @@ Computed offsets like `G LABEL+expr` require line-indexed execution at runtime.
 - `MRoutine.get_text_at_label(label, offset)`: Returns source at label+offset
 - `MCall.offset`: Full `MExpr` - can be any expression
 
-**Gap for codegen** (to be built in Spec 008):
+**Gap for codegen** (to be built in Spec 007):
 - Statement line number tracking: `MStatement.line_number` not yet populated
 - Line-to-entry-point mapping: Build `Dict[int, Callable]` at routine init
 - Runtime dispatch: `_line_dispatch(label.line + int(offset_expr))`
@@ -272,9 +232,14 @@ Computed offsets like `G LABEL+expr` require line-indexed execution at runtime.
 | **004** | Minimal Control Flow Foundation | Low | Just enough for 005/006 |
 | **005** | Structured Control Flow + Variable Scoping | Medium | $TEST tracking, scope strategies |
 | **006** | Cross-Label GOTO | **High** | Strategy selection, variable visibility |
-| **007** | Indirection & XECUTE | **High** | Runtime infrastructure, eval/exec |
-| **008** | Core Language Completion | Medium | Computed offsets, naked globals |
-| **009** | External Calls & Advanced | Medium | Cross-module coordination |
+| **007** | Computed Offsets & Line Dispatch | **Highest** | Parser extension for line numbers |
+| **008** | External Calls & Cross-Routine | **High** | Module loading, variable passing |
+| **009** | LHS Functions & Global Variables | Medium | Parser extension, MArray runtime |
+| **010** | Intrinsic Functions | Low | Large volume, well-defined semantics |
+| **011** | Operators, Commands & Completion | Low | Mechanical translation |
+| **012** | Indirection & XECUTE | **High** | Runtime infrastructure, eval/exec |
+
+**Complexity-First Rationale**: Specs 007-008 tackle the highest-risk architectural work (parser extensions, module loading) while the codebase is small. Spec 012 (Indirection/XECUTE) is last because `runtime.execute()` can run any MUMPS code, so all static constructs must be implemented first.
 
 ---
 
@@ -318,10 +283,25 @@ Review before coding:
    - `FOR` - all loop types with **literal parameters** (e.g., `F I=1:1:10`, `F I="A","B"`)
    - `GOTO` - label targets only, **no offsets** (e.g., `G LABEL`, not `G LABEL+5`)
 
-### Explicitly Deferred to Spec 008
+### Explicitly Deferred (Later Specs)
 
-- Intrinsic functions ($PIECE, $LENGTH, $GET, etc.)
+**Spec 007** (Computed Offsets):
+- **DO/GOTO with offsets** (`G LABEL+5`, `D SUB+N`)
+- **Complex FOR parameters** (`F I=$D(I):1:^MAX`)
+
+**Spec 008** (External Calls):
+- External routine calls (`D LABEL^ROUTINE`, `G LABEL^ROUTINE`)
+- $TEXT function
+
+**Spec 009** (LHS Functions & Globals):
 - Global variables (^name)
+- Subscripted variables
+
+**Spec 010** (Intrinsic Functions):
+- Intrinsic functions ($PIECE, $LENGTH, $GET, etc.)
+- Extrinsic functions ($$func)
+
+**Spec 011** (Operators, Commands & Completion):
 - READ command
 - NEW / KILL commands
 - Logical operators (&, !)
@@ -331,10 +311,11 @@ Review before coding:
 - Multiple assignments (S X=1,Y=2)
 - Format controls (!, #, ?n)
 - Postconditions (S:cond X=1)
-- Extrinsic functions ($$func)
-- Subscripted variables
-- **DO/GOTO with offsets** (`G LABEL+5`, `D SUB+N`)
-- **Complex FOR parameters** (`F I=$D(I):1:^MAX`)
+
+**Spec 012** (Indirection & XECUTE):
+- Indirection (@VAR)
+- XECUTE command
+- `^%ZOSF` patterns
 
 ### Name Translation (Labels, Routines, Variables)
 
@@ -357,141 +338,25 @@ MUMPS names are **case-sensitive** and allow patterns that would be invalid Pyth
 **Scope by Spec**:
 - **Spec 004**: Label names (used as Python function names)
 - **Spec 004**: Local variable names (used as Python variable names)  
-- **Spec 009**: Routine names (used as Python module names)
+- **Spec 008**: Routine names (used as Python module names)
 
 ### Deliverables
 
-- [x] `src/m2py/codegen/` module structure
-- [x] **M value model**: `m_num()`, `m_truth()`, `m_compare()` coercion helpers
+- [ ] `src/m2py/codegen/` module structure
+- [ ] **M value model**: `m_num()`, `m_truth()`, `m_compare()` coercion helpers
   - Tests: `TestNumericCoercionCodegen`, `TestTruthValueCodegen`, `TestComparisonCodegen` in [test_s7_1_1_values.py](../tests/unit/codegen/s7_expressions/test_s7_1_1_values.py)
-- [x] **Case-preserving, injective name translator** (handle %, numeric, reserved words for labels and variables)
+- [ ] **Case-preserving, injective name translator** (handle %, numeric, reserved words for labels and variables)
   - Tests: `TestNameTranslationCodegen` in [test_s6_1_routine_head.py](../tests/unit/codegen/s6_routine/test_s6_1_routine_head.py)
-- [x] Expression generator (numeric, string, variable, comparison, arithmetic)
+- [ ] Expression generator (numeric, string, variable, comparison, arithmetic)
   - Tests: `TestValuesCodegen`, `TestLiteralsCodegen`, `TestOperatorsCodegen` in [s7_expressions/](../tests/unit/codegen/s7_expressions/)
-- [x] Statement generators (SET, WRITE, QUIT, DO, IF, ELSE, FOR, GOTO)
+- [ ] Statement generators (SET, WRITE, QUIT, DO, IF, ELSE, FOR, GOTO)
   - Tests: `TestSetCommandCodegen`, `TestWriteCommandCodegen`, `TestQuitCommandCodegen`, `TestDoCommandCodegen`, `TestIfCommandCodegen`, `TestElseCommandCodegen`, `TestForCommandCodegen`, `TestGotoCommandCodegen` in [s8_commands/](../tests/unit/codegen/s8_commands/)
-- [x] Routine → Python module translation (single routine, labels as structure)
+- [ ] Routine → Python module translation (single routine, labels as structure)
   - Tests: `TestRoutineHeadCodegen`, `TestRoutineBodyCodegen` in [s6_routine/](../tests/unit/codegen/s6_routine/)
-- [x] `MUMPSRuntime` class with `_test` tracking for IF/ELSE
+- [ ] `MUMPSRuntime` class with `_test` tracking for IF/ELSE
   - Tests: `TestTestVariableCodegen` in [test_language_semantics.py](../tests/unit/cross_cutting/test_language_semantics.py)
 
 ### Implementation Notes
-
-**Spec 004 Complete** (2025-01-XX): All 60 tasks across 10 phases implemented. Key lessons:
-
-#### Generated Code Structure (Actual)
-
-```python
-from m2py.codegen.helpers import m_num, m_truth, m_compare
-from m2py.runtime import MUMPSRuntime
-
-_rt = MUMPSRuntime()
-
-_test = False
-
-def TEST():
-    global _test
-    X = 1
-    _rt.write(str(X))
-```
-
-Key decisions made:
-- **Module-level `_rt`**: Single runtime instance per module for output capture
-- **Module-level `_test`**: Simple approach for $TEST tracking; each function declares `global _test`
-- **Labels as functions**: Direct translation, `NameTranslator` handles % prefix, numeric, keywords
-
-#### Concrete Helper Implementations
-
-**`m_num()`** (src/m2py/codegen/helpers.py):
-- Handles leading sign chains: `+-5` → `-5`, `--5` → `5`
-- Leading whitespace stripped: `"  42"` → `42`  
-- Extracts longest left-head numeric prefix: `"3.14ABC"` → `3.14`
-- Returns `int` when possible: `"3.0"` → `3`
-
-**`m_truth()`**:
-- `m_truth(x)` is NOT `bool(m_num(x))` - must return `bool(m_num(x) != 0)`
-- Empty string → `False` (via m_num → 0)
-- `"0.0"` → `False` (canonicalizes to 0)
-
-**`m_compare()`**:
-- `op="="` does type-aware comparison: both look numeric → numeric comparison
-- Other ops (`<`, `>`) always do numeric coercion via `m_num()`
-- String equality is exact: `"007"` ≠ `"7"`
-
-#### Name Translation Patterns (Actual)
-
-`NameTranslator` class with three prefix patterns:
-
-| MUMPS | Python | Prefix |
-|-------|--------|--------|
-| `%START` | `_pct_START` | `_pct_` for % prefix |
-| `01` | `_n_01` | `_n_` for pure numeric |
-| `if` | `_m_if` | `_m_` for Python keywords |
-
-Case preservation verified: `FOO`, `foo`, `Foo` remain distinct.
-
-#### Statement Generation Patterns
-
-**Dispatcher pattern** in `generate_statement()`:
-```python
-def generate_statement(stmt: MStatement, ctx: GeneratorContext) -> None:
-    match stmt:
-        case MSetStatement(): _generate_set(stmt, ctx)
-        case MWriteStatement(): _generate_write(stmt, ctx)
-        case MIfStatement(): _generate_if(stmt, ctx)
-        # ...
-        case _: raise UnsupportedFeatureError(f"Unsupported: {type(stmt)}")
-```
-
-**FOR loop patterns discovered**:
-- `F I=1:1:10` → `for I in range(1, 11, 1):` (bounded)
-- `F I="A","B"` → `for I in ["A", "B"]:` (string list)  
-- Loop variables are local Python vars, not runtime
-
-**GOTO/DO simplified patterns**:
-- `G LABEL` → `return LABEL()` (simple function call)
-- `D LABEL` → `LABEL()` (call without return)
-- Cross-label GOTO deferred to Spec 006 state machine
-
-#### Test Fixture Patterns
-
-`execute_mumps` fixture pattern (conftest.py):
-```python
-@pytest.fixture
-def execute_mumps(generate_python):
-    def _execute(source: str) -> ExecutionResult:
-        python_code = generate_python(source)
-        rt = MUMPSRuntime()
-        rt.execute(python_code)  # Uses isolated namespace
-        return ExecutionResult(output=rt.get_output(), success=True, ...)
-    return _execute
-```
-
-`MUMPSRuntime.execute()` pattern:
-1. Create isolated `namespace` dict
-2. Inject `_rt`, helpers into namespace
-3. `exec(python_code, namespace)` - defines functions
-4. Find entry point function name
-5. `namespace[entry_point]()` - call it
-6. Return captured output
-
-#### Insights for Future Specs
-
-1. **$TEST handling is simple at module level** - but Spec 005's stack semantics will require:
-   - Per-call context for argumentless DO
-   - Return value to restore $TEST after call
-
-2. **Variable locals work well** - but by-reference params (Spec 005) need return-tuple pattern:
-   ```python
-   def SWAP(A, B):
-       return B, A  # Caller does: A, B = SWAP(A, B)
-   ```
-
-3. **Labels-as-functions is clean** - but cross-label GOTO (Spec 006) needs either:
-   - Shared `RoutineState` class for variables
-   - State machine with outer-scope variables
-
-4. **Runtime.execute() already supports eval/exec** - foundation for Spec 007 XECUTE
 
 **Local Variables → Python Locals (NOT runtime)**:
 - `S X=5` → `x = 5` (Python assignment)
@@ -500,7 +365,7 @@ def execute_mumps(generate_python):
 - Use `NameTranslator` to convert M names to Python identifiers
 
 **Runtime reserved for**:
-- Global variables (`^name`) - deferred to Spec 008
+- Global variables (`^name`) - deferred to Spec 009
 - `$TEST` special variable - needs process-wide state
 - Output accumulation (`_rt.write()`) - for test harness capture
 
@@ -513,7 +378,7 @@ def execute_mumps(generate_python):
 
 ### Test Strategy: Embedded Unit Tests
 
-**Do NOT use `.m` files or YDB/MUGJ tests directly yet** - they require I/O overhead and additional syntax.
+**Do NOT use `.m` files or YDB/MUGJ tests** - they require I/O overhead and additional syntax.
 
 Use embedded strings in pytest, matching existing codegen test patterns in `tests/unit/codegen/`:
 
@@ -603,43 +468,13 @@ Minimal, well-understood subset. Just implement and validate against YDB.
 
 **Goal**: Handle common control flow patterns that map cleanly to Python
 
-### Pre-requisites from Spec 004
-
-The following infrastructure is now available:
-- `_test` module-level variable with `global _test` in each function
-- `m_truth()` for condition evaluation in IF statements
-- Labels as Python functions callable via `LABEL()` / `return LABEL()`
-- `NameTranslator` for variable/label name translation
-- `MUMPSRuntime.execute()` with isolated namespace injection
-
-### Key Implementation Decisions (Resolved)
-
-1. **$TEST stacking for DO blocks**: Use save/restore pattern via local variable.
-   - `_saved_test = _test` before block, `_test = _saved_test` after
-   - Only DO blocks (D + dot-indented lines) and extrinsics stack $TEST
-   - Label calls (D SUB, D SUB(), D SUB(X)) do NOT stack - callee's $TEST visible
-
-2. **By-reference parameters**: Return-tuple pattern.
-   - `A, B = SWAP(A, B)` - callee returns modified values
-   - Call site destructures result back to original variables
-   - Uses `FunctionSignature.byref_outputs` from analysis
-
-3. **FOR loop variable modification**: Use `while` loop when `loop_var_modified_in_body=True`.
-   - Track current value and step explicitly
-   - `for` loop only when loop var unmodified
-
-4. **Intra-label forward GOTO**: Inverted if/else restructuring.
-   - Uses `target_stmt_index` computed from MUMPS offset semantics (LABEL+n)
-   - `generate_scope_statements()` handles restructuring at scope level
-   - Statements between IF and target go in `if not _test:` block
-
 ### Research Phase
 
 Review before coding:
 - **Docs**: `docs/analysis/for_analysis.md`, `docs/analysis/goto_analysis.md`, `docs/codegen/for_loops.md`
 - **$TEST**: Where is $TEST represented? When stack/restore?
 - **FOR analysis**: `analysis/for_analysis.py` → `ForLoopType`, `loop_var_modified_in_body`, `has_internal_quit`
-- **GOTO**: `analysis/goto_analysis.py` → `GotoType`, `is_cross_label`, `exits_loops`
+- **GOTO**: `analysis/goto_analysis.py` → `GotoType`, `is_cross_label`, `is_loop_continue`
 - **Scope**: `analysis/variables.py` → `FunctionSignature`, `ScopeStrategy`, `input_variables`, `output_variables`
 - **QUIT**: `asg/statements.py` → `MQuitStatement.exits_for`, `.exits_do_block`, `.return_value`
 - **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1FOR*.m`
@@ -649,16 +484,15 @@ Review before coding:
 1. **IF/ELSE with $TEST tracking**
    - Track `_test` variable for ELSE and argumentless IF
    - Comma-separated conditions (AND semantics)
-   - **Note**: Postconditions (deferred to Spec 008) do NOT update $TEST - document this behavior now
+   - **Note**: Postconditions (deferred to Spec 011) do NOT update $TEST - document this behavior now
    
 2. **$TEST Stack Semantics**
-   - **DO block** (D + dot-indented lines): `$TEST` is stacked, restored after block
-   - **Extrinsic calls** (`$$label`): `$TEST` is stacked, restored on return  
-   - **Label calls** (D SUB, D SUB(), D SUB(X)): `$TEST` NOT stacked - callee mutations visible to caller
+   - **Argumentless DO**: `$TEST` is stacked (NEW $TEST), restored on QUIT
+   - **Extrinsic calls** (`$$label`): `$TEST` is stacked, restored on QUIT  
+   - **DO with arguments**: `$TEST` NOT stacked - callee mutations visible to caller
    - **XECUTE**: `$TEST` NOT stacked - mutations visible to caller
    
-   Note: The term "argumentless DO" is ambiguous. A label call without args (`D SUB`) does NOT stack,
-   but a DO block (`D` followed by dot-indented lines) DOES stack.
+   This is critical for ELSE chains that span DO calls.
 
 3. **FOR Loop Variations**
    - `ForLoopType.OPEN_ENDED` → `while True:` with increment
@@ -670,8 +504,7 @@ Review before coding:
 
 4. **Intra-Label GOTO** (`is_cross_label=False`)
    - Forward jumps → restructure to if/else
-
-   **Note**: GOTO cannot create `continue` semantics (MDC 3.6.5 - GOTO terminates all enclosing FOR loops)
+   - `is_loop_continue=True` → `continue`
 
 5. **Loop Exits**
    - `GotoType.LOOP_EXIT` → `break`
@@ -704,68 +537,24 @@ Review before coding:
 
 ### Deliverables
 
-- [x] $TEST tracking infrastructure with stack/restore for DO blocks (dot-indented)
-  - Tests: `TestDoBlockTestRestore` → [test_s8_2_03_do.py](../tests/unit/codegen/s8_commands/test_s8_2_03_do.py)
-  - Note: Only DO blocks (not label calls) stack $TEST
-- [x] $TEST NOT stacked for label calls (D SUB, D SUB(), D SUB(X))
-  - Tests: `test_label_call_*_test_visible` → test_s8_2_03_do.py
-- [x] FOR loop strategy selector based on analysis flags
-  - Tests: `TestForLoopCodegen` → [test_s8_2_05_for.py](../tests/unit/codegen/s8_commands/test_s8_2_05_for.py)
-  - Patterns: BOUNDED, OPEN_ENDED (itertools.count), ARGUMENTLESS (while True), STRING_LIST, MIXED (chain)
-- [x] Intra-label forward GOTO restructuring
-  - Tests: `test_forward_jump_restructures_*` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
-  - Implementation: `_find_forward_goto_in_if()`, `_restructure_forward_goto()`, `generate_scope_statements()`
-  - Uses `target_stmt_index` computed from MUMPS offset semantics (LABEL+n)
-- [x] Backward intra-label GOTO raises UnsupportedFeatureError
-  - Tests: `test_backward_intra_label_goto_raises_error` → test_s8_2_06_goto.py
-  - Deferred to Spec 006 for proper loop restructuring
-- [x] Loop exit translation (break, exception) for GOTO
-  - Tests: `test_*_loop_exit_*` → test_s8_2_06_goto.py
-  - Implementation: `_generate_goto()` checks `exits_loops` for break vs `raise _LoopExit()`
-- [x] QUIT context-aware code generation
-  - Tests: `TestQuitCommandCodegen` → [test_s8_2_16_quit.py](../tests/unit/codegen/s8_commands/test_s8_2_16_quit.py)
-  - Implementation: `exits_for` → break, `exits_do_block` → return
-- [x] Scope strategy code generation (PURE_FUNCTION, SUBROUTINE, etc.)
-  - Tests: `TestScopeStrategyCodegen` → test_s8_2_03_do.py
-- [x] By-reference parameter return value pattern
-  - Tests: `TestByRefParameterCodegen` → test_s8_2_03_do.py
-- [x] Extrinsic function $TEST stacking
-  - Tests: `test_extrinsic_*_test_restore` → [test_s7_1_1_values.py](../tests/unit/codegen/s7_expressions/test_s7_1_1_values.py)
-  - Implementation: `_call_extrinsic()` wrapper with save/restore pattern
-- [x] Postconditions do NOT update $TEST (explicit test)
+- [ ] $TEST tracking infrastructure with stack/restore for argumentless DO and extrinsics
+  - Tests: `TestTestStackSemanticsCodegen` → [test_language_semantics.py](../tests/unit/cross_cutting/test_language_semantics.py)
+- [ ] $TEST NOT stacked for DO with arguments (explicit test)
+  - Tests: `test_do_with_arguments_mutates_test` → TestTestStackSemanticsCodegen
+- [ ] Postconditions do NOT update $TEST (explicit test)
   - Tests: `TestPostconditionsCodegen` → [test_postconditions.py](../tests/unit/cross_cutting/test_postconditions.py)
-- [x] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
-  - Update codegen-plan.md: mark deliverables complete, add implementation notes
-  - Update docs/codegen/ with actual patterns used
-  - Add pre-requisites section to Spec 006
-
-### Implementation Notes
-
-**Coverage**: 86% on codegen module (exceeds 85% threshold)
-
-**Key Patterns Implemented**:
-1. FOR loops dispatch by `loop_type` and `loop_var_modified_in_body`:
-   - BOUNDED → `range()` with step adjustment for MUMPS end-inclusive
-   - OPEN_ENDED → `itertools.count(start, step)`
-   - ARGUMENTLESS → `while True:`
-   - STRING_LIST → list iteration
-   - MIXED → `itertools.chain()` combining ranges and values
-   - Modified loop var → `while` with explicit stepping
-
-2. GOTO patterns handled by `goto_type` and `exits_loops`:
-   - Single loop exit → `break`
-   - Multi-loop exit → `raise _LoopExit()` with try/except wrapper
-   - Intra-label forward → if/else restructuring via `generate_scope_statements()`
-
-3. $TEST isolation via `_call_extrinsic()` wrapper function generated in preamble
-
-4. AST validation: `ast.parse()` at end of `generate()` catches syntax errors early
-
-5. **Architectural extensibility** (validated for 006+):
-   - Labels-as-functions pattern preserved; Spec 006 adds `RoutineState` class for cross-label variable sharing
-   - Current `label(); return` GOTO pattern extended with trampoline wrapper for cyclic GOTOs
-   - Statement dispatcher (`generate_statement()`) works inside match-case for state machine fallback
-   - `GeneratorContext` extensible to track shared vs local variables per routine analysis
+- [ ] FOR loop strategy selector based on analysis flags
+  - Tests: `TestForLoopCodegen` → [test_s8_2_05_for.py](../tests/unit/codegen/s8_commands/test_s8_2_05_for.py)
+- [ ] Intra-label GOTO restructuring
+  - Tests: `TestIntraLabelGotoCodegen` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
+- [ ] Loop exit translation (break, exception)
+  - Tests: `TestForLoopCodegen.test_quit_in_for_loop_*` → test_s8_2_05_for.py
+- [ ] QUIT context-aware code generation
+  - Tests: `TestQuitCommandCodegen` → [test_s8_2_16_quit.py](../tests/unit/codegen/s8_commands/test_s8_2_16_quit.py)
+- [ ] Scope strategy code generation (PURE_FUNCTION, SUBROUTINE, etc.)
+  - Tests: `TestScopeStrategyCodegen` → [test_s8_2_03_do.py](../tests/unit/codegen/s8_commands/test_s8_2_03_do.py)
+- [ ] By-reference parameter return value pattern
+  - Tests: `TestByRefParameterCodegen` → test_s8_2_03_do.py
 
 ### Validation
 
@@ -793,47 +582,6 @@ Review before coding:
 **Goal**: Handle GOTO patterns that cross label boundaries
 
 This is the **highest complexity** area. The ASG provides classification but translation strategy is TBD.
-
-### Pre-requisites from Spec 004
-
-The following infrastructure is now available:
-- Labels as functions pattern works for simple cases
-- `return LABEL()` pattern for GOTO (tail-call semantics)
-- `LABEL()` pattern for DO (call and continue)
-- `NameTranslator` for function names
-
-### Key Limitation Discovered in Spec 004
-
-Current pattern `return LABEL()` has stack growth for repeated GOTO:
-```python
-def A(): 
-    return B()  # Calls B, which calls C, which calls A → stack grows
-def B():
-    return C()
-def C():
-    return A()  # Back to A but stack depth = 3 now
-```
-
-This means **trampoline pattern is required** for cross-label GOTO to avoid RecursionError.
-
-### Variable Visibility Challenge
-
-Spec 004 uses Python locals within each function. Cross-label needs shared state:
-```mumps
-MAIN S X=1
-     G NEXT
-NEXT S Y=X+1    ; Needs access to X set in MAIN
-     W Y Q
-```
-
-Options:
-1. **State class**: `RoutineState(x=None, y=None)` passed to all labels ← **preferred, preserves labels-as-functions**
-2. **Outer scope**: All vars in module scope, labels are inner functions
-3. **Runtime**: `_rt.get("X")` - but this undermines local var optimization
-
-**Architectural note**: Spec 005's labels-as-functions pattern is preserved. The `RoutineState` class is an additive extension—variable analysis (`input_variables`, `output_variables`) already computes what's needed for state class generation. Simple routines without cross-label GOTOs keep Python locals.
-
-Spec 006 research spike should evaluate these options.
 
 ### Research Phase
 Review before coding:
@@ -871,7 +619,7 @@ Review before coding:
 
 5. **Line-Based Dispatch Foundation**
    
-   Build the dispatch architecture here (even with literal offsets only) to avoid architectural fork with computed offsets in Spec 008:
+   Build the dispatch architecture here (even with literal offsets only) to avoid architectural fork with computed offsets in Spec 007:
    - Build `_line_map` keyed by **source line number** (not statement index)
    - Emit per-line entry points
    - Cross-label GOTO uses same dispatch mechanism (jump to label's line number)
@@ -879,32 +627,14 @@ Review before coding:
    
    This prepares for computed offsets (`G LABEL+expr`) without major refactoring.
 
-6. **Multiple GOTO Targets** (`G A,B`)
-   
-   Sequential execution of multiple labels. YDB executes label A, then continues to label B.
-   The trampoline/state machine infrastructure handles this naturally as a target sequence.
-   
-   ```mumps
-   G END,FIN    ; Execute END, then FIN
-   ```
-
-7. **Argumentless GOTO** (`G`)
-   
-   Special case that acts as a return/quit from current execution context.
-   Per ANSI standard, argumentless GOTO returns control to caller.
-   
-   ```mumps
-   G            ; Return to caller (similar to QUIT)
-   ```
-
-### DEFERRED to Spec 008: Computed Offsets
+### DEFERRED: Computed Offsets (Spec 007) & External Calls (Spec 008)
 
 Computed offsets like `G LABEL+expr` are deferred because they require full expression evaluation:
 
 ```mumps
-G STAR+^V1A                    ; Needs global variable evaluation
-G NOTES+C+(D*2)+E=29.3+3       ; Needs all arithmetic operators
-G 388+$L($E(VCOMP,5,99))       ; Needs intrinsic function evaluation
+G STAR+^V1A                    ; Needs global variable evaluation (Spec 009)
+G NOTES+C+(D*2)+E=29.3+3       ; Needs all arithmetic operators (Spec 011)
+G 388+$L($E(VCOMP,5,99))       ; Needs intrinsic function evaluation (Spec 010)
 ```
 
 **Why deferred:**
@@ -913,8 +643,8 @@ G 388+$L($E(VCOMP,5,99))       ; Needs intrinsic function evaluation
 - Requires line-indexed execution model (jump to line N, not label)
 
 **Spec 006 handles**: Simple label targets only (`G LABEL`, `G LABEL^ROUTINE` same-routine pattern)
-**Spec 008 adds**: Offset targets (`G LABEL+n`, `G LABEL+expr`)
-**Spec 009 adds**: Cross-routine external calls (module loading, `G LABEL^OTHER_ROUTINE`)
+**Spec 007 adds**: Offset targets (`G LABEL+n`, `G LABEL+expr`) with line dispatch
+**Spec 008 adds**: Cross-routine external calls (module loading, `G LABEL^OTHER_ROUTINE`)
 
 ### Strategy Candidates
 
@@ -951,56 +681,22 @@ while True:
 
 - `has_unstructured_goto=True` → State Machine (required)
 - Computed offset target (`G LABEL+expr`) → State Machine (line dispatch)
-- Otherwise → Labels-as-Functions with trampoline (preferred)
+- Otherwise → Labels-as-Functions (preferred)
 
-**Trampoline pattern** (additive to Spec 005):
-```python
-# Labels return next label name instead of calling directly
-def A(state): state.x = 1; return "B"
-def B(state): return "A" if condition else None
+### Deliverables
 
-# Trampoline prevents stack growth for cyclic GOTOs
-next_label = "A"
-while next_label:
-    next_label = labels[next_label](state)
-```
-
-### Deliverables ✅ COMPLETE
-
-- [X] Cross-label jump detector (which labels are targets?)
-  - Implementation: `is_cross_label` flag on MGotoStatement computed in `classify_gotos()`
-  - Tests: `tests/unit/codegen/test_cross_label_goto.py::TestForwardCrossLabelGoto`
-- [X] Computed offset target detector (is label referenced with +offset?)
-  - Implementation: Offset targets handled via ASG resolution
-  - Tests: Covered by existing GOTO offset tests
-- [X] Labels-as-functions generator with shared state class + trampoline
-  - Implementation: `RoutineState` dataclass + trampoline `while` loop in `routine.py`
-  - Tests: `tests/unit/codegen/test_cross_label_goto.py::TestTrampolineCodeStructure`
-- [X] State machine generator (fallback) with match-case
-  - **DEFERRED**: Trampoline pattern handles all tested patterns including cycles
-  - Decision documented in `specs/006-cross-label-control-flow/research.md` section R3
-- [X] Strategy selector based on `needs_trampoline` flag
-  - Implementation: `_select_goto_strategy()` in `codegen/__init__.py`
-  - Tests: `tests/unit/codegen/test_strategy_selection.py`
-- [X] Variable visibility handling for both strategies
-  - Implementation: `RoutineState` class carries variables, MArray for subscripted arrays
-  - Tests: `tests/unit/codegen/test_cross_label_goto.py::TestVariableVisibility`
-- [X] Multiple GOTO targets (`G A,B`) - sequential label execution
-  - Implementation: `_generate_multi_target_goto()` in `statements.py`
-  - Tests: `tests/unit/codegen/test_cross_label_goto.py::TestMultipleGotoTargets`
-- [ ] Argumentless GOTO (`G`) - return to caller semantics
-  - **DEFERRED**: Low priority, awaiting real-world use case
-- [X] **Post-implementation documentation**
-  - Updated codegen-plan.md: mark deliverables complete, add implementation notes
-  - Updated docs/codegen/goto_handling.md with actual strategy patterns
-  - Add pre-requisites section to Spec 007 (below)
-
-**Implementation Notes:**
-- Trampoline pattern selected after spike evaluation (30/30 tests passed)
-- State machine deferred - trampoline handles all V1GO1.m patterns and VistA cycles
-- `needs_trampoline` flag is the sole strategy selector (simpler than planned)
-- `RoutineState` uses `@dataclass` with typed fields for IDE autocomplete
-- MArray class provides MUMPS semantics (value + children at each node)
+- [ ] Cross-label jump detector (which labels are targets?)
+  - Tests: `TestCrossLabelGotoCodegen` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
+- [ ] Computed offset target detector (is label referenced with +offset?)
+  - Tests: `TestComputedOffsetCodegen.test_computed_offset_target_detection` → [test_s8_2_18_set.py](../tests/unit/codegen/s8_commands/test_s8_2_18_set.py)
+- [ ] Labels-as-functions generator with shared state class + trampoline
+  - Tests: `TestTrampolinePatternCodegen` → test_s8_2_06_goto.py
+- [ ] State machine generator (fallback) with match-case
+  - Tests: `TestStateMachineCodegen` → test_s8_2_06_goto.py
+- [ ] Strategy selector based on `has_unstructured_goto` AND `is_offset_target`
+  - Tests: `TestLineDispatchCodegen` → test_s8_2_06_goto.py
+- [ ] Variable visibility handling for both strategies
+  - Tests: `TestCrossLabelGotoCodegen.test_cross_label_goto_variable_visibility` → test_s8_2_06_goto.py
 
 ### Validation
 
@@ -1028,47 +724,526 @@ while next_label:
 
 ---
 
-## Spec 007: Indirection & XECUTE Runtime
+## Spec 007: Computed Offsets & Line Dispatch (Highest Risk)
 
-**Goal**: Handle dynamic code patterns pervasive in VistA
+**Goal**: Tackle the hardest architectural problem first — parser enhancement for line numbers and line-indexed execution
 
-### Pre-requisites from Spec 006
+This is the highest-risk feature because it requires **parser/ASG extension** before codegen can proceed. Discovering issues here early prevents costly rework.
 
-The following infrastructure is now available from Spec 006:
-- **Trampoline pattern**: `while label:` dispatch loop for cross-label control flow
-- **RoutineState dataclass**: Typed fields for variable sharing across labels
-- **MArray class**: MUMPS array semantics (value + children at each node)
-- **Strategy selector**: `_select_goto_strategy()` based on `needs_trampoline` flag
-- **GotoStrategy enum**: SIMPLE_FUNCTIONS vs TRAMPOLINE selection
-- **UnsupportedFeatureError**: Raised for UNRESOLVED GOTO (references Spec 007)
+### Research Phase
+Review before coding:
+- **Docs**: `docs/codegen/goto_handling.md`, `docs/asg/statements.md` (computed offsets)
+- **Offset ASG**: `asg/elements.py` → `MCall.offset` (full `MExpr` structure)
+- **Line numbers**: `MLabel.line_number`, `MStatement.line_number` — is latter populated?
+- **Source lines**: `MRoutine.source_lines` for $TEXT support
+- **textX positions**: How to capture source positions during parsing?
+- **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1GO2.m`
+- **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mvts_inref/V1GO3.m`
 
-Key dependency for Spec 007:
-- UNRESOLVED GOTO (e.g., `G @VAR`) currently raises `UnsupportedFeatureError`
-- Spec 007 will implement runtime dispatch for dynamic targets
+**Output**: Line dispatch architecture, statement line number population strategy.
 
-### Pre-requisites from Spec 004
+### Scope
 
-The following infrastructure is now available:
-- `MUMPSRuntime.execute(python_code)` - already supports dynamic code execution
-- Isolated namespace injection pattern (inject `_rt`, helpers, then `exec()`)
-- `generate_python()` API for on-demand MUMPS→Python translation
+1. **Statement Line Number Population** (parser enhancement) ⚠️ **HIGHEST RISK**
+   
+   Enhance textX model classes to capture source positions during parsing:
+   - Add `line_number` attribute to `MStatement`
+   - Populate during textX post-processing
+   - Measure performance impact
+   
+   **Decision point**: If overhead >10%, consider separate line numbering pass.
 
-### Key Insight from Spec 004
+2. **Line-to-Entry Mapping Generator**
+   
+   Build `_line_map: Dict[int, Callable]` at routine init:
+   ```python
+   _line_map = {
+       1: self._line_1,   # Label A
+       3: self._line_3,   # First statement after A
+       5: self._line_5,   # Label B
+       ...
+   }
+   ```
+   
+   **Non-executable lines**: Comment-only and blank lines are NOT in `_line_map`. Per MUMPS semantics, `G LABEL+n` landing on non-executable line should error.
 
-`MUMPSRuntime.execute()` already does:
-1. Create namespace with `_rt` and helpers
-2. `exec(python_code, namespace)` to define functions
-3. Call entry point function
+3. **Computed Offset Dispatch**
+   
+   For `G LABEL+expr`, evaluate `target_line = label_line + int(expr)`, dispatch via `_line_map[target_line]`:
+   ```mumps
+   G STAR+^V1A                    ; Global variable as offset
+   G %0+A=2                       ; Binary comparison in offset!
+   G HAL9000+^V1A(2)-ZORAC        ; Arithmetic with subscripted global
+   G 388+$L($E(VCOMP,5,99))       ; Function call in offset
+   D LABEL+^V1A(2)-^(3)/10        ; Naked globals in offset
+   ```
 
-For XECUTE, we need similar pattern but with MUMPS code as input:
-```python
-def execute_mumps(self, mumps_code: str) -> None:
-    from m2py.codegen import generate_python
-    python_code = generate_python(mumps_code)
-    # ... same namespace injection pattern
-```
+4. **Minimal Expression Evaluator for Offsets**
+   
+   Phase 1 evaluator handles subset needed for literal offsets:
+   ```python
+   def _evaluate_offset(self, expr: MExpr) -> int:
+       """Evaluate offset expression - minimal version for Spec 007."""
+       match expr:
+           case MNumericLiteral(value): return int(value)
+           case MVariableRef(name): return int(self._get_var(name))
+           case MBinaryOp("+", left, right): 
+               return self._evaluate_offset(left) + self._evaluate_offset(right)
+           case _:
+               raise NotImplementedError(f"Complex offset {type(expr)} - Spec 009")
+   ```
+   
+   Full expression support (globals, functions) added in Spec 009 after those are implemented.
 
-This means Spec 007's runtime work is mostly building on Spec 004 foundation.
+### Infrastructure Needed
+
+| Component | Existing | To Build |
+|-----------|----------|----------|
+| Label line numbers | `MLabel.line_number` ✓ | — |
+| Source lines | `MRoutine.source_lines` ✓ | — |
+| Statement line numbers | — | Populate `MStatement.line_number` from textX |
+| Line-to-entry mapping | — | `Dict[int, Callable]` built at init |
+| Runtime dispatch | — | `_line_dispatch(line_num)` method |
+
+### Deliverables
+
+- [ ] Statement line number population (parser enhancement)
+  - Tests: `TestStatementLineNumbersParser` → [test_parser.py](../tests/unit/parser/test_parser.py)
+- [ ] Line-to-entry mapping generator
+  - Tests: `TestLineMapGenerationCodegen` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
+- [ ] Computed offset dispatch (literal offsets first)
+  - Tests: `TestComputedOffsetCodegen` → test_s8_2_06_goto.py
+- [ ] Minimal expression evaluator for integer offsets
+  - Tests: `TestOffsetExpressionEvaluator` → test_s8_2_06_goto.py
+- [ ] **Post-implementation documentation**
+  - Update codegen-plan.md: mark deliverables complete, add implementation notes
+  - Update docs/codegen/goto_handling.md with computed offset architecture
+  - Add pre-requisites section to Spec 008
+
+### Validation
+
+- MUGJ: V1GO2.m (computed offset patterns - literal offsets)
+- Embedded pytest tests with computed offsets
+
+### Spike: Parser Line Number Performance
+
+**Hypothesis**: Statement line numbers can be populated during textX parsing without significant performance cost.
+
+**Test**: Enhance textX model to capture line numbers. Measure:
+1. Parsing time increase for V1GO2.m
+2. ASG size increase  
+3. Memory overhead
+
+**Decision**: If overhead <10%, implement during parsing. Otherwise, add separate line numbering pass.
+
+---
+
+## Spec 008: External Calls & Cross-Routine Infrastructure (Second Highest Risk)
+
+**Goal**: Tackle cross-routine coordination and module loading — architecturally significant for VistA
+
+External routine calls affect codegen design significantly. Getting this right early prevents late rework.
+
+### Pre-requisites from Spec 007
+
+- Statement line numbers populated (for $TEXT with offsets)
+- Line dispatch infrastructure (for cross-routine GOTO)
+
+### Research Phase
+Review before coding:
+- **Docs**: `docs/codegen/runtime_requirements.md`, `docs/asg/elements.py` (routine references)
+- **Routine refs**: `asg/elements.py` → `MCall.routine_name`, external ref detection
+- **Module loading**: Python import semantics, `importlib.import_module()`
+- **Variable visibility**: Which variables cross routine boundaries?
+- **ASG dump**: `uv run python utils/validate_asg.py --compact VistA-M/Packages/Kernel/*.m | head -100`
+
+**Output**: Module loading pattern, shared runtime context design.
+
+### Scope
+
+1. **External Routine Calls**
+   - `D LABEL^ROUTINE` → `import routine; routine.label(state)`
+   - `G LABEL^ROUTINE` → state transfer to external routine
+   - Module loading and caching
+
+2. **Routine Discovery & Loading**
+   ```python
+   class MUMPSRuntime:
+       _module_cache: Dict[str, ModuleType] = {}
+       _search_paths: List[Path] = []
+       
+       def load_routine(self, name: str) -> ModuleType:
+           if name not in self._module_cache:
+               # Translate .m file if needed, then import
+               self._module_cache[name] = importlib.import_module(f"translated.{name}")
+           return self._module_cache[name]
+   ```
+
+3. **Cross-Routine Variable Passing**
+   - Variables visible across routine calls (not NEWed)
+   - Requires shared runtime context
+   - `RoutineState` passed between routines
+
+4. **$TEXT Function with Offsets**
+   ```mumps
+   S A=$T(TEX+I)           ; Get line at TEX+I offset
+   S A=$T(+5)              ; Get 5th line of routine
+   S A=$T(LABEL+0^ROUTINE) ; Get line from external routine
+   ```
+   - Store `_source_lines` in generated module
+   - Use line dispatch infrastructure from Spec 007
+   - External routine refs require module access
+
+### Deliverables
+
+- [ ] Cross-routine call infrastructure (`D LABEL^ROUTINE`)
+  - Tests: `TestExternalRoutineCallsCodegen` → [test_s7_1_6_extrinsic_functions.py](../tests/unit/codegen/s7_expressions/test_s7_1_6_extrinsic_functions.py)
+- [ ] Module loading and caching
+  - Tests: `TestModuleLoadingCodegen` → test_s7_1_6_extrinsic_functions.py
+- [ ] Shared runtime context for variable passing
+  - Tests: `TestCrossRoutineVariableVisibility` → test_s7_1_6_extrinsic_functions.py
+- [ ] $TEXT function implementation
+  - Tests: `TestTextFunctionCodegen` → [test_s7_1_5_intrinsic_functions.py](../tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py)
+- [ ] **Post-implementation documentation**
+  - Update codegen-plan.md: mark deliverables complete, add implementation notes
+  - Update docs/codegen/runtime_requirements.md with module loading pattern
+  - Add pre-requisites section to Spec 009
+
+### Validation
+
+- Simple 2-routine tests (hand-crafted)
+- MUGJ: V1GO* series with external refs
+- VistA: Kernel routines with cross-routine calls
+
+### No Spikes Needed
+
+Module loading pattern is well-understood from Python. Straightforward implementation.
+
+---
+
+## Spec 009: LHS Functions & Global Variables (Parser + Runtime)
+
+**Goal**: Complete parser extensions and core runtime infrastructure
+
+LHS functions have unusual semantics requiring parser changes. Globals need the MArray runtime.
+
+### Pre-requisites from Spec 007/008
+
+- Line dispatch infrastructure (for validation tests)
+- Module loading (for cross-routine tests)
+
+### Research Phase
+Review before coding:
+- **Docs**: `docs/asg/expressions.md` (global variables), `docs/codegen/runtime_requirements.md`
+- **LHS functions**: Parser/ASG → does `MLhsFunctionCall` exist? Need `MSetTarget` variant?
+- **Global ASG**: `asg/expressions.py` → `MGlobalRef`, naked vs full refs
+- **MArray semantics**: Each node can have value + children (unlike Python dicts)
+- **ASG dump**: `uv run python utils/validate_asg.py --compact -c "TEST S ^A(1,2)=1 S ^(3)=2 Q"`
+
+**Output**: LHS function ASG design, MArray implementation plan.
+
+### Scope
+
+1. **Left-Hand Function Assignment** (parser extension)
+   ```mumps
+   S $P(X,"^",2)="NEW"    ; Replace second ^-piece of X
+   S $E(X,1,3)="ABC"      ; Replace first 3 characters
+   ```
+   - Modifies variable in-place
+   - Creates variable if doesn't exist
+   - Pads with delimiter if piece index beyond current length
+   
+   **⚠️ Parser/ASG extension needed**: Verify parser distinguishes LHS function calls from RHS. ASG may need `MSetTarget` variant for function-modified targets.
+
+2. **MArray Class** (core runtime)
+   ```python
+   class MArray:
+       """MUMPS array node - can have value AND children."""
+       value: Any = None  # Node's own value
+       children: dict[str, MArray] = {}  # Sub-nodes
+   ```
+   - Differentiates MUMPS semantics from Python dicts
+   - Used for both local subscripted vars and globals
+
+3. **Global Variable Infrastructure**
+   - Basic syntax: `^name`, `^name(sub1,sub2,...)`
+   - Tree structure where each node can have **both** value and children
+   - SET to global: `S ^A=1`, `S ^A(1)=2`
+   - READ from global: `W ^A`, `W ^A(1)`
+
+4. **Subscripted Local Variables**
+   - Basic syntax: `X(sub1,sub2,...)`
+   - SET: `S X(1)=1`, `S X(1,2)="value"`
+   - READ: `W X(1)`, `W X(1,2)`
+   - Uses MArray, same as globals
+
+5. **Naked Global References** (runtime tracking)
+   ```mumps
+   S ^A(1,2)=1    ; Sets context: ^A with subscript path (1)
+   S ^(3)=2       ; Actually ^A(1,3) - replaces last subscript
+   S ^(4,5)=3     ; Actually ^A(1,4,5)
+   ```
+   
+   Runtime tracking:
+   ```python
+   class MUMPSRuntime:
+       naked_global: str | None = None  # Last global name
+       naked_subscripts: tuple = ()      # All but last subscript
+   ```
+
+### Deliverables
+
+- [ ] LHS function parser/ASG extension
+  - Tests: `TestLhsFunctionParsingParser` → [test_parser.py](../tests/unit/parser/test_parser.py)
+- [ ] LHS $PIECE assignment codegen
+  - Tests: `TestLhsPieceCodegen` → [test_s8_2_18_set.py](../tests/unit/codegen/s8_commands/test_s8_2_18_set.py)
+- [ ] LHS $EXTRACT assignment codegen
+  - Tests: `TestLhsExtractCodegen` → test_s8_2_18_set.py
+- [ ] MArray class (value + children at each node)
+  - Tests: `TestMArrayCodegen` → [test_globals.py](../tests/unit/cross_cutting/test_globals.py)
+- [ ] Global variable SET/READ generation
+  - Tests: `TestGlobalSetCodegen`, `TestGlobalReadCodegen` → test_globals.py
+- [ ] Subscripted local variables (using MArray)
+  - Tests: `TestSubscriptedVariablesCodegen` → [test_s7_1_2_variables.py](../tests/unit/codegen/s7_expressions/test_s7_1_2_variables.py)
+- [ ] Naked indicator runtime tracking
+  - Tests: `TestNakedReferencesCodegen` → [test_naked_references.py](../tests/unit/cross_cutting/test_naked_references.py)
+- [ ] **Upgrade offset evaluator** to handle globals
+  - Tests: `TestComputedOffsetWithGlobalsCodegen` → test_s8_2_06_goto.py
+- [ ] **Post-implementation documentation**
+  - Update codegen-plan.md: mark deliverables complete, add implementation notes
+  - Update docs/codegen/runtime_requirements.md with MArray design
+  - Add pre-requisites section to Spec 010
+
+### Validation
+
+- MUGJ: V1SET (LHS function tests)
+- MUGJ: V1BOA (basic global operations)
+- MUGJ: V1NKD (naked reference patterns)
+- MUGJ: V1GO3.m (computed offsets with globals - now with full support)
+- YDBTest: global/* suite
+
+### Spike: LHS Function Detection
+
+**Hypothesis**: Parser already distinguishes LHS/RHS context, just needs codegen support.
+
+**Test**: Dump ASG for `S $P(X,"^",2)="NEW"` and compare with `W $P(X,"^",2)`. Measure:
+1. Does ASG distinguish the two contexts?
+2. If not, is the change to parser simple or complex?
+
+**Decision**: If parser change needed, do it first. If codegen-only, proceed directly.
+
+---
+
+## Spec 010: Intrinsic Functions (Large but Straightforward)
+
+**Goal**: Implement all MUMPS intrinsic functions — large volume, well-defined semantics
+
+Now that globals and MArray are available, implement all intrinsic functions.
+
+### Pre-requisites from Spec 009
+
+- MArray class (for data functions)
+- Global variable infrastructure (for $DATA, $ORDER, $QUERY)
+
+### Research Phase
+Review before coding:
+- **Docs**: `docs/codegen/functions.md`, `docs/asg/expressions.md` (intrinsic functions section)
+- **Function ASG**: `asg/expressions.py` → `MIntrinsicFunction`, argument list
+- **MUMPS spec**: Functions are in ANSI §7.1.5 - https://71.174.62.16/Demo/AnnoStd
+- **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1FN*.m`
+
+**Output**: List of functions with implementation priority, edge case documentation.
+
+### Scope
+
+1. **String Functions**
+   - $PIECE(string, delimiter, piece#) - extract delimited piece
+   - $LENGTH(string [, delimiter]) - length or piece count
+   - $EXTRACT(string, start [, end]) - substring extraction
+   - $FIND(string, substring [, start]) - search position
+   - $TRANSLATE(string, from, to) - character translation
+   - $JUSTIFY(string, width [, decimals]) - formatting
+   - $CHAR(code, ...) - ASCII codes to string
+   - $ASCII(string [, position]) - string to ASCII code
+   - $REVERSE(string) - reverse string order
+   - $FNUMBER(number, codes [, decimals]) - formatted numeric output
+
+2. **Numeric Functions**
+   - $RANDOM(limit) - random integer 0 to limit-1
+
+3. **Data Functions** (require Spec 009 globals)
+   - $DATA(variable) - existence test (0=none, 1=value, 10=children, 11=both)
+   - $GET(variable [, default]) - safe read with default
+   - $ORDER(global(subscripts)) - next subscript in tree
+   - $QUERY(global) - next node in tree walk
+
+4. **Array Utility Functions**
+   - $NAME(variable [, depth]) - return name with subscripts as string
+   - $QLENGTH(name) - count subscripts in name string
+   - $QSUBSCRIPT(name, position) - extract subscript from name string
+
+5. **Conditional Function**
+   - $SELECT(cond1:val1, cond2:val2, ..., 1:default) - conditional selection
+   - Special syntax - colon separates condition from value
+
+6. **Extrinsic Functions** ($$label)
+   - `$$label` - call label as function, return QUIT value
+   - `$$label^routine` - external routine call (uses Spec 008 infrastructure)
+   - Parameter passing (by value, by reference)
+
+### Deliverables
+
+- [ ] All string function implementations
+  - Tests: `TestStringFunctionsCodegen` → [test_s7_1_5_intrinsic_functions.py](../tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py)
+- [ ] $RANDOM implementation
+  - Tests: `TestRandomFunctionCodegen` → test_s7_1_5_intrinsic_functions.py
+- [ ] Data function implementations ($DATA, $GET, $ORDER, $QUERY)
+  - Tests: `TestDataFunctionsCodegen` → test_s7_1_5_intrinsic_functions.py
+- [ ] Array utility functions ($NAME, $QLENGTH, $QSUBSCRIPT)
+  - Tests: `TestArrayUtilityFunctionsCodegen` → test_s7_1_5_intrinsic_functions.py
+- [ ] $SELECT implementation (special colon syntax)
+  - Tests: `TestSelectFunctionCodegen` → test_s7_1_5_intrinsic_functions.py
+- [ ] Extrinsic function support ($$label)
+  - Tests: `TestExtrinsicFunctionCodegen` → [test_s7_1_6_extrinsic_functions.py](../tests/unit/codegen/s7_expressions/test_s7_1_6_extrinsic_functions.py)
+- [ ] **Upgrade offset evaluator** to handle function calls
+  - Tests: `TestComputedOffsetWithFunctionsCodegen` → test_s8_2_06_goto.py
+- [ ] **Post-implementation documentation**
+  - Update codegen-plan.md: mark deliverables complete, add implementation notes
+  - Update docs/codegen/functions.md with all intrinsic function implementations
+  - Add pre-requisites section to Spec 011
+
+### Validation
+
+- MUGJ: V1FN* series (all intrinsic function tests)
+- MUGJ: V1BOA (data functions with globals)
+- MUGJ: V1GO3.m (computed offsets with functions - full expression support)
+- YDBTest: functions/* suite
+
+### No Spikes Needed
+
+All functions have well-defined ANSI semantics. Implementation is straightforward translation to Python.
+
+---
+
+## Spec 011: Extended Operators, Commands & Completion
+
+**Goal**: Complete remaining operators, statements, and edge cases — mechanical translation work
+
+This is cleanup work. Low risk, just filling in the remaining gaps.
+
+### Pre-requisites from Spec 009/010
+
+- MArray class (for MERGE, NEW/KILL semantics)
+- Intrinsic functions (for validation tests)
+- Global variables (for MERGE)
+
+### Research Phase
+Review before coding:
+- **Docs**: `docs/codegen/operators.md`, `docs/asg/statements.md`
+- **Operators**: `asg/expressions.py` → operator enums
+- **Statements**: `asg/statements.py` → all statement types
+- **Pattern match**: `asg/` → pattern codes (1N, .A) fully represented?
+- **ASG dump**: `uv run python utils/validate_asg.py --compact -c "TEST S X=1&2 W X!3 Q"`
+
+**Output**: Implementation order for operators and commands based on dependencies.
+
+### Scope
+
+1. **Extended Operators**
+   - Negated comparisons: `'=`, `'<`, `'>`
+   - Logical operators: `&` (AND), `!` (OR), `'` (NOT)
+   - String concatenation: `_`
+   - Contains: `[`, Follows: `]`, `]]`
+   - Modulo: `#`, Integer division: `\`
+   - Pattern match: `?` (basic patterns) — **verify parser captures pattern codes in ASG**
+
+2. **Extended Statements**
+   - SET with multiple assignments (`S X=1,Y=2`)
+   - SET with subscripted targets
+   - WRITE with format controls (`!`, `#`, `?n`, `*n`)
+   - READ (basic, with timeout)
+   - NEW (selective)
+   - KILL (selective)
+   - MERGE (copy array subtrees: `M dest=src`)
+   - HANG (delay: `H seconds`)
+   - HALT (terminate: `H` argumentless)
+   - Postconditions on all commands (`S:cond X=1`)
+
+3. **Exclusive NEW/KILL**
+   - `N (A,B)` → save all except A,B
+   - `K (X,Y)` → kill all except X,Y
+   - Runtime scope manipulation
+
+4. **Special Variables**
+   - $HOROLOG, $JOB, $IO, $X, $Y
+   - $STORAGE (memory available), $STACK (call level)
+   - $QUIT (per ANSI 7.1.4.10): Returns 1 if current frame was invoked by exfunc/exvar, 0 otherwise
+   - Some static, some require runtime tracking
+   - **Note**: $TEST is covered in Spec 005; Spec 011 adds remaining special variables
+
+5. **Decimal Numeric Literals**
+   - Already parsed, just need codegen support
+
+### Deliverables
+
+- [ ] Extended operator generators
+  - Tests: `TestOperatorsCodegen` → [test_s7_2_operators.py](../tests/unit/codegen/s7_expressions/test_s7_2_operators.py)
+- [ ] SET with multiple assignments
+  - Tests: `TestMultipleAssignmentCodegen` → [test_s8_2_18_set.py](../tests/unit/codegen/s8_commands/test_s8_2_18_set.py)
+- [ ] WRITE format controls
+  - Tests: `TestWriteFormatControlsCodegen` → [test_s8_2_25_write.py](../tests/unit/codegen/s8_commands/test_s8_2_25_write.py)
+- [ ] READ command implementation
+  - Tests: `TestReadCommandCodegen` → [test_s8_2_17_read.py](../tests/unit/codegen/s8_commands/test_s8_2_17_read.py)
+- [ ] NEW/KILL selective implementation
+  - Tests: `TestNewCommandCodegen` → [test_s8_2_12_new.py](../tests/unit/codegen/s8_commands/test_s8_2_12_new.py)
+  - Tests: `TestKillCommandCodegen` → [test_s8_2_10_kill.py](../tests/unit/codegen/s8_commands/test_s8_2_10_kill.py)
+- [ ] Exclusive NEW/KILL implementation
+  - Tests: `TestExclusiveNewCodegen` → test_s8_2_12_new.py
+  - Tests: `TestExclusiveKillCodegen` → test_s8_2_10_kill.py
+- [ ] MERGE command implementation
+  - Tests: `TestMergeCommandCodegen` → [test_s8_2_11_merge.py](../tests/unit/codegen/s8_commands/test_s8_2_11_merge.py)
+- [ ] HANG command implementation
+  - Tests: `TestHangCommandCodegen` → [test_s8_2_07_hang.py](../tests/unit/codegen/s8_commands/test_s8_2_07_hang.py)
+- [ ] HALT command implementation
+  - Tests: `TestHaltCommandCodegen` → [test_s8_2_08_halt.py](../tests/unit/codegen/s8_commands/test_s8_2_08_halt.py)
+- [ ] Postcondition support
+  - Tests: `TestPostconditionsCodegen` → [test_postconditions.py](../tests/unit/cross_cutting/test_postconditions.py)
+- [ ] Special variable implementations
+  - Tests: `TestSpecialVariablesCodegen` → [test_s7_1_7_special_variables.py](../tests/unit/codegen/s7_expressions/test_s7_1_7_special_variables.py)
+- [ ] Pattern match operator
+  - Tests: `TestPatternMatchCodegen` → test_s7_2_operators.py
+- [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
+  - Update codegen-plan.md: mark all deliverables complete
+  - Update docs/codegen/operators.md with all operator implementations
+  - Final review of all codegen docs for accuracy
+
+### Validation
+
+- MUGJ: V1SET, V1WR, V1NUM series
+- MUGJ: V1PAT (pattern match)
+- MUGJ: V1NX series (NEW exclusive)
+- YDBTest: basic/* suite
+- Full VistA Kernel package translation attempt
+
+### No Spikes Needed
+
+All patterns are straightforward. Implementation builds on existing codegen patterns.
+
+---
+
+## Spec 012: Indirection & XECUTE Runtime (Dynamic Fallback)
+
+**Goal**: Handle dynamic code patterns pervasive in VistA — the ultimate fallback for code that cannot be statically analyzed
+
+This is the final spec because XECUTE and indirection can execute ANY MUMPS construct dynamically. All static constructs must be implemented first so `runtime.execute()` can handle them.
+
+### Pre-requisites from Specs 007-011
+
+- Line dispatch infrastructure (for computed targets in dynamic code)
+- External routine loading (for `D ^ROUTINE` in dynamic code)
+- Global variable support (for `^%ZOSF` patterns)
+- All intrinsic functions (for dynamic code with `$PIECE`, `$LENGTH`, etc.)
+- All operators and commands (dynamic code can contain anything)
 
 ### Research Phase
 Review before coding:
@@ -1087,7 +1262,7 @@ Review before coding:
 1. **Runtime Infrastructure**
    
    Build the shared runtime that manages M semantics at execution time.
-   **Note**: Basic global variable support (`^VAR`, `^VAR(sub)`) is included here so XECUTE/indirection tests can use realistic VistA patterns (e.g., `^%ZOSF`). Spec 008 adds extended global features (naked refs, complex subscripting).
+   Uses global variable support from Spec 009 for `^%ZOSF` patterns.
    
    Core `MUMPSRuntime` API: `variables: dict`, `globals: dict`, `test: bool`, `execute(mumps_code)`, `get_global(name, *subs)`, `set_global(name, value, *subs)`
 
@@ -1122,9 +1297,8 @@ Review before coding:
 - [ ] `^%ZOSF` lookup table
   - Tests: `TestZosfPatternCodegen` → test_s8_2_26_xecute.py
 - [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
-  - Update codegen-plan.md: mark deliverables complete, add implementation notes
-  - Update docs/codegen/runtime_requirements.md with actual runtime API
-  - Add pre-requisites section to Spec 008
+  - Update codegen-plan.md: mark all deliverables complete
+  - Final review: all MUMPS language constructs now covered
 
 ### Validation
 
@@ -1132,6 +1306,7 @@ Review before coding:
 - MUGJ: V1IDARG series (indirect arguments)
 - MUGJ: V1XECA series (XECUTE)
 - VistA: Kernel/XUINCON.m (real-world patterns)
+- Full MUGJ suite (all tests should now pass)
 
 ### Spike: eval/exec Performance & Safety
 
@@ -1144,221 +1319,6 @@ Review before coding:
 4. Error message quality when MUMPS code fails
 
 **Decision**: If performance is >10x slower than YDB, consider caching translated code. If error messages are poor, add source mapping.
-
----
-
-## Spec 008: Core Language Completion
-
-**Goal**: Complete the simple constructs deferred from Spec 004
-
-Now that control flow is solid, add the rest of the straightforward language features.
-
-### Research Phase
-Review before coding:
-- **Docs**: `docs/asg/expressions.md`, `docs/codegen/functions.md`, `docs/codegen/operators.md`
-- **Intrinsic functions**: `asg/expressions.py` → `MFunctionCall`, intrinsic vs extrinsic
-- **Global variables**: `asg/expressions.py` → `MGlobalRef`, naked ref (`^(sub)`) vs full
-- **LHS functions**: Parser/ASG → `MLhsFunctionCall` for SET $P()/$E()?
-- **Pattern match**: `asg/` → pattern codes (1N, .A) fully represented?
-- **Computed offsets**: `asg/elements.py` → `MCall.offset`, `G LABEL+expr` structure
-- **Statement line numbers**: Check if `MStatement.line_number` populated during parsing
-- **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1FN*.m`
-
-**Output**: List of ASG gaps needing parser/analysis work before codegen.
-
-### Scope
-
-1. **Extended Operators**
-   - Negated comparisons: `'=`, `'<`, `'>`
-   - Logical operators: `&` (AND), `!` (OR), `'` (NOT)
-   - String concatenation: `_`
-   - Contains: `[`, Follows: `]`, `]]`
-   - Modulo: `#`, Integer division: `\`
-   - Pattern match: `?` (basic patterns) — **verify parser captures pattern codes in ASG**
-
-2. **Extended Literals & Variables**
-   - Decimal numeric literals
-   - Global variable syntax (`^name`, `^name(subs)`) → builds on runtime from Spec 007
-   - Local variables with subscripts
-   - Naked global references (requires runtime naked indicator tracking)
-
-3. **Extended Statements**
-   - SET with multiple assignments (`S X=1,Y=2`)
-   - SET with subscripted targets
-   - WRITE with format controls (`!`, `#`, `?n`, `*n`)
-   - READ (basic, with timeout)
-   - NEW (selective) — **includes variable scope isolation deferred from Spec 006 (FR-021: NEWed variables not visible after GOTO)**
-   - KILL (selective)
-   - MERGE (copy array subtrees: `M dest=src`)
-   - Postconditions on all commands (`S:cond X=1`)
-   - **DO with arguments in cross-label context** — formal parameter isolation (FR-022 from Spec 006)
-
-4. **Intrinsic Functions**
-   - String: $PIECE, $LENGTH, $EXTRACT, $FIND, $TRANSLATE, $JUSTIFY
-   - Numeric: $RANDOM, $ASCII, $CHAR
-   - Data: $GET, $DATA, $ORDER, $QUERY
-   - Conditional: $SELECT (special colon syntax: `condition:value` pairs)
-
-5. **Extrinsic Functions**
-   - `$$label` and `$$label^routine` calls
-   - Parameter passing (by value, by reference)
-
-6. **Left-Hand Function Assignment** (complex semantics)
-   ```mumps
-   S $P(X,"^",2)="NEW"    ; Replace second ^-piece of X
-   S $E(X,1,3)="ABC"      ; Replace first 3 characters
-   ```
-   - Modifies variable in-place
-   - Creates variable if doesn't exist
-   - Pads with delimiter if piece index beyond current length
-   
-   **⚠️ Parser/ASG extension likely needed**: Verify parser distinguishes LHS function calls from RHS. ASG may need `MSetTarget` variant for function-modified targets.
-
-7. **Naked Global References** (runtime tracking required)
-   ```mumps
-   S ^A(1,2)=1    ; Sets context: ^A with subscript path (1)
-   S ^(3)=2       ; Actually ^A(1,3) - replaces last subscript
-   S ^(4,5)=3     ; Actually ^A(1,4,5)
-   ```
-   - Context = global name + all subscripts except the last
-   - Must track "naked indicator" at runtime
-   
-   **⚠️ ASG extension likely needed**: Verify `MGlobalRef` distinguishes naked refs (`^(sub)`) from full refs (`^name(sub)`). Analysis pass may need to flag naked ref usage for runtime tracking.
-
-8. **Computed Offsets in DO/GOTO** (deferred from Spec 006)
-   
-   Now that full expressions are available, implement offset targets:
-   ```mumps
-   G STAR+^V1A                    ; Global variable as offset
-   G %0+A=2                       ; Binary comparison in offset!
-   G HAL9000+^V1A(2)-ZORAC        ; Arithmetic with subscripted global
-   G 388+$L($E(VCOMP,5,99))       ; Function call in offset
-   D LABEL+^V1A(2)-^(3)/10        ; Naked globals in offset
-   ```
-   
-   **Infrastructure needed** (building on existing analysis):
-   
-   | Component | Existing | To Build |
-   |-----------|----------|----------|
-   | Label line numbers | `MLabel.line_number` ✓ | — |
-   | Source lines | `MRoutine.source_lines` ✓ | — |
-   | Statement line numbers | — | Populate `MStatement.line_number` from textX |
-   | Line-to-entry mapping | — | `Dict[int, Callable]` built at init |
-   | Runtime dispatch | — | `_line_dispatch(line_num)` method |
-   
-   **⚠️ Parser extension needed**: Statement line numbers require enhancing textX model classes to capture source positions during parsing.
-   
-   **Architectural note**: This is the one area requiring parser/analysis enhancement before codegen can proceed. The codegen architecture (dispatchers, emitters, context) is ready—just needs `MStatement.line_number` populated. Can be done incrementally without blocking Spec 006.
-   
-   **Code generation approach**: Build `_line_map: Dict[int, Callable]` at routine init. For `G LABEL+expr`, evaluate `target_line = label_line + int(expr)`, dispatch via `_line_map[target_line]`. Error if line not in map.
-   
-   **Non-executable lines**: Comment-only and blank lines are NOT in `_line_map`. Per MUMPS semantics, `G LABEL+n` landing on non-executable line should error (strict) or skip (lenient). Validate actual YDB behavior.
-
-### Deliverables
-
-- [ ] Extended expression generators
-  - Tests: `TestOperatorsCodegen` → [test_s7_2_operators.py](../tests/unit/codegen/s7_expressions/test_s7_2_operators.py)
-- [ ] Global variable infrastructure (tree-based, each node can have value + children)
-  - Tests: `TestGlobalCodegen` → [test_globals.py](../tests/unit/cross_cutting/test_globals.py)
-- [ ] Naked indicator runtime tracking
-  - Tests: `TestNakedReferencesCodegen` → [test_naked_references.py](../tests/unit/cross_cutting/test_naked_references.py)
-- [ ] All intrinsic function implementations
-  - Tests: `TestIntrinsicFunctionsCodegen` → [test_s7_1_5_intrinsic_functions.py](../tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py)
-- [ ] Left-hand $PIECE/$EXTRACT assignment
-  - Tests: `TestLhsFunctionAssignmentCodegen` → [test_s8_2_18_set.py](../tests/unit/codegen/s8_commands/test_s8_2_18_set.py)
-- [ ] Extended statement generators
-  - Tests: Various `Test*CommandCodegen` → tests/unit/codegen/s8_commands/
-- [ ] Postcondition support
-  - Tests: `TestPostconditionsCodegen` → [test_postconditions.py](../tests/unit/cross_cutting/test_postconditions.py)
-- [ ] Statement line number population (parser enhancement)
-  - Tests: `TestLineDispatchCodegen` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
-- [ ] Line-to-entry mapping generator
-  - Tests: `TestLineDispatchCodegen.test_line_map_generation` → test_s8_2_06_goto.py
-- [ ] Computed offset dispatch
-  - Tests: `TestComputedOffsetCodegen` → test_s8_2_18_set.py
-- [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
-  - Update codegen-plan.md: mark deliverables complete, add implementation notes
-  - Update docs/codegen/functions.md with intrinsic function implementations
-  - Add pre-requisites section to Spec 009
-
-### Validation
-
-- MUGJ: V1SET, V1WR, V1NUM, V1FN* series
-- MUGJ: V1GO2.m (computed offset patterns - literal offsets)
-- MVTS: V1GO3.m (computed offset patterns - complex expressions including globals, functions, arithmetic)
-  - **Note**: V1GO3.m was deferred from Spec 006 validation because it's entirely about computed offsets (`G LABEL+expr`)
-  - Contains patterns like: `G STAR+^V1A`, `G 388+$L($E(VCOMP,5,99))`, `G NOTES+C+(D*2)+E=29.3+3`
-- YDBTest: basic/* suite
-
-### No Spikes Needed
-
-All patterns understood from prior specs. Straightforward implementation.
-
----
-
-## Spec 009: External Calls & Advanced Features
-
-**Goal**: Complete coverage for production VistA translation
-
-### Scope
-
-1. **External Routine Calls**
-   - `D LABEL^ROUTINE` → `import routine; routine.label()`
-   - `G LABEL^ROUTINE` → `return routine.label()` or state transfer
-   - Module loading and caching
-
-2. **Cross-Routine Variable Passing**
-   - Variables visible across routine calls (not NEWed)
-   - Requires shared runtime context
-
-3. **Exclusive NEW/KILL** (rare but required)
-   - `N (A,B)` → save all except A,B
-   - `K (X,Y)` → kill all except X,Y
-   - Runtime scope manipulation
-
-4. **$TEXT Function with Offsets**
-   ```mumps
-   S A=$T(TEX+I)           ; Get line at TEX+I offset
-   S A=$T(+5)              ; Get 5th line of routine
-   S A=$T(LABEL+0^ROUTINE) ; Get line from external routine
-   ```
-   - Returns source code lines (including comments)
-   - Store `MRoutine.source_lines` in generated module
-   - Offset is evaluated at runtime
-   - External routine refs require module access
-
-5. **Special Variables**
-   - $HOROLOG, $JOB, $IO, $X, $Y
-   - $QUIT (per ANSI 7.1.4.10): Returns 1 if current frame was invoked by exfunc/exvar, 0 otherwise
-   - Some static, some require runtime tracking
-
-### Deliverables
-
-- [ ] Cross-routine call infrastructure
-  - Tests: `TestExternalRoutineCallsCodegen` → [test_s7_1_6_extrinsic_functions.py](../tests/unit/codegen/s7_expressions/test_s7_1_6_extrinsic_functions.py)
-- [ ] Shared runtime context for variable passing
-  - Tests: `TestExternalRoutineCallsCodegen.test_cross_routine_variable_visibility` → test_s7_1_6_extrinsic_functions.py
-- [ ] Exclusive NEW/KILL implementation
-  - Tests: `TestNewCommandCodegen.test_exclusive_new` → [test_s8_2_12_new.py](../tests/unit/codegen/s8_commands/test_s8_2_12_new.py)
-  - Tests: `TestKillCommandCodegen.test_exclusive_kill` → [test_s8_2_10_kill.py](../tests/unit/codegen/s8_commands/test_s8_2_10_kill.py)
-- [ ] $TEXT support
-  - Tests: `TestTextWithOffsetsCodegen` → [test_s7_1_7_special_variables.py](../tests/unit/codegen/s7_expressions/test_s7_1_7_special_variables.py)
-- [ ] Special variable implementations
-  - Tests: `TestSpecialVariablesCodegen`, `TestQuitSpecialVariableCodegen` → test_s7_1_7_special_variables.py
-- [ ] **Post-implementation documentation** (see [Post-Implementation Documentation](#post-implementation-documentation) section)
-  - Update codegen-plan.md: mark deliverables complete, add implementation notes
-  - Update docs/ with complete API documentation for production use
-  - Final review of all codegen docs for accuracy
-
-### Validation
-
-- VistA routines with cross-routine calls
-- MUGJ: V1NX series (NEW exclusive)
-- Full VistA Kernel package translation attempt
-
-### No Spikes Needed
-
-Patterns are understood, just require careful implementation of runtime infrastructure from Spec 007.
 
 ---
 
@@ -1394,9 +1354,13 @@ def test_expressions(execute_expr, expr, expected):
 
 | Spec | Test Approach |
 |------|---------------|
-| 004-006 | Embedded pytest |
-| 007-008 | MUGJ files (V1ID*, V1XEC*, V1GO2) |
-| 009 | Full MUGJ + VistA Kernel |
+| 004-007 | Embedded pytest only (unit tests with minimal syntax) |
+| 008 | Embedded pytest + simple multi-routine tests (external calls) |
+| 009-010 | Begin simple MUGJ files (now have globals + intrinsics) |
+| 011 | More MUGJ files (have operators + commands) |
+| 012 | Full MUGJ suite + VistA Kernel translation attempt (indirection/XECUTE) |
+
+**Reality check**: MUGJ test files use globals, intrinsic functions, operators, and cross-routine calls extensively. Until Specs 009-010 are complete, most MUGJ files won't parse or execute correctly. Early specs should focus on small, focused unit tests that exercise specific features in isolation.
 
 ---
 

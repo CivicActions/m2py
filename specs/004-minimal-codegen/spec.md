@@ -138,7 +138,7 @@ As a developer, the code generator correctly translates MUMPS names (labels, var
 - Zero step FOR (`F I=1:0` infinite loop) → Spec 005
 - Open-ended FOR (`F I=1:1` no end) → Spec 005  
 - QUIT inside FOR (`Q:I=5` break pattern) → Spec 005
-- QUIT with value (extrinsic return) → Spec 008
+- QUIT with value (extrinsic return) → Spec 010
 - Cross-label GOTO variable visibility → Spec 006
 
 ## Requirements *(mandatory)*
@@ -228,7 +228,7 @@ As a developer, the code generator correctly translates MUMPS names (labels, var
 - The ASG is fully populated by the parser before code generation begins (no parsing in codegen)
 - Analysis passes (resolver, for_analysis, goto_analysis) have been run and populated classification fields
 - `ScopeStrategy` for all labels in scope is `PURE_FUNCTION` or similar (not `REQUIRES_RUNTIME`)
-- Only same-routine labels are targeted by DO/GOTO (external routine calls deferred to Spec 009)
+- Only same-routine labels are targeted by DO/GOTO (external routine calls deferred to Spec 008)
 - Argumentless DO blocks and FOR exit patterns are deferred to Spec 005
 
 ## Explicitly Deferred
@@ -257,7 +257,7 @@ The following are explicitly **out of scope** for Spec 004:
 - FOR loop variations requiring analysis flags (open-ended, argumentless, mixed, loop_var_modified, has_internal_quit) (Spec 005)
 - Cross-label GOTO with variable visibility (Spec 006)
 - State machine or trampoline patterns for complex GOTO (Spec 006)
-- XECUTE / Indirection (Spec 007)
+- XECUTE / Indirection (Spec 012)
 
 ## Research Phase
 

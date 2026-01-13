@@ -87,7 +87,7 @@ As a developer, the code generator correctly handles all FOR loop types by consu
 3. **Given** `TEST F I=1:1:3,"X",10:2:14 W I`, **When** generated and executed, **Then** output is "123X101214" (mixed parameters)
 4. **Given** `TEST F I=1:1:10 S I=I+2 W I I I>8 Q` / `Q`, **When** generated and executed, **Then** output is "369" (loop var modified -> while loop)
 
-**Note**: Acceptance scenarios use `I cond Q` pattern. Postconditioned QUIT (`Q:cond`) codegen is deferred to Spec 008.
+**Note**: Acceptance scenarios use `I cond Q` pattern. Postconditioned QUIT (`Q:cond`) codegen is deferred to Spec 011.
 
 ---
 
@@ -137,7 +137,7 @@ As a developer, the code generator correctly interprets QUIT statements based on
 2. **Given** `TEST D` / ` . W "A"` / ` . Q` / ` . W "B"` / ` W "C" Q`, **When** generated and executed, **Then** output is "AC" (QUIT with exits_do_block=True -> return from nested scope)
 3. **Given** `TEST S R=$$ADD(2,3) W R Q ADD(A,B) Q A+B`, **When** generated and executed, **Then** output is "5" (QUIT with return_value -> return expression)
 
-**Note**: This tests basic extrinsic return mechanics. Full extrinsic function support ($$label^routine, external calls) is Spec 008.
+**Note**: This tests basic extrinsic return mechanics. Full extrinsic function support ($$label^routine, external calls) is Spec 010.
 
 ---
 
@@ -184,10 +184,10 @@ As a developer, when I generate Python from MUMPS code that passes variables by 
 - **Multiple by-ref to same variable**: `D FOO(.A,.A)` - aliasing edge case (may require REQUIRES_RUNTIME)
 
 **Edge cases explicitly deferred to later specs**:
-- $TEST behavior with XECUTE -> Spec 007
+- $TEST behavior with XECUTE -> Spec 012
 - Cross-label GOTO requiring state machine -> Spec 006
-- REQUIRES_RUNTIME scope strategy -> Spec 006/007
-- Extrinsic functions ($$label) with full semantics -> Spec 008
+- REQUIRES_RUNTIME scope strategy -> Spec 006/012
+- Extrinsic functions ($$label) with full semantics -> Spec 010
 
 ## Requirements *(mandatory)*
 
@@ -229,14 +229,14 @@ As a developer, when I generate Python from MUMPS code that passes variables by 
 - **FR-019**: System MUST generate `break` when `MQuitStatement.exits_for=True`
 - **FR-020**: System MUST generate appropriate return when `MQuitStatement.exits_do_block=True`
 - **FR-021**: System MUST generate `return <value>` when `MQuitStatement.return_value` is present
-- **FR-022**: System MUST recognize postconditioned QUIT (`Q:cond`) syntax but MAY defer codegen to Spec 008 (postconditions)
+- **FR-022**: System MUST recognize postconditioned QUIT (`Q:cond`) syntax but MAY defer codegen to Spec 011 (postconditions)
 
 #### Variable Scope Strategies
 
 - **FR-023**: System MUST generate simple return for `ScopeStrategy.PURE_FUNCTION`
 - **FR-024**: System MUST generate return-tuple for `ScopeStrategy.FUNCTION_WITH_OUTPUTS`
 - **FR-025**: System MUST generate return None (implicit) for `ScopeStrategy.SUBROUTINE`
-- **FR-026**: System MUST defer to Spec 006/007 for `ScopeStrategy.REQUIRES_RUNTIME`
+- **FR-026**: System MUST defer to Spec 006/012 for `ScopeStrategy.REQUIRES_RUNTIME`
 
 #### By-Reference Parameters
 
@@ -281,9 +281,9 @@ As a developer, when I generate Python from MUMPS code that passes variables by 
 - Spec 004 infrastructure is complete and functioning (labels as functions, _test variable, m_truth())
 - Analysis passes (for_analysis, goto_analysis, variables analysis) have been run and populated all classification fields
 - `is_cross_label=False` for all GOTOs handled in this spec (cross-label deferred to Spec 006)
-- `ScopeStrategy.REQUIRES_RUNTIME` labels will raise UnsupportedFeatureError (deferred to Spec 006/007)
+- `ScopeStrategy.REQUIRES_RUNTIME` labels will raise UnsupportedFeatureError (deferred to Spec 006/012)
 - Extrinsic function syntax (`$$label`) parsing is complete; this spec handles $TEST stack only
-- Postcondition parsing exists in ASG; this spec tests that postconditions do NOT update $TEST but defers postcondition codegen to Spec 008
+- Postcondition parsing exists in ASG; this spec tests that postconditions do NOT update $TEST but defers postcondition codegen to Spec 011
 
 ## Explicitly Deferred
 
@@ -292,16 +292,16 @@ The following are explicitly **out of scope** for Spec 005:
 - **Cross-label GOTO** (`is_cross_label=True`) -> Spec 006
 - **Backward intra-label GOTO** (creates implicit loops within label) -> Spec 006
 - **State machine or trampoline patterns** -> Spec 006
-- **Line-based dispatch for computed offsets** (`G LABEL+expr`) -> Spec 006/008
-- **REQUIRES_RUNTIME scope strategy** (indirection/XECUTE defeats analysis) -> Spec 006/007
-- **XECUTE command** -> Spec 007
-- **Indirection** (`@VAR`) -> Spec 007
-- **Global variables** (`^name`) -> Spec 008
-- **Intrinsic functions** ($PIECE, $LENGTH, etc.) -> Spec 008
-- **Full extrinsic function support** ($$label^routine, parameter semantics) -> Spec 008
-- **External routine calls** (D LABEL^ROUTINE, G LABEL^ROUTINE) -> Spec 009
-- **NEW / KILL commands** -> Spec 008
-- **Postconditions** (S:cond X=1, Q:cond) - parsing exists, codegen deferred -> Spec 008
+- **Line-based dispatch for computed offsets** (`G LABEL+expr`) -> Spec 006/007
+- **REQUIRES_RUNTIME scope strategy** (indirection/XECUTE defeats analysis) -> Spec 006/012
+- **XECUTE command** -> Spec 012
+- **Indirection** (`@VAR`) -> Spec 012
+- **Global variables** (`^name`) -> Spec 009
+- **Intrinsic functions** ($PIECE, $LENGTH, etc.) -> Spec 010
+- **Full extrinsic function support** ($$label^routine, parameter semantics) -> Spec 010
+- **External routine calls** (D LABEL^ROUTINE, G LABEL^ROUTINE) -> Spec 008
+- **NEW / KILL commands** -> Spec 011
+- **Postconditions** (S:cond X=1, Q:cond) - parsing exists, codegen deferred -> Spec 011
 - **Multiple GOTO targets** (`G A,B`) - rarely used, sequential execution -> Spec 006
 - **Argumentless GOTO** (`G`) - special case, returns to caller -> Spec 006
 

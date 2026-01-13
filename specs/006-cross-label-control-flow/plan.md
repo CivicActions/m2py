@@ -190,7 +190,7 @@ See [research.md R1](research.md#r1-current-asg-infrastructure) for findings.
 
 #### 2.4 State Machine Pattern *(DEFERRED)*
 
-Deferred based on Phase 2 spike results. Trampoline handles all known patterns including cycles. Reconsider if truly irreducible patterns discovered (e.g., computed offsets in Spec 008).
+Deferred based on Phase 2 spike results. Trampoline handles all known patterns including cycles. Reconsider if truly irreducible patterns discovered (e.g., computed offsets in Spec 007).
 
 #### 2.5 Cross-Label Variable Visibility → See tasks.md Phase 7 (T070-T076c)
 
@@ -235,9 +235,9 @@ Per spec "ASG Gap Handling" section:
 See [spec.md "Explicitly Deferred" section](spec.md#explicitly-deferred) for the canonical list of deferred items.
 
 **Key deferrals**:
-- Computed offsets (`G LABEL+expr`) → Spec 008
-- External routine GOTO (`G LABEL^ROUTINE`) → Spec 009
-- Indirect GOTO (`G @VAR`) → Spec 007
+- Computed offsets (`G LABEL+expr`) → Spec 007
+- External routine GOTO (`G LABEL^ROUTINE`) → Spec 008
+- Indirect GOTO (`G @VAR`) → Spec 012
 - **State machine pattern** → Deferred (trampoline handles all patterns)
 
 ## Risk Register

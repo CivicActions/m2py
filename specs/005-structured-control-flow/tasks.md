@@ -519,5 +519,5 @@ After MVP:
 - Use `execute_mumps` fixture for full routine execution tests
 - Verify generated code passes `ast.parse()` before execution
 - Cross-label GOTO patterns → raise UnsupportedFeatureError (Spec 006)
-- REQUIRES_RUNTIME scope → raise UnsupportedFeatureError (Spec 006/007)
-- Postcondition codegen → out of scope (Spec 008), but test $TEST behavior
+- REQUIRES_RUNTIME scope → raise UnsupportedFeatureError (Spec 006/012)
+- Postcondition codegen → out of scope (Spec 011), but test $TEST behavior

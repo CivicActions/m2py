@@ -18,8 +18,8 @@ After `classify_gotos()`, each MGotoStatement has a `goto_type`:
 | `FORWARD_JUMP` (cross-label) | To later label | Trampoline: `return (label, state)` |
 | `BACKWARD_JUMP` (intra-label) | To earlier code in same label | `while True:` + `continue` |
 | `BACKWARD_JUMP` (cross-label) | To earlier label | Trampoline: `return (label, state)` |
-| `EXTERNAL` | To other routine | Not yet supported (Spec 009) |
-| `UNRESOLVED` | Dynamic target | Not yet supported (Spec 007) |
+| `EXTERNAL` | To other routine | Not yet supported (Spec 008) |
+| `UNRESOLVED` | Dynamic target | Not yet supported (Spec 012) |
 
 ## Intra-Label Forward Jump
 
@@ -249,8 +249,8 @@ The following GOTO patterns raise `NotImplementedError` or `UnsupportedFeatureEr
 
 | Pattern | Example | Reason | Spec |
 |---------|---------|--------|------|
-| External routine | `G LABEL^OTHER` | Requires module import handling | 009 |
-| Indirect | `G @VAR` | Runtime dispatch needed | 007 |
+| External routine | `G LABEL^OTHER` | Requires module import handling | 008 |
+| Indirect | `G @VAR` | Runtime dispatch needed | 012 |
 | Argumentless | `G` | Returns to caller | 006 |
 
 ## Backward Intra-Label GOTO (Self-Loop Pattern)
@@ -322,8 +322,8 @@ def _select_goto_strategy(routine: MRoutine) -> GotoStrategy:
 | `TRAMPOLINE` | Any cross-label GOTOs | Labels return target, dispatcher loop handles control |
 
 Unsupported patterns raise `UnsupportedFeatureError` referencing future specs:
-- `UNRESOLVED` GOTOs → "See Spec 007"
-- `EXTERNAL` GOTOs → "See Spec 009"
+- `UNRESOLVED` GOTOs → "See Spec 012"
+- `EXTERNAL` GOTOs → "See Spec 008"
 
 ## Trampoline Pattern (Spec 006 Phase 5+)
 

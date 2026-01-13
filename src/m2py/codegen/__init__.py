@@ -81,11 +81,11 @@ def _check_unsupported_gotos(routine: "MRoutine") -> None:
             if isinstance(stmt, MGotoStatement):
                 if stmt.goto_type == GotoType.UNRESOLVED:
                     raise UnsupportedFeatureError(
-                        "UNRESOLVED GOTO not supported - See Spec 007"
+                        "UNRESOLVED GOTO not supported - See Spec 012"
                     )
                 if stmt.goto_type == GotoType.EXTERNAL:
                     raise UnsupportedFeatureError(
-                        "EXTERNAL GOTO not supported - See Spec 009"
+                        "EXTERNAL GOTO not supported - See Spec 008"
                     )
 
 

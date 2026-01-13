@@ -669,9 +669,9 @@ def SUM(s: RoutineState) -> tuple[Optional[str], RoutineState]:
 4. Is another spike needed before committing to the selected approach?
 
 **Context**: Before finalizing our Phase 2 architecture decisions, we evaluated whether the selected patterns (Trampoline + RoutineState + MArray) can accommodate deferred GOTO features planned for future specs:
-- Spec 007: Indirect GOTO (`G @VAR`)
-- Spec 008: Computed offsets (`G LABEL+expr`)
-- Spec 009: External routine GOTO (`G LABEL^ROUTINE`)
+- Spec 012: Indirect GOTO (`G @VAR`)
+- Spec 007: Computed offsets (`G LABEL+expr`)
+- Spec 008: External routine GOTO (`G LABEL^ROUTINE`)
 
 #### Existing ASG Infrastructure
 
@@ -694,7 +694,7 @@ class GotoType(Enum):
     UNRESOLVED = auto()    # For indirection
 ```
 
-#### Feature 1: Indirect GOTO (`G @VAR`) → Spec 007
+#### Feature 1: Indirect GOTO (`G @VAR`) → Spec 012
 
 **MUMPS Semantics**:
 - `G @VAR` evaluates VAR at runtime to get label name
@@ -720,7 +720,7 @@ while label is not None:
 
 **Verdict**: This is the BEST case for trampoline - just need runtime evaluation of @VAR expression.
 
-#### Feature 2: Computed Offsets (`G LABEL+expr`) → Spec 008
+#### Feature 2: Computed Offsets (`G LABEL+expr`) → Spec 007
 
 **MUMPS Semantics**:
 - `G LABEL+3` jumps to 3 lines after LABEL
@@ -737,7 +737,7 @@ while label is not None:
 
 **Verdict**: FEASIBLE with extensions. Static offsets work naturally; dynamic requires finer-grained dispatch.
 
-#### Feature 3: External Routine GOTO (`G LABEL^ROUTINE`) → Spec 009
+#### Feature 3: External Routine GOTO (`G LABEL^ROUTINE`) → Spec 008
 
 **MUMPS Semantics**:
 - `G LABEL^ROUTINE` transfers control to another routine entirely

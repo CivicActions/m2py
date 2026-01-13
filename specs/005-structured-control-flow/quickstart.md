@@ -16,8 +16,8 @@ This guide covers implementing structured control flow code generation for the M
 **Out of scope** (deferred to later specs):
 - Cross-label GOTO → Spec 006
 - Backward intra-label GOTO → Spec 006
-- REQUIRES_RUNTIME scope strategy → Spec 006/007
-- Postcondition codegen → Spec 008
+- REQUIRES_RUNTIME scope strategy → Spec 006/012
+- Postcondition codegen → Spec 011
 
 ---
 

@@ -77,35 +77,35 @@ class TestCheckUnsupportedGotos:
     def test_unresolved_goto_raises_error(self):
         """T045a: UNRESOLVED GOTO raises UnsupportedFeatureError.
 
-        Pattern: goto_type=UNRESOLVED → error with Spec 007 reference
+        Pattern: goto_type=UNRESOLVED → error with Spec 012 reference
         """
         routine = self._create_routine_with_goto(GotoType.UNRESOLVED)
 
         with pytest.raises(UnsupportedFeatureError, match="UNRESOLVED GOTO"):
             _check_unsupported_gotos(routine)
 
-    def test_unresolved_goto_error_mentions_spec_007(self):
-        """T045a: Error message references Spec 007."""
+    def test_unresolved_goto_error_mentions_spec_012(self):
+        """T045a: Error message references Spec 012."""
         routine = self._create_routine_with_goto(GotoType.UNRESOLVED)
 
-        with pytest.raises(UnsupportedFeatureError, match="Spec 007"):
+        with pytest.raises(UnsupportedFeatureError, match="Spec 012"):
             _check_unsupported_gotos(routine)
 
     def test_external_goto_raises_error(self):
         """T045b: EXTERNAL GOTO raises UnsupportedFeatureError.
 
-        Pattern: goto_type=EXTERNAL → error with Spec 009 reference
+        Pattern: goto_type=EXTERNAL → error with Spec 008 reference
         """
         routine = self._create_routine_with_goto(GotoType.EXTERNAL)
 
         with pytest.raises(UnsupportedFeatureError, match="EXTERNAL GOTO"):
             _check_unsupported_gotos(routine)
 
-    def test_external_goto_error_mentions_spec_009(self):
-        """T045b: Error message references Spec 009."""
+    def test_external_goto_error_mentions_spec_008(self):
+        """T045b: Error message references Spec 008."""
         routine = self._create_routine_with_goto(GotoType.EXTERNAL)
 
-        with pytest.raises(UnsupportedFeatureError, match="Spec 009"):
+        with pytest.raises(UnsupportedFeatureError, match="Spec 008"):
             _check_unsupported_gotos(routine)
 
     def test_forward_jump_does_not_raise(self):

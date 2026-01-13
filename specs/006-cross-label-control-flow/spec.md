@@ -208,9 +208,9 @@ As a developer, the code generator automatically selects the appropriate strateg
 - **Mixed FOR and cross-label patterns**: GOTO exiting FOR to another label that later GOTOs back must work
 
 **Edge cases explicitly deferred to later specs**:
-- Computed offsets (`G LABEL+expr`) -> Spec 008
-- External routine GOTO (`G LABEL^OTHER`) -> Spec 009
-- Indirect GOTO (`G @VAR`) -> Spec 007
+- Computed offsets (`G LABEL+expr`) -> Spec 007
+- External routine GOTO (`G LABEL^OTHER`) -> Spec 008
+- Indirect GOTO (`G @VAR`) -> Spec 012
 - Argumentless GOTO (`G` alone) - appears invalid in YDB, verify and document
 
 ## Requirements *(mandatory)*
@@ -247,7 +247,7 @@ As a developer, the code generator automatically selects the appropriate strateg
 - **FR-017**: System SHOULD set `MRoutine.needs_trampoline=True` during analysis for cross-label patterns
 - **FR-018**: Strategy selection MUST happen before code emission based on ASG analysis
 
-**Note**: State machine pattern was evaluated but deferred. Trampoline handles all known cross-label patterns including cycles. If truly irreducible patterns are discovered (e.g., computed offsets requiring line-level dispatch), state machine may be reconsidered in Spec 008.
+**Note**: State machine pattern was evaluated but deferred. Trampoline handles all known cross-label patterns including cycles. If truly irreducible patterns are discovered (e.g., computed offsets requiring line-level dispatch), state machine may be reconsidered in Spec 007.
 
 #### Variable Visibility
 
@@ -298,7 +298,7 @@ As a developer, the code generator automatically selects the appropriate strateg
 
 ### Session 2025-01-11
 
-- Q: What control flow patterns should trigger `has_unstructured_goto=True` and force state machine generation? → A: **DEFERRED** - `has_unstructured_goto` is not set in Spec 006. All cross-label patterns use trampoline. State machine was evaluated but found unnecessary; if truly irreducible patterns are discovered (e.g., computed offsets in Spec 008), `has_unstructured_goto` may be reconsidered.
+- Q: What control flow patterns should trigger `has_unstructured_goto=True` and force state machine generation? → A: **DEFERRED** - `has_unstructured_goto` is not set in Spec 006. All cross-label patterns use trampoline. State machine was evaluated but found unnecessary; if truly irreducible patterns are discovered (e.g., computed offsets in Spec 007), `has_unstructured_goto` may be reconsidered.
 - Q: Should subscripted local variables be in scope for Spec 006? → A: Yes, include minimal dict-based implementation for subscripted locals (needed for realistic cross-label variable visibility tests)
 - Q: How should multiple GOTO targets (`G A,B,C`) interact with trampoline? → A: Execute all targets in sequence within one trampoline iteration; trampoline only dispatches the initial target
 - Q: When should the V1GO1.m spike execute relative to implementation? → A: Spike IS first implementation phase (prototypes both strategies); followed by analysis/decision phase; then productionization phase (stub populated with tasks after decision)
@@ -312,9 +312,9 @@ As a developer, the code generator automatically selects the appropriate strateg
 - `has_unstructured_goto` is DEFERRED for Spec 006 - not set or used; all cross-label patterns use trampoline
 - `needs_trampoline=True` is set for ANY cross-label GOTOs (not just cycles)
 - `FunctionSignature.input_variables` and `output_variables` are computed by variable analysis
-- Computed offsets (`G LABEL+expr`) are deferred to Spec 008
-- External routine calls (`G LABEL^ROUTINE`) are deferred to Spec 009
-- Indirect GOTO (`G @VAR`) is deferred to Spec 007
+- Computed offsets (`G LABEL+expr`) are deferred to Spec 007
+- External routine calls (`G LABEL^ROUTINE`) are deferred to Spec 008
+- Indirect GOTO (`G @VAR`) is deferred to Spec 012
 - Argumentless GOTO (`G` alone) is invalid in YDB (verified - causes syntax error)
 
 ## ASG Gap Handling (Critical)
@@ -359,14 +359,14 @@ As a developer, the code generator automatically selects the appropriate strateg
 
 The following are explicitly **out of scope** for Spec 006:
 
-- **Computed offsets** (`G LABEL+expr`, `G LABEL+^VAR`) -> Spec 008
-- **Line-based dispatch** for computed targets -> Spec 008  
-- **External routine GOTO** (`G LABEL^ROUTINE`) -> Spec 009
-- **Indirect GOTO** (`G @VAR`) -> Spec 007
-- **REQUIRES_RUNTIME scope strategy** (indirection defeats analysis) -> Spec 007
-- **XECUTE command** -> Spec 007
-- **Global variables** (`^name`) -> Spec 008
-- **Intrinsic functions** ($PIECE, $LENGTH, etc.) -> Spec 008
+- **Computed offsets** (`G LABEL+expr`, `G LABEL+^VAR`) -> Spec 007
+- **Line-based dispatch** for computed targets -> Spec 007  
+- **External routine GOTO** (`G LABEL^ROUTINE`) -> Spec 008
+- **Indirect GOTO** (`G @VAR`) -> Spec 012
+- **REQUIRES_RUNTIME scope strategy** (indirection defeats analysis) -> Spec 012
+- **XECUTE command** -> Spec 012
+- **Global variables** (`^name`) -> Spec 009
+- **Intrinsic functions** ($PIECE, $LENGTH, etc.) -> Spec 010
 - **Subscripted local variables** - NOW IN SCOPE for Spec 006 (MArray class implementation for cross-label visibility tests)
 - **State machine pattern** - Deferred (trampoline handles all known patterns; reconsider if truly irreducible flow discovered)
 
@@ -467,7 +467,7 @@ This is NOT a Python dict - naive implementation will fail.
 |----------|----------------|------|------|
 | Custom MArray class | `class MArray` with value + children | Clean API, MUMPS-native | More code |
 | Nested dict + _value key | `{"_value": 1, 1: {"_value": 2}}` | Uses stdlib | Awkward access pattern |
-| Defer to Spec 008 | Remove from Spec 006 scope | Reduce risk | Acceptance scenario #3 invalid |
+| Defer to Spec 007 | Remove from Spec 006 scope | Reduce risk | Acceptance scenario #3 invalid |
 
 **Results** (from research R5):
 - ✅ MArray class works for User Story 3 scenario: `S A(1)=10,A(2)=20 G SUM` / `SUM W A(1)+A(2)`

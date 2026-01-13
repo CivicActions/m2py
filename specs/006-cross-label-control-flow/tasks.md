@@ -163,8 +163,8 @@ Tests are generated in each phase as implementation progresses. Per spec, use em
   - `needs_trampoline=True` → `TRAMPOLINE` with RoutineState
   - `needs_trampoline=False` → `SIMPLE_FUNCTIONS` (current Spec 005 behavior)
 - [X] T045 Add GotoStrategy enum to src/m2py/codegen/enums.py (TRAMPOLINE, SIMPLE_FUNCTIONS)
-- [X] T045a Emit `UnsupportedFeatureError("UNRESOLVED GOTO not supported - See Spec 007")` for `goto_type=UNRESOLVED`
-- [X] T045b Emit `UnsupportedFeatureError("EXTERNAL GOTO not supported - See Spec 009")` for `goto_type=EXTERNAL`
+- [X] T045a Emit `UnsupportedFeatureError("UNRESOLVED GOTO not supported - See Spec 012")` for `goto_type=UNRESOLVED`
+- [X] T045b Emit `UnsupportedFeatureError("EXTERNAL GOTO not supported - See Spec 008")` for `goto_type=EXTERNAL`
 - [X] T046 Unit test strategy selection in tests/unit/codegen/test_strategy_selection.py
 
 **Note**: STATE_MACHINE strategy deferred - trampoline handles all patterns.
@@ -448,7 +448,7 @@ Added bonus tests:
 - [X] T120 [P] Update docs/codegen/goto_handling.md with cross-label patterns
   - Added "Multiple GOTO Targets" section
   - Removed "Multiple targets" from "Not Yet Supported" table
-- [X] T121 [P] Update docs/limitations.md with Spec 006 deferrals (007, 008, 009, state machine)
+- [X] T121 [P] Update docs/limitations.md with Spec 006 deferrals (007, 008, 012, state machine)
   - Limitations documented in goto_handling.md "Not Yet Supported" table
   - Argumentless GOTO deferred, state machine deferred
 - [X] T122 [P] Update docs/architecture.md with trampoline/RoutineState/MArray patterns

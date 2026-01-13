@@ -20,14 +20,14 @@ class TestQuitCommandCodegen:
         assert "return" in code
 
     @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: QUIT with value - Spec 008")
+    @pytest.mark.xfail(reason="Not yet implemented: QUIT with value - Spec 010")
     def test_quit_with_value(self, generate_python):
         """QUIT expr generates return value (§8.2.16).
 
         T048: QUIT with return_value generates return <expr>.
-        Full extrinsic function support is Spec 008.
+        Full extrinsic function support is Spec 010.
         """
-        pytest.fail("Stub - extrinsic functions deferred to Spec 008")
+        pytest.fail("Stub - extrinsic functions deferred to Spec 010")
 
     def test_quit_in_for(self, generate_python):
         """QUIT in FOR generates break (§8.2.16).

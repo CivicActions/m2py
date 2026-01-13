@@ -356,7 +356,7 @@ class RoutineGenerator:
         ):
             raise UnsupportedFeatureError(
                 f"Label '{label.name}' requires runtime scope (indirection/XECUTE). "
-                "This is not supported in Spec 005. See Spec 006/007."
+                "This is not supported in Spec 005. See Spec 006/012."
             )
 
         # Generate function definition with formal parameters
@@ -487,7 +487,7 @@ class RoutineGenerator:
         ):
             raise UnsupportedFeatureError(
                 f"Label '{label.name}' requires runtime scope (indirection/XECUTE). "
-                "This is not supported in Spec 005. See Spec 006/007."
+                "This is not supported in Spec 005. See Spec 006/012."
             )
 
         # Generate function definition with state parameter

@@ -16,9 +16,9 @@ Implement Python code generation for MUMPS structured control flow constructs. T
 **Explicitly out of scope** (handled in later specs):
 - Cross-label GOTO of any kind (`is_cross_label=True`) → Spec 006
 - Backward intra-label GOTO (creates implicit loops) → Spec 006
-- `REQUIRES_RUNTIME` scope strategy → Spec 006/007
-- Postcondition codegen (`S:cond X=1`, `Q:cond`) → Spec 008
-- Full extrinsic functions (`$$label^routine`) → Spec 008
+- `REQUIRES_RUNTIME` scope strategy → Spec 006/012
+- Postcondition codegen (`S:cond X=1`, `Q:cond`) → Spec 011
+- Full extrinsic functions (`$$label^routine`) → Spec 010
 
 All patterns leverage existing analysis infrastructure (for_analysis, goto_analysis, variables) - no new ASG types needed.
 

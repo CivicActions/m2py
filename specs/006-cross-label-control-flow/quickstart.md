@@ -162,9 +162,9 @@ print(f"needs_trampoline: {routine.needs_trampoline}")
 
 The following are NOT supported in Spec 006:
 
-- Computed offsets: `G LABEL+expr` → Spec 008
-- External GOTO: `G LABEL^ROUTINE` → Spec 009
-- Indirect GOTO: `G @VAR` → Spec 007
+- Computed offsets: `G LABEL+expr` → Spec 007
+- External GOTO: `G LABEL^ROUTINE` → Spec 008
+- Indirect GOTO: `G @VAR` → Spec 012
 - Argumentless GOTO: `G` alone → Invalid in YDB
 
 ## Testing Your Changes
