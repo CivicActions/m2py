@@ -126,7 +126,7 @@
 
 ---
 
-## Phase 7: User Story 5 - Invalid Offset Error Handling (Priority: P2)
+## Phase 7: User Story 5 - Invalid Offset Error Handling (Priority: P2) ✅ COMPLETE
 
 **Goal**: Invalid offsets (past end of routine) raise descriptive runtime error
 
@@ -134,14 +134,14 @@
 
 ### Implementation for User Story 5
 
-- [ ] T035 [US5] Add error handling in dispatcher: check if target line exists in `_line_map`
-- [ ] T036 [US5] If target not in `_line_map` and no next executable, raise ValueError with descriptive message
-- [ ] T037 [US5] Error message format: "Entry point LABEL+OFFSET not valid" (matches YDB format)
-- [ ] T038 [US5] Add unit test: `G STAR+100` raises error (literal offset past end)
-- [ ] T039 [US5] Add unit test: `S N=99 G STAR+N` raises error at runtime (variable offset past end)
-- [ ] T040 [US5] Add YDB validation to verify error message matches YDB semantics
+- [X] T035 [US5] Add error handling in dispatcher: check if target line exists in `_line_map`
+- [X] T036 [US5] If target not in `_line_map` and no next executable, raise ValueError with descriptive message
+- [X] T037 [US5] Error message format: "Entry point LABEL+OFFSET not valid" (matches YDB format)
+- [X] T038 [US5] Add unit test: `G STAR+100` raises error (literal offset past end)
+- [X] T039 [US5] Add unit test: `S N=99 G STAR+N` raises error at runtime (variable offset past end)
+- [X] T040 [US5] Add YDB validation to verify error message matches YDB semantics
 
-**Checkpoint**: Invalid offset errors handled - matches YDB error behavior
+**Checkpoint**: Invalid offset errors handled - matches YDB error behavior ✅
 
 ---
 

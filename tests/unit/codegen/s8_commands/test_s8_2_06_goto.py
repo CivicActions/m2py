@@ -870,7 +870,10 @@ STAR W "X" Q"""
     def test_offset_generates_line_dispatch(self, generate_python):
         """Phase 4: GOTO with offset returns (line_number, state).
 
-        G LABEL+N generates: return (label_line + int(N), state)
+        G LABEL+N generates:
+        - _target = label_line + int(N)
+        - Validation check for invalid offset (Phase 7)
+        - return (_target, state)
         """
         source = """TEST G STAR+2 Q
 STAR W "0"
@@ -878,9 +881,14 @@ STAR W "0"
  W "2"
  Q"""
         code = generate_python(source)
-        # Check that offset call generates line-based dispatch
-        # Label STAR is at line 2, so STAR+2 should be: return (2 + int(2), state)
-        assert "return (2 + int(2), state)" in code
+        # Check that offset call generates line-based dispatch with validation
+        # Label STAR is at line 2, so STAR+2 computes: _target = 2 + int(2)
+        assert "_target = 2 + int(2)" in code
+        # Phase 7: Validation check for invalid offset
+        assert "if _target not in _line_map:" in code
+        assert 'raise ValueError("Entry point STAR+' in code
+        # Return uses _target
+        assert "return (_target, state)" in code
 
     # Phase 5: Variable Offset GOTO (T025-T029)
 
@@ -997,6 +1005,43 @@ STAR W "0"
  Q"""
         result = execute_mumps(source)
         assert result.output == "2"
+
+    # Phase 7: Invalid Offset Error Handling (T035-T040)
+
+    def test_invalid_literal_offset_raises_error(self, execute_mumps):
+        """T038: G STAR+100 raises error (literal offset past end).
+
+        When offset is beyond the routine's end, a ValueError is raised
+        with message "Entry point LABEL+OFFSET not valid".
+        """
+        source = """TEST G STAR+100 Q
+STAR W "X" Q"""
+        result = execute_mumps(source)
+        assert result.success is False
+        assert "Entry point STAR+100 not valid" in result.error
+
+    def test_invalid_variable_offset_raises_error(self, execute_mumps):
+        """T039: S N=99 G STAR+N raises error at runtime.
+
+        Variable offset that evaluates to invalid value at runtime
+        raises error with computed offset value in message.
+        """
+        source = """TEST S N=99 G STAR+N Q
+STAR W "X" Q"""
+        result = execute_mumps(source)
+        assert result.success is False
+        assert "Entry point STAR+99 not valid" in result.error
+
+    def test_invalid_do_offset_raises_error(self, execute_mumps):
+        """T038 extension: D SUB+100 raises error (DO offset past end).
+
+        DO with invalid offset also raises error matching YDB behavior.
+        """
+        source = """TEST D SUB+100 W "after" Q
+SUB W "X" Q"""
+        result = execute_mumps(source)
+        assert result.success is False
+        assert "Entry point SUB+100 not valid" in result.error
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: same level enforcement")

@@ -1133,7 +1133,15 @@ def _generate_single_target_goto(
                 )
             label_line = target.target.line_number
             offset_code = generate_expr(target.offset, ctx)
-            ctx.emitter.line(f"return ({label_line} + int({offset_code}), state)")
+            # Spec 007 Phase 7 (T035-T037): Validate offset and raise descriptive error
+            ctx.emitter.line(f"_target = {label_line} + int({offset_code})")
+            ctx.emitter.line("if _target not in _line_map:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    f'raise ValueError("Entry point {target.name}+" '
+                    f'+ str(int({offset_code})) + " not valid")'
+                )
+            ctx.emitter.line("return (_target, state)")
         else:
             # Trampoline pattern: return (label_name, state) tuple
             # The trampoline dispatcher will call the target label
@@ -1324,6 +1332,19 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
             internal_func = "_" + label_name
             # Generate offset expression code
             offset_code = generate_expr(target.offset, ctx)
+
+            # Spec 007 Phase 7 (T035-T037): Validate offset for DO as well
+            # Get the label's line number for validation
+            if target.target is not None and target.target.line_number is not None:
+                label_line = target.target.line_number
+                ctx.emitter.line(f"_target = {label_line} + int({offset_code})")
+                ctx.emitter.line("if _target not in _line_map:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        f'raise ValueError("Entry point {target.name}+" '
+                        f'+ str(int({offset_code})) + " not valid")'
+                    )
+
             # Build call with state and _start_offset
             # Note: args handling with offset is complex - for now just handle simple case
             if args:
