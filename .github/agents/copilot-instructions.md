@@ -15,6 +15,7 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - Python 3.10+ (target output); textX for parser + extX (parsing), itertools (FOR codegen), pytest (testing) (005-structured-control-flow)
 - N/A (transpiler, no persistence) (005-structured-control-flow)
 - Python 3.10+ + extX (parsing), pytest (testing), uv (package management) (006-cross-label-control-flow)
+- Python 3.10+ + extX (parser), pytest (testing), dataclasses (ASG/codegen) (007-computed-offsets)
 
 - (001-textx-semantic-graph)
 
@@ -35,9 +36,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 007-computed-offsets: Added Python 3.10+ + extX (parser), pytest (testing), dataclasses (ASG/codegen)
 - 006-cross-label-control-flow: Added Python 3.10+ + extX (parsing), pytest (testing), uv (package management)
 - 005-structured-control-flow: Added Python 3.10+ (target output); textX for parser + extX (parsing), itertools (FOR codegen), pytest (testing)
-- 005-structured-control-flow: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 
 
 <!-- MANUAL ADDITIONS START -->
