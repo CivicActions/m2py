@@ -296,6 +296,77 @@ unicode_files = _make_suite_files_fixture("unicode")
 
 
 # =============================================================================
+# External Calls Test Fixtures (Spec 008)
+# =============================================================================
+
+# Path to external call test fixtures
+EXTERNAL_FIXTURES = Path(__file__).parent / "fixtures" / "external"
+
+
+@pytest.fixture
+def external_fixtures_path() -> Path:
+    """Return the path to the external call test fixtures directory."""
+    return EXTERNAL_FIXTURES
+
+
+@pytest.fixture
+def external_sys_path(tmp_path: Path) -> Iterator[Path]:
+    """Fixture that adds external fixtures to sys.path for module imports.
+
+    This fixture:
+    1. Adds tests/fixtures/external/ to sys.path
+    2. Yields the path for test use
+    3. Removes the path and clears cached modules on cleanup
+
+    Usage:
+        def test_external_do(external_sys_path):
+            # sys.path now includes external fixtures
+            import ext2  # Can import transpiled external routines
+    """
+    import sys
+
+    # Add fixtures directory to sys.path
+    fixtures_str = str(EXTERNAL_FIXTURES)
+    sys.path.insert(0, fixtures_str)
+
+    yield EXTERNAL_FIXTURES
+
+    # Cleanup: remove from sys.path
+    if fixtures_str in sys.path:
+        sys.path.remove(fixtures_str)
+
+    # Clear any cached modules from fixtures directory
+    to_remove = [
+        name
+        for name, mod in sys.modules.items()
+        if hasattr(mod, "__file__")
+        and mod.__file__
+        and EXTERNAL_FIXTURES.as_posix() in mod.__file__
+    ]
+    for name in to_remove:
+        del sys.modules[name]
+
+
+@pytest.fixture
+def external_file() -> Callable[[str], str]:
+    """Factory fixture to load a specific external fixture .m file by name.
+
+    Usage:
+        def test_parse_ext1(external_file):
+            source = external_file("ext1.m")
+            # ... parse and validate
+    """
+
+    def _load_external_file(filename: str) -> str:
+        file_path = EXTERNAL_FIXTURES / filename
+        if not file_path.exists():
+            raise FileNotFoundError(f"External fixture not found: {file_path}")
+        return file_path.read_text(encoding="utf-8")
+
+    return _load_external_file
+
+
+# =============================================================================
 # Legacy MUGJ-Specific Fixtures
 # =============================================================================
 

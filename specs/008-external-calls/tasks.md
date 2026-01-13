@@ -9,12 +9,12 @@
 
 **Purpose**: Create test fixtures and development infrastructure
 
-- [ ] T001 Create external call test fixtures directory at tests/fixtures/external/
-- [ ] T002 [P] Create ext1.m fixture with DO/GOTO calls in tests/fixtures/external/ext1.m
-- [ ] T003 [P] Create ext2.m fixture with helper labels in tests/fixtures/external/ext2.m
-- [ ] T004 [P] Create ext3.m fixture for $TEXT testing in tests/fixtures/external/ext3.m
-- [ ] T005 [P] Create circular.m fixture for circular call testing in tests/fixtures/external/circular.m
-- [ ] T006 Add pytest fixture for sys.path configuration (insert tests/fixtures/external/ into sys.path) in tests/conftest.py
+- [X] T001 Create external call test fixtures directory at tests/fixtures/external/
+- [X] T002 [P] Create ext1.m fixture with DO/GOTO calls in tests/fixtures/external/ext1.m
+- [X] T003 [P] Create ext2.m fixture with helper labels in tests/fixtures/external/ext2.m
+- [X] T004 [P] Create ext3.m fixture for $TEXT testing in tests/fixtures/external/ext3.m
+- [X] T005 [P] Create circular.m fixture for circular call testing in tests/fixtures/external/circular.m
+- [X] T006 Add pytest fixture for sys.path configuration (insert tests/fixtures/external/ into sys.path) in tests/conftest.py
 
 **Checkpoint**: Test fixtures exist and can be used by subsequent phases
 
