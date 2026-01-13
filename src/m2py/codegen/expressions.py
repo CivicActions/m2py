@@ -226,8 +226,11 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     Per MUMPS spec, the caller's $TEST is saved before the call and restored
     after, so the callee's $TEST changes don't leak back.
 
-    Generated pattern:
+    Generated pattern (internal):
         _call_extrinsic(LABEL, arg1, arg2)
+
+    Generated pattern (external - Spec 008 Phase 7):
+        _call_extrinsic(ext2.ADD, arg1, arg2, _scope=_scope)
 
     The _call_extrinsic helper handles save/restore of _test.
 
@@ -239,7 +242,7 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         Python expression string
 
     Raises:
-        NotImplementedError: For external routine calls (Spec 008)
+        NotImplementedError: For unsupported patterns
     """
     # Get the target label
     if expr.target is None:
@@ -249,13 +252,27 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     if not label_name:
         raise NotImplementedError("Extrinsic function with empty label not supported")
 
-    # Check for external routine reference (deferred to Spec 008)
+    # Spec 008 Phase 7 (T043-T046): Handle external routine extrinsic
     if expr.target.routine:
-        raise NotImplementedError(
-            f"External routine extrinsic ($$label^routine) not yet supported. "
-            f"Target: {label_name}^{expr.target.routine}"
-        )
+        routine_name = expr.target.routine
 
+        # T044: Generate import statement for external routine
+        ctx.emitter.line(f"import {routine_name}")
+
+        # Translate label name to Python function name
+        func_name = translate_name(label_name)
+
+        # Generate arguments
+        args = _generate_extrinsic_arguments(expr.arguments, ctx)
+
+        # T045-T046: Generate call via _call_extrinsic with module prefix and _scope
+        # The _call_extrinsic helper provides $TEST save/restore
+        if args:
+            return f"_call_extrinsic({routine_name}.{func_name}, {args}, _scope=_scope)"
+        else:
+            return f"_call_extrinsic({routine_name}.{func_name}, _scope=_scope)"
+
+    # Internal extrinsic (within same routine)
     # Translate label name to Python function name
     func_name = translate_name(label_name)
 

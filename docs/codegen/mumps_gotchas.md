@@ -521,6 +521,28 @@ D @A^@B            ; Doubly indirect
 - `MCall.is_resolved`: False (cannot validate externally)
 - `MCall.call_type`: `ROUTINE_CALL`
 
+### External Extrinsic Functions (Spec 008 Phase 7)
+
+External extrinsic functions call functions in other routines and return values:
+
+```mumps
+S X=$$ADD^MATH(3,5)      ; Call ADD function in MATH routine
+S Y=$$MAX^UTIL(A,B,C)    ; Call MAX with multiple args
+```
+
+**Code Generation Pattern:**
+```python
+# Generated code for: S X=$$ADD^MATH(3,5)
+import MATH
+X = _call_extrinsic(MATH.ADD, 3, 5, _scope=_scope)
+```
+
+**Key Implementation Details:**
+- Import statement generated inline for external routine
+- `_call_extrinsic` helper saves/restores `$TEST` around call
+- `_scope` parameter passed for cross-routine variable visibility
+- Return value from external function becomes expression value
+
 ---
 
 ## READ Command Variants

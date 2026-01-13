@@ -548,3 +548,145 @@ HELPER
                 for mod in ["ext2", "ext3"]:
                     if mod in sys.modules:
                         del sys.modules[mod]
+
+
+class TestExternalExtrinsic:
+    """Test User Story 5: $$FUNC^ROUTINE calls external function and returns value (Phase 7)."""
+
+    def test_external_extrinsic_generates_import(self):
+        """$$ADD^ext2(3,5) should generate import statement and pass _scope."""
+        source = """ext1
+ S X=$$ADD^ext2(3,5)
+ Q
+"""
+        code = generate_python(source)
+        assert "import ext2" in code
+        # T045: External extrinsic calls pass _scope for variable visibility
+        assert "_call_extrinsic(ext2.ADD, 3, 5, _scope=_scope)" in code
+
+    def test_external_extrinsic_returns_value(self):
+        """$$ADD^ext2(3,5) should call external function and return value."""
+        # ext2 defines ADD function
+        ext2_source = """ext2
+ Q
+ADD(A,B)
+ Q A+B
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1 calls $$ADD^ext2
+        ext1_source = """ext1
+ S X=$$ADD^ext2(3,5)
+ Q X
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "ext2.py").write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                result = namespace["ext1"]()
+                assert result == 8
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+    def test_external_extrinsic_test_isolation(self):
+        """$TEST should be isolated across external extrinsic calls (T046)."""
+        # ext2 defines SETTRUE which sets $TEST to true
+        ext2_source = """ext2
+ Q
+SETTRUE()
+ S X=1
+ I X
+ Q "OK"
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1 sets $TEST to false, calls external extrinsic, then checks $TEST
+        ext1_source = """ext1
+ S X=0
+ I X
+ S Y=$$SETTRUE^ext2()
+ I '$T Q "PASS"
+ Q "FAIL"
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "ext2.py").write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                result = namespace["ext1"]()
+
+                # ext1 should have its $TEST restored after extrinsic call
+                # $TEST was false (I X failed), should remain false after $$SETTRUE
+                assert result == "PASS"
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+    def test_external_extrinsic_scope_parameter_passed(self):
+        """External extrinsic should receive _scope parameter (infrastructure test).
+
+        Note: Full variable visibility requires variable storage to use _scope,
+        which is not yet implemented. This test verifies _scope parameter
+        infrastructure works correctly.
+        """
+        # ext2 defines CHECKSCOPE which checks if _scope was passed
+        ext2_source = """ext2
+ Q
+CHECKSCOPE()
+ Q "OK"
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1 calls external extrinsic
+        ext1_source = """ext1
+ S RESULT=$$CHECKSCOPE^ext2()
+ Q RESULT
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "ext2.py").write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                # Call with shared _scope - should work without error
+                shared_scope = {"test_var": 42}
+                result = namespace["ext1"](_scope=shared_scope)
+                assert result == "OK"
+
+                # Infrastructure test: _scope was passed through without error
+                # Full variable visibility test would verify shared_scope changes
+                # but this requires variable storage to use _scope (future work)
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]

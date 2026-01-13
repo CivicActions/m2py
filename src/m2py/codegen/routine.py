@@ -329,14 +329,20 @@ class RoutineGenerator:
 
         # T066: Extrinsic function helper - saves/restores $TEST
         ctx.emitter.blank()
-        ctx.emitter.line("def _call_extrinsic(_ef, *args):")
+        ctx.emitter.line("def _call_extrinsic(_ef, *args, _scope=None):")
         with ctx.emitter.indented():
             ctx.emitter.line('"""Call extrinsic function with $TEST save/restore."""')
             ctx.emitter.line("global _test")
             ctx.emitter.line("_saved = _test")
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
-                ctx.emitter.line("return _ef(*args)")
+                # T045: Pass _scope to external extrinsic if provided
+                ctx.emitter.line("if _scope is not None:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("return _ef(*args, _scope=_scope)")
+                ctx.emitter.line("else:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("return _ef(*args)")
             ctx.emitter.line("finally:")
             with ctx.emitter.indented():
                 ctx.emitter.line("_test = _saved")
