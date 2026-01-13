@@ -73,18 +73,18 @@
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Modify `_generate_single_target_goto()` in statements.py to detect `target.offset is not None`
-- [ ] T016 [US1] For TRAMPOLINE strategy with offset: emit `return (label_line + int(offset_expr), state)` instead of label name
-- [ ] T017 [US1] Use `generate_expr(target.offset, ctx)` for offset expression code generation
-- [ ] T018 [US1] Modify `_generate_trampoline_code()` in routine.py to handle `int` targets in dispatcher
-- [ ] T019 [US1] Update dispatcher: `if isinstance(target, int): label, offset = _line_map[target]; func(state, _start_offset=offset)`
-- [ ] T020 [US1] Modify `_generate_trampoline_label()` to accept `_start_offset=0` parameter
-- [ ] T021 [US1] Generate offset guards: `if _start_offset <= N:` for each statement in label body
-- [ ] T022 [US1] Add unit test: `G STAR+2` outputs "2" (skips first 2 lines after label)
-- [ ] T023 [US1] Add unit test: `G STAR+0` executes label line itself
-- [ ] T024 [US1] Add YDB validation: `uv run python utils/validate.py --code 'TEST G STAR+2 Q\nSTAR W "0"\n W "1"\n W "2"\n Q'`
+- [X] T015 [US1] Modify `_generate_single_target_goto()` in statements.py to detect `target.offset is not None`
+- [X] T016 [US1] For TRAMPOLINE strategy with offset: emit `return (label_line + int(offset_expr), state)` instead of label name
+- [X] T017 [US1] Use `generate_expr(target.offset, ctx)` for offset expression code generation
+- [X] T018 [US1] Modify `_generate_trampoline_code()` in routine.py to handle `int` targets in dispatcher
+- [X] T019 [US1] Update dispatcher: `if isinstance(target, int): label, offset = _line_map[target]; func(state, _start_offset=offset)`
+- [X] T020 [US1] Modify `_generate_trampoline_label()` to accept `_start_offset=0` parameter
+- [X] T021 [US1] Generate offset guards: `if _start_offset <= N:` for each statement in label body
+- [X] T022 [US1] Add unit test: `G STAR+2` outputs "2" (skips first 2 lines after label)
+- [X] T023 [US1] Add unit test: `G STAR+0` executes label line itself
+- [X] T024 [US1] Add YDB validation: `uv run python utils/validate.py --code 'TEST G STAR+2 Q\nSTAR W "0"\n W "1"\n W "2"\n Q'`
 
-**Checkpoint**: Literal offset GOTO working - can dispatch to specific line by integer offset
+**Checkpoint**: Literal offset GOTO working - can dispatch to specific line by integer offset ✅
 
 ---
 

@@ -395,6 +395,40 @@ def generate_scope_statements(
         i += 1
 
 
+def generate_offset_guarded_statements(
+    statements: List["MStatement"],
+    label_line: int,
+    ctx: "GeneratorContext",
+) -> None:
+    """Generate statements with offset guards for computed offset support.
+
+    Spec 007 (T021): Each statement is wrapped with an offset guard that
+    checks if the statement should be skipped based on _start_offset.
+
+    The guard is: if _start_offset <= offset:
+    where offset = statement.line_number - label.line_number
+
+    This ensures that when entering a label at offset N, statements
+    at offsets 0 through N-1 are skipped.
+
+    Args:
+        statements: List of statements to generate
+        label_line: Line number of the containing label (for offset calculation)
+        ctx: Generator context
+    """
+    for stmt in statements:
+        stmt_line = stmt.line_number
+        if stmt_line is not None:
+            # Calculate offset from label line
+            offset = stmt_line - label_line
+            ctx.emitter.line(f"if _start_offset <= {offset}:")
+            with ctx.emitter.indented():
+                generate_statement(stmt, ctx)
+        else:
+            # No line number - always execute (shouldn't happen normally)
+            generate_statement(stmt, ctx)
+
+
 def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     """Generate Python statement from ASG statement node.
 
@@ -1089,9 +1123,21 @@ def _generate_single_target_goto(
     # Cross-label GOTO: pattern depends on strategy
     # Spec 006 (T055): Check strategy and generate appropriate pattern
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
-        # Trampoline pattern: return (label_name, state) tuple
-        # The trampoline dispatcher will call the target label
-        ctx.emitter.line(f'return ("{target.name}", state)')
+        # Spec 007 (T015-T017): Check for offset and emit line-based dispatch
+        if target.offset is not None:
+            # Offset GOTO: compute target line = label_line + offset
+            # The dispatcher will look up (label, offset) in _line_map
+            if target.target is None or target.target.line_number is None:
+                raise UnsupportedFeatureError(
+                    f"Cannot resolve offset GOTO target: {target.name}"
+                )
+            label_line = target.target.line_number
+            offset_code = generate_expr(target.offset, ctx)
+            ctx.emitter.line(f"return ({label_line} + int({offset_code}), state)")
+        else:
+            # Trampoline pattern: return (label_name, state) tuple
+            # The trampoline dispatcher will call the target label
+            ctx.emitter.line(f'return ("{target.name}", state)')
     else:
         # SIMPLE_FUNCTIONS pattern: function call + return
         # Get the label name and translate it

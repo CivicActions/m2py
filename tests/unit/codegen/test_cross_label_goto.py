@@ -144,8 +144,9 @@ NEXT W "done" Q"""
 
         # Entry point should be named after first label
         assert "def TEST():" in code
-        assert "while label is not None:" in code
-        assert "func = _labels[label]" in code
+        # Spec 007: 'target' is now used instead of 'label' to support int line dispatch
+        assert "while target is not None:" in code
+        assert "func = _labels[target]" in code
 
     def test_trampoline_generates_state_class(self):
         """Trampoline pattern generates RoutineState class."""
@@ -520,7 +521,8 @@ NEXT W X Q"""
 
         # Trampoline should initialize state and pass through
         assert "state = RoutineState()" in code
-        assert "label, state = func(state)" in code
+        # Spec 007: 'target' is now used instead of 'label' to support int line dispatch
+        assert "target, state = func(state)" in code
 
     def test_routinestate_enables_ide_autocomplete(self):
         """T097: RoutineState uses @dataclass with typed fields for IDE support."""

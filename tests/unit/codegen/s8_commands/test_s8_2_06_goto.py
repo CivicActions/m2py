@@ -691,8 +691,9 @@ NEXT W "done" Q"""
         )
         # Entry point with trampoline dispatcher
         assert "def TEST():" in code
-        assert "while label is not None:" in code
-        assert "func = _labels[label]" in code
+        # Spec 007: 'target' is now used instead of 'label' to support int line dispatch
+        assert "while target is not None:" in code
+        assert "func = _labels[target]" in code
 
     def test_shared_state_class(self, generate_python):
         """Labels-as-functions share state via RoutineState class.
@@ -826,14 +827,43 @@ STAR W "0"
         assert '3: ("STAR", 1),' in code
         assert '4: ("STAR", 2),' in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: line dispatch call")
-    def test_line_dispatch_call(self, generate_python):
-        """GOTO with offset dispatches by computed line.
+    def test_literal_offset_goto_skips_lines(self, execute_mumps):
+        """T022: G STAR+2 outputs "2" (skips first 2 lines after label).
 
-        G LABEL+N generates: _goto_line(label_line + N)
+        Literal offset GOTO dispatches by computed line number.
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST G STAR+2 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_offset_zero_executes_label_line(self, execute_mumps):
+        """T023: G STAR+0 executes the label line itself.
+
+        Offset 0 means jump to the label line, equivalent to G STAR.
+        """
+        source = """TEST G STAR+0 Q
+STAR W "X" Q"""
+        result = execute_mumps(source)
+        assert result.output == "X"
+
+    def test_offset_generates_line_dispatch(self, generate_python):
+        """Phase 4: GOTO with offset returns (line_number, state).
+
+        G LABEL+N generates: return (label_line + int(N), state)
+        """
+        source = """TEST G STAR+2 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        code = generate_python(source)
+        # Check that offset call generates line-based dispatch
+        # Label STAR is at line 2, so STAR+2 should be: return (2 + int(2), state)
+        assert "return (2 + int(2), state)" in code
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: same level enforcement")
