@@ -52,11 +52,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Verify parser already captures MCall.routine for external DO in src/m2py/asg/elements.py
-- [ ] T018 [US1] Update _generate_do() for D ^ROUTINE pattern in src/m2py/codegen/statements.py (L1333)
-- [ ] T019 [US1] Generate import statement for external routine in src/m2py/codegen/statements.py
-- [ ] T020 [US1] Generate ext2.ext2(_rt, _scope) call pattern in src/m2py/codegen/statements.py
-- [ ] T021 [US1] Add integration test for D ^ROUTINE in tests/integration/test_external_calls.py
+- [X] T017 [US1] Verify parser already captures MCall.routine for external DO in src/m2py/asg/elements.py
+- [X] T018 [US1] Update _generate_do() for D ^ROUTINE pattern in src/m2py/codegen/statements.py (L1333)
+- [X] T019 [US1] Generate import statement for external routine in src/m2py/codegen/statements.py
+- [X] T020 [US1] Generate ext2.ext2(_rt, _scope) call pattern in src/m2py/codegen/statements.py
+- [X] T021 [US1] Add integration test for D ^ROUTINE in tests/integration/test_external_calls.py
 
 **Checkpoint**: `D ^ROUTINE` works end-to-end with YDB-matching output
 

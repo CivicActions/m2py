@@ -1328,13 +1328,29 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     # Label calls - NO $TEST save/restore
     # Handle each target (multiple targets allowed: D A,B,C)
     for target in stmt.targets:
-        # Check for external routine reference
-        if target.routine:
-            raise NotImplementedError("External routine DO not yet supported")
-
         # Check for indirection
         if target.label_is_indirect or target.indirection:
             raise NotImplementedError("Indirect DO not yet supported")
+
+        # Spec 008 (T018-T020): Handle external routine reference D ^ROUTINE
+        if target.routine:
+            # External routine call - D ^ext2 or D LABEL^ext2
+            routine_name = target.routine
+            label_name = target.name if target.name else routine_name
+
+            # Generate import statement (T019)
+            ctx.emitter.line(f"import {routine_name}")
+
+            # Generate function call (T020)
+            # For now, simple call without _rt/_scope parameters
+            # (shared state will be addressed in Phase 5)
+            label_name = translate_name(label_name)
+            args = _generate_call_arguments(target.arguments, ctx)
+            if args:
+                ctx.emitter.line(f"{routine_name}.{label_name}({args})")
+            else:
+                ctx.emitter.line(f"{routine_name}.{label_name}()")
+            continue
 
         # Get the label name and translate it
         label_name = translate_name(target.name)
