@@ -1,2 +1,3 @@
 test
- D ^ext2 W "Back",! Q
+ D +3^ext2
+ Q

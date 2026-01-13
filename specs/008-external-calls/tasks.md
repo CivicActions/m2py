@@ -70,13 +70,13 @@
 
 ### Implementation for User Story 2
 
-- [ ] T022 [US2] Update _generate_do() for D LABEL^ROUTINE pattern in src/m2py/codegen/statements.py
-- [ ] T023 [US2] Generate ext2.HELPER(_rt, _scope) call pattern in src/m2py/codegen/statements.py
-- [ ] T024 [US2] Handle D LABEL+N^ROUTINE using _label_lines and _line_map in src/m2py/codegen/statements.py
-- [ ] T025 [US2] Handle D +N^ROUTINE using _line_map in src/m2py/codegen/statements.py
-- [ ] T026 [US2] Generate LabelNotFoundError check for missing labels in src/m2py/codegen/statements.py
-- [ ] T027 [US2] Add integration test for D LABEL^ROUTINE in tests/integration/test_external_calls.py
-- [ ] T028 [US2] Add integration test for LabelNotFoundError in tests/integration/test_external_calls.py
+- [X] T022 [US2] Update _generate_do() for D LABEL^ROUTINE pattern in src/m2py/codegen/statements.py
+- [X] T023 [US2] Generate ext2.HELPER(_rt, _scope) call pattern in src/m2py/codegen/statements.py
+- [X] T024 [US2] Handle D LABEL+N^ROUTINE using _label_lines and _line_map in src/m2py/codegen/statements.py
+- [X] T025 [US2] Handle D +N^ROUTINE using _line_map in src/m2py/codegen/statements.py
+- [X] T026 [US2] Generate LabelNotFoundError check for missing labels in src/m2py/codegen/statements.py
+- [X] T027 [US2] Add integration test for D LABEL^ROUTINE in tests/integration/test_external_calls.py
+- [X] T028 [US2] Add integration test for LabelNotFoundError in tests/integration/test_external_calls.py
 
 **Checkpoint**: `D LABEL^ROUTINE` and offset variants work end-to-end
 

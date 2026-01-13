@@ -1332,24 +1332,64 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         if target.label_is_indirect or target.indirection:
             raise NotImplementedError("Indirect DO not yet supported")
 
-        # Spec 008 (T018-T020): Handle external routine reference D ^ROUTINE
+        # Spec 008 (T018-T026): Handle external routine reference D ^ROUTINE
         if target.routine:
-            # External routine call - D ^ext2 or D LABEL^ext2
             routine_name = target.routine
-            label_name = target.name if target.name else routine_name
 
-            # Generate import statement (T019)
+            # Generate import statement
             ctx.emitter.line(f"import {routine_name}")
 
-            # Generate function call (T020)
-            # For now, simple call without _rt/_scope parameters
-            # (shared state will be addressed in Phase 5)
-            label_name = translate_name(label_name)
-            args = _generate_call_arguments(target.arguments, ctx)
-            if args:
-                ctx.emitter.line(f"{routine_name}.{label_name}({args})")
+            # Handle different external DO patterns
+            if target.offset is not None:
+                # D LABEL+N^ROUTINE or D +N^ROUTINE - uses line dispatch
+                offset_code = generate_expr(target.offset, ctx)
+
+                if target.name:
+                    # T024: D LABEL+N^ROUTINE - label + offset
+                    # Check label exists in _label_lines
+                    ctx.emitter.line(
+                        f"if {target.name!r} not in {routine_name}._label_lines:"
+                    )
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+                        ctx.emitter.line(
+                            f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
+                            f"list({routine_name}._label_lines.keys()))"
+                        )
+                    # Calculate target line from label's line + offset
+                    ctx.emitter.line(
+                        f"_target_line = {routine_name}._label_lines[{target.name!r}] + {offset_code}"
+                    )
+                else:
+                    # T025: D +N^ROUTINE - absolute line offset (1-based to 0-indexed)
+                    ctx.emitter.line(f"_target_line = {offset_code} - 1")
+
+                # Call via line dispatch map (requires routine to have _line_map)
+                ctx.emitter.line(f"{routine_name}._line_map[_target_line]()")
+            elif target.name:
+                # T022-T023: D LABEL^ROUTINE - call specific label
+                label_name = translate_name(target.name)
+                # T026: Generate LabelNotFoundError check
+                ctx.emitter.line(f"if not hasattr({routine_name}, {label_name!r}):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+                    ctx.emitter.line(
+                        f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
+                        f"list({routine_name}._label_lines.keys()))"
+                    )
+                args = _generate_call_arguments(target.arguments, ctx)
+                if args:
+                    ctx.emitter.line(f"{routine_name}.{label_name}({args})")
+                else:
+                    ctx.emitter.line(f"{routine_name}.{label_name}()")
             else:
-                ctx.emitter.line(f"{routine_name}.{label_name}()")
+                # D ^ROUTINE - call entry label (same name as routine)
+                entry_label = translate_name(routine_name)
+                args = _generate_call_arguments(target.arguments, ctx)
+                if args:
+                    ctx.emitter.line(f"{routine_name}.{entry_label}({args})")
+                else:
+                    ctx.emitter.line(f"{routine_name}.{entry_label}()")
             continue
 
         # Get the label name and translate it

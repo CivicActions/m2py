@@ -126,3 +126,109 @@ class TestExternalDORoutineCall:
                 sys.path.remove(tmpdir)
                 if "ext2" in sys.modules:
                     del sys.modules["ext2"]
+
+
+class TestExternalDOLabelCall:
+    """Test User Story 2: D LABEL^ROUTINE calls specific label in external routine."""
+
+    def test_d_label_routine_generates_call(self):
+        """D HELPER^ext2 should generate call to ext2.HELPER()."""
+        source = """ext1
+ D HELPER^ext2
+ Q
+"""
+        code = generate_python(source)
+        assert "import ext2" in code
+        assert "ext2.HELPER()" in code
+
+    def test_d_label_routine_calls_label(self, external_fixtures_path):
+        """D HELPER^ext2 should call the HELPER label (not entry label)."""
+        # Generate Python for ext2 with two labels
+        ext2_source = """ext2
+ W "In ext2"
+ Q
+HELPER
+ W "In HELPER"
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # Generate Python for ext1 calling HELPER
+        ext1_source = """ext1
+ D HELPER^ext2
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ext2_path = Path(tmpdir) / "ext2.py"
+            ext2_path.write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                # Execute ext1
+                namespace = {}
+                exec(ext1_code, namespace)
+                namespace["ext1"]()
+
+                # Import ext2 to check output
+                import ext2
+
+                output = ext2._rt.get_output()
+                # Should have HELPER output, not ext2 entry output
+                assert "In HELPER" in output
+                assert "In ext2" not in output
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+    def test_d_label_missing_raises_error(self):
+        """D NONEXISTENT^ext2 should raise LabelNotFoundError."""
+        from m2py.runtime import LabelNotFoundError
+
+        # ext2 without NONEXISTENT label
+        ext2_source = """ext2
+ W "In ext2"
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1 calling nonexistent label
+        ext1_source = """ext1
+ D NONEXISTENT^ext2
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ext2_path = Path(tmpdir) / "ext2.py"
+            ext2_path.write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                # Should raise LabelNotFoundError when called
+                import pytest
+
+                with pytest.raises(LabelNotFoundError) as exc_info:
+                    namespace["ext1"]()
+
+                # Verify error details
+                assert exc_info.value.label == "NONEXISTENT"
+                assert exc_info.value.routine == "ext2"
+                assert "ext2" in exc_info.value.available_labels
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
