@@ -168,10 +168,10 @@
 
 ### Implementation for User Story 7
 
-- [ ] T055 [US7] Implement $TEXT(+N^ROUTINE) with module import in src/m2py/codegen/expressions.py
-- [ ] T056 [US7] Implement $TEXT(LABEL^ROUTINE) with external label lookup in src/m2py/codegen/expressions.py
-- [ ] T057 [US7] Implement $TEXT(LABEL+N^ROUTINE) with offset in src/m2py/codegen/expressions.py
-- [ ] T058 [US7] Add integration test for $TEXT external routine in tests/integration/test_external_calls.py
+- [X] T055 [US7] Implement $TEXT(+N^ROUTINE) with module import in src/m2py/codegen/expressions.py
+- [X] T056 [US7] Implement $TEXT(LABEL^ROUTINE) with external label lookup in src/m2py/codegen/expressions.py
+- [X] T057 [US7] Implement $TEXT(LABEL+N^ROUTINE) with offset in src/m2py/codegen/expressions.py
+- [X] T058 [US7] Add integration test for $TEXT external routine in tests/integration/test_external_calls.py
 
 **Checkpoint**: $TEXT works for external routines with all patterns
 

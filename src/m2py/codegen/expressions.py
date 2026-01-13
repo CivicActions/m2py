@@ -58,35 +58,12 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_extrinsic(expr, ctx)
     elif isinstance(expr, MSpecialVariable):
         return _generate_special_variable(expr, ctx)
-    # Phase 8: $TEXT/$T support for current routine (handle multiple ASG node types)
+    # Phase 8-9: $TEXT/$T support (current and external routines)
     elif (
         expr.__class__.__name__ in ("TextFunction", "IntrinsicFunction")
         and getattr(expr, "name", "").upper() in ("TEXT", "T")
     ) or (hasattr(expr, "name") and getattr(expr, "name", "").upper() in ("TEXT", "T")):
-        args = getattr(expr, "arguments", [])
-        # $T() with no args: treat as $T(+0) (routine name)
-        if len(args) == 0:
-            return "_rt.get_text(offset=0)"
-        if len(args) == 1:
-            arg = args[0]
-            # $T(+N) or $T(-N): arg is a literal or unary op
-            if hasattr(arg, "value") and isinstance(arg.value, int):
-                return f"_rt.get_text(offset={arg.value})"
-            elif hasattr(arg, "operator") and arg.operator in ("+", "-"):
-                val = generate_expr(arg.operand, ctx)
-                sign = "-" if arg.operator == "-" else ""
-                return f"_rt.get_text(offset={sign}{val})"
-            elif hasattr(arg, "name"):
-                # $T(LABEL)
-                label = arg.name
-                return f'_rt.get_text(label="{label}")'
-            elif hasattr(arg, "left") and hasattr(arg, "right"):
-                # $T(LABEL+N)
-                label = getattr(arg.left, "name", None)
-                offset = getattr(arg.right, "value", None)
-                if label is not None and offset is not None:
-                    return f'_rt.get_text(label="{label}", offset={offset})'
-        raise NotImplementedError("Unsupported $TEXT/$T argument pattern")
+        return _generate_text(expr, ctx)
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -346,6 +323,65 @@ def _generate_extrinsic_arguments(
             parts.append("None")
 
     return ", ".join(parts)
+
+
+def _generate_text(expr, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $TEXT/$T function.
+
+    Supports both current routine and external routine patterns:
+    - $T(+0) → routine name
+    - $T(+N) → Nth line of current routine
+    - $T(LABEL) → label line in current routine
+    - $T(LABEL+N) → label+offset in current routine
+    - $T(+N^ROUTINE) → Nth line of external routine
+    - $T(LABEL^ROUTINE) → label line in external routine
+    - $T(LABEL+N^ROUTINE) → label+offset in external routine
+
+    Args:
+        expr: TextFunction ASG node with line_ref dictionary
+        ctx: Generator context
+
+    Returns:
+        Python code calling _rt.get_text()
+    """
+    from m2py.asg.expressions import MLiteral
+
+    # TextFunction stores line reference info in line_ref dict, not arguments
+    line_ref = getattr(expr, "line_ref", {})
+
+    # Check if this is an external routine reference
+    routine = line_ref.get("routine")
+    label = line_ref.get("label")
+    offset = line_ref.get("offset")
+
+    # Build the get_text() call parameters
+    params = []
+
+    # Handle offset parameter
+    if offset is not None:
+        if isinstance(offset, MLiteral):
+            params.append(f"offset={offset.value}")
+        else:
+            # Offset is an expression (variable, etc.)
+            offset_code = generate_expr(offset, ctx)
+            params.append(f"offset={offset_code}")
+    elif label is None:
+        # No label, no offset - must be $T(+0) or $T() which defaults to +0
+        params.append("offset=0")
+    else:
+        # Label with no offset - defaults to 0
+        params.append("offset=0")
+
+    # Handle label parameter
+    if label is not None:
+        params.append(f'label="{label}"')
+
+    # Handle external routine
+    if routine is not None:
+        # Use __import__() to get module reference inline
+        params.append(f"module=__import__('{routine}')")
+
+    return f"_rt.get_text({', '.join(params)})"
 
 
 __all__ = ["generate_expr"]
