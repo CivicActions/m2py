@@ -185,9 +185,9 @@
 
 ### Implementation for User Story 8
 
-- [ ] T059 [US8] Verify import statements are generated (no importlib) in src/m2py/codegen/statements.py
-- [ ] T060 [US8] Verify no custom module cache exists in runtime in src/m2py/runtime/__init__.py
-- [ ] T061 [US8] Add integration test verifying sys.modules caching behavior in tests/integration/test_external_calls.py
+- [X] T059 [US8] Verify import statements are generated (no importlib) in src/m2py/codegen/statements.py
+- [X] T060 [US8] Verify no custom module cache exists in runtime in src/m2py/runtime/__init__.py
+- [X] T061 [US8] Add integration test verifying sys.modules caching behavior in tests/integration/test_external_calls.py
 
 **Checkpoint**: Module caching works via standard Python import mechanism
 

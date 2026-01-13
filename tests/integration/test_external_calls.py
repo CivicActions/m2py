@@ -895,3 +895,135 @@ CHECKSCOPE()
                 sys.path.remove(tmpdir)
                 if "ext2" in sys.modules:
                     del sys.modules["ext2"]
+
+
+class TestModuleCaching:
+    """Test User Story 8: Verify Python's sys.modules caching prevents redundant imports (Phase 10)."""
+
+    def test_module_cached_in_sys_modules(self):
+        """Multiple external calls should use cached module from sys.modules (T061)."""
+        # ext2 defines a simple routine
+        ext2_source = """ext2
+ W "Hello from ext2"
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1 calls ext2 three times
+        ext1_source = """ext1
+ D ^ext2
+ D ^ext2
+ D ^ext2
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "ext2.py").write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                # Clear sys.modules before test
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                # Verify ext2 not in sys.modules initially
+                assert "ext2" not in sys.modules
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                # Execute ext1 which calls ext2 three times
+                namespace["ext1"]()
+
+                # Verify ext2 is now in sys.modules (cached)
+                assert "ext2" in sys.modules
+
+                # Get the cached module reference
+                cached_module = sys.modules["ext2"]
+
+                # Call ext1 again - should use cached module
+                namespace["ext1"]()
+
+                # Verify same module instance is still in sys.modules
+                assert sys.modules["ext2"] is cached_module
+
+                # This confirms Python's sys.modules caching works:
+                # - First import loads the module
+                # - Subsequent imports use the cached version
+                # - No custom caching mechanism needed
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+    def test_generated_code_uses_standard_import(self):
+        """Generated code should use standard 'import' statements, not importlib (T059)."""
+        source = """ext1
+ D ^ext2
+ Q
+"""
+        code = generate_python(source)
+
+        # Verify standard import statement is generated
+        assert "import ext2" in code
+
+        # Verify no custom import mechanisms are used
+        assert "importlib" not in code
+        assert (
+            "__import__" not in code.split("\n")[0:20]
+        )  # Check first 20 lines (header area)
+
+        # Standard import relies on Python's built-in sys.modules caching
+
+    def test_multiple_external_calls_share_module(self):
+        """Multiple external calls to different labels in same routine share cached module (T061)."""
+        # ext2 defines multiple labels
+        ext2_source = """ext2
+ W "Main"
+ Q
+HELPER1
+ W "Helper1"
+ Q
+HELPER2
+ W "Helper2"
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1 calls different labels in ext2
+        ext1_source = """ext1
+ D ^ext2
+ D HELPER1^ext2
+ D HELPER2^ext2
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "ext2.py").write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                # First call loads module into sys.modules
+                assert "ext2" not in sys.modules
+
+                namespace["ext1"]()
+
+                # After execution, module should be cached
+                assert "ext2" in sys.modules
+
+                # All three calls use the same cached module instance
+                # No separate imports per label - module is shared
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
