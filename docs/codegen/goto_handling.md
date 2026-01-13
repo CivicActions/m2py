@@ -442,6 +442,34 @@ _LINE(state, _start_offset=int(N))
 - Offset 1 = first statement after label line
 - Offsets are based on source line number difference: `stmt.line_number - label.line_number`
 - DO with offset returns to caller after QUIT (unlike GOTO which transfers control)
+- Non-integer offsets are truncated toward zero (e.g., 2.7 → 2, 2.999 → 2)
+- Invalid offsets (past end of routine) raise "Entry point LABEL+N not valid" error
+
+**Non-Executable Line Handling:**
+
+When an offset lands on a non-executable line (comment or blank), execution continues to the next executable line:
+
+```mumps
+TEST G STAR+1 Q    ; Target line 3 (comment)
+STAR W "0"         ; Line 2 - offset 0
+;comment line      ; Line 3 - offset 1 (non-executable)
+ W "2"             ; Line 4 - offset 2 (next executable)
+ Q
+```
+
+Output: `2` (skips comment, continues to next executable)
+
+**Generated Code Pattern:**
+
+```python
+_target = label_line + int(offset_expr)
+if _target not in _line_map:
+    _next = min((ln for ln in _line_map if ln > _target), default=None)
+    if _next is None:
+        raise ValueError("Entry point LABEL+offset not valid")
+    _target = _next
+return (_target, state)
+```
 
 **Strategy Selection:**
 
