@@ -30,20 +30,20 @@
 
 ---
 
-## Phase 2: Foundational Infrastructure (US4 Prerequisites)
+## Phase 2: Foundational Infrastructure (US4 Prerequisites) ✅ COMPLETE
 
 **Purpose**: Core line_dispatch.py module that User Story 4 integrates into routine generation
 
 **⚠️ CRITICAL**: This phase builds the line map infrastructure that US4 then integrates into codegen
 
-- [ ] T004 [P] Create new module `src/m2py/codegen/line_dispatch.py` with module docstring and imports
-- [ ] T005 [P] Add `has_offset_calls` field to MRoutine or detection helper in line_dispatch.py
-- [ ] T006 Implement `generate_line_map(routine: MRoutine) -> Dict[int, Tuple[str, int]]` in line_dispatch.py
-- [ ] T007 Implement `generate_line_map_code(line_map, emitter)` to emit `_line_map` dict definition
-- [ ] T008 Implement `find_next_executable(target_line, line_map)` helper for non-executable line handling
-- [ ] T009 Add unit tests for line map generation: `TestLineMapGeneration` in tests/unit/codegen/test_line_dispatch.py
+- [X] T004 [P] Create new module `src/m2py/codegen/line_dispatch.py` with module docstring and imports
+- [X] T005 [P] Add `has_offset_calls` detection helper in line_dispatch.py
+- [X] T006 Implement `generate_line_map(routine: MRoutine) -> Dict[int, Tuple[str, int]]` in line_dispatch.py
+- [X] T007 Implement `generate_line_map_code(line_map, emitter)` to emit `_line_map` dict definition
+- [X] T008 Implement `find_next_executable(target_line, line_map)` helper for non-executable line handling
+- [X] T009 Add unit tests for line map generation: `TestLineMapGeneration` in tests/unit/codegen/test_line_dispatch.py (19 tests passing)
 
-**Checkpoint**: Foundation ready - line map generation working and tested
+**Checkpoint**: Foundation ready - line map generation working and tested ✅
 
 ---
 
