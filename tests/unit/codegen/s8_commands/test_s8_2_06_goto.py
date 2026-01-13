@@ -1073,6 +1073,36 @@ STAR W "0"
         result = execute_mumps(source)
         assert result.output == "2"
 
+    # Phase 9: Comment/Blank Line Handling (T045-T049)
+
+    def test_offset_landing_on_comment_continues(self, execute_mumps):
+        """T047: Offset landing on comment line continues to next executable.
+
+        When GOTO offset lands on a comment line (not in _line_map),
+        execution continues to the next executable line.
+        """
+        source = """TEST G STAR+1 Q
+STAR W "0"
+;comment line
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_offset_landing_on_blank_continues(self, execute_mumps):
+        """T048: Offset landing on blank line continues to next executable.
+
+        When GOTO offset lands on a blank line (not in _line_map),
+        execution continues to the next executable line.
+        """
+        source = """TEST G STAR+1 Q
+STAR W "0"
+
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: same level enforcement")
     def test_same_level_enforcement(self, generate_python):

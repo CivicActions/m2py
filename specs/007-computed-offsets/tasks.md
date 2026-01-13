@@ -164,19 +164,21 @@
 
 ## Phase 9: User Story 7 - Comment/Blank Line Handling (Priority: P3)
 
+## Phase 9: User Story 7 - Comment/Blank Line Handling (Priority: P3) ✅ COMPLETE
+
 **Goal**: Offset landing on comment/blank line continues to next executable
 
 **Independent Test**: Offset targeting comment line skips to next executable and outputs correct value
 
 ### Implementation for User Story 7
 
-- [ ] T045 [US7] Integrate `find_next_executable()` (from T008) into dispatcher for non-executable line handling
-- [ ] T046 [US7] In dispatcher, if target not in `_line_map`, call `find_next_executable()` before error
-- [ ] T047 [US7] Add unit test: offset landing on comment line continues to next executable
-- [ ] T048 [US7] Add unit test: offset landing on blank line continues to next executable
-- [ ] T049 [US7] Add YDB validation for comment/blank line handling
+- [X] T045 [US7] Integrate `find_next_executable()` (from T008) into dispatcher for non-executable line handling
+- [X] T046 [US7] In dispatcher, if target not in `_line_map`, call `find_next_executable()` before error
+- [X] T047 [US7] Add unit test: offset landing on comment line continues to next executable
+- [X] T048 [US7] Add unit test: offset landing on blank line continues to next executable
+- [X] T049 [US7] Add YDB validation for comment/blank line handling
 
-**Checkpoint**: Comment/blank line handling working - matches YDB skip behavior
+**Checkpoint**: Comment/blank line handling working - matches YDB skip behavior ✅
 
 ---
 
