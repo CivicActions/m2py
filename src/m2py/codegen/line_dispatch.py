@@ -17,34 +17,9 @@ if TYPE_CHECKING:
     from m2py.codegen.emitter import CodeEmitter
 
 
-def has_offset_calls(routine: "MRoutine") -> bool:
-    """Check if routine contains any offset calls (GOTO/DO with offsets).
-
-    Traverses all labels and their statements to find any MCall with
-    a non-None offset field.
-
-    Args:
-        routine: The MRoutine to check
-
-    Returns:
-        True if any offset call is found, False otherwise
-    """
-    from m2py.asg.statements import MGotoStatement, MDoStatement
-
-    for label in routine.labels:
-        if label.body:
-            for stmt in label.body.walk_statements():
-                # Check GOTO statements
-                if isinstance(stmt, MGotoStatement):
-                    for target in stmt.targets:
-                        if target.offset is not None:
-                            return True
-                # Check DO statements
-                elif isinstance(stmt, MDoStatement):
-                    for target in stmt.targets:
-                        if target.offset is not None:
-                            return True
-    return False
+# NOTE: Offset call detection is now done in analysis layer via classify_gotos().
+# The routine.has_offset_calls ASG field should be used instead of traversing here.
+# See m2py.analysis.goto_analysis._detect_offset_calls() for the implementation.
 
 
 def generate_line_map(routine: "MRoutine") -> Dict[int, Tuple[str, int]]:

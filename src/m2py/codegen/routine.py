@@ -18,7 +18,6 @@ from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.line_dispatch import (
     generate_line_map,
     generate_line_map_code,
-    has_offset_calls,
 )
 from m2py.codegen.names import NameTranslator, translate_name
 from m2py.codegen.statements import (
@@ -478,7 +477,8 @@ class RoutineGenerator:
         ctx.emitter.blank()
 
         # Spec 007 (T010-T012): Generate _line_map when routine has offset calls
-        has_offsets = has_offset_calls(self._routine)
+        # Uses pre-computed ASG field from classify_gotos() analysis
+        has_offsets = self._routine.has_offset_calls
         if has_offsets:
             line_map = generate_line_map(self._routine)
             generate_line_map_code(line_map, ctx.emitter)
@@ -569,7 +569,8 @@ class RoutineGenerator:
         # Generate function definition with state parameter
         # For trampoline, all labels take state; formal params come later
         # Spec 007 (T020): Add _start_offset parameter for offset entry support
-        has_offsets = has_offset_calls(self._routine)
+        # Uses pre-computed ASG field from classify_gotos() analysis
+        has_offsets = self._routine.has_offset_calls
         if formal_params:
             if has_offsets:
                 params_str = "state, " + ", ".join(formal_params) + ", _start_offset=0"
