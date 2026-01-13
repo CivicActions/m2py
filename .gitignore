@@ -1,3 +1,5 @@
+# Ignore workspace tmp folder for test artifacts
+tmp/
 # Temporary and binary files
 *~
 *.py[cod]

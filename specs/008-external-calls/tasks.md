@@ -148,13 +148,13 @@
 
 ### Implementation for User Story 6
 
-- [ ] T048 [US6] Implement $TEXT(+N) using _current_source_lines in src/m2py/codegen/expressions.py
-- [ ] T049 [US6] Implement $TEXT(+0) returning _current_routine in src/m2py/codegen/expressions.py
-- [ ] T050 [US6] Implement $TEXT(LABEL) using _current_label_lines in src/m2py/codegen/expressions.py
-- [ ] T051 [US6] Implement $TEXT(LABEL+N) with label lookup and offset in src/m2py/codegen/expressions.py
-- [ ] T052 [US6] Handle negative offset edge case (return empty string) in src/m2py/codegen/expressions.py
-- [ ] T053 [US6] Add integration test for $TEXT(+N) current routine in tests/integration/test_external_calls.py
-- [ ] T054 [US6] Add integration test for $TEXT(-1) negative offset in tests/integration/test_external_calls.py
+- [X] T048 [US6] Implement $TEXT(+N) using _current_source_lines in src/m2py/codegen/expressions.py
+- [X] T049 [US6] Implement $TEXT(+0) returning _current_routine in src/m2py/codegen/expressions.py
+- [X] T050 [US6] Implement $TEXT(LABEL) using _current_label_lines in src/m2py/codegen/expressions.py
+- [X] T051 [US6] Implement $TEXT(LABEL+N) with label lookup and offset in src/m2py/codegen/expressions.py
+- [X] T052 [US6] Handle negative offset edge case (return empty string) in src/m2py/codegen/expressions.py
+- [X] T053 [US6] Add integration test for $TEXT(+N) current routine in tests/integration/test_external_calls.py
+- [X] T054 [US6] Add integration test for $TEXT(-1) negative offset in tests/integration/test_external_calls.py
 
 **Checkpoint**: $TEXT works for current routine with all offset patterns
 

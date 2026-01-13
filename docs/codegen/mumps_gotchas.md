@@ -566,18 +566,25 @@ R !,"Prompt:",X  ; Prompts and format controls
 
 ## $TEXT Function
 
-Returns source code lines - requires original source access:
+Returns source code lines for the current routine (Spec 008 Phase 8):
 
 ```mumps
+S X=$T(+0)          ; Routine name
 S X=$T(+1)          ; First line of current routine
-S X=$T(LBL+5)       ; 5 lines after label LBL
-S X=$T(LBL^RTN)     ; Label in external routine
+S X=$T(+2)          ; Second line
+S X=$T(LABEL)       ; Label line
+S X=$T(LABEL+N)     ; N lines after label
+S X=$T(-1)          ; Negative offset (returns empty string)
+S X=$T(+99)         ; Past end (returns empty string)
 ```
 
 **Code Generation Strategy:**
-- Embed source lines in generated code as data
-- Or provide stub returning empty string
-- `MRoutine.source_lines` field stores original source
+- Embed source lines in generated code as `_source_lines` list
+- Use `_rt.get_text(offset=N)` for $T(+N), $T(-N)
+- Use `_rt.get_text(label="LABEL", offset=N)` for $T(LABEL+N)
+- $T(+0) returns routine name
+- Out-of-range and negative offsets return empty string
+- Only current routine supported in this phase (no ^ROUTINE)
 
 ---
 

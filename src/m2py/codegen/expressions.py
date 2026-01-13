@@ -58,6 +58,35 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_extrinsic(expr, ctx)
     elif isinstance(expr, MSpecialVariable):
         return _generate_special_variable(expr, ctx)
+    # Phase 8: $TEXT/$T support for current routine (handle multiple ASG node types)
+    elif (
+        expr.__class__.__name__ in ("TextFunction", "IntrinsicFunction")
+        and getattr(expr, "name", "").upper() in ("TEXT", "T")
+    ) or (hasattr(expr, "name") and getattr(expr, "name", "").upper() in ("TEXT", "T")):
+        args = getattr(expr, "arguments", [])
+        # $T() with no args: treat as $T(+0) (routine name)
+        if len(args) == 0:
+            return "_rt.get_text(offset=0)"
+        if len(args) == 1:
+            arg = args[0]
+            # $T(+N) or $T(-N): arg is a literal or unary op
+            if hasattr(arg, "value") and isinstance(arg.value, int):
+                return f"_rt.get_text(offset={arg.value})"
+            elif hasattr(arg, "operator") and arg.operator in ("+", "-"):
+                val = generate_expr(arg.operand, ctx)
+                sign = "-" if arg.operator == "-" else ""
+                return f"_rt.get_text(offset={sign}{val})"
+            elif hasattr(arg, "name"):
+                # $T(LABEL)
+                label = arg.name
+                return f'_rt.get_text(label="{label}")'
+            elif hasattr(arg, "left") and hasattr(arg, "right"):
+                # $T(LABEL+N)
+                label = getattr(arg.left, "name", None)
+                offset = getattr(arg.right, "value", None)
+                if label is not None and offset is not None:
+                    return f'_rt.get_text(label="{label}", offset={offset})'
+        raise NotImplementedError("Unsupported $TEXT/$T argument pattern")
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 

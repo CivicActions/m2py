@@ -600,6 +600,69 @@ ADD(A,B)
                 if "ext2" in sys.modules:
                     del sys.modules["ext2"]
 
+    class TestTextCurrentRoutine:
+        """Test User Story 6: $TEXT with current routine (Phase 8)."""
+
+        def test_text_plus_n_and_label(self):
+            """$T(+N), $T(label), $T(label+N) return correct source lines."""
+            source = """texttest ; Test $TEXT function
+     W "$T(+0): ",$T(+0),!
+     W "$T(+1): ",$T(+1),!
+     W "$T(+2): ",$T(+2),!
+    LABEL
+     W "$T(LABEL): ",$T(LABEL),!
+     W "$T(LABEL+1): ",$T(LABEL+1),!
+     Q
+    """
+            code = generate_python(source)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                sys.path.insert(0, tmpdir)
+                try:
+                    namespace = {}
+                    exec(code, namespace)
+                    rt = MUMPSRuntime()
+                    namespace["_rt"] = rt
+                    namespace["texttest"]()
+                    output = rt.get_output()
+                    lines = output.split("\n")
+                    # $T(+0): routine name
+                    assert "$T(+0): texttest" in lines[0]
+                    # $T(+1): first source line
+                    assert "$T(+1): texttest ; Test $TEXT function" in lines[1]
+                    # $T(+2): second source line
+                    assert '$T(+2):  W "$T(+0): ",$T(+0),!' in lines[2]
+                    # $T(LABEL): label line
+                    assert "$T(LABEL): LABEL" in lines[3]
+                    # $T(LABEL+1): line after label
+                    assert '$T(LABEL+1):  W "$T(LABEL): ",$T(LABEL),!' in lines[4]
+                finally:
+                    sys.path.remove(tmpdir)
+
+        def test_text_negative_and_past_end(self):
+            """$T(-1) and $T(+99) return empty string (edge cases)."""
+            source = """texttest
+     W "$T(-1): ",$T(-1),!
+     W "$T(+99): ",$T(+99),!
+     Q
+    """
+            code = generate_python(source)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                sys.path.insert(0, tmpdir)
+                try:
+                    namespace = {}
+                    exec(code, namespace)
+                    rt = MUMPSRuntime()
+                    namespace["_rt"] = rt
+                    namespace["texttest"]()
+                    output = rt.get_output()
+                    lines = output.split("\n")
+                    # $T(-1): empty
+                    assert "$T(-1): " in lines[0]
+                    # $T(+99): empty
+                    assert "$T(+99): " in lines[1]
+                finally:
+                    sys.path.remove(tmpdir)
+
     def test_external_extrinsic_test_isolation(self):
         """$TEST should be isolated across external extrinsic calls (T046)."""
         # ext2 defines SETTRUE which sets $TEST to true
