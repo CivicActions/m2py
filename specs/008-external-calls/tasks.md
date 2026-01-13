@@ -197,12 +197,12 @@
 
 **Purpose**: Documentation, validation, and cleanup
 
-- [ ] T062 [P] Update docs/codegen/statements.md with external call patterns
-- [ ] T063 [P] Update docs/codegen/expressions.md with extrinsic and $TEXT patterns
-- [ ] T064 [P] Update docs/architecture.md with cross-routine infrastructure
-- [ ] T065 Run quickstart.md validation scenarios using utils/validate.py
-- [ ] T066 Run full test suite and verify YDB output matching
-- [ ] T067 Update docs/limitations.md if any edge cases deferred
+- [X] T062 [P] Update docs/codegen/statements.md with external call patterns
+- [X] T063 [P] Update docs/codegen/expressions.md with extrinsic and $TEXT patterns
+- [X] T064 [P] Update docs/architecture.md with cross-routine infrastructure
+- [X] T065 Run quickstart.md validation scenarios using utils/validate.py
+- [X] T066 Run full test suite and verify YDB output matching
+- [X] T067 Update docs/limitations.md if any edge cases deferred
 
 ---
 

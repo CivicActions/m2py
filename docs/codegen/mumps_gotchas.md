@@ -521,6 +521,78 @@ D @A^@B            ; Doubly indirect
 - `MCall.is_resolved`: False (cannot validate externally)
 - `MCall.call_type`: `ROUTINE_CALL`
 
+### External DO (Spec 008 Phases 3-4)
+
+External DO calls transfer control to another routine and return:
+
+```mumps
+D ^ext2              ; Call entry label of ext2 routine
+D HELPER^ext2        ; Call HELPER label in ext2
+D LABEL+5^ext2       ; Call 5th line after LABEL
+D +10^ext2           ; Call 10th line of ext2 (line dispatch)
+```
+
+**Code Generation Pattern:**
+```python
+# D ^ext2
+import ext2
+ext2.ext2(_rt, _scope)
+
+# D HELPER^ext2
+import ext2
+ext2.HELPER(_rt, _scope)
+
+# D LABEL+5^ext2 (with offset validation)
+import ext2
+if "LABEL" in ext2._label_lines:
+    target_line = ext2._label_lines["LABEL"] + 5
+    ext2._dispatch_line(target_line, _rt, _scope)
+
+# D +10^ext2 (direct line dispatch)
+import ext2
+ext2._dispatch_line(10, _rt, _scope)
+```
+
+**Key Implementation Details:**
+- Import statement generated for each external routine reference
+- `_rt` (runtime) and `_scope` (variable dictionary) passed to all calls
+- Label+offset patterns validated at runtime
+- Line dispatch uses `_dispatch_line()` function in target module
+
+### External GOTO (Spec 008 Phase 6)
+
+External GOTO transfers control permanently without return:
+
+```mumps
+G ^dispatcher        ; Transfer to entry label
+G ERROR^handler      ; Transfer to ERROR label
+G +10^handler        ; Transfer to line 10
+```
+
+**Code Generation Pattern:**
+```python
+# G ^dispatcher
+import dispatcher
+from m2py.runtime import GotoExternal
+raise GotoExternal(dispatcher.dispatcher, _rt, _scope)
+
+# G ERROR^handler
+import handler
+from m2py.runtime import GotoExternal
+raise GotoExternal(handler.ERROR, _rt, _scope)
+
+# G +10^handler (line dispatch)
+import handler
+from m2py.runtime import GotoExternal
+raise GotoExternal(handler._dispatch_line, _rt, _scope, 10)
+```
+
+**Key Implementation Details:**
+- Raises `GotoExternal` exception caught by runtime
+- Target function/line passed to exception handler
+- No return to caller - control fully transferred
+- Runtime unwinds stack and executes target
+
 ### External Extrinsic Functions (Spec 008 Phase 7)
 
 External extrinsic functions call functions in other routines and return values:
@@ -542,6 +614,40 @@ X = _call_extrinsic(MATH.ADD, 3, 5, _scope=_scope)
 - `_call_extrinsic` helper saves/restores `$TEST` around call
 - `_scope` parameter passed for cross-routine variable visibility
 - Return value from external function becomes expression value
+
+### Cross-Routine Variable Visibility (Spec 008 Phase 5)
+
+Variables are visible across routine calls via `_scope` parameter:
+
+```mumps
+; In main routine
+MAIN S X=42
+ D SHOW^helper
+ Q
+
+; In helper routine
+HELPER W X,!
+ Q
+```
+
+**Code Generation Pattern:**
+```python
+# main.py
+def MAIN(_rt, _scope):
+    _scope["X"] = 42
+    import helper
+    helper.SHOW(_rt, _scope)
+
+# helper.py
+def SHOW(_rt, _scope):
+    _rt.write(str(_scope.get("X", "")))
+```
+
+**Key Implementation Details:**
+- All routines receive `_scope` dictionary parameter
+- Variables stored in `_scope` instead of local scope
+- `_scope` shared across all external calls
+- NEW command creates temporary scope overlay (Spec 005)
 
 ---
 

@@ -193,6 +193,86 @@ def LABEL():
     # ... translated statements
 ```
 
+### Cross-Routine Infrastructure (Spec 008)
+
+External routine calls require coordinated code generation across multiple modules:
+
+**Import Generation:**
+```python
+# When transpiling: D ^ext2
+import ext2
+ext2.ext2(_rt, _scope)
+```
+
+Import statements are generated inline when external routine references are encountered:
+- `D ^ROUTINE` → generates `import ROUTINE`
+- `$$FUNC^ROUTINE` → generates `import ROUTINE`
+- `G ^ROUTINE` → generates `import ROUTINE` and `from m2py.runtime import GotoExternal`
+- `$TEXT(+N^ROUTINE)` → generates `module=__import__('routine')` inline
+
+**Module Caching:**
+
+Python's standard `sys.modules` dictionary automatically caches imported modules. No custom caching mechanism is needed:
+- First import loads the module
+- Subsequent imports use the cached version
+- Module initialization runs only once
+- All references share the same module instance
+
+**_scope Parameter:**
+
+All routine functions accept a `_scope` dictionary parameter for cross-routine variable visibility:
+
+```python
+def MAIN(_rt=None, _scope=None):
+    if _rt is None:
+        _rt = MUMPSRuntime()
+    if _scope is None:
+        _scope = {}
+    
+    _scope["X"] = 42
+    import helper
+    helper.SHOW(_rt, _scope)
+
+# helper.py
+def SHOW(_rt, _scope):
+    _rt.write(str(_scope.get("X", "")))
+```
+
+Key design points:
+- `_scope` shared across all external calls
+- Variables stored in `_scope` dictionary instead of local Python scope
+- Entry points have default parameters for standalone execution
+- Internal calls pass `_scope` explicitly
+
+**$TEST Isolation:**
+
+External extrinsic functions save and restore `$TEST` to maintain caller state:
+
+```python
+def _call_extrinsic(func, *args, _scope=None):
+    """Call extrinsic function with $TEST isolation."""
+    saved_test = _rt._test
+    try:
+        return func(_rt, _scope, *args)
+    finally:
+        _rt._test = saved_test
+```
+
+This ensures extrinsic functions can use IF/pattern matching without affecting the caller's `$TEST` value.
+
+**GotoExternal Exception:**
+
+External GOTO uses exception-based control flow to unwind the stack:
+
+```python
+# G ERROR^handler
+import handler
+from m2py.runtime import GotoExternal
+raise GotoExternal(handler.ERROR, _rt, _scope)
+```
+
+The exception is caught at the entry point and the target function is called directly, simulating MUMPS's permanent control transfer semantics.
+
 ## Design Decisions
 
 ### Why textX?
