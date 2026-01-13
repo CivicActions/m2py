@@ -954,6 +954,50 @@ LINE W "0"
         # Caller continues with W "X"
         assert result.output == "12X"
 
+    # Phase 6: Arithmetic Offset Expressions (T030-T034)
+
+    def test_chained_addition_offset(self, execute_mumps):
+        """T031: G STAR+1+1 outputs "2" (chained addition).
+
+        Arithmetic offset expression with chained addition evaluates
+        correctly: 1+1=2, so STAR+2 is reached.
+        """
+        source = """TEST G STAR+1+1 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_variable_subtraction_offset(self, execute_mumps):
+        """T032: G STAR+A-B with A=3, B=1 outputs "2".
+
+        Arithmetic offset expression with variable subtraction:
+        A-B = 3-1 = 2, so STAR+2 is reached.
+        """
+        source = """TEST S A=3,B=1 G STAR+A-B Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_division_offset(self, execute_mumps):
+        """T033: G STAR+6/3 outputs "2" (division).
+
+        Arithmetic offset expression with division:
+        6/3 = 2, so STAR+2 is reached.
+        """
+        source = """TEST G STAR+6/3 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: same level enforcement")
     def test_same_level_enforcement(self, generate_python):

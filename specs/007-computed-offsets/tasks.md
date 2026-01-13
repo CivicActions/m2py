@@ -108,7 +108,7 @@
 
 ---
 
-## Phase 6: User Story 3 - Arithmetic Offset Expressions (Priority: P2)
+## Phase 6: User Story 3 - Arithmetic Offset Expressions (Priority: P2) ✅ COMPLETE
 
 **Goal**: Arithmetic expressions in offsets (`G LABEL+A-B`, `G LABEL+1+1`) evaluate correctly
 
@@ -116,13 +116,13 @@
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Verify existing implementation handles binary ops (T017 should already support via `generate_expr`)
-- [ ] T031 [US3] Add unit test: `G STAR+1+1` outputs "2" (chained addition)
-- [ ] T032 [US3] Add unit test: `G STAR+A-B` with A=3, B=1 outputs "2"
-- [ ] T033 [US3] Add unit test: `G STAR+6/3` outputs "2" (division)
-- [ ] T034 [US3] Add YDB validation for arithmetic offset expressions
+- [X] T030 [US3] Verify existing implementation handles binary ops (T017 should already support via `generate_expr`)
+- [X] T031 [US3] Add unit test: `G STAR+1+1` outputs "2" (chained addition)
+- [X] T032 [US3] Add unit test: `G STAR+A-B` with A=3, B=1 outputs "2"
+- [X] T033 [US3] Add unit test: `G STAR+6/3` outputs "2" (division)
+- [X] T034 [US3] Add YDB validation for arithmetic offset expressions
 
-**Checkpoint**: Arithmetic offset expressions working - all basic operators supported
+**Checkpoint**: Arithmetic offset expressions working - all basic operators supported ✅
 
 ---
 
