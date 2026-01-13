@@ -1135,7 +1135,16 @@ def _generate_single_target_goto(
             offset_code = generate_expr(target.offset, ctx)
             # Spec 007 Phase 7 (T035-T037): Validate offset and raise descriptive error
             # Spec 007 Phase 9 (T045-T046): Skip non-executable lines (comments/blanks)
-            ctx.emitter.line(f"_target = {label_line} + int({offset_code})")
+            # Spec 007: Check for negative offset (must resolve to non-negative integer)
+            # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
+            ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
+            ctx.emitter.line("if _offset_val < 0:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    f'raise ValueError("Entry point {target.name}+" '
+                    '+ str(_offset_val) + " not valid")'
+                )
+            ctx.emitter.line(f"_target = {label_line} + _offset_val")
             ctx.emitter.line("if _target not in _line_map:")
             with ctx.emitter.indented():
                 # Find next executable line after target
@@ -1146,7 +1155,7 @@ def _generate_single_target_goto(
                 with ctx.emitter.indented():
                     ctx.emitter.line(
                         f'raise ValueError("Entry point {target.name}+" '
-                        f'+ str(int({offset_code})) + " not valid")'
+                        '+ str(_offset_val) + " not valid")'
                     )
                 ctx.emitter.line("_target = _next")
             ctx.emitter.line("return (_target, state)")
@@ -1346,7 +1355,16 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
             # Get the label's line number for validation
             if target.target is not None and target.target.line_number is not None:
                 label_line = target.target.line_number
-                ctx.emitter.line(f"_target = {label_line} + int({offset_code})")
+                # Spec 007: Check for negative offset (must resolve to non-negative integer)
+                # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
+                ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
+                ctx.emitter.line("if _offset_val < 0:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        f'raise ValueError("Entry point {target.name}+" '
+                        '+ str(_offset_val) + " not valid")'
+                    )
+                ctx.emitter.line(f"_target = {label_line} + _offset_val")
                 ctx.emitter.line("if _target not in _line_map:")
                 with ctx.emitter.indented():
                     # Find next executable line after target
@@ -1358,25 +1376,23 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                     with ctx.emitter.indented():
                         ctx.emitter.line(
                             f'raise ValueError("Entry point {target.name}+" '
-                            f'+ str(int({offset_code})) + " not valid")'
+                            '+ str(_offset_val) + " not valid")'
                         )
                     ctx.emitter.line("_target = _next")
                 # Now update the offset based on the new target line
                 ctx.emitter.line(
                     f"_offset = _line_map[_target][1] if _target != {label_line} + "
-                    f"int({offset_code}) else int({offset_code})"
+                    "_offset_val else _offset_val"
                 )
 
             # Build call with state and _start_offset
             # Note: args handling with offset is complex - for now just handle simple case
             if args:
                 ctx.emitter.line(
-                    f"{internal_func}(state, {args}, _start_offset=int({offset_code}))"
+                    f"{internal_func}(state, {args}, _start_offset=_offset_val)"
                 )
             else:
-                ctx.emitter.line(
-                    f"{internal_func}(state, _start_offset=int({offset_code}))"
-                )
+                ctx.emitter.line(f"{internal_func}(state, _start_offset=_offset_val)")
             continue
 
         # T060-T062: Check callee signature for byref_outputs and generate destructuring

@@ -444,6 +444,8 @@ _LINE(state, _start_offset=int(N))
 - DO with offset returns to caller after QUIT (unlike GOTO which transfers control)
 - Non-integer offsets are truncated toward zero (e.g., 2.7 → 2, 2.999 → 2)
 - Invalid offsets (past end of routine) raise "Entry point LABEL+N not valid" error
+- **String coercion**: String offsets are coerced using MUMPS numeric rules via `m_num()` (e.g., `"ABC"` → 0, `"2A"` → 2)
+- **Negative offsets**: Negative values raise `ValueError("Entry point LABEL+-N not valid")` at runtime
 
 **Non-Executable Line Handling:**
 
