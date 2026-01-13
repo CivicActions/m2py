@@ -41,11 +41,55 @@ class TestGotoCommandCodegen:
         """Computed GOTO generates dispatch table (§8.2.6)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: GOTO external")
-    def test_goto_external(self, generate_python):
-        """External GOTO generates import and call (§8.2.6)."""
-        pytest.fail("Stub - implement test")
+    def test_goto_external_routine(self, generate_python):
+        """External GOTO G ^ROUTINE generates import and raise GotoExternal (§8.2.6).
+
+        Spec 008 Phase 6: External GOTO raises GotoExternal exception which is
+        caught by run_with_goto_support() to transfer control to external routine.
+        """
+        code = generate_python('TEST\n G ^OTHER\n W "Never"\n Q\n')
+
+        # Should import the external routine
+        assert "import OTHER" in code
+        # Should import GotoExternal exception
+        assert "from m2py.runtime import GotoExternal" in code
+        # Should raise GotoExternal with module and None (entry label)
+        assert "raise GotoExternal(OTHER, None)" in code
+        # "Never" write should be generated but unreachable due to raise
+        assert '_rt.write("Never")' in code
+
+    def test_goto_external_label_routine(self, generate_python):
+        """External GOTO G LABEL^ROUTINE generates raise with label name (§8.2.6).
+
+        Spec 008 Phase 6: G LABEL^ROUTINE transfers to specific label.
+        """
+        code = generate_python("TEST\n G HELPER^ext2\n Q\n")
+
+        assert "import ext2" in code
+        assert "raise GotoExternal(ext2, 'HELPER')" in code
+
+    def test_goto_external_label_offset(self, generate_python):
+        """External GOTO G LABEL+N^ROUTINE generates raise with offset (§8.2.6).
+
+        Spec 008 Phase 6: G LABEL+N^ROUTINE includes offset in GotoExternal.
+        """
+        code = generate_python("TEST\n G HELPER+2^ext2\n Q\n")
+
+        assert "import ext2" in code
+        # Should include offset parameter
+        assert "offset=" in code
+        assert "GotoExternal(ext2, 'HELPER'" in code
+
+    def test_goto_external_line_offset(self, generate_python):
+        """External GOTO G +N^ROUTINE generates raise with line offset (§8.2.6).
+
+        Spec 008 Phase 6: G +N^ROUTINE uses absolute line offset.
+        """
+        code = generate_python("TEST\n G +5^ext2\n Q\n")
+
+        assert "import ext2" in code
+        assert "GotoExternal(ext2, None" in code
+        assert "offset=" in code
 
 
 @pytest.mark.codegen

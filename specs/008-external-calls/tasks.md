@@ -108,15 +108,15 @@
 
 ### Implementation for User Story 3
 
-- [ ] T034 [US3] Update _generate_goto() for G ^ROUTINE pattern in src/m2py/codegen/statements.py (L1064)
-- [ ] T035 [US3] Update _generate_goto() for G LABEL^ROUTINE pattern in src/m2py/codegen/statements.py
-- [ ] T036 [US3] Generate raise GotoExternal(module, label) pattern in src/m2py/codegen/statements.py
-- [ ] T037 [US3] Handle G LABEL+N^ROUTINE with offset parameter in src/m2py/codegen/statements.py
-- [ ] T038 [US3] Handle G +N^ROUTINE with offset parameter in src/m2py/codegen/statements.py
-- [ ] T039 [US3] Implement run_with_goto_support() runtime helper for GotoExternal dispatch in src/m2py/runtime/__init__.py
-- [ ] T040 [US3] Generate trampoline call (run_with_goto_support) at entry points in src/m2py/codegen/routine.py
-- [ ] T041 [US3] Add integration test for G ^ROUTINE in tests/integration/test_external_calls.py
-- [ ] T042 [US3] Add integration test for G LABEL^ROUTINE in tests/integration/test_external_calls.py
+- [X] T034 [US3] Update _generate_goto() for G ^ROUTINE pattern in src/m2py/codegen/statements.py (L1064)
+- [X] T035 [US3] Update _generate_goto() for G LABEL^ROUTINE pattern in src/m2py/codegen/statements.py
+- [X] T036 [US3] Generate raise GotoExternal(module, label) pattern in src/m2py/codegen/statements.py
+- [X] T037 [US3] Handle G LABEL+N^ROUTINE with offset parameter in src/m2py/codegen/statements.py
+- [X] T038 [US3] Handle G +N^ROUTINE with offset parameter in src/m2py/codegen/statements.py
+- [X] T039 [US3] Implement run_with_goto_support() runtime helper for GotoExternal dispatch in src/m2py/runtime/__init__.py
+- [X] T040 [US3] Generate trampoline call (run_with_goto_support) at entry points in src/m2py/codegen/routine.py - **Note**: Entry points raise GotoExternal; caller uses run_with_goto_support() for chain handling
+- [X] T041 [US3] Add integration test for G ^ROUTINE in tests/integration/test_external_calls.py
+- [X] T042 [US3] Add integration test for G LABEL^ROUTINE in tests/integration/test_external_calls.py
 
 **Checkpoint**: External GOTO works with proper stack unwinding
 

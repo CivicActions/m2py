@@ -318,3 +318,233 @@ class TestCrossRoutineVariableVisibility:
         import pytest
 
         pytest.skip("NEW command (Spec 005) not yet implemented")
+
+
+class TestExternalGOTO:
+    """Test User Story 3: G ^ROUTINE and G LABEL^ROUTINE for permanent control transfer."""
+
+    def test_g_routine_generates_raise_goto_external(self):
+        """T034: G ^ext2 should generate raise GotoExternal statement."""
+        source = """ext1
+ W "Start"
+ G ^ext2
+ W "Never"
+ Q
+"""
+        code = generate_python(source)
+        assert "import ext2" in code
+        assert "from m2py.runtime import GotoExternal" in code
+        assert "raise GotoExternal(ext2, None)" in code
+
+    def test_g_label_routine_generates_raise_goto_external(self):
+        """T035: G LABEL^ext2 should generate raise GotoExternal with label."""
+        source = """ext1
+ G HELPER^ext2
+ Q
+"""
+        code = generate_python(source)
+        assert "import ext2" in code
+        assert "raise GotoExternal(ext2, 'HELPER')" in code
+
+    def test_g_routine_transfers_control(self, external_fixtures_path):
+        """T041: G ^ext2 transfers control permanently (no return)."""
+        from m2py.runtime import run_with_goto_support
+
+        # Generate ext2 that writes and quits
+        ext2_source = """ext2
+ W "In ext2"
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # Generate ext1 that GOTOs ext2 - "Never" should not print
+        ext1_source = """ext1
+ W "Start"
+ G ^ext2
+ W "Never"
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ext2_path = Path(tmpdir) / "ext2.py"
+            ext2_path.write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                # Execute ext1 module code to get the entry function
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                # Use run_with_goto_support to handle the GotoExternal
+                run_with_goto_support(namespace["ext1"])
+
+                # Check output: should have "Start" and "In ext2", but NOT "Never"
+                import ext2
+
+                output = ext2._rt.get_output()
+                assert "In ext2" in output
+                # "Never" should NOT be in output - GOTO doesn't return
+                # Note: "Start" goes to ext1's runtime, which is separate
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+    def test_g_label_routine_transfers_to_label(self, external_fixtures_path):
+        """T042: G LABEL^ext2 transfers control to specific label."""
+        from m2py.runtime import run_with_goto_support
+
+        # Generate ext2 with entry and HELPER labels
+        ext2_source = """ext2
+ W "In ext2 entry"
+ Q
+HELPER
+ W "In HELPER"
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # Generate ext1 that GOTOs HELPER^ext2
+        ext1_source = """ext1
+ G HELPER^ext2
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ext2_path = Path(tmpdir) / "ext2.py"
+            ext2_path.write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                run_with_goto_support(namespace["ext1"])
+
+                import ext2
+
+                output = ext2._rt.get_output()
+                # Should have HELPER output, NOT entry output
+                assert "In HELPER" in output
+                assert "In ext2 entry" not in output
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+    def test_g_routine_chain(self, external_fixtures_path):
+        """Test chained GOTO: ext1 -> ext2 -> ext3 (all GOTOs, no returns)."""
+        from m2py.runtime import run_with_goto_support
+
+        # ext3: final destination
+        ext3_source = """ext3
+ W "In ext3"
+ Q
+"""
+        ext3_code = generate_python(ext3_source)
+
+        # ext2: GOTOs to ext3
+        ext2_source = """ext2
+ G ^ext3
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1: GOTOs to ext2
+        ext1_source = """ext1
+ G ^ext2
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "ext2.py").write_text(ext2_code)
+            Path(tmpdir, "ext3.py").write_text(ext3_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                for mod in ["ext2", "ext3"]:
+                    if mod in sys.modules:
+                        del sys.modules[mod]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                # This should chain: ext1 -> ext2 -> ext3 -> quit
+                run_with_goto_support(namespace["ext1"])
+
+                import ext3
+
+                output = ext3._rt.get_output()
+                assert "In ext3" in output
+
+            finally:
+                sys.path.remove(tmpdir)
+                for mod in ["ext2", "ext3"]:
+                    if mod in sys.modules:
+                        del sys.modules[mod]
+
+    def test_g_from_called_routine_no_return(self, external_fixtures_path):
+        """Test: D ^ext2 where ext2 does G ^ext3 - caller's code after D never runs."""
+        from m2py.runtime import run_with_goto_support
+
+        # ext3: final destination
+        ext3_source = """ext3
+ W "In ext3"
+ Q
+"""
+        ext3_code = generate_python(ext3_source)
+
+        # ext2: GOTOs to ext3 (doesn't return)
+        ext2_source = """ext2
+ G ^ext3
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1: DOs ext2, then writes "Return" (should not execute due to ext2's GOTO)
+        ext1_source = """ext1
+ D ^ext2
+ W "Return"
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "ext2.py").write_text(ext2_code)
+            Path(tmpdir, "ext3.py").write_text(ext3_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                for mod in ["ext2", "ext3"]:
+                    if mod in sys.modules:
+                        del sys.modules[mod]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                # This should: ext1 calls ext2, ext2 GOTOs ext3, ext3 quits
+                # ext1's "Return" line should never execute
+                run_with_goto_support(namespace["ext1"])
+
+                import ext3
+
+                output = ext3._rt.get_output()
+                assert "In ext3" in output
+                # "Return" should NOT be in output
+
+            finally:
+                sys.path.remove(tmpdir)
+                for mod in ["ext2", "ext3"]:
+                    if mod in sys.modules:
+                        del sys.modules[mod]

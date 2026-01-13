@@ -1059,9 +1059,10 @@ def _generate_single_target_goto(
         stmt: The parent MGotoStatement (for classification info)
         ctx: Generator context
     """
-    # Check for external routine reference
+    # Spec 008 Phase 6 (T034-T038): Handle external routine GOTO
     if target.routine:
-        raise NotImplementedError("External routine GOTO not yet supported")
+        _generate_external_goto(target, ctx)
+        return
 
     # Check for indirection
     if target.label_is_indirect or target.indirection:
@@ -1275,6 +1276,55 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
         label_name = translate_name(target.name)
         ctx.emitter.line(f"{label_name}()")
         ctx.emitter.line("return")
+
+
+def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
+    """Generate code for external GOTO (G ^ROUTINE, G LABEL^ROUTINE).
+
+    Spec 008 Phase 6 (T034-T038): External GOTO transfers control permanently
+    to another routine by raising GotoExternal exception. The exception is
+    caught by run_with_goto_support() which handles the transfer.
+
+    Patterns:
+    - G ^ROUTINE: raise GotoExternal(module, None) - entry label
+    - G LABEL^ROUTINE: raise GotoExternal(module, "LABEL") - specific label
+    - G LABEL+N^ROUTINE: raise GotoExternal(module, "LABEL", offset=N) - label with offset
+    - G +N^ROUTINE: raise GotoExternal(module, None, offset=N) - absolute line offset
+
+    Args:
+        target: The MCall target with routine field set
+        ctx: Generator context
+    """
+    routine_name = target.routine
+
+    # Generate import statement for external routine
+    ctx.emitter.line(f"import {routine_name}")
+    ctx.emitter.line("from m2py.runtime import GotoExternal")
+
+    # Handle offset patterns (G LABEL+N^ROUTINE, G +N^ROUTINE)
+    if target.offset is not None:
+        offset_code = generate_expr(target.offset, ctx)
+        # T037-T038: Pass offset to GotoExternal
+        if target.name:
+            # G LABEL+N^ROUTINE
+            label_name = target.name
+            ctx.emitter.line(
+                f"raise GotoExternal({routine_name}, {label_name!r}, "
+                f"offset=int(m_num({offset_code})))"
+            )
+        else:
+            # G +N^ROUTINE (absolute line offset)
+            ctx.emitter.line(
+                f"raise GotoExternal({routine_name}, None, "
+                f"offset=int(m_num({offset_code})))"
+            )
+    elif target.name:
+        # T035: G LABEL^ROUTINE - specific label
+        label_name = target.name
+        ctx.emitter.line(f"raise GotoExternal({routine_name}, {label_name!r})")
+    else:
+        # T034: G ^ROUTINE - entry label (same name as routine)
+        ctx.emitter.line(f"raise GotoExternal({routine_name}, None)")
 
 
 def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:

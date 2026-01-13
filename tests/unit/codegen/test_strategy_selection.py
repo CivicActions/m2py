@@ -92,21 +92,21 @@ class TestCheckUnsupportedGotos:
             _check_unsupported_gotos(routine)
 
     def test_external_goto_raises_error(self):
-        """T045b: EXTERNAL GOTO raises UnsupportedFeatureError.
+        """T045b: EXTERNAL GOTO now supported (Spec 008 Phase 6).
 
-        Pattern: goto_type=EXTERNAL → error with Spec 008 reference
+        Pattern: goto_type=EXTERNAL → no error, generates GotoExternal raise
         """
         routine = self._create_routine_with_goto(GotoType.EXTERNAL)
 
-        with pytest.raises(UnsupportedFeatureError, match="EXTERNAL GOTO"):
-            _check_unsupported_gotos(routine)
+        # Should NOT raise - EXTERNAL GOTO is now supported
+        _check_unsupported_gotos(routine)
 
-    def test_external_goto_error_mentions_spec_008(self):
-        """T045b: Error message references Spec 008."""
+    def test_external_goto_no_longer_blocked(self):
+        """Spec 008 Phase 6: EXTERNAL GOTO is now supported."""
         routine = self._create_routine_with_goto(GotoType.EXTERNAL)
 
-        with pytest.raises(UnsupportedFeatureError, match="Spec 008"):
-            _check_unsupported_gotos(routine)
+        # Should NOT raise
+        _check_unsupported_gotos(routine)
 
     def test_forward_jump_does_not_raise(self):
         """FORWARD_JUMP GOTO does not raise error."""
@@ -202,7 +202,9 @@ class TestStrategyIntegration:
         assert "RoutineState" in code
         assert "_labels" in code
 
-    def test_external_goto_raises_unsupported(self, generate_python):
-        """T045b: External GOTO raises UnsupportedFeatureError during generation."""
-        with pytest.raises(UnsupportedFeatureError, match="EXTERNAL GOTO"):
-            generate_python("TEST\n G ^OTHER\n Q\n")
+    def test_external_goto_generates_raise(self, generate_python):
+        """Spec 008 Phase 6: External GOTO generates raise GotoExternal."""
+        code = generate_python("TEST\n G ^OTHER\n Q\n")
+        # Should generate import and raise, not error
+        assert "import OTHER" in code
+        assert "raise GotoExternal(OTHER, None)" in code
