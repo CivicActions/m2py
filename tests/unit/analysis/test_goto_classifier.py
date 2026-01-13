@@ -1037,3 +1037,91 @@ class TestNeedsTrampoline:
         classify_gotos(routine)
 
         assert routine.needs_trampoline is False
+
+
+class TestHasOffsetCalls:
+    """Test has_offset_calls flag for Spec 007 offset dispatch."""
+
+    def test_no_offset_no_flag(self):
+        """Routine without offset calls has has_offset_calls=False."""
+        routine = MRoutine(name="TEST")
+
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+        label.body.parent = label
+
+        # GOTO without offset
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        goto_stmt.targets.append(call)
+        label.body.add_statement(goto_stmt)
+
+        routine.add_label(label)
+
+        target_label = MLabel(name="TARGET")
+        target_label.body = MScope()
+        routine.add_label(target_label)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        assert routine.has_offset_calls is False
+
+    def test_goto_with_offset_sets_flag(self):
+        """GOTO with offset sets has_offset_calls=True."""
+        from m2py.asg.expressions import MLiteral
+        from m2py.asg.enums import LiteralType
+
+        routine = MRoutine(name="TEST")
+
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+        label.body.parent = label
+
+        # GOTO with offset expression
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET")
+        call.offset = MLiteral(value=2, literal_type=LiteralType.INTEGER)
+        goto_stmt.targets.append(call)
+        label.body.add_statement(goto_stmt)
+
+        routine.add_label(label)
+
+        target_label = MLabel(name="TARGET")
+        target_label.body = MScope()
+        routine.add_label(target_label)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        assert routine.has_offset_calls is True
+
+    def test_do_with_offset_sets_flag(self):
+        """DO with offset sets has_offset_calls=True."""
+        from m2py.asg.expressions import MLiteral
+        from m2py.asg.enums import LiteralType
+        from m2py.asg.statements import MDoStatement
+
+        routine = MRoutine(name="TEST")
+
+        label = MLabel(name="MAIN")
+        label.body = MScope()
+        label.body.parent = label
+
+        # DO with offset expression
+        do_stmt = MDoStatement()
+        call = MCall(name="SUB")
+        call.offset = MLiteral(value=1, literal_type=LiteralType.INTEGER)
+        do_stmt.targets.append(call)
+        label.body.add_statement(do_stmt)
+
+        routine.add_label(label)
+
+        sub_label = MLabel(name="SUB")
+        sub_label.body = MScope()
+        routine.add_label(sub_label)
+
+        resolve_references(routine)
+        classify_gotos(routine)
+
+        assert routine.has_offset_calls is True

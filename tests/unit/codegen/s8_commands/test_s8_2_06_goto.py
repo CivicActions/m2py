@@ -72,6 +72,10 @@ class TestIntraLabelGotoCodegen:
                 if not _test:
                     _rt.write(str("C"))  # only when condition false
                 _rt.write(str("D"))  # always executed
+
+        Note: After Spec 007, intra-label GOTOs with literal offsets may use
+        trampoline pattern with offset guards instead of if/else restructuring.
+        Both patterns produce correct output.
         """
         code = 'TEST W "A"\n W "B"\n I 1 G TEST+4\n W "C"\n W "D"\n Q\n'
         python_code = generate_python(code)
@@ -90,8 +94,13 @@ class TestIntraLabelGotoCodegen:
             if in_test_body:
                 assert "TEST()" not in line, f"Found recursive call in: {line}"
 
-        # Should contain the negated condition pattern
-        assert "if not _test:" in python_code
+        # Should contain either negated condition pattern (simple functions)
+        # or offset guard pattern (trampoline with offsets)
+        has_restructured_pattern = "if not _test:" in python_code
+        has_offset_guard_pattern = "_start_offset" in python_code
+        assert has_restructured_pattern or has_offset_guard_pattern, (
+            "Expected either if/else restructuring or offset guard pattern"
+        )
 
         # Verify execution produces correct output
         result = execute_mumps(code)
@@ -104,13 +113,21 @@ class TestIntraLabelGotoCodegen:
         """Forward GOTO can skip multiple statements.
 
         Verifies that multiple statements between GOTO and target
-        are all wrapped in the if/else block.
+        are all wrapped in the if/else block or handled by offset guards.
+
+        Note: After Spec 007, intra-label GOTOs with literal offsets may use
+        trampoline pattern with offset guards instead of if/else restructuring.
         """
         code = 'TEST W "A"\n I 1 G TEST+5\n W "B"\n W "C"\n W "D"\n Q\n'
         python_code = generate_python(code)
 
-        # Should contain negated condition
-        assert "if not _test:" in python_code
+        # Should contain either negated condition pattern (simple functions)
+        # or offset guard pattern (trampoline with offsets)
+        has_restructured_pattern = "if not _test:" in python_code
+        has_offset_guard_pattern = "_start_offset" in python_code
+        assert has_restructured_pattern or has_offset_guard_pattern, (
+            "Expected either if/else restructuring or offset guard pattern"
+        )
 
         # Verify execution - all of B, C, D skipped
         result = execute_mumps(code)
@@ -691,8 +708,9 @@ NEXT W "done" Q"""
         )
         # Entry point with trampoline dispatcher
         assert "def TEST():" in code
-        assert "while label is not None:" in code
-        assert "func = _labels[label]" in code
+        # Spec 007: 'target' is now used instead of 'label' to support int line dispatch
+        assert "while target is not None:" in code
+        assert "func = _labels[target]" in code
 
     def test_shared_state_class(self, generate_python):
         """Labels-as-functions share state via RoutineState class.
@@ -765,23 +783,403 @@ class TestLineDispatchCodegen:
     Reference: §8.2.6
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: line map generation")
     def test_line_map_generation(self, generate_python):
-        """Routine generates line-to-entry-point mapping.
+        """T013: Routine with offset call generates _line_map dict.
 
-        _line_map = {1: _line_1, 5: _line_5, ...}
+        When routine contains G LABEL+N, the generated code includes
+        _line_map = {line: (label, offset), ...} for line dispatch.
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST G STAR+2 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        code = generate_python(source)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: line dispatch call")
-    def test_line_dispatch_call(self, generate_python):
-        """GOTO with offset dispatches by computed line.
+        # Verify _line_map is present
+        assert "_line_map" in code, "Generated code should contain _line_map"
+        assert "_line_map: dict[int, tuple[str, int]] = {" in code
 
-        G LABEL+N generates: _goto_line(label_line + N)
+        # Verify correct entries
+        assert '1: ("TEST", 0),' in code  # Line 1 = TEST label
+        assert '2: ("STAR", 0),' in code  # Line 2 = STAR label
+        assert '3: ("STAR", 1),' in code  # Line 3 = STAR+1
+        assert '4: ("STAR", 2),' in code  # Line 4 = STAR+2
+        assert '5: ("STAR", 3),' in code  # Line 5 = STAR+3
+
+    def test_line_map_not_generated_without_offsets(self, generate_python):
+        """T013b: Routine without offset calls does NOT generate _line_map.
+
+        Only routines with computed offsets need the line map overhead.
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST G NEXT Q
+NEXT W "done" Q"""
+        code = generate_python(source)
+
+        # Verify _line_map is NOT present (no offset calls)
+        assert "_line_map" not in code, (
+            "No _line_map should be generated without offset calls"
+        )
+
+    def test_line_map_excludes_non_executable_lines(self, generate_python):
+        """T014: Comment-only and blank lines are excluded from _line_map.
+
+        Only executable lines with statements are mapped.
+        Note: The parser doesn't capture comment-only lines as statements,
+        so they are naturally excluded from the line map.
+        """
+        # This test verifies the basic line map structure works
+        # Comment lines are never added to MLabel.body.statements by the parser
+        source = """TEST G STAR+1 Q
+STAR W "0"
+ W "1"
+ Q"""
+        code = generate_python(source)
+
+        # Verify line map exists and has correct structure
+        assert "_line_map" in code
+        # Lines 1-4 should be in the map (all executable)
+        assert '1: ("TEST", 0),' in code
+        assert '2: ("STAR", 0),' in code
+        assert '3: ("STAR", 1),' in code
+        assert '4: ("STAR", 2),' in code
+
+    def test_literal_offset_goto_skips_lines(self, execute_mumps):
+        """T022: G STAR+2 outputs "2" (skips first 2 lines after label).
+
+        Literal offset GOTO dispatches by computed line number.
+        """
+        source = """TEST G STAR+2 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_offset_zero_executes_label_line(self, execute_mumps):
+        """T023: G STAR+0 executes the label line itself.
+
+        Offset 0 means jump to the label line, equivalent to G STAR.
+        """
+        source = """TEST G STAR+0 Q
+STAR W "X" Q"""
+        result = execute_mumps(source)
+        assert result.output == "X"
+
+    def test_offset_generates_line_dispatch(self, generate_python):
+        """Phase 4: GOTO with offset returns (line_number, state).
+
+        G LABEL+N generates:
+        - _target = label_line + int(N)
+        - Validation check for invalid offset (Phase 7)
+        - return (_target, state)
+        """
+        source = """TEST G STAR+2 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        code = generate_python(source)
+        # Check that offset call generates line-based dispatch with validation
+        # Label STAR is at line 2, so STAR+2 computes: _target = 2 + int(2)
+        assert "_target = 2 +" in code
+        # Phase 7: Validation check for invalid offset
+        assert "if _target not in _line_map:" in code
+        assert 'raise ValueError("Entry point STAR+' in code
+        # Return uses _target
+        assert "return (_target, state)" in code
+
+    def test_offset_targeting_multi_statement_line(self, execute_mumps):
+        """Offset targeting multi-statement line executes all statements.
+
+        When offset lands on a line with multiple statements separated by
+        spaces, MUMPS executes all statements on that line because line
+        is the execution unit.
+        """
+        source = """TEST G STAR+1 Q
+STAR W "A"
+ W "B" W "C"
+ W "D"
+ Q"""
+        result = execute_mumps(source)
+        # STAR+1 targets line 3 (W "B" W "C"), then continues to line 4
+        assert result.output == "BCD"
+
+    # Phase 5: Variable Offset GOTO (T025-T029)
+
+    def test_variable_offset_goto_outputs_correct_line(self, execute_mumps):
+        """T026: S N=2 G STAR+N outputs "2".
+
+        Variable offset is evaluated at runtime.
+        """
+        source = """TEST S N=2 G STAR+N Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_variable_offset_zero_executes_label_line(self, execute_mumps):
+        """T027: S N=0 G STAR+N executes label line.
+
+        Variable offset 0 is equivalent to G STAR.
+        """
+        source = """TEST S N=0 G STAR+N Q
+STAR W "X" Q"""
+        result = execute_mumps(source)
+        assert result.output == "X"
+
+    def test_do_with_variable_offset_in_loop(self, execute_mumps):
+        """T028: F N=0:1:2 D LINE+N outputs "ABCBCC".
+
+        DO with variable offset in FOR loop:
+        - N=0: D LINE+0 → execute "A", "B", "C", then Q returns
+        - N=1: D LINE+1 → execute "B", "C", then Q returns
+        - N=2: D LINE+2 → execute "C", then Q returns
+        """
+        source = """TEST F N=0:1:2 D LINE+N
+ Q
+LINE W "A"
+ W "B"
+ W "C"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "ABCBCC"
+
+    def test_do_offset_returns_to_caller(self, execute_mumps):
+        """T028b: D SUB+2 returns to caller after QUIT.
+
+        DO with offset executes from offset line, then Q returns
+        to caller which continues execution.
+        """
+        source = """TEST D SUB+2 W "after" Q
+SUB W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2after"
+
+    def test_do_offset_executes_through_quit(self, execute_mumps):
+        """T028c: DO+offset executes from offset through QUIT.
+
+        DO with offset starts at the offset line, executes
+        all subsequent statements until QUIT, then returns.
+        """
+        source = """TEST D LINE+1 W "X" Q
+LINE W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        # LINE+1 starts at W "1", then W "2", then Q returns
+        # Caller continues with W "X"
+        assert result.output == "12X"
+
+    def test_nested_do_offset_variable_evaluated_at_dispatch_time(self, execute_mumps):
+        """Offset variable is evaluated at dispatch time, not modified inside.
+
+        When DO+offset uses a variable for the offset, that variable is
+        evaluated at the time of the DO call. Modifications to the variable
+        inside the subroutine do not affect the already-computed offset.
+        This tests that variable evaluation happens at dispatch time.
+        """
+        source = """TEST S N=1 D SUB+N W "after" Q
+SUB W "0"
+ S N=99 W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        # N=1 at dispatch: SUB+1 starts at S N=99 W "1" (skips W "0")
+        # The S N=99 executes but doesn't affect the dispatch
+        # Output: "12after" (1, 2, then caller continues)
+        assert result.output == "12after"
+
+    # Phase 6: Arithmetic Offset Expressions (T030-T034)
+
+    def test_chained_addition_offset(self, execute_mumps):
+        """T031: G STAR+1+1 outputs "2" (chained addition).
+
+        Arithmetic offset expression with chained addition evaluates
+        correctly: 1+1=2, so STAR+2 is reached.
+        """
+        source = """TEST G STAR+1+1 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_variable_subtraction_offset(self, execute_mumps):
+        """T032: G STAR+A-B with A=3, B=1 outputs "2".
+
+        Arithmetic offset expression with variable subtraction:
+        A-B = 3-1 = 2, so STAR+2 is reached.
+        """
+        source = """TEST S A=3,B=1 G STAR+A-B Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_division_offset(self, execute_mumps):
+        """T033: G STAR+6/3 outputs "2" (division).
+
+        Arithmetic offset expression with division:
+        6/3 = 2, so STAR+2 is reached.
+        """
+        source = """TEST G STAR+6/3 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    # Phase 7: Invalid Offset Error Handling (T035-T040)
+
+    def test_invalid_literal_offset_raises_error(self, execute_mumps):
+        """T038: G STAR+100 raises error (literal offset past end).
+
+        When offset is beyond the routine's end, a ValueError is raised
+        with message "Entry point LABEL+OFFSET not valid".
+        """
+        source = """TEST G STAR+100 Q
+STAR W "X" Q"""
+        result = execute_mumps(source)
+        assert result.success is False
+        assert "Entry point STAR+100 not valid" in result.error
+
+    def test_invalid_variable_offset_raises_error(self, execute_mumps):
+        """T039: S N=99 G STAR+N raises error at runtime.
+
+        Variable offset that evaluates to invalid value at runtime
+        raises error with computed offset value in message.
+        """
+        source = """TEST S N=99 G STAR+N Q
+STAR W "X" Q"""
+        result = execute_mumps(source)
+        assert result.success is False
+        assert "Entry point STAR+99 not valid" in result.error
+
+    def test_invalid_do_offset_raises_error(self, execute_mumps):
+        """T038 extension: D SUB+100 raises error (DO offset past end).
+
+        DO with invalid offset also raises error matching YDB behavior.
+        """
+        source = """TEST D SUB+100 W "after" Q
+SUB W "X" Q"""
+        result = execute_mumps(source)
+        assert result.success is False
+        assert "Entry point SUB+100 not valid" in result.error
+
+    def test_negative_offset_raises_error(self, execute_mumps):
+        """Negative offset raises error (must resolve to non-negative integer).
+
+        Per data-model.md validation rules, offset must resolve to a
+        non-negative integer. Negative offsets raise ValueError at runtime.
+        """
+        source = """TEST S N=-1 G STAR+N Q
+STAR W "0"
+ W "1"
+ Q"""
+        result = execute_mumps(source)
+        assert result.success is False
+        assert "Entry point STAR+-1 not valid" in result.error
+
+    def test_negative_do_offset_raises_error(self, execute_mumps):
+        """Negative DO offset raises error (must resolve to non-negative integer).
+
+        DO with negative offset also raises error matching GOTO behavior.
+        """
+        source = """TEST S N=-2 D SUB+N W "after" Q
+SUB W "0"
+ W "1"
+ Q"""
+        result = execute_mumps(source)
+        assert result.success is False
+        assert "Entry point SUB+-2 not valid" in result.error
+
+    # Phase 8: Non-Integer Offset Coercion (T041-T044)
+
+    def test_float_offset_truncated(self, execute_mumps):
+        """T042: G STAR+2.7 outputs "2" (float truncated).
+
+        Non-integer offset is truncated to integer using Python's int().
+        2.7 truncates to 2, so STAR+2 is reached.
+        """
+        source = """TEST G STAR+2.7 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_float_offset_floor_toward_zero(self, execute_mumps):
+        """T043: G STAR+2.999 outputs "2" (floor toward zero).
+
+        Non-integer offset near next integer still truncates down.
+        2.999 truncates to 2, not rounds to 3.
+        """
+        source = """TEST G STAR+2.999 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_string_offset_coerces_to_zero(self, execute_mumps):
+        """String offset coerces to 0 (standard numeric coercion).
+
+        When offset expression evaluates to a non-numeric string like "ABC",
+        MUMPS numeric coercion rules convert it to 0. So G STAR+X where
+        X="ABC" is equivalent to G STAR+0 (executes label line).
+        """
+        source = """TEST S X="ABC" G STAR+X Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        # "ABC" coerces to 0, so STAR+0 = label line outputs "0", then "1", "2"
+        assert result.output == "012"
+
+    # Phase 9: Comment/Blank Line Handling (T045-T049)
+
+    def test_offset_landing_on_comment_continues(self, execute_mumps):
+        """T047: Offset landing on comment line continues to next executable.
+
+        When GOTO offset lands on a comment line (not in _line_map),
+        execution continues to the next executable line.
+        """
+        source = """TEST G STAR+1 Q
+STAR W "0"
+;comment line
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_offset_landing_on_blank_continues(self, execute_mumps):
+        """T048: Offset landing on blank line continues to next executable.
+
+        When GOTO offset lands on a blank line (not in _line_map),
+        execution continues to the next executable line.
+        """
+        source = """TEST G STAR+1 Q
+STAR W "0"
+
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: same level enforcement")

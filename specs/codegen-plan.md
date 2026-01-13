@@ -801,24 +801,35 @@ Review before coding:
 |-----------|----------|----------|
 | Label line numbers | `MLabel.line_number` ✓ | — |
 | Source lines | `MRoutine.source_lines` ✓ | — |
-| Statement line numbers | — | Populate `MStatement.line_number` from textX |
-| Line-to-entry mapping | — | `Dict[int, Callable]` built at init |
-| Runtime dispatch | — | `_line_dispatch(line_num)` method |
+| Statement line numbers | `MStatement.line_number` ✓ | Populated from textX ✓ |
+| Line-to-entry mapping | `_line_map` ✓ | `Dict[int, Tuple[str, int]]` ✓ |
+| Runtime dispatch | Trampoline ✓ | Handles `int` targets via `_line_map` ✓ |
 
-### Deliverables
+### Deliverables ✅ COMPLETE
 
-- [ ] Statement line number population (parser enhancement)
-  - Tests: `TestStatementLineNumbersParser` → [test_parser.py](../tests/unit/parser/test_parser.py)
-- [ ] Line-to-entry mapping generator
-  - Tests: `TestLineMapGenerationCodegen` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
-- [ ] Computed offset dispatch (literal offsets first)
-  - Tests: `TestComputedOffsetCodegen` → test_s8_2_06_goto.py
-- [ ] Minimal expression evaluator for integer offsets
-  - Tests: `TestOffsetExpressionEvaluator` → test_s8_2_06_goto.py
-- [ ] **Post-implementation documentation**
-  - Update codegen-plan.md: mark deliverables complete, add implementation notes
-  - Update docs/codegen/goto_handling.md with computed offset architecture
-  - Add pre-requisites section to Spec 008
+- [X] Statement line number population (parser already populates via `_set_line_number_recursive()`)
+  - Tests: Line numbers verified in codegen tests
+- [X] Line-to-entry mapping generator (`generate_line_map()` in `line_dispatch.py`)
+  - Tests: `TestLineMapGeneration` → [test_line_dispatch.py](../tests/unit/codegen/test_line_dispatch.py)
+- [X] Computed offset dispatch (literal, variable, arithmetic offsets)
+  - Tests: `TestLineDispatchCodegen` → [test_s8_2_06_goto.py](../tests/unit/codegen/s8_commands/test_s8_2_06_goto.py)
+- [X] Offset expression evaluation via `generate_expr()` + `int()` wrapper
+  - Tests: Arithmetic, float truncation, variable offsets all covered
+- [X] Non-executable line handling (comments/blanks skip to next executable)
+  - Tests: `test_offset_landing_on_comment_continues`, `test_offset_landing_on_blank_continues`
+- [X] Invalid offset error handling ("Entry point LABEL+N not valid")
+  - Tests: `test_invalid_offset_raises_error`, `test_variable_offset_past_end_raises_error`
+- [X] **Post-implementation documentation**
+  - Updated docs/codegen/goto_handling.md with computed offset architecture
+  - Added pre-requisites section referencing Spec 007 infrastructure
+
+**Implementation Notes (Spec 007)**:
+- Parser already populated statement line numbers - no changes needed
+- Line map is `Dict[int, Tuple[str, int]]` mapping line → (label_name, offset_within_label)
+- Offset dispatch uses trampoline pattern: `return (label_line + int(offset), state)`
+- Label functions accept `_start_offset=0` parameter with `if _start_offset <= N:` guards
+- Non-integer offsets truncated via `int()` (matches MUMPS truncation-toward-zero)
+- Comment/blank lines not in `_line_map`; offset landing on them finds next executable
 
 ### Validation
 

@@ -330,9 +330,10 @@ Unsupported patterns raise `UnsupportedFeatureError` referencing future specs:
 When `needs_trampoline=True`, the code generator produces:
 
 1. **RoutineState dataclass** - Carries variables across label boundaries
-2. **Label functions** - Prefixed with `_`, accept state parameter, return `(next_label, state)` tuple
+2. **Label functions** - Prefixed with `_`, accept state parameter, return `(next_target, state)` tuple
 3. **Entry point function** - Named after first label, creates state and runs trampoline dispatcher
 4. **Labels dictionary** - Maps label names to their functions
+5. **Line map** (Spec 007) - Maps source line numbers to (label, offset) tuples for offset dispatch
 
 ```python
 from dataclasses import dataclass, field
@@ -343,15 +344,18 @@ class RoutineState:
     """Shared state for cross-label variable visibility."""
     X: Any = None
 
-def _TEST(state) -> Tuple[Optional[str], RoutineState]:
+def _TEST(state, _start_offset=0) -> Tuple[Optional[str | int], RoutineState]:
     """Label function receives/returns state."""
     global _test
-    state.X = m_num(1)
-    return ("NEXT", state)  # Cross-label GOTO
+    if _start_offset <= 0:
+        state.X = m_num(1)
+        return ("NEXT", state)  # Cross-label GOTO
+    return (None, state)
 
-def _NEXT(state) -> Tuple[Optional[str], RoutineState]:
+def _NEXT(state, _start_offset=0) -> Tuple[Optional[str | int], RoutineState]:
     global _test
-    _rt.write(str(state.X))
+    if _start_offset <= 0:
+        _rt.write(str(state.X))
     return (None, state)  # End execution
 
 _labels = {
@@ -359,14 +363,25 @@ _labels = {
     "NEXT": _NEXT,
 }
 
+# Spec 007: Line map for offset dispatch
+_line_map: dict[int, tuple[str, int]] = {
+    1: ("TEST", 0),
+    2: ("NEXT", 0),
+}
+
 def TEST():
     """Trampoline dispatcher for routine execution."""
     state = RoutineState()
-    label = "TEST"
+    target: str | int | None = "TEST"
 
-    while label is not None:
-        func = _labels[label]
-        label, state = func(state)
+    while target is not None:
+        if isinstance(target, int):
+            label_name, offset = _line_map[target]
+            func = _labels[label_name]
+            target, state = func(state, _start_offset=offset)
+        else:
+            func = _labels[target]
+            target, state = func(state)
 
     return state
 ```
@@ -376,9 +391,92 @@ def TEST():
 - Label functions are prefixed with `_` (e.g., `_TEST`) to distinguish from entry point
 - The entry point (`TEST()`) has the original label name for external callers
 - Cross-label GOTOs return the target label as a string: `return ("NEXT", state)`
+- **Spec 007**: Offset GOTOs return line number: `return (label_line + offset, state)`
+- **Spec 007**: Dispatcher handles `int` targets via `_line_map` lookup
+- **Spec 007**: Label functions accept `_start_offset=0` parameter for entry at offset
 - QUIT returns `(None, state)` to exit the trampoline loop
 - Fall-through to next label returns that label's name instead of `None`
 - FOR loop variables in state use `state.VAR` for loop counter when cross-label visible
+
+## Computed Offsets (Spec 007)
+
+GOTO/DO with computed offsets (`G LABEL+N`, `D SUB+expr`) dispatches by source line number:
+
+```mumps
+TEST G STAR+2 Q    ; Line 1 - jump to STAR+2 = line 4
+STAR W "0"         ; Line 2 - offset 0 (label line)
+ W "1"             ; Line 3 - offset 1
+ W "2"             ; Line 4 - offset 2 (target)
+ Q                 ; Line 5 - offset 3
+```
+
+**Generated Code Pattern:**
+
+1. **GOTO with offset**: emits `return (label_line + int(offset_expr), state)`
+2. **DO with offset**: emits `_LABEL(state, _start_offset=int(offset_expr))`
+3. Dispatcher resolves line number via `_line_map[target]` → `(label_name, offset)`
+4. Label function is called with `_start_offset=offset`
+5. Each statement has offset guard: `if _start_offset <= N:` to skip earlier statements
+
+**DO+Offset Example:**
+
+```mumps
+TEST F N=0:1:2 D LINE+N
+ Q
+LINE W "A"
+ W "B"
+ W "C"
+ Q
+```
+
+Output: `ABCBCC` (N=0→ABC, N=1→BC, N=2→C)
+
+```python
+# Generated DO+offset call:
+_LINE(state, _start_offset=int(N))
+```
+
+**Offset Semantics:**
+
+- Offset 0 = label line itself
+- Offset 1 = first statement after label line
+- Offsets are based on source line number difference: `stmt.line_number - label.line_number`
+- DO with offset returns to caller after QUIT (unlike GOTO which transfers control)
+- Non-integer offsets are truncated toward zero (e.g., 2.7 → 2, 2.999 → 2)
+- Invalid offsets (past end of routine) raise "Entry point LABEL+N not valid" error
+- **String coercion**: String offsets are coerced using MUMPS numeric rules via `m_num()` (e.g., `"ABC"` → 0, `"2A"` → 2)
+- **Negative offsets**: Negative values raise `ValueError("Entry point LABEL+-N not valid")` at runtime
+
+**Non-Executable Line Handling:**
+
+When an offset lands on a non-executable line (comment or blank), execution continues to the next executable line:
+
+```mumps
+TEST G STAR+1 Q    ; Target line 3 (comment)
+STAR W "0"         ; Line 2 - offset 0
+;comment line      ; Line 3 - offset 1 (non-executable)
+ W "2"             ; Line 4 - offset 2 (next executable)
+ Q
+```
+
+Output: `2` (skips comment, continues to next executable)
+
+**Generated Code Pattern:**
+
+```python
+_target = label_line + int(offset_expr)
+if _target not in _line_map:
+    _next = min((ln for ln in _line_map if ln > _target), default=None)
+    if _next is None:
+        raise ValueError("Entry point LABEL+offset not valid")
+    _target = _next
+return (_target, state)
+```
+
+**Strategy Selection:**
+
+- Routines with offset calls use TRAMPOLINE strategy (even without cross-label GOTOs)
+- This ensures label functions have `_start_offset` parameter and offset guards
 
 ## MArray Runtime Support
 

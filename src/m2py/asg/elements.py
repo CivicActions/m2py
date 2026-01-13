@@ -302,6 +302,10 @@ class MRoutine(ASGElement):
     # Populated by compute_all_signatures when subscripted local variable access detected
     array_vars: set = field(default_factory=set, repr=False)
 
+    # Spec 007: True if any GOTO/DO has offset expression (populated by classify_gotos)
+    # Triggers TRAMPOLINE strategy and _line_map generation for line-based dispatch
+    has_offset_calls: bool = False
+
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.
 

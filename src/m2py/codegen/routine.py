@@ -15,8 +15,16 @@ from m2py.asg.enums import ScopeStrategy
 from m2py.analysis.variables import FunctionSignature
 from m2py.codegen.emitter import CodeEmitter
 from m2py.codegen.enums import GotoStrategy
+from m2py.codegen.line_dispatch import (
+    generate_line_map,
+    generate_line_map_code,
+    has_offset_calls,
+)
 from m2py.codegen.names import NameTranslator, translate_name
-from m2py.codegen.statements import generate_scope_statements
+from m2py.codegen.statements import (
+    generate_offset_guarded_statements,
+    generate_scope_statements,
+)
 
 if TYPE_CHECKING:
     pass
@@ -427,6 +435,13 @@ class RoutineGenerator:
         ctx.emitter.line("}")
         ctx.emitter.blank()
 
+        # Spec 007 (T010-T012): Generate _line_map when routine has offset calls
+        has_offsets = has_offset_calls(self._routine)
+        if has_offsets:
+            line_map = generate_line_map(self._routine)
+            generate_line_map_code(line_map, ctx.emitter)
+            ctx.emitter.blank()
+
         # Generate trampoline dispatcher entry point
         # Named after the first label so it's the default entry point
         entry_label = self._routine.labels[0].name if self._routine.labels else None
@@ -436,12 +451,28 @@ class RoutineGenerator:
             with ctx.emitter.indented():
                 ctx.emitter.line('"""Trampoline dispatcher for routine execution."""')
                 ctx.emitter.line("state = RoutineState()")
-                ctx.emitter.line(f'label = "{entry_label}"')
+                # Spec 007 (T018): Target can be str (label) or int (line number)
+                ctx.emitter.line(f'target: str | int | None = "{entry_label}"')
                 ctx.emitter.blank()
-                ctx.emitter.line("while label is not None:")
+                ctx.emitter.line("while target is not None:")
                 with ctx.emitter.indented():
-                    ctx.emitter.line("func = _labels[label]")
-                    ctx.emitter.line("label, state = func(state)")
+                    if has_offsets:
+                        # Spec 007 (T018-T019): Handle int targets via _line_map
+                        ctx.emitter.line("if isinstance(target, int):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("label_name, offset = _line_map[target]")
+                            ctx.emitter.line("func = _labels[label_name]")
+                            ctx.emitter.line(
+                                "target, state = func(state, _start_offset=offset)"
+                            )
+                        ctx.emitter.line("else:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("func = _labels[target]")
+                            ctx.emitter.line("target, state = func(state)")
+                    else:
+                        # No offsets: simple label dispatch
+                        ctx.emitter.line("func = _labels[target]")
+                        ctx.emitter.line("target, state = func(state)")
                 ctx.emitter.blank()
                 ctx.emitter.line("return state")
             ctx.emitter.blank()
@@ -492,19 +523,33 @@ class RoutineGenerator:
 
         # Generate function definition with state parameter
         # For trampoline, all labels take state; formal params come later
+        # Spec 007 (T020): Add _start_offset parameter for offset entry support
+        has_offsets = has_offset_calls(self._routine)
         if formal_params:
-            params_str = "state, " + ", ".join(formal_params)
+            if has_offsets:
+                params_str = "state, " + ", ".join(formal_params) + ", _start_offset=0"
+            else:
+                params_str = "state, " + ", ".join(formal_params)
         else:
-            params_str = "state"
+            if has_offsets:
+                params_str = "state, _start_offset=0"
+            else:
+                params_str = "state"
 
         # Return type annotation for trampoline labels
-        ctx.emitter.line(
-            f"def {func_name}({params_str}) -> Tuple[Optional[str], RoutineState]:"
-        )
+        # Spec 007: return type is str | int | None (can be label name or line number)
+        if has_offsets:
+            return_type = "Tuple[Optional[str | int], RoutineState]"
+        else:
+            return_type = "Tuple[Optional[str], RoutineState]"
+        ctx.emitter.line(f"def {func_name}({params_str}) -> {return_type}:")
 
         with ctx.emitter.indented():
             # Declare global _test
             ctx.emitter.line("global _test")
+
+            # Get label line number for offset calculation
+            label_line = label.line_number
 
             # Spec 006 (T069a/T069b): Self-loop labels wrap body in while True:
             # Self-loop GOTOs become continue, QUIT becomes break
@@ -513,7 +558,13 @@ class RoutineGenerator:
                 with ctx.emitter.indented():
                     # Generate body statements
                     if label.body and label.body.statements:
-                        generate_scope_statements(label.body.statements, ctx)
+                        # Spec 007: Use offset guards when routine has offset calls
+                        if has_offsets and label_line is not None:
+                            generate_offset_guarded_statements(
+                                label.body.statements, label_line, ctx
+                            )
+                        else:
+                            generate_scope_statements(label.body.statements, ctx)
                     else:
                         ctx.emitter.line("pass")
                     # Implicit break at end if no explicit exit (to prevent infinite loop)
@@ -523,7 +574,13 @@ class RoutineGenerator:
                 # Generate body statements using scope-aware generator
                 # This handles forward GOTO restructuring automatically
                 if label.body and label.body.statements:
-                    generate_scope_statements(label.body.statements, ctx)
+                    # Spec 007 (T021): Use offset guards when routine has offset calls
+                    if has_offsets and label_line is not None:
+                        generate_offset_guarded_statements(
+                            label.body.statements, label_line, ctx
+                        )
+                    else:
+                        generate_scope_statements(label.body.statements, ctx)
                 else:
                     # Empty function needs pass
                     ctx.emitter.line("pass")

@@ -92,6 +92,7 @@ The top-level container for a MUMPS routine (source file).
 | `needs_trampoline` | `bool` | True if ANY cross-label GOTOs exist (triggers trampoline pattern) |
 | `routine_state_vars` | `Set[str]` | Variables needing RoutineState fields (cross-label flow) |
 | `array_vars` | `Set[str]` | Variables with subscripted access (need MArray fields) |
+| `has_offset_calls` | `bool` | True if any GOTO/DO has offset expression (triggers line-based dispatch) |
 
 ### Methods
 

@@ -395,6 +395,40 @@ def generate_scope_statements(
         i += 1
 
 
+def generate_offset_guarded_statements(
+    statements: List["MStatement"],
+    label_line: int,
+    ctx: "GeneratorContext",
+) -> None:
+    """Generate statements with offset guards for computed offset support.
+
+    Spec 007 (T021): Each statement is wrapped with an offset guard that
+    checks if the statement should be skipped based on _start_offset.
+
+    The guard is: if _start_offset <= offset:
+    where offset = statement.line_number - label.line_number
+
+    This ensures that when entering a label at offset N, statements
+    at offsets 0 through N-1 are skipped.
+
+    Args:
+        statements: List of statements to generate
+        label_line: Line number of the containing label (for offset calculation)
+        ctx: Generator context
+    """
+    for stmt in statements:
+        stmt_line = stmt.line_number
+        if stmt_line is not None:
+            # Calculate offset from label line
+            offset = stmt_line - label_line
+            ctx.emitter.line(f"if _start_offset <= {offset}:")
+            with ctx.emitter.indented():
+                generate_statement(stmt, ctx)
+        else:
+            # No line number - always execute (shouldn't happen normally)
+            generate_statement(stmt, ctx)
+
+
 def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     """Generate Python statement from ASG statement node.
 
@@ -1089,9 +1123,46 @@ def _generate_single_target_goto(
     # Cross-label GOTO: pattern depends on strategy
     # Spec 006 (T055): Check strategy and generate appropriate pattern
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
-        # Trampoline pattern: return (label_name, state) tuple
-        # The trampoline dispatcher will call the target label
-        ctx.emitter.line(f'return ("{target.name}", state)')
+        # Spec 007 (T015-T017): Check for offset and emit line-based dispatch
+        if target.offset is not None:
+            # Offset GOTO: compute target line = label_line + offset
+            # The dispatcher will look up (label, offset) in _line_map
+            if target.target is None or target.target.line_number is None:
+                raise UnsupportedFeatureError(
+                    f"Cannot resolve offset GOTO target: {target.name}"
+                )
+            label_line = target.target.line_number
+            offset_code = generate_expr(target.offset, ctx)
+            # Spec 007 Phase 7 (T035-T037): Validate offset and raise descriptive error
+            # Spec 007 Phase 9 (T045-T046): Skip non-executable lines (comments/blanks)
+            # Spec 007: Check for negative offset (must resolve to non-negative integer)
+            # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
+            ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
+            ctx.emitter.line("if _offset_val < 0:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    f'raise ValueError("Entry point {target.name}+" '
+                    '+ str(_offset_val) + " not valid")'
+                )
+            ctx.emitter.line(f"_target = {label_line} + _offset_val")
+            ctx.emitter.line("if _target not in _line_map:")
+            with ctx.emitter.indented():
+                # Find next executable line after target
+                ctx.emitter.line(
+                    "_next = min((ln for ln in _line_map if ln > _target), default=None)"
+                )
+                ctx.emitter.line("if _next is None:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        f'raise ValueError("Entry point {target.name}+" '
+                        '+ str(_offset_val) + " not valid")'
+                    )
+                ctx.emitter.line("_target = _next")
+            ctx.emitter.line("return (_target, state)")
+        else:
+            # Trampoline pattern: return (label_name, state) tuple
+            # The trampoline dispatcher will call the target label
+            ctx.emitter.line(f'return ("{target.name}", state)')
     else:
         # SIMPLE_FUNCTIONS pattern: function call + return
         # Get the label name and translate it
@@ -1270,6 +1341,59 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
 
         # Generate arguments if any
         args = _generate_call_arguments(target.arguments, ctx)
+
+        # Spec 007 (T025-T028c): Handle DO with offset
+        # In TRAMPOLINE strategy, call the internal function with _start_offset
+        if target.offset is not None and ctx.strategy == GotoStrategy.TRAMPOLINE:
+            # Prefix with _ for internal trampoline function
+            internal_func = "_" + label_name
+            # Generate offset expression code
+            offset_code = generate_expr(target.offset, ctx)
+
+            # Spec 007 Phase 7 (T035-T037): Validate offset for DO as well
+            # Spec 007 Phase 9 (T045-T046): Skip non-executable lines (comments/blanks)
+            # Get the label's line number for validation
+            if target.target is not None and target.target.line_number is not None:
+                label_line = target.target.line_number
+                # Spec 007: Check for negative offset (must resolve to non-negative integer)
+                # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
+                ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
+                ctx.emitter.line("if _offset_val < 0:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        f'raise ValueError("Entry point {target.name}+" '
+                        '+ str(_offset_val) + " not valid")'
+                    )
+                ctx.emitter.line(f"_target = {label_line} + _offset_val")
+                ctx.emitter.line("if _target not in _line_map:")
+                with ctx.emitter.indented():
+                    # Find next executable line after target
+                    ctx.emitter.line(
+                        "_next = min((ln for ln in _line_map if ln > _target), "
+                        "default=None)"
+                    )
+                    ctx.emitter.line("if _next is None:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            f'raise ValueError("Entry point {target.name}+" '
+                            '+ str(_offset_val) + " not valid")'
+                        )
+                    ctx.emitter.line("_target = _next")
+                # Now update the offset based on the new target line
+                ctx.emitter.line(
+                    f"_offset = _line_map[_target][1] if _target != {label_line} + "
+                    "_offset_val else _offset_val"
+                )
+
+            # Build call with state and _start_offset
+            # Note: args handling with offset is complex - for now just handle simple case
+            if args:
+                ctx.emitter.line(
+                    f"{internal_func}(state, {args}, _start_offset=_offset_val)"
+                )
+            else:
+                ctx.emitter.line(f"{internal_func}(state, _start_offset=_offset_val)")
+            continue
 
         # T060-T062: Check callee signature for byref_outputs and generate destructuring
         callee_signature = None
