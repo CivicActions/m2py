@@ -142,8 +142,8 @@ NEXT W "done" Q"""
 NEXT W "done" Q"""
         code = generate_python(source)
 
-        # Entry point should be named after first label
-        assert "def TEST():" in code
+        # Entry point should be named after first label (with _scope param)
+        assert "def TEST(_scope=None):" in code
         # Spec 007: 'target' is now used instead of 'label' to support int line dispatch
         assert "while target is not None:" in code
         assert "func = _labels[target]" in code
@@ -227,7 +227,7 @@ class TestSimpleFunctionsNotAffected:
         # No trampoline machinery
         assert "RoutineState" not in code
         assert "_labels" not in code
-        assert "def TEST():" in code
+        assert "def TEST(_scope=None):" in code
         assert "def _TEST(" not in code
 
     def test_intra_label_goto_no_trampoline(self):
@@ -249,9 +249,9 @@ class TestSimpleFunctionsNotAffected:
         ast.parse(code)
 
         # Either pattern is acceptable:
-        # - Simple function with if/else: def TEST():
+        # - Simple function with if/else: def TEST(_scope=None):
         # - Trampoline with offset guards: _labels, _start_offset
-        has_simple_pattern = "def TEST():" in code and "_labels" not in code
+        has_simple_pattern = "def TEST(_scope=None):" in code and "_labels" not in code
         has_trampoline_pattern = "_labels" in code and "_start_offset" in code
         assert has_simple_pattern or has_trampoline_pattern, (
             "Expected either simple function or trampoline pattern"

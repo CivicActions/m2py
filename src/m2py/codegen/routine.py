@@ -398,13 +398,18 @@ class RoutineGenerator:
                 "This is not supported in Spec 005. See Spec 006/012."
             )
 
-        # Generate function definition with formal parameters
-        params_str = ", ".join(formal_params)
+        # T030: Add _scope parameter for cross-routine variable visibility
+        # All labels accept _scope so they can be called externally (D LABEL^ROUTINE)
+        # _scope must come AFTER formal params since it has a default value
+        all_params = formal_params + ["_scope=None"]
+        params_str = ", ".join(all_params)
         ctx.emitter.line(f"def {func_name}({params_str}):")
 
         with ctx.emitter.indented():
             # Declare global _test
             ctx.emitter.line("global _test")
+            # T030: Initialize _scope if not provided (entry point behavior)
+            ctx.emitter.line("_scope = _scope if _scope is not None else {}")
 
             # Spec 006 (T069a): Check for self-loop pattern
             if label.has_self_loop:
@@ -475,12 +480,15 @@ class RoutineGenerator:
 
         # Generate trampoline dispatcher entry point
         # Named after the first label so it's the default entry point
+        # T030: Accept _scope parameter for cross-routine variable visibility
         entry_label = self._routine.labels[0].name if self._routine.labels else None
         if entry_label:
             entry_func = translate_name(entry_label)
-            ctx.emitter.line(f"def {entry_func}():")
+            ctx.emitter.line(f"def {entry_func}(_scope=None):")
             with ctx.emitter.indented():
                 ctx.emitter.line('"""Trampoline dispatcher for routine execution."""')
+                # T030: Initialize _scope if not provided (entry point behavior)
+                ctx.emitter.line("_scope = _scope if _scope is not None else {}")
                 ctx.emitter.line("state = RoutineState()")
                 # Spec 007 (T018): Target can be str (label) or int (line number)
                 ctx.emitter.line(f'target: str | int | None = "{entry_label}"')

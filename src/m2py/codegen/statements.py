@@ -1332,7 +1332,7 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         if target.label_is_indirect or target.indirection:
             raise NotImplementedError("Indirect DO not yet supported")
 
-        # Spec 008 (T018-T026): Handle external routine reference D ^ROUTINE
+        # Spec 008 (T018-T029): Handle external routine reference D ^ROUTINE
         if target.routine:
             routine_name = target.routine
 
@@ -1364,8 +1364,10 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                     # T025: D +N^ROUTINE - absolute line offset (1-based to 0-indexed)
                     ctx.emitter.line(f"_target_line = {offset_code} - 1")
 
-                # Call via line dispatch map (requires routine to have _line_map)
-                ctx.emitter.line(f"{routine_name}._line_map[_target_line]()")
+                # T029: Call via line dispatch map, passing _scope for cross-routine visibility
+                ctx.emitter.line(
+                    f"{routine_name}._line_map[_target_line](_scope=_scope)"
+                )
             elif target.name:
                 # T022-T023: D LABEL^ROUTINE - call specific label
                 label_name = translate_name(target.name)
@@ -1377,19 +1379,25 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                         f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
                         f"list({routine_name}._label_lines.keys()))"
                     )
+                # T029: Pass _scope for cross-routine variable visibility (as keyword arg)
                 args = _generate_call_arguments(target.arguments, ctx)
                 if args:
-                    ctx.emitter.line(f"{routine_name}.{label_name}({args})")
+                    ctx.emitter.line(
+                        f"{routine_name}.{label_name}({args}, _scope=_scope)"
+                    )
                 else:
-                    ctx.emitter.line(f"{routine_name}.{label_name}()")
+                    ctx.emitter.line(f"{routine_name}.{label_name}(_scope=_scope)")
             else:
                 # D ^ROUTINE - call entry label (same name as routine)
                 entry_label = translate_name(routine_name)
+                # T029: Pass _scope for cross-routine variable visibility (as keyword arg)
                 args = _generate_call_arguments(target.arguments, ctx)
                 if args:
-                    ctx.emitter.line(f"{routine_name}.{entry_label}({args})")
+                    ctx.emitter.line(
+                        f"{routine_name}.{entry_label}({args}, _scope=_scope)"
+                    )
                 else:
-                    ctx.emitter.line(f"{routine_name}.{entry_label}()")
+                    ctx.emitter.line(f"{routine_name}.{entry_label}(_scope=_scope)")
             continue
 
         # Get the label name and translate it

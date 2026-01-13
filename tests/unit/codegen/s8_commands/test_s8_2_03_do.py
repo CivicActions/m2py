@@ -466,7 +466,7 @@ class TestByRefParameterCodegen:
         code = generate_python("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
 
         # Callee returns modified param
-        assert "def INCR(N):" in code
+        assert "def INCR(N, _scope=None):" in code
         assert "return N" in code
 
         # Call site destructures the return
@@ -494,7 +494,7 @@ class TestByRefParameterCodegen:
         )
 
         # Callee returns both modified params
-        assert "def SWAP(X, Y):" in code
+        assert "def SWAP(X, Y, _scope=None):" in code
         # Check for tuple return (order may vary based on set ordering)
         assert "return X, Y" in code or "return Y, X" in code
 

@@ -81,11 +81,11 @@ class TestIntraLabelGotoCodegen:
         python_code = generate_python(code)
 
         # Should NOT contain recursive TEST() call inside the function body
-        # The function definition "def TEST():" is expected, but no TEST() calls
+        # The function definition "def TEST(_scope=None):" is expected, but no TEST() calls
         lines = python_code.split("\n")
         in_test_body = False
         for line in lines:
-            if "def TEST():" in line:
+            if "def TEST(_scope=None):" in line:
                 in_test_body = True
                 continue
             if in_test_body and line.strip().startswith("def "):
@@ -707,7 +707,7 @@ class TestTrampolinePatternCodegen:
 NEXT W "done" Q"""
         )
         # Entry point with trampoline dispatcher
-        assert "def TEST():" in code
+        assert "def TEST(_scope=None):" in code
         # Spec 007: 'target' is now used instead of 'label' to support int line dispatch
         assert "while target is not None:" in code
         assert "func = _labels[target]" in code

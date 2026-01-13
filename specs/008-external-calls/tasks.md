@@ -90,13 +90,13 @@
 
 ### Implementation for User Story 4
 
-- [ ] T029 [US4] Ensure _scope parameter is passed to all external DO calls in src/m2py/codegen/statements.py
-- [ ] T030 [US4] Ensure _scope initialization at entry points in src/m2py/codegen/routine.py
-- [ ] T031 [US4] Verify NEW semantics work across routine boundaries (Spec 005 integration)
-- [ ] T032 [US4] Add integration test for cross-routine variable modification in tests/integration/test_external_calls.py
-- [ ] T033 [US4] Add integration test for NEW hiding caller variables in tests/integration/test_external_calls.py
+- [X] T029 [US4] Ensure _scope parameter is passed to all external DO calls in src/m2py/codegen/statements.py
+- [X] T030 [US4] Ensure _scope initialization at entry points in src/m2py/codegen/routine.py
+- [ ] T031 [US4] Verify NEW semantics work across routine boundaries (Spec 005 integration) - **DEFERRED: requires NEW command from Spec 005**
+- [X] T032 [US4] Add integration test for cross-routine variable modification in tests/integration/test_external_calls.py
+- [ ] T033 [US4] Add integration test for NEW hiding caller variables in tests/integration/test_external_calls.py - **DEFERRED: requires NEW command from Spec 005**
 
-**Checkpoint**: Shared scope works correctly across routine boundaries
+**Checkpoint**: Shared scope infrastructure works correctly across routine boundaries
 
 ---
 
