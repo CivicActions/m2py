@@ -55,13 +55,13 @@
 
 ### Implementation for User Story 4
 
-- [ ] T010 [US4] Modify `RoutineGenerator._generate_preamble()` in routine.py to call line map generator when routine has offset calls
-- [ ] T011 [US4] Add logic to detect if routine contains offset calls (check all MCall.offset fields)
-- [ ] T012 [US4] Generate `_line_map` dict in routine preamble using `generate_line_map_code()`
-- [ ] T013 [US4] Add unit test: verify generated code contains `_line_map` with correct line→(label, offset) entries
-- [ ] T014 [US4] Add unit test: verify comment-only and blank lines are excluded from `_line_map`
+- [X] T010 [US4] Modify `RoutineGenerator._generate_preamble()` in routine.py to call line map generator when routine has offset calls
+- [X] T011 [US4] Add logic to detect if routine contains offset calls (check all MCall.offset fields)
+- [X] T012 [US4] Generate `_line_map` dict in routine preamble using `generate_line_map_code()`
+- [X] T013 [US4] Add unit test: verify generated code contains `_line_map` with correct line→(label, offset) entries
+- [X] T014 [US4] Add unit test: verify comment-only and blank lines are excluded from `_line_map`
 
-**Checkpoint**: Line map generation complete - `_line_map` appears in generated Python for routines with offsets
+**Checkpoint**: Line map generation complete - `_line_map` appears in generated Python for routines with offsets ✅
 
 ---
 

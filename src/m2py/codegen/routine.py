@@ -427,6 +427,18 @@ class RoutineGenerator:
         ctx.emitter.line("}")
         ctx.emitter.blank()
 
+        # Spec 007 (T010-T012): Generate _line_map when routine has offset calls
+        from m2py.codegen.line_dispatch import (
+            has_offset_calls,
+            generate_line_map,
+            generate_line_map_code,
+        )
+
+        if has_offset_calls(self._routine):
+            line_map = generate_line_map(self._routine)
+            generate_line_map_code(line_map, ctx.emitter)
+            ctx.emitter.blank()
+
         # Generate trampoline dispatcher entry point
         # Named after the first label so it's the default entry point
         entry_label = self._routine.labels[0].name if self._routine.labels else None
