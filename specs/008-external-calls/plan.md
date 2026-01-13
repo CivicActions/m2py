@@ -29,17 +29,20 @@ Implement cross-routine coordination and module loading for MUMPS-to-Python tran
 **Constraints**: Generated code must be syntactically valid, behavior must match YottaDB  
 **Scale/Scope**: Support VistA-scale systems (thousands of routines, millions of LOC)
 
-### Existing Infrastructure
+### Implementation Status (Complete)
 
 | Component | Location | Status |
 |-----------|----------|--------|
 | `MCall.routine` | [elements.py](../../src/m2py/asg/elements.py#L374) | ✅ Parsed |
 | `CallType.ROUTINE_CALL` | [enums.py](../../src/m2py/asg/enums.py#L101) | ✅ Set |
 | `get_external_calls()` | [resolver.py](../../src/m2py/analysis/resolver.py#L192) | ✅ Available |
-| `MUMPSRuntime` | [runtime/__init__.py](../../src/m2py/runtime/__init__.py) | ✅ Exists |
-| External DO placeholder | [statements.py](../../src/m2py/codegen/statements.py#L1333) | ❌ NotImplementedError |
-| External GOTO placeholder | [statements.py](../../src/m2py/codegen/statements.py#L1064) | ❌ NotImplementedError |
-| External extrinsic placeholder | [expressions.py](../../src/m2py/codegen/expressions.py#L252) | ❌ NotImplementedError |
+| `MUMPSRuntime` | [runtime/__init__.py](../../src/m2py/runtime/__init__.py) | ✅ Extended |
+| External DO | [statements.py](../../src/m2py/codegen/statements.py) | ✅ Implemented |
+| External GOTO | [statements.py](../../src/m2py/codegen/statements.py) | ✅ Implemented |
+| External extrinsic | [expressions.py](../../src/m2py/codegen/expressions.py) | ✅ Implemented |
+| $TEXT function | [expressions.py](../../src/m2py/codegen/expressions.py) | ✅ Implemented |
+| GotoExternal exception | [runtime/__init__.py](../../src/m2py/runtime/__init__.py) | ✅ Added |
+| run_with_goto_support | [runtime/__init__.py](../../src/m2py/runtime/__init__.py) | ✅ Added |
 
 ## Constitution Check
 
@@ -81,15 +84,19 @@ specs/008-external-calls/
 ```text
 src/m2py/
 ├── runtime/
-│   └── __init__.py      # MUMPSRuntime extensions:
+│   └── __init__.py      # Runtime additions:
 │                        #   - get_text(offset, label, module) for $TEXT
 │                        #   - GotoExternal exception class
 │                        #   - LabelNotFoundError exception class
+│                        #   - run_with_goto_support() for external GOTO chains
 │                        #   (module loading uses standard Python import)
 │
 ├── codegen/
-│   ├── statements.py    # Update _generate_do(), _generate_goto() for external
-│   └── expressions.py   # Update _generate_extrinsic() for external
+│   ├── routine.py       # Module constants: _source_lines, _routine_name, _label_lines
+│   ├── statements.py    # External DO: import + routine.LABEL(_scope=_scope)
+│   │                    # External GOTO: raise GotoExternal(module, label, offset)
+│   └── expressions.py   # External extrinsic: import + routine.FUNC(_scope=_scope, args)
+│                        # $TEXT: _rt.get_text() with module constants
 │
 └── parser/
     └── (no changes)     # Parser already captures MCall.routine
@@ -109,9 +116,10 @@ tests/
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
 | Runtime gains `get_text()` | $TEXT needs runtime context (current routine, label resolution) | Pure codegen would bloat every generated file |
+| Runtime gains `run_with_goto_support()` | External GOTO chains require loop-based dispatch | Alternative: nested imports - but breaks return semantics |
 | GotoExternal exception | Stack unwinding for external GOTO semantics | Alternative: return codes - but breaks MUMPS semantics |
 
-**Simplifications achieved**: Standard Python `import`/`sys.modules` replaces custom module loading. No `call_routine()`, `goto_routine()`, or module cache code needed.
+**Simplifications achieved**: Standard Python `import`/`sys.modules` replaces custom module loading. No `call_routine()`, `goto_routine()`, or module cache code needed. The `_scope` dictionary provides cross-routine variable visibility with minimal overhead.
 
 ## Dependencies Summary
 

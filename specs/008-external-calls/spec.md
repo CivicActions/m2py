@@ -2,7 +2,8 @@
 
 **Feature Branch**: `008-external-calls`  
 **Created**: 2026-01-12  
-**Status**: Draft  
+**Completed**: 2026-01-13  
+**Status**: Complete  
 **Input**: Spec 008 from codegen-plan.md - External Calls & Cross-Routine Infrastructure
 
 ## Overview
@@ -16,9 +17,9 @@ External routine calls (`D ^ROUTINE`, `D LABEL^ROUTINE`, `G LABEL^ROUTINE`, `$$F
 3. **Control transfer** - DO returns after QUIT; GOTO transfers permanently
 4. **$TEXT function** - Returns source code lines, supporting external routine references
 
-**Current behavior**: The codegen raises `NotImplementedError` for all external routine references.
+**Implementation status**: All external routine patterns are supported. Codegen generates standard Python `import` statements and function calls.
 
-**Parser status**: The parser **already captures** external references via `MCall.routine` field and `CallType.ROUTINE_CALL`. This spec focuses on **codegen and runtime only**.
+**Parser status**: The parser captures external references via `MCall.routine` field and `CallType.ROUTINE_CALL`. Codegen and runtime handle all call patterns.
 
 ## Pre-requisites from Spec 007
 
