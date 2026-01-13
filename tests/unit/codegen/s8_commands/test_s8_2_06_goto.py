@@ -1043,6 +1043,36 @@ SUB W "X" Q"""
         assert result.success is False
         assert "Entry point SUB+100 not valid" in result.error
 
+    # Phase 8: Non-Integer Offset Coercion (T041-T044)
+
+    def test_float_offset_truncated(self, execute_mumps):
+        """T042: G STAR+2.7 outputs "2" (float truncated).
+
+        Non-integer offset is truncated to integer using Python's int().
+        2.7 truncates to 2, so STAR+2 is reached.
+        """
+        source = """TEST G STAR+2.7 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_float_offset_floor_toward_zero(self, execute_mumps):
+        """T043: G STAR+2.999 outputs "2" (floor toward zero).
+
+        Non-integer offset near next integer still truncates down.
+        2.999 truncates to 2, not rounds to 3.
+        """
+        source = """TEST G STAR+2.999 Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: same level enforcement")
     def test_same_level_enforcement(self, generate_python):

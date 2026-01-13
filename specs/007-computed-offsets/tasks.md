@@ -145,7 +145,7 @@
 
 ---
 
-## Phase 8: User Story 6 - Non-Integer Offset Coercion (Priority: P3)
+## Phase 8: User Story 6 - Non-Integer Offset Coercion (Priority: P3) ✅ COMPLETE
 
 **Goal**: Non-integer offsets truncated to integer using MUMPS numeric coercion
 
@@ -153,12 +153,12 @@
 
 ### Implementation for User Story 6
 
-- [ ] T041 [US6] Verify `int()` wrapper in offset evaluation handles truncation (T016 should include this)
-- [ ] T042 [US6] Add unit test: `G STAR+2.7` outputs "2" (float truncated)
-- [ ] T043 [US6] Add unit test: `G STAR+2.999` outputs "2" (floor toward zero)
-- [ ] T044 [US6] Add YDB validation for non-integer offset coercion
+- [X] T041 [US6] Verify `int()` wrapper in offset evaluation handles truncation (T016 should include this)
+- [X] T042 [US6] Add unit test: `G STAR+2.7` outputs "2" (float truncated)
+- [X] T043 [US6] Add unit test: `G STAR+2.999` outputs "2" (floor toward zero)
+- [X] T044 [US6] Add YDB validation for non-integer offset coercion
 
-**Checkpoint**: Non-integer offset coercion working - matches MUMPS truncation semantics
+**Checkpoint**: Non-integer offset coercion working - matches MUMPS truncation semantics ✅
 
 ---
 
