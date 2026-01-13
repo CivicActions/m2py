@@ -287,6 +287,37 @@ class RoutineGenerator:
         ctx.emitter.line("_test = False")
         ctx.emitter.blank()
 
+        # Spec 008: Module constants for external call infrastructure
+        # _source_lines: Original MUMPS source for $TEXT support
+        source_lines = self._routine.source_lines or []
+        ctx.emitter.line(f"_source_lines = {source_lines!r}")
+        ctx.emitter.blank()
+
+        # _routine_name: Name of this routine for $TEXT(+0) and error messages
+        # Falls back to first label name if routine.name is not set
+        routine_name = self._routine.name or (
+            self._routine.labels[0].name if self._routine.labels else ""
+        )
+        ctx.emitter.line(f'_routine_name = "{routine_name}"')
+        ctx.emitter.blank()
+
+        # _label_lines: Maps label names to 0-indexed line numbers for $TEXT(LABEL+offset)
+        label_lines = {
+            label.name: label.line_number - 1
+            for label in self._routine.labels
+            if label.line_number is not None
+        }
+        ctx.emitter.line(f"_label_lines = {label_lines!r}")
+        ctx.emitter.blank()
+
+        # Spec 008 (T016): Initialize runtime context for $TEXT support
+        # Sets up _rt context fields when module is loaded
+        ctx.emitter.line("# Initialize runtime context for this routine")
+        ctx.emitter.line("_rt._current_routine = _routine_name")
+        ctx.emitter.line("_rt._current_source_lines = _source_lines")
+        ctx.emitter.line("_rt._current_label_lines = _label_lines")
+        ctx.emitter.blank()
+
         # Spec 006: Generate RoutineState class for trampoline pattern
         if self._strategy == GotoStrategy.TRAMPOLINE:
             from m2py.codegen.shared_state import generate_routine_state_class

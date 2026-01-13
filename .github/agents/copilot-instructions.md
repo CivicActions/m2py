@@ -39,8 +39,8 @@ tests/
 
 ## Recent Changes
 - 008-external-calls: Added Python 3.10+ (per pyproject.toml) + extX (grammar/parser), importlib (dynamic module loading)
+- 008-external-calls: Added Python 3.10+ (per pyproject.toml) + extX (grammar/parser), importlib (dynamic module loading)
 - 007-computed-offsets: Added Python 3.10+ + extX (parser), pytest (testing), dataclasses (ASG/codegen)
-- 006-cross-label-control-flow: Added Python 3.10+ + extX (parsing), pytest (testing), uv (package management)
 
 
 <!-- MANUAL ADDITIONS START -->

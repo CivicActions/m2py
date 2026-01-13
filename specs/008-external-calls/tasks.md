@@ -26,19 +26,19 @@
 
 ### Runtime Additions
 
-- [ ] T007 Add GotoExternal exception class in src/m2py/runtime/__init__.py
-- [ ] T008 [P] Add LabelNotFoundError exception class in src/m2py/runtime/__init__.py
-- [ ] T009 Add _current_routine field to MUMPSRuntime in src/m2py/runtime/__init__.py
-- [ ] T010 Add _current_source_lines field to MUMPSRuntime in src/m2py/runtime/__init__.py
-- [ ] T011 Add _current_label_lines field to MUMPSRuntime in src/m2py/runtime/__init__.py
-- [ ] T012 Implement get_text() method in MUMPSRuntime in src/m2py/runtime/__init__.py
+- [X] T007 Add GotoExternal exception class in src/m2py/runtime/__init__.py
+- [X] T008 [P] Add LabelNotFoundError exception class in src/m2py/runtime/__init__.py
+- [X] T009 Add _current_routine field to MUMPSRuntime in src/m2py/runtime/__init__.py
+- [X] T010 Add _current_source_lines field to MUMPSRuntime in src/m2py/runtime/__init__.py
+- [X] T011 Add _current_label_lines field to MUMPSRuntime in src/m2py/runtime/__init__.py
+- [X] T012 Implement get_text() method in MUMPSRuntime in src/m2py/runtime/__init__.py
 
 ### Codegen Infrastructure
 
-- [ ] T013 Generate _source_lines module constant in src/m2py/codegen/routine.py
-- [ ] T014 [P] Generate _routine_name module constant in src/m2py/codegen/routine.py
-- [ ] T015 [P] Generate _label_lines mapping in src/m2py/codegen/routine.py
-- [ ] T016 Add context update prologue to generated label functions in src/m2py/codegen/routine.py
+- [X] T013 Generate _source_lines module constant in src/m2py/codegen/routine.py
+- [X] T014 [P] Generate _routine_name module constant in src/m2py/codegen/routine.py
+- [X] T015 [P] Generate _label_lines mapping in src/m2py/codegen/routine.py
+- [X] T016 Add context update prologue to generated label functions in src/m2py/codegen/routine.py
 
 **Checkpoint**: Runtime exceptions, context fields, and module constants are generated for all routines
 
