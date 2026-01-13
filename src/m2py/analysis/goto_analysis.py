@@ -13,7 +13,13 @@ from typing import List, Optional
 
 from ..asg.elements import MLabel, MRoutine, MScope
 from ..asg.enums import GotoCodegenPattern, GotoType
-from ..asg.statements import MForStatement, MGotoStatement, MIfStatement, MStatement
+from ..asg.statements import (
+    MDoStatement,
+    MForStatement,
+    MGotoStatement,
+    MIfStatement,
+    MStatement,
+)
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 
 
@@ -83,6 +89,10 @@ def classify_gotos(routine: MRoutine) -> None:
     # Spec 006 (T035-T036): Set needs_trampoline if ANY cross-label GOTOs exist
     # This is the sole trigger for trampoline pattern with RoutineState
     routine.needs_trampoline = _detect_cross_label_gotos(routine)
+
+    # Spec 007: Set has_offset_calls if any GOTO/DO has offset expression
+    # This triggers TRAMPOLINE strategy even without cross-label GOTOs
+    routine.has_offset_calls = _detect_offset_calls(routine)
 
 
 def _classify_gotos_in_scope(
@@ -531,4 +541,37 @@ def _detect_cross_label_gotos(routine: MRoutine) -> bool:
                 # Cross-label GOTOs require trampoline pattern
                 if stmt.is_cross_label:
                     return True
+    return False
+
+
+def _detect_offset_calls(routine: MRoutine) -> bool:
+    """Check if the routine contains any offset calls (GOTO/DO with offsets).
+
+    Spec 007: Detects GOTO/DO with offset expressions (e.g., G LABEL+N, D SUB+2).
+    When offset calls exist, the TRAMPOLINE strategy is required for line-based
+    dispatch via _line_map and _start_offset parameter support.
+
+    This function walks all statements looking for MCall targets with non-None
+    offset fields.
+
+    Args:
+        routine: The routine to check
+
+    Returns:
+        True if any GOTO/DO has an offset expression
+    """
+    for label in routine.labels:
+        if label.body is None:
+            continue
+        for stmt in label.body.walk_statements():
+            # Check GOTO statements
+            if isinstance(stmt, MGotoStatement):
+                for target in stmt.targets:
+                    if target.offset is not None:
+                        return True
+            # Check DO statements
+            elif isinstance(stmt, MDoStatement):
+                for target in stmt.targets:
+                    if target.offset is not None:
+                        return True
     return False

@@ -267,12 +267,13 @@ except LoopExit:
     pass
 ```
 
-## Routine-Level Flag
+## Routine-Level Flags
 
-`classify_gotos()` automatically sets `MRoutine.has_unstructured_goto` based on GOTO patterns in the routine:
+`classify_gotos()` automatically sets several `MRoutine` flags based on GOTO/DO patterns:
+
+### has_unstructured_goto
 
 ```python
-# After classify_gotos(), check the flag:
 if routine.has_unstructured_goto:
     # Use state machine or other unstructured approach
     pass
@@ -285,3 +286,18 @@ else:
 - `BACKWARD_JUMP`: Creates implicit loops across labels
 - `UNRESOLVED`: Target unknown, needs runtime dispatch
 - Cross-label `FORWARD_JUMP` not inside a FOR loop
+
+### needs_trampoline
+
+Set to `True` when ANY cross-label GOTO exists. This triggers the trampoline pattern with `RoutineState` for proper control flow across label boundaries.
+
+### has_offset_calls
+
+Set to `True` when any GOTO or DO has an offset expression (e.g., `G LABEL+N`, `D SUB+2`). This triggers the TRAMPOLINE strategy and `_line_map` generation for line-based dispatch, even if there are no cross-label GOTOs.
+
+```python
+if routine.has_offset_calls:
+    # Use trampoline with _line_map for line-based dispatch
+    pass
+```
+

@@ -55,12 +55,11 @@ def _select_goto_strategy(routine: "MRoutine") -> GotoStrategy:
         UNRESOLVED and EXTERNAL GOTOs are checked at statement level during
         code generation, not at strategy selection. They raise UnsupportedFeatureError.
     """
-    from m2py.codegen.line_dispatch import has_offset_calls
-
     if routine.needs_trampoline:
         return GotoStrategy.TRAMPOLINE
-    # Spec 007 (T025): Use TRAMPOLINE when offset calls exist for _start_offset support
-    if has_offset_calls(routine):
+    # Spec 007: Use TRAMPOLINE when offset calls exist for _start_offset support
+    # Note: has_offset_calls is populated by classify_gotos() analysis pass
+    if routine.has_offset_calls:
         return GotoStrategy.TRAMPOLINE
     return GotoStrategy.SIMPLE_FUNCTIONS
 
