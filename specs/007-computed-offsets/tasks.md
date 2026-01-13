@@ -20,13 +20,13 @@
 
 ---
 
-## Phase 1: Setup
+## Phase 1: Setup ✅ COMPLETE
 
 **Purpose**: Environment verification and baseline checks
 
-- [ ] T001 Verify branch is `007-computed-offsets` and sync environment with `uv sync`
-- [ ] T002 Run existing GOTO tests to verify baseline: `uv run pytest tests/unit/codegen/s8_commands/test_s8_2_06_goto.py -v`
-- [ ] T003 [P] Verify parser captures offsets: test `MCall.offset` population with ASG dump
+- [X] T001 Verify branch is `007-computed-offsets` and sync environment with `uv sync`
+- [X] T002 Run existing GOTO tests to verify baseline: `uv run pytest tests/unit/codegen/s8_commands/test_s8_2_06_goto.py -v` (32 passed, 7 xfailed)
+- [X] T003 [P] Verify parser captures offsets: test `MCall.offset` population with ASG dump (NumericLiteral for literals, LocalVariable for variables)
 
 ---
 
