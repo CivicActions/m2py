@@ -72,6 +72,10 @@ class TestIntraLabelGotoCodegen:
                 if not _test:
                     _rt.write(str("C"))  # only when condition false
                 _rt.write(str("D"))  # always executed
+
+        Note: After Spec 007, intra-label GOTOs with literal offsets may use
+        trampoline pattern with offset guards instead of if/else restructuring.
+        Both patterns produce correct output.
         """
         code = 'TEST W "A"\n W "B"\n I 1 G TEST+4\n W "C"\n W "D"\n Q\n'
         python_code = generate_python(code)
@@ -90,8 +94,13 @@ class TestIntraLabelGotoCodegen:
             if in_test_body:
                 assert "TEST()" not in line, f"Found recursive call in: {line}"
 
-        # Should contain the negated condition pattern
-        assert "if not _test:" in python_code
+        # Should contain either negated condition pattern (simple functions)
+        # or offset guard pattern (trampoline with offsets)
+        has_restructured_pattern = "if not _test:" in python_code
+        has_offset_guard_pattern = "_start_offset" in python_code
+        assert has_restructured_pattern or has_offset_guard_pattern, (
+            "Expected either if/else restructuring or offset guard pattern"
+        )
 
         # Verify execution produces correct output
         result = execute_mumps(code)
@@ -104,13 +113,21 @@ class TestIntraLabelGotoCodegen:
         """Forward GOTO can skip multiple statements.
 
         Verifies that multiple statements between GOTO and target
-        are all wrapped in the if/else block.
+        are all wrapped in the if/else block or handled by offset guards.
+
+        Note: After Spec 007, intra-label GOTOs with literal offsets may use
+        trampoline pattern with offset guards instead of if/else restructuring.
         """
         code = 'TEST W "A"\n I 1 G TEST+5\n W "B"\n W "C"\n W "D"\n Q\n'
         python_code = generate_python(code)
 
-        # Should contain negated condition
-        assert "if not _test:" in python_code
+        # Should contain either negated condition pattern (simple functions)
+        # or offset guard pattern (trampoline with offsets)
+        has_restructured_pattern = "if not _test:" in python_code
+        has_offset_guard_pattern = "_start_offset" in python_code
+        assert has_restructured_pattern or has_offset_guard_pattern, (
+            "Expected either if/else restructuring or offset guard pattern"
+        )
 
         # Verify execution - all of B, C, D skipped
         result = execute_mumps(code)
@@ -864,6 +881,78 @@ STAR W "0"
         # Check that offset call generates line-based dispatch
         # Label STAR is at line 2, so STAR+2 should be: return (2 + int(2), state)
         assert "return (2 + int(2), state)" in code
+
+    # Phase 5: Variable Offset GOTO (T025-T029)
+
+    def test_variable_offset_goto_outputs_correct_line(self, execute_mumps):
+        """T026: S N=2 G STAR+N outputs "2".
+
+        Variable offset is evaluated at runtime.
+        """
+        source = """TEST S N=2 G STAR+N Q
+STAR W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2"
+
+    def test_variable_offset_zero_executes_label_line(self, execute_mumps):
+        """T027: S N=0 G STAR+N executes label line.
+
+        Variable offset 0 is equivalent to G STAR.
+        """
+        source = """TEST S N=0 G STAR+N Q
+STAR W "X" Q"""
+        result = execute_mumps(source)
+        assert result.output == "X"
+
+    def test_do_with_variable_offset_in_loop(self, execute_mumps):
+        """T028: F N=0:1:2 D LINE+N outputs "ABCBCC".
+
+        DO with variable offset in FOR loop:
+        - N=0: D LINE+0 → execute "A", "B", "C", then Q returns
+        - N=1: D LINE+1 → execute "B", "C", then Q returns
+        - N=2: D LINE+2 → execute "C", then Q returns
+        """
+        source = """TEST F N=0:1:2 D LINE+N
+ Q
+LINE W "A"
+ W "B"
+ W "C"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "ABCBCC"
+
+    def test_do_offset_returns_to_caller(self, execute_mumps):
+        """T028b: D SUB+2 returns to caller after QUIT.
+
+        DO with offset executes from offset line, then Q returns
+        to caller which continues execution.
+        """
+        source = """TEST D SUB+2 W "after" Q
+SUB W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "2after"
+
+    def test_do_offset_executes_through_quit(self, execute_mumps):
+        """T028c: DO+offset executes from offset through QUIT.
+
+        DO with offset starts at the offset line, executes
+        all subsequent statements until QUIT, then returns.
+        """
+        source = """TEST D LINE+1 W "X" Q
+LINE W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        # LINE+1 starts at W "1", then W "2", then Q returns
+        # Caller continues with W "X"
+        assert result.output == "12X"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: same level enforcement")

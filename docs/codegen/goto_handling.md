@@ -412,16 +412,41 @@ STAR W "0"         ; Line 2 - offset 0 (label line)
 
 **Generated Code Pattern:**
 
-1. GOTO with offset emits `return (label_line + int(offset_expr), state)`
-2. Dispatcher resolves line number via `_line_map[target]` → `(label_name, offset)`
-3. Label function is called with `_start_offset=offset`
-4. Each statement has offset guard: `if _start_offset <= N:` to skip earlier statements
+1. **GOTO with offset**: emits `return (label_line + int(offset_expr), state)`
+2. **DO with offset**: emits `_LABEL(state, _start_offset=int(offset_expr))`
+3. Dispatcher resolves line number via `_line_map[target]` → `(label_name, offset)`
+4. Label function is called with `_start_offset=offset`
+5. Each statement has offset guard: `if _start_offset <= N:` to skip earlier statements
+
+**DO+Offset Example:**
+
+```mumps
+TEST F N=0:1:2 D LINE+N
+ Q
+LINE W "A"
+ W "B"
+ W "C"
+ Q
+```
+
+Output: `ABCBCC` (N=0→ABC, N=1→BC, N=2→C)
+
+```python
+# Generated DO+offset call:
+_LINE(state, _start_offset=int(N))
+```
 
 **Offset Semantics:**
 
 - Offset 0 = label line itself
 - Offset 1 = first statement after label line
 - Offsets are based on source line number difference: `stmt.line_number - label.line_number`
+- DO with offset returns to caller after QUIT (unlike GOTO which transfers control)
+
+**Strategy Selection:**
+
+- Routines with offset calls use TRAMPOLINE strategy (even without cross-label GOTOs)
+- This ensures label functions have `_start_offset` parameter and offset guards
 
 ## MArray Runtime Support
 

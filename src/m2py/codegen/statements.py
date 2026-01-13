@@ -1317,6 +1317,25 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         # Generate arguments if any
         args = _generate_call_arguments(target.arguments, ctx)
 
+        # Spec 007 (T025-T028c): Handle DO with offset
+        # In TRAMPOLINE strategy, call the internal function with _start_offset
+        if target.offset is not None and ctx.strategy == GotoStrategy.TRAMPOLINE:
+            # Prefix with _ for internal trampoline function
+            internal_func = "_" + label_name
+            # Generate offset expression code
+            offset_code = generate_expr(target.offset, ctx)
+            # Build call with state and _start_offset
+            # Note: args handling with offset is complex - for now just handle simple case
+            if args:
+                ctx.emitter.line(
+                    f"{internal_func}(state, {args}, _start_offset=int({offset_code}))"
+                )
+            else:
+                ctx.emitter.line(
+                    f"{internal_func}(state, _start_offset=int({offset_code}))"
+                )
+            continue
+
         # T060-T062: Check callee signature for byref_outputs and generate destructuring
         callee_signature = None
         if hasattr(target, "target") and target.target:

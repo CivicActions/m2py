@@ -96,15 +96,15 @@
 
 ### Implementation for User Story 2
 
-- [ ] T025 [US2] Verify existing implementation handles variables (T016-T017 should already support via `generate_expr`)
-- [ ] T026 [US2] Add unit test: `S N=2 G STAR+N` outputs "2"
-- [ ] T027 [US2] Add unit test: `S N=0 G STAR+N` executes label line
-- [ ] T028 [US2] Add unit test: `F N=0:1:2 D LINE+N` (DO with variable offset in loop)
-- [ ] T028b [US2] Add unit test: `D SUB+2` returns to caller after QUIT (FR-011 verification)
-- [ ] T028c [US2] Add unit test: DO+offset executes from offset line through QUIT, then continues caller
-- [ ] T029 [US2] Add YDB validation for variable offset patterns
+- [X] T025 [US2] Verify existing implementation handles variables (T016-T017 should already support via `generate_expr`)
+- [X] T026 [US2] Add unit test: `S N=2 G STAR+N` outputs "2"
+- [X] T027 [US2] Add unit test: `S N=0 G STAR+N` executes label line
+- [X] T028 [US2] Add unit test: `F N=0:1:2 D LINE+N` (DO with variable offset in loop)
+- [X] T028b [US2] Add unit test: `D SUB+2` returns to caller after QUIT (FR-011 verification)
+- [X] T028c [US2] Add unit test: DO+offset executes from offset line through QUIT, then continues caller
+- [X] T029 [US2] Add YDB validation for variable offset patterns
 
-**Checkpoint**: Variable offset GOTO and DO working - runtime variable evaluation dispatches correctly
+**Checkpoint**: Variable offset GOTO and DO working - runtime variable evaluation dispatches correctly ✅
 
 ---
 

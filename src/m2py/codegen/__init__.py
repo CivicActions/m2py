@@ -48,13 +48,19 @@ def _select_goto_strategy(routine: "MRoutine") -> GotoStrategy:
 
     Strategy Selection:
         - `needs_trampoline=True` → TRAMPOLINE with RoutineState
-        - `needs_trampoline=False` → SIMPLE_FUNCTIONS (current Spec 005 behavior)
+        - Offset calls present → TRAMPOLINE (for _start_offset parameter support)
+        - Otherwise → SIMPLE_FUNCTIONS (current Spec 005 behavior)
 
     Note:
         UNRESOLVED and EXTERNAL GOTOs are checked at statement level during
         code generation, not at strategy selection. They raise UnsupportedFeatureError.
     """
+    from m2py.codegen.line_dispatch import has_offset_calls
+
     if routine.needs_trampoline:
+        return GotoStrategy.TRAMPOLINE
+    # Spec 007 (T025): Use TRAMPOLINE when offset calls exist for _start_offset support
+    if has_offset_calls(routine):
         return GotoStrategy.TRAMPOLINE
     return GotoStrategy.SIMPLE_FUNCTIONS
 
