@@ -376,6 +376,15 @@ m_set_extract(
 - Replaces characters at positions from_pos to to_pos (inclusive)
 - Pads with spaces if needed: `$E(X,5)="Y"` on `"AB"` → `"AB  Y"`
 - Replacement can be shorter or longer than the range
+- Single position: `$E(X,2)="A"` replaces only character at position 2
+
+**Generated Code Example:**
+```python
+# For: S X="HELLO" S $E(X,2,3)="XX" W X Q
+_scope['X'] = "HELLO"
+m_set_extract(lambda: _scope.get('X', ''), lambda v: _scope.__setitem__('X', v), 2, 3, "XX")
+_rt.write(_scope.get('X', ''))
+```
 
 ### $ORDER Traversal
 

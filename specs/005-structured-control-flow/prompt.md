@@ -13,4 +13,4 @@ When you are done:
 2) Update docs/ with any changes needed - describe current state only, avoid "change" language
 3) Run coverage_check.py and rebuild_docs.py
 4) `git add` and `pre-commit run` - fix any issues that are not automatically fixed
-5) Make a conventional commit - review previous commit messages for format
+5) Make a conventional commit referencing the main area(s) of word (not the spec ID) - review previous commit messages for format

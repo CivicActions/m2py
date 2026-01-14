@@ -274,8 +274,8 @@ class RoutineGenerator:
         ctx.emitter.line("from itertools import chain, count")
         ctx.emitter.line("from m2py.codegen.helpers import m_num, m_truth, m_compare")
         ctx.emitter.line("from m2py.runtime import MUMPSRuntime")
-        # Spec 009: Import LHS function helpers (Phase 3)
-        ctx.emitter.line("from m2py.runtime.helpers import m_set_piece")
+        # Spec 009: Import LHS function helpers (Phase 3-4)
+        ctx.emitter.line("from m2py.runtime.helpers import m_set_piece, m_set_extract")
 
         # Spec 006: Additional imports for trampoline pattern
         if self._strategy == GotoStrategy.TRAMPOLINE:

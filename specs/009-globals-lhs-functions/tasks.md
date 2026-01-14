@@ -71,14 +71,14 @@
 
 ### Tests for User Story 2
 
-- [ ] T015 [P] [US2] Create `tests/test_spec_009_lhs_extract.py` with 5 acceptance scenarios from spec
+- [X] T015 [P] [US2] Create `tests/test_spec_009_lhs_extract.py` with 5 acceptance scenarios from spec
 
 ### Implementation for User Story 2
 
-- [ ] T016 [US2] Implement `m_set_extract()` helper in `src/m2py/runtime/helpers.py`
-- [ ] T017 [US2] Extend `_generate_set()` in `src/m2py/codegen/statements.py` to detect IntrinsicFunction target with name 'E'/'EXTRACT'
-- [ ] T018 [US2] Generate `m_set_extract()` call with getter/setter lambdas
-- [ ] T019 [US2] Add `m_set_extract` to generated code imports
+- [X] T016 [US2] Implement `m_set_extract()` helper in `src/m2py/runtime/helpers.py`
+- [X] T017 [US2] Extend `_generate_set()` in `src/m2py/codegen/statements.py` to detect IntrinsicFunction target with name 'E'/'EXTRACT'
+- [X] T018 [US2] Generate `m_set_extract()` call with getter/setter lambdas
+- [X] T019 [US2] Add `m_set_extract` to generated code imports
 
 **Checkpoint**: `S $E(X,2,3)="XX"` works for local variables
 

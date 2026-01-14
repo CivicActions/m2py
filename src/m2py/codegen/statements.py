@@ -542,8 +542,8 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
                 _generate_lhs_piece(assignment, ctx)
                 continue
             elif func_name in ("E", "EXTRACT"):
-                # Phase 4: LHS $EXTRACT - stub for now
-                raise NotImplementedError("LHS $EXTRACT not yet implemented (Phase 4)")
+                _generate_lhs_extract(assignment, ctx)
+                continue
             else:
                 raise NotImplementedError(
                     f"Unsupported LHS function: ${assignment.target.name}"
@@ -631,6 +631,76 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     # Emit m_set_piece call
     ctx.emitter.line(
         f"m_set_piece({getter}, {setter}, {delimiter_expr}, {piece_from_expr}, {piece_to_expr}, {value_expr})"
+    )
+
+
+def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> None:
+    """Generate m_set_extract() call for LHS $EXTRACT assignment.
+
+    Spec 009 (T017-T018): Generate code for S $E(var,from,to)=value
+
+    Args:
+        assignment: MAssignment with IntrinsicFunction target
+        ctx: Generator context
+
+    The generated code calls m_set_extract with getter/setter lambdas:
+        m_set_extract(
+            lambda: _scope.get('X', ''),
+            lambda v: _scope.__setitem__('X', v),
+            2, 3, 'XX'
+        )
+    """
+    # We know target is MIntrinsicFunction because caller checked isinstance
+    assert isinstance(assignment.target, MIntrinsicFunction)
+    func = assignment.target
+    args = func.arguments
+
+    # $EXTRACT(var, from_pos [, to_pos])
+    if len(args) < 2:
+        raise ValueError(f"LHS $EXTRACT requires at least 2 arguments, got {len(args)}")
+
+    # First argument must be a variable
+    if not isinstance(args[0], MVariable):
+        raise NotImplementedError(
+            f"LHS $EXTRACT first argument must be a variable, got {type(args[0]).__name__}"
+        )
+
+    var = args[0]
+    var_name = var.name
+    translated_name = translate_name(var_name)
+
+    # Generate from_pos expression
+    from_pos_expr = generate_expr(args[1], ctx)
+
+    # Generate to_pos expression (optional, 3rd argument)
+    if len(args) >= 3:
+        arg2 = args[2]
+        assert arg2 is not None  # Type narrowing for pyright
+        to_pos_expr = generate_expr(arg2, ctx)
+    else:
+        to_pos_expr = "None"
+
+    # Generate value expression
+    assert assignment.value is not None, "LHS $EXTRACT requires a value"
+    value_expr = generate_expr(assignment.value, ctx)
+
+    # Build getter/setter based on strategy
+    if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+        # _scope-based access
+        getter = f"lambda: _scope.get({translated_name!r}, '')"
+        setter = f"lambda v: _scope.__setitem__({translated_name!r}, v)"
+    elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+        # state-based access
+        getter = f"lambda: getattr(state, {translated_name!r}, '') or ''"
+        setter = f"lambda v: setattr(state, {translated_name!r}, v)"
+    else:
+        # Plain local variable - fall back to _scope pattern for safety
+        getter = f"lambda: _scope.get({translated_name!r}, '')"
+        setter = f"lambda v: _scope.__setitem__({translated_name!r}, v)"
+
+    # Emit m_set_extract call
+    ctx.emitter.line(
+        f"m_set_extract({getter}, {setter}, {from_pos_expr}, {to_pos_expr}, {value_expr})"
     )
 
 

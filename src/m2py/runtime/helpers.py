@@ -113,7 +113,29 @@ def m_set_extract(
         # S X="AB" S $E(X,5)="X" → X="AB  X"
         m_set_extract(lambda: "AB", setter, 5, None, "X")
     """
-    raise NotImplementedError("m_set_extract: stub - implementation in Phase 4")
+    # Get current value (empty string if undefined/None)
+    current = var_getter() or ""
+
+    # Normalize to_pos: if None, single position
+    if to_pos is None:
+        to_pos = from_pos
+
+    # Convert to 0-indexed
+    from_idx = from_pos - 1
+    to_idx = to_pos - 1
+
+    # Pad with spaces if needed to reach the start position
+    if from_idx > len(current):
+        current = current + " " * (from_idx - len(current))
+
+    # Build the result: before + value + after
+    # "before" is everything up to from_idx
+    # "after" is everything after to_idx (inclusive, so to_idx+1)
+    before = current[:from_idx]
+    after = current[to_idx + 1 :] if to_idx + 1 < len(current) else ""
+
+    result = before + value + after
+    var_setter(result)
 
 
 def m_data(array: MArray | None, subscripts: tuple[str, ...] = ()) -> int:
