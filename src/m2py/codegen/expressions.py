@@ -353,6 +353,7 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
     routine = line_ref.get("routine")
     label = line_ref.get("label")
     offset = line_ref.get("offset")
+    offset_sign = line_ref.get("offset_sign", "+")  # Default to + if not specified
 
     # Build the get_text() call parameters
     params = []
@@ -360,13 +361,22 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
     # Handle offset parameter
     if offset is not None:
         if isinstance(offset, MLiteral):
-            params.append(f"offset={offset.value}")
+            # Apply sign to literal value
+            offset_val = offset.value if offset_sign == "+" else -offset.value
+            params.append(f"offset={offset_val}")
         else:
             # Offset is an expression (variable, etc.)
             offset_code = generate_expr(offset, ctx)
-            params.append(f"offset={offset_code}")
+            if offset_sign == "-":
+                params.append(f"offset=-({offset_code})")
+            else:
+                params.append(f"offset={offset_code}")
+    elif offset_sign is not None and label is None:
+        # Sign without offset value - $T(+) or $T(-) defaults to 0
+        # This handles $T(+0) or $T(-0) which both equal 0
+        params.append("offset=0")
     elif label is None:
-        # No label, no offset - must be $T(+0) or $T() which defaults to +0
+        # No label, no offset - must be $T() which defaults to +0
         params.append("offset=0")
     else:
         # Label with no offset - defaults to 0

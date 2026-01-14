@@ -242,6 +242,11 @@ class RoutineGenerator:
             for label in self._routine.labels:
                 self._generate_label(label, ctx)
 
+            # Spec 008 (T089-T092): Generate _line_map for external D/G +N^ROUTINE patterns
+            # External routines can call this module with D +N^ROUTINE or D LABEL+N^ROUTINE
+            # so we always need _line_map for line dispatch
+            self._generate_simple_line_map(ctx)
+
         code = self._emitter.get_code()
 
         # Validate generated Python is syntactically correct
@@ -406,7 +411,8 @@ class RoutineGenerator:
         # T030: Add _scope parameter for cross-routine variable visibility
         # All labels accept _scope so they can be called externally (D LABEL^ROUTINE)
         # _scope must come AFTER formal params since it has a default value
-        all_params = formal_params + ["_scope=None"]
+        # **_kwargs allows external callers to pass _start_offset (TRAMPOLINE) which is ignored
+        all_params = formal_params + ["_scope=None", "**_kwargs"]
         params_str = ", ".join(all_params)
         ctx.emitter.line(f"def {func_name}({params_str}):")
 
@@ -440,6 +446,35 @@ class RoutineGenerator:
 
         ctx.emitter.blank()
         ctx.current_label = None
+
+    def _generate_simple_line_map(self, ctx: GeneratorContext) -> None:
+        """Generate _line_map for SIMPLE_FUNCTIONS strategy.
+
+        Spec 008 (T089-T092): External routines may call this module with
+        D +N^ROUTINE or D LABEL+N^ROUTINE patterns, so we always need
+        _line_map for line dispatch.
+
+        For SIMPLE_FUNCTIONS, _line_map uses the same format as TRAMPOLINE:
+        dict[int, tuple[str, int]] mapping line numbers to (label_name, offset).
+
+        The calling code then uses getattr(module, label_name) to get the function.
+        Note: SIMPLE_FUNCTIONS don't support offset entry (always starts from beginning),
+        but we need the _line_map for run_with_goto_support() compatibility.
+
+        Args:
+            ctx: Generator context
+        """
+        line_map = generate_line_map(self._routine)
+
+        if not line_map:
+            # No line map needed - empty routine
+            ctx.emitter.line("_line_map: dict[int, tuple[str, int]] = {}")
+            ctx.emitter.blank()
+            return
+
+        # Generate _line_map dict (same format as TRAMPOLINE)
+        generate_line_map_code(line_map, ctx.emitter)
+        ctx.emitter.blank()
 
     def _generate_trampoline_code(self, ctx: GeneratorContext) -> None:
         """Generate trampoline pattern code for cross-label GOTOs.
@@ -507,17 +542,20 @@ class RoutineGenerator:
                         with ctx.emitter.indented():
                             ctx.emitter.line("label_name, offset = _line_map[target]")
                             ctx.emitter.line("func = _labels[label_name]")
+                            # Spec 008: Pass _scope to inner functions for external call support
                             ctx.emitter.line(
-                                "target, state = func(state, _start_offset=offset)"
+                                "target, state = func(state, _scope, _start_offset=offset)"
                             )
                         ctx.emitter.line("else:")
                         with ctx.emitter.indented():
                             ctx.emitter.line("func = _labels[target]")
-                            ctx.emitter.line("target, state = func(state)")
+                            # Spec 008: Pass _scope to inner functions for external call support
+                            ctx.emitter.line("target, state = func(state, _scope)")
                     else:
                         # No offsets: simple label dispatch
                         ctx.emitter.line("func = _labels[target]")
-                        ctx.emitter.line("target, state = func(state)")
+                        # Spec 008: Pass _scope to inner functions for external call support
+                        ctx.emitter.line("target, state = func(state, _scope)")
                 ctx.emitter.blank()
                 ctx.emitter.line("return state")
             ctx.emitter.blank()
@@ -567,20 +605,23 @@ class RoutineGenerator:
             )
 
         # Generate function definition with state parameter
-        # For trampoline, all labels take state; formal params come later
+        # For trampoline, all labels take state and _scope; formal params come later
         # Spec 007 (T020): Add _start_offset parameter for offset entry support
+        # Spec 008: Add _scope parameter for external call support
         # Uses pre-computed ASG field from classify_gotos() analysis
         has_offsets = self._routine.has_offset_calls
         if formal_params:
             if has_offsets:
-                params_str = "state, " + ", ".join(formal_params) + ", _start_offset=0"
+                params_str = (
+                    "state, _scope, " + ", ".join(formal_params) + ", _start_offset=0"
+                )
             else:
-                params_str = "state, " + ", ".join(formal_params)
+                params_str = "state, _scope, " + ", ".join(formal_params)
         else:
             if has_offsets:
-                params_str = "state, _start_offset=0"
+                params_str = "state, _scope, _start_offset=0"
             else:
-                params_str = "state"
+                params_str = "state, _scope"
 
         # Return type annotation for trampoline labels
         # Spec 007: return type is str | int | None (can be label name or line number)

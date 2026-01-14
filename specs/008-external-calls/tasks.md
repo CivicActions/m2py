@@ -236,6 +236,66 @@
 
 ---
 
+## Phase 13: Execution Model & Cross-Routine Variable Visibility
+
+**Purpose**: Fix critical execution model issues identified in gap analysis
+
+**Goal**: Correct the runtime/scope passing pattern and enable true cross-routine variable visibility
+
+### Background
+
+Gap analysis revealed critical issues with the current implementation:
+1. Variables stored as Python locals, not in `_scope` dictionary - breaks cross-routine visibility
+2. `_rt` not passed to external calls - each module creates its own runtime instance
+3. Missing tests for external DO/GOTO with offset patterns
+4. $TEXT(-1) test marked complete but not present
+5. FR-020 parse error test too weak
+6. Documentation patterns don't match implementation
+
+### Execution Model Changes
+
+- [ ] T076 Update function signatures to accept `_rt` as first parameter: `def LABEL(_rt, _scope=None)` in src/m2py/codegen/routine.py
+- [ ] T077 Generate `if __name__ == "__main__"` block that creates `_rt = MUMPSRuntime()` and `_scope = {}` in src/m2py/codegen/routine.py
+- [ ] T078 Remove module-level `_rt = MUMPSRuntime()` from generated code (entry point creates it) in src/m2py/codegen/routine.py
+- [ ] T079 Update external DO calls to pass `_rt`: `ext2.LABEL(_rt, _scope)` in src/m2py/codegen/statements.py
+- [ ] T080 Update external GOTO to pass `_rt` in GotoExternal exception handling in src/m2py/codegen/statements.py
+- [ ] T081 Update external extrinsic calls to pass `_rt`: `ext2.FUNC(_rt, _scope, args)` in src/m2py/codegen/expressions.py
+- [ ] T082 Update run_with_goto_support() to accept and pass `_rt` in src/m2py/runtime/__init__.py
+- [ ] T083 Update _call_extrinsic() helper to accept and pass `_rt` in src/m2py/codegen/routine.py
+
+### Variable Storage in _scope
+
+- [ ] T084 Update SET command to store variables in `_scope['varname']` instead of Python locals in src/m2py/codegen/statements.py
+- [ ] T085 Update variable reads to access `_scope.get('varname', '')` in src/m2py/codegen/expressions.py
+- [ ] T086 Add integration test: variable set in caller visible to callee in tests/integration/test_external_calls.py
+- [ ] T087 Add integration test: variable set in callee visible to caller after return in tests/integration/test_external_calls.py
+
+### Missing Test Coverage
+
+- [X] T088 Add integration test for $TEXT(-1) negative offset (was T054, marked done but missing) in tests/integration/test_external_calls.py
+- [X] T089 [P] Add integration test for D LABEL+N^ROUTINE (external DO with label+offset) in tests/integration/test_external_calls.py
+- [X] T090 [P] Add integration test for D +N^ROUTINE (external DO with absolute offset) in tests/integration/test_external_calls.py
+- [X] T091 [P] Add integration test for G LABEL+N^ROUTINE (external GOTO with label+offset) in tests/integration/test_external_calls.py
+- [X] T092 [P] Add integration test for G +N^ROUTINE (external GOTO with absolute offset) in tests/integration/test_external_calls.py
+- [X] T093 Fix FR-020 test to actually test parse error handling with invalid MUMPS in tests/integration/test_external_calls.py
+
+### Documentation Updates
+
+- [ ] T094 [P] Update data-model.md to document `_rt, _scope` passing pattern in specs/008-external-calls/data-model.md
+- [ ] T095 [P] Update research.md to reflect execution model decisions in specs/008-external-calls/research.md
+- [ ] T096 [P] Update docs/codegen/functions.md with `def LABEL(_rt, _scope)` signature in docs/codegen/functions.md
+- [ ] T097 [P] Update docs/architecture.md with entry point `if __name__ == "__main__"` pattern in docs/architecture.md
+- [ ] T098 Update quickstart.md with correct invocation pattern in specs/008-external-calls/quickstart.md
+
+### Validation
+
+- [ ] T099 Run full test suite and fix any regressions from execution model changes
+- [ ] T100 Validate with YDB using utils/validate.py for cross-routine variable visibility scenarios
+
+**Checkpoint**: Execution model is clean with explicit `_rt, _scope` passing; variables stored in `_scope` for true cross-routine visibility
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -248,6 +308,7 @@
   - P3 stories (US7) complete last
 - **Polish (Phase 11)**: Depends on all user stories being complete
 - **Gap Resolution (Phase 12)**: Can start after Phase 11 - improves test coverage and resolves tracking issues
+- **Execution Model (Phase 13)**: Can start after Phase 12 - fixes critical execution model issues; may require updates to earlier phases' generated code
 
 ### User Story Dependencies
 
@@ -318,14 +379,19 @@ Task T015: "Generate _label_lines mapping"
 
 | File | Tasks |
 |------|-------|
-| src/m2py/runtime/__init__.py | T007-T012, T039 |
-| src/m2py/codegen/routine.py | T013-T016, T030, T040 |
-| src/m2py/codegen/statements.py | T017-T028, T029, T034-T038, T059 |
-| src/m2py/codegen/expressions.py | T043-T058 |
+| src/m2py/runtime/__init__.py | T007-T012, T039, T082 |
+| src/m2py/codegen/routine.py | T013-T016, T030, T040, T076-T078, T083 |
+| src/m2py/codegen/statements.py | T017-T028, T029, T034-T038, T059, T079-T080, T084 |
+| src/m2py/codegen/expressions.py | T043-T058, T081, T085 |
 | tests/fixtures/external/ | T001-T005 |
-| tests/integration/test_external_calls.py | T021, T027-T028, T032-T033, T041-T042, T047, T053-T054, T058, T061, T069-T072 |
+| tests/integration/test_external_calls.py | T021, T027-T028, T032-T033, T041-T042, T047, T053-T054, T058, T061, T069-T072, T086-T093 |
 | tests/conftest.py | T006 |
 | specs/008-external-calls/tasks.md | T068 |
+| specs/008-external-calls/data-model.md | T094 |
+| specs/008-external-calls/research.md | T095 |
+| specs/008-external-calls/quickstart.md | T098 |
+| docs/codegen/functions.md | T096 |
+| docs/architecture.md | T097 |
 | docs/limitations.md | T075 |
 
 ---
@@ -338,5 +404,6 @@ Task T015: "Generate _label_lines mapping"
 - Standard Python import used throughout - no importlib complexity
 - $TEST save/restore per Spec 005 semantics
 - Line dispatch (_line_map) from Spec 007 used for offset patterns
-- Total tasks: **75** (67 original + 8 gap resolution tasks in Phase 12)
+- Total tasks: **100** (67 original + 8 Phase 12 + 25 Phase 13)
 - **Phase 12 added**: Addresses gaps identified in tmp/spec_008_gap_analysis.md
+- **Phase 13 added**: Fixes critical execution model issues - `_rt, _scope` explicit passing, variables in `_scope` dictionary

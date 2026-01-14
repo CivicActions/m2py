@@ -259,9 +259,10 @@ DONE W I
         # The loop exit GOTO should generate 'break'
         assert "break" in python_code
         # Look for the break in the context of the _TEST function (trampoline label function)
-        test_func = python_code.split("def _TEST(state)")[1].split("def _DONE(state)")[
-            0
-        ]
+        # Now takes state and _scope parameters
+        test_func = python_code.split("def _TEST(state, _scope)")[1].split(
+            "def _DONE(state, _scope)"
+        )[0]
         assert "break" in test_func
         # FR-018: Cross-label exit should track target label as string
         assert '_goto_label = "DONE"' in test_func

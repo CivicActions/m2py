@@ -641,6 +641,10 @@ class TextFunction(MIntrinsicFunction):
                     line_ref["label"] = arg.label  # Plain string
                 if hasattr(arg, "offset") and arg.offset:
                     line_ref["offset"] = _unwrap_expr(arg.offset)
+                # Capture offset sign (+ or -) for proper offset handling
+                # offsetSign is set when + or - precedes the offset expression
+                if hasattr(arg, "offsetSign") and arg.offsetSign:
+                    line_ref["offset_sign"] = arg.offsetSign
                 if hasattr(arg, "routineIndirect") and arg.routineIndirect:
                     line_ref["routine_indirect"] = _unwrap_expr(arg.routineIndirect)
                 if hasattr(arg, "routine") and arg.routine:

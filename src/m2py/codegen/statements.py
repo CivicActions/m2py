@@ -1418,8 +1418,12 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                     ctx.emitter.line(f"_target_line = {offset_code} - 1")
 
                 # T029: Call via line dispatch map, passing _scope for cross-routine visibility
+                # _line_map returns (label_name, offset) tuple - extract and call
                 ctx.emitter.line(
-                    f"{routine_name}._line_map[_target_line](_scope=_scope)"
+                    f"_label_name, _line_offset = {routine_name}._line_map[_target_line]"
+                )
+                ctx.emitter.line(
+                    f"getattr({routine_name}, _label_name)(_scope=_scope, _start_offset=_line_offset)"
                 )
             elif target.name:
                 # T022-T023: D LABEL^ROUTINE - call specific label
@@ -1504,14 +1508,16 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                     "_offset_val else _offset_val"
                 )
 
-            # Build call with state and _start_offset
+            # Build call with state, _scope, and _start_offset
             # Note: args handling with offset is complex - for now just handle simple case
             if args:
                 ctx.emitter.line(
-                    f"{internal_func}(state, {args}, _start_offset=_offset_val)"
+                    f"{internal_func}(state, _scope, {args}, _start_offset=_offset_val)"
                 )
             else:
-                ctx.emitter.line(f"{internal_func}(state, _start_offset=_offset_val)")
+                ctx.emitter.line(
+                    f"{internal_func}(state, _scope, _start_offset=_offset_val)"
+                )
             continue
 
         # T060-T062: Check callee signature for byref_outputs and generate destructuring
