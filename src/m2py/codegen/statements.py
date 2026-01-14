@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, List
 
 from m2py.asg.enums import ForLoopType, ForParamType, GotoType, PassingMode
 from m2py.asg.expressions import MActualParameter, MExpr, MIntrinsicFunction, MVariable
-from m2py.parser.textx_classes import GlobalVariable
+from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
 from m2py.asg.statements import (
     MAssignment,
     MDoStatement,
@@ -542,6 +542,12 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
             _generate_global_set(assignment, ctx)
             continue
 
+        elif isinstance(assignment.target, NakedGlobal):
+            # Spec 009 (T031): Handle naked global reference SET targets
+            # Generate: resolve_naked then set
+            _generate_naked_global_set(assignment, ctx)
+            continue
+
         elif isinstance(assignment.target, MIntrinsicFunction):
             # Spec 009 (T012-T013): Handle LHS function targets ($PIECE, $EXTRACT)
             func_name = assignment.target.name.upper()
@@ -753,6 +759,48 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
     ctx.emitter.line(
         f"_rt.globals.set({global_name!r}, {subscripts_tuple}, str({value_expr}))"
     )
+
+
+def _generate_naked_global_set(
+    assignment: MAssignment, ctx: "GeneratorContext"
+) -> None:
+    """Generate resolve_naked + set for naked global reference SET.
+
+    Spec 009 (T031): Generate code for S ^(subscripts)=value
+
+    Args:
+        assignment: MAssignment with NakedGlobal target
+        ctx: Generator context
+
+    The generated code resolves the naked reference then sets:
+        _name, _subs = _rt.globals.resolve_naked(("sub1", "sub2",))
+        _rt.globals.set(_name, _subs, "value")
+
+    The naked indicator holds (name, base_subscripts) from the last global access.
+    resolve_naked() returns (name, base_subscripts + new_subscripts).
+    """
+    # We know target is NakedGlobal because caller checked isinstance
+    assert isinstance(assignment.target, NakedGlobal)
+    naked_global = assignment.target
+
+    # Generate subscript expressions
+    if naked_global.subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in naked_global.subscripts]
+        # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        subscripts_tuple = "()"
+
+    # Generate value expression
+    assert assignment.value is not None, "Naked global SET requires a value"
+    value_expr = generate_expr(assignment.value, ctx)
+
+    # Emit resolve_naked + set calls
+    ctx.emitter.line(f"_name, _subs = _rt.globals.resolve_naked({subscripts_tuple})")
+    ctx.emitter.line(f"_rt.globals.set(_name, _subs, str({value_expr}))")
 
 
 def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:

@@ -21,7 +21,7 @@ from m2py.asg.expressions import (
 )
 from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.names import translate_name
-from m2py.parser.textx_classes import GlobalVariable
+from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
 
 if TYPE_CHECKING:
     from m2py.codegen.routine import GeneratorContext
@@ -53,6 +53,8 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_variable(expr, ctx)
     elif isinstance(expr, GlobalVariable):
         return _generate_global_variable(expr, ctx)
+    elif isinstance(expr, NakedGlobal):
+        return _generate_naked_global_variable(expr, ctx)
     elif isinstance(expr, MBinaryOp):
         return _generate_binary_op(expr, ctx)
     elif isinstance(expr, MUnaryOp):
@@ -182,6 +184,38 @@ def _generate_global_variable(var: GlobalVariable, ctx: "GeneratorContext") -> s
     # Spec 009 (T028): Return empty string for undefined globals
     # _rt.globals.get() returns None for undefined, convert to ""
     return f"(_rt.globals.get({global_name!r}, {subscripts_tuple}) or '')"
+
+
+def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -> str:
+    """Generate Python expression for naked global reference READ.
+
+    Spec 009 (T032): Generate resolve_naked + get for naked global reads.
+
+    Args:
+        var: NakedGlobal node
+        ctx: Generator context
+
+    Returns:
+        Python expression string that resolves and reads the naked global:
+        (_rt.globals.get(*_rt.globals.resolve_naked((subscripts,))) or '')
+
+    The naked indicator holds (name, base_subscripts) from the last global access.
+    resolve_naked() returns (name, base_subscripts + new_subscripts).
+    """
+    # Generate subscript expressions
+    if var.subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+        # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        subscripts_tuple = "()"
+
+    # Spec 009 (T028): Return empty string for undefined globals
+    # resolve_naked returns (name, subscripts), use * to unpack into get()
+    return f"(_rt.globals.get(*_rt.globals.resolve_naked({subscripts_tuple})) or '')"
 
 
 def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -> str:

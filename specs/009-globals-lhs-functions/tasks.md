@@ -134,14 +134,14 @@
 
 ### Tests for User Story 5
 
-- [ ] T030 [P] [US5] Create `tests/test_spec_009_naked.py` with 5 acceptance scenarios from spec
+- [X] T030 [P] [US5] Create `tests/unit/codegen/test_spec_009_naked.py` with 10 tests (5 acceptance scenarios + 5 edge cases)
 
 ### Implementation for User Story 5
 
-- [ ] T031 [US5] Extend `_generate_set()` to handle NakedGlobal targets → `_rt.globals.set_naked()` in `src/m2py/codegen/statements.py`
-- [ ] T032 [US5] Extend `generate_expr()` to handle NakedGlobal reads → `_rt.globals.get_naked()` in `src/m2py/codegen/expressions.py`
-- [ ] T033 [US5] Implement `set_naked()` and `get_naked()` in InMemoryGlobalStorage (codegen calls `_rt.globals.set_naked()` which delegates to backend)
-- [ ] T034 [US5] Add error for naked reference before any global access (NAKEDERR)
+- [X] T031 [US5] Extend `_generate_set()` to handle NakedGlobal targets → `resolve_naked` + `set` in `src/m2py/codegen/statements.py`
+- [X] T032 [US5] Extend `generate_expr()` to handle NakedGlobal reads → `resolve_naked` + `get` in `src/m2py/codegen/expressions.py`
+- [X] T033 [US5] Backend already has `resolve_naked()` in InMemoryGlobalStorage (codegen uses `_rt.globals.resolve_naked()`)
+- [X] T034 [US5] NAKEDERR already implemented in InMemoryGlobalStorage.resolve_naked()
 
 **Checkpoint**: Naked references work, tracking last global access
 
