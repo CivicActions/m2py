@@ -50,14 +50,14 @@
 
 ### Tests for User Story 1
 
-- [ ] T010 [P] [US1] Create `tests/test_spec_009_lhs_piece.py` with 4 local-variable scenarios; scenario 5 (globals) tested after Phase 6
+- [X] T010 [P] [US1] Create `tests/test_spec_009_lhs_piece.py` with 4 local-variable scenarios; scenario 5 (globals) tested after Phase 6
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Implement `m_set_piece()` helper in `src/m2py/runtime/helpers.py`
-- [ ] T012 [US1] Extend `_generate_set()` in `src/m2py/codegen/statements.py` to detect IntrinsicFunction target with name 'P'/'PIECE'
-- [ ] T013 [US1] Generate `m_set_piece()` call with getter/setter lambdas for local variables
-- [ ] T014 [US1] Add `m_set_piece` to generated code imports in `src/m2py/codegen/routine.py`
+- [X] T011 [US1] Implement `m_set_piece()` helper in `src/m2py/runtime/helpers.py`
+- [X] T012 [US1] Extend `_generate_set()` in `src/m2py/codegen/statements.py` to detect IntrinsicFunction target with name 'P'/'PIECE'
+- [X] T013 [US1] Generate `m_set_piece()` call with getter/setter lambdas for local variables
+- [X] T014 [US1] Add `m_set_piece` to generated code imports in `src/m2py/codegen/routine.py`
 
 **Checkpoint**: `S $P(X,"^",2)="NEW"` works for local variables
 

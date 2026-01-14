@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, List
 
 from m2py.asg.enums import ForLoopType, ForParamType, GotoType, PassingMode
-from m2py.asg.expressions import MActualParameter, MExpr, MVariable
+from m2py.asg.expressions import MActualParameter, MExpr, MIntrinsicFunction, MVariable
 from m2py.asg.statements import (
+    MAssignment,
     MDoStatement,
     MElseStatement,
     MForStatement,
@@ -532,6 +533,21 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
                 # Spec 008 (T084): Store variables in _scope for cross-routine visibility
                 target_name = f"_scope[{target_name!r}]"
             # else: use plain Python local variable (TRAMPOLINE without state_vars)
+
+        elif isinstance(assignment.target, MIntrinsicFunction):
+            # Spec 009 (T012-T013): Handle LHS function targets ($PIECE, $EXTRACT)
+            func_name = assignment.target.name.upper()
+
+            if func_name in ("P", "PIECE"):
+                _generate_lhs_piece(assignment, ctx)
+                continue
+            elif func_name in ("E", "EXTRACT"):
+                # Phase 4: LHS $EXTRACT - stub for now
+                raise NotImplementedError("LHS $EXTRACT not yet implemented (Phase 4)")
+            else:
+                raise NotImplementedError(
+                    f"Unsupported LHS function: ${assignment.target.name}"
+                )
         else:
             raise NotImplementedError(
                 f"Unsupported SET target type: {type(assignment.target).__name__}"
@@ -542,6 +558,80 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
 
         # Emit assignment
         ctx.emitter.line(f"{target_name} = {value_expr}")
+
+
+def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> None:
+    """Generate m_set_piece() call for LHS $PIECE assignment.
+
+    Spec 009 (T013): Generate code for S $P(var,"^",pos)=value
+
+    Args:
+        assignment: MAssignment with IntrinsicFunction target
+        ctx: Generator context
+
+    The generated code calls m_set_piece with getter/setter lambdas:
+        m_set_piece(
+            lambda: _scope.get('X', MArray()).value or '',
+            lambda v: _scope.__setitem__('X', MArray(value=v)) if not isinstance(_scope.get('X'), MArray) else setattr(_scope['X'], 'value', v),
+            '^', 2, None, 'NEW'
+        )
+    """
+    # We know target is MIntrinsicFunction because caller checked isinstance
+    assert isinstance(assignment.target, MIntrinsicFunction)
+    func = assignment.target
+    args = func.arguments
+
+    # $PIECE(var, delimiter, piece_from [, piece_to])
+    if len(args) < 3:
+        raise ValueError(f"LHS $PIECE requires at least 3 arguments, got {len(args)}")
+
+    # First argument must be a variable
+    if not isinstance(args[0], MVariable):
+        raise NotImplementedError(
+            f"LHS $PIECE first argument must be a variable, got {type(args[0]).__name__}"
+        )
+
+    var = args[0]
+    var_name = var.name
+    translated_name = translate_name(var_name)
+
+    # Generate delimiter expression
+    delimiter_expr = generate_expr(args[1], ctx)
+
+    # Generate piece_from expression
+    piece_from_expr = generate_expr(args[2], ctx)
+
+    # Generate piece_to expression (optional, 4th argument)
+    if len(args) >= 4:
+        arg3 = args[3]
+        assert arg3 is not None  # Type narrowing for pyright
+        piece_to_expr = generate_expr(arg3, ctx)
+    else:
+        piece_to_expr = "None"
+
+    # Generate value expression
+    assert assignment.value is not None, "LHS $PIECE requires a value"
+    value_expr = generate_expr(assignment.value, ctx)
+
+    # Build getter/setter based on strategy
+    if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+        # _scope-based access
+        getter = f"lambda: _scope.get({translated_name!r}, '')"
+        setter = f"lambda v: _scope.__setitem__({translated_name!r}, v)"
+    elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+        # state-based access
+        getter = f"lambda: getattr(state, {translated_name!r}, '') or ''"
+        setter = f"lambda v: setattr(state, {translated_name!r}, v)"
+    else:
+        # Plain local variable (would need nonlocal in real scenario)
+        # For now, fall back to _scope pattern for safety
+        getter = f"lambda: _scope.get({translated_name!r}, '')"
+        setter = f"lambda v: _scope.__setitem__({translated_name!r}, v)"
+
+    # Emit m_set_piece call
+    ctx.emitter.line(
+        f"m_set_piece({getter}, {setter}, {delimiter_expr}, {piece_from_expr}, {piece_to_expr}, {value_expr})"
+    )
 
 
 def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:

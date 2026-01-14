@@ -317,6 +317,66 @@ A.kill(1)              # K A(1) - removes node and all descendants
 A.kill()               # K A - clears entire array
 ```
 
+## LHS Function Helpers
+
+MUMPS allows functions on the left-hand side of SET to modify portions of variables in-place:
+
+```mumps
+S $P(X,"^",2)="NEW"    ; Replace second piece of X
+S $E(X,2,3)="AB"       ; Replace characters 2-3 of X
+```
+
+The `m2py.runtime.helpers` module provides helper functions for these operations:
+
+### m_set_piece (LHS $PIECE)
+
+```python
+from m2py.runtime.helpers import m_set_piece
+
+# S X="A^B^C" S $P(X,"^",2)="NEW" → X="A^NEW^C"
+m_set_piece(
+    lambda: _scope.get('X', ''),     # getter
+    lambda v: _scope.__setitem__('X', v),  # setter
+    "^",                              # delimiter
+    2,                                # piece_from (1-indexed)
+    None,                             # piece_to (None = single piece)
+    "NEW"                             # replacement value
+)
+```
+
+**Behavior:**
+- Replaces piece(s) at position piece_from (to piece_to if specified)
+- Pads with empty pieces/delimiters if needed: `$P(Y,"^",3)="C"` → `"^^C"`
+- Range replacement collapses pieces: `$P(X,"^",2,4)="X"` replaces pieces 2-4
+
+**Generated Code Example:**
+```python
+# For: S X="A^B^C" S $P(X,"^",2)="NEW" W X Q
+_scope['X'] = "A^B^C"
+m_set_piece(lambda: _scope.get('X', ''), lambda v: _scope.__setitem__('X', v), "^", 2, None, "NEW")
+_rt.write(_scope.get('X', ''))
+```
+
+### m_set_extract (LHS $EXTRACT)
+
+```python
+from m2py.runtime.helpers import m_set_extract
+
+# S X="HELLO" S $E(X,2,3)="XX" → X="HXXLO"
+m_set_extract(
+    lambda: _scope.get('X', ''),     # getter
+    lambda v: _scope.__setitem__('X', v),  # setter
+    2,                                # from_pos (1-indexed)
+    3,                                # to_pos (1-indexed, inclusive)
+    "XX"                              # replacement value
+)
+```
+
+**Behavior:**
+- Replaces characters at positions from_pos to to_pos (inclusive)
+- Pads with spaces if needed: `$E(X,5)="Y"` on `"AB"` → `"AB  Y"`
+- Replacement can be shorter or longer than the range
+
 ### $ORDER Traversal
 
 ```python

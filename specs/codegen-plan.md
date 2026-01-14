@@ -1539,6 +1539,44 @@ def test_expressions(execute_expr, expr, expected):
 
 ---
 
+## Future Spec: Production Database Integration Testing (Spec TBD)
+
+After Spec 009 implements the `GlobalStorageBackend` protocol with stub implementations for YottaDB and IRIS, a dedicated integration testing spec is needed to validate these backends work correctly with real databases.
+
+### Scope
+
+1. **Docker-based Test Environment**
+   - YottaDB container with `yottadb` Python package installed
+   - IRIS Community Edition container with `intersystems-irispython` package
+   - CI/CD pipeline integration (GitHub Actions)
+
+2. **YottaDB Integration Tests**
+   - Test all `GlobalStorageBackend` methods against real YDB
+   - Validate MUMPS→Python→YDB round-trip correctness
+   - Test encoding edge cases (UTF-8, binary data)
+   - Test connection failure handling
+
+3. **IRIS Integration Tests**
+   - Test all `GlobalStorageBackend` methods against real IRIS
+   - Validate connection setup and teardown
+   - Test transaction handling if supported
+
+4. **Cross-Platform Consistency**
+   - Same MUMPS code should produce same results on both backends
+   - Subscript collation order verification
+   - Numeric vs string subscript handling
+
+### Deferred Items from Spec 009
+
+The following were identified in Spec 009 as requiring production database testing:
+- `YottaDBGlobalStorage.kill_node()` behavior verification
+- `IRISGlobalStorage.query()` - not directly supported, needs workaround validation
+- Connection timeout and retry handling
+- Large value handling (>1MB values)
+- Deep nesting limits (>100 subscript levels)
+
+---
+
 ## Risk Register
 
 | Risk | L/I | Mitigation |

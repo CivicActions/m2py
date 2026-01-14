@@ -52,7 +52,35 @@ def m_set_piece(
         # S X="" S $P(X,"^",3)="X" → X="^^X"
         m_set_piece(lambda: "", setter, "^", 3, None, "X")
     """
-    raise NotImplementedError("m_set_piece: stub - implementation in Phase 3")
+    # Get current value (empty string if undefined/None)
+    current = var_getter() or ""
+
+    # Normalize piece_to: if None, single piece replacement
+    if piece_to is None:
+        piece_to = piece_from
+
+    # Split by delimiter (preserving all parts)
+    if delimiter:
+        parts = current.split(delimiter)
+    else:
+        # Empty delimiter edge case - treat each character as a delimiter
+        parts = list(current) if current else [""]
+
+    # Convert to 0-indexed
+    from_idx = piece_from - 1
+    to_idx = piece_to - 1
+
+    # Pad with empty strings if needed to reach the target piece(s)
+    while len(parts) <= to_idx:
+        parts.append("")
+
+    # Replace the range [from_idx, to_idx] with the value
+    # Note: range is inclusive in MUMPS semantics
+    new_parts = parts[:from_idx] + [value] + parts[to_idx + 1 :]
+
+    # Join and set the result
+    result = delimiter.join(new_parts)
+    var_setter(result)
 
 
 def m_set_extract(
