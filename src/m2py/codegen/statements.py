@@ -1313,21 +1313,21 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
             label_name = target.name
             ctx.emitter.line(
                 f"raise GotoExternal({routine_name}, {label_name!r}, "
-                f"offset=int(m_num({offset_code})))"
+                f"offset=int(m_num({offset_code})), _rt=_rt)"
             )
         else:
             # G +N^ROUTINE (absolute line offset)
             ctx.emitter.line(
                 f"raise GotoExternal({routine_name}, None, "
-                f"offset=int(m_num({offset_code})))"
+                f"offset=int(m_num({offset_code})), _rt=_rt)"
             )
     elif target.name:
         # T035: G LABEL^ROUTINE - specific label
         label_name = target.name
-        ctx.emitter.line(f"raise GotoExternal({routine_name}, {label_name!r})")
+        ctx.emitter.line(f"raise GotoExternal({routine_name}, {label_name!r}, _rt=_rt)")
     else:
         # T034: G ^ROUTINE - entry label (same name as routine)
-        ctx.emitter.line(f"raise GotoExternal({routine_name}, None)")
+        ctx.emitter.line(f"raise GotoExternal({routine_name}, None, _rt=_rt)")
 
 
 def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
@@ -1417,13 +1417,13 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                     # T025: D +N^ROUTINE - absolute line offset (1-based to 0-indexed)
                     ctx.emitter.line(f"_target_line = {offset_code} - 1")
 
-                # T029: Call via line dispatch map, passing _scope for cross-routine visibility
+                # T079: Call via line dispatch map, passing _rt and _scope
                 # _line_map returns (label_name, offset) tuple - extract and call
                 ctx.emitter.line(
                     f"_label_name, _line_offset = {routine_name}._line_map[_target_line]"
                 )
                 ctx.emitter.line(
-                    f"getattr({routine_name}, _label_name)(_scope=_scope, _start_offset=_line_offset)"
+                    f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
                 )
             elif target.name:
                 # T022-T023: D LABEL^ROUTINE - call specific label
@@ -1436,25 +1436,27 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                         f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
                         f"list({routine_name}._label_lines.keys()))"
                     )
-                # T029: Pass _scope for cross-routine variable visibility (as keyword arg)
+                # T079: Pass _rt and _scope for cross-routine variable visibility
                 args = _generate_call_arguments(target.arguments, ctx)
                 if args:
                     ctx.emitter.line(
-                        f"{routine_name}.{label_name}({args}, _scope=_scope)"
+                        f"{routine_name}.{label_name}(_rt, {args}, _scope=_scope)"
                     )
                 else:
-                    ctx.emitter.line(f"{routine_name}.{label_name}(_scope=_scope)")
+                    ctx.emitter.line(f"{routine_name}.{label_name}(_rt, _scope=_scope)")
             else:
                 # D ^ROUTINE - call entry label (same name as routine)
                 entry_label = translate_name(routine_name)
-                # T029: Pass _scope for cross-routine variable visibility (as keyword arg)
+                # T079: Pass _rt and _scope for cross-routine variable visibility
                 args = _generate_call_arguments(target.arguments, ctx)
                 if args:
                     ctx.emitter.line(
-                        f"{routine_name}.{entry_label}({args}, _scope=_scope)"
+                        f"{routine_name}.{entry_label}(_rt, {args}, _scope=_scope)"
                     )
                 else:
-                    ctx.emitter.line(f"{routine_name}.{entry_label}(_scope=_scope)")
+                    ctx.emitter.line(
+                        f"{routine_name}.{entry_label}(_rt, _scope=_scope)"
+                    )
             continue
 
         # Get the label name and translate it
@@ -1508,15 +1510,15 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                     "_offset_val else _offset_val"
                 )
 
-            # Build call with state, _scope, and _start_offset
+            # T079: Build call with _rt, state, _scope, and _start_offset
             # Note: args handling with offset is complex - for now just handle simple case
             if args:
                 ctx.emitter.line(
-                    f"{internal_func}(state, _scope, {args}, _start_offset=_offset_val)"
+                    f"{internal_func}(_rt, state, _scope, {args}, _start_offset=_offset_val)"
                 )
             else:
                 ctx.emitter.line(
-                    f"{internal_func}(state, _scope, _start_offset=_offset_val)"
+                    f"{internal_func}(_rt, state, _scope, _start_offset=_offset_val)"
                 )
             continue
 
@@ -1550,15 +1552,24 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                                 return_vars.append(translate_name(actual.variable_name))
 
             if return_vars:
-                # Generate tuple destructuring: X = INCR(X) or A, B = SWAP(A, B)
+                # T079: Generate tuple destructuring with _rt: X = INCR(_rt, X)
                 lhs = ", ".join(return_vars)
-                ctx.emitter.line(f"{lhs} = {label_name}({args})")
+                if args:
+                    ctx.emitter.line(f"{lhs} = {label_name}(_rt, {args})")
+                else:
+                    ctx.emitter.line(f"{lhs} = {label_name}(_rt)")
             else:
-                # No by-ref params at call site - just call
-                ctx.emitter.line(f"{label_name}({args})")
+                # T079: No by-ref params at call site - just call with _rt
+                if args:
+                    ctx.emitter.line(f"{label_name}(_rt, {args})")
+                else:
+                    ctx.emitter.line(f"{label_name}(_rt)")
         else:
-            # No byref_outputs - simple call
-            ctx.emitter.line(f"{label_name}({args})")
+            # T079: No byref_outputs - simple call with _rt
+            if args:
+                ctx.emitter.line(f"{label_name}(_rt, {args})")
+            else:
+                ctx.emitter.line(f"{label_name}(_rt)")
 
 
 __all__ = [

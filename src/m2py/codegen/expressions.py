@@ -233,12 +233,13 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     after, so the callee's $TEST changes don't leak back.
 
     Generated pattern (internal):
-        _call_extrinsic(LABEL, arg1, arg2)
+        _call_extrinsic(_rt, LABEL, arg1, arg2)
 
     Generated pattern (external - Spec 008 Phase 7):
-        _call_extrinsic(ext2.ADD, arg1, arg2, _scope=_scope)
+        _call_extrinsic(_rt, ext2.ADD, arg1, arg2, _scope=_scope)
 
     The _call_extrinsic helper handles save/restore of _test.
+    Phase 13 (T081): _rt is passed explicitly as first parameter.
 
     Args:
         expr: MExtrinsicFunction node
@@ -273,10 +274,11 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
 
         # T045-T046: Generate call via _call_extrinsic with module prefix and _scope
         # The _call_extrinsic helper provides $TEST save/restore
+        # Phase 13 (T081): Pass _rt as first parameter
         if args:
-            return f"_call_extrinsic({routine_name}.{func_name}, {args}, _scope=_scope)"
+            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, {args}, _scope=_scope)"
         else:
-            return f"_call_extrinsic({routine_name}.{func_name}, _scope=_scope)"
+            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, _scope=_scope)"
 
     # Internal extrinsic (within same routine)
     # Translate label name to Python function name
@@ -285,11 +287,12 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     # Generate arguments
     args = _generate_extrinsic_arguments(expr.arguments, ctx)
 
-    # Generate: _call_extrinsic(FUNC, arg1, arg2)
+    # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2)
+    # Phase 13 (T081): Pass _rt as first parameter
     if args:
-        return f"_call_extrinsic({func_name}, {args})"
+        return f"_call_extrinsic(_rt, {func_name}, {args})"
     else:
-        return f"_call_extrinsic({func_name})"
+        return f"_call_extrinsic(_rt, {func_name})"
 
 
 def _generate_extrinsic_arguments(

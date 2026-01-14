@@ -38,8 +38,9 @@ class TestMUMPSRuntimeBasic:
         from m2py.runtime import MUMPSRuntime
 
         rt = MUMPSRuntime()
+        # Phase 13 (T076): Functions now require _rt as first parameter
         code = """
-def TEST():
+def TEST(_rt):
     global _test
     _rt.write("PASS")
 
@@ -55,8 +56,9 @@ _test = False
         from m2py.runtime import MUMPSRuntime
 
         rt = MUMPSRuntime()
+        # Phase 13 (T076): Functions now require _rt as first parameter
         code = """
-def TEST():
+def TEST(_rt):
     global _test
     _test = True
 
@@ -71,8 +73,9 @@ _test = False
         from m2py.runtime import MUMPSRuntime
 
         rt = MUMPSRuntime()
+        # Phase 13 (T076): Functions now require _rt as first parameter
         code = """
-def TEST():
+def TEST(_rt):
     global _test
     raise ValueError("intentional error")
 
@@ -87,12 +90,13 @@ _test = False
         from m2py.runtime import MUMPSRuntime
 
         rt = MUMPSRuntime()
+        # Phase 13 (T076): Functions now require _rt as first parameter
         code = """
-def TEST():
+def TEST(_rt):
     global _test
     _rt.write("FIRST")
 
-def OTHER():
+def OTHER(_rt):
     global _test
     _rt.write("OTHER")
 
@@ -107,8 +111,9 @@ _test = False
         from m2py.runtime import MUMPSRuntime
 
         rt = MUMPSRuntime()
+        # Phase 13 (T076): Functions now require _rt as first parameter
         code = """
-def TEST():
+def TEST(_rt):
     global _test
     _rt.write("test")
 
@@ -441,49 +446,52 @@ class TestRunWithGotoSupport:
 
     def test_normal_execution_returns_result(self):
         """When entry_func doesn't raise GotoExternal, returns normally."""
-        from m2py.runtime import run_with_goto_support
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
 
-        def simple_func(_scope=None):
+        def simple_func(_rt, _scope=None):
             return "completed"
 
-        result = run_with_goto_support(simple_func)
+        _rt = MUMPSRuntime()
+        result = run_with_goto_support(simple_func, _rt)
         assert result == "completed"
 
     def test_passes_scope_to_entry_func(self):
         """_scope is passed to entry function."""
-        from m2py.runtime import run_with_goto_support
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
 
         received_scope = None
 
-        def capture_scope(_scope=None):
+        def capture_scope(_rt, _scope=None):
             nonlocal received_scope
             received_scope = _scope
             return "done"
 
+        _rt = MUMPSRuntime()
         my_scope = {"X": 42}
-        run_with_goto_support(capture_scope, _scope=my_scope)
+        run_with_goto_support(capture_scope, _rt, _scope=my_scope)
         assert received_scope is my_scope
         assert received_scope["X"] == 42
 
     def test_creates_empty_scope_if_none(self):
         """Creates empty _scope dict if None provided."""
-        from m2py.runtime import run_with_goto_support
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
 
         received_scope = None
 
-        def capture_scope(_scope=None):
+        def capture_scope(_rt, _scope=None):
             nonlocal received_scope
             received_scope = _scope
             return "done"
 
-        run_with_goto_support(capture_scope, _scope=None)
+        _rt = MUMPSRuntime()
+        run_with_goto_support(capture_scope, _rt, _scope=None)
         assert received_scope == {}
 
     def test_catches_goto_external_and_transfers(self):
         """GotoExternal is caught and control transfers to target."""
         import types
 
-        from m2py.runtime import GotoExternal, run_with_goto_support
+        from m2py.runtime import GotoExternal, MUMPSRuntime, run_with_goto_support
 
         # Create a mock module with entry function
         target_module = types.ModuleType("target_mod")
@@ -492,7 +500,7 @@ class TestRunWithGotoSupport:
 
         call_count = 0
 
-        def target_entry(_scope=None):
+        def target_entry(_rt, _scope=None):
             nonlocal call_count
             call_count += 1
             return "transferred"
@@ -500,10 +508,11 @@ class TestRunWithGotoSupport:
         target_module.target_mod = target_entry
 
         # Entry function that raises GotoExternal
-        def source_func(_scope=None):
-            raise GotoExternal(target_module, None)
+        def source_func(_rt, _scope=None):
+            raise GotoExternal(target_module, None, _rt=_rt)
 
-        result = run_with_goto_support(source_func)
+        _rt = MUMPSRuntime()
+        result = run_with_goto_support(source_func, _rt)
         assert result == "transferred"
         assert call_count == 1
 
@@ -511,21 +520,22 @@ class TestRunWithGotoSupport:
         """GotoExternal with label transfers to that label's function."""
         import types
 
-        from m2py.runtime import GotoExternal, run_with_goto_support
+        from m2py.runtime import GotoExternal, MUMPSRuntime, run_with_goto_support
 
         target_module = types.ModuleType("target_mod")
         target_module._routine_name = "target_mod"
         target_module._label_lines = {"target_mod": 0, "HELPER": 5}
 
-        def helper_func(_scope=None):
+        def helper_func(_rt, _scope=None):
             return "at HELPER"
 
         target_module.HELPER = helper_func
 
-        def source_func(_scope=None):
-            raise GotoExternal(target_module, "HELPER")
+        def source_func(_rt, _scope=None):
+            raise GotoExternal(target_module, "HELPER", _rt=_rt)
 
-        result = run_with_goto_support(source_func)
+        _rt = MUMPSRuntime()
+        result = run_with_goto_support(source_func, _rt)
         assert result == "at HELPER"
 
     def test_raises_label_not_found_for_missing_label(self):
@@ -535,6 +545,7 @@ class TestRunWithGotoSupport:
         from m2py.runtime import (
             GotoExternal,
             LabelNotFoundError,
+            MUMPSRuntime,
             run_with_goto_support,
         )
 
@@ -542,16 +553,17 @@ class TestRunWithGotoSupport:
         target_module._routine_name = "target_mod"
         target_module._label_lines = {"target_mod": 0}
 
-        def target_entry(_scope=None):
+        def target_entry(_rt, _scope=None):
             return "entry"
 
         target_module.target_mod = target_entry
 
-        def source_func(_scope=None):
-            raise GotoExternal(target_module, "NONEXISTENT")
+        def source_func(_rt, _scope=None):
+            raise GotoExternal(target_module, "NONEXISTENT", _rt=_rt)
 
+        _rt = MUMPSRuntime()
         with pytest.raises(LabelNotFoundError) as exc_info:
-            run_with_goto_support(source_func)
+            run_with_goto_support(source_func, _rt)
 
         assert exc_info.value.label == "NONEXISTENT"
         assert exc_info.value.routine == "target_mod"

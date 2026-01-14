@@ -142,10 +142,11 @@ NEXT W "done" Q"""
 NEXT W "done" Q"""
         code = generate_python(source)
 
-        # Entry point should be named after first label (with _scope param)
+        # Entry point should be named after first label (with _rt and _scope param)
+        # Phase 13 (T076): _rt is now first parameter
         assert (
-            "def TEST(_scope=None, **_kwargs):" in code
-            or "def TEST(_scope=None):" in code
+            "def TEST(_rt, _scope=None, **_kwargs):" in code
+            or "def TEST(_rt, _scope=None):" in code
         )
         # Spec 007: 'target' is now used instead of 'label' to support int line dispatch
         assert "while target is not None:" in code
@@ -167,9 +168,10 @@ NEXT W X Q"""
 NEXT W "done" Q"""
         code = generate_python(source)
 
-        # Trampoline label functions now take state and _scope
-        assert "def _TEST(state, _scope)" in code
-        assert "def _NEXT(state, _scope)" in code
+        # Trampoline label functions now take _rt, state and _scope
+        # Phase 13 (T076): _rt is now first parameter
+        assert "def _TEST(_rt, state, _scope)" in code
+        assert "def _NEXT(_rt, state, _scope)" in code
 
     def test_trampoline_state_variable_access(self):
         """Variables are accessed via state object in trampoline pattern."""
@@ -231,7 +233,8 @@ class TestSimpleFunctionsNotAffected:
         # No trampoline machinery
         assert "RoutineState" not in code
         assert "_labels" not in code
-        assert "def TEST(_scope=None, **_kwargs):" in code
+        # Phase 13 (T076): _rt is now first parameter
+        assert "def TEST(_rt, _scope=None, **_kwargs):" in code
         assert "def _TEST(" not in code
 
     def test_intra_label_goto_no_trampoline(self):
@@ -253,10 +256,11 @@ class TestSimpleFunctionsNotAffected:
         ast.parse(code)
 
         # Either pattern is acceptable:
-        # - Simple function with if/else: def TEST(_scope=None, **_kwargs):
+        # - Simple function with if/else: def TEST(_rt, _scope=None, **_kwargs):
         # - Trampoline with offset guards: _labels, _start_offset
+        # Phase 13 (T076): _rt is now first parameter
         has_simple_pattern = (
-            "def TEST(_scope=None, **_kwargs):" in code and "_labels" not in code
+            "def TEST(_rt, _scope=None, **_kwargs):" in code and "_labels" not in code
         )
         has_trampoline_pattern = "_labels" in code and "_start_offset" in code
         assert has_simple_pattern or has_trampoline_pattern, (
@@ -526,9 +530,16 @@ NEXT W A(1)+B(1,2) Q"""
 NEXT W X Q"""
         code = generate_python(source)
 
-        # Label functions should have correct signature (now with _scope)
-        assert "def _TEST(state, _scope) -> Tuple[Optional[str], RoutineState]:" in code
-        assert "def _NEXT(state, _scope) -> Tuple[Optional[str], RoutineState]:" in code
+        # Label functions should have correct signature (now with _rt and _scope)
+        # Phase 13 (T076): _rt is now first parameter
+        assert (
+            "def _TEST(_rt, state, _scope) -> Tuple[Optional[str], RoutineState]:"
+            in code
+        )
+        assert (
+            "def _NEXT(_rt, state, _scope) -> Tuple[Optional[str], RoutineState]:"
+            in code
+        )
         # Should return tuple with None for QUIT
         assert "return (None, state)" in code
         # Should return tuple with label name for GOTO
@@ -542,8 +553,9 @@ NEXT W X Q"""
 
         # Trampoline should initialize state and pass through
         assert "state = RoutineState()" in code
-        # Spec 007: Dispatcher passes state and _scope to label functions
-        assert "target, state = func(state, _scope" in code
+        # Spec 007: Dispatcher passes _rt, state and _scope to label functions
+        # Phase 13 (T076): _rt is now first parameter
+        assert "target, state = func(_rt, state, _scope" in code
 
     def test_routinestate_enables_ide_autocomplete(self):
         """T097: RoutineState uses @dataclass with typed fields for IDE support."""

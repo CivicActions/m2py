@@ -54,7 +54,8 @@ class TestGotoCommandCodegen:
         # Should import GotoExternal exception
         assert "from m2py.runtime import GotoExternal" in code
         # Should raise GotoExternal with module and None (entry label)
-        assert "raise GotoExternal(OTHER, None)" in code
+        # Phase 13 (T080): GotoExternal now includes _rt=_rt
+        assert "raise GotoExternal(OTHER, None, _rt=_rt)" in code
         # "Never" write should be generated but unreachable due to raise
         assert '_rt.write("Never")' in code
 
@@ -66,7 +67,8 @@ class TestGotoCommandCodegen:
         code = generate_python("TEST\n G HELPER^ext2\n Q\n")
 
         assert "import ext2" in code
-        assert "raise GotoExternal(ext2, 'HELPER')" in code
+        # Phase 13 (T080): GotoExternal now includes _rt=_rt
+        assert "raise GotoExternal(ext2, 'HELPER', _rt=_rt)" in code
 
     def test_goto_external_label_offset(self, generate_python):
         """External GOTO G LABEL+N^ROUTINE generates raise with offset (§8.2.6).
@@ -77,8 +79,10 @@ class TestGotoCommandCodegen:
 
         assert "import ext2" in code
         # Should include offset parameter
+        # Phase 13 (T080): GotoExternal now includes _rt=_rt
         assert "offset=" in code
         assert "GotoExternal(ext2, 'HELPER'" in code
+        assert "_rt=_rt)" in code
 
     def test_goto_external_line_offset(self, generate_python):
         """External GOTO G +N^ROUTINE generates raise with line offset (§8.2.6).
@@ -88,8 +92,10 @@ class TestGotoCommandCodegen:
         code = generate_python("TEST\n G +5^ext2\n Q\n")
 
         assert "import ext2" in code
+        # Phase 13 (T080): GotoExternal now includes _rt=_rt
         assert "GotoExternal(ext2, None" in code
         assert "offset=" in code
+        assert "_rt=_rt)" in code
 
 
 @pytest.mark.codegen
@@ -125,11 +131,12 @@ class TestIntraLabelGotoCodegen:
         python_code = generate_python(code)
 
         # Should NOT contain recursive TEST() call inside the function body
-        # The function definition "def TEST(_scope=None):" is expected, but no TEST() calls
+        # The function definition "def TEST(_rt, _scope=None):" is expected, but no TEST() calls
+        # Phase 13 (T076): _rt is now first parameter
         lines = python_code.split("\n")
         in_test_body = False
         for line in lines:
-            if "def TEST(_scope=None):" in line:
+            if "def TEST(_rt, _scope=None" in line:
                 in_test_body = True
                 continue
             if in_test_body and line.strip().startswith("def "):
@@ -259,9 +266,10 @@ DONE W I
         # The loop exit GOTO should generate 'break'
         assert "break" in python_code
         # Look for the break in the context of the _TEST function (trampoline label function)
-        # Now takes state and _scope parameters
-        test_func = python_code.split("def _TEST(state, _scope)")[1].split(
-            "def _DONE(state, _scope)"
+        # Now takes _rt, state and _scope parameters
+        # Phase 13 (T076): _rt is now first parameter
+        test_func = python_code.split("def _TEST(_rt, state, _scope)")[1].split(
+            "def _DONE(_rt, state, _scope)"
         )[0]
         assert "break" in test_func
         # FR-018: Cross-label exit should track target label as string
@@ -752,7 +760,8 @@ class TestTrampolinePatternCodegen:
 NEXT W "done" Q"""
         )
         # Entry point with trampoline dispatcher
-        assert "def TEST(_scope=None):" in code
+        # Phase 13 (T076): _rt is now first parameter
+        assert "def TEST(_rt, _scope=None" in code
         # Spec 007: 'target' is now used instead of 'label' to support int line dispatch
         assert "while target is not None:" in code
         assert "func = _labels[target]" in code

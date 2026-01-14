@@ -32,8 +32,9 @@ class TestExternalDORoutineCall:
 """
         code = generate_python(source)
         assert "import ext2" in code
-        # T029: External DO calls pass _scope for cross-routine variable visibility
-        assert "ext2.ext2(_scope=_scope)" in code
+        # T029: External DO calls pass _rt and _scope for cross-routine variable visibility
+        # Phase 13 (T079): _rt is now passed as first parameter
+        assert "ext2.ext2(_rt, _scope=_scope)" in code
 
     def test_d_routine_entry_label(self, external_fixtures_path):
         """D ^ext2 should call ext2's entry label and return."""
@@ -67,13 +68,12 @@ class TestExternalDORoutineCall:
                 namespace = {}
                 exec(ext1_code, namespace)
 
-                # Call ext1 entry point
-                namespace["ext1"]()
+                # Phase 13 (T076-T083): Call ext1 entry point with _rt
+                runtime = namespace["MUMPSRuntime"]()
+                namespace["ext1"](runtime)
 
-                # Import ext2 to check its output
-                import ext2
-
-                output = ext2._rt.get_output()
+                # Phase 13: Output now goes to the passed runtime, not ext2's module-level _rt
+                output = runtime.get_output()
                 assert "In ext2" in output
 
             finally:
@@ -109,16 +109,13 @@ class TestExternalDORoutineCall:
 
                 # Create runtime for ext1
                 rt = MUMPSRuntime()
-                namespace = {"_rt": rt}
+                namespace = {}
 
                 # Execute module code
                 exec(ext1_code, namespace)
 
-                # Overwrite module's _rt with our shared one
-                namespace["_rt"] = rt
-
-                # Call ext1
-                namespace["ext1"]()
+                # Phase 13 (T076-T083): Call ext1 with _rt
+                namespace["ext1"](rt)
 
                 # ext1's output should have "Back in ext1"
                 output = rt.get_output()
@@ -141,8 +138,9 @@ class TestExternalDOLabelCall:
 """
         code = generate_python(source)
         assert "import ext2" in code
-        # T029: External DO calls pass _scope for cross-routine variable visibility
-        assert "ext2.HELPER(_scope=_scope)" in code
+        # T029: External DO calls pass _rt and _scope for cross-routine variable visibility
+        # Phase 13 (T079): _rt is now passed as first parameter
+        assert "ext2.HELPER(_rt, _scope=_scope)" in code
 
     def test_d_label_routine_calls_label(self, external_fixtures_path):
         """D HELPER^ext2 should call the HELPER label (not entry label)."""
@@ -175,12 +173,12 @@ HELPER
                 # Execute ext1
                 namespace = {}
                 exec(ext1_code, namespace)
-                namespace["ext1"]()
+                # Phase 13 (T076-T083): Call ext1 with _rt
+                runtime = namespace["MUMPSRuntime"]()
+                namespace["ext1"](runtime)
 
-                # Import ext2 to check output
-                import ext2
-
-                output = ext2._rt.get_output()
+                # Phase 13: Output now goes to the passed runtime
+                output = runtime.get_output()
                 # Should have HELPER output, not ext2 entry output
                 assert "In HELPER" in output
                 assert "In ext2" not in output
@@ -220,11 +218,12 @@ HELPER
                 namespace = {}
                 exec(ext1_code, namespace)
 
-                # Should raise LabelNotFoundError when called
+                # Phase 13 (T076-T083): Call ext1 with _rt; should raise LabelNotFoundError
                 import pytest
 
+                runtime = namespace["MUMPSRuntime"]()
                 with pytest.raises(LabelNotFoundError) as exc_info:
-                    namespace["ext1"]()
+                    namespace["ext1"](runtime)
 
                 # Verify error details
                 assert exc_info.value.label == "NONEXISTENT"
@@ -270,11 +269,12 @@ HELPER
 
                 namespace = {}
                 exec(ext1_code, namespace)
-                namespace["ext1"]()
+                # Phase 13 (T076-T083): Call ext1 with _rt
+                runtime = namespace["MUMPSRuntime"]()
+                namespace["ext1"](runtime)
 
-                import ext2
-
-                output = ext2._rt.get_output()
+                # Phase 13: Output now goes to the passed runtime
+                output = runtime.get_output()
                 # Should start at Line 1, not at HELPER label
                 assert "Line 1 of HELPER" in output
                 assert "Line 2 of HELPER" in output
@@ -325,11 +325,12 @@ HELPER
 
                 namespace = {}
                 exec(ext1_code, namespace)
-                namespace["ext1"]()
+                # Phase 13 (T076-T083): Call ext1 with _rt
+                runtime = namespace["MUMPSRuntime"]()
+                namespace["ext1"](runtime)
 
-                import ext2
-
-                output = ext2._rt.get_output()
+                # Phase 13: Output now goes to the passed runtime
+                output = runtime.get_output()
                 # Verify ext2 was called (with limited offset support)
                 # For SIMPLE_FUNCTIONS, starts from label beginning
                 assert "Line" in output
@@ -350,8 +351,9 @@ class TestCrossRoutineVariableVisibility:
  Q
 """
         code = generate_python(source)
-        # Entry function should have _scope=None parameter (with **_kwargs for flexibility)
-        assert "def ext1(_scope=None, **_kwargs):" in code
+        # Entry function should have _rt and _scope=None parameter (with **_kwargs for flexibility)
+        # Phase 13 (T076): _rt is now first parameter
+        assert "def ext1(_rt, _scope=None, **_kwargs):" in code
         # Should initialize _scope if not provided
         assert "_scope = _scope if _scope is not None else {}" in code
 
@@ -362,8 +364,9 @@ class TestCrossRoutineVariableVisibility:
  Q
 """
         code = generate_python(source)
-        # External call should pass _scope as keyword argument
-        assert "ext2.ext2(_scope=_scope)" in code
+        # External call should pass _rt and _scope as keyword argument
+        # Phase 13 (T079): _rt is now passed as first parameter
+        assert "ext2.ext2(_rt, _scope=_scope)" in code
 
     def test_scope_infrastructure_works(self, external_fixtures_path):
         """T032: _scope passes through external calls (infrastructure test).
@@ -398,9 +401,10 @@ class TestCrossRoutineVariableVisibility:
                 namespace = {}
                 exec(ext1_code, namespace)
 
-                # Call with shared _scope - should work without error
+                # Phase 13 (T076-T083): Call with _rt and shared _scope
+                runtime = namespace["MUMPSRuntime"]()
                 shared_scope = {"test_var": 42}
-                namespace["ext1"](_scope=shared_scope)
+                namespace["ext1"](runtime, _scope=shared_scope)
 
                 # Infrastructure test: _scope was passed through without error
                 # Full variable visibility test would verify shared_scope["X"]
@@ -438,7 +442,8 @@ class TestExternalGOTO:
         code = generate_python(source)
         assert "import ext2" in code
         assert "from m2py.runtime import GotoExternal" in code
-        assert "raise GotoExternal(ext2, None)" in code
+        # Phase 13 (T080): GotoExternal now includes _rt=_rt
+        assert "raise GotoExternal(ext2, None, _rt=_rt)" in code
 
     def test_g_label_routine_generates_raise_goto_external(self):
         """T035: G LABEL^ext2 should generate raise GotoExternal with label."""
@@ -448,7 +453,8 @@ class TestExternalGOTO:
 """
         code = generate_python(source)
         assert "import ext2" in code
-        assert "raise GotoExternal(ext2, 'HELPER')" in code
+        # Phase 13 (T080): GotoExternal now includes _rt=_rt
+        assert "raise GotoExternal(ext2, 'HELPER', _rt=_rt)" in code
 
     def test_g_routine_transfers_control(self, external_fixtures_path):
         """T041: G ^ext2 transfers control permanently (no return)."""
@@ -483,16 +489,16 @@ class TestExternalGOTO:
                 namespace = {}
                 exec(ext1_code, namespace)
 
-                # Use run_with_goto_support to handle the GotoExternal
-                run_with_goto_support(namespace["ext1"])
+                # Phase 13 (T076-T083): Use run_with_goto_support with _rt
+                runtime = namespace["MUMPSRuntime"]()
+                run_with_goto_support(namespace["ext1"], runtime)
 
+                # Phase 13: Output now goes to the passed runtime
                 # Check output: should have "Start" and "In ext2", but NOT "Never"
-                import ext2
-
-                output = ext2._rt.get_output()
+                output = runtime.get_output()
                 assert "In ext2" in output
                 # "Never" should NOT be in output - GOTO doesn't return
-                # Note: "Start" goes to ext1's runtime, which is separate
+                # Note: "Start" goes to same runtime now
 
             finally:
                 sys.path.remove(tmpdir)
@@ -532,11 +538,12 @@ HELPER
                 namespace = {}
                 exec(ext1_code, namespace)
 
-                run_with_goto_support(namespace["ext1"])
+                # Phase 13 (T076-T083): Use run_with_goto_support with _rt
+                runtime = namespace["MUMPSRuntime"]()
+                run_with_goto_support(namespace["ext1"], runtime)
 
-                import ext2
-
-                output = ext2._rt.get_output()
+                # Phase 13: Output now goes to the passed runtime
+                output = runtime.get_output()
                 # Should have HELPER output, NOT entry output
                 assert "In HELPER" in output
                 assert "In ext2 entry" not in output
@@ -584,12 +591,13 @@ HELPER
                 namespace = {}
                 exec(ext1_code, namespace)
 
+                # Phase 13 (T076-T083): Use run_with_goto_support with _rt
+                runtime = namespace["MUMPSRuntime"]()
                 # This should chain: ext1 -> ext2 -> ext3 -> quit
-                run_with_goto_support(namespace["ext1"])
+                run_with_goto_support(namespace["ext1"], runtime)
 
-                import ext3
-
-                output = ext3._rt.get_output()
+                # Phase 13: Output now goes to the passed runtime
+                output = runtime.get_output()
                 assert "In ext3" in output
 
             finally:
@@ -637,13 +645,14 @@ HELPER
                 namespace = {}
                 exec(ext1_code, namespace)
 
+                # Phase 13 (T076-T083): Use run_with_goto_support with _rt
+                runtime = namespace["MUMPSRuntime"]()
                 # This should: ext1 calls ext2, ext2 GOTOs ext3, ext3 quits
                 # ext1's "Return" line should never execute
-                run_with_goto_support(namespace["ext1"])
+                run_with_goto_support(namespace["ext1"], runtime)
 
-                import ext3
-
-                output = ext3._rt.get_output()
+                # Phase 13: Output now goes to the passed runtime
+                output = runtime.get_output()
                 assert "In ext3" in output
                 # "Return" should NOT be in output
 
@@ -691,11 +700,12 @@ HELPER
 
                 namespace = {}
                 exec(ext1_code, namespace)
-                run_with_goto_support(namespace["ext1"])
+                # Phase 13 (T076-T083): Use run_with_goto_support with _rt
+                runtime = namespace["MUMPSRuntime"]()
+                run_with_goto_support(namespace["ext1"], runtime)
 
-                import ext2
-
-                output = ext2._rt.get_output()
+                # Phase 13: Output now goes to the passed runtime
+                output = runtime.get_output()
                 # Should start at Line 1, not at HELPER label
                 assert "Line 1 of HELPER" in output
                 assert "Line 2 of HELPER" in output
@@ -750,11 +760,12 @@ HELPER
 
                 namespace = {}
                 exec(ext1_code, namespace)
-                run_with_goto_support(namespace["ext1"])
+                # Phase 13 (T076-T083): Use run_with_goto_support with _rt
+                runtime = namespace["MUMPSRuntime"]()
+                run_with_goto_support(namespace["ext1"], runtime)
 
-                import ext2
-
-                output = ext2._rt.get_output()
+                # Phase 13: Output now goes to the passed runtime
+                output = runtime.get_output()
                 # Verify ext2 was called (with limited offset support)
                 # For SIMPLE_FUNCTIONS, starts from label beginning
                 assert "Line" in output
@@ -776,8 +787,9 @@ class TestExternalExtrinsic:
 """
         code = generate_python(source)
         assert "import ext2" in code
-        # T045: External extrinsic calls pass _scope for variable visibility
-        assert "_call_extrinsic(ext2.ADD, 3, 5, _scope=_scope)" in code
+        # T045: External extrinsic calls pass _rt and _scope for variable visibility
+        # Phase 13 (T081): _rt is now passed as first parameter to _call_extrinsic
+        assert "_call_extrinsic(_rt, ext2.ADD, 3, 5, _scope=_scope)" in code
 
     def test_external_extrinsic_returns_value(self):
         """$$ADD^ext2(3,5) should call external function and return value."""
@@ -807,7 +819,9 @@ ADD(A,B)
                 namespace = {}
                 exec(ext1_code, namespace)
 
-                result = namespace["ext1"]()
+                # Phase 13 (T076-T083): _rt is passed explicitly to all entry points
+                runtime = namespace["MUMPSRuntime"]()
+                result = namespace["ext1"](runtime)
                 assert result == 8
 
             finally:
@@ -903,8 +917,8 @@ ADD(A,B)
                     namespace = {"__builtins__": __builtins__}
                     exec(code, namespace)
                     rt = MUMPSRuntime()
-                    namespace["_rt"] = rt
-                    namespace["texttest"]()
+                    # Phase 13 (T076-T083): _rt is passed as first argument
+                    namespace["texttest"](rt)
                     output = rt.get_output()
 
                     # Parse output - splits on literal "$T(" in the output string
@@ -953,8 +967,8 @@ ADD(A,B)
                     namespace = {"__builtins__": __builtins__}
                     exec(code, namespace)
                     rt = MUMPSRuntime()
-                    namespace["_rt"] = rt
-                    namespace["texttest"]()
+                    # Phase 13 (T076-T083): _rt is passed as first argument
+                    namespace["texttest"](rt)
                     output = rt.get_output()
 
                     # Nonexistent label should return empty string
@@ -989,9 +1003,11 @@ ADD(A,B)
                     namespace = {"__builtins__": __builtins__}
                     exec(code, namespace)
                     rt = MUMPSRuntime()
-                    namespace["_rt"] = rt
-                    namespace["texttest"]()
+                    # Phase 13 (T076-T083): _rt is passed as first argument
+                    namespace["texttest"](rt)
                     output = rt.get_output()
+
+                    # Line past end should return empty string
 
                     # Past end of file should return empty string
                     assert output == "$T(+999^exttest2): "
@@ -1034,7 +1050,9 @@ SETTRUE()
                 namespace = {}
                 exec(ext1_code, namespace)
 
-                result = namespace["ext1"]()
+                # Phase 13 (T076-T083): _rt is passed as first argument
+                runtime = namespace["MUMPSRuntime"]()
+                result = namespace["ext1"](runtime)
 
                 # ext1 should have its $TEST restored after extrinsic call
                 # $TEST was false (I X failed), should remain false after $$SETTRUE
@@ -1078,9 +1096,11 @@ CHECKSCOPE()
                 namespace = {}
                 exec(ext1_code, namespace)
 
+                # Phase 13 (T076-T083): _rt is passed as first argument
+                runtime = namespace["MUMPSRuntime"]()
                 # Call with shared _scope - should work without error
                 shared_scope = {"test_var": 42}
-                result = namespace["ext1"](_scope=shared_scope)
+                result = namespace["ext1"](runtime, _scope=shared_scope)
                 assert result == "OK"
 
                 # Infrastructure test: _scope was passed through without error
@@ -1129,11 +1149,13 @@ class TestCircularRoutineCalls:
                 # Import circular module - should not raise ImportError
                 import circular
 
+                # Phase 13 (T076-T083): _rt is passed as first argument
+                rt = circular.MUMPSRuntime()
                 # Execute circular which calls circularb - should not raise errors
-                circular.circular()
+                circular.circular(rt)
 
-                # Check output from circular module's runtime
-                output = circular._rt.get_output()
+                # Check output from our runtime
+                output = rt.get_output()
 
                 # Verify circular executed
                 assert "In circular" in output
@@ -1218,9 +1240,11 @@ class TestExternalRoutineErrorHandling:
         namespace = {}
         exec(code, namespace)
 
+        # Phase 13 (T076-T083): _rt is passed as first argument
+        runtime = namespace["MUMPSRuntime"]()
         # Attempting to call ext1 should raise ImportError when it tries to import nonexistent
         with pytest.raises((ImportError, ModuleNotFoundError)) as exc_info:
-            namespace["ext1"]()
+            namespace["ext1"](runtime)
 
         # Error message should mention the missing routine name
         assert "nonexistent" in str(exc_info.value)
@@ -1275,9 +1299,11 @@ class TestExternalRoutineErrorHandling:
         namespace = {}
         exec(code, namespace)
 
+        # Phase 13 (T076-T083): run_with_goto_support expects _rt
+        runtime = namespace["MUMPSRuntime"]()
         # Attempting to call ext1 should raise ImportError
         with pytest.raises((ImportError, ModuleNotFoundError)) as exc_info:
-            run_with_goto_support(namespace["ext1"])
+            run_with_goto_support(namespace["ext1"], runtime)
 
         assert "nonexistent" in str(exc_info.value)
 
@@ -1346,8 +1372,12 @@ entry
                     "shared should not be in sys.modules yet"
                 )
 
+                # Phase 13 (T076-T083): _rt is passed as first argument
+                # Create a runtime for main
+                rt = main_module.MUMPSRuntime()
+
                 # Execute main routine (will import shared)
-                main_module.main()
+                main_module.main(rt)
 
                 # Verify shared module is NOW loaded and cached
                 assert "shared" in sys.modules, (
@@ -1359,7 +1389,7 @@ entry
                 assert cached_shared is not None, "Cached module should not be None"
 
                 # Run main again - should reuse cached module
-                main_module.main()
+                main_module.main(rt)
 
                 # Verify the same module object is still being used (not reloaded)
                 assert sys.modules["shared"] is cached_shared, (
@@ -1375,13 +1405,13 @@ entry
                     "Cached module should have 'shared' function"
                 )
 
-                # Call entry directly to verify it's callable
-                cached_shared.entry()
+                # Phase 13 (T076-T083): Call entry directly with _rt
+                cached_shared.entry(rt)
 
-                # Verify the call worked (should produce output in shared's _rt)
-                shared_output = cached_shared._rt.get_output()
+                # Verify the call worked (should produce output in our _rt)
+                shared_output = rt.get_output()
                 assert "EntryCalled" in shared_output, (
-                    f"Direct call to cached_shared.entry() should produce output. "
+                    f"Direct call to cached_shared.entry(rt) should produce output. "
                     f"Got: {repr(shared_output)}"
                 )
 

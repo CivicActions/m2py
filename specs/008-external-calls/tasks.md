@@ -254,14 +254,14 @@ Gap analysis revealed critical issues with the current implementation:
 
 ### Execution Model Changes
 
-- [ ] T076 Update function signatures to accept `_rt` as first parameter: `def LABEL(_rt, _scope=None)` in src/m2py/codegen/routine.py
-- [ ] T077 Generate `if __name__ == "__main__"` block that creates `_rt = MUMPSRuntime()` and `_scope = {}` in src/m2py/codegen/routine.py
-- [ ] T078 Remove module-level `_rt = MUMPSRuntime()` from generated code (entry point creates it) in src/m2py/codegen/routine.py
-- [ ] T079 Update external DO calls to pass `_rt`: `ext2.LABEL(_rt, _scope)` in src/m2py/codegen/statements.py
-- [ ] T080 Update external GOTO to pass `_rt` in GotoExternal exception handling in src/m2py/codegen/statements.py
-- [ ] T081 Update external extrinsic calls to pass `_rt`: `ext2.FUNC(_rt, _scope, args)` in src/m2py/codegen/expressions.py
-- [ ] T082 Update run_with_goto_support() to accept and pass `_rt` in src/m2py/runtime/__init__.py
-- [ ] T083 Update _call_extrinsic() helper to accept and pass `_rt` in src/m2py/codegen/routine.py
+- [X] T076 Update function signatures to accept `_rt` as first parameter: `def LABEL(_rt, _scope=None)` in src/m2py/codegen/routine.py
+- [X] T077 Generate `if __name__ == "__main__"` block that creates `_rt = MUMPSRuntime()` and `_scope = {}` in src/m2py/codegen/routine.py
+- [X] T078 Remove module-level `_rt = MUMPSRuntime()` from generated code (entry point creates it) in src/m2py/codegen/routine.py
+- [X] T079 Update external DO calls to pass `_rt`: `ext2.LABEL(_rt, _scope)` in src/m2py/codegen/statements.py
+- [X] T080 Update external GOTO to pass `_rt` in GotoExternal exception handling in src/m2py/codegen/statements.py
+- [X] T081 Update external extrinsic calls to pass `_rt`: `ext2.FUNC(_rt, _scope, args)` in src/m2py/codegen/expressions.py
+- [X] T082 Update run_with_goto_support() to accept and pass `_rt` in src/m2py/runtime/__init__.py
+- [X] T083 Update _call_extrinsic() helper to accept and pass `_rt` in src/m2py/codegen/routine.py
 
 ### Variable Storage in _scope
 
@@ -289,7 +289,7 @@ Gap analysis revealed critical issues with the current implementation:
 
 ### Validation
 
-- [ ] T099 Run full test suite and fix any regressions from execution model changes
+- [X] T099 Run full test suite and fix any regressions from execution model changes
 - [ ] T100 Validate with YDB using utils/validate.py for cross-routine variable visibility scenarios
 
 **Checkpoint**: Execution model is clean with explicit `_rt, _scope` passing; variables stored in `_scope` for true cross-routine visibility

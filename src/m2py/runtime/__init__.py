@@ -278,6 +278,7 @@ class GotoExternal(Exception):
         module: Target module (already imported via standard Python import)
         label: Target label name (None = entry label, same name as routine)
         offset: Optional line offset for G LABEL+N^ROUTINE pattern
+        _rt: MUMPSRuntime instance to pass to target routine (Phase 13)
     """
 
     def __init__(
@@ -285,10 +286,12 @@ class GotoExternal(Exception):
         module: types.ModuleType,
         label: Optional[str] = None,
         offset: Optional[int] = None,
+        _rt: Optional["MUMPSRuntime"] = None,
     ) -> None:
         self.module = module
         self.label = label
         self.offset = offset
+        self._rt = _rt
         routine_name = getattr(module, "_routine_name", module.__name__)
         label_str = label or ""
         super().__init__(f"GOTO {label_str}^{routine_name}")
@@ -314,6 +317,7 @@ class LabelNotFoundError(Exception):
 
 def run_with_goto_support(
     entry_func: Callable[..., Any],
+    _rt: "MUMPSRuntime",
     _scope: Optional[Dict[str, Any]] = None,
 ) -> Any:
     """Execute a routine entry point with external GOTO support.
@@ -326,8 +330,12 @@ def run_with_goto_support(
     the target routine, which may itself GOTO to another routine, creating a
     chain of transfers that only ends when a routine QUITs normally.
 
+    Phase 13 (T082): The runtime instance is passed explicitly to all routines
+    to ensure shared state across external calls.
+
     Args:
         entry_func: The entry function to execute (routine's first label)
+        _rt: MUMPSRuntime instance to pass to all routines
         _scope: Optional shared scope for cross-routine variable visibility
 
     Returns:
@@ -341,14 +349,17 @@ def run_with_goto_support(
         _scope = {}
 
     current_func = entry_func
+    current_rt = _rt
     while True:
         try:
-            return current_func(_scope=_scope)
+            return current_func(current_rt, _scope=_scope)
         except GotoExternal as goto:
             # Transfer to external routine
             module = goto.module
             label = goto.label
             offset = goto.offset
+            # Use _rt from exception if available, else current
+            current_rt = goto._rt if goto._rt is not None else current_rt
 
             # Get the entry function from target module
             if offset is not None:
@@ -570,7 +581,7 @@ class MUMPSRuntime:
             exec(python_code, namespace)
 
             # Re-inject runtime after module execution
-            # (the generated code creates its own _rt, but we want to use ours)
+            # (the generated code no longer creates its own _rt since Phase 13)
             namespace["_rt"] = self
 
             # Find entry point
@@ -579,10 +590,11 @@ class MUMPSRuntime:
                 entry_point = self._find_first_function(python_code)
 
             # Call entry point if found
+            # Phase 13 (T076): Entry point functions now require _rt as first parameter
             if entry_point and entry_point in namespace:
                 func = namespace[entry_point]
                 if callable(func):
-                    func()
+                    func(self)
 
             # Get final $TEST value
             test_value = namespace.get("_test", False)

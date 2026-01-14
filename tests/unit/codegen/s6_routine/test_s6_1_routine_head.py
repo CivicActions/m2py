@@ -20,9 +20,10 @@ class TestRoutineHeadCodegen:
         """Formal parameters generate function parameters (§6.1).
 
         T050: Generate formal parameters in function definition.
+        Phase 13 (T076): _rt is now first parameter.
         """
         code = generate_python("ADD(A,B) Q A+B\n")
-        assert "def ADD(A, B, _scope=None, **_kwargs):" in code
+        assert "def ADD(_rt, A, B, _scope=None, **_kwargs):" in code
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: routine docstring")
@@ -214,9 +215,10 @@ class TestScopeStrategyGeneration:
 
         A function with only formal params that returns a value
         should generate `return <expr>`.
+        Phase 13 (T076): _rt is now first parameter.
         """
         code = generate_python("ADD(A,B) Q A+B\n")
-        assert "def ADD(A, B, _scope=None, **_kwargs):" in code
+        assert "def ADD(_rt, A, B, _scope=None, **_kwargs):" in code
         # Should have return with expression (m_num(A) + m_num(B))
         assert "return" in code
         assert "m_num(A)" in code or "A" in code
@@ -230,10 +232,11 @@ class TestScopeStrategyGeneration:
         Note: SUBROUTINEs with byref_outputs (like INCR(N)) now return
         modified params for by-ref call semantics (T059). This test
         uses a subroutine without byref outputs.
+        Phase 13 (T076): _rt is now first parameter.
         """
         # Use a subroutine that sets a local but doesn't modify formals
         code = generate_python("PRINT(MSG) W MSG Q\n")
-        assert "def PRINT(MSG, _scope=None, **_kwargs):" in code
+        assert "def PRINT(_rt, MSG, _scope=None, **_kwargs):" in code
         # Should have plain return (not return <expr>)
         # Find lines that are just 'return' without a value
         lines = code.split("\n")
@@ -257,6 +260,7 @@ class TestScopeStrategyGeneration:
 
         Note: Full by-ref handling is Phase 10. This tests that
         the basic scope strategy is detected correctly.
+        Phase 13 (T076): _rt is now first parameter.
         """
         # For now, SWAP is classified as SUBROUTINE not FUNCTION_WITH_OUTPUTS
         # because it has no return value. The return tuple pattern
@@ -264,7 +268,7 @@ class TestScopeStrategyGeneration:
         # Use a simple example without NEW statement (not yet implemented)
         code = generate_python("INCR(N) S N=N+1 Q\\n")
         # Verifies formal params are generated correctly
-        assert "def INCR(N, _scope=None, **_kwargs):" in code
+        assert "def INCR(_rt, N, _scope=None, **_kwargs):" in code
 
 
 @pytest.mark.codegen

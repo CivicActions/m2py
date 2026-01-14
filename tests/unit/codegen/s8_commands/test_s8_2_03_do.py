@@ -16,10 +16,11 @@ class TestDoCommandCodegen:
         User Story 5 acceptance scenario (T042/T043):
         Given: D SUB
         When: generated
-        Then: output contains SUB() function call
+        Then: output contains SUB(_rt) function call
+        Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         """
         code = generate_python('TEST\n D SUB\n Q\nSUB\n W "SUB"\n Q\n')
-        assert "SUB()" in code
+        assert "SUB(_rt)" in code
 
     def test_do_call_and_return(self, execute_mumps):
         """DO calls subroutine and returns to caller.
@@ -46,9 +47,12 @@ class TestDoCommandCodegen:
         assert result.success is True
 
     def test_do_with_args(self, generate_python):
-        """DO with arguments generates parameterized call (§8.2.3)."""
+        """DO with arguments generates parameterized call (§8.2.3).
+
+        Phase 13 (T079): Internal DO calls now pass _rt as first argument.
+        """
         code = generate_python("TEST\n D SUB(1,2)\n Q\nSUB(A,B)\n W A+B\n Q\n")
-        assert "SUB(1, 2)" in code
+        assert "SUB(_rt, 1, 2)" in code
 
     def test_do_block_codegen(self, generate_python):
         """DO block generates indented block with while True wrapper (§8.2.3).
@@ -95,11 +99,12 @@ class TestTestStackArgumentlessDo:
         """D SUB (label call) does NOT generate _saved_test (T009/T010).
 
         Label calls do NOT stack $TEST - callee's changes are visible.
+        Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         """
         code = generate_python("TEST\n D SUB\n Q\nSUB\n I 0\n Q\n")
         # Should NOT have save/restore for label calls
         assert "_saved_test = _test" not in code
-        assert "SUB()" in code
+        assert "SUB(_rt)" in code
 
     def test_label_call_callee_test_visible(self, execute_mumps):
         """ELSE after label call sees callee's $TEST (T012).
@@ -216,11 +221,13 @@ class TestTestStackDoWithArgs:
         """D SUB() does NOT generate _saved_test (T017).
 
         Empty args still a label call, not a DO block.
+        Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         """
         code = generate_python("TEST\n D SUB()\n Q\nSUB()\n I 0\n Q\n")
         # Should NOT have save/restore for label calls with empty args
         assert "_saved_test = _test" not in code
-        assert "SUB()" in code
+        # With empty args, it generates SUB(_rt) since there are no additional args
+        assert "SUB(_rt)" in code
 
     def test_do_with_empty_args_callee_test_visible(self, execute_mumps):
         """D SUB() - callee's $TEST visible to caller.
@@ -460,17 +467,17 @@ class TestByRefParameterCodegen:
     def test_incr_single_byref_param(self, generate_python):
         """INCR pattern with single by-ref param (T064).
 
-        D INCR(.X) generates: X = INCR(X)
+        D INCR(.X) generates: X = INCR(_rt, X)
         Callee returns the modified value.
         """
         code = generate_python("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
 
-        # Callee returns modified param
-        assert "def INCR(N, _scope=None, **_kwargs):" in code
+        # Phase 13 (T076): Callee signature includes _rt as first parameter
+        assert "def INCR(_rt, N, _scope=None, **_kwargs):" in code
         assert "return N" in code
 
-        # Call site destructures the return
-        assert "X = INCR(X)" in code
+        # Phase 13 (T079): Call site passes _rt and destructures the return
+        assert "X = INCR(_rt, X)" in code
 
     def test_incr_single_byref_runtime(self, execute_mumps):
         """INCR pattern executes correctly with by-ref (T064).
@@ -486,20 +493,20 @@ class TestByRefParameterCodegen:
     def test_swap_two_byref_params(self, generate_python):
         """SWAP pattern with two by-ref params (T063).
 
-        D SWAP(.A,.B) generates: A, B = SWAP(A, B)
+        D SWAP(.A,.B) generates: A, B = SWAP(_rt, A, B)
         Callee returns both modified values as tuple.
         """
         code = generate_python(
             "TEST S A=1,B=2 D SWAP(.A,.B) W A,B Q\nSWAP(X,Y) S T=X,X=Y,Y=T Q\n"
         )
 
-        # Callee returns both modified params
-        assert "def SWAP(X, Y, _scope=None, **_kwargs):" in code
+        # Phase 13 (T076): Callee signature includes _rt as first parameter
+        assert "def SWAP(_rt, X, Y, _scope=None, **_kwargs):" in code
         # Check for tuple return (order may vary based on set ordering)
         assert "return X, Y" in code or "return Y, X" in code
 
-        # Call site destructures both
-        assert "A, B = SWAP(A, B)" in code or "B, A = SWAP(A, B)" in code
+        # Phase 13 (T079): Call site passes _rt and destructures
+        assert "A, B = SWAP(_rt, A, B)" in code or "B, A = SWAP(_rt, A, B)" in code
 
     def test_swap_two_byref_runtime(self, execute_mumps):
         """SWAP pattern executes correctly with two by-refs (T063).
@@ -523,8 +530,8 @@ class TestByRefParameterCodegen:
             "TEST S X=1 D INCR(.X),INCR(.X),INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n"
         )
 
-        # Should have three separate calls with destructuring
-        assert code.count("X = INCR(X)") == 3
+        # Phase 13 (T079): Three separate calls with destructuring, _rt passed
+        assert code.count("X = INCR(_rt, X)") == 3
 
     def test_multiple_byref_calls_runtime(self, execute_mumps):
         """Multiple by-ref calls accumulate correctly (T065).
@@ -547,13 +554,13 @@ class TestByRefParameterCodegen:
         code = generate_python("TEST S X=5 D INCR(X) W X Q\nINCR(N) S N=N+1 Q\n")
 
         # By-value call should not destructure
-        # The call is just INCR(X), not X = INCR(X)
+        # Phase 13 (T079): Call is INCR(_rt, X), not X = INCR(_rt, X)
         lines = [line.strip() for line in code.split("\n")]
         # Find the line that calls INCR in TEST function
-        # It should be just "INCR(X)" not "X = INCR(X)"
-        incr_lines = [line for line in lines if "INCR(X)" in line]
-        # Should have INCR(X) without assignment
-        assert any(line == "INCR(X)" for line in incr_lines)
+        # It should be just "INCR(_rt, X)" not "X = INCR(_rt, X)"
+        incr_lines = [line for line in lines if "INCR(_rt, X)" in line]
+        # Should have INCR(_rt, X) without assignment
+        assert any(line == "INCR(_rt, X)" for line in incr_lines)
 
     def test_byvalue_call_runtime(self, execute_mumps):
         """By-value call does not modify caller's variable.
