@@ -33,4 +33,5 @@ markers = [
     "stub: marks stub tests pending implementation",
     "analysis: marks analysis module tests",
     "runtime: marks runtime module tests",
+    "spec009: marks Spec 009 (LHS Functions & Global Variables) tests",
 ]

@@ -29,9 +29,10 @@
 **Emit inline Python for:**
 | Feature | Python Translation |
 |---------|--------------------|  
-| Local variables | `x = value` (Python locals) |
-| Parameters | `def foo(a, b):` |
-| By-ref outputs | Return tuple: `return (x, y)` |
+| Local variables (SIMPLE_FUNCTIONS) | `_scope['X'] = value` (shared dict for cross-routine visibility) |
+| Local variables (TRAMPOLINE) | `state.X = value` (RoutineState dataclass for cross-label visibility) |
+| Parameters | `def LABEL(_rt, _scope=None, A=None, B=None, **_kwargs):` |
+| By-ref outputs | Return from `_scope`: `return _scope.get('N', '')` |
 | FOR loops | `for i in range(...)` or `while` |
 | Value coercion | Inline `m_num()` calls (pure helper) |
 | Comparisons | Inline `m_compare()` calls (pure helper) |
@@ -358,23 +359,38 @@ MUMPS names are **case-sensitive** and allow patterns that would be invalid Pyth
 
 ### Implementation Notes
 
-**Local Variables → Python Locals (NOT runtime)**:
-- `S X=5` → `x = 5` (Python assignment)
-- `W X` → `print(x)` or `_output.append(str(x))`
-- Do NOT use `_rt.get("X")` / `_rt.set("X", value)` for local variables
-- Use `NameTranslator` to convert M names to Python identifiers
+**Local Variables → Strategy-Dependent Storage** (Phase 13):
+
+Variable storage depends on the codegen strategy selected for the routine:
+
+| Strategy | Variable Storage | Variable Read | Cross-Boundary Visibility |
+|----------|-----------------|---------------|---------------------------|
+| SIMPLE_FUNCTIONS | `_scope['X'] = value` | `_scope.get('X', '')` | Via shared `_scope` dict |
+| TRAMPOLINE | `state.X = value` | `state.X` | Via RoutineState dataclass |
+
+**SIMPLE_FUNCTIONS pattern** (most common):
+- `S X=5` → `_scope['X'] = 5`
+- `W X` → `_rt.write(_scope.get('X', ''))`
+- Function signature: `def LABEL(_rt, _scope=None, **_kwargs):`
+- Entry point: `if __name__ == "__main__": _rt = MUMPSRuntime(); _scope = {}; LABEL(_rt, _scope)`
+- Cross-routine visibility automatic via shared `_scope` dictionary
+
+**TRAMPOLINE pattern** (for `needs_trampoline=True` routines):
+- Uses `RoutineState` dataclass for cross-label variable visibility
+- `S X=5` → `state.X = 5`
+- `W X` → `_rt.write(state.X)`
 
 **Runtime reserved for**:
 - Global variables (`^name`) - deferred to Spec 009
-- `$TEST` special variable - needs process-wide state
+- `$TEST` special variable - accessed via `_rt._test`
 - Output accumulation (`_rt.write()`) - for test harness capture
 
-**Why this matters**: Using runtime for locals would:
-1. Bypass all the `ScopeVariables`/`FunctionSignature` analysis work
-2. Make Rope refactoring impossible (`_rt.get("X")` is opaque)
-3. Turn the transpiler into a MUMPS interpreter
+**Why `_scope` instead of Python locals**: MUMPS variables are visible across routine boundaries by default. Using `_scope['X']` enables:
+1. Caller's variables visible to callee without explicit passing
+2. Callee modifications visible to caller after return
+3. NEW command can save/restore entries (future Spec 011)
 
-**Scope strategy check**: Even in Spec 004, verify `FunctionSignature.scope_strategy` is `PURE_FUNCTION` or similar before emitting Python locals. If `REQUIRES_RUNTIME`, use runtime scope access.
+**Scope strategy check**: Verify `FunctionSignature.scope_strategy` to select appropriate pattern. If `REQUIRES_RUNTIME`, use runtime scope access.
 
 ### Test Strategy: Embedded Unit Tests
 
@@ -932,8 +948,13 @@ Review before coding:
 
 **Implementation Notes (Spec 008)**:
 - Standard Python `import` statements eliminate need for importlib or custom loaders
-- `_scope` dict is passed as keyword arg: `routine.LABEL(_scope=_scope)`
-- External GOTO raises `GotoExternal(module, label, offset=N)` caught by caller's trampoline
+- Function signature: `def LABEL(_rt, _scope=None, **_kwargs):` - `_rt` is first parameter
+- Entry point: `if __name__ == "__main__": _rt = MUMPSRuntime(); _scope = {}; LABEL(_rt, _scope)`
+- Variable storage: `_scope['varname']` for SIMPLE_FUNCTIONS strategy (Phase 13)
+- Variable reads: `_scope.get('varname', '')` for undefined safety (Phase 13)
+- Formal params copied to `_scope` at function entry: `_scope['N'] = N`
+- External calls: `routine.LABEL(_rt, _scope=_scope)` - both `_rt` and `_scope` passed
+- External GOTO raises `GotoExternal(module, label, offset=N, _rt=_rt)` caught by caller's trampoline
 - Each generated module embeds: `_source_lines`, `_routine_name`, `_label_lines`
 - Deferred to Spec 011: NEW semantics verification across routine boundaries (requires NEW command)
 
@@ -958,13 +979,16 @@ LHS functions have unusual semantics requiring parser changes. Globals need the 
 - Line dispatch infrastructure (`_line_map`) for computed offset validation tests
 - Statement line numbers populated by parser
 
-**From Spec 008:**
+**From Spec 008 (Phase 13):**
 - Module loading via standard Python `import` statements
-- `_scope` dictionary pattern for cross-routine variable visibility  
+- `_scope` dictionary pattern for cross-routine variable visibility
+- Variable storage: `_scope['varname'] = value` (SIMPLE_FUNCTIONS strategy)
+- Variable reads: `_scope.get('varname', '')` for undefined safety
 - `_source_lines`, `_label_lines` module constants pattern
 - External call codegen patterns in `statements.py` and `expressions.py`
+- Function signatures: `def LABEL(_rt, _scope=None, **_kwargs):`
 
-**Important note for Spec 009**: Cross-routine variable visibility uses `_scope` dictionary. When implementing subscripted local variables (MArray), arrays accessed across routines must be stored in `_scope`. The existing `RoutineState` pattern (for trampoline) uses `MArray` fields for cross-label visibility.
+**Important note for Spec 009**: Cross-routine variable visibility uses `_scope` dictionary. When implementing subscripted local variables (MArray), arrays accessed across routines must be stored in `_scope`. The existing `RoutineState` pattern (for TRAMPOLINE strategy) uses `MArray` fields for cross-label visibility.
 
 ### Research Phase
 Review before coding:
@@ -1005,13 +1029,104 @@ Review before coding:
    - SET to global: `S ^A=1`, `S ^A(1)=2`
    - READ from global: `W ^A`, `W ^A(1)`
 
-4. **Subscripted Local Variables**
+4. **Pluggable Global Storage Backend**
+   
+   Globals require a pluggable storage system to support different use cases:
+   
+   **Abstract Interface** (`GlobalStorageBackend`):
+   ```python
+   class GlobalStorageBackend(Protocol):
+       """Abstract interface for global variable storage."""
+       
+       def get(self, name: str, *subscripts: str) -> str | None:
+           """Get value at global node. Returns None if undefined."""
+           ...
+       
+       def set(self, value: str, name: str, *subscripts: str) -> None:
+           """Set value at global node."""
+           ...
+       
+       def kill(self, name: str, *subscripts: str) -> None:
+           """Delete global node and all descendants."""
+           ...
+       
+       def is_defined(self, name: str, *subscripts: str) -> int:
+           """Return $DATA value: 0=none, 1=value, 10=descendants, 11=both."""
+           ...
+       
+       def order(self, name: str, *subscripts: str, reverse: bool = False) -> str:
+           """Return next/previous subscript at level (for $ORDER)."""
+           ...
+       
+       def query(self, name: str, *subscripts: str) -> tuple[str, ...] | None:
+           """Return full subscript path of next node with value (for $QUERY)."""
+           ...
+   ```
+   
+   **Implementations**:
+   
+   a. **InMemoryGlobalStorage** (default for sandbox/tests)
+      - Uses `MArray` tree structure internally
+      - Fast, no external dependencies
+      - Perfect for unit tests, functional tests, sandbox mode
+      - Data does not persist between runs
+      ```python
+      storage = InMemoryGlobalStorage()
+      runtime = MUMPSRuntime(global_storage=storage)
+      ```
+   
+   b. **YottaDBGlobalStorage** (production M database)
+      - Uses YottaDB Python wrapper (`yottadb` package)
+      - Full MUMPS semantics, ACID transactions
+      - Requires YottaDB installation
+      - Reference: https://docs.yottadb.com/MultiLangProgGuide/pythonprogram.html
+      ```python
+      # Key YottaDB API mapping:
+      # yottadb.get(varname, subscripts...) → get value
+      # yottadb.set(value, varname, subscripts...) → set value
+      # yottadb.delete_tree(varname, subscripts...) → KILL
+      # yottadb.data(varname, subscripts...) → $DATA
+      # yottadb.subscript_next(varname, subscripts...) → $ORDER
+      # yottadb.node_next(varname, subscripts...) → $QUERY
+      
+      storage = YottaDBGlobalStorage()
+      runtime = MUMPSRuntime(global_storage=storage)
+      ```
+   
+   c. **IRISGlobalStorage** (InterSystems IRIS/Caché)
+      - Uses InterSystems Native SDK for Python (`iris` package)
+      - Full MUMPS semantics, supports IRIS and Caché
+      - Requires IRIS installation and network connection
+      - Reference: https://docs.intersystems.com/irislatest/csp/docbook/DocBook.UI.Page.cls?KEY=BPYNAT_refapi
+      ```python
+      # Key IRIS API mapping:
+      # irispy.get(globalName, *subscripts) → get value
+      # irispy.set(value, globalName, *subscripts) → set value
+      # irispy.kill(globalName, *subscripts) → KILL
+      # irispy.isDefined(globalName, *subscripts) → $DATA
+      # irispy.nextSubscript(reversed, globalName, *subscripts) → $ORDER
+      # IRISGlobalNode.node() for iteration → $QUERY
+      
+      import iris
+      conn = iris.connect(hostname='127.0.0.1', port=1972, namespace='USER', ...)
+      irispy = iris.createIRIS(conn)
+      storage = IRISGlobalStorage(irispy)
+      runtime = MUMPSRuntime(global_storage=storage)
+      ```
+   
+   **Configuration**:
+   - Environment variable: `M2PY_GLOBAL_BACKEND=inmemory|yottadb|iris`
+   - Or programmatic: `MUMPSRuntime(global_storage=backend_instance)`
+   - Tests default to `InMemoryGlobalStorage` for speed and isolation
+   - Functional tests can optionally run against real databases via pytest fixtures
+
+5. **Subscripted Local Variables**
    - Basic syntax: `X(sub1,sub2,...)`
    - SET: `S X(1)=1`, `S X(1,2)="value"`
    - READ: `W X(1)`, `W X(1,2)`
    - Uses MArray, same as globals
 
-5. **Naked Global References** (runtime tracking)
+6. **Naked Global References** (runtime tracking)
    ```mumps
    S ^A(1,2)=1    ; Sets context: ^A with subscript path (1)
    S ^(3)=2       ; Actually ^A(1,3) - replaces last subscript
@@ -1035,6 +1150,20 @@ Review before coding:
   - Tests: `TestLhsExtractCodegen` → test_s8_2_18_set.py
 - [ ] MArray class (value + children at each node)
   - Tests: `TestMArrayCodegen` → [test_globals.py](../tests/unit/cross_cutting/test_globals.py)
+- [ ] `GlobalStorageBackend` protocol (abstract interface)
+  - Tests: `TestGlobalStorageProtocol` → test_globals.py
+- [ ] `InMemoryGlobalStorage` implementation (using MArray)
+  - Tests: `TestInMemoryGlobalStorage` → test_globals.py
+  - Default for unit tests and sandbox mode
+- [ ] `YottaDBGlobalStorage` implementation (optional, requires yottadb package)
+  - Tests: `TestYottaDBGlobalStorage` → test_globals.py (marked pytest.importorskip)
+  - Reference: YDBDoc/MultiLangProgGuide/pythonprogram.rst
+- [ ] `IRISGlobalStorage` implementation (optional, requires iris package)
+  - Tests: `TestIRISGlobalStorage` → test_globals.py (marked pytest.importorskip)
+  - Reference: https://docs.intersystems.com/irislatest/csp/docbook/DocBook.UI.Page.cls?KEY=BPYNAT_refapi
+- [ ] Backend configuration (env var + programmatic)
+  - `M2PY_GLOBAL_BACKEND` environment variable
+  - `MUMPSRuntime(global_storage=...)` constructor parameter
 - [ ] Global variable SET/READ generation
   - Tests: `TestGlobalSetCodegen`, `TestGlobalReadCodegen` → test_globals.py
 - [ ] Subscripted local variables (using MArray)
@@ -1055,6 +1184,18 @@ Review before coding:
 - MUGJ: V1NKD (naked reference patterns)
 - MUGJ: V1GO3.m (computed offsets with globals - now with full support)
 - YDBTest: global/* suite
+
+**Backend-specific validation**:
+- Unit tests: Run with `InMemoryGlobalStorage` (default, fast, isolated)
+- Integration tests: Optionally run with real databases via pytest fixtures:
+  ```bash
+  # Test with YottaDB (requires Docker or local installation)
+  M2PY_GLOBAL_BACKEND=yottadb uv run pytest tests/integration/globals/
+  
+  # Test with IRIS (requires connection details)
+  M2PY_GLOBAL_BACKEND=iris M2PY_IRIS_HOST=localhost M2PY_IRIS_PORT=1972 uv run pytest tests/integration/globals/
+  ```
+- Functional tests should verify behavior is identical across all backends
 
 ### Spike: LHS Function Detection
 
@@ -1395,6 +1536,44 @@ def test_expressions(execute_expr, expr, expected):
 | 012 | Full MUGJ suite + VistA Kernel translation attempt (indirection/XECUTE) |
 
 **Reality check**: MUGJ test files use globals, intrinsic functions, operators, and cross-routine calls extensively. Until Specs 009-010 are complete, most MUGJ files won't parse or execute correctly. Early specs should focus on small, focused unit tests that exercise specific features in isolation.
+
+---
+
+## Future Spec: Production Database Integration Testing (Spec TBD)
+
+After Spec 009 implements the `GlobalStorageBackend` protocol with stub implementations for YottaDB and IRIS, a dedicated integration testing spec is needed to validate these backends work correctly with real databases.
+
+### Scope
+
+1. **Docker-based Test Environment**
+   - YottaDB container with `yottadb` Python package installed
+   - IRIS Community Edition container with `intersystems-irispython` package
+   - CI/CD pipeline integration (GitHub Actions)
+
+2. **YottaDB Integration Tests**
+   - Test all `GlobalStorageBackend` methods against real YDB
+   - Validate MUMPS→Python→YDB round-trip correctness
+   - Test encoding edge cases (UTF-8, binary data)
+   - Test connection failure handling
+
+3. **IRIS Integration Tests**
+   - Test all `GlobalStorageBackend` methods against real IRIS
+   - Validate connection setup and teardown
+   - Test transaction handling if supported
+
+4. **Cross-Platform Consistency**
+   - Same MUMPS code should produce same results on both backends
+   - Subscript collation order verification
+   - Numeric vs string subscript handling
+
+### Deferred Items from Spec 009
+
+The following were identified in Spec 009 as requiring production database testing:
+- `YottaDBGlobalStorage.kill_node()` behavior verification
+- `IRISGlobalStorage.query()` - not directly supported, needs workaround validation
+- Connection timeout and retry handling
+- Large value handling (>1MB values)
+- Deep nesting limits (>100 subscript levels)
 
 ---
 

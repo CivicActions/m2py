@@ -2,6 +2,11 @@
 
 Provides output capture and execution support for generated Python code.
 Includes MArray class for MUMPS array semantics.
+
+Spec 009: Extended with global variable storage and helper functions:
+- GlobalStorageBackend: Protocol for global variable storage
+- m_set_piece, m_set_extract: LHS function helpers
+- m_data, m_data_global: $DATA function helpers
 """
 
 from __future__ import annotations
@@ -10,6 +15,17 @@ import re
 import types
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
+
+# Spec 009: Import global storage backend protocol
+from m2py.runtime.globals import GlobalStorageBackend, InMemoryGlobalStorage
+
+# Spec 009: Import helper functions
+from m2py.runtime.helpers import (
+    m_data,
+    m_data_global,
+    m_set_extract,
+    m_set_piece,
+)
 
 
 class MArray:
@@ -192,6 +208,25 @@ class MArray:
             return 1
         else:
             return 0
+
+    def data(self, *subscripts: Any) -> int:
+        """Return $DATA code for this node or subscripted path.
+
+        Spec 009 (T003): Alias for defined() using MUMPS $DATA naming.
+
+        MUMPS $DATA returns:
+            0 - Not defined (no value, no children)
+            1 - Has value only
+            10 - Has children only (no value at this node)
+            11 - Has both value and children
+
+        Args:
+            *subscripts: Path to check (empty for root)
+
+        Returns:
+            Integer 0, 1, 10, or 11 per MUMPS $DATA semantics
+        """
+        return self.defined(*subscripts)
 
     def kill(self, *subscripts: Any) -> None:
         """Delete node and all descendants (KILL command).
@@ -433,6 +468,56 @@ class ExecutionResult:
     locals: dict[str, Any] | None = field(default=None)
 
 
+# =============================================================================
+# Spec 009: Global Storage Backend Factory (T009)
+# =============================================================================
+
+
+def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
+    """Get global storage backend instance.
+
+    Spec 009 (T009): Factory function for global storage backends.
+
+    Backend selection priority:
+    1. Explicit `backend` parameter if provided
+    2. M2PY_GLOBAL_BACKEND environment variable
+    3. Default: 'inmemory'
+
+    Args:
+        backend: Backend name ('inmemory', 'yottadb', 'iris') or None
+
+    Returns:
+        GlobalStorageBackend instance
+
+    Raises:
+        ImportError: If requested backend is not available
+        ValueError: If backend name is not recognized
+    """
+    import os
+
+    from m2py.runtime.globals import (
+        IRISGlobalStorage,
+        YottaDBGlobalStorage,
+    )
+
+    if backend is None:
+        backend = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
+
+    backend = backend.lower()
+
+    if backend == "inmemory":
+        return InMemoryGlobalStorage()
+    elif backend == "yottadb":
+        return YottaDBGlobalStorage()
+    elif backend == "iris":
+        return IRISGlobalStorage()
+    else:
+        raise ValueError(
+            f"Unknown global storage backend: {backend!r}. "
+            "Valid options: 'inmemory', 'yottadb', 'iris'"
+        )
+
+
 class MUMPSRuntime:
     """Minimal runtime for executing generated MUMPS code.
 
@@ -444,15 +529,40 @@ class MUMPSRuntime:
     - _current_source_lines: Source lines for $TEXT(+N)
     - _current_label_lines: Label->line mapping for $TEXT(LABEL+N)
     - get_text(): Implement $TEXT function
+
+    Spec 009: Extended for global storage configuration with:
+    - global_storage parameter for programmatic backend selection
+    - M2PY_GLOBAL_BACKEND env var support via get_global_storage()
     """
 
-    def __init__(self) -> None:
-        """Initialize runtime with empty state."""
+    def __init__(self, global_storage: GlobalStorageBackend | None = None) -> None:
+        """Initialize runtime with empty state.
+
+        Args:
+            global_storage: Optional global storage backend. If None,
+                uses get_global_storage() which respects M2PY_GLOBAL_BACKEND
+                environment variable (default: 'inmemory').
+        """
         self._output: list[str] = []
         # Spec 008: External call context tracking
         self._current_routine: Optional[str] = None
         self._current_source_lines: Optional[List[str]] = None
         self._current_label_lines: Optional[Dict[str, int]] = None
+        # Spec 009: Global variable storage (T008)
+        # Use provided backend or fall back to factory function
+        self._globals: GlobalStorageBackend = (
+            global_storage if global_storage is not None else get_global_storage()
+        )
+
+    @property
+    def globals(self) -> GlobalStorageBackend:
+        """Get global variable storage backend.
+
+        Spec 009 (T008): Provides access to global variable storage for
+        generated code. The backend is selected via M2PY_GLOBAL_BACKEND
+        environment variable (default: 'inmemory').
+        """
+        return self._globals
 
     def get_text(
         self,
@@ -642,4 +752,12 @@ __all__ = [
     "GotoExternal",
     "LabelNotFoundError",
     "run_with_goto_support",
+    # Spec 009: Global storage and helpers
+    "GlobalStorageBackend",
+    "InMemoryGlobalStorage",
+    "get_global_storage",
+    "m_set_piece",
+    "m_set_extract",
+    "m_data",
+    "m_data_global",
 ]

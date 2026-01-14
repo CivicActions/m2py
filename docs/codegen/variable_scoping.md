@@ -2,6 +2,10 @@
 
 How to generate Python functions with proper arguments and returns.
 
+> **Note**: Code examples in this document show conceptual patterns for clarity.
+> The actual implementation uses `_scope['varname']` for variable storage (SIMPLE_FUNCTIONS strategy)
+> to enable cross-routine visibility. See [architecture.md](../architecture.md) for current patterns.
+
 ## MUMPS Scoping Model
 
 MUMPS variables have unique scoping semantics:

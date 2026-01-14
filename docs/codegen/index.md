@@ -33,14 +33,22 @@ Output:
 from m2py.codegen.helpers import m_num, m_truth, m_compare
 from m2py.runtime import MUMPSRuntime
 
-_rt = MUMPSRuntime()
+_source_lines = ["TEST S X=1 W X Q"]
+_routine_name = "example"
+_label_lines = {"TEST": 0}
 
-_test = False
+def TEST(_rt, _scope=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
+    _rt._current_routine = _routine_name
+    _rt._current_source_lines = _source_lines
+    _rt._current_label_lines = _label_lines
+    _scope['X'] = 1
+    _rt.write(str(_scope.get('X', '')))
 
-def TEST():
-    global _test
-    X = 1
-    _rt.write(str(X))
+if __name__ == "__main__":
+    _rt = MUMPSRuntime()
+    _scope = {}
+    TEST(_rt, _scope)
 ```
 
 ### Using Analysis Flags
