@@ -495,6 +495,11 @@ def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
     """
     import os
 
+    from m2py.runtime.globals import (
+        IRISGlobalStorage,
+        YottaDBGlobalStorage,
+    )
+
     if backend is None:
         backend = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
 
@@ -503,15 +508,9 @@ def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
     if backend == "inmemory":
         return InMemoryGlobalStorage()
     elif backend == "yottadb":
-        raise ImportError(
-            "YottaDB backend not yet implemented. "
-            "See Spec 009 for deferred integration scope."
-        )
+        return YottaDBGlobalStorage()
     elif backend == "iris":
-        raise ImportError(
-            "IRIS backend not yet implemented. "
-            "See Spec 009 for deferred integration scope."
-        )
+        return IRISGlobalStorage()
     else:
         raise ValueError(
             f"Unknown global storage backend: {backend!r}. "

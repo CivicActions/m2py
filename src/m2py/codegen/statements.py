@@ -592,6 +592,13 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
             lambda v: _scope.__setitem__('X', MArray(value=v)) if not isinstance(_scope.get('X'), MArray) else setattr(_scope['X'], 'value', v),
             '^', 2, None, 'NEW'
         )
+
+    For global variables:
+        m_set_piece(
+            lambda: _rt.globals.get("G", ()) or '',
+            lambda v: _rt.globals.set("G", (), v),
+            '^', 2, None, 'NEW'
+        )
     """
     # We know target is MIntrinsicFunction because caller checked isinstance
     assert isinstance(assignment.target, MIntrinsicFunction)
@@ -602,15 +609,44 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     if len(args) < 3:
         raise ValueError(f"LHS $PIECE requires at least 3 arguments, got {len(args)}")
 
-    # First argument must be a variable
-    if not isinstance(args[0], MVariable):
-        raise NotImplementedError(
-            f"LHS $PIECE first argument must be a variable, got {type(args[0]).__name__}"
-        )
+    # First argument must be a variable (local or global)
+    first_arg = args[0]
+    if isinstance(first_arg, GlobalVariable):
+        # Global variable: use _rt.globals.get/set
+        global_name = first_arg.name
+        if first_arg.subscripts:
+            subs_code = []
+            for sub in first_arg.subscripts:
+                subs_code.append(f"str({generate_expr(sub, ctx)})")
+            subscripts_tuple = f"({', '.join(subs_code)},)"
+        else:
+            subscripts_tuple = "()"
+        getter = f'lambda: _rt.globals.get("{global_name}", {subscripts_tuple}) or ""'
+        setter = f'lambda v: _rt.globals.set("{global_name}", {subscripts_tuple}, v)'
+    elif isinstance(first_arg, MVariable):
+        var = first_arg
+        var_name = var.name
+        translated_name = translate_name(var_name)
 
-    var = args[0]
-    var_name = var.name
-    translated_name = translate_name(var_name)
+        # Build getter/setter based on strategy
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # _scope-based access using MArray for consistency with subscripted variables
+            # Spec 009 (T021): Use MArray.value for getter/setter
+            getter = f"lambda: _scope.get({translated_name!r}, MArray()).value or ''"
+            setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            # state-based access
+            getter = f"lambda: getattr(state, {translated_name!r}, '') or ''"
+            setter = f"lambda v: setattr(state, {translated_name!r}, v)"
+        else:
+            # Plain local variable (would need nonlocal in real scenario)
+            # For now, fall back to _scope pattern for safety
+            getter = f"lambda: _scope.get({translated_name!r}, MArray()).value or ''"
+            setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
+    else:
+        raise NotImplementedError(
+            f"LHS $PIECE first argument must be a variable, got {type(first_arg).__name__}"
+        )
 
     # Generate delimiter expression
     delimiter_expr = generate_expr(args[1], ctx)
@@ -629,22 +665,6 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     # Generate value expression
     assert assignment.value is not None, "LHS $PIECE requires a value"
     value_expr = generate_expr(assignment.value, ctx)
-
-    # Build getter/setter based on strategy
-    if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-        # _scope-based access using MArray for consistency with subscripted variables
-        # Spec 009 (T021): Use MArray.value for getter/setter
-        getter = f"lambda: _scope.get({translated_name!r}, MArray()).value"
-        setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
-    elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-        # state-based access
-        getter = f"lambda: getattr(state, {translated_name!r}, '') or ''"
-        setter = f"lambda v: setattr(state, {translated_name!r}, v)"
-    else:
-        # Plain local variable (would need nonlocal in real scenario)
-        # For now, fall back to _scope pattern for safety
-        getter = f"lambda: _scope.get({translated_name!r}, MArray()).value"
-        setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
 
     # Emit m_set_piece call
     ctx.emitter.line(
@@ -667,6 +687,13 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
             lambda v: _scope.__setitem__('X', v),
             2, 3, 'XX'
         )
+
+    For global variables:
+        m_set_extract(
+            lambda: _rt.globals.get("G", ()) or '',
+            lambda v: _rt.globals.set("G", (), v),
+            2, 3, 'XX'
+        )
     """
     # We know target is MIntrinsicFunction because caller checked isinstance
     assert isinstance(assignment.target, MIntrinsicFunction)
@@ -677,15 +704,43 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
     if len(args) < 2:
         raise ValueError(f"LHS $EXTRACT requires at least 2 arguments, got {len(args)}")
 
-    # First argument must be a variable
-    if not isinstance(args[0], MVariable):
-        raise NotImplementedError(
-            f"LHS $EXTRACT first argument must be a variable, got {type(args[0]).__name__}"
-        )
+    # First argument must be a variable (local or global)
+    first_arg = args[0]
+    if isinstance(first_arg, GlobalVariable):
+        # Global variable: use _rt.globals.get/set
+        global_name = first_arg.name
+        if first_arg.subscripts:
+            subs_code = []
+            for sub in first_arg.subscripts:
+                subs_code.append(f"str({generate_expr(sub, ctx)})")
+            subscripts_tuple = f"({', '.join(subs_code)},)"
+        else:
+            subscripts_tuple = "()"
+        getter = f'lambda: _rt.globals.get("{global_name}", {subscripts_tuple}) or ""'
+        setter = f'lambda v: _rt.globals.set("{global_name}", {subscripts_tuple}, v)'
+    elif isinstance(first_arg, MVariable):
+        var = first_arg
+        var_name = var.name
+        translated_name = translate_name(var_name)
 
-    var = args[0]
-    var_name = var.name
-    translated_name = translate_name(var_name)
+        # Build getter/setter based on strategy
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # _scope-based access using MArray for consistency with subscripted variables
+            # Spec 009 (T021): Use MArray.value for getter/setter
+            getter = f"lambda: _scope.get({translated_name!r}, MArray()).value or ''"
+            setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            # state-based access
+            getter = f"lambda: getattr(state, {translated_name!r}, '') or ''"
+            setter = f"lambda v: setattr(state, {translated_name!r}, v)"
+        else:
+            # Plain local variable - fall back to _scope pattern for safety
+            getter = f"lambda: _scope.get({translated_name!r}, MArray()).value or ''"
+            setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
+    else:
+        raise NotImplementedError(
+            f"LHS $EXTRACT first argument must be a variable, got {type(first_arg).__name__}"
+        )
 
     # Generate from_pos expression
     from_pos_expr = generate_expr(args[1], ctx)
@@ -701,21 +756,6 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
     # Generate value expression
     assert assignment.value is not None, "LHS $EXTRACT requires a value"
     value_expr = generate_expr(assignment.value, ctx)
-
-    # Build getter/setter based on strategy
-    if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-        # _scope-based access using MArray for consistency with subscripted variables
-        # Spec 009 (T021): Use MArray.value for getter/setter
-        getter = f"lambda: _scope.get({translated_name!r}, MArray()).value"
-        setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
-    elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-        # state-based access
-        getter = f"lambda: getattr(state, {translated_name!r}, '') or ''"
-        setter = f"lambda v: setattr(state, {translated_name!r}, v)"
-    else:
-        # Plain local variable - fall back to _scope pattern for safety
-        getter = f"lambda: _scope.get({translated_name!r}, MArray()).value"
-        setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
 
     # Emit m_set_extract call
     ctx.emitter.line(
@@ -1953,6 +1993,7 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
     - K X(1,2) → MArray.kill(1, 2) on subscripted local
     - K ^G → _rt.globals.kill("G", ()) on global
     - K ^G(1,2) → _rt.globals.kill("G", ("1", "2")) on subscripted global
+    - K ^(1,2) → resolve_naked then kill (naked global reference)
 
     NOT yet implemented:
     - K (argumentless) - kill all locals
@@ -1988,6 +2029,22 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                 subscripts_tuple = "()"
 
             ctx.emitter.line(f'_rt.globals.kill("{global_name}", {subscripts_tuple})')
+
+        elif isinstance(target, NakedGlobal):
+            # Naked global: K ^(subs) - resolve then kill
+            if target.subscripts:
+                subs_code = []
+                for sub in target.subscripts:
+                    subs_code.append(f"str({generate_expr(sub, ctx)})")
+                subscripts_tuple = f"({', '.join(subs_code)},)"
+            else:
+                subscripts_tuple = "()"
+
+            # Resolve naked to (name, full_subscripts), then kill
+            ctx.emitter.line(
+                f"_naked_name, _naked_subs = _rt.globals.resolve_naked({subscripts_tuple})"
+            )
+            ctx.emitter.line("_rt.globals.kill(_naked_name, _naked_subs)")
 
         elif isinstance(target, MVariable):
             # Local variable: K X or K X(subs)

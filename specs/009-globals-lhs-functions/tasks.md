@@ -224,6 +224,44 @@
 
 ---
 
+## Phase 12: Gap Remediation
+
+**Purpose**: Address gaps identified in spec review - missing tests, incomplete protocol, edge case validation
+
+### Missing Test Coverage
+
+- [X] T055 [P] [US1] Add test for LHS $PIECE on global variables in `tests/unit/codegen/test_spec_009_lhs_piece.py`: `S $P(^G,"^",2)="B" W ^G` → `^B`
+- [X] T056 [P] [US2] Add test for LHS $EXTRACT on global variables in `tests/unit/codegen/test_spec_009_lhs_extract.py`: `S $E(^G,1,3)="ABC" W ^G` → `ABC`
+- [X] T057 [P] [US8] Add test for KILL with naked reference in `tests/unit/codegen/test_spec_009_kill.py`: `S ^G(1)=1,^(2)=2 K ^(1) W $D(^G(1)),$D(^G(2))` → `01`
+
+### Edge Case Validation
+
+- [X] T058 [P] [US1] Add input validation in `src/m2py/runtime/helpers.py` `m_set_piece()`: raise error for piece_from <= 0
+- [X] T059 [P] [US1] Add tests for invalid piece numbers (0, negative) in `tests/unit/codegen/test_spec_009_lhs_piece.py`
+- [X] T060 [P] [US2] Add behavior for start > end in `src/m2py/runtime/helpers.py` `m_set_extract()`: no modification per YDB
+- [X] T061 [P] [US2] Add tests for $EXTRACT start > end edge case in `tests/unit/codegen/test_spec_009_lhs_extract.py`
+
+### Protocol Completion
+
+- [X] T062 Add `order()` method stub to `GlobalStorageBackend` protocol in `src/m2py/runtime/globals.py`
+- [X] T063 Add `query()` method stub to `GlobalStorageBackend` protocol in `src/m2py/runtime/globals.py`
+- [X] T064 Add `incr()` method stub to `GlobalStorageBackend` protocol in `src/m2py/runtime/globals.py`
+- [X] T065 Add `kill_node()` method stub to `GlobalStorageBackend` protocol in `src/m2py/runtime/globals.py`
+- [X] T066 Implement `order()`, `query()`, `incr()`, `kill_node()` stubs in `InMemoryGlobalStorage` class
+
+### Backend Stub Classes
+
+- [X] T067 [P] Create `YottaDBGlobalStorage` stub class (not just factory ImportError) in `src/m2py/runtime/globals.py` per spec
+- [X] T068 [P] Create `IRISGlobalStorage` stub class with connection params in `src/m2py/runtime/globals.py` per spec
+
+### Quality
+
+- [X] T069 Increase test coverage to ≥85% (currently 88%) - added tests for new protocol methods
+
+**Checkpoint**: All spec requirements addressed, protocol complete, edge cases validated
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -233,6 +271,7 @@
 - **Phases 3-5 (US1-3)**: Depend on Phase 1 only (MArray) - can start in parallel
 - **Phases 6-10 (US4-8)**: Depend on Phase 2 (globals infrastructure)
 - **Phase 11 (Polish)**: Depends on all desired user stories being complete
+- **Phase 12 (Gap Remediation)**: Depends on Phase 11 - addresses gaps found in spec review
 
 ### User Story Dependencies
 
@@ -292,4 +331,5 @@ uv run pytest tests/test_spec_009_lhs_piece.py tests/test_spec_009_lhs_extract.p
 | US7 - Backend | 5 | 1 |
 | US8 - KILL | 5 | 1 |
 | Polish | 5 | 2 |
-| **Total** | **54** | **13** |
+| Gap Remediation | 15 | 9 |
+| **Total** | **69** | **22** |

@@ -89,3 +89,49 @@ class TestLHSPieceEdgeCases:
         """Use multi-character delimiter."""
         result = execute_mumps('TEST S X="A||B||C" S $P(X,"||",2)="NEW" W X Q')
         assert result.output == "A||NEW||C"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSPieceGlobals:
+    """Tests for LHS $PIECE on global variables (FR-009)."""
+
+    def test_lhs_piece_on_global(self, execute_mumps):
+        """Scenario 5: LHS $PIECE works on global variables.
+
+        S $P(^G,"^",2)="B" W ^G → "^B"
+        """
+        result = execute_mumps('TEST S $P(^G,"^",2)="B" W ^G Q')
+        assert result.output == "^B"
+
+    def test_lhs_piece_on_subscripted_global(self, execute_mumps):
+        """LHS $PIECE on subscripted global variable."""
+        result = execute_mumps('TEST S ^G(1)="A^B^C" S $P(^G(1),"^",2)="NEW" W ^G(1) Q')
+        assert result.output == "A^NEW^C"
+
+    def test_lhs_piece_global_padding(self, execute_mumps):
+        """LHS $PIECE on undefined global pads with delimiters."""
+        result = execute_mumps('TEST S $P(^H,"^",3)="C" W ^H Q')
+        assert result.output == "^^C"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSPieceInvalidInputs:
+    """Tests for LHS $PIECE edge cases with invalid piece numbers."""
+
+    def test_piece_zero_no_modification(self, execute_mumps):
+        """Piece number 0 results in no modification per MUMPS spec.
+
+        S X="A^B^C" S $P(X,"^",0)="NEW" W X → "A^B^C" (unchanged)
+        """
+        result = execute_mumps('TEST S X="A^B^C" S $P(X,"^",0)="NEW" W X Q')
+        assert result.output == "A^B^C"
+
+    def test_negative_piece_no_modification(self, execute_mumps):
+        """Negative piece number results in no modification per MUMPS spec.
+
+        S X="A^B^C" S $P(X,"^",-1)="NEW" W X → "A^B^C" (unchanged)
+        """
+        result = execute_mumps('TEST S X="A^B^C" S $P(X,"^",-1)="NEW" W X Q')
+        assert result.output == "A^B^C"

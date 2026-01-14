@@ -119,3 +119,34 @@ class TestKillEdgeCases:
         # X has value (1), no children after kill, so $D=1
         # X(1) killed, $D=0
         assert result.output == "1-0"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestKillNakedReference:
+    """Tests for KILL with naked global references."""
+
+    def test_kill_naked_reference(self, execute_mumps):
+        """KILL with naked reference resolves correctly.
+
+        S ^G(1)=1,^(2)=2 K ^(1) W $D(^G(1)),$D(^G(2)) → "01"
+        After S ^(2)=2, naked indicator is G with base subscripts ()
+        So K ^(1) kills ^G(1)
+        """
+        result = execute_mumps("TEST S ^G(1)=1,^(2)=2 K ^(1) W $D(^G(1)),$D(^G(2)) Q")
+        assert result.output == "01"
+
+    def test_kill_naked_with_subscripts(self, execute_mumps):
+        """KILL naked reference with multiple subscripts.
+
+        S ^H(1,2)=1 - sets ^H(1,2)=1, naked indicator = H(1,2)
+        S ^(3,4)=2 - replaces last subscript: ^H(1,3,4)=2, naked = H(1,3,4)
+        K ^(3) - replaces last subscript: kills ^H(1,3,3) (doesn't exist)
+        $D(^H(1,3)) = 10 (has descendants but no value)
+        $D(^H(1,3,4)) = 1 (has value)
+        Result: "101"
+        """
+        result = execute_mumps(
+            "TEST S ^H(1,2)=1 S ^(3,4)=2 K ^(3) W $D(^H(1,3)),$D(^H(1,3,4)) Q"
+        )
+        assert result.output == "101"

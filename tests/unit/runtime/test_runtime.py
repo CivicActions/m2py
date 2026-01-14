@@ -384,6 +384,32 @@ class TestMArrayOrder:
         assert arr.order(1, start="A") == "B"
         assert arr.order(1, start="B") == "C"
 
+    def test_order_start_not_found_returns_next_greater(self):
+        """order() with start not in array returns next greater key."""
+        from m2py.runtime import MArray
+
+        arr = MArray()
+        arr[1] = 10
+        arr[3] = 30
+        arr[5] = 50
+
+        # Start=2 not found, should return 3 (next greater)
+        assert arr.order(start=2) == 3
+        # Start=4 not found, should return 5
+        assert arr.order(start=4) == 5
+        # Start=6 not found, no greater keys, return ""
+        assert arr.order(start=6) == ""
+
+    def test_order_nested_path_not_found(self):
+        """order() with invalid nested path returns empty string."""
+        from m2py.runtime import MArray
+
+        arr = MArray()
+        arr[1, "A"] = 1
+
+        # Path (2) doesn't exist
+        assert arr.order(2) == ""
+
 
 @pytest.mark.runtime
 class TestMArrayMethods:

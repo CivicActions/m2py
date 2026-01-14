@@ -115,3 +115,49 @@ class TestLHSExtractEdgeCases:
         """
         result = execute_mumps('TEST S X="ABC" S $E(X,5)="X" W X Q')
         assert result.output == "ABC X"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSExtractGlobals:
+    """Tests for LHS $EXTRACT on global variables (FR-009)."""
+
+    def test_lhs_extract_on_global(self, execute_mumps):
+        """LHS $EXTRACT works on global variables.
+
+        S $E(^G,1,3)="ABC" W ^G → "ABC"
+        """
+        result = execute_mumps('TEST S $E(^G,1,3)="ABC" W ^G Q')
+        assert result.output == "ABC"
+
+    def test_lhs_extract_on_subscripted_global(self, execute_mumps):
+        """LHS $EXTRACT on subscripted global variable."""
+        result = execute_mumps('TEST S ^G(1)="HELLO" S $E(^G(1),2,3)="XX" W ^G(1) Q')
+        assert result.output == "HXXLO"
+
+    def test_lhs_extract_global_padding(self, execute_mumps):
+        """LHS $EXTRACT on undefined global pads with spaces."""
+        result = execute_mumps('TEST S $E(^H,3)="X" W ^H Q')
+        assert result.output == "  X"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSExtractStartGreaterThanEnd:
+    """Tests for LHS $EXTRACT with start > end edge case."""
+
+    def test_start_greater_than_end_no_modification(self, execute_mumps):
+        """When start > end, no modification occurs per YDB behavior.
+
+        S X="HELLO" S $E(X,4,2)="XX" W X → "HELLO" (unchanged)
+        """
+        result = execute_mumps('TEST S X="HELLO" S $E(X,4,2)="XX" W X Q')
+        assert result.output == "HELLO"
+
+    def test_start_greater_than_end_with_value(self, execute_mumps):
+        """Start > end with existing value is a no-op.
+
+        S X="ABCDE" S $E(X,3,1)="XXX" W X → "ABCDE" (unchanged)
+        """
+        result = execute_mumps('TEST S X="ABCDE" S $E(X,3,1)="XXX" W X Q')
+        assert result.output == "ABCDE"

@@ -51,7 +51,14 @@ def m_set_piece(
 
         # S X="" S $P(X,"^",3)="X" → X="^^X"
         m_set_piece(lambda: "", setter, "^", 3, None, "X")
+
+    Note:
+        Per MUMPS spec, piece numbers <= 0 result in no modification.
     """
+    # Per MUMPS spec: piece numbers <= 0 result in no modification
+    if piece_from <= 0:
+        return
+
     # Get current value (empty string if undefined/None)
     current = var_getter() or ""
 
@@ -112,6 +119,9 @@ def m_set_extract(
 
         # S X="AB" S $E(X,5)="X" → X="AB  X"
         m_set_extract(lambda: "AB", setter, 5, None, "X")
+
+    Note:
+        Per YDB behavior, if from_pos > to_pos, no modification occurs.
     """
     # Get current value (empty string if undefined/None)
     current = var_getter() or ""
@@ -119,6 +129,10 @@ def m_set_extract(
     # Normalize to_pos: if None, single position
     if to_pos is None:
         to_pos = from_pos
+
+    # Per YDB behavior: if from_pos > to_pos, no modification occurs
+    if from_pos > to_pos:
+        return
 
     # Convert to 0-indexed
     from_idx = from_pos - 1
