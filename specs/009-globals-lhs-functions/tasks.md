@@ -92,14 +92,14 @@
 
 ### Tests for User Story 3
 
-- [ ] T020 [P] [US3] Create `tests/test_spec_009_subscripted.py` with 5 acceptance scenarios from spec
+- [X] T020 [P] [US3] Create `tests/test_spec_009_subscripted.py` with 5 acceptance scenarios from spec
 
 ### Implementation for User Story 3
 
-- [ ] T021 [US3] Modify `_generate_set()` to auto-vivify MArray for subscripted LocalVariable targets in `src/m2py/codegen/statements.py`
-- [ ] T022 [US3] Modify `generate_expr()` to handle subscripted LocalVariable reads in `src/m2py/codegen/expressions.py`
-- [ ] T023 [US3] Ensure undefined subscripted variables return empty string
-- [ ] T024 [US3] Add MArray import to generated code preamble
+- [X] T021 [US3] Modify `_generate_set()` to auto-vivify MArray for subscripted LocalVariable targets in `src/m2py/codegen/statements.py`
+- [X] T022 [US3] Modify `generate_expr()` to handle subscripted LocalVariable reads in `src/m2py/codegen/expressions.py`
+- [X] T023 [US3] Ensure undefined subscripted variables return empty string
+- [X] T024 [US3] Add MArray import to generated code preamble
 
 **Checkpoint**: Subscripted locals work with value+children semantics (MVP complete for local arrays!)
 

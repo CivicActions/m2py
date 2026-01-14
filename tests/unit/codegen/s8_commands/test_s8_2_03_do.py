@@ -471,18 +471,19 @@ class TestByRefParameterCodegen:
     def test_incr_single_byref_param(self, generate_python):
         """INCR pattern with single by-ref param (T064).
 
-        D INCR(.X) generates: _scope['X'] = INCR(_rt, _scope.get('X', ''), _scope=_scope)
-        Callee returns the modified value from _scope.
+        D INCR(.X) generates: _byref_result = INCR(...); _scope.setdefault('X', MArray()).value = _byref_result
+        Callee returns the modified value from _scope using MArray.value.
         """
         code = generate_python("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
 
         # Phase 13 (T076): Callee signature includes _rt as first parameter
         assert "def INCR(_rt, N, _scope=None, **_kwargs):" in code
-        # T084: Return from _scope for cross-routine visibility
-        assert "return _scope.get('N', '')" in code
+        # T084 + Spec 009: Return from _scope using MArray.value
+        assert "return _scope.get('N', MArray()).value" in code
 
-        # Phase 13 (T079) + T084: Call site uses _scope for assignment and reading
-        assert "_scope['X'] = INCR(_rt," in code
+        # Phase 13 (T079) + T084 + Spec 009: Call site uses _byref_result and MArray.value
+        assert "_byref_result = INCR(_rt," in code
+        assert "_scope.setdefault('X', MArray()).value = _byref_result" in code
 
     def test_incr_single_byref_runtime(self, execute_mumps):
         """INCR pattern executes correctly with by-ref (T064).
@@ -498,8 +499,8 @@ class TestByRefParameterCodegen:
     def test_swap_two_byref_params(self, generate_python):
         """SWAP pattern with two by-ref params (T063).
 
-        D SWAP(.A,.B) generates: A, B = SWAP(_rt, A, B)
-        Callee returns both modified values as tuple.
+        D SWAP(.A,.B) generates tuple return and temp-based assignment via MArray.
+        Callee returns both modified values as tuple using MArray.value.
         """
         code = generate_python(
             "TEST S A=1,B=2 D SWAP(.A,.B) W A,B Q\nSWAP(X,Y) S T=X,X=Y,Y=T Q\n"
@@ -507,17 +508,18 @@ class TestByRefParameterCodegen:
 
         # Phase 13 (T076): Callee signature includes _rt as first parameter
         assert "def SWAP(_rt, X, Y, _scope=None, **_kwargs):" in code
-        # Check for tuple return (order may vary based on set ordering)
+        # Check for tuple return using MArray.value (order may vary based on set ordering)
         assert (
-            "return _scope.get('X', ''), _scope.get('Y', '')" in code
-            or "return _scope.get('Y', ''), _scope.get('X', '')" in code
+            "return _scope.get('X', MArray()).value, _scope.get('Y', MArray()).value"
+            in code
+            or "return _scope.get('Y', MArray()).value, _scope.get('X', MArray()).value"
+            in code
         )
 
-        # Phase 13 (T079) + T084: Call site uses _scope for assignment
-        assert (
-            "_scope['A'], _scope['B'] = SWAP(_rt," in code
-            or "_scope['B'], _scope['A'] = SWAP(_rt," in code
-        )
+        # Phase 13 (T079) + T084 + Spec 009: Call site uses _byref_result and MArray.value
+        assert "_byref_result = SWAP(_rt," in code
+        assert "_scope.setdefault('A', MArray()).value = _byref_result[0]" in code
+        assert "_scope.setdefault('B', MArray()).value = _byref_result[1]" in code
 
     def test_swap_two_byref_runtime(self, execute_mumps):
         """SWAP pattern executes correctly with two by-refs (T063).
@@ -535,14 +537,15 @@ class TestByRefParameterCodegen:
     def test_multiple_byref_calls_accumulate(self, generate_python):
         """Multiple by-ref calls accumulate changes (T065).
 
-        D INCR(.X),INCR(.X) generates two separate assignments.
+        D INCR(.X),INCR(.X) generates separate _byref_result assignments with MArray.
         """
         code = generate_python(
             "TEST S X=1 D INCR(.X),INCR(.X),INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n"
         )
 
-        # Phase 13 (T079) + T084: Three separate calls with _scope assignment
-        assert code.count("_scope['X'] = INCR(_rt,") == 3
+        # Phase 13 (T079) + T084 + Spec 009: Three separate calls with MArray assignment
+        assert code.count("_byref_result = INCR(_rt,") == 3
+        assert code.count("_scope.setdefault('X', MArray()).value = _byref_result") == 3
 
     def test_multiple_byref_calls_runtime(self, execute_mumps):
         """Multiple by-ref calls accumulate correctly (T065).

@@ -123,14 +123,14 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
             # MArray in RoutineState: state.A.get(subscripts)
             base = f"state.{python_name}"
         elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Spec 008 (T085): Access arrays from _scope for cross-routine visibility
-            # _scope['A'].get(subscripts) - but need to handle missing array
-            base = f"_scope.get({python_name!r}, {{}})"
+            # Spec 009 (T022-T023): Access arrays from _scope using MArray
+            # MArray.get(*subscripts) returns "" for undefined (MUMPS semantics)
+            base = f"_scope.get({python_name!r}, MArray())"
         else:
             # Plain Python local variable (TRAMPOLINE without state_vars)
             base = python_name
 
-        # Use .get() for reading - returns value directly (or "" if undefined)
+        # Use .get() for reading - returns value or "" if undefined
         return f"{base}.get({', '.join(subscript_exprs)})"
 
     # Spec 006: Check if variable should be accessed via state (TRAMPOLINE)
@@ -138,9 +138,10 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
         return f"state.{python_name}"
 
     # Spec 008 (T085): Read variables from _scope for SIMPLE_FUNCTIONS strategy
-    # Return empty string for undefined variables (MUMPS semantics)
+    # Spec 009 (T022): Use MArray.value to read simple variables (consistency with subscripted)
+    # Return empty string for undefined variables (MUMPS semantics via MArray.value)
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-        return f"_scope.get({python_name!r}, '')"
+        return f"_scope.get({python_name!r}, MArray()).value"
 
     # Fallback: plain Python variable (TRAMPOLINE without state_vars)
     return python_name

@@ -273,7 +273,8 @@ class RoutineGenerator:
         # Imports
         ctx.emitter.line("from itertools import chain, count")
         ctx.emitter.line("from m2py.codegen.helpers import m_num, m_truth, m_compare")
-        ctx.emitter.line("from m2py.runtime import MUMPSRuntime")
+        # Spec 009 (T024): Import MArray for subscripted local variable support
+        ctx.emitter.line("from m2py.runtime import MUMPSRuntime, MArray")
         # Spec 009: Import LHS function helpers (Phase 3-4)
         ctx.emitter.line("from m2py.runtime.helpers import m_set_piece, m_set_extract")
 
@@ -281,10 +282,6 @@ class RoutineGenerator:
         if self._strategy == GotoStrategy.TRAMPOLINE:
             ctx.emitter.line("from dataclasses import dataclass, field")
             ctx.emitter.line("from typing import Any, Optional, Tuple")
-            # Check if we have array variables
-            array_vars = self._routine.array_vars or set()
-            if array_vars:
-                ctx.emitter.line("from m2py.runtime import MArray")
 
         ctx.emitter.blank()
 
@@ -426,6 +423,7 @@ class RoutineGenerator:
 
             # T084: Copy formal parameters into _scope for variable reads
             # Use original MUMPS names for _scope keys, translated names for Python vars
+            # Spec 009 (T021): Use MArray for consistency with subscripted variables
             original_formal_params = label.formal_list or []
             if (
                 label.signature
@@ -435,7 +433,9 @@ class RoutineGenerator:
                 original_formal_params = label.signature.formal_params
             for orig_name in original_formal_params:
                 python_name = translate_name(orig_name)
-                ctx.emitter.line(f"_scope[{orig_name!r}] = {python_name}")
+                ctx.emitter.line(
+                    f"_scope.setdefault({orig_name!r}, MArray()).value = {python_name}"
+                )
 
             # Spec 006 (T069a): Check for self-loop pattern
             if label.has_self_loop:

@@ -508,9 +508,9 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
                     # MArray in RoutineState: state.A[subscripts] = value
                     base = f"state.{target_name}"
                 elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                    # Spec 008 (T084): Store arrays in _scope for cross-routine visibility
-                    # _scope['A'][subscripts] = value
-                    base = f"_scope[{target_name!r}]"
+                    # Spec 009 (T021): Auto-vivify MArray for subscripted locals
+                    # _scope.setdefault('A', MArray())[subscripts] = value
+                    base = f"_scope.setdefault({target_name!r}, MArray())"
                 else:
                     # Plain Python local variable (TRAMPOLINE without array_vars)
                     base = target_name
@@ -530,8 +530,9 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
             if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
                 target_name = f"state.{target_name}"
             elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                # Spec 008 (T084): Store variables in _scope for cross-routine visibility
-                target_name = f"_scope[{target_name!r}]"
+                # Spec 009 (T021): Store variables in _scope using MArray for consistency
+                # This allows later subscripted access: S X=1 S X(1)=2 both work
+                target_name = f"_scope.setdefault({target_name!r}, MArray()).value"
             # else: use plain Python local variable (TRAMPOLINE without state_vars)
 
         elif isinstance(assignment.target, MIntrinsicFunction):
@@ -615,9 +616,10 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
 
     # Build getter/setter based on strategy
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-        # _scope-based access
-        getter = f"lambda: _scope.get({translated_name!r}, '')"
-        setter = f"lambda v: _scope.__setitem__({translated_name!r}, v)"
+        # _scope-based access using MArray for consistency with subscripted variables
+        # Spec 009 (T021): Use MArray.value for getter/setter
+        getter = f"lambda: _scope.get({translated_name!r}, MArray()).value"
+        setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
     elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
         # state-based access
         getter = f"lambda: getattr(state, {translated_name!r}, '') or ''"
@@ -625,8 +627,8 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     else:
         # Plain local variable (would need nonlocal in real scenario)
         # For now, fall back to _scope pattern for safety
-        getter = f"lambda: _scope.get({translated_name!r}, '')"
-        setter = f"lambda v: _scope.__setitem__({translated_name!r}, v)"
+        getter = f"lambda: _scope.get({translated_name!r}, MArray()).value"
+        setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
 
     # Emit m_set_piece call
     ctx.emitter.line(
@@ -686,17 +688,18 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
 
     # Build getter/setter based on strategy
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-        # _scope-based access
-        getter = f"lambda: _scope.get({translated_name!r}, '')"
-        setter = f"lambda v: _scope.__setitem__({translated_name!r}, v)"
+        # _scope-based access using MArray for consistency with subscripted variables
+        # Spec 009 (T021): Use MArray.value for getter/setter
+        getter = f"lambda: _scope.get({translated_name!r}, MArray()).value"
+        setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
     elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
         # state-based access
         getter = f"lambda: getattr(state, {translated_name!r}, '') or ''"
         setter = f"lambda v: setattr(state, {translated_name!r}, v)"
     else:
         # Plain local variable - fall back to _scope pattern for safety
-        getter = f"lambda: _scope.get({translated_name!r}, '')"
-        setter = f"lambda v: _scope.__setitem__({translated_name!r}, v)"
+        getter = f"lambda: _scope.get({translated_name!r}, MArray()).value"
+        setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
 
     # Emit m_set_extract call
     ctx.emitter.line(
@@ -773,9 +776,12 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         # Return byref params in formal_params order (for consistent tuple unpacking)
         formal_params = ctx.current_label.signature.formal_params
         # T084: For SIMPLE_FUNCTIONS, return from _scope; for TRAMPOLINE, use local vars
+        # Spec 009 (T021): Use MArray.value for consistency
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             return_exprs = [
-                f"_scope.get({p!r}, '')" for p in formal_params if p in byref_outputs
+                f"_scope.get({p!r}, MArray()).value"
+                for p in formal_params
+                if p in byref_outputs
             ]
         else:
             return_exprs = [
@@ -967,6 +973,7 @@ def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     # T084: Sync for-loop variable to _scope for SIMPLE_FUNCTIONS strategy
     # Only needed when using Python's `for` loop (not while loop)
     # When loop_var_modified_in_body is True, we use while loop with _scope directly
+    # Spec 009 (T021): Use MArray.value for consistency with subscripted variables
     if (
         ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS
         and stmt.loop_var
@@ -980,7 +987,9 @@ def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
             var_name = None  # Complex case (indirection) - skip sync
         if var_name:
             python_name = translate_name(var_name)
-            ctx.emitter.line(f"_scope[{var_name!r}] = {python_name}")
+            ctx.emitter.line(
+                f"_scope.setdefault({var_name!r}, MArray()).value = {python_name}"
+            )
 
     if stmt.body and stmt.body.statements:
         for body_stmt in stmt.body.statements:
@@ -1187,6 +1196,7 @@ def _generate_for_while(
 
     # T084: For SIMPLE_FUNCTIONS, use _scope directly for loop variable
     # so that modifications inside the body affect the loop condition
+    # Spec 009 (T021): Use MArray.value for consistency with subscripted variables
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
         # Get the original MUMPS variable name for _scope key
         if isinstance(stmt.loop_var, str):
@@ -1197,7 +1207,8 @@ def _generate_for_while(
             var_name = None
 
         if var_name:
-            loop_ref = f"_scope[{var_name!r}]"
+            # Use MArray pattern for loop variable access
+            loop_ref = f"_scope.setdefault({var_name!r}, MArray()).value"
         else:
             # Fallback for complex cases
             loop_ref = for_ctx.loop_var
@@ -1785,15 +1796,38 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                                     return_vars.append(translate_name(var_name))
 
             if return_vars:
-                # T079: Generate tuple destructuring with _rt: X = INCR(_rt, X)
+                # T079: Generate call and assign returned values to caller variables
                 # T084: Pass _scope for cross-routine variable visibility
-                lhs = ", ".join(return_vars)
+                # Spec 009 (T021): For SIMPLE_FUNCTIONS, use MArray.value via temp var
                 if args:
-                    ctx.emitter.line(
-                        f"{lhs} = {label_name}(_rt, {args}, _scope=_scope)"
-                    )
+                    call_expr = f"{label_name}(_rt, {args}, _scope=_scope)"
                 else:
-                    ctx.emitter.line(f"{lhs} = {label_name}(_rt, _scope=_scope)")
+                    call_expr = f"{label_name}(_rt, _scope=_scope)"
+
+                if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                    # Use temp variable and assign to MArray.value for each return var
+                    ctx.emitter.line(f"_byref_result = {call_expr}")
+                    if len(return_vars) == 1:
+                        # Single return value
+                        var_name = (
+                            return_vars[0].replace("_scope[", "").replace("]", "")[1:-1]
+                        )  # Extract name from "_scope['X']"
+                        ctx.emitter.line(
+                            f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result"
+                        )
+                    else:
+                        # Tuple unpacking - assign each element
+                        for i, rv in enumerate(return_vars):
+                            var_name = rv.replace("_scope[", "").replace("]", "")[
+                                1:-1
+                            ]  # Extract name
+                            ctx.emitter.line(
+                                f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result[{i}]"
+                            )
+                else:
+                    # TRAMPOLINE: use direct tuple destructuring
+                    lhs = ", ".join(return_vars)
+                    ctx.emitter.line(f"{lhs} = {call_expr}")
             else:
                 # T079: No by-ref params at call site - just call with _rt
                 # T084: Pass _scope for cross-routine variable visibility
