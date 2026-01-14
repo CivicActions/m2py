@@ -1,7 +1,10 @@
+# Ignore workspace tmp folder for test artifacts
+tmp/
 # Temporary and binary files
 *~
 *.py[cod]
 *.so
+*.o
 *.cfg
 !.isort.cfg
 !setup.cfg

@@ -58,6 +58,12 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_extrinsic(expr, ctx)
     elif isinstance(expr, MSpecialVariable):
         return _generate_special_variable(expr, ctx)
+    # Phase 8-9: $TEXT/$T support (current and external routines)
+    elif (
+        expr.__class__.__name__ in ("TextFunction", "IntrinsicFunction")
+        and getattr(expr, "name", "").upper() in ("TEXT", "T")
+    ) or (hasattr(expr, "name") and getattr(expr, "name", "").upper() in ("TEXT", "T")):
+        return _generate_text(expr, ctx)
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -94,6 +100,9 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     Spec 006 (T075): Handle subscripted variable reads for MArray-backed variables.
     For array variables, generate: state.A.get(subscripts)
 
+    Spec 008 (T085): For SIMPLE_FUNCTIONS strategy, read variables from _scope
+    dictionary for cross-routine visibility: _scope.get('VAR', '')
+
     Args:
         var: MVariable node
         ctx: Generator context
@@ -113,17 +122,27 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
         if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.array_vars:
             # MArray in RoutineState: state.A.get(subscripts)
             base = f"state.{python_name}"
+        elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Spec 008 (T085): Access arrays from _scope for cross-routine visibility
+            # _scope['A'].get(subscripts) - but need to handle missing array
+            base = f"_scope.get({python_name!r}, {{}})"
         else:
-            # Local MArray variable: A.get(subscripts)
+            # Plain Python local variable (TRAMPOLINE without state_vars)
             base = python_name
 
         # Use .get() for reading - returns value directly (or "" if undefined)
         return f"{base}.get({', '.join(subscript_exprs)})"
 
-    # Spec 006: Check if variable should be accessed via state
+    # Spec 006: Check if variable should be accessed via state (TRAMPOLINE)
     if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.state_vars:
         return f"state.{python_name}"
 
+    # Spec 008 (T085): Read variables from _scope for SIMPLE_FUNCTIONS strategy
+    # Return empty string for undefined variables (MUMPS semantics)
+    if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+        return f"_scope.get({python_name!r}, '')"
+
+    # Fallback: plain Python variable (TRAMPOLINE without state_vars)
     return python_name
 
 
@@ -226,10 +245,14 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     Per MUMPS spec, the caller's $TEST is saved before the call and restored
     after, so the callee's $TEST changes don't leak back.
 
-    Generated pattern:
-        _call_extrinsic(LABEL, arg1, arg2)
+    Generated pattern (internal):
+        _call_extrinsic(_rt, LABEL, arg1, arg2)
+
+    Generated pattern (external - Spec 008 Phase 7):
+        _call_extrinsic(_rt, ext2.ADD, arg1, arg2, _scope=_scope)
 
     The _call_extrinsic helper handles save/restore of _test.
+    Phase 13 (T081): _rt is passed explicitly as first parameter.
 
     Args:
         expr: MExtrinsicFunction node
@@ -239,7 +262,7 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         Python expression string
 
     Raises:
-        NotImplementedError: For external routine calls (Spec 008)
+        NotImplementedError: For unsupported patterns
     """
     # Get the target label
     if expr.target is None:
@@ -249,24 +272,40 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     if not label_name:
         raise NotImplementedError("Extrinsic function with empty label not supported")
 
-    # Check for external routine reference (deferred to Spec 008)
+    # Spec 008 Phase 7 (T043-T046): Handle external routine extrinsic
     if expr.target.routine:
-        raise NotImplementedError(
-            f"External routine extrinsic ($$label^routine) not yet supported. "
-            f"Target: {label_name}^{expr.target.routine}"
-        )
+        routine_name = expr.target.routine
 
+        # T044: Generate import statement for external routine
+        ctx.emitter.line(f"import {routine_name}")
+
+        # Translate label name to Python function name
+        func_name = translate_name(label_name)
+
+        # Generate arguments
+        args = _generate_extrinsic_arguments(expr.arguments, ctx)
+
+        # T045-T046: Generate call via _call_extrinsic with module prefix and _scope
+        # The _call_extrinsic helper provides $TEST save/restore
+        # Phase 13 (T081): Pass _rt as first parameter
+        if args:
+            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, {args}, _scope=_scope)"
+        else:
+            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, _scope=_scope)"
+
+    # Internal extrinsic (within same routine)
     # Translate label name to Python function name
     func_name = translate_name(label_name)
 
     # Generate arguments
     args = _generate_extrinsic_arguments(expr.arguments, ctx)
 
-    # Generate: _call_extrinsic(FUNC, arg1, arg2)
+    # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2)
+    # Phase 13 (T081): Pass _rt as first parameter
     if args:
-        return f"_call_extrinsic({func_name}, {args})"
+        return f"_call_extrinsic(_rt, {func_name}, {args})"
     else:
-        return f"_call_extrinsic({func_name})"
+        return f"_call_extrinsic(_rt, {func_name})"
 
 
 def _generate_extrinsic_arguments(
@@ -300,6 +339,75 @@ def _generate_extrinsic_arguments(
             parts.append("None")
 
     return ", ".join(parts)
+
+
+def _generate_text(expr, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $TEXT/$T function.
+
+    Supports both current routine and external routine patterns:
+    - $T(+0) → routine name
+    - $T(+N) → Nth line of current routine
+    - $T(LABEL) → label line in current routine
+    - $T(LABEL+N) → label+offset in current routine
+    - $T(+N^ROUTINE) → Nth line of external routine
+    - $T(LABEL^ROUTINE) → label line in external routine
+    - $T(LABEL+N^ROUTINE) → label+offset in external routine
+
+    Args:
+        expr: TextFunction ASG node with line_ref dictionary
+        ctx: Generator context
+
+    Returns:
+        Python code calling _rt.get_text()
+    """
+    from m2py.asg.expressions import MLiteral
+
+    # TextFunction stores line reference info in line_ref dict, not arguments
+    line_ref = getattr(expr, "line_ref", {})
+
+    # Check if this is an external routine reference
+    routine = line_ref.get("routine")
+    label = line_ref.get("label")
+    offset = line_ref.get("offset")
+    offset_sign = line_ref.get("offset_sign", "+")  # Default to + if not specified
+
+    # Build the get_text() call parameters
+    params = []
+
+    # Handle offset parameter
+    if offset is not None:
+        if isinstance(offset, MLiteral):
+            # Apply sign to literal value
+            offset_val = offset.value if offset_sign == "+" else -offset.value
+            params.append(f"offset={offset_val}")
+        else:
+            # Offset is an expression (variable, etc.)
+            offset_code = generate_expr(offset, ctx)
+            if offset_sign == "-":
+                params.append(f"offset=-({offset_code})")
+            else:
+                params.append(f"offset={offset_code}")
+    elif offset_sign is not None and label is None:
+        # Sign without offset value - $T(+) or $T(-) defaults to 0
+        # This handles $T(+0) or $T(-0) which both equal 0
+        params.append("offset=0")
+    elif label is None:
+        # No label, no offset - must be $T() which defaults to +0
+        params.append("offset=0")
+    else:
+        # Label with no offset - defaults to 0
+        params.append("offset=0")
+
+    # Handle label parameter
+    if label is not None:
+        params.append(f'label="{label}"')
+
+    # Handle external routine
+    if routine is not None:
+        # Use __import__() to get module reference inline
+        params.append(f"module=__import__('{routine}')")
+
+    return f"_rt.get_text({', '.join(params)})"
 
 
 __all__ = ["generate_expr"]

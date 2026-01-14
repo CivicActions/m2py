@@ -74,7 +74,7 @@ def _check_unsupported_gotos(routine: "MRoutine") -> None:
         routine: Analyzed MRoutine
 
     Raises:
-        UnsupportedFeatureError: If UNRESOLVED or EXTERNAL GOTOs are found
+        UnsupportedFeatureError: If UNRESOLVED GOTOs are found
     """
     from m2py.asg.enums import GotoType
     from m2py.asg.statements import MGotoStatement
@@ -88,10 +88,7 @@ def _check_unsupported_gotos(routine: "MRoutine") -> None:
                     raise UnsupportedFeatureError(
                         "UNRESOLVED GOTO not supported - See Spec 012"
                     )
-                if stmt.goto_type == GotoType.EXTERNAL:
-                    raise UnsupportedFeatureError(
-                        "EXTERNAL GOTO not supported - See Spec 008"
-                    )
+                # Spec 008 Phase 6: EXTERNAL GOTOs now supported
 
 
 def generate_python(

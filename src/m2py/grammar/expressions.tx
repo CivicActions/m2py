@@ -355,8 +355,9 @@ TEXTNAME:
 TextFunctionArg:
     // Label part: either indirection or static label name (both optional)
     (labelIndirect=Indirection | label=TEXTLABELNAME)?
-    // Offset part: +expr (optional, expr can also be omitted for +)
-    ('+' offset=OffsetExpr?)?
+    // Offset part: +expr or -expr (optional, expr can also be omitted for +)
+    // Sign can be + or - (for negative offsets like $T(-1))
+    (offsetSign=/[+-]/ offset=OffsetExpr?)?
     // Routine part: ^name or ^@indirection (optional)
     // Routine name can include trigger suffixes like #1#A/REGION
     ('^' (routineIndirect=Indirection | routine=TRIGGERROUTINENAME))?

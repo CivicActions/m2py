@@ -153,6 +153,28 @@ import library
 library.util()
 ```
 
+**Module Caching:**
+
+Python's standard `sys.modules` dictionary automatically caches imported modules. Multiple imports of the same routine use the cached module instance:
+
+```python
+# First import loads and caches the module
+import ext2
+ext2.helper()
+
+# Subsequent imports use cached version from sys.modules
+import ext2  # No reload - uses cached module
+ext2.other_label()
+```
+
+Benefits:
+- No custom caching mechanism needed
+- Standard Python import semantics apply
+- Module initialization runs only once
+- Shared state across all references
+
+The transpiler generates standard `import` statements rather than dynamic imports (importlib) to ensure proper caching behavior.
+
 **Or with runtime:**
 ```python
 # Conceptual Python equivalent

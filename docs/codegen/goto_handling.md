@@ -18,7 +18,7 @@ After `classify_gotos()`, each MGotoStatement has a `goto_type`:
 | `FORWARD_JUMP` (cross-label) | To later label | Trampoline: `return (label, state)` |
 | `BACKWARD_JUMP` (intra-label) | To earlier code in same label | `while True:` + `continue` |
 | `BACKWARD_JUMP` (cross-label) | To earlier label | Trampoline: `return (label, state)` |
-| `EXTERNAL` | To other routine | Not yet supported (Spec 008) |
+| `EXTERNAL` | To other routine | `raise GotoExternal(module, label)` (Spec 008) |
 | `UNRESOLVED` | Dynamic target | Not yet supported (Spec 012) |
 
 ## Intra-Label Forward Jump
@@ -534,16 +534,53 @@ The `MArray` class supports:
 |----------|---------|
 | `_generate_goto()` | Main GOTO dispatch in statements.py |
 | `_select_goto_strategy()` | Select strategy based on ASG flags |
-| `_check_unsupported_gotos()` | Raise errors for UNRESOLVED/EXTERNAL |
+| `_check_unsupported_gotos()` | Raise errors for UNRESOLVED GOTOs (EXTERNAL now supported) |
 | `_find_forward_goto_in_if()` | Return pre-computed restructurable GOTO from IF |
 | `_restructure_forward_goto()` | Generate inverted if/else structure |
+| `_generate_external_goto()` | Generate `raise GotoExternal()` for external GOTOs |
 | `generate_scope_statements()` | Statement generation with GOTO restructuring |
 
-## RoutineState Generator Functions (src/m2py/codegen/shared_state.py)
+## External GOTO (Spec 008)
 
-| Function | Purpose |
-|----------|---------|
-| `generate_routine_state_class()` | Build RoutineState dataclass from routine analysis |
+External GOTOs transfer control to another routine permanently (no return). They raise `GotoExternal` exception which must be caught by `run_with_goto_support()`.
+
+```mumps
+EXT1   W "Start",!
+       G ^ext2
+       W "Never",!    ; Unreachable
+       Q
+```
+
+```python
+def EXT1(_scope=None):
+    global _test
+    _scope = _scope if _scope is not None else {}
+    _rt.write("Start")
+    _rt.write("\n")
+    import ext2
+    from m2py.runtime import GotoExternal
+    raise GotoExternal(ext2, None)
+    _rt.write("Never")  # Unreachable but generated
+    _rt.write("\n")
+    return
+```
+
+**Usage Pattern**:
+
+```python
+from m2py.runtime import run_with_goto_support
+
+# Wrap entry point to handle external GOTOs
+result = run_with_goto_support(EXT1)
+```
+
+**Supported Patterns**:
+- `G ^ROUTINE` - Transfer to entry label (same name as routine)
+- `G LABEL^ROUTINE` - Transfer to specific label
+- `G LABEL+N^ROUTINE` - Transfer to label with offset
+- `G +N^ROUTINE` - Transfer to absolute line offset
+
+The `run_with_goto_support()` function catches `GotoExternal` and transfers control to the target routine, supporting chained GOTOs (A → B → C → quit).
 | `generate_state_initialization()` | Create `state = RoutineState()` call |
 | `generate_state_imports()` | Required imports for RoutineState |
 

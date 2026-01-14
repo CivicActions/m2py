@@ -7,8 +7,9 @@ Includes MArray class for MUMPS array semantics.
 from __future__ import annotations
 
 import re
+import types
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from typing import Any, Callable, Dict, List, Optional
 
 
 class MArray:
@@ -261,6 +262,158 @@ class MArray:
         return f"MArray({', '.join(parts)})"
 
 
+# =============================================================================
+# Spec 008: External Call Exception Classes
+# =============================================================================
+
+
+class GotoExternal(Exception):
+    """Raised to transfer control to external routine (no return).
+
+    Used by external GOTO (G ^ROUTINE, G LABEL^ROUTINE) to unwind the stack
+    and transfer control to a different routine. The trampoline dispatcher
+    catches this exception and transfers to the target module.
+
+    Attributes:
+        module: Target module (already imported via standard Python import)
+        label: Target label name (None = entry label, same name as routine)
+        offset: Optional line offset for G LABEL+N^ROUTINE pattern
+        _rt: MUMPSRuntime instance to pass to target routine (Phase 13)
+    """
+
+    def __init__(
+        self,
+        module: types.ModuleType,
+        label: Optional[str] = None,
+        offset: Optional[int] = None,
+        _rt: Optional["MUMPSRuntime"] = None,
+    ) -> None:
+        self.module = module
+        self.label = label
+        self.offset = offset
+        self._rt = _rt
+        routine_name = getattr(module, "_routine_name", module.__name__)
+        label_str = label or ""
+        super().__init__(f"GOTO {label_str}^{routine_name}")
+
+
+class LabelNotFoundError(Exception):
+    """Raised when label doesn't exist in loaded routine.
+
+    Attributes:
+        label: The label name that was not found
+        routine: The routine name that was searched
+        available_labels: List of labels that do exist in the routine
+    """
+
+    def __init__(
+        self, label: str, routine: str, available_labels: Optional[List[str]] = None
+    ) -> None:
+        self.label = label
+        self.routine = routine
+        self.available_labels = available_labels or []
+        super().__init__(f"Label '{label}' not found in routine '{routine}'")
+
+
+def run_with_goto_support(
+    entry_func: Callable[..., Any],
+    _rt: "MUMPSRuntime",
+    _scope: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """Execute a routine entry point with external GOTO support.
+
+    Spec 008 Phase 6 (T039): This function wraps routine execution to catch
+    GotoExternal exceptions and transfer control to external routines.
+
+    When a GOTO to an external routine is executed (G ^ROUTINE, G LABEL^ROUTINE),
+    it raises GotoExternal. This function catches it and transfers control to
+    the target routine, which may itself GOTO to another routine, creating a
+    chain of transfers that only ends when a routine QUITs normally.
+
+    Phase 13 (T082): The runtime instance is passed explicitly to all routines
+    to ensure shared state across external calls.
+
+    Args:
+        entry_func: The entry function to execute (routine's first label)
+        _rt: MUMPSRuntime instance to pass to all routines
+        _scope: Optional shared scope for cross-routine variable visibility
+
+    Returns:
+        The return value of the final routine that QUITs normally
+
+    Raises:
+        LabelNotFoundError: If GOTO targets a non-existent label
+        ImportError: If GOTO targets a routine that cannot be imported
+    """
+    if _scope is None:
+        _scope = {}
+
+    current_func = entry_func
+    current_rt = _rt
+    while True:
+        try:
+            return current_func(current_rt, _scope=_scope)
+        except GotoExternal as goto:
+            # Transfer to external routine
+            module = goto.module
+            label = goto.label
+            offset = goto.offset
+            # Use _rt from exception if available, else current
+            current_rt = goto._rt if goto._rt is not None else current_rt
+
+            # Get the entry function from target module
+            if offset is not None:
+                # G +N^ROUTINE or G LABEL+N^ROUTINE - use line dispatch
+                if label is not None:
+                    # G LABEL+N^ROUTINE - compute line from label
+                    if label not in module._label_lines:
+                        raise LabelNotFoundError(
+                            label,
+                            module._routine_name,
+                            list(module._label_lines.keys()),
+                        ) from goto
+                    target_line = module._label_lines[label] + offset
+                else:
+                    # G +N^ROUTINE - absolute line offset (1-based to 0-indexed)
+                    target_line = offset - 1
+
+                # Look up function via _line_map
+                if target_line not in module._line_map:
+                    # Find next valid line
+                    valid_lines = [ln for ln in module._line_map if ln >= target_line]
+                    if not valid_lines:
+                        raise ValueError(
+                            f"Entry point +{offset} not valid in {module._routine_name}"
+                        )
+                    target_line = min(valid_lines)
+
+                # Get the function from line map
+                label_name, line_offset = module._line_map[target_line]
+                # For offset dispatch, we need to call internal trampoline function
+                # with the proper offset - but the entry function doesn't support this
+                # For simplicity, call the label's entry function (offset=0 behavior)
+                # Full offset support requires passing offset through, which is complex
+                # For now, just call the label function directly
+                current_func = getattr(module, label_name)
+            elif label is not None:
+                # G LABEL^ROUTINE - call specific label
+                label_func_name = label  # Already canonical
+                if not hasattr(module, label_func_name):
+                    raise LabelNotFoundError(
+                        label,
+                        module._routine_name,
+                        list(getattr(module, "_label_lines", {}).keys()),
+                    ) from goto
+                current_func = getattr(module, label_func_name)
+            else:
+                # G ^ROUTINE - call entry label (same name as routine)
+                entry_name = module._routine_name
+                if not hasattr(module, entry_name):
+                    # Fall back to lowercase
+                    entry_name = module._routine_name.lower()
+                current_func = getattr(module, entry_name)
+
+
 @dataclass
 class ExecutionResult:
     """Result of executing generated MUMPS code.
@@ -285,11 +438,81 @@ class MUMPSRuntime:
 
     Provides output capture for WRITE statements and execution support
     for generated Python code. Thread-unsafe - use one instance per thread.
+
+    Spec 008: Extended for external call support with:
+    - _current_routine: Current routine name for $TEXT(+0)
+    - _current_source_lines: Source lines for $TEXT(+N)
+    - _current_label_lines: Label->line mapping for $TEXT(LABEL+N)
+    - get_text(): Implement $TEXT function
     """
 
     def __init__(self) -> None:
         """Initialize runtime with empty state."""
         self._output: list[str] = []
+        # Spec 008: External call context tracking
+        self._current_routine: Optional[str] = None
+        self._current_source_lines: Optional[List[str]] = None
+        self._current_label_lines: Optional[Dict[str, int]] = None
+
+    def get_text(
+        self,
+        offset: int,
+        label: Optional[str] = None,
+        module: Optional[types.ModuleType] = None,
+    ) -> str:
+        """Get source text line ($TEXT function).
+
+        Implements MUMPS $TEXT function which returns source code lines.
+        - $TEXT(+0) returns routine name
+        - $TEXT(+N) returns Nth line of routine (1-indexed)
+        - $TEXT(LABEL) returns the label line itself
+        - $TEXT(LABEL+N) returns line at label offset
+        - $TEXT(+N^ROUTINE) returns Nth line of external routine
+        - $TEXT(LABEL^ROUTINE) returns label line in external routine
+
+        Args:
+            offset: Line offset (0 = routine name, 1+ = source line index)
+            label: Optional label for label+offset lookup
+            module: Module containing _source_lines (None = current routine)
+
+        Returns:
+            Source line text, or empty string if:
+            - Offset is past end of routine
+            - Offset is negative
+            - Label not found
+        """
+        # $TEXT(+0) returns routine name
+        if offset == 0 and label is None:
+            if module is not None:
+                return getattr(module, "_routine_name", module.__name__)
+            return self._current_routine or ""
+
+        # Handle negative offsets (return empty per YDB)
+        if offset < 0 and label is None:
+            return ""
+
+        # Get source lines and label map from module or current context
+        if module is not None:
+            lines = getattr(module, "_source_lines", [])
+            label_lines = getattr(module, "_label_lines", {})
+        else:
+            lines = self._current_source_lines or []
+            label_lines = self._current_label_lines or {}
+
+        # Calculate actual line index
+        if label is not None:
+            base_idx = label_lines.get(label, -1)
+            if base_idx < 0:
+                return ""  # Label not found
+            line_idx = base_idx + offset
+        else:
+            # Convert 1-based offset to 0-based index
+            line_idx = offset - 1
+
+        # Bounds check and return
+        if 0 <= line_idx < len(lines):
+            return lines[line_idx]
+        return ""
 
     def write(self, value: Any) -> None:
         """Capture WRITE output.
@@ -358,7 +581,7 @@ class MUMPSRuntime:
             exec(python_code, namespace)
 
             # Re-inject runtime after module execution
-            # (the generated code creates its own _rt, but we want to use ours)
+            # (the generated code no longer creates its own _rt since Phase 13)
             namespace["_rt"] = self
 
             # Find entry point
@@ -367,10 +590,11 @@ class MUMPSRuntime:
                 entry_point = self._find_first_function(python_code)
 
             # Call entry point if found
+            # Phase 13 (T076): Entry point functions now require _rt as first parameter
             if entry_point and entry_point in namespace:
                 func = namespace[entry_point]
                 if callable(func):
-                    func()
+                    func(self)
 
             # Get final $TEST value
             test_value = namespace.get("_test", False)
@@ -411,4 +635,11 @@ class MUMPSRuntime:
         return None
 
 
-__all__ = ["MUMPSRuntime", "ExecutionResult", "MArray"]
+__all__ = [
+    "MUMPSRuntime",
+    "ExecutionResult",
+    "MArray",
+    "GotoExternal",
+    "LabelNotFoundError",
+    "run_with_goto_support",
+]

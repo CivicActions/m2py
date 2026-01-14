@@ -185,13 +185,104 @@ See: [`src/m2py/codegen/`](../src/m2py/codegen/)
 from m2py.codegen.helpers import m_num, m_truth, m_compare
 from m2py.runtime import MUMPSRuntime
 
-_rt = MUMPSRuntime()
-_test = False
+_source_lines = ["LABEL ; Entry", " W 1", " Q"]
+_routine_name = "LABEL"
+_label_lines = {"LABEL": 0}
 
-def LABEL():
-    global _test
-    # ... translated statements
+def LABEL(_rt, _scope=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
+    _rt._current_routine = _routine_name
+    _rt._current_source_lines = _source_lines
+    _rt._current_label_lines = _label_lines
+    _scope['X'] = 42  # Variables stored in _scope
+    _rt.write(_scope.get('X', ''))  # Variable reads from _scope
+    ...
+
+if __name__ == "__main__":
+    _rt = MUMPSRuntime()
+    _scope = {}
+    LABEL(_rt, _scope)
 ```
+
+### Cross-Routine Infrastructure (Spec 008)
+
+External routine calls require coordinated code generation across multiple modules:
+
+**Import Generation:**
+```python
+# When transpiling: D ^ext2
+import ext2
+ext2.ext2(_rt, _scope)
+```
+
+Import statements are generated inline when external routine references are encountered:
+- `D ^ROUTINE` → generates `import ROUTINE`
+- `$$FUNC^ROUTINE` → generates `import ROUTINE`
+- `G ^ROUTINE` → generates `import ROUTINE` and `from m2py.runtime import GotoExternal`
+- `$TEXT(+N^ROUTINE)` → generates `module=__import__('routine')` inline
+
+**Module Caching:**
+
+Python's standard `sys.modules` dictionary automatically caches imported modules. No custom caching mechanism is needed:
+- First import loads the module
+- Subsequent imports use the cached version
+- Module initialization runs only once
+- All references share the same module instance
+
+**_scope Parameter:**
+
+All routine functions accept `_rt` and `_scope` parameters for runtime and cross-routine variable visibility:
+
+```python
+def MAIN(_rt, _scope=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
+    
+    _scope["X"] = 42
+    import helper
+    helper.SHOW(_rt, _scope=_scope)
+
+# helper.py
+def SHOW(_rt, _scope=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
+    _rt.write(str(_scope.get("X", "")))
+```
+
+Key design points:
+- `_rt` passed as first parameter to all functions
+- `_scope` shared across all external calls
+- Variables stored in `_scope['varname']` instead of local Python scope
+- Variable reads use `_scope.get('varname', '')` for undefined safety
+- Entry points have `_scope=None` default for standalone execution
+- Internal and external calls pass `_rt` and `_scope` explicitly
+
+**$TEST Isolation:**
+
+External extrinsic functions save and restore `$TEST` to maintain caller state:
+
+```python
+def _call_extrinsic(func, *args, _rt=None, _scope=None):
+    """Call extrinsic function with $TEST isolation."""
+    saved_test = _rt._test
+    try:
+        return func(_rt, _scope, *args)
+    finally:
+        _rt._test = saved_test
+```
+
+This ensures extrinsic functions can use IF/pattern matching without affecting the caller's `$TEST` value.
+
+**GotoExternal Exception:**
+
+External GOTO uses exception-based control flow to unwind the stack:
+
+```python
+# G ERROR^handler
+import handler
+from m2py.runtime import GotoExternal
+raise GotoExternal(handler.ERROR, _rt, _scope)
+```
+
+The exception is caught at the entry point and the target function is called directly, simulating MUMPS's permanent control transfer semantics.
 
 ## Design Decisions
 

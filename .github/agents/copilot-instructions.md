@@ -16,6 +16,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - N/A (transpiler, no persistence) (005-structured-control-flow)
 - Python 3.10+ + extX (parsing), pytest (testing), uv (package management) (006-cross-label-control-flow)
 - Python 3.10+ + extX (parser), pytest (testing), dataclasses (ASG/codegen) (007-computed-offsets)
+- Python 3.10+ (per pyproject.toml) + extX (grammar/parser), importlib (dynamic module loading) (008-external-calls)
+- In-memory module cache (dict), source lines stored per MRoutine (008-external-calls)
 
 - (001-textx-semantic-graph)
 
@@ -36,9 +38,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 008-external-calls: Added Python 3.10+ (per pyproject.toml) + extX (grammar/parser), importlib (dynamic module loading)
+- 008-external-calls: Added Python 3.10+ (per pyproject.toml) + extX (grammar/parser), importlib (dynamic module loading)
 - 007-computed-offsets: Added Python 3.10+ + extX (parser), pytest (testing), dataclasses (ASG/codegen)
-- 006-cross-label-control-flow: Added Python 3.10+ + extX (parsing), pytest (testing), uv (package management)
-- 005-structured-control-flow: Added Python 3.10+ (target output); textX for parser + extX (parsing), itertools (FOR codegen), pytest (testing)
 
 
 <!-- MANUAL ADDITIONS START -->

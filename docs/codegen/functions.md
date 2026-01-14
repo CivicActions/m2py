@@ -272,6 +272,45 @@ $Q(^DATA(A,B))      ; Next subscripted reference
 
 More complex than $ORDER - returns full variable reference.
 
+## Source Access Functions
+
+### $TEXT / $T
+
+Access source code lines from current or external routines.
+
+```mumps
+$T(+0)           ; Current routine name
+$T(+N)           ; Nth line of current routine (1-based)
+$T(LABEL)        ; Line containing LABEL in current routine
+$T(LABEL+N)      ; Nth line after LABEL
+$T(+N^ROUTINE)   ; Nth line of external ROUTINE
+$T(LABEL^ROUTINE) ; LABEL line in external ROUTINE
+```
+
+```python
+# Translation uses runtime get_text() method
+_rt.get_text(offset=0)              # +0 → routine name
+_rt.get_text(offset=5)              # +5 → 5th line
+_rt.get_text(label="HELPER")        # LABEL → label line
+_rt.get_text(offset=2, label="HELPER")  # LABEL+2 → offset from label
+_rt.get_text(offset=5, module=__import__('ext2'))  # +5^ext2 → external routine
+_rt.get_text(label="HELPER", module=__import__('ext2'))  # LABEL^ext2 → external label
+```
+
+**Implementation Notes:**
+- Runtime `get_text()` method uses `_source_lines` attribute storing original MUMPS source
+- External routines require `__import__()` to load the target module
+- Returns empty string for invalid references (negative offsets, nonexistent labels, past EOF)
+- Line numbers are 1-based (MUMPS convention)
+- External calls format: `module=__import__('routine_name')`
+
+**Edge Cases:**
+```python
+_rt.get_text(offset=-1)  # Invalid: returns ""
+_rt.get_text(offset=999) # Past end: returns ""
+_rt.get_text(label="NOEXIST")  # Missing label: returns ""
+```
+
 ## Date/Time Functions
 
 ### $HOROLOG / $H

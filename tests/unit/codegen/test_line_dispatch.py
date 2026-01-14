@@ -3,7 +3,6 @@
 Tests the foundational infrastructure for computed offsets:
 - Line map generation from MRoutine
 - Offset call detection
-- Next executable line finding
 - Line map code generation
 """
 
@@ -11,10 +10,8 @@ import pytest
 
 from m2py.parser import MUMPSParser
 from m2py.codegen.line_dispatch import (
-    has_offset_calls,
     generate_line_map,
     generate_line_map_code,
-    find_next_executable,
 )
 from m2py.codegen.emitter import CodeEmitter
 
@@ -27,14 +24,19 @@ def parser():
 
 @pytest.mark.codegen
 class TestHasOffsetCalls:
-    """Tests for has_offset_calls detection (T005)."""
+    """Tests for has_offset_calls ASG field detection (T005).
+
+    The has_offset_calls field is populated by classify_gotos() analysis pass.
+    These tests verify the ASG field is correctly set.
+    """
 
     def test_no_offset_calls(self, parser):
         """Routine with no offset calls returns False."""
         source = """TEST G NEXT Q
 NEXT W "hello" Q"""
         routine = parser.parse(source)
-        assert has_offset_calls(routine) is False
+        parser.classify_gotos(routine)
+        assert routine.has_offset_calls is False
 
     def test_goto_with_literal_offset(self, parser):
         """GOTO with literal offset is detected."""
@@ -44,14 +46,16 @@ STAR W "0"
  W "2"
  Q"""
         routine = parser.parse(source)
-        assert has_offset_calls(routine) is True
+        parser.classify_gotos(routine)
+        assert routine.has_offset_calls is True
 
     def test_goto_with_variable_offset(self, parser):
         """GOTO with variable offset is detected."""
         source = """TEST S N=2 G STAR+N Q
 STAR W "done" Q"""
         routine = parser.parse(source)
-        assert has_offset_calls(routine) is True
+        parser.classify_gotos(routine)
+        assert routine.has_offset_calls is True
 
     def test_do_with_offset(self, parser):
         """DO with offset is detected."""
@@ -59,7 +63,8 @@ STAR W "done" Q"""
 SUB W "0" Q
  W "1" Q"""
         routine = parser.parse(source)
-        assert has_offset_calls(routine) is True
+        parser.classify_gotos(routine)
+        assert routine.has_offset_calls is True
 
     def test_mixed_calls(self, parser):
         """Routine with both regular and offset calls is detected."""
@@ -68,7 +73,8 @@ SUB W "sub" Q
 NEXT W "0"
  W "1" Q"""
         routine = parser.parse(source)
-        assert has_offset_calls(routine) is True
+        parser.classify_gotos(routine)
+        assert routine.has_offset_calls is True
 
 
 @pytest.mark.codegen
@@ -190,53 +196,21 @@ class TestGenerateLineMapCode:
 
 
 @pytest.mark.codegen
-class TestFindNextExecutable:
-    """Tests for find_next_executable (T008)."""
-
-    def test_exact_match(self):
-        """Target line exists in line map."""
-        line_map = {1: ("TEST", 0), 2: ("TEST", 1), 3: ("TEST", 2)}
-        assert find_next_executable(2, line_map) == 2
-
-    def test_next_line(self):
-        """Target line not in map, find next available."""
-        # Lines 1, 3, 5 are executable (2, 4 are comments/blanks)
-        line_map = {1: ("TEST", 0), 3: ("TEST", 1), 5: ("TEST", 2)}
-        assert find_next_executable(2, line_map) == 3
-        assert find_next_executable(4, line_map) == 5
-
-    def test_no_next_executable(self):
-        """No executable line after target returns None."""
-        line_map = {1: ("TEST", 0), 2: ("TEST", 1)}
-        assert find_next_executable(3, line_map) is None
-        assert find_next_executable(100, line_map) is None
-
-    def test_first_line_target(self):
-        """Target is before first executable line."""
-        line_map = {5: ("TEST", 0), 6: ("TEST", 1)}
-        # Line 1-4 don't exist, should find line 5
-        assert find_next_executable(1, line_map) == 5
-
-    def test_empty_line_map(self):
-        """Empty line map returns None for any target."""
-        assert find_next_executable(1, {}) is None
-
-
-@pytest.mark.codegen
 class TestIntegration:
     """Integration tests for line dispatch utilities."""
 
     def test_full_workflow(self, parser):
-        """Test complete workflow: parse → detect → generate map → emit code."""
+        """Test complete workflow: parse → analyze → generate map → emit code."""
         source = """TEST G STAR+2 Q
 STAR W "0"
  W "1"
  W "2"
  Q"""
         routine = parser.parse(source)
+        parser.classify_gotos(routine)
 
-        # Step 1: Detect offset calls
-        assert has_offset_calls(routine) is True
+        # Step 1: Check offset calls ASG field (set by classify_gotos)
+        assert routine.has_offset_calls is True
 
         # Step 2: Generate line map
         line_map = generate_line_map(routine)
