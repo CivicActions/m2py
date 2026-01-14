@@ -422,6 +422,19 @@ class RoutineGenerator:
             # T030: Initialize _scope if not provided (entry point behavior)
             ctx.emitter.line("_scope = _scope if _scope is not None else {}")
 
+            # T084: Copy formal parameters into _scope for variable reads
+            # Use original MUMPS names for _scope keys, translated names for Python vars
+            original_formal_params = label.formal_list or []
+            if (
+                label.signature
+                and label.signature.formal_params
+                and not label.formal_list
+            ):
+                original_formal_params = label.signature.formal_params
+            for orig_name in original_formal_params:
+                python_name = translate_name(orig_name)
+                ctx.emitter.line(f"_scope[{orig_name!r}] = {python_name}")
+
             # Spec 006 (T069a): Check for self-loop pattern
             if label.has_self_loop:
                 # Wrap body in while True: for self-loop pattern
