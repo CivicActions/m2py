@@ -113,14 +113,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T025 [P] [US4] Create `tests/test_spec_009_globals.py` with 5 acceptance scenarios from spec
+- [X] T025 [P] [US4] Create `tests/test_spec_009_globals.py` with 5 acceptance scenarios from spec
 
 ### Implementation for User Story 4
 
-- [ ] T026 [US4] Extend `_generate_set()` to handle GlobalVariable targets → `_rt.globals.set()` in `src/m2py/codegen/statements.py`
-- [ ] T027 [US4] Extend `generate_expr()` to handle GlobalVariable reads → `_rt.globals.get()` in `src/m2py/codegen/expressions.py`
-- [ ] T028 [US4] Ensure undefined globals return empty string (not None)
-- [ ] T029 [US4] Support string subscripts in globals codegen
+- [X] T026 [US4] Extend `_generate_set()` to handle GlobalVariable targets → `_rt.globals.set()` in `src/m2py/codegen/statements.py`
+- [X] T027 [US4] Extend `generate_expr()` to handle GlobalVariable reads → `_rt.globals.get()` in `src/m2py/codegen/expressions.py`
+- [X] T028 [US4] Ensure undefined globals return empty string (not None)
+- [X] T029 [US4] Support string subscripts in globals codegen
 
 **Checkpoint**: Basic global SET/READ works with InMemoryGlobalStorage
 

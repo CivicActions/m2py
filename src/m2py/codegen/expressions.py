@@ -21,6 +21,7 @@ from m2py.asg.expressions import (
 )
 from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.names import translate_name
+from m2py.parser.textx_classes import GlobalVariable
 
 if TYPE_CHECKING:
     from m2py.codegen.routine import GeneratorContext
@@ -50,6 +51,8 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_literal(expr)
     elif isinstance(expr, MVariable):
         return _generate_variable(expr, ctx)
+    elif isinstance(expr, GlobalVariable):
+        return _generate_global_variable(expr, ctx)
     elif isinstance(expr, MBinaryOp):
         return _generate_binary_op(expr, ctx)
     elif isinstance(expr, MUnaryOp):
@@ -145,6 +148,40 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
 
     # Fallback: plain Python variable (TRAMPOLINE without state_vars)
     return python_name
+
+
+def _generate_global_variable(var: GlobalVariable, ctx: "GeneratorContext") -> str:
+    """Generate Python expression for global variable READ.
+
+    Spec 009 (T027): Generate _rt.globals.get() call for global variable reads.
+
+    Args:
+        var: GlobalVariable node
+        ctx: Generator context
+
+    Returns:
+        Python expression string: _rt.globals.get("NAME", (subscripts,)) or ""
+
+    The generated code reads from the global storage backend and returns
+    empty string for undefined globals (MUMPS implicit $GET semantics).
+    """
+    # Get global name (without caret)
+    global_name = var.name
+
+    # Generate subscript expressions
+    if var.subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+        # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        subscripts_tuple = "()"
+
+    # Spec 009 (T028): Return empty string for undefined globals
+    # _rt.globals.get() returns None for undefined, convert to ""
+    return f"(_rt.globals.get({global_name!r}, {subscripts_tuple}) or '')"
 
 
 def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -> str:

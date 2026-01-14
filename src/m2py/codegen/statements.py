@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, List
 
 from m2py.asg.enums import ForLoopType, ForParamType, GotoType, PassingMode
 from m2py.asg.expressions import MActualParameter, MExpr, MIntrinsicFunction, MVariable
+from m2py.parser.textx_classes import GlobalVariable
 from m2py.asg.statements import (
     MAssignment,
     MDoStatement,
@@ -535,6 +536,12 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
                 target_name = f"_scope.setdefault({target_name!r}, MArray()).value"
             # else: use plain Python local variable (TRAMPOLINE without state_vars)
 
+        elif isinstance(assignment.target, GlobalVariable):
+            # Spec 009 (T026): Handle global variable SET targets
+            # Generate: _rt.globals.set("NAME", (subscripts,), value)
+            _generate_global_set(assignment, ctx)
+            continue
+
         elif isinstance(assignment.target, MIntrinsicFunction):
             # Spec 009 (T012-T013): Handle LHS function targets ($PIECE, $EXTRACT)
             func_name = assignment.target.name.upper()
@@ -704,6 +711,47 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
     # Emit m_set_extract call
     ctx.emitter.line(
         f"m_set_extract({getter}, {setter}, {from_pos_expr}, {to_pos_expr}, {value_expr})"
+    )
+
+
+def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> None:
+    """Generate _rt.globals.set() call for global variable SET.
+
+    Spec 009 (T026): Generate code for S ^NAME(subscripts)=value
+
+    Args:
+        assignment: MAssignment with GlobalVariable target
+        ctx: Generator context
+
+    The generated code calls _rt.globals.set():
+        _rt.globals.set("NAME", ("sub1", "sub2"), "value")
+        _rt.globals.set("NAME", (), "value")  # No subscripts
+    """
+    # We know target is GlobalVariable because caller checked isinstance
+    assert isinstance(assignment.target, GlobalVariable)
+    global_var = assignment.target
+
+    # Get global name (without caret)
+    global_name = global_var.name
+
+    # Generate subscript expressions
+    if global_var.subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in global_var.subscripts]
+        # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        subscripts_tuple = "()"
+
+    # Generate value expression
+    assert assignment.value is not None, "Global SET requires a value"
+    value_expr = generate_expr(assignment.value, ctx)
+
+    # Emit _rt.globals.set() call
+    ctx.emitter.line(
+        f"_rt.globals.set({global_name!r}, {subscripts_tuple}, str({value_expr}))"
     )
 
 
