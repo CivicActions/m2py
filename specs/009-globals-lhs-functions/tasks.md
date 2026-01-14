@@ -147,7 +147,7 @@
 
 ---
 
-## Phase 8: User Story 6 - $DATA Function (Priority: P2)
+## Phase 8: User Story 6 - $DATA Function (Priority: P2) ✅ COMPLETE
 
 **Goal**: `W $D(X)` returns 0, 1, 10, or 11 based on value/children state
 
@@ -155,14 +155,14 @@
 
 ### Tests for User Story 6
 
-- [ ] T035 [P] [US6] Create `tests/test_spec_009_data.py` with 5 acceptance scenarios from spec
+- [X] T035 [P] [US6] Create `tests/test_spec_009_data.py` with 5 acceptance scenarios from spec
 
 ### Implementation for User Story 6
 
-- [ ] T036 [US6] Implement `m_data()` for local arrays in `src/m2py/runtime/helpers.py`
-- [ ] T037 [US6] Implement `m_data_global()` for globals in `src/m2py/runtime/helpers.py`
-- [ ] T038 [US6] Extend `generate_expr()` to handle IntrinsicFunction 'D'/'DATA' → `m_data()` or `m_data_global()` in `src/m2py/codegen/expressions.py`
-- [ ] T039 [US6] Add `m_data`, `m_data_global` to generated code imports
+- [X] T036 [US6] Implement `m_data()` for local arrays in `src/m2py/runtime/helpers.py`
+- [X] T037 [US6] Implement `m_data_global()` for globals in `src/m2py/runtime/helpers.py`
+- [X] T038 [US6] Extend `generate_expr()` to handle IntrinsicFunction 'D'/'DATA' → `m_data()` or `m_data_global()` in `src/m2py/codegen/expressions.py`
+- [X] T039 [US6] Add `m_data`, `m_data_global` to generated code imports
 
 **Checkpoint**: $DATA returns correct existence codes for all variable types
 

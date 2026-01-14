@@ -63,6 +63,11 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_extrinsic(expr, ctx)
     elif isinstance(expr, MSpecialVariable):
         return _generate_special_variable(expr, ctx)
+    # Phase 8: $DATA/$D support for local and global variables
+    elif expr.__class__.__name__ == "IntrinsicFunction" and getattr(
+        expr, "name", ""
+    ).upper() in ("DATA", "D"):
+        return _generate_data(expr, ctx)
     # Phase 8-9: $TEXT/$T support (current and external routines)
     elif (
         expr.__class__.__name__ in ("TextFunction", "IntrinsicFunction")
@@ -411,6 +416,68 @@ def _generate_extrinsic_arguments(
             parts.append("None")
 
     return ", ".join(parts)
+
+
+def _generate_data(expr, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $DATA/$D function.
+
+    Spec 009 Phase 8: Generate m_data() or m_data_global() calls based on
+    whether the argument is a local or global variable.
+
+    $DATA returns:
+    - 0: Undefined, no descendants
+    - 1: Defined, no descendants
+    - 10: Undefined, has descendants
+    - 11: Defined AND has descendants
+
+    Args:
+        expr: IntrinsicFunction ASG node with arguments[0] being the variable
+        ctx: Generator context
+
+    Returns:
+        Python code calling m_data() or m_data_global()
+
+    Examples:
+        $D(X) → m_data(_scope.get('X', MArray()), ())
+        $D(X(1)) → m_data(_scope.get('X', MArray()), (str(1),))
+        $D(^G) → m_data_global(_rt.globals, 'G', ())
+        $D(^G(1)) → m_data_global(_rt.globals, 'G', (str(1),))
+    """
+    from m2py.parser.textx_classes import LocalVariable
+
+    # Get first argument (the variable to check)
+    args = getattr(expr, "arguments", [])
+    if not args:
+        # No argument - return 0 for undefined
+        return "0"
+
+    var = args[0]
+
+    # Generate subscript tuple
+    subscripts = getattr(var, "subscripts", [])
+    if subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        subscripts_tuple = "()"
+
+    var_name = getattr(var, "name", "")
+
+    # Check if it's a local or global variable
+    if isinstance(var, LocalVariable):
+        # Local variable: m_data(_scope.get('VAR', MArray()), subscripts)
+        python_name = translate_name(var_name)
+        return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
+    elif isinstance(var, GlobalVariable):
+        # Global variable: m_data_global(_rt.globals, 'NAME', subscripts)
+        return f"m_data_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
+    else:
+        # Fallback for any other variable type - treat as local
+        python_name = translate_name(var_name)
+        return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
 
 
 def _generate_text(expr, ctx: "GeneratorContext") -> str:

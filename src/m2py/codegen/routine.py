@@ -275,8 +275,10 @@ class RoutineGenerator:
         ctx.emitter.line("from m2py.codegen.helpers import m_num, m_truth, m_compare")
         # Spec 009 (T024): Import MArray for subscripted local variable support
         ctx.emitter.line("from m2py.runtime import MUMPSRuntime, MArray")
-        # Spec 009: Import LHS function helpers (Phase 3-4)
-        ctx.emitter.line("from m2py.runtime.helpers import m_set_piece, m_set_extract")
+        # Spec 009: Import LHS function helpers (Phase 3-4) and $DATA helpers (Phase 8)
+        ctx.emitter.line(
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global"
+        )
 
         # Spec 006: Additional imports for trampoline pattern
         if self._strategy == GotoStrategy.TRAMPOLINE:

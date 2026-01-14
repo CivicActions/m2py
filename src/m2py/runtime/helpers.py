@@ -157,7 +157,24 @@ def m_data(array: MArray | None, subscripts: tuple[str, ...] = ()) -> int:
         m_data(arr_with_children_only) → 10  # children only
         m_data(arr_with_both) → 11  # value AND children
     """
-    raise NotImplementedError("m_data: stub - implementation in Phase 8")
+    if array is None:
+        return 0
+    # Navigate to target node via subscripts
+    node = array
+    for sub in subscripts:
+        # MArray may use string or numeric keys depending on how SET was generated
+        # Try the subscript as-is first, then try numeric conversion
+        key = sub
+        if key not in node._children:
+            # Try converting string to int for numeric subscripts
+            try:
+                key = int(sub)
+            except (ValueError, TypeError):
+                pass
+        if key not in node._children:
+            return 0
+        node = node._children[key]
+    return node.data()
 
 
 def m_data_global(
@@ -181,4 +198,4 @@ def m_data_global(
     Note:
         Delegates to backend.data() which updates naked indicator.
     """
-    raise NotImplementedError("m_data_global: stub - implementation in Phase 8")
+    return backend.data(name, subscripts)
