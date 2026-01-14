@@ -2,6 +2,11 @@
 
 Provides output capture and execution support for generated Python code.
 Includes MArray class for MUMPS array semantics.
+
+Spec 009: Extended with global variable storage and helper functions:
+- GlobalStorageBackend: Protocol for global variable storage
+- m_set_piece, m_set_extract: LHS function helpers
+- m_data, m_data_global: $DATA function helpers
 """
 
 from __future__ import annotations
@@ -10,6 +15,17 @@ import re
 import types
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
+
+# Spec 009: Import global storage backend protocol
+from m2py.runtime.globals import GlobalStorageBackend
+
+# Spec 009: Import helper functions
+from m2py.runtime.helpers import (
+    m_data,
+    m_data_global,
+    m_set_extract,
+    m_set_piece,
+)
 
 
 class MArray:
@@ -192,6 +208,25 @@ class MArray:
             return 1
         else:
             return 0
+
+    def data(self, *subscripts: Any) -> int:
+        """Return $DATA code for this node or subscripted path.
+
+        Spec 009 (T003): Alias for defined() using MUMPS $DATA naming.
+
+        MUMPS $DATA returns:
+            0 - Not defined (no value, no children)
+            1 - Has value only
+            10 - Has children only (no value at this node)
+            11 - Has both value and children
+
+        Args:
+            *subscripts: Path to check (empty for root)
+
+        Returns:
+            Integer 0, 1, 10, or 11 per MUMPS $DATA semantics
+        """
+        return self.defined(*subscripts)
 
     def kill(self, *subscripts: Any) -> None:
         """Delete node and all descendants (KILL command).
@@ -642,4 +677,10 @@ __all__ = [
     "GotoExternal",
     "LabelNotFoundError",
     "run_with_goto_support",
+    # Spec 009: Global storage and helpers
+    "GlobalStorageBackend",
+    "m_set_piece",
+    "m_set_extract",
+    "m_data",
+    "m_data_global",
 ]

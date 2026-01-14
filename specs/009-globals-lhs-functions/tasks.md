@@ -19,10 +19,10 @@
 
 **Purpose**: Create new runtime modules and prepare codegen extension points
 
-- [ ] T001 Create `src/m2py/runtime/globals.py` with GlobalStorageBackend protocol stub
-- [ ] T002 [P] Create `src/m2py/runtime/helpers.py` with function stubs (m_set_piece, m_set_extract, m_data)
-- [ ] T003 [P] Add `data()` method to MArray class in `src/m2py/runtime/__init__.py`
-- [ ] T004 Update `src/m2py/runtime/__init__.py` exports to include new modules
+- [X] T001 Create `src/m2py/runtime/globals.py` with GlobalStorageBackend protocol stub
+- [X] T002 [P] Create `src/m2py/runtime/helpers.py` with function stubs (m_set_piece, m_set_extract, m_data)
+- [X] T003 [P] Add `data()` method to MArray class in `src/m2py/runtime/__init__.py`
+- [X] T004 Update `src/m2py/runtime/__init__.py` exports to include new modules
 
 ---
 
