@@ -416,6 +416,95 @@ class TestCrossRoutineVariableVisibility:
                 if "ext2" in sys.modules:
                     del sys.modules["ext2"]
 
+    def test_caller_variable_visible_to_callee(self, external_fixtures_path):
+        """T086: Variable set in caller is visible to callee.
+
+        Phase 13: With _scope variable storage, callers and callees share
+        variable state through the _scope dictionary.
+        """
+        # ext2 reads X which was set by caller
+        ext2_source = """ext2
+ W X
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1 sets X and calls ext2
+        ext1_source = """ext1
+ S X=42
+ D ^ext2
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ext2_path = Path(tmpdir) / "ext2.py"
+            ext2_path.write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                runtime = namespace["MUMPSRuntime"]()
+                namespace["ext1"](runtime)
+
+                output = runtime.get_output()
+                assert output == "42", f"Expected '42', got {output!r}"
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+    def test_callee_modification_visible_to_caller(self, external_fixtures_path):
+        """T087: Variable modified in callee is visible after return.
+
+        Phase 13: Callee modifications to _scope are visible to caller
+        after the call returns.
+        """
+        # ext2 modifies X
+        ext2_source = """ext2
+ S X=999
+ Q
+"""
+        ext2_code = generate_python(ext2_source)
+
+        # ext1 sets X, calls ext2 which modifies it, then writes X
+        ext1_source = """ext1
+ S X=42
+ D ^ext2
+ W X
+ Q
+"""
+        ext1_code = generate_python(ext1_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ext2_path = Path(tmpdir) / "ext2.py"
+            ext2_path.write_text(ext2_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
+                namespace = {}
+                exec(ext1_code, namespace)
+
+                runtime = namespace["MUMPSRuntime"]()
+                namespace["ext1"](runtime)
+
+                output = runtime.get_output()
+                assert output == "999", f"Expected '999', got {output!r}"
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "ext2" in sys.modules:
+                    del sys.modules["ext2"]
+
     def test_new_semantics_deferred(self):
         """T031/T033: NEW semantics require Spec 005 (not yet implemented).
 

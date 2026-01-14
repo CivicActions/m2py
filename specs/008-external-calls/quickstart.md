@@ -145,9 +145,24 @@ Check that:
 
 ### Variables not visible across routines
 
-Ensure:
-1. `_scope` dictionary is passed to all calls
-2. Variable wasn't NEWed in the callee
+With Phase 13 implementation, variables are automatically stored in `_scope` and visible across routines:
+
+```python
+# In main.py
+_scope['X'] = 42
+helper.SHOW(_rt, _scope=_scope)
+# X=42 is visible in helper.SHOW
+
+# In helper.py  
+def SHOW(_rt, _scope=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
+    _rt.write(_scope.get('X', ''))  # Reads X=42 from shared _scope
+```
+
+If variables aren't visible:
+1. Ensure `_scope` dictionary is passed to all calls (generated code handles this)
+2. Check that variable wasn't NEWed in the callee (future Spec 005)
+3. Verify you're using the latest transpiled code with Phase 13 patterns
 
 ## File Structure
 

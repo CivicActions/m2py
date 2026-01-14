@@ -185,12 +185,23 @@ See: [`src/m2py/codegen/`](../src/m2py/codegen/)
 from m2py.codegen.helpers import m_num, m_truth, m_compare
 from m2py.runtime import MUMPSRuntime
 
-_rt = MUMPSRuntime()
-_test = False
+_source_lines = ["LABEL ; Entry", " W 1", " Q"]
+_routine_name = "LABEL"
+_label_lines = {"LABEL": 0}
 
-def LABEL():
-    global _test
-    # ... translated statements
+def LABEL(_rt, _scope=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
+    _rt._current_routine = _routine_name
+    _rt._current_source_lines = _source_lines
+    _rt._current_label_lines = _label_lines
+    _scope['X'] = 42  # Variables stored in _scope
+    _rt.write(_scope.get('X', ''))  # Variable reads from _scope
+    ...
+
+if __name__ == "__main__":
+    _rt = MUMPSRuntime()
+    _scope = {}
+    LABEL(_rt, _scope)
 ```
 
 ### Cross-Routine Infrastructure (Spec 008)
@@ -220,36 +231,36 @@ Python's standard `sys.modules` dictionary automatically caches imported modules
 
 **_scope Parameter:**
 
-All routine functions accept a `_scope` dictionary parameter for cross-routine variable visibility:
+All routine functions accept `_rt` and `_scope` parameters for runtime and cross-routine variable visibility:
 
 ```python
-def MAIN(_rt=None, _scope=None):
-    if _rt is None:
-        _rt = MUMPSRuntime()
-    if _scope is None:
-        _scope = {}
+def MAIN(_rt, _scope=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
     
     _scope["X"] = 42
     import helper
-    helper.SHOW(_rt, _scope)
+    helper.SHOW(_rt, _scope=_scope)
 
 # helper.py
-def SHOW(_rt, _scope):
+def SHOW(_rt, _scope=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
     _rt.write(str(_scope.get("X", "")))
 ```
 
 Key design points:
+- `_rt` passed as first parameter to all functions
 - `_scope` shared across all external calls
-- Variables stored in `_scope` dictionary instead of local Python scope
-- Entry points have default parameters for standalone execution
-- Internal calls pass `_scope` explicitly
+- Variables stored in `_scope['varname']` instead of local Python scope
+- Variable reads use `_scope.get('varname', '')` for undefined safety
+- Entry points have `_scope=None` default for standalone execution
+- Internal and external calls pass `_rt` and `_scope` explicitly
 
 **$TEST Isolation:**
 
 External extrinsic functions save and restore `$TEST` to maintain caller state:
 
 ```python
-def _call_extrinsic(func, *args, _scope=None):
+def _call_extrinsic(func, *args, _rt=None, _scope=None):
     """Call extrinsic function with $TEST isolation."""
     saved_test = _rt._test
     try:

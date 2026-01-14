@@ -308,6 +308,44 @@ _idx = ext2._label_lines.get("LABEL", -1)
 ext2._source_lines[_idx + 2] if _idx >= 0 and _idx + 2 < len(ext2._source_lines) else ""
 ```
 
+### Variable Storage in _scope
+
+MUMPS variables are stored in the shared `_scope` dictionary to enable cross-routine visibility:
+
+```python
+# MUMPS: S X=42 - Store variable
+_scope['X'] = 42
+
+# MUMPS: W X - Read variable (returns empty string if undefined)
+_rt.write(_scope.get('X', ''))
+
+# MUMPS: S X=Y+1 - Read and write
+_scope['X'] = _scope.get('Y', '') + 1
+
+# Function entry: copy formal parameters to _scope
+def MYLABEL(_rt, _scope=None, N=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
+    _scope['N'] = N  # Formal param accessible in _scope
+    ...
+
+# By-reference returns: return from _scope
+def INCR(_rt, _scope=None, N=None, **_kwargs):
+    _scope = _scope if _scope is not None else {}
+    _scope['N'] = N
+    _scope['N'] = _scope.get('N', '') + 1
+    return _scope.get('N', '')
+
+# By-reference call sites: assign result back to _scope
+_scope['X'] = INCR(_rt, N=_scope.get('X', ''), _scope=_scope)
+```
+
+**Key invariants**:
+- All variable storage uses `_scope['varname']` for SIMPLE_FUNCTIONS strategy
+- All variable reads use `_scope.get('varname', '')` for undefined safety
+- Formal parameters are copied to `_scope` at function entry
+- By-reference parameters return from and assign to `_scope`
+- Cross-routine visibility is automatic since all routines share the same `_scope` dict
+
 ---
 
 ## State Transitions

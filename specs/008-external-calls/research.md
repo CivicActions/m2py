@@ -71,6 +71,13 @@ def EXT2(_rt, _scope):
 
 **Key point**: `_scope` is created once at the top-level entry point and passed through all calls. It is never re-created - all routines share the same dictionary instance.
 
+**Phase 13 Implementation Note**: Variables are stored in `_scope['varname']` and read via `_scope.get('varname', '')`. This enables true cross-routine visibility:
+- Caller sets `_scope['X'] = 42`, callee reads `_scope.get('X', '')` → sees 42
+- Callee sets `_scope['X'] = 999`, caller reads `_scope.get('X', '')` after return → sees 999
+- Formal parameters are copied to `_scope` at function entry: `_scope['N'] = N`
+- By-reference returns: `return _scope.get('N', '')`
+- By-reference call sites: `_scope['X'] = INCR(_rt, N=_scope.get('X', ''), _scope=_scope)`
+
 **Pattern for NEW**:
 ```python
 def LABEL(_rt, _scope):

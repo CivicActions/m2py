@@ -265,10 +265,10 @@ Gap analysis revealed critical issues with the current implementation:
 
 ### Variable Storage in _scope
 
-- [ ] T084 Update SET command to store variables in `_scope['varname']` instead of Python locals in src/m2py/codegen/statements.py
-- [ ] T085 Update variable reads to access `_scope.get('varname', '')` in src/m2py/codegen/expressions.py
-- [ ] T086 Add integration test: variable set in caller visible to callee in tests/integration/test_external_calls.py
-- [ ] T087 Add integration test: variable set in callee visible to caller after return in tests/integration/test_external_calls.py
+- [X] T084 Update SET command to store variables in `_scope['varname']` instead of Python locals in src/m2py/codegen/statements.py
+- [X] T085 Update variable reads to access `_scope.get('varname', '')` in src/m2py/codegen/expressions.py
+- [X] T086 Add integration test: variable set in caller visible to callee in tests/integration/test_external_calls.py
+- [X] T087 Add integration test: variable set in callee visible to caller after return in tests/integration/test_external_calls.py
 
 ### Missing Test Coverage
 
@@ -281,16 +281,16 @@ Gap analysis revealed critical issues with the current implementation:
 
 ### Documentation Updates
 
-- [ ] T094 [P] Update data-model.md to document `_rt, _scope` passing pattern in specs/008-external-calls/data-model.md
-- [ ] T095 [P] Update research.md to reflect execution model decisions in specs/008-external-calls/research.md
-- [ ] T096 [P] Update docs/codegen/functions.md with `def LABEL(_rt, _scope)` signature in docs/codegen/functions.md
-- [ ] T097 [P] Update docs/architecture.md with entry point `if __name__ == "__main__"` pattern in docs/architecture.md
-- [ ] T098 Update quickstart.md with correct invocation pattern in specs/008-external-calls/quickstart.md
+- [X] T094 [P] Update data-model.md to document `_rt, _scope` passing pattern in specs/008-external-calls/data-model.md
+- [X] T095 [P] Update research.md to reflect execution model decisions in specs/008-external-calls/research.md
+- [X] T096 [P] Update docs/codegen/functions.md with `def LABEL(_rt, _scope)` signature in docs/codegen/functions.md
+- [X] T097 [P] Update docs/architecture.md with entry point `if __name__ == "__main__"` pattern in docs/architecture.md
+- [X] T098 Update quickstart.md with correct invocation pattern in specs/008-external-calls/quickstart.md
 
 ### Validation
 
 - [X] T099 Run full test suite and fix any regressions from execution model changes
-- [ ] T100 Validate with YDB using utils/validate.py for cross-routine variable visibility scenarios
+- [X] T100 Validate with YDB using utils/validate.py for cross-routine variable visibility scenarios
 
 **Checkpoint**: Execution model is clean with explicit `_rt, _scope` passing; variables stored in `_scope` for true cross-routine visibility
 
