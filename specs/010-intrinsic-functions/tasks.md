@@ -19,11 +19,11 @@
 
 **Purpose**: Create foundational infrastructure needed by ALL intrinsic functions
 
-- [ ] T001 Create MRuntimeError exception class in src/m2py/runtime/exceptions.py
-- [ ] T002 Export MRuntimeError from src/m2py/runtime/__init__.py
-- [ ] T003 Add INTRINSIC_GENERATORS dispatch table in src/m2py/codegen/expressions.py
-- [ ] T004 Add generate_intrinsic_function() dispatcher in src/m2py/codegen/expressions.py
-- [ ] T005 Update generate_expr() to dispatch MIntrinsicFunction to generate_intrinsic_function() in src/m2py/codegen/expressions.py
+- [X] T001 Create MRuntimeError exception class in src/m2py/runtime/exceptions.py
+- [X] T002 Export MRuntimeError from src/m2py/runtime/__init__.py
+- [X] T003 Add INTRINSIC_GENERATORS dispatch table in src/m2py/codegen/expressions.py
+- [X] T004 Add generate_intrinsic_function() dispatcher in src/m2py/codegen/expressions.py
+- [X] T005 Update generate_expr() to dispatch MIntrinsicFunction to generate_intrinsic_function() in src/m2py/codegen/expressions.py
 
 ---
 

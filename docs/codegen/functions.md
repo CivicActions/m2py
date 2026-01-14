@@ -6,6 +6,41 @@ How to translate MUMPS intrinsic functions to Python.
 
 MUMPS intrinsic functions start with `$`. Most have both full and abbreviated names.
 
+## Implementation Architecture
+
+Intrinsic functions are handled by the `generate_intrinsic_function()` dispatcher in `codegen/expressions.py`. The function uses a dispatch table (`INTRINSIC_GENERATORS`) that maps function names to generator functions:
+
+```python
+# Dispatch table pattern
+INTRINSIC_GENERATORS = {
+    "L": _gen_length, "LENGTH": _gen_length,
+    "P": _gen_piece, "PIECE": _gen_piece,
+    # ... etc
+}
+
+def generate_intrinsic_function(expr: MIntrinsicFunction, ctx: GeneratorContext) -> str:
+    func_name = expr.name.upper()
+    if func_name in INTRINSIC_GENERATORS:
+        return INTRINSIC_GENERATORS[func_name](expr, ctx)
+    raise NotImplementedError(f"Intrinsic function ${expr.name} not yet implemented")
+```
+
+### Runtime Helpers
+
+Complex functions that require M-specific semantics use runtime helpers in `runtime/helpers.py`:
+- `m_piece()` - $PIECE extraction with edge case handling
+- `m_extract()` - $EXTRACT with 1-based indexing
+- `m_order()` - $ORDER with MUMPS collation order
+- `m_query()` - $QUERY depth-first tree traversal
+
+Simple functions generate inline Python (e.g., `len()` for $LENGTH, `chr()` for $CHAR).
+
+### Error Handling
+
+Runtime errors specific to MUMPS semantics use `MRuntimeError` from `runtime/exceptions.py`:
+- `SELECTFALSE` - $SELECT with no true condition
+- `RANDARGNEG` - $RANDOM with argument ≤ 0
+
 ## String Functions
 
 ### $EXTRACT / $E

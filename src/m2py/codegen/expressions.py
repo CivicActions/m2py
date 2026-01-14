@@ -2,11 +2,13 @@
 
 Generates Python expression strings from MUMPS ASG expression nodes.
 Handles literals, variables, binary operations, unary operations, and extrinsic functions.
+
+Spec 010: Extended with intrinsic function dispatch table for $LENGTH, $PIECE, etc.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, Callable, Dict, List
 
 from m2py.asg.enums import LiteralType, PassingMode
 from m2py.asg.expressions import (
@@ -14,6 +16,7 @@ from m2py.asg.expressions import (
     MBinaryOp,
     MExpr,
     MExtrinsicFunction,
+    MIntrinsicFunction,
     MLiteral,
     MSpecialVariable,
     MUnaryOp,
@@ -27,6 +30,67 @@ if TYPE_CHECKING:
     from m2py.codegen.routine import GeneratorContext
 
 
+# =============================================================================
+# Intrinsic Function Dispatch Table (Spec 010)
+# =============================================================================
+
+# Type alias for intrinsic function generator functions
+IntrinsicGenerator = Callable[["MIntrinsicFunction", "GeneratorContext"], str]
+
+# Dispatch table mapping function names (uppercase) to generator functions.
+# Both full names and abbreviations are registered.
+# Functions are added in later phases of Spec 010.
+INTRINSIC_GENERATORS: Dict[str, IntrinsicGenerator] = {
+    # Phase 2: $ORDER, $QUERY
+    # "O": _gen_order, "ORDER": _gen_order,
+    # "Q": _gen_query, "QUERY": _gen_query,
+    # Phase 3: $SELECT
+    # "S": _gen_select, "SELECT": _gen_select,
+    # Phase 5: String functions
+    # "L": _gen_length, "LENGTH": _gen_length,
+    # "P": _gen_piece, "PIECE": _gen_piece,
+    # ... more to be added
+}
+
+
+def generate_intrinsic_function(
+    expr: MIntrinsicFunction, ctx: "GeneratorContext"
+) -> str:
+    """Generate Python code for MUMPS intrinsic function.
+
+    Dispatches to function-specific generators based on the function name.
+    Falls back to existing special-case handlers for $DATA and $TEXT until
+    they are migrated to this dispatch table.
+
+    Args:
+        expr: MIntrinsicFunction ASG node
+        ctx: Generator context
+
+    Returns:
+        Python expression string
+
+    Raises:
+        NotImplementedError: For unsupported function names
+    """
+    # Normalize function name to uppercase for dispatch
+    func_name = expr.name.upper()
+
+    # Check dispatch table first
+    if func_name in INTRINSIC_GENERATORS:
+        return INTRINSIC_GENERATORS[func_name](expr, ctx)
+
+    # Fall back to existing special-case handlers until migrated
+    # $DATA/$D is handled by existing _generate_data
+    if func_name in ("DATA", "D"):
+        return _generate_data(expr, ctx)
+
+    # $TEXT/$T is handled by existing _generate_text
+    if func_name in ("TEXT", "T"):
+        return _generate_text(expr, ctx)
+
+    raise NotImplementedError(f"Intrinsic function ${expr.name} not yet implemented")
+
+
 def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     """Generate Python expression from ASG expression node.
 
@@ -36,6 +100,7 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     - MBinaryOp → operation with coercion
     - MUnaryOp → unary operation
     - MExtrinsicFunction → function call with $TEST save/restore
+    - MIntrinsicFunction → intrinsic function dispatch table
 
     Args:
         expr: ASG expression node
@@ -63,17 +128,12 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_extrinsic(expr, ctx)
     elif isinstance(expr, MSpecialVariable):
         return _generate_special_variable(expr, ctx)
-    # Phase 8: $DATA/$D support for local and global variables
-    elif expr.__class__.__name__ == "IntrinsicFunction" and getattr(
-        expr, "name", ""
-    ).upper() in ("DATA", "D"):
-        return _generate_data(expr, ctx)
-    # Phase 8-9: $TEXT/$T support (current and external routines)
-    elif (
-        expr.__class__.__name__ in ("TextFunction", "IntrinsicFunction")
-        and getattr(expr, "name", "").upper() in ("TEXT", "T")
-    ) or (hasattr(expr, "name") and getattr(expr, "name", "").upper() in ("TEXT", "T")):
-        return _generate_text(expr, ctx)
+    # Spec 010: Dispatch all intrinsic functions through unified handler
+    # This handles both MIntrinsicFunction ASG nodes and parser textx classes
+    # (IntrinsicFunction, TextFunction, SelectFunction) which all inherit
+    # from MIntrinsicFunction.
+    elif isinstance(expr, MIntrinsicFunction):
+        return generate_intrinsic_function(expr, ctx)
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -549,4 +609,4 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
     return f"_rt.get_text({', '.join(params)})"
 
 
-__all__ = ["generate_expr"]
+__all__ = ["generate_expr", "generate_intrinsic_function", "INTRINSIC_GENERATORS"]

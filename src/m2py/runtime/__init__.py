@@ -27,6 +27,9 @@ from m2py.runtime.helpers import (
     m_set_piece,
 )
 
+# Spec 010: Import runtime exception class
+from m2py.runtime.exceptions import MRuntimeError
+
 
 class MArray:
     """MUMPS array with hierarchical subscript support.
@@ -760,4 +763,6 @@ __all__ = [
     "m_set_extract",
     "m_data",
     "m_data_global",
+    # Spec 010: Runtime exceptions
+    "MRuntimeError",
 ]
