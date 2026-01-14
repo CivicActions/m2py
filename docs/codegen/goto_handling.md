@@ -2,6 +2,11 @@
 
 Python code generation for MUMPS GOTO statements.
 
+> **Note**: Code examples in this document show simplified patterns for clarity.
+> The actual implementation uses `_scope['varname']` for variable storage (SIMPLE_FUNCTIONS strategy)
+> or `state.varname` (TRAMPOLINE strategy) per Phase 13 execution model.
+> See [architecture.md](../architecture.md) for current function signatures.
+
 ## Overview
 
 GOTO is MUMPS's primary control flow mechanism. The code generator translates it to Python's structured constructs.
@@ -552,14 +557,13 @@ EXT1   W "Start",!
 ```
 
 ```python
-def EXT1(_scope=None):
-    global _test
+def EXT1(_rt, _scope=None, **_kwargs):
     _scope = _scope if _scope is not None else {}
     _rt.write("Start")
     _rt.write("\n")
     import ext2
     from m2py.runtime import GotoExternal
-    raise GotoExternal(ext2, None)
+    raise GotoExternal(ext2, None, _rt=_rt)
     _rt.write("Never")  # Unreachable but generated
     _rt.write("\n")
     return

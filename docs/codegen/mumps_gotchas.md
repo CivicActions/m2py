@@ -2,6 +2,10 @@
 
 This document captures MUMPS semantics and edge cases that affect Python code generation. These were discovered during MUGJ validation testing.
 
+> **Note**: Some code examples show conceptual patterns for clarity.
+> The actual implementation uses `_scope['varname']` for variable storage (SIMPLE_FUNCTIONS strategy)
+> and `_rt._test` for $TEST access. See [architecture.md](../architecture.md) for current patterns.
+
 ## IF Command with Comma Conditions
 
 MUMPS IF supports comma-separated conditions where comma acts as logical AND:
