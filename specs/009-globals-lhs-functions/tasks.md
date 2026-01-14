@@ -191,24 +191,24 @@
 
 ---
 
-## Phase 10: User Story 8 - KILL Command (Priority: P3)
+## Phase 10: User Story 8 - KILL Command (Priority: P3) ✅
 
 **Goal**: `K X(1)` deletes node and all descendants
 
-**Independent Test**: `uv run python utils/validate.py --code 'TEST S X=1 S X(1)=2 K X(1) W $D(X),"-",$D(X(1)),! Q'` → `1-0`
+**Independent Test**: `uv run python utils/validate.py --code 'TEST S X=1 S X(1)=2 K X(1) W $D(X),"-",$D(X(1)) Q'` → `1-0`
 
 ### Tests for User Story 8
 
-- [ ] T045 [P] [US8] Create `tests/test_spec_009_kill.py` with 4 acceptance scenarios from spec
+- [X] T045 [P] [US8] Create `tests/test_spec_009_kill.py` with 10 test cases (4 acceptance scenarios + edge cases)
 
 ### Implementation for User Story 8
 
-- [ ] T046 [US8] Add `_generate_kill()` handler in `src/m2py/codegen/statements.py`
-- [ ] T047 [US8] Handle MKillStatement with LocalVariable target → `MArray.kill()`
-- [ ] T048 [US8] Handle MKillStatement with GlobalVariable target → `_rt.globals.kill()`
-- [ ] T049 [US8] Add `kill()` method to MArray if not already present
+- [X] T046 [US8] Add `_generate_kill()` handler in `src/m2py/codegen/statements.py`
+- [X] T047 [US8] Handle MKillStatement with LocalVariable target → `MArray.kill()` / `_scope.pop()`
+- [X] T048 [US8] Handle MKillStatement with GlobalVariable target → `_rt.globals.kill()`
+- [X] T049 [US8] MArray.kill() already present in runtime/__init__.py (line 231)
 
-**Checkpoint**: KILL works for locals and globals, removing node + descendants
+**Checkpoint**: KILL works for locals and globals, removing node + descendants ✅
 
 ---
 

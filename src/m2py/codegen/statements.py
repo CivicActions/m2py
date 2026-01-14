@@ -19,6 +19,7 @@ from m2py.asg.statements import (
     MForStatement,
     MGotoStatement,
     MIfStatement,
+    MKillStatement,
     MQuitStatement,
     MSetStatement,
     MWriteStatement,
@@ -465,6 +466,8 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_goto(stmt, ctx)
     elif isinstance(stmt, MDoStatement):
         _generate_do(stmt, ctx)
+    elif isinstance(stmt, MKillStatement):
+        _generate_kill(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -1938,6 +1941,89 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
                 ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
             else:
                 ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+
+
+def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for KILL command.
+
+    Spec 009 (Phase 10): KILL deletes a variable node and all its descendants.
+
+    Supports:
+    - K X → MArray.kill() on local variable X
+    - K X(1,2) → MArray.kill(1, 2) on subscripted local
+    - K ^G → _rt.globals.kill("G", ()) on global
+    - K ^G(1,2) → _rt.globals.kill("G", ("1", "2")) on subscripted global
+
+    NOT yet implemented:
+    - K (argumentless) - kill all locals
+    - K (X,Y) - exclusive kill
+
+    Args:
+        stmt: MKillStatement node
+        ctx: Generator context
+    """
+    # Handle exclusive KILL - not yet implemented
+    if stmt.exclusive:
+        raise NotImplementedError("Exclusive KILL (K (X,Y)) not yet supported")
+
+    # Handle argumentless KILL (kill all locals) - not yet implemented
+    if stmt.is_kill_all:
+        raise NotImplementedError(
+            "Argumentless KILL (K with no args) not yet supported"
+        )
+
+    # Process each target in the kill list
+    for target in stmt.targets:
+        if isinstance(target, GlobalVariable):
+            # Global variable: K ^G or K ^G(subs)
+            global_name = target.name
+
+            # Generate subscript tuple
+            if target.subscripts:
+                subs_code = []
+                for sub in target.subscripts:
+                    subs_code.append(f"str({generate_expr(sub, ctx)})")
+                subscripts_tuple = f"({', '.join(subs_code)},)"
+            else:
+                subscripts_tuple = "()"
+
+            ctx.emitter.line(f'_rt.globals.kill("{global_name}", {subscripts_tuple})')
+
+        elif isinstance(target, MVariable):
+            # Local variable: K X or K X(subs)
+            var_name = target.name
+            translated = translate_name(var_name)
+
+            # Generate subscript arguments
+            if target.subscripts:
+                subs_code = []
+                for sub in target.subscripts:
+                    subs_code.append(generate_expr(sub, ctx))
+                subscripts_args = ", ".join(subs_code)
+            else:
+                subscripts_args = ""
+
+            # For SIMPLE_FUNCTIONS strategy, use _scope
+            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                if subscripts_args:
+                    ctx.emitter.line(
+                        f"_scope.get({var_name!r}, MArray()).kill({subscripts_args})"
+                    )
+                else:
+                    # Kill entire variable - remove from scope
+                    ctx.emitter.line(f"_scope.pop({var_name!r}, None)")
+            else:
+                # TRAMPOLINE strategy - direct variable access
+                if subscripts_args:
+                    ctx.emitter.line(f"{translated}.kill({subscripts_args})")
+                else:
+                    # Kill entire variable - reset to empty MArray
+                    ctx.emitter.line(f"{translated} = MArray()")
+
+        else:
+            raise NotImplementedError(
+                f"KILL target type not supported: {type(target).__name__}"
+            )
 
 
 __all__ = [
