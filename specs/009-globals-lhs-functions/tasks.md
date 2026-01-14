@@ -32,11 +32,11 @@
 
 **⚠️ CRITICAL**: User stories 4-8 depend on globals infrastructure. Stories 1-3 can proceed with just MArray.
 
-- [ ] T005 Implement `MArray.data()` returning 0, 1, 10, or 11 in `src/m2py/runtime/__init__.py`
-- [ ] T006 Implement `InMemoryGlobalStorage` class in `src/m2py/runtime/globals.py`
-- [ ] T007 Add naked indicator tracking to InMemoryGlobalStorage (get/set/resolve methods)
-- [ ] T008 Add `globals` property to MUMPSRuntime in `src/m2py/runtime/__init__.py`
-- [ ] T009 Add environment variable config (`M2PY_GLOBAL_BACKEND`) for backend selection
+- [X] T005 Implement `MArray.data()` returning 0, 1, 10, or 11 in `src/m2py/runtime/__init__.py`
+- [X] T006 Implement `InMemoryGlobalStorage` class in `src/m2py/runtime/globals.py`
+- [X] T007 Add naked indicator tracking to InMemoryGlobalStorage (get/set/resolve methods)
+- [X] T008 Add `globals` property to MUMPSRuntime in `src/m2py/runtime/__init__.py`
+- [X] T009 Add environment variable config (`M2PY_GLOBAL_BACKEND`) for backend selection
 
 **Checkpoint**: Foundation ready - GlobalStorageBackend works, MArray.data() returns correct codes
 

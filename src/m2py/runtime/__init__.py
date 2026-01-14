@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 # Spec 009: Import global storage backend protocol
-from m2py.runtime.globals import GlobalStorageBackend
+from m2py.runtime.globals import GlobalStorageBackend, InMemoryGlobalStorage
 
 # Spec 009: Import helper functions
 from m2py.runtime.helpers import (
@@ -468,6 +468,57 @@ class ExecutionResult:
     locals: dict[str, Any] | None = field(default=None)
 
 
+# =============================================================================
+# Spec 009: Global Storage Backend Factory (T009)
+# =============================================================================
+
+
+def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
+    """Get global storage backend instance.
+
+    Spec 009 (T009): Factory function for global storage backends.
+
+    Backend selection priority:
+    1. Explicit `backend` parameter if provided
+    2. M2PY_GLOBAL_BACKEND environment variable
+    3. Default: 'inmemory'
+
+    Args:
+        backend: Backend name ('inmemory', 'yottadb', 'iris') or None
+
+    Returns:
+        GlobalStorageBackend instance
+
+    Raises:
+        ImportError: If requested backend is not available
+        ValueError: If backend name is not recognized
+    """
+    import os
+
+    if backend is None:
+        backend = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
+
+    backend = backend.lower()
+
+    if backend == "inmemory":
+        return InMemoryGlobalStorage()
+    elif backend == "yottadb":
+        raise ImportError(
+            "YottaDB backend not yet implemented. "
+            "See Spec 009 for deferred integration scope."
+        )
+    elif backend == "iris":
+        raise ImportError(
+            "IRIS backend not yet implemented. "
+            "See Spec 009 for deferred integration scope."
+        )
+    else:
+        raise ValueError(
+            f"Unknown global storage backend: {backend!r}. "
+            "Valid options: 'inmemory', 'yottadb', 'iris'"
+        )
+
+
 class MUMPSRuntime:
     """Minimal runtime for executing generated MUMPS code.
 
@@ -488,6 +539,18 @@ class MUMPSRuntime:
         self._current_routine: Optional[str] = None
         self._current_source_lines: Optional[List[str]] = None
         self._current_label_lines: Optional[Dict[str, int]] = None
+        # Spec 009: Global variable storage (T008)
+        self._globals: GlobalStorageBackend = get_global_storage()
+
+    @property
+    def globals(self) -> GlobalStorageBackend:
+        """Get global variable storage backend.
+
+        Spec 009 (T008): Provides access to global variable storage for
+        generated code. The backend is selected via M2PY_GLOBAL_BACKEND
+        environment variable (default: 'inmemory').
+        """
+        return self._globals
 
     def get_text(
         self,
@@ -679,6 +742,8 @@ __all__ = [
     "run_with_goto_support",
     # Spec 009: Global storage and helpers
     "GlobalStorageBackend",
+    "InMemoryGlobalStorage",
+    "get_global_storage",
     "m_set_piece",
     "m_set_extract",
     "m_data",

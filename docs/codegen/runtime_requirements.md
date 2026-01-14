@@ -108,25 +108,42 @@ S ^A(1,2)=1   ; Sets last global context
 S ^(3)=2      ; Actually ^A(1,3)
 ```
 
-**Runtime Tracking:**
-```python
-# Conceptual Python equivalent
+**Runtime Tracking (Spec 009):**
 
-class MUMPSRuntime:
-    def __init__(self):
-        self.last_global_name = ""
-        self.last_global_subs = []
-    
-    def set_global(self, name, subscripts, value):
-        self.last_global_name = name
-        self.last_global_subs = subscripts[:-1]  # All but last
-        # Actually store value
-    
-    def set_naked(self, subscripts, value):
-        # Use last_global_name with combined subscripts
-        full_subs = self.last_global_subs + subscripts
-        self.set_global(self.last_global_name, full_subs, value)
+Global variable storage uses the `GlobalStorageBackend` protocol with `InMemoryGlobalStorage` as the default implementation:
+
+```python
+from m2py.runtime import MUMPSRuntime, get_global_storage
+
+# MUMPSRuntime provides access to global storage
+rt = MUMPSRuntime()
+
+# Set global variable: ^A(1,2)=1
+rt.globals.set("A", ("1", "2"), "1")
+
+# Naked reference: ^(3)=2 -> ^A(1,3)=2
+# The naked indicator is updated after each global access
+name, subs = rt.globals.resolve_naked(("3",))
+rt.globals.set(name, subs, "2")
+
+# Get value
+value = rt.globals.get("A", ("1", "3"))  # Returns "2"
+
+# $DATA function
+data_code = rt.globals.data("A", ("1",))  # Returns 10, 1, 11, or 0
+
+# Backend selection via environment variable
+# M2PY_GLOBAL_BACKEND=inmemory (default)
+# M2PY_GLOBAL_BACKEND=yottadb (requires yottadb package)
+# M2PY_GLOBAL_BACKEND=iris (requires iris package)
+storage = get_global_storage()  # Uses M2PY_GLOBAL_BACKEND env var
 ```
+
+**Naked Indicator Semantics:**
+
+- After `^G(1,2,3)`: naked indicator = `("G", ("1", "2"))`, so `^(4)` = `^G(1,2,4)`
+- After `^G(1)`: naked indicator = `("G", ())`, so `^(2)` = `^G(2)`
+- After `^G` (no subscripts): naked indicator is cleared, naked refs are illegal
 
 ## External Routine Calls
 
