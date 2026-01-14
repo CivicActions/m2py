@@ -168,7 +168,7 @@
 
 ---
 
-## Phase 9: User Story 7 - Backend Configuration (Priority: P2)
+## Phase 9: User Story 7 - Backend Configuration (Priority: P2) ✅ COMPLETE
 
 **Goal**: `M2PY_GLOBAL_BACKEND=inmemory` selects storage backend
 
@@ -176,14 +176,16 @@
 
 ### Tests for User Story 7
 
-- [ ] T040 [P] [US7] Create `tests/test_spec_009_backend.py` with 4 acceptance scenarios from spec
+- [X] T040 [P] [US7] Create `tests/test_spec_009_backend.py` with 4 acceptance scenarios from spec
 
 ### Implementation for User Story 7
 
-- [ ] T041 [US7] Add `get_global_storage()` factory function in `src/m2py/runtime/globals.py`
-- [ ] T042 [US7] Read `M2PY_GLOBAL_BACKEND` env var with 'inmemory' default
-- [ ] T043 [US7] Add stub `YottaDBGlobalStorage` class (ImportError only; functional impl deferred to integration spec)
-- [ ] T044 [US7] Add stub `IRISGlobalStorage` class (ImportError only; functional impl deferred to integration spec)
+- [X] T041 [US7] Add `get_global_storage()` factory function in `src/m2py/runtime/globals.py` (already existed)
+- [X] T042 [US7] Read `M2PY_GLOBAL_BACKEND` env var with 'inmemory' default (already existed)
+- [X] T043 [US7] Add stub `YottaDBGlobalStorage` class (ImportError raised by factory function)
+- [X] T044 [US7] Add stub `IRISGlobalStorage` class (ImportError raised by factory function)
+
+**Additional**: Added `global_storage` parameter to `MUMPSRuntime.__init__()` for programmatic API
 
 **Checkpoint**: Backend selection works via environment or programmatic API
 

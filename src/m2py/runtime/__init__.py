@@ -530,17 +530,30 @@ class MUMPSRuntime:
     - _current_source_lines: Source lines for $TEXT(+N)
     - _current_label_lines: Label->line mapping for $TEXT(LABEL+N)
     - get_text(): Implement $TEXT function
+
+    Spec 009: Extended for global storage configuration with:
+    - global_storage parameter for programmatic backend selection
+    - M2PY_GLOBAL_BACKEND env var support via get_global_storage()
     """
 
-    def __init__(self) -> None:
-        """Initialize runtime with empty state."""
+    def __init__(self, global_storage: GlobalStorageBackend | None = None) -> None:
+        """Initialize runtime with empty state.
+
+        Args:
+            global_storage: Optional global storage backend. If None,
+                uses get_global_storage() which respects M2PY_GLOBAL_BACKEND
+                environment variable (default: 'inmemory').
+        """
         self._output: list[str] = []
         # Spec 008: External call context tracking
         self._current_routine: Optional[str] = None
         self._current_source_lines: Optional[List[str]] = None
         self._current_label_lines: Optional[Dict[str, int]] = None
         # Spec 009: Global variable storage (T008)
-        self._globals: GlobalStorageBackend = get_global_storage()
+        # Use provided backend or fall back to factory function
+        self._globals: GlobalStorageBackend = (
+            global_storage if global_storage is not None else get_global_storage()
+        )
 
     @property
     def globals(self) -> GlobalStorageBackend:
