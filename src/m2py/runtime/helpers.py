@@ -8,16 +8,57 @@ as simple Python expressions:
 - m_data: $DATA function for local arrays
 - m_data_global: $DATA function for global variables
 
+Spec 010: Extended with array traversal functions:
+- m_order: $ORDER function for local arrays
+- m_order_global: $ORDER function for global variables
+- m_query: $QUERY function for local arrays
+- m_query_global: $QUERY function for global variables
+
 These helpers are imported in generated code and called at runtime.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable, Tuple
 
 if TYPE_CHECKING:
     from m2py.runtime import MArray
     from m2py.runtime.globals import GlobalStorageBackend
+
+
+def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
+    """Generate a sort key for MUMPS collation order.
+
+    MUMPS collation order:
+    1. Numeric values (sorted numerically, negatives first)
+    2. String values (sorted by ASCII/UTF-8)
+
+    The key returns a tuple (type_order, sort_value) where:
+    - type_order: 0 for numeric, 1 for string
+    - sort_value: the value to compare within the type
+
+    Args:
+        value: A subscript value (string, int, or float)
+
+    Returns:
+        Tuple for comparison in sorted()
+    """
+    # Check if value is numeric (can be int, float, or numeric string)
+    if isinstance(value, (int, float)):
+        return (0, float(value))
+
+    # Try to parse string as a number
+    if isinstance(value, str):
+        try:
+            # MUMPS considers numeric strings as numbers for collation
+            num = float(value)
+            return (0, num)
+        except (ValueError, TypeError):
+            # Not a numeric string, sort as string
+            return (1, value)
+
+    # Fallback for any other type
+    return (1, str(value))
 
 
 def m_set_piece(
@@ -213,3 +254,253 @@ def m_data_global(
         Delegates to backend.data() which updates naked indicator.
     """
     return backend.data(name, subscripts)
+
+
+def m_order(
+    array: MArray | None,
+    subscripts: tuple[str, ...],
+    direction: int = 1,
+) -> str:
+    """Return next subscript in MUMPS collation order ($ORDER).
+
+    Navigates to the parent level specified by all but the last subscript,
+    then finds the next/previous subscript after the last subscript value.
+
+    Args:
+        array: MArray instance or None (undefined variable)
+        subscripts: Tuple of subscript values. The last element is the
+                   starting point for iteration. Use ("",) to get first/last.
+        direction: 1 for forward (next), -1 for reverse (previous)
+
+    Returns:
+        Next/previous subscript as string, or "" if no more subscripts.
+
+    MUMPS Collation Order:
+        1. Negative numbers (most negative first)
+        2. Zero
+        3. Positive numbers (ascending)
+        4. Strings (ASCII/UTF-8 order)
+
+    Examples:
+        # arr has children at 1, 2, 3
+        m_order(arr, ("",), 1) → "1"   # First key forward
+        m_order(arr, ("1",), 1) → "2"  # Next after 1
+        m_order(arr, ("3",), 1) → ""   # No more keys forward
+        m_order(arr, ("",), -1) → "3"  # First key reverse (i.e., last)
+        m_order(arr, ("3",), -1) → "2" # Previous before 3
+
+        # With parent subscripts: arr(1,1)=1, arr(1,2)=2
+        m_order(arr, ("1", ""), 1) → "1"  # First child of arr(1)
+        m_order(arr, ("1", "1"), 1) → "2" # Next after arr(1,1)
+    """
+    if array is None:
+        return ""
+
+    # Navigate to parent level (all but last subscript)
+    # The last subscript is the starting point for the search
+    if not subscripts:
+        return ""
+
+    parent_subs = subscripts[:-1]
+    start_key = subscripts[-1]
+
+    # Navigate to parent node
+    node = array
+    for sub in parent_subs:
+        # Try to find the subscript (handle string/int key mismatches)
+        key = sub
+        if key not in node._children:
+            try:
+                key = int(sub)
+            except (ValueError, TypeError):
+                pass
+        if key not in node._children:
+            try:
+                key = float(sub)
+            except (ValueError, TypeError):
+                pass
+        if key not in node._children:
+            return ""
+        node = node._children[key]
+
+    # Get all children keys sorted in MUMPS collation order
+    keys = sorted(node._children.keys(), key=_mumps_collation_key)
+
+    if direction == -1:
+        keys = list(reversed(keys))
+
+    if start_key == "":
+        # Empty string means get first key in the current direction
+        return str(keys[0]) if keys else ""
+
+    # Find the next key after start_key
+    # First, locate start_key in the sorted list
+    start_sort_key = _mumps_collation_key(start_key)
+
+    for key in keys:
+        key_sort = _mumps_collation_key(key)
+        if direction == 1:
+            # Forward: find first key greater than start_key
+            if key_sort > start_sort_key:
+                return str(key)
+        else:
+            # Reverse: find first key less than start_key
+            if key_sort < start_sort_key:
+                return str(key)
+
+    return ""
+
+
+def m_order_global(
+    backend: GlobalStorageBackend,
+    name: str,
+    subscripts: tuple[str, ...],
+    direction: int = 1,
+) -> str:
+    """Return next subscript in MUMPS collation order for global variable.
+
+    Args:
+        backend: GlobalStorageBackend instance
+        name: Global name without caret (e.g., "PATIENT")
+        subscripts: Tuple of subscript values. Last element is starting point.
+        direction: 1 for forward, -1 for reverse
+
+    Returns:
+        Next/previous subscript as string, or "" if no more subscripts.
+
+    Note:
+        Delegates to backend.order() which updates naked indicator.
+    """
+    return backend.order(name, subscripts, direction)
+
+
+def _find_next_valued_node(
+    node: "MArray",
+    current_path: list[str],
+    start_path: tuple[str, ...],
+    at_start: bool,
+) -> tuple[str, ...] | None:
+    """Find the next valued node in depth-first traversal order.
+
+    This is a helper function for m_query that performs the actual tree traversal.
+
+    Args:
+        node: Current MArray node to search from
+        current_path: Path to this node (for building result)
+        start_path: Starting point for search (find nodes after this)
+        at_start: True if we should search from beginning of this subtree
+
+    Returns:
+        Tuple of subscripts to next valued node, or None if no more nodes
+    """
+    # Get children in collation order
+    keys = sorted(node._children.keys(), key=_mumps_collation_key)
+
+    for key in keys:
+        str_key = str(key)
+        child = node._children[key]
+        child_path = current_path + [str_key]
+
+        # Determine if we should explore this subtree
+        if at_start:
+            # We're searching from start - check all children
+            should_explore = True
+        elif len(start_path) == 0:
+            # Start path exhausted, explore everything from here
+            should_explore = True
+        elif str_key == start_path[0]:
+            # This key matches start path - recurse deeper
+            result = _find_next_valued_node(
+                child, child_path, start_path[1:], at_start=False
+            )
+            if result is not None:
+                return result
+            # Didn't find in this subtree, continue to siblings
+            should_explore = False
+        elif _mumps_collation_key(str_key) > _mumps_collation_key(start_path[0]):
+            # This key is after start path at this level - explore fully
+            should_explore = True
+        else:
+            # This key is before start path - skip
+            should_explore = False
+
+        if should_explore:
+            # Check if this node has a value
+            if child._value is not None:
+                return tuple(child_path)
+
+            # Recursively search children
+            result = _find_next_valued_node(child, child_path, (), at_start=True)
+            if result is not None:
+                return result
+
+    return None
+
+
+def m_query(
+    array: MArray | None,
+    var_name: str,
+    subscripts: tuple[str, ...],
+) -> str:
+    """Return full reference of next node in depth-first traversal ($QUERY).
+
+    Args:
+        array: MArray instance or None (undefined variable)
+        var_name: Variable name for constructing reference string
+        subscripts: Current position subscripts. Use ("",) to start from beginning.
+
+    Returns:
+        Full variable reference string (e.g., "A(1,2)"), or "" if no more nodes.
+
+    MUMPS $QUERY semantics:
+        - Returns the full reference of the next node that has a value
+        - Traverses in depth-first order following MUMPS collation
+        - Starting from empty string finds the first valued node
+        - Returns empty string when no more valued nodes exist
+
+    Examples:
+        # arr(1,1)=1, arr(1,2)=2, arr(2,1)=3
+        m_query(arr, "A", ("",)) → "A(1,1)"
+        m_query(arr, "A", ("1", "1")) → "A(1,2)"
+        m_query(arr, "A", ("1", "2")) → "A(2,1)"
+        m_query(arr, "A", ("2", "1")) → ""
+    """
+    if array is None:
+        return ""
+
+    # Check if we're starting from empty string (find first valued node)
+    if subscripts == ("",) or subscripts == ():
+        # Start from beginning - find first valued node in entire tree
+        result = _find_next_valued_node(array, [], (), at_start=True)
+    else:
+        # Find next valued node after the given subscripts
+        result = _find_next_valued_node(array, [], subscripts, at_start=False)
+
+    if result is None:
+        return ""
+
+    # Format as variable reference: "A(1,2,3)"
+    if len(result) == 0:
+        return var_name
+    return f"{var_name}({','.join(result)})"
+
+
+def m_query_global(
+    backend: GlobalStorageBackend,
+    name: str,
+    subscripts: tuple[str, ...],
+) -> str:
+    """Return full reference of next node in depth-first traversal for global variable.
+
+    Args:
+        backend: GlobalStorageBackend instance
+        name: Global name without caret (e.g., "PATIENT")
+        subscripts: Current position subscripts
+
+    Returns:
+        Full variable reference string (e.g., "^G(1,2)"), or "" if no more nodes.
+
+    Note:
+        Delegates to backend.query() which updates naked indicator.
+    """
+    return backend.query(name, subscripts)

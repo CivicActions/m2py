@@ -30,6 +30,14 @@ from m2py.runtime.helpers import (
 # Spec 010: Import runtime exception class
 from m2py.runtime.exceptions import MRuntimeError
 
+# Spec 010: Import $ORDER and $QUERY helper functions
+from m2py.runtime.helpers import (
+    m_order,
+    m_order_global,
+    m_query,
+    m_query_global,
+)
+
 
 class MArray:
     """MUMPS array with hierarchical subscript support.
@@ -765,4 +773,9 @@ __all__ = [
     "m_data_global",
     # Spec 010: Runtime exceptions
     "MRuntimeError",
+    # Spec 010: $ORDER and $QUERY helpers
+    "m_order",
+    "m_order_global",
+    "m_query",
+    "m_query_global",
 ]

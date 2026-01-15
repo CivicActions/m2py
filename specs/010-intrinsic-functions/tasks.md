@@ -37,11 +37,11 @@
 
 **Complexity**: High - requires MUMPS collation order, direction parameter, empty-string start convention
 
-- [ ] T006 [US10] Add m_order() helper function in src/m2py/runtime/helpers.py
-- [ ] T007 [US10] Add m_order_global() helper for global variables in src/m2py/runtime/helpers.py
-- [ ] T008 [US10] Add _gen_order() generator in src/m2py/codegen/expressions.py
-- [ ] T009 [US10] Register ORDER/O in INTRINSIC_GENERATORS dispatch table
-- [ ] T010 [US10] Replace stub test_function_order in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T006 [US10] Add m_order() helper function in src/m2py/runtime/helpers.py
+- [X] T007 [US10] Add m_order_global() helper for global variables in src/m2py/runtime/helpers.py
+- [X] T008 [US10] Add _gen_order() generator in src/m2py/codegen/expressions.py
+- [X] T009 [US10] Register ORDER/O in INTRINSIC_GENERATORS dispatch table
+- [X] T010 [US10] Replace stub test_function_order in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
 **Checkpoint**: $ORDER works for local and global arrays, forward and reverse
 
@@ -53,11 +53,11 @@
 
 **Complexity**: High - requires depth-first tree walk, full reference string construction
 
-- [ ] T011 [US11] Add m_query() helper function in src/m2py/runtime/helpers.py
-- [ ] T012 [US11] Add m_query_global() helper for global variables in src/m2py/runtime/helpers.py
-- [ ] T013 [US11] Add _gen_query() generator in src/m2py/codegen/expressions.py
-- [ ] T014 [US11] Register QUERY/Q in INTRINSIC_GENERATORS dispatch table
-- [ ] T015 [US11] Replace stub test_function_query in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T011 [US11] Add m_query() helper function in src/m2py/runtime/helpers.py
+- [X] T012 [US11] Add m_query_global() helper for global variables in src/m2py/runtime/helpers.py
+- [X] T013 [US11] Add _gen_query() generator in src/m2py/codegen/expressions.py
+- [X] T014 [US11] Register QUERY/Q in INTRINSIC_GENERATORS dispatch table
+- [X] T015 [US11] Replace stub test_function_query in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
 **Checkpoint**: $QUERY returns full variable references like "A(1,2)"
 

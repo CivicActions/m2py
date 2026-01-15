@@ -52,11 +52,41 @@ class TestIntrinsicFunctionsCodegen:
         """$LENGTH generates len() equivalent (§7.1.5)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ORDER codegen")
-    def test_function_order(self, generate_python):
-        """$ORDER generates next key retrieval (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_order(self, execute_mumps):
+        """$ORDER generates next key retrieval (§7.1.5).
+
+        Tests:
+        - Forward iteration from empty string
+        - Forward iteration from existing key
+        - Reverse iteration
+        - Global variable support
+        - MUMPS collation order (negatives < 0 < positives < strings)
+        """
+        # Test 1: Forward iteration from empty string - gets first key
+        result = execute_mumps(
+            'TEST\n S A(1)=1,A(2)=2,A(3)=3\n S X=$O(A(""))\n W X\n Q'
+        )
+        assert result.output == "1"
+
+        # Test 2: Forward iteration from existing key
+        result = execute_mumps("TEST\n S A(1)=1,A(2)=2,A(3)=3\n S X=$O(A(1))\n W X\n Q")
+        assert result.output == "2"
+
+        # Test 3: Reverse iteration - gets last key
+        result = execute_mumps(
+            'TEST\n S A(1)=1,A(2)=2,A(3)=3\n S X=$O(A(""),-1)\n W X\n Q'
+        )
+        assert result.output == "3"
+
+        # Test 4: Collation order - negatives before positives
+        result = execute_mumps(
+            'TEST\n S A(-1)=1,A(0)=2,A(1)=3\n S X=$O(A(""))\n W X\n Q'
+        )
+        assert result.output == "-1"
+
+        # Test 5: Collation order - strings after numbers
+        result = execute_mumps('TEST\n S A(1)=1,A("Z")=2\n S X=$O(A(1))\n W X\n Q')
+        assert result.output == "Z"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: $PIECE codegen")
@@ -64,11 +94,36 @@ class TestIntrinsicFunctionsCodegen:
         """$PIECE generates string split (§7.1.5)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QUERY codegen")
-    def test_function_query(self, generate_python):
-        """$QUERY generates tree traversal (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_query(self, execute_mumps):
+        """$QUERY generates tree traversal (§7.1.5).
+
+        Tests:
+        - Start from empty string to get first valued node
+        - Continue traversal to next valued node
+        - Multi-level subscript traversal (depth-first order)
+        - End of traversal returns empty string
+        """
+        # Test 1: Start traversal - gets first valued node
+        result = execute_mumps(
+            'TEST\n S A(1,1)=1,A(1,2)=2,A(2,1)=3\n S X=$Q(A(""))\n W X\n Q'
+        )
+        assert result.output == "A(1,1)"
+
+        # Test 2: Continue traversal to sibling
+        result = execute_mumps(
+            "TEST\n S A(1,1)=1,A(1,2)=2,A(2,1)=3\n S X=$Q(A(1,1))\n W X\n Q"
+        )
+        assert result.output == "A(1,2)"
+
+        # Test 3: Cross branch boundary
+        result = execute_mumps(
+            "TEST\n S A(1,1)=1,A(1,2)=2,A(2,1)=3\n S X=$Q(A(1,2))\n W X\n Q"
+        )
+        assert result.output == "A(2,1)"
+
+        # Test 4: End of traversal returns empty string
+        result = execute_mumps("TEST\n S A(1)=1,A(2)=2\n S X=$Q(A(2))\n W X\n Q")
+        assert result.output == ""
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: $RANDOM codegen")

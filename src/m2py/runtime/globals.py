@@ -17,6 +17,9 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+# Spec 010: Import collation key and query helper for $ORDER/$QUERY
+from m2py.runtime.helpers import _mumps_collation_key, _find_next_valued_node
+
 
 @runtime_checkable
 class GlobalStorageBackend(Protocol):
@@ -400,30 +403,104 @@ class InMemoryGlobalStorage:
         return (name, full_subscripts)
 
     def order(self, name: str, subscripts: tuple[str, ...], direction: int = 1) -> str:
-        """Return next/previous subscript at level.
+        """Return next/previous subscript in MUMPS collation order.
 
-        Spec 009 T066: Stub implementation for $ORDER function.
-        Returns empty string - full implementation in future spec.
+        Spec 010: Full implementation of $ORDER function.
+
+        Args:
+            name: Global name without caret
+            subscripts: Tuple where last element is starting point. Use "" to get first/last.
+            direction: 1 for forward (next), -1 for reverse (previous)
+
+        Returns:
+            Next/previous subscript as string, or "" if no more.
+
+        MUMPS Collation Order:
+            1. Negative numbers (most negative first)
+            2. Zero
+            3. Positive numbers (ascending)
+            4. Strings (ASCII order)
         """
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
-        # Stub: full $ORDER implementation in future spec
-        # Would iterate through children at the specified level
+        if name not in self._globals:
+            return ""
+
+        if not subscripts:
+            return ""
+
+        # Navigate to parent level (all but last subscript)
+        parent_subs = subscripts[:-1]
+        start_key = subscripts[-1]
+
+        node = self._globals[name]
+        for sub in parent_subs:
+            if sub not in node._children:
+                return ""
+            node = node._children[sub]
+
+        # Get all children keys sorted in MUMPS collation order
+        keys = sorted(node._children.keys(), key=_mumps_collation_key)
+
+        if direction == -1:
+            keys = list(reversed(keys))
+
+        if start_key == "":
+            # Empty string means get first key in current direction
+            return keys[0] if keys else ""
+
+        # Find next key after start_key in collation order
+        start_sort_key = _mumps_collation_key(start_key)
+
+        for key in keys:
+            key_sort = _mumps_collation_key(key)
+            if direction == 1:
+                # Forward: find first key greater than start_key
+                if key_sort > start_sort_key:
+                    return str(key)
+            else:
+                # Reverse: find first key less than start_key
+                if key_sort < start_sort_key:
+                    return str(key)
+
         return ""
 
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return full reference of next node with data.
 
-        Spec 009 T066: Stub implementation for $QUERY function.
-        Returns empty string - full implementation in future spec.
+        Spec 010 Phase 2: Full implementation of $QUERY function.
+
+        Args:
+            name: Global name without caret
+            subscripts: Current position subscripts. Use ("",) to start from beginning.
+
+        Returns:
+            Full variable reference string (e.g., "^G(1,2)"), or "" if no more nodes.
         """
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
-        # Stub: full $QUERY implementation in future spec
-        # Would traverse tree depth-first to find next valued node
-        return ""
+        if name not in self._globals:
+            return ""
+
+        array = self._globals[name]
+
+        # Check if we're starting from empty string (find first valued node)
+        if subscripts == ("",) or subscripts == ():
+            # Start from beginning - find first valued node in entire tree
+            result = _find_next_valued_node(array, [], (), at_start=True)
+        else:
+            # Find next valued node after the given subscripts
+            result = _find_next_valued_node(array, [], subscripts, at_start=False)
+
+        if result is None:
+            return ""
+
+        # Format as global reference: "^G(1,2,3)"
+        if len(result) == 0:
+            return f"^{name}"
+        return f"^{name}({','.join(result)})"
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts).

@@ -39,18 +39,8 @@ IntrinsicGenerator = Callable[["MIntrinsicFunction", "GeneratorContext"], str]
 
 # Dispatch table mapping function names (uppercase) to generator functions.
 # Both full names and abbreviations are registered.
-# Functions are added in later phases of Spec 010.
-INTRINSIC_GENERATORS: Dict[str, IntrinsicGenerator] = {
-    # Phase 2: $ORDER, $QUERY
-    # "O": _gen_order, "ORDER": _gen_order,
-    # "Q": _gen_query, "QUERY": _gen_query,
-    # Phase 3: $SELECT
-    # "S": _gen_select, "SELECT": _gen_select,
-    # Phase 5: String functions
-    # "L": _gen_length, "LENGTH": _gen_length,
-    # "P": _gen_piece, "PIECE": _gen_piece,
-    # ... more to be added
-}
+# Populated at module load time after functions are defined.
+INTRINSIC_GENERATORS: Dict[str, IntrinsicGenerator] = {}
 
 
 def generate_intrinsic_function(
@@ -540,6 +530,137 @@ def _generate_data(expr, ctx: "GeneratorContext") -> str:
         return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
 
 
+def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ORDER/$O function.
+
+    Spec 010 Phase 2: Generate m_order() or m_order_global() calls based on
+    whether the argument is a local or global variable.
+
+    $ORDER returns the next subscript in MUMPS collation order:
+    - Negative numbers (most negative first)
+    - Zero
+    - Positive numbers (ascending)
+    - Strings (ASCII/UTF-8 order)
+
+    Args:
+        expr: IntrinsicFunction ASG node with:
+              arguments[0]: Variable reference (array to traverse)
+              arguments[1]: Optional direction (1=forward, -1=reverse)
+        ctx: Generator context
+
+    Returns:
+        Python code calling m_order() or m_order_global()
+
+    Examples:
+        $O(A("")) → m_order(_scope.get('A', MArray()), ("",))
+        $O(A(1)) → m_order(_scope.get('A', MArray()), (str(1),))
+        $O(A(""),-1) → m_order(_scope.get('A', MArray()), ("",), -1)
+        $O(^G("")) → m_order_global(_rt.globals, 'G', ("",))
+    """
+    from m2py.parser.textx_classes import LocalVariable
+
+    # Get arguments
+    args = getattr(expr, "arguments", [])
+    if not args:
+        # No argument - return empty string
+        return '""'
+
+    var = args[0]
+
+    # Get direction argument if present (second argument)
+    direction_code = "1"  # Default to forward
+    if len(args) >= 2:
+        direction_code = generate_expr(args[1], ctx)
+
+    # Generate subscript tuple
+    # For $ORDER, subscripts include the starting point for iteration
+    subscripts = getattr(var, "subscripts", [])
+    if subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        # If no subscripts, use ("",) to get first key at root level
+        subscripts_tuple = '("",)'
+
+    var_name = getattr(var, "name", "")
+
+    # Check if it's a local or global variable
+    if isinstance(var, LocalVariable):
+        # Local variable: m_order(_scope.get('VAR', MArray()), subscripts, direction)
+        python_name = translate_name(var_name)
+        return f"m_order(_scope.get({python_name!r}, MArray()), {subscripts_tuple}, {direction_code})"
+    elif isinstance(var, GlobalVariable):
+        # Global variable: m_order_global(_rt.globals, 'NAME', subscripts, direction)
+        return f"m_order_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {direction_code})"
+    else:
+        # Fallback for any other variable type - treat as local
+        python_name = translate_name(var_name)
+        return f"m_order(_scope.get({python_name!r}, MArray()), {subscripts_tuple}, {direction_code})"
+
+
+def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $QUERY/$Q function.
+
+    Spec 010 Phase 2: Generate m_query() or m_query_global() calls based on
+    whether the argument is a local or global variable.
+
+    $QUERY returns the full reference of the next node with a value in
+    depth-first traversal order.
+
+    Args:
+        expr: IntrinsicFunction ASG node with:
+              arguments[0]: Variable reference (starting point for traversal)
+        ctx: Generator context
+
+    Returns:
+        Python code calling m_query() or m_query_global()
+
+    Examples:
+        $Q(A("")) → m_query(_scope.get('A', MArray()), 'A', ("",))
+        $Q(A(1,1)) → m_query(_scope.get('A', MArray()), 'A', (str(1), str(1)))
+        $Q(^G("")) → m_query_global(_rt.globals, 'G', ("",))
+    """
+    from m2py.parser.textx_classes import LocalVariable
+
+    # Get arguments
+    args = getattr(expr, "arguments", [])
+    if not args:
+        # No argument - return empty string
+        return '""'
+
+    var = args[0]
+
+    # Generate subscript tuple
+    subscripts = getattr(var, "subscripts", [])
+    if subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        # If no subscripts, use ("",) to start from beginning
+        subscripts_tuple = '("",)'
+
+    var_name = getattr(var, "name", "")
+
+    # Check if it's a local or global variable
+    if isinstance(var, LocalVariable):
+        # Local variable: m_query(_scope.get('VAR', MArray()), 'VAR', subscripts)
+        python_name = translate_name(var_name)
+        return f"m_query(_scope.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
+    elif isinstance(var, GlobalVariable):
+        # Global variable: m_query_global(_rt.globals, 'NAME', subscripts)
+        return f"m_query_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
+    else:
+        # Fallback for any other variable type - treat as local
+        python_name = translate_name(var_name)
+        return f"m_query(_scope.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
+
+
 def _generate_text(expr, ctx: "GeneratorContext") -> str:
     """Generate Python code for $TEXT/$T function.
 
@@ -607,6 +728,29 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
         params.append(f"module=__import__('{routine}')")
 
     return f"_rt.get_text({', '.join(params)})"
+
+
+# =============================================================================
+# Register Intrinsic Function Generators
+# =============================================================================
+# Registration happens at module load time after all functions are defined.
+
+# Phase 2: $ORDER, $QUERY
+INTRINSIC_GENERATORS["O"] = _gen_order
+INTRINSIC_GENERATORS["ORDER"] = _gen_order
+INTRINSIC_GENERATORS["Q"] = _gen_query
+INTRINSIC_GENERATORS["QUERY"] = _gen_query
+
+# Phase 3: $SELECT
+# INTRINSIC_GENERATORS["S"] = _gen_select
+# INTRINSIC_GENERATORS["SELECT"] = _gen_select
+
+# Phase 5: String functions
+# INTRINSIC_GENERATORS["L"] = _gen_length
+# INTRINSIC_GENERATORS["LENGTH"] = _gen_length
+# INTRINSIC_GENERATORS["P"] = _gen_piece
+# INTRINSIC_GENERATORS["PIECE"] = _gen_piece
+# ... more to be added
 
 
 __all__ = ["generate_expr", "generate_intrinsic_function", "INTRINSIC_GENERATORS"]

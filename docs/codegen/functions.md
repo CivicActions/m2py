@@ -280,32 +280,50 @@ var_dict.get("X", "default")  # Custom default
 Next subscript in collation order.
 
 ```mumps
-$O(^DATA(KEY))      ; Next key after KEY
-$O(^DATA(KEY),-1)   ; Previous key
+$O(A(""))       ; First subscript (forward)
+$O(A(KEY))      ; Next key after KEY
+$O(A(""),-1)    ; Last subscript (reverse)
+$O(A(KEY),-1)   ; Previous key before KEY
 ```
 
+**MUMPS Collation Order:**
+1. Negative numbers (most negative first)
+2. Zero
+3. Positive numbers (ascending)
+4. Strings (ASCII/UTF-8 order)
+
+**Translation:**
 ```python
-# Conceptual Python equivalent
+# Local array
+m_order(_scope.get('A', MArray()), ("",), 1)      # Forward from start
+m_order(_scope.get('A', MArray()), ("KEY",), -1)  # Reverse from KEY
 
-def mumps_order(data_dict, prefix, current, direction=1):
-    keys = sorted(k for k in data_dict if k.startswith(prefix))
-    try:
-        idx = keys.index(current)
-        next_idx = idx + direction
-        return keys[next_idx] if 0 <= next_idx < len(keys) else ""
-    except ValueError:
-        return keys[0] if direction == 1 and keys else ""
+# Global array
+m_order_global(_rt.globals, 'DATA', ("KEY",), 1)  # Forward from KEY
 ```
+
+The `m_order()` and `m_order_global()` helpers in `runtime/helpers.py` implement MUMPS collation order sorting.
 
 ### $QUERY / $Q
 
-Full reference of next node.
+Full reference of next node in depth-first traversal.
 
 ```mumps
-$Q(^DATA(A,B))      ; Next subscripted reference
+$Q(A(""))       ; First valued node reference
+$Q(A(1,2))      ; Next valued node after A(1,2)
 ```
 
-More complex than $ORDER - returns full variable reference.
+**Translation:**
+```python
+# Local array
+m_query(_scope.get('A', MArray()), 'A', ("",))      # Start traversal
+m_query(_scope.get('A', MArray()), 'A', ("1", "2")) # Continue after A(1,2)
+
+# Global array
+m_query_global(_rt.globals, 'DATA', ("",))  # Start traversal
+```
+
+Returns full variable reference string (e.g., "A(1,2,3)") or empty string when traversal is complete. The `m_query()` helper performs depth-first tree traversal following MUMPS collation order.
 
 ## Source Access Functions
 
