@@ -1206,6 +1206,63 @@ def _gen_char(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         return "(" + " + ".join(parts) + ")"
 
 
+def _gen_random(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $RANDOM/$R function.
+
+    Spec 010 Phase 8 (T055): $RANDOM generates random integers from 0 to limit-1.
+    $R(limit) returns a random integer in range [0, limit-1].
+
+    Raises MRuntimeError("RANDARGNEG") if limit <= 0.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1 argument
+        ctx: Generator context
+
+    Returns:
+        Python expression using random.randint() with error check
+
+    Examples:
+        $R(10) → random int 0-9
+        $R(1) → always 0
+        $R(0) → raises RANDARGNEG
+    """
+    args = getattr(expr, "arguments", [])
+
+    if not args:
+        # No argument - raise error
+        return "_m_random_checked(0)"
+
+    limit_expr = generate_expr(args[0], ctx)
+    return f"_m_random_checked(int(m_num({limit_expr})))"
+
+
+def _m_random_checked(limit: int) -> int:
+    """Generate random integer with RANDARGNEG check.
+
+    Helper function called by generated code for $RANDOM.
+    Must be imported into generated code.
+
+    Args:
+        limit: Upper bound (exclusive), must be >= 1
+
+    Returns:
+        Random integer from 0 to limit-1
+
+    Raises:
+        MRuntimeError: If limit <= 0
+    """
+    import random
+
+    from m2py.runtime.exceptions import MRuntimeError
+
+    if limit <= 0:
+        raise MRuntimeError(
+            "RANDARGNEG",
+            "Random number generator argument must be greater than or equal to one",
+        )
+    return random.randint(0, limit - 1)
+
+
 # =============================================================================
 # Register Intrinsic Function Generators
 # =============================================================================
@@ -1245,5 +1302,14 @@ INTRINSIC_GENERATORS["ASCII"] = _gen_ascii
 INTRINSIC_GENERATORS["C"] = _gen_char
 INTRINSIC_GENERATORS["CHAR"] = _gen_char
 
+# Phase 8: Numeric functions ($RANDOM)
+INTRINSIC_GENERATORS["R"] = _gen_random
+INTRINSIC_GENERATORS["RANDOM"] = _gen_random
 
-__all__ = ["generate_expr", "generate_intrinsic_function", "INTRINSIC_GENERATORS"]
+
+__all__ = [
+    "generate_expr",
+    "generate_intrinsic_function",
+    "INTRINSIC_GENERATORS",
+    "_m_random_checked",
+]

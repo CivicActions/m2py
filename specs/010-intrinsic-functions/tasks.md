@@ -230,12 +230,12 @@
 
 **Complexity**: Low - inline random.randint() with error check
 
-- [ ] T055 [P] [US7] Add _gen_random() generator in src/m2py/codegen/expressions.py
-- [ ] T056 [US7] Register RANDOM/R in INTRINSIC_GENERATORS dispatch table
-- [ ] T057 [US7] Replace stub test_function_random in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
-- [ ] T058 [US7] Add test for RANDARGNEG error when limit <= 0
+- [X] T055 [P] [US7] Add _gen_random() generator in src/m2py/codegen/expressions.py
+- [X] T056 [US7] Register RANDOM/R in INTRINSIC_GENERATORS dispatch table
+- [X] T057 [US7] Replace stub test_function_random in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T058 [US7] Add test for RANDARGNEG error when limit <= 0
 
-**Checkpoint**: $R(10) → 0-9, $R(0) raises MRuntimeError("RANDARGNEG")
+**Checkpoint**: $R(10) → 0-9, $R(0) raises MRuntimeError("RANDARGNEG") ✅
 
 ---
 

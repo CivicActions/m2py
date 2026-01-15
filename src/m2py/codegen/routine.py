@@ -282,6 +282,8 @@ class RoutineGenerator:
         ctx.emitter.line(
             "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find"
         )
+        # Spec 010: Import $RANDOM helper (Phase 8)
+        ctx.emitter.line("from m2py.codegen.expressions import _m_random_checked")
 
         # Spec 006: Additional imports for trampoline pattern
         if self._strategy == GotoStrategy.TRAMPOLINE:

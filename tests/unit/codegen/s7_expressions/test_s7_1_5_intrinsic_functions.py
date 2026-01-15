@@ -333,11 +333,52 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps("TEST\n S A(1)=1,A(2)=2\n S X=$Q(A(2))\n W X\n Q")
         assert result.output == ""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $RANDOM codegen")
-    def test_function_random(self, generate_python):
-        """$RANDOM generates random.randint (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_random(self, execute_mumps):
+        """$RANDOM generates random.randint (§7.1.5).
+
+        Spec 010 Phase 8 (T057): $RANDOM generates random integers.
+        $R(limit) returns integer from 0 to limit-1.
+        $R(1) always returns 0.
+        """
+        # Test 1: $R(1) always returns 0
+        result = execute_mumps("TEST W $R(1) Q")
+        assert result.output == "0"
+
+        # Test 2: $R(10) returns something (we just verify it runs)
+        result = execute_mumps("TEST W $R(10) Q")
+        assert result.output.isdigit()
+        assert 0 <= int(result.output) <= 9
+
+        # Test 3: $R(100) returns 0-99
+        result = execute_mumps("TEST W $R(100) Q")
+        assert result.output.isdigit()
+        assert 0 <= int(result.output) <= 99
+
+        # Test 4: Full form abbreviation
+        result = execute_mumps("TEST W $RANDOM(1) Q")
+        assert result.output == "0"
+
+    def test_function_random_randargneg_error(self, generate_python):
+        """$RANDOM raises RANDARGNEG for limit <= 0 (§7.1.5).
+
+        Spec 010 Phase 8 (T058): $RANDOM with 0 or negative argument
+        must raise MRuntimeError with RANDARGNEG code.
+        """
+        from m2py.runtime import MUMPSRuntime
+
+        # Test 1: $R(0) raises RANDARGNEG
+        code = generate_python("TEST W $R(0) Q")
+        runtime = MUMPSRuntime()
+        result = runtime.execute(code)
+        assert result.success is False
+        assert "RANDARGNEG" in result.error
+
+        # Test 2: $R(-1) raises RANDARGNEG
+        code = generate_python("TEST W $R(-1) Q")
+        runtime = MUMPSRuntime()
+        result = runtime.execute(code)
+        assert result.success is False
+        assert "RANDARGNEG" in result.error
 
     def test_function_select(self, execute_mumps):
         """$SELECT generates conditional expression (§7.1.5).
