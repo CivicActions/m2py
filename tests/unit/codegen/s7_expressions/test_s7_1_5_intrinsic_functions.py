@@ -471,6 +471,101 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST W $TRANSLATE("ABC","A","X") Q')
         assert result.output == "XBC"
 
+    def test_function_name(self, execute_mumps):
+        """$NAME/$NA function generates canonical name strings (§7.1.5).
+
+        Spec 010 Phase 9: $NAME converts variable references to name strings.
+        """
+        # Test 1: Basic array reference
+        result = execute_mumps("TEST S A(1,2,3)=1 W $NA(A(1,2,3)) Q")
+        assert result.output == "A(1,2,3)"
+
+        # Test 2: With depth parameter
+        result = execute_mumps("TEST S A(1,2,3)=1 W $NA(A(1,2,3),2) Q")
+        assert result.output == "A(1,2)"
+
+        # Test 3: Depth 0 returns name only
+        result = execute_mumps("TEST S A(1,2,3)=1 W $NA(A(1,2,3),0) Q")
+        assert result.output == "A"
+
+        # Test 4: String subscripts are quoted
+        result = execute_mumps('TEST S A("foo","bar")=1 W $NA(A("foo","bar")) Q')
+        assert result.output == 'A("foo","bar")'
+
+        # Test 5: Variable with no subscripts
+        result = execute_mumps("TEST S A=1 W $NA(A) Q")
+        assert result.output == "A"
+
+        # Test 6: Full form
+        result = execute_mumps("TEST S A(1,2)=1 W $NAME(A(1,2)) Q")
+        assert result.output == "A(1,2)"
+
+    def test_function_qlength(self, execute_mumps):
+        """$QLENGTH/$QL function counts subscripts in name string (§7.1.5).
+
+        Spec 010 Phase 9: $QLENGTH returns the number of subscripts.
+        """
+        # Test 1: Basic count
+        result = execute_mumps('TEST W $QL("A(1,2,3)") Q')
+        assert result.output == "3"
+
+        # Test 2: No subscripts
+        result = execute_mumps('TEST W $QL("A") Q')
+        assert result.output == "0"
+
+        # Test 3: Global with subscripts
+        result = execute_mumps('TEST W $QL("^GLO(1,2)") Q')
+        assert result.output == "2"
+
+        # Test 4: String subscripts
+        result = execute_mumps('TEST W $QL("A(""hello"",""world"")") Q')
+        assert result.output == "2"
+
+        # Test 5: Full form
+        result = execute_mumps('TEST W $QLENGTH("A(1,2,3,4,5)") Q')
+        assert result.output == "5"
+
+    def test_function_qsubscript(self, execute_mumps):
+        """$QSUBSCRIPT/$QS function extracts subscripts from name string (§7.1.5).
+
+        Spec 010 Phase 9: $QSUBSCRIPT extracts subscript at position from name.
+        """
+        # Test 1: Position 0 returns name
+        result = execute_mumps('TEST W $QS("A(1,2,3)",0) Q')
+        assert result.output == "A"
+
+        # Test 2: Position 1 returns first subscript
+        result = execute_mumps('TEST W $QS("A(1,2,3)",1) Q')
+        assert result.output == "1"
+
+        # Test 3: Position 2 returns second subscript
+        result = execute_mumps('TEST W $QS("A(1,2,3)",2) Q')
+        assert result.output == "2"
+
+        # Test 4: Position 3 returns third subscript
+        result = execute_mumps('TEST W $QS("A(1,2,3)",3) Q')
+        assert result.output == "3"
+
+        # Test 5: Out of range returns empty
+        result = execute_mumps('TEST W "[" W $QS("A(1,2,3)",5) W "]" Q')
+        assert result.output == "[]"
+
+        # Test 6: Global name at position 0
+        result = execute_mumps('TEST W $QS("^GLO(1,2)",0) Q')
+        assert result.output == "^GLO"
+
+        # Test 7: Negative position returns empty
+        result = execute_mumps('TEST W "[" W $QS("A(1,2,3)",-1) W "]" Q')
+        assert result.output == "[]"
+
+        # Test 8: String subscript extraction (unquoted)
+        result = execute_mumps('TEST W $QS("A(""hello"",2)",1) Q')
+        assert result.output == "hello"
+
+        # Test 9: Full form
+        result = execute_mumps('TEST W $QSUBSCRIPT("A(1,2)",1) Q')
+        assert result.output == "1"
+
     @pytest.mark.pre1995
     @pytest.mark.stub
     @pytest.mark.xfail(

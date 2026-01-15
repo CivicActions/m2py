@@ -771,3 +771,228 @@ def _raise_select_false() -> None:
     from m2py.runtime.exceptions import MRuntimeError
 
     raise MRuntimeError("SELECTFALSE", "No argument to $SELECT was true")
+
+
+def _is_canonical_numeric(value: str) -> bool:
+    """Check if a string is a canonical numeric representation.
+
+    In MUMPS, a canonical number is the shortest representation:
+    - No leading zeros (except "0" itself)
+    - No trailing zeros after decimal point
+    - No unnecessary plus sign
+
+    Args:
+        value: String to check
+
+    Returns:
+        True if value is canonical numeric representation
+    """
+    if not value:
+        return False
+    try:
+        num = float(value)
+        # Check if string representation matches canonical form
+        if num == int(num):
+            return value == str(int(num))
+        else:
+            # For floats, canonical means no trailing zeros
+            canonical = str(num)
+            return value == canonical
+    except (ValueError, TypeError):
+        return False
+
+
+def _format_subscript(value: str) -> str:
+    """Format a subscript value for canonical name representation.
+
+    Args:
+        value: Subscript value (string)
+
+    Returns:
+        Canonically formatted subscript - unquoted for numbers, quoted for strings
+    """
+    if _is_canonical_numeric(value):
+        # Numeric values are not quoted in canonical name
+        return value
+    else:
+        # String values are quoted, with internal quotes doubled
+        escaped = value.replace('"', '""')
+        return f'"{escaped}"'
+
+
+def m_name(
+    var_name: str,
+    subscripts: tuple[str, ...],
+    depth: int | None = None,
+    is_global: bool = False,
+) -> str:
+    """Convert variable reference to canonical name string ($NAME).
+
+    Spec 010 Phase 9 (T059): Implements $NAME intrinsic function.
+
+    Args:
+        var_name: Variable name (without caret for globals)
+        subscripts: Tuple of subscript values (as strings)
+        depth: Number of subscripts to include (None = all, 0 = name only)
+        is_global: True if this is a global variable (prepend ^)
+
+    Returns:
+        Canonical name string like "A(1,2,3)" or "^GLO(1,2)"
+
+    Examples:
+        m_name("A", ("1", "2", "3")) → "A(1,2,3)"
+        m_name("A", ("1", "2", "3"), depth=2) → "A(1,2)"
+        m_name("A", ("1", "2", "3"), depth=0) → "A"
+        m_name("GLO", ("1", "2"), is_global=True) → "^GLO(1,2)"
+        m_name("A", ("foo", "bar")) → 'A("foo","bar")'
+    """
+    # Apply depth limit if specified
+    if depth is not None:
+        # depth >= len(subscripts) means use all subscripts
+        if depth < len(subscripts):
+            subscripts = subscripts[:depth]
+
+    # Build the canonical name
+    prefix = "^" if is_global else ""
+    if not subscripts:
+        return f"{prefix}{var_name}"
+
+    # Format each subscript (numeric = unquoted, string = quoted)
+    formatted_subs = [_format_subscript(sub) for sub in subscripts]
+    return f"{prefix}{var_name}({','.join(formatted_subs)})"
+
+
+def m_qlength(name: str) -> int:
+    """Count subscripts in a name string ($QLENGTH).
+
+    Spec 010 Phase 9 (T060): Implements $QLENGTH intrinsic function.
+
+    Args:
+        name: Canonical name string like "A(1,2,3)" or "^GLO(1,2)"
+
+    Returns:
+        Number of subscripts (0 if no subscripts)
+
+    Examples:
+        m_qlength("A") → 0
+        m_qlength("A(1,2,3)") → 3
+        m_qlength("^GLO(1,2)") → 2
+        m_qlength('A("hello","world")') → 2
+
+    Note:
+        Empty string input raises NOCANONICNAME in YottaDB.
+        For simplicity, we return 0 for empty strings.
+    """
+    if not name or "(" not in name:
+        return 0
+
+    # Find the opening paren
+    paren_pos = name.index("(")
+    if paren_pos == len(name) - 1:
+        return 0
+
+    # Parse the subscript portion
+    subscript_part = name[paren_pos + 1 : -1]  # Remove outer parens
+    if not subscript_part:
+        return 0
+
+    # Count subscripts, handling quoted strings with commas
+    count = 0
+    in_quote = False
+    i = 0
+    while i < len(subscript_part):
+        ch = subscript_part[i]
+        if ch == '"':
+            if (
+                in_quote
+                and i + 1 < len(subscript_part)
+                and subscript_part[i + 1] == '"'
+            ):
+                # Escaped quote - skip both
+                i += 2
+                continue
+            in_quote = not in_quote
+        elif ch == "," and not in_quote:
+            count += 1
+        i += 1
+
+    # Number of subscripts is number of commas + 1
+    return count + 1
+
+
+def m_qsubscript(name: str, position: int) -> str:
+    """Extract subscript from name string ($QSUBSCRIPT).
+
+    Spec 010 Phase 9 (T061): Implements $QSUBSCRIPT intrinsic function.
+
+    Args:
+        name: Canonical name string like "A(1,2,3)"
+        position: Subscript position (0 = variable name, 1+ = subscripts)
+
+    Returns:
+        The subscript value (unquoted), or empty string if out of range.
+        Position 0 returns the variable name (with ^ for globals).
+
+    Examples:
+        m_qsubscript("A(1,2,3)", 0) → "A"
+        m_qsubscript("A(1,2,3)", 1) → "1"
+        m_qsubscript("A(1,2,3)", 3) → "3"
+        m_qsubscript("A(1,2,3)", 5) → ""
+        m_qsubscript("^GLO(1,2)", 0) → "^GLO"
+        m_qsubscript('A("hello",2)', 1) → "hello"
+
+    Note:
+        Negative positions return empty string.
+    """
+    if position < 0:
+        return ""
+
+    # Position 0 returns the variable name (with ^ for globals)
+    paren_pos = name.find("(")
+    if position == 0:
+        if paren_pos == -1:
+            return name
+        return name[:paren_pos]
+
+    # No subscripts in name
+    if paren_pos == -1 or paren_pos == len(name) - 1:
+        return ""
+
+    # Parse subscripts
+    subscript_part = name[paren_pos + 1 : -1]  # Remove outer parens
+    if not subscript_part:
+        return ""
+
+    # Extract the subscript at the given position (1-indexed)
+    subscripts: list[str] = []
+    current = ""
+    in_quote = False
+    i = 0
+    while i < len(subscript_part):
+        ch = subscript_part[i]
+        if ch == '"':
+            if not in_quote:
+                in_quote = True
+                # Don't include the opening quote in the value
+            elif i + 1 < len(subscript_part) and subscript_part[i + 1] == '"':
+                # Escaped quote - include one quote
+                current += '"'
+                i += 2
+                continue
+            else:
+                in_quote = False
+                # Don't include the closing quote in the value
+        elif ch == "," and not in_quote:
+            subscripts.append(current)
+            current = ""
+        else:
+            current += ch
+        i += 1
+
+    # Add the last subscript
+    subscripts.append(current)
+
+    # Return the requested subscript (1-indexed)
+    if position > len(subscripts):
+        return ""
+    return subscripts[position - 1]

@@ -247,16 +247,16 @@
 
 **Complexity**: Medium - string parsing for name components
 
-- [ ] T059 [P] [US14] Add m_name() helper function in src/m2py/runtime/helpers.py
-- [ ] T060 [P] [US14] Add m_qlength() helper function in src/m2py/runtime/helpers.py
-- [ ] T061 [P] [US14] Add m_qsubscript() helper function in src/m2py/runtime/helpers.py
-- [ ] T062 [US14] Add _gen_name() generator in src/m2py/codegen/expressions.py
-- [ ] T063 [US14] Add _gen_qlength() generator in src/m2py/codegen/expressions.py
-- [ ] T064 [US14] Add _gen_qsubscript() generator in src/m2py/codegen/expressions.py
-- [ ] T065 [US14] Register NAME/NA, QLENGTH/QL, QSUBSCRIPT/QS in INTRINSIC_GENERATORS dispatch table
-- [ ] T066 [US14] Add tests for $NAME, $QLENGTH, $QSUBSCRIPT in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T059 [P] [US14] Add m_name() helper function in src/m2py/runtime/helpers.py
+- [X] T060 [P] [US14] Add m_qlength() helper function in src/m2py/runtime/helpers.py
+- [X] T061 [P] [US14] Add m_qsubscript() helper function in src/m2py/runtime/helpers.py
+- [X] T062 [US14] Add _gen_name() generator in src/m2py/codegen/expressions.py
+- [X] T063 [US14] Add _gen_qlength() generator in src/m2py/codegen/expressions.py
+- [X] T064 [US14] Add _gen_qsubscript() generator in src/m2py/codegen/expressions.py
+- [X] T065 [US14] Register NAME/NA, QLENGTH/QL, QSUBSCRIPT/QS in INTRINSIC_GENERATORS dispatch table
+- [X] T066 [US14] Add tests for $NAME, $QLENGTH, $QSUBSCRIPT in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
-**Checkpoint**: $NA(A(1,2,3)) → "A(1,2,3)", $QL("A(1,2,3)") → 3, $QS("A(1,2,3)",2) → "2"
+**Checkpoint**: $NA(A(1,2,3)) → "A(1,2,3)", $QL("A(1,2,3)") → 3, $QS("A(1,2,3)",2) → "2" ✅
 
 ---
 

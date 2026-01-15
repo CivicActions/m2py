@@ -1263,6 +1263,117 @@ def _m_random_checked(limit: int) -> int:
     return random.randint(0, limit - 1)
 
 
+def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $NAME/$NA function.
+
+    Spec 010 Phase 9 (T062): $NAME converts a variable reference to a canonical
+    name string representation.
+
+    $NAME(varref [, depth]) returns the canonical name of the variable:
+    - depth omitted or > subscript count: all subscripts
+    - depth = 0: variable name only
+    - depth = n: first n subscripts
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1-2 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_name() helper
+
+    Examples:
+        $NA(A(1,2,3)) → m_name("A", ("1", "2", "3"))
+        $NA(A(1,2,3),2) → m_name("A", ("1", "2", "3"), depth=2)
+        $NA(^GLO(1,2)) → m_name("GLO", ("1", "2"), is_global=True)
+    """
+
+    args = getattr(expr, "arguments", [])
+    if not args:
+        return '""'
+
+    var = args[0]
+    var_name = getattr(var, "name", "")
+    subscripts = getattr(var, "subscripts", [])
+
+    # Build subscripts tuple - evaluate at runtime
+    if subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        subscripts_tuple = "()"
+
+    # Get depth argument if present
+    depth_arg = ""
+    if len(args) >= 2:
+        depth_expr = generate_expr(args[1], ctx)
+        depth_arg = f", depth=int(m_num({depth_expr}))"
+
+    # Check if it's a global variable
+    if isinstance(var, GlobalVariable):
+        return f"m_name({var_name!r}, {subscripts_tuple}{depth_arg}, is_global=True)"
+    else:
+        return f"m_name({var_name!r}, {subscripts_tuple}{depth_arg})"
+
+
+def _gen_qlength(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $QLENGTH/$QL function.
+
+    Spec 010 Phase 9 (T063): $QLENGTH counts subscripts in a name string.
+
+    $QLENGTH(name) returns the number of subscripts in the name string.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1 argument
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_qlength() helper
+
+    Examples:
+        $QL("A") → 0
+        $QL("A(1,2,3)") → 3
+    """
+    args = getattr(expr, "arguments", [])
+    if not args:
+        return "0"
+
+    name_expr = generate_expr(args[0], ctx)
+    return f"m_qlength(str({name_expr}))"
+
+
+def _gen_qsubscript(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $QSUBSCRIPT/$QS function.
+
+    Spec 010 Phase 9 (T064): $QSUBSCRIPT extracts a subscript from a name string.
+
+    $QSUBSCRIPT(name, position) returns:
+    - position=0: variable name (with ^ for globals)
+    - position>0: subscript at that position (1-indexed)
+    - position<0 or out of range: empty string
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 2 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_qsubscript() helper
+
+    Examples:
+        $QS("A(1,2,3)",0) → "A"
+        $QS("A(1,2,3)",2) → "2"
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) < 2:
+        return '""'
+
+    name_expr = generate_expr(args[0], ctx)
+    pos_expr = generate_expr(args[1], ctx)
+    return f"m_qsubscript(str({name_expr}), int(m_num({pos_expr})))"
+
+
 # =============================================================================
 # Register Intrinsic Function Generators
 # =============================================================================
@@ -1305,6 +1416,14 @@ INTRINSIC_GENERATORS["CHAR"] = _gen_char
 # Phase 8: Numeric functions ($RANDOM)
 INTRINSIC_GENERATORS["R"] = _gen_random
 INTRINSIC_GENERATORS["RANDOM"] = _gen_random
+
+# Phase 9: Array utility functions ($NAME, $QLENGTH, $QSUBSCRIPT)
+INTRINSIC_GENERATORS["NA"] = _gen_name
+INTRINSIC_GENERATORS["NAME"] = _gen_name
+INTRINSIC_GENERATORS["QL"] = _gen_qlength
+INTRINSIC_GENERATORS["QLENGTH"] = _gen_qlength
+INTRINSIC_GENERATORS["QS"] = _gen_qsubscript
+INTRINSIC_GENERATORS["QSUBSCRIPT"] = _gen_qsubscript
 
 
 __all__ = [
