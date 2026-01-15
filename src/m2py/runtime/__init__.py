@@ -27,6 +27,27 @@ from m2py.runtime.helpers import (
     m_set_piece,
 )
 
+# Spec 010: Import runtime exception class
+from m2py.runtime.exceptions import MRuntimeError
+
+# Spec 010: Import $ORDER and $QUERY helper functions (Phase 2)
+# Spec 010: Import $SELECT helper function (Phase 3)
+# Spec 010: Import $PIECE and $EXTRACT helper functions (Phase 5)
+# Spec 010: Import $GET helper functions (Phase 6)
+# Spec 010: Import $FIND helper function (Phase 7)
+from m2py.runtime.helpers import (
+    _raise_select_false,
+    m_extract,
+    m_find,
+    m_get,
+    m_get_global,
+    m_order,
+    m_order_global,
+    m_piece,
+    m_query,
+    m_query_global,
+)
+
 
 class MArray:
     """MUMPS array with hierarchical subscript support.
@@ -760,4 +781,21 @@ __all__ = [
     "m_set_extract",
     "m_data",
     "m_data_global",
+    # Spec 010: Runtime exceptions
+    "MRuntimeError",
+    # Spec 010: $ORDER and $QUERY helpers
+    "m_order",
+    "m_order_global",
+    "m_query",
+    "m_query_global",
+    # Spec 010: $SELECT helper
+    "_raise_select_false",
+    # Spec 010: $PIECE and $EXTRACT helpers (Phase 5)
+    "m_piece",
+    "m_extract",
+    # Spec 010: $GET helpers (Phase 6)
+    "m_get",
+    "m_get_global",
+    # Spec 010: $FIND helper (Phase 7)
+    "m_find",
 ]

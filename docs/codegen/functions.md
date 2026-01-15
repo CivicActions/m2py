@@ -6,6 +6,69 @@ How to translate MUMPS intrinsic functions to Python.
 
 MUMPS intrinsic functions start with `$`. Most have both full and abbreviated names.
 
+## Implementation Status
+
+All intrinsic functions are implemented and validated against YottaDB:
+
+| Function | Abbreviation | Status | Implementation |
+|----------|--------------|--------|----------------|
+| $LENGTH | $L | ✅ | Inline `len()` or `count()+1` |
+| $PIECE | $P | ✅ | `m_piece()` helper |
+| $EXTRACT | $E | ✅ | `m_extract()` helper |
+| $FIND | $F | ✅ | `m_find()` helper |
+| $TRANSLATE | $TR | ✅ | Inline `str.translate()` |
+| $JUSTIFY | $J | ✅ | `m_justify()` helper |
+| $ASCII | $A | ✅ | Inline `ord()` |
+| $CHAR | $C | ✅ | Inline `chr()` |
+| $REVERSE | $RE | ✅ | Inline `[::-1]` |
+| $FNUMBER | $FN | ✅ | `m_fnumber()` helper |
+| $RANDOM | $R | ✅ | Inline `random.randint()` |
+| $DATA | $D | ✅ | `m_data()` / `m_data_global()` |
+| $GET | $G | ✅ | `m_get()` / `m_get_global()` |
+| $ORDER | $O | ✅ | `m_order()` / `m_order_global()` |
+| $QUERY | $Q | ✅ | `m_query()` / `m_query_global()` |
+| $SELECT | $S | ✅ | Inline chained conditional |
+| $NAME | $NA | ✅ | `m_name()` helper |
+| $QLENGTH | $QL | ✅ | `m_qlength()` helper |
+| $QSUBSCRIPT | $QS | ✅ | `m_qsubscript()` helper |
+| $TEXT | $T | ✅ | Runtime `_rt.get_text()` |
+| $NEXT | $N | ✅ | Maps to `$ORDER` (deprecated pre-1995) |
+
+## Implementation Architecture
+
+Intrinsic functions are handled by the `generate_intrinsic_function()` dispatcher in `codegen/expressions.py`. The function uses a dispatch table (`INTRINSIC_GENERATORS`) that maps function names to generator functions:
+
+```python
+# Dispatch table pattern
+INTRINSIC_GENERATORS = {
+    "L": _gen_length, "LENGTH": _gen_length,
+    "P": _gen_piece, "PIECE": _gen_piece,
+    # ... etc
+}
+
+def generate_intrinsic_function(expr: MIntrinsicFunction, ctx: GeneratorContext) -> str:
+    func_name = expr.name.upper()
+    if func_name in INTRINSIC_GENERATORS:
+        return INTRINSIC_GENERATORS[func_name](expr, ctx)
+    raise NotImplementedError(f"Intrinsic function ${expr.name} not yet implemented")
+```
+
+### Runtime Helpers
+
+Complex functions that require M-specific semantics use runtime helpers in `runtime/helpers.py`:
+- `m_piece()` - $PIECE extraction with edge case handling
+- `m_extract()` - $EXTRACT with 1-based indexing
+- `m_order()` - $ORDER with MUMPS collation order
+- `m_query()` - $QUERY depth-first tree traversal
+
+Simple functions generate inline Python (e.g., `len()` for $LENGTH, `chr()` for $CHAR).
+
+### Error Handling
+
+Runtime errors specific to MUMPS semantics use `MRuntimeError` from `runtime/exceptions.py`:
+- `SELECTFALSE` - $SELECT with no true condition
+- `RANDARGNEG` - $RANDOM with argument ≤ 0
+
 ## String Functions
 
 ### $EXTRACT / $E
@@ -183,27 +246,31 @@ chr(65)         # "A"
 
 ### $SELECT / $S
 
-Conditional value selection.
+Conditional value selection. Evaluates conditions left-to-right and returns
+the value for the first true condition. Raises SELECTFALSE error if no
+condition is true.
+
+**Status**: ✅ Implemented (Spec 010 Phase 3)
+
+**Implementation**: Generated as chained conditional expression with
+`m_truth()` for condition evaluation and `_raise_select_false()` fallback.
 
 ```mumps
 $S(X=1:"one",X=2:"two",1:"other")
 ```
 
 ```python
-# Conceptual Python equivalent
-
-"one" if x == 1 else "two" if x == 2 else "other"
+# Generated Python code
+("one" if m_truth((X == 1)) else
+ ("two" if m_truth((X == 2)) else
+  ("other" if m_truth(1) else _raise_select_false())))
 ```
 
-Or using match (Python 3.10+):
-```python
-# Conceptual Python equivalent
-
-match x:
-    case 1: result = "one"
-    case 2: result = "two"
-    case _: result = "other"
-```
+**Key behaviors**:
+- Conditions are evaluated left-to-right
+- Returns value for first true condition
+- If no condition is true, raises `MRuntimeError("SELECTFALSE")`
+- Both full name `$SELECT` and abbreviation `$S` are supported
 
 ## Data Functions
 
@@ -245,32 +312,50 @@ var_dict.get("X", "default")  # Custom default
 Next subscript in collation order.
 
 ```mumps
-$O(^DATA(KEY))      ; Next key after KEY
-$O(^DATA(KEY),-1)   ; Previous key
+$O(A(""))       ; First subscript (forward)
+$O(A(KEY))      ; Next key after KEY
+$O(A(""),-1)    ; Last subscript (reverse)
+$O(A(KEY),-1)   ; Previous key before KEY
 ```
 
+**MUMPS Collation Order:**
+1. Negative numbers (most negative first)
+2. Zero
+3. Positive numbers (ascending)
+4. Strings (ASCII/UTF-8 order)
+
+**Translation:**
 ```python
-# Conceptual Python equivalent
+# Local array
+m_order(_scope.get('A', MArray()), ("",), 1)      # Forward from start
+m_order(_scope.get('A', MArray()), ("KEY",), -1)  # Reverse from KEY
 
-def mumps_order(data_dict, prefix, current, direction=1):
-    keys = sorted(k for k in data_dict if k.startswith(prefix))
-    try:
-        idx = keys.index(current)
-        next_idx = idx + direction
-        return keys[next_idx] if 0 <= next_idx < len(keys) else ""
-    except ValueError:
-        return keys[0] if direction == 1 and keys else ""
+# Global array
+m_order_global(_rt.globals, 'DATA', ("KEY",), 1)  # Forward from KEY
 ```
+
+The `m_order()` and `m_order_global()` helpers in `runtime/helpers.py` implement MUMPS collation order sorting.
 
 ### $QUERY / $Q
 
-Full reference of next node.
+Full reference of next node in depth-first traversal.
 
 ```mumps
-$Q(^DATA(A,B))      ; Next subscripted reference
+$Q(A(""))       ; First valued node reference
+$Q(A(1,2))      ; Next valued node after A(1,2)
 ```
 
-More complex than $ORDER - returns full variable reference.
+**Translation:**
+```python
+# Local array
+m_query(_scope.get('A', MArray()), 'A', ("",))      # Start traversal
+m_query(_scope.get('A', MArray()), 'A', ("1", "2")) # Continue after A(1,2)
+
+# Global array
+m_query_global(_rt.globals, 'DATA', ("",))  # Start traversal
+```
+
+Returns full variable reference string (e.g., "A(1,2,3)") or empty string when traversal is complete. The `m_query()` helper performs depth-first tree traversal following MUMPS collation order.
 
 ## Source Access Functions
 
