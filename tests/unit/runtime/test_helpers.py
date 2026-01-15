@@ -6,6 +6,8 @@ Tests the helper functions used by generated code for intrinsic functions.
 from m2py.runtime import MArray
 from m2py.runtime.helpers import (
     _mumps_collation_key,
+    m_get,
+    m_get_global,
     m_order,
     m_order_global,
     m_query,
@@ -158,3 +160,94 @@ class TestMQueryGlobal:
         backend.set("G", ("1", "2"), "b")
         assert m_query_global(backend, "G", ("",)) == "^G(1,1)"
         assert m_query_global(backend, "G", ("1", "1")) == "^G(1,2)"
+
+
+class TestMGet:
+    """Tests for m_get() helper function."""
+
+    def test_none_array_returns_default(self):
+        """m_get on None returns default."""
+        assert m_get(None, (), "DEFAULT") == "DEFAULT"
+
+    def test_undefined_root_returns_default(self):
+        """m_get on array with no value returns default."""
+        arr = MArray()  # No value set
+        assert m_get(arr, (), "DEFAULT") == "DEFAULT"
+
+    def test_defined_root_returns_value(self):
+        """m_get on array with value returns that value."""
+        arr = MArray()
+        arr.value = "HELLO"
+        assert m_get(arr, (), "DEFAULT") == "HELLO"
+
+    def test_empty_string_is_defined(self):
+        """m_get on array with empty string value returns empty string."""
+        arr = MArray()
+        arr.value = ""
+        assert m_get(arr, (), "DEFAULT") == ""
+
+    def test_subscript_navigation_integer_key(self):
+        """m_get navigates subscripts with integer keys."""
+        arr = MArray()
+        arr[1].value = "VALUE"
+        assert m_get(arr, (1,), "DEFAULT") == "VALUE"
+
+    def test_subscript_navigation_string_key(self):
+        """m_get navigates subscripts with string keys."""
+        arr = MArray()
+        arr["A"].value = "VALUE"
+        assert m_get(arr, ("A",), "DEFAULT") == "VALUE"
+
+    def test_subscript_string_to_int_conversion(self):
+        """m_get converts string subscripts to int when needed."""
+        # MArray stores as integer key, but code passes string
+        arr = MArray()
+        arr[1].value = "VALUE"
+        # String "1" should find integer key 1
+        assert m_get(arr, ("1",), "DEFAULT") == "VALUE"
+
+    def test_undefined_subscript_returns_default(self):
+        """m_get returns default when subscript doesn't exist."""
+        arr = MArray()
+        arr[1].value = "VALUE"
+        assert m_get(arr, (2,), "DEFAULT") == "DEFAULT"
+
+    def test_deep_subscript_navigation(self):
+        """m_get navigates multiple levels of subscripts."""
+        arr = MArray()
+        arr[1][2][3].value = "DEEP"
+        assert m_get(arr, (1, 2, 3), "DEFAULT") == "DEEP"
+
+    def test_unconvertible_string_key(self):
+        """m_get handles strings that cannot convert to int."""
+        arr = MArray()
+        arr["ABC"].value = "VALUE"
+        # "ABC" can't be converted to int, stays as string
+        assert m_get(arr, ("ABC",), "DEFAULT") == "VALUE"
+
+
+class TestMGetGlobal:
+    """Tests for m_get_global() helper function."""
+
+    def test_undefined_global_returns_default(self):
+        """m_get_global on undefined global returns default."""
+        backend = InMemoryGlobalStorage()
+        assert m_get_global(backend, "G", (), "DEFAULT") == "DEFAULT"
+
+    def test_defined_global_returns_value(self):
+        """m_get_global on defined global returns value."""
+        backend = InMemoryGlobalStorage()
+        backend.set("G", (), "VALUE")
+        assert m_get_global(backend, "G", (), "DEFAULT") == "VALUE"
+
+    def test_subscripted_global_returns_value(self):
+        """m_get_global on subscripted global returns value."""
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("1", "A"), "VALUE")
+        assert m_get_global(backend, "G", ("1", "A"), "DEFAULT") == "VALUE"
+
+    def test_undefined_subscript_returns_default(self):
+        """m_get_global returns default for undefined subscript."""
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("1",), "VALUE")
+        assert m_get_global(backend, "G", ("2",), "DEFAULT") == "DEFAULT"

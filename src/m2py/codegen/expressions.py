@@ -71,10 +71,6 @@ def generate_intrinsic_function(
         return INTRINSIC_GENERATORS[func_name](expr, ctx)
 
     # Fall back to existing special-case handlers until migrated
-    # $DATA/$D is handled by existing _generate_data
-    if func_name in ("DATA", "D"):
-        return _generate_data(expr, ctx)
-
     # $TEXT/$T is handled by existing _generate_text
     if func_name in ("TEXT", "T"):
         return _generate_text(expr, ctx)
@@ -532,11 +528,11 @@ def _generate_extrinsic_arguments(
     return args
 
 
-def _generate_data(expr, ctx: "GeneratorContext") -> str:
+def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $DATA/$D function.
 
-    Spec 009 Phase 8: Generate m_data() or m_data_global() calls based on
-    whether the argument is a local or global variable.
+    Spec 009 Phase 8, Spec 010 Phase 6: Generate m_data() or m_data_global()
+    calls based on whether the argument is a local or global variable.
 
     $DATA returns:
     - 0: Undefined, no descendants
@@ -592,6 +588,75 @@ def _generate_data(expr, ctx: "GeneratorContext") -> str:
         # Fallback for any other variable type - treat as local
         python_name = translate_name(var_name)
         return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
+
+
+def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $GET/$G function.
+
+    Spec 010 Phase 6 (T040): Generate m_get() or m_get_global() calls based on
+    whether the argument is a local or global variable.
+
+    $GET returns the variable's value if defined, otherwise the default value.
+    It distinguishes between undefined and defined-as-empty-string.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1-2 arguments:
+              - arg[0]: variable to retrieve
+              - arg[1]: optional default value (defaults to "")
+        ctx: Generator context
+
+    Returns:
+        Python code calling m_get() or m_get_global()
+
+    Examples:
+        $G(X) → m_get(_scope.get('X', None), (), "")
+        $G(X,"DEF") → m_get(_scope.get('X', None), (), "DEF")
+        $G(X(1)) → m_get(_scope.get('X', None), (str(1),), "")
+        $G(^G) → m_get_global(_rt.globals, 'G', (), "")
+        $G(^G(1),"DEF") → m_get_global(_rt.globals, 'G', (str(1),), "DEF")
+    """
+    from m2py.parser.textx_classes import LocalVariable
+
+    # Get arguments
+    args = getattr(expr, "arguments", [])
+    if not args:
+        # No argument - return empty string
+        return '""'
+
+    var = args[0]
+
+    # Get default value if provided
+    if len(args) >= 2:
+        default_expr = generate_expr(args[1], ctx)
+        default_code = f"str({default_expr})"
+    else:
+        default_code = '""'
+
+    # Generate subscript tuple
+    subscripts = getattr(var, "subscripts", [])
+    if subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        subscripts_tuple = "()"
+
+    var_name = getattr(var, "name", "")
+
+    # Check if it's a local or global variable
+    if isinstance(var, LocalVariable):
+        # Local variable: m_get(_scope.get('VAR', None), subscripts, default)
+        python_name = translate_name(var_name)
+        return f"m_get(_scope.get({python_name!r}), {subscripts_tuple}, {default_code})"
+    elif isinstance(var, GlobalVariable):
+        # Global variable: m_get_global(_rt.globals, 'NAME', subscripts, default)
+        return f"m_get_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {default_code})"
+    else:
+        # Fallback for any other variable type - treat as local
+        python_name = translate_name(var_name)
+        return f"m_get(_scope.get({python_name!r}), {subscripts_tuple}, {default_code})"
 
 
 def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1005,6 +1070,12 @@ INTRINSIC_GENERATORS["P"] = _gen_piece
 INTRINSIC_GENERATORS["PIECE"] = _gen_piece
 INTRINSIC_GENERATORS["E"] = _gen_extract
 INTRINSIC_GENERATORS["EXTRACT"] = _gen_extract
+
+# Phase 6: Data functions ($DATA, $GET)
+INTRINSIC_GENERATORS["D"] = _gen_data
+INTRINSIC_GENERATORS["DATA"] = _gen_data
+INTRINSIC_GENERATORS["G"] = _gen_get
+INTRINSIC_GENERATORS["GET"] = _gen_get
 
 
 __all__ = ["generate_expr", "generate_intrinsic_function", "INTRINSIC_GENERATORS"]

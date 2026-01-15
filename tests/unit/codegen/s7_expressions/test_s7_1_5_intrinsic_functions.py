@@ -22,11 +22,42 @@ class TestIntrinsicFunctionsCodegen:
         """$CHAR generates chr() equivalent (§7.1.5)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $DATA codegen")
-    def test_function_data(self, generate_python):
-        """$DATA generates data check (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_data(self, execute_mumps):
+        """$DATA generates data check (§7.1.5).
+
+        Spec 010 Phase 6 (T035-T037): $DATA returns variable existence status.
+        - 0: Undefined, no descendants
+        - 1: Has value only
+        - 10: Has descendants only
+        - 11: Has both value and descendants
+        """
+        # Test 1: Undefined variable
+        result = execute_mumps("TEST K Y W $D(Y) Q")
+        assert result.output == "0"
+
+        # Test 2: Defined simple variable
+        result = execute_mumps("TEST S X=1 W $D(X) Q")
+        assert result.output == "1"
+
+        # Test 3: Array with children only
+        result = execute_mumps("TEST S A(1)=1,A(2)=2 W $D(A) Q")
+        assert result.output == "10"
+
+        # Test 4: Variable with both value and children
+        result = execute_mumps("TEST S A=1,A(1)=2 W $D(A) Q")
+        assert result.output == "11"
+
+        # Test 5: Subscripted variable that exists
+        result = execute_mumps("TEST S A(1)=1 W $D(A(1)) Q")
+        assert result.output == "1"
+
+        # Test 6: Subscripted variable that doesn't exist
+        result = execute_mumps("TEST S A(1)=1 W $D(A(2)) Q")
+        assert result.output == "0"
+
+        # Test 7: Full form abbreviation
+        result = execute_mumps("TEST S X=1 W $DATA(X) Q")
+        assert result.output == "1"
 
     def test_function_extract(self, execute_mumps):
         """$EXTRACT generates string slice (§7.1.5).
@@ -68,11 +99,39 @@ class TestIntrinsicFunctionsCodegen:
         """$FIND generates string find (§7.1.5)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $GET codegen")
-    def test_function_get(self, generate_python):
-        """$GET generates dict.get() equivalent (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_get(self, execute_mumps):
+        """$GET generates safe variable retrieval (§7.1.5).
+
+        Spec 010 Phase 6 (T038-T042): $GET returns value if defined, else default.
+        Distinguished undefined from defined-as-empty-string.
+        """
+        # Test 1: Undefined variable with default
+        result = execute_mumps('TEST K X W $G(X,"DEFAULT") Q')
+        assert result.output == "DEFAULT"
+
+        # Test 2: Undefined variable without default (returns empty)
+        result = execute_mumps('TEST K X W "[" W $G(X) W "]" Q')
+        assert result.output == "[]"
+
+        # Test 3: Defined variable (returns value, not default)
+        result = execute_mumps('TEST S X="VALUE" W $G(X,"DEFAULT") Q')
+        assert result.output == "VALUE"
+
+        # Test 4: Defined as empty string (returns empty, not default)
+        result = execute_mumps('TEST S X="" W "[" W $G(X,"DEFAULT") W "]" Q')
+        assert result.output == "[]"
+
+        # Test 5: Subscripted variable - defined
+        result = execute_mumps('TEST S X(1)="A" W $G(X(1),"DEF") Q')
+        assert result.output == "A"
+
+        # Test 6: Subscripted variable - undefined
+        result = execute_mumps('TEST S X(1)="A" W $G(X(2),"DEF") Q')
+        assert result.output == "DEF"
+
+        # Test 7: Full form abbreviation
+        result = execute_mumps('TEST K Y W $GET(Y,"FULL") Q')
+        assert result.output == "FULL"
 
     def test_function_length(self, execute_mumps):
         """$LENGTH generates len() equivalent (§7.1.5).

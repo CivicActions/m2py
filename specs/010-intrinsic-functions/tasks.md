@@ -151,11 +151,11 @@
 
 **Complexity**: Low - $DATA already implemented in Spec 009, just wire to dispatcher
 
-- [ ] T035 [US8] Move _generate_data() logic into _gen_data() following new pattern in src/m2py/codegen/expressions.py
-- [ ] T036 [US8] Register DATA/D in INTRINSIC_GENERATORS dispatch table
-- [ ] T037 [US8] Replace stub test_function_data in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T035 [US8] Move _generate_data() logic into _gen_data() following new pattern in src/m2py/codegen/expressions.py
+- [X] T036 [US8] Register DATA/D in INTRINSIC_GENERATORS dispatch table
+- [X] T037 [US8] Replace stub test_function_data in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
-**Checkpoint**: $D(X) → 0/1/10/11 correctly
+**Checkpoint**: $D(X) → 0/1/10/11 correctly ✅
 
 ---
 
@@ -165,13 +165,13 @@
 
 **Complexity**: Medium - must distinguish undefined from empty string
 
-- [ ] T038 [US9] Add m_get() helper function in src/m2py/runtime/helpers.py
-- [ ] T039 [US9] Add m_get_global() helper for global variables in src/m2py/runtime/helpers.py
-- [ ] T040 [US9] Add _gen_get() generator in src/m2py/codegen/expressions.py
-- [ ] T041 [US9] Register GET/G in INTRINSIC_GENERATORS dispatch table
-- [ ] T042 [US9] Replace stub test_function_get in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T038 [US9] Add m_get() helper function in src/m2py/runtime/helpers.py
+- [X] T039 [US9] Add m_get_global() helper for global variables in src/m2py/runtime/helpers.py
+- [X] T040 [US9] Add _gen_get() generator in src/m2py/codegen/expressions.py
+- [X] T041 [US9] Register GET/G in INTRINSIC_GENERATORS dispatch table
+- [X] T042 [US9] Replace stub test_function_get in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
-**Checkpoint**: $G(UNDEF,"DEF") → "DEF", $G(DEFINED,"DEF") → actual value
+**Checkpoint**: $G(UNDEF,"DEF") → "DEF", $G(DEFINED,"DEF") → actual value ✅
 
 ---
 

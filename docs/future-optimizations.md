@@ -58,6 +58,56 @@ This document tracks potential optimizations that were considered but deferred i
 
 ---
 
+## Inline String Operations for $PIECE and $EXTRACT
+
+**Current approach** (Spec 010): `$PIECE` and `$EXTRACT` generate calls to runtime helper functions (`m_piece()`, `m_extract()`) that handle all edge cases including out-of-range indices, invalid positions, and range extraction.
+
+**Potential optimization**: When function arguments are **literal constants**, generate inline Python string operations:
+
+```python
+# Current: $E("HELLO",2,4) generates:
+m_extract("HELLO", 2, 4)
+
+# Optimized: could generate:
+"HELLO"[1:4]  # Direct Python slice (1-indexed to 0-indexed conversion)
+
+# Current: $P("A^B^C","^",2) generates:
+m_piece("A^B^C", "^", 2)
+
+# Optimized: could generate:
+"A^B^C".split("^")[1]  # Direct Python split/index
+```
+
+For dynamic arguments, a lambda expression could avoid function call overhead:
+```python
+# $E(X,N,M) could generate:
+(lambda s,f,t: s[max(0,f-1):t] if f>0 and t>=f else "")(str(X), int(N), int(M))
+```
+
+**Benefits**:
+- Faster execution (no function call overhead)
+- More idiomatic Python output
+- Better for debugging/reading generated code in simple cases
+
+**Why deferred**:
+- Helper functions are clearer and easier to maintain
+- Edge case handling (out-of-range, negative indices) is complex inline
+- Lambda expressions for dynamic cases are verbose and hard to read
+- Function call overhead is negligible for typical MUMPS workloads
+- "Correct and readable" beats "micro-optimized" initially
+
+**Prerequisites to implement**:
+- Literal detection in ASG (identify constant vs dynamic arguments)
+- Comprehensive edge-case testing for inline expressions
+- Performance profiling showing helper calls as actual bottleneck
+- Consider a `--optimize` flag to opt-in
+
+**Related code**:
+- `src/m2py/codegen/expressions.py` - `_gen_piece()`, `_gen_extract()`, `_gen_length()`
+- `src/m2py/runtime/helpers.py` - `m_piece()`, `m_extract()`
+
+---
+
 ## Contributing
 
 When adding optimizations to this document, include:

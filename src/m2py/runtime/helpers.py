@@ -617,6 +617,92 @@ def m_extract(string: str, from_pos: int, to_pos: int) -> str:
     return string[from_idx:to_idx]
 
 
+def m_get(
+    array: "MArray | None", subscripts: tuple[str, ...], default: str = ""
+) -> str:
+    """Safe variable retrieval with default value (RHS $GET).
+
+    Spec 010 Phase 6 (T038): $GET returns the value if defined, otherwise the default.
+    Distinguished from MArray.get() which always returns "" for undefined.
+
+    Args:
+        array: MArray instance or None (undefined variable)
+        subscripts: Tuple of subscripts to traverse
+        default: Value to return if undefined (default: "")
+
+    Returns:
+        The variable's value if defined, otherwise the default value.
+
+    Examples:
+        m_get(None, ()) → "" (undefined root)
+        m_get(arr, ()) → arr.value if defined
+        m_get(arr, ("1",)) → arr[1].value if defined
+        m_get(None, (), "DEF") → "DEF" (undefined with default)
+
+    Note:
+        $GET distinguishes between undefined and defined-as-empty-string.
+        Undefined → returns default
+        Defined as "" → returns ""
+    """
+    if array is None:
+        return default
+
+    if not subscripts:
+        # Check root value - None means undefined
+        if array._value is None:
+            return default
+        return array._value
+
+    # Traverse subscripts
+    node = array
+    for sub in subscripts:
+        # MArray may use string or numeric keys depending on how SET was generated
+        # Try the subscript as-is first, then try numeric conversion
+        key = sub
+        if key not in node._children:
+            # Try converting string to int for numeric subscripts
+            try:
+                key = int(sub)
+            except (ValueError, TypeError):
+                pass
+        if key not in node._children:
+            return default  # Subscript path doesn't exist
+        node = node._children[key]
+
+    # Check if this node has a value (None = undefined)
+    if node._value is None:
+        return default
+    return node._value
+
+
+def m_get_global(
+    backend: "GlobalStorageBackend",
+    name: str,
+    subscripts: tuple[str, ...],
+    default: str = "",
+) -> str:
+    """Safe global variable retrieval with default value (RHS $GET).
+
+    Spec 010 Phase 6 (T039): $GET on global variables.
+
+    Args:
+        backend: GlobalStorageBackend instance
+        name: Global name without caret (e.g., "PATIENT")
+        subscripts: Tuple of subscripts
+        default: Value to return if undefined (default: "")
+
+    Returns:
+        The variable's value if defined, otherwise the default value.
+
+    Note:
+        Delegates to backend.get() which returns None for undefined.
+    """
+    value = backend.get(name, subscripts)
+    if value is None:
+        return default
+    return value
+
+
 def _raise_select_false() -> None:
     """Raise SELECTFALSE error for $SELECT with no true condition.
 
