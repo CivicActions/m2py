@@ -10,17 +10,65 @@ import pytest
 class TestIntrinsicFunctionsCodegen:
     """Codegen-level tests for intrinsic functions code generation (§7.1.5)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ASCII codegen")
-    def test_function_ascii(self, generate_python):
-        """$ASCII generates ord() equivalent (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_ascii(self, execute_mumps):
+        """$ASCII generates ord() equivalent (§7.1.5).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $CHAR codegen")
-    def test_function_char(self, generate_python):
-        """$CHAR generates chr() equivalent (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        Spec 010 Phase 7 (T053): $ASCII returns ASCII code of character at position.
+        Returns -1 for out of range or empty string.
+        """
+        # Test 1: First character (default position)
+        result = execute_mumps('TEST W $A("ABC") Q')
+        assert result.output == "65"
+
+        # Test 2: Character at position 2
+        result = execute_mumps('TEST W $A("ABC",2) Q')
+        assert result.output == "66"
+
+        # Test 3: Character at position 3
+        result = execute_mumps('TEST W $A("ABC",3) Q')
+        assert result.output == "67"
+
+        # Test 4: Out of range position returns -1
+        result = execute_mumps('TEST W $A("ABC",4) Q')
+        assert result.output == "-1"
+
+        # Test 5: Position 0 returns -1
+        result = execute_mumps('TEST W $A("ABC",0) Q')
+        assert result.output == "-1"
+
+        # Test 6: Empty string returns -1
+        result = execute_mumps('TEST W $A("") Q')
+        assert result.output == "-1"
+
+        # Test 7: Full form abbreviation
+        result = execute_mumps('TEST W $ASCII("XYZ") Q')
+        assert result.output == "88"
+
+    def test_function_char(self, execute_mumps):
+        """$CHAR generates chr() equivalent (§7.1.5).
+
+        Spec 010 Phase 7 (T054): $CHAR converts ASCII codes to characters.
+        Multiple arguments produce concatenated result. Negative codes produce empty.
+        """
+        # Test 1: Single character
+        result = execute_mumps("TEST W $C(65) Q")
+        assert result.output == "A"
+
+        # Test 2: Multiple characters
+        result = execute_mumps("TEST W $C(65,66,67) Q")
+        assert result.output == "ABC"
+
+        # Test 3: Negative code produces empty
+        result = execute_mumps('TEST W "[" W $C(-1) W "]" Q')
+        assert result.output == "[]"
+
+        # Test 4: Unicode support (code > 127)
+        result = execute_mumps("TEST W $C(256) Q")
+        assert result.output == "Ā"
+
+        # Test 5: Full form abbreviation
+        result = execute_mumps("TEST W $CHAR(90) Q")
+        assert result.output == "Z"
 
     def test_function_data(self, execute_mumps):
         """$DATA generates data check (§7.1.5).
@@ -93,11 +141,35 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST W $EXTRACT("ABC",1,2) Q')
         assert result.output == "AB"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $FIND codegen")
-    def test_function_find(self, generate_python):
-        """$FIND generates string find (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_find(self, execute_mumps):
+        """$FIND generates string find (§7.1.5).
+
+        Spec 010 Phase 7 (T046): $FIND locates substring and returns position
+        AFTER the match. Returns 0 if not found.
+        """
+        # Test 1: Find substring - returns position after match
+        result = execute_mumps('TEST W $F("HELLO","LL") Q')
+        assert result.output == "5"
+
+        # Test 2: Find first occurrence of character
+        result = execute_mumps('TEST W $F("HELLO","L") Q')
+        assert result.output == "4"
+
+        # Test 3: Not found returns 0
+        result = execute_mumps('TEST W $F("HELLO","X") Q')
+        assert result.output == "0"
+
+        # Test 4: Search with starting position
+        result = execute_mumps('TEST W $F("HELLO","L",4) Q')
+        assert result.output == "5"
+
+        # Test 5: Empty target returns start position
+        result = execute_mumps('TEST W $F("ABC","") Q')
+        assert result.output == "1"
+
+        # Test 6: Full form abbreviation
+        result = execute_mumps('TEST W $FIND("HELLO","LL") Q')
+        assert result.output == "5"
 
     def test_function_get(self, execute_mumps):
         """$GET generates safe variable retrieval (§7.1.5).
@@ -328,11 +400,35 @@ class TestIntrinsicFunctionsCodegen:
         """$TEXT generates source retrieval (§7.1.5)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TRANSLATE codegen")
-    def test_function_translate(self, generate_python):
-        """$TRANSLATE generates str.translate (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_translate(self, execute_mumps):
+        """$TRANSLATE generates str.translate (§7.1.5).
+
+        Spec 010 Phase 7 (T049): $TRANSLATE performs character-by-character
+        replacement or deletion.
+        """
+        # Test 1: Delete characters (no 'to' argument)
+        result = execute_mumps('TEST W $TR("HELLO","L") Q')
+        assert result.output == "HEO"
+
+        # Test 2: Replace characters (same length)
+        result = execute_mumps('TEST W $TR("HELLO","LO","XY") Q')
+        assert result.output == "HEXXY"
+
+        # Test 3: Replace with different length 'to' (shorter deletes extra)
+        result = execute_mumps('TEST W $TR("HELLO","HEL","A") Q')
+        assert result.output == "AO"
+
+        # Test 4: Replace all occurrences
+        result = execute_mumps('TEST W $TR("HELLO","HEL","ABC") Q')
+        assert result.output == "ABCCO"
+
+        # Test 5: Empty string input
+        result = execute_mumps('TEST W "[" W $TR("","A","B") W "]" Q')
+        assert result.output == "[]"
+
+        # Test 6: Full form abbreviation
+        result = execute_mumps('TEST W $TRANSLATE("ABC","A","X") Q')
+        assert result.output == "XBC"
 
     @pytest.mark.pre1995
     @pytest.mark.stub

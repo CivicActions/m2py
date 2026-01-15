@@ -1048,6 +1048,164 @@ def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         return f"m_extract(str({string_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
 
 
+def _gen_find(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $FIND/$F function.
+
+    Spec 010 Phase 7 (T044): $FIND locates substring and returns position
+    AFTER the match. $F(string, target [, start])
+
+    Returns 0 if not found, or position AFTER the match (1-indexed).
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 2-3 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_find() helper
+
+    Examples:
+        $F("HELLO","LL") → m_find("HELLO", "LL", 1) → 5
+        $F("HELLO","L",4) → m_find("HELLO", "L", 4) → 5
+    """
+    args = getattr(expr, "arguments", [])
+
+    if len(args) < 2:
+        # Not enough arguments - return 0
+        return "0"
+
+    string_expr = generate_expr(args[0], ctx)
+    target_expr = generate_expr(args[1], ctx)
+
+    if len(args) >= 3:
+        start_expr = generate_expr(args[2], ctx)
+        return (
+            f"m_find(str({string_expr}), str({target_expr}), int(m_num({start_expr})))"
+        )
+    else:
+        return f"m_find(str({string_expr}), str({target_expr}), 1)"
+
+
+def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $TRANSLATE/$TR function.
+
+    Spec 010 Phase 7 (T047): $TRANSLATE performs character-by-character
+    replacement or deletion. $TR(string, from [, to])
+
+    Characters in 'from' are replaced by corresponding characters in 'to'.
+    If 'to' is shorter than 'from', extra characters in 'from' are deleted.
+    If 'to' is omitted, all characters in 'from' are deleted.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 2-3 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression using str.translate() with str.maketrans()
+
+    Examples:
+        $TR("HELLO","L") → "HEO" (delete all L's)
+        $TR("HELLO","LO","XY") → "HEXXY" (L→X, O→Y)
+        $TR("HELLO","HEL","ABC") → "ABCCO" (H→A, E→B, L→C)
+    """
+    args = getattr(expr, "arguments", [])
+
+    if len(args) < 2:
+        # Not enough arguments - return original string
+        if args:
+            return f"str({generate_expr(args[0], ctx)})"
+        return '""'
+
+    string_expr = generate_expr(args[0], ctx)
+    from_expr = generate_expr(args[1], ctx)
+
+    if len(args) >= 3:
+        to_expr = generate_expr(args[2], ctx)
+        # Build translation table with replacement
+        return f"str({string_expr}).translate(str.maketrans(str({from_expr}), str({to_expr}).ljust(len(str({from_expr})), chr(0)), ''.join(chr(0) if i < len(str({to_expr})) else c for i, c in enumerate(str({from_expr})))))"
+    else:
+        # No 'to' argument - delete all characters in 'from'
+        return f"str({string_expr}).translate(str.maketrans('', '', str({from_expr})))"
+
+
+def _gen_ascii(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ASCII/$A function.
+
+    Spec 010 Phase 7 (T050): $ASCII returns ASCII code of character.
+    $A(string [, position])
+
+    Returns -1 if position is out of range or string is empty.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1-2 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression using ord() with bounds checking
+
+    Examples:
+        $A("ABC") → 65 (A)
+        $A("ABC",2) → 66 (B)
+        $A("ABC",4) → -1 (out of range)
+        $A("") → -1 (empty string)
+    """
+    args = getattr(expr, "arguments", [])
+
+    if not args:
+        return "-1"
+
+    string_expr = generate_expr(args[0], ctx)
+
+    if len(args) >= 2:
+        pos_expr = generate_expr(args[1], ctx)
+        # 1-indexed position, -1 if out of range
+        return f"(ord(str({string_expr})[int(m_num({pos_expr}))-1]) if 0 < int(m_num({pos_expr})) <= len(str({string_expr})) else -1)"
+    else:
+        # Default position 1 (first character)
+        return f"(ord(str({string_expr})[0]) if str({string_expr}) else -1)"
+
+
+def _gen_char(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $CHAR/$C function.
+
+    Spec 010 Phase 7 (T051): $CHAR converts ASCII codes to characters.
+    $C(code1 [, code2, ...])
+
+    Multiple arguments produce concatenated characters.
+    Negative codes produce empty string (per YottaDB behavior).
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1+ arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression using chr() for each argument
+
+    Examples:
+        $C(65) → "A"
+        $C(65,66,67) → "ABC"
+        $C(-1) → "" (empty for negative)
+        $C(256) → "Ā" (Unicode)
+    """
+    args = getattr(expr, "arguments", [])
+
+    if not args:
+        return '""'
+
+    # Generate chr() for each argument, with negative check
+    parts = []
+    for arg in args:
+        arg_expr = generate_expr(arg, ctx)
+        # chr() for non-negative, empty string for negative
+        parts.append(
+            f"(chr(int(m_num({arg_expr}))) if int(m_num({arg_expr})) >= 0 else '')"
+        )
+
+    if len(parts) == 1:
+        return parts[0]
+    else:
+        return "(" + " + ".join(parts) + ")"
+
+
 # =============================================================================
 # Register Intrinsic Function Generators
 # =============================================================================
@@ -1076,6 +1234,16 @@ INTRINSIC_GENERATORS["D"] = _gen_data
 INTRINSIC_GENERATORS["DATA"] = _gen_data
 INTRINSIC_GENERATORS["G"] = _gen_get
 INTRINSIC_GENERATORS["GET"] = _gen_get
+
+# Phase 7: String search and transform functions ($FIND, $TRANSLATE, $ASCII, $CHAR)
+INTRINSIC_GENERATORS["F"] = _gen_find
+INTRINSIC_GENERATORS["FIND"] = _gen_find
+INTRINSIC_GENERATORS["TR"] = _gen_translate
+INTRINSIC_GENERATORS["TRANSLATE"] = _gen_translate
+INTRINSIC_GENERATORS["A"] = _gen_ascii
+INTRINSIC_GENERATORS["ASCII"] = _gen_ascii
+INTRINSIC_GENERATORS["C"] = _gen_char
+INTRINSIC_GENERATORS["CHAR"] = _gen_char
 
 
 __all__ = ["generate_expr", "generate_intrinsic_function", "INTRINSIC_GENERATORS"]

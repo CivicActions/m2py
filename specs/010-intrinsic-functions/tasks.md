@@ -183,12 +183,12 @@
 
 **Complexity**: Medium - returns position after match, not match position
 
-- [ ] T043 [P] [US4] Add m_find() helper function in src/m2py/runtime/helpers.py
-- [ ] T044 [US4] Add _gen_find() generator in src/m2py/codegen/expressions.py
-- [ ] T045 [US4] Register FIND/F in INTRINSIC_GENERATORS dispatch table
-- [ ] T046 [US4] Replace stub test_function_find in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T043 [P] [US4] Add m_find() helper function in src/m2py/runtime/helpers.py
+- [X] T044 [US4] Add _gen_find() generator in src/m2py/codegen/expressions.py
+- [X] T045 [US4] Register FIND/F in INTRINSIC_GENERATORS dispatch table
+- [X] T046 [US4] Replace stub test_function_find in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
-**Checkpoint**: $F("HELLO","LL") → 5 (position AFTER "LL")
+**Checkpoint**: $F("HELLO","LL") → 5 (position AFTER "LL") ✅
 
 ---
 
@@ -198,11 +198,11 @@
 
 **Complexity**: Low - uses Python str.translate()
 
-- [ ] T047 [P] [US5] Add _gen_translate() generator in src/m2py/codegen/expressions.py
-- [ ] T048 [US5] Register TRANSLATE/TR in INTRINSIC_GENERATORS dispatch table
-- [ ] T049 [US5] Replace stub test_function_translate in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T047 [P] [US5] Add _gen_translate() generator in src/m2py/codegen/expressions.py
+- [X] T048 [US5] Register TRANSLATE/TR in INTRINSIC_GENERATORS dispatch table
+- [X] T049 [US5] Replace stub test_function_translate in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
-**Checkpoint**: $TR("HELLO","L") → "HEO"
+**Checkpoint**: $TR("HELLO","L") → "HEO" ✅
 
 ---
 
@@ -212,13 +212,13 @@
 
 **Complexity**: Low - inline ord()/chr() with edge case handling
 
-- [ ] T050 [P] [US6] Add _gen_ascii() generator in src/m2py/codegen/expressions.py
-- [ ] T051 [P] [US6] Add _gen_char() generator in src/m2py/codegen/expressions.py
-- [ ] T052 [US6] Register ASCII/A and CHAR/C in INTRINSIC_GENERATORS dispatch table
-- [ ] T053 [US6] Replace stub test_function_ascii in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
-- [ ] T054 [US6] Replace stub test_function_char in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T050 [P] [US6] Add _gen_ascii() generator in src/m2py/codegen/expressions.py
+- [X] T051 [P] [US6] Add _gen_char() generator in src/m2py/codegen/expressions.py
+- [X] T052 [US6] Register ASCII/A and CHAR/C in INTRINSIC_GENERATORS dispatch table
+- [X] T053 [US6] Replace stub test_function_ascii in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T054 [US6] Replace stub test_function_char in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
-**Checkpoint**: $A("ABC") → 65, $C(65,66,67) → "ABC"
+**Checkpoint**: $A("ABC") → 65, $C(65,66,67) → "ABC" ✅
 
 ---
 

@@ -278,8 +278,9 @@ class RoutineGenerator:
         # Spec 009: Import LHS function helpers (Phase 3-4) and $DATA helpers (Phase 8)
         # Spec 010: Import $ORDER and $QUERY helpers (Phase 2), $SELECT helper (Phase 3)
         # Spec 010: Import $PIECE and $EXTRACT helpers (Phase 5), $GET helpers (Phase 6)
+        # Spec 010: Import $FIND helper (Phase 7)
         ctx.emitter.line(
-            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global"
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find"
         )
 
         # Spec 006: Additional imports for trampoline pattern

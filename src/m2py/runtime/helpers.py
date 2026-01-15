@@ -617,6 +617,57 @@ def m_extract(string: str, from_pos: int, to_pos: int) -> str:
     return string[from_idx:to_idx]
 
 
+def m_find(string: str, target: str, start: int = 1) -> int:
+    """Find substring and return position AFTER the match (RHS $FIND).
+
+    Spec 010 Phase 7 (T043): $FIND locates substring and returns position
+    AFTER the end of the match. Returns 0 if not found.
+
+    Args:
+        string: The string to search in
+        target: The substring to find
+        start: Starting position for search (1-indexed, default 1)
+
+    Returns:
+        Position AFTER the found substring (1-indexed), or 0 if not found.
+
+    Examples:
+        m_find("HELLO", "LL") → 5 (position after "LL")
+        m_find("HELLO", "L") → 4 (position after first "L")
+        m_find("HELLO", "X") → 0 (not found)
+        m_find("HELLO", "L", 4) → 5 (search from position 4)
+        m_find("ABC", "") → 1 (empty target found at start)
+
+    Note:
+        - Returns position AFTER the match, not the start of the match
+        - Empty target string returns start position
+        - start <= 0 is treated as 1
+    """
+    # Handle edge cases
+    if start <= 0:
+        start = 1
+
+    # Empty target returns start position (MUMPS behavior)
+    if target == "":
+        return start
+
+    # Convert to 0-indexed for search
+    start_idx = start - 1
+
+    # If start is beyond string length, not found
+    if start_idx >= len(string):
+        return 0
+
+    # Find the target starting from start_idx
+    pos = string.find(target, start_idx)
+
+    if pos == -1:
+        return 0
+
+    # Return position AFTER the match (1-indexed)
+    return pos + len(target) + 1
+
+
 def m_get(
     array: "MArray | None", subscripts: tuple[str, ...], default: str = ""
 ) -> str:
