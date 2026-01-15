@@ -333,10 +333,27 @@ class RoutineGenerator:
 
         # T083: Extrinsic function helper - saves/restores $TEST
         # T076: Accept _rt as first parameter for shared runtime
+        # Spec 010 (T020): Handle by-ref parameter unpacking via _byref
         ctx.emitter.blank()
-        ctx.emitter.line("def _call_extrinsic(_rt, _ef, *args, _scope=None):")
+        ctx.emitter.line(
+            "def _call_extrinsic(_rt, _ef, *args, _scope=None, _byref=None):"
+        )
         with ctx.emitter.indented():
-            ctx.emitter.line('"""Call extrinsic function with $TEST save/restore."""')
+            ctx.emitter.line(
+                '"""Call extrinsic function with $TEST save/restore and by-ref handling.'
+            )
+            ctx.emitter.blank()
+            ctx.emitter.line("Args:")
+            ctx.emitter.line("    _rt: Runtime instance")
+            ctx.emitter.line("    _ef: The extrinsic function to call")
+            ctx.emitter.line("    *args: Positional arguments for the function")
+            ctx.emitter.line(
+                "    _scope: Variable scope dictionary for cross-routine visibility"
+            )
+            ctx.emitter.line(
+                "    _byref: List of by-ref variable names (or None for by-value)"
+            )
+            ctx.emitter.line('"""')
             ctx.emitter.line("global _test")
             ctx.emitter.line("_saved = _test")
             ctx.emitter.line("try:")
@@ -344,10 +361,29 @@ class RoutineGenerator:
                 # T083: Pass _rt and _scope to external extrinsic
                 ctx.emitter.line("if _scope is not None:")
                 with ctx.emitter.indented():
-                    ctx.emitter.line("return _ef(_rt, *args, _scope=_scope)")
+                    ctx.emitter.line("_result = _ef(_rt, *args, _scope=_scope)")
                 ctx.emitter.line("else:")
                 with ctx.emitter.indented():
-                    ctx.emitter.line("return _ef(_rt, *args)")
+                    ctx.emitter.line("_result = _ef(_rt, *args)")
+                # Spec 010 (T020): Handle by-ref unpacking
+                ctx.emitter.line("# Unpack by-ref values if result is a tuple")
+                ctx.emitter.line(
+                    "if _byref and _scope is not None and isinstance(_result, tuple) and len(_result) > 1:"
+                )
+                with ctx.emitter.indented():
+                    ctx.emitter.line("_byref_idx = 1")
+                    ctx.emitter.line("for _name in _byref:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            "if _name is not None and _byref_idx < len(_result):"
+                        )
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                "_scope.setdefault(_name, MArray()).value = _result[_byref_idx]"
+                            )
+                            ctx.emitter.line("_byref_idx += 1")
+                    ctx.emitter.line("return _result[0]")
+                ctx.emitter.line("return _result")
             ctx.emitter.line("finally:")
             with ctx.emitter.indented():
                 ctx.emitter.line("_test = _saved")

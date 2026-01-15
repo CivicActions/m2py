@@ -88,12 +88,12 @@
 
 **Complexity**: Medium - extend existing infrastructure, add by-ref parameter handling, $TEST save/restore (FR-025)
 
-- [ ] T020 [US13] Extend _generate_extrinsic_arguments() to handle PassingMode.BY_REFERENCE and ensure $TEST save/restore per FR-025 in src/m2py/codegen/expressions.py
-- [ ] T021 [US13] Add tests for by-reference extrinsic parameters in tests/unit/codegen/s7_expressions/test_s7_1_6_extrinsic_functions.py
-- [ ] T022 [US13] Add test for internal extrinsic $$label returning value
-- [ ] T023 [US13] Add test for external extrinsic $$label^routine
+- [X] T020 [US13] Extend _generate_extrinsic_arguments() to handle PassingMode.BY_REFERENCE and ensure $TEST save/restore per FR-025 in src/m2py/codegen/expressions.py
+- [X] T021 [US13] Add tests for by-reference extrinsic parameters in tests/unit/codegen/s7_expressions/test_s7_1_6_extrinsic_functions.py
+- [X] T022 [US13] Add test for internal extrinsic $$label returning value
+- [X] T023 [US13] Add test for external extrinsic $$label^routine
 
-**Checkpoint**: Extrinsic functions work with both by-value and by-reference parameters
+**Checkpoint**: Extrinsic functions work with both by-value and by-reference parameters ✅
 
 ---
 

@@ -373,13 +373,21 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     Per MUMPS spec, the caller's $TEST is saved before the call and restored
     after, so the callee's $TEST changes don't leak back.
 
+    Spec 010 (T020): Handle by-reference parameters. When arguments are passed
+    by reference (.VAR), the caller's variables are updated when the callee
+    modifies them. This is handled by:
+    1. Callee returns tuple (value, *byref_outputs) when has by-ref outputs
+    2. Caller passes _byref list with variable names for by-ref args
+    3. _call_extrinsic helper unpacks and updates caller's scope
+
     Generated pattern (internal):
         _call_extrinsic(_rt, LABEL, arg1, arg2)
+        _call_extrinsic(_rt, LABEL, arg1, arg2, _scope=_scope, _byref=['A', 'B'])
 
     Generated pattern (external - Spec 008 Phase 7):
-        _call_extrinsic(_rt, ext2.ADD, arg1, arg2, _scope=_scope)
+        _call_extrinsic(_rt, ext2.ADD, arg1, arg2, _scope=_scope, _byref=['A', 'B'])
 
-    The _call_extrinsic helper handles save/restore of _test.
+    The _call_extrinsic helper handles save/restore of _test and by-ref unpacking.
     Phase 13 (T081): _rt is passed explicitly as first parameter.
 
     Args:
@@ -400,6 +408,16 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     if not label_name:
         raise NotImplementedError("Extrinsic function with empty label not supported")
 
+    # Generate arguments and collect by-ref info
+    args, byref_names = _generate_extrinsic_arguments_with_byref(expr.arguments, ctx)
+
+    # Build _byref parameter if there are by-ref arguments
+    byref_param = ""
+    if byref_names:
+        # Format: _byref=['A', 'B', None] - None for by-value positions
+        byref_list = ", ".join(repr(name) for name in byref_names)
+        byref_param = f", _byref=[{byref_list}]"
+
     # Spec 008 Phase 7 (T043-T046): Handle external routine extrinsic
     if expr.target.routine:
         routine_name = expr.target.routine
@@ -410,23 +428,26 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         # Translate label name to Python function name
         func_name = translate_name(label_name)
 
-        # Generate arguments
-        args = _generate_extrinsic_arguments(expr.arguments, ctx)
-
         # T045-T046: Generate call via _call_extrinsic with module prefix and _scope
-        # The _call_extrinsic helper provides $TEST save/restore
+        # The _call_extrinsic helper provides $TEST save/restore and by-ref unpacking
         # Phase 13 (T081): Pass _rt as first parameter
         if args:
-            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, {args}, _scope=_scope)"
+            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, {args}, _scope=_scope{byref_param})"
         else:
-            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, _scope=_scope)"
+            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, _scope=_scope{byref_param})"
 
     # Internal extrinsic (within same routine)
     # Translate label name to Python function name
     func_name = translate_name(label_name)
 
-    # Generate arguments
-    args = _generate_extrinsic_arguments(expr.arguments, ctx)
+    # Spec 010 (T020): For internal calls with by-ref, need _scope for by-ref unpacking
+    if byref_names:
+        if args:
+            return (
+                f"_call_extrinsic(_rt, {func_name}, {args}, _scope=_scope{byref_param})"
+            )
+        else:
+            return f"_call_extrinsic(_rt, {func_name}, _scope=_scope{byref_param})"
 
     # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2)
     # Phase 13 (T081): Pass _rt as first parameter
@@ -436,14 +457,69 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         return f"_call_extrinsic(_rt, {func_name})"
 
 
+def _generate_extrinsic_arguments_with_byref(
+    arguments: List[MActualParameter], ctx: "GeneratorContext"
+) -> tuple[str, list[str | None]]:
+    """Generate Python arguments for extrinsic function call with by-ref info.
+
+    Spec 010 (T020): Returns both the argument string and a list of by-ref
+    variable names. The by-ref list has the variable name for BY_REFERENCE
+    arguments and None for BY_VALUE arguments.
+
+    Args:
+        arguments: List of MActualParameter
+        ctx: Generator context
+
+    Returns:
+        Tuple of (comma-separated argument string, list of by-ref names)
+    """
+    if not arguments:
+        return "", []
+
+    parts = []
+    byref_names: list[str | None] = []
+    has_byref = False
+
+    for arg in arguments:
+        if arg.passing_mode == PassingMode.OMITTED:
+            parts.append("None")
+            byref_names.append(None)
+        elif arg.passing_mode == PassingMode.BY_REFERENCE:
+            # By-reference: pass the variable value, record name for unpacking
+            has_byref = True
+            if arg.variable_name:
+                # Spec 009 (T021): Use MArray.value for SIMPLE_FUNCTIONS
+                var_name = arg.variable_name
+                parts.append(f"_scope.get({var_name!r}, MArray()).value")
+                byref_names.append(var_name)
+            elif arg.expression:
+                # Expression passed by-ref (unusual but possible)
+                parts.append(generate_expr(arg.expression, ctx))
+                byref_names.append(None)  # Can't write back to expression
+            else:
+                parts.append("None")
+                byref_names.append(None)
+        else:  # BY_VALUE
+            if arg.expression:
+                parts.append(generate_expr(arg.expression, ctx))
+            elif arg.variable_name:
+                var_name = arg.variable_name
+                parts.append(f"_scope.get({var_name!r}, MArray()).value")
+            else:
+                parts.append("None")
+            byref_names.append(None)
+
+    # Only return byref_names if there were actually by-ref arguments
+    return ", ".join(parts), byref_names if has_byref else []
+
+
 def _generate_extrinsic_arguments(
     arguments: List[MActualParameter], ctx: "GeneratorContext"
 ) -> str:
     """Generate Python arguments for extrinsic function call.
 
-    Note: By-reference parameters in extrinsic functions would need special
-    handling (similar to DO calls in Phase 10), but for Spec 005 we just
-    pass values. Full by-ref support for extrinsics is Spec 010.
+    Note: This is the legacy version that doesn't handle by-ref.
+    Use _generate_extrinsic_arguments_with_byref for full by-ref support.
 
     Args:
         arguments: List of MActualParameter
@@ -452,21 +528,8 @@ def _generate_extrinsic_arguments(
     Returns:
         Comma-separated argument string
     """
-    if not arguments:
-        return ""
-
-    parts = []
-    for arg in arguments:
-        if arg.passing_mode == PassingMode.OMITTED:
-            parts.append("None")
-        elif arg.expression:
-            parts.append(generate_expr(arg.expression, ctx))
-        elif arg.variable_name:
-            parts.append(translate_name(arg.variable_name))
-        else:
-            parts.append("None")
-
-    return ", ".join(parts)
+    args, _ = _generate_extrinsic_arguments_with_byref(arguments, ctx)
+    return args
 
 
 def _generate_data(expr, ctx: "GeneratorContext") -> str:

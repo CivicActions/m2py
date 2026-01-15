@@ -867,12 +867,13 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
 
     MUMPS QUIT has context-dependent behavior:
     - With return value: returns value from extrinsic (Python: return value)
+    - With return value + by-ref outputs: returns tuple (value, *byref_outputs)
     - Inside a FOR loop: exits the FOR loop (Python: break)
     - Inside a DO block: exits the DO block only (Python: break from while True)
     - Otherwise: returns from label/routine (Python: return or return (None, state))
 
     Priority order (checked first to last):
-    1. return_value -> return <expr>
+    1. return_value -> return <expr> (or tuple with by-ref outputs)
     2. exits_for (from ASG) -> break
     3. exits_do_block (from ASG) -> break (exit DO block's while True)
     4. default -> return (or return (None, state) for trampoline)
@@ -882,8 +883,36 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     # T045: QUIT with return value (extrinsic function return)
+    # Spec 010 (T020): If label has by-ref outputs, return tuple (value, *byref_outputs)
     if stmt.return_value is not None:
         value_expr = generate_expr(stmt.return_value, ctx)
+
+        # Check if label has by-ref outputs that need to be included
+        if (
+            ctx.current_label
+            and ctx.current_label.signature
+            and ctx.current_label.signature.byref_outputs
+        ):
+            byref_outputs = ctx.current_label.signature.byref_outputs
+            formal_params = ctx.current_label.signature.formal_params
+            # Build tuple: (return_value, byref1, byref2, ...)
+            # Spec 009 (T021): Use MArray.value for consistency
+            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                byref_exprs = [
+                    f"_scope.get({p!r}, MArray()).value"
+                    for p in formal_params
+                    if p in byref_outputs
+                ]
+            else:
+                byref_exprs = [
+                    translate_name(p) for p in formal_params if p in byref_outputs
+                ]
+            if byref_exprs:
+                all_exprs = [value_expr] + byref_exprs
+                ctx.emitter.line(f"return ({', '.join(all_exprs)})")
+                return
+
+        # No by-ref outputs - just return the value
         ctx.emitter.line(f"return {value_expr}")
         return
 
