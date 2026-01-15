@@ -296,14 +296,14 @@
 
 **Purpose**: Full validation against YottaDB and documentation updates
 
-- [ ] T077 Run MUGJ V1FNL.m tests and compare with YottaDB output
-- [ ] T078 Run MUGJ V1FNE1.m, V1FNE2.m tests for $EXTRACT
-- [ ] T079 Run MUGJ V1FNP1.m, V1FNP2.m tests for $PIECE
-- [ ] T080 Run MUGJ V1FNF1.m, V1FNF2.m, V1FNF3.m tests for $FIND
-- [ ] T081 [P] Update docs/codegen/functions.md with implementation details
-- [ ] T082 [P] Remove all @pytest.mark.xfail markers from intrinsic function tests
-- [ ] T083 Run full test suite and verify no regressions
-- [ ] T084 Validate generated Python with ast.parse() for all test cases
+- [X] T077 Run MUGJ V1FNL.m tests and compare with YottaDB output
+- [X] T078 Run MUGJ V1FNE1.m, V1FNE2.m tests for $EXTRACT
+- [X] T079 Run MUGJ V1FNP1.m, V1FNP2.m tests for $PIECE
+- [X] T080 Run MUGJ V1FNF1.m, V1FNF2.m, V1FNF3.m tests for $FIND
+- [X] T081 [P] Update docs/codegen/functions.md with implementation details
+- [X] T082 [P] Remove all @pytest.mark.xfail markers from intrinsic function tests
+- [X] T083 Run full test suite and verify no regressions
+- [X] T084 Validate generated Python with ast.parse() for all test cases
 
 ---
 

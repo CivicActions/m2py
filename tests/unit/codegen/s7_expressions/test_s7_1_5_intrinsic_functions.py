@@ -435,11 +435,23 @@ class TestIntrinsicFunctionsCodegen:
         assert result.success is False
         assert "SELECTFALSE" in result.error
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT codegen")
     def test_function_text(self, generate_python):
-        """$TEXT generates source retrieval (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+        """$TEXT generates source retrieval (§7.1.5).
+
+        $TEXT returns source code lines from the routine.
+        Implemented in Spec 008 with _rt.get_text() runtime method.
+        """
+        # Test $T(+N) generates get_text() with offset
+        code = generate_python("TEST W $T(+1) Q")
+        assert "_rt.get_text(offset=1)" in code
+
+        # Test $T(LABEL) generates get_text() with label
+        code = generate_python("TEST W $T(END) Q\nEND Q")
+        assert "_rt.get_text(" in code and 'label="END"' in code
+
+        # Test $T(+0) returns routine name
+        code = generate_python("TEST W $T(+0) Q")
+        assert "_rt.get_text(offset=0)" in code
 
     def test_function_translate(self, execute_mumps):
         """$TRANSLATE generates str.translate (§7.1.5).

@@ -6,6 +6,33 @@ How to translate MUMPS intrinsic functions to Python.
 
 MUMPS intrinsic functions start with `$`. Most have both full and abbreviated names.
 
+## Implementation Status
+
+All intrinsic functions are implemented and validated against YottaDB:
+
+| Function | Abbreviation | Status | Implementation |
+|----------|--------------|--------|----------------|
+| $LENGTH | $L | ✅ | Inline `len()` or `count()+1` |
+| $PIECE | $P | ✅ | `m_piece()` helper |
+| $EXTRACT | $E | ✅ | `m_extract()` helper |
+| $FIND | $F | ✅ | `m_find()` helper |
+| $TRANSLATE | $TR | ✅ | Inline `str.translate()` |
+| $JUSTIFY | $J | ✅ | `m_justify()` helper |
+| $ASCII | $A | ✅ | Inline `ord()` |
+| $CHAR | $C | ✅ | Inline `chr()` |
+| $REVERSE | $RE | ✅ | Inline `[::-1]` |
+| $FNUMBER | $FN | ✅ | `m_fnumber()` helper |
+| $RANDOM | $R | ✅ | Inline `random.randint()` |
+| $DATA | $D | ✅ | `m_data()` / `m_data_global()` |
+| $GET | $G | ✅ | `m_get()` / `m_get_global()` |
+| $ORDER | $O | ✅ | `m_order()` / `m_order_global()` |
+| $QUERY | $Q | ✅ | `m_query()` / `m_query_global()` |
+| $SELECT | $S | ✅ | Inline chained conditional |
+| $NAME | $NA | ✅ | `m_name()` helper |
+| $QLENGTH | $QL | ✅ | `m_qlength()` helper |
+| $QSUBSCRIPT | $QS | ✅ | `m_qsubscript()` helper |
+| $TEXT | $T | ✅ | Runtime `_rt.get_text()` |
+
 ## Implementation Architecture
 
 Intrinsic functions are handled by the `generate_intrinsic_function()` dispatcher in `codegen/expressions.py`. The function uses a dispatch table (`INTRINSIC_GENERATORS`) that maps function names to generator functions:

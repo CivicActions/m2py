@@ -591,16 +591,22 @@ def m_extract(string: str, from_pos: int, to_pos: int) -> str:
         m_extract("HELLO", 1, 1) → "H"
         m_extract("HELLO", 2, 4) → "ELL"
         m_extract("HELLO", 6, 6) → ""
-        m_extract("HELLO", 0, 1) → ""
+        m_extract("HELLO", 0, 3) → "HEL" (start treated as 1)
+        m_extract("HELLO", -5, 3) → "HEL" (negative start treated as 1)
 
     Note:
-        - Positions <= 0 return empty string
+        - from_pos <= 0 is treated as 1 per MUMPS spec
+        - to_pos <= 0 returns empty string
         - from_pos > to_pos returns empty string
         - from_pos > string length returns empty string
     """
-    # Handle edge cases
-    if from_pos <= 0:
+    # Handle edge cases: to_pos <= 0 means empty result
+    if to_pos <= 0:
         return ""
+
+    # Per MUMPS spec: from_pos <= 0 is treated as 1
+    if from_pos <= 0:
+        from_pos = 1
 
     if to_pos < from_pos:
         return ""
