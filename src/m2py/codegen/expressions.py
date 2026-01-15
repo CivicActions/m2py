@@ -865,6 +865,125 @@ def _gen_select(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
 
 # =============================================================================
+# Phase 5: String Functions ($LENGTH, $PIECE, $EXTRACT)
+# =============================================================================
+
+
+def _gen_length(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $LENGTH/$L function.
+
+    Spec 010 Phase 5 (T024-T026): $LENGTH has two forms:
+    1. $L(string) - returns character count (len())
+    2. $L(string, delimiter) - returns piece count (count + 1)
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1 or 2 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression for length or piece count
+
+    Examples:
+        $L("HELLO") → len("HELLO")
+        $L("A^B^C","^") → (str("A^B^C").count("^") + 1)
+        $L("","^") → 1 (empty string has 1 piece)
+    """
+    args = getattr(expr, "arguments", [])
+
+    if not args:
+        # No arguments - return 0 (edge case)
+        return "0"
+
+    # First argument is the string
+    string_expr = generate_expr(args[0], ctx)
+
+    if len(args) == 1:
+        # Single argument - character count
+        return f"len(str({string_expr}))"
+    else:
+        # Two arguments - piece count
+        # Piece count = delimiter occurrences + 1
+        delimiter_expr = generate_expr(args[1], ctx)
+        return f"(str({string_expr}).count(str({delimiter_expr})) + 1)"
+
+
+def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $PIECE/$P function.
+
+    Spec 010 Phase 5 (T027-T030): $PIECE extracts delimited pieces.
+    $P(string, delimiter, from [, to])
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 2-4 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_piece() helper
+
+    Examples:
+        $P("A^B^C","^",2) → m_piece("A^B^C", "^", 2)
+        $P("A^B^C","^",2,3) → m_piece("A^B^C", "^", 2, 3)
+    """
+    args = getattr(expr, "arguments", [])
+
+    if len(args) < 3:
+        # Not enough arguments - return empty string
+        return '""'
+
+    string_expr = generate_expr(args[0], ctx)
+    delimiter_expr = generate_expr(args[1], ctx)
+    from_expr = generate_expr(args[2], ctx)
+
+    if len(args) >= 4:
+        to_expr = generate_expr(args[3], ctx)
+        return f"m_piece(str({string_expr}), str({delimiter_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
+    else:
+        return f"m_piece(str({string_expr}), str({delimiter_expr}), int(m_num({from_expr})))"
+
+
+def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $EXTRACT/$E function.
+
+    Spec 010 Phase 5 (T031-T034): $EXTRACT extracts substrings by position.
+    $E(string [, from [, to]])
+
+    MUMPS uses 1-based indexing. Default from=1, default to=from.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1-3 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_extract() helper
+
+    Examples:
+        $E("HELLO") → m_extract("HELLO", 1, 1)
+        $E("HELLO",2) → m_extract("HELLO", 2, 2)
+        $E("HELLO",2,4) → m_extract("HELLO", 2, 4)
+    """
+    args = getattr(expr, "arguments", [])
+
+    if not args:
+        # No arguments - return empty string
+        return '""'
+
+    string_expr = generate_expr(args[0], ctx)
+
+    if len(args) == 1:
+        # $E(string) - default to first character
+        return f"m_extract(str({string_expr}), 1, 1)"
+    elif len(args) == 2:
+        # $E(string, from) - single character at position from
+        from_expr = generate_expr(args[1], ctx)
+        return f"m_extract(str({string_expr}), int(m_num({from_expr})), int(m_num({from_expr})))"
+    else:
+        # $E(string, from, to) - substring
+        from_expr = generate_expr(args[1], ctx)
+        to_expr = generate_expr(args[2], ctx)
+        return f"m_extract(str({string_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
+
+
+# =============================================================================
 # Register Intrinsic Function Generators
 # =============================================================================
 # Registration happens at module load time after all functions are defined.
@@ -878,15 +997,14 @@ INTRINSIC_GENERATORS["QUERY"] = _gen_query
 # Phase 3: $SELECT
 INTRINSIC_GENERATORS["S"] = _gen_select
 INTRINSIC_GENERATORS["SELECT"] = _gen_select
-# INTRINSIC_GENERATORS["S"] = _gen_select
-# INTRINSIC_GENERATORS["SELECT"] = _gen_select
 
-# Phase 5: String functions
-# INTRINSIC_GENERATORS["L"] = _gen_length
-# INTRINSIC_GENERATORS["LENGTH"] = _gen_length
-# INTRINSIC_GENERATORS["P"] = _gen_piece
-# INTRINSIC_GENERATORS["PIECE"] = _gen_piece
-# ... more to be added
+# Phase 5: String functions ($LENGTH, $PIECE, $EXTRACT)
+INTRINSIC_GENERATORS["L"] = _gen_length
+INTRINSIC_GENERATORS["LENGTH"] = _gen_length
+INTRINSIC_GENERATORS["P"] = _gen_piece
+INTRINSIC_GENERATORS["PIECE"] = _gen_piece
+INTRINSIC_GENERATORS["E"] = _gen_extract
+INTRINSIC_GENERATORS["EXTRACT"] = _gen_extract
 
 
 __all__ = ["generate_expr", "generate_intrinsic_function", "INTRINSIC_GENERATORS"]

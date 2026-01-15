@@ -28,11 +28,39 @@ class TestIntrinsicFunctionsCodegen:
         """$DATA generates data check (§7.1.5)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $EXTRACT codegen")
-    def test_function_extract(self, generate_python):
-        """$EXTRACT generates string slice (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_extract(self, execute_mumps):
+        """$EXTRACT generates string slice (§7.1.5).
+
+        Spec 010 Phase 5 (T031-T034): $EXTRACT extracts substrings by position.
+        Uses 1-based indexing with inclusive range.
+        """
+        # Test 1: Default - first character
+        result = execute_mumps('TEST W $E("HELLO") Q')
+        assert result.output == "H"
+
+        # Test 2: Single position
+        result = execute_mumps('TEST W $E("HELLO",2) Q')
+        assert result.output == "E"
+
+        # Test 3: Range extraction
+        result = execute_mumps('TEST W $E("HELLO",2,4) Q')
+        assert result.output == "ELL"
+
+        # Test 4: Out of range returns empty
+        result = execute_mumps('TEST W $E("HELLO",6) Q')
+        assert result.output == ""
+
+        # Test 5: Position 0 returns empty
+        result = execute_mumps('TEST W $E("HELLO",0) Q')
+        assert result.output == ""
+
+        # Test 6: Reverse range (start > end) returns empty
+        result = execute_mumps('TEST W $E("HELLO",4,2) Q')
+        assert result.output == ""
+
+        # Test 7: Full form abbreviation
+        result = execute_mumps('TEST W $EXTRACT("ABC",1,2) Q')
+        assert result.output == "AB"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: $FIND codegen")
@@ -46,11 +74,36 @@ class TestIntrinsicFunctionsCodegen:
         """$GET generates dict.get() equivalent (§7.1.5)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $LENGTH codegen")
-    def test_function_length(self, generate_python):
-        """$LENGTH generates len() equivalent (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_length(self, execute_mumps):
+        """$LENGTH generates len() equivalent (§7.1.5).
+
+        Spec 010 Phase 5 (T024-T026): $LENGTH has two forms:
+        1. $L(string) - character count
+        2. $L(string, delimiter) - piece count
+        """
+        # Test 1: Character count
+        result = execute_mumps('TEST W $L("HELLO") Q')
+        assert result.output == "5"
+
+        # Test 2: Empty string length
+        result = execute_mumps('TEST W $L("") Q')
+        assert result.output == "0"
+
+        # Test 3: Piece count
+        result = execute_mumps('TEST W $L("A^B^C","^") Q')
+        assert result.output == "3"
+
+        # Test 4: Empty string has 1 piece
+        result = execute_mumps('TEST W $L("","^") Q')
+        assert result.output == "1"
+
+        # Test 5: Leading/trailing delimiters count as pieces
+        result = execute_mumps('TEST W $L("^A^B^","^") Q')
+        assert result.output == "4"
+
+        # Test 6: Full form abbreviation
+        result = execute_mumps('TEST W $LENGTH("ABC") Q')
+        assert result.output == "3"
 
     def test_function_order(self, execute_mumps):
         """$ORDER generates next key retrieval (§7.1.5).
@@ -88,11 +141,35 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST\n S A(1)=1,A("Z")=2\n S X=$O(A(1))\n W X\n Q')
         assert result.output == "Z"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $PIECE codegen")
-    def test_function_piece(self, generate_python):
-        """$PIECE generates string split (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_piece(self, execute_mumps):
+        """$PIECE generates string split (§7.1.5).
+
+        Spec 010 Phase 5 (T027-T030): $PIECE extracts delimited pieces.
+        Uses 1-based indexing.
+        """
+        # Test 1: Single piece extraction
+        result = execute_mumps('TEST W $P("A^B^C","^",2) Q')
+        assert result.output == "B"
+
+        # Test 2: Range extraction
+        result = execute_mumps('TEST W $P("A^B^C","^",2,3) Q')
+        assert result.output == "B^C"
+
+        # Test 3: Out of range returns empty
+        result = execute_mumps('TEST W $P("A^B^C","^",4) Q')
+        assert result.output == ""
+
+        # Test 4: First piece
+        result = execute_mumps('TEST W $P("A^B^C","^",1) Q')
+        assert result.output == "A"
+
+        # Test 5: Multi-character delimiter
+        result = execute_mumps('TEST W $P("A::B::C","::",2) Q')
+        assert result.output == "B"
+
+        # Test 6: Full form abbreviation
+        result = execute_mumps('TEST W $PIECE("X-Y-Z","-",2) Q')
+        assert result.output == "Y"
 
     def test_function_query(self, execute_mumps):
         """$QUERY generates tree traversal (§7.1.5).

@@ -105,11 +105,11 @@
 
 **Complexity**: Low - simple len() and count() operations
 
-- [ ] T024 [P] [US1] Add _gen_length() generator in src/m2py/codegen/expressions.py
-- [ ] T025 [P] [US1] Register LENGTH/L in INTRINSIC_GENERATORS dispatch table
-- [ ] T026 [US1] Replace stub test_function_length in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T024 [P] [US1] Add _gen_length() generator in src/m2py/codegen/expressions.py
+- [X] T025 [P] [US1] Register LENGTH/L in INTRINSIC_GENERATORS dispatch table
+- [X] T026 [US1] Replace stub test_function_length in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
-**Checkpoint**: $L("HELLO") → 5, $L("A^B^C","^") → 3
+**Checkpoint**: $L("HELLO") → 5, $L("A^B^C","^") → 3 ✅
 
 ---
 
@@ -119,12 +119,12 @@
 
 **Complexity**: Medium - edge cases for out-of-range pieces, ranges
 
-- [ ] T027 [US2] Add m_piece() helper function in src/m2py/runtime/helpers.py
-- [ ] T028 [US2] Add _gen_piece() generator in src/m2py/codegen/expressions.py
-- [ ] T029 [US2] Register PIECE/P in INTRINSIC_GENERATORS dispatch table
-- [ ] T030 [US2] Replace stub test_function_piece in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T027 [US2] Add m_piece() helper function in src/m2py/runtime/helpers.py
+- [X] T028 [US2] Add _gen_piece() generator in src/m2py/codegen/expressions.py
+- [X] T029 [US2] Register PIECE/P in INTRINSIC_GENERATORS dispatch table
+- [X] T030 [US2] Replace stub test_function_piece in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
-**Checkpoint**: $P("A^B^C","^",2) → "B", $P("A^B^C","^",2,3) → "B^C"
+**Checkpoint**: $P("A^B^C","^",2) → "B", $P("A^B^C","^",2,3) → "B^C" ✅
 
 ---
 
@@ -134,12 +134,12 @@
 
 **Complexity**: Medium - 1-based indexing, edge cases for out-of-range
 
-- [ ] T031 [US3] Add m_extract() helper function in src/m2py/runtime/helpers.py
-- [ ] T032 [US3] Add _gen_extract() generator in src/m2py/codegen/expressions.py
-- [ ] T033 [US3] Register EXTRACT/E in INTRINSIC_GENERATORS dispatch table
-- [ ] T034 [US3] Replace stub test_function_extract in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T031 [US3] Add m_extract() helper function in src/m2py/runtime/helpers.py
+- [X] T032 [US3] Add _gen_extract() generator in src/m2py/codegen/expressions.py
+- [X] T033 [US3] Register EXTRACT/E in INTRINSIC_GENERATORS dispatch table
+- [X] T034 [US3] Replace stub test_function_extract in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
-**Checkpoint**: $E("HELLO",2,4) → "ELL"
+**Checkpoint**: $E("HELLO",2,4) → "ELL" ✅
 
 ---
 

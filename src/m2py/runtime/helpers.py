@@ -506,6 +506,117 @@ def m_query_global(
     return backend.query(name, subscripts)
 
 
+# =============================================================================
+# Phase 5: String function helpers ($PIECE, $EXTRACT - RHS extraction)
+# =============================================================================
+
+
+def m_piece(
+    string: str, delimiter: str, from_pos: int, to_pos: int | None = None
+) -> str:
+    """Extract piece(s) from a delimited string (RHS $PIECE).
+
+    Spec 010 Phase 5 (T027): $PIECE extracts substrings by delimiter position.
+
+    Args:
+        string: The string to extract from
+        delimiter: The delimiter string
+        from_pos: Starting piece number (1-indexed)
+        to_pos: Ending piece number (1-indexed, optional - defaults to from_pos)
+
+    Returns:
+        The extracted piece(s), or empty string if out of range.
+        When extracting a range, pieces are rejoined with the delimiter.
+
+    Examples:
+        m_piece("A^B^C", "^", 2) → "B"
+        m_piece("A^B^C", "^", 2, 3) → "B^C"
+        m_piece("A^B^C", "^", 4) → ""
+        m_piece("A::B::C", "::", 2) → "B"
+
+    Note:
+        - Piece numbers <= 0 return empty string
+        - Multi-character delimiters are supported
+        - Empty delimiter returns empty string (edge case)
+    """
+    # Handle edge cases
+    if from_pos <= 0:
+        return ""
+
+    if to_pos is None:
+        to_pos = from_pos
+
+    # Invalid range
+    if to_pos < from_pos:
+        return ""
+
+    # Empty delimiter - edge case, return empty
+    if not delimiter:
+        return ""
+
+    # Split the string by delimiter
+    parts = string.split(delimiter)
+
+    # Convert to 0-indexed
+    from_idx = from_pos - 1
+    to_idx = to_pos - 1
+
+    # Out of range check
+    if from_idx >= len(parts):
+        return ""
+
+    # Extract the range (clamp to_idx to available parts)
+    to_idx = min(to_idx, len(parts) - 1)
+    extracted = parts[from_idx : to_idx + 1]
+
+    # Rejoin with delimiter for multi-piece extraction
+    return delimiter.join(extracted)
+
+
+def m_extract(string: str, from_pos: int, to_pos: int) -> str:
+    """Extract substring by character position (RHS $EXTRACT).
+
+    Spec 010 Phase 5 (T031): $EXTRACT extracts substrings by position.
+    MUMPS uses 1-based indexing with inclusive range.
+
+    Args:
+        string: The string to extract from
+        from_pos: Starting position (1-indexed)
+        to_pos: Ending position (1-indexed, inclusive)
+
+    Returns:
+        The extracted substring, or empty string if out of range.
+
+    Examples:
+        m_extract("HELLO", 1, 1) → "H"
+        m_extract("HELLO", 2, 4) → "ELL"
+        m_extract("HELLO", 6, 6) → ""
+        m_extract("HELLO", 0, 1) → ""
+
+    Note:
+        - Positions <= 0 return empty string
+        - from_pos > to_pos returns empty string
+        - from_pos > string length returns empty string
+    """
+    # Handle edge cases
+    if from_pos <= 0:
+        return ""
+
+    if to_pos < from_pos:
+        return ""
+
+    # Convert to 0-indexed
+    from_idx = from_pos - 1
+    to_idx = to_pos  # Python slice is exclusive, so to_pos is correct
+
+    # Out of range check
+    if from_idx >= len(string):
+        return ""
+
+    # Extract the substring
+    return string[from_idx:to_idx]
+
+
 def _raise_select_false() -> None:
     """Raise SELECTFALSE error for $SELECT with no true condition.
 

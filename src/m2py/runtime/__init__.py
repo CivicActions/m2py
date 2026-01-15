@@ -32,10 +32,13 @@ from m2py.runtime.exceptions import MRuntimeError
 
 # Spec 010: Import $ORDER and $QUERY helper functions (Phase 2)
 # Spec 010: Import $SELECT helper function (Phase 3)
+# Spec 010: Import $PIECE and $EXTRACT helper functions (Phase 5)
 from m2py.runtime.helpers import (
     _raise_select_false,
+    m_extract,
     m_order,
     m_order_global,
+    m_piece,
     m_query,
     m_query_global,
 )
@@ -782,4 +785,7 @@ __all__ = [
     "m_query_global",
     # Spec 010: $SELECT helper
     "_raise_select_false",
+    # Spec 010: $PIECE and $EXTRACT helpers (Phase 5)
+    "m_piece",
+    "m_extract",
 ]
