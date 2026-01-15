@@ -1095,6 +1095,71 @@ STAR W "0"
         result = execute_mumps(source)
         assert result.output == "2"
 
+    # Phase 11 (Spec 010): Intrinsic Function Offset Expressions (T075-T076)
+
+    def test_goto_offset_with_length_function(self, execute_mumps):
+        """T075: G LABEL+$L(X) uses length function in offset.
+
+        Intrinsic functions like $LENGTH can be used in computed offset
+        expressions. $L("AB") = 2, so G END+$L(X) is G END+2.
+        """
+        source = """TEST S X="AB" G END+$L(X) Q
+END W "0"
+ W "1"
+ W "2"
+ W "3"
+ Q"""
+        result = execute_mumps(source)
+        # $L("AB") = 2, so END+2 skips "0" and "1", outputs "23"
+        assert result.output == "23"
+
+    def test_do_offset_with_piece_function(self, execute_mumps):
+        """T076: D LABEL+$P(X,"^",1) uses piece function in offset.
+
+        Intrinsic functions like $PIECE can be used in computed offset
+        expressions. $P("3^5^7","^",1) = "3", so D END+$P(X,"^",1) is D END+3.
+        """
+        source = """TEST S X="3^5^7" D END+$P(X,"^",1) W "DONE" Q
+END W "0"
+ W "1"
+ W "2"
+ W "3"
+ W "4"
+ Q"""
+        result = execute_mumps(source)
+        # $P("3^5^7","^",1) = "3", so END+3 skips "0", "1", "2", outputs "34DONE"
+        assert result.output == "34DONE"
+
+    def test_goto_offset_with_extract_function(self, execute_mumps):
+        """G LABEL+$E(X) uses extract function in offset.
+
+        $EXTRACT can be used in computed offset expressions.
+        $E("25ABC") = "2", so G END+$E(X) is G END+2.
+        """
+        source = """TEST S X="25ABC" G END+$E(X) Q
+END W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        # $E("25ABC") = "2", so END+2 skips "0", "1", outputs "2"
+        assert result.output == "2"
+
+    def test_goto_offset_with_nested_functions(self, execute_mumps):
+        """G LABEL+$L($P(X,"^",2)) uses nested intrinsic functions.
+
+        Nested intrinsic function calls work in offset expressions.
+        $P("A^BC^D","^",2) = "BC", $L("BC") = 2, so G END+$L($P(X,"^",2)) is G END+2.
+        """
+        source = """TEST S X="A^BC^D" G END+$L($P(X,"^",2)) Q
+END W "0"
+ W "1"
+ W "2"
+ Q"""
+        result = execute_mumps(source)
+        # $P("A^BC^D","^",2) = "BC", $L("BC") = 2, so END+2 outputs "2"
+        assert result.output == "2"
+
     # Phase 7: Invalid Offset Error Handling (T035-T040)
 
     def test_invalid_literal_offset_raises_error(self, execute_mumps):

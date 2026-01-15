@@ -283,10 +283,10 @@
 
 **Purpose**: Enable intrinsic functions in computed offsets like G LABEL+$L(X)
 
-- [ ] T073 Identify offset expression evaluation code in src/m2py/codegen/
-- [ ] T074 Update offset evaluator to use generate_expr() for complex expressions
-- [ ] T075 Add test for G LABEL+$L(X) computed offset in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
-- [ ] T076 Add test for D LABEL+$P(X,"^",1) computed offset
+- [X] T073 Identify offset expression evaluation code in src/m2py/codegen/
+- [X] T074 Update offset evaluator to use generate_expr() for complex expressions
+- [X] T075 Add test for G LABEL+$L(X) computed offset in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [X] T076 Add test for D LABEL+$P(X,"^",1) computed offset
 
 **Checkpoint**: Computed offsets with function calls produce correct line dispatch
 
