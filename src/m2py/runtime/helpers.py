@@ -996,3 +996,121 @@ def m_qsubscript(name: str, position: int) -> str:
     if position > len(subscripts):
         return ""
     return subscripts[position - 1]
+
+
+def m_justify(value: float, width: int, decimals: int) -> str:
+    """Right-justify a numeric value with decimal formatting ($JUSTIFY).
+
+    Spec 010 Phase 10 (T067): Implements 3-argument $JUSTIFY.
+
+    Args:
+        value: Numeric value to format
+        width: Field width to right-justify within
+        decimals: Number of decimal places
+
+    Returns:
+        Right-justified string with specified decimal places
+
+    Examples:
+        m_justify(3.14159, 10, 2) → "      3.14"
+        m_justify(42, 5, 0) → "   42"
+    """
+    # Format with specified decimal places
+    formatted = f"{value:.{decimals}f}"
+    # Right-justify within width
+    return formatted.rjust(width)
+
+
+def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
+    """Format number with specified formatting codes ($FNUMBER).
+
+    Spec 010 Phase 10 (T069): Implements $FNUMBER intrinsic function.
+
+    Formatting codes (can be combined):
+    - "," = add comma separators for thousands
+    - "+" = show + sign for positive numbers
+    - "-" = suppress the minus sign on negative values
+    - "P" = parentheses for negative, space padding for positive
+    - "T" = trailing sign (trailing space for positive, - for negative)
+
+    Args:
+        value: Numeric value to format
+        codes: String of formatting codes
+        decimals: Number of decimal places (optional)
+
+    Returns:
+        Formatted number string
+
+    Examples:
+        m_fnumber(12345.67, ",") → "12,345.67"
+        m_fnumber(-42, "P") → "(42)"
+        m_fnumber(42, "+") → "+42"
+        m_fnumber(-42, "-") → "42"
+        m_fnumber(42, "T") → "42 "
+        m_fnumber(-42, "T") → "42-"
+    """
+    codes_upper = codes.upper()
+
+    # Handle decimals first
+    if decimals is not None:
+        value = round(value, decimals)
+
+    # Determine if value is negative
+    is_negative = value < 0
+    abs_value = abs(value)
+
+    # Format the number (without sign initially)
+    if decimals is not None:
+        formatted = f"{abs_value:.{decimals}f}"
+    else:
+        # MUMPS preserves decimal precision from input
+        if abs_value == int(abs_value):
+            formatted = str(int(abs_value))
+        else:
+            formatted = str(abs_value)
+
+    # Add comma separators if requested
+    if "," in codes_upper:
+        # Split by decimal point
+        parts = formatted.split(".")
+        # Add commas to integer part
+        int_part = parts[0]
+        int_with_commas = ""
+        for i, digit in enumerate(reversed(int_part)):
+            if i > 0 and i % 3 == 0:
+                int_with_commas = "," + int_with_commas
+            int_with_commas = digit + int_with_commas
+        if len(parts) > 1:
+            formatted = int_with_commas + "." + parts[1]
+        else:
+            formatted = int_with_commas
+
+    # Handle sign formatting based on codes
+    # Priority: P > - > T > + > default
+    if "P" in codes_upper:
+        # Parentheses for negative, space padding for positive
+        if is_negative:
+            return f"({formatted})"
+        else:
+            return f" {formatted} "
+    elif "-" in codes_upper:
+        # Suppress the minus sign on negative values (return absolute value)
+        return formatted
+    elif "T" in codes_upper:
+        # Trailing sign: space for positive, - for negative
+        if is_negative:
+            return f"{formatted}-"
+        else:
+            return f"{formatted} "
+    elif "+" in codes_upper:
+        # Force + sign for positive
+        if is_negative:
+            return f"-{formatted}"
+        else:
+            return f"+{formatted}"
+    else:
+        # Default: leading minus for negative
+        if is_negative:
+            return f"-{formatted}"
+        else:
+            return formatted

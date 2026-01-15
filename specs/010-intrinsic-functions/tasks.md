@@ -268,12 +268,12 @@
 
 **Complexity**: Medium - $FNUMBER has complex formatting codes
 
-- [ ] T067 [P] [US15] Add _gen_justify() generator in src/m2py/codegen/expressions.py
-- [ ] T068 [P] [US15] Add _gen_reverse() generator in src/m2py/codegen/expressions.py
-- [ ] T069 [US15] Add m_fnumber() helper function in src/m2py/runtime/helpers.py
-- [ ] T070 [US15] Add _gen_fnumber() generator in src/m2py/codegen/expressions.py
-- [ ] T071 [US15] Register JUSTIFY/J, FNUMBER/FN, REVERSE/RE in INTRINSIC_GENERATORS dispatch table
-- [ ] T072 [US15] Add tests for $JUSTIFY, $FNUMBER, $REVERSE in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T067 [P] [US15] Add _gen_justify() generator in src/m2py/codegen/expressions.py
+- [X] T068 [P] [US15] Add _gen_reverse() generator in src/m2py/codegen/expressions.py
+- [X] T069 [US15] Add m_fnumber() helper function in src/m2py/runtime/helpers.py
+- [X] T070 [US15] Add _gen_fnumber() generator in src/m2py/codegen/expressions.py
+- [X] T071 [US15] Register JUSTIFY/J, FNUMBER/FN, REVERSE/RE in INTRINSIC_GENERATORS dispatch table
+- [X] T072 [US15] Add tests for $JUSTIFY, $FNUMBER, $REVERSE in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
 
 **Checkpoint**: $J(12,5) → "   12", $FN(12345.67,",") → "12,345.67", $RE("HELLO") → "OLLEH"
 

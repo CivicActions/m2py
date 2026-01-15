@@ -1374,6 +1374,110 @@ def _gen_qsubscript(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     return f"m_qsubscript(str({name_expr}), int(m_num({pos_expr})))"
 
 
+def _gen_justify(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $JUSTIFY/$J function.
+
+    Spec 010 Phase 10 (T067): $JUSTIFY right-justifies a value within a field width.
+
+    $JUSTIFY(expr, width [, decimals]):
+    - Right-justify expr within width characters
+    - Optional decimals: format as number with specified decimal places
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 2-3 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression using string formatting
+
+    Examples:
+        $J(12,5) → "   12"
+        $J("ABC",6) → "   ABC"
+        $J(3.14159,10,2) → "      3.14"
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) < 2:
+        # Not enough arguments
+        if args:
+            return f"str({generate_expr(args[0], ctx)})"
+        return '""'
+
+    value_expr = generate_expr(args[0], ctx)
+    width_expr = generate_expr(args[1], ctx)
+
+    if len(args) >= 3:
+        # With decimals - use helper function for proper formatting
+        decimals_expr = generate_expr(args[2], ctx)
+        return f"m_justify(m_num({value_expr}), int(m_num({width_expr})), int(m_num({decimals_expr})))"
+    else:
+        # Simple right-justify
+        return f"str({value_expr}).rjust(int(m_num({width_expr})))"
+
+
+def _gen_reverse(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $REVERSE/$RE function.
+
+    Spec 010 Phase 10 (T068): $REVERSE reverses a string.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1 argument
+        ctx: Generator context
+
+    Returns:
+        Python expression using string slicing
+
+    Examples:
+        $RE("HELLO") → "OLLEH"
+        $RE("") → ""
+    """
+    args = getattr(expr, "arguments", [])
+    if not args:
+        return '""'
+
+    string_expr = generate_expr(args[0], ctx)
+    return f"str({string_expr})[::-1]"
+
+
+def _gen_fnumber(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $FNUMBER/$FN function.
+
+    Spec 010 Phase 10 (T070): $FNUMBER formats a number with various options.
+
+    $FNUMBER(number, codes [, decimals]):
+    - codes: string containing formatting codes
+      - "," = add comma separators
+      - "+" = show + sign for positive numbers
+      - "-" = trailing minus for negative
+      - "P" = parentheses for negative
+      - "T" = trailing sign (space for positive, - for negative)
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 2-3 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_fnumber() helper
+
+    Examples:
+        $FN(12345.67,",") → "12,345.67"
+        $FN(-42,"P") → "(42)"
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) < 2:
+        if args:
+            return f"str(m_num({generate_expr(args[0], ctx)}))"
+        return '""'
+
+    value_expr = generate_expr(args[0], ctx)
+    codes_expr = generate_expr(args[1], ctx)
+
+    if len(args) >= 3:
+        decimals_expr = generate_expr(args[2], ctx)
+        return f"m_fnumber(m_num({value_expr}), str({codes_expr}), int(m_num({decimals_expr})))"
+    else:
+        return f"m_fnumber(m_num({value_expr}), str({codes_expr}))"
+
+
 # =============================================================================
 # Register Intrinsic Function Generators
 # =============================================================================
@@ -1424,6 +1528,14 @@ INTRINSIC_GENERATORS["QL"] = _gen_qlength
 INTRINSIC_GENERATORS["QLENGTH"] = _gen_qlength
 INTRINSIC_GENERATORS["QS"] = _gen_qsubscript
 INTRINSIC_GENERATORS["QSUBSCRIPT"] = _gen_qsubscript
+
+# Phase 10: Formatting functions ($JUSTIFY, $FNUMBER, $REVERSE)
+INTRINSIC_GENERATORS["J"] = _gen_justify
+INTRINSIC_GENERATORS["JUSTIFY"] = _gen_justify
+INTRINSIC_GENERATORS["FN"] = _gen_fnumber
+INTRINSIC_GENERATORS["FNUMBER"] = _gen_fnumber
+INTRINSIC_GENERATORS["RE"] = _gen_reverse
+INTRINSIC_GENERATORS["REVERSE"] = _gen_reverse
 
 
 __all__ = [

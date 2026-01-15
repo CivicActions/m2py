@@ -566,6 +566,97 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST W $QSUBSCRIPT("A(1,2)",1) Q')
         assert result.output == "1"
 
+    def test_function_justify(self, execute_mumps):
+        """$JUSTIFY/$J right-justifies values in field width (§7.1.5).
+
+        Spec 010 Phase 10 (T067): $JUSTIFY right-justifies strings or numbers.
+        Two-argument form: simple right-justify.
+        Three-argument form: numeric formatting with decimal places.
+        """
+        # Test 1: Simple right-justify string
+        result = execute_mumps('TEST W $J("ABC",6) Q')
+        assert result.output == "   ABC"
+
+        # Test 2: Simple right-justify number
+        result = execute_mumps("TEST W $J(12,5) Q")
+        assert result.output == "   12"
+
+        # Test 3: Number with decimal places
+        result = execute_mumps("TEST W $J(3.14159,10,2) Q")
+        assert result.output == "      3.14"
+
+        # Test 4: Width smaller than string (no truncation)
+        result = execute_mumps('TEST W $J("HELLO",3) Q')
+        assert result.output == "HELLO"
+
+        # Test 5: Full form abbreviation
+        result = execute_mumps("TEST W $JUSTIFY(42,6) Q")
+        assert result.output == "    42"
+
+    def test_function_reverse(self, execute_mumps):
+        """$REVERSE/$RE reverses a string (§7.1.5).
+
+        Spec 010 Phase 10 (T068): $REVERSE returns string with characters in reverse order.
+        """
+        # Test 1: Simple reverse
+        result = execute_mumps('TEST W $RE("HELLO") Q')
+        assert result.output == "OLLEH"
+
+        # Test 2: Reverse number (treated as string)
+        result = execute_mumps("TEST W $RE(12345) Q")
+        assert result.output == "54321"
+
+        # Test 3: Empty string
+        result = execute_mumps('TEST W "[" W $RE("") W "]" Q')
+        assert result.output == "[]"
+
+        # Test 4: Single character
+        result = execute_mumps('TEST W $RE("X") Q')
+        assert result.output == "X"
+
+        # Test 5: Full form abbreviation
+        result = execute_mumps('TEST W $REVERSE("ABC") Q')
+        assert result.output == "CBA"
+
+    def test_function_fnumber(self, execute_mumps):
+        """$FNUMBER/$FN formats numbers with specified codes (§7.1.5).
+
+        Spec 010 Phase 10 (T069-T070): $FNUMBER formats numbers with codes:
+        - "," = add comma separators
+        - "+" = force plus sign for positive
+        - "-" = suppress minus sign on negative
+        - "P" = parentheses for negative
+        - "T" = trailing sign
+        """
+        # Test 1: Comma separators
+        result = execute_mumps('TEST W $FN(12345.67,",") Q')
+        assert result.output == "12,345.67"
+
+        # Test 2: Plus sign for positive
+        result = execute_mumps('TEST W $FN(42,"+") Q')
+        assert result.output == "+42"
+
+        # Test 3: Suppress minus on negative
+        result = execute_mumps('TEST W $FN(-42,"-") Q')
+        assert result.output == "42"
+
+        # Test 4: Parentheses for negative
+        result = execute_mumps('TEST W $FN(-42,"P") Q')
+        assert result.output == "(42)"
+
+        # Test 5: Trailing minus for negative
+        result = execute_mumps('TEST W $FN(-100,"T") Q')
+        assert result.output == "100-"
+
+        # Test 6: Trailing space for positive
+        # Note: trailing space may be stripped by test harness
+        result = execute_mumps('TEST W "|" W $FN(42,"T") W "|" Q')
+        assert result.output == "|42 |"
+
+        # Test 7: Full form abbreviation
+        result = execute_mumps('TEST W $FNUMBER(1000,",") Q')
+        assert result.output == "1,000"
+
     @pytest.mark.pre1995
     @pytest.mark.stub
     @pytest.mark.xfail(
