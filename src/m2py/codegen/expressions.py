@@ -70,11 +70,6 @@ def generate_intrinsic_function(
     if func_name in INTRINSIC_GENERATORS:
         return INTRINSIC_GENERATORS[func_name](expr, ctx)
 
-    # Fall back to existing special-case handlers until migrated
-    # $TEXT/$T is handled by existing _generate_text
-    if func_name in ("TEXT", "T"):
-        return _generate_text(expr, ctx)
-
     raise NotImplementedError(f"Intrinsic function ${expr.name} not yet implemented")
 
 
@@ -1536,6 +1531,14 @@ INTRINSIC_GENERATORS["FN"] = _gen_fnumber
 INTRINSIC_GENERATORS["FNUMBER"] = _gen_fnumber
 INTRINSIC_GENERATORS["RE"] = _gen_reverse
 INTRINSIC_GENERATORS["REVERSE"] = _gen_reverse
+
+# $TEXT (Spec 008, migrated to dispatch table for consistency)
+INTRINSIC_GENERATORS["T"] = _generate_text
+INTRINSIC_GENERATORS["TEXT"] = _generate_text
+
+# $NEXT (pre-1995 deprecated, maps to $ORDER)
+INTRINSIC_GENERATORS["N"] = _gen_order
+INTRINSIC_GENERATORS["NEXT"] = _gen_order
 
 
 __all__ = [

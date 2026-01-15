@@ -670,10 +670,65 @@ class TestIntrinsicFunctionsCodegen:
         assert result.output == "1,000"
 
     @pytest.mark.pre1995
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $NEXT codegen (deprecated but supported)"
-    )
-    def test_function_next(self, generate_python):
-        """$NEXT function generates $ORDER equivalent (§7.1.5, pre-1995)."""
-        pytest.fail("Stub - implement test")
+    def test_function_next(self, execute_mumps):
+        """$NEXT function generates $ORDER equivalent (§7.1.5, pre-1995).
+
+        Spec 010: $NEXT is deprecated but still supported by YottaDB.
+        It maps directly to $ORDER for forward iteration.
+        """
+        # Test 1: Forward iteration from empty string - gets first key
+        result = execute_mumps(
+            'TEST\n S A(1)=1,A(2)=2,A(3)=3\n S X=$N(A(""))\n W X\n Q'
+        )
+        assert result.output == "1"
+
+        # Test 2: Forward iteration from existing key
+        result = execute_mumps("TEST\n S A(1)=1,A(2)=2,A(3)=3\n S X=$N(A(1))\n W X\n Q")
+        assert result.output == "2"
+
+        # Test 3: Full form
+        result = execute_mumps('TEST\n S A(1)=1,A(2)=2\n S X=$NEXT(A(""))\n W X\n Q')
+        assert result.output == "1"
+
+    def test_function_case_insensitivity(self, execute_mumps):
+        """Function names are case-insensitive per FR-027 (§7.1.5).
+
+        Spec 010 FR-027: System MUST be case-insensitive for function names.
+        $l = $L = $LENGTH, $p = $P = $PIECE, etc.
+        """
+        # Test lowercase $l
+        result = execute_mumps('TEST W $l("HELLO") Q')
+        assert result.output == "5"
+
+        # Test lowercase $p
+        result = execute_mumps('TEST W $p("A^B^C","^",2) Q')
+        assert result.output == "B"
+
+        # Test lowercase $e
+        result = execute_mumps('TEST W $e("HELLO",1,3) Q')
+        assert result.output == "HEL"
+
+        # Test mixed case $Length
+        result = execute_mumps('TEST W $Length("ABC") Q')
+        assert result.output == "3"
+
+        # Test mixed case $Piece
+        result = execute_mumps('TEST W $Piece("X-Y","-",2) Q')
+        assert result.output == "Y"
+
+    def test_function_get_global_undefined(self, execute_mumps):
+        """$GET with undefined global returns empty or default (§7.1.5).
+
+        Spec 010 Edge Case: $G(^UNDEFINED) returns empty string.
+        """
+        # Test 1: Undefined global without default
+        result = execute_mumps('TEST W "[" W $G(^UNDEFINED12345) W "]" Q')
+        assert result.output == "[]"
+
+        # Test 2: Undefined global with default
+        result = execute_mumps('TEST W $G(^UNDEFINED12345,"DEFAULT") Q')
+        assert result.output == "DEFAULT"
+
+        # Test 3: Undefined subscripted global
+        result = execute_mumps('TEST W $G(^UNDEFINED12345(1,2),"DEF") Q')
+        assert result.output == "DEF"

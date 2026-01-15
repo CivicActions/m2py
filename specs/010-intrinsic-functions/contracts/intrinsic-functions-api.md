@@ -276,7 +276,7 @@ def m_fnumber(
         number: Numeric value
         codes: Format codes (combination of):
             - "+" → Always show sign
-            - "-" → Trailing minus for negatives
+            - "-" → Suppress minus sign (returns absolute value)
             - "," → Comma grouping
             - "P" → Parentheses for negatives
             - "T" → Trailing sign

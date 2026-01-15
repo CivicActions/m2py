@@ -5,10 +5,10 @@
 ## Prerequisites
 
 Ensure Spec 009 is complete:
-- [ ] MArray class in `runtime/__init__.py`
-- [ ] GlobalStorageBackend protocol in `runtime/globals.py`
-- [ ] `m_data()` and `m_data_global()` in `runtime/helpers.py`
-- [ ] Subscripted local variable codegen working
+- [X] MArray class in `runtime/__init__.py`
+- [X] GlobalStorageBackend protocol in `runtime/globals.py`
+- [X] `m_data()` and `m_data_global()` in `runtime/helpers.py`
+- [X] Subscripted local variable codegen working
 
 ## Implementation Order
 
@@ -172,8 +172,8 @@ uv run python utils/validate.py tests/functional/mugj/inref/V1FNL.m
 
 ## Success Criteria
 
-- [ ] All acceptance scenarios from spec.md pass
-- [ ] MUGJ V1FN* tests produce matching output
-- [ ] No xfail markers remain on intrinsic function tests
-- [ ] `ast.parse()` succeeds on all generated Python
-- [ ] Documentation updated (docs/codegen/functions.md)
+- [X] All acceptance scenarios from spec.md pass (validated via unit tests)
+- [ ] MUGJ V1FN* tests produce matching output (blocked by MFormatControl - deferred to Spec 011)
+- [X] No xfail markers remain on intrinsic function tests (except MUGJ-dependent stubs)
+- [X] `ast.parse()` succeeds on all generated Python
+- [X] Documentation updated (docs/codegen/functions.md)

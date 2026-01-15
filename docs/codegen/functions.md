@@ -32,6 +32,7 @@ All intrinsic functions are implemented and validated against YottaDB:
 | $QLENGTH | $QL | ✅ | `m_qlength()` helper |
 | $QSUBSCRIPT | $QS | ✅ | `m_qsubscript()` helper |
 | $TEXT | $T | ✅ | Runtime `_rt.get_text()` |
+| $NEXT | $N | ✅ | Maps to `$ORDER` (deprecated pre-1995) |
 
 ## Implementation Architecture
 

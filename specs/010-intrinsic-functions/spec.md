@@ -412,7 +412,7 @@ $J(12,5) → "   12" (right-justify in 5 chars)
 $J(12.345,8,2) → "   12.35" (2 decimal places)
 $J("X",3) → "  X" (string right-justify)
 $FN(12345.67,",") → "12,345.67" (comma grouping)
-$FN(-12345.67,"-") → "12345.67" (trailing minus for negative)
+$FN(-12345.67,"-") → "12345.67" (suppress minus sign)
 $RE("HELLO") → "OLLEH"
 ```
 
