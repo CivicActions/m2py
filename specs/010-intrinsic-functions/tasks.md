@@ -71,10 +71,10 @@
 
 **Complexity**: High - requires MSelectArg handling, short-circuit evaluation, SELECTFALSE error
 
-- [ ] T016 [US12] Add _gen_select() generator handling MSelectArg list in src/m2py/codegen/expressions.py
-- [ ] T017 [US12] Register SELECT/S in INTRINSIC_GENERATORS dispatch table
-- [ ] T018 [US12] Replace stub test_function_select in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
-- [ ] T019 [US12] Add test for SELECTFALSE error when no condition true
+- [X] T016 [US12] Add _gen_select() generator handling MSelectArg list in src/m2py/codegen/expressions.py
+- [X] T017 [US12] Register SELECT/S in INTRINSIC_GENERATORS dispatch table
+- [X] T018 [US12] Replace stub test_function_select in tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- [X] T019 [US12] Add test for SELECTFALSE error when no condition true
 
 **Checkpoint**: $SELECT evaluates conditions and raises MRuntimeError("SELECTFALSE") when none true
 

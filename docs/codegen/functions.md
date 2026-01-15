@@ -218,27 +218,31 @@ chr(65)         # "A"
 
 ### $SELECT / $S
 
-Conditional value selection.
+Conditional value selection. Evaluates conditions left-to-right and returns
+the value for the first true condition. Raises SELECTFALSE error if no
+condition is true.
+
+**Status**: ✅ Implemented (Spec 010 Phase 3)
+
+**Implementation**: Generated as chained conditional expression with
+`m_truth()` for condition evaluation and `_raise_select_false()` fallback.
 
 ```mumps
 $S(X=1:"one",X=2:"two",1:"other")
 ```
 
 ```python
-# Conceptual Python equivalent
-
-"one" if x == 1 else "two" if x == 2 else "other"
+# Generated Python code
+("one" if m_truth((X == 1)) else
+ ("two" if m_truth((X == 2)) else
+  ("other" if m_truth(1) else _raise_select_false())))
 ```
 
-Or using match (Python 3.10+):
-```python
-# Conceptual Python equivalent
-
-match x:
-    case 1: result = "one"
-    case 2: result = "two"
-    case _: result = "other"
-```
+**Key behaviors**:
+- Conditions are evaluated left-to-right
+- Returns value for first true condition
+- If no condition is true, raises `MRuntimeError("SELECTFALSE")`
+- Both full name `$SELECT` and abbreviation `$S` are supported
 
 ## Data Functions
 

@@ -131,11 +131,60 @@ class TestIntrinsicFunctionsCodegen:
         """$RANDOM generates random.randint (§7.1.5)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $SELECT codegen")
-    def test_function_select(self, generate_python):
-        """$SELECT generates conditional expression (§7.1.5)."""
-        pytest.fail("Stub - implement test")
+    def test_function_select(self, execute_mumps):
+        """$SELECT generates conditional expression (§7.1.5).
+
+        Spec 010 Phase 3: $SELECT evaluates conditions left-to-right
+        and returns the value for the first true condition.
+        """
+        # Test 1: Basic $SELECT with first condition true
+        result = execute_mumps('TEST S X=$S(1=1:"YES",1:"NO") W X Q')
+        assert result.output == "YES"
+
+        # Test 2: $SELECT with multiple conditions - second matches
+        result = execute_mumps('TEST S X=2 S Y=$S(X=1:"ONE",X=2:"TWO",1:"OTHER") W Y Q')
+        assert result.output == "TWO"
+
+        # Test 3: $SELECT with all false except final catch-all
+        result = execute_mumps('TEST S Y=$S(0:"A",0:"B",1:"C") W Y Q')
+        assert result.output == "C"
+
+        # Test 4: $SELECT with comparison operators
+        result = execute_mumps('TEST S A=5,B=3 S Y=$S(A>B:"FIRST",B>A:"SECOND") W Y Q')
+        assert result.output == "FIRST"
+
+        # Test 5: $SELECT using abbreviation $S
+        result = execute_mumps('TEST S Y=$S(1:"ONLY") W Y Q')
+        assert result.output == "ONLY"
+
+    def test_function_select_abbreviation(self, generate_python):
+        """$SELECT abbreviation $S generates same code (§7.1.5)."""
+        # Both $SELECT and $S should generate the same pattern
+        code_full = generate_python('TEST S X=$SELECT(1:"YES") Q')
+        code_abbrev = generate_python('TEST S X=$S(1:"YES") Q')
+
+        # Both should contain m_truth for condition check
+        assert "m_truth" in code_full
+        assert "m_truth" in code_abbrev
+
+    def test_function_select_selectfalse_error(self, generate_python):
+        """$SELECT raises SELECTFALSE when no condition is true (§7.1.5).
+
+        Spec 010 Phase 3 T019: $SELECT with no true conditions must raise
+        MRuntimeError with SELECTFALSE code.
+        """
+        from m2py.runtime import MUMPSRuntime
+
+        # Generate code for $SELECT with all false conditions
+        code = generate_python('TEST S X=$S(0:"A",0:"B") W X Q')
+
+        # Execute - runtime captures exception as result error
+        runtime = MUMPSRuntime()
+        result = runtime.execute(code)
+
+        # Check execution failed with SELECTFALSE error
+        assert result.success is False
+        assert "SELECTFALSE" in result.error
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: $TEXT codegen")

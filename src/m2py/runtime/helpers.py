@@ -504,3 +504,22 @@ def m_query_global(
         Delegates to backend.query() which updates naked indicator.
     """
     return backend.query(name, subscripts)
+
+
+def _raise_select_false() -> None:
+    """Raise SELECTFALSE error for $SELECT with no true condition.
+
+    Spec 010 Phase 3: This function is called as the final fallback in generated
+    $SELECT expressions. If all conditions evaluate to false, this raises
+    MRuntimeError with the SELECTFALSE error code.
+
+    Raises:
+        MRuntimeError: Always raises with code "SELECTFALSE"
+
+    Example generated code:
+        # $S(0:"A",0:"B") generates:
+        ("A" if m_truth(0) else "B" if m_truth(0) else _raise_select_false())
+    """
+    from m2py.runtime.exceptions import MRuntimeError
+
+    raise MRuntimeError("SELECTFALSE", "No argument to $SELECT was true")

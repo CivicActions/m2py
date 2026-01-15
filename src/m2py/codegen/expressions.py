@@ -18,6 +18,7 @@ from m2py.asg.expressions import (
     MExtrinsicFunction,
     MIntrinsicFunction,
     MLiteral,
+    MSelectArg,
     MSpecialVariable,
     MUnaryOp,
     MVariable,
@@ -730,6 +731,76 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
     return f"_rt.get_text({', '.join(params)})"
 
 
+def _gen_select(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $SELECT/$S function.
+
+    Spec 010 Phase 3: Generate chained conditional expression that evaluates
+    condition:value pairs left-to-right, returning the value for the first
+    true condition. If no condition is true, raises MRuntimeError("SELECTFALSE").
+
+    $SELECT(cond1:val1, cond2:val2, ..., 1:default) evaluates conditions
+    left-to-right and returns the value associated with the first true condition.
+
+    Args:
+        expr: IntrinsicFunction ASG node with arguments as list of MSelectArg
+        ctx: Generator context
+
+    Returns:
+        Python chained conditional expression with SELECTFALSE fallback
+
+    Examples:
+        $S(1=1:"YES",1:"NO") →
+            ("YES" if m_truth((1 == 1)) else "NO" if m_truth(1) else _raise_select_false())
+
+        $S(X=1:"ONE",X=2:"TWO",1:"OTHER") →
+            ("ONE" if m_truth((X == 1)) else "TWO" if m_truth((X == 2)) else
+             "OTHER" if m_truth(1) else _raise_select_false())
+    """
+    from m2py.runtime.exceptions import MRuntimeError  # noqa: F401 - for docstring
+
+    args = getattr(expr, "arguments", [])
+    if not args:
+        # Empty $SELECT - error
+        return "_raise_select_false()"
+
+    # Build the chained conditional expression
+    # Each MSelectArg has condition and value
+    parts = []
+    for arg in args:
+        if not isinstance(arg, MSelectArg):
+            # Skip non-MSelectArg arguments (shouldn't happen but defensive)
+            continue
+
+        # Generate condition and value expressions
+        if arg.condition is not None:
+            cond_expr = generate_expr(arg.condition, ctx)
+        else:
+            # No condition - treat as always false (shouldn't happen)
+            cond_expr = "0"
+
+        if arg.value is not None:
+            val_expr = generate_expr(arg.value, ctx)
+        else:
+            # No value - use empty string
+            val_expr = '""'
+
+        parts.append((cond_expr, val_expr))
+
+    if not parts:
+        # No valid parts - error
+        return "_raise_select_false()"
+
+    # Build chained conditional: (val1 if m_truth(cond1) else val2 if m_truth(cond2) else ... else _raise_select_false())
+    # We need to build from the inside out, starting with the fallback
+    result = "_raise_select_false()"
+
+    # Build backwards from the last condition
+    for cond_expr, val_expr in reversed(parts):
+        result = f"({val_expr} if m_truth({cond_expr}) else {result})"
+
+    return result
+
+
 # =============================================================================
 # Register Intrinsic Function Generators
 # =============================================================================
@@ -742,6 +813,8 @@ INTRINSIC_GENERATORS["Q"] = _gen_query
 INTRINSIC_GENERATORS["QUERY"] = _gen_query
 
 # Phase 3: $SELECT
+INTRINSIC_GENERATORS["S"] = _gen_select
+INTRINSIC_GENERATORS["SELECT"] = _gen_select
 # INTRINSIC_GENERATORS["S"] = _gen_select
 # INTRINSIC_GENERATORS["SELECT"] = _gen_select
 
