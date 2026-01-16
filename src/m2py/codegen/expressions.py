@@ -390,13 +390,15 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         return f'int(not m_compare({left}, ">", {right}))'
     elif op.operator == "[":
         # Contains: A[B returns 1 if B is substring of A
-        return f"m_contains({left}, {right})"
+        # Inline Python - no runtime helper needed
+        return f"int(str({right}) in str({left}))"
     elif op.operator == "]":
-        # Follows: A]B returns 1 if A sorts after B (string comparison)
-        return f"m_follows({left}, {right})"
+        # Follows: A]B returns 1 if A sorts after B (ASCII string comparison)
+        # Inline Python - no runtime helper needed
+        return f"int(str({left}) > str({right}))"
     elif op.operator == "]]":
         # Sorts after: A]]B returns 1 if A strictly sorts after B
-        # Empty string never sorts after anything
+        # Uses MUMPS collation (numerics before strings), empty string never sorts after
         return f"m_sorts_after({left}, {right})"
     elif op.operator == "?":
         # Pattern match: A?pattern returns 1 if A matches pattern

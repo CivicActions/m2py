@@ -1187,65 +1187,32 @@ def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
 # Spec 011: String Comparison Operators
 # =============================================================================
 
-
-def m_contains(haystack: Any, needle: Any) -> int:
-    """Check if needle is substring of haystack (MUMPS [ operator).
-
-    MUMPS semantics: A[B returns 1 if B is contained in A.
-
-    Args:
-        haystack: String to search in
-        needle: String to search for
-
-    Returns:
-        1 if needle is in haystack, 0 otherwise
-
-    Examples:
-        >>> m_contains("ABC", "B")
-        1
-        >>> m_contains("ABC", "X")
-        0
-        >>> m_contains("", "")
-        1
-    """
-    return int(str(needle) in str(haystack))
-
-
-def m_follows(left: Any, right: Any) -> int:
-    """Check if left sorts after right (MUMPS ] operator).
-
-    MUMPS semantics: A]B returns 1 if A collates after B in ASCII order.
-
-    Args:
-        left: Left operand
-        right: Right operand
-
-    Returns:
-        1 if left > right (string comparison), 0 otherwise
-
-    Examples:
-        >>> m_follows("B", "A")
-        1
-        >>> m_follows("A", "B")
-        0
-        >>> m_follows("10", "9")
-        0  # String comparison: "10" < "9"
-    """
-    return int(str(left) > str(right))
+# Note: Contains ([) and Follows (]) operators are inlined in codegen as:
+#   Contains: int(str(right) in str(left))
+#   Follows:  int(str(left) > str(right))
+# Only sorts-after (]]) requires a runtime helper due to MUMPS collation.
 
 
 def m_sorts_after(left: Any, right: Any) -> int:
     """Check if left strictly sorts after right (MUMPS ]] operator).
 
-    MUMPS semantics: A]]B returns 1 if A strictly collates after B.
-    Empty string never sorts after anything.
+    MUMPS semantics: A]]B returns 1 if A strictly collates after B using
+    MUMPS collation order (numerics before strings). Empty string never
+    sorts after anything.
+
+    Note: This differs from the ] (follows) operator which uses simple
+    ASCII string comparison. The ]] operator uses MUMPS collation where:
+    - Numeric values (including numeric strings) sort before non-numeric strings
+    - Numeric values are compared numerically (10 > 9)
+    - Non-numeric strings are compared by ASCII/UTF-8 ordering
 
     Args:
         left: Left operand
         right: Right operand
 
     Returns:
-        1 if left is non-empty and left > right (string comparison), 0 otherwise
+        1 if left is non-empty and left sorts after right in MUMPS collation,
+        0 otherwise
 
     Examples:
         >>> m_sorts_after("B", "A")
@@ -1254,9 +1221,22 @@ def m_sorts_after(left: Any, right: Any) -> int:
         0
         >>> m_sorts_after("A", "B")
         0
+        >>> m_sorts_after(10, 9)
+        1
+        >>> m_sorts_after("10", "9")
+        1
+        >>> m_sorts_after("ABC", "9")
+        1
     """
+    # Empty string never sorts after anything
     left_str = str(left)
-    return int(left_str != "" and left_str > str(right))
+    if left_str == "":
+        return 0
+
+    # Use MUMPS collation comparison
+    left_key = _mumps_collation_key(left)
+    right_key = _mumps_collation_key(right)
+    return int(left_key > right_key)
 
 
 # =============================================================================

@@ -153,40 +153,65 @@ if x >= 10:
 
 ### Contains `[`
 
+The contains operator checks if the right operand is a substring of the left operand.
+
 ```mumps
-I A[B       ; True if A contains B
+I A[B       ; True if A contains B (B is substring of A)
+W "ABC"["B" ; 1 - "B" is in "ABC"
+W "ABC"["X" ; 0 - "X" is not in "ABC"
 ```
 
-**Note operand order reversal in Python:**
+**Generated code** (inlined Python expression):
 
 ```python
-# Conceptual Python equivalent
-
-if b in a:  # B in A
+# int(str(right) in str(left))
+int(str(b) in str(a))  # Note: operands reversed from MUMPS
 ```
 
-### Sorts After `]`
+### Follows `]`
+
+The follows operator checks if the left operand collates after the right operand
+using **ASCII string comparison**.
 
 ```mumps
 I A]B       ; True if A collates after B
+W "B"]"A"   ; 1 - "B" > "A" in ASCII
+W "10"]"9"  ; 0 - "10" < "9" in ASCII string comparison
 ```
+
+**Generated code** (inlined Python expression):
 
 ```python
-# Conceptual Python equivalent
-
-if a > b:   # String comparison
+# int(str(left) > str(right))
+int(str(a) > str(b))  # Simple string comparison
 ```
 
-For numeric strings, MUMPS compares numerically:
+### Sorts After `]]`
+
+The sorts-after operator checks if the left operand strictly sorts after the right
+operand using **MUMPS collation** (numerics before strings). This differs from
+the follows operator.
+
 ```mumps
-"10"]"9"    ; True (10 > 9 numerically)
+W "B"]]"A"    ; 1 - "B" sorts after "A"
+W ""]]"A"     ; 0 - empty string never sorts after anything
+W 10]]9       ; 1 - numeric 10 > 9
+W "10"]]"9"   ; 1 - numeric strings compared numerically
+W "ABC"]]"9"  ; 1 - strings sort after numbers
+W "9"]]"ABC"  ; 0 - numbers sort before strings
 ```
 
-This requires special handling in Python.
+**Generated code** (uses runtime helper for MUMPS collation):
 
-### Strictly Follows `]]`
+```python
+# m_sorts_after(left, right)
+m_sorts_after(a, b)  # Uses MUMPS collation order
+```
 
-Similar to `]` but for strict ordering (implementation-specific).
+MUMPS collation order:
+1. Empty string is lowest (never sorts after anything)
+2. Numeric values (sorted numerically, including negative numbers)
+3. String values (sorted by ASCII/UTF-8)
 
 ## Logical Operators
 

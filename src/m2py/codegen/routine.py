@@ -285,11 +285,12 @@ class RoutineGenerator:
         # Spec 010: Import $PIECE and $EXTRACT helpers (Phase 5), $GET helpers (Phase 6)
         # Spec 010: Import $FIND helper (Phase 7), $NAME/$QLENGTH/$QSUBSCRIPT (Phase 9)
         # Spec 010: Import $FNUMBER helper (Phase 10)
-        # Spec 011: Import contains/follows/sorts-after helpers (Phase 10), pattern_match (Phase 12)
+        # Spec 011: Import sorts-after helper (Phase 10, uses MUMPS collation), pattern_match (Phase 12)
         # Spec 011: Import NewScopeManager for NEW command scope semantics
         # Spec 011 Phase 20: Import READ command helpers
+        # Note: Contains ([) and follows (]) are inlined as Python expressions
         ctx.emitter.line(
-            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_contains, m_follows, m_sorts_after, m_pattern_match, NewScopeManager, m_read_timeout, m_read_char"
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, NewScopeManager, m_read_timeout, m_read_char"
         )
         # Spec 010: Import $RANDOM helper (Phase 8)
         ctx.emitter.line("from m2py.codegen.expressions import _m_random_checked")

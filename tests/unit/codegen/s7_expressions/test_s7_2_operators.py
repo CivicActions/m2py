@@ -269,6 +269,31 @@ class TestOperatorsCodegen:
         assert result.output == "0"
         assert result.success is True
 
+    def test_sorts_after_numeric_collation(self, execute_mumps):
+        """Sorts-after uses MUMPS collation, not string comparison (§7.2).
+
+        MUMPS collation: numerics sort before strings, and numeric
+        values are compared numerically. This differs from ] (follows)
+        which uses simple string comparison.
+
+        YDB verified: 10]]9 → 1 (numeric comparison)
+        YDB verified: "10"]]"9" → 1 (numeric string comparison)
+        Contrast: "10"]"9" → 0 (string comparison, "10" < "9")
+        """
+        result = execute_mumps("TEST\n W 10]]9\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_sorts_after_mixed_types(self, execute_mumps):
+        """Sorts-after: strings sort after numbers in MUMPS collation (§7.2).
+
+        YDB verified: "ABC"]]"9" → 1 (non-numeric string after numeric)
+        YDB verified: "9"]]"ABC" → 0 (numeric sorts before string)
+        """
+        result = execute_mumps('TEST\n W "ABC"]]"9"\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: logical AND")
     def test_logical_and(self, generate_python):

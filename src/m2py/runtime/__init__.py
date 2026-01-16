@@ -49,10 +49,9 @@ from m2py.runtime.helpers import (
     m_query_global,
 )
 
-# Spec 011: Import string comparison and pattern match helpers
+# Spec 011: Import sorts-after (uses MUMPS collation) and pattern match helpers
+# Note: Contains ([) and Follows (]) are inlined as Python expressions in codegen
 from m2py.runtime.helpers import (
-    m_contains,
-    m_follows,
     m_pattern_match,
     m_sorts_after,
 )
@@ -967,8 +966,7 @@ __all__ = [
     # Spec 010: $FIND helper (Phase 7)
     "m_find",
     # Spec 011: String comparison and pattern match helpers
-    "m_contains",
-    "m_follows",
+    # Note: Contains ([) and Follows (]) are inlined; only sorts-after needs runtime
     "m_sorts_after",
     "m_pattern_match",
     # Spec 011 Phase 20: READ command helpers
