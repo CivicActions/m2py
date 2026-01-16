@@ -175,11 +175,11 @@
 
 ### Implementation for User Story 4
 
-- [ ] T039 [US4] Add contains (`[`) operator case to `_generate_binary_op()` in `src/m2py/codegen/expressions.py`
-- [ ] T040 [P] [US4] Add follows (`]`) operator case to `_generate_binary_op()` in `src/m2py/codegen/expressions.py`
-- [ ] T041 [P] [US4] Add sorts-after (`]]`) operator case to `_generate_binary_op()` in `src/m2py/codegen/expressions.py`
-- [ ] T042 [US4] Add contains/follows tests in `tests/unit/codegen/s7_expressions/test_s7_2_string_operators.py`
-- [ ] T043 [US4] Validate all 7 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T039 [US4] Add contains (`[`) operator case to `_generate_binary_op()` in `src/m2py/codegen/expressions.py`
+- [x] T040 [P] [US4] Add follows (`]`) operator case to `_generate_binary_op()` in `src/m2py/codegen/expressions.py`
+- [x] T041 [P] [US4] Add sorts-after (`]]`) operator case to `_generate_binary_op()` in `src/m2py/codegen/expressions.py`
+- [x] T042 [US4] Add contains/follows tests in `tests/unit/codegen/s7_expressions/test_s7_2_string_operators.py`
+- [x] T043 [US4] Validate all 7 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: String operators functional - `"ABC"["B"→1`, `"B"]"A"→1`
 

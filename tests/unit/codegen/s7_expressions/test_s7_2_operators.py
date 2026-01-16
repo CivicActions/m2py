@@ -140,17 +140,81 @@ class TestOperatorsCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: contains operator")
-    def test_contains(self, generate_python):
-        """Contains generates Python 'in' (§7.2)."""
-        pytest.fail("Stub - implement test")
+    # =========================================================================
+    # Contains and Follows Operators Tests (Spec 011 Phase 10)
+    # =========================================================================
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: follows operator")
-    def test_follows(self, generate_python):
-        """Follows generates string comparison (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_contains_match(self, execute_mumps):
+        """Contains operator returns 1 when substring found (§7.2).
+
+        YDB verified: "ABC"["B" → 1
+        """
+        result = execute_mumps('TEST\n W "ABC"["B"\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_contains_no_match(self, execute_mumps):
+        """Contains operator returns 0 when substring not found (§7.2).
+
+        YDB verified: "ABC"["X" → 0
+        """
+        result = execute_mumps('TEST\n W "ABC"["X"\n Q\n')
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_contains_empty_string(self, execute_mumps):
+        """Contains operator: empty string is in any string (§7.2).
+
+        YDB verified: "ABC"["" → 1
+        """
+        result = execute_mumps('TEST\n W "ABC"[""\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_follows_true(self, execute_mumps):
+        """Follows operator returns 1 when left sorts after right (§7.2).
+
+        YDB verified: "B"]"A" → 1
+        """
+        result = execute_mumps('TEST\n W "B"]"A"\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_follows_false(self, execute_mumps):
+        """Follows operator returns 0 when left does not sort after right (§7.2).
+
+        YDB verified: "A"]"B" → 0
+        """
+        result = execute_mumps('TEST\n W "A"]"B"\n Q\n')
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_sorts_after_true(self, execute_mumps):
+        """Sorts-after operator returns 1 when left strictly sorts after right (§7.2).
+
+        YDB verified: "B"]]"A" → 1
+        """
+        result = execute_mumps('TEST\n W "B"]]"A"\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_sorts_after_same_value(self, execute_mumps):
+        """Sorts-after operator returns 0 for equal values (§7.2).
+
+        YDB verified: "A"]]"A" → 0
+        """
+        result = execute_mumps('TEST\n W "A"]]"A"\n Q\n')
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_sorts_after_empty_string(self, execute_mumps):
+        """Sorts-after: empty string never sorts after anything (§7.2).
+
+        YDB verified: ""]]"A" → 0
+        """
+        result = execute_mumps('TEST\n W ""]]"A"\n Q\n')
+        assert result.output == "0"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: logical AND")

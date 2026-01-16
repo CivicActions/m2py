@@ -343,6 +343,16 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
     elif op.operator == "'>":
         # Negated greater-than (less than or equal) - must return int (0/1)
         return f'int(not m_compare({left}, ">", {right}))'
+    elif op.operator == "[":
+        # Contains: A[B returns 1 if B is substring of A
+        return f"m_contains({left}, {right})"
+    elif op.operator == "]":
+        # Follows: A]B returns 1 if A sorts after B (string comparison)
+        return f"m_follows({left}, {right})"
+    elif op.operator == "]]":
+        # Sorts after: A]]B returns 1 if A strictly sorts after B
+        # Empty string never sorts after anything
+        return f"m_sorts_after({left}, {right})"
     else:
         raise NotImplementedError(f"Unsupported binary operator: {op.operator}")
 
