@@ -55,18 +55,22 @@ class TestFormatControlsCodegen:
     # =========================================================================
 
     def test_write_formfeed_basic(self, execute_mumps):
-        """WRITE # outputs a form feed character (§8.2.25).
+        """WRITE # outputs newline + form feed (§8.2.25).
 
+        YDB verified: W "A",#,"B" outputs A\n\x0cB (newline before form feed).
         Form feed is ASCII 12 (\\x0c).
         """
         result = execute_mumps('TEST\n W "A",#,"B"\n Q\n')
-        assert result.output == "A\x0cB"
+        assert result.output == "A\n\x0cB"
         assert result.success is True
 
     def test_write_formfeed_only(self, execute_mumps):
-        """WRITE # alone outputs just a form feed (§8.2.25)."""
+        """WRITE # alone outputs newline + form feed (§8.2.25).
+
+        YDB verified: W # outputs \n\x0c (newline before form feed).
+        """
         result = execute_mumps("TEST\n W #\n Q\n")
-        assert result.output == "\x0c"
+        assert result.output == "\n\x0c"
         assert result.success is True
 
     # =========================================================================
