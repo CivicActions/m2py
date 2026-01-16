@@ -299,6 +299,7 @@ class RoutineGenerator:
             ctx: Generator context
         """
         # Imports
+        ctx.emitter.line("import time")
         ctx.emitter.line("from itertools import chain, count")
         ctx.emitter.line("from m2py.codegen.helpers import m_num, m_truth, m_compare")
         # Spec 009 (T024): Import MArray for subscripted local variable support

@@ -30,6 +30,7 @@ from m2py.asg.statements import (
     MElseStatement,
     MForStatement,
     MGotoStatement,
+    MHangStatement,
     MIfStatement,
     MKillStatement,
     MMergeStatement,
@@ -513,6 +514,8 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_new(stmt, ctx)
     elif isinstance(stmt, MMergeStatement):
         _generate_merge(stmt, ctx)
+    elif isinstance(stmt, MHangStatement):
+        _generate_hang(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -2440,6 +2443,27 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
             raise NotImplementedError(
                 f"MERGE destination type not supported: {type(dest).__name__}"
             )
+
+
+def _generate_hang(stmt: MHangStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python sleep for HANG command.
+
+    MUMPS HANG pauses execution for the specified number of seconds.
+    Supports fractional seconds (e.g., H 0.5 for half a second).
+
+    Examples:
+        H 5     -> time.sleep(5)
+        H 0.1   -> time.sleep(0.1)
+        H X     -> time.sleep(m_num(X))
+
+    Args:
+        stmt: MHangStatement node with durations list
+        ctx: Generator context
+    """
+    # HANG can have multiple durations: H 1,2,3 hangs for 1+2+3=6 seconds total
+    for duration in stmt.durations:
+        duration_expr = generate_expr(duration, ctx)
+        ctx.emitter.line(f"time.sleep(m_num({duration_expr}))")
 
 
 __all__ = [

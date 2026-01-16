@@ -704,3 +704,96 @@ class TestRunWithGotoSupport:
 
         assert exc_info.value.label == "NONEXISTENT"
         assert exc_info.value.routine == "target_mod"
+
+
+@pytest.mark.runtime
+class TestMUMPSRuntimeTextMethod:
+    """Tests for MUMPSRuntime.get_text() method ($TEXT implementation)."""
+
+    def test_text_plus_zero_returns_routine_name(self):
+        """$TEXT(+0) returns the current routine name."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt._current_routine = "TESTRTN"
+        # get_text(offset=0, label=None) should return routine name
+        assert rt.get_text(0) == "TESTRTN"
+
+    def test_text_plus_zero_external_module(self):
+        """$TEXT(+0^ROUTINE) returns external module's routine name."""
+        import types
+
+        from m2py.runtime import MUMPSRuntime
+
+        target_module = types.ModuleType("EXTERNAL")
+        target_module._routine_name = "EXTERNAL"
+        target_module._source_lines = []
+        target_module._label_lines = {}
+
+        rt = MUMPSRuntime()
+        assert rt.get_text(0, module=target_module) == "EXTERNAL"
+
+    def test_text_negative_offset_returns_empty(self):
+        """$TEXT with negative offset returns empty string."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt._current_source_lines = ["TEST W 1 Q", "NEXT W 2 Q"]
+        assert rt.get_text(-1) == ""
+
+    def test_text_returns_source_line(self):
+        """$TEXT(+n) returns nth source line."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt._current_source_lines = ["TEST W 1 Q", "NEXT W 2 Q", "END Q"]
+        # +1 returns first line (1-based indexing)
+        assert rt.get_text(1) == "TEST W 1 Q"
+        assert rt.get_text(2) == "NEXT W 2 Q"
+        assert rt.get_text(3) == "END Q"
+
+    def test_text_out_of_bounds_returns_empty(self):
+        """$TEXT with out-of-bounds offset returns empty string."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt._current_source_lines = ["TEST W 1 Q"]
+        assert rt.get_text(2) == ""  # Beyond end
+        assert rt.get_text(100) == ""
+
+    def test_text_with_label_and_offset(self):
+        """$TEXT(LABEL+n) returns line relative to label."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt._current_source_lines = ["TEST W 1 Q", "HELPER W 2 Q", " W 3 Q"]
+        rt._current_label_lines = {"TEST": 0, "HELPER": 1}
+        # HELPER+0 returns HELPER line
+        assert rt.get_text(0, label="HELPER") == "HELPER W 2 Q"
+        # HELPER+1 returns next line
+        assert rt.get_text(1, label="HELPER") == " W 3 Q"
+
+    def test_text_with_nonexistent_label_returns_empty(self):
+        """$TEXT with non-existent label returns empty string."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt._current_source_lines = ["TEST W 1 Q"]
+        rt._current_label_lines = {"TEST": 0}
+        assert rt.get_text(0, label="NONEXISTENT") == ""
+
+    def test_text_from_external_module_source(self):
+        """$TEXT from external module returns that module's source lines."""
+        import types
+
+        from m2py.runtime import MUMPSRuntime
+
+        target_module = types.ModuleType("EXTERNAL")
+        target_module._routine_name = "EXTERNAL"
+        target_module._source_lines = ["EXT W 'external' Q", "EXT2 W 'line2' Q"]
+        target_module._label_lines = {"EXT": 0, "EXT2": 1}
+
+        rt = MUMPSRuntime()
+        assert rt.get_text(1, module=target_module) == "EXT W 'external' Q"
+        assert rt.get_text(2, module=target_module) == "EXT2 W 'line2' Q"
+        assert rt.get_text(0, label="EXT2", module=target_module) == "EXT2 W 'line2' Q"

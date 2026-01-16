@@ -310,7 +310,7 @@
 
 ---
 
-## Phase 18: User Story 14 - HANG Command (Priority: P3)
+## Phase 18: User Story 14 - HANG Command (Priority: P3) ✅
 
 **Goal**: Generate Python for `H seconds` using time.sleep()
 
@@ -318,9 +318,9 @@
 
 ### Implementation for User Story 14
 
-- [ ] T076 [US14] Implement `_generate_hang()` using `time.sleep()` in `src/m2py/codegen/statements.py`
-- [ ] T077 [US14] Add HANG command tests in `tests/unit/codegen/s8_commands/test_s8_2_07_hang.py`
-- [ ] T078 [US14] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T076 [US14] Implement `_generate_hang()` using `time.sleep()` in `src/m2py/codegen/statements.py`
+- [x] T077 [US14] Add HANG command tests in `tests/unit/codegen/s8_commands/test_s8_2_08_hang.py`
+- [x] T078 [US14] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: HANG functional - `H 0.5` pauses for 0.5 seconds
 
