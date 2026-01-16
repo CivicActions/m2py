@@ -65,7 +65,7 @@
 
 ---
 
-## Phase 4: User Story 2 - String Concatenation (Priority: P1)
+## Phase 4: User Story 2 - String Concatenation (Priority: P1) ✅
 
 **Goal**: Verify/ensure concatenation (`_`) generates working Python
 
@@ -73,9 +73,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Verify concatenation operator `_` in `_generate_binary_op()` works correctly in `src/m2py/codegen/expressions.py`
-- [ ] T016 [US2] Add concatenation tests including number coercion (`"X"_1_"Y"`) in `tests/unit/codegen/s7_expressions/test_s7_2_operators.py`
-- [ ] T017 [US2] Validate all 3 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T015 [US2] Verify concatenation operator `_` in `_generate_binary_op()` works correctly in `src/m2py/codegen/expressions.py`
+- [x] T016 [US2] Add concatenation tests including number coercion (`"X"_1_"Y"`) in `tests/unit/codegen/s7_expressions/test_s7_2_operators.py`
+- [x] T017 [US2] Validate all 3 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Concatenation functional - `"A"_"B"→"AB"`, `"X"_1_"Y"→"X1Y"`
 

@@ -58,11 +58,41 @@ class TestOperatorsCodegen:
         """Exponentiation generates Python ** (§7.2)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: concatenation")
-    def test_concatenation(self, generate_python):
-        """Concatenation generates Python + for strings (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_concatenation_strings(self, execute_mumps):
+        """Concatenation joins strings correctly (§7.2).
+
+        YDB verified: "A"_"B"_"C" → "ABC"
+        """
+        result = execute_mumps('TEST\n W "A"_"B"_"C"\n Q\n')
+        assert result.output == "ABC"
+        assert result.success is True
+
+    def test_concatenation_with_number(self, execute_mumps):
+        """Concatenation coerces numbers to strings (§7.2).
+
+        YDB verified: "X"_1_"Y" → "X1Y"
+        """
+        result = execute_mumps('TEST\n W "X"_1_"Y"\n Q\n')
+        assert result.output == "X1Y"
+        assert result.success is True
+
+    def test_concatenation_with_variable(self, execute_mumps):
+        """Concatenation works with variables (§7.2).
+
+        YDB verified: S X="Hello" W X_" World" → "Hello World"
+        """
+        result = execute_mumps('TEST\n S X="Hello" W X_" World"\n Q\n')
+        assert result.output == "Hello World"
+        assert result.success is True
+
+    def test_concatenation_numbers_only(self, execute_mumps):
+        """Concatenation of numbers coerces all to strings (§7.2).
+
+        YDB verified: 1_2_3 → "123"
+        """
+        result = execute_mumps("TEST\n W 1_2_3\n Q\n")
+        assert result.output == "123"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: equals comparison")
