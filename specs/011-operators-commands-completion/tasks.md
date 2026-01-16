@@ -98,7 +98,7 @@
 
 ---
 
-## Phase 6: User Story 7 - Multiple SET Assignments (Priority: P1)
+## Phase 6: User Story 7 - Multiple SET Assignments (Priority: P1) ✅
 
 **Goal**: Verify SET with multiple assignments generates correct Python
 
@@ -106,9 +106,9 @@
 
 ### Implementation for User Story 7
 
-- [ ] T022 [US7] Verify `_generate_set()` handles list of assignments in `src/m2py/codegen/statements.py`
-- [ ] T023 [US7] Add multiple assignment tests in `tests/unit/codegen/s8_commands/test_s8_2_23_set.py`
-- [ ] T024 [US7] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T022 [US7] Verify `_generate_set()` handles list of assignments in `src/m2py/codegen/statements.py`
+- [x] T023 [US7] Add multiple assignment tests in `tests/unit/codegen/s8_commands/test_s8_2_18_set.py`
+- [x] T024 [US7] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Multiple SET functional - `S X=1,Y=2,Z=3` generates correct assignments
 
