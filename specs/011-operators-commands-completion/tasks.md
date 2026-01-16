@@ -358,19 +358,19 @@
 
 **Checkpoint**: READ functional - `R X` reads input, `R X:n` supports timeout
 
-**Checkpoint**: READ functional - `R X` reads input, `R X:1` has timeout
-
 ---
 
-## Phase 21: Polish & Cross-Cutting Concerns
+## Phase 21: Polish & Cross-Cutting Concerns ✅
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T087 [P] Update `docs/coverage-matrix.md` with newly implemented operators and commands
-- [ ] T088 [P] Update `docs/limitations.md` if any features remain partial
-- [ ] T089 Run full test suite `uv run pytest tests/unit/codegen/ -v` to verify no regressions
-- [ ] T090 Run quickstart.md validation scenarios
-- [ ] T091 Code cleanup and remove any TODO comments in modified files
+- [x] T087 [P] Update `docs/coverage-matrix.md` with newly implemented operators and commands
+- [x] T088 [P] Update `docs/limitations.md` if any features remain partial
+- [x] T089 Run full test suite `uv run pytest tests/unit/codegen/ -v` to verify no regressions
+- [x] T090 Run quickstart.md validation scenarios
+- [x] T091 Code cleanup and remove any TODO comments in modified files
+
+**Checkpoint**: All phases complete, Spec 011 implementation finished
 
 ---
 
