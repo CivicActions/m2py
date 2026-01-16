@@ -328,6 +328,12 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
     elif op.operator == "_":
         # String concatenation
         return f"(str({left}) + str({right}))"
+    elif op.operator == "&":
+        # Logical AND - must return int (0/1), not Python bool
+        return f"int(m_truth({left}) and m_truth({right}))"
+    elif op.operator == "!":
+        # Logical OR - must return int (0/1), not Python bool
+        return f"int(m_truth({left}) or m_truth({right}))"
     else:
         raise NotImplementedError(f"Unsupported binary operator: {op.operator}")
 
@@ -351,8 +357,8 @@ def _generate_unary_op(op: MUnaryOp, ctx: "GeneratorContext") -> str:
         # Unary plus (force numeric)
         return f"(+m_num({operand}))"
     elif op.operator == "'":
-        # Logical NOT in MUMPS
-        return f"(not m_truth({operand}))"
+        # Logical NOT in MUMPS - must return int (0/1), not Python bool
+        return f"int(not m_truth({operand}))"
     else:
         raise NotImplementedError(f"Unsupported unary operator: {op.operator}")
 

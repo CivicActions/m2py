@@ -18,14 +18,13 @@ import pytest
 class TestLogicalOperatorsCodegen:
     """Codegen-level tests for logical operators code generation (§7.2).
 
-    Phase 1: Setup - these tests are expected to fail until Phase 3 implementation.
+    Tests verify correct 0/1 output for MUMPS logical operators.
     """
 
     # =========================================================================
     # NOT Operator (') Tests
     # =========================================================================
 
-    @pytest.mark.xfail(reason="Phase 3: NOT returns Python bool instead of int")
     def test_not_true_returns_zero(self, execute_mumps):
         """NOT of true value returns 0 (§7.2).
 
@@ -35,7 +34,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "0"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: NOT returns Python bool instead of int")
     def test_not_false_returns_one(self, execute_mumps):
         """NOT of false value returns 1 (§7.2).
 
@@ -45,7 +43,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: NOT returns Python bool instead of int")
     def test_not_string_empty_returns_one(self, execute_mumps):
         """NOT of empty string returns 1 (§7.2).
 
@@ -56,7 +53,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: NOT returns Python bool instead of int")
     def test_not_nonzero_string_returns_zero(self, execute_mumps):
         """NOT of string starting with nonzero returns 0 (§7.2).
 
@@ -71,7 +67,6 @@ class TestLogicalOperatorsCodegen:
     # AND Operator (&) Tests
     # =========================================================================
 
-    @pytest.mark.xfail(reason="Phase 3: AND operator not implemented")
     def test_and_true_true_returns_one(self, execute_mumps):
         """AND of two true values returns 1 (§7.2).
 
@@ -81,7 +76,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: AND operator not implemented")
     def test_and_true_false_returns_zero(self, execute_mumps):
         """AND of true and false returns 0 (§7.2).
 
@@ -91,7 +85,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "0"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: AND operator not implemented")
     def test_and_false_false_returns_zero(self, execute_mumps):
         """AND of two false values returns 0 (§7.2).
 
@@ -101,7 +94,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "0"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: AND operator not implemented")
     def test_and_false_true_returns_zero(self, execute_mumps):
         """AND of false and true returns 0 (§7.2).
 
@@ -115,7 +107,6 @@ class TestLogicalOperatorsCodegen:
     # OR Operator (!) Tests
     # =========================================================================
 
-    @pytest.mark.xfail(reason="Phase 3: OR operator not implemented")
     def test_or_true_true_returns_one(self, execute_mumps):
         """OR of two true values returns 1 (§7.2).
 
@@ -125,7 +116,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: OR operator not implemented")
     def test_or_true_false_returns_one(self, execute_mumps):
         """OR of true and false returns 1 (§7.2).
 
@@ -135,7 +125,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: OR operator not implemented")
     def test_or_false_true_returns_one(self, execute_mumps):
         """OR of false and true returns 1 (§7.2).
 
@@ -145,7 +134,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: OR operator not implemented")
     def test_or_false_false_returns_zero(self, execute_mumps):
         """OR of two false values returns 0 (§7.2).
 
@@ -159,7 +147,6 @@ class TestLogicalOperatorsCodegen:
     # Left-to-Right Evaluation Tests
     # =========================================================================
 
-    @pytest.mark.xfail(reason="Phase 3: Logical operators not implemented")
     def test_left_to_right_and_or(self, execute_mumps):
         """Operators evaluate left-to-right without precedence (§7.2).
 
@@ -172,7 +159,6 @@ class TestLogicalOperatorsCodegen:
         assert result.output == "0"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="Phase 3: Logical operators not implemented")
     def test_left_to_right_arithmetic_and_logical(self, execute_mumps):
         """Arithmetic and logical operators evaluate left-to-right (§7.2).
 

@@ -47,7 +47,7 @@
 
 ---
 
-## Phase 3: User Story 1 - Logical Operators (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - Logical Operators (Priority: P1) ✅
 
 **Goal**: Generate Python for `&`, `!`, `'` with correct boolean logic (0/1, not True/False)
 
@@ -55,11 +55,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Fix `_generate_unary_op()` NOT operator to return `int(not m_truth(x))` instead of `not m_truth(x)` in `src/m2py/codegen/expressions.py`
-- [ ] T011 [US1] Add AND (`&`) operator case to `_generate_binary_op()` returning `int(m_truth(x) and m_truth(y))` in `src/m2py/codegen/expressions.py`
-- [ ] T012 [US1] Add OR (`!`) operator case to `_generate_binary_op()` returning `int(m_truth(x) or m_truth(y))` in `src/m2py/codegen/expressions.py`
-- [ ] T013 [US1] Add unit tests for logical operators in `tests/unit/codegen/s7_expressions/test_s7_2_logical_operators.py`
-- [ ] T014 [US1] Validate all 7 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T010 [US1] Fix `_generate_unary_op()` NOT operator to return `int(not m_truth(x))` instead of `not m_truth(x)` in `src/m2py/codegen/expressions.py`
+- [x] T011 [US1] Add AND (`&`) operator case to `_generate_binary_op()` returning `int(m_truth(x) and m_truth(y))` in `src/m2py/codegen/expressions.py`
+- [x] T012 [US1] Add OR (`!`) operator case to `_generate_binary_op()` returning `int(m_truth(x) or m_truth(y))` in `src/m2py/codegen/expressions.py`
+- [x] T013 [US1] Add unit tests for logical operators in `tests/unit/codegen/s7_expressions/test_s7_2_logical_operators.py`
+- [x] T014 [US1] Validate all 7 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Logical operators fully functional - `1&1→1`, `1!0→1`, `'1→0`
 
