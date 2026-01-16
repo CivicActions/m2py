@@ -57,6 +57,12 @@ from m2py.runtime.helpers import (
     m_sorts_after,
 )
 
+# Spec 011 Phase 20: Import READ command helpers
+from m2py.runtime.helpers import (
+    m_read_char,
+    m_read_timeout,
+)
+
 
 class MArray:
     """MUMPS array with hierarchical subscript support.
@@ -965,4 +971,7 @@ __all__ = [
     "m_follows",
     "m_sorts_after",
     "m_pattern_match",
+    # Spec 011 Phase 20: READ command helpers
+    "m_read_timeout",
+    "m_read_char",
 ]

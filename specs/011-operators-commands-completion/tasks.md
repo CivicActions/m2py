@@ -343,7 +343,7 @@
 
 ---
 
-## Phase 20: User Story 18 - READ Command (Priority: P3)
+## Phase 20: User Story 18 - READ Command (Priority: P3) ✅
 
 **Goal**: Generate Python for `R X` and `R X:timeout` that reads user input
 
@@ -351,10 +351,12 @@
 
 ### Implementation for User Story 18
 
-- [ ] T083 [US18] Implement `_generate_read()` for basic READ using input() in `src/m2py/codegen/statements.py`
-- [ ] T084 [US18] Implement timeout variant `R X:n` with select-based timeout in `src/m2py/codegen/statements.py`
-- [ ] T085 [US18] Add READ command tests in `tests/unit/codegen/s8_commands/test_s8_2_20_read.py`
-- [ ] T086 [US18] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T083 [US18] Implement `_generate_read()` for basic READ using input() in `src/m2py/codegen/statements.py`
+- [x] T084 [US18] Implement timeout variant `R X:n` with select-based timeout in `src/m2py/codegen/statements.py`
+- [x] T085 [US18] Add READ command tests in `tests/unit/codegen/s8_commands/test_s8_2_20_read.py`
+- [x] T086 [US18] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
+
+**Checkpoint**: READ functional - `R X` reads input, `R X:n` supports timeout
 
 **Checkpoint**: READ functional - `R X` reads input, `R X:1` has timeout
 

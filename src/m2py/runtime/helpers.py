@@ -1397,3 +1397,64 @@ class NewScopeManager:
             del self._scope[var_name]
         else:
             self._saved[var_name] = _UNDEFINED
+
+
+# =============================================================================
+# READ Command Helpers (Spec 011 Phase 20)
+# =============================================================================
+
+
+def m_read_timeout(timeout_seconds: float) -> tuple[str, int]:
+    """Read input with timeout.
+
+    Attempts to read a line from stdin with a timeout.
+    If input is received within the timeout, returns the input and sets
+    $TEST to 1. If timeout occurs, returns empty string and sets $TEST to 0.
+
+    MUMPS semantics:
+    - R X:n reads with n-second timeout
+    - On success: X gets input, $TEST=1
+    - On timeout: X gets empty string, $TEST=0
+
+    Args:
+        timeout_seconds: Maximum seconds to wait for input
+
+    Returns:
+        Tuple of (input_value, test_flag)
+        test_flag is 1 for success, 0 for timeout
+    """
+    import select
+    import sys
+
+    timeout = float(timeout_seconds)
+
+    # Check if stdin has data available within timeout
+    # select.select returns (readable, writable, exceptional) lists
+    readable, _, _ = select.select([sys.stdin], [], [], timeout)
+
+    if readable:
+        # Input available - read it
+        line = sys.stdin.readline()
+        # Strip trailing newline if present
+        if line.endswith("\n"):
+            line = line[:-1]
+        return (line, 1)
+    else:
+        # Timeout occurred
+        return ("", 0)
+
+
+def m_read_char() -> str:
+    """Read a single character from stdin.
+
+    MUMPS R *X reads a single character and stores its ASCII value.
+    For simplicity, we return the character as a string (code can convert
+    to ASCII if needed with $ASCII).
+
+    Returns:
+        Single character read from stdin, or empty string on EOF
+    """
+    import sys
+
+    char = sys.stdin.read(1)
+    return char

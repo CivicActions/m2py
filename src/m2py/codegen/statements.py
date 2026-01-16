@@ -37,6 +37,8 @@ from m2py.asg.statements import (
     MMergeStatement,
     MNewStatement,
     MQuitStatement,
+    MReadStatement,
+    MReadTarget,
     MSetStatement,
     MWriteStatement,
 )
@@ -519,6 +521,8 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_hang(stmt, ctx)
     elif isinstance(stmt, MHaltStatement):
         _generate_halt(stmt, ctx)
+    elif isinstance(stmt, MReadStatement):
+        _generate_read(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -2483,6 +2487,86 @@ def _generate_halt(stmt: MHaltStatement, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     ctx.emitter.line("raise SystemExit(0)")
+
+
+def _generate_read(stmt: MReadStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python input for READ command.
+
+    MUMPS READ reads input from stdin into variables.
+    Supports prompts, timeouts, and format controls.
+
+    Examples:
+        R X              -> X = input()
+        R "Name: ",X     -> print("Name: ", end=""); X = input()
+        R X:5            -> X = m_read_timeout(5); _test = _read_succeeded
+        R !,X            -> print(); X = input()
+
+    Args:
+        stmt: MReadStatement node with arguments list
+        ctx: Generator context
+    """
+    from m2py.asg.enums import LiteralType
+    from m2py.asg.expressions import MLiteral
+
+    for arg in stmt.arguments:
+        if isinstance(arg, MFormatControl):
+            # Handle format controls (!, #, ?n)
+            _generate_format_control(arg, ctx)
+        elif isinstance(arg, MLiteral) and arg.literal_type == LiteralType.STRING:
+            # Handle prompt string - output without newline
+            prompt_val = arg.value
+            ctx.emitter.line(f'print({prompt_val!r}, end="")')
+        elif isinstance(arg, MReadTarget):
+            # Handle variable read target
+            _generate_read_target(arg, ctx)
+
+
+def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
+    """Generate Python input for a single READ target.
+
+    Handles basic reads, timeout reads, and char reads.
+    For SIMPLE_FUNCTIONS strategy, stores into _scope dictionary.
+
+    Args:
+        target: MReadTarget with variable and optional timeout
+        ctx: Generator context
+    """
+    if target.variable is None:
+        return
+
+    # Get the target variable name and determine storage location
+    if isinstance(target.variable, MVariable):
+        var_name = translate_name(target.variable.name)
+        # Determine how to store the variable based on strategy
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Spec 011 Phase 20: Store in _scope dictionary like SET does
+            storage_target = f"_scope.setdefault({var_name!r}, MArray()).value"
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            storage_target = f"state.{var_name}"
+        else:
+            storage_target = var_name
+    else:
+        # Could be array subscript or global - generate expression
+        storage_target = generate_expr(target.variable, ctx)
+
+    if target.timeout is not None:
+        # Timeout read: R X:n
+        timeout_expr = generate_expr(target.timeout, ctx)
+        # Use runtime helper for timeout read - returns (value, test_flag)
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Need to unpack properly for scope storage
+            ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
+            ctx.emitter.line(f"{storage_target} = _read_val")
+        else:
+            ctx.emitter.line(
+                f"{storage_target}, _test = m_read_timeout({timeout_expr})"
+            )
+    elif target.is_char_read:
+        # Single character read: R *X
+        ctx.emitter.line(f"{storage_target} = m_read_char()")
+    else:
+        # Basic read: R X
+        ctx.emitter.line(f"{storage_target} = input()")
 
 
 __all__ = [
