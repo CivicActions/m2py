@@ -20,13 +20,13 @@
 
 ---
 
-## Phase 1: Setup
+## Phase 1: Setup ✅
 
 **Purpose**: Verify baseline and prepare for implementation
 
-- [ ] T001 Verify existing test suite passes with `uv run pytest tests/unit/codegen/ -v`
-- [ ] T002 [P] Create test file `tests/unit/codegen/s7_expressions/test_s7_2_logical_operators.py` with failing tests for AND, OR, NOT
-- [ ] T003 [P] Create test file `tests/unit/codegen/s8_commands/test_s8_2_format_controls.py` with failing tests for `!`, `#`, `?n`, `*n`
+- [x] T001 Verify existing test suite passes with `uv run pytest tests/unit/codegen/ -v`
+- [x] T002 [P] Create test file `tests/unit/codegen/s7_expressions/test_s7_2_logical_operators.py` with failing tests for AND, OR, NOT
+- [x] T003 [P] Create test file `tests/unit/codegen/s8_commands/test_s8_2_format_controls.py` with failing tests for `!`, `#`, `?n`, `*n`
 
 ---
 
