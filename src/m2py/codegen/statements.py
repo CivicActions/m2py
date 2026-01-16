@@ -9,8 +9,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List
 
-from m2py.asg.enums import ForLoopType, ForParamType, GotoType, PassingMode
-from m2py.asg.expressions import MActualParameter, MExpr, MIntrinsicFunction, MVariable
+from m2py.asg.enums import (
+    ForLoopType,
+    FormatControlType,
+    ForParamType,
+    GotoType,
+    PassingMode,
+)
+from m2py.asg.expressions import (
+    MActualParameter,
+    MExpr,
+    MFormatControl,
+    MIntrinsicFunction,
+    MVariable,
+)
 from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
 from m2py.asg.statements import (
     MAssignment,
@@ -849,17 +861,70 @@ def _generate_naked_global_set(
 def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
     """Generate _rt.write() calls from MWriteStatement.
 
+    Handles both expressions and format controls:
+    - MExpr: Generate expression and write it
+    - MFormatControl: Handle !, #, ?n, *n format controls
+
+    Spec 011 (T025-T029): Format control support.
+
     Args:
         stmt: MWriteStatement node
         ctx: Generator context
     """
     for arg in stmt.arguments:
-        if isinstance(arg, MExpr):
+        if isinstance(arg, MFormatControl):
+            # Spec 011 (T025): Handle format control nodes
+            _generate_format_control(arg, ctx)
+        elif isinstance(arg, MExpr):
             # Generate expression and write it
             # Runtime handles None -> empty string conversion (MUMPS undefined semantics)
             expr = generate_expr(arg, ctx)
             ctx.emitter.line(f"_rt.write({expr})")
-        # Skip format controls for now (!, #, ?n) - Phase 2 scope is basic only
+        else:
+            # Unknown argument type - skip silently for now
+            pass
+
+
+def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> None:
+    """Generate Python code for WRITE format controls.
+
+    Handles the four MUMPS format controls:
+    - ! (NEWLINE): Output newline character
+    - # (FORMFEED): Output form feed character
+    - ?n (TAB): Tab to column n
+    - *n (CHARCODE): Output character with ASCII code n
+
+    Spec 011 (T026-T029): Format control code generation.
+
+    Args:
+        fc: MFormatControl node
+        ctx: Generator context
+    """
+    if fc.control_type == FormatControlType.NEWLINE:
+        # Spec 011 (T026): NEWLINE format control
+        ctx.emitter.line('_rt.write("\\n")')
+
+    elif fc.control_type == FormatControlType.FORMFEED:
+        # Spec 011 (T027): FORMFEED format control
+        ctx.emitter.line('_rt.write("\\x0c")')
+
+    elif fc.control_type == FormatControlType.CHARCODE:
+        # Spec 011 (T028): CHARCODE format control (*n)
+        if fc.expression is not None:
+            expr = generate_expr(fc.expression, ctx)
+            ctx.emitter.line(f"_rt.write(chr(int({expr})))")
+        else:
+            # No expression - shouldn't happen but handle gracefully
+            pass
+
+    elif fc.control_type == FormatControlType.TAB:
+        # Spec 011 (T029): TAB format control (?n)
+        if fc.expression is not None:
+            expr = generate_expr(fc.expression, ctx)
+            ctx.emitter.line(f"_rt.write_tab(int({expr}))")
+        else:
+            # No expression - shouldn't happen but handle gracefully
+            pass
 
 
 def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:

@@ -114,7 +114,7 @@
 
 ---
 
-## Phase 7: User Story 8 - WRITE Format Controls (Priority: P1)
+## Phase 7: User Story 8 - WRITE Format Controls (Priority: P1) ✅
 
 **Goal**: Handle `MFormatControl` nodes in `_generate_write()` for `!`, `#`, `?n`, `*n`
 
@@ -122,13 +122,13 @@
 
 ### Implementation for User Story 8
 
-- [ ] T025 [US8] Update `_generate_write()` to detect and dispatch `MFormatControl` nodes in `src/m2py/codegen/statements.py`
-- [ ] T026 [US8] Implement NEWLINE format control (`!`) in `_generate_write()` in `src/m2py/codegen/statements.py`
-- [ ] T027 [US8] Implement FORMFEED format control (`#`) in `_generate_write()` in `src/m2py/codegen/statements.py`
-- [ ] T028 [US8] Implement CHARCODE format control (`*n`) in `_generate_write()` in `src/m2py/codegen/statements.py`
-- [ ] T029 [US8] Implement TAB format control (`?n`) with `_rt.write_tab()` in `src/m2py/codegen/statements.py`
-- [ ] T030 [US8] Add format control tests in `tests/unit/codegen/s8_commands/test_s8_2_format_controls.py`
-- [ ] T031 [US8] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T025 [US8] Update `_generate_write()` to detect and dispatch `MFormatControl` nodes in `src/m2py/codegen/statements.py`
+- [x] T026 [US8] Implement NEWLINE format control (`!`) in `_generate_write()` in `src/m2py/codegen/statements.py`
+- [x] T027 [US8] Implement FORMFEED format control (`#`) in `_generate_write()` in `src/m2py/codegen/statements.py`
+- [x] T028 [US8] Implement CHARCODE format control (`*n`) in `_generate_write()` in `src/m2py/codegen/statements.py`
+- [x] T029 [US8] Implement TAB format control (`?n`) with `_rt.write_tab()` in `src/m2py/codegen/statements.py`
+- [x] T030 [US8] Add format control tests in `tests/unit/codegen/s8_commands/test_s8_2_format_controls.py`
+- [x] T031 [US8] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Format controls functional - `!→\n`, `#→\f`, `*65→A`, `?10→tab to col 10`
 
