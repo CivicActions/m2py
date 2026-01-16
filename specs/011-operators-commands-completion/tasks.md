@@ -134,7 +134,7 @@
 
 ---
 
-## Phase 8: User Story 9 - Postconditions (Priority: P1)
+## Phase 8: User Story 9 - Postconditions (Priority: P1) ✅
 
 **Goal**: Check `stmt.postcondition` and wrap statement in conditional when present
 
@@ -142,10 +142,10 @@
 
 ### Implementation for User Story 9
 
-- [ ] T032 [US9] Modify `generate_statement()` to check `postcondition` field in `src/m2py/codegen/statements.py`
-- [ ] T033 [US9] Wrap statement body in `if m_truth(cond):` when postcondition present in `src/m2py/codegen/statements.py`
-- [ ] T034 [US9] Add postcondition tests in `tests/unit/codegen/s8_commands/test_s8_postconditions.py`
-- [ ] T035 [US9] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T032 [US9] Modify `generate_statement()` to check `postcondition` field in `src/m2py/codegen/statements.py`
+- [x] T033 [US9] Wrap statement body in `if m_truth(cond):` when postcondition present in `src/m2py/codegen/statements.py`
+- [x] T034 [US9] Add postcondition tests in `tests/unit/codegen/s8_commands/test_s8_1_general_rules.py` and `tests/unit/cross_cutting/test_postconditions.py`
+- [x] T035 [US9] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Postconditions functional - `S:1 X=1` sets X, `S:0 X=1` skips
 

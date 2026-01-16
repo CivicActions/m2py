@@ -455,6 +455,33 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     - MElseStatement → if not _test block
     - MForStatement → for loop
 
+    Spec 011 (T032-T033): If stmt.postcondition is set, wrap the statement
+    in a conditional: if m_truth(cond): <statement>
+
+    Args:
+        stmt: ASG statement node
+        ctx: Generator context with emitter
+
+    Raises:
+        NotImplementedError: For unsupported statement types
+    """
+    # Spec 011 (T032): Check for postcondition
+    if stmt.postcondition is not None:
+        cond_expr = generate_expr(stmt.postcondition, ctx)
+        ctx.emitter.line(f"if m_truth({cond_expr}):")
+        ctx.emitter.indent()
+        _dispatch_statement(stmt, ctx)
+        ctx.emitter.dedent()
+    else:
+        _dispatch_statement(stmt, ctx)
+
+
+def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
+    """Dispatch statement to type-specific generator.
+
+    Internal helper that handles the actual statement generation
+    after postcondition handling is complete.
+
     Args:
         stmt: ASG statement node
         ctx: Generator context with emitter
