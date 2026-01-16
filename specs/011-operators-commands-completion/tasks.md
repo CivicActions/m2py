@@ -30,18 +30,18 @@
 
 ---
 
-## Phase 2: Foundational (Blocking Prerequisites)
+## Phase 2: Foundational (Blocking Prerequisites) ✅
 
 **Purpose**: Core infrastructure needed by multiple user stories
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Add `m_truth()` helper import to `src/m2py/codegen/expressions.py` if not present
-- [ ] T005 [P] Add `m_contains()`, `m_follows()`, `m_sorts_after()` helpers in `src/m2py/runtime/helpers.py`
-- [ ] T006 [P] Add `m_pattern_match()` helper in `src/m2py/runtime/helpers.py` using `compile_pattern_to_regex()` from `analysis/pattern_compiler.py`
-- [ ] T007 [P] Add runtime fields `_x`, `_y`, `_stack_level` to `MUMPSRuntime` in `src/m2py/runtime/__init__.py`
-- [ ] T008 Add `write_tab()` method to `MUMPSRuntime` for column positioning in `src/m2py/runtime/__init__.py`
-- [ ] T009 [P] Add `horolog()`, `job()`, `io()`, `x()`, `y()`, `stack_level()`, `quit_flag()` methods to `MUMPSRuntime` in `src/m2py/runtime/__init__.py`
+- [x] T004 Add `m_truth()` helper import to `src/m2py/codegen/expressions.py` if not present
+- [x] T005 [P] Add `m_contains()`, `m_follows()`, `m_sorts_after()` helpers in `src/m2py/runtime/helpers.py`
+- [x] T006 [P] Add `m_pattern_match()` helper in `src/m2py/runtime/helpers.py` using `compile_pattern_to_regex()` from `analysis/pattern_compiler.py`
+- [x] T007 [P] Add runtime fields `_x`, `_y`, `_stack_level` to `MUMPSRuntime` in `src/m2py/runtime/__init__.py`
+- [x] T008 Add `write_tab()` method to `MUMPSRuntime` for column positioning in `src/m2py/runtime/__init__.py`
+- [x] T009 [P] Add `horolog()`, `job()`, `io()`, `x()`, `y()`, `stack_level()`, `quit_flag()` methods to `MUMPSRuntime` in `src/m2py/runtime/__init__.py`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
