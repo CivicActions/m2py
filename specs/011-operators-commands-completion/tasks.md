@@ -282,10 +282,10 @@
 
 ### Implementation for User Story 13
 
-- [ ] T068 [US13] Implement `_generate_merge()` for local-to-local MERGE in `src/m2py/codegen/statements.py`
-- [ ] T069 [US13] Implement global-to-local MERGE variant in `src/m2py/codegen/statements.py`
-- [ ] T070 [US13] Add MERGE command tests in `tests/unit/codegen/s8_commands/test_s8_2_11_merge.py`
-- [ ] T071 [US13] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T068 [US13] Implement `_generate_merge()` for local-to-local MERGE in `src/m2py/codegen/statements.py`
+- [x] T069 [US13] Implement global-to-local MERGE variant in `src/m2py/codegen/statements.py`
+- [x] T070 [US13] Add MERGE command tests in `tests/unit/codegen/s8_commands/test_s8_2_13_merge.py`
+- [x] T071 [US13] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: MERGE functional - `M B=A` copies A tree to B
 

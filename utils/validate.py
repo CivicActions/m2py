@@ -264,7 +264,7 @@ def run_m2py(source: str, debug: bool = False) -> tuple[str, str | None, str | N
         result = runtime.execute(python_code_generated)
 
         if result.success:
-            return result.output, ast_str, python_code
+            return result.output.rstrip(), ast_str, python_code
         else:
             return f"ERROR: {result.error}", ast_str, python_code
 

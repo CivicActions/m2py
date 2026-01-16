@@ -463,6 +463,117 @@ class TestMArrayMethods:
 
 
 @pytest.mark.runtime
+class TestMArrayMergeFrom:
+    """Tests for MArray.merge_from() - MERGE command semantics."""
+
+    def test_merge_from_copies_value(self):
+        """merge_from() copies source value to destination."""
+        from m2py.runtime import MArray
+
+        source = MArray()
+        source.value = 42
+
+        dest = MArray()
+        dest.merge_from(source)
+
+        assert dest.value == 42
+
+    def test_merge_from_copies_children(self):
+        """merge_from() copies source children to destination."""
+        from m2py.runtime import MArray
+
+        source = MArray()
+        source[1] = 10
+        source[2] = 20
+
+        dest = MArray()
+        dest.merge_from(source)
+
+        assert dest.get(1) == 10
+        assert dest.get(2) == 20
+
+    def test_merge_from_deep_copies_nested(self):
+        """merge_from() deep copies nested children."""
+        from m2py.runtime import MArray
+
+        source = MArray()
+        source[1, "A"] = "nested"
+        source[1, "B"] = "also nested"
+
+        dest = MArray()
+        dest.merge_from(source)
+
+        assert dest.get(1, "A") == "nested"
+        assert dest.get(1, "B") == "also nested"
+
+    def test_merge_from_preserves_existing_children(self):
+        """merge_from() preserves existing destination children not in source."""
+        from m2py.runtime import MArray
+
+        source = MArray()
+        source[1] = "new"
+
+        dest = MArray()
+        dest[2] = "existing"
+
+        dest.merge_from(source)
+
+        assert dest.get(1) == "new"
+        assert dest.get(2) == "existing"
+
+    def test_merge_from_overwrites_existing_value(self):
+        """merge_from() overwrites destination value if source has value."""
+        from m2py.runtime import MArray
+
+        source = MArray()
+        source.value = "source_value"
+
+        dest = MArray()
+        dest.value = "old_value"
+
+        dest.merge_from(source)
+
+        assert dest.value == "source_value"
+
+    def test_merge_from_merges_overlapping_children(self):
+        """merge_from() recursively merges overlapping children."""
+        from m2py.runtime import MArray
+
+        source = MArray()
+        source[1, "A"] = "from_source"
+        source[1, "B"] = "also_source"
+
+        dest = MArray()
+        dest[1, "A"] = "dest_existing"
+        dest[1, "C"] = "dest_only"
+
+        dest.merge_from(source)
+
+        # Source values overwrite
+        assert dest.get(1, "A") == "from_source"
+        assert dest.get(1, "B") == "also_source"
+        # Dest values preserved
+        assert dest.get(1, "C") == "dest_only"
+
+    def test_merge_from_no_source_value_preserves_dest_value(self):
+        """merge_from() preserves dest value if source has no value."""
+        from m2py.runtime import MArray
+
+        source = MArray()
+        source[1] = "child"  # source has children but no value
+
+        dest = MArray()
+        dest.value = "keep_this"
+
+        dest.merge_from(source)
+
+        # Value should be preserved since source._value is None
+        assert dest.value == "keep_this"
+        # Children should be merged
+        assert dest.get(1) == "child"
+
+
+@pytest.mark.runtime
 class TestRunWithGotoSupport:
     """Tests for run_with_goto_support() runtime helper.
 

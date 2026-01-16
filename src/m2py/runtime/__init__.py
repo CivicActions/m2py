@@ -317,6 +317,27 @@ class MArray:
                     return k
             return ""
 
+    def merge_from(self, source: "MArray") -> None:
+        """Merge source tree into this node (MERGE command).
+
+        Spec 011 Phase 16: Implements MERGE semantics:
+        - Copies source's value to this node (if source has value)
+        - Recursively copies all descendants from source
+        - Does NOT delete any existing nodes in this tree
+
+        Args:
+            source: Source MArray to merge from
+        """
+        # Copy source's value if it has one
+        if source._value is not None:
+            self._value = source._value
+
+        # Recursively merge children
+        for key, child_source in source._children.items():
+            if key not in self._children:
+                self._children[key] = MArray()
+            self._children[key].merge_from(child_source)
+
     def __repr__(self) -> str:
         """String representation for debugging."""
         parts = []
