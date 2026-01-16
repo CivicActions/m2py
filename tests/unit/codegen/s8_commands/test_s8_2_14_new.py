@@ -13,21 +13,23 @@ class TestNewCommandCodegen:
     """Codegen-level tests for NEW command code generation (§8.2.14)."""
 
     def test_new_single_variable(self, generate_python):
-        """NEW single variable generates scope pop (§8.2.14).
+        """NEW single variable generates NewScopeManager with new_var (§8.2.14).
 
-        Spec 011 (T060): N X generates _scope.pop('X', None).
+        Spec 011 (T060): N X wraps body in NewScopeManager and generates new_var('X').
         """
         result = generate_python("TEST N X Q")
-        assert "_scope.pop('X', None)" in result
+        assert "with NewScopeManager(_scope) as _new_mgr:" in result
+        assert "_new_mgr.new_var('X')" in result
 
     def test_new_multiple_variables(self, generate_python):
-        """NEW multiple variables generates multiple pops (§8.2.14).
+        """NEW multiple variables generates multiple new_var calls (§8.2.14).
 
-        Spec 011 (T060): N X,Y generates pops for both variables.
+        Spec 011 (T060): N X,Y generates new_var for both variables.
         """
         result = generate_python("TEST N X,Y Q")
-        assert "_scope.pop('X', None)" in result
-        assert "_scope.pop('Y', None)" in result
+        assert "with NewScopeManager(_scope) as _new_mgr:" in result
+        assert "_new_mgr.new_var('X')" in result
+        assert "_new_mgr.new_var('Y')" in result
 
     def test_new_makes_variable_undefined(self, execute_mumps):
         """NEW makes variable undefined for $GET (§8.2.14).

@@ -506,15 +506,59 @@ class TestCrossRoutineVariableVisibility:
                     del sys.modules["ext2"]
 
     def test_new_semantics_deferred(self):
-        """T031/T033: NEW semantics require Spec 011 Phase 14 (not yet implemented).
+        """T031/T033: NEW semantics - N X in callee hides caller's X.
 
-        When NEW is implemented, these tests should verify:
+        Tests that:
         - N X in callee hides caller's X
         - X restored to caller's value on return
         """
-        import pytest
+        # Generate Python for callee that NEWs X
+        callee_source = """CALLEE
+ N X
+ S X=999
+ W "X in callee: ",X,!
+ Q
+"""
+        callee_code = generate_python(callee_source)
 
-        pytest.skip("NEW command (Spec 011 Phase 14) not yet implemented")
+        # Generate Python for caller that sets X and calls callee
+        caller_source = """CALLER
+ S X=100
+ D ^CALLEE
+ W "X after call: ",X,!
+ Q
+"""
+        caller_code = generate_python(caller_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            callee_path = Path(tmpdir) / "CALLEE.py"
+            callee_path.write_text(callee_code)
+
+            sys.path.insert(0, tmpdir)
+            try:
+                if "CALLEE" in sys.modules:
+                    del sys.modules["CALLEE"]
+
+                namespace = {}
+                exec(caller_code, namespace)
+
+                runtime = namespace["MUMPSRuntime"]()
+                namespace["CALLER"](runtime)
+
+                output = runtime.get_output()
+                # Callee should print 999 (its NEWed X)
+                # Caller should print 100 (X restored after callee returns)
+                assert "X in callee: 999" in output, (
+                    f"Expected 'X in callee: 999', got {output!r}"
+                )
+                assert "X after call: 100" in output, (
+                    f"Expected 'X after call: 100', got {output!r}"
+                )
+
+            finally:
+                sys.path.remove(tmpdir)
+                if "CALLEE" in sys.modules:
+                    del sys.modules["CALLEE"]
 
 
 class TestExternalGOTO:

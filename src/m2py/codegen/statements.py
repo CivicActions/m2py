@@ -2214,16 +2214,16 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     The old values are shadowed until the routine/label exits.
 
     Supports:
-    - N X → Remove X from _scope (undefined until next SET)
-    - N X,Y,Z → Remove multiple variables from _scope
+    - N X → NEW X (save and remove from _scope until function exit)
+    - N X,Y,Z → NEW multiple variables
 
     NOT yet implemented:
     - N (argumentless) - new all variables
     - N (X,Y) - exclusive new (new all except X,Y)
 
-    Note: Full scope restoration on QUIT requires try/finally wrapping.
-    For simple cases within a single label, just removing from _scope
-    makes the variable undefined.
+    When ctx.new_scope_manager_var is set, uses NewScopeManager.new_var()
+    for proper save/restore semantics on function exit.
+    Otherwise, uses simple _scope.pop() for within-routine NEW.
 
     Args:
         stmt: MNewStatement node
@@ -2239,15 +2239,19 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
 
     # Process each variable in the new list
     for var_name in stmt.variables:
-        translated = translate_name(var_name)
-
-        # For SIMPLE_FUNCTIONS strategy, use _scope
+        # For SIMPLE_FUNCTIONS strategy with NewScopeManager, use .new_var()
+        # This ensures proper save/restore on function exit
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Remove variable from scope - makes it undefined
-            # $G(X,"default") will return "default" after this
-            ctx.emitter.line(f"_scope.pop({translated!r}, None)")
+            if ctx.new_scope_manager_var:
+                # Use NewScopeManager for proper save/restore semantics
+                ctx.emitter.line(f"{ctx.new_scope_manager_var}.new_var({var_name!r})")
+            else:
+                # Fallback: simple pop (used when no NewScopeManager in context)
+                translated = translate_name(var_name)
+                ctx.emitter.line(f"_scope.pop({translated!r}, None)")
         else:
             # TRAMPOLINE strategy - reset to empty MArray
+            translated = translate_name(var_name)
             ctx.emitter.line(f"{translated} = MArray()")
 
 

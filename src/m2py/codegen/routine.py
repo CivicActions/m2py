@@ -59,6 +59,10 @@ class GeneratorContext:
     # Spec 006: Array variables (MArray-backed) for subscript access
     array_vars: set[str] = field(default_factory=set)
 
+    # Spec 011: Name of the NewScopeManager variable when inside a NEW-managed block
+    # If set, _generate_new() should use _new_mgr.new_var() instead of _scope.pop()
+    new_scope_manager_var: Optional[str] = None
+
 
 class AnalysisNotCompleteError(ValueError):
     """Raised when code generation is attempted without complete analysis.
@@ -147,6 +151,30 @@ def validate_analysis_complete(routine: MRoutine) -> None:
             # None when QUIT is not inside a FOR or DO block. The analysis pass
             # sets them when appropriate, so we don't raise errors for None here.
             # The codegen correctly handles None by generating 'return' statements.
+
+
+def _label_has_new_statements(label: MLabel) -> bool:
+    """Check if a label body contains any NEW statements.
+
+    Spec 011: Labels with NEW statements need to wrap their body
+    in a NewScopeManager context to ensure proper save/restore
+    of NEWed variables on function exit.
+
+    Args:
+        label: MLabel ASG node to check
+
+    Returns:
+        True if the label contains any MNewStatement nodes
+    """
+    from m2py.asg.statements import MNewStatement
+
+    if not label.body:
+        return False
+
+    for stmt in label.body.walk_statements():
+        if isinstance(stmt, MNewStatement):
+            return True
+    return False
 
 
 def get_scope_strategy_pattern(strategy: ScopeStrategy) -> str:
@@ -281,8 +309,9 @@ class RoutineGenerator:
         # Spec 010: Import $FIND helper (Phase 7), $NAME/$QLENGTH/$QSUBSCRIPT (Phase 9)
         # Spec 010: Import $FNUMBER helper (Phase 10)
         # Spec 011: Import contains/follows/sorts-after helpers (Phase 10), pattern_match (Phase 12)
+        # Spec 011: Import NewScopeManager for NEW command scope semantics
         ctx.emitter.line(
-            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_contains, m_follows, m_sorts_after, m_pattern_match"
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_contains, m_follows, m_sorts_after, m_pattern_match, NewScopeManager"
         )
         # Spec 010: Import $RANDOM helper (Phase 8)
         ctx.emitter.line("from m2py.codegen.expressions import _m_random_checked")
@@ -489,30 +518,51 @@ class RoutineGenerator:
                     f"_scope.setdefault({orig_name!r}, MArray()).value = {python_name}"
                 )
 
-            # Spec 006 (T069a): Check for self-loop pattern
-            if label.has_self_loop:
-                # Wrap body in while True: for self-loop pattern
-                ctx.emitter.line("while True:")
+            # Spec 011: Check if label has NEW statements - if so, wrap body
+            # in NewScopeManager to ensure proper save/restore semantics
+            has_new = _label_has_new_statements(label)
+            if has_new:
+                ctx.emitter.line("with NewScopeManager(_scope) as _new_mgr:")
+                ctx.new_scope_manager_var = "_new_mgr"
                 with ctx.emitter.indented():
-                    if label.body and label.body.statements:
-                        generate_scope_statements(label.body.statements, ctx)
-                    else:
-                        ctx.emitter.line("pass")
-                    # If no explicit exit, add break to prevent infinite loop
-                    # This handles fall-through at end of label
-                    if not label.has_explicit_exit:
-                        ctx.emitter.line("break")
+                    self._generate_label_body(label, ctx)
+                ctx.new_scope_manager_var = None
             else:
-                # Generate body statements using scope-aware generator
-                # This handles forward GOTO restructuring automatically
-                if label.body and label.body.statements:
-                    generate_scope_statements(label.body.statements, ctx)
-                else:
-                    # Empty function needs pass
-                    ctx.emitter.line("pass")
+                self._generate_label_body(label, ctx)
 
         ctx.emitter.blank()
         ctx.current_label = None
+
+    def _generate_label_body(self, label: MLabel, ctx: GeneratorContext) -> None:
+        """Generate the body statements for a label function.
+
+        Factored out to support wrapping with NewScopeManager when needed.
+
+        Args:
+            label: MLabel ASG node
+            ctx: Generator context
+        """
+        # Spec 006 (T069a): Check for self-loop pattern
+        if label.has_self_loop:
+            # Wrap body in while True: for self-loop pattern
+            ctx.emitter.line("while True:")
+            with ctx.emitter.indented():
+                if label.body and label.body.statements:
+                    generate_scope_statements(label.body.statements, ctx)
+                else:
+                    ctx.emitter.line("pass")
+                # If no explicit exit, add break to prevent infinite loop
+                # This handles fall-through at end of label
+                if not label.has_explicit_exit:
+                    ctx.emitter.line("break")
+        else:
+            # Generate body statements using scope-aware generator
+            # This handles forward GOTO restructuring automatically
+            if label.body and label.body.statements:
+                generate_scope_statements(label.body.statements, ctx)
+            else:
+                # Empty function needs pass
+                ctx.emitter.line("pass")
 
     def _generate_simple_line_map(self, ctx: GeneratorContext) -> None:
         """Generate _line_map for SIMPLE_FUNCTIONS strategy.

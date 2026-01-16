@@ -1297,3 +1297,103 @@ def m_pattern_match(string: Any, pattern: str) -> int:
     except Exception:
         # Pattern compilation error - return 0 (no match)
         return 0
+
+
+# =============================================================================
+# Spec 011: NEW Command Scope Management
+# =============================================================================
+
+
+# Sentinel value to indicate a variable was undefined before NEW
+_UNDEFINED = object()
+
+
+class NewScopeManager:
+    """Context manager for MUMPS NEW command scope semantics.
+
+    MUMPS NEW command creates a new scope level for specified variables,
+    hiding the caller's values. When the function returns, the original
+    values are restored.
+
+    Usage in generated code:
+        with NewScopeManager(_scope) as _new_mgr:
+            _new_mgr.new_var('X')  # N X - saves and removes X
+            _scope['X'] = MArray()
+            _scope['X'].value = 999
+            # ... rest of function body ...
+        # On exit: X restored to original value
+
+    This handles:
+    - Save original value (or mark as undefined)
+    - Remove variable from scope (making it undefined)
+    - Restore original values on normal return or exception
+
+    Example MUMPS:
+        CALLER
+         S X=100
+         D ^CALLEE
+         W X  ; Prints 100 - X restored after callee's NEW
+
+        CALLEE
+         N X
+         S X=999
+         W X  ; Prints 999
+         Q
+
+    Generated Python for CALLEE:
+        def CALLEE(_rt, _scope=None, **_kwargs):
+            _scope = _scope if _scope is not None else {}
+            with NewScopeManager(_scope) as _new_mgr:
+                _new_mgr.new_var('X')
+                _scope['X'] = MArray()
+                _scope['X'].value = 999
+                _rt.write(_scope.get('X', MArray()).value or '')
+                return
+    """
+
+    def __init__(self, scope: dict):
+        """Initialize the scope manager.
+
+        Args:
+            scope: The _scope dict for the current routine
+        """
+        self._scope = scope
+        self._saved: dict = {}
+
+    def __enter__(self) -> "NewScopeManager":
+        """Enter the context - nothing to do on entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit the context - restore all saved variables.
+
+        This runs on both normal return and exceptions, ensuring
+        MUMPS NEW semantics are preserved.
+        """
+        for var_name, saved_value in self._saved.items():
+            if saved_value is _UNDEFINED:
+                # Variable was undefined before NEW - remove it
+                self._scope.pop(var_name, None)
+            else:
+                # Variable had a value - restore it
+                self._scope[var_name] = saved_value
+
+    def new_var(self, var_name: str) -> None:
+        """NEW a single variable - save and remove from scope.
+
+        If the variable has already been NEWed in this scope level,
+        this is a no-op (first NEW wins).
+
+        Args:
+            var_name: The MUMPS variable name (not translated)
+        """
+        if var_name in self._saved:
+            # Already NEWed - skip
+            return
+
+        # Save current value (or mark as undefined)
+        if var_name in self._scope:
+            self._saved[var_name] = self._scope[var_name]
+            del self._scope[var_name]
+        else:
+            self._saved[var_name] = _UNDEFINED
