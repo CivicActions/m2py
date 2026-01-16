@@ -236,15 +236,26 @@ if not (a and b):
 
 ## Pattern Match
 
+The pattern match operator (`?`) checks if a string matches a MUMPS pattern.
+
 ```mumps
-I X?1A.N
+W "ABC"?1A.A    ; 1 (one letter, any letters)
+W "123"?1N.N    ; 1 (one or more digits)
+W "AB12"?2A2N   ; 1 (exactly 2 letters, 2 digits)
+W "ABC"'?1N.N   ; 1 (negated - ABC doesn't match numeric)
 ```
 
-```python
-# Conceptual Python equivalent
+The codegen generates `m_pattern_match()` calls:
 
-import re
-if re.fullmatch(r"[A-Za-z][0-9]*", x):
+```python
+m_pattern_match("ABC", "1A.A")   # Returns 1 (match)
+m_pattern_match("A1B", "1A.A")   # Returns 0 (no match)
+```
+
+Negated pattern match (`'?`) wraps the result:
+
+```python
+int(not m_pattern_match("ABC", "1N.N"))  # Returns 1 (doesn't match)
 ```
 
 See [pattern_compiler.md](../analysis/pattern_compiler.md) for pattern translation.

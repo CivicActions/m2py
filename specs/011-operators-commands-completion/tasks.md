@@ -210,9 +210,9 @@
 
 ### Implementation for User Story 6
 
-- [ ] T048 [US6] Add pattern match (`?`) operator case to `_generate_binary_op()` using `m_pattern_match()` in `src/m2py/codegen/expressions.py`
-- [ ] T049 [US6] Add pattern match tests including negated pattern (`X'?1N` = NOT pattern match) in `tests/unit/codegen/s7_expressions/test_s7_2_pattern_match.py`
-- [ ] T050 [US6] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T048 [US6] Add pattern match (`?`) operator case to `_generate_binary_op()` using `m_pattern_match()` in `src/m2py/codegen/expressions.py`
+- [x] T049 [US6] Add pattern match tests including negated pattern (`X'?1N` = NOT pattern match) in `tests/unit/codegen/s7_expressions/test_s7_2_pattern_match.py`
+- [x] T050 [US6] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Pattern match functional - `"ABC"?1A.A→1`
 

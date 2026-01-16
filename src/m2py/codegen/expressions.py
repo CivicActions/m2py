@@ -18,6 +18,7 @@ from m2py.asg.expressions import (
     MExtrinsicFunction,
     MIntrinsicFunction,
     MLiteral,
+    MPatternMatch,
     MSelectArg,
     MSpecialVariable,
     MUnaryOp,
@@ -116,6 +117,9 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     # from MIntrinsicFunction.
     elif isinstance(expr, MIntrinsicFunction):
         return generate_intrinsic_function(expr, ctx)
+    # Spec 011 Phase 12: Pattern match expressions
+    elif isinstance(expr, MPatternMatch):
+        return _generate_pattern_match(expr, ctx)
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -353,6 +357,9 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         # Sorts after: A]]B returns 1 if A strictly sorts after B
         # Empty string never sorts after anything
         return f"m_sorts_after({left}, {right})"
+    elif op.operator == "?":
+        # Pattern match: A?pattern returns 1 if A matches pattern
+        return f"m_pattern_match({left}, {right})"
     else:
         raise NotImplementedError(f"Unsupported binary operator: {op.operator}")
 
@@ -380,6 +387,38 @@ def _generate_unary_op(op: MUnaryOp, ctx: "GeneratorContext") -> str:
         return f"int(not m_truth({operand}))"
     else:
         raise NotImplementedError(f"Unsupported unary operator: {op.operator}")
+
+
+def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str:
+    """Generate Python pattern match expression from MPatternMatch.
+
+    Spec 011 Phase 12: Pattern match operator generates m_pattern_match() call.
+    Supports both direct patterns (literal) and indirect patterns (@X).
+    Also handles negated pattern match ('?) which returns the inverse.
+
+    Args:
+        expr: MPatternMatch node
+        ctx: Generator context
+
+    Returns:
+        Python expression string that evaluates to 1 (match) or 0 (no match)
+    """
+    subject = generate_expr(expr.subject, ctx) if expr.subject else '""'
+
+    if expr.pattern_indirect:
+        # Indirect pattern: X?@Y - pattern is in variable Y
+        pattern = generate_expr(expr.pattern_indirect, ctx)
+    else:
+        # Direct pattern: use pre-compiled regex if available, else use pattern string
+        # Pattern is a literal string like "1A.N"
+        pattern = repr(expr.pattern)
+
+    result = f"m_pattern_match({subject}, {pattern})"
+
+    # Handle negated pattern match ('?)
+    if expr.operator == "'?":
+        return f"int(not {result})"
+    return result
 
 
 def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> str:
