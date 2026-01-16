@@ -265,10 +265,10 @@
 
 ### Implementation for User Story 11
 
-- [ ] T064 [US11] Verify `_generate_kill()` handles basic local KILL in `src/m2py/codegen/statements.py`
-- [ ] T065 [US11] Verify `_generate_kill()` handles subscripted KILL in `src/m2py/codegen/statements.py`
-- [ ] T066 [US11] Add KILL command tests including edge case (KILL of undefined variable should no-op) in `tests/unit/codegen/s8_commands/test_s8_2_10_kill.py`
-- [ ] T067 [US11] Validate all 3 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T064 [US11] Verify `_generate_kill()` handles basic local KILL in `src/m2py/codegen/statements.py`
+- [x] T065 [US11] Verify `_generate_kill()` handles subscripted KILL in `src/m2py/codegen/statements.py`
+- [x] T066 [US11] Add KILL command tests including edge case (KILL of undefined variable should no-op) in `tests/unit/codegen/s8_commands/test_s8_2_10_kill.py`
+- [x] T067 [US11] Validate all 3 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Selective KILL functional - `K X` removes X, `K A(1)` removes subtree
 
