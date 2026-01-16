@@ -193,10 +193,10 @@
 
 ### Implementation for User Story 5
 
-- [ ] T044 [US5] Verify modulo (`#`) operator in `_generate_binary_op()` including edge cases (negative numbers: `-7#3`, zero dividend: `0#5`) in `src/m2py/codegen/expressions.py`
-- [ ] T045 [US5] Verify integer division (`\`) operator in `_generate_binary_op()` including edge cases (negative numbers: `-7\3`, large numbers) in `src/m2py/codegen/expressions.py`
-- [ ] T046 [US5] Add modulo/intdiv tests in `tests/unit/codegen/s7_expressions/test_s7_2_operators.py`
-- [ ] T047 [US5] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T044 [US5] Verify modulo (`#`) operator in `_generate_binary_op()` including edge cases (negative numbers: `-7#3`, zero dividend: `0#5`) in `src/m2py/codegen/expressions.py`
+- [x] T045 [US5] Verify integer division (`\`) operator in `_generate_binary_op()` including edge cases (negative numbers: `-7\3`, large numbers) in `src/m2py/codegen/expressions.py`
+- [x] T046 [US5] Add modulo/intdiv tests in `tests/unit/codegen/s7_expressions/test_s7_2_operators.py`
+- [x] T047 [US5] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Arithmetic operators functional - `7#3→1`, `7\3→2`
 

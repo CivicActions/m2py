@@ -49,20 +49,24 @@ x = ((2 + 3) * 4)  # Force left-to-right
 | `-` | `-` | Subtraction |
 | `*` | `*` | Multiplication |
 | `/` | `/` | Division (Python 3 returns float) |
-| `\` | `//` | Integer division |
+| `\` | `int(x / y)` | Integer division (truncation towards zero) |
 | `#` | `%` | Modulo |
 | `**` | `**` | Exponentiation |
 
 ### Integer Division
 
+MUMPS integer division truncates towards zero, not towards negative infinity like Python's `//`.
+
 ```mumps
 S X=7\2     ; X=3
+S Y=-7\3    ; Y=-2 (not -3)
 ```
 
 ```python
 # Conceptual Python equivalent
 
-x = 7 // 2  # x=3
+x = int(7 / 2)   # x=3
+y = int(-7 / 3)  # y=-2 (truncation, not floor)
 ```
 
 ### Modulo

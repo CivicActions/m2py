@@ -40,17 +40,70 @@ class TestOperatorsCodegen:
         """Division generates Python / with numeric coercion (§7.2)."""
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: integer division")
-    def test_integer_division(self, generate_python):
-        """Integer division generates Python // (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_integer_division(self, execute_mumps):
+        """Integer division generates Python int(x/y) for truncation (§7.2).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: modulo")
-    def test_modulo(self, generate_python):
-        """Modulo generates Python % (§7.2)."""
-        pytest.fail("Stub - implement test")
+        User Story 5 acceptance scenario 2:
+        YDB verified: 7\3 → 2
+        """
+        result = execute_mumps("TEST\n W 7\\3\n Q\n")
+        assert result.output == "2"
+        assert result.success is True
+
+    def test_integer_division_second(self, execute_mumps):
+        """Integer division acceptance scenario 4.
+
+        YDB verified: 10\4 → 2
+        """
+        result = execute_mumps("TEST\n W 10\\4\n Q\n")
+        assert result.output == "2"
+        assert result.success is True
+
+    def test_integer_division_negative(self, execute_mumps):
+        """Integer division with negative number uses truncation towards zero.
+
+        YDB verified: -7\3 → -2 (not -3 as floor division would give)
+        """
+        result = execute_mumps("TEST\n W -7\\3\n Q\n")
+        assert result.output == "-2"
+        assert result.success is True
+
+    def test_modulo(self, execute_mumps):
+        """Modulo generates Python % (§7.2).
+
+        User Story 5 acceptance scenario 1:
+        YDB verified: 7#3 → 1
+        """
+        result = execute_mumps("TEST\n W 7#3\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_modulo_second(self, execute_mumps):
+        """Modulo acceptance scenario 3.
+
+        YDB verified: 10#4 → 2
+        """
+        result = execute_mumps("TEST\n W 10#4\n Q\n")
+        assert result.output == "2"
+        assert result.success is True
+
+    def test_modulo_negative_dividend(self, execute_mumps):
+        """Modulo with negative dividend.
+
+        YDB verified: -7#3 → 2
+        """
+        result = execute_mumps("TEST\n W -7#3\n Q\n")
+        assert result.output == "2"
+        assert result.success is True
+
+    def test_modulo_zero_dividend(self, execute_mumps):
+        """Modulo with zero dividend.
+
+        YDB verified: 0#5 → 0
+        """
+        result = execute_mumps("TEST\n W 0#5\n Q\n")
+        assert result.output == "0"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: exponentiation")

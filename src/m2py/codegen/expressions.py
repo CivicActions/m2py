@@ -317,8 +317,8 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         # Multiplication/Division: coerce both operands
         return f"(m_num({left}) {op.operator} m_num({right}))"
     elif op.operator == "\\":
-        # Integer division in MUMPS
-        return f"(int(m_num({left}) // m_num({right})))"
+        # Integer division in MUMPS - uses truncation towards zero, not floor division
+        return f"(int(m_num({left}) / m_num({right})))"
     elif op.operator == "#":
         # Modulo in MUMPS
         return f"(m_num({left}) % m_num({right}))"
