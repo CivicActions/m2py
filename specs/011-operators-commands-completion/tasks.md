@@ -291,7 +291,7 @@
 
 ---
 
-## Phase 17: User Story 12 - Exclusive NEW and KILL (Priority: P3)
+## Phase 17: User Story 12 - Exclusive NEW and KILL (Priority: P3) ✅
 
 **Prerequisites**: Phase 14 (US10 - Selective NEW) and Phase 15 (US11 - Selective KILL) must be complete.
 
@@ -301,10 +301,10 @@
 
 ### Implementation for User Story 12
 
-- [ ] T072 [US12] Implement exclusive NEW `N (X,Y)` in `_generate_new()` in `src/m2py/codegen/statements.py`
-- [ ] T073 [US12] Implement exclusive KILL `K (X,Y)` in `_generate_kill()` in `src/m2py/codegen/statements.py`
-- [ ] T074 [US12] Add exclusive NEW/KILL tests in `tests/unit/codegen/s8_commands/test_s8_exclusive_new_kill.py`
-- [ ] T075 [US12] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T072 [US12] Implement exclusive NEW `N (X,Y)` in `_generate_new()` in `src/m2py/codegen/statements.py`
+- [x] T073 [US12] Implement exclusive KILL `K (X,Y)` in `_generate_kill()` in `src/m2py/codegen/statements.py`
+- [x] T074 [US12] Add exclusive NEW/KILL tests in `tests/unit/codegen/s8_commands/test_s8_2_14_new.py` and `test_s8_2_11_kill.py`
+- [x] T075 [US12] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Exclusive forms functional - `N (X)` keeps X, NEWs everything else
 

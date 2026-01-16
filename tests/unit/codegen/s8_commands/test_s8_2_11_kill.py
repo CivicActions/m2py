@@ -71,11 +71,36 @@ class TestKillCommandCodegen:
         result = execute_mumps('TEST\n K X W $G(X,"still gone"),!\n Q\n')
         assert result.output == "still gone\n"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL exclusive")
-    def test_kill_exclusive(self, generate_python):
-        """KILL exclusive generates selective delete (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+    def test_kill_exclusive_generates_loop(self, generate_python):
+        """KILL exclusive generates loop to KILL non-kept variables (§8.2.11).
+
+        Spec 011 (T073): K (X) generates a for loop that KILLs all variables except X.
+        """
+        result = generate_python("TEST K (X) Q")
+        assert "for _var_name in list(_scope.keys()):" in result
+        assert "if _var_name not in" in result
+        assert "'X'" in result
+
+    def test_kill_exclusive_keeps_specified(self, execute_mumps):
+        """KILL exclusive keeps specified variables, KILLs others (§8.2.11).
+
+        Spec 011: Acceptance scenario - S X=1,Y=2,Z=3 K (X) W $G(X),$G(Y,"none"),$G(Z,"none") → "1nonenone"
+        """
+        result = execute_mumps(
+            'TEST\n S X=1,Y=2,Z=3 K (X) W $G(X,"none"),$G(Y,"none"),$G(Z,"none"),!\n Q\n'
+        )
+        assert result.output == "1nonenone\n"
+
+    def test_kill_exclusive_multiple_kept(self, execute_mumps):
+        """KILL exclusive with multiple kept variables (§8.2.11).
+
+        K (X,Y) keeps both X and Y, KILLs all others.
+        """
+        result = execute_mumps(
+            'TEST\n S A=1,X=2,Y=3,Z=4 K (X,Y) W $G(A,"a"),$G(X,"x"),$G(Y,"y"),$G(Z,"z"),!\n Q\n'
+        )
+        # After K (X,Y), A and Z are undefined (KILLed), X and Y are kept
+        assert result.output == "a23z\n"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: KILL global")

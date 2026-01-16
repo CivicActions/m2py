@@ -47,11 +47,36 @@ class TestNewCommandCodegen:
         result = execute_mumps('TEST\n S X=1,Y=2 N X,Y W $G(X,"x"),$G(Y,"y"),!\n Q\n')
         assert result.output == "xy\n"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW exclusive")
-    def test_new_exclusive(self, generate_python):
-        """NEW exclusive generates selective scope (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+    def test_new_exclusive_generates_loop(self, generate_python):
+        """NEW exclusive generates loop to NEW non-kept variables (§8.2.14).
+
+        Spec 011 (T072): N (X) generates a for loop that NEWs all variables except X.
+        """
+        result = generate_python("TEST N (X) Q")
+        assert "for _var_name in list(_scope.keys()):" in result
+        assert "if _var_name not in" in result
+        assert "'X'" in result
+
+    def test_new_exclusive_keeps_specified(self, execute_mumps):
+        """NEW exclusive keeps specified variables, NEWs others (§8.2.14).
+
+        Spec 011: Acceptance scenario - S X=1,Y=2 N (X) S Z=3 W $G(X),$G(Y,"none"),$G(Z) → "1none3"
+        """
+        result = execute_mumps(
+            'TEST\n S X=1,Y=2 N (X) S Z=3 W $G(X,"none"),$G(Y,"none"),$G(Z,"none"),!\n Q\n'
+        )
+        assert result.output == "1none3\n"
+
+    def test_new_exclusive_multiple_kept(self, execute_mumps):
+        """NEW exclusive with multiple kept variables (§8.2.14).
+
+        N (X,Y) keeps both X and Y, NEWs all others.
+        """
+        result = execute_mumps(
+            'TEST\n S A=1,X=2,Y=3,Z=4 N (X,Y) W $G(A,"a"),$G(X,"x"),$G(Y,"y"),$G(Z,"z"),!\n Q\n'
+        )
+        # After N (X,Y), A and Z are undefined (NEWed), X and Y are kept
+        assert result.output == "a23z\n"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: NEW scope cleanup on QUIT")

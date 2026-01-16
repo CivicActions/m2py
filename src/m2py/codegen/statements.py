@@ -2121,18 +2121,33 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
     - K ^G → _rt.globals.kill("G", ()) on global
     - K ^G(1,2) → _rt.globals.kill("G", ("1", "2")) on subscripted global
     - K ^(1,2) → resolve_naked then kill (naked global reference)
+    - K (X,Y) → Exclusive KILL: kill all locals except X,Y (Spec 011 T073)
 
     NOT yet implemented:
     - K (argumentless) - kill all locals
-    - K (X,Y) - exclusive kill
 
     Args:
         stmt: MKillStatement node
         ctx: Generator context
     """
-    # Handle exclusive KILL - not yet implemented
+    # Handle exclusive KILL: K (X,Y) - kill all except X,Y
     if stmt.exclusive:
-        raise NotImplementedError("Exclusive KILL (K (X,Y)) not yet supported")
+        # Build set of variables to keep
+        keep_vars_repr = repr(set(stmt.except_list))
+
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Iterate over _scope and remove non-kept variables
+            ctx.emitter.line("for _var_name in list(_scope.keys()):")
+            with ctx.emitter.indented():
+                ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("_scope.pop(_var_name, None)")
+        else:
+            # TRAMPOLINE strategy - not supported for exclusive KILL
+            raise NotImplementedError(
+                "Exclusive KILL not supported in TRAMPOLINE strategy"
+            )
+        return
 
     # Handle argumentless KILL (kill all locals) - not yet implemented
     if stmt.is_kill_all:
@@ -2219,10 +2234,10 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     Supports:
     - N X → NEW X (save and remove from _scope until function exit)
     - N X,Y,Z → NEW multiple variables
+    - N (X,Y) → Exclusive NEW: NEW all locals except X,Y (Spec 011 T072)
 
     NOT yet implemented:
     - N (argumentless) - new all variables
-    - N (X,Y) - exclusive new (new all except X,Y)
 
     When ctx.new_scope_manager_var is set, uses NewScopeManager.new_var()
     for proper save/restore semantics on function exit.
@@ -2232,9 +2247,34 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
         stmt: MNewStatement node
         ctx: Generator context
     """
-    # Handle exclusive NEW - not yet implemented
+    # Handle exclusive NEW: N (X,Y) - NEW all except X,Y
     if stmt.exclusive:
-        raise NotImplementedError("Exclusive NEW (N (X,Y)) not yet supported")
+        # Build set of variables to keep
+        keep_vars_repr = repr(set(stmt.except_list))
+
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            if ctx.new_scope_manager_var:
+                # Use NewScopeManager - iterate over _scope and new_var for non-kept
+                ctx.emitter.line("for _var_name in list(_scope.keys()):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            f"{ctx.new_scope_manager_var}.new_var(_var_name)"
+                        )
+            else:
+                # Simple pop for non-kept variables
+                ctx.emitter.line("for _var_name in list(_scope.keys()):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_scope.pop(_var_name, None)")
+        else:
+            # TRAMPOLINE strategy - not supported for exclusive NEW
+            raise NotImplementedError(
+                "Exclusive NEW not supported in TRAMPOLINE strategy"
+            )
+        return
 
     # Handle argumentless NEW (new all locals) - not yet implemented
     if not stmt.variables:
