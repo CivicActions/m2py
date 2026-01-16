@@ -100,6 +100,46 @@ class TestOperatorsCodegen:
         """Equals generates Python == (§7.2)."""
         pytest.fail("Stub - implement test")
 
+    # =========================================================================
+    # Negated Comparison Operators Tests
+    # =========================================================================
+
+    def test_negated_equals_same_value(self, execute_mumps):
+        """Negated equals returns 0 for equal values (§7.2).
+
+        YDB verified: 5'=5 → 0
+        """
+        result = execute_mumps("TEST\n W 5'=5\n Q\n")
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_negated_equals_different_values(self, execute_mumps):
+        """Negated equals returns 1 for different values (§7.2).
+
+        YDB verified: 5'=6 → 1
+        """
+        result = execute_mumps("TEST\n W 5'=6\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_negated_less_than(self, execute_mumps):
+        """Negated less-than (>=) returns correct value (§7.2).
+
+        YDB verified: 10'<5 → 1 (10 is not less than 5)
+        """
+        result = execute_mumps("TEST\n W 10'<5\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_negated_greater_than(self, execute_mumps):
+        """Negated greater-than (<=) returns correct value (§7.2).
+
+        YDB verified: 5'>10 → 1 (5 is not greater than 10)
+        """
+        result = execute_mumps("TEST\n W 5'>10\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: contains operator")
     def test_contains(self, generate_python):

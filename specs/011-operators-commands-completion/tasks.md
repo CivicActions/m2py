@@ -81,7 +81,7 @@
 
 ---
 
-## Phase 5: User Story 3 - Negated Comparison Operators (Priority: P1)
+## Phase 5: User Story 3 - Negated Comparison Operators (Priority: P1) ✅
 
 **Goal**: Generate Python for `'=`, `'<`, `'>` with correct comparison logic
 
@@ -89,10 +89,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T018 [US3] Add negated equals (`'=`) operator case to `_generate_binary_op()` in `src/m2py/codegen/expressions.py`
-- [ ] T019 [P] [US3] Add negated less-than (`'<`) and negated greater-than (`'>`) operator cases in `src/m2py/codegen/expressions.py`
-- [ ] T020 [US3] Add unit tests for negated comparisons in `tests/unit/codegen/s7_expressions/test_s7_2_operators.py`
-- [ ] T021 [US3] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T018 [US3] Add negated equals (`'=`) operator case to `_generate_binary_op()` in `src/m2py/codegen/expressions.py`
+- [x] T019 [P] [US3] Add negated less-than (`'<`) and negated greater-than (`'>`) operator cases in `src/m2py/codegen/expressions.py`
+- [x] T020 [US3] Add unit tests for negated comparisons in `tests/unit/codegen/s7_expressions/test_s7_2_operators.py`
+- [x] T021 [US3] Validate all 4 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Negated comparisons functional - `5'=6→1`, `10'<5→1`
 

@@ -334,6 +334,15 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
     elif op.operator == "!":
         # Logical OR - must return int (0/1), not Python bool
         return f"int(m_truth({left}) or m_truth({right}))"
+    elif op.operator == "'=":
+        # Negated equals - must return int (0/1)
+        return f'int(not m_compare({left}, "=", {right}))'
+    elif op.operator == "'<":
+        # Negated less-than (greater than or equal) - must return int (0/1)
+        return f'int(not m_compare({left}, "<", {right}))'
+    elif op.operator == "'>":
+        # Negated greater-than (less than or equal) - must return int (0/1)
+        return f'int(not m_compare({left}, ">", {right}))'
     else:
         raise NotImplementedError(f"Unsupported binary operator: {op.operator}")
 
