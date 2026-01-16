@@ -32,6 +32,7 @@ from m2py.asg.statements import (
     MGotoStatement,
     MIfStatement,
     MKillStatement,
+    MNewStatement,
     MQuitStatement,
     MSetStatement,
     MWriteStatement,
@@ -507,6 +508,8 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_do(stmt, ctx)
     elif isinstance(stmt, MKillStatement):
         _generate_kill(stmt, ctx)
+    elif isinstance(stmt, MNewStatement):
+        _generate_new(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -2202,6 +2205,50 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
             raise NotImplementedError(
                 f"KILL target type not supported: {type(target).__name__}"
             )
+
+
+def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for NEW command.
+
+    Spec 011 (T060-T061): NEW creates a new local scope for specified variables.
+    The old values are shadowed until the routine/label exits.
+
+    Supports:
+    - N X → Remove X from _scope (undefined until next SET)
+    - N X,Y,Z → Remove multiple variables from _scope
+
+    NOT yet implemented:
+    - N (argumentless) - new all variables
+    - N (X,Y) - exclusive new (new all except X,Y)
+
+    Note: Full scope restoration on QUIT requires try/finally wrapping.
+    For simple cases within a single label, just removing from _scope
+    makes the variable undefined.
+
+    Args:
+        stmt: MNewStatement node
+        ctx: Generator context
+    """
+    # Handle exclusive NEW - not yet implemented
+    if stmt.exclusive:
+        raise NotImplementedError("Exclusive NEW (N (X,Y)) not yet supported")
+
+    # Handle argumentless NEW (new all locals) - not yet implemented
+    if not stmt.variables:
+        raise NotImplementedError("Argumentless NEW (N with no args) not yet supported")
+
+    # Process each variable in the new list
+    for var_name in stmt.variables:
+        translated = translate_name(var_name)
+
+        # For SIMPLE_FUNCTIONS strategy, use _scope
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Remove variable from scope - makes it undefined
+            # $G(X,"default") will return "default" after this
+            ctx.emitter.line(f"_scope.pop({translated!r}, None)")
+        else:
+            # TRAMPOLINE strategy - reset to empty MArray
+            ctx.emitter.line(f"{translated} = MArray()")
 
 
 __all__ = [

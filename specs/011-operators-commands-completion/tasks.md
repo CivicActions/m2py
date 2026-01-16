@@ -248,10 +248,10 @@
 
 ### Implementation for User Story 10
 
-- [ ] T060 [US10] Implement `_generate_new()` for selective NEW in `src/m2py/codegen/statements.py`
-- [ ] T061 [US10] Handle scope save/restore with try/finally pattern in `src/m2py/codegen/statements.py`
-- [ ] T062 [US10] Add NEW command tests in `tests/unit/codegen/s8_commands/test_s8_2_12_new.py`
-- [ ] T063 [US10] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
+- [X] T060 [US10] Implement `_generate_new()` for selective NEW in `src/m2py/codegen/statements.py`
+- [X] T061 [US10] Handle scope save/restore with try/finally pattern in `src/m2py/codegen/statements.py`
+- [X] T062 [US10] Add NEW command tests in `tests/unit/codegen/s8_commands/test_s8_2_12_new.py`
+- [X] T063 [US10] Validate all 2 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Selective NEW functional - `N X` makes X undefined locally
 
