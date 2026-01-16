@@ -153,30 +153,6 @@ def validate_analysis_complete(routine: MRoutine) -> None:
             # The codegen correctly handles None by generating 'return' statements.
 
 
-def _label_has_new_statements(label: MLabel) -> bool:
-    """Check if a label body contains any NEW statements.
-
-    Spec 011: Labels with NEW statements need to wrap their body
-    in a NewScopeManager context to ensure proper save/restore
-    of NEWed variables on function exit.
-
-    Args:
-        label: MLabel ASG node to check
-
-    Returns:
-        True if the label contains any MNewStatement nodes
-    """
-    from m2py.asg.statements import MNewStatement
-
-    if not label.body:
-        return False
-
-    for stmt in label.body.walk_statements():
-        if isinstance(stmt, MNewStatement):
-            return True
-    return False
-
-
 def get_scope_strategy_pattern(strategy: ScopeStrategy) -> str:
     """Get the code generation pattern for a scope strategy.
 
@@ -522,8 +498,8 @@ class RoutineGenerator:
 
             # Spec 011: Check if label has NEW statements - if so, wrap body
             # in NewScopeManager to ensure proper save/restore semantics
-            has_new = _label_has_new_statements(label)
-            if has_new:
+            # (has_new_statements is populated by variable analysis)
+            if label.has_new_statements:
                 ctx.emitter.line("with NewScopeManager(_scope) as _new_mgr:")
                 ctx.new_scope_manager_var = "_new_mgr"
                 with ctx.emitter.indented():

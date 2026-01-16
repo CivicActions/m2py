@@ -164,6 +164,25 @@ def swap(refs):
 
 ## NEW Command Handling
 
+Labels containing NEW statements require special handling to ensure proper save/restore
+semantics. The `has_new_statements` field on MLabel (populated by `analyze_variables()`)
+indicates whether a label needs NewScopeManager wrapping.
+
+**Detection**: The analysis pass walks all statements in the label body, including nested
+scopes (IF, FOR), to detect any MNewStatement. This is needed because:
+- `variables_newed` only tracks which variables are NEWed
+- Argumentless NEW (`N`) saves all locals but `variables_newed` is empty
+- Exclusive NEW (`N (X)`) tracks excluded vars, not presence of statement
+
+**Code generation**: When `label.has_new_statements` is True, codegen wraps the label
+body in a `NewScopeManager` context:
+
+```python
+# Generated code pattern
+with NewScopeManager(_scope) as _new_mgr:
+    # ... label body with NEW statements ...
+```
+
 ### Selective NEW
 
 ```mumps
