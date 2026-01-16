@@ -30,6 +30,7 @@ from m2py.asg.statements import (
     MElseStatement,
     MForStatement,
     MGotoStatement,
+    MHaltStatement,
     MHangStatement,
     MIfStatement,
     MKillStatement,
@@ -516,6 +517,8 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_merge(stmt, ctx)
     elif isinstance(stmt, MHangStatement):
         _generate_hang(stmt, ctx)
+    elif isinstance(stmt, MHaltStatement):
+        _generate_halt(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -2464,6 +2467,22 @@ def _generate_hang(stmt: MHangStatement, ctx: "GeneratorContext") -> None:
     for duration in stmt.durations:
         duration_expr = generate_expr(duration, ctx)
         ctx.emitter.line(f"time.sleep(m_num({duration_expr}))")
+
+
+def _generate_halt(stmt: MHaltStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python exit for HALT command.
+
+    MUMPS HALT terminates execution immediately. Unlike QUIT which returns
+    from a subroutine, HALT stops the entire program.
+
+    Examples:
+        H (argumentless) -> raise SystemExit(0)
+
+    Args:
+        stmt: MHaltStatement node (no fields)
+        ctx: Generator context
+    """
+    ctx.emitter.line("raise SystemExit(0)")
 
 
 __all__ = [

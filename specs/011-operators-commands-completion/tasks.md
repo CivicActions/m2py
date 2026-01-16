@@ -326,20 +326,20 @@
 
 ---
 
-## Phase 19: User Story 15 - HALT Command (Priority: P3)
+## Phase 19: User Story 15 - HALT Command (Priority: P3) ✅
 
 **Goal**: Generate Python for argumentless `H` that terminates execution
 
-**Independent Test**: `uv run python utils/validate.py --code 'TEST W "before",! H W "after",! Q'` outputs "before\n" only
+**Independent Test**: `uv run python utils/validate.py --code 'TEST W "before",! HALT  W "after",! Q'` outputs "before\n" only
 
 ### Implementation for User Story 15
 
-- [ ] T079 [US15] Distinguish argumentless HALT from HANG in statement dispatch in `src/m2py/codegen/statements.py`
-- [ ] T080 [US15] Implement `_generate_halt()` using `raise SystemExit(0)` in `src/m2py/codegen/statements.py`
-- [ ] T081 [US15] Add HALT command tests in `tests/unit/codegen/s8_commands/test_s8_halt.py`
-- [ ] T082 [US15] Validate acceptance scenario from spec.md using `utils/validate.py`
+- [x] T079 [US15] Distinguish argumentless HALT from HANG in statement dispatch in `src/m2py/codegen/statements.py`
+- [x] T080 [US15] Implement `_generate_halt()` using `raise SystemExit(0)` in `src/m2py/codegen/statements.py`
+- [x] T081 [US15] Add HALT command tests in `tests/unit/codegen/s8_commands/test_s8_2_07_halt.py`
+- [x] T082 [US15] Validate acceptance scenario from spec.md using `utils/validate.py`
 
-**Checkpoint**: HALT functional - `H` (no args) terminates program
+**Checkpoint**: HALT functional - `HALT` terminates program
 
 ---
 

@@ -888,6 +888,17 @@ class MUMPSRuntime:
                 test_value=bool(test_value),
             )
 
+        except SystemExit:
+            # Spec 011 Phase 19: HALT command raises SystemExit(0)
+            # This is a normal termination, not an error
+            test_value = namespace.get("_test", False)
+            return ExecutionResult(
+                output=self.get_output() if capture_output else "",
+                success=True,
+                error=None,
+                test_value=bool(test_value),
+            )
+
         except Exception as e:
             return ExecutionResult(
                 output=self.get_output() if capture_output else "",
