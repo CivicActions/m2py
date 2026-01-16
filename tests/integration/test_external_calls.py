@@ -506,7 +506,7 @@ class TestCrossRoutineVariableVisibility:
                     del sys.modules["ext2"]
 
     def test_new_semantics_deferred(self):
-        """T031/T033: NEW semantics require Spec 005 (not yet implemented).
+        """T031/T033: NEW semantics require Spec 011 Phase 14 (not yet implemented).
 
         When NEW is implemented, these tests should verify:
         - N X in callee hides caller's X
@@ -514,7 +514,7 @@ class TestCrossRoutineVariableVisibility:
         """
         import pytest
 
-        pytest.skip("NEW command (Spec 005) not yet implemented")
+        pytest.skip("NEW command (Spec 011 Phase 14) not yet implemented")
 
 
 class TestExternalGOTO:

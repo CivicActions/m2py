@@ -23,6 +23,7 @@ from m2py.runtime.globals import GlobalStorageBackend, InMemoryGlobalStorage
 from m2py.runtime.helpers import (
     m_data,
     m_data_global,
+    m_format_output,
     m_set_extract,
     m_set_piece,
 )
@@ -672,11 +673,12 @@ class MUMPSRuntime:
             Does not add newlines automatically (MUMPS WRITE doesn't either).
             None values are treated as empty string (MUMPS undefined semantics).
             Spec 011: Updates _x (column) and _y (line) for $X/$Y tracking.
+            Spec 011 Phase 9: Uses m_format_output for canonical number formatting.
         """
         if value is None:
             s = ""
         else:
-            s = str(value)
+            s = m_format_output(value)
 
         # Spec 011: Update $X/$Y position tracking
         for char in s:

@@ -410,6 +410,26 @@ m_set_extract(lambda: _scope.get('X', ''), lambda v: _scope.__setitem__('X', v),
 _rt.write(_scope.get('X', ''))
 ```
 
+### m_format_output (Numeric Formatting)
+
+```python
+from m2py.runtime.helpers import m_format_output
+
+# Convert values to MUMPS canonical format for output
+m_format_output(1.0)    # → "1"
+m_format_output(0.5)    # → ".5"
+m_format_output(-0.5)   # → "-.5"
+m_format_output(3.14)   # → "3.14"
+```
+
+**Behavior:**
+- Integers formatted without trailing `.0`: `1.0` → `"1"`
+- Leading zero removed for decimals < 1: `0.5` → `".5"`
+- Negative values preserve sign: `-0.5` → `"-.5"`
+- Non-numeric values converted with `str()`
+
+This function is used internally by `MUMPSRuntime.write()` to ensure numeric output matches MUMPS formatting conventions.
+
 ### $ORDER Traversal
 
 ```python

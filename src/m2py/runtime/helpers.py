@@ -61,6 +61,67 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
     return (1, str(value))
 
 
+def m_format_output(value: Any) -> str:
+    """Format a value for MUMPS output.
+
+    MUMPS canonical number formatting:
+    - No trailing zeros after decimal point
+    - No unnecessary decimal point for integers
+    - No leading zero before decimal for values < 1 (0.5 → ".5")
+    - Negative numbers keep the minus sign (-0.5 → "-.5")
+
+    Spec 011 Phase 9: Ensures numeric output matches MUMPS formatting.
+
+    Args:
+        value: Any value to format for output
+
+    Returns:
+        String formatted according to MUMPS conventions
+
+    Examples:
+        m_format_output(1.0) → "1"
+        m_format_output(0.5) → ".5"
+        m_format_output(-0.5) → "-.5"
+        m_format_output(3.14) → "3.14"
+    """
+    # If not numeric, just convert to string
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, bool):
+        # Convert boolean to MUMPS 1/0
+        return "1" if value else "0"
+
+    if isinstance(value, (int, float)):
+        # Check if it's effectively an integer
+        if isinstance(value, float) and value == int(value):
+            return str(int(value))
+
+        if isinstance(value, int):
+            return str(value)
+
+        # It's a true float with decimals
+        s = str(value)
+
+        # Python may output in scientific notation for very large/small numbers
+        if "e" in s or "E" in s:
+            # Format without scientific notation
+            if value == int(value):
+                return str(int(value))
+            # Use a reasonable number of decimal places
+            s = f"{value:.15g}"
+
+        # Remove leading zero before decimal if value is between -1 and 1
+        if s.startswith("0."):
+            s = s[1:]  # Remove leading zero: "0.5" -> ".5"
+        elif s.startswith("-0."):
+            s = "-" + s[2:]  # "-0.5" -> "-.5"
+
+        return s
+
+    return str(value)
+
+
 def m_set_piece(
     var_getter: Callable[[], str],
     var_setter: Callable[[str], None],

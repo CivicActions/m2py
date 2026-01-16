@@ -151,7 +151,7 @@
 
 ---
 
-## Phase 9: User Story 17 - Decimal Numeric Literals (Priority: P1)
+## Phase 9: User Story 17 - Decimal Numeric Literals (Priority: P1) ✅
 
 **Goal**: Verify decimal literals in codegen produce correct Python floats
 
@@ -159,9 +159,9 @@
 
 ### Implementation for User Story 17
 
-- [ ] T036 [US17] Verify `_generate_literal()` handles decimal numbers in `src/m2py/codegen/expressions.py`
-- [ ] T037 [US17] Add decimal literal tests in `tests/unit/codegen/s7_expressions/test_s7_1_literals.py`
-- [ ] T038 [US17] Validate all 3 acceptance scenarios from spec.md using `utils/validate.py`
+- [x] T036 [US17] Verify `_generate_literal()` handles decimal numbers in `src/m2py/codegen/expressions.py`
+- [x] T037 [US17] Add decimal literal tests in `tests/unit/codegen/s7_expressions/test_s7_1_literals.py`
+- [x] T038 [US17] Validate all 3 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Decimals functional - `1.5+2.7→4.2`, `.5→0.5`
 
