@@ -274,6 +274,14 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
 
     Currently supported:
     - $TEST ($T): Returns int(_test) for MUMPS-style 0/1 output
+    - $HOROLOG ($H): Returns days,seconds since MUMPS epoch
+    - $JOB ($J): Returns process ID
+    - $IO: Returns current I/O device name
+    - $X: Returns current column position
+    - $Y: Returns current line position
+    - $STORAGE ($S): Returns available memory (large constant)
+    - $STACK ($ST): Returns call stack level
+    - $QUIT ($Q): Returns 1 if in extrinsic, 0 otherwise
 
     Args:
         var: MSpecialVariable node (name without $ prefix)
@@ -291,6 +299,39 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     # MUMPS $TEST is always 0 or 1, not Python True/False
     if name in ("TEST", "T"):
         return "int(_test)"
+
+    # $HOROLOG / $H - days since Dec 31, 1840, seconds since midnight
+    if name in ("HOROLOG", "H"):
+        return "_rt.horolog()"
+
+    # $JOB / $J - current process ID
+    if name in ("JOB", "J"):
+        return "_rt.job()"
+
+    # $IO - current I/O device
+    if name == "IO":
+        return "_rt.io()"
+
+    # $X - current column position
+    if name == "X":
+        return "_rt.x()"
+
+    # $Y - current line position
+    if name == "Y":
+        return "_rt.y()"
+
+    # $STORAGE / $S - available memory (return large constant)
+    # MUMPS $STORAGE reports available memory; we return a reasonable large value
+    if name in ("STORAGE", "S"):
+        return "2147483647"  # Max 32-bit signed integer as placeholder
+
+    # $STACK / $ST - call stack level
+    if name in ("STACK", "ST"):
+        return "_rt.stack_level()"
+
+    # $QUIT / $Q - extrinsic function context flag
+    if name in ("QUIT", "Q"):
+        return "_rt.quit_flag()"
 
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")

@@ -226,15 +226,15 @@
 
 ### Implementation for User Story 16
 
-- [ ] T051 [US16] Add $HOROLOG case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
-- [ ] T052 [P] [US16] Add $JOB case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
-- [ ] T053 [P] [US16] Add $IO case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
-- [ ] T054 [P] [US16] Add $X and $Y cases to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
-- [ ] T055 [P] [US16] Add $STORAGE case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
-- [ ] T056 [P] [US16] Add $STACK case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
-- [ ] T057 [P] [US16] Add $QUIT case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
-- [ ] T058 [US16] Add special variable tests in `tests/unit/codegen/s7_expressions/test_s7_3_special_variables.py`
-- [ ] T059 [US16] Validate all 8 acceptance scenarios from spec.md using `utils/validate.py`
+- [X] T051 [US16] Add $HOROLOG case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
+- [X] T052 [P] [US16] Add $JOB case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
+- [X] T053 [P] [US16] Add $IO case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
+- [X] T054 [P] [US16] Add $X and $Y cases to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
+- [X] T055 [P] [US16] Add $STORAGE case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
+- [X] T056 [P] [US16] Add $STACK case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
+- [X] T057 [P] [US16] Add $QUIT case to `_generate_special_variable()` in `src/m2py/codegen/expressions.py`
+- [X] T058 [US16] Add special variable tests in `tests/unit/codegen/s7_expressions/test_s7_3_special_variables.py`
+- [X] T059 [US16] Validate all 8 acceptance scenarios from spec.md using `utils/validate.py`
 
 **Checkpoint**: Special variables functional - `$H→"days,seconds"`, `$J→pid`
 

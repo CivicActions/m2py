@@ -340,6 +340,7 @@ class RoutineGenerator:
         # T083: Extrinsic function helper - saves/restores $TEST
         # T076: Accept _rt as first parameter for shared runtime
         # Spec 010 (T020): Handle by-ref parameter unpacking via _byref
+        # Spec 011: Set _in_extrinsic flag for $QUIT tracking
         ctx.emitter.blank()
         ctx.emitter.line(
             "def _call_extrinsic(_rt, _ef, *args, _scope=None, _byref=None):"
@@ -362,8 +363,12 @@ class RoutineGenerator:
             ctx.emitter.line('"""')
             ctx.emitter.line("global _test")
             ctx.emitter.line("_saved = _test")
+            # Spec 011: Save/restore _in_extrinsic for $QUIT tracking
+            ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
+                # Spec 011: Mark that we're in an extrinsic for $QUIT
+                ctx.emitter.line("_rt._in_extrinsic = True")
                 # T083: Pass _rt and _scope to external extrinsic
                 ctx.emitter.line("if _scope is not None:")
                 with ctx.emitter.indented():
@@ -393,6 +398,8 @@ class RoutineGenerator:
             ctx.emitter.line("finally:")
             with ctx.emitter.indented():
                 ctx.emitter.line("_test = _saved")
+                # Spec 011: Restore extrinsic flag for nested calls
+                ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
         ctx.emitter.blank()
 
         # T036: _LoopExit exception for multi-loop exits
