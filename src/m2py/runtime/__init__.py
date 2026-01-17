@@ -14,7 +14,197 @@ from __future__ import annotations
 import re
 import types
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, NamedTuple, Optional, Tuple
+
+if TYPE_CHECKING:
+    pass  # Reserved for future type imports
+
+
+# =============================================================================
+# Spec 012: Variable Name Validation Helper (T012)
+# =============================================================================
+
+# MUMPS variable name pattern: starts with letter or %, followed by alphanumerics
+# Global variables start with ^ followed by the same pattern
+# Examples: X, VAR1, %ZTMP, ^GLO, ^GLO123
+_VARNAME_PATTERN = re.compile(r"^[A-Za-z%][A-Za-z0-9]*$")
+_GLOBAL_VARNAME_PATTERN = re.compile(r"^\^[A-Za-z%][A-Za-z0-9]*$")
+
+
+def _is_valid_varname(name: str) -> bool:
+    """Check if name is a valid MUMPS variable name.
+
+    Spec 012 (T012): Validates variable names for name indirection.
+
+    MUMPS variable naming rules:
+    - Must start with letter (A-Z, a-z) or %
+    - Followed by zero or more alphanumeric characters
+    - Global variables start with ^ followed by valid name
+    - Names are case-insensitive but we preserve case
+
+    Does NOT handle subscripted names - call _parse_subscripted_name first
+    to extract the base name and subscripts.
+
+    Args:
+        name: Variable name to validate (without subscripts)
+
+    Returns:
+        True if valid MUMPS variable name, False otherwise
+
+    Examples:
+        >>> _is_valid_varname("X")
+        True
+        >>> _is_valid_varname("VAR1")
+        True
+        >>> _is_valid_varname("%ZTMP")
+        True
+        >>> _is_valid_varname("^GLO")
+        True
+        >>> _is_valid_varname("123BAD")
+        False
+        >>> _is_valid_varname("")
+        False
+        >>> _is_valid_varname("VAR(1)")  # Subscripts not allowed here
+        False
+    """
+    if not name:
+        return False
+    # Check global or local pattern
+    if name.startswith("^"):
+        return bool(_GLOBAL_VARNAME_PATTERN.match(name))
+    return bool(_VARNAME_PATTERN.match(name))
+
+
+def _parse_subscripted_name(name: str) -> Tuple[str, Optional[Tuple[Any, ...]]]:
+    """Parse a variable name that may include subscripts.
+
+    Spec 012 (T007-T008): Extracts base name and subscripts from
+    name indirection targets like "ARR(1,2)" or "^GLO(sub)".
+
+    Args:
+        name: Variable name, optionally with subscripts
+              Examples: "X", "ARR(1,2)", "^GLO", "^GLO(1)"
+
+    Returns:
+        Tuple of (base_name, subscripts) where:
+        - base_name: The variable name without subscripts
+        - subscripts: Tuple of subscript values, or None if no subscripts
+
+    Raises:
+        IndirectionError: If subscript syntax is malformed
+
+    Examples:
+        >>> _parse_subscripted_name("X")
+        ("X", None)
+        >>> _parse_subscripted_name("ARR(1,2)")
+        ("ARR", (1, 2))
+        >>> _parse_subscripted_name("^GLO(1)")
+        ("^GLO", (1,))
+    """
+    # Find opening parenthesis
+    paren_pos = name.find("(")
+    if paren_pos == -1:
+        return (name, None)
+
+    base_name = name[:paren_pos]
+
+    # Extract subscript portion - must end with )
+    if not name.endswith(")"):
+        raise IndirectionError(
+            name, "malformed subscript - missing closing parenthesis"
+        )
+
+    subscript_str = name[paren_pos + 1 : -1]
+    if not subscript_str:
+        raise IndirectionError(name, "empty subscripts not allowed")
+
+    # Parse subscripts - handle quoted strings and nested parens
+    subscripts = _parse_subscript_list(subscript_str, name)
+    return (base_name, tuple(subscripts))
+
+
+def _parse_subscript_list(subscript_str: str, original_name: str) -> List[Any]:
+    """Parse comma-separated subscript list.
+
+    Handles:
+    - Numeric subscripts: 1, 2, 3
+    - String subscripts: "foo", 'bar'
+    - Variable references: X, VAR (returned as strings)
+    - Nested parentheses in expressions
+
+    Args:
+        subscript_str: The content between parentheses
+        original_name: Original name for error messages
+
+    Returns:
+        List of subscript values
+
+    Raises:
+        IndirectionError: If subscript parsing fails
+    """
+    subscripts: List[Any] = []
+    current = ""
+    paren_depth = 0
+    in_string = False
+    string_char = ""
+
+    for char in subscript_str:
+        if in_string:
+            current += char
+            if char == string_char:
+                in_string = False
+        elif char in ('"', "'"):
+            in_string = True
+            string_char = char
+            current += char
+        elif char == "(":
+            paren_depth += 1
+            current += char
+        elif char == ")":
+            paren_depth -= 1
+            current += char
+        elif char == "," and paren_depth == 0:
+            subscripts.append(_convert_subscript(current.strip(), original_name))
+            current = ""
+        else:
+            current += char
+
+    # Don't forget the last subscript
+    if current.strip():
+        subscripts.append(_convert_subscript(current.strip(), original_name))
+
+    return subscripts
+
+
+def _convert_subscript(value: str, original_name: str) -> Any:
+    """Convert a subscript string to its value.
+
+    Args:
+        value: String representation of subscript
+        original_name: Original name for error messages
+
+    Returns:
+        Converted value (int, float, or string)
+    """
+    if not value:
+        raise IndirectionError(original_name, "empty subscript value")
+
+    # Try numeric conversion
+    try:
+        if "." in value:
+            return float(value)
+        return int(value)
+    except ValueError:
+        pass
+
+    # Handle quoted strings - remove quotes
+    if (value.startswith('"') and value.endswith('"')) or (
+        value.startswith("'") and value.endswith("'")
+    ):
+        return value[1:-1]
+
+    # Return as-is (variable reference or expression)
+    return value
 
 
 # =============================================================================
@@ -886,6 +1076,485 @@ class MUMPSRuntime:
         """Pop a stack frame (for QUIT)."""
         if self._stack_level > 0:
             self._stack_level -= 1
+
+    # =========================================================================
+    # Spec 012: Indirection & XECUTE Runtime Methods (Phase 2 - T007-T011)
+    # =========================================================================
+
+    def get_var(self, name: str, _scope: Dict[str, Any]) -> Any:
+        """Get variable value by name (name indirection).
+
+        Spec 012 (T007): Implements reading a variable by dynamic name.
+
+        Behavior:
+        - Local variables: Look up in _scope dict
+        - Global variables (^prefix): Use global storage (MArray at _globals)
+        - Subscripted variables: Access nested structure
+        - Undefined variables: Return empty string ""
+        - Invalid names: Raise IndirectionError
+
+        Args:
+            name: Variable name, optionally with subscripts
+                  Examples: "X", "ARR(1,2)", "^GLO", "^GLO(1)"
+            _scope: Current scope dictionary
+
+        Returns:
+            Variable value, or "" if undefined
+
+        Raises:
+            IndirectionError: If name is not a valid variable name
+
+        Examples:
+            >>> rt.get_var("X", {"X": 5})
+            5
+            >>> rt.get_var("UNDEF", {})
+            ""
+            >>> rt.get_var("ARR(1)", {"ARR": MArray()})
+            # Returns value at subscript
+        """
+        if not name:
+            raise IndirectionError("", "empty variable name")
+
+        # Parse subscripts if present
+        base_name, subscripts = _parse_subscripted_name(name)
+
+        # Validate the base name
+        if not _is_valid_varname(base_name):
+            raise IndirectionError(
+                name,
+                f"invalid variable name - must start with letter or %, got '{base_name}'",
+            )
+
+        # Handle global variables
+        if base_name.startswith("^"):
+            return self._get_global_var(base_name, subscripts)
+
+        # Handle local variables
+        return self._get_local_var(base_name, subscripts, _scope)
+
+    def _get_local_var(
+        self, name: str, subscripts: Optional[Tuple[Any, ...]], _scope: Dict[str, Any]
+    ) -> Any:
+        """Get local variable value from scope.
+
+        Args:
+            name: Base variable name (no subscripts)
+            subscripts: Optional tuple of subscript values
+            _scope: Scope dictionary
+
+        Returns:
+            Variable value, or "" if undefined
+        """
+        value = _scope.get(name, "")
+
+        if subscripts is None:
+            return value
+
+        # Handle subscripted access
+        if isinstance(value, MArray):
+            return value.get(*subscripts)
+        elif value == "":
+            # Undefined base variable, subscript also undefined
+            return ""
+        else:
+            # Non-array value with subscripts - undefined
+            return ""
+
+    def _get_global_var(self, name: str, subscripts: Optional[Tuple[Any, ...]]) -> Any:
+        """Get global variable value.
+
+        Args:
+            name: Global variable name (starts with ^)
+            subscripts: Optional tuple of subscript values
+
+        Returns:
+            Variable value, or "" if undefined
+        """
+        # Global storage is in _globals attribute (create if needed)
+        if not hasattr(self, "_globals"):
+            self._globals: Dict[str, MArray] = {}
+
+        # Strip ^ for storage key
+        key = name[1:]
+
+        if key not in self._globals:
+            return ""
+
+        global_var = self._globals[key]
+        if subscripts is None:
+            return global_var.value
+        return global_var.get(*subscripts)
+
+    def set_var(self, name: str, value: Any, _scope: Dict[str, Any]) -> None:
+        """Set variable value by name (name indirection).
+
+        Spec 012 (T008): Implements writing a variable by dynamic name.
+
+        Behavior:
+        - Local variables: Store in _scope dict
+        - Global variables (^prefix): Use global storage
+        - Subscripted variables: Create nested structure as needed
+        - Creates variable if doesn't exist
+        - Invalid names: Raise IndirectionError
+
+        Args:
+            name: Variable name, optionally with subscripts
+            value: Value to set
+            _scope: Current scope dictionary
+
+        Raises:
+            IndirectionError: If name is not a valid variable name
+
+        Examples:
+            >>> scope = {}
+            >>> rt.set_var("X", 5, scope)
+            >>> scope["X"]
+            5
+            >>> rt.set_var("ARR(1,2)", 10, scope)
+            >>> scope["ARR"].get(1, 2)
+            10
+        """
+        if not name:
+            raise IndirectionError("", "empty variable name")
+
+        # Parse subscripts if present
+        base_name, subscripts = _parse_subscripted_name(name)
+
+        # Validate the base name
+        if not _is_valid_varname(base_name):
+            raise IndirectionError(
+                name,
+                f"invalid variable name - must start with letter or %, got '{base_name}'",
+            )
+
+        # Handle global variables
+        if base_name.startswith("^"):
+            self._set_global_var(base_name, subscripts, value)
+            return
+
+        # Handle local variables
+        self._set_local_var(base_name, subscripts, value, _scope)
+
+    def _set_local_var(
+        self,
+        name: str,
+        subscripts: Optional[Tuple[Any, ...]],
+        value: Any,
+        _scope: Dict[str, Any],
+    ) -> None:
+        """Set local variable value in scope.
+
+        Args:
+            name: Base variable name (no subscripts)
+            subscripts: Optional tuple of subscript values
+            value: Value to set
+            _scope: Scope dictionary
+        """
+        if subscripts is None:
+            # Simple variable assignment
+            _scope[name] = value
+            return
+
+        # Subscripted assignment - ensure MArray exists
+        if name not in _scope or not isinstance(_scope[name], MArray):
+            _scope[name] = MArray()
+
+        # Set value at subscript
+        _scope[name][subscripts].value = value
+
+    def _set_global_var(
+        self, name: str, subscripts: Optional[Tuple[Any, ...]], value: Any
+    ) -> None:
+        """Set global variable value.
+
+        Args:
+            name: Global variable name (starts with ^)
+            subscripts: Optional tuple of subscript values
+            value: Value to set
+        """
+        # Global storage is in _globals attribute (create if needed)
+        if not hasattr(self, "_globals"):
+            self._globals = {}
+
+        # Strip ^ for storage key
+        key = name[1:]
+
+        # Ensure MArray exists for global
+        if key not in self._globals:
+            self._globals[key] = MArray()
+
+        if subscripts is None:
+            self._globals[key].value = value
+        else:
+            self._globals[key][subscripts].value = value
+
+    def resolve_indirection(
+        self, expr: str, levels: int, _scope: Dict[str, Any]
+    ) -> Any:
+        """Resolve N levels of name indirection.
+
+        Spec 012 (T009): Resolves multi-level indirection like @@X, @@@X.
+
+        For @X: Get value of X (levels=1)
+        For @@X: Get value of variable named by X's value (levels=2)
+        For @@@X: Three levels of indirection (levels=3)
+
+        Args:
+            expr: Initial variable name to start resolving
+            levels: Number of indirection levels (1 for @, 2 for @@, etc.)
+            _scope: Current scope dictionary
+
+        Returns:
+            Final resolved value
+
+        Raises:
+            IndirectionError: If any resolution step fails
+
+        Examples:
+            >>> scope = {"A": "B", "B": "C", "C": 100}
+            >>> rt.resolve_indirection("A", 1, scope)  # @A
+            "B"
+            >>> rt.resolve_indirection("A", 2, scope)  # @@A
+            "C"
+            >>> rt.resolve_indirection("A", 3, scope)  # @@@A
+            100
+        """
+        if levels < 1:
+            raise IndirectionError(
+                expr, f"indirection levels must be >= 1, got {levels}"
+            )
+
+        current_name = expr
+        for level in range(levels):
+            # Check if current variable exists (for multi-level, undefined in chain is error)
+            # This matches YDB behavior: LVUNDEF when chain has undefined variable
+            if level > 0:
+                # For levels after the first, the variable MUST exist
+                # (first level is the initial expression, not a dereference)
+                base_name, _ = _parse_subscripted_name(current_name)
+                if base_name.startswith("^"):
+                    # Global: check in _globals
+                    if not hasattr(self, "_globals"):
+                        self._globals = {}
+                    key = base_name[1:]
+                    if key not in self._globals:
+                        raise IndirectionError(
+                            expr,
+                            f"undefined variable in indirection chain at level {level}",
+                            variable_name=current_name,
+                        )
+                else:
+                    # Local: check in _scope
+                    if base_name not in _scope:
+                        raise IndirectionError(
+                            expr,
+                            f"undefined variable in indirection chain at level {level}",
+                            variable_name=current_name,
+                        )
+
+            # Get the value of the current variable
+            value = self.get_var(current_name, _scope)
+
+            # If this is not the last level, the value must be a valid variable name
+            if level < levels - 1:
+                if not isinstance(value, str):
+                    value = str(value)
+                if not value:
+                    raise IndirectionError(
+                        expr,
+                        f"undefined variable in indirection chain at level {level + 1}",
+                        variable_name=current_name,
+                        variable_value=value,
+                    )
+                current_name = value
+            else:
+                # Last level - return the value
+                return value
+
+        # Should not reach here
+        return ""
+
+    def parse_call_target(self, target_str: str) -> CallTarget:
+        """Parse indirect DO/GOTO target into components.
+
+        Spec 012 (T010): Parses target strings for indirect DO/GOTO.
+
+        Formats supported:
+        - "LABEL" → local label
+        - "^ROUTINE" → entry label of external routine
+        - "LABEL^ROUTINE" → specific label in external routine
+        - "LABEL+N" → label with offset (N is integer)
+        - "LABEL+N^ROUTINE" → external with offset
+
+        Args:
+            target_str: Target string from indirection resolution
+
+        Returns:
+            CallTarget(label, routine, offset)
+
+        Raises:
+            IndirectionError: If format is invalid
+
+        Examples:
+            >>> rt.parse_call_target("LABEL")
+            CallTarget(label="LABEL", routine=None, offset=None)
+            >>> rt.parse_call_target("LABEL^ROUTINE")
+            CallTarget(label="LABEL", routine="ROUTINE", offset=None)
+            >>> rt.parse_call_target("LABEL+5^ROUTINE")
+            CallTarget(label="LABEL", routine="ROUTINE", offset=5)
+        """
+        if not target_str:
+            raise IndirectionError("", "empty call target")
+
+        target_str = target_str.strip()
+
+        # Parse routine (^ROUTINE part)
+        routine: Optional[str] = None
+        if "^" in target_str:
+            parts = target_str.split("^", 1)
+            target_str = parts[0]  # Label part (may be empty)
+            routine = parts[1]
+            if not routine:
+                raise IndirectionError(target_str, "empty routine name after ^")
+            # Validate routine name
+            if not _is_valid_varname(routine):
+                raise IndirectionError(
+                    target_str,
+                    f"invalid routine name '{routine}'",
+                )
+
+        # Handle case where only ^ROUTINE is given (no label)
+        if not target_str and routine:
+            return CallTarget(label=None, routine=routine, offset=None)
+
+        # Parse offset (LABEL+N part)
+        offset: Optional[int] = None
+        label: Optional[str] = None
+
+        if "+" in target_str:
+            parts = target_str.split("+", 1)
+            label = parts[0] if parts[0] else None
+            try:
+                offset = int(parts[1])
+            except ValueError:
+                raise IndirectionError(
+                    target_str,
+                    f"invalid offset '{parts[1]}' - must be integer",
+                )
+        else:
+            label = target_str if target_str else None
+
+        # Validate label name if present
+        if label and not _is_valid_varname(label):
+            raise IndirectionError(
+                target_str,
+                f"invalid label name '{label}'",
+            )
+
+        return CallTarget(label=label, routine=routine, offset=offset)
+
+    def execute_mumps(self, mumps_code: str, _scope: Dict[str, Any]) -> Any:
+        """Execute MUMPS code string at runtime (XECUTE).
+
+        Spec 012 (T011): Implements dynamic MUMPS code execution.
+
+        Behavior:
+        - Parses code as MUMPS using m2py parser
+        - Generates Python via m2py codegen
+        - Executes with exec() in shared _scope context
+        - $TEST is NOT stacked (mutations visible to caller)
+        - Supports all MUMPS constructs (depends on Specs 004-011)
+
+        Note: Named execute_mumps() to distinguish from existing execute()
+        which runs Python code. The contract specifies execute() but we
+        need a different name to avoid shadowing the existing method.
+
+        Args:
+            mumps_code: MUMPS code to execute (one or more commands)
+            _scope: Scope dictionary shared with caller
+
+        Returns:
+            Return value if code contains QUIT with value, else None
+
+        Raises:
+            SyntaxError: If MUMPS code has parse errors
+            Any exception from executed code
+
+        Examples:
+            >>> scope = {}
+            >>> rt.execute_mumps("S X=1", scope)
+            >>> scope["X"]
+            1
+
+            >>> scope = {"Y": 5}
+            >>> rt.execute_mumps("S X=Y+1", scope)
+            >>> scope["X"]
+            6
+        """
+        # Import here to avoid circular dependency
+        from m2py.codegen import generate_python
+        from m2py.codegen.helpers import m_compare, m_num, m_truth
+
+        # Wrap the code in a routine format if it's just commands
+        # MUMPS XECUTE executes commands without label context
+        if not mumps_code.strip():
+            return None
+
+        # Check if code already has a label
+        lines = mumps_code.strip().split("\n")
+        first_line = lines[0].strip()
+
+        # If first line starts with a command (space or tab), wrap it
+        if first_line and (first_line[0].isspace() or first_line[0] in "SWRKQIDG"):
+            # Wrap in a temporary routine with label
+            wrapped_code = "XECUTE " + mumps_code.strip() + " Q"
+        else:
+            # Already has structure, use as-is
+            wrapped_code = mumps_code
+
+        # Generate Python code
+        try:
+            python_code = generate_python(wrapped_code, routine_name="XECUTE")
+        except Exception as e:
+            raise SyntaxError(f"MUMPS parse error: {e}") from e
+
+        # Create execution namespace with shared scope
+        namespace: Dict[str, Any] = {
+            "_rt": self,
+            "_scope": _scope,
+            "_test": _scope.get("_test", False),
+            "m_num": m_num,
+            "m_truth": m_truth,
+            "m_compare": m_compare,
+            "MArray": MArray,
+        }
+
+        # Copy scope variables into namespace for direct access
+        # Generated code uses _scope.get("VAR", "") pattern, so this works
+        namespace.update(_scope)
+
+        try:
+            # Execute the generated code
+            exec(python_code, namespace)
+
+            # The generated code defines a function, we need to call it
+            if "XECUTE" in namespace and callable(namespace["XECUTE"]):
+                result = namespace["XECUTE"](self, _scope=_scope)
+            else:
+                result = None
+
+            # Sync $TEST back to scope
+            if "_test" in namespace:
+                _scope["_test"] = namespace["_test"]
+
+            # Sync any modified variables back to _scope
+            # (Generated code modifies _scope directly via _scope["X"] = value)
+
+            return result
+
+        except Exception:
+            # Re-raise with context
+            raise
 
     def execute(
         self,

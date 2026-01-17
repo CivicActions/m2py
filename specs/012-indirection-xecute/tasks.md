@@ -35,15 +35,15 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T007 Implement `MUMPSRuntime.get_var(name, _scope)` in src/m2py/runtime/__init__.py
-- [ ] T008 Implement `MUMPSRuntime.set_var(name, value, _scope)` in src/m2py/runtime/__init__.py
-- [ ] T009 Implement `MUMPSRuntime.resolve_indirection(expr, levels, _scope)` in src/m2py/runtime/__init__.py
-- [ ] T010 Implement `MUMPSRuntime.parse_call_target(target_str)` in src/m2py/runtime/__init__.py
-- [ ] T011 Implement `MUMPSRuntime.execute(mumps_code, _scope)` in src/m2py/runtime/__init__.py
-- [ ] T012 Add `_is_valid_varname(name)` helper in src/m2py/runtime/__init__.py
-- [ ] T013 Unit tests for foundational runtime methods in tests/unit/runtime/test_indirection_runtime.py
+- [x] T007 Implement `MUMPSRuntime.get_var(name, _scope)` in src/m2py/runtime/__init__.py
+- [x] T008 Implement `MUMPSRuntime.set_var(name, value, _scope)` in src/m2py/runtime/__init__.py
+- [x] T009 Implement `MUMPSRuntime.resolve_indirection(expr, levels, _scope)` in src/m2py/runtime/__init__.py
+- [x] T010 Implement `MUMPSRuntime.parse_call_target(target_str)` in src/m2py/runtime/__init__.py
+- [x] T011 Implement `MUMPSRuntime.execute_mumps(mumps_code, _scope)` in src/m2py/runtime/__init__.py
+- [x] T012 Add `_is_valid_varname(name)` helper in src/m2py/runtime/__init__.py
+- [x] T013 Unit tests for foundational runtime methods in tests/unit/runtime/test_indirection_runtime.py
 
-**Checkpoint**: Foundation ready - user story implementation can now begin
+**Checkpoint**: Foundation ready - user story implementation can now begin ✅
 
 ---
 
