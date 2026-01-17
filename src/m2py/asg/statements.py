@@ -72,9 +72,14 @@ class MSetStatement(MStatement):
 
     Assigns values to one or more targets:
     SET X=1, SET A=1,B=2, SET (A,B)=1
+
+    Supports argument indirection (Spec 012 Phase 9):
+    SET @A where A contains "X=1,Y=2"
     """
 
     assignments: List[MAssignment] = field(default_factory=list)
+    # Argument indirections: @A where A contains complete SET args like "X=1"
+    argument_indirections: List["MIndirection"] = field(default_factory=list)
 
 
 # =============================================================================

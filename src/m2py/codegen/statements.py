@@ -545,13 +545,24 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
     Spec 012 (T017): Handle name indirection targets (@VAR).
     For indirection targets, generate: _rt.set_var(name_expr, value, _scope)
 
+    Spec 012 (T056): Handle argument indirections (S @A where A="X=1").
+    For argument indirection, generate: _rt.execute_mumps("S " + value, _scope)
+
     Args:
         stmt: MSetStatement node
         ctx: Generator context
     """
     # Import MIndirection here to avoid circular imports at module level
     from m2py.asg.expressions import MIndirection as MIndirectionType
-    from m2py.codegen.indirection import generate_name_indirection_write
+    from m2py.codegen.indirection import (
+        generate_argument_indirection,
+        generate_name_indirection_write,
+    )
+
+    # Spec 012 (T056): Handle argument indirections first
+    # These are @A patterns where A contains "target=value" string
+    for indir in stmt.argument_indirections:
+        generate_argument_indirection(indir, ctx)
 
     for assignment in stmt.assignments:
         if assignment.target is None or assignment.value is None:

@@ -221,3 +221,72 @@ class TestComputedOffsetCodegen:
         G LABEL+A*2-1 evaluates left-to-right.
         """
         pytest.fail("Stub - implement test")
+
+
+@pytest.mark.codegen
+class TestSetArgumentIndirectionCodegen:
+    """Codegen tests for SET argument indirection (S @A where A="X=1").
+
+    Spec 012 Phase 9: Support argument indirection in SET command.
+    The indirection target contains a complete SET argument string.
+
+    Reference: §7.1.1, §8.2.18
+    """
+
+    def test_set_argument_indirection_simple(self, execute_mumps):
+        """S @A where A contains "X=1" sets X to 1.
+
+        User Story 7 acceptance scenario 1:
+        Given: S A="X=1" S @A
+        When: generated and executed
+        Then: X equals 1
+        """
+        result = execute_mumps('TEST\n S A="X=1" S @A\n W X\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_set_argument_indirection_multiple(self, execute_mumps):
+        """S @A,@B executes both argument indirections.
+
+        User Story 7 acceptance scenario 2:
+        Given: S A="X=1",B="Y=2" S @A,@B
+        When: generated and executed
+        Then: X equals 1 and Y equals 2
+        """
+        result = execute_mumps('TEST\n S A="X=1",B="Y=2" S @A,@B\n W X,",",Y\n Q\n')
+        assert result.output == "1,2"
+        assert result.success is True
+
+    def test_set_argument_indirection_multi_assign_string(self, execute_mumps):
+        """S @A where A contains "X=1,Y=2" sets both X and Y.
+
+        The indirection string can contain multiple comma-separated assignments.
+        """
+        result = execute_mumps('TEST\n S A="X=1,Y=2"\n S @A\n W X,",",Y\n Q\n')
+        assert result.output == "1,2"
+        assert result.success is True
+
+    def test_set_argument_indirection_nested(self, execute_mumps):
+        """S @A where A="@B" and B="X=5" sets X to 5.
+
+        Nested argument indirection: the first level resolves to
+        another indirection which is then executed.
+        """
+        result = execute_mumps('TEST\n S A="@B",B="X=5"\n S @A\n W X\n Q\n')
+        assert result.output == "5"
+        assert result.success is True
+
+    def test_set_argument_indirection_mixed(self, execute_mumps):
+        """Mixed regular and argument indirection in same SET.
+
+        S Z=3,@A,Y=2 executes all in order.
+        """
+        result = execute_mumps('TEST\n S A="X=1"\n S Z=3,@A,Y=2\n W X,Y,Z\n Q\n')
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_set_argument_indirection_generates_execute_mumps(self, generate_python):
+        """S @A generates _rt.execute_mumps("S " + ..., _scope) call."""
+        code = generate_python('TEST\n S A="X=1" S @A\n Q\n')
+        assert "execute_mumps" in code
+        assert '"S "' in code

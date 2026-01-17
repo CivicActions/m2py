@@ -15,8 +15,8 @@ Indirection (`@`) allows runtime evaluation of names, subscripts, and arguments.
 | Name + Subscripts (`@NAME@(1,2)`) | ✅ Implemented | Uses `name_indirection_subscripts` |
 | Indirect DO (`D @TARGET`) | ✅ Implemented | Spec 012 Phase 7 |
 | Indirect GOTO (`G @TARGET`) | ✅ Implemented | Spec 012 Phase 8 |
+| SET Argument Indirection (`S @A`) | ✅ Implemented | Spec 012 Phase 9 |
 | Subscript Indirection (`A(@I)`) | ❌ Not yet | Future phase |
-| Argument Indirection (`D F(@ARGS)`) | ❌ Not yet | Future phase |
 | Pattern Indirection (`X?@PAT`) | ❌ Not yet | Future phase |
 | XECUTE Constant (`X "S X=1"`) | ✅ Implemented | Inlined at transpile time |
 | XECUTE Dynamic (`X CODE`) | ✅ Implemented | Via runtime execute_mumps() |
@@ -107,6 +107,44 @@ MDoStatement(
         )
     ]
 )
+```
+
+### SET Argument Indirection
+
+SET command argument indirection allows dynamic assignment strings:
+
+```mumps
+S A="X=1" S @A     ; Sets X to 1
+S B="Y=2,Z=3" S @B ; Sets Y to 2 and Z to 3
+```
+
+**ASG Structure:**
+```
+MSetStatement(
+    assignments=[],  ; Empty - no static assignments
+    argument_indirections=[
+        MIndirection(
+            expression=MVariable(name="A"),
+            indirection_type=IndirectionType.ARGUMENT
+        )
+    ]
+)
+```
+
+**Generated Python:**
+```python
+_rt.execute_mumps("S " + str(_scope.get('A', '')), _scope)
+```
+
+The runtime parses and executes the SET argument string dynamically.
+
+### Nested SET Argument Indirection
+
+Indirection chains work with argument indirection:
+
+```mumps
+S A="@B",B="X=5"
+S @A              ; First resolves A to "@B", then resolves to "X=5"
 ```
 
 ### Pattern Indirection

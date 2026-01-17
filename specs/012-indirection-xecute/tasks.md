@@ -174,13 +174,13 @@
 
 ### Implementation for User Story 7
 
-- [ ] T055 [P] [US7] Implement `generate_argument_indirection()` in src/m2py/codegen/indirection.py
-- [ ] T056 [US7] Extend SET codegen for argument indirection patterns
-- [ ] T057 [US7] Handle nested argument indirection (`S @A` where A contains `"@B"`)
-- [ ] T058 [US7] Unit tests for SET argument indirection in tests/unit/codegen/s8_commands/test_s8_2_18_set.py
-- [ ] T059 [US7] Integration test: `S A="X=1",B="Y=2" S @A,@B` sets X=1 and Y=2
+- [x] T055 [P] [US7] Implement `generate_argument_indirection()` in src/m2py/codegen/indirection.py
+- [x] T056 [US7] Extend SET codegen for argument indirection patterns
+- [x] T057 [US7] Handle nested argument indirection (`S @A` where A contains `"@B"`)
+- [x] T058 [US7] Unit tests for SET argument indirection in tests/unit/codegen/s8_commands/test_s8_2_18_set.py
+- [x] T059 [US7] Integration test: `S A="X=1",B="Y=2" S @A,@B` sets X=1 and Y=2
 
-**Checkpoint**: SET argument indirection works
+**Checkpoint**: SET argument indirection works ✅
 
 ---
 

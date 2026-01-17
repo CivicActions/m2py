@@ -702,23 +702,43 @@ def generate_indirect_goto(
 def generate_argument_indirection(
     expr: "MIndirection",
     ctx: "GeneratorContext",
-) -> str:
-    """Generate Python code for argument indirection.
+) -> None:
+    """Generate Python code for SET argument indirection.
 
-    Spec 012 Phase 8 (T056): Generate runtime call to evaluate indirection
-    expression and use result as command argument.
+    Spec 012 Phase 9 (T055): Generate runtime code that evaluates the
+    indirection expression to get a SET argument string, then executes
+    it dynamically using execute_mumps().
+
+    For `S @A` where A="X=1":
+      - Gets value of A: "X=1"
+      - Executes: _rt.execute_mumps("S X=1", _scope)
+
+    For nested `S @A` where A="@B" and B="X=5":
+      - Gets value of A: "@B"
+      - Executes: _rt.execute_mumps("S @B", _scope)
+      - The execute_mumps handles the nested indirection
 
     Args:
-        expr: MIndirection ASG node with indirection_type=ARGUMENT
+        expr: MIndirection ASG node representing the argument indirection
         ctx: Generator context
 
-    Returns:
-        Python expression string
-
     Note:
-        This is a Phase 8 placeholder - implementation pending.
+        This generates a statement, not an expression. The caller must
+        ensure this is emitted at statement level.
     """
-    raise NotImplementedError("Argument indirection codegen not yet implemented")
+    from m2py.codegen.expressions import generate_expr
+
+    # Argument indirection must have an expression
+    if expr.expression is None:
+        raise ValueError("Argument indirection requires an expression")
+
+    # Generate expression to get the indirection target value
+    # For @A, this is _scope.get("A", "")
+    target_expr = generate_expr(expr.expression, ctx)
+
+    # Generate the SET command string and execute it
+    # Use execute_mumps which handles parsing and execution
+    ctx.emitter.line(f'_rt.execute_mumps("S " + str({target_expr}), _scope)')
 
 
 def generate_pattern_indirection(

@@ -421,3 +421,49 @@ class TestIndirectGotoExecution:
         )
         # GOTO does not return, so "After" is never executed
         assert result.output == "BeforeTarget"
+
+
+# =============================================================================
+# Argument Indirection Integration Tests (Spec 012 Phase 9, T059)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestArgumentIndirectionExecution:
+    """Integration tests for SET argument indirection runtime behavior (T059).
+
+    Spec 012 Phase 9: Support S @A where A contains "X=1,Y=2".
+    These tests execute generated Python code to verify argument
+    indirection works correctly at runtime.
+    """
+
+    def test_argument_indirection_multiple_vars(self, execute_mumps):
+        """S A="X=1",B="Y=2" S @A,@B sets both X and Y (T059).
+
+        Spec 012 Phase 9 acceptance scenario:
+        Given: S A="X=1",B="Y=2" S @A,@B
+        When: executed
+        Then: X=1 and Y=2
+        """
+        result = execute_mumps('TEST S A="X=1",B="Y=2" S @A,@B W X,Y Q\n')
+        assert result.output == "12"
+
+    def test_argument_indirection_string_with_multiple_assigns(self, execute_mumps):
+        """S A="X=1,Y=2" S @A processes entire string as SET args (T059).
+
+        Given: S A="X=1,Y=2" S @A
+        When: executed
+        Then: Both X=1 and Y=2 are set from single indirection
+        """
+        result = execute_mumps('TEST S A="X=1,Y=2" S @A W X,Y Q\n')
+        assert result.output == "12"
+
+    def test_argument_indirection_order_preserved(self, execute_mumps):
+        """S Z=9,@A,@B,W=4 processes all in left-to-right order (T059).
+
+        Given: S A="X=1",B="Y=2" S Z=9,@A,@B,W=4
+        When: executed
+        Then: Z=9, X=1, Y=2, W=4 in that order
+        """
+        result = execute_mumps('TEST S A="X=1",B="Y=2" S Z=9,@A,@B,W=4 W Z,X,Y,W Q\n')
+        assert result.output == "9124"
