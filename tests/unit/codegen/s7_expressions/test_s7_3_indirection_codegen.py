@@ -512,10 +512,19 @@ class TestXecutePlaceholders:
         assert "parse_call_target" in source
         assert "_call_target" in source
 
-    def test_generate_pattern_indirection_not_implemented(self, mock_ctx):
-        """generate_pattern_indirection() raises NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="Pattern indirection"):
-            generate_pattern_indirection("subject", "pattern", mock_ctx)
+    def test_generate_pattern_indirection_implemented(self, mock_ctx):
+        """generate_pattern_indirection() is now implemented (Spec 012 Phase 10).
+
+        Pattern indirection generates compile_pattern_indirect call.
+        """
+        import inspect
+
+        source = inspect.getsource(generate_pattern_indirection)
+        # Should NOT raise NotImplementedError anymore
+        assert "raise NotImplementedError" not in source
+        # Should have actual implementation logic
+        assert "compile_pattern_indirect" in source
+        assert "re.fullmatch" in source
 
 
 # =============================================================================

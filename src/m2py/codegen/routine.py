@@ -270,11 +270,13 @@ class RoutineGenerator:
         """Generate module imports and initialization.
 
         Spec 006: Adds RoutineState imports and class for TRAMPOLINE strategy.
+        Spec 012: Adds re import for pattern matching.
 
         Args:
             ctx: Generator context
         """
         # Imports
+        ctx.emitter.line("import re")
         ctx.emitter.line("import time")
         ctx.emitter.line("from itertools import chain, count")
         ctx.emitter.line("from m2py.codegen.helpers import m_num, m_truth, m_compare")

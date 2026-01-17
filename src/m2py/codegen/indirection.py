@@ -745,24 +745,46 @@ def generate_pattern_indirection(
     subject_expr: str,
     pattern_expr: str,
     ctx: "GeneratorContext",
+    negated: bool = False,
 ) -> str:
     """Generate Python code for pattern indirection (X?@PAT).
 
-    Spec 012 Phase 9 (T062): Generate runtime call to compile the pattern
+    Spec 012 Phase 10 (T060): Generate runtime call to compile the pattern
     from a variable and match against the subject.
+
+    The generated code:
+    1. Retrieves the pattern string from the variable
+    2. Calls _rt.compile_pattern_indirect() to convert to regex
+    3. Uses re.fullmatch() to test the subject
 
     Args:
         subject_expr: Python expression for the subject string
-        pattern_expr: Python expression for the pattern variable
+        pattern_expr: Python expression for the pattern variable/expression
         ctx: Generator context
+        negated: True if this is negated match ('?), False for regular match (?)
 
     Returns:
-        Python expression string for pattern match
+        Python expression string for pattern match result (1 or 0)
 
-    Note:
-        This is a Phase 9 placeholder - implementation pending.
+    Example:
+        For `I "123"?@PAT` where PAT="1N.N":
+        - subject_expr: '"123"'
+        - pattern_expr: '_scope.get("PAT", "")'
+        - Returns: '(1 if re.fullmatch(_rt.compile_pattern_indirect(...), ...) else 0)'
     """
-    raise NotImplementedError("Pattern indirection codegen not yet implemented")
+    # The pattern match operator sets $TEST and returns 1 or 0
+    # For indirect patterns, we compile at runtime
+    match_expr = (
+        f"re.fullmatch(_rt.compile_pattern_indirect(str({pattern_expr})), "
+        f"str({subject_expr}), re.DOTALL)"
+    )
+
+    if negated:
+        # '? operator: true if pattern does NOT match
+        return f"(1 if {match_expr} is None else 0)"
+    else:
+        # ? operator: true if pattern matches
+        return f"(1 if {match_expr} is not None else 0)"
 
 
 __all__ = [

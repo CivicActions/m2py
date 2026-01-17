@@ -192,13 +192,13 @@
 
 ### Implementation for User Story 8
 
-- [ ] T060 [P] [US8] Implement `generate_pattern_indirection()` in src/m2py/codegen/indirection.py
-- [ ] T061 [US8] Add `compile_pattern_indirect()` to src/m2py/runtime/__init__.py
-- [ ] T062 [US8] Extend pattern match codegen for indirect patterns
-- [ ] T063 [US8] Unit tests for pattern indirection in tests/unit/codegen/s7_expressions/test_s7_3_indirection.py
-- [ ] T064 [US8] Integration test: `S PAT="1N.N" I "123"?@PAT W "MATCH"` outputs MATCH
+- [x] T060 [P] [US8] Implement `generate_pattern_indirection()` in src/m2py/codegen/indirection.py
+- [x] T061 [US8] Add `compile_pattern_indirect()` to src/m2py/runtime/__init__.py
+- [x] T062 [US8] Extend pattern match codegen for indirect patterns
+- [x] T063 [US8] Unit tests for pattern indirection in tests/unit/codegen/s7_expressions/test_s7_3_indirection.py
+- [x] T064 [US8] Integration test: `S PAT="1N.N" I "123"?@PAT W "MATCH"` outputs MATCH
 
-**Checkpoint**: Pattern indirection works
+**Checkpoint**: Pattern indirection works ✅
 
 ---
 

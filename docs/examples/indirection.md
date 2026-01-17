@@ -16,8 +16,8 @@ Indirection (`@`) allows runtime evaluation of names, subscripts, and arguments.
 | Indirect DO (`D @TARGET`) | ✅ Implemented | Spec 012 Phase 7 |
 | Indirect GOTO (`G @TARGET`) | ✅ Implemented | Spec 012 Phase 8 |
 | SET Argument Indirection (`S @A`) | ✅ Implemented | Spec 012 Phase 9 |
+| Pattern Indirection (`X?@PAT`) | ✅ Implemented | Spec 012 Phase 10 |
 | Subscript Indirection (`A(@I)`) | ❌ Not yet | Future phase |
-| Pattern Indirection (`X?@PAT`) | ❌ Not yet | Future phase |
 | XECUTE Constant (`X "S X=1"`) | ✅ Implemented | Inlined at transpile time |
 | XECUTE Dynamic (`X CODE`) | ✅ Implemented | Via runtime execute_mumps() |
 
@@ -149,18 +149,45 @@ S @A              ; First resolves A to "@B", then resolves to "X=5"
 
 ### Pattern Indirection
 
+Pattern indirection allows dynamic pattern matching at runtime:
+
 ```mumps
-S PAT="1N.A"
-I X?@PAT    ; Pattern from variable
+S PAT="1N.N"
+I "123"?@PAT W "MATCH"    ; Pattern compiled at runtime
 ```
 
 **ASG Structure:**
 ```
 MPatternMatch(
-    subject=MVariable(name="X"),
-    pattern=None,
-    pattern_indirect=MVariable(name="PAT")
+    subject=MLiteral(value="123"),
+    pattern="",              ; Empty for indirect
+    pattern_indirect=MVariable(name="PAT"),
+    operator="?"
 )
+```
+
+**Generated Python:**
+```python
+_scope['PAT'] = "1N.N"
+_test = m_truth((1 if re.fullmatch(_rt.compile_pattern_indirect(str(_scope.get('PAT', ''))), str("123"), re.DOTALL) is not None else 0))
+if _test:
+    _rt.write("MATCH")
+```
+
+The runtime `compile_pattern_indirect` method uses the pattern compiler to convert MUMPS patterns to Python regex at runtime.
+
+### Negated Pattern Indirection
+
+The negated pattern match operator (`'?`) also supports indirection:
+
+```mumps
+S PAT="1N"
+I "A"'?@PAT W "NOT NUMERIC"   ; "A" does not match "1N"
+```
+
+**Generated Python:**
+```python
+_test = m_truth((1 if re.fullmatch(_rt.compile_pattern_indirect(str(_scope.get('PAT', ''))), str("A"), re.DOTALL) is None else 0))
 ```
 
 ---

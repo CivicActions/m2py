@@ -1388,6 +1388,50 @@ class MUMPSRuntime:
 
         return self.get_var(current_name, _scope)
 
+    def compile_pattern_indirect(self, pattern_str: str) -> str:
+        """Compile MUMPS pattern string to regex at runtime.
+
+        Spec 012 Phase 10 (T061): Implements pattern indirection by compiling
+        pattern strings to regex at runtime.
+
+        Uses the existing pattern compiler from analysis/pattern_compiler.py.
+
+        Args:
+            pattern_str: MUMPS pattern string like "1N.N", "1A.A"
+
+        Returns:
+            str: Regex pattern string for use with re.fullmatch()
+
+        Raises:
+            IndirectionError: If pattern is invalid or empty
+
+        Examples:
+            >>> rt.compile_pattern_indirect("1N.N")
+            "^[0-9][0-9]*$"  # Matches one digit followed by any digits
+
+            >>> rt.compile_pattern_indirect("1A.A")
+            "^[A-Za-z][A-Za-z]*$"  # Matches one letter followed by any letters
+        """
+        # Import here to avoid circular dependency
+        from m2py.analysis.pattern_compiler import (
+            PatternCompileError,
+            compile_pattern_to_regex,
+        )
+
+        if not pattern_str:
+            raise IndirectionError(
+                "",
+                "empty pattern string in pattern indirection",
+            )
+
+        try:
+            return compile_pattern_to_regex(pattern_str)
+        except PatternCompileError as e:
+            raise IndirectionError(
+                pattern_str,
+                f"invalid pattern: {e}",
+            ) from e
+
     def parse_call_target(self, target_str: str) -> CallTarget:
         """Parse indirect DO/GOTO target into components.
 

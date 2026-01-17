@@ -78,17 +78,16 @@ class TestIndirectionCodegen:
         """
         pytest.fail("Stub - implement when codegen supports indirection")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Codegen not yet implemented: pattern indirection execution"
-    )
-    def test_pattern_indirection_resolves_at_runtime(self):
+    def test_pattern_indirection_resolves_at_runtime(self, execute_mumps):
         """Pattern indirection resolves pattern at runtime (§7.2.5.5).
 
         Per 1995__a901027.md: "Write string?@pattern" where pattern="3N1...4N"
         The pattern string is retrieved and compiled at runtime.
+
+        Spec 012 Phase 10 (T064): Pattern indirection is now implemented.
         """
-        pytest.fail("Stub - implement when codegen supports indirection")
+        result = execute_mumps('TEST S PAT="1N.N" I "123"?@PAT W "MATCHED" Q\n')
+        assert result.output == "MATCHED"
 
     @pytest.mark.stub
     @pytest.mark.xfail(
@@ -467,3 +466,84 @@ class TestArgumentIndirectionExecution:
         """
         result = execute_mumps('TEST S A="X=1",B="Y=2" S Z=9,@A,@B,W=4 W Z,X,Y,W Q\n')
         assert result.output == "9124"
+
+
+# =============================================================================
+# Pattern Indirection Integration Tests (Spec 012 Phase 10, T064)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestPatternIndirectionExecution:
+    """Integration tests for pattern indirection runtime behavior (T064).
+
+    Spec 012 Phase 10: Support X?@PAT for dynamic pattern matching.
+    These tests execute generated Python code to verify pattern
+    indirection works correctly at runtime.
+    """
+
+    def test_pattern_indirection_numeric(self, execute_mumps):
+        """S PAT="1N.N" I "123"?@PAT W "MATCH" outputs MATCH (T064).
+
+        Spec 012 Phase 10 acceptance scenario:
+        Given: S PAT="1N.N" I "123"?@PAT W "MATCH"
+        When: executed
+        Then: "123" matches "1N.N" (one digit, followed by any digits)
+        """
+        result = execute_mumps('TEST S PAT="1N.N" I "123"?@PAT W "MATCH" Q\n')
+        assert result.output == "MATCH"
+
+    def test_pattern_indirection_alpha(self, execute_mumps):
+        """S PAT="1A.A" I "ABC"?@PAT W "MATCH" outputs MATCH (T064).
+
+        Given: S PAT="1A.A" I "ABC"?@PAT W "MATCH"
+        When: executed
+        Then: "ABC" matches "1A.A" (one letter, followed by any letters)
+        """
+        result = execute_mumps('TEST S PAT="1A.A" I "ABC"?@PAT W "MATCH" Q\n')
+        assert result.output == "MATCH"
+
+    def test_pattern_indirection_no_match(self, execute_mumps):
+        """S PAT="1N" I "A"?@PAT W "MATCH" outputs nothing (T064).
+
+        Given: S PAT="1N" I "A"?@PAT W "MATCH"
+        When: executed
+        Then: "A" does not match "1N" (one digit), no output
+        """
+        result = execute_mumps('TEST S PAT="1N" I "A"?@PAT W "MATCH" Q\n')
+        assert result.output == ""
+
+    def test_negated_pattern_indirection(self, execute_mumps):
+        """S PAT="1N" I "A"'?@PAT W "NOT NUMERIC" outputs NOT NUMERIC (T064).
+
+        Negated pattern match: '?@PAT matches when pattern does NOT match.
+        Given: S PAT="1N" I "A"'?@PAT W "NOT NUMERIC"
+        When: executed
+        Then: "A" does not match "1N", negation is true
+        """
+        result = execute_mumps('TEST S PAT="1N" I "A"\'?@PAT W "NOT" Q\n')
+        assert result.output == "NOT"
+
+    def test_pattern_indirection_with_variable_subject(self, execute_mumps):
+        """Subject from variable, pattern from variable (T064).
+
+        Given: S PAT="1N.N",VAL="42" I VAL?@PAT W "OK"
+        When: executed
+        Then: "42" matches "1N.N", outputs "OK"
+        """
+        result = execute_mumps('TEST S PAT="1N.N",VAL="42" I VAL?@PAT W "OK" Q\n')
+        assert result.output == "OK"
+
+    def test_pattern_indirection_phone_format(self, execute_mumps):
+        """Complex pattern indirection for phone number format (T064).
+
+        Given: S PAT="3N1""-""3N1""-""4N" I "555-123-4567"?@PAT W "VALID"
+        When: executed
+        Then: Matches phone format nnn-nnn-nnnn
+
+        Note: MUMPS uses doubled quotes for literal strings in patterns.
+        """
+        result = execute_mumps(
+            'TEST S PAT="3N1""-""3N1""-""4N" I "555-123-4567"?@PAT W "VALID" Q\n'
+        )
+        assert result.output == "VALID"

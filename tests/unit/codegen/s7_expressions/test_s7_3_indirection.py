@@ -62,3 +62,59 @@ class TestIndirectionCodegen:
     @pytest.mark.xfail(reason="Not yet implemented: argument indirection")
     def test_argument_indirection(self, generate_python):
         """Argument indirection generates runtime evaluation (§7.3)."""
+        pytest.fail("Stub - implement test")
+
+
+@pytest.mark.codegen
+class TestPatternIndirectionCodegen:
+    """Codegen-level tests for pattern indirection (§7.3, §7.2.5.5).
+
+    Spec 012 Phase 10 (T063): Pattern indirection (X?@PAT) generates
+    runtime pattern matching via m_pattern_match() helper.
+    """
+
+    def test_pattern_indirection_basic(self, generate_python):
+        """Pattern indirection generates m_pattern_match call (T063).
+
+        In MUMPS, X?@PAT compiles the pattern from PAT at runtime.
+        Example: S PAT="1N.N" I "123"?@PAT compiles "1N.N" and matches "123"
+        """
+        code = generate_python('TEST S PAT="1N.N" I "123"?@PAT W "MATCH" Q\n')
+
+        # Should generate m_pattern_match helper call for indirect patterns
+        assert "m_pattern_match" in code
+
+    def test_pattern_indirection_with_variable_subject(self, generate_python):
+        """Pattern indirection with variable subject (T063).
+
+        Example: S PAT="1A.A",VAL="ABC" I VAL?@PAT
+        """
+        code = generate_python('TEST S PAT="1A.A",VAL="ABC" I VAL?@PAT W "Y" Q\n')
+
+        # Should use m_pattern_match helper for pattern indirection
+        assert "m_pattern_match" in code
+        # Should read subject from VAL variable
+        assert "_scope" in code
+
+    def test_negated_pattern_indirection(self, generate_python):
+        """Negated pattern indirection uses '? operator (T063).
+
+        Example: S PAT="1N" I "A"'?@PAT W "NOT NUMERIC"
+        """
+        code = generate_python('TEST S PAT="1N" I "A"\'?@PAT W "NOT" Q\n')
+
+        # Should generate m_pattern_match call
+        assert "m_pattern_match" in code
+        # Negated match uses int(not ...) wrapper
+        assert "int(not" in code
+
+    def test_literal_pattern_uses_m_pattern_match(self, generate_python):
+        """Literal pattern (not indirect) also uses m_pattern_match (T063).
+
+        m_pattern_match helper handles both direct and indirect patterns.
+        Example: I "123"?1N.N uses m_pattern_match
+        """
+        code = generate_python('TEST I "123"?1N.N W "MATCH" Q\n')
+
+        # Should use m_pattern_match helper
+        assert "m_pattern_match" in code
