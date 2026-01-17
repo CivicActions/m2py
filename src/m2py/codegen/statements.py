@@ -2598,7 +2598,9 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
     For constant string XECUTE, inline the generated Python code at transpile
     time for better performance and debuggability.
 
-    Phase 5 (T032-T038) will add support for dynamic XECUTE via runtime.
+    Spec 012 Phase 5 (T032-T037): Handle XECUTE with dynamic code via runtime.
+    For dynamic XECUTE (variables/expressions), generate runtime.execute_mumps()
+    calls that parse and execute at runtime with shared scope.
 
     Args:
         stmt: MXecuteStatement node
@@ -2606,9 +2608,10 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
 
     Behavior:
         - Constant strings (is_constant=True): Parse at transpile time, inline Python
-        - Dynamic expressions (is_constant=False): Defer to runtime (Phase 5)
+        - Dynamic expressions (is_constant=False): Call _rt.execute_mumps() at runtime
         - Multiple arguments: Process each in order
         - Postconditions: Wrap in if block
+        - $TEST is NOT stacked (XECUTE mutations visible to caller)
     """
     # Import here to avoid circular imports
     from m2py.asg.elements import MParseError
@@ -2638,6 +2641,17 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                 # Recursively generate Python for the statement
                 generate_statement(asg_stmt, ctx)
 
+    def generate_dynamic_xecute() -> None:
+        """Generate runtime calls for dynamic XECUTE expressions.
+
+        Spec 012 Phase 5 (T032-T034): Each code expression is evaluated
+        at runtime and executed via _rt.execute_mumps() with shared _scope.
+        """
+        for code_expr in stmt.code_expressions:
+            expr_code = generate_expr(code_expr, ctx)
+            # Call runtime execute_mumps with evaluated expression and shared scope
+            ctx.emitter.line(f"_rt.execute_mumps({expr_code}, _scope)")
+
     # Handle postcondition if present
     if stmt.postcondition:
         cond_expr = generate_expr(stmt.postcondition, ctx)
@@ -2648,10 +2662,8 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                 for code_str in stmt.constant_values:
                     generate_inline_code(code_str)
             else:
-                # Phase 5: Dynamic XECUTE - not yet implemented
-                raise UnsupportedFeatureError(
-                    "Dynamic XECUTE not yet implemented - See Spec 012 Phase 5"
-                )
+                # Phase 5: Dynamic XECUTE - call runtime
+                generate_dynamic_xecute()
     else:
         # No postcondition - generate code directly
         if stmt.is_constant:
@@ -2659,10 +2671,8 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
             for code_str in stmt.constant_values:
                 generate_inline_code(code_str)
         else:
-            # Phase 5: Dynamic XECUTE - not yet implemented
-            raise UnsupportedFeatureError(
-                "Dynamic XECUTE not yet implemented - See Spec 012 Phase 5"
-            )
+            # Phase 5: Dynamic XECUTE - call runtime
+            generate_dynamic_xecute()
 
 
 __all__ = [

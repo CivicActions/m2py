@@ -99,14 +99,14 @@
 
 ### Implementation for User Story 3
 
-- [ ] T032 [P] [US3] Implement `generate_xecute_dynamic()` in src/m2py/codegen/statements.py
-- [ ] T033 [US3] Integrate constant vs dynamic XECUTE detection in statement generator
-- [ ] T034 [US3] Implement scope sharing between caller and XECUTEd code
-- [ ] T035 [US3] Unit tests for dynamic XECUTE in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
-- [ ] T036 [US3] Unit tests for scope access from XECUTEd code in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
-- [ ] T037 [US3] Integration test: `S OUTER=10 X "S INNER=OUTER+1"` sets INNER=11
+- [x] T032 [P] [US3] Implement `generate_xecute_dynamic()` in src/m2py/codegen/statements.py
+- [x] T033 [US3] Integrate constant vs dynamic XECUTE detection in statement generator
+- [x] T034 [US3] Implement scope sharing between caller and XECUTEd code
+- [x] T035 [US3] Unit tests for dynamic XECUTE in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
+- [x] T036 [US3] Unit tests for scope access from XECUTEd code in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
+- [x] T037 [US3] Integration test: `S OUTER=10 X "S INNER=OUTER+1"` sets INNER=11
 
-**Checkpoint**: Dynamic XECUTE works with full scope access
+**Checkpoint**: Dynamic XECUTE works with full scope access ✅
 
 ---
 

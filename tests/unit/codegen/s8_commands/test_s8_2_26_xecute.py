@@ -2,6 +2,7 @@
 
 Reference: MUMPS 1995 ANSI Standard, Section 8.2.26
 Spec 012 Phase 4: Constant string XECUTE with inline optimization.
+Spec 012 Phase 5: Dynamic XECUTE via runtime.execute_mumps().
 """
 
 import pytest
@@ -14,14 +15,38 @@ from m2py.runtime import MUMPSRuntime
 class TestXecuteCommandCodegen:
     """Codegen-level tests for XECUTE command code generation (§8.2.26)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Phase 5: Dynamic XECUTE not yet implemented")
-    def test_xecute_to_exec(self, generate_python):
-        """XECUTE generates dynamic code execution (§8.2.26).
+    def test_xecute_dynamic_generates_execute_mumps(self, generate_python):
+        """XECUTE dynamic code generates runtime execute_mumps call (§8.2.26).
 
-        Phase 5 (T032-T038): Dynamic XECUTE via runtime.execute_mumps().
+        Spec 012 Phase 5 (T032-T033): Dynamic XECUTE via runtime.execute_mumps().
+
+        X CODE → _rt.execute_mumps(_scope.get('CODE', ''), _scope)
         """
-        pytest.fail("Stub - implement in Phase 5")
+        code = generate_python('TEST S CODE="S X=1" X CODE Q')
+        # Should generate runtime execute_mumps call
+        assert "execute_mumps" in code
+        assert "_scope.get('CODE'" in code or '_scope.get("CODE"' in code
+        assert "_scope)" in code  # Passes _scope to runtime
+
+    def test_xecute_dynamic_multiple_args(self, generate_python):
+        """XECUTE with multiple dynamic arguments generates multiple calls.
+
+        Spec 012 Phase 5 (T032): Each dynamic expression gets its own call.
+
+        X A,B → _rt.execute_mumps(A, _scope); _rt.execute_mumps(B, _scope)
+        """
+        code = generate_python('TEST S A="S X=1",B="S Y=2" X A,B Q')
+        # Should have two execute_mumps calls
+        assert code.count("execute_mumps") == 2
+
+    def test_xecute_dynamic_with_postcondition(self, generate_python):
+        """Dynamic XECUTE with postcondition wraps in if block.
+
+        X:cond CODE → if m_truth(cond): _rt.execute_mumps(CODE, _scope)
+        """
+        code = generate_python('TEST S P=1,CODE="S X=5" X:P=1 CODE Q')
+        assert "if m_truth" in code
+        assert "execute_mumps" in code
 
     def test_xecute_static_optimization(self, generate_python):
         """XECUTE literal string is statically inlined (§8.2.26).
@@ -110,6 +135,89 @@ class TestXecuteCommandCodegen:
 
 
 @pytest.mark.codegen
+class TestDynamicXecuteScopeAccess:
+    """Tests for dynamic XECUTE scope sharing (T034, T036).
+
+    Spec 012 Phase 5: XECUTEd code shares scope with caller.
+    - Can read caller's variables
+    - Can modify caller's variables
+    - New variables set in XECUTE visible to caller
+    """
+
+    def test_xecute_reads_outer_scope(self):
+        """XECUTEd code can read caller's variables (T034).
+
+        S OUTER=10 X "S INNER=OUTER+1" → INNER=11
+        """
+        code = generate_python('TEST S OUTER=10 X "S INNER=OUTER+1" Q')
+
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+        namespace = {
+            "_rt": _rt,
+            "_scope": _scope,
+            "m_truth": __import__("m2py.codegen.helpers", fromlist=["m_truth"]).m_truth,
+            "m_compare": __import__(
+                "m2py.codegen.helpers", fromlist=["m_compare"]
+            ).m_compare,
+            "m_num": __import__("m2py.codegen.helpers", fromlist=["m_num"]).m_num,
+        }
+        exec(code, namespace)
+        namespace["TEST"](_rt, _scope=_scope)
+
+        # INNER should be 11 (OUTER+1 = 10+1) - stored as MArray
+        assert _scope.get("INNER").value == 11
+
+    def test_xecute_modifies_outer_scope(self):
+        """XECUTEd code can modify caller's variables (T036).
+
+        S OUTER=10 X "S OUTER=99" → OUTER=99
+        """
+        code = generate_python('TEST S OUTER=10 X "S OUTER=99" Q')
+
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+        namespace = {
+            "_rt": _rt,
+            "_scope": _scope,
+            "m_truth": __import__("m2py.codegen.helpers", fromlist=["m_truth"]).m_truth,
+            "m_compare": __import__(
+                "m2py.codegen.helpers", fromlist=["m_compare"]
+            ).m_compare,
+            "m_num": __import__("m2py.codegen.helpers", fromlist=["m_num"]).m_num,
+        }
+        exec(code, namespace)
+        namespace["TEST"](_rt, _scope=_scope)
+
+        # OUTER should be modified to 99 - stored as MArray
+        assert _scope.get("OUTER").value == 99
+
+    def test_xecute_with_concatenated_code(self):
+        """XECUTE works with runtime-constructed code strings (T036).
+
+        S CODE="S X=" S CODE=CODE_"5" X CODE → X=5
+        """
+        code = generate_python('TEST S CODE="S X=" S CODE=CODE_"5" X CODE Q')
+
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+        namespace = {
+            "_rt": _rt,
+            "_scope": _scope,
+            "m_truth": __import__("m2py.codegen.helpers", fromlist=["m_truth"]).m_truth,
+            "m_compare": __import__(
+                "m2py.codegen.helpers", fromlist=["m_compare"]
+            ).m_compare,
+            "m_num": __import__("m2py.codegen.helpers", fromlist=["m_num"]).m_num,
+        }
+        exec(code, namespace)
+        namespace["TEST"](_rt, _scope=_scope)
+
+        # X should be 5 (code was "S X=5") - stored as MArray
+        assert _scope.get("X").value == 5
+
+
+@pytest.mark.codegen
 class TestMUMPSRuntimeCodegen:
     """Codegen tests for MUMPSRuntime infrastructure.
 
@@ -119,23 +227,54 @@ class TestMUMPSRuntimeCodegen:
     Reference: §8.2.26, §7.3
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: runtime execute method")
-    def test_runtime_execute_method(self, generate_python):
-        """Runtime provides execute() for dynamic MUMPS code.
+    def test_runtime_execute_mumps_basic(self):
+        """Runtime execute_mumps() executes MUMPS code string.
 
-        runtime.execute('S X=1') translates and runs at runtime.
+        Spec 012 Phase 5: runtime.execute_mumps() transpiles and runs code.
         """
-        pytest.fail("Stub - implement test")
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: runtime variable access")
-    def test_runtime_variable_access(self, generate_python):
-        """Runtime provides dynamic variable get/set.
+        _rt.execute_mumps("S X=42", _scope)
 
-        runtime.get_var(name), runtime.set_var(name, value)
+        # Variables stored as MArray objects
+        assert _scope.get("X").value == 42
+
+    def test_runtime_execute_mumps_scope_read(self):
+        """Runtime execute_mumps() can read from shared scope.
+
+        XECUTEd code has access to caller's variables.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.runtime import MArray
+
+        _rt = MUMPSRuntime()
+        # Pre-populate scope with MArray (as codegen does)
+        _scope: dict = {}
+        _scope["Y"] = MArray()
+        _scope["Y"].value = 10
+
+        _rt.execute_mumps("S X=Y+5", _scope)
+
+        # X should be 15 (Y+5 = 10+5)
+        assert _scope.get("X").value == 15
+
+    def test_runtime_execute_mumps_scope_write(self):
+        """Runtime execute_mumps() can write to shared scope.
+
+        XECUTEd code modifications persist after return.
+        """
+        from m2py.runtime import MArray
+
+        _rt = MUMPSRuntime()
+        # Pre-populate scope with MArray
+        _scope: dict = {}
+        _scope["Z"] = MArray()
+        _scope["Z"].value = 1
+
+        _rt.execute_mumps("S Z=99", _scope)
+
+        # Z should be modified to 99
+        assert _scope.get("Z").value == 99
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: runtime global access")
@@ -147,13 +286,14 @@ class TestMUMPSRuntimeCodegen:
         pytest.fail("Stub - implement test")
 
     @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: runtime test tracking")
+    @pytest.mark.xfail(reason="Phase 6: $TEST semantics for XECUTE")
     def test_runtime_test_tracking(self, generate_python):
         """Runtime tracks $TEST across execute() calls.
 
         $TEST state visible to and from dynamically executed code.
+        Phase 6 will implement proper $TEST handling.
         """
-        pytest.fail("Stub - implement test")
+        pytest.fail("Stub - implement in Phase 6")
 
 
 @pytest.mark.codegen

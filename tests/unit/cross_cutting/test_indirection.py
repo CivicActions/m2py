@@ -118,6 +118,7 @@ class TestXecuteExecution:
 
     Spec 012 Phase 4 (T031): Verify constant XECUTE produces readable
     inlined Python code and executes correctly.
+    Spec 012 Phase 5 (T037): Verify dynamic XECUTE with scope access.
     """
 
     def test_xecute_constant_set_inlined(self, execute_mumps):
@@ -170,3 +171,75 @@ class TestXecuteExecution:
         # Should NOT have runtime execute call
         assert "execute_mumps" not in code
         assert "_rt.execute" not in code
+
+    # --- Phase 5: Dynamic XECUTE Integration Tests (T037) ---
+
+    def test_xecute_dynamic_basic(self, execute_mumps):
+        """S CODE="W 42" X CODE executes dynamic code (T037).
+
+        Spec 012 Phase 5: Dynamic XECUTE parses and runs at runtime.
+        """
+        result = execute_mumps('TEST S CODE="W 42" X CODE Q\n')
+        assert result.output == "42"
+
+    def test_xecute_dynamic_scope_read(self, execute_mumps):
+        """XECUTEd code can access outer scope variables (T037).
+
+        S OUTER=10 X "S INNER=OUTER+1" W INNER → outputs 11
+        """
+        result = execute_mumps('TEST S OUTER=10 X "S INNER=OUTER+1" W INNER Q\n')
+        assert result.output == "11"
+
+    def test_xecute_dynamic_scope_modify(self, execute_mumps):
+        """XECUTEd code can modify outer scope variables (T037).
+
+        S OUTER=10 X "S OUTER=99" W OUTER → outputs 99
+        """
+        result = execute_mumps('TEST S OUTER=10 X "S OUTER=99" W OUTER Q\n')
+        assert result.output == "99"
+
+    def test_xecute_dynamic_concatenated_code(self, execute_mumps):
+        """XECUTE works with runtime-constructed code strings (T037).
+
+        S CODE="S X=" S CODE=CODE_"5" X CODE W X → outputs 5
+        """
+        result = execute_mumps('TEST S CODE="S X=" S CODE=CODE_"5" X CODE W X Q\n')
+        assert result.output == "5"
+
+    def test_xecute_dynamic_multiple_args(self, execute_mumps):
+        """X A,B with dynamic args executes each in order (T037).
+
+        S A="S X=1",B="S Y=2" X A,B W X,Y → outputs 12
+        """
+        result = execute_mumps('TEST S A="S X=1",B="S Y=2" X A,B W X,Y Q\n')
+        assert result.output == "12"
+
+    def test_xecute_dynamic_with_postcondition_true(self, execute_mumps):
+        """Dynamic XECUTE respects postcondition when true (T037).
+
+        S P=1,CODE="S X=5" X:P=1 CODE W X → outputs 5
+        """
+        result = execute_mumps('TEST S P=1,CODE="S X=5" X:P=1 CODE W X Q\n')
+        assert result.output == "5"
+
+    def test_xecute_dynamic_with_postcondition_false(self, execute_mumps):
+        """Dynamic XECUTE respects postcondition when false (T037).
+
+        S P=0,CODE="S X=5" X:P=1 CODE W X → outputs empty (X undefined)
+        """
+        result = execute_mumps('TEST S P=0,CODE="S X=5" X:P=1 CODE W X Q\n')
+        assert result.output == ""
+
+    def test_xecute_dynamic_produces_runtime_call(self):
+        """Dynamic XECUTE generates execute_mumps call (T037).
+
+        The generated code should call _rt.execute_mumps() at runtime.
+        """
+        from m2py.codegen import generate_python
+
+        code = generate_python('TEST S CODE="S X=1" X CODE Q')
+
+        # Should have runtime execute_mumps call
+        assert "execute_mumps" in code
+        # Should pass _scope for shared variable access
+        assert "_scope)" in code

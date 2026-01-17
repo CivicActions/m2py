@@ -17,7 +17,7 @@ Indirection (`@`) allows runtime evaluation of names, subscripts, and arguments.
 | Argument Indirection (`D F(@ARGS)`) | ❌ Not yet | Future phase |
 | Pattern Indirection (`X?@PAT`) | ❌ Not yet | Future phase |
 | XECUTE Constant (`X "S X=1"`) | ✅ Implemented | Inlined at transpile time |
-| XECUTE Dynamic (`X CODE`) | ❌ Not yet | Phase 5 (runtime) |
+| XECUTE Dynamic (`X CODE`) | ✅ Implemented | Via runtime execute_mumps() |
 
 ## Types of Indirection
 
@@ -280,14 +280,48 @@ if m_truth(cond_expr):
     _scope["X"] = 1
 ```
 
-### Dynamic XECUTE (Not Yet Implemented)
+### Dynamic XECUTE
 
 ```mumps
 S CODE="W 42"
 X CODE           ; Execute code from variable
 ```
 
-Dynamic XECUTE requires runtime support and is planned for Phase 5.
+Dynamic XECUTE uses runtime `execute_mumps()` to parse and execute code at runtime.
+
+**ASG Structure:**
+```
+MXecuteStatement(
+    code_expressions=[MVariable(name="CODE")],
+    is_constant=False,
+    constant_values=[]
+)
+```
+
+**Generated Python:**
+```python
+_rt.execute_mumps(_scope.get("CODE", ""), _scope)
+```
+
+### Scope Sharing in XECUTE
+
+XECUTEd code shares the caller's variable scope:
+
+```mumps
+S OUTER=10
+X "S INNER=OUTER+1"   ; INNER=11 (reads OUTER from caller)
+W INNER               ; Outputs 11
+```
+
+**Generated Python:**
+```python
+_scope["OUTER"] = 10
+_rt.execute_mumps("S INNER=OUTER+1", _scope)  # _scope passed
+_rt.write(_scope.get("INNER", ""))
+```
+
+The `_scope` dictionary is passed to `execute_mumps()`, allowing the executed
+code to read and modify caller's variables.
 
 ---
 
