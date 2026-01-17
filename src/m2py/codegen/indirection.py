@@ -318,9 +318,7 @@ def generate_subscripted_indirection(
         if levels > 1:
             return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", _scope)'
         else:
-            return (
-                f'_rt.get_var(f\'{{_scope.get("{base_name}", "")}}{subs_str}\', _scope)'
-            )
+            return f"_rt.get_var(f'{{_scope.get(\"{base_name}\", MArray()).value}}{subs_str}', _scope)"
     else:
         name_expr = generate_expr(inner_expr, ctx)
         return f'_rt.get_var(f"{{str({name_expr})}}{subs_str}", _scope)'
