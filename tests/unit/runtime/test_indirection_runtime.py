@@ -131,19 +131,19 @@ class TestGetVar:
 
     def test_get_global_variable(self, rt):
         """Get global variables (^prefix)."""
-        rt._globals = {"GLO": MArray(100)}
+        # Set via GlobalStorageBackend interface
+        rt._globals.set("GLO", (), "100")
         scope = {}
 
-        assert rt.get_var("^GLO", scope) == 100
+        assert rt.get_var("^GLO", scope) == "100"
 
     def test_get_global_with_subscript(self, rt):
         """Get global variables with subscripts."""
-        glo = MArray()
-        glo[1].value = 200
-        rt._globals = {"GLO": glo}
+        # Set via GlobalStorageBackend interface
+        rt._globals.set("GLO", ("1",), "200")
         scope = {}
 
-        assert rt.get_var("^GLO(1)", scope) == 200
+        assert rt.get_var("^GLO(1)", scope) == "200"
 
     def test_get_undefined_global(self, rt):
         """Undefined global returns empty string."""
@@ -182,13 +182,17 @@ class TestSetVar:
         """Set a simple local variable."""
         scope = {}
         rt.set_var("X", 5, scope)
-        assert scope["X"] == 5
+        # Variables are stored as MArray for consistency with codegen
+        assert isinstance(scope["X"], MArray)
+        assert scope["X"].value == 5
 
     def test_set_overwrites_existing(self, rt):
         """Setting overwrites existing value."""
-        scope = {"X": 10}
+        # Start with an MArray-wrapped value
+        scope = {"X": MArray()}
+        scope["X"].value = 10
         rt.set_var("X", 20, scope)
-        assert scope["X"] == 20
+        assert scope["X"].value == 20
 
     def test_set_subscripted_creates_marray(self, rt):
         """Setting subscripted var creates MArray automatically."""
@@ -214,14 +218,16 @@ class TestSetVar:
         scope = {}
         rt.set_var("^GLO", 100, scope)
 
-        assert rt._globals["GLO"].value == 100
+        # Access via GlobalStorageBackend interface
+        assert rt._globals.get("GLO", ()) == "100"
 
     def test_set_global_with_subscript(self, rt):
         """Set global with subscripts."""
         scope = {}
         rt.set_var("^GLO(1,2)", 200, scope)
 
-        assert rt._globals["GLO"].get(1, 2) == 200
+        # Access via GlobalStorageBackend interface
+        assert rt._globals.get("GLO", ("1", "2")) == "200"
 
     def test_set_invalid_name_raises(self, rt):
         """Invalid variable name raises IndirectionError."""
@@ -252,23 +258,44 @@ class TestResolveIndirection:
         return MUMPSRuntime()
 
     def test_single_level_indirection(self, rt):
-        """Single level @X returns value of X."""
-        scope = {"A": "hello", "B": 42}
+        """Single level @X: If X="VAR", returns value of VAR.
 
-        assert rt.resolve_indirection("A", 1, scope) == "hello"
-        assert rt.resolve_indirection("B", 1, scope) == 42
+        In MUMPS, @X where X contains a variable name "VAR" evaluates
+        to the value of VAR. This is one level of indirection.
+        """
+        # A="B" means @A should look up "B", which is 42
+        scope = {"A": "B", "B": 42, "C": "hello"}
+
+        assert rt.resolve_indirection("A", 1, scope) == 42
+        # C="hello" means @C looks up "hello" - which doesn't exist
+        with pytest.raises(IndirectionError):
+            rt.resolve_indirection("C", 1, scope)
 
     def test_double_level_indirection(self, rt):
-        """Double level @@X returns value of variable named by X."""
-        scope = {"A": "B", "B": "result"}
+        """Double level @@X: If X="VAR" and VAR="OTHER", returns value of OTHER.
+
+        In MUMPS, @@X where X contains "VAR" and VAR contains "OTHER"
+        evaluates to the value of OTHER. Two levels of dereference.
+        """
+        # A="B", B="C", so @@A -> @B -> look up "C", which is "result"
+        scope = {"A": "B", "B": "C", "C": "result"}
 
         assert rt.resolve_indirection("A", 2, scope) == "result"
 
     def test_triple_level_indirection(self, rt):
-        """Triple level @@@X chains three dereferences."""
-        scope = {"A": "B", "B": "C", "C": 100}
+        """Triple level @@@X chains three dereferences.
 
-        assert rt.resolve_indirection("A", 3, scope) == 100
+        If X="A", A="B", B="C", and C=100, then @@@X:
+        1. Gets value of X -> "A"
+        2. Gets value of A -> "B"
+        3. Gets value of B -> "C"
+        4. Gets value of C -> 100
+        """
+        # X="A", A="B", B="C", C=100
+        # @@@X -> A -> B -> C -> get value of C = 100
+        scope = {"X": "A", "A": "B", "B": "C", "C": 100}
+
+        assert rt.resolve_indirection("X", 3, scope) == 100
 
     def test_indirection_undefined_chain(self, rt):
         """Undefined variable in chain raises error."""

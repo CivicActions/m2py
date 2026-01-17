@@ -265,11 +265,12 @@ class CallTarget(NamedTuple):
     routine: Optional[str] = None
     offset: Optional[int] = None
 
+
 # Spec 009: Import global storage backend protocol
-from m2py.runtime.globals import GlobalStorageBackend, InMemoryGlobalStorage
+from m2py.runtime.globals import GlobalStorageBackend, InMemoryGlobalStorage  # noqa: E402
 
 # Spec 009: Import helper functions
-from m2py.runtime.helpers import (
+from m2py.runtime.helpers import (  # noqa: E402
     m_data,
     m_data_global,
     m_format_output,
@@ -278,14 +279,14 @@ from m2py.runtime.helpers import (
 )
 
 # Spec 010: Import runtime exception class
-from m2py.runtime.exceptions import MRuntimeError
+from m2py.runtime.exceptions import MRuntimeError  # noqa: E402
 
 # Spec 010: Import $ORDER and $QUERY helper functions (Phase 2)
 # Spec 010: Import $SELECT helper function (Phase 3)
 # Spec 010: Import $PIECE and $EXTRACT helper functions (Phase 5)
 # Spec 010: Import $GET helper functions (Phase 6)
 # Spec 010: Import $FIND helper function (Phase 7)
-from m2py.runtime.helpers import (
+from m2py.runtime.helpers import (  # noqa: E402
     _raise_select_false,
     m_extract,
     m_find,
@@ -300,13 +301,13 @@ from m2py.runtime.helpers import (
 
 # Spec 011: Import sorts-after (uses MUMPS collation) and pattern match helpers
 # Note: Contains ([) and Follows (]) are inlined as Python expressions in codegen
-from m2py.runtime.helpers import (
+from m2py.runtime.helpers import (  # noqa: E402
     m_pattern_match,
     m_sorts_after,
 )
 
 # Spec 011 Phase 20: Import READ command helpers
-from m2py.runtime.helpers import (
+from m2py.runtime.helpers import (  # noqa: E402
     m_read_char,
     m_read_timeout,
 )
@@ -1145,15 +1146,21 @@ class MUMPSRuntime:
         Returns:
             Variable value, or "" if undefined
         """
-        value = _scope.get(name, "")
+        raw_value = _scope.get(name, "")
 
+        # Extract value from MArray if needed
+        if isinstance(raw_value, MArray):
+            if subscripts is None:
+                # Simple variable - return value
+                return raw_value.value
+            else:
+                # Subscripted access
+                return raw_value.get(*subscripts)
+
+        # Non-MArray value (shouldn't happen normally but handle gracefully)
         if subscripts is None:
-            return value
-
-        # Handle subscripted access
-        if isinstance(value, MArray):
-            return value.get(*subscripts)
-        elif value == "":
+            return raw_value
+        elif raw_value == "":
             # Undefined base variable, subscript also undefined
             return ""
         else:
@@ -1170,20 +1177,13 @@ class MUMPSRuntime:
         Returns:
             Variable value, or "" if undefined
         """
-        # Global storage is in _globals attribute (create if needed)
-        if not hasattr(self, "_globals"):
-            self._globals: Dict[str, MArray] = {}
-
         # Strip ^ for storage key
         key = name[1:]
 
-        if key not in self._globals:
-            return ""
-
-        global_var = self._globals[key]
-        if subscripts is None:
-            return global_var.value
-        return global_var.get(*subscripts)
+        # Use the GlobalStorageBackend interface
+        subs = () if subscripts is None else tuple(str(s) for s in subscripts)
+        result = self._globals.get(key, subs)
+        return result if result is not None else ""
 
     def set_var(self, name: str, value: Any, _scope: Dict[str, Any]) -> None:
         """Set variable value by name (name indirection).
@@ -1251,8 +1251,10 @@ class MUMPSRuntime:
             _scope: Scope dictionary
         """
         if subscripts is None:
-            # Simple variable assignment
-            _scope[name] = value
+            # Simple variable assignment - use MArray for consistency with codegen
+            if name not in _scope or not isinstance(_scope[name], MArray):
+                _scope[name] = MArray()
+            _scope[name].value = value
             return
 
         # Subscripted assignment - ensure MArray exists
@@ -1272,32 +1274,28 @@ class MUMPSRuntime:
             subscripts: Optional tuple of subscript values
             value: Value to set
         """
-        # Global storage is in _globals attribute (create if needed)
-        if not hasattr(self, "_globals"):
-            self._globals = {}
-
         # Strip ^ for storage key
         key = name[1:]
 
-        # Ensure MArray exists for global
-        if key not in self._globals:
-            self._globals[key] = MArray()
-
-        if subscripts is None:
-            self._globals[key].value = value
-        else:
-            self._globals[key][subscripts].value = value
+        # Use the GlobalStorageBackend interface
+        subs = () if subscripts is None else tuple(str(s) for s in subscripts)
+        self._globals.set(key, subs, str(value))
 
     def resolve_indirection(
         self, expr: str, levels: int, _scope: Dict[str, Any]
     ) -> Any:
         """Resolve N levels of name indirection.
 
-        Spec 012 (T009): Resolves multi-level indirection like @@X, @@@X.
+        Spec 012 (T009): Resolves multi-level indirection like @X, @@X, @@@X.
 
-        For @X: Get value of X (levels=1)
-        For @@X: Get value of variable named by X's value (levels=2)
-        For @@@X: Three levels of indirection (levels=3)
+        MUMPS indirection semantics:
+        - @X means: evaluate X to get a name, then get value of that variable
+        - @@X means: evaluate @X to get a name, then get value of that variable
+        - Each @ adds one level of dereferencing
+
+        For levels=1 (@X): X → name → get value of that name
+        For levels=2 (@@X): X → name1 → get value → name2 → get value of that name
+        For levels=3 (@@@X): X → name1 → name2 → name3 → get value of that name
 
         Args:
             expr: Initial variable name to start resolving
@@ -1313,11 +1311,10 @@ class MUMPSRuntime:
         Examples:
             >>> scope = {"A": "B", "B": "C", "C": 100}
             >>> rt.resolve_indirection("A", 1, scope)  # @A
-            "B"
-            >>> rt.resolve_indirection("A", 2, scope)  # @@A
             "C"
-            >>> rt.resolve_indirection("A", 3, scope)  # @@@A
+            >>> rt.resolve_indirection("A", 2, scope)  # @@A
             100
+            >>> # @@@A would be: A→"B"→"C"→100→get value of "100" (error: 100 is not a var name)
         """
         if levels < 1:
             raise IndirectionError(
@@ -1325,54 +1322,71 @@ class MUMPSRuntime:
             )
 
         current_name = expr
+
+        # Each level of indirection means:
+        # 1. Get the value of the current variable (this gives us a new name)
+        # 2. Use that name for the next level
+        # After all levels, we have the final value (which might be a name or a value)
+
         for level in range(levels):
-            # Check if current variable exists (for multi-level, undefined in chain is error)
-            # This matches YDB behavior: LVUNDEF when chain has undefined variable
-            if level > 0:
-                # For levels after the first, the variable MUST exist
-                # (first level is the initial expression, not a dereference)
-                base_name, _ = _parse_subscripted_name(current_name)
-                if base_name.startswith("^"):
-                    # Global: check in _globals
-                    if not hasattr(self, "_globals"):
-                        self._globals = {}
-                    key = base_name[1:]
-                    if key not in self._globals:
-                        raise IndirectionError(
-                            expr,
-                            f"undefined variable in indirection chain at level {level}",
-                            variable_name=current_name,
-                        )
-                else:
-                    # Local: check in _scope
-                    if base_name not in _scope:
-                        raise IndirectionError(
-                            expr,
-                            f"undefined variable in indirection chain at level {level}",
-                            variable_name=current_name,
-                        )
+            # Validate the variable exists before dereferencing
+            base_name, _ = _parse_subscripted_name(current_name)
+            if base_name.startswith("^"):
+                # Global: check via GlobalStorageBackend
+                key = base_name[1:]
+                if self._globals.get(key, ()) is None:
+                    raise IndirectionError(
+                        expr,
+                        f"undefined variable in indirection chain at level {level}",
+                        variable_name=current_name,
+                    )
+            else:
+                # Local: check in _scope
+                if base_name not in _scope:
+                    raise IndirectionError(
+                        expr,
+                        f"undefined variable in indirection chain at level {level}",
+                        variable_name=current_name,
+                    )
 
             # Get the value of the current variable
             value = self.get_var(current_name, _scope)
 
-            # If this is not the last level, the value must be a valid variable name
-            if level < levels - 1:
-                if not isinstance(value, str):
-                    value = str(value)
-                if not value:
-                    raise IndirectionError(
-                        expr,
-                        f"undefined variable in indirection chain at level {level + 1}",
-                        variable_name=current_name,
-                        variable_value=value,
-                    )
-                current_name = value
-            else:
-                # Last level - return the value
-                return value
+            # Convert to string if not already (for use as variable name in next level)
+            if not isinstance(value, str):
+                value = str(value)
 
-        # Should not reach here
-        return ""
+            if not value:
+                raise IndirectionError(
+                    expr,
+                    f"empty value in indirection chain at level {level}",
+                    variable_name=current_name,
+                    variable_value=value,
+                )
+
+            # This value becomes the name for the next level
+            current_name = value
+
+        # After all indirection levels, get the final value
+        # Validate final name exists
+        base_name, _ = _parse_subscripted_name(current_name)
+        if base_name.startswith("^"):
+            key = base_name[1:]
+            if self._globals.get(key, ()) is None:
+                raise IndirectionError(
+                    expr,
+                    "undefined final target variable in indirection",
+                    variable_name=current_name,
+                )
+        else:
+            if base_name not in _scope:
+                raise IndirectionError(
+                    expr,
+                    "undefined final target variable in indirection",
+                    variable_name=current_name,
+                )
+
+        return self.get_var(current_name, _scope)
 
     def parse_call_target(self, target_str: str) -> CallTarget:
         """Parse indirect DO/GOTO target into components.

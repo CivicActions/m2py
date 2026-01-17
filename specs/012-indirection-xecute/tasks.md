@@ -55,18 +55,18 @@
 
 ### Implementation for User Story 1
 
-- [ ] T014 [P] [US1] Implement `generate_name_indirection()` in src/m2py/codegen/indirection.py
-- [ ] T015 [P] [US1] Implement `generate_name_indirection_write()` in src/m2py/codegen/indirection.py
-- [ ] T016 [US1] Extend `generate_expr()` in src/m2py/codegen/expressions.py to handle MIndirection with NAME type
-- [ ] T017 [US1] Extend SET codegen in src/m2py/codegen/statements.py for indirection targets
-- [ ] T018 [US1] Implement multi-level indirection (`@@VAR`, `@@@VAR`) in generate_name_indirection()
-- [ ] T019 [US1] Implement name+subscript syntax (`@NAME@(1,2)`) in generate_name_indirection()
-- [ ] T020 [US1] Unit tests for name indirection read in tests/unit/codegen/s7_expressions/test_s7_3_indirection.py
-- [ ] T021 [US1] Unit tests for name indirection write in tests/unit/codegen/s7_expressions/test_s7_3_indirection.py
-- [ ] T022 [US1] Unit tests for multi-level indirection in tests/unit/codegen/s7_expressions/test_s7_3_indirection.py
-- [ ] T023 [US1] Integration test: `S X="VAR",@X=1 W VAR` equals 1 in tests/unit/cross_cutting/test_indirection.py
+- [x] T014 [P] [US1] Implement `generate_name_indirection()` in src/m2py/codegen/indirection.py
+- [x] T015 [P] [US1] Implement `generate_name_indirection_write()` in src/m2py/codegen/indirection.py
+- [x] T016 [US1] Extend `generate_expr()` in src/m2py/codegen/expressions.py to handle MIndirection with NAME type
+- [x] T017 [US1] Extend SET codegen in src/m2py/codegen/statements.py for indirection targets
+- [x] T018 [US1] Implement multi-level indirection (`@@VAR`, `@@@VAR`) in generate_name_indirection()
+- [x] T019 [US1] Implement name+subscript syntax (`@NAME@(1,2)`) in generate_name_indirection()
+- [x] T020 [US1] Unit tests for name indirection read in tests/unit/codegen/s7_expressions/test_s7_3_indirection.py
+- [x] T021 [US1] Unit tests for name indirection write in tests/unit/codegen/s7_expressions/test_s7_3_indirection.py
+- [x] T022 [US1] Unit tests for multi-level indirection in tests/unit/codegen/s7_expressions/test_s7_3_indirection.py
+- [x] T023 [US1] Integration test: `S X="VAR",@X=1 W VAR` equals 1 in tests/unit/cross_cutting/test_indirection.py
 
-**Checkpoint**: Name indirection fully functional - `@X` works for read and write
+**Checkpoint**: Name indirection fully functional - `@X` works for read and write ✅
 
 ---
 

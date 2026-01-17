@@ -243,17 +243,21 @@ class TestScopeStrategyGeneration:
         return_lines = [line.strip() for line in lines if line.strip() == "return"]
         assert len(return_lines) > 0, "Expected plain 'return' for subroutine"
 
-    def test_requires_runtime_raises_error(self, generate_python):
-        """REQUIRES_RUNTIME raises UnsupportedFeatureError (T058).
+    def test_requires_runtime_generates_code(self, generate_python):
+        """REQUIRES_RUNTIME labels now generate code (Spec 012).
 
-        Labels that use XECUTE or indirection require runtime scope
-        and should raise an error in Spec 005.
+        Labels that use indirection require runtime scope.
+        As of Spec 012, these are now supported and generate code with
+        runtime scope management.
         """
-        from m2py.codegen import UnsupportedFeatureError
-
-        with pytest.raises(UnsupportedFeatureError) as exc_info:
-            generate_python('TEST S X="W 1" X X Q\n')
-        assert "runtime" in str(exc_info.value).lower()
+        # Indirection requires runtime scope - now supported
+        code = generate_python('TEST S X="VAR",@X=1 Q\n')
+        # Should generate code with _scope parameter
+        assert "_scope" in code
+        # Should have def with _rt parameter for runtime
+        assert "def TEST(_rt" in code
+        # Should have runtime set_var call for @X=1
+        assert "_rt.set_var" in code
 
     def test_function_with_outputs_basic(self, generate_python):
         """FUNCTION_WITH_OUTPUTS generates tuple return (T057).

@@ -539,12 +539,30 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
     Spec 008 (T084): For SIMPLE_FUNCTIONS strategy, store variables in _scope
     dictionary for cross-routine visibility: _scope['VAR'] = value
 
+    Spec 012 (T017): Handle name indirection targets (@VAR).
+    For indirection targets, generate: _rt.set_var(name_expr, value, _scope)
+
     Args:
         stmt: MSetStatement node
         ctx: Generator context
     """
+    # Import MIndirection here to avoid circular imports at module level
+    from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.codegen.indirection import generate_name_indirection_write
+
     for assignment in stmt.assignments:
         if assignment.target is None or assignment.value is None:
+            continue
+
+        # Spec 012 (T017): Handle indirection targets (@VAR, @@VAR, @NAME@(1,2))
+        if isinstance(assignment.target, MIndirectionType):
+            # Generate value expression first
+            value_expr = generate_expr(assignment.value, ctx)
+            # Generate the set_var call via indirection module
+            set_stmt = generate_name_indirection_write(
+                assignment.target, value_expr, ctx
+            )
+            ctx.emitter.line(set_stmt)
             continue
 
         # Get target variable name

@@ -17,12 +17,73 @@ Code generation strategy:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Tuple
 
 if TYPE_CHECKING:
-    from m2py.asg.expressions import MIndirection
+    from m2py.asg.expressions import MExpr, MIndirection
     from m2py.asg.statements import MXecuteStatement
     from m2py.codegen.routine import GeneratorContext
+
+
+def _count_indirection_levels(expr: "MIndirection") -> Tuple[int, "MExpr"]:
+    """Count nested indirection levels and find the innermost expression.
+
+    For @X returns (1, X)
+    For @@X returns (2, X)
+    For @@@X returns (3, X)
+
+    Args:
+        expr: The outermost MIndirection node
+
+    Returns:
+        Tuple of (level_count, innermost_expr)
+
+    Raises:
+        ValueError: If indirection has no inner expression
+    """
+    # Import here to avoid circular import
+    from m2py.asg.expressions import MIndirection as MIndirectionType
+
+    levels = 1
+    inner = expr.expression
+
+    if inner is None:
+        raise ValueError("Indirection has no inner expression")
+
+    while isinstance(inner, MIndirectionType):
+        levels += 1
+        if inner.expression is None:
+            raise ValueError("Nested indirection has no inner expression")
+        inner = inner.expression
+
+    return levels, inner
+
+
+def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> str:
+    """Generate the Python expression for the variable name to look up.
+
+    For a simple variable like X, generates: _scope.get("X", MArray()).value
+    For other expressions, uses generate_expr.
+
+    Args:
+        inner_expr: The innermost expression inside indirection
+        ctx: Generator context
+
+    Returns:
+        Python expression string that evaluates to the variable name
+    """
+    # Import here to avoid circular import
+    from m2py.asg.expressions import MVariable
+    from m2py.codegen.expressions import generate_expr
+
+    if isinstance(inner_expr, MVariable):
+        # Direct variable reference - look up by name and get value
+        # Variables are stored as MArray objects, so we need .value
+        var_name = inner_expr.name
+        return f'_scope.get("{var_name}", MArray()).value'
+    else:
+        # Other expression - generate and convert to string if needed
+        return generate_expr(inner_expr, ctx)
 
 
 def generate_name_indirection(
@@ -34,17 +95,65 @@ def generate_name_indirection(
     Spec 012 Phase 3 (T014): Generates runtime call to resolve variable
     name at runtime and read its value.
 
+    Handles:
+    - Simple indirection: @X → _rt.get_var(_scope.get("X", ""), _scope)
+    - Multi-level: @@X → _rt.resolve_indirection("X", 2, _scope)
+    - With subscripts: @NAME@(1,2) → _rt.get_var(f'{_scope.get("NAME", "")}(1,2)', _scope)
+
     Args:
         expr: MIndirection ASG node with indirection_type=NAME
         ctx: Generator context
 
     Returns:
-        Python expression string like: _rt.get_var(_scope.get("X", ""), _scope)
-
-    Note:
-        This is a Phase 3 placeholder - implementation pending.
+        Python expression string
     """
-    raise NotImplementedError("Name indirection codegen not yet implemented")
+    from m2py.asg.expressions import MVariable
+    from m2py.codegen.expressions import generate_expr
+
+    # Count indirection levels
+    levels, inner_expr = _count_indirection_levels(expr)
+
+    # Handle name+subscript syntax: @NAME@(1,2)
+    if expr.name_indirection_subscripts:
+        # Generate subscript expressions
+        all_subs = []
+        for sub_list in expr.name_indirection_subscripts:
+            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+            all_subs.extend(sub_exprs)
+
+        # Build the subscript string
+        if len(all_subs) == 1:
+            subs_str = f"({all_subs[0]})"
+        else:
+            subs_str = f"({', '.join(all_subs)})"
+
+        # Get the base name expression
+        if isinstance(inner_expr, MVariable):
+            base_name = inner_expr.name
+            if levels > 1:
+                # Multi-level with subscripts: resolve first, then add subscripts
+                return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", _scope)'
+            else:
+                # Single level with subscripts
+                return f"_rt.get_var(f'{{_scope.get(\"{base_name}\", MArray()).value}}{subs_str}', _scope)"
+        else:
+            # Complex expression
+            name_expr = generate_expr(inner_expr, ctx)
+            return f'_rt.get_var(f"{{str({name_expr})}}{subs_str}", _scope)'
+
+    # Handle multi-level indirection (@@X, @@@X)
+    if levels > 1:
+        if isinstance(inner_expr, MVariable):
+            var_name = inner_expr.name
+            return f'_rt.resolve_indirection("{var_name}", {levels}, _scope)'
+        else:
+            # Complex expression - evaluate first
+            name_expr = generate_expr(inner_expr, ctx)
+            return f"_rt.resolve_indirection(str({name_expr}), {levels}, _scope)"
+
+    # Simple single-level indirection: @X
+    name_expr = _generate_inner_name_expr(inner_expr, ctx)
+    return f"_rt.get_var({name_expr}, _scope)"
 
 
 def generate_name_indirection_write(
@@ -57,18 +166,75 @@ def generate_name_indirection_write(
     Spec 012 Phase 3 (T015): Generates runtime call to resolve variable
     name at runtime and write a value to it.
 
+    Handles:
+    - Simple indirection: S @X=1 → _rt.set_var(_scope.get("X", ""), 1, _scope)
+    - Multi-level: S @@X=1 → _rt.set_var(_rt.resolve_indirection("X", 1, _scope), 1, _scope)
+    - With subscripts: S @NAME@(1,2)=5 → _rt.set_var(f'{_scope.get("NAME", "")}(1,2)', 5, _scope)
+
     Args:
         expr: MIndirection ASG node with indirection_type=NAME
         value_expr: Python expression for the value to set
         ctx: Generator context
 
     Returns:
-        Python statement string like: _rt.set_var(_scope.get("X", ""), 5, _scope)
-
-    Note:
-        This is a Phase 3 placeholder - implementation pending.
+        Python statement string
     """
-    raise NotImplementedError("Name indirection write codegen not yet implemented")
+    from m2py.asg.expressions import MVariable
+    from m2py.codegen.expressions import generate_expr
+
+    # Count indirection levels
+    levels, inner_expr = _count_indirection_levels(expr)
+
+    # Handle name+subscript syntax: @NAME@(1,2)
+    if expr.name_indirection_subscripts:
+        # Generate subscript expressions
+        all_subs = []
+        for sub_list in expr.name_indirection_subscripts:
+            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+            all_subs.extend(sub_exprs)
+
+        # Build the subscript string
+        if len(all_subs) == 1:
+            subs_str = f"({all_subs[0]})"
+        else:
+            subs_str = f"({', '.join(all_subs)})"
+
+        # Get the base name expression
+        if isinstance(inner_expr, MVariable):
+            base_name = inner_expr.name
+            if levels > 1:
+                # Multi-level with subscripts
+                return f'_rt.set_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", {value_expr}, _scope)'
+            else:
+                # Single level with subscripts
+                return f"_rt.set_var(f'{{_scope.get(\"{base_name}\", MArray()).value}}{subs_str}', {value_expr}, _scope)"
+        else:
+            # Complex expression
+            name_expr = generate_expr(inner_expr, ctx)
+            return (
+                f'_rt.set_var(f"{{str({name_expr})}}{subs_str}", {value_expr}, _scope)'
+            )
+
+    # Handle multi-level indirection (@@X, @@@X) for write
+    # For @@X=val, we resolve one fewer level to get the target variable name
+    if levels > 1:
+        if isinstance(inner_expr, MVariable):
+            var_name = inner_expr.name
+            # Resolve levels-1 times to get the target variable name
+            resolved_name = (
+                f'_rt.resolve_indirection("{var_name}", {levels - 1}, _scope)'
+            )
+            return f"_rt.set_var(str({resolved_name}), {value_expr}, _scope)"
+        else:
+            name_expr = generate_expr(inner_expr, ctx)
+            resolved_name = (
+                f"_rt.resolve_indirection(str({name_expr}), {levels - 1}, _scope)"
+            )
+            return f"_rt.set_var(str({resolved_name}), {value_expr}, _scope)"
+
+    # Simple single-level indirection: @X
+    name_expr = _generate_inner_name_expr(inner_expr, ctx)
+    return f"_rt.set_var({name_expr}, {value_expr}, _scope)"
 
 
 def generate_multi_level_indirection(
@@ -81,6 +247,10 @@ def generate_multi_level_indirection(
     Spec 012 Phase 3 (T018): Generates runtime call to resolve multiple
     levels of indirection before accessing the final variable.
 
+    Note: This is now handled directly in generate_name_indirection(),
+    which counts indirection levels automatically. This function is
+    kept for explicit level control when needed.
+
     Args:
         expr: MIndirection ASG node
         levels: Number of @ symbols (2 for @@, 3 for @@@, etc.)
@@ -89,10 +259,24 @@ def generate_multi_level_indirection(
     Returns:
         Python expression string like: _rt.resolve_indirection("X", 2, _scope)
 
-    Note:
-        This is a Phase 3 placeholder - implementation pending.
+    Raises:
+        ValueError: If indirection has no inner expression
     """
-    raise NotImplementedError("Multi-level indirection codegen not yet implemented")
+    from m2py.asg.expressions import MVariable
+    from m2py.codegen.expressions import generate_expr
+
+    # Get the innermost expression by unwrapping all indirection levels
+    inner_expr = expr.expression
+
+    if inner_expr is None:
+        raise ValueError("Indirection has no inner expression")
+
+    if isinstance(inner_expr, MVariable):
+        var_name = inner_expr.name
+        return f'_rt.resolve_indirection("{var_name}", {levels}, _scope)'
+    else:
+        name_expr = generate_expr(inner_expr, ctx)
+        return f"_rt.resolve_indirection(str({name_expr}), {levels}, _scope)"
 
 
 def generate_subscripted_indirection(
@@ -105,6 +289,10 @@ def generate_subscripted_indirection(
     Spec 012 Phase 3 (T019): Generates runtime call to resolve variable
     name and then access with explicit subscripts.
 
+    Note: This is now handled directly in generate_name_indirection(),
+    which handles name_indirection_subscripts. This function is kept
+    for explicit subscript control when needed.
+
     Args:
         expr: MIndirection ASG node with name_indirection_subscripts
         subscript_exprs: List of Python expressions for subscripts
@@ -112,11 +300,30 @@ def generate_subscripted_indirection(
 
     Returns:
         Python expression string
-
-    Note:
-        This is a Phase 3 placeholder - implementation pending.
     """
-    raise NotImplementedError("Subscripted indirection codegen not yet implemented")
+    from m2py.asg.expressions import MVariable
+    from m2py.codegen.expressions import generate_expr
+
+    # Count indirection levels
+    levels, inner_expr = _count_indirection_levels(expr)
+
+    # Build the subscript string
+    if len(subscript_exprs) == 1:
+        subs_str = f"({subscript_exprs[0]})"
+    else:
+        subs_str = f"({', '.join(subscript_exprs)})"
+
+    if isinstance(inner_expr, MVariable):
+        base_name = inner_expr.name
+        if levels > 1:
+            return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", _scope)'
+        else:
+            return (
+                f'_rt.get_var(f\'{{_scope.get("{base_name}", "")}}{subs_str}\', _scope)'
+            )
+    else:
+        name_expr = generate_expr(inner_expr, ctx)
+        return f'_rt.get_var(f"{{str({name_expr})}}{subs_str}", _scope)'
 
 
 def generate_xecute_constant(

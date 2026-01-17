@@ -16,6 +16,7 @@ from m2py.asg.expressions import (
     MBinaryOp,
     MExpr,
     MExtrinsicFunction,
+    MIndirection,
     MIntrinsicFunction,
     MLiteral,
     MPatternMatch,
@@ -84,6 +85,7 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     - MUnaryOp → unary operation
     - MExtrinsicFunction → function call with $TEST save/restore
     - MIntrinsicFunction → intrinsic function dispatch table
+    - MIndirection → runtime indirection call (Spec 012)
 
     Args:
         expr: ASG expression node
@@ -120,6 +122,9 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     # Spec 011 Phase 12: Pattern match expressions
     elif isinstance(expr, MPatternMatch):
         return _generate_pattern_match(expr, ctx)
+    # Spec 012 Phase 3 (T016): Handle name indirection (@VAR)
+    elif isinstance(expr, MIndirection):
+        return _generate_indirection(expr, ctx)
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -335,6 +340,29 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
 
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
+
+
+def _generate_indirection(ind: MIndirection, ctx: "GeneratorContext") -> str:
+    """Generate Python expression for name indirection (@VAR).
+
+    Spec 012 Phase 3 (T016): Dispatches to codegen/indirection.py for
+    runtime indirection handling.
+
+    Handles:
+    - Simple: @X → _rt.get_var(_scope.get("X", ""), _scope)
+    - Multi-level: @@X → _rt.resolve_indirection("X", 2, _scope)
+    - With subscripts: @NAME@(1,2) → _rt.get_var(f'{...}(1,2)', _scope)
+
+    Args:
+        ind: MIndirection ASG node
+        ctx: Generator context
+
+    Returns:
+        Python expression string
+    """
+    from m2py.codegen.indirection import generate_name_indirection
+
+    return generate_name_indirection(ind, ctx)
 
 
 def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:

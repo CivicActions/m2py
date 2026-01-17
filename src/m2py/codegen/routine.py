@@ -442,7 +442,6 @@ class RoutineGenerator:
         Raises:
             UnsupportedFeatureError: For REQUIRES_RUNTIME scope strategy
         """
-        from m2py.codegen import UnsupportedFeatureError
 
         ctx.current_label = label
 
@@ -456,15 +455,9 @@ class RoutineGenerator:
         elif label.signature and label.signature.formal_params:
             formal_params = [translate_name(p) for p in label.signature.formal_params]
 
-        # Check for REQUIRES_RUNTIME strategy
-        if (
-            label.signature
-            and label.signature.scope_strategy == ScopeStrategy.REQUIRES_RUNTIME
-        ):
-            raise UnsupportedFeatureError(
-                f"Label '{label.name}' requires runtime scope (indirection/XECUTE). "
-                "This is not supported in Spec 005. See Spec 006/012."
-            )
+        # Spec 012 Phase 3: REQUIRES_RUNTIME strategy is now supported.
+        # Labels with indirection/XECUTE use _rt.get_var()/_rt.set_var() at runtime.
+        # The strategy is handled the same as SIMPLE_FUNCTIONS for code generation.
 
         # T076: Add _rt as first parameter for shared runtime across routines
         # T030: Add _scope parameter for cross-routine variable visibility
@@ -705,7 +698,6 @@ class RoutineGenerator:
         Raises:
             UnsupportedFeatureError: For REQUIRES_RUNTIME scope strategy
         """
-        from m2py.codegen import UnsupportedFeatureError
 
         ctx.current_label = label
 
@@ -719,15 +711,8 @@ class RoutineGenerator:
         elif label.signature and label.signature.formal_params:
             formal_params = [translate_name(p) for p in label.signature.formal_params]
 
-        # Check for REQUIRES_RUNTIME strategy
-        if (
-            label.signature
-            and label.signature.scope_strategy == ScopeStrategy.REQUIRES_RUNTIME
-        ):
-            raise UnsupportedFeatureError(
-                f"Label '{label.name}' requires runtime scope (indirection/XECUTE). "
-                "This is not supported in Spec 005. See Spec 006/012."
-            )
+        # Spec 012 Phase 3: REQUIRES_RUNTIME strategy is now supported for TRAMPOLINE too.
+        # Labels with indirection/XECUTE use _rt.get_var()/_rt.set_var() at runtime.
 
         # Generate function definition with state parameter
         # T076: All labels take _rt as first parameter for shared runtime

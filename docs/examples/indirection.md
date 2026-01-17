@@ -6,6 +6,17 @@ Examples of MUMPS indirection and their ASG representation.
 
 Indirection (`@`) allows runtime evaluation of names, subscripts, and arguments. It's one of MUMPS's most powerful (and challenging) features.
 
+## Implementation Status
+
+| Type | Status | Notes |
+|------|--------|-------|
+| Name Indirection (`@X`) | ✅ Implemented | Read and write supported |
+| Multi-level (`@@X`) | ✅ Implemented | Arbitrary nesting depth |
+| Name + Subscripts (`@NAME@(1,2)`) | ⚠️ Codegen ready | Blocked by subscripted SET bug |
+| Subscript Indirection (`A(@I)`) | ❌ Not yet | Future phase |
+| Argument Indirection (`D F(@ARGS)`) | ❌ Not yet | Future phase |
+| Pattern Indirection (`X?@PAT`) | ❌ Not yet | Future phase |
+
 ## Types of Indirection
 
 ### Name Indirection
@@ -24,10 +35,11 @@ MIndirection(
 )
 ```
 
-**Python Equivalent:**
+**Generated Python:**
 ```python
-x = "var"
-locals()[x] = 1  # or use dict-based variable storage
+_scope["X"] = "VAR"
+_rt.set_var(_scope.get("X", ""), 1, _scope)  # S @X=1
+_rt.write(_rt.get_var(_scope.get("X", ""), _scope))  # W @X
 ```
 
 ### Subscript Indirection
@@ -152,6 +164,20 @@ MIndirection(
 )
 ```
 
+**Generated Python:**
+```python
+_rt.write(_rt.resolve_indirection("A", 2, _scope))
+```
+
+The `resolve_indirection` method:
+1. Gets value of A → "B"
+2. Gets value of B → "C"  
+3. Gets value of C → 100
+4. Returns 100
+    indirection_type=IndirectionType.NAME
+)
+```
+
 ---
 
 ## Command Indirection
@@ -219,42 +245,37 @@ MIndirection(
 
 ---
 
-## Code Generation Implications
+## Code Generation
 
-### Analysis Flags
+### Runtime Methods
 
-```python
-MRoutine.requires_runtime_eval  # True if any unresolvable indirection
-MCall.call_type  # INDIRECT_CALL for indirect DO/GOTO
-```
+The `MUMPSRuntime` class provides these methods for indirection:
+
+| Method | Purpose |
+|--------|---------|
+| `get_var(name, _scope)` | Read variable by dynamic name |
+| `set_var(name, value, _scope)` | Write variable by dynamic name |
+| `resolve_indirection(name, levels, _scope)` | Multi-level indirection |
 
 ### Generation Strategies
 
-| Scenario | Strategy |
-|----------|----------|
-| Static resolvable | Substitute resolved value |
-| Name indirection | Dict-based variable storage |
-| Subscript indirection | Normal expression evaluation |
-| Argument indirection | Runtime argument unpacking |
-| Pattern indirection | Runtime regex compilation |
-| Multi-level | Recursive resolution |
+| Scenario | Generated Code |
+|----------|----------------|
+| `@X` read | `_rt.get_var(_scope.get("X", ""), _scope)` |
+| `S @X=1` | `_rt.set_var(_scope.get("X", ""), 1, _scope)` |
+| `@@X` | `_rt.resolve_indirection("X", 2, _scope)` |
+| `@@@X` | `_rt.resolve_indirection("X", 3, _scope)` |
 
-### Runtime Requirements
+### Scope Strategy
 
-When `requires_runtime_eval=True`:
+Labels using indirection have `ScopeStrategy.REQUIRES_RUNTIME`, which generates
+functions with `_scope` parameter for runtime variable access:
 
 ```python
-# Runtime variable access
-def get_var(name):
-    return runtime.variables[name]
-
-def set_var(name, value):
-    runtime.variables[name] = value
-
-# Indirect call
-def indirect_do(target_str):
-    label, routine = parse_target(target_str)
-    call_label(label, routine)
+def TEST(_rt, _scope=None, **_kwargs):
+    if _scope is None:
+        _scope = {}
+    # ... code using _rt.get_var()/_rt.set_var() ...
 ```
 
 ---
@@ -275,43 +296,39 @@ S @Y=3        ; Sets A(1)=3
 
 ```mumps
 S CMD="LABEL"
-D @CMD        ; Indirect call
+D @CMD        ; Indirect call (not yet implemented)
 ```
 
 ### V1IDARG.m - Argument Indirection
 
 ```mumps
 S ARGS="1,2,3"
-D PROC(@ARGS) ; Expands to PROC(1,2,3)
+D PROC(@ARGS) ; Expands to PROC(1,2,3) (not yet implemented)
 ```
 
 ---
 
 ## IndirectionType Enum
 
-| Type | Example | Meaning |
-|------|---------|---------|
-| `NAME` | `@X` | Variable name in X |
-| `SUBSCRIPT` | `A(@I)` | Subscript value |
-| `ARGUMENT` | `D F(@ARGS)` | Argument list |
-| `PATTERN` | `X?@PAT` | Pattern string |
-| `UNKNOWN` | | Cannot determine statically |
+| Type | Example | Status |
+|------|---------|--------|
+| `NAME` | `@X` | ✅ Implemented |
+| `SUBSCRIPT` | `A(@I)` | ❌ Not yet |
+| `ARGUMENT` | `D F(@ARGS)` | ❌ Not yet |
+| `PATTERN` | `X?@PAT` | ❌ Not yet |
+| `UNKNOWN` | | Analysis fallback |
 
 ---
 
-## Best Practices for Code Generation
+## Testing
 
-1. **Detect static cases**: If the indirected expression is a constant or known value, resolve it.
+```bash
+# Unit tests
+uv run pytest tests/unit/codegen/s7_expressions/test_s7_3_indirection.py -v
 
-2. **Use dict-based storage**: For name indirection, use:
-   ```python
-   variables = {}
-   variables[name] = value
-   ```
+# Integration tests  
+uv run pytest tests/unit/cross_cutting/test_indirection.py -v
 
-3. **Defer to runtime**: For complex cases, generate runtime calls:
-   ```python
-   runtime.eval_indirection(expr)
-   ```
-
-4. **Track requirements**: Set `requires_runtime_eval=True` on the routine if any indirection cannot be resolved.
+# Validate against YDB
+uv run python utils/validate.py --code 'TEST S X="VAR",@X=1 W VAR Q'
+```
