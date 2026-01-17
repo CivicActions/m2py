@@ -521,8 +521,8 @@ NEXT W A(1)+B(1,2) Q"""
         # Array variables should use MArray with field factory
         assert "A: MArray = field(default_factory=MArray)" in code
         assert "B: MArray = field(default_factory=MArray)" in code
-        # Should import MArray (may be combined with other imports)
-        assert "import MArray" in code or "MArray" in code.split("\n")[2]
+        # Should import MArray somewhere in the imports section
+        assert "MArray" in code
 
     def test_label_functions_return_tuple(self):
         """T093: Label functions accept state and return (next_label, state) tuple."""

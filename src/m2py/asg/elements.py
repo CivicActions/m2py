@@ -220,6 +220,11 @@ class MLabel(ASGElement):
     # True if label contains intra-label backward GOTO to itself (creates while True: pattern)
     has_self_loop: bool = False
 
+    # Spec 011: NEW statement presence flag (populated by variable analysis)
+    # True if label contains any MNewStatement (NEW, NEW X, NEW (X))
+    # Used by codegen to determine if NewScopeManager context is needed
+    has_new_statements: bool = False
+
     # Parser internal: stores unparsed line content and parsed results
     _line_rest: Optional[str] = field(default=None, repr=False)
     _parsed_content: Optional[Any] = field(default=None, repr=False)

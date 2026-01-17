@@ -9,8 +9,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List
 
-from m2py.asg.enums import ForLoopType, ForParamType, GotoType, PassingMode
-from m2py.asg.expressions import MActualParameter, MExpr, MIntrinsicFunction, MVariable
+from m2py.asg.enums import (
+    ForLoopType,
+    FormatControlType,
+    ForParamType,
+    GotoType,
+    PassingMode,
+)
+from m2py.asg.expressions import (
+    MActualParameter,
+    MExpr,
+    MFormatControl,
+    MIntrinsicFunction,
+    MVariable,
+)
 from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
 from m2py.asg.statements import (
     MAssignment,
@@ -18,9 +30,15 @@ from m2py.asg.statements import (
     MElseStatement,
     MForStatement,
     MGotoStatement,
+    MHaltStatement,
+    MHangStatement,
     MIfStatement,
     MKillStatement,
+    MMergeStatement,
+    MNewStatement,
     MQuitStatement,
+    MReadStatement,
+    MReadTarget,
     MSetStatement,
     MWriteStatement,
 )
@@ -443,6 +461,33 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     - MElseStatement → if not _test block
     - MForStatement → for loop
 
+    Spec 011 (T032-T033): If stmt.postcondition is set, wrap the statement
+    in a conditional: if m_truth(cond): <statement>
+
+    Args:
+        stmt: ASG statement node
+        ctx: Generator context with emitter
+
+    Raises:
+        NotImplementedError: For unsupported statement types
+    """
+    # Spec 011 (T032): Check for postcondition
+    if stmt.postcondition is not None:
+        cond_expr = generate_expr(stmt.postcondition, ctx)
+        ctx.emitter.line(f"if m_truth({cond_expr}):")
+        ctx.emitter.indent()
+        _dispatch_statement(stmt, ctx)
+        ctx.emitter.dedent()
+    else:
+        _dispatch_statement(stmt, ctx)
+
+
+def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
+    """Dispatch statement to type-specific generator.
+
+    Internal helper that handles the actual statement generation
+    after postcondition handling is complete.
+
     Args:
         stmt: ASG statement node
         ctx: Generator context with emitter
@@ -468,6 +513,16 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_do(stmt, ctx)
     elif isinstance(stmt, MKillStatement):
         _generate_kill(stmt, ctx)
+    elif isinstance(stmt, MNewStatement):
+        _generate_new(stmt, ctx)
+    elif isinstance(stmt, MMergeStatement):
+        _generate_merge(stmt, ctx)
+    elif isinstance(stmt, MHangStatement):
+        _generate_hang(stmt, ctx)
+    elif isinstance(stmt, MHaltStatement):
+        _generate_halt(stmt, ctx)
+    elif isinstance(stmt, MReadStatement):
+        _generate_read(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -849,17 +904,71 @@ def _generate_naked_global_set(
 def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
     """Generate _rt.write() calls from MWriteStatement.
 
+    Handles both expressions and format controls:
+    - MExpr: Generate expression and write it
+    - MFormatControl: Handle !, #, ?n, *n format controls
+
+    Spec 011 (T025-T029): Format control support.
+
     Args:
         stmt: MWriteStatement node
         ctx: Generator context
     """
     for arg in stmt.arguments:
-        if isinstance(arg, MExpr):
+        if isinstance(arg, MFormatControl):
+            # Spec 011 (T025): Handle format control nodes
+            _generate_format_control(arg, ctx)
+        elif isinstance(arg, MExpr):
             # Generate expression and write it
             # Runtime handles None -> empty string conversion (MUMPS undefined semantics)
             expr = generate_expr(arg, ctx)
             ctx.emitter.line(f"_rt.write({expr})")
-        # Skip format controls for now (!, #, ?n) - Phase 2 scope is basic only
+        else:
+            # Unknown argument type - skip silently for now
+            pass
+
+
+def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> None:
+    """Generate Python code for WRITE format controls.
+
+    Handles the four MUMPS format controls:
+    - ! (NEWLINE): Output newline character
+    - # (FORMFEED): Output form feed character
+    - ?n (TAB): Tab to column n
+    - *n (CHARCODE): Output character with ASCII code n
+
+    Spec 011 (T026-T029): Format control code generation.
+
+    Args:
+        fc: MFormatControl node
+        ctx: Generator context
+    """
+    if fc.control_type == FormatControlType.NEWLINE:
+        # Spec 011 (T026): NEWLINE format control
+        ctx.emitter.line('_rt.write("\\n")')
+
+    elif fc.control_type == FormatControlType.FORMFEED:
+        # Spec 011 (T027): FORMFEED format control
+        # YDB outputs newline before form feed (\n\f)
+        ctx.emitter.line('_rt.write("\\n\\x0c")')
+
+    elif fc.control_type == FormatControlType.CHARCODE:
+        # Spec 011 (T028): CHARCODE format control (*n)
+        if fc.expression is not None:
+            expr = generate_expr(fc.expression, ctx)
+            ctx.emitter.line(f"_rt.write(chr(int({expr})))")
+        else:
+            # No expression - shouldn't happen but handle gracefully
+            pass
+
+    elif fc.control_type == FormatControlType.TAB:
+        # Spec 011 (T029): TAB format control (?n)
+        if fc.expression is not None:
+            expr = generate_expr(fc.expression, ctx)
+            ctx.emitter.line(f"_rt.write_tab(int({expr}))")
+        else:
+            # No expression - shouldn't happen but handle gracefully
+            pass
 
 
 def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
@@ -2023,18 +2132,33 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
     - K ^G → _rt.globals.kill("G", ()) on global
     - K ^G(1,2) → _rt.globals.kill("G", ("1", "2")) on subscripted global
     - K ^(1,2) → resolve_naked then kill (naked global reference)
+    - K (X,Y) → Exclusive KILL: kill all locals except X,Y (Spec 011 T073)
 
     NOT yet implemented:
     - K (argumentless) - kill all locals
-    - K (X,Y) - exclusive kill
 
     Args:
         stmt: MKillStatement node
         ctx: Generator context
     """
-    # Handle exclusive KILL - not yet implemented
+    # Handle exclusive KILL: K (X,Y) - kill all except X,Y
     if stmt.exclusive:
-        raise NotImplementedError("Exclusive KILL (K (X,Y)) not yet supported")
+        # Build set of variables to keep
+        keep_vars_repr = repr(set(stmt.except_list))
+
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Iterate over _scope and remove non-kept variables
+            ctx.emitter.line("for _var_name in list(_scope.keys()):")
+            with ctx.emitter.indented():
+                ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("_scope.pop(_var_name, None)")
+        else:
+            # TRAMPOLINE strategy - not supported for exclusive KILL
+            raise NotImplementedError(
+                "Exclusive KILL not supported in TRAMPOLINE strategy"
+            )
+        return
 
     # Handle argumentless KILL (kill all locals) - not yet implemented
     if stmt.is_kill_all:
@@ -2110,6 +2234,340 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
             raise NotImplementedError(
                 f"KILL target type not supported: {type(target).__name__}"
             )
+
+
+def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for NEW command.
+
+    Spec 011 (T060-T061): NEW creates a new local scope for specified variables.
+    The old values are shadowed until the routine/label exits.
+
+    Supports:
+    - N X → NEW X (save and remove from _scope until function exit)
+    - N X,Y,Z → NEW multiple variables
+    - N (X,Y) → Exclusive NEW: NEW all locals except X,Y (Spec 011 T072)
+
+    NOT yet implemented:
+    - N (argumentless) - new all variables
+
+    When ctx.new_scope_manager_var is set, uses NewScopeManager.new_var()
+    for proper save/restore semantics on function exit.
+    Otherwise, uses simple _scope.pop() for within-routine NEW.
+
+    Args:
+        stmt: MNewStatement node
+        ctx: Generator context
+    """
+    # Handle exclusive NEW: N (X,Y) - NEW all except X,Y
+    if stmt.exclusive:
+        # Build set of variables to keep
+        keep_vars_repr = repr(set(stmt.except_list))
+
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            if ctx.new_scope_manager_var:
+                # Use NewScopeManager - iterate over _scope and new_var for non-kept
+                ctx.emitter.line("for _var_name in list(_scope.keys()):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            f"{ctx.new_scope_manager_var}.new_var(_var_name)"
+                        )
+            else:
+                # Simple pop for non-kept variables
+                ctx.emitter.line("for _var_name in list(_scope.keys()):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_scope.pop(_var_name, None)")
+        else:
+            # TRAMPOLINE strategy - not supported for exclusive NEW
+            raise NotImplementedError(
+                "Exclusive NEW not supported in TRAMPOLINE strategy"
+            )
+        return
+
+    # Handle argumentless NEW (new all locals) - not yet implemented
+    if not stmt.variables:
+        raise NotImplementedError("Argumentless NEW (N with no args) not yet supported")
+
+    # Process each variable in the new list
+    for var_name in stmt.variables:
+        # For SIMPLE_FUNCTIONS strategy with NewScopeManager, use .new_var()
+        # This ensures proper save/restore on function exit
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            if ctx.new_scope_manager_var:
+                # Use NewScopeManager for proper save/restore semantics
+                ctx.emitter.line(f"{ctx.new_scope_manager_var}.new_var({var_name!r})")
+            else:
+                # Fallback: simple pop (used when no NewScopeManager in context)
+                translated = translate_name(var_name)
+                ctx.emitter.line(f"_scope.pop({translated!r}, None)")
+        else:
+            # TRAMPOLINE strategy - reset to empty MArray
+            translated = translate_name(var_name)
+            ctx.emitter.line(f"{translated} = MArray()")
+
+
+def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for MERGE command.
+
+    Spec 011 Phase 16: MERGE copies entire variable subtrees.
+
+    Supports:
+    - M B=A → Copy local A tree to local B
+    - M L=^G → Copy global ^G tree to local L
+    - M ^G=A → Copy local A tree to global ^G
+    - M ^G=^H → Copy global ^H tree to global ^G
+
+    MERGE does NOT delete existing nodes in destination - it only adds/overwrites.
+
+    Args:
+        stmt: MMergeStatement node
+        ctx: Generator context
+    """
+    for merge_pair in stmt.merges:
+        dest = merge_pair.destination
+        src = merge_pair.source
+
+        if dest is None or src is None:
+            continue
+
+        # Generate source access code
+        if isinstance(src, GlobalVariable):
+            # Source is global: ^G or ^G(subs)
+            src_name = src.name
+
+            if src.subscripts:
+                subs_code = []
+                for sub in src.subscripts:
+                    subs_code.append(f"str({generate_expr(sub, ctx)})")
+                src_subs = f"({', '.join(subs_code)},)"
+            else:
+                src_subs = "()"
+
+            # Get source tree from global storage
+            src_tree_expr = f'_rt.globals.get_tree("{src_name}", {src_subs})'
+
+        elif isinstance(src, NakedGlobal):
+            # Source is naked global: ^(subs)
+            if src.subscripts:
+                subs_code = []
+                for sub in src.subscripts:
+                    subs_code.append(f"str({generate_expr(sub, ctx)})")
+                src_subs = f"({', '.join(subs_code)},)"
+            else:
+                src_subs = "()"
+
+            # Resolve naked then get tree
+            ctx.emitter.line(
+                f"_naked_name, _naked_subs = _rt.globals.resolve_naked({src_subs})"
+            )
+            src_tree_expr = "_rt.globals.get_tree(_naked_name, _naked_subs)"
+
+        elif isinstance(src, MVariable):
+            # Source is local variable: A or A(subs)
+            src_var_name = src.name
+
+            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                if src.subscripts:
+                    subs_code = []
+                    for sub in src.subscripts:
+                        subs_code.append(generate_expr(sub, ctx))
+                    src_tree_expr = f"_scope.get({src_var_name!r}, MArray())[{', '.join(subs_code)}]"
+                else:
+                    src_tree_expr = f"_scope.get({src_var_name!r}, MArray())"
+            else:
+                # TRAMPOLINE strategy
+                src_translated = translate_name(src_var_name)
+                if src.subscripts:
+                    subs_code = []
+                    for sub in src.subscripts:
+                        subs_code.append(generate_expr(sub, ctx))
+                    src_tree_expr = f"{src_translated}[{', '.join(subs_code)}]"
+                else:
+                    src_tree_expr = src_translated
+        else:
+            raise NotImplementedError(
+                f"MERGE source type not supported: {type(src).__name__}"
+            )
+
+        # Generate destination merge code
+        if isinstance(dest, GlobalVariable):
+            # Destination is global: ^G or ^G(subs)
+            # For global destination, we need to iterate and set values
+            # This is more complex - for now, raise NotImplementedError
+            raise NotImplementedError(
+                "MERGE to global destination not yet supported (M ^G=...)"
+            )
+
+        elif isinstance(dest, NakedGlobal):
+            raise NotImplementedError(
+                "MERGE to naked global destination not yet supported (M ^(...)=...)"
+            )
+
+        elif isinstance(dest, MVariable):
+            # Destination is local variable: B or B(subs)
+            dest_var_name = dest.name
+
+            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                # Ensure destination exists as MArray
+                ctx.emitter.line(f"if {dest_var_name!r} not in _scope:")
+                ctx.emitter.indent()
+                ctx.emitter.line(f"_scope[{dest_var_name!r}] = MArray()")
+                ctx.emitter.dedent()
+
+                if dest.subscripts:
+                    subs_code = []
+                    for sub in dest.subscripts:
+                        subs_code.append(generate_expr(sub, ctx))
+                    dest_expr = f"_scope[{dest_var_name!r}][{', '.join(subs_code)}]"
+                else:
+                    dest_expr = f"_scope[{dest_var_name!r}]"
+
+                # Check if source exists before merging
+                ctx.emitter.line(f"_merge_src = {src_tree_expr}")
+                ctx.emitter.line("if _merge_src is not None:")
+                ctx.emitter.indent()
+                ctx.emitter.line(f"{dest_expr}.merge_from(_merge_src)")
+                ctx.emitter.dedent()
+            else:
+                # TRAMPOLINE strategy
+                dest_translated = translate_name(dest_var_name)
+                if dest.subscripts:
+                    subs_code = []
+                    for sub in dest.subscripts:
+                        subs_code.append(generate_expr(sub, ctx))
+                    dest_expr = f"{dest_translated}[{', '.join(subs_code)}]"
+                else:
+                    dest_expr = dest_translated
+
+                ctx.emitter.line(f"_merge_src = {src_tree_expr}")
+                ctx.emitter.line("if _merge_src is not None:")
+                ctx.emitter.indent()
+                ctx.emitter.line(f"{dest_expr}.merge_from(_merge_src)")
+                ctx.emitter.dedent()
+        else:
+            raise NotImplementedError(
+                f"MERGE destination type not supported: {type(dest).__name__}"
+            )
+
+
+def _generate_hang(stmt: MHangStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python sleep for HANG command.
+
+    MUMPS HANG pauses execution for the specified number of seconds.
+    Supports fractional seconds (e.g., H 0.5 for half a second).
+
+    Examples:
+        H 5     -> time.sleep(5)
+        H 0.1   -> time.sleep(0.1)
+        H X     -> time.sleep(m_num(X))
+
+    Args:
+        stmt: MHangStatement node with durations list
+        ctx: Generator context
+    """
+    # HANG can have multiple durations: H 1,2,3 hangs for 1+2+3=6 seconds total
+    for duration in stmt.durations:
+        duration_expr = generate_expr(duration, ctx)
+        ctx.emitter.line(f"time.sleep(m_num({duration_expr}))")
+
+
+def _generate_halt(stmt: MHaltStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python exit for HALT command.
+
+    MUMPS HALT terminates execution immediately. Unlike QUIT which returns
+    from a subroutine, HALT stops the entire program.
+
+    Examples:
+        H (argumentless) -> raise SystemExit(0)
+
+    Args:
+        stmt: MHaltStatement node (no fields)
+        ctx: Generator context
+    """
+    ctx.emitter.line("raise SystemExit(0)")
+
+
+def _generate_read(stmt: MReadStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python input for READ command.
+
+    MUMPS READ reads input from stdin into variables.
+    Supports prompts, timeouts, and format controls.
+
+    Examples:
+        R X              -> X = input()
+        R "Name: ",X     -> print("Name: ", end=""); X = input()
+        R X:5            -> X = m_read_timeout(5); _test = _read_succeeded
+        R !,X            -> print(); X = input()
+
+    Args:
+        stmt: MReadStatement node with arguments list
+        ctx: Generator context
+    """
+    from m2py.asg.enums import LiteralType
+    from m2py.asg.expressions import MLiteral
+
+    for arg in stmt.arguments:
+        if isinstance(arg, MFormatControl):
+            # Handle format controls (!, #, ?n)
+            _generate_format_control(arg, ctx)
+        elif isinstance(arg, MLiteral) and arg.literal_type == LiteralType.STRING:
+            # Handle prompt string - output without newline
+            prompt_val = arg.value
+            ctx.emitter.line(f'print({prompt_val!r}, end="")')
+        elif isinstance(arg, MReadTarget):
+            # Handle variable read target
+            _generate_read_target(arg, ctx)
+
+
+def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
+    """Generate Python input for a single READ target.
+
+    Handles basic reads, timeout reads, and char reads.
+    For SIMPLE_FUNCTIONS strategy, stores into _scope dictionary.
+
+    Args:
+        target: MReadTarget with variable and optional timeout
+        ctx: Generator context
+    """
+    if target.variable is None:
+        return
+
+    # Get the target variable name and determine storage location
+    if isinstance(target.variable, MVariable):
+        var_name = translate_name(target.variable.name)
+        # Determine how to store the variable based on strategy
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Spec 011 Phase 20: Store in _scope dictionary like SET does
+            storage_target = f"_scope.setdefault({var_name!r}, MArray()).value"
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            storage_target = f"state.{var_name}"
+        else:
+            storage_target = var_name
+    else:
+        # Could be array subscript or global - generate expression
+        storage_target = generate_expr(target.variable, ctx)
+
+    if target.timeout is not None:
+        # Timeout read: R X:n
+        timeout_expr = generate_expr(target.timeout, ctx)
+        # Use runtime helper for timeout read - returns (value, test_flag)
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Need to unpack properly for scope storage
+            ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
+            ctx.emitter.line(f"{storage_target} = _read_val")
+        else:
+            ctx.emitter.line(
+                f"{storage_target}, _test = m_read_timeout({timeout_expr})"
+            )
+    elif target.is_char_read:
+        # Single character read: R *X
+        ctx.emitter.line(f"{storage_target} = m_read_char()")
+    else:
+        # Basic read: R X
+        ctx.emitter.line(f"{storage_target} = input()")
 
 
 __all__ = [

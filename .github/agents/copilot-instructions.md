@@ -21,6 +21,7 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - InMemoryGlobalStorage (default), YottaDB/IRIS backends (future) (009-globals-lhs-functions)
 - Python 3.10+ + extX (parser), pytest (testing), MArray (Spec 009), GlobalStorageBackend (Spec 009) (010-intrinsic-functions)
 - InMemoryGlobalStorage for tests (Spec 009) (010-intrinsic-functions)
+- Python 3.10+ + extX (parser), pytest (testing), MArray (Spec 009), pattern_compiler (analysis) (011-operators-commands-completion)
 
 - (001-textx-semantic-graph)
 
@@ -41,9 +42,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 011-operators-commands-completion: Added Python 3.10+ + extX (parser), pytest (testing), MArray (Spec 009), pattern_compiler (analysis)
+- 011-operators-commands-completion: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 - 010-intrinsic-functions: Added Python 3.10+ + extX (parser), pytest (testing), MArray (Spec 009), GlobalStorageBackend (Spec 009)
-- 009-globals-lhs-functions: Added Python 3.10+ + extX (parsing), pytest (testing)
-- 008-external-calls: Added Python 3.10+ (per pyproject.toml) + extX (grammar/parser), importlib (dynamic module loading)
 
 
 <!-- MANUAL ADDITIONS START -->

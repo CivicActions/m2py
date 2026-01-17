@@ -59,6 +59,10 @@ class GeneratorContext:
     # Spec 006: Array variables (MArray-backed) for subscript access
     array_vars: set[str] = field(default_factory=set)
 
+    # Spec 011: Name of the NewScopeManager variable when inside a NEW-managed block
+    # If set, _generate_new() should use _new_mgr.new_var() instead of _scope.pop()
+    new_scope_manager_var: Optional[str] = None
+
 
 class AnalysisNotCompleteError(ValueError):
     """Raised when code generation is attempted without complete analysis.
@@ -271,6 +275,7 @@ class RoutineGenerator:
             ctx: Generator context
         """
         # Imports
+        ctx.emitter.line("import time")
         ctx.emitter.line("from itertools import chain, count")
         ctx.emitter.line("from m2py.codegen.helpers import m_num, m_truth, m_compare")
         # Spec 009 (T024): Import MArray for subscripted local variable support
@@ -280,8 +285,12 @@ class RoutineGenerator:
         # Spec 010: Import $PIECE and $EXTRACT helpers (Phase 5), $GET helpers (Phase 6)
         # Spec 010: Import $FIND helper (Phase 7), $NAME/$QLENGTH/$QSUBSCRIPT (Phase 9)
         # Spec 010: Import $FNUMBER helper (Phase 10)
+        # Spec 011: Import sorts-after helper (Phase 10, uses MUMPS collation), pattern_match (Phase 12)
+        # Spec 011: Import NewScopeManager for NEW command scope semantics
+        # Spec 011 Phase 20: Import READ command helpers
+        # Note: Contains ([) and follows (]) are inlined as Python expressions
         ctx.emitter.line(
-            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber"
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, NewScopeManager, m_read_timeout, m_read_char"
         )
         # Spec 010: Import $RANDOM helper (Phase 8)
         ctx.emitter.line("from m2py.codegen.expressions import _m_random_checked")
@@ -339,6 +348,7 @@ class RoutineGenerator:
         # T083: Extrinsic function helper - saves/restores $TEST
         # T076: Accept _rt as first parameter for shared runtime
         # Spec 010 (T020): Handle by-ref parameter unpacking via _byref
+        # Spec 011: Set _in_extrinsic flag for $QUIT tracking
         ctx.emitter.blank()
         ctx.emitter.line(
             "def _call_extrinsic(_rt, _ef, *args, _scope=None, _byref=None):"
@@ -361,8 +371,12 @@ class RoutineGenerator:
             ctx.emitter.line('"""')
             ctx.emitter.line("global _test")
             ctx.emitter.line("_saved = _test")
+            # Spec 011: Save/restore _in_extrinsic for $QUIT tracking
+            ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
+                # Spec 011: Mark that we're in an extrinsic for $QUIT
+                ctx.emitter.line("_rt._in_extrinsic = True")
                 # T083: Pass _rt and _scope to external extrinsic
                 ctx.emitter.line("if _scope is not None:")
                 with ctx.emitter.indented():
@@ -392,6 +406,8 @@ class RoutineGenerator:
             ctx.emitter.line("finally:")
             with ctx.emitter.indented():
                 ctx.emitter.line("_test = _saved")
+                # Spec 011: Restore extrinsic flag for nested calls
+                ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
         ctx.emitter.blank()
 
         # T036: _LoopExit exception for multi-loop exits
@@ -481,30 +497,51 @@ class RoutineGenerator:
                     f"_scope.setdefault({orig_name!r}, MArray()).value = {python_name}"
                 )
 
-            # Spec 006 (T069a): Check for self-loop pattern
-            if label.has_self_loop:
-                # Wrap body in while True: for self-loop pattern
-                ctx.emitter.line("while True:")
+            # Spec 011: Check if label has NEW statements - if so, wrap body
+            # in NewScopeManager to ensure proper save/restore semantics
+            # (has_new_statements is populated by variable analysis)
+            if label.has_new_statements:
+                ctx.emitter.line("with NewScopeManager(_scope) as _new_mgr:")
+                ctx.new_scope_manager_var = "_new_mgr"
                 with ctx.emitter.indented():
-                    if label.body and label.body.statements:
-                        generate_scope_statements(label.body.statements, ctx)
-                    else:
-                        ctx.emitter.line("pass")
-                    # If no explicit exit, add break to prevent infinite loop
-                    # This handles fall-through at end of label
-                    if not label.has_explicit_exit:
-                        ctx.emitter.line("break")
+                    self._generate_label_body(label, ctx)
+                ctx.new_scope_manager_var = None
             else:
-                # Generate body statements using scope-aware generator
-                # This handles forward GOTO restructuring automatically
-                if label.body and label.body.statements:
-                    generate_scope_statements(label.body.statements, ctx)
-                else:
-                    # Empty function needs pass
-                    ctx.emitter.line("pass")
+                self._generate_label_body(label, ctx)
 
         ctx.emitter.blank()
         ctx.current_label = None
+
+    def _generate_label_body(self, label: MLabel, ctx: GeneratorContext) -> None:
+        """Generate the body statements for a label function.
+
+        Factored out to support wrapping with NewScopeManager when needed.
+
+        Args:
+            label: MLabel ASG node
+            ctx: Generator context
+        """
+        # Spec 006 (T069a): Check for self-loop pattern
+        if label.has_self_loop:
+            # Wrap body in while True: for self-loop pattern
+            ctx.emitter.line("while True:")
+            with ctx.emitter.indented():
+                if label.body and label.body.statements:
+                    generate_scope_statements(label.body.statements, ctx)
+                else:
+                    ctx.emitter.line("pass")
+                # If no explicit exit, add break to prevent infinite loop
+                # This handles fall-through at end of label
+                if not label.has_explicit_exit:
+                    ctx.emitter.line("break")
+        else:
+            # Generate body statements using scope-aware generator
+            # This handles forward GOTO restructuring automatically
+            if label.body and label.body.statements:
+                generate_scope_statements(label.body.statements, ctx)
+            else:
+                # Empty function needs pass
+                ctx.emitter.line("pass")
 
     def _generate_simple_line_map(self, ctx: GeneratorContext) -> None:
         """Generate _line_map for SIMPLE_FUNCTIONS strategy.

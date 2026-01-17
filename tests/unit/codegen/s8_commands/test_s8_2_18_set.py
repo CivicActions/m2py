@@ -27,6 +27,47 @@ class TestSetCommandCodegen:
         assert result.output == "1"
         assert result.success is True
 
+    def test_set_multiple_assignments(self, execute_mumps):
+        """SET with comma-separated assignments works (§8.2.18).
+
+        Spec 011 User Story 7 - Multiple SET Assignments
+        Acceptance scenario 1:
+        Given: TEST S X=1,Y=2,Z=3 W X,Y,Z Q
+        When: generated and executed
+        Then: output is "123"
+        """
+        result = execute_mumps("TEST\n S X=1,Y=2,Z=3\n W X,Y,Z\n Q\n")
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_set_multiple_string_assignments(self, execute_mumps):
+        """SET with multiple string assignments works (§8.2.18).
+
+        Spec 011 User Story 7 - Multiple SET Assignments
+        Acceptance scenario 2:
+        Given: TEST S A="X",B="Y" W A,B Q
+        When: generated and executed
+        Then: output is "XY"
+        """
+        result = execute_mumps('TEST\n S A="X",B="Y"\n W A,B\n Q\n')
+        assert result.output == "XY"
+        assert result.success is True
+
+    def test_set_multiple_with_expressions(self, execute_mumps):
+        """SET with expressions in later assignments uses prior values (§8.2.18).
+
+        Multiple assignments execute left-to-right, so Y=X*3 uses X's new value.
+        """
+        result = execute_mumps("TEST\n S X=1+2,Y=X*3\n W X,Y\n Q\n")
+        assert result.output == "39"
+        assert result.success is True
+
+    def test_set_multiple_subscripted(self, execute_mumps):
+        """SET with multiple subscripted assignments (§8.2.18)."""
+        result = execute_mumps("TEST\n S A(1)=10,A(2)=20\n W A(1),A(2)\n Q\n")
+        assert result.output == "1020"
+        assert result.success is True
+
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: SET multiple targets")
     def test_set_multiple_targets(self, generate_python):

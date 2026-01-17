@@ -18,6 +18,7 @@ from m2py.asg.expressions import (
     MExtrinsicFunction,
     MIntrinsicFunction,
     MLiteral,
+    MPatternMatch,
     MSelectArg,
     MSpecialVariable,
     MUnaryOp,
@@ -116,6 +117,9 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     # from MIntrinsicFunction.
     elif isinstance(expr, MIntrinsicFunction):
         return generate_intrinsic_function(expr, ctx)
+    # Spec 011 Phase 12: Pattern match expressions
+    elif isinstance(expr, MPatternMatch):
+        return _generate_pattern_match(expr, ctx)
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -270,6 +274,14 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
 
     Currently supported:
     - $TEST ($T): Returns int(_test) for MUMPS-style 0/1 output
+    - $HOROLOG ($H): Returns days,seconds since MUMPS epoch
+    - $JOB ($J): Returns process ID
+    - $IO: Returns current I/O device name
+    - $X: Returns current column position
+    - $Y: Returns current line position
+    - $STORAGE ($S): Returns available memory (large constant)
+    - $STACK ($ST): Returns call stack level
+    - $QUIT ($Q): Returns 1 if in extrinsic, 0 otherwise
 
     Args:
         var: MSpecialVariable node (name without $ prefix)
@@ -287,6 +299,39 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     # MUMPS $TEST is always 0 or 1, not Python True/False
     if name in ("TEST", "T"):
         return "int(_test)"
+
+    # $HOROLOG / $H - days since Dec 31, 1840, seconds since midnight
+    if name in ("HOROLOG", "H"):
+        return "_rt.horolog()"
+
+    # $JOB / $J - current process ID
+    if name in ("JOB", "J"):
+        return "_rt.job()"
+
+    # $IO - current I/O device
+    if name == "IO":
+        return "_rt.io()"
+
+    # $X - current column position
+    if name == "X":
+        return "_rt.x()"
+
+    # $Y - current line position
+    if name == "Y":
+        return "_rt.y()"
+
+    # $STORAGE / $S - available memory (return large constant)
+    # MUMPS $STORAGE reports available memory; we return a reasonable large value
+    if name in ("STORAGE", "S"):
+        return "2147483647"  # Max 32-bit signed integer as placeholder
+
+    # $STACK / $ST - call stack level
+    if name in ("STACK", "ST"):
+        return "_rt.stack_level()"
+
+    # $QUIT / $Q - extrinsic function context flag
+    if name in ("QUIT", "Q"):
+        return "_rt.quit_flag()"
 
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
@@ -317,8 +362,8 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         # Multiplication/Division: coerce both operands
         return f"(m_num({left}) {op.operator} m_num({right}))"
     elif op.operator == "\\":
-        # Integer division in MUMPS
-        return f"(int(m_num({left}) // m_num({right})))"
+        # Integer division in MUMPS - uses truncation towards zero, not floor division
+        return f"(int(m_num({left}) / m_num({right})))"
     elif op.operator == "#":
         # Modulo in MUMPS
         return f"(m_num({left}) % m_num({right}))"
@@ -328,6 +373,36 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
     elif op.operator == "_":
         # String concatenation
         return f"(str({left}) + str({right}))"
+    elif op.operator == "&":
+        # Logical AND - must return int (0/1), not Python bool
+        return f"int(m_truth({left}) and m_truth({right}))"
+    elif op.operator == "!":
+        # Logical OR - must return int (0/1), not Python bool
+        return f"int(m_truth({left}) or m_truth({right}))"
+    elif op.operator == "'=":
+        # Negated equals - must return int (0/1)
+        return f'int(not m_compare({left}, "=", {right}))'
+    elif op.operator == "'<":
+        # Negated less-than (greater than or equal) - must return int (0/1)
+        return f'int(not m_compare({left}, "<", {right}))'
+    elif op.operator == "'>":
+        # Negated greater-than (less than or equal) - must return int (0/1)
+        return f'int(not m_compare({left}, ">", {right}))'
+    elif op.operator == "[":
+        # Contains: A[B returns 1 if B is substring of A
+        # Inline Python - no runtime helper needed
+        return f"int(str({right}) in str({left}))"
+    elif op.operator == "]":
+        # Follows: A]B returns 1 if A sorts after B (ASCII string comparison)
+        # Inline Python - no runtime helper needed
+        return f"int(str({left}) > str({right}))"
+    elif op.operator == "]]":
+        # Sorts after: A]]B returns 1 if A strictly sorts after B
+        # Uses MUMPS collation (numerics before strings), empty string never sorts after
+        return f"m_sorts_after({left}, {right})"
+    elif op.operator == "?":
+        # Pattern match: A?pattern returns 1 if A matches pattern
+        return f"m_pattern_match({left}, {right})"
     else:
         raise NotImplementedError(f"Unsupported binary operator: {op.operator}")
 
@@ -351,10 +426,42 @@ def _generate_unary_op(op: MUnaryOp, ctx: "GeneratorContext") -> str:
         # Unary plus (force numeric)
         return f"(+m_num({operand}))"
     elif op.operator == "'":
-        # Logical NOT in MUMPS
-        return f"(not m_truth({operand}))"
+        # Logical NOT in MUMPS - must return int (0/1), not Python bool
+        return f"int(not m_truth({operand}))"
     else:
         raise NotImplementedError(f"Unsupported unary operator: {op.operator}")
+
+
+def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str:
+    """Generate Python pattern match expression from MPatternMatch.
+
+    Spec 011 Phase 12: Pattern match operator generates m_pattern_match() call.
+    Supports both direct patterns (literal) and indirect patterns (@X).
+    Also handles negated pattern match ('?) which returns the inverse.
+
+    Args:
+        expr: MPatternMatch node
+        ctx: Generator context
+
+    Returns:
+        Python expression string that evaluates to 1 (match) or 0 (no match)
+    """
+    subject = generate_expr(expr.subject, ctx) if expr.subject else '""'
+
+    if expr.pattern_indirect:
+        # Indirect pattern: X?@Y - pattern is in variable Y
+        pattern = generate_expr(expr.pattern_indirect, ctx)
+    else:
+        # Direct pattern: use pre-compiled regex if available, else use pattern string
+        # Pattern is a literal string like "1A.N"
+        pattern = repr(expr.pattern)
+
+    result = f"m_pattern_match({subject}, {pattern})"
+
+    # Handle negated pattern match ('?)
+    if expr.operator == "'?":
+        return f"int(not {result})"
+    return result
 
 
 def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> str:

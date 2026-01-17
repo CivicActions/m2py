@@ -8,3 +8,5 @@ Go through all of the current spec, plan documents, tasks, chat backlog and git 
 Then, check the codegen-plan and make any corrections or important notes needed for subsequent specs there - make changes in context, avoiding "change" language.
 
 We have an objective to minimize the runtime where possible - are there any elements in the runtime that could be removed and replaced with direct simple python code if we did a bit more in the analysis phase? Note that we are not concerned about runtime performance per-se, but rather simplicity of the resulting code and how easily it can be refactored into "normal" python code. In your recommendations, consider risks - if we are not confident that we can implement these 100% correctly it would be safer to wait, then we can test the changes with a large production codebase.
+
+Using gh, review several previous PRs for format, then create a temporary workspace file in tmp/ for the desc representing all of the current spec (check spec, plan, tasks, git diff etc) and us gh CLI to create a new draft PR (don't commit).

@@ -59,6 +59,30 @@ print(result.output)   # Captured WRITE output
 print(result.success)  # True if no exception
 ```
 
+**Format Control Methods:**
+```python
+# Tab to column (0-indexed per YDB semantics)
+rt.write_tab(10)       # Move to column 10 (pad with spaces if needed)
+```
+
+**Special Variable Accessors:**
+```python
+# Intrinsic Special Variables (ISVs)
+rt.horolog()           # $HOROLOG - "days,seconds" since epoch
+rt.job()               # $JOB - process ID
+rt.io()                # $IO - current I/O device
+rt.x()                 # $X - cursor column position
+rt.y()                 # $Y - cursor row position
+rt.stack_level()       # $STACK - call stack depth
+rt.quit_flag()         # Check if routine should exit
+```
+
+**Stack Frame Management:**
+```python
+rt.push_frame()        # Enter new scope (increments $STACK)
+rt.pop_frame()         # Exit scope (decrements $STACK)
+```
+
 **Note**: Dynamic variable access via `runtime.get_var()` / `runtime.set_var()` 
 is reserved for indirection and global variables. Local variables use Python 
 locals for refactorability.
@@ -385,6 +409,26 @@ _scope['X'] = "HELLO"
 m_set_extract(lambda: _scope.get('X', ''), lambda v: _scope.__setitem__('X', v), 2, 3, "XX")
 _rt.write(_scope.get('X', ''))
 ```
+
+### m_format_output (Numeric Formatting)
+
+```python
+from m2py.runtime.helpers import m_format_output
+
+# Convert values to MUMPS canonical format for output
+m_format_output(1.0)    # → "1"
+m_format_output(0.5)    # → ".5"
+m_format_output(-0.5)   # → "-.5"
+m_format_output(3.14)   # → "3.14"
+```
+
+**Behavior:**
+- Integers formatted without trailing `.0`: `1.0` → `"1"`
+- Leading zero removed for decimals < 1: `0.5` → `".5"`
+- Negative values preserve sign: `-0.5` → `"-.5"`
+- Non-numeric values converted with `str()`
+
+This function is used internally by `MUMPSRuntime.write()` to ensure numeric output matches MUMPS formatting conventions.
 
 ### $ORDER Traversal
 

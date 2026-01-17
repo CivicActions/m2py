@@ -2298,3 +2298,114 @@ class TestArrayVars:
 
         # A should be in array_vars (subscripted read)
         assert "A" in routine.array_vars
+
+
+class TestHasNewStatements:
+    """Test has_new_statements field population (Spec 011 refactor).
+
+    The has_new_statements field on MLabel indicates whether the label
+    contains any NEW statements. This is used by codegen to determine
+    whether to wrap the label body in a NewScopeManager context.
+
+    Note: We can't just check variables_newed because:
+    - Argumentless NEW (N) saves all locals, variables_newed is empty
+    - Exclusive NEW (N (X)) tracks excluded vars, not presence
+    """
+
+    def test_has_new_statements_with_new_variable(self):
+        """Label with NEW X has has_new_statements=True."""
+        # N X - selective NEW
+        new_stmt = MNewStatement(variables=["X"])
+        scope = MScope(statements=[new_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert label.has_new_statements is True
+
+    def test_has_new_statements_with_multiple_new_vars(self):
+        """Label with NEW X,Y has has_new_statements=True."""
+        # N X,Y - selective NEW multiple
+        new_stmt = MNewStatement(variables=["X", "Y"])
+        scope = MScope(statements=[new_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert label.has_new_statements is True
+
+    def test_has_new_statements_exclusive_new(self):
+        """Label with exclusive NEW (X) has has_new_statements=True."""
+        # N (X) - exclusive NEW (all except X)
+        new_stmt = MNewStatement(variables=["X"], exclusive=True)
+        scope = MScope(statements=[new_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert label.has_new_statements is True
+        # Note: For exclusive NEW, variables_newed tracks KEPT vars, not newed ones
+        # So variables_newed might be empty or contain the excluded vars
+
+    def test_has_new_statements_without_new(self):
+        """Label without NEW has has_new_statements=False."""
+        # S X=1 - no NEW statement
+        var_x = MVariable(name="X", subscripts=[])
+        set_stmt = MSetStatement(
+            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
+        )
+        scope = MScope(statements=[set_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert label.has_new_statements is False
+
+    def test_has_new_statements_empty_label(self):
+        """Label with no body has has_new_statements=False."""
+        label = MLabel(name="TEST", body=MScope(statements=[]))
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert label.has_new_statements is False
+
+    def test_has_new_statements_nested_in_if(self):
+        """NEW in nested IF body sets has_new_statements=True."""
+        # I 1 N X - NEW inside IF body
+        new_stmt = MNewStatement(variables=["X"])
+        then_scope = MScope(statements=[new_stmt])
+        if_stmt = MIfStatement(condition=MLiteral(value="1"), then_scope=then_scope)
+        scope = MScope(statements=[if_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+        then_scope.parent = if_stmt
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert label.has_new_statements is True
+
+    def test_has_new_statements_nested_in_for(self):
+        """NEW in nested FOR body sets has_new_statements=True."""
+        # F I=1:1:10 N X - NEW inside FOR body
+        new_stmt = MNewStatement(variables=["X"])
+        for_body = MScope(statements=[new_stmt])
+        for_stmt = MForStatement(loop_var="I", body=for_body)
+        scope = MScope(statements=[for_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+        for_body.parent = for_stmt
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert label.has_new_statements is True

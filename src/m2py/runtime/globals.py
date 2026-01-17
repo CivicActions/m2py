@@ -15,10 +15,13 @@ until integration specs implement them.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 # Spec 010: Import collation key and query helper for $ORDER/$QUERY
 from m2py.runtime.helpers import _mumps_collation_key, _find_next_valued_node
+
+if TYPE_CHECKING:
+    from m2py.runtime import MArray
 
 
 @runtime_checkable
@@ -230,7 +233,6 @@ class InMemoryGlobalStorage:
 
     def __init__(self) -> None:
         """Initialize empty global storage."""
-        from m2py.runtime import MArray
 
         self._globals: dict[str, MArray] = {}
         self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
@@ -557,6 +559,70 @@ class InMemoryGlobalStorage:
 
         # Remove only the value, preserve children
         node._value = None
+
+    def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
+        """Get subtree rooted at ^NAME(subscripts) as MArray for MERGE.
+
+        Spec 011 Phase 16: Extract a global subtree for local MERGE operations.
+
+        Args:
+            name: Global name without caret
+            subscripts: Path to the subtree root (empty for root)
+
+        Returns:
+            MArray containing the subtree, or None if path doesn't exist
+        """
+
+        subscripts = self._canonicalize_subscripts(subscripts)
+        self._update_naked_indicator(name, subscripts)
+
+        if name not in self._globals:
+            return None
+
+        node = self._globals[name]
+        if subscripts:
+            for sub in subscripts:
+                if sub not in node._children:
+                    return None
+                node = node._children[sub]
+
+        # Deep copy the subtree
+        return self._deep_copy_tree(node)
+
+    def _deep_copy_tree(self, source: "MArray") -> "MArray":
+        """Deep copy an MArray tree.
+
+        Converts string subscript keys to numeric types when possible,
+        for consistency with local MArray operations.
+
+        Args:
+            source: Source MArray to copy
+
+        Returns:
+            New MArray with same structure and values
+        """
+        from m2py.runtime import MArray
+
+        result = MArray()
+        result._value = source._value
+
+        for key, child in source._children.items():
+            # Convert numeric string keys to int/float for local use
+            if isinstance(key, str):
+                try:
+                    # Try integer first
+                    if "." in key:
+                        canonical_key: int | float | str = float(key)
+                    else:
+                        canonical_key = int(key)
+                except ValueError:
+                    canonical_key = key
+            else:
+                canonical_key = key
+
+            result._children[canonical_key] = self._deep_copy_tree(child)
+
+        return result
 
 
 # =============================================================================

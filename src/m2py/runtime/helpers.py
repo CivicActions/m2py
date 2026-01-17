@@ -61,6 +61,67 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
     return (1, str(value))
 
 
+def m_format_output(value: Any) -> str:
+    """Format a value for MUMPS output.
+
+    MUMPS canonical number formatting:
+    - No trailing zeros after decimal point
+    - No unnecessary decimal point for integers
+    - No leading zero before decimal for values < 1 (0.5 → ".5")
+    - Negative numbers keep the minus sign (-0.5 → "-.5")
+
+    Spec 011 Phase 9: Ensures numeric output matches MUMPS formatting.
+
+    Args:
+        value: Any value to format for output
+
+    Returns:
+        String formatted according to MUMPS conventions
+
+    Examples:
+        m_format_output(1.0) → "1"
+        m_format_output(0.5) → ".5"
+        m_format_output(-0.5) → "-.5"
+        m_format_output(3.14) → "3.14"
+    """
+    # If not numeric, just convert to string
+    if isinstance(value, str):
+        return value
+
+    if isinstance(value, bool):
+        # Convert boolean to MUMPS 1/0
+        return "1" if value else "0"
+
+    if isinstance(value, (int, float)):
+        # Check if it's effectively an integer
+        if isinstance(value, float) and value == int(value):
+            return str(int(value))
+
+        if isinstance(value, int):
+            return str(value)
+
+        # It's a true float with decimals
+        s = str(value)
+
+        # Python may output in scientific notation for very large/small numbers
+        if "e" in s or "E" in s:
+            # Format without scientific notation
+            if value == int(value):
+                return str(int(value))
+            # Use a reasonable number of decimal places
+            s = f"{value:.15g}"
+
+        # Remove leading zero before decimal if value is between -1 and 1
+        if s.startswith("0."):
+            s = s[1:]  # Remove leading zero: "0.5" -> ".5"
+        elif s.startswith("-0."):
+            s = "-" + s[2:]  # "-0.5" -> "-.5"
+
+        return s
+
+    return str(value)
+
+
 def m_set_piece(
     var_getter: Callable[[], str],
     var_setter: Callable[[str], None],
@@ -1120,3 +1181,260 @@ def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
             return f"-{formatted}"
         else:
             return formatted
+
+
+# =============================================================================
+# Spec 011: String Comparison Operators
+# =============================================================================
+
+# Note: Contains ([) and Follows (]) operators are inlined in codegen as:
+#   Contains: int(str(right) in str(left))
+#   Follows:  int(str(left) > str(right))
+# Only sorts-after (]]) requires a runtime helper due to MUMPS collation.
+
+
+def m_sorts_after(left: Any, right: Any) -> int:
+    """Check if left strictly sorts after right (MUMPS ]] operator).
+
+    MUMPS semantics: A]]B returns 1 if A strictly collates after B using
+    MUMPS collation order (numerics before strings). Empty string never
+    sorts after anything.
+
+    Note: This differs from the ] (follows) operator which uses simple
+    ASCII string comparison. The ]] operator uses MUMPS collation where:
+    - Numeric values (including numeric strings) sort before non-numeric strings
+    - Numeric values are compared numerically (10 > 9)
+    - Non-numeric strings are compared by ASCII/UTF-8 ordering
+
+    Args:
+        left: Left operand
+        right: Right operand
+
+    Returns:
+        1 if left is non-empty and left sorts after right in MUMPS collation,
+        0 otherwise
+
+    Examples:
+        >>> m_sorts_after("B", "A")
+        1
+        >>> m_sorts_after("", "A")
+        0
+        >>> m_sorts_after("A", "B")
+        0
+        >>> m_sorts_after(10, 9)
+        1
+        >>> m_sorts_after("10", "9")
+        1
+        >>> m_sorts_after("ABC", "9")
+        1
+    """
+    # Empty string never sorts after anything
+    left_str = str(left)
+    if left_str == "":
+        return 0
+
+    # Use MUMPS collation comparison
+    left_key = _mumps_collation_key(left)
+    right_key = _mumps_collation_key(right)
+    return int(left_key > right_key)
+
+
+# =============================================================================
+# Spec 011: Pattern Match Operator
+# =============================================================================
+
+
+def m_pattern_match(string: Any, pattern: str) -> int:
+    """Match string against MUMPS pattern (MUMPS ? operator).
+
+    Uses compile_pattern_to_regex() from analysis module to convert
+    MUMPS pattern to Python regex, then performs fullmatch.
+
+    Args:
+        string: String to match
+        pattern: MUMPS pattern string (e.g., "1A.N", "3N")
+
+    Returns:
+        1 if string matches pattern, 0 otherwise
+
+    Examples:
+        >>> m_pattern_match("ABC", "1A.A")
+        1
+        >>> m_pattern_match("123", "3N")
+        1
+        >>> m_pattern_match("12A", "3N")
+        0
+    """
+    import re
+
+    from m2py.analysis.pattern_compiler import compile_pattern_to_regex
+
+    try:
+        regex = compile_pattern_to_regex(pattern)
+        # Use DOTALL for E pattern code to match newlines
+        result = re.fullmatch(regex, str(string), re.DOTALL)
+        return 1 if result else 0
+    except Exception:
+        # Pattern compilation error - return 0 (no match)
+        return 0
+
+
+# =============================================================================
+# Spec 011: NEW Command Scope Management
+# =============================================================================
+
+
+# Sentinel value to indicate a variable was undefined before NEW
+_UNDEFINED = object()
+
+
+class NewScopeManager:
+    """Context manager for MUMPS NEW command scope semantics.
+
+    MUMPS NEW command creates a new scope level for specified variables,
+    hiding the caller's values. When the function returns, the original
+    values are restored.
+
+    Usage in generated code:
+        with NewScopeManager(_scope) as _new_mgr:
+            _new_mgr.new_var('X')  # N X - saves and removes X
+            _scope['X'] = MArray()
+            _scope['X'].value = 999
+            # ... rest of function body ...
+        # On exit: X restored to original value
+
+    This handles:
+    - Save original value (or mark as undefined)
+    - Remove variable from scope (making it undefined)
+    - Restore original values on normal return or exception
+
+    Example MUMPS:
+        CALLER
+         S X=100
+         D ^CALLEE
+         W X  ; Prints 100 - X restored after callee's NEW
+
+        CALLEE
+         N X
+         S X=999
+         W X  ; Prints 999
+         Q
+
+    Generated Python for CALLEE:
+        def CALLEE(_rt, _scope=None, **_kwargs):
+            _scope = _scope if _scope is not None else {}
+            with NewScopeManager(_scope) as _new_mgr:
+                _new_mgr.new_var('X')
+                _scope['X'] = MArray()
+                _scope['X'].value = 999
+                _rt.write(_scope.get('X', MArray()).value or '')
+                return
+    """
+
+    def __init__(self, scope: dict):
+        """Initialize the scope manager.
+
+        Args:
+            scope: The _scope dict for the current routine
+        """
+        self._scope = scope
+        self._saved: dict = {}
+
+    def __enter__(self) -> "NewScopeManager":
+        """Enter the context - nothing to do on entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit the context - restore all saved variables.
+
+        This runs on both normal return and exceptions, ensuring
+        MUMPS NEW semantics are preserved.
+        """
+        for var_name, saved_value in self._saved.items():
+            if saved_value is _UNDEFINED:
+                # Variable was undefined before NEW - remove it
+                self._scope.pop(var_name, None)
+            else:
+                # Variable had a value - restore it
+                self._scope[var_name] = saved_value
+
+    def new_var(self, var_name: str) -> None:
+        """NEW a single variable - save and remove from scope.
+
+        If the variable has already been NEWed in this scope level,
+        this is a no-op (first NEW wins).
+
+        Args:
+            var_name: The MUMPS variable name (not translated)
+        """
+        if var_name in self._saved:
+            # Already NEWed - skip
+            return
+
+        # Save current value (or mark as undefined)
+        if var_name in self._scope:
+            self._saved[var_name] = self._scope[var_name]
+            del self._scope[var_name]
+        else:
+            self._saved[var_name] = _UNDEFINED
+
+
+# =============================================================================
+# READ Command Helpers (Spec 011 Phase 20)
+# =============================================================================
+
+
+def m_read_timeout(timeout_seconds: float) -> tuple[str, int]:
+    """Read input with timeout.
+
+    Attempts to read a line from stdin with a timeout.
+    If input is received within the timeout, returns the input and sets
+    $TEST to 1. If timeout occurs, returns empty string and sets $TEST to 0.
+
+    MUMPS semantics:
+    - R X:n reads with n-second timeout
+    - On success: X gets input, $TEST=1
+    - On timeout: X gets empty string, $TEST=0
+
+    Args:
+        timeout_seconds: Maximum seconds to wait for input
+
+    Returns:
+        Tuple of (input_value, test_flag)
+        test_flag is 1 for success, 0 for timeout
+    """
+    import select
+    import sys
+
+    timeout = float(timeout_seconds)
+
+    # Check if stdin has data available within timeout
+    # select.select returns (readable, writable, exceptional) lists
+    readable, _, _ = select.select([sys.stdin], [], [], timeout)
+
+    if readable:
+        # Input available - read it
+        line = sys.stdin.readline()
+        # Strip trailing newline if present
+        if line.endswith("\n"):
+            line = line[:-1]
+        return (line, 1)
+    else:
+        # Timeout occurred
+        return ("", 0)
+
+
+def m_read_char() -> str:
+    """Read a single character from stdin.
+
+    MUMPS R *X reads a single character and stores its ASCII value.
+    For simplicity, we return the character as a string (code can convert
+    to ASCII if needed with $ASCII).
+
+    Returns:
+        Single character read from stdin, or empty string on EOF
+    """
+    import sys
+
+    char = sys.stdin.read(1)
+    return char

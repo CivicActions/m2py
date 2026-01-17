@@ -276,3 +276,90 @@ class TestInMemoryGlobalStorageEdgeCases:
         indicator = backend.get_naked_indicator()
         assert indicator is not None
         assert indicator[0] == "G"
+
+
+@pytest.mark.runtime
+class TestInMemoryGlobalStorageGetTree:
+    """Tests for get_tree() method used by MERGE command."""
+
+    def test_get_tree_returns_marray(self):
+        """get_tree() returns an MArray with subtree contents."""
+        from m2py.runtime import InMemoryGlobalStorage, MArray
+
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("1",), "value1")
+        backend.set("G", ("2",), "value2")
+
+        result = backend.get_tree("G", ())
+        assert isinstance(result, MArray)
+        assert result.get(1) == "value1"
+        assert result.get(2) == "value2"
+
+    def test_get_tree_nonexistent_returns_none(self):
+        """get_tree() returns None for nonexistent global."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        result = backend.get_tree("NONEXISTENT", ())
+        assert result is None
+
+    def test_get_tree_nonexistent_subscript_returns_none(self):
+        """get_tree() returns None for nonexistent subscript path."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("1",), "value")
+        result = backend.get_tree("G", ("2", "3"))
+        assert result is None
+
+    def test_get_tree_with_subscripts(self):
+        """get_tree() can get a subtree at a subscripted path."""
+        from m2py.runtime import InMemoryGlobalStorage, MArray
+
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("A", "1"), "v1")
+        backend.set("G", ("A", "2"), "v2")
+        backend.set("G", ("B", "1"), "other")
+
+        result = backend.get_tree("G", ("A",))
+        assert isinstance(result, MArray)
+        assert result.get(1) == "v1"
+        assert result.get(2) == "v2"
+
+    def test_get_tree_preserves_nested_structure(self):
+        """get_tree() deep copies nested subscripts."""
+        from m2py.runtime import InMemoryGlobalStorage, MArray
+
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("1", "A"), "nested")
+
+        result = backend.get_tree("G", ("1",))
+        assert isinstance(result, MArray)
+        assert result.get("A") == "nested"
+
+    def test_get_tree_converts_numeric_string_keys(self):
+        """get_tree() converts numeric string keys to int/float."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("1",), "int_key")
+        backend.set("G", ("1.5",), "float_key")
+        backend.set("G", ("text",), "string_key")
+
+        result = backend.get_tree("G", ())
+        # Access using numeric keys (should work for numeric strings)
+        assert result.get(1) == "int_key"
+        assert result.get(1.5) == "float_key"
+        assert result.get("text") == "string_key"
+
+    def test_get_tree_updates_naked_indicator(self):
+        """get_tree() updates the naked indicator."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("1",), "value")
+        backend.get_tree("G", ("1",))
+
+        indicator = backend.get_naked_indicator()
+        assert indicator is not None
+        assert indicator[0] == "G"

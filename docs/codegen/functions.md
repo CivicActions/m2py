@@ -61,6 +61,14 @@ Complex functions that require M-specific semantics use runtime helpers in `runt
 - `m_order()` - $ORDER with MUMPS collation order
 - `m_query()` - $QUERY depth-first tree traversal
 
+String comparison operators:
+- `[` (contains) - Inlined as `int(str(right) in str(left))`
+- `]` (follows) - Inlined as `int(str(left) > str(right))`
+- `m_sorts_after(left, right)` - `]]` operator, uses MUMPS collation (numerics before strings)
+
+Pattern matching uses:
+- `m_pattern_match(string, pattern)` - `?` operator (MUMPS pattern matching)
+
 Simple functions generate inline Python (e.g., `len()` for $LENGTH, `chr()` for $CHAR).
 
 ### Error Handling

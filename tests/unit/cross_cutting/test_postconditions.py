@@ -38,14 +38,23 @@ class TestPostconditionsCodegen:
     Reference: §8.1.4
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Codegen not yet implemented: postcondition runtime gate")
-    def test_command_postcondition_gates_all_arguments(self):
+    def test_command_postcondition_gates_all_arguments(self, execute_mumps):
         """False command postcondition skips all arguments (§8.1.4).
 
-        SET:0 X=1,Y=2  # Neither X nor Y should be set
+        Spec 011 Phase 8: SET:0 X=1,Y=2 - Neither X nor Y should be set.
         """
-        pytest.fail("Stub - requires codegen runtime execution")
+        source = 'TEST S:0 X=1,Y=2 W $G(X,"x"),$G(Y,"y"),! Q'
+        result = execute_mumps(source)
+        assert result.output == "xy\n"
+
+    def test_command_postcondition_true_executes(self, execute_mumps):
+        """True command postcondition executes all arguments (§8.1.4).
+
+        Spec 011 Phase 8: SET:1 X=1,Y=2 - Both X and Y should be set.
+        """
+        source = "TEST S:1 X=1,Y=2 W X,Y,! Q"
+        result = execute_mumps(source)
+        assert result.output == "12\n"
 
     @pytest.mark.stub
     @pytest.mark.xfail(
@@ -76,11 +85,17 @@ class TestPostconditionsCodegen:
         """
         pytest.fail("Stub - requires codegen runtime execution")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Codegen not yet implemented: postcondition truthiness")
-    def test_postcondition_truthiness(self):
+    def test_postcondition_truthiness(self, execute_mumps):
         """Postcondition truthiness follows MUMPS rules (§8.1.4).
 
-        Non-zero/non-empty = true, zero/empty = false
+        Spec 011 Phase 8: Non-zero/non-empty = true, zero/empty = false.
         """
-        pytest.fail("Stub - requires codegen runtime execution")
+        # Empty string is false
+        source = 'TEST S C="" S:C X=1 W $G(X,"none"),! Q'
+        result = execute_mumps(source)
+        assert result.output == "none\n"
+
+        # Non-zero string is true
+        source = 'TEST S C="1" S:C X=1 W $G(X,"none"),! Q'
+        result = execute_mumps(source)
+        assert result.output == "1\n"

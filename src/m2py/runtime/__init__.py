@@ -23,6 +23,7 @@ from m2py.runtime.globals import GlobalStorageBackend, InMemoryGlobalStorage
 from m2py.runtime.helpers import (
     m_data,
     m_data_global,
+    m_format_output,
     m_set_extract,
     m_set_piece,
 )
@@ -46,6 +47,19 @@ from m2py.runtime.helpers import (
     m_piece,
     m_query,
     m_query_global,
+)
+
+# Spec 011: Import sorts-after (uses MUMPS collation) and pattern match helpers
+# Note: Contains ([) and Follows (]) are inlined as Python expressions in codegen
+from m2py.runtime.helpers import (
+    m_pattern_match,
+    m_sorts_after,
+)
+
+# Spec 011 Phase 20: Import READ command helpers
+from m2py.runtime.helpers import (
+    m_read_char,
+    m_read_timeout,
 )
 
 
@@ -307,6 +321,27 @@ class MArray:
                 if (isinstance(start, str), start) < (isinstance(k, str), k):
                     return k
             return ""
+
+    def merge_from(self, source: "MArray") -> None:
+        """Merge source tree into this node (MERGE command).
+
+        Spec 011 Phase 16: Implements MERGE semantics:
+        - Copies source's value to this node (if source has value)
+        - Recursively copies all descendants from source
+        - Does NOT delete any existing nodes in this tree
+
+        Args:
+            source: Source MArray to merge from
+        """
+        # Copy source's value if it has one
+        if source._value is not None:
+            self._value = source._value
+
+        # Recursively merge children
+        for key, child_source in source._children.items():
+            if key not in self._children:
+                self._children[key] = MArray()
+            self._children[key].merge_from(child_source)
 
     def __repr__(self) -> str:
         """String representation for debugging."""
@@ -574,6 +609,15 @@ class MUMPSRuntime:
         self._globals: GlobalStorageBackend = (
             global_storage if global_storage is not None else get_global_storage()
         )
+        # Spec 011: Column/line position tracking for $X, $Y
+        self._x: int = 0  # Current column position (0-based)
+        self._y: int = 0  # Current line position
+        # Spec 011: Stack level tracking for $STACK
+        self._stack_level: int = 0
+        # Spec 011: I/O device tracking for $IO
+        self._io: str = "0"  # Default I/O device
+        # Spec 011: Extrinsic function context for $QUIT
+        self._in_extrinsic: bool = False
 
     @property
     def globals(self) -> GlobalStorageBackend:
@@ -646,7 +690,7 @@ class MUMPSRuntime:
         return ""
 
     def write(self, value: Any) -> None:
-        """Capture WRITE output.
+        """Capture WRITE output and update $X/$Y position tracking.
 
         Args:
             value: Value to write (converted to string)
@@ -654,11 +698,41 @@ class MUMPSRuntime:
         Note:
             Does not add newlines automatically (MUMPS WRITE doesn't either).
             None values are treated as empty string (MUMPS undefined semantics).
+            Spec 011: Updates _x (column) and _y (line) for $X/$Y tracking.
+            Spec 011 Phase 9: Uses m_format_output for canonical number formatting.
         """
         if value is None:
-            self._output.append("")
+            s = ""
         else:
-            self._output.append(str(value))
+            s = m_format_output(value)
+
+        # Spec 011: Update $X/$Y position tracking
+        for char in s:
+            if char == "\n":
+                self._x = 0
+                self._y += 1
+            elif char == "\f":
+                self._x = 0
+                self._y = 0  # Form feed resets line too
+            else:
+                self._x += 1
+
+        self._output.append(s)
+
+    def write_tab(self, column: int) -> None:
+        """Tab to specified column position (MUMPS ?n format control).
+
+        MUMPS semantics: If current column ($X) < target, write spaces to reach
+        the target column. If current column >= target, do nothing.
+
+        Args:
+            column: Target column (0-based, same as $X)
+
+        Spec 011 (T008): Implements column positioning for WRITE ?n.
+        """
+        if self._x < column:
+            spaces = column - self._x
+            self.write(" " * spaces)
 
     def get_output(self) -> str:
         """Return accumulated WRITE output.
@@ -669,8 +743,90 @@ class MUMPSRuntime:
         return "".join(self._output)
 
     def clear(self) -> None:
-        """Clear accumulated output."""
+        """Clear accumulated output and reset position tracking."""
         self._output.clear()
+        self._x = 0
+        self._y = 0
+
+    # =========================================================================
+    # Spec 011: Special Variable Accessor Methods
+    # =========================================================================
+
+    def horolog(self) -> str:
+        """Return MUMPS $HOROLOG format: days,seconds.
+
+        Days since December 31, 1840 (MUMPS epoch).
+        Seconds since midnight.
+
+        Returns:
+            String in format "days,seconds"
+        """
+        import datetime
+
+        now = datetime.datetime.now()
+        epoch = datetime.date(1840, 12, 31)
+        days = (now.date() - epoch).days
+        seconds = now.hour * 3600 + now.minute * 60 + now.second
+        return f"{days},{seconds}"
+
+    def job(self) -> int:
+        """Return process ID ($JOB).
+
+        Returns:
+            Current process ID
+        """
+        import os
+
+        return os.getpid()
+
+    def io(self) -> str:
+        """Return current I/O device name ($IO).
+
+        Returns:
+            Current I/O device identifier (default "0")
+        """
+        return self._io
+
+    def x(self) -> int:
+        """Return current column position ($X).
+
+        Returns:
+            Current column position (0-based)
+        """
+        return self._x
+
+    def y(self) -> int:
+        """Return current line position ($Y).
+
+        Returns:
+            Current line position
+        """
+        return self._y
+
+    def stack_level(self) -> int:
+        """Return current stack level ($STACK).
+
+        Returns:
+            Current call stack depth
+        """
+        return self._stack_level
+
+    def quit_flag(self) -> int:
+        """Return extrinsic function context flag ($QUIT).
+
+        Returns:
+            1 if inside extrinsic function ($$label), 0 otherwise
+        """
+        return 1 if self._in_extrinsic else 0
+
+    def push_frame(self) -> None:
+        """Push a new stack frame (for DO/extrinsic calls)."""
+        self._stack_level += 1
+
+    def pop_frame(self) -> None:
+        """Pop a stack frame (for QUIT)."""
+        if self._stack_level > 0:
+            self._stack_level -= 1
 
     def execute(
         self,
@@ -730,6 +886,17 @@ class MUMPSRuntime:
             # Get final $TEST value
             test_value = namespace.get("_test", False)
 
+            return ExecutionResult(
+                output=self.get_output() if capture_output else "",
+                success=True,
+                error=None,
+                test_value=bool(test_value),
+            )
+
+        except SystemExit:
+            # Spec 011 Phase 19: HALT command raises SystemExit(0)
+            # This is a normal termination, not an error
+            test_value = namespace.get("_test", False)
             return ExecutionResult(
                 output=self.get_output() if capture_output else "",
                 success=True,
@@ -798,4 +965,11 @@ __all__ = [
     "m_get_global",
     # Spec 010: $FIND helper (Phase 7)
     "m_find",
+    # Spec 011: String comparison and pattern match helpers
+    # Note: Contains ([) and Follows (]) are inlined; only sorts-after needs runtime
+    "m_sorts_after",
+    "m_pattern_match",
+    # Spec 011 Phase 20: READ command helpers
+    "m_read_timeout",
+    "m_read_char",
 ]

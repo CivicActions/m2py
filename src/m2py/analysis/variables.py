@@ -371,7 +371,38 @@ def analyze_variables(routine: MRoutine) -> Dict[str, ScopeVariables]:
         label.input_variables = scope_vars.input_variables
         label.output_variables = scope_vars.output_variables
 
+        # Spec 011: Track whether label contains any NEW statements
+        # Used by codegen to determine if NewScopeManager context is needed
+        label.has_new_statements = _label_has_new_statements(label)
+
     return result
+
+
+def _label_has_new_statements(label: MLabel) -> bool:
+    """Check if a label body contains any NEW statements.
+
+    This is used by codegen to determine whether to wrap the label body
+    in a NewScopeManager context for proper save/restore semantics.
+
+    Note: We can't just check variables_newed because:
+    - Argumentless NEW (N) saves all locals, variables_newed is empty
+    - Exclusive NEW (N (X)) tracks excluded vars, not presence of statement
+
+    Args:
+        label: MLabel ASG node to check
+
+    Returns:
+        True if the label contains any MNewStatement nodes
+    """
+    from m2py.asg.statements import MNewStatement
+
+    if not label.body:
+        return False
+
+    for stmt in label.body.walk_statements():
+        if isinstance(stmt, MNewStatement):
+            return True
+    return False
 
 
 def _analyze_label(label: MLabel) -> ScopeVariables:

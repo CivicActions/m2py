@@ -164,6 +164,13 @@ An entry point (subroutine) within a routine.
 | `input_variables` | `set` | Variables read before written (inputs) |
 | `output_variables` | `set` | Variables written (outputs) |
 | `signature` | `FunctionSignature` | Complete function signature |
+| `has_new_statements` | `bool` | True if label contains any NEW statements |
+
+**Control flow analysis** (populated by `classify_gotos`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `has_self_loop` | `bool` | True if label has backward GOTO to itself |
 
 ### Properties
 
