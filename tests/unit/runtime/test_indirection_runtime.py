@@ -86,6 +86,66 @@ class TestIsValidVarname:
 
 
 # =============================================================================
+# T065: get_indirection_source() Tests - Edge Case Error Handling
+# =============================================================================
+
+
+class TestGetIndirectionSource:
+    """Tests for MUMPSRuntime.get_indirection_source() method.
+
+    T065: This method provides better error messages when the source
+    variable for indirection is undefined.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create fresh runtime instance for each test."""
+        return MUMPSRuntime()
+
+    def test_defined_variable_returns_value(self, rt):
+        """Get indirection source for defined variable returns its value."""
+        arr = MArray()
+        arr.value = "TARGET"
+        scope = {"X": arr}
+        result = rt.get_indirection_source("X", scope)
+        assert result == "TARGET"
+
+    def test_undefined_variable_raises_error(self, rt):
+        """Undefined source variable raises IndirectionError with clear message."""
+        scope = {}
+        with pytest.raises(IndirectionError) as exc_info:
+            rt.get_indirection_source("UNDEF", scope)
+        assert "Undefined local variable" in str(exc_info.value)
+        assert "UNDEF" in str(exc_info.value)
+
+    def test_undefined_variable_error_reason(self, rt):
+        """IndirectionError has the error message as reason field."""
+        scope = {}
+        with pytest.raises(IndirectionError) as exc_info:
+            rt.get_indirection_source("NOTSET", scope)
+        # The reason field contains the full error message
+        assert "Undefined local variable" in exc_info.value.reason
+        assert "NOTSET" in exc_info.value.reason
+
+    def test_empty_value_returns_empty_string(self, rt):
+        """Variable with empty value returns empty string."""
+        arr = MArray()
+        arr.value = ""
+        scope = {"X": arr}
+        result = rt.get_indirection_source("X", scope)
+        assert result == ""
+
+    def test_numeric_value_converted_to_string(self, rt):
+        """Numeric values are returned as strings for use in indirection."""
+        arr = MArray()
+        arr.value = 123
+        scope = {"X": arr}
+        result = rt.get_indirection_source("X", scope)
+        # Value is converted to string for use as variable name
+        assert result == "123"
+
+
+# =============================================================================
 # T007: get_var() Tests
 # =============================================================================
 

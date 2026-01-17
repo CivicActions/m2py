@@ -65,8 +65,8 @@ def _count_indirection_levels(expr: "MIndirection") -> Tuple[int, "MExpr"]:
 def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> str:
     """Generate the Python expression for the variable name to look up.
 
-    For a simple variable like X, generates: _scope.get("X", MArray()).value
-    For other expressions, uses generate_expr.
+    For a simple variable like X, generates a call to _rt.get_indirection_source
+    which validates that the source variable exists (T065: error for @UNDEF).
 
     Args:
         inner_expr: The innermost expression inside indirection
@@ -80,10 +80,10 @@ def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> s
     from m2py.codegen.expressions import generate_expr
 
     if isinstance(inner_expr, MVariable):
-        # Direct variable reference - look up by name and get value
-        # Variables are stored as MArray objects, so we need .value
+        # Direct variable reference - use get_indirection_source to validate
+        # existence and get the value (T065: error for undefined indirection source)
         var_name = inner_expr.name
-        return f'_scope.get("{var_name}", MArray()).value'
+        return f'_rt.get_indirection_source("{var_name}", _scope)'
     else:
         # Other expression - generate and convert to string if needed
         return generate_expr(inner_expr, ctx)
@@ -99,9 +99,9 @@ def generate_name_indirection(
     name at runtime and read its value.
 
     Handles:
-    - Simple indirection: @X → _rt.get_var(_scope.get("X", ""), _scope)
+    - Simple indirection: @X → _rt.get_var(_rt.get_indirection_source("X", _scope), _scope)
     - Multi-level: @@X → _rt.resolve_indirection("X", 2, _scope)
-    - With subscripts: @NAME@(1,2) → _rt.get_var(f'{_scope.get("NAME", "")}(1,2)', _scope)
+    - With subscripts: @NAME@(1,2) → _rt.get_var(f'{_rt.get_indirection_source("NAME", _scope)}(1,2)', _scope)
 
     Args:
         expr: MIndirection ASG node with indirection_type=NAME
@@ -137,8 +137,8 @@ def generate_name_indirection(
                 # Multi-level with subscripts: resolve first, then add subscripts
                 return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", _scope)'
             else:
-                # Single level with subscripts
-                return f"_rt.get_var(f'{{_scope.get(\"{base_name}\", MArray()).value}}{subs_str}', _scope)"
+                # Single level with subscripts - T065: validate source exists
+                return f"_rt.get_var(f'{{_rt.get_indirection_source(\"{base_name}\", _scope)}}{subs_str}', _scope)"
         else:
             # Complex expression
             name_expr = generate_expr(inner_expr, ctx)
@@ -170,9 +170,9 @@ def generate_name_indirection_write(
     name at runtime and write a value to it.
 
     Handles:
-    - Simple indirection: S @X=1 → _rt.set_var(_scope.get("X", ""), 1, _scope)
+    - Simple indirection: S @X=1 → _rt.set_var(_rt.get_indirection_source("X", _scope), 1, _scope)
     - Multi-level: S @@X=1 → _rt.set_var(_rt.resolve_indirection("X", 1, _scope), 1, _scope)
-    - With subscripts: S @NAME@(1,2)=5 → _rt.set_var(f'{_scope.get("NAME", "")}(1,2)', 5, _scope)
+    - With subscripts: S @NAME@(1,2)=5 → _rt.set_var(f'{_rt.get_indirection_source("NAME", _scope)}(1,2)', 5, _scope)
 
     Args:
         expr: MIndirection ASG node with indirection_type=NAME
@@ -209,8 +209,8 @@ def generate_name_indirection_write(
                 # Multi-level with subscripts
                 return f'_rt.set_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", {value_expr}, _scope)'
             else:
-                # Single level with subscripts
-                return f"_rt.set_var(f'{{_scope.get(\"{base_name}\", MArray()).value}}{subs_str}', {value_expr}, _scope)"
+                # Single level with subscripts - T065: validate source exists
+                return f"_rt.set_var(f'{{_rt.get_indirection_source(\"{base_name}\", _scope)}}{subs_str}', {value_expr}, _scope)"
         else:
             # Complex expression
             name_expr = generate_expr(inner_expr, ctx)
@@ -292,6 +292,9 @@ def generate_subscripted_indirection(
     Spec 012 Phase 3 (T019): Generates runtime call to resolve variable
     name and then access with explicit subscripts.
 
+    T065: Uses _generate_inner_name_expr for the variable name expression
+    which provides better error messages for undefined source variables.
+
     Note: This is now handled directly in generate_name_indirection(),
     which handles name_indirection_subscripts. This function is kept
     for explicit subscript control when needed.
@@ -321,7 +324,9 @@ def generate_subscripted_indirection(
         if levels > 1:
             return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", _scope)'
         else:
-            return f"_rt.get_var(f'{{_scope.get(\"{base_name}\", MArray()).value}}{subs_str}', _scope)"
+            # T065: Use _generate_inner_name_expr for better error messages
+            inner_name = _generate_inner_name_expr(inner_expr, ctx)
+            return f"_rt.get_var(f'{{{inner_name}}}{subs_str}', _scope)"
     else:
         name_expr = generate_expr(inner_expr, ctx)
         return f'_rt.get_var(f"{{str({name_expr})}}{subs_str}", _scope)'

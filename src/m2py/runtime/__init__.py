@@ -1080,7 +1080,52 @@ class MUMPSRuntime:
 
     # =========================================================================
     # Spec 012: Indirection & XECUTE Runtime Methods (Phase 2 - T007-T011)
+    # Phase 11: Edge case handling (T065-T072)
     # =========================================================================
+
+    def get_indirection_source(self, varname: str, _scope: Dict[str, Any]) -> str:
+        """Get value of an indirection source variable, validating existence.
+
+        Spec 012 Phase 11 (T065): Unlike get_var(), this method raises an error
+        if the source variable is undefined, matching YDB's LVUNDEF behavior.
+
+        In MUMPS, @UNDEF should raise "Undefined local variable: UNDEF"
+        rather than silently using an empty string.
+
+        Args:
+            varname: Variable name to get value of (the indirection source)
+            _scope: Current scope dictionary
+
+        Returns:
+            str: The variable's value (which becomes the target variable name)
+
+        Raises:
+            IndirectionError: If varname is undefined in _scope
+
+        Examples:
+            >>> scope = {"X": MArray("Y")}
+            >>> rt.get_indirection_source("X", scope)
+            "Y"
+            >>> rt.get_indirection_source("UNDEF", {})
+            IndirectionError: Undefined local variable: UNDEF
+        """
+        if varname not in _scope:
+            raise IndirectionError(
+                varname,
+                f"Undefined local variable: {varname}",
+                variable_name=varname,
+            )
+
+        raw_value = _scope[varname]
+
+        # Extract value from MArray if present
+        if isinstance(raw_value, MArray):
+            value = raw_value.value
+        else:
+            value = raw_value
+
+        # Convert to string for use as variable name
+        return str(value) if value is not None else ""
 
     def get_var(self, name: str, _scope: Dict[str, Any]) -> Any:
         """Get variable value by name (name indirection).
@@ -1574,7 +1619,10 @@ class MUMPSRuntime:
         try:
             python_code = generate_python(wrapped_code, routine_name="XECUTE")
         except Exception as e:
-            raise SyntaxError(f"MUMPS parse error: {e}") from e
+            # T067: Provide useful context in XECUTE syntax error message
+            # Include the original MUMPS code so user knows what failed
+            error_msg = f"XECUTE parse error in '{mumps_code}': {e}"
+            raise SyntaxError(error_msg) from e
 
         # Create execution namespace with shared scope
         namespace: Dict[str, Any] = {

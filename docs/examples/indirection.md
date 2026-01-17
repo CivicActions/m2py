@@ -17,6 +17,9 @@ Indirection (`@`) allows runtime evaluation of names, subscripts, and arguments.
 | Indirect GOTO (`G @TARGET`) | ✅ Implemented | Spec 012 Phase 8 |
 | SET Argument Indirection (`S @A`) | ✅ Implemented | Spec 012 Phase 9 |
 | Pattern Indirection (`X?@PAT`) | ✅ Implemented | Spec 012 Phase 10 |
+| FOR Loop Variable (`F @A=1:1:3`) | ✅ Implemented | Spec 012 Phase 11 |
+| KILL Indirection (`K @X`) | ✅ Implemented | Spec 012 Phase 11 |
+| NEW Indirection (`N @X`) | ✅ Implemented | Spec 012 Phase 11 |
 | Subscript Indirection (`A(@I)`) | ❌ Not yet | Future phase |
 | XECUTE Constant (`X "S X=1"`) | ✅ Implemented | Inlined at transpile time |
 | XECUTE Dynamic (`X CODE`) | ✅ Implemented | Via runtime execute_mumps() |
@@ -475,14 +478,143 @@ D PROC(@ARGS) ; Expands to PROC(1,2,3) (not yet implemented)
 
 ---
 
+## FOR Loop Variable Indirection
+
+FOR loops support indirect loop variables:
+
+```mumps
+S A="I"
+F @A=1:1:3 W I    ; Loop variable is I, outputs 123
+```
+
+**ASG Structure:**
+```
+MForStatement(
+    loop_var=MIndirection(
+        expression=MVariable(name="A"),
+        indirection_type=IndirectionType.NAME
+    ),
+    parameters=[MForParameter(param_type=RANGE, start=1, step=1, end=3)],
+    body=[...]
+)
+```
+
+**Generated Python:**
+```python
+_for_indirect_var = _rt.get_indirection_source("A", _scope)
+_scope.setdefault(_for_indirect_var, MArray()).value = m_num(1)
+_for_step = m_num(1)
+_for_end = m_num(3)
+while (_for_step > 0 and _scope.setdefault(_for_indirect_var, MArray()).value <= _for_end) or (_for_step < 0 and _scope.setdefault(_for_indirect_var, MArray()).value >= _for_end):
+    _rt.write(_scope.get('I', MArray()).value)
+    if not ((_for_step > 0 and _scope.setdefault(_for_indirect_var, MArray()).value + _for_step <= _for_end) or (_for_step < 0 and _scope.setdefault(_for_indirect_var, MArray()).value + _for_step >= _for_end)):
+        break
+    _scope.setdefault(_for_indirect_var, MArray()).value = _scope.setdefault(_for_indirect_var, MArray()).value + _for_step
+```
+
+The loop variable name is resolved once via `get_indirection_source()` and used throughout the loop.
+
+### String List with Indirect Variable
+
+```mumps
+S A="V"
+F @A="X","Y","Z" W V    ; Outputs XYZ
+```
+
+**Generated Python:**
+```python
+_for_indirect_var = _rt.get_indirection_source("A", _scope)
+_for_values = ["X", "Y", "Z"]
+_for_idx = 0
+while _for_idx < len(_for_values):
+    _scope.setdefault(_for_indirect_var, MArray()).value = _for_values[_for_idx]
+    _rt.write(_scope.get('V', MArray()).value)
+    _for_idx += 1
+```
+
+---
+
+## KILL Indirection
+
+KILL supports indirect variable targets:
+
+```mumps
+S A="TARGET"
+S TARGET=1
+K @A          ; Kills TARGET (A contains "TARGET")
+```
+
+**Generated Python:**
+```python
+_scope['A'] = "TARGET"
+_scope['TARGET'] = 1
+_target = _rt.get_indirection_source("A", _scope)
+_scope.pop(_target, None)
+```
+
+The source variable (A) remains unchanged; only the target (TARGET) is killed.
+
+---
+
+## NEW Indirection
+
+NEW supports indirect variable targets:
+
+```mumps
+S A="X"
+S X=1
+N @A          ; NEWs X (A contains "X")
+S X=2
+; When scope exits, X is restored to 1
+```
+
+**Generated Python:**
+```python
+_target = _rt.get_indirection_source("A", _scope)
+with NewScopeManager(_scope, [_target]):
+    # body that may modify X
+    pass
+# X restored when exiting scope
+```
+
+---
+
+## Error Handling
+
+### Undefined Indirection Source
+
+Accessing an undefined variable via indirection raises a clear error:
+
+```mumps
+W @UNDEF      ; Error: Undefined local variable: UNDEF
+```
+
+The `get_indirection_source()` runtime method validates that the source variable exists before resolving.
+
+### Invalid Variable Names
+
+Indirection targets must be valid MUMPS variable names:
+
+```mumps
+S A="123INVALID"
+W @A          ; Error: invalid variable name - must start with letter or %
+```
+
+```mumps
+S A=""
+W @A          ; Error: empty variable name
+```
+
+---
+
 ## IndirectionType Enum
 
 | Type | Example | Status |
 |------|---------|--------|
 | `NAME` | `@X` | ✅ Implemented |
 | `SUBSCRIPT` | `A(@I)` | ❌ Not yet |
-| `ARGUMENT` | `D F(@ARGS)` | ❌ Not yet |
-| `PATTERN` | `X?@PAT` | ❌ Not yet |
+| `ARGUMENT` | `S @A` | ✅ Implemented |
+| `PATTERN` | `X?@PAT` | ✅ Implemented |
 | `UNKNOWN` | | Analysis fallback |
 
 ---

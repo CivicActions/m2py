@@ -206,16 +206,16 @@
 
 **Purpose**: Handle error conditions and edge cases from spec
 
-- [ ] T065 [P] Implement error handling for undefined indirection source (`@UNDEF`)
-- [ ] T066 [P] Implement error handling for invalid variable names (`@"123INVALID"`)
-- [ ] T067 [P] Implement error handling for XECUTE syntax errors with context
-- [ ] T068 [P] Implement FOR loop variable indirection (`F @A=1:1:10`)
-- [ ] T069 [P] Implement indirection in KILL (`K @X`)
-- [ ] T070 [P] Implement indirection in NEW (`N @X`)
-- [ ] T071 Unit tests for edge cases in tests/unit/cross_cutting/test_indirection.py
-- [ ] T072 Unit tests for error messages include variable name/value
+- [X] T065 [P] Implement error handling for undefined indirection source (`@UNDEF`)
+- [X] T066 [P] Implement error handling for invalid variable names (`@"123INVALID"`)
+- [X] T067 [P] Implement error handling for XECUTE syntax errors with context
+- [X] T068 [P] Implement FOR loop variable indirection (`F @A=1:1:10`)
+- [X] T069 [P] Implement indirection in KILL (`K @X`)
+- [X] T070 [P] Implement indirection in NEW (`N @X`)
+- [X] T071 Unit tests for edge cases in tests/unit/cross_cutting/test_indirection.py
+- [X] T072 Unit tests for error messages include variable name/value
 
-**Checkpoint**: All edge cases handled with clear error messages
+**Checkpoint**: All edge cases handled with clear error messages ✅
 
 ---
 

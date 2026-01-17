@@ -7,7 +7,7 @@ Handles SET, WRITE, QUIT, IF, ELSE, FOR, and other basic commands.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 
 from m2py.asg.enums import (
     ForLoopType,
@@ -20,6 +20,7 @@ from m2py.asg.expressions import (
     MActualParameter,
     MExpr,
     MFormatControl,
+    MIndirection,
     MIntrinsicFunction,
     MVariable,
 )
@@ -28,6 +29,7 @@ from m2py.asg.statements import (
     MAssignment,
     MDoStatement,
     MElseStatement,
+    MForParameter,
     MForStatement,
     MGotoStatement,
     MHaltStatement,
@@ -132,6 +134,8 @@ class ForGenContext:
         needs_break: True if has_internal_quit or exit GOTOs need break
         is_infinite: True for argumentless FOR (F)
         loop_type: Classification from analysis for pattern selection
+        loop_var_indirect: True if loop variable uses indirection (@A)
+        loop_var_expr: For indirect, the expression to get the target var name
     """
 
     stmt: MForStatement
@@ -140,6 +144,8 @@ class ForGenContext:
     needs_break: bool  # True if has_internal_quit or has_internal_goto
     is_infinite: bool
     loop_type: ForLoopType
+    loop_var_indirect: bool = False  # T068: True if loop_var is @A
+    loop_var_expr: Optional[str] = None  # T068: Expression to get target var name
 
     @classmethod
     def from_statement(
@@ -159,8 +165,25 @@ class ForGenContext:
         Raises:
             ValueError: If loop_type was not set by analysis
         """
-        # Get loop variable name
-        if isinstance(stmt.loop_var, str):
+        # Import here to avoid circular import
+        from m2py.asg.expressions import MIndirection as MIndirectionType
+
+        # T068: Check for indirection loop variable (F @A=1:1:3)
+        loop_var_indirect = False
+        loop_var_expr: Optional[str] = None
+
+        if isinstance(stmt.loop_var, MIndirectionType):
+            # Indirect loop variable: F @A=1:1:3 where A contains "B"
+            loop_var_indirect = True
+            # Generate expression to get target variable name at runtime
+            # This requires ctx to be provided
+            if ctx is not None and stmt.loop_var.expression is not None:
+                from m2py.codegen.indirection import _generate_inner_name_expr
+
+                loop_var_expr = _generate_inner_name_expr(stmt.loop_var.expression, ctx)
+            var_name = "_for_indirect_var"
+            loop_var = "_for_val"  # Temporary for range iteration
+        elif isinstance(stmt.loop_var, str):
             var_name = stmt.loop_var if stmt.loop_var else "_"
             loop_var = translate_name(var_name)
         elif isinstance(stmt.loop_var, MVariable):
@@ -175,6 +198,7 @@ class ForGenContext:
             ctx
             and ctx.strategy == GotoStrategy.TRAMPOLINE
             and var_name in ctx.state_vars
+            and not loop_var_indirect
         ):
             loop_var = f"state.{translate_name(var_name)}"
 
@@ -197,6 +221,8 @@ class ForGenContext:
             needs_break=needs_break,
             is_infinite=is_infinite,
             loop_type=loop_type,
+            loop_var_indirect=loop_var_indirect,
+            loop_var_expr=loop_var_expr,
         )
 
 
@@ -1314,6 +1340,9 @@ def _generate_for_bounded(
 
     Uses range() with adjusted end for MUMPS end-inclusive semantics.
 
+    T068: For indirect loop variables (F @A=1:1:3), resolve the target
+    variable name at runtime and update via _rt.set_var().
+
     Args:
         stmt: MForStatement node
         for_ctx: FOR loop context with analysis
@@ -1336,18 +1365,35 @@ def _generate_for_bounded(
     # For negative step: range(start, end - 1, step)
     ctx.emitter.line(f"_for_step = m_num({step_expr})")
     ctx.emitter.line(f"_for_end = m_num({end_expr}) + (1 if _for_step > 0 else -1)")
-    ctx.emitter.line(
-        f"for {for_ctx.loop_var} in range(m_num({start_expr}), _for_end, _for_step):"
-    )
 
-    with ctx.emitter.indented():
-        _generate_for_body(stmt, ctx)
+    # T068: Handle indirect loop variable (F @A=1:1:3)
+    if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
+        # Resolve the target variable name once before the loop
+        ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+        ctx.emitter.line(
+            f"for {for_ctx.loop_var} in range(m_num({start_expr}), _for_end, _for_step):"
+        )
+        with ctx.emitter.indented():
+            # Update the indirect variable at start of each iteration
+            ctx.emitter.line(
+                f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+            )
+            _generate_for_body(stmt, ctx)
+    else:
+        ctx.emitter.line(
+            f"for {for_ctx.loop_var} in range(m_num({start_expr}), _for_end, _for_step):"
+        )
+        with ctx.emitter.indented():
+            _generate_for_body(stmt, ctx)
 
 
 def _generate_for_string_list(
     stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
 ) -> None:
     """Generate Python for loop from string list FOR (F I="A","B","C").
+
+    T068: For indirect loop variables (F @A="X","Y","Z"), resolve the target
+    variable name at runtime and update via _rt.set_var().
 
     Args:
         stmt: MForStatement node
@@ -1363,10 +1409,22 @@ def _generate_for_string_list(
         raise NotImplementedError("Empty string list FOR")
 
     values_str = ", ".join(values)
-    ctx.emitter.line(f"for {for_ctx.loop_var} in [{values_str}]:")
 
-    with ctx.emitter.indented():
-        _generate_for_body(stmt, ctx)
+    # T068: Handle indirect loop variable (F @A="X","Y","Z")
+    if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
+        # Resolve the target variable name once before the loop
+        ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+        ctx.emitter.line(f"for {for_ctx.loop_var} in [{values_str}]:")
+        with ctx.emitter.indented():
+            # Update the indirect variable at start of each iteration
+            ctx.emitter.line(
+                f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+            )
+            _generate_for_body(stmt, ctx)
+    else:
+        ctx.emitter.line(f"for {for_ctx.loop_var} in [{values_str}]:")
+        with ctx.emitter.indented():
+            _generate_for_body(stmt, ctx)
 
 
 def _generate_for_open_ended(
@@ -1375,6 +1433,9 @@ def _generate_for_open_ended(
     """Generate Python for loop from open-ended FOR (F I=1:1).
 
     Uses itertools.count() for unbounded iteration.
+
+    T068: For indirect loop variables (F @A=1:1), resolve the target
+    variable name at runtime and update via _rt.set_var().
 
     Args:
         stmt: MForStatement node
@@ -1394,12 +1455,25 @@ def _generate_for_open_ended(
     start_expr = generate_expr(open_param.start, ctx)
     step_expr = generate_expr(open_param.step, ctx)
 
-    ctx.emitter.line(
-        f"for {for_ctx.loop_var} in count(m_num({start_expr}), m_num({step_expr})):"
-    )
-
-    with ctx.emitter.indented():
-        _generate_for_body(stmt, ctx)
+    # T068: Handle indirect loop variable (F @A=1:1)
+    if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
+        # Resolve the target variable name once before the loop
+        ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+        ctx.emitter.line(
+            f"for {for_ctx.loop_var} in count(m_num({start_expr}), m_num({step_expr})):"
+        )
+        with ctx.emitter.indented():
+            # Update the indirect variable at start of each iteration
+            ctx.emitter.line(
+                f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+            )
+            _generate_for_body(stmt, ctx)
+    else:
+        ctx.emitter.line(
+            f"for {for_ctx.loop_var} in count(m_num({start_expr}), m_num({step_expr})):"
+        )
+        with ctx.emitter.indented():
+            _generate_for_body(stmt, ctx)
 
 
 def _generate_for_argumentless(
@@ -1424,6 +1498,9 @@ def _generate_for_mixed(
     """Generate Python for loop from mixed FOR (F I=1:1:3,"X",10:2:14).
 
     Uses itertools.chain() to combine multiple iterables.
+
+    T068: For indirect loop variables (F @A=1:1:3,"X"), resolve the target
+    variable name at runtime and update via _rt.set_var().
 
     Args:
         stmt: MForStatement node
@@ -1463,10 +1540,22 @@ def _generate_for_mixed(
         raise NotImplementedError("Empty mixed FOR parameters")
 
     chain_args = ", ".join(iterables)
-    ctx.emitter.line(f"for {for_ctx.loop_var} in chain({chain_args}):")
 
-    with ctx.emitter.indented():
-        _generate_for_body(stmt, ctx)
+    # T068: Handle indirect loop variable (F @A=1:1:3,"X",10:2:14)
+    if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
+        # Resolve the target variable name once before the loop
+        ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+        ctx.emitter.line(f"for {for_ctx.loop_var} in chain({chain_args}):")
+        with ctx.emitter.indented():
+            # Update the indirect variable at start of each iteration
+            ctx.emitter.line(
+                f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+            )
+            _generate_for_body(stmt, ctx)
+    else:
+        ctx.emitter.line(f"for {for_ctx.loop_var} in chain({chain_args}):")
+        with ctx.emitter.indented():
+            _generate_for_body(stmt, ctx)
 
 
 def _generate_for_while(
@@ -1481,32 +1570,31 @@ def _generate_for_while(
     For SIMPLE_FUNCTIONS: Use _scope['VAR'] directly so that modifications
     inside the body are visible to the loop condition and stepping.
 
+    T068: For indirect loop variables (F @A=1:1:3 with body modifying A),
+    resolve the target variable name once at the start.
+
+    MUMPS FOR semantics: After the loop exits, the loop variable retains
+    the last value it held during iteration, NOT the value that would have
+    failed the range check. We achieve this by checking if the NEXT value
+    would be in range before incrementing.
+
+    Supports both RANGE (F I=1:1:10) and STRING_LIST (F I="A","B","C").
+
     Args:
         stmt: MForStatement node
         for_ctx: FOR loop context with analysis
         ctx: Generator context
     """
-    # Currently supports single RANGE parameter only
     if not stmt.parameters:
         raise NotImplementedError("While loop requires FOR parameters")
 
-    param = stmt.parameters[0]
-    if param.param_type != ForParamType.RANGE:
-        raise NotImplementedError(
-            "While loop for modified loop var only supports RANGE"
-        )
-
-    if param.start is None or param.step is None or param.end is None:
-        raise NotImplementedError("Incomplete FOR range parameters for while loop")
-
-    start_expr = generate_expr(param.start, ctx)
-    step_expr = generate_expr(param.step, ctx)
-    end_expr = generate_expr(param.end, ctx)
-
+    # T068: Handle indirect loop variable setup
+    if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
+        # Resolve the target variable name once before the loop
+        ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+        loop_ref = "_scope.setdefault(_for_indirect_var, MArray()).value"
     # T084: For SIMPLE_FUNCTIONS, use _scope directly for loop variable
-    # so that modifications inside the body affect the loop condition
-    # Spec 009 (T021): Use MArray.value for consistency with subscripted variables
-    if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+    elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
         # Get the original MUMPS variable name for _scope key
         if isinstance(stmt.loop_var, str):
             var_name = stmt.loop_var
@@ -1516,35 +1604,102 @@ def _generate_for_while(
             var_name = None
 
         if var_name:
-            # Use MArray pattern for loop variable access
             loop_ref = f"_scope.setdefault({var_name!r}, MArray()).value"
         else:
-            # Fallback for complex cases
             loop_ref = for_ctx.loop_var
     else:
         loop_ref = for_ctx.loop_var
 
-    # Initialize loop variable
+    # Check loop type - dispatch to appropriate pattern
+    param = stmt.parameters[0]
+    if param.param_type == ForParamType.RANGE:
+        _generate_for_while_range(stmt, for_ctx, ctx, loop_ref, param)
+    elif for_ctx.loop_type == ForLoopType.STRING_LIST:
+        _generate_for_while_string_list(stmt, for_ctx, ctx, loop_ref)
+    else:
+        raise NotImplementedError(
+            f"While loop for modified loop var doesn't support {for_ctx.loop_type}"
+        )
+
+
+def _generate_for_while_range(
+    stmt: MForStatement,
+    for_ctx: ForGenContext,
+    ctx: "GeneratorContext",
+    loop_ref: str,
+    param: MForParameter,
+) -> None:
+    """Generate while loop for RANGE FOR with modified loop variable."""
+    if param.start is None or param.step is None or param.end is None:
+        raise NotImplementedError("Incomplete FOR range parameters for while loop")
+
+    start_expr = generate_expr(param.start, ctx)
+    step_expr = generate_expr(param.step, ctx)
+    end_expr = generate_expr(param.end, ctx)
+
+    # Initialize loop variable and step/end values
     ctx.emitter.line(f"{loop_ref} = m_num({start_expr})")
     ctx.emitter.line(f"_for_step = m_num({step_expr})")
     ctx.emitter.line(f"_for_end = m_num({end_expr})")
 
     # While condition: check bounds based on step direction
-    # Positive step: loop_var <= end
-    # Negative step: loop_var >= end
-    ctx.emitter.line(
-        f"while (_for_step > 0 and {loop_ref} <= _for_end) or "
-        f"(_for_step < 0 and {loop_ref} >= _for_end):"
+    in_range_cond = (
+        f"(_for_step > 0 and {loop_ref} <= _for_end) or "
+        f"(_for_step < 0 and {loop_ref} >= _for_end)"
     )
+    ctx.emitter.line(f"while {in_range_cond}:")
 
     with ctx.emitter.indented():
-        # For while loops with SIMPLE_FUNCTIONS, we don't need the body sync
-        # because we're already using _scope directly. The body will read/write
-        # from _scope, and the loop condition/increment use _scope too.
-        # But _generate_for_body will still emit the sync - that's harmless.
+        # Execute body
         _generate_for_body(stmt, ctx)
+        # Check if the NEXT value would be in range BEFORE incrementing
+        next_val_cond = (
+            f"(_for_step > 0 and {loop_ref} + _for_step <= _for_end) or "
+            f"(_for_step < 0 and {loop_ref} + _for_step >= _for_end)"
+        )
+        ctx.emitter.line(f"if not ({next_val_cond}):")
+        with ctx.emitter.indented():
+            ctx.emitter.line("break")
         # Increment loop variable at end of iteration
         ctx.emitter.line(f"{loop_ref} = {loop_ref} + _for_step")
+
+
+def _generate_for_while_string_list(
+    stmt: MForStatement,
+    for_ctx: ForGenContext,
+    ctx: "GeneratorContext",
+    loop_ref: str,
+) -> None:
+    """Generate while loop for STRING_LIST FOR with modified loop variable.
+
+    For indirect loop variables like F @A="X","Y","Z", we need to:
+    1. Build the list of values
+    2. Use an index-based while loop
+    3. Assign the current value to the indirect variable on each iteration
+    """
+    # Collect all values from parameters
+    values = []
+    for param in stmt.parameters:
+        if param.param_type == ForParamType.VALUE and param.value is not None:
+            values.append(generate_expr(param.value, ctx))
+
+    if not values:
+        raise NotImplementedError("Empty string list FOR")
+
+    values_str = ", ".join(values)
+
+    # Create the value list and use index-based iteration
+    ctx.emitter.line(f"_for_values = [{values_str}]")
+    ctx.emitter.line("_for_idx = 0")
+    ctx.emitter.line("while _for_idx < len(_for_values):")
+
+    with ctx.emitter.indented():
+        # Assign current value to loop variable
+        ctx.emitter.line(f"{loop_ref} = _for_values[_for_idx]")
+        # Execute body
+        _generate_for_body(stmt, ctx)
+        # Increment index
+        ctx.emitter.line("_for_idx += 1")
 
 
 def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
@@ -2268,6 +2423,38 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                     # Kill entire variable - reset to empty MArray
                     ctx.emitter.line(f"{translated} = MArray()")
 
+        elif isinstance(target, MIndirection):
+            # T069: Indirection target: K @A where A contains the variable name
+            from m2py.codegen.indirection import _generate_inner_name_expr
+
+            if target.expression is None:
+                raise ValueError("KILL indirection has no expression")
+
+            # Get the target variable name at runtime
+            target_name_expr = _generate_inner_name_expr(target.expression, ctx)
+
+            # For SIMPLE_FUNCTIONS strategy, use _scope
+            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                # Handle subscripts on the indirection if present
+                if target.name_indirection_subscripts:
+                    # Build subscript expressions
+                    subs_lists = target.name_indirection_subscripts
+                    subs_code = []
+                    for sub_list in subs_lists:
+                        for sub in sub_list:
+                            subs_code.append(generate_expr(sub, ctx))
+                    subscripts_args = ", ".join(subs_code)
+                    ctx.emitter.line(
+                        f"_scope.get({target_name_expr}, MArray()).kill({subscripts_args})"
+                    )
+                else:
+                    # Kill entire variable - remove from scope by resolved name
+                    ctx.emitter.line(f"_scope.pop({target_name_expr}, None)")
+            else:
+                raise NotImplementedError(
+                    "KILL indirection not supported in TRAMPOLINE strategy"
+                )
+
         else:
             raise NotImplementedError(
                 f"KILL target type not supported: {type(target).__name__}"
@@ -2330,21 +2517,49 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
         raise NotImplementedError("Argumentless NEW (N with no args) not yet supported")
 
     # Process each variable in the new list
-    for var_name in stmt.variables:
-        # For SIMPLE_FUNCTIONS strategy with NewScopeManager, use .new_var()
-        # This ensures proper save/restore on function exit
-        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            if ctx.new_scope_manager_var:
-                # Use NewScopeManager for proper save/restore semantics
-                ctx.emitter.line(f"{ctx.new_scope_manager_var}.new_var({var_name!r})")
+    for var in stmt.variables:
+        # T070: Handle indirection in NEW (N @A where A contains variable name)
+        if isinstance(var, MIndirection):
+            from m2py.codegen.indirection import _generate_inner_name_expr
+
+            if var.expression is None:
+                raise ValueError("NEW indirection has no expression")
+
+            # Get the target variable name at runtime
+            target_name_expr = _generate_inner_name_expr(var.expression, ctx)
+
+            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                if ctx.new_scope_manager_var:
+                    # Use NewScopeManager for proper save/restore semantics
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_var({target_name_expr})"
+                    )
+                else:
+                    # Fallback: simple pop by resolved name
+                    ctx.emitter.line(f"_scope.pop({target_name_expr}, None)")
             else:
-                # Fallback: simple pop (used when no NewScopeManager in context)
-                translated = translate_name(var_name)
-                ctx.emitter.line(f"_scope.pop({translated!r}, None)")
+                raise NotImplementedError(
+                    "NEW indirection not supported in TRAMPOLINE strategy"
+                )
         else:
-            # TRAMPOLINE strategy - reset to empty MArray
-            translated = translate_name(var_name)
-            ctx.emitter.line(f"{translated} = MArray()")
+            # Regular variable name (string)
+            var_name = var
+            # For SIMPLE_FUNCTIONS strategy with NewScopeManager, use .new_var()
+            # This ensures proper save/restore on function exit
+            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                if ctx.new_scope_manager_var:
+                    # Use NewScopeManager for proper save/restore semantics
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_var({var_name!r})"
+                    )
+                else:
+                    # Fallback: simple pop (used when no NewScopeManager in context)
+                    translated = translate_name(var_name)
+                    ctx.emitter.line(f"_scope.pop({translated!r}, None)")
+            else:
+                # TRAMPOLINE strategy - reset to empty MArray
+                translated = translate_name(var_name)
+                ctx.emitter.line(f"{translated} = MArray()")
 
 
 def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
@@ -2640,10 +2855,12 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         # Parse the MUMPS code string
         commands = parse_commands_from_line(mumps_code)
         if isinstance(commands, MParseError):
+            # T067: Include original code in error message for context
             # Emit a runtime error for parse failures in constant strings
             # This shouldn't happen in well-formed code but we handle it gracefully
+            escaped_code = mumps_code.replace('"', '\\"')
             ctx.emitter.line(
-                f'raise SyntaxError("XECUTE parse error: {commands.message}")'
+                f"raise SyntaxError(\"XECUTE parse error in '{escaped_code}': {commands.message}\")"
             )
             return
 
