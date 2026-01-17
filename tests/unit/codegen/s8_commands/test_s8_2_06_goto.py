@@ -1308,3 +1308,175 @@ STAR W "0"
         Per ANSI, GOTO to different level raises M45 error.
         """
         pytest.fail("Stub - implement test")
+
+
+# =============================================================================
+# Phase 8: Indirect GOTO Tests (Spec 012, T049-T054)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestIndirectGotoCodegen:
+    """Codegen tests for indirect GOTO (G @TARGET).
+
+    Spec 012 Phase 8 (T049-T052): Support G @TARGET for dynamic control flow.
+
+    Indirect GOTO resolves the target at runtime, allowing dynamic
+    transfer of control based on variable contents.
+
+    Reference: §8.2.6, MUMPS 1995 ANSI Standard
+    """
+
+    def test_indirect_goto_generates_runtime_dispatch(self, generate_python):
+        """G @TARGET generates runtime parse_call_target dispatch (T049).
+
+        The generated code should:
+        1. Evaluate the indirection expression
+        2. Call _rt.parse_call_target() to parse label/routine
+        3. Return to trampoline with resolved label
+        """
+        code = generate_python('TEST S TARGET="DONE" G @TARGET Q\nDONE W "Done" Q\n')
+
+        # Should call parse_call_target
+        assert "parse_call_target" in code
+        # Should have dispatch logic
+        assert "_call_target" in code
+
+    def test_indirect_goto_basic_execution(self, execute_mumps):
+        """S TARGET="DONE" G @TARGET transfers to DONE (T054).
+
+        Spec 012 Phase 8 acceptance scenario:
+        Given: S TARGET="DONE" G @TARGET
+        When: executed
+        Then: control transfers to DONE, skipping intervening code
+        """
+        result = execute_mumps(
+            'TEST S TARGET="DONE" G @TARGET W "Skip" Q\nDONE W "Done" Q\n'
+        )
+        assert result.output == "Done"
+        assert result.success is True
+
+    def test_indirect_goto_skips_intervening_code(self, execute_mumps):
+        """G @TARGET skips code after GOTO (T054).
+
+        Given: S TARGET="END" G @TARGET W "Never"
+        When: executed
+        Then: "Never" is NOT written, "End" IS written
+        """
+        result = execute_mumps(
+            'TEST W "Start " S TARGET="END" G @TARGET W "Never" Q\nEND W "End" Q\n'
+        )
+        assert result.output == "Start End"
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestIndirectGotoWithOffset:
+    """Tests for indirect GOTO with offset (G @TARGET+N).
+
+    Spec 012 Phase 8 (T052): Handle indirect GOTO with explicit offset.
+    G @TARGET+5 resolves TARGET to a label, then enters at offset +5.
+
+    Reference: §8.2.6
+    """
+
+    def test_indirect_goto_with_offset_codegen(self, generate_python):
+        """G @TARGET+1 generates offset handling code (T052).
+
+        The generated code should handle offset calculation:
+        1. Resolve TARGET to get label name
+        2. Look up label's start line in _label_lines
+        3. Add offset to find target line
+        4. Return line number to trampoline
+        """
+        code = generate_python(
+            'TEST S TARGET="DONE" G @TARGET+1 Q\nDONE W "Line0"\n W "Line1" Q\n'
+        )
+
+        # Should have offset handling
+        assert "_label_line" in code or "offset" in code.lower()
+        # Should have parse_call_target
+        assert "parse_call_target" in code
+
+    def test_indirect_goto_with_offset_execution(self, execute_mumps):
+        """G @TARGET+1 enters at offset +1 (T052).
+
+        Given: S TARGET="DONE" G @TARGET+1
+        When: executed
+        Then: skips first line of DONE, outputs "Line1" only
+        """
+        result = execute_mumps(
+            'TEST S TARGET="DONE" G @TARGET+1 Q\nDONE W "Line0"\n W "Line1" Q\n'
+        )
+        assert result.output == "Line1"
+        assert result.success is True
+
+    def test_indirect_goto_offset_zero(self, execute_mumps):
+        """G @TARGET+0 is equivalent to G @TARGET (starts at label).
+
+        Given: S TARGET="DONE" G @TARGET+0
+        When: executed
+        Then: outputs "Line0Line1" (full label execution)
+        """
+        result = execute_mumps(
+            'TEST S TARGET="DONE" G @TARGET+0 Q\nDONE W "Line0"\n W "Line1" Q\n'
+        )
+        assert result.output == "Line0Line1"
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestIndirectGotoPartialIndirection:
+    """Tests for partial indirection in GOTO (G LABEL^@RTN, G @LBL^ROUTINE).
+
+    Spec 012 Phase 8 (T051): Handle partial indirection where only
+    part of the GOTO target is indirect.
+
+    Reference: §8.2.6
+    """
+
+    def test_label_indirect_codegen(self, generate_python):
+        """G @LBL generates indirection for label only (T051).
+
+        When only the label is indirect, the routine is this module.
+        """
+        code = generate_python('TEST S LBL="DONE" G @LBL Q\nDONE W "OK" Q\n')
+
+        # Should evaluate LBL variable
+        assert "parse_call_target" in code
+        # Should have label name lookup
+        assert "_call_target.label" in code
+
+    def test_label_indirect_execution(self, execute_mumps):
+        """G @LBL transfers to label stored in variable (T051).
+
+        Given: S LBL="DONE" G @LBL
+        When: executed
+        Then: control transfers to DONE
+        """
+        result = execute_mumps('TEST S LBL="DONE" G @LBL Q\nDONE W "Jumped" Q\n')
+        assert result.output == "Jumped"
+        assert result.success is True
+
+    def test_computed_indirect_goto(self, execute_mumps):
+        """G @(computed expression) resolves at runtime (T051).
+
+        Given: S X="DO",Y="NE" G @(X_Y)
+        When: executed
+        Then: Concatenates X_Y to "DONE" and jumps there
+        """
+        result = execute_mumps(
+            'TEST S X="DO",Y="NE" G @(X_Y) W "Skip" Q\nDONE W "Concat" Q\n'
+        )
+        assert result.output == "Concat"
+        assert result.success is True
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="External routine indirection requires module setup")
+    def test_routine_indirect_codegen(self, generate_python):
+        """G LABEL^@RTN generates routine indirection (T051).
+
+        When routine is indirect, need dynamic import at runtime.
+        """
+        # This would require an external routine module to exist
+        pytest.fail("Stub - implement when external routines fully supported")

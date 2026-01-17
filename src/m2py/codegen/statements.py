@@ -1601,9 +1601,12 @@ def _generate_single_target_goto(
         _generate_external_goto(target, ctx)
         return
 
-    # Check for indirection
-    if target.label_is_indirect or target.indirection:
-        raise NotImplementedError("Indirect GOTO not yet supported")
+    # Spec 012 Phase 8 (T049-T052): Check for indirection
+    if target.label_is_indirect or target.routine_is_indirect:
+        from m2py.codegen.indirection import generate_indirect_goto
+
+        generate_indirect_goto(target, ctx)
+        return
 
     # Check for backward intra-label GOTO (creates implicit loops)
     # These cannot be restructured to simple if/else and require Spec 006

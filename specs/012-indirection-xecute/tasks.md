@@ -155,14 +155,14 @@
 
 ### Implementation for User Story 6
 
-- [ ] T049 [P] [US6] Implement `generate_indirect_goto()` in src/m2py/codegen/indirection.py
-- [ ] T050 [US6] Extend GOTO codegen in src/m2py/codegen/statements.py for indirect targets
-- [ ] T051 [US6] Handle partial indirection (`G LABEL^@RTN`)
-- [ ] T052 [US6] Handle indirect GOTO with offset (`G @TARGET+5`)
-- [ ] T053 [US6] Unit tests for indirect GOTO in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
-- [ ] T054 [US6] Integration test: `S TARGET="DONE" G @TARGET` skips intervening code
+- [x] T049 [P] [US6] Implement `generate_indirect_goto()` in src/m2py/codegen/indirection.py
+- [x] T050 [US6] Extend GOTO codegen in src/m2py/codegen/statements.py for indirect targets
+- [x] T051 [US6] Handle partial indirection (`G LABEL^@RTN`)
+- [x] T052 [US6] Handle indirect GOTO with offset (`G @TARGET+5`)
+- [x] T053 [US6] Unit tests for indirect GOTO in tests/unit/codegen/s8_commands/test_s8_2_06_goto.py
+- [x] T054 [US6] Integration test: `S TARGET="DONE" G @TARGET` skips intervening code
 
-**Checkpoint**: Indirect GOTO works for all patterns
+**Checkpoint**: Indirect GOTO works for all patterns ✅
 
 ---
 

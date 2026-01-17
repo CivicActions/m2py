@@ -344,3 +344,80 @@ class TestIndirectDoExecution:
             'TEST S CMD="SUB" D @CMD W "After" Q\nSUB W "Before" Q\n'
         )
         assert result.output == "BeforeAfter"
+
+
+# =============================================================================
+# Indirect GOTO Integration Tests (Spec 012 Phase 8, T054)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestIndirectGotoExecution:
+    """Integration tests for indirect GOTO runtime behavior (T054).
+
+    Spec 012 Phase 8: Support G @TARGET for dynamic control flow.
+    These tests execute generated Python code to verify indirect GOTO
+    works correctly at runtime.
+    """
+
+    def test_indirect_goto_simple(self, execute_mumps):
+        """S TARGET="DONE" G @TARGET transfers to DONE (T054).
+
+        Spec 012 Phase 8 acceptance scenario:
+        Given: S TARGET="DONE" G @TARGET
+        When: executed
+        Then: Control transfers to DONE, "Skip" is NOT written
+        """
+        result = execute_mumps(
+            'TEST S TARGET="DONE" G @TARGET W "Skip" Q\nDONE W "Done" Q\n'
+        )
+        assert result.output == "Done"
+
+    def test_indirect_goto_with_explicit_offset(self, execute_mumps):
+        """G @TARGET+1 enters at offset from resolved label (T054).
+
+        Given: S TARGET="DONE" G @TARGET+1
+        When: executed
+        Then: Enters DONE at line +1, skipping first line
+        """
+        result = execute_mumps(
+            'TEST S TARGET="DONE" G @TARGET+1 Q\nDONE W "Skip"\n W "Show" Q\n'
+        )
+        assert result.output == "Show"
+
+    def test_indirect_goto_skips_intervening_code(self, execute_mumps):
+        """G @TARGET skips all code between GOTO and target (T054).
+
+        Given: W "A" G @TARGET W "B" W "C"
+        When: executed
+        Then: Only "A" and "D" are written (B and C skipped)
+        """
+        result = execute_mumps(
+            'TEST W "A" S TARGET="DONE" G @TARGET W "B" W "C" Q\nDONE W "D" Q\n'
+        )
+        assert result.output == "AD"
+
+    def test_indirect_goto_computed_target(self, execute_mumps):
+        """G @(computed expression) resolves at runtime (T054).
+
+        Given: S X="DO",Y="NE" G @(X_Y)
+        When: executed
+        Then: Concatenates X_Y to "DONE" and jumps there
+        """
+        result = execute_mumps(
+            'TEST S X="DO",Y="NE" G @(X_Y) W "Skip" Q\nDONE W "Concat" Q\n'
+        )
+        assert result.output == "Concat"
+
+    def test_indirect_goto_does_not_return(self, execute_mumps):
+        """G @TARGET does NOT return to caller (unlike DO) (T054).
+
+        Given: W "Before" G @TARGET W "After"
+        When: executed
+        Then: Only "Before" and "Target" written, "After" is NOT
+        """
+        result = execute_mumps(
+            'TEST W "Before" S TARGET="DONE" G @TARGET W "After" Q\nDONE W "Target" Q\n'
+        )
+        # GOTO does not return, so "After" is never executed
+        assert result.output == "BeforeTarget"

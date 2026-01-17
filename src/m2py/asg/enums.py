@@ -52,7 +52,8 @@ class GotoType(Enum):
     - LOOP_EXIT: Exits a single FOR loop
     - MULTI_LOOP_EXIT: Exits multiple nested FOR loops
     - EXTERNAL: Jumps to external routine (^routine)
-    - UNRESOLVED: Target cannot be statically determined
+    - INDIRECT: Target resolved via indirection at runtime (@expr)
+    - UNRESOLVED: Target cannot be statically determined (error)
 
     Note: The is_cross_label field on MGotoStatement indicates whether the
     jump crosses label boundaries. This is orthogonal to direction.
@@ -63,6 +64,7 @@ class GotoType(Enum):
     LOOP_EXIT = auto()
     MULTI_LOOP_EXIT = auto()
     EXTERNAL = auto()
+    INDIRECT = auto()
     UNRESOLVED = auto()
 
 

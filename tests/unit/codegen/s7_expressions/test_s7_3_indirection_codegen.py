@@ -496,10 +496,21 @@ class TestXecutePlaceholders:
         assert "parse_call_target" in source
         assert "_call_target" in source
 
-    def test_generate_indirect_goto_not_implemented(self, mock_ctx):
-        """generate_indirect_goto() raises NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="Indirect GOTO"):
-            generate_indirect_goto("target", mock_ctx)
+    def test_generate_indirect_goto_implemented(self):
+        """generate_indirect_goto() is now implemented (Phase 8).
+
+        This is a smoke test. Detailed tests are in test_s8_2_06_goto.py
+        and test_indirection.py cross-cutting tests.
+        """
+        # Just verify the function is no longer a stub placeholder
+        import inspect
+
+        source = inspect.getsource(generate_indirect_goto)
+        # Should NOT raise NotImplementedError anymore
+        assert "raise NotImplementedError" not in source
+        # Should have actual implementation logic
+        assert "parse_call_target" in source
+        assert "_call_target" in source
 
     def test_generate_pattern_indirection_not_implemented(self, mock_ctx):
         """generate_pattern_indirection() raises NotImplementedError."""
