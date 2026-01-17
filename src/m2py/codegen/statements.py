@@ -1918,9 +1918,12 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     # Label calls - NO $TEST save/restore
     # Handle each target (multiple targets allowed: D A,B,C)
     for target in stmt.targets:
-        # Check for indirection
-        if target.label_is_indirect or target.indirection:
-            raise NotImplementedError("Indirect DO not yet supported")
+        # Spec 012 Phase 7 (T042-T045): Check for indirection
+        if target.label_is_indirect or target.routine_is_indirect:
+            from m2py.codegen.indirection import generate_indirect_do
+
+            generate_indirect_do(target, ctx)
+            continue
 
         # Spec 008 (T018-T029): Handle external routine reference D ^ROUTINE
         if target.routine:

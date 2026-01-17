@@ -20,9 +20,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List, Tuple
 
 if TYPE_CHECKING:
+    from m2py.asg.elements import MCall
     from m2py.asg.expressions import MExpr, MIndirection
     from m2py.asg.statements import MXecuteStatement
     from m2py.codegen.routine import GeneratorContext
+
+from m2py.codegen.enums import GotoStrategy
 
 
 def _count_indirection_levels(expr: "MIndirection") -> Tuple[int, "MExpr"]:
@@ -372,25 +375,175 @@ def generate_xecute_dynamic(
 
 
 def generate_indirect_do(
-    target_expr: str,
+    target: "MCall",
     ctx: "GeneratorContext",
-) -> str:
+) -> None:
     """Generate Python code for indirect DO (D @CMD).
 
-    Spec 012 Phase 6 (T041): Generate runtime call to parse the target
-    string and dispatch to the appropriate label/routine.
+    Spec 012 Phase 7 (T042-T045): Generate runtime dispatch for indirect DO.
+    Handles various patterns:
+    - D @CMD: Full indirection (label comes from variable)
+    - D LABEL^@RTN: Partial indirection (routine from variable)
+    - D @LBL^@RTN: Double indirection (both from variables)
+    - D @CMD+5: Indirection with offset
+
+    Generated code pattern:
+    1. Resolve indirection expression(s) to get target string
+    2. Call _rt.parse_call_target() to parse label/routine/offset
+    3. Dispatch: local call or import + external call
 
     Args:
-        target_expr: Python expression for the target string
+        target: MCall ASG node with indirection set
         ctx: Generator context
-
-    Returns:
-        Python statement string for indirect DO dispatch
-
-    Note:
-        This is a Phase 6 placeholder - implementation pending.
     """
-    raise NotImplementedError("Indirect DO codegen not yet implemented")
+    from m2py.codegen.expressions import generate_expr
+
+    # Determine what's indirect and what's static
+    label_is_indirect = target.label_is_indirect
+    routine_is_indirect = target.routine_is_indirect
+
+    # Generate the target expression
+    if label_is_indirect and target.indirection:
+        # Label comes from indirection: D @CMD or D @CMD^ROUTINE
+        label_expr = generate_expr(target.indirection, ctx)
+    elif target.name:
+        # Static label name
+        label_expr = repr(target.name)
+    else:
+        label_expr = "''"
+
+    if routine_is_indirect and target.routine_indirection:
+        # Routine comes from indirection: D LABEL^@RTN or D @LBL^@RTN
+        routine_expr = generate_expr(target.routine_indirection, ctx)
+    elif target.routine:
+        # Static routine name
+        routine_expr = repr(target.routine)
+    else:
+        routine_expr = None
+
+    # Handle offset (D @CMD+5)
+    offset_expr = None
+    if target.offset is not None:
+        offset_expr = generate_expr(target.offset, ctx)
+
+    # Build the target string for parsing
+    # Format: "LABEL+OFFSET^ROUTINE" (any part may be absent)
+    if routine_expr is None and offset_expr is None:
+        # Simple case: just label (D @CMD)
+        target_str_expr = label_expr
+    else:
+        # Need to build a compound target string
+        ctx.emitter.line(f"_indirect_label = str({label_expr})")
+        if offset_expr is not None:
+            ctx.emitter.line(f"_indirect_offset = int(m_num({offset_expr}))")
+            ctx.emitter.line(
+                '_indirect_target = _indirect_label + "+" + str(_indirect_offset)'
+            )
+        else:
+            ctx.emitter.line("_indirect_target = _indirect_label")
+
+        if routine_expr is not None:
+            ctx.emitter.line(f"_indirect_routine = str({routine_expr})")
+            ctx.emitter.line(
+                '_indirect_target = _indirect_target + "^" + _indirect_routine'
+            )
+
+        target_str_expr = "_indirect_target"
+
+    # Parse the target string
+    ctx.emitter.line(f"_call_target = _rt.parse_call_target({target_str_expr})")
+
+    # Generate dispatch code
+    # Check if it's an external or local call
+    ctx.emitter.line("if _call_target.routine:")
+    with ctx.emitter.indented():
+        # External call: import routine and call label
+        ctx.emitter.line("import importlib")
+        ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
+        ctx.emitter.line("if _call_target.label:")
+        with ctx.emitter.indented():
+            ctx.emitter.line("_func = getattr(_module, _call_target.label, None)")
+            ctx.emitter.line("if _func is None:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+                ctx.emitter.line(
+                    "raise LabelNotFoundError(_call_target.label, _call_target.routine, "
+                    "list(getattr(_module, '_label_lines', {}).keys()))"
+                )
+        ctx.emitter.line("else:")
+        with ctx.emitter.indented():
+            # Entry label (same name as routine)
+            ctx.emitter.line("_func = getattr(_module, _call_target.routine, None)")
+            ctx.emitter.line("if _func is None:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+                ctx.emitter.line(
+                    "raise LabelNotFoundError(_call_target.routine, _call_target.routine, "
+                    "list(getattr(_module, '_label_lines', {}).keys()))"
+                )
+        # Handle offset for external calls
+        ctx.emitter.line("if _call_target.offset is not None:")
+        with ctx.emitter.indented():
+            ctx.emitter.line(
+                "_label_line = _module._label_lines.get(_call_target.label or _call_target.routine, 0)"
+            )
+            ctx.emitter.line("_target_line = _label_line + _call_target.offset")
+            ctx.emitter.line(
+                "_label_name, _line_offset = _module._line_map[_target_line]"
+            )
+            ctx.emitter.line(
+                "getattr(_module, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
+            )
+        ctx.emitter.line("else:")
+        with ctx.emitter.indented():
+            ctx.emitter.line("_func(_rt, _scope=_scope)")
+
+    ctx.emitter.line("else:")
+    with ctx.emitter.indented():
+        # Local call: use current module's functions
+        # In TRAMPOLINE mode, functions are in _labels dict; in SIMPLE mode, in globals()
+        is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
+        if is_trampoline:
+            ctx.emitter.line("_func = _labels.get(_call_target.label)")
+        else:
+            ctx.emitter.line("_func = globals().get(_call_target.label)")
+        ctx.emitter.line("if _func is None:")
+        with ctx.emitter.indented():
+            ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+            ctx.emitter.line(
+                "raise LabelNotFoundError(_call_target.label, _routine_name, "
+                "list(_label_lines.keys()))"
+            )
+        # Handle offset for local calls
+        ctx.emitter.line("if _call_target.offset is not None:")
+        with ctx.emitter.indented():
+            # _label_lines uses 0-indexed line numbers, _line_map uses 1-indexed
+            # So we need to add 1 to convert before adding offset
+            ctx.emitter.line("_label_line = _label_lines.get(_call_target.label, 0)")
+            ctx.emitter.line("_target_line = (_label_line + 1) + _call_target.offset")
+            ctx.emitter.line("if _target_line in _line_map:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("_label_name, _line_offset = _line_map[_target_line]")
+                if is_trampoline:
+                    # In TRAMPOLINE mode, call internal function with state
+                    ctx.emitter.line(
+                        "_labels[_label_name](_rt, state, _scope, _start_offset=_line_offset)"
+                    )
+                else:
+                    # In SIMPLE mode, call function directly (must support _start_offset)
+                    # Note: SIMPLE mode doesn't support offset calls by design
+                    # This should not be reached as offset calls force TRAMPOLINE
+                    ctx.emitter.line(
+                        "globals()[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
+                    )
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    'raise ValueError(f"Entry point {_call_target.label}+{_call_target.offset} not valid")'
+                )
+        ctx.emitter.line("else:")
+        with ctx.emitter.indented():
+            ctx.emitter.line("_func(_rt, _scope=_scope)")
 
 
 def generate_indirect_goto(

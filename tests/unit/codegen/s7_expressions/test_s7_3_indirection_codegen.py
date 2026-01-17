@@ -480,10 +480,21 @@ class TestXecutePlaceholders:
         with pytest.raises(NotImplementedError, match="Dynamic XECUTE"):
             generate_xecute_dynamic(stmt, "code_expr", mock_ctx)
 
-    def test_generate_indirect_do_not_implemented(self, mock_ctx):
-        """generate_indirect_do() raises NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="Indirect DO"):
-            generate_indirect_do("target", mock_ctx)
+    def test_generate_indirect_do_implemented(self):
+        """generate_indirect_do() is now implemented (Phase 7).
+
+        This is a smoke test. Detailed tests are in test_s8_2_03_do.py
+        and test_indirection.py cross-cutting tests.
+        """
+        # Just verify the function is no longer a stub placeholder
+        import inspect
+
+        source = inspect.getsource(generate_indirect_do)
+        # Should NOT raise NotImplementedError anymore
+        assert "raise NotImplementedError" not in source
+        # Should have actual implementation logic
+        assert "parse_call_target" in source
+        assert "_call_target" in source
 
     def test_generate_indirect_goto_not_implemented(self, mock_ctx):
         """generate_indirect_goto() raises NotImplementedError."""

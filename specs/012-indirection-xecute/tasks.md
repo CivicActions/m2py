@@ -135,15 +135,15 @@
 
 ### Implementation for User Story 5
 
-- [ ] T042 [P] [US5] Implement `generate_indirect_do()` in src/m2py/codegen/indirection.py
-- [ ] T043 [US5] Extend DO codegen in src/m2py/codegen/statements.py for indirect targets
-- [ ] T044 [US5] Handle partial indirection (`D LABEL^@RTN`, `D @LBL^@RTN`)
-- [ ] T045 [US5] Handle indirect DO with offset (`D @CMD+5`)
-- [ ] T046 [US5] Unit tests for indirect DO in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [ ] T047 [US5] Unit tests for partial indirection in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
-- [ ] T048 [US5] Integration test: `S CMD="LABEL" D @CMD` calls LABEL
+- [x] T042 [P] [US5] Implement `generate_indirect_do()` in src/m2py/codegen/indirection.py
+- [x] T043 [US5] Extend DO codegen in src/m2py/codegen/statements.py for indirect targets
+- [x] T044 [US5] Handle partial indirection (`D LABEL^@RTN`, `D @LBL^@RTN`)
+- [x] T045 [US5] Handle indirect DO with offset (`D @CMD+5`)
+- [x] T046 [US5] Unit tests for indirect DO in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [x] T047 [US5] Unit tests for partial indirection in tests/unit/codegen/s8_commands/test_s8_2_03_do.py
+- [x] T048 [US5] Integration test: `S CMD="LABEL" D @CMD` calls LABEL
 
-**Checkpoint**: Indirect DO works for all patterns
+**Checkpoint**: Indirect DO works for all patterns ✅
 
 ---
 

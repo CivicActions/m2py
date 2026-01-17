@@ -272,3 +272,75 @@ class TestXecuteExecution:
         result = execute_mumps('TEST S CODE="I 1=1" I 0=1 X CODE E  W "ELSE" Q\n')
         # ELSE should NOT execute - $TEST=1 after inner IF
         assert result.output == ""
+
+
+# =============================================================================
+# Indirect DO Integration Tests (Spec 012 Phase 7, T048)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestIndirectDoExecution:
+    """Integration tests for indirect DO runtime behavior (T048).
+
+    Spec 012 Phase 7: Support D @CMD for dynamic subroutine dispatch.
+    These tests execute generated Python code to verify indirect DO
+    works correctly at runtime.
+    """
+
+    def test_indirect_do_simple(self, execute_mumps):
+        """S CMD="LABEL" D @CMD calls LABEL (T048).
+
+        Spec 012 Phase 7 acceptance scenario:
+        Given: S CMD="SUB" D @CMD
+        When: executed
+        Then: SUB is called and its output appears
+        """
+        result = execute_mumps('TEST S CMD="SUB" D @CMD Q\nSUB W "SubOut" Q\n')
+        assert result.output == "SubOut"
+
+    def test_indirect_do_with_explicit_offset(self, execute_mumps):
+        """D @CMD+1 enters at offset from resolved label (T048).
+
+        Given: S CMD="SUB" D @CMD+1
+        When: executed
+        Then: Enters SUB at line +1, skipping first line
+        """
+        result = execute_mumps(
+            'TEST S CMD="SUB" D @CMD+1 Q\nSUB W "Skip"\n W "Show" Q\n'
+        )
+        assert result.output == "Show"
+
+    def test_indirect_do_chained_calls(self, execute_mumps):
+        """Multiple indirect DOs in sequence (T048).
+
+        Given: S A="S1",B="S2" D @A,@B
+        When: executed
+        Then: Both S1 and S2 are called in order
+        """
+        result = execute_mumps(
+            'TEST S A="S1",B="S2" D @A,@B Q\nS1 W "1" Q\nS2 W "2" Q\n'
+        )
+        assert result.output == "12"
+
+    def test_indirect_do_computed_target(self, execute_mumps):
+        """D @(computed expression) resolves at runtime (T048).
+
+        Given: S X="SU",Y="B" D @(X_Y)
+        When: executed
+        Then: Concatenates X_Y to "SUB" and calls it
+        """
+        result = execute_mumps('TEST S X="SU",Y="B" D @(X_Y) Q\nSUB W "Concat" Q\n')
+        assert result.output == "Concat"
+
+    def test_indirect_do_return_to_caller(self, execute_mumps):
+        """Indirect DO returns control to caller (T048).
+
+        Given: D @CMD W "After"
+        When: executed
+        Then: Subroutine runs, returns, "After" is written
+        """
+        result = execute_mumps(
+            'TEST S CMD="SUB" D @CMD W "After" Q\nSUB W "Before" Q\n'
+        )
+        assert result.output == "BeforeAfter"
