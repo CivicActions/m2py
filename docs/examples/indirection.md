@@ -12,7 +12,7 @@ Indirection (`@`) allows runtime evaluation of names, subscripts, and arguments.
 |------|--------|-------|
 | Name Indirection (`@X`) | ✅ Implemented | Read and write supported |
 | Multi-level (`@@X`) | ✅ Implemented | Arbitrary nesting depth |
-| Name + Subscripts (`@NAME@(1,2)`) | ⚠️ Codegen ready | Blocked by subscripted SET bug |
+| Name + Subscripts (`@NAME@(1,2)`) | ✅ Implemented | Uses `name_indirection_subscripts` |
 | Subscript Indirection (`A(@I)`) | ❌ Not yet | Future phase |
 | Argument Indirection (`D F(@ARGS)`) | ❌ Not yet | Future phase |
 | Pattern Indirection (`X?@PAT`) | ❌ Not yet | Future phase |
