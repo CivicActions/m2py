@@ -20,12 +20,12 @@
 
 **Purpose**: Create runtime foundation for indirection and XECUTE support
 
-- [ ] T001 [P] Add `IndirectionError` exception class in src/m2py/runtime/__init__.py
-- [ ] T002 [P] Add `CallTarget` named tuple in src/m2py/runtime/__init__.py  
-- [ ] T003 [P] Create src/m2py/codegen/indirection.py module with empty placeholder functions
-- [ ] T004 [P] Create tests/unit/codegen/s7_expressions/test_s7_3_indirection.py with test class stubs
-- [ ] T005 [P] Create tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py with test class stubs
-- [ ] T006 [P] Create tests/unit/cross_cutting/test_indirection.py with test class stubs
+- [x] T001 [P] Add `IndirectionError` exception class in src/m2py/runtime/__init__.py
+- [x] T002 [P] Add `CallTarget` named tuple in src/m2py/runtime/__init__.py  
+- [x] T003 [P] Create src/m2py/codegen/indirection.py module with empty placeholder functions
+- [x] T004 [P] Create tests/unit/codegen/s7_expressions/test_s7_3_indirection.py with test class stubs
+- [x] T005 [P] Create tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py with test class stubs
+- [x] T006 [P] Create tests/unit/cross_cutting/test_indirection.py with test class stubs
 
 ---
 

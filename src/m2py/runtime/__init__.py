@@ -14,7 +14,66 @@ from __future__ import annotations
 import re
 import types
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, NamedTuple, Optional
+
+
+# =============================================================================
+# Spec 012: Indirection & XECUTE Exceptions and Types
+# =============================================================================
+
+
+class IndirectionError(Exception):
+    """Raised for invalid indirection operations at runtime.
+
+    Spec 012 (T001): Exception for name indirection, XECUTE, and
+    indirect DO/GOTO operations that fail at runtime.
+
+    Attributes:
+        expression: The expression that caused the error (string representation)
+        reason: Human-readable error description
+        variable_name: Name of the variable being indirected (if applicable)
+        variable_value: Value found in the variable (if applicable)
+    """
+
+    def __init__(
+        self,
+        expression: str,
+        reason: str,
+        variable_name: Optional[str] = None,
+        variable_value: Optional[Any] = None,
+    ) -> None:
+        self.expression = expression
+        self.reason = reason
+        self.variable_name = variable_name
+        self.variable_value = variable_value
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        msg = f"Indirection error: {self.expression} - {self.reason}"
+        if self.variable_name:
+            msg += f" (variable '{self.variable_name}'"
+            if self.variable_value is not None:
+                msg += f" = '{self.variable_value}'"
+            msg += ")"
+        return msg
+
+
+class CallTarget(NamedTuple):
+    """Parsed indirect DO/GOTO target.
+
+    Spec 012 (T002): Represents the components of a DO/GOTO target string.
+
+    Examples:
+        - "LABEL" → CallTarget(label="LABEL", routine=None, offset=None)
+        - "^ROUTINE" → CallTarget(label=None, routine="ROUTINE", offset=None)
+        - "LABEL^ROUTINE" → CallTarget(label="LABEL", routine="ROUTINE", offset=None)
+        - "LABEL+5" → CallTarget(label="LABEL", routine=None, offset=5)
+        - "LABEL+5^ROUTINE" → CallTarget(label="LABEL", routine="ROUTINE", offset=5)
+    """
+
+    label: Optional[str] = None
+    routine: Optional[str] = None
+    offset: Optional[int] = None
 
 # Spec 009: Import global storage backend protocol
 from m2py.runtime.globals import GlobalStorageBackend, InMemoryGlobalStorage
@@ -972,4 +1031,7 @@ __all__ = [
     # Spec 011 Phase 20: READ command helpers
     "m_read_timeout",
     "m_read_char",
+    # Spec 012: Indirection & XECUTE
+    "IndirectionError",
+    "CallTarget",
 ]
