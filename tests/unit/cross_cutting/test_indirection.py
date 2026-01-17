@@ -105,3 +105,68 @@ class TestIndirectionCodegen:
         (S ARRAY(1,2)=5) doesn't properly initialize MArray.
         """
         pytest.fail("Blocked by pre-existing subscripted SET bug")
+
+
+# =============================================================================
+# XECUTE Integration Tests - Generated code execution
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestXecuteExecution:
+    """Integration tests for XECUTE runtime behavior.
+
+    Spec 012 Phase 4 (T031): Verify constant XECUTE produces readable
+    inlined Python code and executes correctly.
+    """
+
+    def test_xecute_constant_set_inlined(self, execute_mumps):
+        """X "S X=1" sets X via inlined Python.
+
+        The constant string should be parsed at transpile time
+        and generate _scope['X'] = 1 inline.
+        """
+        result = execute_mumps('TEST X "S X=1" W X Q\n')
+        assert result.output == "1"
+
+    def test_xecute_multiple_constant_strings(self, execute_mumps):
+        """X "S A=1","S B=2" processes each string in order.
+
+        Both constant strings should be inlined, A then B.
+        """
+        result = execute_mumps('TEST X "S A=1","S B=2" W A,B Q\n')
+        assert result.output == "12"
+
+    def test_xecute_postcondition_true_executes(self, execute_mumps):
+        """X:P=1 "S X=5" executes when postcondition is true.
+
+        When P=1, the XECUTE should execute and set X=5.
+        """
+        result = execute_mumps('TEST S P=1 X:P=1 "S X=5" W X Q\n')
+        assert result.output == "5"
+
+    def test_xecute_postcondition_false_skips(self, execute_mumps):
+        """X:P=1 "S X=5" skips when postcondition is false.
+
+        When P=0, the XECUTE should NOT execute and X remains undefined.
+        """
+        # Note: Undefined variable returns empty string in m2py
+        result = execute_mumps('TEST S P=0 X:P=1 "S X=5" W X Q\n')
+        assert result.output == ""
+
+    def test_xecute_constant_produces_readable_python(self):
+        """Constant XECUTE generates readable inlined Python (T031).
+
+        The generated code should contain direct variable assignments
+        rather than runtime.execute() calls.
+        """
+        from m2py.codegen import generate_python
+
+        code = generate_python('TEST X "S X=1" Q')
+
+        # Should have inline assignment (MArray-based format)
+        assert "_scope.setdefault('X', MArray()).value = 1" in code
+
+        # Should NOT have runtime execute call
+        assert "execute_mumps" not in code
+        assert "_rt.execute" not in code

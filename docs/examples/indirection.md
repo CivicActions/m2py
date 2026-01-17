@@ -16,6 +16,8 @@ Indirection (`@`) allows runtime evaluation of names, subscripts, and arguments.
 | Subscript Indirection (`A(@I)`) | ❌ Not yet | Future phase |
 | Argument Indirection (`D F(@ARGS)`) | ❌ Not yet | Future phase |
 | Pattern Indirection (`X?@PAT`) | ❌ Not yet | Future phase |
+| XECUTE Constant (`X "S X=1"`) | ✅ Implemented | Inlined at transpile time |
+| XECUTE Dynamic (`X CODE`) | ❌ Not yet | Phase 5 (runtime) |
 
 ## Types of Indirection
 
@@ -225,6 +227,70 @@ MGotoStatement(
 
 ---
 
+## XECUTE Command
+
+The XECUTE command executes MUMPS code from a string at runtime.
+
+### Constant String XECUTE
+
+```mumps
+X "S X=1"      ; Execute SET command
+X "W 42"       ; Execute WRITE command
+```
+
+**Optimization:** Constant strings are parsed at transpile time and inlined.
+
+**ASG Structure:**
+```
+MXecuteStatement(
+    code_expressions=[MLiteral(value="S X=1")],
+    is_constant=True,
+    constant_values=["S X=1"]
+)
+```
+
+**Generated Python:**
+```python
+_scope["X"] = 1  # Inlined from "S X=1"
+```
+
+### Multiple Arguments
+
+```mumps
+X "S A=1","S B=2"
+```
+
+Each argument is processed in order:
+
+**Generated Python:**
+```python
+_scope["A"] = 1
+_scope["B"] = 2
+```
+
+### XECUTE with Postcondition
+
+```mumps
+X:cond "S X=1"  ; Execute only if cond is true
+```
+
+**Generated Python:**
+```python
+if m_truth(cond_expr):
+    _scope["X"] = 1
+```
+
+### Dynamic XECUTE (Not Yet Implemented)
+
+```mumps
+S CODE="W 42"
+X CODE           ; Execute code from variable
+```
+
+Dynamic XECUTE requires runtime support and is planned for Phase 5.
+
+---
+
 ## Static Resolution
 
 Some indirection can be resolved at analysis time:
@@ -323,12 +389,16 @@ D PROC(@ARGS) ; Expands to PROC(1,2,3) (not yet implemented)
 ## Testing
 
 ```bash
-# Unit tests
+# Unit tests for indirection codegen
 uv run pytest tests/unit/codegen/s7_expressions/test_s7_3_indirection.py -v
+
+# Unit tests for XECUTE codegen
+uv run pytest tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py -v
 
 # Integration tests  
 uv run pytest tests/unit/cross_cutting/test_indirection.py -v
 
 # Validate against YDB
 uv run python utils/validate.py --code 'TEST S X="VAR",@X=1 W VAR Q'
+uv run python utils/validate.py --code 'TEST X "S X=1" W X Q'
 ```

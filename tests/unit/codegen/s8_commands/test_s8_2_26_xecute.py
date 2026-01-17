@@ -1,9 +1,13 @@
 """Tests for XECUTE command code generation (§8.2.26).
 
 Reference: MUMPS 1995 ANSI Standard, Section 8.2.26
+Spec 012 Phase 4: Constant string XECUTE with inline optimization.
 """
 
 import pytest
+
+from m2py.codegen import generate_python
+from m2py.runtime import MUMPSRuntime
 
 
 @pytest.mark.codegen
@@ -11,16 +15,98 @@ class TestXecuteCommandCodegen:
     """Codegen-level tests for XECUTE command code generation (§8.2.26)."""
 
     @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: XECUTE to exec")
+    @pytest.mark.xfail(reason="Phase 5: Dynamic XECUTE not yet implemented")
     def test_xecute_to_exec(self, generate_python):
-        """XECUTE generates dynamic code execution (§8.2.26)."""
-        pytest.fail("Stub - implement test")
+        """XECUTE generates dynamic code execution (§8.2.26).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: XECUTE static optimization")
+        Phase 5 (T032-T038): Dynamic XECUTE via runtime.execute_mumps().
+        """
+        pytest.fail("Stub - implement in Phase 5")
+
     def test_xecute_static_optimization(self, generate_python):
-        """XECUTE literal string can be statically transpiled (§8.2.26)."""
-        pytest.fail("Stub - implement test")
+        """XECUTE literal string is statically inlined (§8.2.26).
+
+        Spec 012 Phase 4 (T024): Constant strings are parsed at transpile
+        time and inlined for efficiency.
+
+        X "S X=1" → _scope.setdefault('X', MArray()).value = 1
+        """
+        code = generate_python('TEST X "S X=1" Q')
+        # Should generate inline assignment, not runtime.execute call
+        assert "_scope.setdefault('X', MArray()).value = 1" in code
+        assert "execute" not in code.lower()
+
+    def test_xecute_constant_write(self, generate_python):
+        """XECUTE with WRITE command inside string literal.
+
+        X "W 42" → _rt.write(42)
+        """
+        code = generate_python('TEST X "W 42" Q')
+        assert "_rt.write(42)" in code
+
+    def test_xecute_multiple_args_constant(self, generate_python):
+        """XECUTE with multiple constant string arguments.
+
+        Spec 012 Phase 4 (T026): Multiple constant strings are each
+        parsed and inlined in order.
+
+        X "S A=1","S B=2" → _scope.setdefault('A', MArray()).value = 1; ...
+        """
+        code = generate_python('TEST X "S A=1","S B=2" Q')
+        assert "_scope.setdefault('A', MArray()).value = 1" in code
+        assert "_scope.setdefault('B', MArray()).value = 2" in code
+        # Verify order: A before B
+        a_pos = code.index("_scope.setdefault('A', MArray()).value = 1")
+        b_pos = code.index("_scope.setdefault('B', MArray()).value = 2")
+        assert a_pos < b_pos
+
+    def test_xecute_postcondition_true(self, generate_python):
+        """XECUTE with postcondition generates conditional block.
+
+        Spec 012 Phase 4 (T027): Postcondition wraps code in if block.
+
+        X:cond "S X=1" → if m_truth(cond): _scope.setdefault('X', MArray()).value = 1
+        """
+        code = generate_python('TEST S P=1 X:P=1 "S X=5" Q')
+        # Should have if statement with condition
+        assert "if m_truth" in code
+        # Should have inline assignment inside if block
+        assert "_scope.setdefault('X', MArray()).value = 5" in code
+
+    def test_xecute_postcondition_runtime(self):
+        """XECUTE postcondition evaluated at runtime.
+
+        When P=0, X:P=1 "code" should not execute.
+        """
+        code = generate_python('TEST S P=0 X:P=1 "S X=5" Q')
+
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+        namespace = {
+            "_rt": _rt,
+            "_scope": _scope,
+            "m_truth": __import__("m2py.codegen.helpers", fromlist=["m_truth"]).m_truth,
+            "m_compare": __import__(
+                "m2py.codegen.helpers", fromlist=["m_compare"]
+            ).m_compare,
+            "m_num": __import__("m2py.codegen.helpers", fromlist=["m_num"]).m_num,
+        }
+        exec(code, namespace)
+        namespace["TEST"](_rt, _scope=_scope)
+
+        # X should NOT be set since P=0 fails postcondition
+        assert "X" not in _scope
+
+    def test_xecute_empty_string(self, generate_python):
+        """XECUTE with empty string is a no-op.
+
+        X "" should not generate any statements.
+        """
+        code = generate_python('TEST X "" Q')
+        # Empty string XECUTE should just produce a valid function
+        # that returns immediately (besides the return statement)
+        assert "def TEST" in code
+        assert "return" in code
 
 
 @pytest.mark.codegen

@@ -78,16 +78,16 @@
 
 ### Implementation for User Story 2
 
-- [ ] T024 [P] [US2] Implement `generate_xecute_constant()` in src/m2py/codegen/statements.py
-- [ ] T025 [US2] Extend statement dispatch in src/m2py/codegen/statements.py for MXecuteStatement
-- [ ] T026 [US2] Handle multiple XECUTE arguments (`X "S A=1","S B=2"`)
-- [ ] T027 [US2] Handle postconditions (`X:cond code`)
-- [ ] T028 [US2] Unit tests for constant XECUTE in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
-- [ ] T029 [US2] Unit tests for multiple XECUTE args in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
-- [ ] T030 [US2] Unit tests for XECUTE postconditions in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
-- [ ] T031 [US2] Integration test: constant XECUTE produces readable inlined Python
+- [x] T024 [P] [US2] Implement `generate_xecute_constant()` in src/m2py/codegen/statements.py
+- [x] T025 [US2] Extend statement dispatch in src/m2py/codegen/statements.py for MXecuteStatement
+- [x] T026 [US2] Handle multiple XECUTE arguments (`X "S A=1","S B=2"`)
+- [x] T027 [US2] Handle postconditions (`X:cond code`)
+- [x] T028 [US2] Unit tests for constant XECUTE in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
+- [x] T029 [US2] Unit tests for multiple XECUTE args in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
+- [x] T030 [US2] Unit tests for XECUTE postconditions in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
+- [x] T031 [US2] Integration test: constant XECUTE produces readable inlined Python
 
-**Checkpoint**: XECUTE with constant strings works with inline optimization
+**Checkpoint**: XECUTE with constant strings works with inline optimization ✅
 
 ---
 

@@ -41,6 +41,7 @@ from m2py.asg.statements import (
     MReadTarget,
     MSetStatement,
     MWriteStatement,
+    MXecuteStatement,
 )
 from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.expressions import generate_expr
@@ -523,6 +524,8 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_halt(stmt, ctx)
     elif isinstance(stmt, MReadStatement):
         _generate_read(stmt, ctx)
+    elif isinstance(stmt, MXecuteStatement):
+        _generate_xecute(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -2586,6 +2589,80 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
     else:
         # Basic read: R X
         ctx.emitter.line(f"{storage_target} = input()")
+
+
+def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for XECUTE command.
+
+    Spec 012 Phase 4 (T024-T027): Handle XECUTE with constant strings.
+    For constant string XECUTE, inline the generated Python code at transpile
+    time for better performance and debuggability.
+
+    Phase 5 (T032-T038) will add support for dynamic XECUTE via runtime.
+
+    Args:
+        stmt: MXecuteStatement node
+        ctx: Generator context
+
+    Behavior:
+        - Constant strings (is_constant=True): Parse at transpile time, inline Python
+        - Dynamic expressions (is_constant=False): Defer to runtime (Phase 5)
+        - Multiple arguments: Process each in order
+        - Postconditions: Wrap in if block
+    """
+    # Import here to avoid circular imports
+    from m2py.asg.elements import MParseError
+    from m2py.analysis.semantic_analyzer import analyze_command
+    from m2py.parser.line_parser import parse_commands_from_line
+
+    def generate_inline_code(mumps_code: str) -> None:
+        """Parse and generate inline Python for constant MUMPS code."""
+        # Parse the MUMPS code string
+        commands = parse_commands_from_line(mumps_code)
+        if isinstance(commands, MParseError):
+            # Emit a runtime error for parse failures in constant strings
+            # This shouldn't happen in well-formed code but we handle it gracefully
+            ctx.emitter.line(
+                f'raise SyntaxError("XECUTE parse error: {commands.message}")'
+            )
+            return
+
+        if not commands:
+            # Empty string - no-op
+            return
+
+        # Analyze each command and generate Python
+        for textx_cmd in commands:
+            asg_stmt = analyze_command(textx_cmd, None)
+            if asg_stmt is not None:
+                # Recursively generate Python for the statement
+                generate_statement(asg_stmt, ctx)
+
+    # Handle postcondition if present
+    if stmt.postcondition:
+        cond_expr = generate_expr(stmt.postcondition, ctx)
+        ctx.emitter.line(f"if m_truth({cond_expr}):")
+        with ctx.emitter.indented():
+            if stmt.is_constant:
+                # Phase 4: Inline constant strings
+                for code_str in stmt.constant_values:
+                    generate_inline_code(code_str)
+            else:
+                # Phase 5: Dynamic XECUTE - not yet implemented
+                raise UnsupportedFeatureError(
+                    "Dynamic XECUTE not yet implemented - See Spec 012 Phase 5"
+                )
+    else:
+        # No postcondition - generate code directly
+        if stmt.is_constant:
+            # Phase 4: Inline constant strings
+            for code_str in stmt.constant_values:
+                generate_inline_code(code_str)
+        else:
+            # Phase 5: Dynamic XECUTE - not yet implemented
+            raise UnsupportedFeatureError(
+                "Dynamic XECUTE not yet implemented - See Spec 012 Phase 5"
+            )
 
 
 __all__ = [
