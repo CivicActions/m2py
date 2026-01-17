@@ -2353,11 +2353,17 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
             )
         return
 
-    # Handle argumentless KILL (kill all locals) - not yet implemented
+    # Handle argumentless KILL (kill all locals)
     if stmt.is_kill_all:
-        raise NotImplementedError(
-            "Argumentless KILL (K with no args) not yet supported"
-        )
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Clear all local variables from _scope
+            ctx.emitter.line("_scope.clear()")
+        else:
+            # TRAMPOLINE strategy - not supported for argumentless KILL
+            raise NotImplementedError(
+                "Argumentless KILL not supported in TRAMPOLINE strategy"
+            )
+        return
 
     # Process each target in the kill list
     for target in stmt.targets:
