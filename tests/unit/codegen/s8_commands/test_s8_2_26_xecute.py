@@ -285,15 +285,145 @@ class TestMUMPSRuntimeCodegen:
         """
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Phase 6: $TEST semantics for XECUTE")
-    def test_runtime_test_tracking(self, generate_python):
-        """Runtime tracks $TEST across execute() calls.
+    def test_runtime_execute_mumps_test_mutation(self):
+        """Runtime execute_mumps() propagates $TEST mutations (T039).
 
-        $TEST state visible to and from dynamically executed code.
-        Phase 6 will implement proper $TEST handling.
+        Spec 012 Phase 6 (T038): XECUTE does NOT stack $TEST.
+        $TEST mutations in XECUTEd code are visible via _rt._test.
         """
-        pytest.fail("Stub - implement in Phase 6")
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+
+        # Execute IF that sets $TEST=False (0=1 is false)
+        _rt.execute_mumps("I 0=1", _scope)
+
+        # _rt._test should be False
+        assert _rt._test is False
+
+        # Execute IF that sets $TEST=True (1=1 is true)
+        _rt.execute_mumps("I 1=1", _scope)
+
+        # _rt._test should be True
+        assert _rt._test is True
+
+    def test_runtime_execute_mumps_test_in_scope(self):
+        """Runtime execute_mumps() stores $TEST in _scope['_test'] (T039).
+
+        The modified $TEST is stored in both _rt._test and _scope['_test'].
+        """
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+
+        _rt.execute_mumps("I 0=1", _scope)
+
+        assert _scope.get("_test") is False
+
+
+@pytest.mark.codegen
+class TestXecuteTestSemantics:
+    """Tests for XECUTE $TEST semantics (T038-T041).
+
+    Spec 012 Phase 6: XECUTE does NOT stack $TEST.
+    Unlike argumentless DO which saves/restores $TEST,
+    XECUTE mutations to $TEST are visible to caller.
+    """
+
+    def test_xecute_dynamic_test_mutation_visible(self):
+        """Dynamic XECUTE $TEST mutation visible to caller (T039).
+
+        X CODE where CODE contains IF modifies caller's $TEST.
+        """
+        code = generate_python('TEST S CODE="I 0=1" I 1=1 X CODE Q')
+
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+        namespace = {
+            "_rt": _rt,
+            "_scope": _scope,
+            "m_truth": __import__("m2py.codegen.helpers", fromlist=["m_truth"]).m_truth,
+            "m_compare": __import__(
+                "m2py.codegen.helpers", fromlist=["m_compare"]
+            ).m_compare,
+            "m_num": __import__("m2py.codegen.helpers", fromlist=["m_num"]).m_num,
+        }
+        exec(code, namespace)
+        namespace["TEST"](_rt, _scope=_scope)
+
+        # After XECUTE "I 0=1", $TEST should be False
+        # The module-level _test should be synced from _rt._test
+        assert namespace["_test"] is False
+
+    def test_xecute_dynamic_else_sees_modified_test(self):
+        """ELSE after dynamic XECUTE sees modified $TEST (T040).
+
+        I 1=1 X "I 0=1" E W "ELSE" → ELSE executes because inner IF set $TEST=0
+        """
+        code = generate_python('TEST S CODE="I 0=1" I 1=1 X CODE E  W "ELSE" Q')
+
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+        namespace = {
+            "_rt": _rt,
+            "_scope": _scope,
+            "m_truth": __import__("m2py.codegen.helpers", fromlist=["m_truth"]).m_truth,
+            "m_compare": __import__(
+                "m2py.codegen.helpers", fromlist=["m_compare"]
+            ).m_compare,
+            "m_num": __import__("m2py.codegen.helpers", fromlist=["m_num"]).m_num,
+        }
+        exec(code, namespace)
+        namespace["TEST"](_rt, _scope=_scope)
+
+        # ELSE should have executed, writing "ELSE"
+        assert _rt._output == ["ELSE"]
+
+    def test_xecute_constant_test_mutation_visible(self):
+        """Constant XECUTE $TEST mutation visible to caller (T039).
+
+        X "I 0=1" modifies caller's $TEST (already works via inline).
+        """
+        code = generate_python('TEST I 1=1 X "I 0=1" Q')
+
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+        namespace = {
+            "_rt": _rt,
+            "_scope": _scope,
+            "m_truth": __import__("m2py.codegen.helpers", fromlist=["m_truth"]).m_truth,
+            "m_compare": __import__(
+                "m2py.codegen.helpers", fromlist=["m_compare"]
+            ).m_compare,
+            "m_num": __import__("m2py.codegen.helpers", fromlist=["m_num"]).m_num,
+        }
+        exec(code, namespace)
+        namespace["TEST"](_rt, _scope=_scope)
+
+        # After inlined "I 0=1", $TEST should be False
+        assert namespace["_test"] is False
+
+    def test_xecute_constant_else_sees_modified_test(self):
+        """ELSE after constant XECUTE sees modified $TEST (T040).
+
+        I 1=1 X "I 0=1" E W "ELSE" → ELSE executes (already works via inline).
+        """
+        code = generate_python('TEST I 1=1 X "I 0=1" E  W "ELSE" Q')
+
+        _rt = MUMPSRuntime()
+        _scope: dict = {}
+        namespace = {
+            "_rt": _rt,
+            "_scope": _scope,
+            "m_truth": __import__("m2py.codegen.helpers", fromlist=["m_truth"]).m_truth,
+            "m_compare": __import__(
+                "m2py.codegen.helpers", fromlist=["m_compare"]
+            ).m_compare,
+            "m_num": __import__("m2py.codegen.helpers", fromlist=["m_num"]).m_num,
+        }
+        exec(code, namespace)
+        namespace["TEST"](_rt, _scope=_scope)
+
+        # ELSE should have executed, writing "ELSE"
+        assert _rt._output == ["ELSE"]
 
 
 @pytest.mark.codegen

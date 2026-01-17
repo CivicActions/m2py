@@ -243,3 +243,32 @@ class TestXecuteExecution:
         assert "execute_mumps" in code
         # Should pass _scope for shared variable access
         assert "_scope)" in code
+
+    # --- Phase 6: XECUTE $TEST Semantics Integration Tests (T041) ---
+
+    def test_xecute_constant_test_mutation_visible(self, execute_mumps):
+        """I 1=1 X "I 0=1" E W "ELSE" → ELSE executes (T041).
+
+        Spec 012 Phase 6: XECUTE does NOT stack $TEST.
+        Inner IF sets $TEST=0, ELSE clause sees modified value.
+        """
+        result = execute_mumps('TEST I 1=1 X "I 0=1" E  W "ELSE" Q\n')
+        assert result.output == "ELSE"
+
+    def test_xecute_dynamic_test_mutation_visible(self, execute_mumps):
+        """S CODE="I 0=1" I 1=1 X CODE E W "ELSE" → ELSE executes (T041).
+
+        Dynamic XECUTE with IF modifies caller's $TEST.
+        """
+        result = execute_mumps('TEST S CODE="I 0=1" I 1=1 X CODE E  W "ELSE" Q\n')
+        assert result.output == "ELSE"
+
+    def test_xecute_dynamic_test_mutation_inverse(self, execute_mumps):
+        """S CODE="I 1=1" I 0=1 X CODE E W "ELSE" → no output (T041).
+
+        Outer IF sets $TEST=0, inner sets $TEST=1.
+        ELSE doesn't execute because final $TEST=1.
+        """
+        result = execute_mumps('TEST S CODE="I 1=1" I 0=1 X CODE E  W "ELSE" Q\n')
+        # ELSE should NOT execute - $TEST=1 after inner IF
+        assert result.output == ""

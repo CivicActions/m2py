@@ -2646,11 +2646,17 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
 
         Spec 012 Phase 5 (T032-T034): Each code expression is evaluated
         at runtime and executed via _rt.execute_mumps() with shared _scope.
+
+        Spec 012 Phase 6 (T038): XECUTE does NOT stack $TEST.
+        After execute_mumps(), sync _test from _rt._test so mutations
+        made by XECUTEd code are visible to caller.
         """
         for code_expr in stmt.code_expressions:
             expr_code = generate_expr(code_expr, ctx)
             # Call runtime execute_mumps with evaluated expression and shared scope
             ctx.emitter.line(f"_rt.execute_mumps({expr_code}, _scope)")
+            # Sync $TEST back from runtime - XECUTE does NOT stack $TEST
+            ctx.emitter.line("_test = _rt._test")
 
     # Handle postcondition if present
     if stmt.postcondition:

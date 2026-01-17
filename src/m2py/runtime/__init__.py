@@ -1557,9 +1557,12 @@ class MUMPSRuntime:
             else:
                 result = None
 
-            # Sync $TEST back to scope
+            # Sync $TEST back - store in both _scope and self._test
+            # Spec 012 Phase 6 (T038): XECUTE does NOT stack $TEST
+            # The modified $TEST must be visible to caller
             if "_test" in namespace:
                 _scope["_test"] = namespace["_test"]
+                self._test = namespace["_test"]
 
             # Sync any modified variables back to _scope
             # (Generated code modifies _scope directly via _scope["X"] = value)

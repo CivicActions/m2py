@@ -118,12 +118,12 @@
 
 ### Implementation for User Story 4
 
-- [ ] T038 [US4] Verify XECUTE codegen does NOT wrap with $TEST save/restore
-- [ ] T039 [US4] Unit test: $TEST mutation in XECUTE visible to caller in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
-- [ ] T040 [US4] Unit test: ELSE after XECUTE sees modified $TEST
-- [ ] T041 [US4] Integration test: `I 1=1 X "I 0=1" E W "ELSE"` outputs ELSE
+- [x] T038 [US4] Verify XECUTE codegen does NOT wrap with $TEST save/restore
+- [x] T039 [US4] Unit test: $TEST mutation in XECUTE visible to caller in tests/unit/codegen/s8_commands/test_s8_2_26_xecute.py
+- [x] T040 [US4] Unit test: ELSE after XECUTE sees modified $TEST
+- [x] T041 [US4] Integration test: `I 1=1 X "I 0=1" E W "ELSE"` outputs ELSE
 
-**Checkpoint**: $TEST semantics correct for XECUTE
+**Checkpoint**: $TEST semantics correct for XECUTE ✅
 
 ---
 
