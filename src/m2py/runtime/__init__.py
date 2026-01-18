@@ -866,6 +866,9 @@ class MUMPSRuntime:
         self._stack_level: int = 0
         # Spec 011: I/O device tracking for $IO
         self._io: str = "0"  # Default I/O device
+        # Spec 013: Device table for OPEN/CLOSE/USE
+        # Maps device name -> file object (or None for special devices)
+        self._devices: Dict[str, Any] = {"0": None}  # "0" is principal device
         # Spec 011: Extrinsic function context for $QUIT
         self._in_extrinsic: bool = False
 
@@ -1087,6 +1090,82 @@ class MUMPSRuntime:
         """Pop a stack frame (for QUIT)."""
         if self._stack_level > 0:
             self._stack_level -= 1
+
+    # =========================================================================
+    # Spec 013: Device I/O Methods (Phase 10 - OPEN/CLOSE/USE)
+    # =========================================================================
+
+    def open_device(
+        self,
+        device: str,
+        parameters: Optional[List[str]] = None,
+        timeout: Optional[float] = None,
+    ) -> bool:
+        """Open a device for I/O (MUMPS OPEN command).
+
+        Spec 013 Phase 10 (T091): Opens a device/file for I/O operations.
+
+        Args:
+            device: Device name (file path or special device name)
+            parameters: Device parameters (NEWVERSION, READONLY, etc.)
+            timeout: Optional timeout in seconds
+
+        Returns:
+            True if device opened successfully, False if timeout
+        """
+        params = parameters or []
+
+        # Determine file mode from parameters
+        mode = "r"  # Default read
+        if "NEWVERSION" in params or "NEW" in params:
+            mode = "w"
+        elif "APPEND" in params:
+            mode = "a"
+        elif "WRITE" in params:
+            mode = "r+"
+
+        try:
+            # Open the file (device)
+            self._devices[device] = open(device, mode)  # noqa: SIM115
+            return True
+        except (FileNotFoundError, PermissionError, OSError):
+            # For timeout operations, return False instead of raising
+            if timeout is not None:
+                return False
+            raise
+
+    def close_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
+        """Close a device (MUMPS CLOSE command).
+
+        Spec 013 Phase 10 (T092): Closes a device/file.
+
+        Args:
+            device: Device name to close
+            parameters: Optional close parameters (usually ignored)
+        """
+        if device in self._devices and self._devices[device] is not None:
+            try:
+                self._devices[device].close()
+            except (OSError, IOError):
+                pass  # Ignore errors closing
+            del self._devices[device]
+
+        # If closing current device, switch back to principal device
+        if self._io == device:
+            self._io = "0"
+
+    def use_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
+        """Select current I/O device (MUMPS USE command).
+
+        Spec 013 Phase 10 (T089): Switches the current I/O device.
+
+        Args:
+            device: Device name to make current
+            parameters: Optional device parameters
+        """
+        # Device "0" is always available (principal device)
+        if device == "0" or device in self._devices:
+            self._io = device
 
     # =========================================================================
     # Spec 012: Indirection & XECUTE Runtime Methods (Phase 2 - T007-T011)

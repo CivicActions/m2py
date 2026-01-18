@@ -27,6 +27,7 @@ from m2py.asg.expressions import (
 from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
 from m2py.asg.statements import (
     MAssignment,
+    MCloseStatement,
     MDoStatement,
     MElseStatement,
     MForParameter,
@@ -39,6 +40,7 @@ from m2py.asg.statements import (
     MLockStatement,
     MMergeStatement,
     MNewStatement,
+    MOpenStatement,
     MQuitStatement,
     MReadStatement,
     MReadTarget,
@@ -46,6 +48,7 @@ from m2py.asg.statements import (
     MTCommitStatement,
     MTRollbackStatement,
     MTStartStatement,
+    MUseStatement,
     MWriteStatement,
     MXecuteStatement,
 )
@@ -564,6 +567,12 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_trollback(stmt, ctx)
     elif isinstance(stmt, MLockStatement):
         _generate_lock(stmt, ctx)
+    elif isinstance(stmt, MOpenStatement):
+        _generate_open(stmt, ctx)
+    elif isinstance(stmt, MCloseStatement):
+        _generate_close(stmt, ctx)
+    elif isinstance(stmt, MUseStatement):
+        _generate_use(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -3043,6 +3052,209 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
             ctx.emitter.line(
                 f'_rt.globals.lock("{name}", {subs_str}, lock_type="{lock_type}")'
             )
+
+
+# =============================================================================
+# I/O Statement Generation (Spec 013 Phase 10)
+# =============================================================================
+
+
+def _generate_open(stmt: MOpenStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for OPEN command.
+
+    Spec 013 Phase 10 (T091, T093): Opens devices/files for I/O.
+
+    MUMPS Forms:
+    - O "file"                ; Open file
+    - O "file":NEWVERSION     ; Open for write (create/truncate)
+    - O "file":(params)       ; Open with parenthesized params
+    - O "file":(params):timeout ; Open with timeout (sets $TEST)
+    - O device1,device2       ; Open multiple devices
+
+    Note: The parser may interpret bare :KEYWORD as a timeout due to
+    MUMPS syntax ambiguity. We detect common device keywords and treat
+    them as parameters.
+
+    Generated code:
+    - _rt.open_device("file", ["params"])
+    - With timeout: _test = _rt.open_device("file", ["params"], timeout)
+
+    Per MUMPS spec §8.2.15:
+    - Timed OPEN sets $TEST: 1 for success, 0 for timeout
+    - Untimed OPEN does NOT modify $TEST
+
+    Args:
+        stmt: MOpenStatement node
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MVariable as MVar
+
+    # Common device keywords that may be misinterpreted as timeouts
+    DEVICE_KEYWORDS = {
+        "NEWVERSION",
+        "NEW",
+        "READONLY",
+        "READ",
+        "WRITE",
+        "APPEND",
+        "STREAM",
+        "FIXED",
+        "VARIABLE",
+        "NOWRAP",
+        "WRAP",
+        "NOTRUNCATE",
+        "TRUNCATE",
+        "REWIND",
+        "SEEK",
+        "DELETE",
+        "RENAME",
+    }
+
+    for device in stmt.devices:
+        if device.device_expr is None:
+            continue
+
+        # Generate device name expression
+        device_name = generate_expr(device.device_expr, ctx)
+
+        # Collect parameters - device params are keywords, not variables
+        params = []
+        for param in device.parameters:
+            # Device parameters can be:
+            # - Identifiers (NEWVERSION, READONLY, etc.) - treat as string constants
+            # - Expressions for dynamic parameters
+            if isinstance(param, MVar) and not param.subscripts:
+                # Simple identifier - treat as string keyword
+                params.append(repr(param.name))
+            else:
+                # Expression - evaluate it
+                param_str = generate_expr(param, ctx)
+                params.append(param_str)
+
+        # Check if timeout is actually a device keyword (parser ambiguity)
+        actual_timeout = device.timeout
+        if (
+            actual_timeout is not None
+            and isinstance(actual_timeout, MVar)
+            and not actual_timeout.subscripts
+            and actual_timeout.name.upper() in DEVICE_KEYWORDS
+        ):
+            # This is a device keyword, not a timeout
+            params.append(repr(actual_timeout.name))
+            actual_timeout = None
+
+        # Build parameters list string
+        if params:
+            params_str = f"[{', '.join(params)}]"
+        else:
+            params_str = "None"
+
+        # Generate the open call
+        if actual_timeout is not None:
+            # Timed OPEN - sets $TEST
+            timeout_val = generate_expr(actual_timeout, ctx)
+            ctx.emitter.line(
+                f"_test = _rt.open_device({device_name}, {params_str}, {timeout_val})"
+            )
+        else:
+            # Untimed OPEN - does NOT modify $TEST
+            ctx.emitter.line(f"_rt.open_device({device_name}, {params_str})")
+
+
+def _generate_close(stmt: MCloseStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for CLOSE command.
+
+    Spec 013 Phase 10 (T092): Closes devices/files.
+
+    MUMPS Forms:
+    - C "file"         ; Close file
+    - C device1,device2 ; Close multiple devices
+    - C device:params   ; Close with parameters
+
+    Generated code:
+    - _rt.close_device("file")
+    - _rt.close_device("file", ["params"])
+
+    Args:
+        stmt: MCloseStatement node
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MVariable as MVar
+
+    for device in stmt.devices:
+        if device.device_expr is None:
+            continue
+
+        # Generate device name expression
+        device_name = generate_expr(device.device_expr, ctx)
+
+        # Collect parameters - device params are keywords, not variables
+        params = []
+        for param in device.parameters:
+            if isinstance(param, MVar) and not param.subscripts:
+                # Simple identifier - treat as string keyword
+                params.append(repr(param.name))
+            else:
+                # Expression - evaluate it
+                param_str = generate_expr(param, ctx)
+                params.append(param_str)
+
+        # Build parameters list string
+        if params:
+            params_str = f"[{', '.join(params)}]"
+        else:
+            params_str = "None"
+
+        ctx.emitter.line(f"_rt.close_device({device_name}, {params_str})")
+
+
+def _generate_use(stmt: MUseStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for USE command.
+
+    Spec 013 Phase 10 (T089-T090): Switches current I/O device.
+
+    MUMPS Forms:
+    - U "file"          ; Use file as current device
+    - U 0               ; Use principal device (stdin/stdout)
+    - U device:params   ; Use with parameters
+
+    Generated code:
+    - _rt.use_device("file")
+    - _rt.use_device("file", ["params"])
+
+    Note: USE does not affect $TEST.
+
+    Args:
+        stmt: MUseStatement node
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MVariable as MVar
+
+    for device in stmt.devices:
+        if device.device_expr is None:
+            continue
+
+        # Generate device name expression
+        device_name = generate_expr(device.device_expr, ctx)
+
+        # Collect parameters - device params are keywords, not variables
+        params = []
+        for param in device.parameters:
+            if isinstance(param, MVar) and not param.subscripts:
+                # Simple identifier - treat as string keyword
+                params.append(repr(param.name))
+            else:
+                # Expression - evaluate it
+                param_str = generate_expr(param, ctx)
+                params.append(param_str)
+
+        # Build parameters list string
+        if params:
+            params_str = f"[{', '.join(params)}]"
+        else:
+            params_str = "None"
+
+        ctx.emitter.line(f"_rt.use_device({device_name}, {params_str})")
 
 
 def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:

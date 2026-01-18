@@ -304,23 +304,48 @@ Some candidates marked as CONVERT in gaps-stubs.md were discovered to have bugs 
 
 ### READ Command (FR-016) - 13.4% usage
 
-- [ ] T086 [US4] Add MReadStatement codegen in src/m2py/codegen/statements.py
-- [ ] T087 [US4] Implement READ timeout syntax in src/m2py/codegen/statements.py
-- [ ] T088 [US4] Create READ tests (mock input) in tests/unit/codegen/
+- [X] T086 [US4] Add MReadStatement codegen in src/m2py/codegen/statements.py
+  - **Already implemented** in Spec 011 Phase 20 (T083-T086)
+  - Handles basic READ, prompt, format controls, timeout, single-char read
+  - Deleted 4 redundant xfail stubs (consolidated in test_s8_2_20_read.py)
+- [X] T087 [US4] Implement READ timeout syntax in src/m2py/codegen/statements.py
+  - **Already implemented**: m_read_timeout() helper with $TEST setting
+- [X] T088 [US4] Create READ tests (mock input) in tests/unit/codegen/
+  - Comprehensive tests exist in test_s8_2_20_read.py (12 tests passing)
 
 ### USE Command (FR-018) - 10.6% usage
 
-- [ ] T089 [US4] Add MUseStatement codegen in src/m2py/codegen/statements.py
-- [ ] T090 [US4] Create USE tests in tests/unit/codegen/
+- [X] T089 [US4] Add MUseStatement codegen in src/m2py/codegen/statements.py
+  - Added _generate_use() function
+  - Generates _rt.use_device(device, params) calls
+  - Handles device parameter keywords (NOWRAP, etc.)
+- [X] T090 [US4] Create USE tests in tests/unit/codegen/
+  - Converted 2 xfail stubs to 4 real tests
+  - Tests: use_to_device_select, use_with_parameters, use_principal_device, use_multiple_devices
 
 ### OPEN/CLOSE Commands (FR-022) - 7.2% usage
 
-- [ ] T091 [US4] Add MOpenStatement codegen in src/m2py/codegen/statements.py
-- [ ] T092 [US4] Add MCloseStatement codegen in src/m2py/codegen/statements.py
-- [ ] T093 [US4] Implement OPEN timeout syntax in src/m2py/codegen/statements.py
-- [ ] T094 [US4] Create OPEN/CLOSE tests in tests/unit/codegen/
+- [X] T091 [US4] Add MOpenStatement codegen in src/m2py/codegen/statements.py
+  - Added _generate_open() function with device keyword handling
+  - Detects NEWVERSION, READONLY, etc. keywords (parser ambiguity workaround)
+- [X] T092 [US4] Add MCloseStatement codegen in src/m2py/codegen/statements.py
+  - Added _generate_close() function
+  - Generates _rt.close_device(device, params) calls
+- [X] T093 [US4] Implement OPEN timeout syntax in src/m2py/codegen/statements.py
+  - Timed OPEN: _test = _rt.open_device(device, params, timeout)
+  - Untimed OPEN does not modify $TEST
+- [X] T094 [US4] Create OPEN/CLOSE tests in tests/unit/codegen/
+  - OPEN: 4 real tests (open_to_file_open, open_with_parameters, open_with_parenthesized_params, open_with_timeout_sets_test)
+  - CLOSE: 2 real tests (close_codegen, close_multiple_devices)
+
+**Additional Notes**:
+- Added device I/O methods to MUMPSRuntime: open_device(), close_device(), use_device()
+- Device parameters (NEWVERSION, READONLY, etc.) handled specially to avoid parser ambiguity
+- Runtime device tracking via _devices dict and _io for current device
 
 **Checkpoint**: I/O commands complete (SC-015 partial)
+- xfail count reduced from 209 to 200 (9 fewer)
+- Converted 5 xfail stubs to 10 real tests (OPEN: 4, CLOSE: 2, USE: 4)
 
 ---
 
