@@ -167,36 +167,42 @@ Some candidates marked as CONVERT in gaps-stubs.md were discovered to have bugs 
 
 ### $ASCII/$CHAR (FR-013, FR-014) - 31.1% usage
 
-- [ ] T052 [P] [US4] Implement _ascii() helper in src/m2py/codegen/helpers.py
-- [ ] T053 [P] [US4] Implement _char() helper in src/m2py/codegen/helpers.py
-- [ ] T054 [US4] Add $ASCII/$CHAR codegen in src/m2py/codegen/expressions.py
-- [ ] T055 [US4] Create tests for $ASCII/$CHAR edge cases in tests/unit/codegen/
+- [x] T052 [P] [US4] Implement _ascii() helper in src/m2py/codegen/helpers.py
+- [x] T053 [P] [US4] Implement _char() helper in src/m2py/codegen/helpers.py
+- [x] T054 [US4] Add $ASCII/$CHAR codegen in src/m2py/codegen/expressions.py
+- [x] T055 [US4] Create tests for $ASCII/$CHAR edge cases in tests/unit/codegen/
 
 ### $TRANSLATE (FR-020) - 8.7% usage
 
-- [ ] T056 [US4] Implement _translate() helper in src/m2py/codegen/helpers.py
-- [ ] T057 [US4] Add $TRANSLATE codegen in src/m2py/codegen/expressions.py
-- [ ] T058 [US4] Create tests for $TRANSLATE in tests/unit/codegen/
+- [x] T056 [US4] Implement _translate() helper in src/m2py/codegen/helpers.py
+- [x] T057 [US4] Add $TRANSLATE codegen in src/m2py/codegen/expressions.py
+- [x] T058 [US4] Create tests for $TRANSLATE in tests/unit/codegen/
 
 ### $JUSTIFY (FR-017) - 13.2% usage
 
-- [ ] T059 [US4] Implement _justify() helper in src/m2py/codegen/helpers.py
-- [ ] T060 [US4] Add $JUSTIFY codegen in src/m2py/codegen/expressions.py
-- [ ] T061 [US4] Create tests for $JUSTIFY in tests/unit/codegen/
+- [x] T059 [US4] Implement _justify() helper in src/m2py/codegen/helpers.py
+- [x] T060 [US4] Add $JUSTIFY codegen in src/m2py/codegen/expressions.py
+- [x] T061 [US4] Create tests for $JUSTIFY in tests/unit/codegen/
 
 ### $REVERSE (FR-027) - 0.11% usage
 
-- [ ] T062 [US4] Implement _reverse() helper in src/m2py/codegen/helpers.py
-- [ ] T063 [US4] Add $REVERSE codegen in src/m2py/codegen/expressions.py
-- [ ] T064 [US4] Create tests for $REVERSE in tests/unit/codegen/
+- [x] T062 [US4] Implement _reverse() helper in src/m2py/codegen/helpers.py
+- [x] T063 [US4] Add $REVERSE codegen in src/m2py/codegen/expressions.py
+- [x] T064 [US4] Create tests for $REVERSE in tests/unit/codegen/
 
 ### $FNUMBER (FR-025) - 1.4% usage
 
-- [ ] T065 [US4] Implement _fnumber() helper in src/m2py/codegen/helpers.py
-- [ ] T066 [US4] Add $FNUMBER codegen in src/m2py/codegen/expressions.py
-- [ ] T067 [US4] Create tests for $FNUMBER in tests/unit/codegen/
+- [x] T065 [US4] Implement _fnumber() helper in src/m2py/codegen/helpers.py
+- [x] T066 [US4] Add $FNUMBER codegen in src/m2py/codegen/expressions.py
+- [x] T067 [US4] Create tests for $FNUMBER in tests/unit/codegen/
 
 **Checkpoint**: String intrinsics complete (SC-009 verified)
+
+**Note**: All Phase 6 features were already implemented in Spec 010 (Intrinsic Functions).
+- Codegen: src/m2py/codegen/expressions.py (_gen_ascii, _gen_char, _gen_translate, _gen_justify, _gen_reverse, _gen_fnumber)
+- Helpers: src/m2py/runtime/helpers.py (m_justify, m_fnumber)  
+- Tests: tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py
+- All validated against YDB (2026-01-18)
 
 ---
 
