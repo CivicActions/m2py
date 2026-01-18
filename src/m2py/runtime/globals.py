@@ -856,6 +856,7 @@ class InMemoryGlobalStorage:
         """Rollback current transaction (TROLLBACK).
 
         Spec 013 FR-015: Restores globals from snapshot.
+        Per MUMPS spec 8.2.21: Argumentless TROLLBACK rolls back ALL levels.
 
         Raises:
             RuntimeError: If $TLEVEL = 0 (M44 error)
@@ -863,9 +864,12 @@ class InMemoryGlobalStorage:
         if self._tlevel == 0:
             raise RuntimeError("M44: TROLLBACK without matching TSTART")
 
-        # Restore from the snapshot
+        # Per MUMPS spec: Argumentless TROLLBACK rolls back ALL transaction levels
+        # Restore from the FIRST snapshot (outermost transaction)
+        while len(self._transaction_snapshots) > 1:
+            self._transaction_snapshots.pop()
         self._globals = self._transaction_snapshots.pop()
-        self._tlevel -= 1
+        self._tlevel = 0
 
     def get_tlevel(self) -> int:
         """Return current transaction nesting level ($TLEVEL).

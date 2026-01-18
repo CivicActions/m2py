@@ -243,12 +243,23 @@ Some candidates marked as CONVERT in gaps-stubs.md were discovered to have bugs 
 
 ### Transaction Commands (FR-015)
 
-- [ ] T075 [US4] Add MTStartStatement codegen in src/m2py/codegen/statements.py
-- [ ] T076 [US4] Add MTCommitStatement codegen in src/m2py/codegen/statements.py
-- [ ] T077 [US4] Add MTRollbackStatement codegen in src/m2py/codegen/statements.py
-- [ ] T078 [US4] Create transaction tests with Memory backend in tests/unit/codegen/
-- [ ] T079 [US4] Test transaction rollback restores state in tests/unit/codegen/
-- [ ] T080 [US4] Validate transactions against YDB using validate.py
+- [X] T075 [US4] Add MTStartStatement codegen in src/m2py/codegen/statements.py
+  - Added _generate_tstart() function calling _rt.globals.transaction_start()
+- [X] T076 [US4] Add MTCommitStatement codegen in src/m2py/codegen/statements.py
+  - Added _generate_tcommit() function calling _rt.globals.transaction_commit()
+- [X] T077 [US4] Add MTRollbackStatement codegen in src/m2py/codegen/statements.py
+  - Added _generate_trollback() function calling _rt.globals.transaction_rollback()
+  - Fixed: Argumentless TROLLBACK now rolls back ALL levels (not just one)
+- [X] T078 [US4] Create transaction tests with Memory backend in tests/unit/codegen/
+  - Converted 5 xfail stubs in TestTransactionNestingCodegen to real tests
+  - Added test_tlevel_increments_on_tstart, test_nested_tstart_increments_tlevel,
+    test_tcommit_decrements_tlevel, test_trollback_full, test_trollback_restores_global_state
+- [X] T079 [US4] Test transaction rollback restores state in tests/unit/codegen/
+  - test_trollback_restores_global_state verifies global state is restored
+- [X] T080 [US4] Validate transactions against YDB using validate.py
+  - All transaction operations verified: TSTART, TCOMMIT, TROLLBACK, $TLEVEL
+
+**Additional**: Added $TLEVEL special variable codegen (was missing from expressions.py)
 
 **Checkpoint**: Transactions complete (SC-010 verified)
 

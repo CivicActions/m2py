@@ -338,6 +338,11 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("QUIT", "Q"):
         return "_rt.quit_flag()"
 
+    # $TLEVEL / $TL - transaction nesting level
+    # Spec 013 FR-015: Returns current transaction depth (0 = no transaction)
+    if name in ("TLEVEL", "TL"):
+        return "_rt.tlevel()"
+
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 

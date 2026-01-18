@@ -42,6 +42,9 @@ from m2py.asg.statements import (
     MReadStatement,
     MReadTarget,
     MSetStatement,
+    MTCommitStatement,
+    MTRollbackStatement,
+    MTStartStatement,
     MWriteStatement,
     MXecuteStatement,
 )
@@ -552,6 +555,12 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_read(stmt, ctx)
     elif isinstance(stmt, MXecuteStatement):
         _generate_xecute(stmt, ctx)
+    elif isinstance(stmt, MTStartStatement):
+        _generate_tstart(stmt, ctx)
+    elif isinstance(stmt, MTCommitStatement):
+        _generate_tcommit(stmt, ctx)
+    elif isinstance(stmt, MTRollbackStatement):
+        _generate_trollback(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -2827,6 +2836,80 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
     else:
         # Basic read: R X
         ctx.emitter.line(f"{storage_target} = input()")
+
+
+# =============================================================================
+# Transaction Statement Generation (Spec 013 Phase 8)
+# =============================================================================
+
+
+def _generate_tstart(stmt: MTStartStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for TSTART command.
+
+    Spec 013 FR-015: Begin transaction via database abstraction.
+
+    MUMPS: TS, TSTART, TS (), TS (A,B), TS ():serial
+
+    Generated: _rt.globals.transaction_start()
+
+    Note: Restart variables and parameters are not yet implemented -
+    they require additional runtime infrastructure for transaction
+    restart handling.
+
+    Args:
+        stmt: MTStartStatement node
+        ctx: Generator context
+    """
+    # Basic implementation - call transaction_start on global storage
+    # Note: restart_vars, restart_all, and parameters are ignored for now
+    # A full implementation would need to save variable state for restart
+    ctx.emitter.line("_rt.globals.transaction_start()")
+
+
+def _generate_tcommit(stmt: MTCommitStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for TCOMMIT command.
+
+    Spec 013 FR-015: Commit transaction via database abstraction.
+
+    MUMPS: TC, TCOMMIT
+
+    Generated: _rt.globals.transaction_commit()
+
+    Per MUMPS spec:
+    - If $TLEVEL = 1, commits the transaction
+    - If $TLEVEL > 1, decrements $TLEVEL (nested transaction)
+    - Error M44 if $TLEVEL = 0
+
+    Args:
+        stmt: MTCommitStatement node
+        ctx: Generator context
+    """
+    ctx.emitter.line("_rt.globals.transaction_commit()")
+
+
+def _generate_trollback(stmt: MTRollbackStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for TROLLBACK command.
+
+    Spec 013 FR-015: Rollback transaction via database abstraction.
+
+    MUMPS: TRO, TROLLBACK, TRO 1
+
+    Generated: _rt.globals.transaction_rollback()
+
+    Per MUMPS spec:
+    - Rolls back all changes since transaction start
+    - Sets $TLEVEL = 0 and $TRESTART = 0
+    - Optional level argument specifies transaction level to roll back to
+
+    Note: The level argument is not yet implemented.
+
+    Args:
+        stmt: MTRollbackStatement node
+        ctx: Generator context
+    """
+    # Basic implementation - roll back entire transaction
+    # Note: stmt.level is ignored for now
+    ctx.emitter.line("_rt.globals.transaction_rollback()")
 
 
 def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
