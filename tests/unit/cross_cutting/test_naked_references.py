@@ -34,73 +34,73 @@ class TestNakedStateTransitions:
     Reference: §7.1.2.4, FR-046
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: SET establishes indicator at runtime"
-    )
-    def test_set_establishes_naked_indicator(self):
+    def test_set_establishes_naked_indicator(self, execute_mumps):
         """SET ^DATA(1)=X establishes naked indicator to ^DATA (§7.1.2.4).
 
         SET ^DATA(1)=X
         SET ^(2)=Y  ; Should access ^DATA(2) at runtime
-        """
-        pytest.fail("Stub - requires codegen runtime execution")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: READ establishes indicator at runtime"
-    )
-    def test_read_establishes_naked_indicator(self):
+        YDB verified: S ^DATA(1)=1 S ^(2)=2 W ^DATA(2) → "2"
+        """
+        result = execute_mumps("TEST S ^DATA(1)=1 S ^(2)=2 W ^DATA(2) Q")
+        assert result.output == "2"
+
+    def test_read_establishes_naked_indicator(self, execute_mumps):
         """SET X=^DATA(1) establishes naked indicator to ^DATA (§7.1.2.4).
 
-        SET X=^DATA(1)
-        SET Y=^(2)  ; Should access ^DATA(2) at runtime
-        """
-        pytest.fail("Stub - requires codegen runtime execution")
+        SET X=^DATA(1)  ; establishes indicator
+        SET Y=^(2)      ; Should access ^DATA(2) at runtime
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: subscript chaining at runtime")
-    def test_naked_reference_subscript_chaining(self):
+        YDB verified: S ^DATA(1)=1 S X=^(1) W X → "1"
+        """
+        result = execute_mumps("TEST S ^DATA(1)=1 S X=^(1) W X Q")
+        assert result.output == "1"
+
+    def test_naked_reference_subscript_chaining(self, execute_mumps):
         """Naked reference replaces last subscript, chains others (§7.1.2.4).
 
         SET ^DATA(1,2)=X  ; Indicator = ^DATA(1
         SET ^(3)=Y        ; Should access ^DATA(1,3) at runtime
-        """
-        pytest.fail("Stub - requires codegen runtime execution")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: multiple subscripts at runtime")
-    def test_naked_reference_multiple_subscripts(self):
+        YDB verified: S ^DATA(1,2)=5 S ^(3)=7 W ^DATA(1,3) → "7"
+        """
+        result = execute_mumps("TEST S ^DATA(1,2)=5 S ^(3)=7 W ^DATA(1,3) Q")
+        assert result.output == "7"
+
+    def test_naked_reference_multiple_subscripts(self, execute_mumps):
         """Naked with multiple subscripts extends from indicator (§7.1.2.4).
 
         SET ^DATA(1)=X   ; Indicator = ^DATA
         SET ^(2,3)=Y     ; Should access ^DATA(2,3) at runtime
-        """
-        pytest.fail("Stub - requires codegen runtime execution")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: naked updates indicator at runtime")
-    def test_naked_reference_updates_indicator(self):
+        YDB verified: S ^DATA(1)=1 S ^(2,3)=5 W ^DATA(2,3) → "5"
+        """
+        result = execute_mumps("TEST S ^DATA(1)=1 S ^(2,3)=5 W ^DATA(2,3) Q")
+        assert result.output == "5"
+
+    def test_naked_reference_updates_indicator(self, execute_mumps):
         """Naked reference itself updates the indicator (§7.1.2.4).
 
         SET ^DATA(1)=X   ; Indicator = ^DATA
         SET ^(2)=Y       ; Access ^DATA(2), indicator = ^DATA(
         SET ^(3)=Z       ; Should access ^DATA(3) at runtime
-        """
-        pytest.fail("Stub - requires codegen runtime execution")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: different global changes indicator")
-    def test_different_global_changes_indicator(self):
+        YDB verified: S ^DATA(1)=1 S ^(2)=2 S ^(3)=3 W ^DATA(3) → "3"
+        """
+        result = execute_mumps("TEST S ^DATA(1)=1 S ^(2)=2 S ^(3)=3 W ^DATA(3) Q")
+        assert result.output == "3"
+
+    def test_different_global_changes_indicator(self, execute_mumps):
         """Reference to different global changes indicator (§7.1.2.4).
 
         SET ^DATA(1)=X    ; Indicator = ^DATA
         SET ^OTHER(5)=Y   ; Indicator = ^OTHER
         SET ^(6)=Z        ; Should access ^OTHER(6), not ^DATA(6)
 
-        This test verifies runtime behavior which requires codegen.
+        YDB verified: S ^DATA(1)=1 S ^OTHER(5)=2 S ^(6)=3 W ^OTHER(6) → "3"
         """
-        pytest.fail("Stub - requires codegen runtime execution")
+        result = execute_mumps("TEST S ^DATA(1)=1 S ^OTHER(5)=2 S ^(6)=3 W ^OTHER(6) Q")
+        assert result.output == "3"
 
 
 # =============================================================================
@@ -128,15 +128,15 @@ class TestNakedReferenceErrors:
         """
         pytest.fail("Stub - requires codegen runtime execution for M1 error")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: naked indicator scope at runtime")
-    def test_naked_indicator_scope(self):
+    def test_naked_indicator_scope(self, execute_mumps):
         """Naked indicator scope within routine execution (§7.1.2.4).
 
         The naked indicator persists across statements within same execution.
-        SET ^DATA(1)=1 S X=^(2) S ^(3)=X  ; All reference ^DATA at runtime
+
+        YDB verified: S ^DATA(1)=1 S X=^(1) S ^(2)=X W ^DATA(2) → "1"
         """
-        pytest.fail("Stub - requires codegen runtime execution")
+        result = execute_mumps("TEST S ^DATA(1)=1 S X=^(1) S ^(2)=X W ^DATA(2) Q")
+        assert result.output == "1"
 
 
 # =============================================================================
@@ -173,15 +173,16 @@ class TestNakedReferenceEdgeCases:
         """
         pytest.fail("Stub - requires codegen runtime execution")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL with naked at runtime")
-    def test_kill_with_naked(self):
+    def test_kill_with_naked(self, execute_mumps):
         """KILL ^(sub) uses naked reference at runtime (§7.1.2.4).
 
         ASG parsing is tested in test_s8_2_11_kill.py.
         This tests runtime resolution of the naked reference.
+
+        YDB verified: S ^A(1)=1,^A(2)=2 K ^(1) W $D(^A(1)) → "0"
         """
-        pytest.fail("Stub - requires codegen runtime execution")
+        result = execute_mumps("TEST S ^A(1)=1,^A(2)=2 K ^(1) W $D(^A(1)) Q")
+        assert result.output == "0"
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: MERGE with naked at runtime")

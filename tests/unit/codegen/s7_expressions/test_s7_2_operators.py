@@ -37,11 +37,14 @@ class TestOperatorsCodegen:
         assert result.output == "12"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: division")
-    def test_division(self, generate_python):
-        """Division generates Python / with numeric coercion (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_division(self, execute_mumps):
+        """Division generates Python / with numeric coercion (§7.2).
+
+        YDB verified: W 10/4 → 2.5
+        """
+        result = execute_mumps("TEST\n W 10/4\n Q\n")
+        assert result.output == "2.5"
+        assert result.success is True
 
     def test_integer_division(self, execute_mumps):
         """Integer division generates Python int(x/y) for truncation (§7.2).
@@ -150,11 +153,14 @@ class TestOperatorsCodegen:
         assert result.output == "123"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: equals comparison")
-    def test_equals(self, generate_python):
-        """Equals generates Python == (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_equals(self, execute_mumps):
+        """Equals generates Python == comparison (§7.2).
+
+        YDB verified: W 5=5 → 1
+        """
+        result = execute_mumps("TEST\n W 5=5\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
 
     # =========================================================================
     # Negated Comparison Operators Tests

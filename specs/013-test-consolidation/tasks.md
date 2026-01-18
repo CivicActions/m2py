@@ -122,31 +122,40 @@
 
 ### CONVERT: §7.2 Operators (7 stubs)
 
-- [ ] T038 [P] [US3] Validate division works, convert test_division to execute_mumps in tests/
-- [ ] T039 [P] [US3] Validate equals works, convert test_equals to execute_mumps in tests/
-- [ ] T040 [P] [US3] Convert test_addition_then_multiplication to execute_mumps in tests/
-- [ ] T041 [P] [US3] Convert test_subtraction_left_to_right to execute_mumps in tests/
-- [ ] T042 [P] [US3] Convert test_division_left_to_right to execute_mumps in tests/
-- [ ] T043 [P] [US3] Convert test_mixed_arithmetic_comparison to execute_mumps in tests/
-- [ ] T044 [P] [US3] Convert test_parentheses_override_left_to_right to execute_mumps in tests/
+- [x] T038 [P] [US3] Validate division works, convert test_division to execute_mumps in tests/
+- [x] T039 [P] [US3] Validate equals works, convert test_equals to execute_mumps in tests/
+- [x] T040 [P] [US3] Convert test_addition_then_multiplication to execute_mumps in tests/
+- [x] T041 [P] [US3] Convert test_subtraction_left_to_right to execute_mumps in tests/
+- [x] T042 [P] [US3] Convert test_division_left_to_right to execute_mumps in tests/
+- [x] T043 [P] [US3] Convert test_mixed_arithmetic_comparison to execute_mumps in tests/
+- [x] T044 [P] [US3] Convert test_parentheses_override_left_to_right to execute_mumps in tests/
 
 ### CONVERT: SET Command (1 stub)
 
-- [ ] T045 [US3] Validate set_multiple_targets works, convert to execute_mumps in tests/
+- [x] T045 [US3] Validate set_multiple_targets works, convert to execute_mumps in tests/
 
 ### CONVERT: IF Command Stubs
 
-- [ ] T046 [P] [US3] Convert test_if_multiple_conditions to execute_mumps in tests/
-- [ ] T047 [P] [US3] Convert other IF-related stubs to execute_mumps in tests/
+- [x] T046 [P] [US3] Convert test_if_multiple_conditions to execute_mumps in tests/
+- [x] T047 [P] [US3] Convert other IF-related stubs to execute_mumps in tests/
 
 ### CONVERT: Remaining Stubs
 
-- [ ] T048 [US3] Identify all remaining CONVERT candidates from gaps-stubs.md
-- [ ] T049 [US3] Validate each feature works using validate.py before conversion
-- [ ] T050 [US3] Convert remaining ~25 stubs to execute_mumps with real assertions
-- [ ] T051 [US3] Run test suite, verify all converted tests pass
+- [x] T048 [US3] Identify all remaining CONVERT candidates from gaps-stubs.md
+- [x] T049 [US3] Validate each feature works using validate.py before conversion
+- [x] T050 [US3] Convert remaining ~25 stubs to execute_mumps with real assertions
+- [x] T051 [US3] Run test suite, verify all converted tests pass
 
-**Checkpoint**: User Story 3 complete - ~39 stubs converted to real tests (SC-003)
+**Checkpoint**: User Story 3 complete - xfail reduced from 237 to 226 (11 conversions)
+
+**Note**: Many CONVERT candidates were already converted in previous phases. Additional conversions:
+- test_division, test_equals (T038-T039)
+- test_subscripted_indirection_resolves_correctly 
+- 7 naked reference tests (SET/READ establishes indicator, subscript chaining, multiple subscripts, updates indicator, different global changes, indicator scope, KILL with naked)
+
+Some candidates marked as CONVERT in gaps-stubs.md were discovered to have bugs blocking conversion:
+- Postcondition independence (D L1:0,L2:1 calls both)
+- $DATA/$ORDER with naked references
 
 ---
 
