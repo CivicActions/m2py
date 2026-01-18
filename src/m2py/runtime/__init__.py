@@ -1069,6 +1069,16 @@ class MUMPSRuntime:
         """
         return 1 if self._in_extrinsic else 0
 
+    def tlevel(self) -> int:
+        """Return current transaction nesting level ($TLEVEL).
+
+        Spec 013 FR-015: Delegates to global storage backend.
+
+        Returns:
+            Current transaction depth (0 = no active transaction)
+        """
+        return self._globals.get_tlevel()
+
     def push_frame(self) -> None:
         """Push a new stack frame (for DO/extrinsic calls)."""
         self._stack_level += 1

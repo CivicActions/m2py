@@ -29,13 +29,13 @@
 
 **⚠️ CRITICAL**: VistA feature implementation depends on this phase
 
-- [ ] T004 Add lock methods to GlobalStorageBackend protocol in src/m2py/runtime/globals.py
-- [ ] T005 [P] Implement lock() in InMemoryGlobalStorage (in-process lock table) in src/m2py/runtime/globals.py
-- [ ] T006 [P] Add transaction methods to GlobalStorageBackend protocol in src/m2py/runtime/globals.py
-- [ ] T007 Implement transaction_start/commit/rollback in InMemoryGlobalStorage in src/m2py/runtime/globals.py
-- [ ] T008 [P] Add SSVN query methods to GlobalStorageBackend protocol in src/m2py/runtime/globals.py
-- [ ] T009 Implement ssvn_global/job/lock/routine in InMemoryGlobalStorage in src/m2py/runtime/globals.py
-- [ ] T010 Add $TLEVEL support to MUMPSRuntime in src/m2py/runtime/__init__.py
+- [x] T004 Add lock methods to GlobalStorageBackend protocol in src/m2py/runtime/globals.py
+- [x] T005 [P] Implement lock() in InMemoryGlobalStorage (in-process lock table) in src/m2py/runtime/globals.py
+- [x] T006 [P] Add transaction methods to GlobalStorageBackend protocol in src/m2py/runtime/globals.py
+- [x] T007 Implement transaction_start/commit/rollback in InMemoryGlobalStorage in src/m2py/runtime/globals.py
+- [x] T008 [P] Add SSVN query methods to GlobalStorageBackend protocol in src/m2py/runtime/globals.py
+- [x] T009 Implement ssvn_global/job/lock/routine in InMemoryGlobalStorage in src/m2py/runtime/globals.py
+- [x] T010 Add $TLEVEL support to MUMPSRuntime in src/m2py/runtime/__init__.py
 
 **Checkpoint**: Database abstraction ready - VistA features can now be implemented
 
