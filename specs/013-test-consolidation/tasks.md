@@ -271,11 +271,24 @@ Some candidates marked as CONVERT in gaps-stubs.md were discovered to have bugs 
 
 ### LOCK Command (FR-019)
 
-- [ ] T081 [US4] Add MLockStatement codegen in src/m2py/codegen/statements.py
-- [ ] T082 [US4] Implement LOCK +/- syntax handling in src/m2py/codegen/statements.py
-- [ ] T083 [US4] Create LOCK tests with Memory backend in tests/unit/codegen/
-- [ ] T084 [US4] Test LOCK timeout sets $TEST in tests/unit/codegen/
-- [ ] T085 [US4] Validate LOCK against YDB using validate.py
+- [X] T081 [US4] Add MLockStatement codegen in src/m2py/codegen/statements.py
+  - Added _generate_lock() and _generate_lock_target() functions
+  - Handles incremental (+), decremental (-), and regular LOCK
+  - Generates _rt.globals.lock() / unlock_all() calls
+- [X] T082 [US4] Implement LOCK +/- syntax handling in src/m2py/codegen/statements.py
+  - LOCK + acquires without releasing existing locks
+  - LOCK - releases specific lock
+  - Plain LOCK (no +/-) releases all then acquires
+  - Argumentless LOCK releases all via unlock_all()
+- [X] T083 [US4] Create LOCK tests with Memory backend in tests/unit/codegen/
+  - Converted 3 xfail stubs in test_timeouts.py to real tests
+  - Converted 3 xfail stubs in test_s8_2_12_lock.py to 7 real tests
+- [X] T084 [US4] Test LOCK timeout sets $TEST in tests/unit/codegen/
+  - Timed LOCK sets $TEST=1 on success
+  - Untimed LOCK preserves existing $TEST value
+  - LOCK - with timeout always sets $TEST=1
+- [X] T085 [US4] Validate LOCK against YDB using validate.py
+  - All LOCK operations verified: L +, L -, L (list), subscripts, timeout
 
 **Checkpoint**: LOCK complete (SC-011 partial, SC-015 partial)
 
