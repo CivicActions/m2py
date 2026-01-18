@@ -10,23 +10,32 @@ import pytest
 class TestRoutineBodyCodegen:
     """Codegen-level tests for routine body code generation (§6.2)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: label to function")
-    def test_label_to_function(self, generate_python):
-        """Labels generate Python functions (§6.2)."""
-        pytest.fail("Stub - implement test")
+    def test_label_to_function(self, execute_mumps):
+        """Labels generate callable Python functions (§6.2).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: line body")
-    def test_line_body(self, generate_python):
-        """Line bodies generate statement sequences (§6.2)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: D SUB Q SUB W "SUB" Q → "SUB"
+        """
+        result = execute_mumps('TEST\n D SUB\n Q\nSUB\n W "SUB"\n Q\n')
+        assert result.output == "SUB"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: block structure")
-    def test_block_structure(self, generate_python):
-        """Block structure generates proper indentation (§6.2)."""
-        pytest.fail("Stub - implement test")
+    def test_line_body(self, execute_mumps):
+        """Line bodies execute statements in sequence (§6.2).
+
+        YDB verified: S X=1,Y=2 W X,Y Q → "12"
+        """
+        result = execute_mumps("TEST\n S X=1,Y=2\n W X,Y\n Q\n")
+        assert result.output == "12"
+        assert result.success is True
+
+    def test_block_structure(self, execute_mumps):
+        """Block structure with subroutine calls works correctly (§6.2).
+
+        YDB verified: D A Q A D B Q B W "B" Q → "B"
+        """
+        result = execute_mumps('TEST\n D A\n Q\nA\n D B\n Q\nB\n W "B"\n Q\n')
+        assert result.output == "B"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: comment preservation")

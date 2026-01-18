@@ -10,29 +10,42 @@ import pytest
 class TestValuesCodegen:
     """Codegen-level tests for values code generation (§7.1.1)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: string value")
-    def test_string_value(self, generate_python):
-        """String values generate Python strings (§7.1.1)."""
-        pytest.fail("Stub - implement test")
+    def test_string_value(self, execute_mumps):
+        """String values output directly (§7.1.1).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: numeric value")
-    def test_numeric_value(self, generate_python):
-        """Numeric values generate Python numbers (§7.1.1)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: W "hello" → "hello"
+        """
+        result = execute_mumps('TEST\n W "hello"\n Q\n')
+        assert result.output == "hello"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: empty string")
-    def test_empty_string(self, generate_python):
-        """Empty string generates empty Python string (§7.1.1)."""
-        pytest.fail("Stub - implement test")
+    def test_numeric_value(self, execute_mumps):
+        """Numeric values output directly (§7.1.1).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: MValue wrapper")
-    def test_mvalue_wrapper(self, generate_python):
-        """Values use MValue wrapper for MUMPS semantics (§7.1.1)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: W 42 → "42"
+        """
+        result = execute_mumps("TEST\n W 42\n Q\n")
+        assert result.output == "42"
+        assert result.success is True
+
+    def test_empty_string(self, execute_mumps):
+        """Empty string outputs nothing (§7.1.1).
+
+        YDB verified: W "" → ""
+        """
+        result = execute_mumps('TEST\n W ""\n Q\n')
+        assert result.output == ""
+        assert result.success is True
+
+    def test_mvalue_wrapper(self, execute_mumps):
+        """Values handle numeric string coercion correctly (§7.1.1).
+
+        M2py uses helpers (m_num, m_str) rather than MValue class.
+        YDB verified: W "3"+2 → "5" (string "3" coerces to numeric 3)
+        """
+        result = execute_mumps('TEST\n W "3"+2\n Q\n')
+        assert result.output == "5"
+        assert result.success is True
 
 
 @pytest.mark.codegen
@@ -66,23 +79,24 @@ class TestNumericCoercionCodegen:
 
         assert m_num("007") == 7
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: numeric prefix extraction")
-    def test_numeric_prefix_extraction(self, generate_python):
-        """Numeric coercion extracts leading numeric prefix.
+    def test_numeric_prefix_extraction(self):
+        """Numeric coercion extracts leading numeric prefix (§7.1.4.5).
 
-        '3A' coerces to 3, 'A3' coerces to 0 (no leading numeric).
+        m_num('3A') returns 3, m_num('A3') returns 0.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.helpers import m_num
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: empty string to zero")
-    def test_empty_string_to_zero(self, generate_python):
-        """Empty string coerces to 0.
+        assert m_num("3A") == 3
+        assert m_num("A3") == 0
 
-        '' coerces to 0 per MUMPS semantics.
+    def test_empty_string_to_zero(self):
+        """Empty string coerces to 0 (§7.1.4.5).
+
+        m_num('') returns 0 per MUMPS semantics.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.helpers import m_num
+
+        assert m_num("") == 0
 
     def test_sign_canonicalization(self):
         """Numeric coercion canonicalizes signs.
@@ -162,14 +176,15 @@ class TestTruthValueCodegen:
         assert m_truth("1A") is True
         assert m_truth("-5") is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: string with leading number")
-    def test_string_with_leading_number(self, generate_python):
-        """String with leading number uses numeric truth.
+    def test_string_with_leading_number(self):
+        """String with leading number uses numeric truth (§1.2.4).
 
-        '1ABC' is true (coerces to 1), '0ABC' is false (coerces to 0).
+        m_truth('1ABC') is True (coerces to 1), m_truth('0ABC') is False.
         """
-        pytest.fail("Stub - implement test")
+        from m2py.codegen.helpers import m_truth
+
+        assert m_truth("1ABC") is True
+        assert m_truth("0ABC") is False
 
 
 @pytest.mark.codegen

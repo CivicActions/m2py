@@ -104,14 +104,20 @@ class TestIfCommandCodegen:
         assert result.output == "YES"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF multiple conditions")
-    def test_if_multiple_conditions(self, generate_python):
-        """IF with comma-separated conditions generates AND (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+    def test_if_multiple_conditions(self, execute_mumps):
+        """IF with comma-separated conditions (AND) (§8.2.9).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: IF argumentless")
-    def test_if_argumentless(self, generate_python):
-        """IF argumentless uses $TEST (§8.2.9)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: S X=3 I X>0,X<5 W "OK" → "OK"
+        """
+        result = execute_mumps('TEST\n S X=3\n I X>0,X<5 W "OK"\n Q\n')
+        assert result.output == "OK"
+        assert result.success is True
+
+    def test_if_argumentless(self, execute_mumps):
+        """IF argumentless uses $TEST (§8.2.9).
+
+        YDB verified: I 1 I  W "YES" → "YES"
+        """
+        result = execute_mumps('TEST\n I 1 I  W "YES"\n Q\n')
+        assert result.output == "YES"
+        assert result.success is True

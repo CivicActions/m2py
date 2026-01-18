@@ -10,11 +10,14 @@ import pytest
 class TestRoutineHeadCodegen:
     """Codegen-level tests for routine head code generation (§6.1)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: routine to function")
-    def test_routine_to_function(self, generate_python):
-        """Routine generates Python function (§6.1)."""
-        pytest.fail("Stub - implement test")
+    def test_routine_to_function(self, execute_mumps):
+        """Routine generates executable Python function (§6.1).
+
+        YDB verified: TEST W "Pass" Q → "Pass"
+        """
+        result = execute_mumps('TEST\n W "Pass"\n Q\n')
+        assert result.output == "Pass"
+        assert result.success is True
 
     def test_formal_parameters(self, generate_python):
         """Formal parameters generate function parameters (§6.1).
@@ -139,14 +142,14 @@ class TestNameTranslationCodegen:
         # Normal name round-trip
         assert nt.reverse(nt.translate("FOO")) == "FOO"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: variable name translation")
-    def test_variable_name_translation(self, generate_python):
-        """Variable names use same translation rules.
+    def test_variable_name_translation(self, execute_mumps):
+        """Variable names with % prefix work correctly (§6.1).
 
-        %X variable becomes _pct_X in generated Python.
+        YDB verified: S %X=1 W %X → "1"
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST\n S %X=1\n W %X\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
 
 
 @pytest.mark.codegen

@@ -78,8 +78,11 @@ class TestNewCommandCodegen:
         # After N (X,Y), A and Z are undefined (NEWed), X and Y are kept
         assert result.output == "a23z\n"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: NEW scope cleanup on QUIT")
-    def test_new_scope_cleanup(self, generate_python):
-        """NEW scope cleanup on QUIT (§8.2.14)."""
-        pytest.fail("Stub - implement test")
+    def test_new_scope_cleanup(self, execute_mumps):
+        """NEW scope cleanup on QUIT (§8.2.14).
+
+        YDB verified: S X=1 D SUB W X ... SUB N X S X=2 Q → "1"
+        """
+        result = execute_mumps("TEST\n S X=1 D SUB W X Q\nSUB\n N X S X=2 Q\n")
+        assert result.output == "1"
+        assert result.success is True

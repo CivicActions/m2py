@@ -27,20 +27,29 @@ class TestWriteCommandCodegen:
         assert result.output == "PASS"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE format controls")
-    def test_write_format_controls(self, generate_python):
-        """WRITE !, # generate newlines/form feeds (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_write_format_controls(self, execute_mumps):
+        """WRITE !, # generate newlines/form feeds (§8.2.25).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE ?column")
-    def test_write_column(self, generate_python):
-        """WRITE ?n generates column positioning (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: W "A",!,"B" → "A\\nB"
+        """
+        result = execute_mumps('TEST\n W "A",!,"B"\n Q\n')
+        assert result.output == "A\nB"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: WRITE char code")
-    def test_write_char_code(self, generate_python):
-        """WRITE *n generates char output (§8.2.25)."""
-        pytest.fail("Stub - implement test")
+    def test_write_column(self, execute_mumps):
+        """WRITE ?n generates column positioning (§8.2.25).
+
+        YDB verified: W ?5,"X" → "     X"
+        """
+        result = execute_mumps('TEST\n W ?5,"X"\n Q\n')
+        assert result.output == "     X"
+        assert result.success is True
+
+    def test_write_char_code(self, execute_mumps):
+        """WRITE *n generates char output (§8.2.25).
+
+        YDB verified: W *65 → "A"
+        """
+        result = execute_mumps("TEST\n W *65\n Q\n")
+        assert result.output == "A"
+        assert result.success is True

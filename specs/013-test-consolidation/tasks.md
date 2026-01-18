@@ -49,37 +49,37 @@
 
 ### DELETE: §7.2 Operators (4 stubs)
 
-- [ ] T011 [P] [US1] Verify test_s7_2_logical_operators.py covers multiplication, then delete stub in tests/
-- [ ] T012 [P] [US1] Verify test_s7_2_logical_operators.py covers logical_and, then delete stub in tests/
-- [ ] T013 [P] [US1] Verify test_s7_2_logical_operators.py covers logical_or, then delete stub in tests/
-- [ ] T014 [P] [US1] Verify test_s7_2_logical_operators.py covers left_to_right_evaluation, then delete stub in tests/
+- [x] T011 [P] [US1] Verify test_s7_2_logical_operators.py covers multiplication, then delete stub in tests/
+- [x] T012 [P] [US1] Verify test_s7_2_logical_operators.py covers logical_and, then delete stub in tests/
+- [x] T013 [P] [US1] Verify test_s7_2_logical_operators.py covers logical_or, then delete stub in tests/
+- [x] T014 [P] [US1] Verify test_s7_2_logical_operators.py covers left_to_right_evaluation, then delete stub in tests/
 
 ### DELETE: §8.2.18 SET (9 stubs)
 
-- [ ] T015 [P] [US1] Verify test_spec_009_globals.py covers set_global, then delete stub in tests/
-- [ ] T016 [P] [US1] Verify test_spec_009_lhs_piece.py covers set_piece stubs (3), then delete stubs in tests/
-- [ ] T017 [P] [US1] Verify test_spec_009_lhs_extract.py covers set_extract stubs (3), then delete stubs in tests/
-- [ ] T018 [P] [US1] Verify test_spec_009_lhs_piece.py covers lhs_piece stubs (3), then delete in tests/
-- [ ] T019 [P] [US1] Verify test_spec_009_lhs_extract.py covers lhs_extract stubs (3), then delete in tests/
+- [x] T015 [P] [US1] Verify test_spec_009_globals.py covers set_global, then delete stub in tests/
+- [x] T016 [P] [US1] Verify test_spec_009_lhs_piece.py covers set_piece stubs (3), then delete stubs in tests/
+- [x] T017 [P] [US1] Verify test_spec_009_lhs_extract.py covers set_extract stubs (3), then delete stubs in tests/
+- [x] T018 [P] [US1] Verify test_spec_009_lhs_piece.py covers lhs_piece stubs (3), then delete in tests/
+- [x] T019 [P] [US1] Verify test_spec_009_lhs_extract.py covers lhs_extract stubs (3), then delete in tests/
 
 ### DELETE: Control Flow Duplicates
 
-- [ ] T020 [P] [US1] Verify spec-aligned coverage for IF stubs, delete duplicates in tests/
-- [ ] T021 [P] [US1] Verify spec-aligned coverage for WRITE stubs, delete duplicates in tests/
-- [ ] T022 [P] [US1] Verify spec-aligned coverage for FOR stubs, delete duplicates in tests/
+- [x] T020 [P] [US1] Verify spec-aligned coverage for IF stubs, delete duplicates in tests/
+- [x] T021 [P] [US1] Verify spec-aligned coverage for WRITE stubs, delete duplicates in tests/
+- [x] T022 [P] [US1] Verify spec-aligned coverage for FOR stubs, delete duplicates in tests/
 
 ### DELETE: Z-Command Duplicates (8 stubs)
 
-- [ ] T023 [P] [US1] Identify and delete duplicate ZWRITE test stubs across test files
-- [ ] T024 [P] [US1] Identify and delete duplicate ZLINK test stubs across test files
-- [ ] T025 [P] [US1] Identify and delete other duplicate Z-command stubs
+- [x] T023 [P] [US1] Identify and delete duplicate ZWRITE test stubs across test files
+- [x] T024 [P] [US1] Identify and delete duplicate ZLINK test stubs across test files
+- [x] T025 [P] [US1] Identify and delete other duplicate Z-command stubs
 
 ### DELETE: Remaining Redundant Stubs
 
-- [ ] T026 [US1] Audit remaining DELETE candidates from gaps-stubs.md, verify coverage, delete
-- [ ] T027 [US1] Run xfail count, verify ~44 reduction from baseline
+- [x] T026 [US1] Audit remaining DELETE candidates from gaps-stubs.md, verify coverage, delete
+- [x] T027 [US1] Run xfail count, verify ~44 reduction from baseline
 
-**Checkpoint**: User Story 1 complete - xfail reduced by ~44, all deletions verified
+**Checkpoint**: User Story 1 complete - xfail reduced by ~49 (286→237), all deletions verified
 
 ---
 

@@ -28,11 +28,14 @@ class TestOperatorsCodegen:
         assert result.output == "2"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: multiplication")
-    def test_multiplication(self, generate_python):
-        """Multiplication generates Python * with numeric coercion (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_multiplication(self, execute_mumps):
+        """Multiplication generates Python * with numeric coercion (§7.2).
+
+        YDB verified: W 3*4 → 12
+        """
+        result = execute_mumps("TEST\n W 3*4\n Q\n")
+        assert result.output == "12"
+        assert result.success is True
 
     @pytest.mark.stub
     @pytest.mark.xfail(reason="Not yet implemented: division")
@@ -294,20 +297,32 @@ class TestOperatorsCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: logical AND")
-    def test_logical_and(self, generate_python):
-        """Logical AND generates Python and (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_logical_and(self, execute_mumps):
+        """Logical AND returns 1 if both operands are true (§7.2).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: logical OR")
-    def test_logical_or(self, generate_python):
-        """Logical OR generates Python or (§7.2)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: W 1&1 → 1
+        """
+        result = execute_mumps("TEST\n W 1&1\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: left-to-right evaluation")
-    def test_left_to_right_evaluation(self, generate_python):
-        """Left-to-right evaluation is preserved (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_logical_or(self, execute_mumps):
+        """Logical OR returns 1 if either operand is true (§7.2).
+
+        YDB verified: W 1!0 → 1
+        """
+        result = execute_mumps("TEST\n W 1!0\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_left_to_right_evaluation(self, execute_mumps):
+        """Operators evaluate left-to-right without precedence (§7.2).
+
+        MUMPS: 2+3*4 = (2+3)*4 = 5*4 = 20
+        NOT: 2+(3*4) = 2+12 = 14 (C/Python precedence)
+
+        YDB verified: W 2+3*4 → 20
+        """
+        result = execute_mumps("TEST\n W 2+3*4\n Q\n")
+        assert result.output == "20"
+        assert result.success is True

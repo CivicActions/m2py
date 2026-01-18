@@ -68,29 +68,41 @@ class TestSetCommandCodegen:
         assert result.output == "1020"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: SET multiple targets")
-    def test_set_multiple_targets(self, generate_python):
-        """SET (X,Y)=value generates multiple assignments (§8.2.18)."""
-        pytest.fail("Stub - implement test")
+    def test_set_multiple_targets(self, execute_mumps):
+        """SET (X,Y)=value assigns value to multiple targets (§8.2.18).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: SET global")
-    def test_set_global(self, generate_python):
-        """SET ^GLOBAL generates global assignment (§8.2.18)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: S (X,Y)=5 W X,Y → "55"
+        """
+        result = execute_mumps("TEST\n S (X,Y)=5\n W X,Y\n Q\n")
+        assert result.output == "55"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: SET $PIECE basic")
-    def test_set_piece(self, generate_python):
-        """SET $PIECE generates piece replacement (§8.2.18)."""
-        pytest.fail("Stub - implement test")
+    def test_set_global(self, execute_mumps):
+        """SET ^GLOBAL generates global assignment (§8.2.18).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: SET $EXTRACT basic")
-    def test_set_extract(self, generate_python):
-        """SET $EXTRACT generates substring replacement (§8.2.18)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: S ^A=1 W ^A → "1"
+        """
+        result = execute_mumps("TEST\n S ^A=1\n W ^A\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_set_piece(self, execute_mumps):
+        """SET $PIECE generates piece replacement (§8.2.18).
+
+        YDB verified: S X="A^B^C" S $P(X,"^",2)="NEW" W X → "A^NEW^C"
+        """
+        result = execute_mumps('TEST\n S X="A^B^C" S $P(X,"^",2)="NEW"\n W X\n Q\n')
+        assert result.output == "A^NEW^C"
+        assert result.success is True
+
+    def test_set_extract(self, execute_mumps):
+        """SET $EXTRACT generates substring replacement (§8.2.18).
+
+        YDB verified: S X="HELLO" S $E(X,1,2)="YO" W X → "YOLLO"
+        """
+        result = execute_mumps('TEST\n S X="HELLO" S $E(X,1,2)="YO"\n W X\n Q\n')
+        assert result.output == "YOLLO"
+        assert result.success is True
 
 
 @pytest.mark.codegen
@@ -103,59 +115,59 @@ class TestLhsFunctionAssignmentCodegen:
     Reference: §8.2.18
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: LHS piece creates variable")
-    def test_lhs_piece_creates_variable(self, generate_python):
+    def test_lhs_piece_creates_variable(self, execute_mumps):
         """SET $PIECE creates variable if undefined.
 
-        S $P(X,"^",2)="B" when X undefined creates X="^B"
+        YDB verified: S $P(X,"^",2)="B" W X → "^B"
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST\n S $P(X,"^",2)="B"\n W X\n Q\n')
+        assert result.output == "^B"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: LHS piece pads with delimiter")
-    def test_lhs_piece_pads_with_delimiter(self, generate_python):
+    def test_lhs_piece_pads_with_delimiter(self, execute_mumps):
         """SET $PIECE pads with delimiters if needed.
 
-        S X="A" S $P(X,"^",3)="C" creates X="A^^C"
+        YDB verified: S X="A" S $P(X,"^",3)="C" W X → "A^^C"
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST\n S X="A" S $P(X,"^",3)="C"\n W X\n Q\n')
+        assert result.output == "A^^C"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: LHS piece replaces existing")
-    def test_lhs_piece_replaces_existing(self, generate_python):
+    def test_lhs_piece_replaces_existing(self, execute_mumps):
         """SET $PIECE replaces existing piece.
 
-        S X="A^B^C" S $P(X,"^",2)="NEW" creates X="A^NEW^C"
+        YDB verified: S X="A^B^C" S $P(X,"^",2)="NEW" W X → "A^NEW^C"
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST\n S X="A^B^C" S $P(X,"^",2)="NEW"\n W X\n Q\n')
+        assert result.output == "A^NEW^C"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: LHS extract creates variable")
-    def test_lhs_extract_creates_variable(self, generate_python):
+    def test_lhs_extract_creates_variable(self, execute_mumps):
         """SET $EXTRACT creates variable if undefined.
 
-        S $E(X,1,3)="ABC" when X undefined creates X="ABC"
+        YDB verified: S $E(X,1,3)="ABC" W X → "ABC"
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST\n S $E(X,1,3)="ABC"\n W X\n Q\n')
+        assert result.output == "ABC"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: LHS extract replaces substring")
-    def test_lhs_extract_replaces_substring(self, generate_python):
+    def test_lhs_extract_replaces_substring(self, execute_mumps):
         """SET $EXTRACT replaces substring.
 
-        S X="HELLO" S $E(X,1,2)="YO" creates X="YOLLO"
+        YDB verified: S X="HELLO" S $E(X,1,2)="YO" W X → "YOLLO"
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST\n S X="HELLO" S $E(X,1,2)="YO"\n W X\n Q\n')
+        assert result.output == "YOLLO"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: LHS extract beyond length")
-    def test_lhs_extract_beyond_length(self, generate_python):
+    def test_lhs_extract_beyond_length(self, execute_mumps):
         """SET $EXTRACT beyond length pads with spaces.
 
-        S X="AB" S $E(X,5,6)="XY" may create X="AB  XY"
+        YDB verified: S X="AB" S $E(X,5,6)="XY" W X → "AB  XY"
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST\n S X="AB" S $E(X,5,6)="XY"\n W X\n Q\n')
+        assert result.output == "AB  XY"
+        assert result.success is True
 
 
 @pytest.mark.codegen

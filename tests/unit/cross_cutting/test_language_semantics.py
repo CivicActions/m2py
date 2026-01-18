@@ -28,45 +28,52 @@ class TestTestVariableCodegen:
     Reference: §7.1.4.10, §8.2.4, §8.2.9, FR-047
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Runtime behavior - requires code execution")
-    def test_if_true_sets_test_true(self):
+    def test_if_true_sets_test_true(self, execute_mumps):
         """IF 1 sets $TEST=1 (§8.2.9).
 
         IF 1
         ; $TEST should be 1
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST I 1 W $T Q")
+        assert result.output == "1"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Runtime behavior - requires code execution")
-    def test_if_false_sets_test_false(self):
+    def test_if_false_sets_test_false(self, execute_mumps):
         """IF 0 sets $TEST=0 (§8.2.9).
 
         IF 0
         ; $TEST should be 0
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST
+ I 0
+ W $T Q"""
+        result = execute_mumps(source)
+        assert result.output == "0"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Runtime behavior - requires code execution")
-    def test_argumentless_if_uses_test(self):
+    def test_argumentless_if_uses_test(self, execute_mumps):
         """Argumentless IF executes based on $TEST (§8.2.9).
 
         IF 1
         IF  WRITE "YES"  ; Should execute
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST
+ I 1
+ I  W "YES" Q
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "YES"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Runtime behavior - requires code execution")
-    def test_else_uses_test(self):
+    def test_else_uses_test(self, execute_mumps):
         """ELSE executes when $TEST=0 (§8.2.4).
 
         IF 0
         ELSE  WRITE "NO"  ; Should execute
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST
+ I 0
+ E  W "NO" Q
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "NO"
 
 
 @pytest.mark.codegen
@@ -193,50 +200,45 @@ class TestLeftToRightCodegen:
     Reference: §7.2, FR-050
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: 2+3*4=20")
-    def test_addition_then_multiplication(self):
+    def test_addition_then_multiplication(self, execute_mumps):
         """2+3*4 evaluates to 20, not 14 (§7.2, FR-050).
 
         SET X=2+3*4  ; X should be 20 = (2+3)*4
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W 2+3*4 Q")
+        assert result.output == "20"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: 10-3-2=5")
-    def test_subtraction_left_to_right(self):
+    def test_subtraction_left_to_right(self, execute_mumps):
         """10-3-2 evaluates to 5 (§7.2).
 
         SET X=10-3-2  ; X should be 5 = (10-3)-2
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W 10-3-2 Q")
+        assert result.output == "5"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: division left to right")
-    def test_division_left_to_right(self):
+    def test_division_left_to_right(self, execute_mumps):
         """24/4/2 evaluates to 3 (§7.2).
 
         SET X=24/4/2  ; X should be 3 = (24/4)/2
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W 24/4/2 Q")
+        assert result.output == "3"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: mixed with comparison")
-    def test_mixed_arithmetic_comparison(self):
+    def test_mixed_arithmetic_comparison(self, execute_mumps):
         """2+3>4 evaluates to 1 (true) (§7.2).
 
         SET X=2+3>4  ; (2+3)>4 = 5>4 = 1
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W 2+3>4 Q")
+        assert result.output == "1"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: parentheses override")
-    def test_parentheses_override_left_to_right(self):
+    def test_parentheses_override_left_to_right(self, execute_mumps):
         """2+(3*4) evaluates to 14 with parentheses (§7.2).
 
         SET X=2+(3*4)  ; X should be 14
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W 2+(3*4) Q")
+        assert result.output == "14"
 
 
 # =============================================================================
