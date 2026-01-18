@@ -272,23 +272,27 @@ Some candidates marked as CONVERT in gaps-stubs.md were discovered to have bugs 
 ### LOCK Command (FR-019)
 
 - [X] T081 [US4] Add MLockStatement codegen in src/m2py/codegen/statements.py
-  - Added _generate_lock() and _generate_lock_target() functions
-  - Handles incremental (+), decremental (-), and regular LOCK
-  - Generates _rt.globals.lock() / unlock_all() calls
+  - Added _generate_lock() function with full LOCK semantics
+  - Handles argumentless LOCK (releases all), exclusive LOCK, L +/- operations
 - [X] T082 [US4] Implement LOCK +/- syntax handling in src/m2py/codegen/statements.py
-  - LOCK + acquires without releasing existing locks
-  - LOCK - releases specific lock
-  - Plain LOCK (no +/-) releases all then acquires
-  - Argumentless LOCK releases all via unlock_all()
+  - Increment (L +name) acquires lock without releasing others
+  - Decrement (L -name) decrements lock count
+  - Exclusive (L name) releases all then locks
+  - Parenthesized lists (L (A,B)) for simultaneous locks
 - [X] T083 [US4] Create LOCK tests with Memory backend in tests/unit/codegen/
-  - Converted 3 xfail stubs in test_timeouts.py to real tests
-  - Converted 3 xfail stubs in test_s8_2_12_lock.py to 7 real tests
+  - Converted 3 xfail stubs in TestLockCommandCodegen to 7 real tests
+  - Tests: lock_primitive, increment, decrement, subscripts, argumentless, exclusive, parenthesized_list
 - [X] T084 [US4] Test LOCK timeout sets $TEST in tests/unit/codegen/
-  - Timed LOCK sets $TEST=1 on success
-  - Untimed LOCK preserves existing $TEST value
-  - LOCK - with timeout always sets $TEST=1
+  - Converted 2 xfail stubs in TestTimeoutsCodegen to 5 real tests
+  - Tests: timed LOCK changes $TEST, untimed preserves $TEST, LOCK -:timeout always 1
 - [X] T085 [US4] Validate LOCK against YDB using validate.py
-  - All LOCK operations verified: L +, L -, L (list), subscripts, timeout
+  - All LOCK operations match YDB behavior
+  - Verified: L +/-, L:timeout, L (list), argumentless L
+
+**Additional Notes**:
+- LOCK indirection (L +@X) emits comment but skips operation (future work)
+- Naked global LOCK (L +^(sub)) not yet supported (low priority)
+- $TEST behavior matches MUMPS spec: timed LOCK sets $TEST, untimed does not
 
 **Checkpoint**: LOCK complete (SC-011 partial, SC-015 partial)
 

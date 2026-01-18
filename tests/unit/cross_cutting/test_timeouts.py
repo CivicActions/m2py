@@ -65,47 +65,47 @@ class TestTimeoutsCodegen:
         """
         pytest.fail("Stub - implement test")
 
-    def test_lock_timeout_sets_test_false(self, execute_mumps):
-        """LOCK timeout sets $TEST=0 (§8.2.12, FR-047).
+    def test_lock_timeout_sets_test_true(self, execute_mumps):
+        """LOCK success with timeout sets $TEST=1 (§8.2.12, FR-047).
 
-        Spec 013 Phase 9: In single-process mode, LOCK always succeeds,
-        but we can test that timeout:0 correctly sets $TEST=1 (success).
-        Note: True contention-based timeout would require multi-process test.
+        Spec 013 FR-019: Timed LOCK sets $TEST based on success.
+        In single-process mode, lock always succeeds immediately.
         """
-        # Memory backend always succeeds, so $TEST=1 even with timeout:0
-        # This verifies the codegen correctly generates $TEST assignment
-        result = execute_mumps("TEST\n L +^BUSY:0\n W $T\n Q")
-        assert result.output == "1"  # Memory backend has no contention
-
-    def test_lock_success_sets_test_true(self, execute_mumps):
-        """LOCK success sets $TEST=1 (§8.2.12, FR-047).
-
-        Spec 013 Phase 9: LOCK with timeout sets $TEST=1 on success.
-        """
-        result = execute_mumps("TEST\n L +^AVAIL:5\n W $T\n Q")
+        result = execute_mumps("TEST\n I 0\n L +^A:0\n W $T\n Q")
         assert result.output == "1"
 
-    def test_lock_without_timeout_preserves_test(self, execute_mumps):
-        """LOCK without timeout does NOT modify $TEST (§8.2.12).
+    def test_lock_timed_changes_test(self, execute_mumps):
+        """Timed LOCK changes $TEST (§8.2.12, FR-047).
 
-        Spec 013 Phase 9: Per MUMPS spec, untimed LOCK does not change $TEST.
-        This is distinct from timed LOCK which always sets $TEST.
+        Spec 013: L +^A:timeout modifies $TEST, but L +^A does not.
         """
-        # Set $TEST to 0, then LOCK without timeout - $TEST should stay 0
-        result = execute_mumps("TEST\n IF 0\n S X=1\n L +^DATA\n W $T\n Q")
+        result = execute_mumps("TEST\n I 0\n W $T\n L +^A:0\n W $T\n Q")
+        assert result.output == "01"
+
+    def test_untimed_lock_preserves_test(self, execute_mumps):
+        """Untimed LOCK does NOT change $TEST (§8.2.12).
+
+        Spec 013: Per MUMPS spec, untimed LOCK does not modify $TEST.
+        """
+        result = execute_mumps("TEST\n I 0\n W $T\n L +^A\n W $T\n Q")
+        assert result.output == "00"
+
+    def test_lock_decrement_timed_always_true(self, execute_mumps):
+        """LOCK -:timeout always sets $TEST=1 (§8.2.12, FR-047).
+
+        Spec 013: L -name:timeout always sets $TEST to 1 per MUMPS spec.
+        """
+        result = execute_mumps("TEST\n I 0\n L -^A:0\n W $T\n Q")
+        assert result.output == "1"
+
+    def test_lock_decrement_untimed_preserves_test(self, execute_mumps):
+        """Untimed LOCK - does NOT change $TEST (§8.2.12).
+
+        Spec 013: L -name without timeout does not modify $TEST.
+        """
+        result = execute_mumps("TEST\n I 0\n L -^A\n W $T\n Q")
         assert result.output == "0"
 
-        # Set $TEST to 1, then LOCK without timeout - $TEST should stay 1
-        result2 = execute_mumps("TEST\n IF 1\n L +^DATA\n W $T\n Q")
-        assert result2.output == "1"
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Runtime behavior - requires full code execution")
-    def test_open_timeout_sets_test_false(self):
-        """OPEN timeout sets $TEST=0 (§8.2.15, FR-047)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
     @pytest.mark.xfail(reason="Runtime behavior - requires full code execution")
     def test_job_timeout_sets_test_false(self):
         """JOB timeout sets $TEST=0 (§8.2.10, FR-047)."""

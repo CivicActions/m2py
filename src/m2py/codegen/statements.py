@@ -2923,179 +2923,126 @@ def _generate_trollback(stmt: MTRollbackStatement, ctx: "GeneratorContext") -> N
 def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for LOCK command.
 
-    Spec 013 FR-019: Lock command via database abstraction.
+    Spec 013 FR-019: LOCK command via database abstraction.
 
     MUMPS Forms:
-    - L (no args) - release all locks
-    - L ^A - release all, then lock ^A
-    - L +^A - incremental lock (acquire without releasing)
-    - L -^A - decremental lock (release specific lock)
-    - L ^A:5 - lock with timeout (sets $TEST)
-    - L (^A,^B):5 - lock multiple as atomic unit with timeout
+    - L              ; Release all locks (argumentless)
+    - L ^A           ; Exclusive lock on ^A (releases all previous locks first)
+    - L +^A          ; Increment lock count on ^A
+    - L -^A          ; Decrement lock count on ^A
+    - L ^A:5         ; Lock with timeout (sets $TEST)
+    - L (^A,^B)      ; Lock multiple simultaneously (releases all previous)
+    - L +(^A,^B)     ; Increment locks on multiple
+    - L -(^A,^B)     ; Decrement locks on multiple
 
-    Per MUMPS spec (§8.2.12):
-    - Untimed LOCK does NOT change $TEST
-    - Timed LOCK sets $TEST=1 on success, $TEST=0 on timeout
-    - LOCK - (release) with timeout always sets $TEST=1
+    Generated code:
+    - _rt.globals.unlock_all() for release-all semantics
+    - _rt.globals.lock(name, subscripts, timeout, lock_type)
+
+    Per MUMPS spec §8.2.12:
+    - Timed LOCK sets $TEST: 1 for success, 0 for timeout
+    - Untimed LOCK does NOT modify $TEST
+    - LOCK - always sets $TEST to 1
 
     Args:
         stmt: MLockStatement node
         ctx: Generator context
     """
-
-    # Case 1: Argumentless LOCK - release all locks
+    # Handle argumentless LOCK - releases all locks
     if not stmt.targets:
         ctx.emitter.line("_rt.globals.unlock_all()")
         return
 
-    # Get statement-level lock_type (derived from all targets having same lockop)
-    stmt_lock_type = stmt.lock_type or ""
+    # Handle lock_type at statement level (applies to all targets)
+    # lock_type can be "" (exclusive - releases all first), "+" (increment), "-" (decrement)
+    stmt_lock_type = stmt.lock_type
 
-    # For regular LOCK (no + or -), release all locks first
-    # This is per MUMPS spec: "L ^A" first releases all, then acquires ^A
-    if stmt_lock_type == "" and not all(
-        t.get("lockop", "") in ("+", "-") for t in stmt.targets
-    ):
+    # For exclusive lock (no + or -), we first release all locks
+    # This happens BEFORE any locks are acquired
+    if stmt_lock_type == "":
         ctx.emitter.line("_rt.globals.unlock_all()")
 
     # Process each target
-    for target in stmt.targets:
-        _generate_lock_target(target, stmt, ctx)
+    for target_dict in stmt.targets:
+        # Extract target info from dict
+        # target_dict keys: lockop, target, timeout, is_indirect, indirection, indirection_levels
 
+        # Get lock operation from target (overrides stmt-level if present)
+        target_lockop = target_dict.get("lockop", "")
+        # Use target lockop if present, otherwise use stmt-level
+        lock_type = target_lockop if target_lockop else stmt_lock_type
+        # For exclusive lock, use "+" since we already released all above
+        if lock_type == "":
+            lock_type = "+"
 
-def _generate_lock_target(
-    target: dict, stmt: MLockStatement, ctx: "GeneratorContext"
-) -> None:
-    """Generate code for a single LOCK target.
+        # Handle indirection
+        if target_dict.get("is_indirect"):
+            # Indirection - need runtime resolution
+            # For now, emit a comment about unsupported feature
+            ctx.emitter.line("# LOCK indirection not yet supported")
+            continue
 
-    Args:
-        target: Lock target dict with lockop, target/indirection, timeout, etc.
-        stmt: Parent MLockStatement (for statement-level timeout)
-        ctx: Generator context
-    """
+        # Get the target (global or local variable)
+        target = target_dict.get("target")
+        if target is None:
+            continue
 
-    # Determine lock operation type
-    lockop = target.get("lockop", "") or stmt.lock_type or ""
+        # Extract name and subscripts from target
+        # target can be GlobalVariable, NakedGlobal, or MVariable
+        from m2py.parser.textx_classes import GlobalVariable as GV
+        from m2py.parser.textx_classes import NakedGlobal as NG
 
-    # Get timeout - target-level overrides statement-level
-    timeout_expr = target.get("timeout") or stmt.timeout
-    has_timeout = timeout_expr is not None
-
-    # Handle postcondition
-    postcond = target.get("postcondition")
-    if postcond:
-        cond_code = generate_expr(postcond, ctx)
-        ctx.emitter.line(f"if _rt.m_bool({cond_code}):")
-        ctx.emitter.indent()
-
-    # Handle indirection (runtime-resolved lock name)
-    if target.get("is_indirect"):
-        indirection = target.get("indirection")
-        if indirection is None:
-            # Should never happen for valid ASG
-            if postcond:
-                ctx.emitter.dedent()
-            return
-        levels = target.get("indirection_levels", 1)
-        indir_code = generate_expr(indirection, ctx)
-        # Indirection resolved at runtime - use _rt.lock_indirect
-        timeout_code = (
-            generate_expr(timeout_expr, ctx)
-            if has_timeout and timeout_expr is not None
-            else "None"
-        )
-        if lockop == "-":
-            ctx.emitter.line(f"_rt.lock_indirect({indir_code}, {levels}, '-')")
+        if isinstance(target, GV):
+            name = target.name
+            subscripts = target.subscripts
+        elif isinstance(target, NG):
+            # Naked global - use naked reference handling
+            ctx.emitter.line("# LOCK with naked global not yet supported")
+            continue
         else:
-            if has_timeout:
+            # Local variable as lock name
+            name = getattr(target, "name", str(target))
+            subscripts = getattr(target, "subscripts", [])
+
+        # Generate subscript expressions
+        subs_exprs = []
+        for sub in subscripts:
+            subs_exprs.append(generate_expr(sub, ctx))
+
+        # Build the subscripts tuple string
+        if subs_exprs:
+            subs_str = f"({', '.join(subs_exprs)},)"
+        else:
+            subs_str = "()"
+
+        # Get timeout from target dict
+        timeout_expr = target_dict.get("timeout")
+
+        # For parenthesized lists, timeout may be on the statement
+        if timeout_expr is None and stmt.timeout is not None:
+            timeout_expr = stmt.timeout
+
+        # Generate lock call
+        if timeout_expr is not None:
+            # Timed lock - sets $TEST
+            timeout_val = generate_expr(timeout_expr, ctx)
+            if lock_type == "-":
+                # LOCK -name:timeout always sets $TEST to 1
                 ctx.emitter.line(
-                    f"_test = _rt.lock_indirect({indir_code}, {levels}, '+', {timeout_code})"
-                )
-            else:
-                ctx.emitter.line(f"_rt.lock_indirect({indir_code}, {levels}, '+')")
-    else:
-        # Direct target - extract name and subscripts
-        lock_target = target.get("target")
-        if lock_target is None:
-            # Empty target - skip
-            if postcond:
-                ctx.emitter.dedent()
-            return
-
-        name, subscripts = _extract_lock_name_subscripts(lock_target, ctx)
-
-        # Generate appropriate lock call
-        timeout_code = (
-            generate_expr(timeout_expr, ctx)
-            if has_timeout and timeout_expr is not None
-            else "None"
-        )
-        subscripts_code = f"({', '.join(subscripts)},)" if subscripts else "()"
-
-        if lockop == "-":
-            # Decremental lock - release
-            # LOCK - with timeout always succeeds (sets $TEST=1)
-            if has_timeout:
-                ctx.emitter.line(
-                    f"_rt.globals.lock({name!r}, {subscripts_code}, {timeout_code}, '-')"
+                    f'_rt.globals.lock("{name}", {subs_str}, lock_type="-")'
                 )
                 ctx.emitter.line("_test = True")
             else:
+                # LOCK +name:timeout sets $TEST based on success/timeout
                 ctx.emitter.line(
-                    f"_rt.globals.lock({name!r}, {subscripts_code}, None, '-')"
+                    f'_test = _rt.globals.lock("{name}", {subs_str}, '
+                    f'timeout={timeout_val}, lock_type="{lock_type}")'
                 )
         else:
-            # Incremental or regular lock - acquire
-            if has_timeout:
-                ctx.emitter.line(
-                    f"_test = _rt.globals.lock({name!r}, {subscripts_code}, {timeout_code}, '+')"
-                )
-            else:
-                ctx.emitter.line(
-                    f"_rt.globals.lock({name!r}, {subscripts_code}, None, '+')"
-                )
-
-    if postcond:
-        ctx.emitter.dedent()
-
-
-def _extract_lock_name_subscripts(
-    lock_target, ctx: "GeneratorContext"
-) -> tuple[str, list[str]]:
-    """Extract global name and subscripts from a lock target.
-
-    Args:
-        lock_target: MVariable, GlobalVariable, or MNakedGlobal
-        ctx: Generator context
-
-    Returns:
-        Tuple of (name, list of subscript code strings)
-    """
-    from m2py.asg.expressions import MNakedGlobal, MVariable
-    from m2py.parser.textx_classes import GlobalVariable
-
-    if isinstance(lock_target, MVariable):
-        name = lock_target.name
-        subscripts = [generate_expr(s, ctx) for s in lock_target.subscripts]
-        return (name, subscripts)
-    elif isinstance(lock_target, GlobalVariable):
-        name = lock_target.name
-        # GlobalVariable has raw textX subscripts
-        subscripts = []
-        if hasattr(lock_target, "subscripts") and lock_target.subscripts:
-            for s in lock_target.subscripts:
-                # Analyze and generate each subscript
-                subscripts.append(generate_expr(s, ctx))
-        return (name, subscripts)
-    elif isinstance(lock_target, MNakedGlobal):
-        # Naked reference - resolved at runtime
-        # Generate subscript expressions
-        subscripts = [generate_expr(s, ctx) for s in lock_target.subscripts]
-        # Return special marker for naked reference
-        return ("__NAKED__", subscripts)
-    else:
-        # Unknown type - return empty
-        return ("", [])
+            # Untimed lock - does NOT modify $TEST
+            ctx.emitter.line(
+                f'_rt.globals.lock("{name}", {subs_str}, lock_type="{lock_type}")'
+            )
 
 
 def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:

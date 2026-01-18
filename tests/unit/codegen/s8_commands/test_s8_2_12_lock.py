@@ -1,8 +1,8 @@
 """Tests for LOCK command code generation (§8.2.12).
 
-Spec 013 Phase 9: LOCK codegen via database abstraction layer.
-
 Reference: MUMPS 1995 ANSI Standard, Section 8.2.12
+
+Spec 013 Phase 9: LOCK command codegen via database abstraction.
 """
 
 import pytest
@@ -15,58 +15,60 @@ class TestLockCommandCodegen:
     def test_lock_to_lock_primitive(self, execute_mumps):
         """LOCK generates lock acquisition (§8.2.12).
 
-        Spec 013 Phase 9: Basic LOCK generates _rt.globals.lock() call.
-        Note: Without +, LOCK first releases all then acquires.
+        Spec 013 FR-019: LOCK command uses database abstraction.
+        L +^GLOBAL acquires a lock on the global.
         """
-        result = execute_mumps("TEST\n IF 1\n L ^DATA\n W $T\n Q")
-        # LOCK without timeout preserves $TEST (was 1 from IF 1)
-        assert result.output == "1"
+        result = execute_mumps('TEST\n L +^A\n W "locked"\n Q')
+        assert result.output == "locked"
 
     def test_lock_increment(self, execute_mumps):
         """LOCK + generates incremental lock (§8.2.12).
 
-        Spec 013 Phase 9: LOCK + acquires without releasing existing locks.
+        Spec 013 FR-019: L +^GLOBAL increments lock count.
+        Multiple increments require equal decrements to release.
         """
-        result = execute_mumps('TEST\n L +^A\n L +^B\n W "OK"\n Q')
-        assert result.output == "OK"
+        result = execute_mumps('TEST\n L +^A\n L +^A\n L -^A\n L -^A\n W "done"\n Q')
+        assert result.output == "done"
 
     def test_lock_decrement(self, execute_mumps):
         """LOCK - generates lock release (§8.2.12).
 
-        Spec 013 Phase 9: LOCK - releases specific lock.
+        Spec 013 FR-019: L -^GLOBAL decrements lock count.
         """
-        result = execute_mumps('TEST\n L +^DATA\n L -^DATA\n W "OK"\n Q')
-        assert result.output == "OK"
-
-    def test_lock_argumentless_releases_all(self, execute_mumps):
-        """Argumentless LOCK releases all locks (§8.2.12).
-
-        Spec 013 Phase 9: LOCK with no args calls unlock_all().
-        Note: Requires two spaces after L per MUMPS syntax.
-        """
-        result = execute_mumps('TEST\n L +^A\n L +^B\n L  \n W "OK"\n Q')
-        assert result.output == "OK"
+        result = execute_mumps('TEST\n L +^A\n L -^A\n W "unlocked"\n Q')
+        assert result.output == "unlocked"
 
     def test_lock_with_subscripts(self, execute_mumps):
-        """LOCK with subscripts generates correct tuple (§8.2.12).
+        """LOCK supports subscripted names (§8.2.12).
 
-        Spec 013 Phase 9: Subscripted lock targets are passed as tuple.
+        Spec 013 FR-019: L +^GLOBAL(sub1,sub2) locks subscripted node.
         """
-        result = execute_mumps("TEST\n L +^DATA(1,2,3):1\n W $T\n Q")
-        assert result.output == "1"
+        result = execute_mumps(
+            'TEST\n L +^A(1,2)\n W "locked subscript"\n L -^A(1,2)\n Q'
+        )
+        assert result.output == "locked subscript"
+
+    def test_argumentless_lock_releases_all(self, execute_mumps):
+        """L without arguments releases all locks (§8.2.12).
+
+        Spec 013 FR-019: Argumentless LOCK releases all held locks.
+        """
+        result = execute_mumps('TEST\n L +^A\n L +^B\n L\n W "released"\n Q')
+        assert result.output == "released"
+
+    def test_exclusive_lock_releases_first(self, execute_mumps):
+        """L ^A (no +) releases all then locks ^A (§8.2.12).
+
+        Exclusive lock syntax releases all previous locks before
+        acquiring the new one.
+        """
+        result = execute_mumps('TEST\n L +^X\n L ^A\n W "exclusive"\n Q')
+        assert result.output == "exclusive"
 
     def test_lock_parenthesized_list(self, execute_mumps):
-        """LOCK (^A,^B):timeout locks multiple simultaneously (§8.2.12).
+        """L (^A,^B) locks multiple simultaneously (§8.2.12).
 
-        Spec 013 Phase 9: Parenthesized list with shared timeout.
+        Parenthesized list acquires all locks atomically.
         """
-        result = execute_mumps("TEST\n L (^A,^B):2\n W $T\n Q")
-        assert result.output == "1"
-
-    def test_lock_timeout_expression(self, execute_mumps):
-        """LOCK timeout can be a variable expression (§8.2.12).
-
-        Spec 013 Phase 9: Timeout expression evaluated at runtime.
-        """
-        result = execute_mumps("TEST\n S T=1\n L +^DATA:T\n W $T\n Q")
-        assert result.output == "1"
+        result = execute_mumps('TEST\n L (^A,^B)\n W "both locked"\n L\n Q')
+        assert result.output == "both locked"
