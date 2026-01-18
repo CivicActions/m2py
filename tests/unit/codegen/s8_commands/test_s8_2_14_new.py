@@ -86,3 +86,30 @@ class TestNewCommandCodegen:
         result = execute_mumps("TEST\n S X=1 D SUB W X Q\nSUB\n N X S X=2 Q\n")
         assert result.output == "1"
         assert result.success is True
+
+    def test_new_argumentless_generates_loop(self, generate_python):
+        """Argumentless NEW generates loop with NewScopeManager (§8.2.14).
+
+        N (with no arguments, followed by two spaces) NEWs all local variables.
+        Note: N<space><space>Q is argumentless NEW then QUIT.
+        """
+        result = generate_python("TEST\n N  Q")
+        # Uses NewScopeManager with loop to new_var all variables
+        assert "for _var_name in list(_scope.keys()):" in result
+        assert "_new_mgr.new_var(_var_name)" in result
+
+    def test_new_argumentless_hides_all(self, execute_mumps):
+        """Argumentless NEW makes all variables undefined (§8.2.14).
+
+        S X=1,Y=2 N W $D(X),$D(Y) → "00"
+        """
+        result = execute_mumps("TEST\n S X=1,Y=2\n N  W $D(X),$D(Y)\n Q")
+        assert result.output == "00"
+
+    def test_new_argumentless_restores_on_quit(self, execute_mumps):
+        """Argumentless NEW restores variables on QUIT (§8.2.14).
+
+        S X=1 D SUB W X ... SUB N S X=99 Q → "1"
+        """
+        result = execute_mumps("TEST\n S X=1 D SUB W X Q\nSUB\n N\n S X=99 Q\n")
+        assert result.output == "1"

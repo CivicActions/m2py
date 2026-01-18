@@ -343,6 +343,11 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("TLEVEL", "TL"):
         return "_rt.tlevel()"
 
+    # $ZJOB / $ZJ - last JOB'd process ID
+    # Spec 013 Phase 11: Returns PID of last process started by JOB command
+    if name in ("ZJOB", "ZJ"):
+        return "_rt.zjob()"
+
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 

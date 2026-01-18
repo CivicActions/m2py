@@ -253,35 +253,133 @@ class TestExclusiveNewCodegen:
 
     Generated Python must implement inverse scoping correctly.
     Reference: §8.2.14, FR-048
+
+    Exclusive NEW (N (X)) preserves only listed variables and
+    creates new empty scope for all others.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exclusive NEW protects listed")
-    def test_exclusive_new_protects_listed_variables(self):
+    def test_exclusive_new_protects_listed_variables(self, execute_mumps):
         """NEW (X) keeps X visible, hides others (§8.2.14, FR-048).
 
         SET A=1,X=2
         NEW (X)
-        ; X should still be 2, A should be undefined
+        ; X should still be 2 ($D=1), A should be undefined ($D=0)
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST\n S A=1,X=2\n N (X)\n W $D(X)," ",$D(A)\n Q')
+        assert result.output == "1 0"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exclusive NEW hides unlisted")
-    def test_exclusive_new_hides_unlisted_variables(self):
+    def test_exclusive_new_preserves_value(self, execute_mumps):
+        """NEW (X) preserves the actual value of X (§8.2.14, FR-048).
+
+        SET X=42
+        NEW (X)
+        ; X should still equal 42
+        """
+        result = execute_mumps("TEST\n S X=42\n N (X)\n W X\n Q")
+        assert result.output == "42"
+
+    def test_exclusive_new_hides_unlisted_variables(self, execute_mumps):
         """NEW (X) makes unlisted variables undefined (§8.2.14, FR-048).
 
         SET A=1,B=2,X=3
         NEW (X)
-        ; A and B should be undefined
+        ; A and B should be undefined ($D=0)
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST\n S A=1,B=2,X=3\n N (X)\n W $D(A),$D(B)\n Q")
+        assert result.output == "00"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exclusive NEW restored on QUIT")
-    def test_exclusive_new_restored_on_quit(self):
-        """Exclusive NEW variables restored on QUIT (§8.2.14, FR-048)."""
-        pytest.fail("Stub - implement test")
+    def test_exclusive_new_multiple_preserved(self, execute_mumps):
+        """NEW (X,Y) preserves multiple variables (§8.2.14, FR-048).
+
+        SET A=1,X=2,Y=3
+        NEW (X,Y)
+        ; X and Y preserved, A hidden
+        """
+        result = execute_mumps(
+            "TEST\n S A=1,X=2,Y=3\n N (X,Y)\n W $D(X),$D(Y),$D(A)\n Q"
+        )
+        assert result.output == "110"
+
+    def test_exclusive_new_with_quit_restores(self, execute_mumps):
+        """Exclusive NEW variables restored on QUIT (§8.2.14, FR-048).
+
+        A outer value should be restored after SUB returns.
+        SUB does N (Z) which creates new scope for A (and all except Z).
+        After SUB returns, A should be restored to its outer value.
+        """
+        result = execute_mumps(
+            "TEST\n S A=1,Z=0\n D SUB\n W A\n Q\nSUB\n N (Z)\n S A=99\n Q"
+        )
+        # After SUB returns, A should be restored to 1
+        assert result.output == "1"
+
+
+# =============================================================================
+# Argumentless NEW Tests - Codegen Only
+# Parser/ASG tests are in tests/unit/asg/s8_commands/test_s8_2_14_new.py
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestArgumentlessNewCodegen:
+    """Codegen tests for Argumentless NEW behavior.
+
+    Generated Python must implement new scope for all local variables.
+    Reference: §8.2.14, FR-048
+
+    Argumentless NEW (N with no args) creates a new empty scope for
+    ALL local variables. After the NEW, all locals are undefined.
+    On subroutine exit, all original values are restored.
+
+    Note: N () (empty exclusive NEW) is invalid MUMPS syntax.
+    YDB rejects it with %YDB-E-VAREXPECTED.
+    """
+
+    def test_argumentless_new_hides_all_variables(self, execute_mumps):
+        """Argumentless NEW hides all local variables (§8.2.14).
+
+        SET X=1,Y=2
+        NEW
+        ; Both X and Y should be undefined ($D=0)
+        """
+        result = execute_mumps("TEST\n S X=1,Y=2\n N  W $D(X),$D(Y)\n Q")
+        assert result.output == "00"
+
+    def test_argumentless_new_with_two_spaces(self, execute_mumps):
+        """Argumentless NEW with two spaces followed by command (§8.2.14).
+
+        S X=1
+        N  W $D(X)  ; Two spaces between N and W
+        ; X should be undefined after N
+        """
+        result = execute_mumps("TEST\n S X=1\n N  W $D(X)\n Q")
+        assert result.output == "0"
+
+    def test_argumentless_new_in_subroutine_restores(self, execute_mumps):
+        """Argumentless NEW variables restored on subroutine QUIT (§8.2.14).
+
+        SET X=1
+        DO SUB
+        ; After SUB returns, X should be restored to 1
+
+        SUB
+         NEW  ; Argumentless NEW - hides all variables
+         SET X=99  ; This is a new local X, shadows outer
+         QUIT
+        """
+        result = execute_mumps("TEST\n S X=1\n D SUB\n W X\n Q\nSUB\n N\n S X=99\n Q")
+        # After SUB returns, X should be restored to 1
+        assert result.output == "1"
+
+    def test_argumentless_new_multiple_variables(self, execute_mumps):
+        """Argumentless NEW hides multiple variables (§8.2.14).
+
+        SET A=1,B=2,C=3
+        NEW
+        ; All should be undefined
+        """
+        result = execute_mumps("TEST\n S A=1,B=2,C=3\n N  W $D(A),$D(B),$D(C)\n Q")
+        assert result.output == "000"
 
 
 # =============================================================================

@@ -36,6 +36,7 @@ from m2py.asg.statements import (
     MHaltStatement,
     MHangStatement,
     MIfStatement,
+    MJobStatement,
     MKillStatement,
     MLockStatement,
     MMergeStatement,
@@ -573,6 +574,8 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_close(stmt, ctx)
     elif isinstance(stmt, MUseStatement):
         _generate_use(stmt, ctx)
+    elif isinstance(stmt, MJobStatement):
+        _generate_job(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -2495,12 +2498,13 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     The old values are shadowed until the routine/label exits.
 
     Supports:
+    - N → NEW all (argumentless - save and remove all locals until function exit)
     - N X → NEW X (save and remove from _scope until function exit)
     - N X,Y,Z → NEW multiple variables
     - N (X,Y) → Exclusive NEW: NEW all locals except X,Y (Spec 011 T072)
 
-    NOT yet implemented:
-    - N (argumentless) - new all variables
+    Note: N () (empty exclusive NEW) is invalid MUMPS syntax - YDB rejects it.
+    Our parser silently skips it, which is acceptable.
 
     When ctx.new_scope_manager_var is set, uses NewScopeManager.new_var()
     for proper save/restore semantics on function exit.
@@ -2539,9 +2543,26 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
             )
         return
 
-    # Handle argumentless NEW (new all locals) - not yet implemented
+    # Handle argumentless NEW (new all locals)
+    # N with no args creates a new scope for ALL local variables
+    # This is equivalent to exclusive NEW with empty except list: N ()
+    # (though N () is technically invalid MUMPS syntax - YDB rejects it)
     if not stmt.variables:
-        raise NotImplementedError("Argumentless NEW (N with no args) not yet supported")
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            if ctx.new_scope_manager_var:
+                # Use NewScopeManager - iterate over _scope and new_var for all
+                ctx.emitter.line("for _var_name in list(_scope.keys()):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(f"{ctx.new_scope_manager_var}.new_var(_var_name)")
+            else:
+                # Simple clear of all local variables
+                ctx.emitter.line("_scope.clear()")
+        else:
+            # TRAMPOLINE strategy - not supported for argumentless NEW
+            raise NotImplementedError(
+                "Argumentless NEW not supported in TRAMPOLINE strategy"
+            )
+        return
 
     # Process each variable in the new list
     for var in stmt.variables:
@@ -3347,6 +3368,83 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         else:
             # Phase 5: Dynamic XECUTE - call runtime
             generate_dynamic_xecute()
+
+
+def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for JOB command.
+
+    Spec 013 Phase 11 (T095-T097): Starts a new process executing a routine.
+
+    MUMPS Forms:
+    - J label           ; Start job at label in current routine
+    - J label^routine   ; Start job at label in external routine
+    - J label::5        ; Start job with 5-second timeout
+    - J label:():5      ; Start job with empty params and timeout
+    - J label:params    ; Start job with process parameters
+
+    Timeout behavior per MUMPS spec 8.2.10:
+    - No timeout: Does not affect $TEST
+    - Timeout present: Sets $TEST=1 on success, $TEST=0 on timeout
+
+    Generated code:
+    - _rt.job("label", "routine", args, timeout) -> (success, pid)
+    - $ZJOB is set to the spawned process ID
+
+    Note: In Python transpilation, JOB creates a subprocess running
+    the transpiled Python module with the specified entry point.
+
+    Args:
+        stmt: MJobStatement node
+        ctx: Generator context
+    """
+    for job_target in stmt.targets:
+        if job_target.call is None:
+            continue
+
+        call = job_target.call
+
+        # Build label/routine reference
+        label_name = repr(call.name) if call.name else "None"
+        routine_name = repr(call.routine) if call.routine else "None"
+
+        # Generate arguments if any
+        args_parts = []
+        for arg in call.arguments:
+            if arg.expression is not None:
+                arg_expr = generate_expr(arg.expression, ctx)
+            else:
+                arg_expr = "None"
+            args_parts.append(arg_expr)
+        args_str = f"[{', '.join(args_parts)}]" if args_parts else "[]"
+
+        # Generate process parameters if any
+        params_parts = []
+        for param in job_target.processparameters:
+            param_expr = generate_expr(param, ctx)
+            params_parts.append(param_expr)
+        params_str = f"[{', '.join(params_parts)}]" if params_parts else "None"
+
+        # Generate timeout expression
+        has_timeout = job_target.timeout is not None
+        if has_timeout and job_target.timeout is not None:
+            timeout_expr = generate_expr(job_target.timeout, ctx)
+        else:
+            timeout_expr = "None"
+
+        # Generate JOB call - runtime handles subprocess creation
+        # _rt.start_job() returns True on success, False on timeout
+        if has_timeout:
+            # With timeout: _test = _rt.start_job(label, routine, args, timeout)
+            ctx.emitter.line(
+                f"_test = _rt.start_job({label_name}, {routine_name}, {args_str}, "
+                f"{params_str}, {timeout_expr})"
+            )
+        else:
+            # Without timeout: just call start_job, don't modify $TEST
+            ctx.emitter.line(
+                f"_rt.start_job({label_name}, {routine_name}, {args_str}, "
+                f"{params_str}, {timeout_expr})"
+            )
 
 
 __all__ = [
