@@ -91,22 +91,24 @@
 
 ### Analysis Phase
 
-- [ ] T028 [US2] Add fall-through detection to semantic analyzer in src/m2py/analysis/semantic_analyzer.py
-- [ ] T029 [US2] Add `needs_fallthrough` flag to MLabel ASG node in src/m2py/asg/elements.py
-- [ ] T030 [US2] Detect labels not ending with QUIT/GOTO/HALT in src/m2py/analysis/semantic_analyzer.py
+- [x] T028 [US2] Add fall-through detection to semantic analyzer in src/m2py/analysis/semantic_analyzer.py
+- [x] T029 [US2] Add `needs_fallthrough` flag to MLabel ASG node in src/m2py/asg/elements.py
+- [x] T030 [US2] Detect labels not ending with QUIT/GOTO/HALT in src/m2py/analysis/semantic_analyzer.py
 
 ### Codegen Phase
 
-- [ ] T031 [US2] Generate explicit fall-through calls in label codegen in src/m2py/codegen/routine.py
-- [ ] T032 [US2] Handle return value propagation through fall-through chain in src/m2py/codegen/routine.py
-- [ ] T033 [US2] Support external entry fall-through (D LABEL^ROUTINE) in src/m2py/codegen/routine.py
+- [x] T031 [US2] Generate explicit fall-through calls in label codegen in src/m2py/codegen/routine.py
+- [x] T032 [US2] Handle return value propagation through fall-through chain in src/m2py/codegen/routine.py
+- [x] T033 [US2] Support external entry fall-through (D LABEL^ROUTINE) in src/m2py/codegen/routine.py
 
 ### Tests
 
-- [ ] T034 [US2] Create fall-through test: TEST→FOR→END outputs ABC in tests/unit/codegen/
-- [ ] T035 [US2] Create fall-through test: middle QUIT stops chain in tests/unit/codegen/
-- [ ] T036 [US2] Create fall-through test: external entry continues fall-through in tests/unit/codegen/
-- [ ] T037 [US2] Validate fall-through against YDB using validate.py
+- [x] T034 [US2] Create fall-through test: TEST→FOR→END outputs ABC in tests/unit/codegen/
+- [x] T035 [US2] Create fall-through test: middle QUIT stops chain in tests/unit/codegen/
+- [x] T036 [US2] Create fall-through test: external entry continues fall-through in tests/unit/codegen/
+- [x] T037 [US2] Validate fall-through against YDB using validate.py
+
+**Checkpoint**: User Story 2 complete - fall-through works per SC-004
 
 **Checkpoint**: User Story 2 complete - fall-through works per SC-004
 

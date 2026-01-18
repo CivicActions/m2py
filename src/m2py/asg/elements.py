@@ -225,6 +225,15 @@ class MLabel(ASGElement):
     # Used by codegen to determine if NewScopeManager context is needed
     has_new_statements: bool = False
 
+    # Spec 013: Fall-through flag (populated by semantic analyzer)
+    # True if label should fall through to the next label when it completes
+    # (i.e., it doesn't end with QUIT, GOTO, or HALT)
+    needs_fallthrough: bool = False
+
+    # Spec 013: Next label reference (populated by semantic analyzer)
+    # Points to the next label in sequence for fall-through, None if last label
+    next_label: Optional["MLabel"] = field(default=None, repr=False)
+
     # Parser internal: stores unparsed line content and parsed results
     _line_rest: Optional[str] = field(default=None, repr=False)
     _parsed_content: Optional[Any] = field(default=None, repr=False)

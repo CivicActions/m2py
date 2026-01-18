@@ -94,6 +94,10 @@ def classify_gotos(routine: MRoutine) -> None:
     # This triggers TRAMPOLINE strategy even without cross-label GOTOs
     routine.has_offset_calls = _detect_offset_calls(routine)
 
+    # Spec 013: Set fall-through flags on labels
+    # Labels without explicit exit (QUIT/GOTO/HALT) fall through to the next label
+    _detect_fallthrough(routine)
+
 
 def _classify_gotos_in_scope(
     scope: MScope,
@@ -581,3 +585,40 @@ def _detect_offset_calls(routine: MRoutine) -> bool:
                     if target.offset is not None:
                         return True
     return False
+
+
+def _detect_fallthrough(routine: MRoutine) -> None:
+    """Detect labels that need fall-through to the next label.
+
+    Spec 013 (T028-T030): MUMPS labels fall through to the next label
+    if they don't end with an explicit exit (QUIT, GOTO, or HALT).
+
+    This function sets:
+    - MLabel.needs_fallthrough: True if label should fall through
+    - MLabel.next_label: Reference to the next label in sequence
+
+    Args:
+        routine: The MRoutine to analyze
+
+    Side Effects:
+        - Sets MLabel.needs_fallthrough for each label
+        - Sets MLabel.next_label for each label (except the last)
+    """
+    labels = routine.labels
+    num_labels = len(labels)
+
+    for i, label in enumerate(labels):
+        # Set reference to next label (None for last label)
+        if i + 1 < num_labels:
+            label.next_label = labels[i + 1]
+        else:
+            label.next_label = None
+
+        # Check if this label needs fall-through
+        # A label needs fall-through if:
+        # 1. It's not the last label (nothing to fall through to)
+        # 2. It doesn't have an explicit exit (QUIT, GOTO, HALT)
+        if i + 1 < num_labels and not label.has_explicit_exit:
+            label.needs_fallthrough = True
+        else:
+            label.needs_fallthrough = False
