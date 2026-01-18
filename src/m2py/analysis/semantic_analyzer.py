@@ -764,8 +764,18 @@ class SemanticAnalyzer:
 
         if hasattr(cmd, "assignments") and cmd.assignments:
             for assign in cmd.assignments:
-                # Handle targets
-                if hasattr(assign, "targets") and assign.targets:
+                # Check for SetIndirection (@A where A contains "X=1")
+                # Grammar: SetIndirection: indirect=Indirection
+                if hasattr(assign, "indirect") and assign.indirect is not None:
+                    # Argument-level indirection: S @A
+                    indir = self.analyze(assign.indirect, stmt)
+                    # Mark as ARGUMENT type indirection
+                    from m2py.asg.enums import IndirectionType
+
+                    indir.indirection_type = IndirectionType.ARGUMENT
+                    stmt.argument_indirections.append(indir)
+                # Handle regular assignments with targets
+                elif hasattr(assign, "targets") and assign.targets:
                     targets = assign.targets
                     if targets.__class__.__name__ == "ParenTargets":
                         # Multi-assignment: S (A,B,C)=value

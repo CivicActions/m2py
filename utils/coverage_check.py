@@ -80,7 +80,7 @@ def check_overall_coverage() -> tuple[bool, float | None]:
     passed = coverage >= OVERALL_COVERAGE_MIN
     status = "✅ PASS" if passed else "❌ FAIL"
 
-    print(f"\nCoverage: {coverage:.0f}%")
+    print(f"\nCoverage: {coverage:.1f}%")
     print(f"Minimum:  {OVERALL_COVERAGE_MIN}%")
     print(f"Status:   {status}")
 
@@ -111,7 +111,7 @@ def check_transpilation_readiness() -> tuple[float | None, float | None]:
     )
     progress = max(0, min(100, progress))  # Clamp to 0-100
 
-    print(f"\nParser/ASG/Analysis coverage: {coverage:.0f}%")
+    print(f"\nParser/ASG/Analysis coverage: {coverage:.1f}%")
     print(f"Baseline (imports only):      {TRANSPILE_BASELINE}%")
     print(f"Target (full transpilation):  {TRANSPILE_TARGET}%")
     print(f"\n📊 TRANSPILATION PROGRESS: {progress:.1f}%")
@@ -159,7 +159,7 @@ def main():
     if overall_cov is not None:
         status = "✅" if passed else "❌"
         print(
-            f"{status} Overall coverage: {overall_cov:.0f}% (min: {OVERALL_COVERAGE_MIN}%)"
+            f"{status} Overall coverage: {overall_cov:.1f}% (min: {OVERALL_COVERAGE_MIN}%)"
         )
 
     if progress is not None:

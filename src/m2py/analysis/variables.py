@@ -497,7 +497,11 @@ def _extract_statement_variables(
     elif isinstance(stmt, MNewStatement):
         # NEW X,Y,Z creates new local scope for these variables
         for var in stmt.variables:
-            news.add(var)
+            # T070: var may be a string or MIndirection
+            # Only add string names - indirection can't be tracked statically
+            if isinstance(var, str):
+                news.add(var)
+            # MIndirection variables can only be resolved at runtime
         # Exclusive NEW (X) means all EXCEPT X get newed
         # We can't enumerate all, so we just note the exception
         if stmt.exclusive:

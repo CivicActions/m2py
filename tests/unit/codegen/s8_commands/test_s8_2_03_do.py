@@ -588,3 +588,158 @@ class TestByRefParameterCodegen:
         result = execute_mumps("TEST S X=5 D INCR(X) W X Q\nINCR(N) S N=N+1 Q\n")
         assert result.output == "5"
         assert result.success is True
+
+
+# =============================================================================
+# Phase 7: Indirect DO Tests (Spec 012, T042-T048)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestIndirectDoCodegen:
+    """Codegen tests for indirect DO (D @CMD).
+
+    Spec 012 Phase 7 (T042-T045): Support D @CMD for dynamic subroutine dispatch.
+
+    Indirect DO resolves the call target at runtime, allowing dynamic
+    dispatch based on variable contents.
+
+    Reference: §8.2.3, MUMPS 1995 ANSI Standard
+    """
+
+    def test_indirect_do_generates_runtime_dispatch(self, generate_python):
+        """D @CMD generates runtime parse_call_target dispatch (T042).
+
+        The generated code should:
+        1. Evaluate the indirection expression
+        2. Call _rt.parse_call_target() to parse label/routine
+        3. Dispatch to the resolved function
+        """
+        code = generate_python('TEST S CMD="SUB" D @CMD Q\nSUB W "Hello" Q\n')
+
+        # Should call parse_call_target
+        assert "parse_call_target" in code
+        # Should have dispatch logic
+        assert "_func" in code or "_labels" in code
+
+    def test_indirect_do_basic_execution(self, execute_mumps):
+        """S CMD="SUB" D @CMD calls SUB (T048).
+
+        Spec 012 Phase 7 acceptance scenario:
+        Given: S CMD="SUB" D @CMD
+        When: executed
+        Then: SUB subroutine is called and writes "Hello"
+        """
+        result = execute_mumps('TEST S CMD="SUB" D @CMD Q\nSUB W "Hello" Q\n')
+        assert result.output == "Hello"
+        assert result.success is True
+
+    def test_indirect_do_returns_to_caller(self, execute_mumps):
+        """D @CMD returns to caller after subroutine completes (T048).
+
+        Given: S CMD="SUB" D @CMD W "After"
+        When: executed
+        Then: output is "HelloAfter" (SUB writes, returns, caller continues)
+        """
+        result = execute_mumps('TEST S CMD="SUB" D @CMD W "After" Q\nSUB W "Hello" Q\n')
+        assert result.output == "HelloAfter"
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestIndirectDoWithOffset:
+    """Tests for indirect DO with offset (D @CMD+N).
+
+    Spec 012 Phase 7 (T045): Handle indirect DO with explicit offset.
+    D @CMD+5 resolves CMD to a label, then enters at offset +5.
+
+    Reference: §8.2.3
+    """
+
+    def test_indirect_do_with_offset_codegen(self, generate_python):
+        """D @CMD+1 generates offset handling code (T045).
+
+        The generated code should handle offset calculation:
+        1. Resolve CMD to get label name
+        2. Look up label's start line in _label_lines
+        3. Add offset to find target line
+        4. Look up _line_map to get entry point
+        """
+        code = generate_python(
+            'TEST S CMD="SUB" D @CMD+1 Q\nSUB W "Line0"\n W "Line1" Q\n'
+        )
+
+        # Should reference _label_lines for offset calculation
+        assert "_label_line" in code or "offset" in code.lower()
+        # Should have parse_call_target
+        assert "parse_call_target" in code
+
+    def test_indirect_do_with_offset_execution(self, execute_mumps):
+        """D @CMD+1 enters subroutine at offset +1 (T045).
+
+        Given: S CMD="SUB" D @CMD+1
+        When: executed
+        Then: skips first line of SUB, outputs "Line1" only
+        """
+        result = execute_mumps(
+            'TEST S CMD="SUB" D @CMD+1 Q\nSUB W "Line0"\n W "Line1" Q\n'
+        )
+        assert result.output == "Line1"
+        assert result.success is True
+
+    def test_indirect_do_offset_zero(self, execute_mumps):
+        """D @CMD+0 is equivalent to D @CMD (starts at label).
+
+        Given: S CMD="SUB" D @CMD+0
+        When: executed
+        Then: outputs "Line0Line1" (full subroutine)
+        """
+        result = execute_mumps(
+            'TEST S CMD="SUB" D @CMD+0 Q\nSUB W "Line0"\n W "Line1" Q\n'
+        )
+        assert result.output == "Line0Line1"
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestPartialIndirection:
+    """Tests for partial indirection in DO (D LABEL^@RTN, D @LBL^ROUTINE).
+
+    Spec 012 Phase 7 (T044): Handle partial indirection where only
+    part of the call target is indirect.
+
+    Reference: §8.2.3
+    """
+
+    def test_label_indirect_routine_static_codegen(self, generate_python):
+        """D @LBL generates indirection for label only (T044).
+
+        When only the label is indirect, the routine is this module.
+        """
+        code = generate_python('TEST S LBL="SUB" D @LBL Q\nSUB W "OK" Q\n')
+
+        # Should evaluate LBL variable
+        assert "parse_call_target" in code
+        # Generated code handles local dispatch
+        assert "_labels" in code or "_func" in code
+
+    def test_label_indirect_execution(self, execute_mumps):
+        """D @LBL calls label stored in variable (T044).
+
+        Given: S LBL="SUB" D @LBL
+        When: executed
+        Then: SUB is called
+        """
+        result = execute_mumps('TEST S LBL="SUB" D @LBL Q\nSUB W "Called" Q\n')
+        assert result.output == "Called"
+        assert result.success is True
+
+    @pytest.mark.stub
+    @pytest.mark.xfail(reason="External routine indirection requires module setup")
+    def test_routine_indirect_codegen(self, generate_python):
+        """D LABEL^@RTN generates routine indirection (T044).
+
+        When routine is indirect, need dynamic import at runtime.
+        """
+        # This would require an external routine module to exist
+        pytest.fail("Stub - implement when external routines fully supported")

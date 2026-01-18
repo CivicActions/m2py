@@ -215,6 +215,12 @@ def _classify_single_goto(
     """
     # Check each target (usually just one, but GOTO can have multiple)
     for call in stmt.targets:
+        # Spec 012 Phase 8 (T049-T052): Check for indirection first
+        # Indirect GOTOs are resolved at runtime, not statically
+        if call.label_is_indirect or call.routine_is_indirect:
+            stmt.goto_type = GotoType.INDIRECT
+            continue
+
         # External call (^routine) - but check if it's same routine first
         if call.routine is not None:
             # Check if this is the same routine (G label^SAMEROUTINE pattern)
