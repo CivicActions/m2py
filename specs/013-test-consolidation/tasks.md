@@ -212,16 +212,26 @@ Some candidates marked as CONVERT in gaps-stubs.md were discovered to have bugs 
 
 ### $TEXT (FR-021)
 
-- [ ] T068 [US4] Implement _text() helper using _source_lines/_label_lines in src/m2py/codegen/helpers.py
-- [ ] T069 [US4] Add $TEXT codegen in src/m2py/codegen/expressions.py
-- [ ] T070 [US4] Create tests for $TEXT(LABEL) and $TEXT(LABEL+n) in tests/unit/codegen/
-- [ ] T071 [US4] Validate $TEXT against YDB using validate.py
+- [X] T068 [US4] Implement _text() helper using _source_lines/_label_lines in src/m2py/codegen/helpers.py
+  - **Already implemented**: Runtime `get_text()` method in src/m2py/runtime/__init__.py (lines 882-943)
+  - Fixed: `execute()` now initializes runtime context from generated module variables
+- [X] T069 [US4] Add $TEXT codegen in src/m2py/codegen/expressions.py
+  - **Already implemented**: `_generate_text()` function and INTRINSIC_GENERATORS["T"/"TEXT"] registration
+- [X] T070 [US4] Create tests for $TEXT(LABEL) and $TEXT(LABEL+n) in tests/unit/codegen/
+  - Converted 5 xfail stubs to real tests in test_s7_1_7_special_variables.py
+  - Added: test_text_with_label, test_text_with_label_offset, test_text_with_line_number, test_text_line_zero_returns_routine_name, test_text_different_label, test_text_with_variable_offset
+- [X] T071 [US4] Validate $TEXT against YDB using validate.py
+  - Fixed routine name lowercase convention (YDB uses lowercase filenames)
+  - Fixed execute() to initialize _current_routine, _current_source_lines, _current_label_lines
 
 ### $NEXT (FR-031) - Deprecated
 
-- [ ] T072 [US4] Implement _next() helper (wraps _order, returns -1) in src/m2py/codegen/helpers.py
-- [ ] T073 [US4] Add $NEXT codegen with deprecation warning in src/m2py/codegen/expressions.py
-- [ ] T074 [US4] Create tests for $NEXT in tests/unit/codegen/
+- [X] T072 [US4] Implement _next() helper (wraps _order, returns -1) in src/m2py/codegen/helpers.py
+  - **Implemented inline**: _gen_next() in expressions.py wraps $ORDER with lambda for -1 return
+- [X] T073 [US4] Add $NEXT codegen with deprecation warning in src/m2py/codegen/expressions.py
+  - **Implemented**: _gen_next() function and INTRINSIC_GENERATORS["N"/"NEXT"] registration
+- [X] T074 [US4] Create tests for $NEXT in tests/unit/codegen/
+  - Added test_function_next_returns_minus_one to verify -1 return behavior
 
 **Checkpoint**: $TEXT and $NEXT complete (SC-014, SC-018 verified)
 

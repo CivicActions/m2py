@@ -1671,9 +1671,24 @@ INTRINSIC_GENERATORS["REVERSE"] = _gen_reverse
 INTRINSIC_GENERATORS["T"] = _generate_text
 INTRINSIC_GENERATORS["TEXT"] = _generate_text
 
-# $NEXT (pre-1995 deprecated, maps to $ORDER)
-INTRINSIC_GENERATORS["N"] = _gen_order
-INTRINSIC_GENERATORS["NEXT"] = _gen_order
+
+# $NEXT (pre-1995 deprecated, similar to $ORDER but returns -1 when no next)
+def _gen_next(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $NEXT function.
+
+    $NEXT is a pre-1995 deprecated function similar to $ORDER, but returns
+    -1 instead of empty string when there is no next subscript.
+
+    Implementation: Generate $ORDER and wrap with a conditional to convert
+    empty string results to -1.
+    """
+    order_code = _gen_order(expr, ctx)
+    # Wrap the $ORDER call: if result is "", return -1, else return result
+    return f"(lambda _r: -1 if _r == '' else _r)({order_code})"
+
+
+INTRINSIC_GENERATORS["N"] = _gen_next
+INTRINSIC_GENERATORS["NEXT"] = _gen_next
 
 
 __all__ = [

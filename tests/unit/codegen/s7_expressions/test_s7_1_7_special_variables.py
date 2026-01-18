@@ -193,35 +193,50 @@ class TestTextWithOffsetsCodegen:
     Reference: §7.1.5 ($TEXT function)
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT with label")
-    def test_text_with_label(self, generate_python):
+    def test_text_with_label(self, execute_mumps):
         """$TEXT(LABEL) returns source at label.
 
-        S A=$T(MAIN) returns first line of MAIN label.
+        S A=$T(LABEL) returns first line of LABEL.
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W $T(TEST) Q")
+        assert result.output == "TEST W $T(TEST) Q"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT with label+offset")
-    def test_text_with_label_offset(self, generate_python):
+    def test_text_with_label_offset(self, execute_mumps):
         """$TEXT(LABEL+n) returns line at offset from label.
 
-        S A=$T(TEX+5) returns 5th line after TEX.
+        S A=$T(TEST+1) returns 1st line after TEST.
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST W $T(TEST+1) Q\n W "line2" Q')
+        assert result.output == ' W "line2" Q'
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT with +N")
-    def test_text_with_line_number(self, generate_python):
+    def test_text_with_line_number(self, execute_mumps):
         """$TEXT(+N) returns Nth line of routine.
 
-        S A=$T(+5) returns 5th line of current routine.
+        S A=$T(+1) returns 1st line of current routine.
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W $T(+1) Q")
+        assert result.output == "TEST W $T(+1) Q"
+
+    def test_text_line_zero_returns_routine_name(self, execute_mumps):
+        """$TEXT(+0) returns the routine name.
+
+        S A=$T(+0) returns the routine name (lowercase convention).
+        """
+        result = execute_mumps("TEST W $T(+0) Q")
+        assert result.output == "test"
+
+    def test_text_different_label(self, execute_mumps):
+        """$TEXT(LABEL) retrieves source from another label in same routine.
+
+        Returns the source line for the specified label.
+        """
+        result = execute_mumps('TEST W $T(OTHER) Q\nOTHER W "hello" Q')
+        assert result.output == 'OTHER W "hello" Q'
 
     @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT external routine")
+    @pytest.mark.xfail(
+        reason="Not yet implemented: $TEXT external routine (requires multi-routine)"
+    )
     def test_text_external_routine(self, generate_python):
         """$TEXT(LABEL+N^ROUTINE) accesses external routine.
 
@@ -229,11 +244,10 @@ class TestTextWithOffsetsCodegen:
         """
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT with variable offset")
-    def test_text_with_variable_offset(self, generate_python):
-        """$TEXT(LABEL+I) evaluates offset at runtime.
+    def test_text_with_variable_offset(self, execute_mumps):
+        """$TEXT(+I) evaluates offset at runtime.
 
-        S A=$T(TEX+I) computes offset from I value.
+        S A=$T(+I) computes offset from I value.
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST S I=1 W $T(+I) Q")
+        assert result.output == "TEST S I=1 W $T(+I) Q"

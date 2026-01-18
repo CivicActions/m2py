@@ -1718,6 +1718,15 @@ class MUMPSRuntime:
             # (the generated code no longer creates its own _rt since Phase 13)
             namespace["_rt"] = self
 
+            # Set up runtime context for $TEXT function support
+            # These are module-level variables set by generated code
+            if "_routine_name" in namespace:
+                self._current_routine = namespace["_routine_name"]
+            if "_source_lines" in namespace:
+                self._current_source_lines = namespace["_source_lines"]
+            if "_label_lines" in namespace:
+                self._current_label_lines = namespace["_label_lines"]
+
             # Find entry point
             if entry_point is None:
                 # Find first function defined (look for def statements)
