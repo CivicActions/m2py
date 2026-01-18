@@ -132,17 +132,59 @@ class TestSpecialVariablesCodegen:
         assert "_rt.stack_level()" in full
         assert "_rt.stack_level()" in abbrev
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ECODE codegen")
     def test_sv_ecode(self, generate_python):
-        """$ECODE generates error code access (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$ECODE generates _rt.ecode() call (§7.1.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ETRAP codegen")
+        Spec 013 Phase 12 (FR-026): $ECODE returns comma-delimited error codes.
+        """
+        result = generate_python("TEST W $ECODE Q")
+        assert "_rt.ecode()" in result
+
+    def test_sv_ecode_abbreviated(self, generate_python):
+        """$EC abbreviated form generates same call (§7.1.7).
+
+        Spec 013 Phase 12: Both $ECODE and $EC use _rt.ecode().
+        """
+        full = generate_python("TEST W $ECODE Q")
+        abbrev = generate_python("TEST W $EC Q")
+        assert "_rt.ecode()" in full
+        assert "_rt.ecode()" in abbrev
+
     def test_sv_etrap(self, generate_python):
-        """$ETRAP generates error trap access (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$ETRAP generates _rt.etrap() call (§7.1.7).
+
+        Spec 013 Phase 12 (FR-026): $ETRAP returns error trap code string.
+        """
+        result = generate_python("TEST W $ETRAP Q")
+        assert "_rt.etrap()" in result
+
+    def test_sv_etrap_abbreviated(self, generate_python):
+        """$ET abbreviated form generates same call (§7.1.7).
+
+        Spec 013 Phase 12: Both $ETRAP and $ET use _rt.etrap().
+        """
+        full = generate_python("TEST W $ETRAP Q")
+        abbrev = generate_python("TEST W $ET Q")
+        assert "_rt.etrap()" in full
+        assert "_rt.etrap()" in abbrev
+
+    def test_sv_zerror(self, generate_python):
+        """$ZERROR generates _rt.zerror() call (§7.1.7).
+
+        Spec 013 Phase 12 (FR-045): $ZERROR returns application error message.
+        """
+        result = generate_python("TEST W $ZERROR Q")
+        assert "_rt.zerror()" in result
+
+    def test_sv_zerror_abbreviated(self, generate_python):
+        """$ZE abbreviated form generates same call (§7.1.7).
+
+        Spec 013 Phase 12: Both $ZERROR and $ZE use _rt.zerror().
+        """
+        full = generate_python("TEST W $ZERROR Q")
+        abbrev = generate_python("TEST W $ZE Q")
+        assert "_rt.zerror()" in full
+        assert "_rt.zerror()" in abbrev
 
 
 @pytest.mark.codegen

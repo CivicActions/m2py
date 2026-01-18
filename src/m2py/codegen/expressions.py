@@ -287,6 +287,11 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     - $STORAGE ($S): Returns available memory (large constant)
     - $STACK ($ST): Returns call stack level
     - $QUIT ($Q): Returns 1 if in extrinsic, 0 otherwise
+    - $TLEVEL ($TL): Returns transaction nesting level
+    - $ZJOB ($ZJ): Returns last JOB'd process ID
+    - $ECODE ($EC): Returns comma-delimited error code list
+    - $ETRAP ($ET): Returns error trap code string
+    - $ZERROR ($ZE): Returns application error message
 
     Args:
         var: MSpecialVariable node (name without $ prefix)
@@ -347,6 +352,21 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     # Spec 013 Phase 11: Returns PID of last process started by JOB command
     if name in ("ZJOB", "ZJ"):
         return "_rt.zjob()"
+
+    # $ECODE / $EC - error code list
+    # Spec 013 Phase 12 (FR-026): Comma-delimited list of active error codes
+    if name in ("ECODE", "EC"):
+        return "_rt.ecode()"
+
+    # $ETRAP / $ET - error trap code
+    # Spec 013 Phase 12 (FR-026): M code to execute on error
+    if name in ("ETRAP", "ET"):
+        return "_rt.etrap()"
+
+    # $ZERROR / $ZE - application error message
+    # Spec 013 Phase 12 (FR-045): Application-supplied error message text
+    if name in ("ZERROR", "ZE"):
+        return "_rt.zerror()"
 
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")

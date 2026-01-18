@@ -22,6 +22,7 @@ from m2py.asg.expressions import (
     MFormatControl,
     MIndirection,
     MIntrinsicFunction,
+    MSpecialVariable,
     MVariable,
 )
 from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
@@ -627,6 +628,22 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
                 assignment.target, value_expr, ctx
             )
             ctx.emitter.line(set_stmt)
+            continue
+
+        # Spec 013 Phase 12: Handle special variable assignments ($ETRAP, $ECODE, $ZERROR)
+        if isinstance(assignment.target, MSpecialVariable):
+            value_expr = generate_expr(assignment.value, ctx)
+            svar_name = assignment.target.name.upper()
+            if svar_name in ("ETRAP", "ET"):
+                ctx.emitter.line(f"_rt.set_etrap({value_expr})")
+            elif svar_name in ("ECODE", "EC"):
+                ctx.emitter.line(f"_rt.set_ecode({value_expr})")
+            elif svar_name in ("ZERROR", "ZE"):
+                ctx.emitter.line(f"_rt.set_zerror({value_expr})")
+            else:
+                raise NotImplementedError(
+                    f"SET ${assignment.target.name} not supported"
+                )
             continue
 
         # Get target variable name
@@ -2589,6 +2606,39 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
                 raise NotImplementedError(
                     "NEW indirection not supported in TRAMPOLINE strategy"
                 )
+        elif isinstance(var, MSpecialVariable):
+            # Spec 013 Phase 12: Handle NEW for special variables ($ETRAP, $ECODE, $ZERROR)
+            # VistA uses patterns like: N $ETRAP,$ESTACK S $ETRAP="..."
+            # This saves current value and initializes to empty on scope exit
+            svar_name = var.name.upper()
+            if svar_name in ("ETRAP", "ET"):
+                if ctx.new_scope_manager_var:
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_special_var('etrap', _rt.etrap(), _rt.set_etrap)"
+                    )
+                else:
+                    # Fallback: no-op if no scope manager
+                    ctx.emitter.line("_rt.set_etrap('')")
+            elif svar_name in ("ECODE", "EC"):
+                if ctx.new_scope_manager_var:
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_special_var('ecode', _rt.ecode(), _rt.set_ecode)"
+                    )
+                else:
+                    ctx.emitter.line("_rt.set_ecode('')")
+            elif svar_name in ("ZERROR", "ZE"):
+                if ctx.new_scope_manager_var:
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_special_var('zerror', _rt.zerror(), _rt.set_zerror)"
+                    )
+                else:
+                    ctx.emitter.line("_rt.set_zerror('')")
+            elif svar_name in ("ESTACK", "ES"):
+                # $ESTACK is typically NEW'd together with $ETRAP
+                # For now, treat as no-op since we don't have full stack tracking
+                pass
+            else:
+                raise NotImplementedError(f"NEW ${var.name} not supported")
         else:
             # Regular variable name (string)
             var_name = var

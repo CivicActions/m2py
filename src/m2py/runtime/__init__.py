@@ -873,6 +873,13 @@ class MUMPSRuntime:
         self._in_extrinsic: bool = False
         # Spec 013 Phase 11: $ZJOB - last JOB'd process ID
         self._zjob: str = "0"
+        # Spec 013 Phase 12: Error processing special variables
+        # $ECODE - comma-delimited list of active error codes (empty = no errors)
+        self._ecode: str = ""
+        # $ETRAP - code string to execute when error occurs
+        self._etrap: str = ""
+        # $ZERROR - application-supplied error message text
+        self._zerror: str = ""
 
     @property
     def globals(self) -> GlobalStorageBackend:
@@ -1094,6 +1101,80 @@ class MUMPSRuntime:
             Current transaction depth (0 = no active transaction)
         """
         return self._globals.get_tlevel()
+
+    def ecode(self) -> str:
+        """Return current error code list ($ECODE).
+
+        Spec 013 Phase 12 (FR-026): Returns comma-delimited list of active
+        error codes. Empty string means no active errors.
+
+        Format: ",code1,code2," - always starts and ends with comma when non-empty.
+        Error codes:
+        - M codes: Standard MUMPS errors (e.g., ",M6," for undefined)
+        - Z codes: Implementation-specific errors
+        - U codes: User-defined errors
+
+        Returns:
+            Comma-delimited error code list, or empty string
+        """
+        return self._ecode
+
+    def set_ecode(self, value: str) -> None:
+        """Set error code list ($ECODE).
+
+        Spec 013 Phase 12 (FR-026): Setting $ECODE is how applications
+        clear errors (SET $ECODE="") or trigger error handlers.
+
+        Args:
+            value: Error code list (empty string to clear)
+        """
+        self._ecode = value
+
+    def etrap(self) -> str:
+        """Return current error trap code ($ETRAP).
+
+        Spec 013 Phase 12 (FR-026): Returns M code string to execute
+        when an error occurs and $ECODE becomes non-empty.
+
+        Returns:
+            Error trap code string, or empty string if not set
+        """
+        return self._etrap
+
+    def set_etrap(self, value: str) -> None:
+        """Set error trap code ($ETRAP).
+
+        Spec 013 Phase 12 (FR-026): Sets the M code to execute on error.
+        Common patterns:
+        - SET $ETRAP="D ^%ZTER Q"  ; Log error and quit
+        - SET $ETRAP="G ERROR^ROUTINE"  ; Goto error handler
+
+        Args:
+            value: M code string to execute on error
+        """
+        self._etrap = value
+
+    def zerror(self) -> str:
+        """Return application error message ($ZERROR).
+
+        Spec 013 Phase 12 (FR-045): Returns application-supplied error
+        message text. Typically set by $ZYERROR routine using $ZSTATUS.
+
+        Returns:
+            Error message string, or empty string
+        """
+        return self._zerror
+
+    def set_zerror(self, value: str) -> None:
+        """Set application error message ($ZERROR).
+
+        Spec 013 Phase 12 (FR-045): Sets error message text for application
+        error handling. Usually set in error handler routines.
+
+        Args:
+            value: Error message text
+        """
+        self._zerror = value
 
     def push_frame(self) -> None:
         """Push a new stack frame (for DO/extrinsic calls)."""

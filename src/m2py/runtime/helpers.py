@@ -1351,7 +1351,12 @@ class NewScopeManager:
         MUMPS NEW semantics are preserved.
         """
         for var_name, saved_value in self._saved.items():
-            if saved_value is _UNDEFINED:
+            # Check if this is a special variable (stored as tuple with setter)
+            if var_name.startswith("__special__"):
+                # Special variable: saved_value is (value, setter)
+                value, setter = saved_value
+                setter(value)
+            elif saved_value is _UNDEFINED:
                 # Variable was undefined before NEW - remove it
                 self._scope.pop(var_name, None)
             else:
@@ -1377,6 +1382,33 @@ class NewScopeManager:
             del self._scope[var_name]
         else:
             self._saved[var_name] = _UNDEFINED
+
+    def new_special_var(
+        self, name: str, current_value: str, setter: "Callable[[str], None]"
+    ) -> None:
+        """NEW a special variable like $ETRAP or $ECODE.
+
+        Spec 013 Phase 12: Handles NEW for special variables that use
+        runtime setters instead of _scope storage.
+
+        VistA pattern: N $ETRAP,$ESTACK S $ETRAP="D ERR^ROUTINE"
+        This saves the current $ETRAP value and restores it on scope exit.
+
+        Args:
+            name: Identifier for this special var (for dedup check)
+            current_value: Current value to save
+            setter: Function to call with saved value on restore
+        """
+        # Use special key prefix to avoid collision with regular vars
+        key = f"__special__{name}"
+        if key in self._saved:
+            # Already NEWed - skip
+            return
+
+        # Store tuple of (value, setter) - we'll call setter(value) on restore
+        self._saved[key] = (current_value, setter)
+        # Initialize to empty (NEW semantics)
+        setter("")
 
 
 # =============================================================================
