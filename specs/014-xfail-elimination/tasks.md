@@ -99,12 +99,12 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 ### Task A4: Zero-VistA Feature Errors (9 tests)
 
 - [x] T035 [US2] Add TROLLBACK:n (level arg) detection and NotImplementedError in src/m2py/codegen/statements.py
-- [ ] T036 [P] [US2] Add device parameter NotImplementedError in src/m2py/codegen/statements.py (DEFERRED - needs more research)
+- [ ] T036 [P] [US2] Add device parameter NotImplementedError in src/m2py/codegen/statements.py (NOT NEEDED - device params already work!)
 - [x] T037 [P] [US2] Convert TROLLBACK:n test from xfail to pytest.raises in tests/unit/codegen/s6_routine/test_s6_3_1_transaction.py
 - [x] T038 [P] [US2] Convert $TRESTART test from xfail to pytest.raises in tests/unit/codegen/s6_routine/test_s6_3_1_transaction.py
 - [x] T039 [P] [US1] Convert legacy pre-1984 variable scope tests from xfail to execute_mumps in tests/unit/codegen/legacy/test_pre1995_behavior.py
 - [x] T040 [P] [US1] Convert $NEXT tests (3) from xfail to execute_mumps in tests/unit/codegen/legacy/test_pre1995_behavior.py
-- [ ] T041 [P] [US2] Convert device parameter tests (2) from xfail to pytest.raises in tests/unit/codegen/ (DEFERRED - needs more research)
+- [x] T041 [P] [US2] Convert device parameter tests from xfail to real tests - device params codegen already works! (tests/unit/codegen/s8_commands/test_s8_3_device_params.py)
 
 ### Phase 3 Validation
 
