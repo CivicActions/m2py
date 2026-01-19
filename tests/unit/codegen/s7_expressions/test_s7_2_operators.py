@@ -111,11 +111,59 @@ class TestOperatorsCodegen:
         assert result.output == "0"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exponentiation")
-    def test_exponentiation(self, generate_python):
-        """Exponentiation generates Python ** (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_exponentiation(self, execute_mumps):
+        """Exponentiation operator ** (§7.2).
+
+        YDB verified: 2**3 → 8
+        """
+        result = execute_mumps("TEST\n W 2**3\n Q\n")
+        assert result.output == "8"
+        assert result.success is True
+
+    def test_exponentiation_zero_exponent(self, execute_mumps):
+        """Any non-zero number to the power 0 is 1 (§7.2).
+
+        YDB verified: 10**0 → 1
+        """
+        result = execute_mumps("TEST\n W 10**0\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_exponentiation_negative_base(self, execute_mumps):
+        """Negative base with integer exponent (§7.2).
+
+        YDB verified: (-2)**3 → -8
+        """
+        result = execute_mumps("TEST\n W (-2)**3\n Q\n")
+        assert result.output == "-8"
+        assert result.success is True
+
+    def test_exponentiation_negative_exponent(self, execute_mumps):
+        """Negative exponent produces reciprocal (§7.2).
+
+        YDB verified: 2**-1 → .5
+        """
+        result = execute_mumps("TEST\n W 2**-1\n Q\n")
+        assert result.output == ".5"
+        assert result.success is True
+
+    def test_exponentiation_zero_to_zero(self, execute_mumps):
+        """0**0 is defined as 1 in MUMPS (§7.2).
+
+        YDB verified: 0**0 → 1
+        """
+        result = execute_mumps("TEST\n W 0**0\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_exponentiation_fractional_base(self, execute_mumps):
+        """Fractional base with integer exponent (§7.2).
+
+        YDB verified: 2.5**2 → 6.25
+        """
+        result = execute_mumps("TEST\n W 2.5**2\n Q\n")
+        assert result.output == "6.25"
+        assert result.success is True
 
     def test_concatenation_strings(self, execute_mumps):
         """Concatenation joins strings correctly (§7.2).

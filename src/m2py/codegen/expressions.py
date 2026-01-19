@@ -425,6 +425,9 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
     elif op.operator == "#":
         # Modulo in MUMPS
         return f"(m_num({left}) % m_num({right}))"
+    elif op.operator == "**":
+        # Exponentiation in MUMPS - base ** exponent
+        return f"(m_num({left}) ** m_num({right}))"
     elif op.operator in ("=", "<", ">"):
         # Comparison: use m_compare helper
         return f'm_compare({left}, "{op.operator}", {right})'

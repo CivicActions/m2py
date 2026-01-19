@@ -455,9 +455,20 @@ YDB validates this by rejecting $SIN(x) as "Invalid function name".
 
 ### Exponentiation
 
-- [ ] T114 [US4] Add exponentiation operator codegen in src/m2py/codegen/expressions.py
-- [ ] T115 [US4] Create exponentiation tests (`W 2**3` → 8) in tests/unit/codegen/
-- [ ] T116 [US4] Validate exponentiation against YDB
+- [X] T114 [US4] Add exponentiation operator codegen in src/m2py/codegen/expressions.py
+- [X] T115 [US4] Create exponentiation tests (`W 2**3` → 8) in tests/unit/codegen/
+- [X] T116 [US4] Validate exponentiation against YDB
+
+**Implementation Notes**:
+- Added `**` operator handling in `_generate_binary_op()` with m_num coercion
+- Uses Python's native `**` operator which matches MUMPS semantics
+- Converted 1 xfail stub to 6 real tests covering edge cases:
+  - Basic: 2**3 → 8
+  - Zero exponent: 10**0 → 1, 0**0 → 1
+  - Negative base: (-2)**3 → -8
+  - Negative exponent: 2**-1 → .5
+  - Fractional base: 2.5**2 → 6.25
+- YDB behavior note: Fractional power of negative number raises error (not implemented - low priority)
 
 **Checkpoint**: Exponentiation complete (SC-005 verified)
 
