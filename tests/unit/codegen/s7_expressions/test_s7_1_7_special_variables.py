@@ -65,11 +65,20 @@ class TestSpecialVariablesCodegen:
         result = generate_python("TEST W $T Q")
         assert "int(_test)" in result
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TLEVEL codegen")
     def test_sv_tlevel(self, generate_python):
-        """$TLEVEL generates transaction level access (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$TLEVEL generates runtime tlevel() call (§7.1.7).
+
+        Spec 013 FR-015: $TL generates _rt.tlevel() call.
+        """
+        result = generate_python("TEST W $TL Q")
+        assert "_rt.tlevel()" in result
+
+    def test_sv_tlevel_abbreviated(self, generate_python):
+        """$TL generates same as $TLEVEL (§7.1.7)."""
+        full = generate_python("TEST W $TLEVEL Q")
+        abbrev = generate_python("TEST W $TL Q")
+        assert "_rt.tlevel()" in full
+        assert "_rt.tlevel()" in abbrev
 
     def test_sv_x(self, generate_python):
         """$X generates runtime x() call (§7.1.7).
@@ -206,23 +215,21 @@ class TestQuitSpecialVariableCodegen:
         result = generate_python("TEST W $Q Q")
         assert "_rt.quit_flag()" in result
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QUIT in extrinsic runtime test")
-    def test_quit_in_extrinsic_returns_one(self, generate_python):
+    def test_quit_in_extrinsic_returns_one(self, execute_mumps):
         """$QUIT returns 1 when called from extrinsic function.
 
         S X=$$FUNC  ; Inside FUNC, $QUIT=1
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W $$FN() Q\nFN() W $Q Q 1")
+        assert result.output == "11"  # $Q writes 1, then return value 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QUIT in DO runtime test")
-    def test_quit_in_do_returns_zero(self, generate_python):
+    def test_quit_in_do_returns_zero(self, execute_mumps):
         """$QUIT returns 0 when called from DO.
 
         D LABEL  ; Inside LABEL, $QUIT=0
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST D SUB Q\nSUB W $Q Q")
+        assert result.output == "0"
 
 
 @pytest.mark.codegen

@@ -100,33 +100,35 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 - [x] T035 [US2] Add TROLLBACK:n (level arg) detection and NotImplementedError in src/m2py/codegen/statements.py
 - [ ] T036 [P] [US2] Add device parameter NotImplementedError in src/m2py/codegen/statements.py (DEFERRED - needs more research)
-- [x] T037 [P] [US2] Convert TROLLBACK:n test from xfail to pytest.raises in tests/unit/codegen/s8_commands/test_s8_2_21_trollback.py
-- [ ] T038 [P] [US2] Convert $TRESTART test from xfail to pytest.raises in tests/unit/codegen/s7_expressions/ (DEFERRED - $TRESTART is implemented)
-- [ ] T039 [P] [US2] Convert legacy pre-1984 variable scope tests (2) from xfail to pytest.raises in tests/unit/codegen/legacy/test_pre1995_behavior.py (DEFERRED - tests are stubs)
-- [ ] T040 [P] [US2] Convert $NEXT tests (3) from xfail to pytest.raises in tests/unit/codegen/legacy/ (DEFERRED - $NEXT is implemented)
+- [x] T037 [P] [US2] Convert TROLLBACK:n test from xfail to pytest.raises in tests/unit/codegen/s6_routine/test_s6_3_1_transaction.py
+- [x] T038 [P] [US2] Convert $TRESTART test from xfail to pytest.raises in tests/unit/codegen/s6_routine/test_s6_3_1_transaction.py
+- [x] T039 [P] [US1] Convert legacy pre-1984 variable scope tests from xfail to execute_mumps in tests/unit/codegen/legacy/test_pre1995_behavior.py
+- [x] T040 [P] [US1] Convert $NEXT tests (3) from xfail to execute_mumps in tests/unit/codegen/legacy/test_pre1995_behavior.py
 - [ ] T041 [P] [US2] Convert device parameter tests (2) from xfail to pytest.raises in tests/unit/codegen/ (DEFERRED - needs more research)
 
 ### Phase 3 Validation
 
 - [x] T042 [US2] Run Phase A validation: `uv run pytest --collect-only -m xfail -q` (expect ~64 remaining)
-  - **Actual result**: 92 xfails (74 original + 20 from test_math_library.py - 2 TROLLBACK converted)
-  - **Note**: test_math_library.py was unmarked but broken by LIM-014, added xfail marker
+  - **Actual result**: 72 xfails after MATH library fix, then 61 after Phase 4 work
 - [x] T043 [US2] Run full test suite: `uv run pytest` (expect 0 failures)
-  - **Result**: 4896 passed, 92 xfailed, 0 failed
+  - **Result**: 4918 passed, 61 xfailed, 0 failed
 
-**Checkpoint**: Phase 3 (Limitation Errors) substantially complete.
+**Checkpoint**: Phase 3 (Limitation Errors) and initial Phase 4 complete.
 - SSVN errors (LIM-003, LIM-011): ✅
-- ANSI library errors (LIM-014): ✅
+- ANSI library errors (LIM-014): ✅ (with selective MATH implementation)
 - Z-command errors (LIM-015): ✅
 - Z-function errors (LIM-015): ✅
 - TROLLBACK:n (LIM-016): ✅
-- Legacy/device tests: DEFERRED (need proper implementation, not LIM-XXX errors)
+- $TRESTART: ✅ (raises NotImplementedError)
+- Legacy tests ($NEXT, pre-1984, pre-1990): ✅ (converted to execute_mumps)
 
 ---
 
 ## Phase 4: User Story 1 - Zero xfail Tests in CI (Priority: P1)
 
-**Goal**: Implement remaining 64 features after error handling (163 - 99 = 64 tests)
+**Goal**: Implement remaining features after error handling
+
+**Current Status**: 61 xfails remaining (down from 72)
 
 **Independent Test**: `uv run pytest --collect-only -m xfail -q`
 
@@ -134,10 +136,10 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task B1: Special Variables (4 tests)
 
-- [ ] T044 [US1] Implement $TLEVEL special variable in src/m2py/codegen/expressions.py
-- [ ] T045 [P] [US1] Implement $QUIT context awareness (1 in extrinsic, 0 in DO) in src/m2py/codegen/expressions.py
-- [ ] T046 [US1] Implement $TEXT external routine lookup in src/m2py/codegen/expressions.py
-- [ ] T047 [US1] Convert 4 special variable tests from xfail in tests/unit/codegen/s7_expressions/
+- [x] T044 [US1] $TLEVEL already implemented - converted test to verify _rt.tlevel() call
+- [x] T045 [P] [US1] $QUIT context awareness (1 in extrinsic, 0 in DO) - converted tests to execute_mumps
+- [ ] T046 [US1] Implement $TEXT external routine lookup in src/m2py/codegen/expressions.py (STUB - requires multi-routine)
+- [x] T047 [US1] Converted special variable tests: $TLEVEL codegen, $QUIT extrinsic/DO context
 
 #### Task B2: Indirection Completion (3 tests)
 
@@ -181,8 +183,8 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 #### Task D1: Routine Metadata (3 tests)
 
 - [ ] T065 [US1] Implement routine docstring from MUMPS header in src/m2py/codegen/
-- [ ] T066 [P] [US1] Implement empty label translation (_preamble) in src/m2py/codegen/
-- [ ] T067 [US1] Convert 3 routine metadata tests from xfail in tests/unit/codegen/s6_routine/
+- [x] T066 [P] [US1] Empty label translation (_preamble) already implemented - converted test in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
+- [ ] T067 [US1] Convert 2 remaining routine metadata tests from xfail (docstring, etc.)
 
 #### Task D2: Extrinsic Advanced (3 tests)
 

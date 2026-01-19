@@ -87,14 +87,23 @@ class TestNameTranslationCodegen:
         assert nt.translate("IF") == "IF"
         assert nt.translate("FOR") == "FOR"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: empty label translation")
     def test_empty_label_translation(self, generate_python):
-        """Labelless preamble gets special name.
+        """Labelless preamble gets special _preamble function name.
 
         Lines before first label become _preamble function.
         """
-        pytest.fail("Stub - implement test")
+        # Code with preamble (lines before TEST label)
+        code = """ ; This is a routine with preamble
+ W "preamble",!
+TEST
+ W "test"
+ Q
+"""
+        result = generate_python(code)
+        # Should have _preamble function
+        assert "def _preamble" in result
+        # And the TEST function
+        assert "def TEST" in result
 
     def test_case_preservation(self):
         """Name translation preserves case distinctions.
