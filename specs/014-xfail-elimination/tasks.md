@@ -138,7 +138,7 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 - [x] T044 [US1] $TLEVEL already implemented - converted test to verify _rt.tlevel() call
 - [x] T045 [P] [US1] $QUIT context awareness (1 in extrinsic, 0 in DO) - converted tests to execute_mumps
-- [ ] T046 [US1] Implement $TEXT external routine lookup in src/m2py/codegen/expressions.py (STUB - requires multi-routine)
+- [x] T046 [US1] $TEXT external routine codegen already implemented - generates __import__('ROUTINE') for module access
 - [x] T047 [US1] Converted special variable tests: $TLEVEL codegen, $QUIT extrinsic/DO context
 
 #### Task B2: Indirection Completion (3 tests)
