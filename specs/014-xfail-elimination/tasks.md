@@ -40,12 +40,12 @@
 
 **⚠️ CRITICAL**: Complete before any US2 test conversions
 
-- [ ] T004 Define `ANSI_LIBRARY_ROUTINES` constant in src/m2py/codegen/expressions.py
-- [ ] T005 [P] Define `Z_COMMANDS` constant set in src/m2py/codegen/statements.py
-- [ ] T006 [P] Define `Z_FUNCTIONS` constant set in src/m2py/codegen/expressions.py
-- [ ] T007 Validate limitation IDs exist in src/m2py/limitations.py (LIM-003, LIM-011, LIM-014, LIM-015, LIM-016)
+- [x] T004 Define `ANSI_LIBRARY_ROUTINES` constant in src/m2py/codegen/expressions.py
+- [x] T005 [P] Define `Z_COMMANDS` constant set in src/m2py/codegen/statements.py
+- [x] T006 [P] Define `Z_FUNCTIONS` constant set in src/m2py/codegen/expressions.py
+- [x] T007 Validate limitation IDs exist in src/m2py/limitations.py (LIM-003, LIM-011, LIM-014, LIM-015, LIM-016)
 
-**Checkpoint**: Error infrastructure ready - test conversions can begin
+**Checkpoint**: Error infrastructure ready - test conversions can begin ✅ COMPLETE
 
 ---
 

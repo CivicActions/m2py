@@ -35,6 +35,21 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
+# Limitation Constants (Spec 014)
+# =============================================================================
+
+# ANSI Standard Library routines (LIM-014)
+# These are defined in ANSI M X11.1-1995 Annex I but have zero VistA usage.
+# Codegen raises NotImplementedError for these routines.
+ANSI_LIBRARY_ROUTINES: frozenset[str] = frozenset({"MATH", "STRING", "CHARACTER"})
+
+# YDB Z-functions with zero VistA usage (LIM-015)
+# These are implementation-defined per FR-017 and parsed but not implemented.
+# Codegen raises NotImplementedError for these functions.
+Z_FUNCTIONS_UNIMPLEMENTED: frozenset[str] = frozenset({"ZDATE", "ZMESSAGE", "ZWIDTH"})
+
+
+# =============================================================================
 # Intrinsic Function Dispatch Table (Spec 010)
 # =============================================================================
 

@@ -90,6 +90,32 @@ class UnsupportedFeatureError(Exception):
 
 
 # =============================================================================
+# Limitation Constants (Spec 014)
+# =============================================================================
+
+# YDB Z-commands with zero VistA usage (LIM-015)
+# These are implementation-defined per FR-017 and parsed but not implemented.
+# Codegen raises NotImplementedError for these commands.
+# Note: ZWRITE, ZKILL, ZLINK, ZSHOW, ZGOTO, ZHALT are implemented.
+Z_COMMANDS_UNIMPLEMENTED: frozenset[str] = frozenset(
+    {
+        "ZALLOCATE",
+        "ZDEALLOCATE",
+        "ZBREAK",
+        "ZCOMPILE",
+        "ZCONTINUE",
+        "ZEDIT",
+        "ZHELP",
+        "ZMESSAGE",
+        "ZPRINT",
+        "ZSTEP",
+        "ZSYSTEM",
+        "ZTRIGGER",
+    }
+)
+
+
+# =============================================================================
 # Spec 005: Code Generation Context Helpers
 # =============================================================================
 
