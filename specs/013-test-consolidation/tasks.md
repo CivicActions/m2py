@@ -480,9 +480,22 @@ YDB validates this by rejecting $SIN(x) as "Invalid function name".
 
 ### Pattern Alternation
 
-- [ ] T117 [US4] Extend pattern compiler for alternation in src/m2py/analysis/pattern_compiler.py
-- [ ] T118 [US4] Create pattern alternation tests in tests/unit/codegen/
-- [ ] T119 [US4] Validate pattern alternation against YDB
+- [X] T117 [US4] Extend pattern compiler for alternation in src/m2py/analysis/pattern_compiler.py
+- [X] T118 [US4] Create pattern alternation tests in tests/unit/codegen/
+- [X] T119 [US4] Validate pattern alternation against YDB
+
+**Implementation Notes**:
+- Pattern compiler already supported alternation parsing in `_parse_alternation()`
+- Bug fix: `_pattern_atom_to_string()` in semantic_analyzer.py was incorrectly serializing
+  PatternAlternative objects (calling itself on PatternAlternative instead of its atoms)
+- Fixed by properly iterating over alt.atoms for each PatternAlternative
+- Converted 1 xfail stub to 6 real tests covering:
+  - Basic alternation: "AB"?1(1A,1N)1(1A,1N) → 1
+  - Numeric option: "12"?1(1A,1N)1(1A,1N) → 1
+  - Failure case: "A.B"?1(1A,1N)1(1A,1N) → 0 (dot not in alternation)
+  - Phone number format: "123-456-7890"?3N1(1"-",1".")3N1(1"-",1".")4N → 1
+  - Nested alternation: "a"?1(1(1l,1u),2N) → 1 (lowercase matches inner)
+  - Nested outer match: "12"?1(1(1l,1u),2N) → 1 (2N matches outer)
 
 **Checkpoint**: Pattern alternation complete (SC-017 verified)
 
