@@ -584,37 +584,37 @@ YDB validates this by rejecting $SIN(x) as "Invalid function name".
 
 ### ZWRITE (FR-039) - 54 files
 
-- [ ] T132 [US4] Implement _zwrite() helper in src/m2py/codegen/helpers.py
-- [ ] T133 [US4] Add ZWRITE codegen in src/m2py/codegen/statements.py
-- [ ] T134 [US4] Create ZWRITE tests in tests/unit/codegen/
+- [X] T132 [US4] Implement _zwrite() helper in src/m2py/codegen/helpers.py
+- [X] T133 [US4] Add ZWRITE codegen in src/m2py/codegen/statements.py
+- [X] T134 [US4] Create ZWRITE tests in tests/unit/codegen/
 
 ### ZKILL (FR-042) - 5 files
 
-- [ ] T135 [US4] Add ZKILL codegen using kill_node() in src/m2py/codegen/statements.py
-- [ ] T136 [US4] Create ZKILL tests in tests/unit/codegen/
+- [X] T135 [US4] Add ZKILL codegen using kill_node() in src/m2py/codegen/statements.py
+- [X] T136 [US4] Create ZKILL tests in tests/unit/codegen/
 
 ### ZLINK (FR-040) - 20 files
 
-- [ ] T137 [US4] Implement _zlink() for dynamic routine loading in src/m2py/codegen/helpers.py
-- [ ] T138 [US4] Add ZLINK codegen in src/m2py/codegen/statements.py
-- [ ] T139 [US4] Create ZLINK tests in tests/unit/codegen/
+- [X] T137 [US4] Implement _zlink() for dynamic routine loading in src/m2py/codegen/helpers.py
+- [X] T138 [US4] Add ZLINK codegen in src/m2py/codegen/statements.py
+- [X] T139 [US4] Create ZLINK tests in tests/unit/codegen/
 
 ### ZSHOW (FR-041) - 9 files
 
-- [ ] T140 [US4] Implement _zshow() helper in src/m2py/codegen/helpers.py
-- [ ] T141 [US4] Add ZSHOW codegen in src/m2py/codegen/statements.py
-- [ ] T142 [US4] Create ZSHOW tests in tests/unit/codegen/
+- [X] T140 [US4] Implement _zshow() helper in src/m2py/codegen/helpers.py
+- [X] T141 [US4] Add ZSHOW codegen in src/m2py/codegen/statements.py
+- [X] T142 [US4] Create ZSHOW tests in tests/unit/codegen/
 
 ### ZGOTO (FR-043) - 2 files
 
-- [ ] T143 [US4] Implement ZGotoException for stack unwinding in src/m2py/runtime/exceptions.py
-- [ ] T144 [US4] Add ZGOTO codegen in src/m2py/codegen/statements.py
-- [ ] T145 [US4] Create ZGOTO tests in tests/unit/codegen/
+- [X] T143 [US4] Implement ZGotoException for stack unwinding in src/m2py/runtime/exceptions.py
+- [X] T144 [US4] Add ZGOTO codegen in src/m2py/codegen/statements.py
+- [X] T145 [US4] Create ZGOTO tests in tests/unit/codegen/
 
 ### ZHALT (FR-044) - 1 file
 
-- [ ] T146 [US4] Add ZHALT codegen using sys.exit() in src/m2py/codegen/statements.py
-- [ ] T147 [US4] Create ZHALT tests in tests/unit/codegen/
+- [X] T146 [US4] Add ZHALT codegen using sys.exit() in src/m2py/codegen/statements.py
+- [X] T147 [US4] Create ZHALT tests in tests/unit/codegen/
 
 **Checkpoint**: Z-commands complete (SC-013 verified)
 

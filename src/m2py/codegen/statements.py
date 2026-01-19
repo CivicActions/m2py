@@ -55,6 +55,14 @@ from m2py.asg.statements import (
     MViewStatement,
     MWriteStatement,
     MXecuteStatement,
+    # Z-commands (Phase 19)
+    MZGotoStatement,
+    MZHaltStatement,
+    MZKillStatement,
+    MZLinkStatement,
+    MZShowStatement,
+    MZWithdrawStatement,
+    MZWriteStatement,
 )
 from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.expressions import generate_expr
@@ -583,6 +591,19 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_view(stmt, ctx)
     elif isinstance(stmt, MBreakStatement):
         _generate_break(stmt, ctx)
+    # Z-commands (Phase 19)
+    elif isinstance(stmt, MZWriteStatement):
+        _generate_zwrite(stmt, ctx)
+    elif isinstance(stmt, (MZKillStatement, MZWithdrawStatement)):
+        _generate_zkill(stmt, ctx)
+    elif isinstance(stmt, MZLinkStatement):
+        _generate_zlink(stmt, ctx)
+    elif isinstance(stmt, MZShowStatement):
+        _generate_zshow(stmt, ctx)
+    elif isinstance(stmt, MZGotoStatement):
+        _generate_zgoto(stmt, ctx)
+    elif isinstance(stmt, MZHaltStatement):
+        _generate_zhalt(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -3553,6 +3574,257 @@ def _generate_break(stmt: MBreakStatement, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     ctx.emitter.line("breakpoint()  # BREAK - enter debugger")
+
+
+# =============================================================================
+# Z-Commands (Phase 19)
+# =============================================================================
+
+
+def _generate_zwrite(stmt: MZWriteStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZWRITE command.
+
+    Spec 013 Phase 19 (T132-T134): ZWRITE displays variables with names.
+
+    ZWRITE outputs variables in a format that can be used with SET @:
+    - Variable names are shown
+    - String values are quoted
+    - Subscripted descendants are shown recursively
+
+    Examples:
+        ZW X      -> X=1
+                    X(1)="A"
+        ZW        -> (all local variables)
+        ZW ^GLOB  -> ^GLOB=value (global and descendants)
+
+    Args:
+        stmt: MZWriteStatement node
+        ctx: Generator context
+    """
+    from m2py.parser.textx_classes import (
+        LocalVariable,
+        MGlobal,
+        ZWriteGlobal,
+        ZWriteLocal,
+    )
+
+    if not stmt.args:
+        # Argumentless ZWRITE - display all local variables
+        ctx.emitter.line("_rt.zwrite(_scope)")
+    else:
+        for arg in stmt.args:
+            if arg.target is None:
+                continue
+
+            target = arg.target
+
+            # Check for any global type (GlobalVariable, ZWriteGlobal, or MGlobal subclass)
+            if isinstance(target, (GlobalVariable, ZWriteGlobal, MGlobal)):
+                # Global variable: ZW ^NAME or ZW ^NAME(subs)
+                name = target.name
+                if target.subscripts:
+                    subs = ", ".join(
+                        f"str({generate_expr(s, ctx)})" for s in target.subscripts
+                    )
+                    ctx.emitter.line(f"_rt.zwrite_global('{name}', ({subs},))")
+                else:
+                    ctx.emitter.line(f"_rt.zwrite_global('{name}', ())")
+            elif isinstance(target, (LocalVariable, ZWriteLocal)):
+                # Local variable: ZW X or ZW X(subs)
+                name = target.name
+                if target.subscripts:
+                    subs = ", ".join(
+                        f"str({generate_expr(s, ctx)})" for s in target.subscripts
+                    )
+                    ctx.emitter.line(f"_rt.zwrite_local('{name}', ({subs},), _scope)")
+                else:
+                    ctx.emitter.line(f"_rt.zwrite_local('{name}', (), _scope)")
+            else:
+                # Fallback - generate expression and try to write it
+                ctx.emitter.line(f"pass  # ZWRITE {generate_expr(target, ctx)}")
+
+
+def _generate_zkill(
+    stmt: "MZKillStatement | MZWithdrawStatement", ctx: "GeneratorContext"
+) -> None:
+    """Generate Python code for ZKILL/ZWITHDRAW command.
+
+    Spec 013 Phase 19 (T135-T136): ZKILL removes node value but preserves descendants.
+
+    Unlike KILL which removes the entire subtree, ZKILL only removes the value
+    at the specified node, leaving all subscripted descendants intact.
+
+    Example:
+        S ^A=1,^A(1)=2,^A(2)=3
+        ZK ^A        ; Removes ^A value, keeps ^A(1) and ^A(2)
+        W $D(^A)     ; Returns 10 (has descendants but no value)
+
+    Args:
+        stmt: MZKillStatement or MZWithdrawStatement node
+        ctx: Generator context
+    """
+    from m2py.parser.textx_classes import LocalVariable
+
+    for target in stmt.targets:
+        if isinstance(target, GlobalVariable):
+            name = target.name
+            if target.subscripts:
+                subs = ", ".join(
+                    f"str({generate_expr(s, ctx)})" for s in target.subscripts
+                )
+                ctx.emitter.line(f"_rt.globals.kill_node('{name}', ({subs},))")
+            else:
+                ctx.emitter.line(f"_rt.globals.kill_node('{name}', ())")
+        elif isinstance(target, LocalVariable):
+            name = target.name
+            py_name = translate_name(name)
+            if target.subscripts:
+                subs = ", ".join(
+                    f"str({generate_expr(s, ctx)})" for s in target.subscripts
+                )
+                ctx.emitter.line(
+                    f"_scope.setdefault('{py_name}', MArray()).kill_node(({subs},))"
+                )
+            else:
+                # ZKILL on unsubscripted local - remove value but keep children
+                ctx.emitter.line(
+                    f"_scope.setdefault('{py_name}', MArray()).kill_node(())"
+                )
+        else:
+            # Fallback
+            ctx.emitter.line(f"pass  # ZKILL {generate_expr(target, ctx)}")
+
+
+def _generate_zlink(stmt: MZLinkStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZLINK command.
+
+    Spec 013 Phase 19 (T137-T139): ZLINK dynamically links/loads a routine.
+
+    In the transpiler context, ZLINK imports a Python module representing
+    the routine and registers it in the runtime's routine registry.
+
+    Example:
+        ZLINK "MYROUTINE"
+        D ^MYROUTINE
+
+    Args:
+        stmt: MZLinkStatement node
+        ctx: Generator context
+    """
+    if not stmt.args:
+        ctx.emitter.line("pass  # ZLINK (no args)")
+        return
+
+    for arg in stmt.args:
+        routine_expr = generate_expr(arg, ctx)
+        ctx.emitter.line(f"_rt.zlink({routine_expr})")
+
+
+def _generate_zshow(stmt: MZShowStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZSHOW command.
+
+    Spec 013 Phase 19 (T140-T142): ZSHOW displays system information.
+
+    Codes:
+    - S: Stack trace
+    - V: Local variables (like ZWRITE)
+    - D: Devices
+    - I: Intrinsic special variables
+    - G: Global variables
+    - L: Locks held
+    - *: All of the above
+
+    Example:
+        ZSHOW "S"    ; Show call stack
+        ZSHOW "V"    ; Show variables
+
+    Args:
+        stmt: MZShowStatement node
+        ctx: Generator context
+    """
+    if not stmt.args:
+        # Argumentless ZSHOW shows everything
+        ctx.emitter.line('_rt.zshow("*", _scope)')
+        return
+
+    for arg in stmt.args:
+        if arg.codes:
+            codes_expr = generate_expr(arg.codes, ctx)
+            if arg.destination:
+                dest_expr = generate_expr(arg.destination, ctx)
+                ctx.emitter.line(f"_rt.zshow({codes_expr}, _scope, {dest_expr})")
+            else:
+                ctx.emitter.line(f"_rt.zshow({codes_expr}, _scope)")
+        else:
+            ctx.emitter.line('_rt.zshow("*", _scope)')
+
+
+def _generate_zgoto(stmt: MZGotoStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZGOTO command.
+
+    Spec 013 Phase 19 (T143-T145): ZGOTO unwinds stack to specified level.
+
+    ZGOTO is a powerful control flow mechanism that can:
+    - Unwind the call stack to a specific level
+    - Transfer control to a label after unwinding
+    - Exit the program (ZGOTO 0)
+
+    Example:
+        ZGOTO 0         ; Exit program
+        ZGOTO 1:ERROR   ; Unwind to level 1, go to ERROR
+
+    Implementation uses an exception-based approach for stack unwinding.
+
+    Args:
+        stmt: MZGotoStatement node
+        ctx: Generator context
+    """
+    if not stmt.args:
+        # Argumentless ZGOTO - return to direct mode (exit in batch)
+        ctx.emitter.line("raise SystemExit(0)  # ZGOTO - return to direct mode")
+        return
+
+    for arg in stmt.args:
+        level_expr = "0"
+        if arg.level is not None:
+            level_expr = generate_expr(arg.level, ctx)
+
+        if arg.target is not None:
+            # ZGOTO level:label - unwind and transfer
+            target_expr = generate_expr(arg.target, ctx)
+            ctx.emitter.line(
+                f"raise _rt.ZGotoException({level_expr}, {target_expr})  # ZGOTO"
+            )
+        else:
+            # ZGOTO level - unwind only
+            if level_expr == "0":
+                ctx.emitter.line("raise SystemExit(0)  # ZGOTO 0 - exit")
+            else:
+                ctx.emitter.line(
+                    f"raise _rt.ZGotoException({level_expr})  # ZGOTO {level_expr}"
+                )
+
+
+def _generate_zhalt(stmt: MZHaltStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZHALT command.
+
+    Spec 013 Phase 19 (T146-T147): ZHALT terminates with exit status.
+
+    Similar to HALT but allows specifying an exit code.
+
+    Example:
+        ZHALT 0     ; Exit with success
+        ZHALT 1     ; Exit with error
+
+    Args:
+        stmt: MZHaltStatement node
+        ctx: Generator context
+    """
+    if stmt.exitcode is not None:
+        exit_expr = generate_expr(stmt.exitcode, ctx)
+        ctx.emitter.line(f"raise SystemExit(int({exit_expr}))  # ZHALT")
+    else:
+        ctx.emitter.line("raise SystemExit(0)  # ZHALT")
 
 
 __all__ = [

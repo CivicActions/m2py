@@ -11,14 +11,18 @@ import pytest
 class TestZgotoCodegen:
     """Codegen-level tests for ZGOTO command (YDB)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZGOTO codegen")
     def test_zgoto_generates_stack_unwind(self, generate_python):
         """ZGOTO generates stack unwinding code."""
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST ZGOTO 0 Q")
+        assert "raise SystemExit(0)" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZGOTO level handling")
     def test_zgoto_level_handling(self, generate_python):
         """ZGOTO with level generates proper unwinding."""
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST ZGOTO 1 Q")
+        assert "ZGotoException" in code
+
+    def test_zgoto_zero_exits(self, generate_python):
+        """ZGOTO 0 exits the program."""
+        code = generate_python("TEST ZGOTO 0")
+        assert "raise SystemExit(0)" in code
+        assert "ZGOTO 0" in code  # Comment indicates it's ZGOTO 0

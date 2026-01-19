@@ -533,6 +533,40 @@ class MArray:
             if last in parent._children:
                 del parent._children[last]
 
+    def kill_node(self, subscripts: tuple[Any, ...]) -> None:
+        """Delete node value but preserve descendants (ZKILL command).
+
+        Spec 013 Phase 19 (T135): ZKILL removes value but keeps children.
+
+        Unlike kill() which removes the entire subtree, kill_node()
+        only removes the value at the specified node, leaving all
+        subscripted descendants intact.
+
+        Args:
+            subscripts: Path to the node to zkill (empty for root)
+
+        Example:
+            arr.set(value=1)
+            arr.set(1, value=2)
+            arr.kill_node(())  # Removes root value, keeps arr(1)
+            arr.defined()      # Returns 10 (has children, no value)
+        """
+        if not subscripts:
+            self._value = None
+            return
+
+        # Navigate to parent of target
+        parent = self
+        for sub in subscripts[:-1]:
+            if sub not in parent._children:
+                return  # Path doesn't exist
+            parent = parent._children[sub]
+
+        last = subscripts[-1]
+        if last in parent._children:
+            # Only remove value, keep children intact
+            parent._children[last]._value = None
+
     def order(self, *subscripts: Any, start: Any = "") -> Any:
         """Get next subscript ($ORDER equivalent).
 
@@ -880,6 +914,8 @@ class MUMPSRuntime:
         self._etrap: str = ""
         # $ZERROR - application-supplied error message text
         self._zerror: str = ""
+        # Spec 013 Phase 19: Routine registry for ZLINK
+        self._routines: Dict[str, Any] = {}
 
     @property
     def globals(self) -> GlobalStorageBackend:
@@ -1009,6 +1045,249 @@ class MUMPSRuntime:
         self._output.clear()
         self._x = 0
         self._y = 0
+
+    # =========================================================================
+    # Spec 013 Phase 19: Z-Command Support Methods
+    # =========================================================================
+
+    def _quote_value(self, value: Any) -> str:
+        """Quote a value for ZWRITE output format.
+
+        Args:
+            value: Value to quote
+
+        Returns:
+            Quoted string suitable for SET @ input
+        """
+        if value is None or value == "":
+            return '""'
+        s = str(value)
+        # Check if it's a number (doesn't need quoting)
+        try:
+            float(s)
+            return s
+        except ValueError:
+            pass
+        # Quote strings, escaping internal quotes
+        escaped = s.replace('"', '""')
+        return f'"{escaped}"'
+
+    def zwrite(self, scope: dict[str, Any]) -> None:
+        """ZWRITE - display all local variables.
+
+        Spec 013 Phase 19 (T132): Argumentless ZWRITE shows all locals.
+
+        Args:
+            scope: Variable scope dictionary
+        """
+        for name in sorted(scope.keys()):
+            if name.startswith("_"):
+                continue  # Skip internal variables
+            value = scope[name]
+            self._zwrite_var(name, value)
+
+    def _format_subscript(self, sub: Any) -> str:
+        """Format a subscript value for ZWRITE output.
+
+        Numeric subscripts are not quoted, string subscripts are.
+
+        Args:
+            sub: Subscript value
+
+        Returns:
+            Formatted subscript (quoted if string, unquoted if numeric)
+        """
+        s = str(sub)
+        # Check if it's numeric
+        try:
+            float(s)
+            # Return numeric subscripts unquoted
+            return s
+        except ValueError:
+            pass
+        # Quote string subscripts
+        escaped = s.replace('"', '""')
+        return f'"{escaped}"'
+
+    def zwrite_local(
+        self, name: str, subscripts: tuple[str, ...], scope: dict[str, Any]
+    ) -> None:
+        """ZWRITE - display a local variable and its descendants.
+
+        Args:
+            name: Variable name
+            subscripts: Subscript path (empty for unsubscripted)
+            scope: Variable scope dictionary
+        """
+        if name not in scope:
+            return  # Variable not defined
+
+        var = scope[name]
+        if not isinstance(var, MArray):
+            # Simple value
+            if subscripts:
+                return  # Can't subscript a simple value
+            self.write(f"{name}={self._quote_value(var)}\n")
+            return
+
+        # Navigate to subscript position and collect path
+        node = var
+        subs_list = list(subscripts)
+        for sub in subscripts:
+            if sub not in node._children:
+                return  # Subscript doesn't exist
+            node = node._children[sub]
+
+        # Output this node and descendants
+        self._zwrite_marray(name, subs_list, node)
+
+    def _zwrite_marray(
+        self, base_name: str, subscripts: list[Any], node: "MArray"
+    ) -> None:
+        """Output an MArray node and its descendants in ZWRITE format.
+
+        Args:
+            base_name: Variable name (e.g., "X")
+            subscripts: List of subscripts to this node (may be empty)
+            node: The MArray node to output
+        """
+        # Build the path string with comma-separated subscripts
+        if subscripts:
+            subs_str = ",".join(self._format_subscript(s) for s in subscripts)
+            path = f"{base_name}({subs_str})"
+        else:
+            path = base_name
+
+        # Output value at this node if it exists
+        if node._value is not None:
+            self.write(f"{path}={self._quote_value(node._value)}\n")
+
+        # Output children recursively in sorted order
+        for sub in sorted(node._children.keys(), key=str):
+            child = node._children[sub]
+            self._zwrite_marray(base_name, subscripts + [sub], child)
+
+    def zwrite_global(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """ZWRITE - display a global variable and its descendants.
+
+        Args:
+            name: Global name (without ^)
+            subscripts: Subscript path (empty for unsubscripted)
+        """
+        # Get value at this node
+        value = self.globals.get(name, subscripts)
+        if value is not None:
+            if subscripts:
+                sub_str = ",".join(self._format_subscript(s) for s in subscripts)
+                self.write(f"^{name}({sub_str})={self._quote_value(value)}\n")
+            else:
+                self.write(f"^{name}={self._quote_value(value)}\n")
+
+        # Get descendants using $ORDER
+        current = subscripts
+        while True:
+            # Find next subscript at this level (direction=1 means forward)
+            next_sub = self.globals.order(name, current, direction=1)
+            if not next_sub:
+                break
+            # Construct new subscripts tuple
+            new_subs = subscripts + (next_sub,)
+            # Recursively output this subtree
+            self.zwrite_global(name, new_subs)
+            # Move to next sibling
+            current = subscripts + (next_sub,)
+
+    def _zwrite_var(self, name: str, value: Any) -> None:
+        """Output a single variable in ZWRITE format."""
+        if isinstance(value, MArray):
+            self._zwrite_marray(name, [], value)
+        else:
+            self.write(f"{name}={self._quote_value(value)}\n")
+
+    def zshow(self, codes: str, scope: dict[str, Any], destination: Any = None) -> None:
+        """ZSHOW - display system information.
+
+        Spec 013 Phase 19 (T140): ZSHOW displays process info.
+
+        Codes:
+        - S: Stack trace
+        - V: Local variables
+        - D: Devices
+        - I: Intrinsic special variables
+        - *: All of the above
+
+        Args:
+            codes: Information code string
+            scope: Variable scope dictionary
+            destination: Optional output destination (not implemented)
+        """
+        import traceback
+
+        codes = codes.upper() if codes else "*"
+
+        for code in codes:
+            if code == "V" or code == "*":
+                # Variables - like ZWRITE
+                self.zwrite(scope)
+            if code == "S" or code == "*":
+                # Stack trace
+                self.write("Stack trace:\n")
+                for line in traceback.format_stack():
+                    self.write(line)
+            if code == "D" or code == "*":
+                # Devices
+                self.write(f"$IO={self._io}\n")
+                self.write("$PRINCIPAL=0\n")  # Principal device is always "0"
+            if code == "I" or code == "*":
+                # Intrinsic special variables
+                self.write(f"$HOROLOG={self.horolog()}\n")
+                self.write(f"$JOB={self.job()}\n")
+                self.write(f"$TLEVEL={self.tlevel()}\n")
+
+    def zlink(self, routine_name: str) -> None:
+        """ZLINK - dynamically link/load a routine.
+
+        Spec 013 Phase 19 (T137): ZLINK imports a routine module.
+
+        In the transpiler context, this imports a Python module and
+        registers it in the routine registry.
+
+        Args:
+            routine_name: Name of routine to link
+        """
+        import importlib
+
+        # Clean routine name
+        name = str(routine_name).strip().strip('"').lower()
+
+        try:
+            # Try to import as a Python module
+            module = importlib.import_module(name)
+            self._routines[name.upper()] = module
+        except ImportError:
+            # Try m2py bundled routines
+            try:
+                module = importlib.import_module(
+                    f"m2py.runtime.routines.{name.upper()}"
+                )
+                self._routines[name.upper()] = module
+            except ImportError:
+                # Routine not found - this is not an error in MUMPS
+                # The routine may be linked later or not needed
+                pass
+
+    class ZGotoException(Exception):
+        """Exception for ZGOTO stack unwinding.
+
+        Spec 013 Phase 19 (T143): ZGOTO unwinds to specified stack level.
+        """
+
+        def __init__(self, level: int, target: str | None = None):
+            self.level = level
+            self.target = target
+            super().__init__(
+                f"ZGOTO to level {level}" + (f":{target}" if target else "")
+            )
 
     # =========================================================================
     # Spec 011: Special Variable Accessor Methods
