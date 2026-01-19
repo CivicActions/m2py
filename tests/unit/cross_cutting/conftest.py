@@ -8,6 +8,26 @@ import pytest
 
 
 @pytest.fixture
+def generate_python():
+    """Fixture for generating Python code from MUMPS source.
+
+    Returns a function that takes MUMPS source and returns generated Python code.
+
+    Usage:
+        def test_codegen(generate_python):
+            code = generate_python("TEST S X=1 W X Q")
+            assert "X = " in code
+    """
+    from m2py.codegen import generate_python as gen_python
+
+    def _generate(source: str) -> str:
+        """Generate Python from MUMPS source."""
+        return gen_python(source)
+
+    return _generate
+
+
+@pytest.fixture
 def execute_mumps():
     """Fixture for parsing, generating, and executing MUMPS code.
 

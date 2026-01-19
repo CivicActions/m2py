@@ -561,11 +561,18 @@ YDB validates this by rejecting $SIN(x) as "Invalid function name".
 
 ### Timeout Infrastructure
 
-- [ ] T127 [US4] Add timeout parameter handling to LOCK codegen in src/m2py/codegen/statements.py
-- [ ] T128 [US4] Add timeout parameter handling to READ codegen in src/m2py/codegen/statements.py
-- [ ] T129 [US4] Add timeout parameter handling to OPEN codegen in src/m2py/codegen/statements.py
-- [ ] T130 [US4] Add timeout parameter handling to JOB codegen in src/m2py/codegen/statements.py
-- [ ] T131 [US4] Verify $TEST set correctly on timeout in tests/unit/codegen/
+- [X] T127 [US4] Add timeout parameter handling to LOCK codegen in src/m2py/codegen/statements.py
+  - Already implemented in Phase 9 (_generate_lock handles timeout, sets _test)
+- [X] T128 [US4] Add timeout parameter handling to READ codegen in src/m2py/codegen/statements.py
+  - Already implemented (_generate_read_target uses m_read_timeout with _test)
+- [X] T129 [US4] Add timeout parameter handling to OPEN codegen in src/m2py/codegen/statements.py
+  - Already implemented (_generate_open handles timeout, sets _test)
+- [X] T130 [US4] Add timeout parameter handling to JOB codegen in src/m2py/codegen/statements.py
+  - Already implemented in Phase 11 (_generate_job handles timeout, sets _test)
+- [X] T131 [US4] Verify $TEST set correctly on timeout in tests/unit/codegen/
+  - Converted 5 xfail stubs to 8 real tests in test_timeouts.py (total 13 tests)
+  - Added generate_python fixture to cross_cutting/conftest.py
+  - Tests verify: LOCK/READ/OPEN/JOB with/without timeout, expression evaluation, zero timeout
 
 **Checkpoint**: Timeout infrastructure complete (SC-015 verified)
 

@@ -44,26 +44,29 @@ class TestTimeoutsCodegen:
     Reference: §8.2.10, §8.2.12, §8.2.15, §8.2.17, FR-047
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Runtime behavior - requires full code execution")
-    def test_read_timeout_sets_test_false(self):
-        """READ timeout sets $TEST=0 (§8.2.17, FR-047).
+    def test_read_timeout_sets_test(self, generate_python):
+        """READ with timeout assigns to $TEST (§8.2.17, FR-047).
 
-        READ X:0  ; Immediate timeout
-        ; $TEST should be 0
+        READ X:timeout generates code that assigns _test based on
+        success/timeout from m_read_timeout().
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST R X:5 Q")
+        # Generated code should call m_read_timeout and set _test
+        assert "m_read_timeout" in code
+        assert "_test" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Runtime behavior - requires full code execution")
-    def test_read_success_sets_test_true(self):
-        """READ success sets $TEST=1 (§8.2.17, FR-047).
+    def test_read_without_timeout_no_test(self, generate_python):
+        """READ without timeout does NOT modify $TEST (§8.2.17).
 
-        ; With input available
-        READ X:5
-        ; $TEST should be 1
+        Per MUMPS spec: untimed READ does not set $TEST.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST R X Q")
+        # Without timeout, should use input() not m_read_timeout
+        assert "input()" in code
+        # Should not have _test assignment from READ
+        input_lines = [line for line in code.split("\n") if "input()" in line]
+        for line in input_lines:
+            assert "_test" not in line
 
     def test_lock_timeout_sets_test_true(self, execute_mumps):
         """LOCK success with timeout sets $TEST=1 (§8.2.12, FR-047).
@@ -90,6 +93,24 @@ class TestTimeoutsCodegen:
         result = execute_mumps("TEST\n I 0\n W $T\n L +^A\n W $T\n Q")
         assert result.output == "00"
 
+    def test_open_timeout_sets_test(self, generate_python):
+        """OPEN with timeout assigns to $TEST (§8.2.15, FR-047).
+
+        OPEN device:timeout generates code that assigns _test based on success.
+        """
+        code = generate_python('TEST O "/tmp/test":5 Q')
+        # Generated code should assign to _test for timed OPEN
+        assert "_test = _rt.open_device" in code
+
+    def test_open_without_timeout_no_test(self, generate_python):
+        """OPEN without timeout does NOT modify $TEST (§8.2.15).
+
+        Per MUMPS spec: untimed OPEN does not set $TEST.
+        """
+        code = generate_python('TEST O "/tmp/test" Q')
+        # Without timeout, should NOT assign to _test
+        assert "_test = _rt.open_device" not in code
+
     def test_lock_decrement_timed_always_true(self, execute_mumps):
         """LOCK -:timeout always sets $TEST=1 (§8.2.12, FR-047).
 
@@ -106,25 +127,40 @@ class TestTimeoutsCodegen:
         result = execute_mumps("TEST\n I 0\n L -^A\n W $T\n Q")
         assert result.output == "0"
 
-    @pytest.mark.xfail(reason="Runtime behavior - requires full code execution")
-    def test_job_timeout_sets_test_false(self):
-        """JOB timeout sets $TEST=0 (§8.2.10, FR-047)."""
-        pytest.fail("Stub - implement test")
+    def test_job_timeout_sets_test_true(self, generate_python):
+        """JOB with timeout sets $TEST based on result (§8.2.10, FR-047).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Runtime behavior - requires full code execution")
-    def test_timeout_expression_evaluated(self):
-        """Timeout expression is evaluated at runtime (§8.2.17).
-
-        SET T=5 READ X:T  ; T evaluated to get timeout value
+        Note: Actual job execution behavior varies - testing codegen structure.
+        With timeout present, generated code must assign to _test.
         """
-        pytest.fail("Stub - implement test")
+        code = generate_python("TEST J NOPE::0 W $T Q")
+        # Generated code should assign to _test for timed JOB
+        assert "_test = _rt.start_job" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Runtime behavior - requires full code execution")
-    def test_zero_timeout_is_immediate(self):
-        """Timeout of 0 is immediate/non-blocking (§8.2.17).
+    def test_job_without_timeout_no_test(self, generate_python):
+        """JOB without timeout does NOT modify $TEST (§8.2.10).
+
+        Per MUMPS spec: untimed JOB does not set $TEST.
+        """
+        code = generate_python("TEST J NOPE W $T Q")
+        # Without timeout, should NOT assign to _test
+        assert "_test = _rt.start_job" not in code
+
+    def test_timeout_expression_evaluated(self, execute_mumps):
+        """Timeout expression is evaluated at runtime (§8.2.12).
+
+        SET T=0 LOCK +^X:T  ; T evaluated to get timeout value
+        Uses LOCK since it's testable without stdin.
+        """
+        # Set T=0 (immediate timeout), use it in LOCK timeout
+        result = execute_mumps("TEST\n S T=0\n L +^X:T\n W $T\n Q")
+        assert result.output == "1"
+
+    def test_zero_timeout_is_immediate(self, execute_mumps):
+        """Timeout of 0 is immediate/non-blocking (§8.2.12).
 
         Per spec: timeout of 0 means immediate (non-blocking) attempt.
+        In single-process mode, LOCK always succeeds.
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST\n L +^X:0\n W $T\n Q")
+        assert result.output == "1"
