@@ -1793,6 +1793,382 @@ Based on the xfail stub audit ([specs/gaps-stubs.md](gaps-stubs.md)), this part 
 
 ---
 
+## Spec 014: Remaining Gaps Completion
+
+**Goal**: Resolve all remaining xfail tests (156 total) by implementing in-scope features or documenting deferrals
+
+This spec captures genuinely incomplete items from Spec 013 gap analysis. Items are grouped by priority and complexity.
+
+### VistA Usage Analysis
+
+The following features were verified against the VA VistA codebase (33,951 routine files):
+
+| Feature | VistA Usage | Priority |
+|---------|-------------|----------|
+| Argument indirection (@var) | 45,271 | **HIGH** |
+| Name indirection (@var as lvalue) | 17,120 | ✅ IMPLEMENTED |
+| $QUIT context flag | 9,440 | **HIGH** |
+| Computed offsets (LABEL+n) | 3,643 | **MEDIUM** |
+| MERGE global (^A=^B) | 1,676 | **MEDIUM** |
+| $NEXT function (deprecated) | 578 | **MEDIUM** |
+| TROLLBACK:n | 0 | LIM-016 |
+| $TRESTART | 0 | LIM-016 |
+
+### Current State Summary
+
+| Category | Xfail Count | Status |
+|----------|-------------|--------|
+| Extended Math Library (§7.1.6.5) | 57 | Deferred - implement on demand |
+| YDB Z-Commands/Functions | 15 | LIM-015: Zero-VistA, low priority |
+| DO Command Gaps | 6 | In-scope: external routine, scope strategies |
+| Computed Offsets | 6 | Spec 007 dependency (3,643 VistA usages) |
+| String Library Functions | 6 | Deferred - implement on demand |
+| Character Library Functions | 5 | Deferred - implement on demand |
+| GOTO Advanced Features | 5 | Spec 006 dependency |
+| Naked Reference Edge Cases | 5 | In-scope: runtime tracking |
+| Language Semantics Misc | 5 | In-scope: test stack, execution level |
+| $NEXT Function (Legacy) | 3 | In-scope: 578 VistA usages |
+| Legacy Pre-1995 Behavior | 2 | LIM-016: Zero VistA usage |
+| Special Variables | 4 | In-scope: $TLEVEL, $QUIT behavior |
+| Postconditions Advanced | 3 | In-scope: evaluation order, side effects |
+| Character Set (§9) | 3 | In-scope: M character encoding |
+| XECUTE Runtime | 3 | In-scope: ZOSF patterns, global access |
+| Extrinsic Functions | 3 | In-scope: module caching, variable passing |
+| Transaction Commands | 4 | In-scope: TSTART/TCOMMIT (TROLLBACK:n zero usage) |
+| Indirection | 3 | In-scope: subscript, argument (45,271 usages) |
+| Routine Structure | 3 | In-scope: docstring, empty labels, comments |
+| MERGE Command | 2 | In-scope: global-to-global (1,676 usages) |
+| Error Processing | 1 | In-scope: error propagation |
+| Device/IO | 3 | Deferred - implement when needed |
+| **Total** | **156** | |
+
+### Phase 1: Core Language Semantics (HIGH PRIORITY)
+
+**These items have explicit FRs in specs and affect VistA compatibility.**
+
+#### Task 14.1: Special Variables Completion (4 tests)
+
+- [ ] `test_sv_tlevel` - Transaction level tracking
+- [ ] `test_quit_in_extrinsic_returns_one` - $QUIT=1 in extrinsic context
+- [ ] `test_quit_in_do_returns_zero` - $QUIT=0 in DO context
+- [ ] `test_text_external_routine` - $TEXT with external routine
+
+**Files**: `src/m2py/codegen/special_vars.py`, `src/m2py/runtime/context.py`
+**Complexity**: MEDIUM - Context tracking infrastructure exists
+
+#### Task 14.2: Indirection Completion (3 tests)
+
+- [ ] `test_subscript_indirection` - @var in subscript position
+- [ ] `test_argument_indirection` - @var as command argument
+- [ ] `test_argument_indirection_resolves_at_runtime` - Runtime resolution
+
+**Files**: `src/m2py/codegen/indirection.py`, `src/m2py/runtime/eval.py`
+**Complexity**: HIGH - Requires runtime MUMPS parser
+**Spec Reference**: FR-IND-001 through FR-IND-004
+**VistA Usage**: 45,271 (argument indirection is critical)
+
+#### Task 14.3: Transaction Commands (2 tests)
+
+- [ ] `test_tstart_to_begin` - Basic TSTART codegen
+- [ ] `test_tcommit_to_commit` - Basic TCOMMIT codegen
+
+**Note**: TROLLBACK:n and $TRESTART have **zero VistA usage** (LIM-016).
+Only basic transaction start/commit is needed.
+
+**Files**: `src/m2py/codegen/commands/transaction.py`
+**Complexity**: MEDIUM - Requires database backend transaction support
+**Dependency**: Database backend (stub implementation acceptable)
+
+#### Task 14.4: Error Processing (1 test)
+
+- [ ] `test_error_propagation` - Error propagation across label calls
+
+**Files**: `src/m2py/codegen/commands/error.py`, `src/m2py/runtime/error.py`
+**Complexity**: MEDIUM - Exception handling infrastructure
+**Spec Reference**: FR-ERR-001
+
+### Phase 2: Control Flow Gaps (MEDIUM PRIORITY)
+
+**These require cross-label infrastructure (Spec 006/007 dependencies).**
+
+#### Task 14.5: DO Command Advanced (6 tests)
+
+- [ ] `test_do_external_routine` - D LABEL^ROUTINE codegen
+- [ ] `test_pure_function_codegen` - Scope strategy: pure function
+- [ ] `test_subroutine_codegen` - Scope strategy: subroutine
+- [ ] `test_function_with_outputs_codegen` - Scope strategy: outputs
+- [ ] `test_requires_runtime_codegen` - Scope strategy: runtime required
+- [ ] `test_routine_indirect_codegen` - D @var^ROUTINE
+
+**Files**: `src/m2py/codegen/commands/do.py`, `src/m2py/analysis/scope_analysis.py`
+**Complexity**: HIGH - External routine resolution, scope analysis
+**Dependency**: Spec 008 (external calls)
+
+#### Task 14.6: GOTO Advanced (5 tests)
+
+- [ ] `test_goto_computed` - G LABEL+offset
+- [ ] `test_state_machine_fallback` - State machine codegen
+- [ ] `test_state_machine_variable_scope` - Scope in state machine
+- [ ] `test_same_level_enforcement` - Same-level GOTO rule
+- [ ] `test_routine_indirect_codegen` - G @var
+
+**Files**: `src/m2py/codegen/commands/goto.py`, `src/m2py/codegen/strategy/trampoline.py`
+**Complexity**: HIGH - TRAMPOLINE infrastructure
+**Dependency**: Spec 006 (cross-label GOTO)
+
+#### Task 14.7: Computed Offsets (6 tests)
+
+- [ ] `test_do_with_literal_offset` - D LABEL+1
+- [ ] `test_goto_with_literal_offset` - G LABEL+1
+- [ ] `test_offset_with_variable` - D LABEL+var
+- [ ] `test_offset_with_global` - D LABEL+^GLO
+- [ ] `test_offset_with_function` - D LABEL+$L(x)
+- [ ] `test_offset_arithmetic` - D LABEL+(expr)
+
+**Files**: `src/m2py/codegen/commands/do.py`, `src/m2py/codegen/commands/goto.py`
+**Complexity**: MEDIUM - Line mapping infrastructure
+**Dependency**: Spec 007 (computed offsets)
+
+### Phase 3: Data Operations (MEDIUM PRIORITY)
+
+#### Task 14.8: MERGE Command Globals (2 tests)
+
+- [ ] `test_merge_local_to_global` - M ^GLO=LOCAL
+- [ ] `test_merge_global_to_global` - M ^GLO1=^GLO2
+
+**Files**: `src/m2py/codegen/commands/merge.py`, `src/m2py/runtime/globals.py`
+**Complexity**: MEDIUM - Global variable infrastructure
+**Dependency**: Database backend
+
+#### Task 14.9: Naked Reference Edge Cases (5 tests)
+
+- [ ] `test_naked_without_prior_global_error` - Error handling
+- [ ] `test_data_function_with_naked` - $D(^())
+- [ ] `test_order_function_with_naked` - $O(^())
+- [ ] `test_merge_with_naked` - M dest=^()
+- [ ] `test_lock_with_naked` - L ^()
+
+**Files**: `src/m2py/runtime/naked.py`, `src/m2py/codegen/expressions/globals.py`
+**Complexity**: MEDIUM - Runtime naked reference tracking
+
+#### Task 14.10: KILL Global (1 test)
+
+- [ ] `test_kill_global` - K ^GLO
+
+**Files**: `src/m2py/codegen/commands/kill.py`, `src/m2py/runtime/globals.py`
+**Complexity**: LOW - Simple codegen with backend
+
+### Phase 4: Routine Structure (LOW PRIORITY)
+
+#### Task 14.11: Routine Metadata (3 tests)
+
+- [ ] `test_routine_docstring` - Preserve MUMPS routine header
+- [ ] `test_empty_label_translation` - Empty label handling
+- [ ] `test_comment_preservation` - Comment in generated code
+
+**Files**: `src/m2py/codegen/routine.py`
+**Complexity**: LOW - Nice-to-have, cosmetic
+
+#### Task 14.12: Extrinsic Functions Advanced (3 tests)
+
+- [ ] `test_module_caching` - Python module import caching
+- [ ] `test_cross_routine_variable_passing` - Variable semantics
+- [ ] `test_routine_name_translation` - MUMPS→Python name mapping
+
+**Files**: `src/m2py/codegen/expressions/extrinsic.py`, `src/m2py/runtime/loader.py`
+**Complexity**: MEDIUM - Import infrastructure
+
+### Phase 5: Advanced Features (LOW PRIORITY)
+
+#### Task 14.13: Language Semantics Misc (5 tests)
+
+- [ ] `test_test_not_stacked_for_label_call` - $TEST behavior
+- [ ] `test_test_not_stacked_for_do_with_args` - $TEST in DO
+- [ ] `test_test_not_stacked_for_xecute` - $TEST in XECUTE
+- [ ] `test_do_block_execution_level` - Execution level tracking
+- [ ] `test_extrinsic_function_return` - Return semantics
+
+**Files**: `src/m2py/runtime/context.py`, `src/m2py/codegen/commands/do.py`
+**Complexity**: MEDIUM - Context management
+
+#### Task 14.14: Postconditions Advanced (3 tests)
+
+- [ ] `test_argument_postconditions_independent` - PC evaluation
+- [ ] `test_postcondition_evaluation_order` - Order semantics
+- [ ] `test_postcondition_side_effects` - Side effect handling
+
+**Files**: `src/m2py/codegen/postcondition.py`
+**Complexity**: MEDIUM - Expression evaluation order
+
+#### Task 14.15: XECUTE Runtime (3 tests)
+
+- [ ] `test_runtime_global_access` - XECUTE with globals
+- [ ] `test_zosf_lookup_table` - ZOSF pattern optimization
+- [ ] `test_zosf_fallback_to_runtime` - ZOSF runtime fallback
+
+**Files**: `src/m2py/codegen/commands/xecute.py`, `src/m2py/runtime/eval.py`
+**Complexity**: HIGH - Runtime MUMPS interpreter
+
+#### Task 14.16: Character Set §9 (3 tests)
+
+- [ ] `test_m_character_encoding` - M character encoding
+- [ ] `test_graphic_characters` - Graphic character handling
+- [ ] `test_control_characters` - Control character handling
+
+**Files**: `src/m2py/runtime/charset.py`
+**Complexity**: MEDIUM - Unicode/ASCII handling
+
+### Phase 6: Deferred Features (EXPLICIT ERROR HANDLING)
+
+**These features are documented in LIM-014/LIM-015/LIM-016 and will NOT be functionally
+implemented. However, codegen MUST raise explicit `NotImplementedError` with the
+limitation ID so tests pass and developers get clear feedback.**
+
+The work required is:
+1. Update codegen to detect these features and raise `NotImplementedError`
+2. Ensure error message includes the limitation ID (e.g., "LIM-015: ZBREAK not implemented")
+3. Remove xfail markers from tests once errors are properly raised
+
+#### Task 14.17: Extended Math Library (57 tests) - ERROR HANDLING
+
+Section §7.1.6.5 library functions including:
+- Trigonometric: sin, cos, tan, cot, sec, csc, sinh, cosh, tanh, coth, sech, csch
+- Inverse trig: arcsin, arccos, arctan, arccot, arcsec, arccsc, arcsinh, arccosh, arctanh, arccoth
+- Exponential: exp, log, log10, sqrt, sign, abs
+- Angle conversion: degrad, raddeg, decdms, dmsdec
+- Complex numbers: complex, conjug, cabs, cadd, csub, cmul, cdiv, cexp, clog, cpower, csin, ccos
+- Matrix operations: mtxadd, mtxsub, mtxmul, mtxsca, mtxcopy, mtxtrp, mtxdet, mtxinv, mtxcof, mtxequ, mtxunit
+
+**Action Required**: Codegen must raise `NotImplementedError("LIM-014: ANSI library function $$%{name}^MATH not implemented")`
+**Tracking**: LIM-014
+
+#### Task 14.18: String/Character Library (11 tests) - ERROR HANDLING
+
+- String: crc16, crc32, crcccitt, format, produce, replace
+- Character: collate, compare, lower, upper, patcode
+
+**Action Required**: Codegen must raise `NotImplementedError("LIM-014: ANSI library function $$%{name}^{routine} not implemented")`
+**Tracking**: LIM-014
+
+#### Task 14.19: YDB Z-Commands (15 tests) - ERROR HANDLING
+
+ZALLOCATE, ZBREAK, ZCOMPILE, ZCONTINUE, ZEDIT, ZHELP, ZMESSAGE, ZPRINT, ZSTEP, ZSYSTEM, ZTRIGGER, ZDATE, ZWIDTH
+
+**Action Required**: Codegen must raise `NotImplementedError("LIM-015: {command} command not implemented (zero VistA usage)")`
+**Tracking**: LIM-015
+
+#### Task 14.20: $NEXT Function (3 tests) - MEDIUM PRIORITY
+
+The $NEXT function ($N) is deprecated since 1995 standard but has **578 VistA usages**.
+
+- [ ] `test_next_function_codegen` - $N(glvn) codegen
+- [ ] `test_next_function_runtime_behavior` - Runtime semantics
+- [ ] `test_next_abbreviated_form` - $N abbreviation
+
+**Files**: `src/m2py/codegen/expressions.py`, `src/m2py/runtime/intrinsics.py`
+**Complexity**: LOW - Equivalent to $ORDER with "" direction
+**VistA Usage**: 578 files (consider implementing rather than error)
+
+#### Task 14.21: Legacy Pre-1995 Behavior (2 tests) - ERROR HANDLING
+
+- Legacy variable scope (pre-1984)
+- Legacy array copy (pre-1990)
+
+**Action Required**: Codegen must raise `NotImplementedError("LIM-016: Pre-{year} {feature} not implemented")`
+**Tracking**: LIM-016
+**Tracking**: LIM-016
+
+#### Task 14.22: Device/IO Commands (3 tests) - DEFERRED
+
+- device_params_codegen
+- ksubscripts_codegen
+- kvalue_codegen
+
+**Status**: Implement when device I/O needed
+**Tracking**: LIM-016
+
+#### Task 14.23: Limitation Error Test Coverage
+
+Ensure all PARSES_OK limitations raise explicit `NotImplementedError` at codegen time
+instead of producing silent empty output. Tests are placed in spec-aligned files.
+
+| Limitation | Issue | Status |
+|------------|-------|--------|
+| LIM-003 (^$EVENT, ^$WINDOW, ^$DISPLAY) | Silent empty output | xfail - needs codegen fix |
+| LIM-004 ($DEXTRACT, $DPIECE) | Already raises correctly | ✅ PASSING |
+| LIM-011 (^$LIBRARY) | Silent empty output | xfail - needs codegen fix |
+| LIM-014 (ANSI Library $$%FUNC) | Wrong error (AttributeError) | xfail - needs codegen fix |
+| LIM-016 ($TRESTART) | Already raises correctly | ✅ PASSING |
+| LIM-016 (TROLLBACK:n) | Silent `pass` output | xfail - needs codegen fix |
+
+**Tests added** (spec-aligned locations):
+
+| Test File | Test Class | Limitation | Tests | Status |
+|-----------|------------|------------|-------|--------|
+| [test_s7_1_3_ssvns.py](../tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py) | `TestMwapiSsvnsCodegen` | LIM-003 | 3 tests | xfail |
+| [test_s7_1_3_ssvns.py](../tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py) | `TestLibrarySsvnCodegen` | LIM-011 | 1 test | xfail |
+| [test_s7_1_5_intrinsic_functions.py](../tests/unit/codegen/s7_expressions/test_s7_1_5_intrinsic_functions.py) | `TestDeprecatedFunctionsCodegen` | LIM-004 | 2 tests | ✅ passing |
+| [test_s7_1_6_5_library_functions_character.py](../tests/unit/codegen/s7_expressions/test_s7_1_6_5_library_functions_character.py) | `TestAnsiLibraryErrorHandling` | LIM-014 | 2 tests | xfail |
+| [test_s7_1_7_special_variables.py](../tests/unit/codegen/s7_expressions/test_s7_1_7_special_variables.py) | `TestTransactionSpecialVariablesCodegen` | LIM-016 | 1 test | ✅ passing |
+| [test_s8_2_21_trollback.py](../tests/unit/codegen/s8_commands/test_s8_2_21_trollback.py) | `TestTrollbackLevelCodegen` | LIM-016 | 1 test | xfail |
+
+**Implementation required** (to pass xfail tests):
+- `src/m2py/codegen/expressions/ssvn.py` - Add MWAPI (^$EVENT, ^$WINDOW, ^$DISPLAY) and ^$LIBRARY checks
+- `src/m2py/codegen/expressions/extrinsic.py` - Wrap import errors as NotImplementedError
+- `src/m2py/codegen/commands/transaction.py` - Add TROLLBACK:n check
+
+**Complexity**: LOW - Simple error handling additions
+**Priority**: HIGH - Ensures silent failures become explicit errors
+
+**Reference**: Each test docstring includes:
+- MUMPS ANSI Standard section reference (§7.1.3, §7.1.5, §7.1.7, §8.2.21)
+- Limitation ID (LIM-003, LIM-004, LIM-011, LIM-014, LIM-016)
+- Link to docs/limitations.md
+
+### Dependencies
+
+| Spec | Required For | Status |
+|------|--------------|--------|
+| Spec 006 | Task 14.6 (GOTO advanced) | ✅ COMPLETE |
+| Spec 007 | Task 14.7 (Computed offsets) | ✅ COMPLETE |
+| Spec 008 | Task 14.5 (DO external) | ✅ COMPLETE |
+| Database Backend | Tasks 14.3, 14.8, 14.10 | Stub OK |
+
+**Note**: All specs 001-013 are 100% complete. No tasks are blocked.
+
+### Validation
+
+#### Success Criteria
+
+1. **Phase 1-5**: All in-scope tests pass (no xfail)
+2. **Phase 6**: Tests pass by verifying `NotImplementedError` is raised with LIM-XXX in message
+3. **All phases**: Zero xfail markers remain - all implementations complete and error handling complete
+4. **Final Target**: `uv run pytest --collect-only -m xfail -q` returns 0 tests
+
+#### Test Commands
+
+```bash
+# Count remaining xfails
+uv run pytest --collect-only -m xfail -q 2>/dev/null | wc -l
+
+# Run Phase 1 tests
+uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_7_special_variables.py -v
+
+# Verify LIM-015 Z-command tests
+uv run pytest tests/unit/codegen/extensions/ydb/ --collect-only -m xfail -q
+```
+
+### Risk Assessment
+
+| Risk | L/I | Mitigation |
+|------|-----|------------|
+| Indirection requires runtime parser | H/H | Spec 009 prerequisite |
+| Transaction tests need DB backend | M/M | Stub implementation acceptable |
+| Spec 006/007/008 dependencies | H/M | Track as blocked until complete |
+| Library functions inflate scope | L/L | Defer to on-demand implementation |
+
+---
+
 ## Test Infrastructure (Cross-Cutting)
 
 Tests live in `tests/unit/codegen/` using embedded strings (no file I/O).

@@ -78,9 +78,70 @@ class TestSsvnsCodegen:
         assert result.success is True
 
 
-# Out-of-scope SSVNs - "Parses OK" limitations.
-# These parse and analyze correctly but runtime semantics are undefined.
-# Parser/ASG tests exist to verify parsing works. No codegen tests needed.
-#
-# - ^$EVENT, ^$WINDOW, ^$DISPLAY: LIM-003 (MWAPI SSVNs)
-# - ^$LIBRARY: LIM-011 (zero real-world usage)
+@pytest.mark.codegen
+class TestMwapiSsvnsCodegen:
+    """Codegen tests for MWAPI SSVNs (LIM-003).
+
+    MWAPI SSVNs (^$EVENT, ^$WINDOW, ^$DISPLAY) are from ANSI M X11.6 standard.
+    They are parsed correctly but have zero VistA usage and no runtime support.
+    Codegen should raise NotImplementedError.
+
+    Reference: MUMPS 1995 ANSI Standard, Section 7.1.3
+    Limitation: docs/limitations.md - LIM-003: MWAPI SSVNs
+    """
+
+    @pytest.mark.xfail(
+        reason="LIM-003: MWAPI SSVN codegen not yet raising NotImplementedError"
+    )
+    def test_lim003_ssvn_event_raises_error(self, generate_python):
+        """^$EVENT should raise NotImplementedError (LIM-003).
+
+        MWAPI SSVNs are not supported. Codegen must fail explicitly.
+        """
+        with pytest.raises(NotImplementedError, match="MWAPI|EVENT"):
+            generate_python('TEST W ^$EVENT("test") Q')
+
+    @pytest.mark.xfail(
+        reason="LIM-003: MWAPI SSVN codegen not yet raising NotImplementedError"
+    )
+    def test_lim003_ssvn_window_raises_error(self, generate_python):
+        """^$WINDOW should raise NotImplementedError (LIM-003).
+
+        MWAPI SSVNs are not supported. Codegen must fail explicitly.
+        """
+        with pytest.raises(NotImplementedError, match="MWAPI|WINDOW"):
+            generate_python('TEST W ^$WINDOW("test") Q')
+
+    @pytest.mark.xfail(
+        reason="LIM-003: MWAPI SSVN codegen not yet raising NotImplementedError"
+    )
+    def test_lim003_ssvn_display_raises_error(self, generate_python):
+        """^$DISPLAY should raise NotImplementedError (LIM-003).
+
+        MWAPI SSVNs are not supported. Codegen must fail explicitly.
+        """
+        with pytest.raises(NotImplementedError, match="MWAPI|DISPLAY"):
+            generate_python('TEST W ^$DISPLAY("test") Q')
+
+
+@pytest.mark.codegen
+class TestLibrarySsvnCodegen:
+    """Codegen tests for ^$LIBRARY SSVN (LIM-011).
+
+    ^$LIBRARY provides routine library information but has zero VistA usage.
+    Codegen should raise NotImplementedError.
+
+    Reference: MUMPS 1995 ANSI Standard, Section 7.1.3
+    Limitation: docs/limitations.md - LIM-011: ^$LIBRARY SSVN
+    """
+
+    @pytest.mark.xfail(
+        reason="LIM-011: ^$LIBRARY codegen not yet raising NotImplementedError"
+    )
+    def test_lim011_ssvn_library_raises_error(self, generate_python):
+        """^$LIBRARY should raise NotImplementedError (LIM-011).
+
+        ^$LIBRARY has zero VistA usage. Codegen must fail explicitly.
+        """
+        with pytest.raises(NotImplementedError, match="LIBRARY"):
+            generate_python('TEST W ^$LIBRARY("RTN") Q')

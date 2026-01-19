@@ -35,7 +35,7 @@ for traceability to test files.
 | LIM-013 | ASSIGN Command | Parse Error | Part of MWAPI event model |
 | LIM-014 | ANSI Standard Library Functions (Annex I) | Parses OK | ~60 library functions with zero VistA usage |
 | LIM-015 | Zero-VistA-Usage YDB Z-Commands | Parses OK | Z-commands parsed but codegen stubs only |
-| LIM-016 | Deferred Low-Priority Features | Parses OK | Features parsed but implementation deferred |
+| LIM-016 | Zero-VistA-Usage Deferred Features | Parses OK | Features with confirmed zero VistA usage |
 | LIM-017 | Generic Indirection Codegen | Redirect | Tests in s7_3_indirection |
 | LIM-018 | Z-Command Codegen | Redirect | Tests in extensions/ydb/ |
 
@@ -57,7 +57,7 @@ This error will be triggered for:
 - Event processing commands (see LIM-001)
 
 
-### LIM-001: Event Processing Commands (Not Implemented)
+### LIM-001: Event Processing Commands
 
 **Type**: Parse Error
 
@@ -78,12 +78,47 @@ production MUMPS systems:
 
 **M2PY Behavior**: Parser raises `MUMPSParseError` for these commands.
 
-### LIM-002: THEN Command (Deferred)
+### LIM-002: THEN Command
 
 **Type**: Parse Error
 
 The THEN command is a standard MUMPS command but has zero usage in YottaDB
 tests and VA Vista. It will be implemented if encountered in real codebases.
+
+**M2PY Behavior**: Parser raises `MUMPSParseError`.
+
+### LIM-009: RLOAD/RSAVE Commands
+
+**Type**: Parse Error
+
+The RLOAD (Routine Load) and RSAVE (Routine Save) commands are defined in
+ANSI M X11.1-1995 §8.2.17 and §8.2.18 for dynamic routine management at
+runtime. These commands have **zero usage** in both the YottaDB test suite
+and VA VistA codebase.
+
+**M2PY Behavior**: Parser raises `MUMPSParseError`.
+
+### LIM-012: Unknown Z-Extensions
+
+**Type**: Parse Error
+
+Per the MUMPS standard, all names beginning with 'Z' are reserved for
+vendor-specific extensions (FR-017). M2PY implements support for common
+YottaDB Z-commands (ZBREAK, ZCOMPILE, ZGOTO, ZHALT, ZHELP, ZKILL, ZLINK,
+ZMESSAGE, ZPRINT, ZSHOW, ZSTEP, ZSYSTEM, ZTRIGGER, ZWRITE, ZALLOCATE,
+ZDEALLOCATE) and Z-functions ($ZDATE, $ZSEARCH, etc.).
+
+**M2PY Behavior**: Known YottaDB Z-extensions are fully parsed and produce ASG nodes. Unknown
+Z-commands or Z-functions from other MUMPS implementations (InterSystems
+Caché/IRIS, MicroM, DSM) raise `MUMPSParseError`.
+
+### LIM-013: ASSIGN Command
+
+**Type**: Parse Error
+
+The ASSIGN command is defined in ANSI M X11.1-1995 for structured system
+variable assignment as part of the MWAPI event model. It has **zero usage**
+in both the YottaDB test suite and VA VistA codebase.
 
 **M2PY Behavior**: Parser raises `MUMPSParseError`.
 
@@ -96,7 +131,7 @@ supported and will trigger the unknown command error.
 If you encounter a command that should be supported, please open an issue.
 
 
-## LIM-003: MWAPI (Windowing API) - Out of Scope
+## LIM-003: MWAPI SSVNs
 
 **Type**: Parses OK
 
@@ -124,7 +159,7 @@ listed above are also part of the MWAPI event model.
 ASG produces `MStructuredSystemVariable`. Codegen behavior is undefined as MWAPI
 runtime support is not available in YottaDB.
 
-## LIM-004: $DEXTRACT and $DPIECE (Never Standardized)
+## LIM-004: Deprecated Functions
 
 **Type**: Parses OK
 
@@ -135,7 +170,7 @@ the final ANSI standard. They follow valid intrinsic function syntax.
 `MFunctionCall`. Codegen behavior is undefined as these functions have no standard
 semantics.
 
-## LIM-005: VIEW Command (Implementation-Defined)
+## LIM-005: VIEW Command
 
 **Type**: Parses OK
 
@@ -156,7 +191,7 @@ Parser accepts VIEW commands with YottaDB/GT.M syntax:
 must handle VIEW commands on a per-implementation basis since semantics vary
 significantly between MUMPS platforms.
 
-## LIM-006: Extended Character Sets (Implementation-Defined)
+## LIM-006: Extended Character Sets
 
 **Type**: Parses OK
 
@@ -185,7 +220,7 @@ beyond ASCII are not fully supported. String handling assumes ASCII/UTF-8
 compatibility. The `^$CHARACTER` SSVN is parsed but charset-specific operations
 (transforms, collation algorithms) are implementation-defined.
 
-## LIM-007: §5 BNF Metalanguage (Informative Only)
+## LIM-007: BNF Metalanguage
 
 **Type**: Informative
 
@@ -196,7 +231,7 @@ executable semantics to implement or test.
 **M2PY Behavior**: No parser or ASG implementation needed. Test files contain comments only,
 documenting this as informational content.
 
-## LIM-008: §6.4 Embedded Programs (Out of Scope)
+## LIM-008: Embedded Programs
 
 **Type**: Informative
 
@@ -208,18 +243,7 @@ scope of a source-to-source transpiler.
 **M2PY Behavior**: Not applicable. M2PY transpiles standalone MUMPS routines to Python, not MUMPS
 embedded within other host programs. Test files contain comments only.
 
-## LIM-009: RLOAD and RSAVE Commands (Not Implemented)
-
-**Type**: Parse Error
-
-The RLOAD (Routine Load) and RSAVE (Routine Save) commands are defined in
-ANSI M X11.1-1995 §8.2.17 and §8.2.18 for dynamic routine management at
-runtime. These commands have **zero usage** in both the YottaDB test suite
-and VA VistA codebase.
-
-**M2PY Behavior**: Parser raises `MUMPSParseError`.
-
-## LIM-011: ^$LIBRARY Structured System Variable (Not Implemented)
+## LIM-011: ^$LIBRARY SSVN
 
 **Type**: Parses OK
 
@@ -228,30 +252,6 @@ has **zero usage** in the VA VistA codebase.
 
 **M2PY Behavior**: Parser accepts `^$LIBRARY` syntax (valid SSVN grammar). ASG produces
 `MStructuredSystemVariable`. Codegen behavior is undefined.
-
-## LIM-012: Unknown Z-Commands and Z-Functions
-
-**Type**: Parse Error
-
-Per the MUMPS standard, all names beginning with 'Z' are reserved for
-vendor-specific extensions (FR-017). M2PY implements support for common
-YottaDB Z-commands (ZBREAK, ZCOMPILE, ZGOTO, ZHALT, ZHELP, ZKILL, ZLINK,
-ZMESSAGE, ZPRINT, ZSHOW, ZSTEP, ZSYSTEM, ZTRIGGER, ZWRITE, ZALLOCATE,
-ZDEALLOCATE) and Z-functions ($ZDATE, $ZSEARCH, etc.).
-
-**M2PY Behavior**: Known YottaDB Z-extensions are fully parsed and produce ASG nodes. Unknown
-Z-commands or Z-functions from other MUMPS implementations (InterSystems
-Caché/IRIS, MicroM, DSM) raise `MUMPSParseError`.
-
-## LIM-013: ASSIGN Command (Not Implemented)
-
-**Type**: Parse Error
-
-The ASSIGN command is defined in ANSI M X11.1-1995 for structured system
-variable assignment as part of the MWAPI event model. It has **zero usage**
-in both the YottaDB test suite and VA VistA codebase.
-
-**M2PY Behavior**: Parser raises `MUMPSParseError`.
 
 ## LIM-014: ANSI Standard Library Functions (Annex I)
 
@@ -287,6 +287,55 @@ ASG produces `MExtrinsicFunction`. Code generation imports the target routine mo
 and calls the function. For unimplemented routines, the generated code will fail at
 import time. VistA codebases will work correctly as they use Kernel Library Functions
 (`^XLFMTH`, etc.) instead of ANSI standard library routines.
+
+## LIM-015: Zero-VistA-Usage YDB Z-Commands
+
+**Type**: Parses OK
+
+The following YDB Z-commands and Z-functions are parsed but have **zero usage**
+in the VA VistA codebase (33,951 routine files analyzed):
+
+| Command/Function | Description | VistA Usage |
+|------------------|-------------|-------------|
+| ZALLOCATE | Resource allocation | 0 files |
+| ZDEALLOCATE | Resource deallocation | 0 files |
+| ZBREAK | Set breakpoints | 0 files |
+| ZCOMPILE | Compile routines | 0 files |
+| ZCONTINUE | Continue from break | 0 files |
+| ZEDIT | Edit routine | 0 files |
+| ZHELP | Display help | 0 files |
+| ZMESSAGE | Signal error | 0 files |
+| ZPRINT | Print routine source | 0 files |
+| ZSTEP | Single-step debug | 0 files |
+| ZSYSTEM | Execute OS command | 0 files |
+| ZTRIGGER | Trigger management | 0 files |
+| $ZDATE | Date formatting | 0 files |
+| $ZMESSAGE | Error message lookup | 0 files |
+| $ZWIDTH | String width | 0 files |
+
+These commands are recognized to support complete YDB compatibility but are
+not a priority for implementation due to zero real-world usage.
+
+**M2PY Behavior**: Parser accepts these commands (valid YDB grammar). ASG produces appropriate nodes.
+Codegen generates stubs or raises NotImplementedError. Tests marked xfail with
+reason referencing LIM-015.
+
+## LIM-016: Zero-VistA-Usage Deferred Features
+
+**Type**: Parses OK
+
+The following features are syntactically supported but have **confirmed zero usage**
+in the VA VistA codebase (33,951 routine files analyzed). Implementation is deferred
+indefinitely due to lack of real-world demand:
+
+| Feature | Description | VistA Usage | Status |
+|---------|-------------|-------------|--------|
+| TROLLBACK:n | Rollback to specific transaction level | 0 files | Syntax parsed |
+| $TRESTART | Transaction restart count special variable | 0 files | Syntax parsed |
+| Module caching | Python module import caching optimization | N/A | Performance only |
+
+**M2PY Behavior**: Parser accepts syntax. ASG produces appropriate nodes. Codegen generates stubs.
+Tests marked xfail with reason referencing LIM-016.
 
 ---
 

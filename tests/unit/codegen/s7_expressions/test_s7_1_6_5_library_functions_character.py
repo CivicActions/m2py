@@ -47,3 +47,41 @@ class TestCharacterLibraryFunctionsCodegen:
     def test_string_upper_codegen(self):
         """$%UPPER^STRING(A,CHARMOD) generates correct Python code (Annex I-1.5)."""
         pytest.fail("Stub - implement test")
+
+
+@pytest.mark.codegen
+class TestAnsiLibraryErrorHandling:
+    """Codegen tests for unimplemented ANSI library functions (LIM-014).
+
+    ANSI standard library functions (^MATH, ^STRING, ^CHARACTER) have zero VistA
+    usage. VistA uses Kernel Library Functions (^XLFMTH, etc.) instead.
+    Unimplemented library functions should raise NotImplementedError (not
+    AttributeError or ModuleNotFoundError).
+
+    Reference: MUMPS 1995 ANSI Standard, Annex I
+    Limitation: docs/limitations.md - LIM-014: ANSI Standard Library Functions
+    """
+
+    @pytest.mark.xfail(
+        reason="LIM-014: ANSI library codegen not yet raising NotImplementedError"
+    )
+    def test_lim014_unimplemented_library_raises_not_implemented(self, generate_python):
+        """Unimplemented ANSI library functions should raise NotImplementedError.
+
+        The error should clearly indicate the function is not implemented, not
+        produce an AttributeError or ModuleNotFoundError from import failures.
+        """
+        # Test CHARACTER library function
+        with pytest.raises(NotImplementedError, match="COLLATE|CHARACTER|library"):
+            generate_python('TEST S X=$$%COLLATE^CHARACTER("a","b") Q')
+
+    @pytest.mark.xfail(
+        reason="LIM-014: ANSI library codegen not yet raising NotImplementedError"
+    )
+    def test_lim014_unimplemented_math_raises_not_implemented(self, generate_python):
+        """Unimplemented MATH library function should raise NotImplementedError.
+
+        Extended MATH functions (matrix, complex, etc.) are not implemented.
+        """
+        with pytest.raises(NotImplementedError, match="MTXADD|MATH|library"):
+            generate_python("TEST S X=$$%MTXADD^MATH(A,B) Q")

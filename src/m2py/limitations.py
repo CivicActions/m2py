@@ -367,30 +367,23 @@ reason referencing LIM-015.""",
     ),
     "LIM-016": Limitation(
         id="LIM-016",
-        category="Deferred Low-Priority Features",
+        category="Zero-VistA-Usage Deferred Features",
         type=LimitationType.PARSES_OK,
-        short_description="Features parsed but implementation deferred",
+        short_description="Features with confirmed zero VistA usage",
         sections=(),
         details="""\
-The following features are syntactically supported but have deferred implementation
-due to complexity or low priority. These may be implemented in future specs:
+The following features are syntactically supported but have **confirmed zero usage**
+in the VA VistA codebase (33,951 routine files analyzed). Implementation is deferred
+indefinitely due to lack of real-world demand:
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Name indirection | @var as lvalue name | Parser works, codegen deferred |
-| Argument indirection | @var as argument list | Parser works, codegen deferred |
-| Computed offsets | DO LABEL+@var^ROUTINE | Complex, requires runtime resolution |
-| Module caching | Routine caching optimization | Performance optimization |
-| TROLLBACK:n | Rollback to specific level | Syntax parsed, full semantics deferred |
-| $TRESTART | Transaction restart count | Special variable parsed |
-| MERGE global | MERGE ^A=^B | Implementation partial |
-| Pre-1995 behaviors | Legacy scope/array patterns | Compatibility layer |
-| $QUIT in extrinsic | Returns 1/0 indicator | Edge case |
-
-These features have test stubs marked xfail pending implementation.""",
+| Feature | Description | VistA Usage | Status |
+|---------|-------------|-------------|--------|
+| TROLLBACK:n | Rollback to specific transaction level | 0 files | Syntax parsed |
+| $TRESTART | Transaction restart count special variable | 0 files | Syntax parsed |
+| Module caching | Python module import caching optimization | N/A | Performance only |""",
         behavior="""\
-Parser accepts syntax. ASG produces appropriate nodes. Codegen may be incomplete
-or produce stubs. Tests marked xfail with reason referencing feature status.""",
+Parser accepts syntax. ASG produces appropriate nodes. Codegen generates stubs.
+Tests marked xfail with reason referencing LIM-016.""",
     ),
     "LIM-017": Limitation(
         id="LIM-017",
@@ -508,28 +501,54 @@ def test_ablock_raises_parse_error(self):
 ```
 """
 
-# Order for rendering sections (some limitations are grouped)
-SECTION_ORDER: list[tuple[str, str | None]] = [
-    # Parse Error commands first
-    ("LIM-001", "### {id}: Event Processing Commands (Not Implemented)"),
-    ("LIM-002", "### {id}: THEN Command (Deferred)"),
-    ("_vendor", None),  # Insert vendor commands section here
-    # MWAPI and other "Parses OK" limitations
-    ("LIM-003", "## {id}: MWAPI (Windowing API) - Out of Scope"),
-    ("LIM-004", "## {id}: $DEXTRACT and $DPIECE (Never Standardized)"),
-    ("LIM-005", "## {id}: VIEW Command (Implementation-Defined)"),
-    ("LIM-006", "## {id}: Extended Character Sets (Implementation-Defined)"),
-    # Informative
-    ("LIM-007", "## {id}: §5 BNF Metalanguage (Informative Only)"),
-    ("LIM-008", "## {id}: §6.4 Embedded Programs (Out of Scope)"),
-    # More Parse Error commands
-    ("LIM-009", "## {id}: RLOAD and RSAVE Commands (Not Implemented)"),
-    ("LIM-011", "## {id}: ^$LIBRARY Structured System Variable (Not Implemented)"),
-    ("LIM-012", "## {id}: Unknown Z-Commands and Z-Functions"),
-    ("LIM-013", "## {id}: ASSIGN Command (Not Implemented)"),
-    # Library functions
-    ("LIM-014", "## {id}: ANSI Standard Library Functions (Annex I)"),
-]
+# Heading templates by limitation type
+# REDIRECT types are omitted from the generated doc (they reference other test locations)
+HEADING_TEMPLATES: dict[LimitationType, str] = {
+    LimitationType.PARSE_ERROR: "### {id}: {category}",
+    LimitationType.PARSES_OK: "## {id}: {category}",
+    LimitationType.INFORMATIVE: "## {id}: {category}",
+}
+
+
+def _build_section_order() -> list[tuple[str, str | None]]:
+    """Build section order dynamically from LIMITATIONS dict.
+
+    Returns list of (key, heading_template) tuples where key is either:
+    - A limitation ID (e.g., "LIM-001")
+    - A special marker (e.g., "_vendor" for vendor commands section)
+
+    REDIRECT type limitations are excluded (they point to other test locations).
+    """
+    result: list[tuple[str, str | None]] = []
+
+    # Sort by numeric ID
+    sorted_ids = sorted(LIMITATIONS.keys(), key=lambda x: int(x.split("-")[1]))
+
+    # Group: Parse Error first, then vendor section, then others
+    parse_errors = []
+    others = []
+
+    for lim_id in sorted_ids:
+        lim = LIMITATIONS[lim_id]
+        if lim.type == LimitationType.REDIRECT:
+            continue  # Skip redirect entries
+        template = HEADING_TEMPLATES.get(lim.type)
+        if template:
+            heading = template.format(id="{id}", category=lim.category)
+            if lim.type == LimitationType.PARSE_ERROR:
+                parse_errors.append((lim_id, heading))
+            else:
+                others.append((lim_id, heading))
+
+    # Build final order: parse errors, vendor section, then others
+    result.extend(parse_errors)
+    result.append(("_vendor", None))  # Insert vendor commands section
+    result.extend(others)
+
+    return result
+
+
+SECTION_ORDER: list[tuple[str, str | None]] = _build_section_order()
 
 
 # =============================================================================

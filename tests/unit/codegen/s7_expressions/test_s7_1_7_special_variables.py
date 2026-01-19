@@ -293,3 +293,23 @@ class TestTextWithOffsetsCodegen:
         """
         result = execute_mumps("TEST S I=1 W $T(+I) Q")
         assert result.output == "TEST S I=1 W $T(+I) Q"
+
+
+@pytest.mark.codegen
+class TestTransactionSpecialVariablesCodegen:
+    """Codegen tests for transaction special variables (LIM-016).
+
+    $TRESTART has zero VistA usage and is deferred. Codegen should raise
+    NotImplementedError explicitly.
+
+    Reference: MUMPS 1995 ANSI Standard, Section 7.1.7
+    Limitation: docs/limitations.md - LIM-016: Zero-VistA-Usage Deferred Features
+    """
+
+    def test_lim016_trestart_raises_error(self, generate_python):
+        """$TRESTART should raise NotImplementedError (LIM-016).
+
+        $TRESTART has zero VistA usage. Codegen must fail explicitly.
+        """
+        with pytest.raises(NotImplementedError, match="TRESTART"):
+            generate_python("TEST W $TRESTART Q")
