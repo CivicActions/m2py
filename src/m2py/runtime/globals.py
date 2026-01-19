@@ -213,6 +213,167 @@ class GlobalStorageBackend(Protocol):
         """
         ...
 
+    # =========================================================================
+    # Lock Operations (Spec 013 FR-019)
+    # =========================================================================
+
+    def lock(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        timeout: float | None = None,
+        lock_type: str = "+",
+    ) -> bool:
+        """Acquire or release a lock on ^NAME(subscripts).
+
+        Spec 013 FR-019: Protocol for LOCK command support.
+
+        Args:
+            name: Global/lock name without caret (e.g., "PATIENT")
+            subscripts: Tuple of string subscript values
+            timeout: Timeout in seconds, None for indefinite wait
+            lock_type: "+" for increment (acquire), "-" for decrement (release)
+
+        Returns:
+            True if lock acquired/released successfully, False on timeout
+
+        Side Effects:
+            Sets $TEST to 1 on success, 0 on timeout (when timeout specified)
+        """
+        ...
+
+    def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Release a lock on ^NAME(subscripts).
+
+        Spec 013 FR-019: Explicit unlock operation.
+
+        Args:
+            name: Global/lock name without caret
+            subscripts: Tuple of string subscript values
+
+        Behavior:
+            Decrements lock count, releases when count reaches 0.
+        """
+        ...
+
+    def unlock_all(self) -> None:
+        """Release all locks held by current process.
+
+        Spec 013 FR-019: Argumentless LOCK releases all locks.
+        """
+        ...
+
+    # =========================================================================
+    # Transaction Operations (Spec 013 FR-015)
+    # =========================================================================
+
+    def transaction_start(self) -> None:
+        """Begin a transaction (TSTART).
+
+        Spec 013 FR-015: Initiates a new transaction or increments
+        transaction nesting level.
+
+        Behavior:
+            - Increments $TLEVEL
+            - Takes snapshot for rollback (Memory backend)
+            - Begins native transaction (YDB/IRIS backends)
+        """
+        ...
+
+    def transaction_commit(self) -> None:
+        """Commit current transaction (TCOMMIT).
+
+        Spec 013 FR-015: Commits or decrements transaction level.
+
+        Behavior:
+            - If $TLEVEL = 1, commits the transaction
+            - If $TLEVEL > 1, decrements $TLEVEL only
+
+        Raises:
+            RuntimeError: If $TLEVEL = 0 (M44 error)
+        """
+        ...
+
+    def transaction_rollback(self) -> None:
+        """Rollback current transaction (TROLLBACK).
+
+        Spec 013 FR-015: Reverts changes since matching TSTART.
+
+        Behavior:
+            - Reverts changes since TSTART
+            - Sets $TLEVEL = 0
+
+        Raises:
+            RuntimeError: If $TLEVEL = 0 (M44 error)
+        """
+        ...
+
+    def get_tlevel(self) -> int:
+        """Return current transaction nesting level ($TLEVEL).
+
+        Spec 013 FR-015: Returns transaction depth.
+
+        Returns:
+            Current transaction nesting level (0 = no transaction)
+        """
+        ...
+
+    # =========================================================================
+    # SSVN Queries (Spec 013 FR-029)
+    # =========================================================================
+
+    def ssvn_global(self, subscript: str) -> str:
+        """Query ^$GLOBAL(name) for global existence.
+
+        Spec 013 FR-029: Structured System Variable query.
+
+        Args:
+            subscript: Global name to query
+
+        Returns:
+            Non-empty string if global exists, empty string otherwise
+        """
+        ...
+
+    def ssvn_job(self, subscript: str) -> str:
+        """Query ^$JOB(pid) for job/process information.
+
+        Spec 013 FR-029: Structured System Variable query.
+
+        Args:
+            subscript: Process ID to query
+
+        Returns:
+            Process information string
+        """
+        ...
+
+    def ssvn_lock(self, subscript: str) -> str:
+        """Query ^$LOCK(lockname) for lock information.
+
+        Spec 013 FR-029: Structured System Variable query.
+
+        Args:
+            subscript: Lock name to query
+
+        Returns:
+            Lock owner/status information
+        """
+        ...
+
+    def ssvn_routine(self, subscript: str) -> str:
+        """Query ^$ROUTINE(routinename) for routine metadata.
+
+        Spec 013 FR-029: Structured System Variable query.
+
+        Args:
+            subscript: Routine name to query
+
+        Returns:
+            Routine metadata (source path, compile date, etc.)
+        """
+        ...
+
 
 # =============================================================================
 # InMemoryGlobalStorage Implementation
@@ -225,6 +386,8 @@ class InMemoryGlobalStorage:
     Spec 009 (T006-T007): Implements GlobalStorageBackend protocol using
     MArray structures for hierarchical storage. Not thread-safe.
 
+    Spec 013: Extended with lock table, transaction support, and SSVNs.
+
     The naked indicator tracks the base for naked references:
     - After ^G(1,2,3): indicator = ("G", ("1", "2")) -> ^(4) = ^G(1,2,4)
     - After ^G(1): indicator = ("G", ()) -> ^(2) = ^G(2)
@@ -236,6 +399,13 @@ class InMemoryGlobalStorage:
 
         self._globals: dict[str, MArray] = {}
         self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
+
+        # Spec 013: Lock table - maps (name, subscripts) to lock count
+        self._lock_table: dict[tuple[str, tuple[str, ...]], int] = {}
+
+        # Spec 013: Transaction support
+        self._tlevel: int = 0
+        self._transaction_snapshots: list[dict[str, MArray]] = []
 
     def _canonicalize_subscript(self, subscript: str | int | float) -> str:
         """Convert subscript to canonical string form.
@@ -589,6 +759,174 @@ class InMemoryGlobalStorage:
         # Deep copy the subtree
         return self._deep_copy_tree(node)
 
+    # =========================================================================
+    # Lock Operations Implementation (Spec 013)
+    # =========================================================================
+
+    def lock(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        timeout: float | None = None,
+        lock_type: str = "+",
+    ) -> bool:
+        """Acquire or release a lock on ^NAME(subscripts).
+
+        Spec 013 FR-019: In-memory implementation always succeeds immediately
+        since there's no concurrent access in single-process mode.
+
+        Args:
+            name: Global/lock name without caret
+            subscripts: Tuple of string subscript values
+            timeout: Ignored for in-memory backend (always immediate)
+            lock_type: "+" for increment (acquire), "-" for decrement (release)
+
+        Returns:
+            True always (in-memory backend has no contention)
+        """
+        subscripts = self._canonicalize_subscripts(subscripts)
+        key = (name, subscripts)
+
+        if lock_type == "+":
+            # Increment lock count (acquire)
+            self._lock_table[key] = self._lock_table.get(key, 0) + 1
+        else:
+            # Decrement lock count (release)
+            if key in self._lock_table:
+                self._lock_table[key] -= 1
+                if self._lock_table[key] <= 0:
+                    del self._lock_table[key]
+
+        return True
+
+    def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Release a lock on ^NAME(subscripts).
+
+        Spec 013 FR-019: Explicit unlock (equivalent to LOCK - operation).
+        """
+        subscripts = self._canonicalize_subscripts(subscripts)
+        key = (name, subscripts)
+
+        if key in self._lock_table:
+            self._lock_table[key] -= 1
+            if self._lock_table[key] <= 0:
+                del self._lock_table[key]
+
+    def unlock_all(self) -> None:
+        """Release all locks held by current process.
+
+        Spec 013 FR-019: Argumentless LOCK releases all locks.
+        """
+        self._lock_table.clear()
+
+    # =========================================================================
+    # Transaction Operations Implementation (Spec 013)
+    # =========================================================================
+
+    def transaction_start(self) -> None:
+        """Begin a transaction (TSTART).
+
+        Spec 013 FR-015: Saves a deep copy snapshot of globals for rollback.
+        """
+
+        # Deep copy the entire globals dictionary
+        snapshot = {}
+        for name, array in self._globals.items():
+            snapshot[name] = self._deep_copy_tree(array)
+
+        self._transaction_snapshots.append(snapshot)
+        self._tlevel += 1
+
+    def transaction_commit(self) -> None:
+        """Commit current transaction (TCOMMIT).
+
+        Spec 013 FR-015: Decrements level and discards snapshot on full commit.
+
+        Raises:
+            RuntimeError: If $TLEVEL = 0 (M44 error)
+        """
+        if self._tlevel == 0:
+            raise RuntimeError("M44: TCOMMIT without matching TSTART")
+
+        # Discard the snapshot (commit the changes)
+        self._transaction_snapshots.pop()
+        self._tlevel -= 1
+
+    def transaction_rollback(self) -> None:
+        """Rollback current transaction (TROLLBACK).
+
+        Spec 013 FR-015: Restores globals from snapshot.
+        Per MUMPS spec 8.2.21: Argumentless TROLLBACK rolls back ALL levels.
+
+        Raises:
+            RuntimeError: If $TLEVEL = 0 (M44 error)
+        """
+        if self._tlevel == 0:
+            raise RuntimeError("M44: TROLLBACK without matching TSTART")
+
+        # Per MUMPS spec: Argumentless TROLLBACK rolls back ALL transaction levels
+        # Restore from the FIRST snapshot (outermost transaction)
+        while len(self._transaction_snapshots) > 1:
+            self._transaction_snapshots.pop()
+        self._globals = self._transaction_snapshots.pop()
+        self._tlevel = 0
+
+    def get_tlevel(self) -> int:
+        """Return current transaction nesting level ($TLEVEL).
+
+        Spec 013 FR-015: Returns transaction depth.
+
+        Returns:
+            Current transaction nesting level (0 = no transaction)
+        """
+        return self._tlevel
+
+    # =========================================================================
+    # SSVN Query Operations Implementation (Spec 013)
+    # =========================================================================
+
+    def ssvn_global(self, subscript: str) -> str:
+        """Query ^$GLOBAL(name) for global existence.
+
+        Spec 013 FR-029: Returns "1" if global exists, "" otherwise.
+        """
+        return "1" if subscript in self._globals else ""
+
+    def ssvn_job(self, subscript: str) -> str:
+        """Query ^$JOB(pid) for job/process information.
+
+        Spec 013 FR-029: In-memory backend only knows about current process.
+        Returns process info for current PID, empty for others.
+        """
+        import os
+
+        try:
+            pid = int(subscript)
+            if pid == os.getpid():
+                return "1"  # Current process exists
+        except ValueError:
+            pass
+        return ""
+
+    def ssvn_lock(self, subscript: str) -> str:
+        """Query ^$LOCK(lockname) for lock information.
+
+        Spec 013 FR-029: Returns lock count if locked, empty if not.
+        """
+        # Parse subscript as (name, subscripts) key
+        # For simplicity, treat subscript as global name with no subscripts
+        key = (subscript, ())
+        count = self._lock_table.get(key, 0)
+        return str(count) if count > 0 else ""
+
+    def ssvn_routine(self, subscript: str) -> str:
+        """Query ^$ROUTINE(routinename) for routine metadata.
+
+        Spec 013 FR-029: In-memory backend has no routine metadata.
+        Returns empty string (routine info not available).
+        """
+        return ""
+
     def _deep_copy_tree(self, source: "MArray") -> "MArray":
         """Deep copy an MArray tree.
 
@@ -707,6 +1045,59 @@ class YottaDBGlobalStorage:
         """Kill only node value. Stub raises NotImplementedError."""
         raise NotImplementedError("YottaDB backend not yet implemented")
 
+    # Spec 013: Lock operation stubs
+    def lock(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        timeout: float | None = None,
+        lock_type: str = "+",
+    ) -> bool:
+        """Lock operation. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Unlock operation. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def unlock_all(self) -> None:
+        """Unlock all. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    # Spec 013: Transaction operation stubs
+    def transaction_start(self) -> None:
+        """Begin transaction. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def transaction_commit(self) -> None:
+        """Commit transaction. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def transaction_rollback(self) -> None:
+        """Rollback transaction. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def get_tlevel(self) -> int:
+        """Get transaction level. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    # Spec 013: SSVN query stubs
+    def ssvn_global(self, subscript: str) -> str:
+        """Query ^$GLOBAL. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def ssvn_job(self, subscript: str) -> str:
+        """Query ^$JOB. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def ssvn_lock(self, subscript: str) -> str:
+        """Query ^$LOCK. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def ssvn_routine(self, subscript: str) -> str:
+        """Query ^$ROUTINE. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
 
 class IRISGlobalStorage:
     """InterSystems IRIS global storage backend stub.
@@ -802,4 +1193,57 @@ class IRISGlobalStorage:
 
     def kill_node(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Kill only node value. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    # Spec 013: Lock operation stubs
+    def lock(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        timeout: float | None = None,
+        lock_type: str = "+",
+    ) -> bool:
+        """Lock operation. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Unlock operation. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def unlock_all(self) -> None:
+        """Unlock all. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    # Spec 013: Transaction operation stubs
+    def transaction_start(self) -> None:
+        """Begin transaction. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def transaction_commit(self) -> None:
+        """Commit transaction. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def transaction_rollback(self) -> None:
+        """Rollback transaction. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def get_tlevel(self) -> int:
+        """Get transaction level. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    # Spec 013: SSVN query stubs
+    def ssvn_global(self, subscript: str) -> str:
+        """Query ^$GLOBAL. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def ssvn_job(self, subscript: str) -> str:
+        """Query ^$JOB. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def ssvn_lock(self, subscript: str) -> str:
+        """Query ^$LOCK. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def ssvn_routine(self, subscript: str) -> str:
+        """Query ^$ROUTINE. Stub raises NotImplementedError."""
         raise NotImplementedError("IRIS backend not yet implemented")

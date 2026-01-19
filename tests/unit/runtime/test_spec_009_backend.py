@@ -363,3 +363,215 @@ class TestInMemoryGlobalStorageGetTree:
         indicator = backend.get_naked_indicator()
         assert indicator is not None
         assert indicator[0] == "G"
+
+
+@pytest.mark.runtime
+class TestLockOperations:
+    """Test LOCK operations (Spec 013 FR-019)."""
+
+    def test_lock_acquire(self):
+        """Lock acquire returns True and increments count."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        result = backend.lock("PATIENT", ("123",), lock_type="+")
+        assert result is True
+        assert ("PATIENT", ("123",)) in backend._lock_table
+        assert backend._lock_table[("PATIENT", ("123",))] == 1
+
+    def test_lock_increment(self):
+        """Multiple lock acquires increment the count."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.lock("PATIENT", ("123",), lock_type="+")
+        backend.lock("PATIENT", ("123",), lock_type="+")
+        assert backend._lock_table[("PATIENT", ("123",))] == 2
+
+    def test_lock_decrement(self):
+        """Lock release decrements the count."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.lock("PATIENT", ("123",), lock_type="+")
+        backend.lock("PATIENT", ("123",), lock_type="+")
+        backend.lock("PATIENT", ("123",), lock_type="-")
+        assert backend._lock_table[("PATIENT", ("123",))] == 1
+
+    def test_lock_release_removes_entry(self):
+        """Lock release to 0 removes the entry."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.lock("PATIENT", ("123",), lock_type="+")
+        backend.lock("PATIENT", ("123",), lock_type="-")
+        assert ("PATIENT", ("123",)) not in backend._lock_table
+
+    def test_unlock(self):
+        """unlock() decrements lock count."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.lock("X", (), lock_type="+")
+        backend.lock("X", (), lock_type="+")
+        backend.unlock("X", ())
+        assert backend._lock_table[("X", ())] == 1
+
+    def test_unlock_all(self):
+        """unlock_all() clears all locks."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.lock("A", (), lock_type="+")
+        backend.lock("B", ("1",), lock_type="+")
+        backend.lock("C", ("1", "2"), lock_type="+")
+        backend.unlock_all()
+        assert len(backend._lock_table) == 0
+
+
+@pytest.mark.runtime
+class TestTransactionOperations:
+    """Test transaction operations (Spec 013 FR-015)."""
+
+    def test_transaction_start_increments_tlevel(self):
+        """TSTART increments $TLEVEL."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        assert backend.get_tlevel() == 0
+        backend.transaction_start()
+        assert backend.get_tlevel() == 1
+        backend.transaction_start()
+        assert backend.get_tlevel() == 2
+
+    def test_transaction_commit_decrements_tlevel(self):
+        """TCOMMIT decrements $TLEVEL."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.transaction_start()
+        backend.transaction_start()
+        backend.transaction_commit()
+        assert backend.get_tlevel() == 1
+        backend.transaction_commit()
+        assert backend.get_tlevel() == 0
+
+    def test_transaction_commit_without_tstart_raises(self):
+        """TCOMMIT without TSTART raises M44 error."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        with pytest.raises(RuntimeError) as exc:
+            backend.transaction_commit()
+        assert "M44" in str(exc.value)
+
+    def test_transaction_rollback_restores_state(self):
+        """TROLLBACK restores global state."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.set("A", (), "1")
+        backend.transaction_start()
+        backend.set("A", (), "2")
+        assert backend.get("A", ()) == "2"
+        backend.transaction_rollback()
+        assert backend.get("A", ()) == "1"
+
+    def test_transaction_rollback_without_tstart_raises(self):
+        """TROLLBACK without TSTART raises M44 error."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        with pytest.raises(RuntimeError) as exc:
+            backend.transaction_rollback()
+        assert "M44" in str(exc.value)
+
+    def test_nested_transaction_commit(self):
+        """Nested TCOMMIT only commits on outer level."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.set("A", (), "initial")
+        backend.transaction_start()
+        backend.set("A", (), "level1")
+        backend.transaction_start()
+        backend.set("A", (), "level2")
+        backend.transaction_commit()  # Inner commit
+        assert backend.get("A", ()) == "level2"  # Changes persisted
+        assert backend.get_tlevel() == 1
+        backend.transaction_commit()  # Outer commit
+        assert backend.get_tlevel() == 0
+
+
+@pytest.mark.runtime
+class TestSSVNOperations:
+    """Test SSVN operations (Spec 013 FR-029)."""
+
+    def test_ssvn_global_exists(self):
+        """^$GLOBAL returns '1' for existing globals."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.set("TEST", (), "value")
+        assert backend.ssvn_global("TEST") == "1"
+
+    def test_ssvn_global_not_exists(self):
+        """^$GLOBAL returns '' for non-existent globals."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        assert backend.ssvn_global("NOTEXIST") == ""
+
+    def test_ssvn_job_current_process(self):
+        """^$JOB returns '1' for current process."""
+        import os
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        assert backend.ssvn_job(str(os.getpid())) == "1"
+
+    def test_ssvn_job_other_process(self):
+        """^$JOB returns '' for other processes."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        assert backend.ssvn_job("99999") == ""
+
+    def test_ssvn_lock_locked(self):
+        """^$LOCK returns count for locked resource."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.lock("TEST", (), lock_type="+")
+        backend.lock("TEST", (), lock_type="+")
+        assert backend.ssvn_lock("TEST") == "2"
+
+    def test_ssvn_lock_unlocked(self):
+        """^$LOCK returns '' for unlocked resource."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        assert backend.ssvn_lock("TEST") == ""
+
+    def test_ssvn_routine(self):
+        """^$ROUTINE returns '' (not implemented in memory backend)."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        assert backend.ssvn_routine("ANYNAME") == ""
+
+
+@pytest.mark.runtime
+class TestRuntimeTlevel:
+    """Test $TLEVEL access via MUMPSRuntime."""
+
+    def test_runtime_tlevel(self):
+        """MUMPSRuntime.tlevel() delegates to backend."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt.tlevel() == 0
+        rt._globals.transaction_start()
+        assert rt.tlevel() == 1
+        rt._globals.transaction_commit()
+        assert rt.tlevel() == 0

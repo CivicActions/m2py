@@ -89,21 +89,17 @@ class TestIndirectionCodegen:
         result = execute_mumps('TEST S PAT="1N.N" I "123"?@PAT W "MATCHED" Q\n')
         assert result.output == "MATCHED"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Pre-existing bug: subscripted SET doesn't initialize MArray"
-    )
-    def test_subscripted_indirection_resolves_correctly(self):
+    def test_subscripted_indirection_resolves_correctly(self, execute_mumps):
         """Subscripted indirection @VAR@(1,2) works correctly (§7.3.1).
 
         Per 1984 addition (1995__a901027.md):
         "@ARRAY@(1,2,3) where ARRAY='PRICES' refers to PRICES(1,2,3)"
         The base is resolved first, then subscripts are appended.
 
-        Note: Blocked by pre-existing bug where subscripted SET
-        (S ARRAY(1,2)=5) doesn't properly initialize MArray.
+        YDB verified: S ARRAY="Y" S @ARRAY@(1,2)=5 W Y(1,2) → "5"
         """
-        pytest.fail("Blocked by pre-existing subscripted SET bug")
+        result = execute_mumps('TEST S ARRAY="Y" S @ARRAY@(1,2)=5 W Y(1,2) Q')
+        assert result.output == "5"
 
 
 # =============================================================================

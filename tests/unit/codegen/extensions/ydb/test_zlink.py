@@ -11,8 +11,13 @@ import pytest
 class TestZlinkCodegen:
     """Codegen-level tests for ZLINK command (YDB)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: ZLINK codegen")
     def test_zlink_generates_import(self, generate_python):
-        """ZLINK generates import statement."""
-        pytest.fail("Stub - implement test")
+        """ZLINK generates runtime zlink call."""
+        code = generate_python('TEST ZLINK "MYMOD" Q')
+        assert "_rt.zlink(" in code
+        assert '"MYMOD"' in code or "'MYMOD'" in code
+
+    def test_zlink_with_variable(self, generate_python):
+        """ZLINK with variable generates dynamic import."""
+        code = generate_python('TEST S X="MOD" ZLINK X Q')
+        assert "_rt.zlink(" in code

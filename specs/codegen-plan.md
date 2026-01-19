@@ -239,7 +239,7 @@ Computed offsets like `G LABEL+expr` require line-indexed execution at runtime.
 | **010** | Intrinsic Functions | Low | Large volume, well-defined semantics |
 | **011** | Operators, Commands & Completion | Low | Mechanical translation |
 | **012** | Indirection & XECUTE | **High** | Runtime infrastructure, eval/exec |
-| **013** | Label Fall-Through Support | Medium | SIMPLE_FUNCTIONS limitation, MUGJ compatibility |
+| **013** | Fall-Through & Test Consolidation | Medium | MUGJ compatibility, ~288 xfail stubs |
 
 **Complexity-First Rationale**: Specs 007-008 tackle the highest-risk architectural work (parser extensions, module loading) while the codebase is small. Spec 012 (Indirection/XECUTE) is last because `runtime.execute()` can run any MUMPS code, so all static constructs must be implemented first.
 
@@ -1498,249 +1498,271 @@ Review before coding:
 
 ---
 
-## Spec 013: Label Fall-Through Support
+## Spec 013: Fall-Through Support & Test Suite Consolidation
 
-**Goal**: Enable SIMPLE_FUNCTIONS strategy to support MUMPS implicit fall-through semantics
+**Goal**: Enable SIMPLE_FUNCTIONS fall-through semantics AND resolve test suite gaps identified in the xfail stub audit
 
-### Problem Statement
+This spec has two major components:
+1. **Part A: Label Fall-Through** - Enable MUMPS implicit fall-through in SIMPLE_FUNCTIONS
+2. **Part B: Test Suite Consolidation** - Delete redundant stubs, convert working stubs to real tests, implement remaining gaps
 
-In MUMPS, control flow implicitly falls through from one label to the next when a label body doesn't end with QUIT, GOTO, or HALT. This is fundamental to MUMPS semantics:
+### Part A: Label Fall-Through Support
+
+#### Problem Statement
+
+In MUMPS, control flow implicitly falls through from one label to the next when a label body doesn't end with QUIT, GOTO, or HALT:
 
 ```mumps
 TEST   S PASS=0,FAIL=0
        W "Starting tests",!
 FOR    W "FOR tests",!
-       ; ... test code ...
-489    W "Test I-489",!
-       ; ... more tests ...
 END    W "END",!
        Q
 ```
 
-When `D TEST` is called, execution flows: `TEST` → `FOR` → `489` → `END` → QUIT.
+When `D TEST` is called, execution flows: `TEST` → `FOR` → `END` → QUIT.
 
-**Current SIMPLE_FUNCTIONS limitation**: Each label is generated as a separate Python function. Calling `TEST()` only executes that function's body—it does NOT call `FOR()`, `_n_489()`, etc.
+**Current limitation**: SIMPLE_FUNCTIONS generates each label as a separate Python function. Calling `TEST()` only executes that function's body—fall-through to `FOR()` and `END()` doesn't happen.
 
-```python
-def TEST(_rt, _scope=None, **_kwargs):
-    _scope.setdefault('PASS', MArray()).value = 0
-    _scope.setdefault('FAIL', MArray()).value = 0
-    _rt.write("Starting tests")
-    _rt.write("\n")
-    # NO CALL TO FOR() - execution stops here!
-
-def FOR(_rt, _scope=None, **_kwargs):
-    # This is never reached when TEST is the entry point
-```
-
-**Impact**: MUGJ test files (V1IDNM1.m, V1FOR*.m, etc.) cannot be validated because they rely heavily on fall-through patterns. This blocks full MUMPS compatibility.
-
-### Research Phase
+#### Research Phase
 
 Review before coding:
-- **Docs**: `docs/codegen/goto_handling.md`, existing fall-through handling in TRAMPOLINE
-- **Current TRAMPOLINE**: `routine.py` → `_generate_trampoline_label()` uses `next_label_map` for fall-through
-- **Strategy selection**: `goto_analysis.py` → `classify_gotos()`, `needs_trampoline` flag
-- **Label analysis**: `asg/elements.py` → `MLabel.has_explicit_exit`, `MLabel.ends_with_quit`
-- **Dead code analysis**: `analysis/dead_code_analysis.py` → `label_ends_with_unconditional_exit()`
+- **Docs**: `docs/codegen/goto_handling.md`
+- **TRAMPOLINE fall-through**: `routine.py` → `_generate_trampoline_label()` uses `next_label_map`
+- **Exit detection**: `analysis/dead_code_analysis.py` → `label_ends_with_unconditional_exit()`
+- **Label info**: `asg/elements.py` → `MLabel.has_explicit_exit`
 - **ASG dump**: `uv run python utils/validate_asg.py --compact tests/functional/mugj/inref/V1IDNM1.m`
 
-**Key question**: Can we extend SIMPLE_FUNCTIONS without breaking existing tests, or do we need a new strategy?
+#### VistA Stack Depth Analysis
 
-### Strategy Candidates
+Analysis of 33,809 VistA routines confirms explicit fall-through calls are safe:
 
-#### Option A: Explicit Fall-Through Calls (SIMPLE_FUNCTIONS Extension)
+| Metric | Value |
+|--------|-------|
+| Max fall-through (single routine) | 52 |
+| Max internal call depth | 12 |
+| Max total stack depth (ft + internal + cross-routine) | **197** |
+| Python default limit | 1000 |
+| **Safety margin** | **803 frames** |
+
+**Analysis utility**: `utils/analyze_stack_depth.py`
+
+#### Approach: Explicit Fall-Through Calls
 
 Extend SIMPLE_FUNCTIONS to add explicit calls to the next label when the current label doesn't end with an exit:
 
 ```python
 def TEST(_rt, _scope=None, **_kwargs):
-    _scope.setdefault('PASS', MArray()).value = 0
-    _scope.setdefault('FAIL', MArray()).value = 0
-    _rt.write("Starting tests")
-    _rt.write("\n")
-    # Fall-through: call next label
-    FOR(_rt, _scope=_scope)  # Added automatically
+    _scope['PASS'] = 0
+    _scope['FAIL'] = 0
+    _rt.write("Starting tests\n")
+    return FOR(_rt, _scope=_scope)  # Fall-through
 
 def FOR(_rt, _scope=None, **_kwargs):
-    _rt.write("FOR tests")
-    _rt.write("\n")
-    # Fall-through: call next label
-    _n_489(_rt, _scope=_scope)  # Added automatically
+    _rt.write("FOR tests\n")
+    return END(_rt, _scope=_scope)  # Fall-through
 
 def END(_rt, _scope=None, **_kwargs):
-    _rt.write("END")
-    _rt.write("\n")
-    # No fall-through: ends with QUIT
+    _rt.write("END\n")
+    # Ends with QUIT - no fall-through
 ```
 
-**Pros**:
-- Minimal change to existing infrastructure
-- Preserves function-based structure (Rope-friendly)
-- Each label remains independently callable
-- Shared `_scope` handles variable visibility naturally
+**Why this works**: VistA worst-case is 197 stack frames, well under Python's 1000 limit.
 
-**Cons**:
-- Deep call stacks for routines with many sequential labels
-- QUIT in nested label returns to wrong place (need careful semantics)
-- RecursionError risk for very long label chains (>1000 labels)
+#### Part A Scope
 
-**Mitigation for QUIT**: QUIT should return from the current subroutine context, not just the current function. This requires tracking "subroutine entry point" vs "fall-through entry":
-
-```python
-def TEST(_rt, _scope=None, _entry_point=True, **_kwargs):
-    # ... body ...
-    FOR(_rt, _scope=_scope, _entry_point=False)  # Fall-through
-
-def FOR(_rt, _scope=None, _entry_point=False, **_kwargs):
-    # ... body ...
-    if some_condition:
-        return  # QUIT - if _entry_point=False, just return; caller handles
-    _n_489(_rt, _scope=_scope, _entry_point=False)
-```
-
-#### Option B: Flatten to Single Function (No Fall-Through Calls)
-
-Generate all sequential labels as a single function with internal labels as comments:
-
-```python
-def TEST(_rt, _scope=None, **_kwargs):
-    # --- TEST ---
-    _scope.setdefault('PASS', MArray()).value = 0
-    _scope.setdefault('FAIL', MArray()).value = 0
-    _rt.write("Starting tests")
-    _rt.write("\n")
-    # --- FOR ---
-    _rt.write("FOR tests")
-    _rt.write("\n")
-    # --- 489 ---
-    _rt.write("Test I-489")
-    _rt.write("\n")
-    # --- END ---
-    _rt.write("END")
-    _rt.write("\n")
-    return  # QUIT
-```
-
-**Pros**:
-- No call stack issues
-- QUIT semantics trivial (just `return`)
-- More like original MUMPS execution model
-
-**Cons**:
-- Labels not independently callable (breaks `D FOR^ROUTINE`)
-- Massive functions for large routines
-- Less refactorable
-- Internal GOTO becomes problematic
-
-#### Option C: Expand TRAMPOLINE Usage
-
-Use TRAMPOLINE strategy more broadly—not just for cross-label GOTOs:
-
-```python
-def _TEST(state) -> str | None:
-    state.PASS = 0
-    state.FAIL = 0
-    _rt.write("Starting tests\n")
-    return "FOR"  # Fall-through to next label
-
-def _FOR(state) -> str | None:
-    _rt.write("FOR tests\n")
-    return "489"  # Fall-through
-
-# Trampoline dispatcher
-next_label = "TEST"
-while next_label:
-    next_label = _labels[next_label](state)
-```
-
-**Pros**:
-- Already implemented and working
-- No call stack issues
-- Clean QUIT semantics (return `None`)
-- External entry points work (`D FOR^ROUTINE` starts trampoline at FOR)
-
-**Cons**:
-- State class overhead for all routines
-- Variable access via `state.X` instead of `_scope['X']`
-- May require converting existing SIMPLE_FUNCTIONS code
-
-#### Option D: Hybrid Strategy Selection
-
-Extend strategy selection to consider fall-through patterns:
-
-| Routine Pattern | Strategy | Rationale |
-|-----------------|----------|-----------|
-| All labels end with QUIT | SIMPLE_FUNCTIONS | No fall-through needed |
-| Has cross-label GOTO | TRAMPOLINE | Already required |
-| Has fall-through between labels | TRAMPOLINE or EXTENDED_SIMPLE | Fall-through needed |
-| Simple extrinsic function | SIMPLE_FUNCTIONS | Single entry/exit |
-
-**Implementation**: Add `has_fall_through` flag to `MRoutine` during analysis. Strategy selector uses:
-
-```python
-def select_strategy(routine: MRoutine) -> GotoStrategy:
-    if routine.needs_trampoline:
-        return GotoStrategy.TRAMPOLINE
-    if routine.has_fall_through:
-        return GotoStrategy.TRAMPOLINE  # or EXTENDED_SIMPLE
-    return GotoStrategy.SIMPLE_FUNCTIONS
-```
-
-### Recommended Approach
-
-**Option D (Hybrid)** with **Option A (Explicit Fall-Through)** as the implementation:
-
-1. **Analysis phase**: Detect which routines have fall-through (labels not ending with exit)
-2. **Strategy selection**: Routines with fall-through use extended strategy
-3. **Code generation**: Add explicit next-label calls for fall-through cases
-4. **QUIT handling**: Track entry context to handle nested QUIT correctly
-
-This preserves the benefits of SIMPLE_FUNCTIONS for simple routines while enabling full MUMPS compatibility for complex ones.
-
-### Scope
-
-1. **Fall-Through Detection** (analysis enhancement)
-   - Add `MLabel.ends_with_unconditional_exit` flag
+1. **Fall-Through Detection**
    - Add `MRoutine.has_fall_through` computed property
-   - Integrate with `classify_gotos()` or create new analysis pass
+   - Use existing `label_ends_with_unconditional_exit()` from dead_code_analysis
 
-2. **Strategy Selection Update**
-   - Extend `GotoStrategy` enum if needed: `SIMPLE_FUNCTIONS_WITH_FALLTHROUGH`
-   - Update strategy selector to consider fall-through
+2. **Code Generation**
+   - Build `next_label_map` for label sequencing
+   - Generate `return NEXT_LABEL(_rt, _scope=_scope)` for fall-through cases
+   - Use `return` to propagate QUIT values correctly
 
-3. **Fall-Through Code Generation**
-   - Build `next_label_map` for SIMPLE_FUNCTIONS (like TRAMPOLINE has)
-   - Generate explicit calls to next label when no exit statement
-   - Handle QUIT semantics in fall-through context
+3. **External Entry Support**
+   - `D FOR^ROUTINE` starts at FOR, falls through to END
+   - Each label remains independently callable
 
-4. **Entry Point Tracking**
-   - Distinguish "subroutine entry" from "fall-through entry"
-   - QUIT from fall-through should return to caller, not exit entirely
+---
 
-5. **External Entry Support**
-   - `D FOR^ROUTINE` should work (start execution at FOR label)
-   - Fall-through continues from that point
+### Part B: Test Suite Consolidation
+
+Based on the xfail stub audit ([specs/gaps-stubs.md](gaps-stubs.md)), this part resolves 288 xfail test stubs through deletion, conversion, or implementation.
+
+#### Summary of Actions
+
+| Action | Count | Description |
+|--------|-------|-------------|
+| **DELETE** | ~44 | Redundant stubs - spec-aligned tests exist |
+| **CONVERT** | ~39 | Working features - convert stubs to execute_mumps tests |
+| **KEEP** | ~205 | Genuine gaps - implement or deprioritize |
+
+---
 
 ### Deliverables
 
-- [ ] Fall-through detection in analysis pass
-  - Tests: `TestFallThroughDetection` → new test file
-- [ ] Strategy selection update for fall-through routines
-  - Tests: `TestStrategySelectionFallthrough` → extend existing tests
-- [ ] Fall-through code generation for SIMPLE_FUNCTIONS
-  - Tests: `TestFallThroughCodegen` → new test file
-- [ ] QUIT semantics in fall-through context
-  - Tests: `TestQuitInFallThrough` → extend test_s8_2_16_quit.py
-- [ ] External entry point support with fall-through
-  - Tests: `TestExternalEntryFallThrough` → extend test_s8_2_03_do.py
+#### Part A: Fall-Through
+
+- [ ] `MRoutine.has_fall_through` property
+  - Tests: `TestFallThroughDetection` → new test file `test_fall_through.py`
+- [ ] Fall-through code generation in SIMPLE_FUNCTIONS
+  - Tests: `TestFallThroughCodegen` → `test_fall_through.py`
+- [ ] External entry with fall-through
+  - Tests: `TestExternalEntryFallThrough` → extend `test_s8_2_03_do.py`
+
+#### Part B: Test Suite Consolidation
+
+**Phase 1: Cleanup (DELETE ~44 stubs)** - Single task, mechanical deletion
+
+- [ ] **Task B1: Delete redundant stubs** - Remove xfail stubs covered by existing spec-aligned tests
+  - test_s7_2_operators.py: 4 stubs (multiplication, logical_and, logical_or, left_to_right)
+  - test_s7_1_1_values.py: 7 stubs (string_value, numeric_value, empty_string, mvalue_wrapper, numeric_prefix, empty_to_zero, leading_number)
+  - test_s7_1_2_variables.py: 4 stubs (local_access, global_access, subscripted, naked)
+  - test_s7_1_4_literals.py: 1 stub (string_literal)
+  - test_s8_2_18_set.py: 8 stubs (global, piece, extract, lhs_piece_*, lhs_extract_*)
+  - test_s6_1_routine_head.py: 2 stubs (routine_to_function, variable_name_translation)
+  - test_s6_2_routine_body.py: 3 stubs (label_to_function, line_body, block_structure)
+  - test_s8_2_14_new.py: 1 stub (new_scope_cleanup)
+  - test_s8_2_16_quit.py: 1 stub (quit_with_value)
+  - test_s8_2_25_write.py: 3 stubs (format_controls, column, char_code)
+  - test_language_semantics.py: 1 stub (extrinsic_function_return)
+  - test_s8_2_27_zcommand.py + test_s8_z_commands.py: 8 duplicate Z-command stubs
+
+**Phase 2: Convert Working Features (~39 stubs)** - Multiple tasks by test file
+
+- [ ] **Task B2: Convert operator stubs** (3 tests)
+  - test_s7_2_operators.py: division (`W 10/4` → `2.5`), equals (`W 5=5` → `1`)
+  - test_s8_2_18_set.py: multiple_targets (`S (X,Y)=5 W X,Y` → `55`)
+
+- [ ] **Task B3: Convert left-to-right evaluation stubs** (5 tests)
+  - test_language_semantics.py::TestLeftToRightCodegen: all 5 stubs work, need execute_mumps
+
+- [ ] **Task B4: Convert naked reference stubs** (13 tests)
+  - test_naked_references.py: TestNakedStateTransitions (6), TestNakedReferenceErrors (2), TestNakedReferenceEdgeCases (5)
+
+- [ ] **Task B5: Convert $TEST variable stubs** (4 tests)
+  - test_language_semantics.py::TestTestVariableCodegen: if_true, if_false, argumentless_if, else
+
+- [ ] **Task B6: Convert IF command stubs** (2 tests)
+  - test_s8_2_09_if.py: multiple_conditions, argumentless
+
+- [ ] **Task B7: Convert miscellaneous stubs** (~12 tests)
+  - test_s7_1_4_literals.py: escaped_quotes, scientific_notation (2)
+  - test_s6_3_1_indirection.py: name_indirection, subscript_indirection, argument_indirection (3)
+  - test_postconditions.py: all 3 stubs
+  - test_cross_cutting/test_indirection.py: 2 stubs
+  - test_cross_label_goto.py: newed_variable_isolation, formal_param_isolation (2)
+
+- [ ] **Task B8: Convert command stubs** (~6 tests)
+  - test_s8_2_11_kill.py: kill_global (verify)
+  - test_s8_2_13_merge.py: merge_local_to_global, merge_global_to_global (2)
+  - test_s7_1_7_special_variables.py: quit_in_extrinsic, quit_in_do (2)
+  - test_language_semantics.py: do_block_execution_level (1)
+
+- [ ] **Task B9: Convert DO/GOTO stubs** (~7 tests)
+  - test_s8_2_03_do.py: external_routine, pure_function, subroutine, function_outputs, requires_runtime, routine_indirect (6)
+  - test_s8_2_06_goto.py: routine_indirect (1)
+
+- [ ] **Task B10: Convert remaining stubs** (~5 tests)
+  - test_s8_1_general_rules.py: 2 stubs
+  - test_s7_1_6_extrinsic_functions.py: 3 stubs
+
+**Phase 3: Implement High-Priority Gaps** - Individual tasks per gap
+
+- [ ] **Task B11: Implement exponentiation operator** (1 test)
+  - Add `**` case to `_generate_binary_op()` in expressions.py
+  - Test: `W 2**3` → `8`
+  - Complexity: LOW - single case statement
+
+**Phase 4: Implement Medium-Priority Gaps** - Grouped by feature area
+
+- [ ] **Task B12: Implement exclusive NEW** (3 tests)
+  - `N (A,B)` protects listed variables, hides all others
+  - Requires scope infrastructure changes
+  - Tests: test_language_semantics.py::TestExclusiveNewCodegen
+  - Complexity: MEDIUM - new scope behavior
+
+- [ ] **Task B13: $TEST stack semantics edge cases** (3 tests)
+  - test_test_not_stacked_for_label_call
+  - test_test_not_stacked_for_do_with_args
+  - test_test_not_stacked_for_xecute
+  - Complexity: MEDIUM - requires investigation of current behavior
+
+- [ ] **Task B14: Computed offsets (Spec 007 dependency)** (6 tests)
+  - test_do_with_literal_offset, test_goto_with_literal_offset
+  - test_offset_with_variable, test_offset_with_global, test_offset_with_function
+  - test_offset_arithmetic
+  - **Deferred until Spec 007 complete**
+  - Complexity: HIGH - requires line dispatch infrastructure
+
+- [ ] **Task B15: $TEXT function** (5 tests)
+  - test_text_with_label, test_text_with_label_offset, test_text_with_line_number
+  - test_text_external_routine, test_text_with_variable_offset
+  - Requires source line preservation
+  - Complexity: MEDIUM - infrastructure exists, needs codegen
+
+- [ ] **Task B16: GOTO advanced features** (4 tests)
+  - test_goto_computed, test_state_machine_fallback
+  - test_state_machine_variable_scope, test_same_level_enforcement
+  - **Deferred until Spec 006 complete**
+  - Complexity: HIGH - depends on cross-label infrastructure
+
+**Phase 5: Low-Priority Gaps** - Track but deprioritize
+
+- [ ] **Task B17: I/O commands** (10 tests) - DEFERRED
+  - CLOSE, OPEN, READ, USE, device_params
+  - Implement when file/device I/O needed
+
+- [ ] **Task B18: LOCK/JOB commands** (5 tests) - DEFERRED
+  - Multi-process infrastructure required
+  - Implement when concurrency needed
+
+- [ ] **Task B19: Timeout infrastructure** (8 tests) - DEFERRED
+  - Async/mock infrastructure required
+  - Implement when timeout semantics needed
+
+- [ ] **Task B20: Error processing** (6 tests) - DEFERRED
+  - $ECODE, $ETRAP, error_propagation
+  - Implement when error handling needed
+
+- [ ] **Task B21: Transaction processing** (14 tests) - DEFERRED
+  - TSTART, TCOMMIT, TROLLBACK, TRESTART, $TLEVEL
+  - Requires database backend transaction support
+
+- [ ] **Task B22: SSVNs** (4 tests) - DEFERRED
+  - ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE
+  - Structured system variables - implement on demand
+
+- [ ] **Task B23: Pattern alternation** (1 test) - DEFERRED
+  - Pattern match alternation syntax
+  - Implement when pattern match extensions needed
+
+- [ ] **Task B24: Routine structure stubs** (3 tests) - DEFERRED
+  - routine_docstring, empty_label_translation, comment_preservation
+  - Nice-to-have, not blocking
+
+**Phase 6: Very Low Priority** - Document but do not implement
+
+- [ ] **Task B25: Library functions** (68 tests) - VERY LOW
+  - Character, string, math library functions (§7.1.6.5)
+  - Implement individual functions on demand
+
+- [ ] **Task B26: YDB extensions** (23 tests) - VERY LOW
+  - Z-commands, Z-functions (implementation-defined)
+  - Implement individual commands on demand
+
+- [ ] **Task B27: Legacy/charset** (8 tests) - VERY LOW
+  - Pre-1995 behavior, character encoding edge cases
+  - Unlikely to be needed
+
+---
 
 ### Validation
 
-- MUGJ: V1IDNM1.m - 8 sequential test blocks with fall-through
-- MUGJ: V1FOR*.m series - FOR loop tests with fall-through between test sections
-- MUGJ: V1GO*.m series - GOTO tests (may also need fall-through)
-- Construct minimal fall-through test cases:
+#### Part A: Fall-Through
+- MUGJ: V1IDNM1.m, V1FOR*.m series (heavy fall-through usage)
+- Minimal test case:
   ```mumps
   TEST W "A"
   L2   W "B"
@@ -1748,37 +1770,26 @@ This preserves the benefits of SIMPLE_FUNCTIONS for simple routines while enabli
   ; Expected output: ABC
   ```
 
-### Spike: Fall-Through Semantics Validation
-
-**Hypothesis**: Explicit fall-through calls match YDB behavior for all common patterns.
-
-**Test cases to validate against YDB**:
-
-1. **Simple fall-through**: `TEST → L2 → L3 → Q`
-2. **Fall-through with external entry**: `D L2^ROUTINE` starts at L2, falls through to L3
-3. **QUIT from fall-through context**: Does QUIT return to original caller or intermediate label?
-4. **Fall-through into FOR loop**: Does FOR body fall-through work correctly?
-5. **Conditional QUIT in fall-through**: `I cond Q` - partial fall-through
-
-**Decision criteria**:
-- If Option A (explicit calls) matches YDB for >95% of cases → implement Option A
-- If QUIT semantics are problematic → consider Option C (TRAMPOLINE) as fallback
-- If performance is critical → measure call stack depth for real VistA routines
+#### Part B: Test Suite
+- Run full test suite after each phase
+- Goal: Reduce xfail count from 288 to ~160 (DELETE + CONVERT phases)
+- Track xfail count: `uv run pytest --collect-only -m xfail -q | wc -l`
 
 ### Dependencies
 
-- **Spec 006**: Cross-label GOTO (TRAMPOLINE infrastructure exists)
-- **Spec 008**: External calls (`D LABEL^ROUTINE`) - needed for full validation
-- **Analysis infrastructure**: Dead code detection, exit statement classification
+- **Spec 006**: Cross-label GOTO (TRAMPOLINE infrastructure) - required for Task B16
+- **Spec 007**: Computed offsets - required for Task B14
+- **Spec 008**: External calls (`D LABEL^ROUTINE`) - required for Part A
 
 ### Risk Assessment
 
 | Risk | L/I | Mitigation |
 |------|-----|------------|
-| Deep call stacks for long routines | M/M | Monitor max depth in VistA; consider trampoline fallback |
-| QUIT semantics break existing tests | M/H | Careful entry-point tracking; comprehensive test coverage |
-| Performance regression | L/M | Benchmark before/after; explicit calls are just function calls |
-| Strategy selection complexity | M/M | Clear decision tree; well-documented selection criteria |
+| Stack overflow for edge cases | L/L | VistA max is 197; 803 frame margin |
+| QUIT semantics in fall-through | M/M | Use `return` to propagate correctly |
+| Stub deletion causes test gaps | L/L | Verified all DELETEs have spec-aligned coverage |
+| CONVERT stubs fail unexpectedly | M/L | Run validate.py before converting |
+| Gap implementations cascade | M/M | Phase sequencing respects dependencies |
 
 ---
 
@@ -1875,8 +1886,8 @@ The following were identified in Spec 009 as requiring production database testi
 | VistA patterns not in MUGJ | M/H | Validate against real VistA early |
 | By-ref handling awkward | M/M | Return-value pattern; `byref_outputs` tracks modified params |
 | Duplicate test stubs | M/L | Audit stubs vs existing classes before each spec |
-| **Label fall-through not supported** | **M/H** | **Spec 013: extend SIMPLE_FUNCTIONS or use TRAMPOLINE for fall-through routines** |
-| QUIT semantics in fall-through | M/M | Track entry context; distinguish subroutine entry from fall-through |
+| Label fall-through stack overflow | L/L | VistA max 197 frames; 803 frame margin under Python limit |
+| QUIT semantics in fall-through | M/M | Use `return` to propagate values through call chain |
 
 ---
 

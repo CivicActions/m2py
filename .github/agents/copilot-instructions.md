@@ -24,6 +24,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - Python 3.10+ + extX (parser), pytest (testing), MArray (Spec 009), pattern_compiler (analysis) (011-operators-commands-completion)
 - Python 3.10+ (per pyproject.toml) + extX (grammar/parser), existing m2py codegen pipeline (012-indirection-xecute)
 - `_scope` dict for variable access, `_rt` for runtime state (012-indirection-xecute)
+- Python 3.10+ + extX (parser), pytest (testing), yottadb (YDB backend via YDBPython) (013-test-consolidation)
+- Database abstraction layer with Memory (testing), YottaDB (production), IRIS (future) backends (013-test-consolidation)
 
 - (001-textx-semantic-graph)
 
@@ -44,10 +46,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 013-test-consolidation: Added Python 3.10+ + extX (parser), pytest (testing), yottadb (YDB backend via YDBPython)
 - 012-indirection-xecute: Added Python 3.10+ (per pyproject.toml) + extX (grammar/parser), existing m2py codegen pipeline
 - 011-operators-commands-completion: Added Python 3.10+ + extX (parser), pytest (testing), MArray (Spec 009), pattern_compiler (analysis)
-- 011-operators-commands-completion: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
-- 010-intrinsic-functions: Added Python 3.10+ + extX (parser), pytest (testing), MArray (Spec 009), GlobalStorageBackend (Spec 009)
 
 
 <!-- MANUAL ADDITIONS START -->

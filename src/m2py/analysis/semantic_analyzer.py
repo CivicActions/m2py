@@ -561,7 +561,19 @@ class SemanticAnalyzer:
         elif hasattr(atom, "strlit") and atom.strlit:
             result += atom.strlit
         elif hasattr(atom, "alternation") and atom.alternation:
-            alt_parts = [self._pattern_atom_to_string(a) for a in atom.alternation]
+            # atom.alternation is a list of PatternAlternative objects
+            # Each PatternAlternative has atoms (plural) - a list of PatternAtom
+            alt_parts = []
+            for alt in atom.alternation:
+                if hasattr(alt, "atoms") and alt.atoms:
+                    # Serialize each atom in the alternative
+                    alt_str = "".join(
+                        self._pattern_atom_to_string(a) for a in alt.atoms
+                    )
+                    alt_parts.append(alt_str)
+                else:
+                    # Fallback for single atom (shouldn't happen per grammar)
+                    alt_parts.append(self._pattern_atom_to_string(alt))
             result += "(" + ",".join(alt_parts) + ")"
 
         return result

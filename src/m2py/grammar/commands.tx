@@ -1118,7 +1118,7 @@ ZGotoTarget:
 //   ZKILL X - kill X but keep X(1), X(2), etc.
 //   ZKILL myvar(1)
 ZKillCommand:
-    /([Zz][Kk][Ii][Ll][Ll]|[Zz][Kk][Ii])(?![A-Za-z])/ postcond=Postcondition? (WS targets+=KillTarget[/,/])?
+    /[Zz][Kk]([Ii]([Ll][Ll]?)?)?(?![A-Za-z])/ postcond=Postcondition? (WS targets+=KillTarget[/,/])?
 ;
 
 // ZWITHDRAW command: ZWI[THDRAW] variable

@@ -132,17 +132,59 @@ class TestSpecialVariablesCodegen:
         assert "_rt.stack_level()" in full
         assert "_rt.stack_level()" in abbrev
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ECODE codegen")
     def test_sv_ecode(self, generate_python):
-        """$ECODE generates error code access (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$ECODE generates _rt.ecode() call (§7.1.7).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ETRAP codegen")
+        Spec 013 Phase 12 (FR-026): $ECODE returns comma-delimited error codes.
+        """
+        result = generate_python("TEST W $ECODE Q")
+        assert "_rt.ecode()" in result
+
+    def test_sv_ecode_abbreviated(self, generate_python):
+        """$EC abbreviated form generates same call (§7.1.7).
+
+        Spec 013 Phase 12: Both $ECODE and $EC use _rt.ecode().
+        """
+        full = generate_python("TEST W $ECODE Q")
+        abbrev = generate_python("TEST W $EC Q")
+        assert "_rt.ecode()" in full
+        assert "_rt.ecode()" in abbrev
+
     def test_sv_etrap(self, generate_python):
-        """$ETRAP generates error trap access (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$ETRAP generates _rt.etrap() call (§7.1.7).
+
+        Spec 013 Phase 12 (FR-026): $ETRAP returns error trap code string.
+        """
+        result = generate_python("TEST W $ETRAP Q")
+        assert "_rt.etrap()" in result
+
+    def test_sv_etrap_abbreviated(self, generate_python):
+        """$ET abbreviated form generates same call (§7.1.7).
+
+        Spec 013 Phase 12: Both $ETRAP and $ET use _rt.etrap().
+        """
+        full = generate_python("TEST W $ETRAP Q")
+        abbrev = generate_python("TEST W $ET Q")
+        assert "_rt.etrap()" in full
+        assert "_rt.etrap()" in abbrev
+
+    def test_sv_zerror(self, generate_python):
+        """$ZERROR generates _rt.zerror() call (§7.1.7).
+
+        Spec 013 Phase 12 (FR-045): $ZERROR returns application error message.
+        """
+        result = generate_python("TEST W $ZERROR Q")
+        assert "_rt.zerror()" in result
+
+    def test_sv_zerror_abbreviated(self, generate_python):
+        """$ZE abbreviated form generates same call (§7.1.7).
+
+        Spec 013 Phase 12: Both $ZERROR and $ZE use _rt.zerror().
+        """
+        full = generate_python("TEST W $ZERROR Q")
+        abbrev = generate_python("TEST W $ZE Q")
+        assert "_rt.zerror()" in full
+        assert "_rt.zerror()" in abbrev
 
 
 @pytest.mark.codegen
@@ -193,35 +235,50 @@ class TestTextWithOffsetsCodegen:
     Reference: §7.1.5 ($TEXT function)
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT with label")
-    def test_text_with_label(self, generate_python):
+    def test_text_with_label(self, execute_mumps):
         """$TEXT(LABEL) returns source at label.
 
-        S A=$T(MAIN) returns first line of MAIN label.
+        S A=$T(LABEL) returns first line of LABEL.
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W $T(TEST) Q")
+        assert result.output == "TEST W $T(TEST) Q"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT with label+offset")
-    def test_text_with_label_offset(self, generate_python):
+    def test_text_with_label_offset(self, execute_mumps):
         """$TEXT(LABEL+n) returns line at offset from label.
 
-        S A=$T(TEX+5) returns 5th line after TEX.
+        S A=$T(TEST+1) returns 1st line after TEST.
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST W $T(TEST+1) Q\n W "line2" Q')
+        assert result.output == ' W "line2" Q'
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT with +N")
-    def test_text_with_line_number(self, generate_python):
+    def test_text_with_line_number(self, execute_mumps):
         """$TEXT(+N) returns Nth line of routine.
 
-        S A=$T(+5) returns 5th line of current routine.
+        S A=$T(+1) returns 1st line of current routine.
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W $T(+1) Q")
+        assert result.output == "TEST W $T(+1) Q"
+
+    def test_text_line_zero_returns_routine_name(self, execute_mumps):
+        """$TEXT(+0) returns the routine name.
+
+        S A=$T(+0) returns the routine name (lowercase convention).
+        """
+        result = execute_mumps("TEST W $T(+0) Q")
+        assert result.output == "test"
+
+    def test_text_different_label(self, execute_mumps):
+        """$TEXT(LABEL) retrieves source from another label in same routine.
+
+        Returns the source line for the specified label.
+        """
+        result = execute_mumps('TEST W $T(OTHER) Q\nOTHER W "hello" Q')
+        assert result.output == 'OTHER W "hello" Q'
 
     @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT external routine")
+    @pytest.mark.xfail(
+        reason="Not yet implemented: $TEXT external routine (requires multi-routine)"
+    )
     def test_text_external_routine(self, generate_python):
         """$TEXT(LABEL+N^ROUTINE) accesses external routine.
 
@@ -229,11 +286,10 @@ class TestTextWithOffsetsCodegen:
         """
         pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEXT with variable offset")
-    def test_text_with_variable_offset(self, generate_python):
-        """$TEXT(LABEL+I) evaluates offset at runtime.
+    def test_text_with_variable_offset(self, execute_mumps):
+        """$TEXT(+I) evaluates offset at runtime.
 
-        S A=$T(TEX+I) computes offset from I value.
+        S A=$T(+I) computes offset from I value.
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST S I=1 W $T(+I) Q")
+        assert result.output == "TEST S I=1 W $T(+I) Q"

@@ -1,23 +1,58 @@
 """Tests for USE command code generation (§8.2.23).
 
 Reference: MUMPS 1995 ANSI Standard, Section 8.2.23
+
+Spec 013 Phase 10: USE command switches the current I/O device.
 """
 
 import pytest
+from m2py.codegen import generate_python
 
 
 @pytest.mark.codegen
 class TestUseCommandCodegen:
     """Codegen-level tests for USE command code generation (§8.2.23)."""
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: USE to device select")
-    def test_use_to_device_select(self, generate_python):
-        """USE generates device/file selection (§8.2.23)."""
-        pytest.fail("Stub - implement test")
+    def test_use_to_device_select(self) -> None:
+        """USE generates _rt.use_device call (§8.2.23)."""
+        source = """\
+TEST
+ U "test.txt"
+ Q
+"""
+        python_code = generate_python(source)
+        assert "_rt.use_device" in python_code
+        assert '"test.txt"' in python_code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: USE with parameters")
-    def test_use_with_parameters(self, generate_python):
-        """USE parameters translate to device options (§8.2.23)."""
-        pytest.fail("Stub - implement test")
+    def test_use_with_parameters(self) -> None:
+        """USE parameters are passed to use_device (§8.2.23)."""
+        source = """\
+TEST
+ U "test.txt":(NOWRAP)
+ Q
+"""
+        python_code = generate_python(source)
+        assert "_rt.use_device" in python_code
+
+    def test_use_principal_device(self) -> None:
+        """USE 0 switches to principal device (§8.2.23)."""
+        source = """\
+TEST
+ U 0
+ Q
+"""
+        python_code = generate_python(source)
+        assert "_rt.use_device" in python_code
+        # Principal device is 0
+        assert "0" in python_code
+
+    def test_use_multiple_devices(self) -> None:
+        """USE can switch through multiple devices (§8.2.23)."""
+        source = """\
+TEST
+ U "file1.txt","file2.txt"
+ Q
+"""
+        python_code = generate_python(source)
+        # Should have two use_device calls
+        assert python_code.count("_rt.use_device") == 2

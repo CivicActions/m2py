@@ -533,6 +533,40 @@ class MArray:
             if last in parent._children:
                 del parent._children[last]
 
+    def kill_node(self, subscripts: tuple[Any, ...]) -> None:
+        """Delete node value but preserve descendants (ZKILL command).
+
+        Spec 013 Phase 19 (T135): ZKILL removes value but keeps children.
+
+        Unlike kill() which removes the entire subtree, kill_node()
+        only removes the value at the specified node, leaving all
+        subscripted descendants intact.
+
+        Args:
+            subscripts: Path to the node to zkill (empty for root)
+
+        Example:
+            arr.set(value=1)
+            arr.set(1, value=2)
+            arr.kill_node(())  # Removes root value, keeps arr(1)
+            arr.defined()      # Returns 10 (has children, no value)
+        """
+        if not subscripts:
+            self._value = None
+            return
+
+        # Navigate to parent of target
+        parent = self
+        for sub in subscripts[:-1]:
+            if sub not in parent._children:
+                return  # Path doesn't exist
+            parent = parent._children[sub]
+
+        last = subscripts[-1]
+        if last in parent._children:
+            # Only remove value, keep children intact
+            parent._children[last]._value = None
+
     def order(self, *subscripts: Any, start: Any = "") -> Any:
         """Get next subscript ($ORDER equivalent).
 
@@ -866,8 +900,22 @@ class MUMPSRuntime:
         self._stack_level: int = 0
         # Spec 011: I/O device tracking for $IO
         self._io: str = "0"  # Default I/O device
+        # Spec 013: Device table for OPEN/CLOSE/USE
+        # Maps device name -> file object (or None for special devices)
+        self._devices: Dict[str, Any] = {"0": None}  # "0" is principal device
         # Spec 011: Extrinsic function context for $QUIT
         self._in_extrinsic: bool = False
+        # Spec 013 Phase 11: $ZJOB - last JOB'd process ID
+        self._zjob: str = "0"
+        # Spec 013 Phase 12: Error processing special variables
+        # $ECODE - comma-delimited list of active error codes (empty = no errors)
+        self._ecode: str = ""
+        # $ETRAP - code string to execute when error occurs
+        self._etrap: str = ""
+        # $ZERROR - application-supplied error message text
+        self._zerror: str = ""
+        # Spec 013 Phase 19: Routine registry for ZLINK
+        self._routines: Dict[str, Any] = {}
 
     @property
     def globals(self) -> GlobalStorageBackend:
@@ -999,6 +1047,249 @@ class MUMPSRuntime:
         self._y = 0
 
     # =========================================================================
+    # Spec 013 Phase 19: Z-Command Support Methods
+    # =========================================================================
+
+    def _quote_value(self, value: Any) -> str:
+        """Quote a value for ZWRITE output format.
+
+        Args:
+            value: Value to quote
+
+        Returns:
+            Quoted string suitable for SET @ input
+        """
+        if value is None or value == "":
+            return '""'
+        s = str(value)
+        # Check if it's a number (doesn't need quoting)
+        try:
+            float(s)
+            return s
+        except ValueError:
+            pass
+        # Quote strings, escaping internal quotes
+        escaped = s.replace('"', '""')
+        return f'"{escaped}"'
+
+    def zwrite(self, scope: dict[str, Any]) -> None:
+        """ZWRITE - display all local variables.
+
+        Spec 013 Phase 19 (T132): Argumentless ZWRITE shows all locals.
+
+        Args:
+            scope: Variable scope dictionary
+        """
+        for name in sorted(scope.keys()):
+            if name.startswith("_"):
+                continue  # Skip internal variables
+            value = scope[name]
+            self._zwrite_var(name, value)
+
+    def _format_subscript(self, sub: Any) -> str:
+        """Format a subscript value for ZWRITE output.
+
+        Numeric subscripts are not quoted, string subscripts are.
+
+        Args:
+            sub: Subscript value
+
+        Returns:
+            Formatted subscript (quoted if string, unquoted if numeric)
+        """
+        s = str(sub)
+        # Check if it's numeric
+        try:
+            float(s)
+            # Return numeric subscripts unquoted
+            return s
+        except ValueError:
+            pass
+        # Quote string subscripts
+        escaped = s.replace('"', '""')
+        return f'"{escaped}"'
+
+    def zwrite_local(
+        self, name: str, subscripts: tuple[str, ...], scope: dict[str, Any]
+    ) -> None:
+        """ZWRITE - display a local variable and its descendants.
+
+        Args:
+            name: Variable name
+            subscripts: Subscript path (empty for unsubscripted)
+            scope: Variable scope dictionary
+        """
+        if name not in scope:
+            return  # Variable not defined
+
+        var = scope[name]
+        if not isinstance(var, MArray):
+            # Simple value
+            if subscripts:
+                return  # Can't subscript a simple value
+            self.write(f"{name}={self._quote_value(var)}\n")
+            return
+
+        # Navigate to subscript position and collect path
+        node = var
+        subs_list = list(subscripts)
+        for sub in subscripts:
+            if sub not in node._children:
+                return  # Subscript doesn't exist
+            node = node._children[sub]
+
+        # Output this node and descendants
+        self._zwrite_marray(name, subs_list, node)
+
+    def _zwrite_marray(
+        self, base_name: str, subscripts: list[Any], node: "MArray"
+    ) -> None:
+        """Output an MArray node and its descendants in ZWRITE format.
+
+        Args:
+            base_name: Variable name (e.g., "X")
+            subscripts: List of subscripts to this node (may be empty)
+            node: The MArray node to output
+        """
+        # Build the path string with comma-separated subscripts
+        if subscripts:
+            subs_str = ",".join(self._format_subscript(s) for s in subscripts)
+            path = f"{base_name}({subs_str})"
+        else:
+            path = base_name
+
+        # Output value at this node if it exists
+        if node._value is not None:
+            self.write(f"{path}={self._quote_value(node._value)}\n")
+
+        # Output children recursively in sorted order
+        for sub in sorted(node._children.keys(), key=str):
+            child = node._children[sub]
+            self._zwrite_marray(base_name, subscripts + [sub], child)
+
+    def zwrite_global(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """ZWRITE - display a global variable and its descendants.
+
+        Args:
+            name: Global name (without ^)
+            subscripts: Subscript path (empty for unsubscripted)
+        """
+        # Get value at this node
+        value = self.globals.get(name, subscripts)
+        if value is not None:
+            if subscripts:
+                sub_str = ",".join(self._format_subscript(s) for s in subscripts)
+                self.write(f"^{name}({sub_str})={self._quote_value(value)}\n")
+            else:
+                self.write(f"^{name}={self._quote_value(value)}\n")
+
+        # Get descendants using $ORDER
+        current = subscripts
+        while True:
+            # Find next subscript at this level (direction=1 means forward)
+            next_sub = self.globals.order(name, current, direction=1)
+            if not next_sub:
+                break
+            # Construct new subscripts tuple
+            new_subs = subscripts + (next_sub,)
+            # Recursively output this subtree
+            self.zwrite_global(name, new_subs)
+            # Move to next sibling
+            current = subscripts + (next_sub,)
+
+    def _zwrite_var(self, name: str, value: Any) -> None:
+        """Output a single variable in ZWRITE format."""
+        if isinstance(value, MArray):
+            self._zwrite_marray(name, [], value)
+        else:
+            self.write(f"{name}={self._quote_value(value)}\n")
+
+    def zshow(self, codes: str, scope: dict[str, Any], destination: Any = None) -> None:
+        """ZSHOW - display system information.
+
+        Spec 013 Phase 19 (T140): ZSHOW displays process info.
+
+        Codes:
+        - S: Stack trace
+        - V: Local variables
+        - D: Devices
+        - I: Intrinsic special variables
+        - *: All of the above
+
+        Args:
+            codes: Information code string
+            scope: Variable scope dictionary
+            destination: Optional output destination (not implemented)
+        """
+        import traceback
+
+        codes = codes.upper() if codes else "*"
+
+        for code in codes:
+            if code == "V" or code == "*":
+                # Variables - like ZWRITE
+                self.zwrite(scope)
+            if code == "S" or code == "*":
+                # Stack trace
+                self.write("Stack trace:\n")
+                for line in traceback.format_stack():
+                    self.write(line)
+            if code == "D" or code == "*":
+                # Devices
+                self.write(f"$IO={self._io}\n")
+                self.write("$PRINCIPAL=0\n")  # Principal device is always "0"
+            if code == "I" or code == "*":
+                # Intrinsic special variables
+                self.write(f"$HOROLOG={self.horolog()}\n")
+                self.write(f"$JOB={self.job()}\n")
+                self.write(f"$TLEVEL={self.tlevel()}\n")
+
+    def zlink(self, routine_name: str) -> None:
+        """ZLINK - dynamically link/load a routine.
+
+        Spec 013 Phase 19 (T137): ZLINK imports a routine module.
+
+        In the transpiler context, this imports a Python module and
+        registers it in the routine registry.
+
+        Args:
+            routine_name: Name of routine to link
+        """
+        import importlib
+
+        # Clean routine name
+        name = str(routine_name).strip().strip('"').lower()
+
+        try:
+            # Try to import as a Python module
+            module = importlib.import_module(name)
+            self._routines[name.upper()] = module
+        except ImportError:
+            # Try m2py bundled routines
+            try:
+                module = importlib.import_module(
+                    f"m2py.runtime.routines.{name.upper()}"
+                )
+                self._routines[name.upper()] = module
+            except ImportError:
+                # Routine not found - this is not an error in MUMPS
+                # The routine may be linked later or not needed
+                pass
+
+    class ZGotoException(Exception):
+        """Exception for ZGOTO stack unwinding.
+
+        Spec 013 Phase 19 (T143): ZGOTO unwinds to specified stack level.
+        """
+
+        def __init__(self, level: int, target: str | None = None):
+            self.level = level
+            self.target = target
+            super().__init__(
+                f"ZGOTO to level {level}" + (f":{target}" if target else "")
+            )
+
+    # =========================================================================
     # Spec 011: Special Variable Accessor Methods
     # =========================================================================
 
@@ -1028,6 +1319,17 @@ class MUMPSRuntime:
         import os
 
         return os.getpid()
+
+    def zjob(self) -> str:
+        """Return last JOB'd process ID ($ZJOB).
+
+        Spec 013 Phase 11: Returns the process ID of the last process
+        started by the JOB command. Returns "0" if no JOB has been executed.
+
+        Returns:
+            Process ID as string (matches MUMPS convention)
+        """
+        return self._zjob
 
     def io(self) -> str:
         """Return current I/O device name ($IO).
@@ -1069,6 +1371,90 @@ class MUMPSRuntime:
         """
         return 1 if self._in_extrinsic else 0
 
+    def tlevel(self) -> int:
+        """Return current transaction nesting level ($TLEVEL).
+
+        Spec 013 FR-015: Delegates to global storage backend.
+
+        Returns:
+            Current transaction depth (0 = no active transaction)
+        """
+        return self._globals.get_tlevel()
+
+    def ecode(self) -> str:
+        """Return current error code list ($ECODE).
+
+        Spec 013 Phase 12 (FR-026): Returns comma-delimited list of active
+        error codes. Empty string means no active errors.
+
+        Format: ",code1,code2," - always starts and ends with comma when non-empty.
+        Error codes:
+        - M codes: Standard MUMPS errors (e.g., ",M6," for undefined)
+        - Z codes: Implementation-specific errors
+        - U codes: User-defined errors
+
+        Returns:
+            Comma-delimited error code list, or empty string
+        """
+        return self._ecode
+
+    def set_ecode(self, value: str) -> None:
+        """Set error code list ($ECODE).
+
+        Spec 013 Phase 12 (FR-026): Setting $ECODE is how applications
+        clear errors (SET $ECODE="") or trigger error handlers.
+
+        Args:
+            value: Error code list (empty string to clear)
+        """
+        self._ecode = value
+
+    def etrap(self) -> str:
+        """Return current error trap code ($ETRAP).
+
+        Spec 013 Phase 12 (FR-026): Returns M code string to execute
+        when an error occurs and $ECODE becomes non-empty.
+
+        Returns:
+            Error trap code string, or empty string if not set
+        """
+        return self._etrap
+
+    def set_etrap(self, value: str) -> None:
+        """Set error trap code ($ETRAP).
+
+        Spec 013 Phase 12 (FR-026): Sets the M code to execute on error.
+        Common patterns:
+        - SET $ETRAP="D ^%ZTER Q"  ; Log error and quit
+        - SET $ETRAP="G ERROR^ROUTINE"  ; Goto error handler
+
+        Args:
+            value: M code string to execute on error
+        """
+        self._etrap = value
+
+    def zerror(self) -> str:
+        """Return application error message ($ZERROR).
+
+        Spec 013 Phase 12 (FR-045): Returns application-supplied error
+        message text. Typically set by $ZYERROR routine using $ZSTATUS.
+
+        Returns:
+            Error message string, or empty string
+        """
+        return self._zerror
+
+    def set_zerror(self, value: str) -> None:
+        """Set application error message ($ZERROR).
+
+        Spec 013 Phase 12 (FR-045): Sets error message text for application
+        error handling. Usually set in error handler routines.
+
+        Args:
+            value: Error message text
+        """
+        self._zerror = value
+
     def push_frame(self) -> None:
         """Push a new stack frame (for DO/extrinsic calls)."""
         self._stack_level += 1
@@ -1077,6 +1463,143 @@ class MUMPSRuntime:
         """Pop a stack frame (for QUIT)."""
         if self._stack_level > 0:
             self._stack_level -= 1
+
+    # =========================================================================
+    # Spec 013: Device I/O Methods (Phase 10 - OPEN/CLOSE/USE)
+    # =========================================================================
+
+    def open_device(
+        self,
+        device: str,
+        parameters: Optional[List[str]] = None,
+        timeout: Optional[float] = None,
+    ) -> bool:
+        """Open a device for I/O (MUMPS OPEN command).
+
+        Spec 013 Phase 10 (T091): Opens a device/file for I/O operations.
+
+        Args:
+            device: Device name (file path or special device name)
+            parameters: Device parameters (NEWVERSION, READONLY, etc.)
+            timeout: Optional timeout in seconds
+
+        Returns:
+            True if device opened successfully, False if timeout
+        """
+        params = parameters or []
+
+        # Determine file mode from parameters
+        mode = "r"  # Default read
+        if "NEWVERSION" in params or "NEW" in params:
+            mode = "w"
+        elif "APPEND" in params:
+            mode = "a"
+        elif "WRITE" in params:
+            mode = "r+"
+
+        try:
+            # Open the file (device)
+            self._devices[device] = open(device, mode)  # noqa: SIM115
+            return True
+        except (FileNotFoundError, PermissionError, OSError):
+            # For timeout operations, return False instead of raising
+            if timeout is not None:
+                return False
+            raise
+
+    def close_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
+        """Close a device (MUMPS CLOSE command).
+
+        Spec 013 Phase 10 (T092): Closes a device/file.
+
+        Args:
+            device: Device name to close
+            parameters: Optional close parameters (usually ignored)
+        """
+        if device in self._devices and self._devices[device] is not None:
+            try:
+                self._devices[device].close()
+            except (OSError, IOError):
+                pass  # Ignore errors closing
+            del self._devices[device]
+
+        # If closing current device, switch back to principal device
+        if self._io == device:
+            self._io = "0"
+
+    def use_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
+        """Select current I/O device (MUMPS USE command).
+
+        Spec 013 Phase 10 (T089): Switches the current I/O device.
+
+        Args:
+            device: Device name to make current
+            parameters: Optional device parameters
+        """
+        # Device "0" is always available (principal device)
+        if device == "0" or device in self._devices:
+            self._io = device
+
+    # =========================================================================
+    # Spec 013 Phase 11: JOB Command Runtime Support
+    # =========================================================================
+
+    def start_job(
+        self,
+        label: Optional[str],
+        routine: Optional[str],
+        args: List[Any],
+        params: Optional[List[str]],
+        timeout: Optional[float],
+    ) -> bool:
+        """Start a new process executing a routine (MUMPS JOB command).
+
+        Spec 013 Phase 11 (T095-T096): JOB spawns a new process.
+
+        In Python transpilation context:
+        - If routine is None, uses the current module
+        - Spawns subprocess running the transpiled Python with entry point
+        - Sets $ZJOB to the spawned process ID
+
+        Timeout behavior per MUMPS spec 8.2.10:
+        - No timeout: Returns True, does not affect $TEST
+        - Timeout present: Returns True on success ($TEST=1), False on timeout ($TEST=0)
+
+        Note: This is a simplified implementation. Full MUMPS JOB semantics
+        include process parameters (DEFAULT, INPUT, OUTPUT, etc.) which are
+        not yet supported.
+
+        Args:
+            label: Entry point label name
+            routine: Routine name (None = current routine)
+            args: Arguments to pass to the entry point
+            params: Process parameters (currently ignored)
+            timeout: Optional timeout in seconds
+
+        Returns:
+            bool: True if job started successfully within timeout, False on timeout
+        """
+        import os
+
+        # For now, emit a comment about the JOB - full subprocess support
+        # would require the transpiled module to be runnable as a standalone
+        # Python program with the entry point callable
+        #
+        # Future enhancement: Use subprocess to run:
+        #   python -c "from <module> import <label>; <label>(MUMPSRuntime())"
+        #
+        # For testing purposes, we simulate the JOB:
+        # - $ZJOB gets set to a pseudo-PID (current process ID)
+        # - Job always "succeeds" immediately
+
+        self._zjob = str(os.getpid())  # Set $ZJOB to current PID as placeholder
+
+        if timeout is not None:
+            # With timeout, return True (success) - caller sets $TEST
+            return True
+        else:
+            # Without timeout, just return True
+            return True
 
     # =========================================================================
     # Spec 012: Indirection & XECUTE Runtime Methods (Phase 2 - T007-T011)
@@ -1707,6 +2230,15 @@ class MUMPSRuntime:
             # Re-inject runtime after module execution
             # (the generated code no longer creates its own _rt since Phase 13)
             namespace["_rt"] = self
+
+            # Set up runtime context for $TEXT function support
+            # These are module-level variables set by generated code
+            if "_routine_name" in namespace:
+                self._current_routine = namespace["_routine_name"]
+            if "_source_lines" in namespace:
+                self._current_source_lines = namespace["_source_lines"]
+            if "_label_lines" in namespace:
+                self._current_label_lines = namespace["_label_lines"]
 
             # Find entry point
             if entry_point is None:

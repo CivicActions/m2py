@@ -660,6 +660,21 @@ C W "3" Q"""
         result = execute_mumps(source)
         assert result.output == "12"
 
+    def test_external_entry_with_fall_through(self, execute_mumps):
+        """T104: External entry continues fall-through chain.
+
+        MUMPS: TEST D FOR Q / FOR W "B" / END W "C" Q
+        Expected: "BC" (entry at FOR falls through to END)
+
+        When entering at a label other than the first, fall-through
+        should continue to subsequent labels.
+        """
+        source = """TEST D FOR Q
+FOR W "B"
+END W "C" Q"""
+        result = execute_mumps(source)
+        assert result.output == "BC"
+
 
 @pytest.mark.codegen
 class TestEdgeCaseCoverage:

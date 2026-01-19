@@ -690,6 +690,21 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST\n S A(1)=1,A(2)=2\n S X=$NEXT(A(""))\n W X\n Q')
         assert result.output == "1"
 
+    @pytest.mark.pre1995
+    def test_function_next_returns_minus_one(self, execute_mumps):
+        """$NEXT returns -1 when no next subscript exists (§7.1.5, pre-1995).
+
+        Unlike $ORDER (returns empty string), $NEXT returns -1 when there
+        is no next subscript. This is a key difference from $ORDER.
+        """
+        # Test: $NEXT at end of array returns -1
+        result = execute_mumps("TEST\n S A(1)=1,A(3)=3\n W $NEXT(A(3))\n Q")
+        assert result.output == "-1"
+
+        # Contrast with $ORDER which returns empty string
+        result = execute_mumps("TEST\n S A(1)=1,A(3)=3\n W $ORDER(A(3))\n Q")
+        assert result.output == ""
+
     def test_function_case_insensitivity(self, execute_mumps):
         """Function names are case-insensitive per FR-027 (§7.1.5).
 

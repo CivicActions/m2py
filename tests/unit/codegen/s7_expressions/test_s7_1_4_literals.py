@@ -61,20 +61,25 @@ class TestLiteralsCodegen:
         result = execute_mumps("TEST W -.5 Q")
         assert result.output == "-.5"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: string literal")
-    def test_string_literal(self, generate_python):
+    def test_string_literal(self, execute_mumps):
         """String literals generate Python strings (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST W "Hello",! Q')
+        assert result.output == "Hello\n"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: escaped quotes")
-    def test_escaped_quotes(self, generate_python):
+        # Empty string
+        result = execute_mumps('TEST W "" Q')
+        assert result.output == ""
+
+    def test_escaped_quotes(self, execute_mumps):
         """Escaped quotes generate properly escaped strings (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+        result = execute_mumps('TEST W "He said ""Hello""",! Q')
+        assert result.output == 'He said "Hello"\n'
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: scientific notation")
-    def test_scientific_notation(self, generate_python):
+    def test_scientific_notation(self, execute_mumps):
         """Scientific notation generates Python exponential (§7.1.4)."""
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W 1E2 Q")
+        assert result.output == "100"
+
+        # Negative exponent
+        result = execute_mumps("TEST W 1E-2 Q")
+        assert result.output == ".01"

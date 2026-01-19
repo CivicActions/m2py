@@ -22,11 +22,14 @@ from m2py.asg.expressions import (
     MFormatControl,
     MIndirection,
     MIntrinsicFunction,
+    MSpecialVariable,
     MVariable,
 )
 from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
 from m2py.asg.statements import (
     MAssignment,
+    MBreakStatement,
+    MCloseStatement,
     MDoStatement,
     MElseStatement,
     MForParameter,
@@ -35,15 +38,31 @@ from m2py.asg.statements import (
     MHaltStatement,
     MHangStatement,
     MIfStatement,
+    MJobStatement,
     MKillStatement,
+    MLockStatement,
     MMergeStatement,
     MNewStatement,
+    MOpenStatement,
     MQuitStatement,
     MReadStatement,
     MReadTarget,
     MSetStatement,
+    MTCommitStatement,
+    MTRollbackStatement,
+    MTStartStatement,
+    MUseStatement,
+    MViewStatement,
     MWriteStatement,
     MXecuteStatement,
+    # Z-commands (Phase 19)
+    MZGotoStatement,
+    MZHaltStatement,
+    MZKillStatement,
+    MZLinkStatement,
+    MZShowStatement,
+    MZWithdrawStatement,
+    MZWriteStatement,
 )
 from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.expressions import generate_expr
@@ -552,6 +571,39 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_read(stmt, ctx)
     elif isinstance(stmt, MXecuteStatement):
         _generate_xecute(stmt, ctx)
+    elif isinstance(stmt, MTStartStatement):
+        _generate_tstart(stmt, ctx)
+    elif isinstance(stmt, MTCommitStatement):
+        _generate_tcommit(stmt, ctx)
+    elif isinstance(stmt, MTRollbackStatement):
+        _generate_trollback(stmt, ctx)
+    elif isinstance(stmt, MLockStatement):
+        _generate_lock(stmt, ctx)
+    elif isinstance(stmt, MOpenStatement):
+        _generate_open(stmt, ctx)
+    elif isinstance(stmt, MCloseStatement):
+        _generate_close(stmt, ctx)
+    elif isinstance(stmt, MUseStatement):
+        _generate_use(stmt, ctx)
+    elif isinstance(stmt, MJobStatement):
+        _generate_job(stmt, ctx)
+    elif isinstance(stmt, MViewStatement):
+        _generate_view(stmt, ctx)
+    elif isinstance(stmt, MBreakStatement):
+        _generate_break(stmt, ctx)
+    # Z-commands (Phase 19)
+    elif isinstance(stmt, MZWriteStatement):
+        _generate_zwrite(stmt, ctx)
+    elif isinstance(stmt, (MZKillStatement, MZWithdrawStatement)):
+        _generate_zkill(stmt, ctx)
+    elif isinstance(stmt, MZLinkStatement):
+        _generate_zlink(stmt, ctx)
+    elif isinstance(stmt, MZShowStatement):
+        _generate_zshow(stmt, ctx)
+    elif isinstance(stmt, MZGotoStatement):
+        _generate_zgoto(stmt, ctx)
+    elif isinstance(stmt, MZHaltStatement):
+        _generate_zhalt(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -603,6 +655,22 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
                 assignment.target, value_expr, ctx
             )
             ctx.emitter.line(set_stmt)
+            continue
+
+        # Spec 013 Phase 12: Handle special variable assignments ($ETRAP, $ECODE, $ZERROR)
+        if isinstance(assignment.target, MSpecialVariable):
+            value_expr = generate_expr(assignment.value, ctx)
+            svar_name = assignment.target.name.upper()
+            if svar_name in ("ETRAP", "ET"):
+                ctx.emitter.line(f"_rt.set_etrap({value_expr})")
+            elif svar_name in ("ECODE", "EC"):
+                ctx.emitter.line(f"_rt.set_ecode({value_expr})")
+            elif svar_name in ("ZERROR", "ZE"):
+                ctx.emitter.line(f"_rt.set_zerror({value_expr})")
+            else:
+                raise NotImplementedError(
+                    f"SET ${assignment.target.name} not supported"
+                )
             continue
 
         # Get target variable name
@@ -2474,12 +2542,13 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     The old values are shadowed until the routine/label exits.
 
     Supports:
+    - N → NEW all (argumentless - save and remove all locals until function exit)
     - N X → NEW X (save and remove from _scope until function exit)
     - N X,Y,Z → NEW multiple variables
     - N (X,Y) → Exclusive NEW: NEW all locals except X,Y (Spec 011 T072)
 
-    NOT yet implemented:
-    - N (argumentless) - new all variables
+    Note: N () (empty exclusive NEW) is invalid MUMPS syntax - YDB rejects it.
+    Our parser silently skips it, which is acceptable.
 
     When ctx.new_scope_manager_var is set, uses NewScopeManager.new_var()
     for proper save/restore semantics on function exit.
@@ -2518,9 +2587,26 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
             )
         return
 
-    # Handle argumentless NEW (new all locals) - not yet implemented
+    # Handle argumentless NEW (new all locals)
+    # N with no args creates a new scope for ALL local variables
+    # This is equivalent to exclusive NEW with empty except list: N ()
+    # (though N () is technically invalid MUMPS syntax - YDB rejects it)
     if not stmt.variables:
-        raise NotImplementedError("Argumentless NEW (N with no args) not yet supported")
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            if ctx.new_scope_manager_var:
+                # Use NewScopeManager - iterate over _scope and new_var for all
+                ctx.emitter.line("for _var_name in list(_scope.keys()):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(f"{ctx.new_scope_manager_var}.new_var(_var_name)")
+            else:
+                # Simple clear of all local variables
+                ctx.emitter.line("_scope.clear()")
+        else:
+            # TRAMPOLINE strategy - not supported for argumentless NEW
+            raise NotImplementedError(
+                "Argumentless NEW not supported in TRAMPOLINE strategy"
+            )
+        return
 
     # Process each variable in the new list
     for var in stmt.variables:
@@ -2547,6 +2633,39 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
                 raise NotImplementedError(
                     "NEW indirection not supported in TRAMPOLINE strategy"
                 )
+        elif isinstance(var, MSpecialVariable):
+            # Spec 013 Phase 12: Handle NEW for special variables ($ETRAP, $ECODE, $ZERROR)
+            # VistA uses patterns like: N $ETRAP,$ESTACK S $ETRAP="..."
+            # This saves current value and initializes to empty on scope exit
+            svar_name = var.name.upper()
+            if svar_name in ("ETRAP", "ET"):
+                if ctx.new_scope_manager_var:
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_special_var('etrap', _rt.etrap(), _rt.set_etrap)"
+                    )
+                else:
+                    # Fallback: no-op if no scope manager
+                    ctx.emitter.line("_rt.set_etrap('')")
+            elif svar_name in ("ECODE", "EC"):
+                if ctx.new_scope_manager_var:
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_special_var('ecode', _rt.ecode(), _rt.set_ecode)"
+                    )
+                else:
+                    ctx.emitter.line("_rt.set_ecode('')")
+            elif svar_name in ("ZERROR", "ZE"):
+                if ctx.new_scope_manager_var:
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_special_var('zerror', _rt.zerror(), _rt.set_zerror)"
+                    )
+                else:
+                    ctx.emitter.line("_rt.set_zerror('')")
+            elif svar_name in ("ESTACK", "ES"):
+                # $ESTACK is typically NEW'd together with $ETRAP
+                # For now, treat as no-op since we don't have full stack tracking
+                pass
+            else:
+                raise NotImplementedError(f"NEW ${var.name} not supported")
         else:
             # Regular variable name (string)
             var_name = var
@@ -2829,6 +2948,413 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"{storage_target} = input()")
 
 
+# =============================================================================
+# Transaction Statement Generation (Spec 013 Phase 8)
+# =============================================================================
+
+
+def _generate_tstart(stmt: MTStartStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for TSTART command.
+
+    Spec 013 FR-015: Begin transaction via database abstraction.
+
+    MUMPS: TS, TSTART, TS (), TS (A,B), TS ():serial
+
+    Generated: _rt.globals.transaction_start()
+
+    Note: Restart variables and parameters are not yet implemented -
+    they require additional runtime infrastructure for transaction
+    restart handling.
+
+    Args:
+        stmt: MTStartStatement node
+        ctx: Generator context
+    """
+    # Basic implementation - call transaction_start on global storage
+    # Note: restart_vars, restart_all, and parameters are ignored for now
+    # A full implementation would need to save variable state for restart
+    ctx.emitter.line("_rt.globals.transaction_start()")
+
+
+def _generate_tcommit(stmt: MTCommitStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for TCOMMIT command.
+
+    Spec 013 FR-015: Commit transaction via database abstraction.
+
+    MUMPS: TC, TCOMMIT
+
+    Generated: _rt.globals.transaction_commit()
+
+    Per MUMPS spec:
+    - If $TLEVEL = 1, commits the transaction
+    - If $TLEVEL > 1, decrements $TLEVEL (nested transaction)
+    - Error M44 if $TLEVEL = 0
+
+    Args:
+        stmt: MTCommitStatement node
+        ctx: Generator context
+    """
+    ctx.emitter.line("_rt.globals.transaction_commit()")
+
+
+def _generate_trollback(stmt: MTRollbackStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for TROLLBACK command.
+
+    Spec 013 FR-015: Rollback transaction via database abstraction.
+
+    MUMPS: TRO, TROLLBACK, TRO 1
+
+    Generated: _rt.globals.transaction_rollback()
+
+    Per MUMPS spec:
+    - Rolls back all changes since transaction start
+    - Sets $TLEVEL = 0 and $TRESTART = 0
+    - Optional level argument specifies transaction level to roll back to
+
+    Note: The level argument is not yet implemented.
+
+    Args:
+        stmt: MTRollbackStatement node
+        ctx: Generator context
+    """
+    # Basic implementation - roll back entire transaction
+    # Note: stmt.level is ignored for now
+    ctx.emitter.line("_rt.globals.transaction_rollback()")
+
+
+# =============================================================================
+# LOCK Statement Generation (Spec 013 Phase 9)
+# =============================================================================
+
+
+def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for LOCK command.
+
+    Spec 013 FR-019: LOCK command via database abstraction.
+
+    MUMPS Forms:
+    - L              ; Release all locks (argumentless)
+    - L ^A           ; Exclusive lock on ^A (releases all previous locks first)
+    - L +^A          ; Increment lock count on ^A
+    - L -^A          ; Decrement lock count on ^A
+    - L ^A:5         ; Lock with timeout (sets $TEST)
+    - L (^A,^B)      ; Lock multiple simultaneously (releases all previous)
+    - L +(^A,^B)     ; Increment locks on multiple
+    - L -(^A,^B)     ; Decrement locks on multiple
+
+    Generated code:
+    - _rt.globals.unlock_all() for release-all semantics
+    - _rt.globals.lock(name, subscripts, timeout, lock_type)
+
+    Per MUMPS spec §8.2.12:
+    - Timed LOCK sets $TEST: 1 for success, 0 for timeout
+    - Untimed LOCK does NOT modify $TEST
+    - LOCK - always sets $TEST to 1
+
+    Args:
+        stmt: MLockStatement node
+        ctx: Generator context
+    """
+    # Handle argumentless LOCK - releases all locks
+    if not stmt.targets:
+        ctx.emitter.line("_rt.globals.unlock_all()")
+        return
+
+    # Handle lock_type at statement level (applies to all targets)
+    # lock_type can be "" (exclusive - releases all first), "+" (increment), "-" (decrement)
+    stmt_lock_type = stmt.lock_type
+
+    # For exclusive lock (no + or -), we first release all locks
+    # This happens BEFORE any locks are acquired
+    if stmt_lock_type == "":
+        ctx.emitter.line("_rt.globals.unlock_all()")
+
+    # Process each target
+    for target_dict in stmt.targets:
+        # Extract target info from dict
+        # target_dict keys: lockop, target, timeout, is_indirect, indirection, indirection_levels
+
+        # Get lock operation from target (overrides stmt-level if present)
+        target_lockop = target_dict.get("lockop", "")
+        # Use target lockop if present, otherwise use stmt-level
+        lock_type = target_lockop if target_lockop else stmt_lock_type
+        # For exclusive lock, use "+" since we already released all above
+        if lock_type == "":
+            lock_type = "+"
+
+        # Handle indirection
+        if target_dict.get("is_indirect"):
+            # Indirection - need runtime resolution
+            # For now, emit a comment about unsupported feature
+            ctx.emitter.line("# LOCK indirection not yet supported")
+            continue
+
+        # Get the target (global or local variable)
+        target = target_dict.get("target")
+        if target is None:
+            continue
+
+        # Extract name and subscripts from target
+        # target can be GlobalVariable, NakedGlobal, or MVariable
+        from m2py.parser.textx_classes import GlobalVariable as GV
+        from m2py.parser.textx_classes import NakedGlobal as NG
+
+        if isinstance(target, GV):
+            name = target.name
+            subscripts = target.subscripts
+        elif isinstance(target, NG):
+            # Naked global - use naked reference handling
+            ctx.emitter.line("# LOCK with naked global not yet supported")
+            continue
+        else:
+            # Local variable as lock name
+            name = getattr(target, "name", str(target))
+            subscripts = getattr(target, "subscripts", [])
+
+        # Generate subscript expressions
+        subs_exprs = []
+        for sub in subscripts:
+            subs_exprs.append(generate_expr(sub, ctx))
+
+        # Build the subscripts tuple string
+        if subs_exprs:
+            subs_str = f"({', '.join(subs_exprs)},)"
+        else:
+            subs_str = "()"
+
+        # Get timeout from target dict
+        timeout_expr = target_dict.get("timeout")
+
+        # For parenthesized lists, timeout may be on the statement
+        if timeout_expr is None and stmt.timeout is not None:
+            timeout_expr = stmt.timeout
+
+        # Generate lock call
+        if timeout_expr is not None:
+            # Timed lock - sets $TEST
+            timeout_val = generate_expr(timeout_expr, ctx)
+            if lock_type == "-":
+                # LOCK -name:timeout always sets $TEST to 1
+                ctx.emitter.line(
+                    f'_rt.globals.lock("{name}", {subs_str}, lock_type="-")'
+                )
+                ctx.emitter.line("_test = True")
+            else:
+                # LOCK +name:timeout sets $TEST based on success/timeout
+                ctx.emitter.line(
+                    f'_test = _rt.globals.lock("{name}", {subs_str}, '
+                    f'timeout={timeout_val}, lock_type="{lock_type}")'
+                )
+        else:
+            # Untimed lock - does NOT modify $TEST
+            ctx.emitter.line(
+                f'_rt.globals.lock("{name}", {subs_str}, lock_type="{lock_type}")'
+            )
+
+
+# =============================================================================
+# I/O Statement Generation (Spec 013 Phase 10)
+# =============================================================================
+
+
+def _generate_open(stmt: MOpenStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for OPEN command.
+
+    Spec 013 Phase 10 (T091, T093): Opens devices/files for I/O.
+
+    MUMPS Forms:
+    - O "file"                ; Open file
+    - O "file":NEWVERSION     ; Open for write (create/truncate)
+    - O "file":(params)       ; Open with parenthesized params
+    - O "file":(params):timeout ; Open with timeout (sets $TEST)
+    - O device1,device2       ; Open multiple devices
+
+    Note: The parser may interpret bare :KEYWORD as a timeout due to
+    MUMPS syntax ambiguity. We detect common device keywords and treat
+    them as parameters.
+
+    Generated code:
+    - _rt.open_device("file", ["params"])
+    - With timeout: _test = _rt.open_device("file", ["params"], timeout)
+
+    Per MUMPS spec §8.2.15:
+    - Timed OPEN sets $TEST: 1 for success, 0 for timeout
+    - Untimed OPEN does NOT modify $TEST
+
+    Args:
+        stmt: MOpenStatement node
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MVariable as MVar
+
+    # Common device keywords that may be misinterpreted as timeouts
+    DEVICE_KEYWORDS = {
+        "NEWVERSION",
+        "NEW",
+        "READONLY",
+        "READ",
+        "WRITE",
+        "APPEND",
+        "STREAM",
+        "FIXED",
+        "VARIABLE",
+        "NOWRAP",
+        "WRAP",
+        "NOTRUNCATE",
+        "TRUNCATE",
+        "REWIND",
+        "SEEK",
+        "DELETE",
+        "RENAME",
+    }
+
+    for device in stmt.devices:
+        if device.device_expr is None:
+            continue
+
+        # Generate device name expression
+        device_name = generate_expr(device.device_expr, ctx)
+
+        # Collect parameters - device params are keywords, not variables
+        params = []
+        for param in device.parameters:
+            # Device parameters can be:
+            # - Identifiers (NEWVERSION, READONLY, etc.) - treat as string constants
+            # - Expressions for dynamic parameters
+            if isinstance(param, MVar) and not param.subscripts:
+                # Simple identifier - treat as string keyword
+                params.append(repr(param.name))
+            else:
+                # Expression - evaluate it
+                param_str = generate_expr(param, ctx)
+                params.append(param_str)
+
+        # Check if timeout is actually a device keyword (parser ambiguity)
+        actual_timeout = device.timeout
+        if (
+            actual_timeout is not None
+            and isinstance(actual_timeout, MVar)
+            and not actual_timeout.subscripts
+            and actual_timeout.name.upper() in DEVICE_KEYWORDS
+        ):
+            # This is a device keyword, not a timeout
+            params.append(repr(actual_timeout.name))
+            actual_timeout = None
+
+        # Build parameters list string
+        if params:
+            params_str = f"[{', '.join(params)}]"
+        else:
+            params_str = "None"
+
+        # Generate the open call
+        if actual_timeout is not None:
+            # Timed OPEN - sets $TEST
+            timeout_val = generate_expr(actual_timeout, ctx)
+            ctx.emitter.line(
+                f"_test = _rt.open_device({device_name}, {params_str}, {timeout_val})"
+            )
+        else:
+            # Untimed OPEN - does NOT modify $TEST
+            ctx.emitter.line(f"_rt.open_device({device_name}, {params_str})")
+
+
+def _generate_close(stmt: MCloseStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for CLOSE command.
+
+    Spec 013 Phase 10 (T092): Closes devices/files.
+
+    MUMPS Forms:
+    - C "file"         ; Close file
+    - C device1,device2 ; Close multiple devices
+    - C device:params   ; Close with parameters
+
+    Generated code:
+    - _rt.close_device("file")
+    - _rt.close_device("file", ["params"])
+
+    Args:
+        stmt: MCloseStatement node
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MVariable as MVar
+
+    for device in stmt.devices:
+        if device.device_expr is None:
+            continue
+
+        # Generate device name expression
+        device_name = generate_expr(device.device_expr, ctx)
+
+        # Collect parameters - device params are keywords, not variables
+        params = []
+        for param in device.parameters:
+            if isinstance(param, MVar) and not param.subscripts:
+                # Simple identifier - treat as string keyword
+                params.append(repr(param.name))
+            else:
+                # Expression - evaluate it
+                param_str = generate_expr(param, ctx)
+                params.append(param_str)
+
+        # Build parameters list string
+        if params:
+            params_str = f"[{', '.join(params)}]"
+        else:
+            params_str = "None"
+
+        ctx.emitter.line(f"_rt.close_device({device_name}, {params_str})")
+
+
+def _generate_use(stmt: MUseStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for USE command.
+
+    Spec 013 Phase 10 (T089-T090): Switches current I/O device.
+
+    MUMPS Forms:
+    - U "file"          ; Use file as current device
+    - U 0               ; Use principal device (stdin/stdout)
+    - U device:params   ; Use with parameters
+
+    Generated code:
+    - _rt.use_device("file")
+    - _rt.use_device("file", ["params"])
+
+    Note: USE does not affect $TEST.
+
+    Args:
+        stmt: MUseStatement node
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MVariable as MVar
+
+    for device in stmt.devices:
+        if device.device_expr is None:
+            continue
+
+        # Generate device name expression
+        device_name = generate_expr(device.device_expr, ctx)
+
+        # Collect parameters - device params are keywords, not variables
+        params = []
+        for param in device.parameters:
+            if isinstance(param, MVar) and not param.subscripts:
+                # Simple identifier - treat as string keyword
+                params.append(repr(param.name))
+            else:
+                # Expression - evaluate it
+                param_str = generate_expr(param, ctx)
+                params.append(param_str)
+
+        # Build parameters list string
+        if params:
+            params_str = f"[{', '.join(params)}]"
+        else:
+            params_str = "None"
+
+        ctx.emitter.line(f"_rt.use_device({device_name}, {params_str})")
+
+
 def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for XECUTE command.
 
@@ -2919,6 +3445,386 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         else:
             # Phase 5: Dynamic XECUTE - call runtime
             generate_dynamic_xecute()
+
+
+def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for JOB command.
+
+    Spec 013 Phase 11 (T095-T097): Starts a new process executing a routine.
+
+    MUMPS Forms:
+    - J label           ; Start job at label in current routine
+    - J label^routine   ; Start job at label in external routine
+    - J label::5        ; Start job with 5-second timeout
+    - J label:():5      ; Start job with empty params and timeout
+    - J label:params    ; Start job with process parameters
+
+    Timeout behavior per MUMPS spec 8.2.10:
+    - No timeout: Does not affect $TEST
+    - Timeout present: Sets $TEST=1 on success, $TEST=0 on timeout
+
+    Generated code:
+    - _rt.job("label", "routine", args, timeout) -> (success, pid)
+    - $ZJOB is set to the spawned process ID
+
+    Note: In Python transpilation, JOB creates a subprocess running
+    the transpiled Python module with the specified entry point.
+
+    Args:
+        stmt: MJobStatement node
+        ctx: Generator context
+    """
+    for job_target in stmt.targets:
+        if job_target.call is None:
+            continue
+
+        call = job_target.call
+
+        # Build label/routine reference
+        label_name = repr(call.name) if call.name else "None"
+        routine_name = repr(call.routine) if call.routine else "None"
+
+        # Generate arguments if any
+        args_parts = []
+        for arg in call.arguments:
+            if arg.expression is not None:
+                arg_expr = generate_expr(arg.expression, ctx)
+            else:
+                arg_expr = "None"
+            args_parts.append(arg_expr)
+        args_str = f"[{', '.join(args_parts)}]" if args_parts else "[]"
+
+        # Generate process parameters if any
+        params_parts = []
+        for param in job_target.processparameters:
+            param_expr = generate_expr(param, ctx)
+            params_parts.append(param_expr)
+        params_str = f"[{', '.join(params_parts)}]" if params_parts else "None"
+
+        # Generate timeout expression
+        has_timeout = job_target.timeout is not None
+        if has_timeout and job_target.timeout is not None:
+            timeout_expr = generate_expr(job_target.timeout, ctx)
+        else:
+            timeout_expr = "None"
+
+        # Generate JOB call - runtime handles subprocess creation
+        # _rt.start_job() returns True on success, False on timeout
+        if has_timeout:
+            # With timeout: _test = _rt.start_job(label, routine, args, timeout)
+            ctx.emitter.line(
+                f"_test = _rt.start_job({label_name}, {routine_name}, {args_str}, "
+                f"{params_str}, {timeout_expr})"
+            )
+        else:
+            # Without timeout: just call start_job, don't modify $TEST
+            ctx.emitter.line(
+                f"_rt.start_job({label_name}, {routine_name}, {args_str}, "
+                f"{params_str}, {timeout_expr})"
+            )
+
+
+def _generate_view(stmt: MViewStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for VIEW command.
+
+    Spec 013 Phase 17 (T123): VIEW is implementation-specific.
+
+    Per MUMPS 1995 MDC spec section 8.2.24, VIEW has "arguments unspecified"
+    meaning the exact syntax and semantics are implementation-defined.
+
+    Common YDB VIEW keywords (for reference):
+    - LVNULLSUBS: Control null subscript behavior
+    - NOUNDEF: Control undefined variable behavior
+    - TRACE: Enable/disable tracing
+
+    For m2py: VIEW is a no-op by default since the Python runtime
+    doesn't have equivalent low-level implementation controls.
+    A comment is generated to document the original VIEW command.
+
+    Args:
+        stmt: MViewStatement node
+        ctx: Generator context
+    """
+    # Generate arguments for documentation
+    if stmt.arguments:
+        args_strs = []
+        for arg in stmt.arguments:
+            arg_str = generate_expr(arg, ctx)
+            args_strs.append(arg_str)
+        args_comment = ", ".join(args_strs)
+        ctx.emitter.line(f"pass  # VIEW {args_comment}")
+    else:
+        ctx.emitter.line("pass  # VIEW (no args)")
+
+
+def _generate_break(stmt: MBreakStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for BREAK command.
+
+    Spec 013 Phase 17 (T125): BREAK enters debugger.
+
+    Per MUMPS 1995 MDC spec section 8.2.1, BREAK transfers control
+    to the MUMPS debugger for interactive debugging.
+
+    In Python, we use the built-in breakpoint() function which:
+    - Enters pdb debugger in interactive mode
+    - Can be disabled via PYTHONBREAKPOINT=0
+
+    Args:
+        stmt: MBreakStatement node
+        ctx: Generator context
+    """
+    ctx.emitter.line("breakpoint()  # BREAK - enter debugger")
+
+
+# =============================================================================
+# Z-Commands (Phase 19)
+# =============================================================================
+
+
+def _generate_zwrite(stmt: MZWriteStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZWRITE command.
+
+    Spec 013 Phase 19 (T132-T134): ZWRITE displays variables with names.
+
+    ZWRITE outputs variables in a format that can be used with SET @:
+    - Variable names are shown
+    - String values are quoted
+    - Subscripted descendants are shown recursively
+
+    Examples:
+        ZW X      -> X=1
+                    X(1)="A"
+        ZW        -> (all local variables)
+        ZW ^GLOB  -> ^GLOB=value (global and descendants)
+
+    Args:
+        stmt: MZWriteStatement node
+        ctx: Generator context
+    """
+    from m2py.parser.textx_classes import (
+        LocalVariable,
+        MGlobal,
+        ZWriteGlobal,
+        ZWriteLocal,
+    )
+
+    if not stmt.args:
+        # Argumentless ZWRITE - display all local variables
+        ctx.emitter.line("_rt.zwrite(_scope)")
+    else:
+        for arg in stmt.args:
+            if arg.target is None:
+                continue
+
+            target = arg.target
+
+            # Check for any global type (GlobalVariable, ZWriteGlobal, or MGlobal subclass)
+            if isinstance(target, (GlobalVariable, ZWriteGlobal, MGlobal)):
+                # Global variable: ZW ^NAME or ZW ^NAME(subs)
+                name = target.name
+                if target.subscripts:
+                    subs = ", ".join(
+                        f"str({generate_expr(s, ctx)})" for s in target.subscripts
+                    )
+                    ctx.emitter.line(f"_rt.zwrite_global('{name}', ({subs},))")
+                else:
+                    ctx.emitter.line(f"_rt.zwrite_global('{name}', ())")
+            elif isinstance(target, (LocalVariable, ZWriteLocal)):
+                # Local variable: ZW X or ZW X(subs)
+                name = target.name
+                if target.subscripts:
+                    subs = ", ".join(
+                        f"str({generate_expr(s, ctx)})" for s in target.subscripts
+                    )
+                    ctx.emitter.line(f"_rt.zwrite_local('{name}', ({subs},), _scope)")
+                else:
+                    ctx.emitter.line(f"_rt.zwrite_local('{name}', (), _scope)")
+            else:
+                # Fallback - generate expression and try to write it
+                ctx.emitter.line(f"pass  # ZWRITE {generate_expr(target, ctx)}")
+
+
+def _generate_zkill(
+    stmt: "MZKillStatement | MZWithdrawStatement", ctx: "GeneratorContext"
+) -> None:
+    """Generate Python code for ZKILL/ZWITHDRAW command.
+
+    Spec 013 Phase 19 (T135-T136): ZKILL removes node value but preserves descendants.
+
+    Unlike KILL which removes the entire subtree, ZKILL only removes the value
+    at the specified node, leaving all subscripted descendants intact.
+
+    Example:
+        S ^A=1,^A(1)=2,^A(2)=3
+        ZK ^A        ; Removes ^A value, keeps ^A(1) and ^A(2)
+        W $D(^A)     ; Returns 10 (has descendants but no value)
+
+    Args:
+        stmt: MZKillStatement or MZWithdrawStatement node
+        ctx: Generator context
+    """
+    from m2py.parser.textx_classes import LocalVariable
+
+    for target in stmt.targets:
+        if isinstance(target, GlobalVariable):
+            name = target.name
+            if target.subscripts:
+                subs = ", ".join(
+                    f"str({generate_expr(s, ctx)})" for s in target.subscripts
+                )
+                ctx.emitter.line(f"_rt.globals.kill_node('{name}', ({subs},))")
+            else:
+                ctx.emitter.line(f"_rt.globals.kill_node('{name}', ())")
+        elif isinstance(target, LocalVariable):
+            name = target.name
+            py_name = translate_name(name)
+            if target.subscripts:
+                subs = ", ".join(
+                    f"str({generate_expr(s, ctx)})" for s in target.subscripts
+                )
+                ctx.emitter.line(
+                    f"_scope.setdefault('{py_name}', MArray()).kill_node(({subs},))"
+                )
+            else:
+                # ZKILL on unsubscripted local - remove value but keep children
+                ctx.emitter.line(
+                    f"_scope.setdefault('{py_name}', MArray()).kill_node(())"
+                )
+        else:
+            # Fallback
+            ctx.emitter.line(f"pass  # ZKILL {generate_expr(target, ctx)}")
+
+
+def _generate_zlink(stmt: MZLinkStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZLINK command.
+
+    Spec 013 Phase 19 (T137-T139): ZLINK dynamically links/loads a routine.
+
+    In the transpiler context, ZLINK imports a Python module representing
+    the routine and registers it in the runtime's routine registry.
+
+    Example:
+        ZLINK "MYROUTINE"
+        D ^MYROUTINE
+
+    Args:
+        stmt: MZLinkStatement node
+        ctx: Generator context
+    """
+    if not stmt.args:
+        ctx.emitter.line("pass  # ZLINK (no args)")
+        return
+
+    for arg in stmt.args:
+        routine_expr = generate_expr(arg, ctx)
+        ctx.emitter.line(f"_rt.zlink({routine_expr})")
+
+
+def _generate_zshow(stmt: MZShowStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZSHOW command.
+
+    Spec 013 Phase 19 (T140-T142): ZSHOW displays system information.
+
+    Codes:
+    - S: Stack trace
+    - V: Local variables (like ZWRITE)
+    - D: Devices
+    - I: Intrinsic special variables
+    - G: Global variables
+    - L: Locks held
+    - *: All of the above
+
+    Example:
+        ZSHOW "S"    ; Show call stack
+        ZSHOW "V"    ; Show variables
+
+    Args:
+        stmt: MZShowStatement node
+        ctx: Generator context
+    """
+    if not stmt.args:
+        # Argumentless ZSHOW shows everything
+        ctx.emitter.line('_rt.zshow("*", _scope)')
+        return
+
+    for arg in stmt.args:
+        if arg.codes:
+            codes_expr = generate_expr(arg.codes, ctx)
+            if arg.destination:
+                dest_expr = generate_expr(arg.destination, ctx)
+                ctx.emitter.line(f"_rt.zshow({codes_expr}, _scope, {dest_expr})")
+            else:
+                ctx.emitter.line(f"_rt.zshow({codes_expr}, _scope)")
+        else:
+            ctx.emitter.line('_rt.zshow("*", _scope)')
+
+
+def _generate_zgoto(stmt: MZGotoStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZGOTO command.
+
+    Spec 013 Phase 19 (T143-T145): ZGOTO unwinds stack to specified level.
+
+    ZGOTO is a powerful control flow mechanism that can:
+    - Unwind the call stack to a specific level
+    - Transfer control to a label after unwinding
+    - Exit the program (ZGOTO 0)
+
+    Example:
+        ZGOTO 0         ; Exit program
+        ZGOTO 1:ERROR   ; Unwind to level 1, go to ERROR
+
+    Implementation uses an exception-based approach for stack unwinding.
+
+    Args:
+        stmt: MZGotoStatement node
+        ctx: Generator context
+    """
+    if not stmt.args:
+        # Argumentless ZGOTO - return to direct mode (exit in batch)
+        ctx.emitter.line("raise SystemExit(0)  # ZGOTO - return to direct mode")
+        return
+
+    for arg in stmt.args:
+        level_expr = "0"
+        if arg.level is not None:
+            level_expr = generate_expr(arg.level, ctx)
+
+        if arg.target is not None:
+            # ZGOTO level:label - unwind and transfer
+            target_expr = generate_expr(arg.target, ctx)
+            ctx.emitter.line(
+                f"raise _rt.ZGotoException({level_expr}, {target_expr})  # ZGOTO"
+            )
+        else:
+            # ZGOTO level - unwind only
+            if level_expr == "0":
+                ctx.emitter.line("raise SystemExit(0)  # ZGOTO 0 - exit")
+            else:
+                ctx.emitter.line(
+                    f"raise _rt.ZGotoException({level_expr})  # ZGOTO {level_expr}"
+                )
+
+
+def _generate_zhalt(stmt: MZHaltStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZHALT command.
+
+    Spec 013 Phase 19 (T146-T147): ZHALT terminates with exit status.
+
+    Similar to HALT but allows specifying an exit code.
+
+    Example:
+        ZHALT 0     ; Exit with success
+        ZHALT 1     ; Exit with error
+
+    Args:
+        stmt: MZHaltStatement node
+        ctx: Generator context
+    """
+    if stmt.exitcode is not None:
+        exit_expr = generate_expr(stmt.exitcode, ctx)
+        ctx.emitter.line(f"raise SystemExit(int({exit_expr}))  # ZHALT")
+    else:
+        ctx.emitter.line("raise SystemExit(0)  # ZHALT")
 
 
 __all__ = [

@@ -59,8 +59,61 @@ class TestPatternMatchCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pattern alternation")
-    def test_pattern_alternation(self, generate_python):
-        """Pattern alternation generates regex alternation (§7.2.5)."""
-        pytest.fail("Stub - implement test")
+    def test_pattern_alternation(self, execute_mumps):
+        """Pattern alternation generates regex alternation (§7.2.5).
+
+        User Story 4 (VistA Features) acceptance scenario SC-017:
+        YDB verified: "AB"?1(1A,1N)1(1A,1N) → 1 (matches)
+
+        Pattern alternation allows matching one of several alternatives.
+        """
+        result = execute_mumps('TEST\n W "AB"?1(1A,1N)1(1A,1N)\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_pattern_alternation_numeric_option(self, execute_mumps):
+        """Pattern alternation with numeric option (§7.2.5).
+
+        YDB verified: "12"?1(1A,1N)1(1A,1N) → 1 (two digits match)
+        """
+        result = execute_mumps('TEST\n W "12"?1(1A,1N)1(1A,1N)\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_pattern_alternation_failure(self, execute_mumps):
+        """Pattern alternation fails when no alternative matches (§7.2.5).
+
+        YDB verified: "A.B"?1(1A,1N)1(1A,1N) → 0 (dot not in alternation)
+        """
+        result = execute_mumps('TEST\n W "A.B"?1(1A,1N)1(1A,1N)\n Q\n')
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_pattern_alternation_phone_number(self, execute_mumps):
+        """Pattern alternation for phone number format (§7.2.5).
+
+        YDB verified: "123-456-7890"?3N1(1"-",1".")3N1(1"-",1".")4N → 1
+        """
+        result = execute_mumps(
+            'TEST\n W "123-456-7890"?3N1(1"-",1".")3N1(1"-",1".")4N\n Q\n'
+        )
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_pattern_alternation_nested(self, execute_mumps):
+        """Nested pattern alternation (§7.2.5).
+
+        YDB verified: "a"?1(1(1l,1u),2N) → 1 (lowercase matches inner alt)
+        """
+        result = execute_mumps('TEST\n W "a"?1(1(1l,1u),2N)\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_pattern_alternation_nested_outer(self, execute_mumps):
+        """Nested pattern alternation matching outer option (§7.2.5).
+
+        YDB verified: "12"?1(1(1l,1u),2N) → 1 (two digits match outer 2N option)
+        """
+        result = execute_mumps('TEST\n W "12"?1(1(1l,1u),2N)\n Q\n')
+        assert result.output == "1"
+        assert result.success is True

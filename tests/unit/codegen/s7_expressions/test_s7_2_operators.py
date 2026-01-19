@@ -28,17 +28,23 @@ class TestOperatorsCodegen:
         assert result.output == "2"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: multiplication")
-    def test_multiplication(self, generate_python):
-        """Multiplication generates Python * with numeric coercion (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_multiplication(self, execute_mumps):
+        """Multiplication generates Python * with numeric coercion (§7.2).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: division")
-    def test_division(self, generate_python):
-        """Division generates Python / with numeric coercion (§7.2)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: W 3*4 → 12
+        """
+        result = execute_mumps("TEST\n W 3*4\n Q\n")
+        assert result.output == "12"
+        assert result.success is True
+
+    def test_division(self, execute_mumps):
+        """Division generates Python / with numeric coercion (§7.2).
+
+        YDB verified: W 10/4 → 2.5
+        """
+        result = execute_mumps("TEST\n W 10/4\n Q\n")
+        assert result.output == "2.5"
+        assert result.success is True
 
     def test_integer_division(self, execute_mumps):
         """Integer division generates Python int(x/y) for truncation (§7.2).
@@ -105,11 +111,59 @@ class TestOperatorsCodegen:
         assert result.output == "0"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: exponentiation")
-    def test_exponentiation(self, generate_python):
-        """Exponentiation generates Python ** (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_exponentiation(self, execute_mumps):
+        """Exponentiation operator ** (§7.2).
+
+        YDB verified: 2**3 → 8
+        """
+        result = execute_mumps("TEST\n W 2**3\n Q\n")
+        assert result.output == "8"
+        assert result.success is True
+
+    def test_exponentiation_zero_exponent(self, execute_mumps):
+        """Any non-zero number to the power 0 is 1 (§7.2).
+
+        YDB verified: 10**0 → 1
+        """
+        result = execute_mumps("TEST\n W 10**0\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_exponentiation_negative_base(self, execute_mumps):
+        """Negative base with integer exponent (§7.2).
+
+        YDB verified: (-2)**3 → -8
+        """
+        result = execute_mumps("TEST\n W (-2)**3\n Q\n")
+        assert result.output == "-8"
+        assert result.success is True
+
+    def test_exponentiation_negative_exponent(self, execute_mumps):
+        """Negative exponent produces reciprocal (§7.2).
+
+        YDB verified: 2**-1 → .5
+        """
+        result = execute_mumps("TEST\n W 2**-1\n Q\n")
+        assert result.output == ".5"
+        assert result.success is True
+
+    def test_exponentiation_zero_to_zero(self, execute_mumps):
+        """0**0 is defined as 1 in MUMPS (§7.2).
+
+        YDB verified: 0**0 → 1
+        """
+        result = execute_mumps("TEST\n W 0**0\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_exponentiation_fractional_base(self, execute_mumps):
+        """Fractional base with integer exponent (§7.2).
+
+        YDB verified: 2.5**2 → 6.25
+        """
+        result = execute_mumps("TEST\n W 2.5**2\n Q\n")
+        assert result.output == "6.25"
+        assert result.success is True
 
     def test_concatenation_strings(self, execute_mumps):
         """Concatenation joins strings correctly (§7.2).
@@ -147,11 +201,14 @@ class TestOperatorsCodegen:
         assert result.output == "123"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: equals comparison")
-    def test_equals(self, generate_python):
-        """Equals generates Python == (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_equals(self, execute_mumps):
+        """Equals generates Python == comparison (§7.2).
+
+        YDB verified: W 5=5 → 1
+        """
+        result = execute_mumps("TEST\n W 5=5\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
 
     # =========================================================================
     # Negated Comparison Operators Tests
@@ -294,20 +351,32 @@ class TestOperatorsCodegen:
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: logical AND")
-    def test_logical_and(self, generate_python):
-        """Logical AND generates Python and (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_logical_and(self, execute_mumps):
+        """Logical AND returns 1 if both operands are true (§7.2).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: logical OR")
-    def test_logical_or(self, generate_python):
-        """Logical OR generates Python or (§7.2)."""
-        pytest.fail("Stub - implement test")
+        YDB verified: W 1&1 → 1
+        """
+        result = execute_mumps("TEST\n W 1&1\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: left-to-right evaluation")
-    def test_left_to_right_evaluation(self, generate_python):
-        """Left-to-right evaluation is preserved (§7.2)."""
-        pytest.fail("Stub - implement test")
+    def test_logical_or(self, execute_mumps):
+        """Logical OR returns 1 if either operand is true (§7.2).
+
+        YDB verified: W 1!0 → 1
+        """
+        result = execute_mumps("TEST\n W 1!0\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_left_to_right_evaluation(self, execute_mumps):
+        """Operators evaluate left-to-right without precedence (§7.2).
+
+        MUMPS: 2+3*4 = (2+3)*4 = 5*4 = 20
+        NOT: 2+(3*4) = 2+12 = 14 (C/Python precedence)
+
+        YDB verified: W 2+3*4 → 20
+        """
+        result = execute_mumps("TEST\n W 2+3*4\n Q\n")
+        assert result.output == "20"
+        assert result.success is True

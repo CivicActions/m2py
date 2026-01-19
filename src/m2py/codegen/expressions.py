@@ -22,6 +22,7 @@ from m2py.asg.expressions import (
     MPatternMatch,
     MSelectArg,
     MSpecialVariable,
+    MStructuredSystemVariable,
     MUnaryOp,
     MVariable,
 )
@@ -125,6 +126,9 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     # Spec 012 Phase 3 (T016): Handle name indirection (@VAR)
     elif isinstance(expr, MIndirection):
         return _generate_indirection(expr, ctx)
+    # Spec 013 Phase 16 (FR-029): Handle structured system variables (^$GLOBAL etc)
+    elif isinstance(expr, MStructuredSystemVariable):
+        return _generate_ssvn(expr, ctx)
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -274,6 +278,57 @@ def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -
     return f"(_rt.globals.get(*_rt.globals.resolve_naked({subscripts_tuple})) or '')"
 
 
+def _generate_ssvn(ssvn: MStructuredSystemVariable, ctx: "GeneratorContext") -> str:
+    """Generate Python expression for MUMPS structured system variable (SSVN).
+
+    Spec 013 Phase 16 (FR-029): Generates calls to database abstraction layer
+    for SSVNs ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE.
+
+    Args:
+        ssvn: MStructuredSystemVariable node (name without ^$)
+        ctx: Generator context
+
+    Returns:
+        Python expression string: _rt.globals.ssvn_*() call
+
+    Raises:
+        NotImplementedError: For unsupported SSVNs (MWAPI, etc.)
+    """
+    name = ssvn.name.upper()
+
+    # Generate subscript expression (SSVNs typically have exactly one subscript)
+    if ssvn.subscripts:
+        # SSVNs use first subscript as the lookup key
+        subscript_expr = generate_expr(ssvn.subscripts[0], ctx)
+    else:
+        # No subscript - use empty string
+        subscript_expr = "''"
+
+    # Dispatch to appropriate SSVN query method
+    if name in ("GLOBAL", "G"):
+        return f"_rt.globals.ssvn_global(str({subscript_expr}))"
+    elif name in ("JOB", "J"):
+        return f"_rt.globals.ssvn_job(str({subscript_expr}))"
+    elif name in ("LOCK", "L"):
+        return f"_rt.globals.ssvn_lock(str({subscript_expr}))"
+    elif name in ("ROUTINE", "R"):
+        return f"_rt.globals.ssvn_routine(str({subscript_expr}))"
+    elif name in ("SYSTEM", "S"):
+        # ^$SYSTEM returns implementation info - return constant
+        return "'m2py'"
+    elif name in ("DEVICE", "D", "CHARACTER", "C"):
+        # ^$DEVICE and ^$CHARACTER - return empty (not implemented)
+        return "''"
+    elif name in ("EVENT", "E", "WINDOW", "W", "DISPLAY", "DI"):
+        # MWAPI SSVNs - documented limitation (LIM-003)
+        return "''"
+    elif name in ("LIBRARY", "LI"):
+        # ^$LIBRARY - documented limitation (LIM-011)
+        return "''"
+    else:
+        raise NotImplementedError(f"Unsupported SSVN: ^${name}")
+
+
 def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -> str:
     """Generate Python expression for MUMPS special variable.
 
@@ -287,6 +342,11 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     - $STORAGE ($S): Returns available memory (large constant)
     - $STACK ($ST): Returns call stack level
     - $QUIT ($Q): Returns 1 if in extrinsic, 0 otherwise
+    - $TLEVEL ($TL): Returns transaction nesting level
+    - $ZJOB ($ZJ): Returns last JOB'd process ID
+    - $ECODE ($EC): Returns comma-delimited error code list
+    - $ETRAP ($ET): Returns error trap code string
+    - $ZERROR ($ZE): Returns application error message
 
     Args:
         var: MSpecialVariable node (name without $ prefix)
@@ -337,6 +397,31 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     # $QUIT / $Q - extrinsic function context flag
     if name in ("QUIT", "Q"):
         return "_rt.quit_flag()"
+
+    # $TLEVEL / $TL - transaction nesting level
+    # Spec 013 FR-015: Returns current transaction depth (0 = no transaction)
+    if name in ("TLEVEL", "TL"):
+        return "_rt.tlevel()"
+
+    # $ZJOB / $ZJ - last JOB'd process ID
+    # Spec 013 Phase 11: Returns PID of last process started by JOB command
+    if name in ("ZJOB", "ZJ"):
+        return "_rt.zjob()"
+
+    # $ECODE / $EC - error code list
+    # Spec 013 Phase 12 (FR-026): Comma-delimited list of active error codes
+    if name in ("ECODE", "EC"):
+        return "_rt.ecode()"
+
+    # $ETRAP / $ET - error trap code
+    # Spec 013 Phase 12 (FR-026): M code to execute on error
+    if name in ("ETRAP", "ET"):
+        return "_rt.etrap()"
+
+    # $ZERROR / $ZE - application error message
+    # Spec 013 Phase 12 (FR-045): Application-supplied error message text
+    if name in ("ZERROR", "ZE"):
+        return "_rt.zerror()"
 
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
@@ -395,6 +480,9 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
     elif op.operator == "#":
         # Modulo in MUMPS
         return f"(m_num({left}) % m_num({right}))"
+    elif op.operator == "**":
+        # Exponentiation in MUMPS - base ** exponent
+        return f"(m_num({left}) ** m_num({right}))"
     elif op.operator in ("=", "<", ">"):
         # Comparison: use m_compare helper
         return f'm_compare({left}, "{op.operator}", {right})'
@@ -548,8 +636,15 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     if expr.target.routine:
         routine_name = expr.target.routine
 
-        # T044: Generate import statement for external routine
-        ctx.emitter.line(f"import {routine_name}")
+        # Spec 013 Phase 13: Check for bundled routines first (e.g., MATH for $$%SIN^MATH)
+        # Bundled routines are in m2py.runtime.routines package
+        bundled_routines = {"MATH"}  # Add more as needed
+        if routine_name in bundled_routines:
+            # Import from bundled routines package
+            ctx.emitter.line(f"from m2py.runtime.routines import {routine_name}")
+        else:
+            # T044: Generate import statement for external routine
+            ctx.emitter.line(f"import {routine_name}")
 
         # Translate label name to Python function name
         func_name = translate_name(label_name)
@@ -1671,14 +1766,21 @@ INTRINSIC_GENERATORS["REVERSE"] = _gen_reverse
 INTRINSIC_GENERATORS["T"] = _generate_text
 INTRINSIC_GENERATORS["TEXT"] = _generate_text
 
-# $NEXT (pre-1995 deprecated, maps to $ORDER)
-INTRINSIC_GENERATORS["N"] = _gen_order
-INTRINSIC_GENERATORS["NEXT"] = _gen_order
+
+# $NEXT (pre-1995 deprecated, similar to $ORDER but returns -1 when no next)
+def _gen_next(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $NEXT function.
+
+    $NEXT is a pre-1995 deprecated function similar to $ORDER, but returns
+    -1 instead of empty string when there is no next subscript.
+
+    Implementation: Generate $ORDER and wrap with a conditional to convert
+    empty string results to -1.
+    """
+    order_code = _gen_order(expr, ctx)
+    # Wrap the $ORDER call: if result is "", return -1, else return result
+    return f"(lambda _r: -1 if _r == '' else _r)({order_code})"
 
 
-__all__ = [
-    "generate_expr",
-    "generate_intrinsic_function",
-    "INTRINSIC_GENERATORS",
-    "_m_random_checked",
-]
+INTRINSIC_GENERATORS["N"] = _gen_next
+INTRINSIC_GENERATORS["NEXT"] = _gen_next

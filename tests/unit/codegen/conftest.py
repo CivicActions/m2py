@@ -184,7 +184,7 @@ def eval_mumps(execute_mumps):
             The expression result as a string (MUMPS canonical form)
         """
         # Use % as temp variable, write it, return via QUIT
-        source = f"_EVAL\n S %=({expr})\n W %\n Q\n"
+        source = f"EVAL\n S %=({expr})\n W %\n Q\n"
         result = execute_mumps(source)
         return result.output.rstrip()
 

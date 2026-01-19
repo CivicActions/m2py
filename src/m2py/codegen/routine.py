@@ -320,10 +320,11 @@ class RoutineGenerator:
 
         # _routine_name: Name of this routine for $TEXT(+0) and error messages
         # Falls back to first label name if routine.name is not set
+        # Lowercased to match YDB convention (routine names are case-insensitive file names)
         routine_name = self._routine.name or (
             self._routine.labels[0].name if self._routine.labels else ""
         )
-        ctx.emitter.line(f'_routine_name = "{routine_name}"')
+        ctx.emitter.line(f'_routine_name = "{routine_name.lower()}"')
         ctx.emitter.blank()
 
         # _label_lines: Maps label names to 0-indexed line numbers for $TEXT(LABEL+offset)
@@ -512,6 +513,10 @@ class RoutineGenerator:
 
         Factored out to support wrapping with NewScopeManager when needed.
 
+        Spec 013 (T031-T033): Handles fall-through semantics for SIMPLE_FUNCTIONS.
+        Labels without explicit exit (QUIT/GOTO/HALT) call the next label
+        function directly at the end, implementing MUMPS fall-through behavior.
+
         Args:
             label: MLabel ASG node
             ctx: Generator context
@@ -529,6 +534,10 @@ class RoutineGenerator:
                 # This handles fall-through at end of label
                 if not label.has_explicit_exit:
                     ctx.emitter.line("break")
+            # Spec 013: After the while loop, fall through to next label if needed
+            if label.needs_fallthrough and label.next_label:
+                next_func = translate_name(label.next_label.name)
+                ctx.emitter.line(f"return {next_func}(_rt, _scope=_scope)")
         else:
             # Generate body statements using scope-aware generator
             # This handles forward GOTO restructuring automatically
@@ -537,6 +546,13 @@ class RoutineGenerator:
             else:
                 # Empty function needs pass
                 ctx.emitter.line("pass")
+
+            # Spec 013 (T031): Fall-through to next label if needed
+            # For SIMPLE_FUNCTIONS, we call the next label function directly
+            # This implements MUMPS implicit fall-through behavior
+            if label.needs_fallthrough and label.next_label:
+                next_func = translate_name(label.next_label.name)
+                ctx.emitter.line(f"return {next_func}(_rt, _scope=_scope)")
 
     def _generate_simple_line_map(self, ctx: GeneratorContext) -> None:
         """Generate _line_map for SIMPLE_FUNCTIONS strategy.

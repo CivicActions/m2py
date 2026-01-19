@@ -19,15 +19,14 @@ class TestQuitCommandCodegen:
         code = generate_python(source)
         assert "return" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: QUIT with value - Spec 010")
-    def test_quit_with_value(self, generate_python):
-        """QUIT expr generates return value (§8.2.16).
+    def test_quit_with_value(self, execute_mumps):
+        """QUIT expr returns value from extrinsic function (§8.2.16).
 
-        T048: QUIT with return_value generates return <expr>.
-        Full extrinsic function support is Spec 010.
+        YDB verified: $$ADD(2,3) where ADD(A,B) Q A+B → "5"
         """
-        pytest.fail("Stub - extrinsic functions deferred to Spec 010")
+        result = execute_mumps("TEST\n W $$ADD(2,3) Q\nADD(A,B)\n Q A+B\n")
+        assert result.output == "5"
+        assert result.success is True
 
     def test_quit_in_for(self, generate_python):
         """QUIT in FOR generates break (§8.2.16).
