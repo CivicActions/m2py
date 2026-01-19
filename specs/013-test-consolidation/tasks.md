@@ -535,13 +535,21 @@ YDB validates this by rejecting $SIN(x) as "Invalid function name".
 
 ### VIEW Command (FR-032)
 
-- [ ] T123 [US4] Add MViewStatement codegen in src/m2py/codegen/statements.py
-- [ ] T124 [US4] Create VIEW tests in tests/unit/codegen/
+- [X] T123 [US4] Add MViewStatement codegen in src/m2py/codegen/statements.py
+  - Added MViewStatement/MBreakStatement imports
+  - Added dispatch cases in _dispatch_statement()
+  - Implemented _generate_view(): generates `pass # VIEW args` comment (no-op)
+- [X] T124 [US4] Create VIEW tests in tests/unit/codegen/
+  - Converted 1 xfail stub to 5 real tests in test_s8_2_24_view.py
+  - Tests: simple keyword, keyword with value, variable arg, argumentless, $TEST unchanged
 
 ### BREAK Command (FR-033)
 
-- [ ] T125 [US4] Add MBreakStatement codegen in src/m2py/codegen/statements.py
-- [ ] T126 [US4] Create BREAK tests in tests/unit/codegen/
+- [X] T125 [US4] Add MBreakStatement codegen in src/m2py/codegen/statements.py
+  - Implemented _generate_break(): generates `breakpoint() # BREAK`
+- [X] T126 [US4] Create BREAK tests in tests/unit/codegen/
+  - Converted 1 xfail stub to 4 real tests in test_s8_2_01_break.py
+  - Tests: breakpoint generated, argumentless, postcondition, comment present
 
 **Checkpoint**: VIEW and BREAK complete (SC-019, SC-020 verified)
 

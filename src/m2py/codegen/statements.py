@@ -28,6 +28,7 @@ from m2py.asg.expressions import (
 from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
 from m2py.asg.statements import (
     MAssignment,
+    MBreakStatement,
     MCloseStatement,
     MDoStatement,
     MElseStatement,
@@ -51,6 +52,7 @@ from m2py.asg.statements import (
     MTRollbackStatement,
     MTStartStatement,
     MUseStatement,
+    MViewStatement,
     MWriteStatement,
     MXecuteStatement,
 )
@@ -577,6 +579,10 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_use(stmt, ctx)
     elif isinstance(stmt, MJobStatement):
         _generate_job(stmt, ctx)
+    elif isinstance(stmt, MViewStatement):
+        _generate_view(stmt, ctx)
+    elif isinstance(stmt, MBreakStatement):
+        _generate_break(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -3495,6 +3501,58 @@ def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
                 f"_rt.start_job({label_name}, {routine_name}, {args_str}, "
                 f"{params_str}, {timeout_expr})"
             )
+
+
+def _generate_view(stmt: MViewStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for VIEW command.
+
+    Spec 013 Phase 17 (T123): VIEW is implementation-specific.
+
+    Per MUMPS 1995 MDC spec section 8.2.24, VIEW has "arguments unspecified"
+    meaning the exact syntax and semantics are implementation-defined.
+
+    Common YDB VIEW keywords (for reference):
+    - LVNULLSUBS: Control null subscript behavior
+    - NOUNDEF: Control undefined variable behavior
+    - TRACE: Enable/disable tracing
+
+    For m2py: VIEW is a no-op by default since the Python runtime
+    doesn't have equivalent low-level implementation controls.
+    A comment is generated to document the original VIEW command.
+
+    Args:
+        stmt: MViewStatement node
+        ctx: Generator context
+    """
+    # Generate arguments for documentation
+    if stmt.arguments:
+        args_strs = []
+        for arg in stmt.arguments:
+            arg_str = generate_expr(arg, ctx)
+            args_strs.append(arg_str)
+        args_comment = ", ".join(args_strs)
+        ctx.emitter.line(f"pass  # VIEW {args_comment}")
+    else:
+        ctx.emitter.line("pass  # VIEW (no args)")
+
+
+def _generate_break(stmt: MBreakStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for BREAK command.
+
+    Spec 013 Phase 17 (T125): BREAK enters debugger.
+
+    Per MUMPS 1995 MDC spec section 8.2.1, BREAK transfers control
+    to the MUMPS debugger for interactive debugging.
+
+    In Python, we use the built-in breakpoint() function which:
+    - Enters pdb debugger in interactive mode
+    - Can be disabled via PYTHONBREAKPOINT=0
+
+    Args:
+        stmt: MBreakStatement node
+        ctx: Generator context
+    """
+    ctx.emitter.line("breakpoint()  # BREAK - enter debugger")
 
 
 __all__ = [
