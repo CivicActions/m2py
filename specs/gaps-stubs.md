@@ -466,22 +466,35 @@ All 4 SSVN stubs: **❌ MISSING** - Structured System Variables not implemented
 
 ---
 
-## Part 17: Library Functions (§7.1.6.5) - LOW PRIORITY
+## Part 17: Library Functions (§7.1.6.5)
 
-All 68 library function stubs are **❌ MISSING** but very low priority.
+**Core Math Functions (IMPLEMENTED)**: The following math functions are implemented via the bundled
+%MATH routine (src/m2py/runtime/routines/MATH.py): %EXP, %LOG, %SQRT, %SIN, %COS, %TAN,
+%ARCSIN, %ARCCOS, %ARCTAN (and aliases %LN, %ASIN, %ACOS, %ATAN).
 
-| Category | Count | Files |
-|----------|-------|-------|
-| Character Library | 5 | test_s7_1_6_5_library_functions_character.py |
-| String Library | 6 | test_s7_1_6_5_library_functions_string.py |
-| Math Trigonometric | 12 | test_s7_1_6_5_library_functions_math.py |
-| Math Inverse Trig | 10 | test_s7_1_6_5_library_functions_math.py |
-| Math Exponential | 8 | test_s7_1_6_5_library_functions_math.py |
-| Math Angle Conversion | 4 | test_s7_1_6_5_library_functions_math.py |
-| Math Complex Numbers | 12 | test_s7_1_6_5_library_functions_math.py |
-| Math Matrix | 11 | test_s7_1_6_5_library_functions_math.py |
+Tests: tests/unit/codegen/extensions/test_math_library.py (20 tests)
 
-**Summary**: 68 KEEP (library - deprioritize)
+**Extended ANSI Library Functions - LIM-014 (Zero VistA Usage)**:
+
+The remaining ~60 ANSI standard library functions have **zero usage** in VA VistA.
+VistA uses its own Kernel Library Functions (`^XLFMTH`, `^XLFHYPER`, `^XLFCRC`, etc.)
+instead of the ANSI standard `^MATH`, `^STRING`, `^CHARACTER` routines.
+
+See LIM-014 in docs/limitations.md for the full list of unimplemented functions.
+
+| Category | Count | Status |
+|----------|-------|--------|
+| Character Library (^CHARACTER) | 2 | LIM-014 - Zero VistA usage |
+| String Library (^STRING) | 7 | LIM-014 - Zero VistA usage |
+| Math Hyperbolic | 6 | LIM-014 - Zero VistA usage |
+| Math Inverse Hyperbolic | 4 | LIM-014 - Zero VistA usage |
+| Math Extended Trig | 6 | LIM-014 - Zero VistA usage |
+| Math Angle Conversion | 4 | LIM-014 - Zero VistA usage |
+| Math Complex Numbers | 12 | LIM-014 - Zero VistA usage |
+| Math Matrix | 11 | LIM-014 - Zero VistA usage |
+| Math Misc | 7 | LIM-014 - Zero VistA usage |
+
+**Summary**: ~59 functions documented in LIM-014 (no implementation planned)
 
 ---
 

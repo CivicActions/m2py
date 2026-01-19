@@ -142,13 +142,13 @@ As a project maintainer, I want all MUMPS features used in the VistA codebase to
 - **FR-032**: System MUST implement VIEW command for implementation-defined operations (6 VistA files). Keywords may vary by backend.
 - **FR-033**: System MUST implement BREAK command for debugger interface (2 VistA files).
 
-### Functional Requirements - Math Functions (language completeness)
+### Functional Requirements - Math Functions (standard library)
 
-- **FR-034**: System MUST implement $EXP function (exponential).
-- **FR-035**: System MUST implement $LOG function (natural logarithm).
-- **FR-036**: System MUST implement $SQRT function (square root).
-- **FR-037**: System MUST implement trigonometric functions ($SIN, $COS, $TAN).
-- **FR-038**: System MUST implement inverse trigonometric functions ($ARCSIN, $ARCCOS, $ARCTAN).
+- **FR-034**: System MUST implement $$%EXP^MATH library function (exponential).
+- **FR-035**: System MUST implement $$%LOG^MATH library function (natural logarithm).
+- **FR-036**: System MUST implement $$%SQRT^MATH library function (square root).
+- **FR-037**: System MUST implement trigonometric library functions ($$%SIN^MATH, $$%COS^MATH, $$%TAN^MATH).
+- **FR-038**: System MUST implement inverse trigonometric library functions ($$%ARCSIN^MATH, $$%ARCCOS^MATH, $$%ARCTAN^MATH).
 
 ### Functional Requirements - Z-Commands with VistA Usage
 
@@ -187,7 +187,7 @@ As a project maintainer, I want all MUMPS features used in the VistA codebase to
 - **SC-009**: $ASCII("A") returns 65, $CHAR(65) returns "A".
 - **SC-010**: Transaction TSTART/TCOMMIT sequence completes without error on all database backends (Memory simulated, YottaDB native, IRIS stub).
 - **SC-011**: LOCK command works correctly with all three database backends (Memory for tests, YottaDB for production, IRIS stub exists). JOB spawns separate processes.
-- **SC-012**: All math functions return correct values (e.g., $SQRT(4)=2, $LOG(1)=0).
+- **SC-012**: All math library functions return correct values (e.g., $$%SQRT^MATH(4)=2, $$%LOG^MATH(1)=0).
 - **SC-013**: Z-commands with VistA usage (ZWRITE, ZLINK, ZSHOW, ZKILL, ZGOTO, ZHALT) all function correctly.
 - **SC-014**: $TEXT(LABEL) returns first line of label's source code. $TEXT(LABEL+n) returns nth line after label.
 - **SC-015**: Timeout syntax for LOCK, READ, OPEN, and JOB commands sets $TEST correctly (1 on success, 0 on timeout).

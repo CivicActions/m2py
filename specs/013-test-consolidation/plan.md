@@ -106,7 +106,7 @@ utils/
 | IV. Explicit Over Implicit | ✅ PASS | Fall-through generates explicit calls; LOCK/transactions use explicit methods |
 | V. Foundational Correctness | ✅ PASS | Builds on Spec 007 line mapping ($TEXT), existing ASG infrastructure |
 | VI. Cross-Cutting Semantics | ✅ PASS | Timeout behavior sets $TEST uniformly; DB abstraction for all backends |
-| VII. Minimize Runtime | ✅ PASS | Math functions emit inline `math.X()`; only DB ops use runtime |
+| VII. Minimize Runtime | ✅ PASS | Math library functions implemented via %MATH routine; only DB ops use runtime |
 | VIII. Research First | ✅ PASS | research.md documents existing infrastructure before implementation |
 
 **Post-Design Gate Status**: ✅ Design aligns with all constitution principles.

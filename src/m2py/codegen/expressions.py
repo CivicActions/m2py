@@ -578,8 +578,15 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     if expr.target.routine:
         routine_name = expr.target.routine
 
-        # T044: Generate import statement for external routine
-        ctx.emitter.line(f"import {routine_name}")
+        # Spec 013 Phase 13: Check for bundled routines first (e.g., MATH for $$%SIN^MATH)
+        # Bundled routines are in m2py.runtime.routines package
+        bundled_routines = {"MATH"}  # Add more as needed
+        if routine_name in bundled_routines:
+            # Import from bundled routines package
+            ctx.emitter.line(f"from m2py.runtime.routines import {routine_name}")
+        else:
+            # T044: Generate import statement for external routine
+            ctx.emitter.line(f"import {routine_name}")
 
         # Translate label name to Python function name
         func_name = translate_name(label_name)
@@ -1719,11 +1726,3 @@ def _gen_next(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
 INTRINSIC_GENERATORS["N"] = _gen_next
 INTRINSIC_GENERATORS["NEXT"] = _gen_next
-
-
-__all__ = [
-    "generate_expr",
-    "generate_intrinsic_function",
-    "INTRINSIC_GENERATORS",
-    "_m_random_checked",
-]

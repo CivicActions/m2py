@@ -273,6 +273,47 @@ variable assignment as part of the MWAPI event model. It has **zero usage**
 in both the YottaDB test suite and VA VistA codebase.""",
         behavior="Parser raises `MUMPSParseError`.",
     ),
+    "LIM-014": Limitation(
+        id="LIM-014",
+        category="ANSI Standard Library Functions (Annex I)",
+        type=LimitationType.PARSES_OK,
+        short_description="~60 library functions with zero VistA usage",
+        sections=(
+            "s7_1_6_5_library_functions_character",
+            "s7_1_6_5_library_functions_string",
+        ),
+        details="""\
+ANSI M X11.1-1995 Annex I defines standard library functions organized into
+three routines: `^MATH`, `^STRING`, and `^CHARACTER`. These are extrinsic
+functions called as `$$%FUNC^ROUTINE(args)`. However, VA VistA has **zero usage**
+of any ANSI standard library functions. VistA instead uses its own Kernel
+Library Functions (`^XLFMTH`, `^XLFHYPER`, `^XLFCRC`, etc.).
+
+### Unimplemented ANSI Library Functions
+
+| Routine | Functions | Count |
+|---------|-----------|-------|
+| `^CHARACTER` | COLLATE, COMPARE | 2 |
+| `^STRING` | CRC16, CRC32, CRCCCITT, FORMAT, LOWER, UPPER, PATCODE | 7 |
+| `^MATH` (Extended) | Hyperbolic: SINH, COSH, TANH, COTH, SECH, CSCH | 6 |
+| `^MATH` (Extended) | Inverse Hyperbolic: ARCSINH, ARCCOSH, ARCTANH, ARCCOTH | 4 |
+| `^MATH` (Extended) | Extended Trig: COT, CSC, SEC, ARCCOT, ARCCSC, ARCSEC | 6 |
+| `^MATH` (Extended) | Angle Conversion: DEGRAD, RADDEG, DECDMS, DMSDEC | 4 |
+| `^MATH` (Extended) | Complex Numbers: CABS, CADD, CSUB, CMUL, CDIV, CSIN, CCOS, CEXP, CLOG, CPOWER, COMPLEX, CONJUG | 12 |
+| `^MATH` (Extended) | Matrix: MTXADD, MTXSUB, MTXMUL, MTXINV, MTXDET, MTXTRP, MTXCOPY, MTXSCA, MTXEQU, MTXCOF, MTXUNIT | 11 |
+| `^MATH` (Extended) | Miscellaneous: ABS, SIGN, PI, E, PRODUCE, REPLACE, XOR | 7 |
+
+**Total**: ~59 unimplemented functions
+
+**Note**: Core math functions (EXP, LOG, SQRT, SIN, COS, TAN, ARCSIN, ARCCOS, ARCTAN)
+are implemented via the bundled `%MATH` routine in `m2py.runtime.routines.MATH`.""",
+        behavior="""\
+Parser accepts extrinsic function syntax `$$%FUNC^ROUTINE(args)` (valid grammar).
+ASG produces `MExtrinsicFunction`. Code generation imports the target routine module
+and calls the function. For unimplemented routines, the generated code will fail at
+import time. VistA codebases will work correctly as they use Kernel Library Functions
+(`^XLFMTH`, etc.) instead of ANSI standard library routines.""",
+    ),
 }
 
 
@@ -378,6 +419,8 @@ SECTION_ORDER: list[tuple[str, str | None]] = [
     ("LIM-011", "## {id}: ^$LIBRARY Structured System Variable (Not Implemented)"),
     ("LIM-012", "## {id}: Unknown Z-Commands and Z-Functions"),
     ("LIM-013", "## {id}: ASSIGN Command (Not Implemented)"),
+    # Library functions
+    ("LIM-014", "## {id}: ANSI Standard Library Functions (Annex I)"),
 ]
 
 
