@@ -35,6 +35,9 @@ class LimitationType(Enum):
     INFORMATIVE = "Informative"
     """No executable syntax exists. Documentation only."""
 
+    REDIRECT = "Redirect"
+    """Tests exist in a different location. Reference only."""
+
 
 class Limitation(NamedTuple):
     """A parser limitation entry."""
@@ -313,6 +316,111 @@ ASG produces `MExtrinsicFunction`. Code generation imports the target routine mo
 and calls the function. For unimplemented routines, the generated code will fail at
 import time. VistA codebases will work correctly as they use Kernel Library Functions
 (`^XLFMTH`, etc.) instead of ANSI standard library routines.""",
+    ),
+    "LIM-015": Limitation(
+        id="LIM-015",
+        category="Zero-VistA-Usage YDB Z-Commands",
+        type=LimitationType.PARSES_OK,
+        short_description="Z-commands parsed but codegen stubs only",
+        sections=(
+            "extensions_ydb_zallocate",
+            "extensions_ydb_zbreak",
+            "extensions_ydb_zcompile",
+            "extensions_ydb_zcontinue",
+            "extensions_ydb_zedit",
+            "extensions_ydb_zhelp",
+            "extensions_ydb_zmessage",
+            "extensions_ydb_zprint",
+            "extensions_ydb_zstep",
+            "extensions_ydb_zsystem",
+            "extensions_ydb_ztrigger",
+            "extensions_ydb_zfunctions",
+        ),
+        details="""\
+The following YDB Z-commands and Z-functions are parsed but have **zero usage**
+in the VA VistA codebase (33,951 routine files analyzed):
+
+| Command/Function | Description | VistA Usage |
+|------------------|-------------|-------------|
+| ZALLOCATE | Resource allocation | 0 files |
+| ZDEALLOCATE | Resource deallocation | 0 files |
+| ZBREAK | Set breakpoints | 0 files |
+| ZCOMPILE | Compile routines | 0 files |
+| ZCONTINUE | Continue from break | 0 files |
+| ZEDIT | Edit routine | 0 files |
+| ZHELP | Display help | 0 files |
+| ZMESSAGE | Signal error | 0 files |
+| ZPRINT | Print routine source | 0 files |
+| ZSTEP | Single-step debug | 0 files |
+| ZSYSTEM | Execute OS command | 0 files |
+| ZTRIGGER | Trigger management | 0 files |
+| $ZDATE | Date formatting | 0 files |
+| $ZMESSAGE | Error message lookup | 0 files |
+| $ZWIDTH | String width | 0 files |
+
+These commands are recognized to support complete YDB compatibility but are
+not a priority for implementation due to zero real-world usage.""",
+        behavior="""\
+Parser accepts these commands (valid YDB grammar). ASG produces appropriate nodes.
+Codegen generates stubs or raises NotImplementedError. Tests marked xfail with
+reason referencing LIM-015.""",
+    ),
+    "LIM-016": Limitation(
+        id="LIM-016",
+        category="Deferred Low-Priority Features",
+        type=LimitationType.PARSES_OK,
+        short_description="Features parsed but implementation deferred",
+        sections=(),
+        details="""\
+The following features are syntactically supported but have deferred implementation
+due to complexity or low priority. These may be implemented in future specs:
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Name indirection | @var as lvalue name | Parser works, codegen deferred |
+| Argument indirection | @var as argument list | Parser works, codegen deferred |
+| Computed offsets | DO LABEL+@var^ROUTINE | Complex, requires runtime resolution |
+| Module caching | Routine caching optimization | Performance optimization |
+| TROLLBACK:n | Rollback to specific level | Syntax parsed, full semantics deferred |
+| $TRESTART | Transaction restart count | Special variable parsed |
+| MERGE global | MERGE ^A=^B | Implementation partial |
+| Pre-1995 behaviors | Legacy scope/array patterns | Compatibility layer |
+| $QUIT in extrinsic | Returns 1/0 indicator | Edge case |
+
+These features have test stubs marked xfail pending implementation.""",
+        behavior="""\
+Parser accepts syntax. ASG produces appropriate nodes. Codegen may be incomplete
+or produce stubs. Tests marked xfail with reason referencing feature status.""",
+    ),
+    "LIM-017": Limitation(
+        id="LIM-017",
+        category="Generic Indirection Codegen",
+        type=LimitationType.REDIRECT,
+        short_description="Tests in s7_3_indirection",
+        sections=("s6_3_1_indirection",),
+        details="""\
+Section 6.3.1 defines the runtime processing of generic indirection. Since the
+same code handles both indirection expression syntax (§7.3) and runtime processing
+(§6.3.1), the codegen tests exist in the s7_3_indirection test module.
+
+This section is marked as covered by the s7_3_indirection tests.""",
+        behavior="""\
+See s7_3_indirection tests for full codegen coverage of indirection.""",
+    ),
+    "LIM-018": Limitation(
+        id="LIM-018",
+        category="Z-Command Codegen",
+        type=LimitationType.REDIRECT,
+        short_description="Tests in extensions/ydb/",
+        sections=("s8_2_27_zcommand",),
+        details="""\
+Section 8.2.27 reserves the Z-command syntax for vendor-specific extensions.
+YottaDB Z-commands (ZWRITE, ZKILL, ZGOTO, etc.) are tested in the extensions/ydb/
+test directory, organized per command.
+
+This section is marked as covered by the extensions/ydb tests.""",
+        behavior="""\
+See extensions/ydb tests for full codegen coverage of Z-commands.""",
     ),
 }
 

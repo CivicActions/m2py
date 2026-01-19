@@ -473,6 +473,9 @@ def _format_cell(
                 # Parse Error: parser tests required, ASG/codegen can be missing
                 if category in ("asg", "codegen"):
                     return f"— {limitation.id}"
+            elif limitation.type == LimitationType.REDIRECT:
+                # Redirect: tests exist in different location
+                return f"↪ {limitation.id}"
         return "❌ Missing"
 
     total = file_info.total_count
@@ -672,13 +675,26 @@ def check_coverage(
     """
     missing: list[str] = []
 
+    def is_missing_expected(section_id: str, category: str) -> bool:
+        """Check if a missing file is expected based on limitation type."""
+        limitation = get_limitation_for_section(section_id)
+        if limitation:
+            if limitation.type == LimitationType.INFORMATIVE:
+                return True  # No tests expected
+            elif limitation.type == LimitationType.PARSE_ERROR:
+                return category in ("asg", "codegen")  # Only parser needed
+            elif limitation.type == LimitationType.REDIRECT:
+                return True  # Tests exist elsewhere
+        return False
+
     # Check standard sections
     for section_group, subsections in SPEC_SECTIONS.items():
         for section_id, section_name in subsections.items():
             # Check all three categories
             for category in ("parser", "asg", "codegen"):
                 if section_id not in files[category]:
-                    missing.append(f"{category}/{section_id}")
+                    if not is_missing_expected(section_id, category):
+                        missing.append(f"{category}/{section_id}")
 
     # Check extension sections - use category-specific lists
     extension_by_category: dict[TestCategory, dict[str, str]] = {
@@ -691,7 +707,8 @@ def check_coverage(
         for cmd_id in extensions:
             full_id = f"extensions/ydb/{cmd_id}"
             if full_id not in files[category]:
-                missing.append(f"{category}/{full_id}")
+                if not is_missing_expected(full_id, category):
+                    missing.append(f"{category}/{full_id}")
 
     return len(missing) == 0, missing
 

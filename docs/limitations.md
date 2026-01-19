@@ -34,6 +34,10 @@ for traceability to test files.
 | LIM-012 | Unknown Z-Extensions | Parse Error | Unknown Z-commands/functions from other implementations |
 | LIM-013 | ASSIGN Command | Parse Error | Part of MWAPI event model |
 | LIM-014 | ANSI Standard Library Functions (Annex I) | Parses OK | ~60 library functions with zero VistA usage |
+| LIM-015 | Zero-VistA-Usage YDB Z-Commands | Parses OK | Z-commands parsed but codegen stubs only |
+| LIM-016 | Deferred Low-Priority Features | Parses OK | Features parsed but implementation deferred |
+| LIM-017 | Generic Indirection Codegen | Redirect | Tests in s7_3_indirection |
+| LIM-018 | Z-Command Codegen | Redirect | Tests in extensions/ydb/ |
 
 ---
 
