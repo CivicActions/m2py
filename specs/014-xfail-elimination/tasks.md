@@ -26,11 +26,11 @@
 
 **Purpose**: Validate baseline and prepare branch
 
-- [ ] T001 Verify baseline xfail count: `uv run pytest --collect-only -m xfail -q`
-- [ ] T002 [P] Create backup of current test state for rollback reference
-- [ ] T003 [P] Verify branch is `014-xfail-elimination` and up to date with main
+- [x] T001 Verify baseline xfail count: `uv run pytest --collect-only -m xfail -q`
+- [x] T002 [P] Create backup of current test state for rollback reference
+- [x] T003 [P] Verify branch is `014-xfail-elimination` and up to date with main
 
-**Checkpoint**: Baseline confirmed at 163 xfail tests
+**Checkpoint**: Baseline confirmed at 163 xfail tests ✅ COMPLETE
 
 ---
 
