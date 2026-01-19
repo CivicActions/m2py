@@ -66,17 +66,14 @@ class TestIndirectionCodegen:
     Reference: §6.3.1, §7.3
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Codegen not yet implemented: argument indirection execution"
-    )
-    def test_argument_indirection_resolves_at_runtime(self):
+    def test_argument_indirection_resolves_at_runtime(self, execute_mumps):
         """Argument indirection resolves argument at runtime (§7.3.2).
 
-        Per 1995__a901027.md: "Write @$Select(ENOUGH:SPACE,1:PAGE)"
-        The argument to WRITE is determined by evaluating the indirection.
+        Per 1995__a901027.md: "@VAR evaluates to the value named by VAR"
+        The value of VAR is evaluated, then that value is used.
         """
-        pytest.fail("Stub - implement when codegen supports indirection")
+        result = execute_mumps('TEST S ARG="X" S X=42 W @ARG Q')
+        assert result.output == "42"
 
     def test_pattern_indirection_resolves_at_runtime(self, execute_mumps):
         """Pattern indirection resolves pattern at runtime (§7.2.5.5).

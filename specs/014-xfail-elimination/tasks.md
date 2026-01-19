@@ -143,9 +143,9 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task B2: Indirection Completion (3 tests)
 
-- [ ] T048 [US1] Implement subscript indirection (@var in subscript) in src/m2py/codegen/expressions.py
-- [ ] T049 [US1] Implement argument indirection (@var as argument) in src/m2py/codegen/expressions.py
-- [ ] T050 [US1] Convert 3 indirection tests from xfail in tests/unit/codegen/s7_expressions/
+- [x] T048 [US1] Subscript indirection (@var in subscript) already works - converted test to execute_mumps
+- [x] T049 [US1] Argument indirection (@var as argument) already works - converted test to execute_mumps
+- [x] T050 [US1] Converted 3 indirection tests from xfail (s7_expressions + cross_cutting)
 
 #### Task B3: Transaction Commands (4 tests)
 
