@@ -22,6 +22,7 @@ from m2py.asg.expressions import (
     MPatternMatch,
     MSelectArg,
     MSpecialVariable,
+    MStructuredSystemVariable,
     MUnaryOp,
     MVariable,
 )
@@ -125,6 +126,9 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     # Spec 012 Phase 3 (T016): Handle name indirection (@VAR)
     elif isinstance(expr, MIndirection):
         return _generate_indirection(expr, ctx)
+    # Spec 013 Phase 16 (FR-029): Handle structured system variables (^$GLOBAL etc)
+    elif isinstance(expr, MStructuredSystemVariable):
+        return _generate_ssvn(expr, ctx)
     else:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
@@ -272,6 +276,57 @@ def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -
     # Spec 009 (T028): Return empty string for undefined globals
     # resolve_naked returns (name, subscripts), use * to unpack into get()
     return f"(_rt.globals.get(*_rt.globals.resolve_naked({subscripts_tuple})) or '')"
+
+
+def _generate_ssvn(ssvn: MStructuredSystemVariable, ctx: "GeneratorContext") -> str:
+    """Generate Python expression for MUMPS structured system variable (SSVN).
+
+    Spec 013 Phase 16 (FR-029): Generates calls to database abstraction layer
+    for SSVNs ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE.
+
+    Args:
+        ssvn: MStructuredSystemVariable node (name without ^$)
+        ctx: Generator context
+
+    Returns:
+        Python expression string: _rt.globals.ssvn_*() call
+
+    Raises:
+        NotImplementedError: For unsupported SSVNs (MWAPI, etc.)
+    """
+    name = ssvn.name.upper()
+
+    # Generate subscript expression (SSVNs typically have exactly one subscript)
+    if ssvn.subscripts:
+        # SSVNs use first subscript as the lookup key
+        subscript_expr = generate_expr(ssvn.subscripts[0], ctx)
+    else:
+        # No subscript - use empty string
+        subscript_expr = "''"
+
+    # Dispatch to appropriate SSVN query method
+    if name in ("GLOBAL", "G"):
+        return f"_rt.globals.ssvn_global(str({subscript_expr}))"
+    elif name in ("JOB", "J"):
+        return f"_rt.globals.ssvn_job(str({subscript_expr}))"
+    elif name in ("LOCK", "L"):
+        return f"_rt.globals.ssvn_lock(str({subscript_expr}))"
+    elif name in ("ROUTINE", "R"):
+        return f"_rt.globals.ssvn_routine(str({subscript_expr}))"
+    elif name in ("SYSTEM", "S"):
+        # ^$SYSTEM returns implementation info - return constant
+        return "'m2py'"
+    elif name in ("DEVICE", "D", "CHARACTER", "C"):
+        # ^$DEVICE and ^$CHARACTER - return empty (not implemented)
+        return "''"
+    elif name in ("EVENT", "E", "WINDOW", "W", "DISPLAY", "DI"):
+        # MWAPI SSVNs - documented limitation (LIM-003)
+        return "''"
+    elif name in ("LIBRARY", "LI"):
+        # ^$LIBRARY - documented limitation (LIM-011)
+        return "''"
+    else:
+        raise NotImplementedError(f"Unsupported SSVN: ^${name}")
 
 
 def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -> str:

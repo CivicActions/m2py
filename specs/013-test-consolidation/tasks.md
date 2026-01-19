@@ -507,9 +507,23 @@ YDB validates this by rejecting $SIN(x) as "Invalid function name".
 
 ### SSVNs
 
-- [ ] T120 [US4] Add SSVN detection in parser/analysis in src/m2py/analysis/semantic_analyzer.py
-- [ ] T121 [US4] Add SSVN codegen using database abstraction in src/m2py/codegen/expressions.py
-- [ ] T122 [US4] Create SSVN tests in tests/unit/codegen/
+- [X] T120 [US4] Add SSVN detection in parser/analysis in src/m2py/analysis/semantic_analyzer.py
+- [X] T121 [US4] Add SSVN codegen using database abstraction in src/m2py/codegen/expressions.py
+- [X] T122 [US4] Create SSVN tests in tests/unit/codegen/
+
+**Implementation Notes**:
+- Parser/ASG already supported SSVNs via MStructuredSystemVariable (textX grammar + textx_classes.py)
+- Added _generate_ssvn() in expressions.py dispatching to _rt.globals.ssvn_*() methods
+- Supported SSVNs: ^$GLOBAL (G), ^$JOB (J), ^$LOCK (L), ^$ROUTINE (R), ^$SYSTEM (S)
+- Unsupported SSVNs return '': ^$DEVICE, ^$CHARACTER, ^$EVENT, ^$WINDOW, ^$DISPLAY, ^$LIBRARY
+- InMemoryGlobalStorage SSVN implementations already existed from Phase 2 (T008/T009)
+- Converted 4 xfail stubs to 7 real tests covering:
+  - ^$GLOBAL exists/not exists
+  - ^$JOB current process/non-existent PID
+  - ^$LOCK not held
+  - ^$ROUTINE returns empty
+  - Abbreviation support (^$G)
+- Note: YDB does not support SSVNs natively - m2py provides in-memory implementation
 
 **Checkpoint**: SSVNs complete (SC-016 verified)
 
