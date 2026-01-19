@@ -55,7 +55,7 @@ from m2py.asg.statements import (
     MViewStatement,
     MWriteStatement,
     MXecuteStatement,
-    # Z-commands (Phase 19)
+    # Z-commands (Phase 19) - Implemented
     MZGotoStatement,
     MZHaltStatement,
     MZKillStatement,
@@ -63,6 +63,19 @@ from m2py.asg.statements import (
     MZShowStatement,
     MZWithdrawStatement,
     MZWriteStatement,
+    # Z-commands - Unimplemented (LIM-015)
+    MZAllocateStatement,
+    MZBreakStatement,
+    MZCompileStatement,
+    MZContinueStatement,
+    MZDeallocateStatement,
+    MZEditStatement,
+    MZHelpStatement,
+    MZMessageStatement,
+    MZPrintStatement,
+    MZStepStatement,
+    MZSystemStatement,
+    MZTriggerStatement,
 )
 from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.expressions import generate_expr
@@ -630,6 +643,31 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_zgoto(stmt, ctx)
     elif isinstance(stmt, MZHaltStatement):
         _generate_zhalt(stmt, ctx)
+    # Z-commands - Unimplemented (LIM-015)
+    elif isinstance(stmt, MZAllocateStatement):
+        raise NotImplementedError("LIM-015: ZALLOCATE command not supported")
+    elif isinstance(stmt, MZDeallocateStatement):
+        raise NotImplementedError("LIM-015: ZDEALLOCATE command not supported")
+    elif isinstance(stmt, MZBreakStatement):
+        raise NotImplementedError("LIM-015: ZBREAK command not supported")
+    elif isinstance(stmt, MZCompileStatement):
+        raise NotImplementedError("LIM-015: ZCOMPILE command not supported")
+    elif isinstance(stmt, MZContinueStatement):
+        raise NotImplementedError("LIM-015: ZCONTINUE command not supported")
+    elif isinstance(stmt, MZEditStatement):
+        raise NotImplementedError("LIM-015: ZEDIT command not supported")
+    elif isinstance(stmt, MZHelpStatement):
+        raise NotImplementedError("LIM-015: ZHELP command not supported")
+    elif isinstance(stmt, MZMessageStatement):
+        raise NotImplementedError("LIM-015: ZMESSAGE command not supported")
+    elif isinstance(stmt, MZPrintStatement):
+        raise NotImplementedError("LIM-015: ZPRINT command not supported")
+    elif isinstance(stmt, MZStepStatement):
+        raise NotImplementedError("LIM-015: ZSTEP command not supported")
+    elif isinstance(stmt, MZSystemStatement):
+        raise NotImplementedError("LIM-015: ZSYSTEM command not supported")
+    elif isinstance(stmt, MZTriggerStatement):
+        raise NotImplementedError("LIM-015: ZTRIGGER command not supported")
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -3037,14 +3075,20 @@ def _generate_trollback(stmt: MTRollbackStatement, ctx: "GeneratorContext") -> N
     - Sets $TLEVEL = 0 and $TRESTART = 0
     - Optional level argument specifies transaction level to roll back to
 
-    Note: The level argument is not yet implemented.
+    LIM-016: TROLLBACK:n (with level argument) has zero VistA usage and raises
+    NotImplementedError.
 
     Args:
         stmt: MTRollbackStatement node
         ctx: Generator context
     """
+    # LIM-016: TROLLBACK:n has zero VistA usage
+    if stmt.level is not None:
+        raise NotImplementedError(
+            "LIM-016: TROLLBACK:n (rollback to specific level) not supported"
+        )
+
     # Basic implementation - roll back entire transaction
-    # Note: stmt.level is ignored for now
     ctx.emitter.line("_rt.globals.transaction_rollback()")
 
 

@@ -156,8 +156,8 @@ Event processing commands (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIG
 listed above are also part of the MWAPI event model.
 
 **M2PY Behavior**: Parser accepts `^$EVENT`, `^$WINDOW`, `^$DISPLAY` syntax (valid SSVN grammar).
-ASG produces `MStructuredSystemVariable`. Codegen behavior is undefined as MWAPI
-runtime support is not available in YottaDB.
+ASG produces `MStructuredSystemVariable`. Codegen raises
+`NotImplementedError("LIM-003: MWAPI SSVNs not supported")`.
 
 ## LIM-004: Deprecated Functions
 
@@ -251,7 +251,8 @@ The `^$LIBRARY` SSVN provides access to routine library information. This
 has **zero usage** in the VA VistA codebase.
 
 **M2PY Behavior**: Parser accepts `^$LIBRARY` syntax (valid SSVN grammar). ASG produces
-`MStructuredSystemVariable`. Codegen behavior is undefined.
+`MStructuredSystemVariable`. Codegen raises
+`NotImplementedError("LIM-011: ^$LIBRARY SSVN not supported")`.
 
 ## LIM-014: ANSI Standard Library Functions (Annex I)
 
@@ -280,13 +281,18 @@ Library Functions (`^XLFMTH`, `^XLFHYPER`, `^XLFCRC`, etc.).
 **Total**: ~59 unimplemented functions
 
 **Note**: Core math functions (EXP, LOG, SQRT, SIN, COS, TAN, ARCSIN, ARCCOS, ARCTAN)
-are implemented via the bundled `%MATH` routine in `m2py.runtime.routines.MATH`.
+and their aliases (LN, ASIN, ACOS, ATAN) are implemented via the bundled `%MATH`
+routine in `m2py.runtime.routines.MATH`.
 
 **M2PY Behavior**: Parser accepts extrinsic function syntax `$$%FUNC^ROUTINE(args)` (valid grammar).
-ASG produces `MExtrinsicFunction`. Code generation imports the target routine module
-and calls the function. For unimplemented routines, the generated code will fail at
-import time. VistA codebases will work correctly as they use Kernel Library Functions
-(`^XLFMTH`, etc.) instead of ANSI standard library routines.
+ASG produces `MExtrinsicFunction`. Code generation behavior:
+
+- **STRING, CHARACTER libraries**: Raises `NotImplementedError("LIM-014: ...")`
+- **MATH library - unimplemented functions**: Raises `NotImplementedError("LIM-014: ...")`
+- **MATH library - implemented functions**: Generates working code using bundled MATH.py
+
+VistA codebases work correctly as they use Kernel Library Functions (`^XLFMTH`, etc.)
+instead of ANSI standard library routines.
 
 ## LIM-015: Zero-VistA-Usage YDB Z-Commands
 
@@ -317,8 +323,7 @@ These commands are recognized to support complete YDB compatibility but are
 not a priority for implementation due to zero real-world usage.
 
 **M2PY Behavior**: Parser accepts these commands (valid YDB grammar). ASG produces appropriate nodes.
-Codegen generates stubs or raises NotImplementedError. Tests marked xfail with
-reason referencing LIM-015.
+Codegen raises `NotImplementedError("LIM-015: {command} command not supported")`.
 
 ## LIM-016: Zero-VistA-Usage Deferred Features
 
@@ -334,8 +339,8 @@ indefinitely due to lack of real-world demand:
 | $TRESTART | Transaction restart count special variable | 0 files | Syntax parsed |
 | Module caching | Python module import caching optimization | N/A | Performance only |
 
-**M2PY Behavior**: Parser accepts syntax. ASG produces appropriate nodes. Codegen generates stubs.
-Tests marked xfail with reason referencing LIM-016.
+**M2PY Behavior**: Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
+`NotImplementedError("LIM-016: {feature} not supported")`.
 
 ---
 

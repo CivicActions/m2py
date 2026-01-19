@@ -90,37 +90,28 @@ class TestMwapiSsvnsCodegen:
     Limitation: docs/limitations.md - LIM-003: MWAPI SSVNs
     """
 
-    @pytest.mark.xfail(
-        reason="LIM-003: MWAPI SSVN codegen not yet raising NotImplementedError"
-    )
     def test_lim003_ssvn_event_raises_error(self, generate_python):
         """^$EVENT should raise NotImplementedError (LIM-003).
 
         MWAPI SSVNs are not supported. Codegen must fail explicitly.
         """
-        with pytest.raises(NotImplementedError, match="MWAPI|EVENT"):
+        with pytest.raises(NotImplementedError, match="LIM-003"):
             generate_python('TEST W ^$EVENT("test") Q')
 
-    @pytest.mark.xfail(
-        reason="LIM-003: MWAPI SSVN codegen not yet raising NotImplementedError"
-    )
     def test_lim003_ssvn_window_raises_error(self, generate_python):
         """^$WINDOW should raise NotImplementedError (LIM-003).
 
         MWAPI SSVNs are not supported. Codegen must fail explicitly.
         """
-        with pytest.raises(NotImplementedError, match="MWAPI|WINDOW"):
+        with pytest.raises(NotImplementedError, match="LIM-003"):
             generate_python('TEST W ^$WINDOW("test") Q')
 
-    @pytest.mark.xfail(
-        reason="LIM-003: MWAPI SSVN codegen not yet raising NotImplementedError"
-    )
     def test_lim003_ssvn_display_raises_error(self, generate_python):
         """^$DISPLAY should raise NotImplementedError (LIM-003).
 
         MWAPI SSVNs are not supported. Codegen must fail explicitly.
         """
-        with pytest.raises(NotImplementedError, match="MWAPI|DISPLAY"):
+        with pytest.raises(NotImplementedError, match="LIM-003"):
             generate_python('TEST W ^$DISPLAY("test") Q')
 
 
@@ -135,13 +126,10 @@ class TestLibrarySsvnCodegen:
     Limitation: docs/limitations.md - LIM-011: ^$LIBRARY SSVN
     """
 
-    @pytest.mark.xfail(
-        reason="LIM-011: ^$LIBRARY codegen not yet raising NotImplementedError"
-    )
     def test_lim011_ssvn_library_raises_error(self, generate_python):
         """^$LIBRARY should raise NotImplementedError (LIM-011).
 
         ^$LIBRARY has zero VistA usage. Codegen must fail explicitly.
         """
-        with pytest.raises(NotImplementedError, match="LIBRARY"):
+        with pytest.raises(NotImplementedError, match="LIM-011"):
             generate_python('TEST W ^$LIBRARY("RTN") Q')

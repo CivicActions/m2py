@@ -2,9 +2,11 @@
 
 Reference: YottaDB implementation-defined $Z... functions
 These are implementation-defined per FR-017.
+Spec 014: Verify LIM-015 errors for unimplemented Z-functions.
 """
 
 import pytest
+from m2py.codegen import generate_python
 
 
 @pytest.mark.codegen
@@ -13,23 +15,23 @@ class TestZfunctionsCodegen:
     """Codegen-level tests for Z-functions (YDB implementation-defined).
 
     All Z-functions are implementation-defined per FR-017.
-    Parser and ASG tests pass - codegen is not yet implemented.
+    These tests verify that NotImplementedError is raised with LIM-015.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: Z-function codegen")
-    def test_zdate_codegen(self, generate_python):
-        """$ZDATE generates runtime call."""
-        pytest.fail("Stub - implement test")
+    def test_zdate_raises_not_implemented(self):
+        """$ZDATE raises NotImplementedError with LIM-015."""
+        code = "TEST\n S X=$ZDATE(12345)\n Q"
+        with pytest.raises(NotImplementedError, match="LIM-015"):
+            generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: Z-function codegen")
-    def test_zmessage_codegen(self, generate_python):
-        """$ZMESSAGE generates runtime call."""
-        pytest.fail("Stub - implement test")
+    def test_zmessage_function_raises_not_implemented(self):
+        """$ZMESSAGE raises NotImplementedError with LIM-015."""
+        code = "TEST\n S X=$ZMESSAGE(150373210)\n Q"
+        with pytest.raises(NotImplementedError, match="LIM-015"):
+            generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: Z-function codegen")
-    def test_zwidth_codegen(self, generate_python):
-        """$ZWIDTH generates runtime call."""
-        pytest.fail("Stub - implement test")
+    def test_zwidth_raises_not_implemented(self):
+        """$ZWIDTH raises NotImplementedError with LIM-015."""
+        code = 'TEST\n S X=$ZWIDTH("ABC")\n Q'
+        with pytest.raises(NotImplementedError, match="LIM-015"):
+            generate_python(code)

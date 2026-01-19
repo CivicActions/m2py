@@ -39,9 +39,29 @@ if TYPE_CHECKING:
 # =============================================================================
 
 # ANSI Standard Library routines (LIM-014)
-# These are defined in ANSI M X11.1-1995 Annex I but have zero VistA usage.
-# Codegen raises NotImplementedError for these routines.
-ANSI_LIBRARY_ROUTINES: frozenset[str] = frozenset({"MATH", "STRING", "CHARACTER"})
+# STRING and CHARACTER libraries have zero VistA usage - all functions blocked.
+# MATH library has basic functions implemented (Spec 013), others blocked.
+ANSI_LIBRARY_ROUTINES_BLOCKED: frozenset[str] = frozenset({"STRING", "CHARACTER"})
+
+# Implemented MATH library functions (Spec 013 Phase 13)
+# These are the functions defined in m2py/runtime/routines/MATH.py
+MATH_FUNCTIONS_IMPLEMENTED: frozenset[str] = frozenset(
+    {
+        "%EXP",
+        "%LOG",
+        "%LN",
+        "%SQRT",
+        "%SIN",
+        "%COS",
+        "%TAN",
+        "%ARCSIN",
+        "%ASIN",
+        "%ARCCOS",
+        "%ACOS",
+        "%ARCTAN",
+        "%ATAN",
+    }
+)
 
 # YDB Z-functions with zero VistA usage (LIM-015)
 # These are implementation-defined per FR-017 and parsed but not implemented.
@@ -87,6 +107,10 @@ def generate_intrinsic_function(
     # Check dispatch table first
     if func_name in INTRINSIC_GENERATORS:
         return INTRINSIC_GENERATORS[func_name](expr, ctx)
+
+    # LIM-015: Unimplemented Z-functions
+    if func_name in Z_FUNCTIONS_UNIMPLEMENTED:
+        raise NotImplementedError(f"LIM-015: ${expr.name} function not supported")
 
     raise NotImplementedError(f"Intrinsic function ${expr.name} not yet implemented")
 
@@ -336,10 +360,12 @@ def _generate_ssvn(ssvn: MStructuredSystemVariable, ctx: "GeneratorContext") -> 
         return "''"
     elif name in ("EVENT", "E", "WINDOW", "W", "DISPLAY", "DI"):
         # MWAPI SSVNs - documented limitation (LIM-003)
-        return "''"
+        raise NotImplementedError(
+            "LIM-003: MWAPI SSVNs (^$EVENT, ^$WINDOW, ^$DISPLAY) not supported"
+        )
     elif name in ("LIBRARY", "LI"):
         # ^$LIBRARY - documented limitation (LIM-011)
-        return "''"
+        raise NotImplementedError("LIM-011: ^$LIBRARY SSVN not supported")
     else:
         raise NotImplementedError(f"Unsupported SSVN: ^${name}")
 
@@ -650,6 +676,27 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     # Spec 008 Phase 7 (T043-T046): Handle external routine extrinsic
     if expr.target.routine:
         routine_name = expr.target.routine
+
+        # LIM-014: ANSI library routines with zero VistA usage
+        # STRING and CHARACTER libraries are completely blocked.
+        # MATH library: only unimplemented functions are blocked (implemented ones pass through).
+        if label_name.startswith("%"):
+            upper_routine = routine_name.upper()
+            if upper_routine in ANSI_LIBRARY_ROUTINES_BLOCKED:
+                # STRING and CHARACTER: completely blocked
+                raise NotImplementedError(
+                    f"LIM-014: ANSI library routine ^{routine_name} not supported "
+                    f"(use VistA Kernel Library Functions instead)"
+                )
+            elif (
+                upper_routine == "MATH"
+                and label_name.upper() not in MATH_FUNCTIONS_IMPLEMENTED
+            ):
+                # MATH: only unimplemented functions blocked
+                raise NotImplementedError(
+                    f"LIM-014: ANSI library function {label_name}^MATH not implemented "
+                    f"(only basic trig/exp/log functions supported)"
+                )
 
         # Spec 013 Phase 13: Check for bundled routines first (e.g., MATH for $$%SIN^MATH)
         # Bundled routines are in m2py.runtime.routines package

@@ -303,10 +303,11 @@ StructuredSystemVariable:
 
 // Structured System Variable names (case-insensitive with abbreviations)
 // Per MUMPS 1995 spec §7.1.3: C[HARACTER], D[EVICE], E[VENT], G[LOBAL], J[OB], LI[BRARY], L[OCK], R[OUTINE], S[YSTEM]
+// MWAPI SSVNs (§7.1.3): DI[SPLAY], W[INDOW] - these require MWAPI support (not implemented)
 // §7.1.3.10: ^$Z and ^$Y are reserved for implementation-defined extensions (e.g., YottaDB ^$ZJOB)
-// Longer names must come first to prevent partial matching (e.g., LIBRARY before LOCK)
+// Longer names must come first to prevent partial matching (e.g., LIBRARY before LOCK, WINDOW before W)
 SSVNAME:
-    /[Cc][Hh][Aa][Rr][Aa][Cc][Tt][Ee][Rr]|[Ll][Ii][Bb][Rr][Aa][Rr][Yy]|[Rr][Oo][Uu][Tt][Ii][Nn][Ee]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Gg][Ll][Oo][Bb][Aa][Ll]|[Ee][Vv][Ee][Nn][Tt]|[Ll][Oo][Cc][Kk]|[Jj][Oo][Bb]|[Zz][A-Za-z]*|[Yy][A-Za-z]*|[CcDdEeGgJjLlRrSs][Ii]?/
+    /[Cc][Hh][Aa][Rr][Aa][Cc][Tt][Ee][Rr]|[Ll][Ii][Bb][Rr][Aa][Rr][Yy]|[Rr][Oo][Uu][Tt][Ii][Nn][Ee]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ii][Ss][Pp][Ll][Aa][Yy]|[Ww][Ii][Nn][Dd][Oo][Ww]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Gg][Ll][Oo][Bb][Aa][Ll]|[Ee][Vv][Ee][Nn][Tt]|[Ll][Oo][Cc][Kk]|[Jj][Oo][Bb]|[Zz][A-Za-z]*|[Yy][A-Za-z]*|[Ww]|[CcDdEeGgJjLlRrSs][Ii]?/
 ;
 
 
