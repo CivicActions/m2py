@@ -149,10 +149,14 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task B3: Transaction Commands (4 tests)
 
-- [ ] T051 [US1] Implement TSTART basic in src/m2py/codegen/statements.py
-- [ ] T052 [P] [US1] Implement TCOMMIT basic in src/m2py/codegen/statements.py
-- [ ] T053 [P] [US1] Implement TROLLBACK basic (no level arg) in src/m2py/codegen/statements.py
-- [ ] T054 [US1] Convert 4 transaction tests from xfail in tests/unit/codegen/s6_routine/test_s6_3_1_transaction.py
+- [x] T051 [US1] Implement TSTART basic in src/m2py/codegen/statements.py
+      **Note**: Already implemented, generates `_rt.globals.transaction_start()`
+- [x] T052 [P] [US1] Implement TCOMMIT basic in src/m2py/codegen/statements.py
+      **Note**: Already implemented, generates `_rt.globals.transaction_commit()`
+- [x] T053 [P] [US1] Implement TROLLBACK basic (no level arg) in src/m2py/codegen/statements.py
+      **Note**: Already implemented, generates `_rt.globals.transaction_rollback()`
+- [x] T054 [US1] Convert 4 transaction tests from xfail in tests/unit/codegen/s6_routine/test_s6_3_1_transaction.py
+      **Note**: Converted 3 stubs from s8_commands/ (TSTART, TCOMMIT tests were stubs in s8_commands/, not s6_routine)
 
 #### Task B4: Error Processing (1 test)
 
