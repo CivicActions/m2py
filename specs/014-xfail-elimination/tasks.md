@@ -169,9 +169,12 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task C1: MERGE Globals (2 tests)
 
-- [ ] T057 [US1] Implement MERGE local→global (M ^GLO=LOCAL) in src/m2py/codegen/statements.py
-- [ ] T058 [US1] Implement MERGE global→global (M ^GLO1=^GLO2) in src/m2py/codegen/statements.py
-- [ ] T059 [US1] Convert 2 MERGE global tests from xfail in tests/unit/codegen/s8_commands/
+- [x] T057 [US1] Implement MERGE local→global (M ^GLO=LOCAL) in src/m2py/codegen/statements.py
+      **Note**: Added merge_tree() method to InMemoryGlobalStorage in globals.py. Modified _generate_merge() in statements.py to call merge_tree() for global destinations.
+- [x] T058 [US1] Implement MERGE global→global (M ^GLO1=^GLO2) in src/m2py/codegen/statements.py
+      **Note**: Same implementation handles global→global (source tree is extracted with get_tree(), then merged with merge_tree()).
+- [x] T059 [US1] Convert 2 MERGE global tests from xfail in tests/unit/codegen/s8_commands/
+      **Note**: Converted 2 stubs to execute_mumps tests. Added 4 additional edge case tests. xfail count: 52→50
 
 #### Task C2: Naked Reference Edge Cases (5 tests)
 

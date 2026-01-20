@@ -2837,11 +2837,25 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
         # Generate destination merge code
         if isinstance(dest, GlobalVariable):
             # Destination is global: ^G or ^G(subs)
-            # For global destination, we need to iterate and set values
-            # This is more complex - for now, raise NotImplementedError
-            raise NotImplementedError(
-                "MERGE to global destination not yet supported (M ^G=...)"
+            # Spec 014 Task C1: MERGE local→global and global→global
+            dest_name = dest.name
+
+            if dest.subscripts:
+                subs_code = []
+                for sub in dest.subscripts:
+                    subs_code.append(f"str({generate_expr(sub, ctx)})")
+                dest_subs = f"({', '.join(subs_code)},)"
+            else:
+                dest_subs = "()"
+
+            # Get source tree and merge into global
+            ctx.emitter.line(f"_merge_src = {src_tree_expr}")
+            ctx.emitter.line("if _merge_src is not None:")
+            ctx.emitter.indent()
+            ctx.emitter.line(
+                f'_rt.globals.merge_tree("{dest_name}", {dest_subs}, _merge_src)'
             )
+            ctx.emitter.dedent()
 
         elif isinstance(dest, NakedGlobal):
             raise NotImplementedError(

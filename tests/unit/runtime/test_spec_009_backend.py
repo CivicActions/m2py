@@ -366,6 +366,84 @@ class TestInMemoryGlobalStorageGetTree:
 
 
 @pytest.mark.runtime
+class TestInMemoryGlobalStorageMergeTree:
+    """Tests for merge_tree() method used by MERGE to global destination."""
+
+    def test_merge_tree_simple(self):
+        """merge_tree() copies MArray values to global."""
+        from m2py.runtime import InMemoryGlobalStorage, MArray
+
+        backend = InMemoryGlobalStorage()
+        source = MArray()
+        source[1] = "value1"
+        source[2] = "value2"
+
+        backend.merge_tree("G", (), source)
+
+        assert backend.get("G", ("1",)) == "value1"
+        assert backend.get("G", ("2",)) == "value2"
+
+    def test_merge_tree_with_subscripts(self):
+        """merge_tree() can merge to a subscripted path."""
+        from m2py.runtime import InMemoryGlobalStorage, MArray
+
+        backend = InMemoryGlobalStorage()
+        source = MArray()
+        source[1] = "v1"
+        source[2] = "v2"
+
+        backend.merge_tree("G", ("A",), source)
+
+        assert backend.get("G", ("A", "1")) == "v1"
+        assert backend.get("G", ("A", "2")) == "v2"
+
+    def test_merge_tree_nested(self):
+        """merge_tree() copies nested structures."""
+        from m2py.runtime import InMemoryGlobalStorage, MArray
+
+        backend = InMemoryGlobalStorage()
+        source = MArray()
+        source._value = "root"
+        source[1] = "child"
+        source[1, 2] = "grandchild"
+
+        backend.merge_tree("G", (), source)
+
+        assert backend.get("G", ()) == "root"
+        assert backend.get("G", ("1",)) == "child"
+        assert backend.get("G", ("1", "2")) == "grandchild"
+
+    def test_merge_tree_preserves_existing(self):
+        """merge_tree() does not delete existing nodes."""
+        from m2py.runtime import InMemoryGlobalStorage, MArray
+
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("5",), "existing")
+
+        source = MArray()
+        source[1] = "new"
+
+        backend.merge_tree("G", (), source)
+
+        assert backend.get("G", ("1",)) == "new"
+        assert backend.get("G", ("5",)) == "existing"
+
+    def test_merge_tree_updates_naked_indicator(self):
+        """merge_tree() updates the naked indicator."""
+        from m2py.runtime import InMemoryGlobalStorage, MArray
+
+        backend = InMemoryGlobalStorage()
+        source = MArray()
+        source[1] = "value"
+
+        backend.merge_tree("G", ("A",), source)
+
+        indicator = backend.get_naked_indicator()
+        assert indicator is not None
+        assert indicator[0] == "G"
+
+
+@pytest.mark.runtime
 class TestLockOperations:
     """Test LOCK operations (Spec 013 FR-019)."""
 

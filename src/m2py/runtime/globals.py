@@ -759,6 +759,47 @@ class InMemoryGlobalStorage:
         # Deep copy the subtree
         return self._deep_copy_tree(node)
 
+    def merge_tree(
+        self, name: str, subscripts: tuple[str, ...], source: "MArray"
+    ) -> None:
+        """Merge MArray tree into global at ^NAME(subscripts).
+
+        Spec 014 Task C1: MERGE local→global and global→global operations.
+
+        Copies all nodes with values from source tree into global destination.
+        Does not delete existing nodes - only adds/overwrites values.
+
+        Args:
+            name: Global name without caret
+            subscripts: Path to the destination root (empty for root)
+            source: MArray containing the source tree to merge
+        """
+        subscripts = self._canonicalize_subscripts(subscripts)
+        self._update_naked_indicator(name, subscripts)
+
+        # Recursively merge source tree into global
+        self._merge_tree_recursive(name, subscripts, source)
+
+    def _merge_tree_recursive(
+        self, name: str, subscripts: tuple[str, ...], node: "MArray"
+    ) -> None:
+        """Recursively merge MArray node into global storage.
+
+        Args:
+            name: Global name without caret
+            subscripts: Current subscript path
+            node: MArray node to merge
+        """
+        # If this node has a value, set it in the global
+        if node._value is not None:
+            self.set(name, subscripts, node._value)
+
+        # Recursively merge children
+        for key, child in node._children.items():
+            # Convert key to string for global subscript
+            child_sub = str(key)
+            self._merge_tree_recursive(name, subscripts + (child_sub,), child)
+
     # =========================================================================
     # Lock Operations Implementation (Spec 013)
     # =========================================================================
