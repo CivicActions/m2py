@@ -83,19 +83,21 @@ def test_lim_xxx_feature(self, generate_python):
 ## Implementation Checklist
 
 ### SSVN Handler (expressions.py)
-- [ ] LIM-003: ^$EVENT → NotImplementedError
-- [ ] LIM-003: ^$WINDOW → NotImplementedError
-- [ ] LIM-003: ^$DISPLAY → NotImplementedError
-- [ ] LIM-011: ^$LIBRARY → NotImplementedError
+- [x] LIM-003: ^$EVENT → NotImplementedError
+- [x] LIM-003: ^$WINDOW → NotImplementedError
+- [x] LIM-003: ^$DISPLAY → NotImplementedError
+- [x] LIM-011: ^$LIBRARY → NotImplementedError
 
 ### Extrinsic Handler (expressions.py)
-- [ ] LIM-014: $$%*^MATH → NotImplementedError
-- [ ] LIM-014: $$%*^STRING → NotImplementedError
-- [ ] LIM-014: $$%*^CHARACTER → NotImplementedError
+- [x] LIM-014: $$%*^MATH → NotImplementedError
+- [x] LIM-014: $$%*^STRING → NotImplementedError
+- [x] LIM-014: $$%*^CHARACTER → NotImplementedError
 
 ### Statement Handler (statements.py)
-- [ ] LIM-015: Z-commands → NotImplementedError
-- [ ] LIM-016: TROLLBACK:n → NotImplementedError
+- [x] LIM-015: Z-commands → NotImplementedError
+- [x] LIM-016: TROLLBACK:n → NotImplementedError
+- [x] LIM-016: KSUBSCRIPTS → NotImplementedError
+- [x] LIM-016: KVALUE → NotImplementedError
 
 ---
 

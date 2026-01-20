@@ -7,6 +7,7 @@ variable, leaving subscripted descendants intact. This command is NOT
 supported by YDB ("Invalid command keyword").
 
 m2py targets YDB compatibility, so this command raises NotImplementedError.
+See LIM-016 in docs/limitations.md.
 """
 
 import pytest
@@ -17,13 +18,13 @@ class TestKvalueCodegen:
     """Codegen-level tests for kvalue code generation."""
 
     def test_kvalue_codegen(self, generate_python):
-        """KVALUE command raises NotImplementedError.
+        """KVALUE command raises NotImplementedError (LIM-016).
 
         KVALUE (KV) is an ANSI MUMPS command not supported by YDB.
         m2py raises NotImplementedError when encountering this command.
         """
         source = "TEST KV A Q"
         with pytest.raises(
-            NotImplementedError, match="Unsupported statement type: MKValueStatement"
+            NotImplementedError, match="LIM-016: KVALUE command not supported"
         ):
             generate_python(source)

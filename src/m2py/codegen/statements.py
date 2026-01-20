@@ -40,6 +40,8 @@ from m2py.asg.statements import (
     MIfStatement,
     MJobStatement,
     MKillStatement,
+    MKSubscriptsStatement,
+    MKValueStatement,
     MLockStatement,
     MMergeStatement,
     MNewStatement,
@@ -734,6 +736,15 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         raise NotImplementedError("LIM-015: ZSYSTEM command not supported")
     elif isinstance(stmt, MZTriggerStatement):
         raise NotImplementedError("LIM-015: ZTRIGGER command not supported")
+    # ANSI commands not supported by YDB (LIM-016)
+    elif isinstance(stmt, MKSubscriptsStatement):
+        raise NotImplementedError(
+            "LIM-016: KSUBSCRIPTS command not supported (not implemented in YDB)"
+        )
+    elif isinstance(stmt, MKValueStatement):
+        raise NotImplementedError(
+            "LIM-016: KVALUE command not supported (not implemented in YDB)"
+        )
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 

@@ -375,7 +375,7 @@ Codegen raises `NotImplementedError("LIM-015: {command} command not supported")`
         category="Zero-VistA-Usage Deferred Features",
         type=LimitationType.PARSES_OK,
         short_description="Features with confirmed zero VistA usage",
-        sections=(),
+        sections=("s8_ksubscripts", "s8_kvalue"),
         details="""\
 The following features are syntactically supported but have **confirmed zero usage**
 in the VA VistA codebase (33,951 routine files analyzed). Implementation is deferred
@@ -383,9 +383,14 @@ indefinitely due to lack of real-world demand:
 
 | Feature | Description | VistA Usage | Status |
 |---------|-------------|-------------|--------|
+| KSUBSCRIPTS | Kill subscripted descendants only (ANSI) | 0 files | Not in YDB |
+| KVALUE | Kill root value only (ANSI) | 0 files | Not in YDB |
 | TROLLBACK:n | Rollback to specific transaction level | 0 files | Syntax parsed |
 | $TRESTART | Transaction restart count special variable | 0 files | Syntax parsed |
-| Module caching | Python module import caching optimization | N/A | Performance only |""",
+| Module caching | Python module import caching optimization | N/A | Performance only |
+
+**Note**: KSUBSCRIPTS and KVALUE are ANSI MUMPS commands (§8.2) that YottaDB does not
+implement. Since m2py targets YDB compatibility, these commands raise NotImplementedError.""",
         behavior="""\
 Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
 `NotImplementedError("LIM-016: {feature} not supported")`.""",
