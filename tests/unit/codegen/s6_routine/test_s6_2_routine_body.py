@@ -37,8 +37,14 @@ class TestRoutineBodyCodegen:
         assert result.output == "B"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: comment preservation")
     def test_comment_preservation(self, generate_python):
-        """Comments are preserved in output (§6.2)."""
-        pytest.fail("Stub - implement test")
+        """Comments are preserved in output (§6.2).
+
+        Spec 014 (T067): MUMPS inline comments (;...) are preserved
+        as Python comments in the generated code.
+        """
+        code = generate_python("TEST\n S X=1 ; Initialize X\n W X ; Output\n Q\n")
+
+        # Comments should appear as Python comments before their statements
+        assert "# Initialize X" in code
+        assert "# Output" in code

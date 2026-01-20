@@ -196,9 +196,13 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task D1: Routine Metadata (3 tests)
 
-- [ ] T065 [US1] Implement routine docstring from MUMPS header in src/m2py/codegen/
+- [x] T065 [US1] Implement routine docstring from MUMPS header in src/m2py/codegen/
+      **Note**: Added `_generate_label_docstring()` to routine.py. Generates Python docstring
+      with MUMPS label name, line number, and inline comment (if present) for each function.
 - [x] T066 [P] [US1] Empty label translation (_preamble) already implemented - converted test in tests/unit/codegen/s6_routine/test_s6_1_routine_head.py
-- [ ] T067 [US1] Convert 2 remaining routine metadata tests from xfail (docstring, etc.)
+- [x] T067 [US1] Convert 2 remaining routine metadata tests from xfail (docstring, etc.)
+      **Note**: Added `_emit_source_comment()` to statements.py for comment preservation.
+      Converted test_routine_docstring and test_comment_preservation. xfail: 45→43
 
 #### Task D2: Extrinsic Advanced (3 tests)
 

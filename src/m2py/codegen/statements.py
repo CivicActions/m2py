@@ -129,6 +129,65 @@ Z_COMMANDS_UNIMPLEMENTED: frozenset[str] = frozenset(
 
 
 # =============================================================================
+# Spec 014: Comment Preservation
+# =============================================================================
+
+
+def _emit_source_comment(stmt: "MStatement", ctx: "GeneratorContext") -> None:
+    """Emit MUMPS inline comment as Python comment if present.
+
+    Spec 014 (T067): Preserves MUMPS comments in generated Python code.
+    Looks up the source line for the statement and extracts any inline
+    comment (text after `;`).
+
+    Args:
+        stmt: ASG statement node with line_number
+        ctx: Generator context with routine.source_lines
+    """
+    # Skip if no line number or no source lines
+    if stmt.line_number is None:
+        return
+    source_lines = ctx.routine.source_lines
+    if not source_lines:
+        return
+
+    # Get the source line (1-indexed)
+    line_idx = stmt.line_number - 1
+    if line_idx < 0 or line_idx >= len(source_lines):
+        return
+
+    source_line = source_lines[line_idx]
+
+    # Extract comment if present (everything after unquoted semicolon)
+    comment = _extract_comment(source_line)
+    if comment:
+        ctx.emitter.line(f"# {comment}")
+
+
+def _extract_comment(source_line: str) -> str:
+    """Extract comment text from a MUMPS source line.
+
+    Finds the first semicolon not inside a string literal and returns
+    the text after it (stripped of leading/trailing whitespace).
+
+    Args:
+        source_line: Original MUMPS source line
+
+    Returns:
+        Comment text without the leading semicolon, or empty string if no comment
+    """
+    in_string = False
+    for i, char in enumerate(source_line):
+        if char == '"':
+            in_string = not in_string
+        elif char == ";" and not in_string:
+            # Found unquoted semicolon - rest is comment
+            comment_text = source_line[i + 1 :].strip()
+            return comment_text
+    return ""
+
+
+# =============================================================================
 # Spec 005: Code Generation Context Helpers
 # =============================================================================
 
@@ -549,6 +608,10 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     Spec 011 (T032-T033): If stmt.postcondition is set, wrap the statement
     in a conditional: if m_truth(cond): <statement>
 
+    Spec 014 (T067): Preserves MUMPS comments as Python comments.
+    If the source line has an inline comment (;...), it is emitted
+    as a Python comment before the statement.
+
     Args:
         stmt: ASG statement node
         ctx: Generator context with emitter
@@ -556,6 +619,9 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     Raises:
         NotImplementedError: For unsupported statement types
     """
+    # Spec 014 (T067): Emit MUMPS comment as Python comment if present
+    _emit_source_comment(stmt, ctx)
+
     # Spec 011 (T032): Check for postcondition
     if stmt.postcondition is not None:
         cond_expr = generate_expr(stmt.postcondition, ctx)

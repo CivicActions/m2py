@@ -426,6 +426,38 @@ class RoutineGenerator:
                     ctx.emitter.line("self.target = target")
             ctx.emitter.blank()
 
+    def _generate_label_docstring(self, label: MLabel, ctx: GeneratorContext) -> None:
+        """Generate Python docstring with MUMPS source info.
+
+        Spec 014 (T065): Generates a docstring for each label function containing:
+        - MUMPS label name (original, for debugging/traceability)
+        - Source line number (1-indexed)
+        - Inline comment from label line (if present)
+
+        Args:
+            label: MLabel ASG node
+            ctx: Generator context
+        """
+        # Build docstring content
+        parts = []
+
+        # Label name and line number
+        line_num = label.line_number if label.line_number else "?"
+        parts.append(f"MUMPS label: {label.name} (line {line_num})")
+
+        # Extract inline comment from parsed content if available
+        if label._parsed_content and hasattr(label._parsed_content, "comment"):
+            comment = label._parsed_content.comment
+            if comment and hasattr(comment, "text") and comment.text:
+                # Strip leading/trailing whitespace from comment
+                comment_text = comment.text.strip()
+                if comment_text:
+                    parts.append(comment_text)
+
+        # Generate the docstring
+        docstring = " - ".join(parts) if len(parts) > 1 else parts[0]
+        ctx.emitter.line(f'"""{docstring}"""')
+
     def _generate_label(self, label: MLabel, ctx: GeneratorContext) -> None:
         """Generate Python function from MUMPS label.
 
@@ -477,6 +509,9 @@ class RoutineGenerator:
         ctx.emitter.line(f"def {func_name}({params_str}):")
 
         with ctx.emitter.indented():
+            # Spec 014 (T065): Generate docstring with MUMPS source info
+            self._generate_label_docstring(label, ctx)
+
             # Declare global _test
             ctx.emitter.line("global _test")
             # T030: Initialize _scope if not provided (entry point behavior)

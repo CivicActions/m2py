@@ -28,11 +28,21 @@ class TestRoutineHeadCodegen:
         code = generate_python("ADD(A,B) Q A+B\n")
         assert "def ADD(_rt, A, B, _scope=None, **_kwargs):" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: routine docstring")
     def test_routine_docstring(self, generate_python):
-        """Routine generates docstring with source info (§6.1)."""
-        pytest.fail("Stub - implement test")
+        """Routine generates docstring with source info (§6.1).
+
+        Spec 014 (T065): Each label function includes a docstring with:
+        - MUMPS label name (original, for debugging/traceability)
+        - Source line number
+        - Inline comment from label line (if present)
+        """
+        # Test with label that has inline comment
+        code = generate_python('MAIN ; Main entry point\n W "Hello"\n Q\n')
+        assert '"""MUMPS label: MAIN (line 1) - Main entry point"""' in code
+
+        # Test label without inline comment
+        code2 = generate_python("TEST\n Q\n")
+        assert '"""MUMPS label: TEST (line 1)"""' in code2
 
 
 @pytest.mark.codegen

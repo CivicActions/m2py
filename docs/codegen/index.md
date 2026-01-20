@@ -122,6 +122,28 @@ Parse MUMPS → Build ASG → Run Analysis → Generate Python
 | SUBROUTINE | `def f(args) -> None` |
 | REQUIRES_RUNTIME | Runtime scope access |
 
+### Output Features
+
+**Docstrings**: Each generated label function includes a docstring with:
+- MUMPS label name (for debugging and traceability)
+- Source line number
+- Inline comment from the label line (if present)
+
+Example:
+```python
+def MAIN(_rt, _scope=None, **_kwargs):
+    """MUMPS label: MAIN (line 1) - Main entry point"""
+```
+
+**Comment Preservation**: Inline comments (`;...`) on MUMPS statement lines
+are preserved as Python comments before the corresponding statement:
+```python
+# Initialize X
+_scope.setdefault('X', MArray()).value = 1
+# Output value
+_rt.write(_scope.get('X', MArray()).value)
+```
+
 ## Existing Notes
 
 For additional detail, see:
