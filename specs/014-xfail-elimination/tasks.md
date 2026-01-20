@@ -402,12 +402,25 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 ### Organization Verification
 
-- [ ] T113 [US3] Verify test directory structure matches spec sections in tests/unit/codegen/
-- [ ] T114 [P] [US3] Verify all modified test files have spec section docstrings
-- [ ] T115 [P] [US3] Verify limitation reference tests are in correct directories
-- [ ] T116 [US3] Update any misplaced tests to correct locations
+- [X] T113 [US3] Verify test directory structure matches spec sections in tests/unit/codegen/
+      **Result**: Structure verified - s5_metalanguage/, s6_routine/, s7_expressions/,
+      s8_commands/, s9_charset/, extensions/ydb/, legacy/ all present and properly organized.
+- [X] T114 [P] [US3] Verify all modified test files have spec section docstrings
+      **Result**: All 42 modified test files have proper module docstrings referencing
+      MUMPS ANSI Standard sections (e.g., "§7.1.5", "§8.2.18") or extension documentation.
+- [X] T115 [P] [US3] Verify limitation reference tests are in correct directories
+      **Result**: All limitation tests correctly located:
+      - LIM-003/011 (SSVNs): s7_expressions/test_s7_1_3_ssvns.py
+      - LIM-014 (Library): s7_expressions/test_s7_1_6_5_library_functions_*.py
+      - LIM-015 (Z-Commands): extensions/ydb/test_z*.py
+      - LIM-016 (Zero-VistA): s6_routine/transaction, s8_commands/trollback
+- [X] T116 [US3] Update any misplaced tests to correct locations
+      **Result**: No misplaced tests found. Top-level tests (test_emitter.py,
+      test_line_dispatch.py, test_strategy_selection.py, test_shared_state.py,
+      test_spec_009_*.py, test_cross_label_goto.py) are correctly positioned as
+      internal module tests or cross-cutting implementation tests.
 
-**Checkpoint**: Test organization verified - US3 complete
+**Checkpoint**: ✅ Test organization verified - US3 complete
 
 ---
 
