@@ -383,9 +383,6 @@ SUM W A(1)+A(2) Q"""
         assert result.output == "30"
         assert result.success is True
 
-    @pytest.mark.xfail(
-        reason="m2py scope isolation differs from YDB: m2py isolates NEWed vars, YDB preserves across GOTO"
-    )
     def test_newed_variable_isolation(self, execute_mumps):
         """T076a: GOTO inherits NEWed variable scope in YDB.
 
@@ -396,8 +393,8 @@ SUM W A(1)+A(2) Q"""
         MUMPS: TEST N X S X=1 G NEXT Q / NEXT W X Q
         YDB output: "1" (X from TEST's scope visible in NEXT via GOTO)
 
-        Note: m2py currently isolates scopes differently than YDB. This test
-        documents the YDB behavior for future compatibility work.
+        Fixed: m2py now includes NEWed-and-written variables in RoutineState
+        so they flow correctly across GOTO boundaries.
         """
         source = """TEST N X S X=1 G NEXT Q
 NEXT W X Q"""
@@ -406,17 +403,17 @@ NEXT W X Q"""
         assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.xfail(
-        reason="Bug: trampoline pattern doesn't define SUB function for D SUB(5) call"
-    )
     def test_formal_param_isolation(self, execute_mumps):
         """T076b: Formal parameters are isolated to subroutine scope.
 
         MUMPS: TEST D SUB(5) Q / SUB(X) G SHOW Q / SHOW W X Q
         Expected: "5" (X from SUB's formal param visible via cross-label GOTO)
 
-        Note: Per MUMPS semantics, X in SUB(X) is local to SUB.
+        Per MUMPS semantics, X in SUB(X) is local to SUB.
         When GOTO SHOW happens, X from SUB's scope should be visible.
+
+        Fixed: Now generates wrapper functions for all labels and stores
+        formal parameters in RoutineState for cross-label visibility.
         """
         source = """TEST D SUB(5) Q
 SUB(X) G SHOW Q

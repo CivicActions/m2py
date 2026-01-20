@@ -285,7 +285,7 @@ class TestTextWithOffsetsCodegen:
     def test_text_external_routine(self, generate_python):
         """$TEXT(LABEL+N^ROUTINE) generates code for external routine access.
 
-        S A=$T(MAIN+3^OTHER) generates __import__('OTHER') for module access.
+        S A=$T(MAIN+3^OTHER) generates importlib.import_module('OTHER') for module access.
         This is a codegen test - runtime requires the module to exist.
         """
         mumps = "TEST S A=$T(MAIN+3^OTHER) Q"
@@ -294,7 +294,7 @@ class TestTextWithOffsetsCodegen:
         assert "_rt.get_text(" in python
         assert 'label="MAIN"' in python
         assert "offset=3" in python
-        assert "__import__('OTHER')" in python
+        assert "import_module('OTHER')" in python
 
     def test_text_external_routine_label_only(self, generate_python):
         """$TEXT(LABEL^ROUTINE) without offset generates correct code."""
@@ -302,7 +302,7 @@ class TestTextWithOffsetsCodegen:
         python = generate_python(mumps)
         assert "_rt.get_text(" in python
         assert 'label="INIT"' in python
-        assert "__import__('OTHER')" in python
+        assert "import_module('OTHER')" in python
 
     def test_text_external_routine_offset_only(self, generate_python):
         """$TEXT(+N^ROUTINE) with offset only generates correct code."""
@@ -310,7 +310,7 @@ class TestTextWithOffsetsCodegen:
         python = generate_python(mumps)
         assert "_rt.get_text(" in python
         assert "offset=5" in python
-        assert "__import__('OTHER')" in python
+        assert "import_module('OTHER')" in python
 
     def test_text_with_variable_offset(self, execute_mumps):
         """$TEXT(+I) evaluates offset at runtime.

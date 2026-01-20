@@ -1177,8 +1177,9 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
 
     # Handle external routine
     if routine is not None:
-        # Use __import__() to get module reference inline
-        params.append(f"module=__import__('{routine}')")
+        # Use importlib.import_module() for reliable module loading in exec() contexts
+        # __import__() has issues with dynamically modified sys.path
+        params.append(f"module=__import__('importlib').import_module('{routine}')")
 
     return f"_rt.get_text({', '.join(params)})"
 

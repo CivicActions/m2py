@@ -201,20 +201,17 @@ class TestNakedReferenceEdgeCases:
         assert result.output == "5"
 
     @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="YDB disallows naked reference in LOCK: LKNAMEXPECTED error"
-    )
-    def test_lock_with_naked(self):
-        """LOCK ^(sub) - YDB disallows naked reference in LOCK arguments.
+    def test_lock_with_naked(self, generate_python):
+        """LOCK ^(sub) raises NotImplementedError (YDB restriction).
 
         Per YDB documentation, LOCK requires explicit global names.
         Error: %YDB-E-LKNAMEXPECTED, An identifier is expected after a ^
 
         Note: The MUMPS 1995 standard §8.2.12 does not explicitly forbid
         naked references in LOCK nrefs, but YDB rejects them. This is a
-        YDB-specific restriction.
+        YDB-specific restriction that m2py enforces at codegen time.
         """
-        pytest.fail(
-            "YDB does not support naked reference in LOCK. "
-            "Error: LKNAMEXPECTED - An identifier is expected after a ^"
-        )
+        with pytest.raises(
+            NotImplementedError, match="Naked reference not supported in LOCK"
+        ):
+            generate_python("TEST S ^A(1)=5 L ^(1) Q")

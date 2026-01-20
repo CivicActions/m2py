@@ -3291,9 +3291,11 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
             name = target.name
             subscripts = target.subscripts
         elif isinstance(target, NG):
-            # Naked global - use naked reference handling
-            ctx.emitter.line("# LOCK with naked global not yet supported")
-            continue
+            # Naked global - YDB does not support naked reference in LOCK
+            # Error: %YDB-E-LKNAMEXPECTED, An identifier is expected after a ^
+            raise NotImplementedError(
+                "Naked reference not supported in LOCK (YDB restriction: LKNAMEXPECTED)"
+            )
         else:
             # Local variable as lock name
             name = getattr(target, "name", str(target))

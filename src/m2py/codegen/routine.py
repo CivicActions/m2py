@@ -770,6 +770,51 @@ class RoutineGenerator:
                 ctx.emitter.line("return state")
             ctx.emitter.blank()
 
+        # Generate wrapper functions for all other labels that can be called via DO
+        # These wrappers create a new state, call the internal function, and run
+        # the trampoline until the subroutine returns (QUIT)
+        for label in self._routine.labels[1:]:  # Skip first label, already has wrapper
+            label_name = translate_name(label.name)
+            internal_func = "_" + label_name
+
+            # Get formal parameters
+            formal_params = []
+            if label.formal_list:
+                formal_params = [translate_name(p) for p in label.formal_list]
+
+            # Build parameter string
+            if formal_params:
+                params_str = "_rt, " + ", ".join(formal_params) + ", _scope=None"
+                args_str = ", ".join(formal_params)
+            else:
+                params_str = "_rt, _scope=None"
+                args_str = ""
+
+            ctx.emitter.line(f"def {label_name}({params_str}):")
+            with ctx.emitter.indented():
+                ctx.emitter.line(f'"""Entry point for DO {label.name} calls."""')
+                ctx.emitter.line("_scope = _scope if _scope is not None else {}")
+                ctx.emitter.line("state = RoutineState()")
+
+                # Call internal function and get next target
+                if args_str:
+                    ctx.emitter.line(
+                        f"target, state = {internal_func}(_rt, state, _scope, {args_str})"
+                    )
+                else:
+                    ctx.emitter.line(
+                        f"target, state = {internal_func}(_rt, state, _scope)"
+                    )
+
+                # Run trampoline until subroutine returns (target is None)
+                ctx.emitter.line("while target is not None:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("func = _labels[target]")
+                    ctx.emitter.line("target, state = func(_rt, state, _scope)")
+
+                ctx.emitter.line("return state")
+            ctx.emitter.blank()
+
     def _generate_trampoline_label(
         self, label: MLabel, ctx: GeneratorContext, next_label: str | None = None
     ) -> None:
@@ -839,6 +884,13 @@ class RoutineGenerator:
         with ctx.emitter.indented():
             # Declare global _test
             ctx.emitter.line("global _test")
+
+            # Store formal parameters in state if they need to flow across GOTO
+            # This handles cases like SUB(X) G SHOW where SHOW needs to read X
+            state_vars = ctx.state_vars or set()
+            for param in formal_params:
+                if param in state_vars:
+                    ctx.emitter.line(f"state.{param} = {param}")
 
             # Get label line number for offset calculation
             label_line = label.line_number
