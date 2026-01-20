@@ -257,9 +257,16 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task E4: Character Set (3 tests)
 
-- [ ] T082 [US1] Implement M character encoding in src/m2py/codegen/
-- [ ] T083 [P] [US1] Implement graphic/control character handling in src/m2py/codegen/
-- [ ] T084 [US1] Convert 3 character set tests from xfail in tests/unit/codegen/s9_charset/
+- [X] T082 [US1] Implement M character encoding in src/m2py/codegen/
+      **Note**: ALREADY WORKING - M characters map to Python unicode via $CHAR/$ASCII.
+      Tested: ASCII, Unicode (é=233, €=8364), round-trip $A($C(n))==n.
+- [X] T083 [P] [US1] Implement graphic/control character handling in src/m2py/codegen/
+      **Note**: ALREADY WORKING - Graphic chars (32-126) and control chars (0-31, 127)
+      are preserved in strings and can be manipulated with string functions.
+- [X] T084 [US1] Convert 3 character set tests from xfail in tests/unit/codegen/s9_charset/
+      **Note**: Converted test_m_character_encoding, test_graphic_characters,
+      test_control_characters to verify current working behavior.
+      xfail: 29→26
 
 ### Phase 4 Validation
 
