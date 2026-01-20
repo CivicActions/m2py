@@ -270,10 +270,13 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 ### Phase 4 Validation
 
-- [ ] T085 [US1] Run validation: `uv run pytest --collect-only -m xfail -q` (expect ~24 remaining)
-- [ ] T086 [US1] Run full test suite: `uv run pytest` (expect 0 failures)
+- [X] T085 [US1] Run validation: `uv run pytest --collect-only -m xfail -q` (expect ~24 remaining)
+      **Result**: 26 xfail tests remaining (close to expected ~24). 
+      Remaining are: DO external, GOTO advanced, computed offsets (Phase 5 scope)
+- [X] T086 [US1] Run full test suite: `uv run pytest` (expect 0 failures)
+      **Result**: 4988 passed, 0 failures, 26 xfailed, 50 warnings
 
-**Checkpoint**: Core feature tests pass - Phase 5 (Control Flow Advanced) can begin
+**Checkpoint**: ✅ Core feature tests pass - Phase 5 (Control Flow Advanced) can begin
 
 ---
 
