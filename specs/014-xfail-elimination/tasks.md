@@ -238,9 +238,9 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task E2: Postconditions Advanced (3 tests)
 
-- [ ] T076 [US1] Implement argument postconditions as independent in src/m2py/codegen/
-- [ ] T077 [P] [US1] Implement postcondition evaluation order in src/m2py/codegen/
-- [ ] T078 [US1] Convert 3 postcondition tests from xfail in tests/unit/codegen/
+- [X] T076 [US1] Implement argument postconditions as independent in src/m2py/codegen/
+- [X] T077 [P] [US1] Implement postcondition evaluation order in src/m2py/codegen/
+- [X] T078 [US1] Convert 3 postcondition tests from xfail in tests/unit/codegen/
 
 #### Task E3: XECUTE Runtime (3 tests)
 

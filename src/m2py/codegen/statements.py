@@ -2299,232 +2299,255 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
 
     # Label calls - NO $TEST save/restore
     # Handle each target (multiple targets allowed: D A,B,C)
+    # Spec 014 (T076-T078): Each target's postcondition is evaluated independently
+    # D L1:0,L2:1 → only L2 executes (L1's postcondition is false)
+    # D L1:1,L2:1 → both execute (both postconditions are true)
     for target in stmt.targets:
-        # Spec 012 Phase 7 (T042-T045): Check for indirection
-        if target.label_is_indirect or target.routine_is_indirect:
-            from m2py.codegen.indirection import generate_indirect_do
+        # Check for argument-level postcondition (different from command postcondition)
+        # Argument postconditions gate individual targets, not the whole command
+        if target.postcondition is not None:
+            cond_expr = generate_expr(target.postcondition, ctx)
+            ctx.emitter.line(f"if m_truth({cond_expr}):")
+            ctx.emitter.indent()
+            _generate_do_target(target, ctx)
+            ctx.emitter.dedent()
+        else:
+            _generate_do_target(target, ctx)
 
-            generate_indirect_do(target, ctx)
-            continue
 
-        # Spec 008 (T018-T029): Handle external routine reference D ^ROUTINE
-        if target.routine:
-            routine_name = target.routine
+def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
+    """Generate code for a single DO target.
 
-            # Generate import statement
-            ctx.emitter.line(f"import {routine_name}")
+    This is a helper function that generates the actual call code for a DO target.
+    It's called by _generate_do after any postcondition checks.
 
-            # Handle different external DO patterns
-            if target.offset is not None:
-                # D LABEL+N^ROUTINE or D +N^ROUTINE - uses line dispatch
-                offset_code = generate_expr(target.offset, ctx)
+    Args:
+        target: MCall target to generate code for
+        ctx: Generator context
+    """
+    # Spec 012 Phase 7 (T042-T045): Check for indirection
+    if target.label_is_indirect or target.routine_is_indirect:
+        from m2py.codegen.indirection import generate_indirect_do
 
-                if target.name:
-                    # T024: D LABEL+N^ROUTINE - label + offset
-                    # Check label exists in _label_lines
-                    ctx.emitter.line(
-                        f"if {target.name!r} not in {routine_name}._label_lines:"
-                    )
-                    with ctx.emitter.indented():
-                        ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
-                        ctx.emitter.line(
-                            f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
-                            f"list({routine_name}._label_lines.keys()))"
-                        )
-                    # Calculate target line from label's line + offset
-                    ctx.emitter.line(
-                        f"_target_line = {routine_name}._label_lines[{target.name!r}] + {offset_code}"
-                    )
-                else:
-                    # T025: D +N^ROUTINE - absolute line offset (1-based to 0-indexed)
-                    ctx.emitter.line(f"_target_line = {offset_code} - 1")
+        generate_indirect_do(target, ctx)
+        return
 
-                # T079: Call via line dispatch map, passing _rt and _scope
-                # _line_map returns (label_name, offset) tuple - extract and call
+    # Spec 008 (T018-T029): Handle external routine reference D ^ROUTINE
+    if target.routine:
+        routine_name = target.routine
+
+        # Generate import statement
+        ctx.emitter.line(f"import {routine_name}")
+
+        # Handle different external DO patterns
+        if target.offset is not None:
+            # D LABEL+N^ROUTINE or D +N^ROUTINE - uses line dispatch
+            offset_code = generate_expr(target.offset, ctx)
+
+            if target.name:
+                # T024: D LABEL+N^ROUTINE - label + offset
+                # Check label exists in _label_lines
                 ctx.emitter.line(
-                    f"_label_name, _line_offset = {routine_name}._line_map[_target_line]"
+                    f"if {target.name!r} not in {routine_name}._label_lines:"
                 )
-                ctx.emitter.line(
-                    f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
-                )
-            elif target.name:
-                # T022-T023: D LABEL^ROUTINE - call specific label
-                label_name = translate_name(target.name)
-                # T026: Generate LabelNotFoundError check
-                ctx.emitter.line(f"if not hasattr({routine_name}, {label_name!r}):")
                 with ctx.emitter.indented():
                     ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
                     ctx.emitter.line(
                         f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
                         f"list({routine_name}._label_lines.keys()))"
                     )
-                # T079: Pass _rt and _scope for cross-routine variable visibility
-                args = _generate_call_arguments(target.arguments, ctx)
-                if args:
-                    ctx.emitter.line(
-                        f"{routine_name}.{label_name}(_rt, {args}, _scope=_scope)"
-                    )
-                else:
-                    ctx.emitter.line(f"{routine_name}.{label_name}(_rt, _scope=_scope)")
+                # Calculate target line from label's line + offset
+                ctx.emitter.line(
+                    f"_target_line = {routine_name}._label_lines[{target.name!r}] + {offset_code}"
+                )
             else:
-                # D ^ROUTINE - call entry label (same name as routine)
-                entry_label = translate_name(routine_name)
-                # T079: Pass _rt and _scope for cross-routine variable visibility
-                args = _generate_call_arguments(target.arguments, ctx)
-                if args:
-                    ctx.emitter.line(
-                        f"{routine_name}.{entry_label}(_rt, {args}, _scope=_scope)"
-                    )
-                else:
-                    ctx.emitter.line(
-                        f"{routine_name}.{entry_label}(_rt, _scope=_scope)"
-                    )
-            continue
+                # T025: D +N^ROUTINE - absolute line offset (1-based to 0-indexed)
+                ctx.emitter.line(f"_target_line = {offset_code} - 1")
 
-        # Get the label name and translate it
-        label_name = translate_name(target.name)
+            # T079: Call via line dispatch map, passing _rt and _scope
+            # _line_map returns (label_name, offset) tuple - extract and call
+            ctx.emitter.line(
+                f"_label_name, _line_offset = {routine_name}._line_map[_target_line]"
+            )
+            ctx.emitter.line(
+                f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
+            )
+        elif target.name:
+            # T022-T023: D LABEL^ROUTINE - call specific label
+            label_name = translate_name(target.name)
+            # T026: Generate LabelNotFoundError check
+            ctx.emitter.line(f"if not hasattr({routine_name}, {label_name!r}):")
+            with ctx.emitter.indented():
+                ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+                ctx.emitter.line(
+                    f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
+                    f"list({routine_name}._label_lines.keys()))"
+                )
+            # T079: Pass _rt and _scope for cross-routine variable visibility
+            args = _generate_call_arguments(target.arguments, ctx)
+            if args:
+                ctx.emitter.line(
+                    f"{routine_name}.{label_name}(_rt, {args}, _scope=_scope)"
+                )
+            else:
+                ctx.emitter.line(f"{routine_name}.{label_name}(_rt, _scope=_scope)")
+        else:
+            # D ^ROUTINE - call entry label (same name as routine)
+            entry_label = translate_name(routine_name)
+            # T079: Pass _rt and _scope for cross-routine variable visibility
+            args = _generate_call_arguments(target.arguments, ctx)
+            if args:
+                ctx.emitter.line(
+                    f"{routine_name}.{entry_label}(_rt, {args}, _scope=_scope)"
+                )
+            else:
+                ctx.emitter.line(f"{routine_name}.{entry_label}(_rt, _scope=_scope)")
+        return
 
-        # Generate arguments if any
-        args = _generate_call_arguments(target.arguments, ctx)
+    # Get the label name and translate it
+    label_name = translate_name(target.name)
 
-        # Spec 007 (T025-T028c): Handle DO with offset
-        # In TRAMPOLINE strategy, call the internal function with _start_offset
-        if target.offset is not None and ctx.strategy == GotoStrategy.TRAMPOLINE:
-            # Prefix with _ for internal trampoline function
-            internal_func = "_" + label_name
-            # Generate offset expression code
-            offset_code = generate_expr(target.offset, ctx)
+    # Generate arguments if any
+    args = _generate_call_arguments(target.arguments, ctx)
 
-            # Spec 007 Phase 7 (T035-T037): Validate offset for DO as well
-            # Spec 007 Phase 9 (T045-T046): Skip non-executable lines (comments/blanks)
-            # Get the label's line number for validation
-            if target.target is not None and target.target.line_number is not None:
-                label_line = target.target.line_number
-                # Spec 007: Check for negative offset (must resolve to non-negative integer)
-                # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
-                ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
-                ctx.emitter.line("if _offset_val < 0:")
+    # Spec 007 (T025-T028c): Handle DO with offset
+    # In TRAMPOLINE strategy, call the internal function with _start_offset
+    if target.offset is not None and ctx.strategy == GotoStrategy.TRAMPOLINE:
+        # Prefix with _ for internal trampoline function
+        internal_func = "_" + label_name
+        # Generate offset expression code
+        offset_code = generate_expr(target.offset, ctx)
+
+        # Spec 007 Phase 7 (T035-T037): Validate offset for DO as well
+        # Spec 007 Phase 9 (T045-T046): Skip non-executable lines (comments/blanks)
+        # Get the label's line number for validation
+        if target.target is not None and target.target.line_number is not None:
+            label_line = target.target.line_number
+            # Spec 007: Check for negative offset (must resolve to non-negative integer)
+            # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
+            ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
+            ctx.emitter.line("if _offset_val < 0:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    f'raise ValueError("Entry point {target.name}+" '
+                    '+ str(_offset_val) + " not valid")'
+                )
+            ctx.emitter.line(f"_target = {label_line} + _offset_val")
+            ctx.emitter.line("if _target not in _line_map:")
+            with ctx.emitter.indented():
+                # Spec 007: Find next executable line after target (inline)
+                # When offset lands on comment/blank line, continue to next executable.
+                # This inline logic is equivalent to find_next_executable() but simpler.
+                ctx.emitter.line(
+                    "_next = min((ln for ln in _line_map if ln > _target), "
+                    "default=None)"
+                )
+                ctx.emitter.line("if _next is None:")
                 with ctx.emitter.indented():
                     ctx.emitter.line(
                         f'raise ValueError("Entry point {target.name}+" '
                         '+ str(_offset_val) + " not valid")'
                     )
-                ctx.emitter.line(f"_target = {label_line} + _offset_val")
-                ctx.emitter.line("if _target not in _line_map:")
-                with ctx.emitter.indented():
-                    # Spec 007: Find next executable line after target (inline)
-                    # When offset lands on comment/blank line, continue to next executable.
-                    # This inline logic is equivalent to find_next_executable() but simpler.
-                    ctx.emitter.line(
-                        "_next = min((ln for ln in _line_map if ln > _target), "
-                        "default=None)"
-                    )
-                    ctx.emitter.line("if _next is None:")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(
-                            f'raise ValueError("Entry point {target.name}+" '
-                            '+ str(_offset_val) + " not valid")'
-                        )
-                    ctx.emitter.line("_target = _next")
-                # Now update the offset based on the new target line
-                ctx.emitter.line(
-                    f"_offset = _line_map[_target][1] if _target != {label_line} + "
-                    "_offset_val else _offset_val"
-                )
+                ctx.emitter.line("_target = _next")
+            # Now update the offset based on the new target line
+            ctx.emitter.line(
+                f"_offset = _line_map[_target][1] if _target != {label_line} + "
+                "_offset_val else _offset_val"
+            )
 
-            # T079: Build call with _rt, state, _scope, and _start_offset
-            # Note: args handling with offset is complex - for now just handle simple case
-            if args:
-                ctx.emitter.line(
-                    f"{internal_func}(_rt, state, _scope, {args}, _start_offset=_offset_val)"
-                )
-            else:
-                ctx.emitter.line(
-                    f"{internal_func}(_rt, state, _scope, _start_offset=_offset_val)"
-                )
-            continue
-
-        # T060-T062: Check callee signature for byref_outputs and generate destructuring
-        callee_signature = None
-        if hasattr(target, "target") and target.target:
-            callee_label = target.target
-            if hasattr(callee_label, "signature") and callee_label.signature:
-                callee_signature = callee_label.signature
-
-        if callee_signature and callee_signature.byref_outputs:
-            # Map byref formal params to actual variables passed by reference
-            # The callee returns byref params in formal_params order
-            formal_params = callee_signature.formal_params
-            byref_outputs = callee_signature.byref_outputs
-            actual_args = target.arguments or []
-
-            # Build list of caller variables that receive returned values
-            # Only include params that are both:
-            # 1. In byref_outputs (callee modifies them)
-            # 2. Passed by reference at call site (.VAR syntax)
-            return_vars = []
-            for i, formal_name in enumerate(formal_params):
-                if formal_name in byref_outputs:
-                    # Check if corresponding actual was passed by reference
-                    if i < len(actual_args):
-                        actual = actual_args[i]
-                        if actual.passing_mode == PassingMode.BY_REFERENCE:
-                            # Get the caller's variable name
-                            if actual.variable_name:
-                                var_name = actual.variable_name
-                                # T084: Use _scope['X'] for SIMPLE_FUNCTIONS
-                                if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                                    return_vars.append(f"_scope[{var_name!r}]")
-                                else:
-                                    return_vars.append(translate_name(var_name))
-
-            if return_vars:
-                # T079: Generate call and assign returned values to caller variables
-                # T084: Pass _scope for cross-routine variable visibility
-                # Spec 009 (T021): For SIMPLE_FUNCTIONS, use MArray.value via temp var
-                if args:
-                    call_expr = f"{label_name}(_rt, {args}, _scope=_scope)"
-                else:
-                    call_expr = f"{label_name}(_rt, _scope=_scope)"
-
-                if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                    # Use temp variable and assign to MArray.value for each return var
-                    ctx.emitter.line(f"_byref_result = {call_expr}")
-                    if len(return_vars) == 1:
-                        # Single return value
-                        var_name = (
-                            return_vars[0].replace("_scope[", "").replace("]", "")[1:-1]
-                        )  # Extract name from "_scope['X']"
-                        ctx.emitter.line(
-                            f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result"
-                        )
-                    else:
-                        # Tuple unpacking - assign each element
-                        for i, rv in enumerate(return_vars):
-                            var_name = rv.replace("_scope[", "").replace("]", "")[
-                                1:-1
-                            ]  # Extract name
-                            ctx.emitter.line(
-                                f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result[{i}]"
-                            )
-                else:
-                    # TRAMPOLINE: use direct tuple destructuring
-                    lhs = ", ".join(return_vars)
-                    ctx.emitter.line(f"{lhs} = {call_expr}")
-            else:
-                # T079: No by-ref params at call site - just call with _rt
-                # T084: Pass _scope for cross-routine variable visibility
-                if args:
-                    ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
-                else:
-                    ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+        # T079: Build call with _rt, state, _scope, and _start_offset
+        # Note: args handling with offset is complex - for now just handle simple case
+        if args:
+            ctx.emitter.line(
+                f"{internal_func}(_rt, state, _scope, {args}, _start_offset=_offset_val)"
+            )
         else:
-            # T079: No byref_outputs - simple call with _rt
+            ctx.emitter.line(
+                f"{internal_func}(_rt, state, _scope, _start_offset=_offset_val)"
+            )
+        return
+
+    # T060-T062: Check callee signature for byref_outputs and generate destructuring
+    callee_signature = None
+    if hasattr(target, "target") and target.target:
+        callee_label = target.target
+        if hasattr(callee_label, "signature") and callee_label.signature:
+            callee_signature = callee_label.signature
+
+    if callee_signature and callee_signature.byref_outputs:
+        # Map byref formal params to actual variables passed by reference
+        # The callee returns byref params in formal_params order
+        formal_params = callee_signature.formal_params
+        byref_outputs = callee_signature.byref_outputs
+        actual_args = target.arguments or []
+
+        # Build list of caller variables that receive returned values
+        # Only include params that are both:
+        # 1. In byref_outputs (callee modifies them)
+        # 2. Passed by reference at call site (.VAR syntax)
+        return_vars = []
+        for i, formal_name in enumerate(formal_params):
+            if formal_name in byref_outputs:
+                # Check if corresponding actual was passed by reference
+                if i < len(actual_args):
+                    actual = actual_args[i]
+                    if actual.passing_mode == PassingMode.BY_REFERENCE:
+                        # Get the caller's variable name
+                        if actual.variable_name:
+                            var_name = actual.variable_name
+                            # T084: Use _scope['X'] for SIMPLE_FUNCTIONS
+                            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                                return_vars.append(f"_scope[{var_name!r}]")
+                            else:
+                                return_vars.append(translate_name(var_name))
+
+        if return_vars:
+            # T079: Generate call and assign returned values to caller variables
+            # T084: Pass _scope for cross-routine variable visibility
+            # Spec 009 (T021): For SIMPLE_FUNCTIONS, use MArray.value via temp var
+            if args:
+                call_expr = f"{label_name}(_rt, {args}, _scope=_scope)"
+            else:
+                call_expr = f"{label_name}(_rt, _scope=_scope)"
+
+            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                # Use temp variable and assign to MArray.value for each return var
+                ctx.emitter.line(f"_byref_result = {call_expr}")
+                if len(return_vars) == 1:
+                    # Single return value
+                    var_name = (
+                        return_vars[0].replace("_scope[", "").replace("]", "")[1:-1]
+                    )  # Extract name from "_scope['X']"
+                    ctx.emitter.line(
+                        f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result"
+                    )
+                else:
+                    # Tuple unpacking - assign each element
+                    for i, rv in enumerate(return_vars):
+                        var_name = rv.replace("_scope[", "").replace("]", "")[
+                            1:-1
+                        ]  # Extract name
+                        ctx.emitter.line(
+                            f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result[{i}]"
+                        )
+            else:
+                # TRAMPOLINE: use direct tuple destructuring
+                lhs = ", ".join(return_vars)
+                ctx.emitter.line(f"{lhs} = {call_expr}")
+        else:
+            # T079: No by-ref params at call site - just call with _rt
             # T084: Pass _scope for cross-routine variable visibility
             if args:
                 ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
             else:
                 ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+    else:
+        # T079: No byref_outputs - simple call with _rt
+        # T084: Pass _scope for cross-routine variable visibility
+        if args:
+            ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
+        else:
+            ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
 
 
 def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:

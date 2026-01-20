@@ -740,12 +740,13 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         else:
             return f"_call_extrinsic(_rt, {func_name}, _scope=_scope{byref_param})"
 
-    # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2)
+    # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2, _scope=_scope)
     # Phase 13 (T081): Pass _rt as first parameter
+    # T076-T078: Always pass _scope for cross-routine variable visibility
     if args:
-        return f"_call_extrinsic(_rt, {func_name}, {args})"
+        return f"_call_extrinsic(_rt, {func_name}, {args}, _scope=_scope)"
     else:
-        return f"_call_extrinsic(_rt, {func_name})"
+        return f"_call_extrinsic(_rt, {func_name}, _scope=_scope)"
 
 
 def _generate_extrinsic_arguments_with_byref(

@@ -56,34 +56,67 @@ class TestPostconditionsCodegen:
         result = execute_mumps(source)
         assert result.output == "12\n"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Codegen not yet implemented: argument postcondition independence"
-    )
-    def test_argument_postconditions_independent(self):
+    def test_argument_postconditions_independent(self, execute_mumps):
         """Argument postconditions are evaluated independently (§8.1.4).
 
         DO L1:0,L2:1  # Only L2 should execute (FR-049)
-        """
-        pytest.fail("Stub - requires codegen runtime execution")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Codegen not yet implemented: postcondition eval order")
-    def test_postcondition_evaluation_order(self):
+        Each argument's postcondition is evaluated independently:
+        - L1:0 - false postcondition, L1 not called
+        - L2:1 - true postcondition, L2 called
+
+        Spec 014 (T076): Argument postconditions independent.
+        """
+        source = """TEST S X=0 D L1:0,L2:1 W X,! Q
+L1 S X=X+10 Q
+L2 S X=X+1 Q"""
+        result = execute_mumps(source)
+        assert result.output == "1\n"  # Only L2 executed, X=0+1=1
+
+    def test_postcondition_evaluation_order(self, execute_mumps):
         """Command postcondition evaluated before argument postconditions (§8.1.4).
 
         DO:0 L1:1,L2:1  # Neither should execute (command gates first)
-        """
-        pytest.fail("Stub - requires codegen runtime execution")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Codegen not yet implemented: postcondition side effects")
-    def test_postcondition_side_effects(self):
+        When command postcondition is false, the entire command is skipped
+        and argument postconditions are never evaluated.
+
+        Spec 014 (T077): Command postcondition gates first.
+        """
+        source = """TEST S X=0 D:0 L1:1,L2:1 W X,! Q
+L1 S X=X+10 Q
+L2 S X=X+1 Q"""
+        result = execute_mumps(source)
+        assert result.output == "0\n"  # Neither executed, X=0
+
+    def test_postcondition_side_effects(self, execute_mumps):
         """Postcondition expressions can have side effects (§8.1.4).
 
-        SET X=0 SET:$$INC^RT() Y=1  # X may be modified by postcondition
+        Postcondition expressions (both command and argument level) are
+        evaluated and their side effects are visible even if the condition
+        is false.
+
+        Spec 014 (T078): Postcondition side effects visible.
         """
-        pytest.fail("Stub - requires codegen runtime execution")
+        # Command postcondition with side effect: $$SETX sets X=1 and returns 1
+        source = """TEST S X=0,Y=0 D:$$SETX L1:$$SETY W X,Y,! Q
+SETX() S X=1 Q 1
+SETY() S Y=1 Q 1
+L1 Q"""
+        result = execute_mumps(source)
+        # Both SETX and SETY are called (postconditions evaluated), both return 1 (true)
+        # L1 is also called (both postconditions true)
+        assert result.output == "11\n"  # X=1 from SETX, Y=1 from SETY
+
+        # Command postcondition false - argument postcondition NOT evaluated
+        source = """TEST S X=0,Y=0 D:0 L1:$$SETY W X,Y,! Q
+SETY() S Y=1 Q 1
+L1 Q"""
+        result = execute_mumps(source)
+        # SETY is NOT called because command postcondition (0) is false
+        assert (
+            result.output == "00\n"
+        )  # X=0, Y=0 (neither postcondition function called)
 
     def test_postcondition_truthiness(self, execute_mumps):
         """Postcondition truthiness follows MUMPS rules (§8.1.4).

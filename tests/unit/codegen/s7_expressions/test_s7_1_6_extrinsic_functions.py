@@ -28,7 +28,10 @@ ADD(A,B)
         compile(code, "<test>", "exec")
 
     def test_extrinsic_with_arguments(self, generate_python):
-        """Extrinsic function arguments are passed correctly (§7.1.6)."""
+        """Extrinsic function arguments are passed correctly (§7.1.6).
+
+        Spec 014 (T076-T078): Always pass _scope for cross-routine variable visibility.
+        """
         source = """TEST
  S X=$$CALC(1,2,3)
  Q X
@@ -36,8 +39,8 @@ CALC(A,B,C)
  Q A+B+C
 """
         code = generate_python(source)
-        # Arguments should be passed to _call_extrinsic
-        assert "_call_extrinsic(_rt, CALC, 1, 2, 3)" in code
+        # Arguments should be passed to _call_extrinsic with _scope
+        assert "_call_extrinsic(_rt, CALC, 1, 2, 3, _scope=_scope)" in code
 
     def test_external_routine_call(self, generate_python):
         """External routine generates module import and call (§7.1.6).

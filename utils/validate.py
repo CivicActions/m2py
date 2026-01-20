@@ -21,9 +21,12 @@ Usage:
 """
 
 import argparse
+import multiprocessing
+import queue
 import subprocess
 import sys
 import tempfile
+import uuid
 from dataclasses import fields
 from pathlib import Path
 from typing import Any
@@ -216,16 +219,10 @@ def _display_stmt_details(stmt: Any, indent: int = 3) -> None:
 # =============================================================================
 
 
-def run_m2py(source: str, debug: bool = False) -> tuple[str, str | None, str | None]:
-    """Run MUMPS source through m2py.
-
-    Args:
-        source: MUMPS source code
-        debug: If True, return AST and generated Python
-
-    Returns:
-        Tuple of (output, ast_str, python_code) - ast_str and python_code are None if not debug
-    """
+def _run_m2py_worker(
+    source: str, debug: bool, result_queue: multiprocessing.Queue
+) -> None:
+    """Worker function for m2py execution (runs in subprocess for timeout support)."""
     try:
         from m2py.codegen import generate_python
         from m2py.parser import MUMPSParser
@@ -235,7 +232,7 @@ def run_m2py(source: str, debug: bool = False) -> tuple[str, str | None, str | N
         python_code = None
 
         if debug:
-            # Parse and show AST
+            # Parse and get routine for AST display
             parser = MUMPSParser()
             routine = parser.parse(source, filename="<input>")
             parser.resolve_references(routine)
@@ -243,10 +240,8 @@ def run_m2py(source: str, debug: bool = False) -> tuple[str, str | None, str | N
             parser.analyze_for_loops(routine)
             parser.analyze_variables(routine, compute_transitive=True)
             parser.compute_signatures(routine)
-
-            # Capture AST as string
+            # Format AST in worker process (can't pickle textX objects)
             import io
-            import sys
 
             old_stdout = sys.stdout
             sys.stdout = io.StringIO()
@@ -264,14 +259,58 @@ def run_m2py(source: str, debug: bool = False) -> tuple[str, str | None, str | N
         result = runtime.execute(python_code_generated)
 
         if result.success:
-            return result.output.rstrip(), ast_str, python_code
+            result_queue.put((result.output.rstrip(), ast_str, python_code))
         else:
-            return f"ERROR: {result.error}", ast_str, python_code
+            result_queue.put((f"ERROR: {result.error}", ast_str, python_code))
 
     except Exception as e:
         import traceback
 
-        return f"ERROR: {e}\n{traceback.format_exc()}", None, None
+        result_queue.put((f"ERROR: {e}\n{traceback.format_exc()}", None, None))
+
+
+def run_m2py(
+    source: str, debug: bool = False, timeout: int = 30
+) -> tuple[str, str | None, str | None]:
+    """Run MUMPS source through m2py with hard timeout.
+
+    Args:
+        source: MUMPS source code
+        debug: If True, return AST and generated Python
+        timeout: Timeout in seconds (process will be killed if exceeded)
+
+    Returns:
+        Tuple of (output, ast_str, python_code) - ast_str and python_code are None if not debug
+    """
+    result_queue: multiprocessing.Queue = multiprocessing.Queue()
+    process = multiprocessing.Process(
+        target=_run_m2py_worker, args=(source, debug, result_queue)
+    )
+
+    try:
+        process.start()
+        try:
+            # Wait for result with timeout
+            output, ast_str, python_code = result_queue.get(timeout=timeout)
+            process.join(timeout=1)  # Give it a second to clean up
+            return output, ast_str, python_code
+        except queue.Empty:
+            # Timeout - kill the process
+            pass
+    finally:
+        # Ensure the process is terminated
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=1)
+            if process.is_alive():
+                process.kill()
+                process.join(timeout=1)
+
+    return (
+        f"ERROR: m2py execution timed out after {timeout}s (process killed)",
+        None,
+        None,
+    )
 
 
 # =============================================================================
@@ -280,11 +319,11 @@ def run_m2py(source: str, debug: bool = False) -> tuple[str, str | None, str | N
 
 
 def run_ydb(source: str, timeout: int = 30) -> str:
-    """Run MUMPS source through YottaDB via Docker.
+    """Run MUMPS source through YottaDB via Docker with hard timeout.
 
     Args:
         source: MUMPS source code
-        timeout: Timeout in seconds
+        timeout: Timeout in seconds (container will be force-killed if exceeded)
 
     Returns:
         Output from YottaDB execution
@@ -293,6 +332,9 @@ def run_ydb(source: str, timeout: int = 30) -> str:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".m", delete=False) as f:
         f.write(source)
         temp_path = Path(f.name)
+
+    # Generate unique container name for cleanup
+    container_name = f"m2py-ydb-{uuid.uuid4().hex[:12]}"
 
     try:
         # Get the first label name from the source
@@ -316,13 +358,13 @@ def run_ydb(source: str, timeout: int = 30) -> str:
         if not entry_label:
             return "ERROR: No entry label found in source"
 
-        # Run YottaDB via Docker
-        # Use --entrypoint to override the container's default entrypoint
-        # This allows us to run bash commands directly
+        # Run YottaDB via Docker with named container
         docker_cmd = [
             "docker",
             "run",
             "--rm",
+            "--name",
+            container_name,
             "--entrypoint",
             "/bin/bash",
             "-v",
@@ -348,7 +390,16 @@ def run_ydb(source: str, timeout: int = 30) -> str:
         return output.rstrip()
 
     except subprocess.TimeoutExpired:
-        return "ERROR: YottaDB execution timed out"
+        # Force kill the container
+        try:
+            subprocess.run(
+                ["docker", "rm", "-f", container_name],
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+        return f"ERROR: YottaDB execution timed out after {timeout}s (container force-killed)"
     except FileNotFoundError:
         return "ERROR: Docker not found. Is Docker installed and running?"
     except Exception as e:
@@ -356,6 +407,16 @@ def run_ydb(source: str, timeout: int = 30) -> str:
     finally:
         # Clean up temp file
         temp_path.unlink(missing_ok=True)
+        # Ensure container is removed even on success (in case --rm failed)
+        try:
+            subprocess.run(
+                ["docker", "rm", "-f", container_name],
+                capture_output=True,
+                timeout=5,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
 
 
 # =============================================================================
@@ -405,7 +466,7 @@ Examples:
         "-t",
         type=int,
         default=30,
-        help="YottaDB execution timeout in seconds (default: 30)",
+        help="Execution timeout in seconds for both m2py and YottaDB (default: 30)",
     )
 
     args = parser.parse_args()
@@ -438,7 +499,9 @@ Examples:
         print(f"{i:3}: {line}")
 
     # Run m2py
-    m2py_output, ast_str, python_code = run_m2py(source, debug=args.debug)
+    m2py_output, ast_str, python_code = run_m2py(
+        source, debug=args.debug, timeout=args.timeout
+    )
 
     # Debug output
     if args.debug:
