@@ -35,11 +35,29 @@ class TestGotoCommandCodegen:
         assert result.output == "END"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: GOTO computed")
-    def test_goto_computed(self, generate_python):
-        """Computed GOTO generates dispatch table (§8.2.6)."""
-        pytest.fail("Stub - implement test")
+    def test_goto_computed(self, generate_python, execute_mumps):
+        """Computed GOTO G LABEL+offset generates offset dispatch (§8.2.6).
+
+        Per Spec 007: Computed GOTO uses _line_map and trampoline to dispatch
+        to the correct statement within a label based on runtime offset.
+        """
+        # G L1+X where X=1 should jump to L1+1 (skip first statement)
+        code = """TEST S X=1 G L1+X Q
+L1 W "0" Q
+ W "1" Q
+ W "2" Q
+"""
+        python_code = generate_python(code)
+
+        # Should have _line_map for offset dispatch
+        assert "_line_map" in python_code
+        # Should calculate offset from variable
+        assert "m_num(X)" in python_code or "int(X)" in python_code
+
+        # Execute and verify correct offset dispatch
+        result = execute_mumps(code)
+        assert result.output == "1"  # Skips line 2 (W "0"), executes line 3 (W "1")
+        assert result.success is True
 
     def test_goto_external_routine(self, generate_python):
         """External GOTO G ^ROUTINE generates import and raise GotoExternal (§8.2.6).
@@ -806,25 +824,58 @@ class TestStateMachineCodegen:
     Reference: §8.2.6
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: state machine fallback")
-    def test_state_machine_fallback(self, generate_python):
-        """Unstructured routines use state machine pattern.
+    def test_state_machine_fallback(self, generate_python, execute_mumps):
+        """Unstructured routines use trampoline dispatcher pattern.
 
-        match state:
-            case 'LABEL1': ...
-            case 'LABEL2': ...
+        Per Spec 006: Cross-label GOTOs use trampoline dispatcher with _labels dict
+        and while loop for multi-label control flow.
         """
-        pytest.fail("Stub - implement test")
+        # Cross-label backward GOTO: L2 → L1 (backward jump)
+        code = """TEST G L2 Q
+L1 W "1" Q
+L2 W "2" G L1 Q
+"""
+        python_code = generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: state machine variable scope")
-    def test_state_machine_variable_scope(self, generate_python):
-        """State machine keeps all variables in outer scope.
+        # Trampoline pattern components:
+        # 1. _labels dict maps label names to functions
+        assert "_labels = {" in python_code
+        # 2. Each label is a separate function returning (next_label, state)
+        assert '"TEST": _TEST,' in python_code
+        assert '"L1": _L1,' in python_code
+        assert '"L2": _L2,' in python_code
+        # 3. Dispatcher uses while loop
+        assert "while target is not None:" in python_code
+        # 4. Lookup and call via _labels dict
+        assert "func = _labels[target]" in python_code
 
-        Variables naturally visible across all states.
+        # Verify execution produces correct output
+        result = execute_mumps(code)
+        assert result.output == "21"  # L2 writes "2", then G L1 writes "1"
+        assert result.success is True
+
+    def test_state_machine_variable_scope(self, generate_python, execute_mumps):
+        """Trampoline keeps variables visible across all labels via RoutineState.
+
+        Per Spec 006: Variables set in one label are accessible in other labels
+        through the shared RoutineState dataclass.
         """
-        pytest.fail("Stub - implement test")
+        code = """TEST S X=5 G NEXT Q
+NEXT W X Q
+"""
+        python_code = generate_python(code)
+
+        # RoutineState dataclass holds cross-label variables
+        assert "class RoutineState:" in python_code
+        # Variable assigned as state attribute
+        assert "state.X = " in python_code or "state.X=" in python_code
+        # Variable accessed as state attribute
+        assert "state.X" in python_code
+
+        # Verify execution - X is visible in NEXT
+        result = execute_mumps(code)
+        assert result.output == "5"
+        assert result.success is True
 
 
 @pytest.mark.codegen
@@ -1300,14 +1351,26 @@ STAR W "0"
         result = execute_mumps(source)
         assert result.output == "2"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: same level enforcement")
-    def test_same_level_enforcement(self, generate_python):
-        """GOTO must target same execution LEVEL.
+    def test_same_level_enforcement(self, execute_mumps):
+        """Cross-label GOTO follows YDB-permissive behavior (no M45 error).
 
-        Per ANSI, GOTO to different level raises M45 error.
+        Per Spec 008 research: Strict ANSI requires M45 error for cross-level GOTO.
+        However, YDB is permissive and allows cross-routine GOTO without level checks.
+        VistA contains 11,474 cross-routine GOTOs - strict MDC would break the codebase.
+        m2py follows YDB-permissive behavior per Constitution II.
+
+        Note: This tests pure GOTO chains (no DO). DO+GOTO combinations have a
+        separate known issue tracked in test_formal_param_isolation.
         """
-        pytest.fail("Stub - implement test")
+        # Cross-label GOTO chain - YDB allows this permissively
+        code = """TEST G SUB Q
+SUB G OUT Q
+OUT W "OUT" Q
+"""
+        result = execute_mumps(code)
+        # TEST → SUB → OUT via GOTO chain, writes "OUT"
+        assert result.output == "OUT"
+        assert result.success is True
 
 
 # =============================================================================
@@ -1471,12 +1534,20 @@ class TestIndirectGotoPartialIndirection:
         assert result.output == "Concat"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="External routine indirection requires module setup")
     def test_routine_indirect_codegen(self, generate_python):
-        """G LABEL^@RTN generates routine indirection (T051).
+        """G LABEL^@RTN generates runtime module import via importlib (T051).
 
-        When routine is indirect, need dynamic import at runtime.
+        When routine name is indirect (G LABEL^@RTN), the generated code
+        evaluates the variable at runtime and uses importlib.import_module()
+        to dynamically import the target routine.
         """
-        # This would require an external routine module to exist
-        pytest.fail("Stub - implement when external routines fully supported")
+        code = generate_python('TEST S RTN="OTHER" G START^@RTN Q')
+
+        # Should have runtime import of importlib
+        assert "import importlib" in code
+        # Should call import_module for dynamic routine loading
+        assert "importlib.import_module" in code
+        # Should use parse_call_target to parse the computed target
+        assert "parse_call_target" in code
+        # Should raise GotoExternal with the dynamically imported module
+        assert "GotoExternal(_module" in code or "GotoExternal(" in code
