@@ -178,14 +178,19 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task C2: Naked Reference Edge Cases (5 tests)
 
-- [ ] T060 [US1] Implement naked reference error without prior global in src/m2py/codegen/
-- [ ] T061 [US1] Implement naked references in $DATA, $ORDER, MERGE, LOCK in src/m2py/codegen/
-- [ ] T062 [US1] Convert 5 naked reference tests from xfail in tests/unit/codegen/
+- [x] T060 [US1] Implement naked reference error without prior global in src/m2py/codegen/
+      **Note**: Already implemented in runtime - resolve_naked() raises RuntimeError. Converted test to execute_mumps and verify error is raised. xfail count: 47→46
+- [x] T061 [US1] Implement naked references in $DATA, $ORDER, MERGE, LOCK in src/m2py/codegen/
+      **Note**: Added NakedGlobal handling to _gen_data(), _gen_order(), _gen_query(), _gen_get() in expressions.py. Uses lambda unpacking pattern for resolve_naked() calls. MERGE source works; MERGE destination and LOCK with naked are YDB-specific errors (documented).
+- [x] T062 [US1] Convert 5 naked reference tests from xfail in tests/unit/codegen/
+      **Note**: Converted test_data_function_with_naked, test_order_function_with_naked, test_merge_source_with_naked, test_naked_without_prior_global_error (4 tests now pass). test_lock_with_naked marked xfail as YDB-specific restriction. xfail count: 50→46
 
 #### Task C3: KILL Global (1 test)
 
-- [ ] T063 [US1] Implement KILL global (K ^GLO) in src/m2py/codegen/statements.py
-- [ ] T064 [US1] Convert KILL global test from xfail in tests/unit/codegen/s8_commands/
+- [x] T063 [US1] Implement KILL global (K ^GLO) in src/m2py/codegen/statements.py
+      **Note**: Already implemented - KILL global works correctly.
+- [x] T064 [US1] Convert KILL global test from xfail in tests/unit/codegen/s8_commands/
+      **Note**: Converted stub to execute_mumps test. Added 2 additional edge case tests. xfail count: 46→45
 
 ### Task D: Routine Structure (6 tests)
 

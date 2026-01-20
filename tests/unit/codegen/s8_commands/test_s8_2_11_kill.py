@@ -102,8 +102,24 @@ class TestKillCommandCodegen:
         # After K (X,Y), A and Z are undefined (KILLed), X and Y are kept
         assert result.output == "a23z\n"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: KILL global")
-    def test_kill_global(self, generate_python):
-        """KILL ^GLOBAL generates global delete (§8.2.11)."""
-        pytest.fail("Stub - implement test")
+    def test_kill_global(self, execute_mumps):
+        """KILL ^GLOBAL deletes entire global tree (§8.2.11)."""
+        result = execute_mumps("TEST S ^G(1)=1,^G(2)=2 K ^G W $D(^G),! Q")
+        assert result.success
+        assert result.output.rstrip() == "0"
+
+    def test_kill_global_subscript(self, execute_mumps):
+        """KILL ^GLOBAL(sub) deletes subtree (§8.2.11)."""
+        result = execute_mumps(
+            "TEST S ^G(1)=1,^G(2)=2 K ^G(1) W $D(^G(1)),$D(^G(2)),! Q"
+        )
+        assert result.success
+        assert result.output.rstrip() == "01"
+
+    def test_kill_global_preserves_siblings(self, execute_mumps):
+        """KILL ^G(1) preserves ^G(2) and ^G root (§8.2.11)."""
+        result = execute_mumps(
+            'TEST S ^G="root",^G(1)=1,^G(2)=2 K ^G(1) W $G(^G),^G(2),! Q'
+        )
+        assert result.success
+        assert result.output.rstrip() == "root2"

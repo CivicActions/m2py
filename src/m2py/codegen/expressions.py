@@ -871,6 +871,13 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_data_global(_rt.globals, 'NAME', subscripts)
         return f"m_data_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve then call m_data_global
+        # Spec 014 (T061): Naked references in $DATA
+        return (
+            f"(lambda _n, _s: m_data_global(_rt.globals, _n, _s))"
+            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+        )
     else:
         # Fallback for any other variable type - treat as local
         python_name = translate_name(var_name)
@@ -940,6 +947,13 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_get_global(_rt.globals, 'NAME', subscripts, default)
         return f"m_get_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {default_code})"
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve then call m_get_global
+        # Spec 014 (T061): Naked references in $GET
+        return (
+            f"(lambda _n, _s: m_get_global(_rt.globals, _n, _s, {default_code}))"
+            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+        )
     else:
         # Fallback for any other variable type - treat as local
         python_name = translate_name(var_name)
@@ -1011,6 +1025,13 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_order_global(_rt.globals, 'NAME', subscripts, direction)
         return f"m_order_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {direction_code})"
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve then call m_order_global
+        # Spec 014 (T061): Naked references in $ORDER
+        return (
+            f"(lambda _n, _s: m_order_global(_rt.globals, _n, _s, {direction_code}))"
+            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+        )
     else:
         # Fallback for any other variable type - treat as local
         python_name = translate_name(var_name)
@@ -1071,6 +1092,13 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_query_global(_rt.globals, 'NAME', subscripts)
         return f"m_query_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve then call m_query_global
+        # Spec 014 (T061): Naked references in $QUERY
+        return (
+            f"(lambda _n, _s: m_query_global(_rt.globals, _n, _s))"
+            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+        )
     else:
         # Fallback for any other variable type - treat as local
         python_name = translate_name(var_name)
