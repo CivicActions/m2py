@@ -175,3 +175,133 @@ class TestNewScopeManagerSpecialVars:
         # Both restored on exit
         assert scope["X"].value == 100
         assert rt.etrap() == "ORIGINAL_ETRAP"
+
+
+class TestExceptionToEcode:
+    """Tests for _exception_to_ecode() method (Spec 014 T055)."""
+
+    def test_zero_division_error(self):
+        """ZeroDivisionError maps to M9 (divide by zero)."""
+        rt = MUMPSRuntime()
+        assert rt._exception_to_ecode(ZeroDivisionError()) == ",M9,"
+
+    def test_key_error(self):
+        """KeyError maps to M6 (undefined local variable)."""
+        rt = MUMPSRuntime()
+        assert rt._exception_to_ecode(KeyError("X")) == ",M6,"
+
+    def test_generic_runtime_error(self):
+        """Generic RuntimeError maps to Z150373210."""
+        rt = MUMPSRuntime()
+        assert rt._exception_to_ecode(RuntimeError("unknown")) == ",Z150373210,"
+
+    def test_naked_error_in_message(self):
+        """RuntimeError with 'naked' in message maps to M1."""
+        rt = MUMPSRuntime()
+        assert rt._exception_to_ecode(RuntimeError("NAKEDERR")) == ",M1,"
+        assert rt._exception_to_ecode(RuntimeError("naked reference error")) == ",M1,"
+
+    def test_tcommit_error(self):
+        """RuntimeError with TCOMMIT/M44 maps to M44."""
+        rt = MUMPSRuntime()
+        assert rt._exception_to_ecode(RuntimeError("M44")) == ",M44,"
+        assert rt._exception_to_ecode(RuntimeError("TCOMMIT without TSTART")) == ",M44,"
+
+    def test_mruntimeerror_selectfalse(self):
+        """MRuntimeError(SELECTFALSE) maps to M4."""
+        from m2py.runtime.exceptions import MRuntimeError
+
+        rt = MUMPSRuntime()
+        assert rt._exception_to_ecode(MRuntimeError("SELECTFALSE")) == ",M4,"
+
+    def test_mruntimeerror_randargneg(self):
+        """MRuntimeError(RANDARGNEG) maps to M28."""
+        from m2py.runtime.exceptions import MRuntimeError
+
+        rt = MUMPSRuntime()
+        assert rt._exception_to_ecode(MRuntimeError("RANDARGNEG")) == ",M28,"
+
+    def test_mruntimeerror_unknown_code(self):
+        """Unknown MRuntimeError code uses Z prefix."""
+        from m2py.runtime.exceptions import MRuntimeError
+
+        rt = MUMPSRuntime()
+        assert rt._exception_to_ecode(MRuntimeError("FOOBAR")) == ",ZFOOBAR,"
+
+
+class TestHandleEtrap:
+    """Tests for _handle_etrap() method (Spec 014 T055)."""
+
+    def test_no_etrap_returns_false(self):
+        """Without $ETRAP set, returns False (propagate exception)."""
+        rt = MUMPSRuntime()
+        scope = {}
+        assert rt._handle_etrap(ZeroDivisionError(), scope) is False
+        # $ECODE should not be set when there's no handler
+        assert rt.ecode() == ""
+
+    def test_etrap_clears_ecode_returns_true(self):
+        '''$ETRAP that clears $ECODE returns True (error handled).
+
+        MUMPS: S $ETRAP="S $ECODE=""""
+        '''
+        rt = MUMPSRuntime()
+        rt.set_etrap('S $ECODE=""')
+        scope = {}
+        result = rt._handle_etrap(ZeroDivisionError(), scope)
+        assert result is True
+        assert rt.ecode() == ""
+
+    def test_etrap_preserves_ecode_returns_false(self):
+        """$ETRAP that doesn't clear $ECODE returns False (propagate).
+
+        MUMPS: S $ETRAP="W \"Logged\""  ; Doesn't clear $ECODE
+        """
+        rt = MUMPSRuntime()
+        rt.set_etrap('W "Logged"')  # Doesn't clear $ECODE
+        scope = {}
+        result = rt._handle_etrap(ZeroDivisionError(), scope)
+        assert result is False
+        assert rt.ecode() == ",M9,"  # Set but not cleared
+
+    def test_etrap_sets_ecode_from_exception(self):
+        """$ETRAP execution sets $ECODE based on exception type."""
+        rt = MUMPSRuntime()
+        rt.set_etrap("Q")  # Does nothing, $ECODE stays set
+        scope = {}
+        rt._handle_etrap(KeyError("X"), scope)
+        assert rt.ecode() == ",M6,"
+
+    def test_etrap_sets_zerror(self):
+        """$ETRAP execution sets $ZERROR to exception message."""
+        rt = MUMPSRuntime()
+        rt.set_etrap('S $ECODE=""')
+        scope = {}
+        rt._handle_etrap(ValueError("custom error message"), scope)
+        assert rt.zerror() == "custom error message"
+
+    def test_etrap_can_access_scope(self):
+        '''$ETRAP code can access and modify scope variables.
+
+        MUMPS: S $ETRAP="S HANDLED=1 S $ECODE=""""
+        '''
+        rt = MUMPSRuntime()
+        rt.set_etrap('S HANDLED=1 S $ECODE=""')
+        scope = {}
+        result = rt._handle_etrap(ZeroDivisionError(), scope)
+        assert result is True
+        # The $ETRAP code should have set HANDLED in scope
+        assert "HANDLED" in scope
+        assert scope["HANDLED"].value == 1
+
+    def test_etrap_error_in_handler_returns_false(self):
+        """Error in $ETRAP itself returns False (propagate original).
+
+        If $ETRAP code itself causes an error, we propagate the original.
+        """
+        rt = MUMPSRuntime()
+        # This will cause a syntax error in execute_mumps
+        rt.set_etrap("INVALID CODE {{{")
+        scope = {}
+        result = rt._handle_etrap(ZeroDivisionError(), scope)
+        assert result is False

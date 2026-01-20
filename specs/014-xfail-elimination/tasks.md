@@ -160,8 +160,10 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task B4: Error Processing (1 test)
 
-- [ ] T055 [US1] Implement error propagation across label calls in src/m2py/codegen/
-- [ ] T056 [US1] Convert error processing test from xfail in tests/unit/codegen/s6_routine/test_s6_3_2_error_processing.py
+- [x] T055 [US1] Implement error propagation across label calls in src/m2py/codegen/
+      **Note**: Added _exception_to_ecode() and _handle_etrap() to MUMPSRuntime. Modified _generate_label() and _generate_trampoline_code() to wrap function bodies in try/except for MUMPS $ETRAP error handling.
+- [x] T056 [US1] Convert error processing test from xfail in tests/unit/codegen/s6_routine/test_s6_3_2_error_processing.py
+      **Note**: Converted test_error_propagation stub to real test verifying try/except generation. Added test_trampoline_error_propagation for GOTO patterns. xfail count: 53→52
 
 ### Task C: Data Operations (8 tests)
 

@@ -438,6 +438,11 @@ class RoutineGenerator:
         - QUIT becomes break (implicit at end of body)
         - Other exits (cross-label GOTO) use return
 
+        Spec 014 (T055): Wraps body in try/except for error handling:
+        - Catches exceptions and calls _rt._handle_etrap()
+        - If $ETRAP clears $ECODE, performs implicit QUIT (return)
+        - If $ECODE not cleared, re-raises exception to propagate
+
         Args:
             label: MLabel ASG node
             ctx: Generator context
@@ -493,17 +498,29 @@ class RoutineGenerator:
                     f"_scope.setdefault({orig_name!r}, MArray()).value = {python_name}"
                 )
 
-            # Spec 011: Check if label has NEW statements - if so, wrap body
-            # in NewScopeManager to ensure proper save/restore semantics
-            # (has_new_statements is populated by variable analysis)
-            if label.has_new_statements:
-                ctx.emitter.line("with NewScopeManager(_scope) as _new_mgr:")
-                ctx.new_scope_manager_var = "_new_mgr"
-                with ctx.emitter.indented():
+            # Spec 014 (T055): Wrap body in try/except for error handling
+            # This implements MUMPS $ETRAP error handling at stack frame boundaries
+            ctx.emitter.line("try:")
+            with ctx.emitter.indented():
+                # Spec 011: Check if label has NEW statements - if so, wrap body
+                # in NewScopeManager to ensure proper save/restore semantics
+                # (has_new_statements is populated by variable analysis)
+                if label.has_new_statements:
+                    ctx.emitter.line("with NewScopeManager(_scope) as _new_mgr:")
+                    ctx.new_scope_manager_var = "_new_mgr"
+                    with ctx.emitter.indented():
+                        self._generate_label_body(label, ctx)
+                    ctx.new_scope_manager_var = None
+                else:
                     self._generate_label_body(label, ctx)
-                ctx.new_scope_manager_var = None
-            else:
-                self._generate_label_body(label, ctx)
+
+            # Spec 014 (T055): Error handling - invoke $ETRAP if set
+            ctx.emitter.line("except Exception as _e:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("if _rt._handle_etrap(_e, _scope):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("return  # $ETRAP cleared $ECODE, implicit QUIT")
+                ctx.emitter.line("raise  # Propagate to caller")
 
         ctx.emitter.blank()
         ctx.current_label = None
@@ -619,6 +636,11 @@ class RoutineGenerator:
         2. _labels dict mapping label names to functions
         3. Entry point function with trampoline dispatcher (named after first label)
 
+        Spec 014 (T055): Wraps dispatcher loop in try/except for error handling:
+        - Catches exceptions and calls _rt._handle_etrap()
+        - If $ETRAP clears $ECODE, returns state (implicit QUIT)
+        - If $ECODE not cleared, re-raises exception to propagate
+
         Args:
             ctx: Generator context
         """
@@ -672,26 +694,43 @@ class RoutineGenerator:
                 ctx.emitter.blank()
                 ctx.emitter.line("while target is not None:")
                 with ctx.emitter.indented():
-                    if has_offsets:
-                        # Spec 007 (T018-T019): Handle int targets via _line_map
-                        ctx.emitter.line("if isinstance(target, int):")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line("label_name, offset = _line_map[target]")
-                            ctx.emitter.line("func = _labels[label_name]")
-                            # T076: Pass _rt and _scope to inner functions
-                            ctx.emitter.line(
-                                "target, state = func(_rt, state, _scope, _start_offset=offset)"
-                            )
-                        ctx.emitter.line("else:")
-                        with ctx.emitter.indented():
+                    # Spec 014 (T055): Wrap dispatcher loop body in try/except
+                    # This implements MUMPS $ETRAP error handling at trampoline level
+                    ctx.emitter.line("try:")
+                    with ctx.emitter.indented():
+                        if has_offsets:
+                            # Spec 007 (T018-T019): Handle int targets via _line_map
+                            ctx.emitter.line("if isinstance(target, int):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    "label_name, offset = _line_map[target]"
+                                )
+                                ctx.emitter.line("func = _labels[label_name]")
+                                # T076: Pass _rt and _scope to inner functions
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope, _start_offset=offset)"
+                                )
+                            ctx.emitter.line("else:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("func = _labels[target]")
+                                # T076: Pass _rt and _scope to inner functions
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope)"
+                                )
+                        else:
+                            # No offsets: simple label dispatch
                             ctx.emitter.line("func = _labels[target]")
                             # T076: Pass _rt and _scope to inner functions
                             ctx.emitter.line("target, state = func(_rt, state, _scope)")
-                    else:
-                        # No offsets: simple label dispatch
-                        ctx.emitter.line("func = _labels[target]")
-                        # T076: Pass _rt and _scope to inner functions
-                        ctx.emitter.line("target, state = func(_rt, state, _scope)")
+                    # Spec 014 (T055): Error handling - invoke $ETRAP if set
+                    ctx.emitter.line("except Exception as _e:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("if _rt._handle_etrap(_e, _scope):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                "return state  # $ETRAP cleared $ECODE, implicit QUIT"
+                            )
+                        ctx.emitter.line("raise  # Propagate to caller")
                 ctx.emitter.blank()
                 ctx.emitter.line("return state")
             ctx.emitter.blank()

@@ -57,12 +57,46 @@ class TestErrorProcessingCodegen:
         assert "new_special_var" in result
         assert "etrap" in result
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: error propagation at runtime")
     def test_error_propagation(self, generate_python):
         """Error propagation generates proper exception handling (§6.3.2).
 
-        Full error handling flow requires try/except wrapping, which is
-        deferred until error propagation semantics are fully specified.
+        Spec 014 (T055-T056): Simple functions are wrapped in try/except
+        to implement MUMPS $ETRAP error handling:
+
+        - Catches exceptions and calls _rt._handle_etrap()
+        - If handler clears $ECODE, performs implicit QUIT (return)
+        - If $ECODE not cleared, re-raises exception to propagate
         """
-        pytest.fail("Stub - implement when try/except wrapping is added")
+        result = generate_python("TEST S X=1 Q")
+
+        # Should have try/except wrapping
+        assert "try:" in result
+        assert "except Exception as _e:" in result
+
+        # Should call _handle_etrap to invoke error handler
+        assert "_rt._handle_etrap(_e, _scope)" in result
+
+        # Should return if $ETRAP cleared $ECODE (implicit QUIT)
+        assert "return  # $ETRAP cleared $ECODE, implicit QUIT" in result
+
+        # Should re-raise if error not handled
+        assert "raise  # Propagate to caller" in result
+
+    def test_trampoline_error_propagation(self, generate_python):
+        """Trampoline dispatcher has error handling for GOTO patterns (§6.3.2).
+
+        Spec 014 (T055): Trampoline dispatchers (used for cross-label GOTOs)
+        wrap their loop in try/except. This ensures errors in any label
+        are caught at the stack frame boundary (the dispatcher).
+
+        Internal _LABEL functions do NOT have try/except because they're
+        not separate MUMPS stack frames - GOTO stays at the same level.
+        """
+        # Cross-label GOTO triggers trampoline pattern
+        result = generate_python("TEST G NEXT Q\nNEXT S X=1 Q")
+
+        # Dispatcher entry point should have try/except
+        assert "while target is not None:" in result
+        assert "except Exception as _e:" in result
+        assert "_rt._handle_etrap(_e, _scope)" in result
+        assert "return state  # $ETRAP cleared $ECODE, implicit QUIT" in result
