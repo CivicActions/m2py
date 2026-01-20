@@ -189,30 +189,64 @@ class TestExternalRoutineCallsCodegen:
         code = generate_python(source)
         assert "_scope=_scope" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: module caching")
     def test_module_caching(self, generate_python):
         """External modules are cached after first import.
 
         Multiple calls to same routine reuse cached module.
+        Python's import statement handles caching via sys.modules.
+        We verify that standard import statement is used (Python caches
+        even when import statement appears multiple times in code).
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST
+ S A=$$ADD^math(1,2)
+ S B=$$MULT^math(3,4)
+ Q A+B
+"""
+        code = generate_python(source)
+        # Python's import statement provides module caching via sys.modules
+        # We use standard import, not __import__ or importlib
+        assert "import math" in code
+        # Module is used with standard attribute access
+        assert "math.ADD" in code
+        assert "math.MULT" in code
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: cross-routine variable passing")
     def test_cross_routine_variable_passing(self, generate_python):
         """Variables visible across routine calls.
 
         Variables not NEWed in callee are visible to caller.
-        Requires shared runtime context.
+        Requires shared runtime context via _scope parameter.
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST
+ S A=100
+ S X=$$MODIFY^helper()
+ Q A
+"""
+        code = generate_python(source)
+        # External calls pass _scope=_scope for cross-routine visibility
+        assert "_scope=_scope" in code
+        # The _scope is initialized and used throughout
+        assert "_scope if _scope is not None else {}" in code
+        # Variables are accessed via _scope for visibility to callees
+        assert "_scope.setdefault('A', MArray())" in code
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: routine name translation")
     def test_routine_name_translation(self, generate_python):
         """Routine names translated to valid module names.
 
-        %ROUTINE becomes _pct_routine module.
+        %ROUTINE becomes _pct_ROUTINE module.
+        This is required because % is invalid in Python identifiers.
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST
+ S X=$$UTILS^%SYSTEM(1,2)
+ Q X
+"""
+        code = generate_python(source)
+        # % prefix translated to _pct_ for valid Python module name
+        assert "import _pct_SYSTEM" in code
+        # Module reference in call also translated
+        assert "_pct_SYSTEM.UTILS" in code
+        # verify valid Python syntax (import of non-existent module is syntax OK)
+        compile(code, "<test>", "exec")

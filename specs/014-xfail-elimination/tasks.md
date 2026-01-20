@@ -206,9 +206,16 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task D2: Extrinsic Advanced (3 tests)
 
-- [ ] T068 [US1] Implement module caching for external imports in src/m2py/codegen/
-- [ ] T069 [P] [US1] Implement cross-routine variable passing in src/m2py/codegen/
-- [ ] T070 [US1] Convert 3 extrinsic advanced tests from xfail in tests/unit/codegen/
+- [x] T068 [US1] Implement module caching for external imports in src/m2py/codegen/
+      **Note**: Python's import statement already provides module caching via sys.modules.
+      Test verifies standard import is used (not __import__ or importlib).
+- [x] T069 [P] [US1] Implement cross-routine variable passing in src/m2py/codegen/
+      **Note**: Already implemented via _scope parameter passing. Test verifies _scope=_scope
+      is passed on external calls and variables are accessed via _scope for visibility.
+- [x] T070 [US1] Convert 3 extrinsic advanced tests from xfail in tests/unit/codegen/
+      **Note**: Fixed routine name translation bug - %ROUTINE now becomes _pct_ROUTINE.
+      Converted test_module_caching, test_cross_routine_variable_passing, and
+      test_routine_name_translation. xfail: 43→40
 
 ### Task E: Advanced Features (14 tests)
 

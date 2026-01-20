@@ -701,12 +701,20 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         # Spec 013 Phase 13: Check for bundled routines first (e.g., MATH for $$%SIN^MATH)
         # Bundled routines are in m2py.runtime.routines package
         bundled_routines = {"MATH"}  # Add more as needed
+
+        # T068-T070: Translate routine name to valid Python module name
+        # %ROUTINE becomes _pct_ROUTINE for Python import compatibility
+        python_module_name = translate_name(routine_name)
+
         if routine_name in bundled_routines:
             # Import from bundled routines package
             ctx.emitter.line(f"from m2py.runtime.routines import {routine_name}")
+            # Bundled routines don't need name translation (they're Python modules)
+            module_ref = routine_name
         else:
             # T044: Generate import statement for external routine
-            ctx.emitter.line(f"import {routine_name}")
+            ctx.emitter.line(f"import {python_module_name}")
+            module_ref = python_module_name
 
         # Translate label name to Python function name
         func_name = translate_name(label_name)
@@ -715,9 +723,9 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         # The _call_extrinsic helper provides $TEST save/restore and by-ref unpacking
         # Phase 13 (T081): Pass _rt as first parameter
         if args:
-            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, {args}, _scope=_scope{byref_param})"
+            return f"_call_extrinsic(_rt, {module_ref}.{func_name}, {args}, _scope=_scope{byref_param})"
         else:
-            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, _scope=_scope{byref_param})"
+            return f"_call_extrinsic(_rt, {module_ref}.{func_name}, _scope=_scope{byref_param})"
 
     # Internal extrinsic (within same routine)
     # Translate label name to Python function name
