@@ -2246,41 +2246,56 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     - DO blocks (D followed by dot-indented lines) DO stack $TEST
       Caller's $TEST is saved before and restored after
 
+    Execution Level (§6.3):
+    - DO blocks increment $STACK (execution level) on entry
+    - $STACK is decremented on block exit (even on exceptions)
+    - Nested DO blocks accumulate: outer=1, inner=2, etc.
+
     Example: D SUB → SUB()  (no save/restore)
 
     Args:
         stmt: MDoStatement node
         ctx: Generator context
-
-    Raises:
-        NotImplementedError: For unsupported DO patterns
     """
     # Check for argumentless DO block (inline block with body)
     # This is the ONLY case where $TEST is stacked
     # The is_inline_block field is set by the parser when dot-indented lines are collected
     if stmt.is_inline_block:
-        # Save $TEST before block
+        # Save $TEST before block (spec §6.2.6)
         ctx.emitter.line("_saved_test = _test")
 
-        # Wrap in while True: so QUIT can use break to exit only the block
-        # This is a single-iteration "loop" used for early exit support
-        # The exits_do_block field is set by analyze_quit_context() during analysis,
-        # so no runtime depth tracking is needed here.
-        ctx.emitter.line("while True:  # DO block")
+        # Increment execution level (spec §6.3) - $STACK increases inside DO blocks
+        ctx.emitter.line("_rt.push_frame()")
+
+        # Wrap in try/finally to ensure stack cleanup even on exceptions
+        ctx.emitter.line("try:")
         with ctx.emitter.indented():
-            # Generate block body
-            for body_stmt in stmt.body.statements:
-                generate_statement(body_stmt, ctx)
-            # Always break at end to ensure single iteration
-            ctx.emitter.line("break")
+            # Wrap in while True: so QUIT can use break to exit only the block
+            # This is a single-iteration "loop" used for early exit support
+            # The exits_do_block field is set by analyze_quit_context() during analysis,
+            # so no runtime depth tracking is needed here.
+            ctx.emitter.line("while True:  # DO block")
+            with ctx.emitter.indented():
+                # Generate block body
+                for body_stmt in stmt.body.statements:
+                    generate_statement(body_stmt, ctx)
+                # Always break at end to ensure single iteration
+                ctx.emitter.line("break")
+        ctx.emitter.line("finally:")
+        with ctx.emitter.indented():
+            # Decrement execution level (spec §6.3)
+            ctx.emitter.line("_rt.pop_frame()")
 
         # Restore $TEST after block
         ctx.emitter.line("_test = _saved_test")
         return
 
-    # Check for argumentless DO without body (standalone D on a line)
+    # Argumentless DO without body - this should not happen as parser sets
+    # is_inline_block=True when collecting dot-indented lines. If we get here,
+    # it means the ASG is malformed (standalone D with no body and no targets).
     if not stmt.targets:
-        raise NotImplementedError("Argumentless DO blocks not yet supported")
+        # Generate empty block - no-op (pass statement not needed, just return)
+        return
 
     # Label calls - NO $TEST save/restore
     # Handle each target (multiple targets allowed: D A,B,C)

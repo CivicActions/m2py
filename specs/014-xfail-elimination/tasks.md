@@ -221,11 +221,20 @@ uv run pytest tests/unit/codegen/s7_expressions/test_s7_1_3_ssvns.py \
 
 #### Task E1: Language Semantics (5 tests)
 
-- [ ] T071 [US1] Implement $TEST NOT stacked for label call in src/m2py/codegen/
-- [ ] T072 [P] [US1] Implement $TEST NOT stacked for DO with arguments in src/m2py/codegen/
-- [ ] T073 [P] [US1] Implement $TEST NOT stacked for XECUTE in src/m2py/codegen/
-- [ ] T074 [US1] Implement DO block execution level tracking in src/m2py/codegen/
-- [ ] T075 [US1] Convert 5 language semantics tests from xfail in tests/unit/codegen/
+- [x] T071 [US1] Implement $TEST NOT stacked for label call in src/m2py/codegen/
+      **Note**: Already working - label calls do NOT stack $TEST. Converted test to
+      verify callee's IF 0 affects caller's $TEST.
+- [x] T072 [P] [US1] Implement $TEST NOT stacked for DO with arguments in src/m2py/codegen/
+      **Note**: Already working - D SUB(X) does NOT stack $TEST (same as D SUB).
+- [x] T073 [P] [US1] Implement $TEST NOT stacked for XECUTE in src/m2py/codegen/
+      **Note**: Already working - XECUTE "IF 0" affects caller's $TEST.
+- [x] T074 [US1] Implement DO block execution level tracking in src/m2py/codegen/
+      **Note**: IMPLEMENTED - Added push_frame()/pop_frame() calls to DO block codegen.
+      $STACK now correctly increments inside DO blocks and decrements on exit.
+      Tested: simple blocks, nested blocks, QUIT in blocks, $TEST stacking.
+- [x] T075 [US1] Convert 5 language semantics tests from xfail in tests/unit/codegen/
+      **Note**: All 5 tests converted. DO block execution level now works correctly.
+      xfail: 40→35
 
 #### Task E2: Postconditions Advanced (3 tests)
 

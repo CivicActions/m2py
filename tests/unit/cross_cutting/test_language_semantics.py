@@ -133,42 +133,58 @@ FUNC()
         # - Second $T is 1 (restored, even though FUNC did IF 0)
         assert result.output == "111"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: label call $TEST visibility")
-    def test_test_not_stacked_for_label_call(self):
+    def test_test_not_stacked_for_label_call(self, execute_mumps):
         """Label calls do NOT stack $TEST - callee changes visible.
 
         IF 1           ; $TEST=1
         D SUB          ; Does NOT stack $TEST
         ; SUB sets $TEST=0, it IS visible to caller
-        ELSE W "YES"   ; DOES execute because SUB set $TEST=0
-        """
-        pytest.fail("Stub - implement test")
+        W $T           ; Should output 0 (callee's IF 0 affected caller)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: label call with args $TEST visibility"
-    )
-    def test_test_not_stacked_for_do_with_args(self):
+        Verified against YottaDB.
+        """
+        source = """TEST
+ I 1 D SUB W $T Q
+SUB
+ I 0 Q"""
+        result = execute_mumps(source)
+        # After D SUB where SUB does IF 0, caller's $TEST should be 0
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_test_not_stacked_for_do_with_args(self, execute_mumps):
         """DO with arguments does NOT stack $TEST (same as D SUB).
 
         IF 1           ; $TEST=1
         D SUB(1)       ; Does NOT stack $TEST (same behavior as D SUB)
         ; If SUB sets $TEST=0, it affects caller
-        ELSE W "YES"   ; DOES execute because SUB set $TEST=0
-        """
-        pytest.fail("Stub - implement test")
+        W $T           ; Should output 0 (callee's IF 0 affected caller)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TEST not stacked for XECUTE")
-    def test_test_not_stacked_for_xecute(self):
+        Verified against YottaDB.
+        """
+        source = """TEST
+ I 1 D SUB(1) W $T Q
+SUB(X)
+ I 0 Q"""
+        result = execute_mumps(source)
+        # After D SUB(1) where SUB does IF 0, caller's $TEST should be 0
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_test_not_stacked_for_xecute(self, execute_mumps):
         """XECUTE does NOT stack $TEST.
 
         IF 1                ; $TEST=1
         X "IF 0"            ; $TEST=0, visible to caller
-        ELSE W "YES"        ; DOES execute - $TEST is 0
+        W $T                ; Should output 0
+
+        Verified against YottaDB.
         """
-        pytest.fail("Stub - implement test")
+        source = 'TEST I 1 X "I 0" W $T Q'
+        result = execute_mumps(source)
+        # After XECUTE "IF 0", $TEST should be 0
+        assert result.output == "0"
+        assert result.success is True
 
     def test_postcondition_does_not_update_test(self, execute_mumps):
         """Postconditions do NOT update $TEST.
@@ -399,25 +415,43 @@ class TestMiscSemanticsCodegen:
     Reference: §6.3, §8.2.3, §8.2.16
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: block execution level")
-    def test_do_block_execution_level(self):
+    def test_do_block_execution_level(self, execute_mumps):
         """Argumentless DO increases execution level (§6.3).
 
         D  ; Starts block at LEVEL+1
         . S X=1  ; Executed at LEVEL+1
         . Q
         S Y=2  ; Back to original LEVEL
-        """
-        pytest.fail("Stub - implement test")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: extrinsic return value")
-    def test_extrinsic_function_return(self):
+        $STACK returns the execution level which increases inside DO blocks.
+        Verified against YottaDB.
+        """
+        source = """TEST
+ W "L0=",$STACK,!
+ D
+ . W "L1=",$STACK,!
+ . D
+ . . W "L2=",$STACK,!
+ . W "L1 again=",$STACK,!
+ W "L0 again=",$STACK,!"""
+        result = execute_mumps(source)
+        assert result.output == "L0=0\nL1=1\nL2=2\nL1 again=1\nL0 again=0\n"
+        assert result.success is True
+
+    def test_extrinsic_function_return(self, execute_mumps):
         """Extrinsic function returns QUIT value (§7.1.6).
 
-        S X=$$FUNC
-        ...
-        FUNC Q 42  ; Returns 42 to caller
+        S X=$$FUNC()
+        ; X should be 42
+        FUNC() Q 42  ; Returns 42 to caller
+
+        Verified against YottaDB.
         """
-        pytest.fail("Stub - implement test")
+        source = """TEST
+ S X=$$FUNC()
+ W X Q
+FUNC()
+ Q 42"""
+        result = execute_mumps(source)
+        assert result.output == "42"
+        assert result.success is True
