@@ -383,23 +383,32 @@ SUM W A(1)+A(2) Q"""
         assert result.output == "30"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="NEW command not yet supported in codegen")
+    @pytest.mark.xfail(
+        reason="m2py scope isolation differs from YDB: m2py isolates NEWed vars, YDB preserves across GOTO"
+    )
     def test_newed_variable_isolation(self, execute_mumps):
-        """T076a: NEWed variables are isolated to their label scope.
+        """T076a: GOTO inherits NEWed variable scope in YDB.
 
-        In MUMPS, NEW creates a local scope for the variable.
+        In MUMPS, NEW creates a local scope for the variable. However, YDB's
+        behavior with GOTO is that the GOTO inherits the current scope including
+        NEWed variables - it does NOT create a new scope boundary.
+
         MUMPS: TEST N X S X=1 G NEXT Q / NEXT W X Q
-        Expected: "" (X is local to TEST, not visible in NEXT)
+        YDB output: "1" (X from TEST's scope visible in NEXT via GOTO)
 
-        Note: This test expects YDB behavior where X is undefined in NEXT.
+        Note: m2py currently isolates scopes differently than YDB. This test
+        documents the YDB behavior for future compatibility work.
         """
         source = """TEST N X S X=1 G NEXT Q
 NEXT W X Q"""
         result = execute_mumps(source)
-        # YDB throws error on undefined variable access
+        # YDB preserves NEWed variable across GOTO
+        assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="DO with args has issues in cross-label context")
+    @pytest.mark.xfail(
+        reason="Bug: trampoline pattern doesn't define SUB function for D SUB(5) call"
+    )
     def test_formal_param_isolation(self, execute_mumps):
         """T076b: Formal parameters are isolated to subroutine scope.
 
