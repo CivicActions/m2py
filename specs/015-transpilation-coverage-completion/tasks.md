@@ -150,12 +150,12 @@
 
 ### Implementation
 
-- [ ] T036 [US1] Update _generate_tstart() to check for restart_vars in src/m2py/codegen/statements.py
-- [ ] T037 [US1] Raise NotImplementedError with clear message when restart_vars present
-- [ ] T038 [US1] Add test_tstart_restart_vars_not_supported in tests/unit/codegen/s8_commands/test_s8_2_22_tstart.py
-- [ ] T039 Run coverage check to verify Phase 7 impact: `uv run python utils/coverage_check.py transpile`
+- [x] T036 [US1] Update _generate_tstart() to check for restart_vars in src/m2py/codegen/statements.py
+- [x] T037 [US1] Raise NotImplementedError with clear message when restart_vars present
+- [x] T038 [US1] Add test_tstart_restart_vars_not_supported in tests/unit/codegen/s8_commands/test_s8_2_22_tstart.py
+- [x] T039 Run coverage check to verify Phase 7 impact: `uv run python utils/coverage_check.py transpile`
 
-**Checkpoint**: TSTART restart variables raise clear NotImplementedError (+0.3% raw coverage)
+**Checkpoint**: ✅ TSTART restart variables (A,B) and restart_all (*) raise clear NotImplementedError. 2 new tests added.
 
 ---
 

@@ -3186,17 +3186,34 @@ def _generate_tstart(stmt: MTStartStatement, ctx: "GeneratorContext") -> None:
 
     Generated: _rt.globals.transaction_start()
 
-    Note: Restart variables and parameters are not yet implemented -
-    they require additional runtime infrastructure for transaction
-    restart handling.
+    Note: Restart variables (A,B) and restart_all (*) require transaction
+    restart infrastructure that is not yet implemented.
 
     Args:
         stmt: MTStartStatement node
         ctx: Generator context
+
+    Raises:
+        NotImplementedError: If restart_vars or restart_all is specified
     """
+    # Check for restart variables or restart_all - these require infrastructure
+    # for saving and restoring variable state on TRESTART which is not implemented
+    if stmt.restart_vars or stmt.restart_all:
+        if stmt.restart_all:
+            raise NotImplementedError(
+                "TSTART (*) restart variables not implemented - "
+                "transaction restart infrastructure required"
+            )
+        else:
+            # restart_vars contains MVariable instances (which have .name)
+            # Use getattr for type safety since the type annotation is MExpr
+            var_names = ", ".join(getattr(v, "name", str(v)) for v in stmt.restart_vars)
+            raise NotImplementedError(
+                f"TSTART ({var_names}) restart variables not implemented - "
+                "transaction restart infrastructure required"
+            )
+
     # Basic implementation - call transaction_start on global storage
-    # Note: restart_vars, restart_all, and parameters are ignored for now
-    # A full implementation would need to save variable state for restart
     ctx.emitter.line("_rt.globals.transaction_start()")
 
 

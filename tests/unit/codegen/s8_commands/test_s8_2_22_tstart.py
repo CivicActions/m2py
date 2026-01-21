@@ -44,3 +44,35 @@ TEST
         result = generate_python(code)
         # SERIAL is parsed but basic transaction_start is generated
         assert "_rt.globals.transaction_start()" in result
+
+    def test_tstart_restart_vars_not_supported(self, generate_python):
+        """TSTART (A,B) raises NotImplementedError (§8.2.22).
+
+        T038: Restart variables require infrastructure for saving and restoring
+        variable state on TRESTART, which is not yet implemented.
+        """
+        code = """\
+TEST
+ TS (A,B)
+ Q
+"""
+        with pytest.raises(
+            NotImplementedError, match="restart variables not implemented"
+        ):
+            generate_python(code)
+
+    def test_tstart_restart_all_not_supported(self, generate_python):
+        """TSTART * raises NotImplementedError (§8.2.22).
+
+        T038: Restart all (*) requires infrastructure for saving and restoring
+        all variable state on TRESTART, which is not yet implemented.
+        """
+        code = """\
+TEST
+ TS *
+ Q
+"""
+        with pytest.raises(
+            NotImplementedError, match="restart variables not implemented"
+        ):
+            generate_python(code)
