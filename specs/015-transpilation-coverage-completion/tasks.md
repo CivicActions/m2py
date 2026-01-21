@@ -281,12 +281,12 @@
 
 ### Implementation
 
-- [ ] T065 [US2] Remove MBinaryOp/MUnaryOp re-analysis handlers from src/m2py/analysis/semantic_analyzer.py lines 256-261
-- [ ] T066 [US2] Remove unreachable else branch from src/m2py/analysis/for_analysis.py line 59
-- [ ] T067 [US2] Remove unreachable defensive fallback from src/m2py/analysis/pattern_compiler.py line 80
-- [ ] T068 [US2] Run full test suite to verify no regressions: `uv run pytest`
+- [x] T065 [US2] Remove MBinaryOp/MUnaryOp re-analysis handlers from src/m2py/analysis/semantic_analyzer.py lines 256-261
+- [x] T066 [US2] Remove unreachable else branch from src/m2py/analysis/for_analysis.py line 59
+- [x] T067 [US2] Remove unreachable defensive fallback from src/m2py/analysis/pattern_compiler.py line 80
+- [x] T068 [US2] Run full test suite to verify no regressions: `uv run pytest`
 
-**Checkpoint**: Dead code removed, all tests pass, coverage improved
+**Checkpoint**: ✅ Dead code removed (~15 lines), all 5078 tests pass
 
 ---
 

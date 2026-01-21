@@ -53,10 +53,8 @@ def _classify_for_loop_type(stmt: MForStatement) -> ForLoopType:
             return ForLoopType.STRING_LIST
         elif param.param_type == ForParamType.RANGE:
             return ForLoopType.BOUNDED
-        elif param.param_type == ForParamType.OPEN_RANGE:
-            return ForLoopType.OPEN_ENDED
-        else:
-            return ForLoopType.BOUNDED  # Default fallback
+        # ForParamType.OPEN_RANGE is the only remaining case
+        return ForLoopType.OPEN_ENDED
 
     # Multiple parameters - check if all same type for potential optimization
     param_types = {p.param_type for p in stmt.parameters}

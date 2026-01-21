@@ -253,12 +253,8 @@ class SemanticAnalyzer:
                 new_args.append(self.analyze(arg, expr))
             object.__setattr__(expr, "arguments", new_args)
 
-        elif isinstance(expr, MBinaryOp):
-            object.__setattr__(expr, "left", self.analyze(expr.left, expr))
-            object.__setattr__(expr, "right", self.analyze(expr.right, expr))
-
-        elif isinstance(expr, MUnaryOp):
-            object.__setattr__(expr, "operand", self.analyze(expr.operand, expr))
+        # Note: MBinaryOp and MUnaryOp are created during analysis with
+        # already-analyzed children, so they never re-enter this method.
 
         elif isinstance(expr, MIndirection):
             object.__setattr__(expr, "expression", self.analyze(expr.expression, expr))
