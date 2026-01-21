@@ -75,11 +75,25 @@ class TestDoCommandCodegen:
         assert result.output == "12"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO external routine")
     def test_do_external_routine(self, generate_python):
-        """DO external routine generates import and call (§8.2.3)."""
-        pytest.fail("Stub - implement test")
+        """DO external routine generates import and call (§8.2.3).
+
+        D LABEL^ROUTINE generates:
+        1. Import statement for the external routine module
+        2. Label existence check with helpful error
+        3. Call to ROUTINE.LABEL(_rt, _scope=_scope)
+        """
+        code = generate_python("TEST D LABEL^EXTRTN Q")
+
+        # Should import the external routine module
+        assert "import EXTRTN" in code
+
+        # Should check if label exists with helpful error
+        assert "hasattr(EXTRTN, 'LABEL')" in code
+        assert "LabelNotFoundError" in code
+
+        # Should call the external label with runtime and scope
+        assert "EXTRTN.LABEL(_rt, _scope=_scope)" in code
 
 
 @pytest.mark.codegen
@@ -421,41 +435,99 @@ class TestScopeStrategyCodegen:
     Reference: §6.3, §8.2.3
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: pure function codegen")
-    def test_pure_function_codegen(self, generate_python):
-        """PURE_FUNCTION generates simple def with return.
+    def test_pure_function_codegen(self):
+        """PURE_FUNCTION is detected for functions with no side effects.
 
-        No side effects, returns value: def f(args) -> T
+        A function that only returns a value and doesn't:
+        - Modify caller variables
+        - Access globals
+        - Have side effects
+        Should be classified as PURE_FUNCTION.
         """
-        pytest.fail("Stub - implement test")
+        from m2py import MUMPSParser
+        from m2py.analysis.variables import compute_all_signatures
+        from m2py.asg.enums import ScopeStrategy
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: subroutine codegen")
-    def test_subroutine_codegen(self, generate_python):
-        """SUBROUTINE generates def returning None or dict.
+        parser = MUMPSParser()
+        # Pure function - just returns a value
+        routine = parser.parse("TEST Q $$ADD(1,2)\nADD(X,Y) Q X+Y")
+        parser.resolve_references(routine)
+        parser.analyze_variables(routine)
 
-        Side effects only, no return value.
+        sigs = compute_all_signatures(routine)
+        # ADD should be classified as PURE_FUNCTION
+        assert sigs["ADD"].scope_strategy == ScopeStrategy.PURE_FUNCTION
+
+    def test_subroutine_codegen(self):
+        """SUBROUTINE is detected for procedures with side effects.
+
+        A label that:
+        - Has no return value (QUIT without expression)
+        - May have side effects (writes, globals, etc.)
+        Should be classified as SUBROUTINE.
         """
-        pytest.fail("Stub - implement test")
+        from m2py import MUMPSParser
+        from m2py.analysis.variables import compute_all_signatures
+        from m2py.asg.enums import ScopeStrategy
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: function with outputs codegen")
-    def test_function_with_outputs_codegen(self, generate_python):
-        """FUNCTION_WITH_OUTPUTS generates tuple return.
+        parser = MUMPSParser()
+        # Subroutine - writes output, no return value
+        routine = parser.parse('TEST D SUB Q\nSUB W "Hello" Q')
+        parser.resolve_references(routine)
+        parser.analyze_variables(routine)
 
-        Returns value plus modified by-ref parameters.
+        sigs = compute_all_signatures(routine)
+        # Both TEST and SUB should be classified as SUBROUTINE
+        assert sigs["SUB"].scope_strategy == ScopeStrategy.SUBROUTINE
+        assert sigs["TEST"].scope_strategy == ScopeStrategy.SUBROUTINE
+
+    def test_function_with_outputs_codegen(self):
+        """FUNCTION_WITH_OUTPUTS is detected for functions returning value + by-ref.
+
+        A function that:
+        - Returns a value (QUIT with expression)
+        - Also modifies by-ref parameters
+        Should be classified as FUNCTION_WITH_OUTPUTS.
         """
-        pytest.fail("Stub - implement test")
+        from m2py import MUMPSParser
+        from m2py.analysis.variables import compute_all_signatures
+        from m2py.asg.enums import ScopeStrategy
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: requires runtime codegen")
-    def test_requires_runtime_codegen(self, generate_python):
-        """REQUIRES_RUNTIME generates runtime scope access.
+        parser = MUMPSParser()
+        # Function with outputs - returns value AND modifies by-ref param X
+        routine = parser.parse("TEST S A=1 S R=$$INC(.A) Q\nINC(X) S X=X+1 Q X")
+        parser.resolve_references(routine)
+        parser.analyze_variables(routine)
 
-        Indirection/XECUTE defeats static analysis.
+        sigs = compute_all_signatures(routine)
+        # INC should be classified as FUNCTION_WITH_OUTPUTS
+        assert sigs["INC"].scope_strategy == ScopeStrategy.FUNCTION_WITH_OUTPUTS
+        # It should also have X in byref_outputs
+        assert "X" in sigs["INC"].byref_outputs
+
+    def test_requires_runtime_codegen(self):
+        """REQUIRES_RUNTIME is detected when indirection defeats static analysis.
+
+        A label that uses:
+        - Indirection (D @var, S @var=...)
+        - XECUTE
+        Should be classified as REQUIRES_RUNTIME.
         """
-        pytest.fail("Stub - implement test")
+        from m2py import MUMPSParser
+        from m2py.analysis.variables import compute_all_signatures
+        from m2py.asg.enums import ScopeStrategy
+
+        parser = MUMPSParser()
+        # Requires runtime - uses indirection
+        routine = parser.parse('TEST S X="SUB" D @X Q\nSUB W "OK" Q')
+        parser.resolve_references(routine)
+        parser.analyze_variables(routine)
+
+        sigs = compute_all_signatures(routine)
+        # TEST should be classified as REQUIRES_RUNTIME
+        assert sigs["TEST"].scope_strategy == ScopeStrategy.REQUIRES_RUNTIME
+        # SUB should be SUBROUTINE (no indirection)
+        assert sigs["SUB"].scope_strategy == ScopeStrategy.SUBROUTINE
 
 
 @pytest.mark.codegen
@@ -734,12 +806,21 @@ class TestPartialIndirection:
         assert result.output == "Called"
         assert result.success is True
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="External routine indirection requires module setup")
     def test_routine_indirect_codegen(self, generate_python):
-        """D LABEL^@RTN generates routine indirection (T044).
+        """D LABEL^@RTN generates runtime import with importlib (T044).
 
-        When routine is indirect, need dynamic import at runtime.
+        When the routine is indirect, we need:
+        1. Evaluate RTN variable to get routine name
+        2. Use importlib.import_module() for dynamic import
+        3. Call the resolved label
         """
-        # This would require an external routine module to exist
-        pytest.fail("Stub - implement when external routines fully supported")
+        code = generate_python('TEST S RTN="MYRTN" D LABEL^@RTN Q')
+
+        # Should use importlib for dynamic import
+        assert "importlib.import_module" in code
+
+        # Should evaluate the RTN variable
+        assert "_scope.get('RTN'" in code
+
+        # Should handle the call target via runtime
+        assert "parse_call_target" in code

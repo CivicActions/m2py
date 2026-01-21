@@ -52,17 +52,37 @@ class TestIndirectionCodegen:
         # Should include scope reference
         assert "_scope" in code
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: subscript indirection")
-    def test_subscript_indirection(self, generate_python):
-        """Subscript indirection generates dynamic access (§7.3)."""
-        pytest.fail("Stub - implement test")
+    def test_subscript_indirection(self, execute_mumps):
+        """Subscript indirection @VAR as subscript evaluates VAR's value (§7.3).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: argument indirection")
-    def test_argument_indirection(self, generate_python):
-        """Argument indirection generates runtime evaluation (§7.3)."""
-        pytest.fail("Stub - implement test")
+        In MUMPS: S X(@VAR) where VAR="A" and A=999 → sets X(999)
+        The @VAR is evaluated first (getting the value of A), then that value
+        is used as the subscript.
+        """
+        result = execute_mumps('TEST S SUB="A" S A=999 S X(@SUB)=2 W X(999) Q')
+        assert result.output == "2"
+
+    def test_subscript_indirection_read(self, execute_mumps):
+        """Subscript indirection works for reading subscripted values (§7.3)."""
+        result = execute_mumps('TEST S SUB="KEY" S KEY=1 S X(1)=42 W X(@SUB) Q')
+        assert result.output == "42"
+
+    def test_argument_indirection(self, execute_mumps):
+        """Argument indirection @VAR where VAR contains variable name (§7.3).
+
+        In MUMPS: W @ARG where ARG="X" writes the value of X.
+        The @ARG is evaluated (getting "X"), then X's value is retrieved.
+        """
+        result = execute_mumps('TEST S ARG="X" S X=123 W @ARG Q')
+        assert result.output == "123"
+
+    def test_argument_indirection_in_set(self, execute_mumps):
+        """Argument indirection works as SET target (§7.3).
+
+        In MUMPS: S @ARG=5 where ARG="X=5" executes SET X=5
+        """
+        result = execute_mumps('TEST S ARG="X=5" S @ARG W X Q')
+        assert result.output == "5"
 
 
 @pytest.mark.codegen

@@ -383,31 +383,37 @@ SUM W A(1)+A(2) Q"""
         assert result.output == "30"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="NEW command not yet supported in codegen")
     def test_newed_variable_isolation(self, execute_mumps):
-        """T076a: NEWed variables are isolated to their label scope.
+        """T076a: GOTO inherits NEWed variable scope in YDB.
 
-        In MUMPS, NEW creates a local scope for the variable.
+        In MUMPS, NEW creates a local scope for the variable. However, YDB's
+        behavior with GOTO is that the GOTO inherits the current scope including
+        NEWed variables - it does NOT create a new scope boundary.
+
         MUMPS: TEST N X S X=1 G NEXT Q / NEXT W X Q
-        Expected: "" (X is local to TEST, not visible in NEXT)
+        YDB output: "1" (X from TEST's scope visible in NEXT via GOTO)
 
-        Note: This test expects YDB behavior where X is undefined in NEXT.
+        Fixed: m2py now includes NEWed-and-written variables in RoutineState
+        so they flow correctly across GOTO boundaries.
         """
         source = """TEST N X S X=1 G NEXT Q
 NEXT W X Q"""
         result = execute_mumps(source)
-        # YDB throws error on undefined variable access
+        # YDB preserves NEWed variable across GOTO
+        assert result.output == "1"
         assert result.success is True
 
-    @pytest.mark.xfail(reason="DO with args has issues in cross-label context")
     def test_formal_param_isolation(self, execute_mumps):
         """T076b: Formal parameters are isolated to subroutine scope.
 
         MUMPS: TEST D SUB(5) Q / SUB(X) G SHOW Q / SHOW W X Q
         Expected: "5" (X from SUB's formal param visible via cross-label GOTO)
 
-        Note: Per MUMPS semantics, X in SUB(X) is local to SUB.
+        Per MUMPS semantics, X in SUB(X) is local to SUB.
         When GOTO SHOW happens, X from SUB's scope should be visible.
+
+        Fixed: Now generates wrapper functions for all labels and stores
+        formal parameters in RoutineState for cross-label visibility.
         """
         source = """TEST D SUB(5) Q
 SUB(X) G SHOW Q

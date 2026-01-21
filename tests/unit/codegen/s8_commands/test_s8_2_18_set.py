@@ -174,65 +174,142 @@ class TestLhsFunctionAssignmentCodegen:
 class TestComputedOffsetCodegen:
     """Codegen tests for computed offsets in DO/GOTO.
 
-    Offset expressions can include globals, functions, all operators.
-    Requires line-indexed execution model.
+    Offset expressions can include literals, variables, globals, functions,
+    and arithmetic expressions. Requires line-indexed execution model.
 
-    Reference: §8.2.3, §8.2.6
+    Reference: §8.2.3, §8.2.6, Spec 007
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: DO with literal offset")
-    def test_do_with_literal_offset(self, generate_python):
-        """DO LABEL+n with literal offset.
+    def test_do_with_literal_offset(self, generate_python, execute_mumps):
+        """DO LABEL+n with literal offset dispatches to n-th line after LABEL.
 
-        D LABEL+5 dispatches to 5th line after LABEL.
+        Per Spec 007: D LABEL+2 calls LABEL starting at statement index 2
+        (0-indexed), skipping the first two statements.
         """
-        pytest.fail("Stub - implement test")
+        code = """TEST D LABEL+2 Q
+LABEL W "0" Q
+ W "1" Q
+ W "2" Q
+"""
+        python_code = generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: GOTO with literal offset")
-    def test_goto_with_literal_offset(self, generate_python):
-        """GOTO LABEL+n with literal offset.
+        # Should have _line_map for offset dispatch
+        assert "_line_map" in python_code
+        # Should have _start_offset parameter in call
+        assert "_start_offset" in python_code
 
-        G LABEL+3 jumps to 3rd line after LABEL.
+        # Execute and verify - D LABEL+2 skips lines 2,3 and executes line 4
+        result = execute_mumps(code)
+        assert result.output == "2"
+        assert result.success is True
+
+    def test_goto_with_literal_offset(self, generate_python, execute_mumps):
+        """GOTO LABEL+n with literal offset jumps to n-th line after LABEL.
+
+        Per Spec 007: G LABEL+2 transfers to LABEL statement index 2.
         """
-        pytest.fail("Stub - implement test")
+        code = """TEST G LABEL+2 Q
+LABEL W "0" Q
+ W "1" Q
+ W "2" Q
+"""
+        python_code = generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: offset with variable")
-    def test_offset_with_variable(self, generate_python):
-        """Offset containing variable evaluated at runtime.
+        # Should have _line_map for offset dispatch
+        assert "_line_map" in python_code
 
-        G LABEL+N computes target from N value.
+        # Execute and verify - G LABEL+2 jumps to line 4 (W "2")
+        result = execute_mumps(code)
+        assert result.output == "2"
+        assert result.success is True
+
+    def test_offset_with_variable(self, generate_python, execute_mumps):
+        """Offset containing variable is evaluated at runtime.
+
+        Per Spec 007: G LABEL+N computes target from N's value.
         """
-        pytest.fail("Stub - implement test")
+        code = """TEST S N=1 G LABEL+N Q
+LABEL W "0" Q
+ W "1" Q
+ W "2" Q
+"""
+        python_code = generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: offset with global")
-    def test_offset_with_global(self, generate_python):
-        """Offset containing global variable.
+        # Should evaluate N at runtime using m_num()
+        assert "m_num" in python_code or "int(" in python_code
+        # Should have _line_map
+        assert "_line_map" in python_code
 
-        G STAR+^V1A reads ^V1A to compute offset.
+        # Execute - N=1, so G LABEL+1 jumps to line 3 (W "1")
+        result = execute_mumps(code)
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_offset_with_global(self, generate_python, execute_mumps):
+        """Offset containing global variable reads global at runtime.
+
+        Per Spec 007: G LABEL+^V reads ^V to compute offset.
         """
-        pytest.fail("Stub - implement test")
+        code = """TEST S ^V=2 G LABEL+^V Q
+LABEL W "0" Q
+ W "1" Q
+ W "2" Q
+"""
+        python_code = generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: offset with function")
-    def test_offset_with_function(self, generate_python):
-        """Offset containing intrinsic function call.
+        # Should access global via _rt.globals
+        assert "_rt.globals" in python_code or "globals" in python_code
+        # Should have _line_map
+        assert "_line_map" in python_code
 
-        G LABEL+$L(X) computes offset from $LENGTH(X).
+        # Execute - ^V=2, so G LABEL+2 jumps to line 4 (W "2")
+        result = execute_mumps(code)
+        assert result.output == "2"
+        assert result.success is True
+
+    def test_offset_with_function(self, generate_python, execute_mumps):
+        """Offset containing intrinsic function call evaluates function.
+
+        Per Spec 007: G LABEL+$L(X) computes offset from $LENGTH(X).
         """
-        pytest.fail("Stub - implement test")
+        code = """TEST S X="ab" G LABEL+$L(X) Q
+LABEL W "0" Q
+ W "1" Q
+ W "2" Q
+"""
+        python_code = generate_python(code)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: offset arithmetic")
-    def test_offset_arithmetic(self, generate_python):
-        """Offset with complex arithmetic expression.
+        # Should call len() for $LENGTH
+        assert "len(" in python_code
+        # Should have _line_map
+        assert "_line_map" in python_code
 
-        G LABEL+A*2-1 evaluates left-to-right.
+        # Execute - $L("ab")=2, so G LABEL+2 jumps to line 4 (W "2")
+        result = execute_mumps(code)
+        assert result.output == "2"
+        assert result.success is True
+
+    def test_offset_arithmetic(self, generate_python, execute_mumps):
+        """Offset with complex arithmetic expression evaluated left-to-right.
+
+        Per Spec 007 and MUMPS §7.2: G LABEL+A*2-1 evaluates as ((A)*2)-1.
         """
-        pytest.fail("Stub - implement test")
+        code = """TEST S A=1 G LABEL+A*2-1 Q
+LABEL W "0" Q
+ W "1" Q
+ W "2" Q
+"""
+        python_code = generate_python(code)
+
+        # Should have arithmetic operators
+        assert "*" in python_code or "m_num" in python_code
+        # Should have _line_map
+        assert "_line_map" in python_code
+
+        # Execute - A=1, so (1*2)-1=1, G LABEL+1 jumps to line 3 (W "1")
+        result = execute_mumps(code)
+        assert result.output == "1"
+        assert result.success is True
 
 
 @pytest.mark.codegen

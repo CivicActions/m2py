@@ -276,14 +276,28 @@ class TestMUMPSRuntimeCodegen:
         # Z should be modified to 99
         assert _scope.get("Z").value == 99
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: runtime global access")
-    def test_runtime_global_access(self, generate_python):
-        """Runtime provides global variable access.
+    def test_runtime_global_access(self, execute_mumps):
+        """XECUTE can read and write global variables (§8.2.26, §7.3).
 
-        runtime.get_global('^DATA', 1, 2), runtime.set_global(...)
+        Spec 014 Task E3 (T079): XECUTEd code has full access to globals.
+        - Can read globals set before XECUTE
+        - Can write new globals
+        - Can modify existing globals
         """
-        pytest.fail("Stub - implement test")
+        # Test reading a global in XECUTE
+        result = execute_mumps('TEST S ^DATA=42 X "W ^DATA" Q')
+        assert result.success is True
+        assert result.output == "42"
+
+        # Test writing a global in XECUTE
+        result = execute_mumps('TEST X "S ^OUT=99" W ^OUT Q')
+        assert result.success is True
+        assert result.output == "99"
+
+        # Test subscripted global access in XECUTE
+        result = execute_mumps('TEST S ^ARR(1,2)=55 X "W ^ARR(1,2)" Q')
+        assert result.success is True
+        assert result.output == "55"
 
     def test_runtime_execute_mumps_test_mutation(self):
         """Runtime execute_mumps() propagates $TEST mutations (T039).
@@ -431,25 +445,51 @@ class TestZosfPatternCodegen:
     """Codegen tests for ^%ZOSF pattern handling.
 
     VistA commonly uses X ^%ZOSF("code") for platform-specific operations.
-    Known patterns can be translated to direct Python calls.
+    The code stored in the global is fetched and executed at runtime.
 
-    Reference: VistA implementation patterns
+    Implementation approach:
+    - Constant keys: X ^%ZOSF("OS") fetches value from global and executes via runtime
+    - Dynamic keys: X ^%ZOSF(VAR) generates runtime.execute_mumps() call
+
+    Reference: VistA implementation patterns, §8.2.26
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: zosf lookup table")
-    def test_zosf_lookup_table(self, generate_python):
-        """Known ^%ZOSF patterns use lookup table.
+    def test_zosf_constant_key_execution(self, execute_mumps):
+        """XECUTE with constant ZOSF key executes stored code (§8.2.26).
 
-        X ^%ZOSF("TEST") generates: _zosf_test()
+        Spec 014 Task E3 (T080): X ^%ZOSF("key") fetches the code from
+        the global and executes it. This works via the runtime for all keys.
+
+        X ^%ZOSF("TEST") → _rt.execute_mumps(globals['^%ZOSF']["TEST"], _scope)
         """
-        pytest.fail("Stub - implement test")
+        # Set up a ZOSF entry and execute it
+        result = execute_mumps('TEST S ^ZOSF("CODE")="W 123,!" X ^ZOSF("CODE") Q')
+        assert result.success is True
+        assert "123" in result.output
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: zosf fallback to runtime")
-    def test_zosf_fallback_to_runtime(self, generate_python):
-        """Unknown ^%ZOSF patterns fall back to runtime.
+        # Test with code that modifies scope
+        result = execute_mumps('TEST S ^ZOSF("SETX")="S X=42" X ^ZOSF("SETX") W X Q')
+        assert result.success is True
+        assert result.output == "42"
 
-        X ^%ZOSF(DYNAMIC) generates: runtime.execute(globals['^%ZOSF'][DYNAMIC])
+    def test_zosf_dynamic_key_execution(self, execute_mumps):
+        """XECUTE with dynamic ZOSF key uses runtime execution (§8.2.26).
+
+        Spec 014 Task E3 (T080): X ^%ZOSF(VAR) generates a runtime call
+        that resolves the key at execution time.
+
+        X ^%ZOSF(KEY) → _rt.execute_mumps(_rt.globals.get('ZOSF', (KEY,)), _scope)
         """
-        pytest.fail("Stub - implement test")
+        # Dynamic key resolution
+        result = execute_mumps(
+            'TEST S ^ZOSF("A")="W 1" S ^ZOSF("B")="W 2" S K="A" X ^ZOSF(K) Q'
+        )
+        assert result.success is True
+        assert result.output == "1"
+
+        # Change key and execute again
+        result = execute_mumps(
+            'TEST S ^ZOSF("A")="W 1" S ^ZOSF("B")="W 2" S K="B" X ^ZOSF(K) Q'
+        )
+        assert result.success is True
+        assert result.output == "2"

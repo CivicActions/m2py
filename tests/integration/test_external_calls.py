@@ -1010,31 +1010,29 @@ ADD(A,B)
     class TestTextExternalRoutine:
         """Test User Story 7: $TEXT with external routine (Phase 9)."""
 
-        @pytest.mark.xfail(
-            reason="__import__() in exec'd code has test environment issues - works in production"
-        )
         def test_text_external_plus_n_and_label(self):
             """$T(+N^ROUTINE), $T(LABEL^ROUTINE), $T(LABEL+N^ROUTINE) return external source lines."""
             # Create exttest2 routine with source lines (unique name to avoid conflicts)
+            # NOTE: MUMPS labels must start at column 0 (no leading spaces)
             ext2_source = """exttest2 ; External test routine
-     W "Entry"
-     Q
-     ;
-    HELPER ; Helper label
-     W "In HELPER"
-     Q
-    """
+ W "Entry"
+ Q
+ ;
+HELPER ; Helper label
+ W "In HELPER"
+ Q
+"""
             ext2_code = generate_python(ext2_source)
 
             # Create test routine that reads from exttest2
             source = """texttest
-     W "$T(+0^exttest2): ",$T(+0^exttest2)
-     W "$T(+1^exttest2): ",$T(+1^exttest2)
-     W "$T(+2^exttest2): ",$T(+2^exttest2)
-     W "$T(HELPER^exttest2): ",$T(HELPER^exttest2)
-     W "$T(HELPER+1^exttest2): ",$T(HELPER+1^exttest2)
-     Q
-    """
+ W "$T(+0^exttest2): ",$T(+0^exttest2)
+ W "$T(+1^exttest2): ",$T(+1^exttest2)
+ W "$T(+2^exttest2): ",$T(+2^exttest2)
+ W "$T(HELPER^exttest2): ",$T(HELPER^exttest2)
+ W "$T(HELPER+1^exttest2): ",$T(HELPER+1^exttest2)
+ Q
+"""
             code = generate_python(source)
 
             with tempfile.TemporaryDirectory() as tmpdir:

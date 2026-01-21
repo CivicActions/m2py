@@ -1175,6 +1175,13 @@ def _compute_routine_state_vars(
     Spec 006 (T039a): Variables that are written in one label and read in
     another label need to be passed through RoutineState for trampoline pattern.
 
+    For GOTO flow (cross-label jumps), NEWed variables should also be included
+    because GOTO doesn't cross the NEW scope boundary (only QUIT does). This
+    matches YDB behavior where `TEST N X S X=1 G NEXT` makes X visible in NEXT.
+
+    Formal parameters are also included because they are implicitly NEWed and
+    should flow through GOTO to other labels that read them.
+
     Returns:
         Set of variable names needing RoutineState fields
     """
@@ -1188,9 +1195,24 @@ def _compute_routine_state_vars(
     for label_name, scope_vars in label_vars.items():
         all_inputs.update(scope_vars.input_variables)
 
+    # Also collect NEWed-and-written variables (they flow through GOTO, not QUIT)
+    # These are variables that were NEWed and then written in the same label
+    newed_and_written: Set[str] = set()
+    for label_name, scope_vars in label_vars.items():
+        # Variables that are both NEWed and written in this label
+        newed_and_written.update(scope_vars.newed & scope_vars.writes)
+
+    # Also include formal parameters - they are implicitly NEWed and initialized
+    # with the actual argument value, so they should flow through GOTO
+    formal_params: Set[str] = set()
+    for label_name, scope_vars in label_vars.items():
+        formal_params.update(scope_vars.formal_params)
+
     # Variables that cross label boundaries: written somewhere, read somewhere
     # These need RoutineState fields
-    return all_outputs & all_inputs
+    # Include: (regular outputs + newed_and_written + formal_params) intersected with inputs
+    all_potential_outputs = all_outputs | newed_and_written | formal_params
+    return all_potential_outputs & all_inputs
 
 
 def _compute_array_vars(routine: MRoutine) -> Set[str]:

@@ -747,3 +747,32 @@ class TestIntrinsicFunctionsCodegen:
         # Test 3: Undefined subscripted global
         result = execute_mumps('TEST W $G(^UNDEFINED12345(1,2),"DEF") Q')
         assert result.output == "DEF"
+
+
+@pytest.mark.codegen
+class TestDeprecatedFunctionsCodegen:
+    """Codegen tests for deprecated functions (LIM-004).
+
+    $DEXTRACT and $DPIECE were proposed but never standardized. They parse
+    as valid intrinsic function syntax but have no defined semantics.
+    Codegen should raise NotImplementedError.
+
+    Reference: MUMPS 1995 ANSI Standard, Section 7.1.5
+    Limitation: docs/limitations.md - LIM-004: Deprecated Functions
+    """
+
+    def test_lim004_dextract_raises_error(self, generate_python):
+        """$DEXTRACT should raise NotImplementedError (LIM-004).
+
+        $DEXTRACT was proposed but never standardized. Codegen must fail.
+        """
+        with pytest.raises(NotImplementedError, match="DEXTRACT"):
+            generate_python('TEST S X=$DEXTRACT("abc") Q')
+
+    def test_lim004_dpiece_raises_error(self, generate_python):
+        """$DPIECE should raise NotImplementedError (LIM-004).
+
+        $DPIECE was proposed but never standardized. Codegen must fail.
+        """
+        with pytest.raises(NotImplementedError, match="DPIECE"):
+            generate_python('TEST S X=$DPIECE("a:b",":",1) Q')

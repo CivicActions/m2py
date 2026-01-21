@@ -59,14 +59,36 @@ class TestMergeCommandCodegen:
         assert result.success
         assert result.output.rstrip() == "12"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: MERGE to global destination")
-    def test_merge_local_to_global(self, generate_python):
-        """MERGE to global destination generates global set operations (§8.2.13)."""
-        pytest.fail("Stub - implement test")
+    def test_merge_local_to_global(self, execute_mumps):
+        """MERGE local→global copies tree to global destination (§8.2.13)."""
+        result = execute_mumps("TEST S A(1)=1,A(2)=2 M ^G=A W ^G(1),^G(2),! Q")
+        assert result.success
+        assert result.output.rstrip() == "12"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: MERGE global to global")
-    def test_merge_global_to_global(self, generate_python):
-        """MERGE from global to global generates copy operations (§8.2.13)."""
-        pytest.fail("Stub - implement test")
+    def test_merge_global_to_global(self, execute_mumps):
+        """MERGE global→global copies tree between globals (§8.2.13)."""
+        result = execute_mumps("TEST S ^G1(1)=1,^G1(2)=2 M ^G2=^G1 W ^G2(1),^G2(2),! Q")
+        assert result.success
+        assert result.output.rstrip() == "12"
+
+    def test_merge_local_to_global_nested(self, execute_mumps):
+        """MERGE local→global copies nested structures (§8.2.13)."""
+        result = execute_mumps(
+            'TEST S A="root",A(1)=1,A(1,2)=12 M ^G=A W $G(^G),^G(1),^G(1,2),! Q'
+        )
+        assert result.success
+        assert result.output.rstrip() == "root112"
+
+    def test_merge_local_to_global_preserves_existing(self, execute_mumps):
+        """MERGE local→global preserves existing destination nodes (§8.2.13)."""
+        result = execute_mumps(
+            'TEST S ^G(5)="old" S A(1)=1 M ^G=A W ^G(1),$G(^G(5),"none"),! Q'
+        )
+        assert result.success
+        assert result.output.rstrip() == "1old"
+
+    def test_merge_local_to_global_subscript(self, execute_mumps):
+        """MERGE local to global with destination subscript (§8.2.13)."""
+        result = execute_mumps("TEST S A(1)=1,A(2)=2 M ^G(3)=A W ^G(3,1),^G(3,2),! Q")
+        assert result.success
+        assert result.output.rstrip() == "12"

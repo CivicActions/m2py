@@ -65,11 +65,20 @@ class TestSpecialVariablesCodegen:
         result = generate_python("TEST W $T Q")
         assert "int(_test)" in result
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $TLEVEL codegen")
     def test_sv_tlevel(self, generate_python):
-        """$TLEVEL generates transaction level access (§7.1.7)."""
-        pytest.fail("Stub - implement test")
+        """$TLEVEL generates runtime tlevel() call (§7.1.7).
+
+        Spec 013 FR-015: $TL generates _rt.tlevel() call.
+        """
+        result = generate_python("TEST W $TL Q")
+        assert "_rt.tlevel()" in result
+
+    def test_sv_tlevel_abbreviated(self, generate_python):
+        """$TL generates same as $TLEVEL (§7.1.7)."""
+        full = generate_python("TEST W $TLEVEL Q")
+        abbrev = generate_python("TEST W $TL Q")
+        assert "_rt.tlevel()" in full
+        assert "_rt.tlevel()" in abbrev
 
     def test_sv_x(self, generate_python):
         """$X generates runtime x() call (§7.1.7).
@@ -206,23 +215,21 @@ class TestQuitSpecialVariableCodegen:
         result = generate_python("TEST W $Q Q")
         assert "_rt.quit_flag()" in result
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QUIT in extrinsic runtime test")
-    def test_quit_in_extrinsic_returns_one(self, generate_python):
+    def test_quit_in_extrinsic_returns_one(self, execute_mumps):
         """$QUIT returns 1 when called from extrinsic function.
 
         S X=$$FUNC  ; Inside FUNC, $QUIT=1
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST W $$FN() Q\nFN() W $Q Q 1")
+        assert result.output == "11"  # $Q writes 1, then return value 1
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $QUIT in DO runtime test")
-    def test_quit_in_do_returns_zero(self, generate_python):
+    def test_quit_in_do_returns_zero(self, execute_mumps):
         """$QUIT returns 0 when called from DO.
 
         D LABEL  ; Inside LABEL, $QUIT=0
         """
-        pytest.fail("Stub - implement test")
+        result = execute_mumps("TEST D SUB Q\nSUB W $Q Q")
+        assert result.output == "0"
 
 
 @pytest.mark.codegen
@@ -275,16 +282,35 @@ class TestTextWithOffsetsCodegen:
         result = execute_mumps('TEST W $T(OTHER) Q\nOTHER W "hello" Q')
         assert result.output == 'OTHER W "hello" Q'
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: $TEXT external routine (requires multi-routine)"
-    )
     def test_text_external_routine(self, generate_python):
-        """$TEXT(LABEL+N^ROUTINE) accesses external routine.
+        """$TEXT(LABEL+N^ROUTINE) generates code for external routine access.
 
-        S A=$T(MAIN+3^OTHER) returns line from OTHER routine.
+        S A=$T(MAIN+3^OTHER) generates importlib.import_module('OTHER') for module access.
+        This is a codegen test - runtime requires the module to exist.
         """
-        pytest.fail("Stub - implement test")
+        mumps = "TEST S A=$T(MAIN+3^OTHER) Q"
+        python = generate_python(mumps)
+        # Should generate get_text() with module parameter
+        assert "_rt.get_text(" in python
+        assert 'label="MAIN"' in python
+        assert "offset=3" in python
+        assert "import_module('OTHER')" in python
+
+    def test_text_external_routine_label_only(self, generate_python):
+        """$TEXT(LABEL^ROUTINE) without offset generates correct code."""
+        mumps = "TEST S A=$T(INIT^OTHER) Q"
+        python = generate_python(mumps)
+        assert "_rt.get_text(" in python
+        assert 'label="INIT"' in python
+        assert "import_module('OTHER')" in python
+
+    def test_text_external_routine_offset_only(self, generate_python):
+        """$TEXT(+N^ROUTINE) with offset only generates correct code."""
+        mumps = "TEST S A=$T(+5^OTHER) Q"
+        python = generate_python(mumps)
+        assert "_rt.get_text(" in python
+        assert "offset=5" in python
+        assert "import_module('OTHER')" in python
 
     def test_text_with_variable_offset(self, execute_mumps):
         """$TEXT(+I) evaluates offset at runtime.
@@ -293,3 +319,23 @@ class TestTextWithOffsetsCodegen:
         """
         result = execute_mumps("TEST S I=1 W $T(+I) Q")
         assert result.output == "TEST S I=1 W $T(+I) Q"
+
+
+@pytest.mark.codegen
+class TestTransactionSpecialVariablesCodegen:
+    """Codegen tests for transaction special variables (LIM-016).
+
+    $TRESTART has zero VistA usage and is deferred. Codegen should raise
+    NotImplementedError explicitly.
+
+    Reference: MUMPS 1995 ANSI Standard, Section 7.1.7
+    Limitation: docs/limitations.md - LIM-016: Zero-VistA-Usage Deferred Features
+    """
+
+    def test_lim016_trestart_raises_error(self, generate_python):
+        """$TRESTART should raise NotImplementedError (LIM-016).
+
+        $TRESTART has zero VistA usage. Codegen must fail explicitly.
+        """
+        with pytest.raises(NotImplementedError, match="TRESTART"):
+            generate_python("TEST W $TRESTART Q")

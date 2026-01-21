@@ -459,25 +459,101 @@ See `src/m2py/codegen/shared_state.py` for RoutineState generation.
 
 ## Error Handling
 
+MUMPS $ETRAP/$ECODE error handling is implemented with try/except wrappers at
+MUMPS stack frame boundaries.
+
+### Setting Up Error Handlers
+
 ```mumps
 S $ECODE=""
-S $ETRAP="G ERROR^HANDLER"
+S $ETRAP="S $ECODE="""" W ""Handled"",!"
 ```
 
-Requires runtime error handling infrastructure:
+Generated Python uses `_rt.set_etrap()` and `_rt.set_ecode()`:
 ```python
-# Conceptual Python equivalent
-
-class MUMPSRuntime:
-    def __init__(self):
-        self.ecode = ""
-        self.etrap = ""
-    
-    def handle_error(self, error):
-        self.ecode = error.code
-        if self.etrap:
-            self.execute(self.etrap)
+_rt.set_etrap('S $ECODE="" W "Handled",!')
+_rt.set_ecode("")
 ```
+
+### Runtime Error Handling Methods
+
+```python
+class MUMPSRuntime:
+    def _exception_to_ecode(self, exc: Exception) -> str:
+        """Map Python exception to MUMPS $ECODE format.
+        
+        Returns comma-delimited format: ",Mnn," or ",Zxxx,"
+        Examples:
+        - ZeroDivisionError → ",M9,"
+        - KeyError → ",M6,"
+        - MRuntimeError("SELECTFALSE") → ",M4,"
+        """
+        ...
+    
+    def _handle_etrap(self, exc: Exception, _scope: dict) -> bool:
+        """Handle exception using $ETRAP if set.
+        
+        Returns True if error was handled ($ECODE cleared),
+        False if error should propagate.
+        """
+        if not self._etrap:
+            return False  # No handler, propagate
+        
+        self._ecode = self._exception_to_ecode(exc)
+        self._zerror = str(exc)
+        self.execute_mumps(self._etrap, _scope)
+        
+        return self._ecode == ""  # True if handler cleared $ECODE
+```
+
+### Generated Code Pattern
+
+Simple functions are wrapped in try/except:
+```python
+def SUB(_rt, _scope=None, **_kwargs):
+    global _test
+    _scope = _scope if _scope is not None else {}
+    try:
+        # Function body...
+        _rt.write("In SUB")
+        return
+    except Exception as _e:
+        if _rt._handle_etrap(_e, _scope):
+            return  # $ETRAP cleared $ECODE, implicit QUIT
+        raise  # Propagate to caller
+```
+
+Trampoline dispatchers wrap the loop:
+```python
+def TEST(_rt, _scope=None):
+    """Trampoline dispatcher for routine execution."""
+    _scope = _scope if _scope is not None else {}
+    state = RoutineState()
+    target: str | int | None = "TEST"
+
+    while target is not None:
+        try:
+            func = _labels[target]
+            target, state = func(_rt, state, _scope)
+        except Exception as _e:
+            if _rt._handle_etrap(_e, _scope):
+                return state  # $ETRAP cleared $ECODE, implicit QUIT
+            raise  # Propagate to caller
+
+    return state
+```
+
+### Error Code Mapping
+
+| Python Exception | MUMPS $ECODE | Description |
+|-----------------|--------------|-------------|
+| `ZeroDivisionError` | `,M9,` | Divide by zero |
+| `KeyError` | `,M6,` | Undefined local variable |
+| `MRuntimeError("SELECTFALSE")` | `,M4,` | No $SELECT argument true |
+| `MRuntimeError("RANDARGNEG")` | `,M28,` | $RANDOM argument negative |
+| `IndirectionError` | `,M26,` | Non-existent environment |
+| `LabelNotFoundError` | `,M13,` | Label not found |
+| Other | `,Z150373210,` | Generic system error |
 
 ## Runtime Library Structure
 

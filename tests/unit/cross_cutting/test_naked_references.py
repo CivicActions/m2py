@@ -116,17 +116,17 @@ class TestNakedReferenceErrors:
     Reference: §7.1.2.4, FR-046
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(
-        reason="Not yet implemented: M1 error detection requires codegen"
-    )
-    def test_naked_without_prior_global_error(self):
-        """Naked reference without prior global raises M1 error (§7.1.2.4).
+    def test_naked_without_prior_global_error(self, execute_mumps):
+        """Naked reference without prior global raises error (§7.1.2.4).
 
         At start of routine or after indicator cleared, using ^(1) is an error.
-        This test requires runtime execution to verify error M1 is raised.
+        MUMPS standard requires M1 error; YDB raises GVNAKED error.
         """
-        pytest.fail("Stub - requires codegen runtime execution for M1 error")
+        result = execute_mumps("TEST W ^(1),! Q")
+        assert not result.success
+        # Error should be raised - either NAKEDERR or GVNAKED
+        error_text = (result.error or result.output).upper()
+        assert "NAKED" in error_text
 
     def test_naked_indicator_scope(self, execute_mumps):
         """Naked indicator scope within routine execution (§7.1.2.4).
@@ -153,25 +153,27 @@ class TestNakedReferenceEdgeCases:
     Reference: §7.1.2.4, FR-046
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $DATA with naked at runtime")
-    def test_data_function_with_naked(self):
+    def test_data_function_with_naked(self, execute_mumps):
         """$DATA(^(1)) uses naked reference at runtime (§7.1.2.4).
 
         ASG parsing is tested in test_s7_1_5_intrinsic_functions.py.
         This tests runtime resolution of the naked reference.
-        """
-        pytest.fail("Stub - requires codegen runtime execution")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $ORDER with naked at runtime")
-    def test_order_function_with_naked(self):
+        YDB verified: S ^A(1)=1 W $D(^(1)),! → "1"
+        """
+        result = execute_mumps("TEST S ^A(1)=1 W $D(^(1)) Q")
+        assert result.output == "1"
+
+    def test_order_function_with_naked(self, execute_mumps):
         """$ORDER(^(sub)) uses naked reference at runtime (§7.1.2.4).
 
         ASG parsing is tested in test_s7_1_5_intrinsic_functions.py.
         This tests runtime resolution of the naked reference.
+
+        YDB verified: S ^A(1)=1,^A(2)=2 W $O(^("")),! → "1"
         """
-        pytest.fail("Stub - requires codegen runtime execution")
+        result = execute_mumps('TEST S ^A(1)=1,^A(2)=2 W $O(^("")) Q')
+        assert result.output == "1"
 
     def test_kill_with_naked(self, execute_mumps):
         """KILL ^(sub) uses naked reference at runtime (§7.1.2.4).
@@ -184,22 +186,32 @@ class TestNakedReferenceEdgeCases:
         result = execute_mumps("TEST S ^A(1)=1,^A(2)=2 K ^(1) W $D(^A(1)) Q")
         assert result.output == "0"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: MERGE with naked at runtime")
-    def test_merge_with_naked(self):
-        """MERGE ^(dest)=^SRC uses naked at runtime (§7.1.2.4).
+    def test_merge_source_with_naked(self, execute_mumps):
+        """MERGE ^DEST=^(src) uses naked reference as source (§7.1.2.4).
 
-        ASG parsing is tested in test_s8_2_13_merge.py.
-        This tests runtime resolution of the naked reference.
+        MERGE supports naked reference as SOURCE. The naked indicator is set
+        by the prior global access, and ^(src) resolves to that global.
+
+        Note: MERGE with naked DESTINATION (M ^(dest)=^SRC) raises M1 error
+        in YDB - naked references are not allowed as MERGE destinations.
+
+        YDB verified: S ^A(1)=5 M ^B=^(1) W ^B → "5"
         """
-        pytest.fail("Stub - requires codegen runtime execution")
+        result = execute_mumps("TEST S ^A(1)=5 M ^B=^(1) W ^B Q")
+        assert result.output == "5"
 
     @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: LOCK with naked at runtime")
-    def test_lock_with_naked(self):
-        """LOCK ^(sub) uses naked reference at runtime (§7.1.2.4).
+    def test_lock_with_naked(self, generate_python):
+        """LOCK ^(sub) raises NotImplementedError (YDB restriction).
 
-        ASG parsing is tested in test_s8_2_12_lock.py.
-        This tests runtime resolution of the naked reference.
+        Per YDB documentation, LOCK requires explicit global names.
+        Error: %YDB-E-LKNAMEXPECTED, An identifier is expected after a ^
+
+        Note: The MUMPS 1995 standard §8.2.12 does not explicitly forbid
+        naked references in LOCK nrefs, but YDB rejects them. This is a
+        YDB-specific restriction that m2py enforces at codegen time.
         """
-        pytest.fail("Stub - requires codegen runtime execution")
+        with pytest.raises(
+            NotImplementedError, match="Naked reference not supported in LOCK"
+        ):
+            generate_python("TEST S ^A(1)=5 L ^(1) Q")

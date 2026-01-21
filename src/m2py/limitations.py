@@ -118,8 +118,8 @@ Event processing commands (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIG
 listed above are also part of the MWAPI event model.""",
         behavior="""\
 Parser accepts `^$EVENT`, `^$WINDOW`, `^$DISPLAY` syntax (valid SSVN grammar).
-ASG produces `MStructuredSystemVariable`. Codegen behavior is undefined as MWAPI
-runtime support is not available in YottaDB.""",
+ASG produces `MStructuredSystemVariable`. Codegen raises
+`NotImplementedError("LIM-003: MWAPI SSVNs not supported")`.""",
     ),
     "LIM-004": Limitation(
         id="LIM-004",
@@ -245,7 +245,8 @@ The `^$LIBRARY` SSVN provides access to routine library information. This
 has **zero usage** in the VA VistA codebase.""",
         behavior="""\
 Parser accepts `^$LIBRARY` syntax (valid SSVN grammar). ASG produces
-`MStructuredSystemVariable`. Codegen behavior is undefined.""",
+`MStructuredSystemVariable`. Codegen raises
+`NotImplementedError("LIM-011: ^$LIBRARY SSVN not supported")`.""",
     ),
     "LIM-012": Limitation(
         id="LIM-012",
@@ -309,13 +310,18 @@ Library Functions (`^XLFMTH`, `^XLFHYPER`, `^XLFCRC`, etc.).
 **Total**: ~59 unimplemented functions
 
 **Note**: Core math functions (EXP, LOG, SQRT, SIN, COS, TAN, ARCSIN, ARCCOS, ARCTAN)
-are implemented via the bundled `%MATH` routine in `m2py.runtime.routines.MATH`.""",
+and their aliases (LN, ASIN, ACOS, ATAN) are implemented via the bundled `%MATH`
+routine in `m2py.runtime.routines.MATH`.""",
         behavior="""\
 Parser accepts extrinsic function syntax `$$%FUNC^ROUTINE(args)` (valid grammar).
-ASG produces `MExtrinsicFunction`. Code generation imports the target routine module
-and calls the function. For unimplemented routines, the generated code will fail at
-import time. VistA codebases will work correctly as they use Kernel Library Functions
-(`^XLFMTH`, etc.) instead of ANSI standard library routines.""",
+ASG produces `MExtrinsicFunction`. Code generation behavior:
+
+- **STRING, CHARACTER libraries**: Raises `NotImplementedError("LIM-014: ...")`
+- **MATH library - unimplemented functions**: Raises `NotImplementedError("LIM-014: ...")`
+- **MATH library - implemented functions**: Generates working code using bundled MATH.py
+
+VistA codebases work correctly as they use Kernel Library Functions (`^XLFMTH`, etc.)
+instead of ANSI standard library routines.""",
     ),
     "LIM-015": Limitation(
         id="LIM-015",
@@ -362,35 +368,32 @@ These commands are recognized to support complete YDB compatibility but are
 not a priority for implementation due to zero real-world usage.""",
         behavior="""\
 Parser accepts these commands (valid YDB grammar). ASG produces appropriate nodes.
-Codegen generates stubs or raises NotImplementedError. Tests marked xfail with
-reason referencing LIM-015.""",
+Codegen raises `NotImplementedError("LIM-015: {command} command not supported")`.""",
     ),
     "LIM-016": Limitation(
         id="LIM-016",
-        category="Deferred Low-Priority Features",
+        category="Zero-VistA-Usage Deferred Features",
         type=LimitationType.PARSES_OK,
-        short_description="Features parsed but implementation deferred",
-        sections=(),
+        short_description="Features with confirmed zero VistA usage",
+        sections=("s8_ksubscripts", "s8_kvalue"),
         details="""\
-The following features are syntactically supported but have deferred implementation
-due to complexity or low priority. These may be implemented in future specs:
+The following features are syntactically supported but have **confirmed zero usage**
+in the VA VistA codebase (33,951 routine files analyzed). Implementation is deferred
+indefinitely due to lack of real-world demand:
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Name indirection | @var as lvalue name | Parser works, codegen deferred |
-| Argument indirection | @var as argument list | Parser works, codegen deferred |
-| Computed offsets | DO LABEL+@var^ROUTINE | Complex, requires runtime resolution |
-| Module caching | Routine caching optimization | Performance optimization |
-| TROLLBACK:n | Rollback to specific level | Syntax parsed, full semantics deferred |
-| $TRESTART | Transaction restart count | Special variable parsed |
-| MERGE global | MERGE ^A=^B | Implementation partial |
-| Pre-1995 behaviors | Legacy scope/array patterns | Compatibility layer |
-| $QUIT in extrinsic | Returns 1/0 indicator | Edge case |
+| Feature | Description | VistA Usage | Status |
+|---------|-------------|-------------|--------|
+| KSUBSCRIPTS | Kill subscripted descendants only (ANSI) | 0 files | Not in YDB |
+| KVALUE | Kill root value only (ANSI) | 0 files | Not in YDB |
+| TROLLBACK:n | Rollback to specific transaction level | 0 files | Syntax parsed |
+| $TRESTART | Transaction restart count special variable | 0 files | Syntax parsed |
+| Module caching | Python module import caching optimization | N/A | Performance only |
 
-These features have test stubs marked xfail pending implementation.""",
+**Note**: KSUBSCRIPTS and KVALUE are ANSI MUMPS commands (§8.2) that YottaDB does not
+implement. Since m2py targets YDB compatibility, these commands raise NotImplementedError.""",
         behavior="""\
-Parser accepts syntax. ASG produces appropriate nodes. Codegen may be incomplete
-or produce stubs. Tests marked xfail with reason referencing feature status.""",
+Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
+`NotImplementedError("LIM-016: {feature} not supported")`.""",
     ),
     "LIM-017": Limitation(
         id="LIM-017",
@@ -508,28 +511,54 @@ def test_ablock_raises_parse_error(self):
 ```
 """
 
-# Order for rendering sections (some limitations are grouped)
-SECTION_ORDER: list[tuple[str, str | None]] = [
-    # Parse Error commands first
-    ("LIM-001", "### {id}: Event Processing Commands (Not Implemented)"),
-    ("LIM-002", "### {id}: THEN Command (Deferred)"),
-    ("_vendor", None),  # Insert vendor commands section here
-    # MWAPI and other "Parses OK" limitations
-    ("LIM-003", "## {id}: MWAPI (Windowing API) - Out of Scope"),
-    ("LIM-004", "## {id}: $DEXTRACT and $DPIECE (Never Standardized)"),
-    ("LIM-005", "## {id}: VIEW Command (Implementation-Defined)"),
-    ("LIM-006", "## {id}: Extended Character Sets (Implementation-Defined)"),
-    # Informative
-    ("LIM-007", "## {id}: §5 BNF Metalanguage (Informative Only)"),
-    ("LIM-008", "## {id}: §6.4 Embedded Programs (Out of Scope)"),
-    # More Parse Error commands
-    ("LIM-009", "## {id}: RLOAD and RSAVE Commands (Not Implemented)"),
-    ("LIM-011", "## {id}: ^$LIBRARY Structured System Variable (Not Implemented)"),
-    ("LIM-012", "## {id}: Unknown Z-Commands and Z-Functions"),
-    ("LIM-013", "## {id}: ASSIGN Command (Not Implemented)"),
-    # Library functions
-    ("LIM-014", "## {id}: ANSI Standard Library Functions (Annex I)"),
-]
+# Heading templates by limitation type
+# REDIRECT types are omitted from the generated doc (they reference other test locations)
+HEADING_TEMPLATES: dict[LimitationType, str] = {
+    LimitationType.PARSE_ERROR: "### {id}: {category}",
+    LimitationType.PARSES_OK: "## {id}: {category}",
+    LimitationType.INFORMATIVE: "## {id}: {category}",
+}
+
+
+def _build_section_order() -> list[tuple[str, str | None]]:
+    """Build section order dynamically from LIMITATIONS dict.
+
+    Returns list of (key, heading_template) tuples where key is either:
+    - A limitation ID (e.g., "LIM-001")
+    - A special marker (e.g., "_vendor" for vendor commands section)
+
+    REDIRECT type limitations are excluded (they point to other test locations).
+    """
+    result: list[tuple[str, str | None]] = []
+
+    # Sort by numeric ID
+    sorted_ids = sorted(LIMITATIONS.keys(), key=lambda x: int(x.split("-")[1]))
+
+    # Group: Parse Error first, then vendor section, then others
+    parse_errors = []
+    others = []
+
+    for lim_id in sorted_ids:
+        lim = LIMITATIONS[lim_id]
+        if lim.type == LimitationType.REDIRECT:
+            continue  # Skip redirect entries
+        template = HEADING_TEMPLATES.get(lim.type)
+        if template:
+            heading = template.format(id="{id}", category=lim.category)
+            if lim.type == LimitationType.PARSE_ERROR:
+                parse_errors.append((lim_id, heading))
+            else:
+                others.append((lim_id, heading))
+
+    # Build final order: parse errors, vendor section, then others
+    result.extend(parse_errors)
+    result.append(("_vendor", None))  # Insert vendor commands section
+    result.extend(others)
+
+    return result
+
+
+SECTION_ORDER: list[tuple[str, str | None]] = _build_section_order()
 
 
 # =============================================================================

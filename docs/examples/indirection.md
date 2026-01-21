@@ -393,6 +393,30 @@ _rt.write(_scope.get("INNER", ""))
 The `_scope` dictionary is passed to `execute_mumps()`, allowing the executed
 code to read and modify caller's variables.
 
+### Global Access in XECUTE
+
+XECUTEd code has full access to global variables through the runtime:
+
+```mumps
+S ^DATA=42
+X "W ^DATA"            ; Outputs: 42
+X "S ^OUT=99"          ; Sets global
+```
+
+**Generated Python:**
+```python
+_rt.globals.set('DATA', (), str(42))
+_rt.execute_mumps("W ^DATA", _scope)  # Reads global via _rt
+```
+
+This is particularly useful for VistA patterns like `X ^%ZOSF("key")` which
+execute platform-specific code stored in the `^%ZOSF` global:
+
+```mumps
+S ^ZOSF("CODE")="W 123,!"
+X ^ZOSF("CODE")        ; Outputs: 123
+```
+
 ---
 
 ## Static Resolution

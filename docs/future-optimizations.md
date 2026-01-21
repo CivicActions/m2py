@@ -35,6 +35,70 @@ This document tracks potential optimizations that were considered but deferred i
 
 ---
 
+## Deduplicate External Routine Imports
+
+**Current approach** (Spec 014 T068-T070): Each external extrinsic call (`$$LABEL^ROUTINE`) emits its own `import` statement inline:
+
+```python
+def TEST(_rt, _scope=None, **_kwargs):
+    import math
+    _scope['A'] = _call_extrinsic(_rt, math.ADD, 1, 2, _scope=_scope)
+    import math  # Duplicate!
+    _scope['B'] = _call_extrinsic(_rt, math.MULT, 3, 4, _scope=_scope)
+```
+
+**Potential optimization**: Track imported modules during code generation and emit each import only once, ideally at the top of the function:
+
+```python
+def TEST(_rt, _scope=None, **_kwargs):
+    import math  # Single import
+    _scope['A'] = _call_extrinsic(_rt, math.ADD, 1, 2, _scope=_scope)
+    _scope['B'] = _call_extrinsic(_rt, math.MULT, 3, 4, _scope=_scope)
+```
+
+Or even at module level for routines that always call a given external:
+
+```python
+import math  # Module-level import
+
+def TEST(_rt, _scope=None, **_kwargs):
+    _scope['A'] = _call_extrinsic(_rt, math.ADD, 1, 2, _scope=_scope)
+    _scope['B'] = _call_extrinsic(_rt, math.MULT, 3, 4, _scope=_scope)
+```
+
+**Benefits**:
+- Cleaner generated code (no duplicate imports)
+- Slightly faster execution (Python checks sys.modules on each import)
+- More idiomatic Python style
+- Easier to read and understand generated code
+
+**Why deferred**:
+- Python's import statement is idempotent - duplicate imports are semantically correct
+- Python caches modules in `sys.modules`, so overhead is minimal (~100ns per redundant import)
+- Current inline approach handles conditional imports correctly (import only when path is taken)
+- Module-level imports would require multi-pass analysis to determine which routines are always called
+
+**Prerequisites to implement**:
+- Add `ctx.imported_modules: set[str]` to track already-emitted imports
+- Check before emitting: `if module not in ctx.imported_modules`
+- Consider: function-scoped dedup vs module-level hoisting (different trade-offs)
+- Handle conditional branches: imports in IF blocks should stay conditional
+
+**Implementation sketch**:
+```python
+# In expressions.py, _generate_extrinsic():
+python_module_name = translate_name(routine_name)
+if python_module_name not in ctx.imported_modules:
+    ctx.emitter.line(f"import {python_module_name}")
+    ctx.imported_modules.add(python_module_name)
+```
+
+**Related code**:
+- `src/m2py/codegen/expressions.py` - `_generate_extrinsic()` emits imports
+- `src/m2py/codegen/routine.py` - `GeneratorContext` could track imported modules
+
+---
+
 ## Conditional $TEXT Source Embedding
 
 **Current approach** (Spec 008): Every generated `.py` file includes `_source_lines = [...]` with the original MUMPS source.

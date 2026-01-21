@@ -40,6 +40,8 @@ from m2py.asg.statements import (
     MIfStatement,
     MJobStatement,
     MKillStatement,
+    MKSubscriptsStatement,
+    MKValueStatement,
     MLockStatement,
     MMergeStatement,
     MNewStatement,
@@ -55,7 +57,7 @@ from m2py.asg.statements import (
     MViewStatement,
     MWriteStatement,
     MXecuteStatement,
-    # Z-commands (Phase 19)
+    # Z-commands (Phase 19) - Implemented
     MZGotoStatement,
     MZHaltStatement,
     MZKillStatement,
@@ -63,6 +65,19 @@ from m2py.asg.statements import (
     MZShowStatement,
     MZWithdrawStatement,
     MZWriteStatement,
+    # Z-commands - Unimplemented (LIM-015)
+    MZAllocateStatement,
+    MZBreakStatement,
+    MZCompileStatement,
+    MZContinueStatement,
+    MZDeallocateStatement,
+    MZEditStatement,
+    MZHelpStatement,
+    MZMessageStatement,
+    MZPrintStatement,
+    MZStepStatement,
+    MZSystemStatement,
+    MZTriggerStatement,
 )
 from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.expressions import generate_expr
@@ -87,6 +102,91 @@ class UnsupportedFeatureError(Exception):
     """
 
     pass
+
+
+# =============================================================================
+# Limitation Constants (Spec 014)
+# =============================================================================
+
+# YDB Z-commands with zero VistA usage (LIM-015)
+# These are implementation-defined per FR-017 and parsed but not implemented.
+# Codegen raises NotImplementedError for these commands.
+# Note: ZWRITE, ZKILL, ZLINK, ZSHOW, ZGOTO, ZHALT are implemented.
+Z_COMMANDS_UNIMPLEMENTED: frozenset[str] = frozenset(
+    {
+        "ZALLOCATE",
+        "ZDEALLOCATE",
+        "ZBREAK",
+        "ZCOMPILE",
+        "ZCONTINUE",
+        "ZEDIT",
+        "ZHELP",
+        "ZMESSAGE",
+        "ZPRINT",
+        "ZSTEP",
+        "ZSYSTEM",
+        "ZTRIGGER",
+    }
+)
+
+
+# =============================================================================
+# Spec 014: Comment Preservation
+# =============================================================================
+
+
+def _emit_source_comment(stmt: "MStatement", ctx: "GeneratorContext") -> None:
+    """Emit MUMPS inline comment as Python comment if present.
+
+    Spec 014 (T067): Preserves MUMPS comments in generated Python code.
+    Looks up the source line for the statement and extracts any inline
+    comment (text after `;`).
+
+    Args:
+        stmt: ASG statement node with line_number
+        ctx: Generator context with routine.source_lines
+    """
+    # Skip if no line number or no source lines
+    if stmt.line_number is None:
+        return
+    source_lines = ctx.routine.source_lines
+    if not source_lines:
+        return
+
+    # Get the source line (1-indexed)
+    line_idx = stmt.line_number - 1
+    if line_idx < 0 or line_idx >= len(source_lines):
+        return
+
+    source_line = source_lines[line_idx]
+
+    # Extract comment if present (everything after unquoted semicolon)
+    comment = _extract_comment(source_line)
+    if comment:
+        ctx.emitter.line(f"# {comment}")
+
+
+def _extract_comment(source_line: str) -> str:
+    """Extract comment text from a MUMPS source line.
+
+    Finds the first semicolon not inside a string literal and returns
+    the text after it (stripped of leading/trailing whitespace).
+
+    Args:
+        source_line: Original MUMPS source line
+
+    Returns:
+        Comment text without the leading semicolon, or empty string if no comment
+    """
+    in_string = False
+    for i, char in enumerate(source_line):
+        if char == '"':
+            in_string = not in_string
+        elif char == ";" and not in_string:
+            # Found unquoted semicolon - rest is comment
+            comment_text = source_line[i + 1 :].strip()
+            return comment_text
+    return ""
 
 
 # =============================================================================
@@ -510,6 +610,10 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     Spec 011 (T032-T033): If stmt.postcondition is set, wrap the statement
     in a conditional: if m_truth(cond): <statement>
 
+    Spec 014 (T067): Preserves MUMPS comments as Python comments.
+    If the source line has an inline comment (;...), it is emitted
+    as a Python comment before the statement.
+
     Args:
         stmt: ASG statement node
         ctx: Generator context with emitter
@@ -517,6 +621,9 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     Raises:
         NotImplementedError: For unsupported statement types
     """
+    # Spec 014 (T067): Emit MUMPS comment as Python comment if present
+    _emit_source_comment(stmt, ctx)
+
     # Spec 011 (T032): Check for postcondition
     if stmt.postcondition is not None:
         cond_expr = generate_expr(stmt.postcondition, ctx)
@@ -604,6 +711,40 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_zgoto(stmt, ctx)
     elif isinstance(stmt, MZHaltStatement):
         _generate_zhalt(stmt, ctx)
+    # Z-commands - Unimplemented (LIM-015)
+    elif isinstance(stmt, MZAllocateStatement):
+        raise NotImplementedError("LIM-015: ZALLOCATE command not supported")
+    elif isinstance(stmt, MZDeallocateStatement):
+        raise NotImplementedError("LIM-015: ZDEALLOCATE command not supported")
+    elif isinstance(stmt, MZBreakStatement):
+        raise NotImplementedError("LIM-015: ZBREAK command not supported")
+    elif isinstance(stmt, MZCompileStatement):
+        raise NotImplementedError("LIM-015: ZCOMPILE command not supported")
+    elif isinstance(stmt, MZContinueStatement):
+        raise NotImplementedError("LIM-015: ZCONTINUE command not supported")
+    elif isinstance(stmt, MZEditStatement):
+        raise NotImplementedError("LIM-015: ZEDIT command not supported")
+    elif isinstance(stmt, MZHelpStatement):
+        raise NotImplementedError("LIM-015: ZHELP command not supported")
+    elif isinstance(stmt, MZMessageStatement):
+        raise NotImplementedError("LIM-015: ZMESSAGE command not supported")
+    elif isinstance(stmt, MZPrintStatement):
+        raise NotImplementedError("LIM-015: ZPRINT command not supported")
+    elif isinstance(stmt, MZStepStatement):
+        raise NotImplementedError("LIM-015: ZSTEP command not supported")
+    elif isinstance(stmt, MZSystemStatement):
+        raise NotImplementedError("LIM-015: ZSYSTEM command not supported")
+    elif isinstance(stmt, MZTriggerStatement):
+        raise NotImplementedError("LIM-015: ZTRIGGER command not supported")
+    # ANSI commands not supported by YDB (LIM-016)
+    elif isinstance(stmt, MKSubscriptsStatement):
+        raise NotImplementedError(
+            "LIM-016: KSUBSCRIPTS command not supported (not implemented in YDB)"
+        )
+    elif isinstance(stmt, MKValueStatement):
+        raise NotImplementedError(
+            "LIM-016: KVALUE command not supported (not implemented in YDB)"
+        )
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -2116,270 +2257,308 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     - DO blocks (D followed by dot-indented lines) DO stack $TEST
       Caller's $TEST is saved before and restored after
 
+    Execution Level (§6.3):
+    - DO blocks increment $STACK (execution level) on entry
+    - $STACK is decremented on block exit (even on exceptions)
+    - Nested DO blocks accumulate: outer=1, inner=2, etc.
+
     Example: D SUB → SUB()  (no save/restore)
 
     Args:
         stmt: MDoStatement node
         ctx: Generator context
-
-    Raises:
-        NotImplementedError: For unsupported DO patterns
     """
     # Check for argumentless DO block (inline block with body)
     # This is the ONLY case where $TEST is stacked
     # The is_inline_block field is set by the parser when dot-indented lines are collected
     if stmt.is_inline_block:
-        # Save $TEST before block
+        # Save $TEST before block (spec §6.2.6)
         ctx.emitter.line("_saved_test = _test")
 
-        # Wrap in while True: so QUIT can use break to exit only the block
-        # This is a single-iteration "loop" used for early exit support
-        # The exits_do_block field is set by analyze_quit_context() during analysis,
-        # so no runtime depth tracking is needed here.
-        ctx.emitter.line("while True:  # DO block")
+        # Increment execution level (spec §6.3) - $STACK increases inside DO blocks
+        ctx.emitter.line("_rt.push_frame()")
+
+        # Wrap in try/finally to ensure stack cleanup even on exceptions
+        ctx.emitter.line("try:")
         with ctx.emitter.indented():
-            # Generate block body
-            for body_stmt in stmt.body.statements:
-                generate_statement(body_stmt, ctx)
-            # Always break at end to ensure single iteration
-            ctx.emitter.line("break")
+            # Wrap in while True: so QUIT can use break to exit only the block
+            # This is a single-iteration "loop" used for early exit support
+            # The exits_do_block field is set by analyze_quit_context() during analysis,
+            # so no runtime depth tracking is needed here.
+            ctx.emitter.line("while True:  # DO block")
+            with ctx.emitter.indented():
+                # Generate block body
+                for body_stmt in stmt.body.statements:
+                    generate_statement(body_stmt, ctx)
+                # Always break at end to ensure single iteration
+                ctx.emitter.line("break")
+        ctx.emitter.line("finally:")
+        with ctx.emitter.indented():
+            # Decrement execution level (spec §6.3)
+            ctx.emitter.line("_rt.pop_frame()")
 
         # Restore $TEST after block
         ctx.emitter.line("_test = _saved_test")
         return
 
-    # Check for argumentless DO without body (standalone D on a line)
+    # Argumentless DO without body - this should not happen as parser sets
+    # is_inline_block=True when collecting dot-indented lines. If we get here,
+    # it means the ASG is malformed (standalone D with no body and no targets).
     if not stmt.targets:
-        raise NotImplementedError("Argumentless DO blocks not yet supported")
+        # Generate empty block - no-op (pass statement not needed, just return)
+        return
 
     # Label calls - NO $TEST save/restore
     # Handle each target (multiple targets allowed: D A,B,C)
+    # Spec 014 (T076-T078): Each target's postcondition is evaluated independently
+    # D L1:0,L2:1 → only L2 executes (L1's postcondition is false)
+    # D L1:1,L2:1 → both execute (both postconditions are true)
     for target in stmt.targets:
-        # Spec 012 Phase 7 (T042-T045): Check for indirection
-        if target.label_is_indirect or target.routine_is_indirect:
-            from m2py.codegen.indirection import generate_indirect_do
+        # Check for argument-level postcondition (different from command postcondition)
+        # Argument postconditions gate individual targets, not the whole command
+        if target.postcondition is not None:
+            cond_expr = generate_expr(target.postcondition, ctx)
+            ctx.emitter.line(f"if m_truth({cond_expr}):")
+            ctx.emitter.indent()
+            _generate_do_target(target, ctx)
+            ctx.emitter.dedent()
+        else:
+            _generate_do_target(target, ctx)
 
-            generate_indirect_do(target, ctx)
-            continue
 
-        # Spec 008 (T018-T029): Handle external routine reference D ^ROUTINE
-        if target.routine:
-            routine_name = target.routine
+def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
+    """Generate code for a single DO target.
 
-            # Generate import statement
-            ctx.emitter.line(f"import {routine_name}")
+    This is a helper function that generates the actual call code for a DO target.
+    It's called by _generate_do after any postcondition checks.
 
-            # Handle different external DO patterns
-            if target.offset is not None:
-                # D LABEL+N^ROUTINE or D +N^ROUTINE - uses line dispatch
-                offset_code = generate_expr(target.offset, ctx)
+    Args:
+        target: MCall target to generate code for
+        ctx: Generator context
+    """
+    # Spec 012 Phase 7 (T042-T045): Check for indirection
+    if target.label_is_indirect or target.routine_is_indirect:
+        from m2py.codegen.indirection import generate_indirect_do
 
-                if target.name:
-                    # T024: D LABEL+N^ROUTINE - label + offset
-                    # Check label exists in _label_lines
-                    ctx.emitter.line(
-                        f"if {target.name!r} not in {routine_name}._label_lines:"
-                    )
-                    with ctx.emitter.indented():
-                        ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
-                        ctx.emitter.line(
-                            f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
-                            f"list({routine_name}._label_lines.keys()))"
-                        )
-                    # Calculate target line from label's line + offset
-                    ctx.emitter.line(
-                        f"_target_line = {routine_name}._label_lines[{target.name!r}] + {offset_code}"
-                    )
-                else:
-                    # T025: D +N^ROUTINE - absolute line offset (1-based to 0-indexed)
-                    ctx.emitter.line(f"_target_line = {offset_code} - 1")
+        generate_indirect_do(target, ctx)
+        return
 
-                # T079: Call via line dispatch map, passing _rt and _scope
-                # _line_map returns (label_name, offset) tuple - extract and call
+    # Spec 008 (T018-T029): Handle external routine reference D ^ROUTINE
+    if target.routine:
+        routine_name = target.routine
+
+        # Generate import statement
+        ctx.emitter.line(f"import {routine_name}")
+
+        # Handle different external DO patterns
+        if target.offset is not None:
+            # D LABEL+N^ROUTINE or D +N^ROUTINE - uses line dispatch
+            offset_code = generate_expr(target.offset, ctx)
+
+            if target.name:
+                # T024: D LABEL+N^ROUTINE - label + offset
+                # Check label exists in _label_lines
                 ctx.emitter.line(
-                    f"_label_name, _line_offset = {routine_name}._line_map[_target_line]"
+                    f"if {target.name!r} not in {routine_name}._label_lines:"
                 )
-                ctx.emitter.line(
-                    f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
-                )
-            elif target.name:
-                # T022-T023: D LABEL^ROUTINE - call specific label
-                label_name = translate_name(target.name)
-                # T026: Generate LabelNotFoundError check
-                ctx.emitter.line(f"if not hasattr({routine_name}, {label_name!r}):")
                 with ctx.emitter.indented():
                     ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
                     ctx.emitter.line(
                         f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
                         f"list({routine_name}._label_lines.keys()))"
                     )
-                # T079: Pass _rt and _scope for cross-routine variable visibility
-                args = _generate_call_arguments(target.arguments, ctx)
-                if args:
-                    ctx.emitter.line(
-                        f"{routine_name}.{label_name}(_rt, {args}, _scope=_scope)"
-                    )
-                else:
-                    ctx.emitter.line(f"{routine_name}.{label_name}(_rt, _scope=_scope)")
+                # Calculate target line from label's line + offset
+                ctx.emitter.line(
+                    f"_target_line = {routine_name}._label_lines[{target.name!r}] + {offset_code}"
+                )
             else:
-                # D ^ROUTINE - call entry label (same name as routine)
-                entry_label = translate_name(routine_name)
-                # T079: Pass _rt and _scope for cross-routine variable visibility
-                args = _generate_call_arguments(target.arguments, ctx)
-                if args:
-                    ctx.emitter.line(
-                        f"{routine_name}.{entry_label}(_rt, {args}, _scope=_scope)"
-                    )
-                else:
-                    ctx.emitter.line(
-                        f"{routine_name}.{entry_label}(_rt, _scope=_scope)"
-                    )
-            continue
+                # T025: D +N^ROUTINE - absolute line offset (1-based to 0-indexed)
+                ctx.emitter.line(f"_target_line = {offset_code} - 1")
 
-        # Get the label name and translate it
-        label_name = translate_name(target.name)
+            # T079: Call via line dispatch map, passing _rt and _scope
+            # _line_map returns (label_name, offset) tuple - extract and call
+            ctx.emitter.line(
+                f"_label_name, _line_offset = {routine_name}._line_map[_target_line]"
+            )
+            ctx.emitter.line(
+                f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
+            )
+        elif target.name:
+            # T022-T023: D LABEL^ROUTINE - call specific label
+            label_name = translate_name(target.name)
+            # T026: Generate LabelNotFoundError check
+            ctx.emitter.line(f"if not hasattr({routine_name}, {label_name!r}):")
+            with ctx.emitter.indented():
+                ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+                ctx.emitter.line(
+                    f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
+                    f"list({routine_name}._label_lines.keys()))"
+                )
+            # T079: Pass _rt and _scope for cross-routine variable visibility
+            args = _generate_call_arguments(target.arguments, ctx)
+            if args:
+                ctx.emitter.line(
+                    f"{routine_name}.{label_name}(_rt, {args}, _scope=_scope)"
+                )
+            else:
+                ctx.emitter.line(f"{routine_name}.{label_name}(_rt, _scope=_scope)")
+        else:
+            # D ^ROUTINE - call entry label (same name as routine)
+            entry_label = translate_name(routine_name)
+            # T079: Pass _rt and _scope for cross-routine variable visibility
+            args = _generate_call_arguments(target.arguments, ctx)
+            if args:
+                ctx.emitter.line(
+                    f"{routine_name}.{entry_label}(_rt, {args}, _scope=_scope)"
+                )
+            else:
+                ctx.emitter.line(f"{routine_name}.{entry_label}(_rt, _scope=_scope)")
+        return
 
-        # Generate arguments if any
-        args = _generate_call_arguments(target.arguments, ctx)
+    # Get the label name and translate it
+    label_name = translate_name(target.name)
 
-        # Spec 007 (T025-T028c): Handle DO with offset
-        # In TRAMPOLINE strategy, call the internal function with _start_offset
-        if target.offset is not None and ctx.strategy == GotoStrategy.TRAMPOLINE:
-            # Prefix with _ for internal trampoline function
-            internal_func = "_" + label_name
-            # Generate offset expression code
-            offset_code = generate_expr(target.offset, ctx)
+    # Generate arguments if any
+    args = _generate_call_arguments(target.arguments, ctx)
 
-            # Spec 007 Phase 7 (T035-T037): Validate offset for DO as well
-            # Spec 007 Phase 9 (T045-T046): Skip non-executable lines (comments/blanks)
-            # Get the label's line number for validation
-            if target.target is not None and target.target.line_number is not None:
-                label_line = target.target.line_number
-                # Spec 007: Check for negative offset (must resolve to non-negative integer)
-                # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
-                ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
-                ctx.emitter.line("if _offset_val < 0:")
+    # Spec 007 (T025-T028c): Handle DO with offset
+    # In TRAMPOLINE strategy, call the internal function with _start_offset
+    if target.offset is not None and ctx.strategy == GotoStrategy.TRAMPOLINE:
+        # Prefix with _ for internal trampoline function
+        internal_func = "_" + label_name
+        # Generate offset expression code
+        offset_code = generate_expr(target.offset, ctx)
+
+        # Spec 007 Phase 7 (T035-T037): Validate offset for DO as well
+        # Spec 007 Phase 9 (T045-T046): Skip non-executable lines (comments/blanks)
+        # Get the label's line number for validation
+        if target.target is not None and target.target.line_number is not None:
+            label_line = target.target.line_number
+            # Spec 007: Check for negative offset (must resolve to non-negative integer)
+            # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
+            ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
+            ctx.emitter.line("if _offset_val < 0:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    f'raise ValueError("Entry point {target.name}+" '
+                    '+ str(_offset_val) + " not valid")'
+                )
+            ctx.emitter.line(f"_target = {label_line} + _offset_val")
+            ctx.emitter.line("if _target not in _line_map:")
+            with ctx.emitter.indented():
+                # Spec 007: Find next executable line after target (inline)
+                # When offset lands on comment/blank line, continue to next executable.
+                # This inline logic is equivalent to find_next_executable() but simpler.
+                ctx.emitter.line(
+                    "_next = min((ln for ln in _line_map if ln > _target), "
+                    "default=None)"
+                )
+                ctx.emitter.line("if _next is None:")
                 with ctx.emitter.indented():
                     ctx.emitter.line(
                         f'raise ValueError("Entry point {target.name}+" '
                         '+ str(_offset_val) + " not valid")'
                     )
-                ctx.emitter.line(f"_target = {label_line} + _offset_val")
-                ctx.emitter.line("if _target not in _line_map:")
-                with ctx.emitter.indented():
-                    # Spec 007: Find next executable line after target (inline)
-                    # When offset lands on comment/blank line, continue to next executable.
-                    # This inline logic is equivalent to find_next_executable() but simpler.
-                    ctx.emitter.line(
-                        "_next = min((ln for ln in _line_map if ln > _target), "
-                        "default=None)"
-                    )
-                    ctx.emitter.line("if _next is None:")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(
-                            f'raise ValueError("Entry point {target.name}+" '
-                            '+ str(_offset_val) + " not valid")'
-                        )
-                    ctx.emitter.line("_target = _next")
-                # Now update the offset based on the new target line
-                ctx.emitter.line(
-                    f"_offset = _line_map[_target][1] if _target != {label_line} + "
-                    "_offset_val else _offset_val"
-                )
+                ctx.emitter.line("_target = _next")
+            # Now update the offset based on the new target line
+            ctx.emitter.line(
+                f"_offset = _line_map[_target][1] if _target != {label_line} + "
+                "_offset_val else _offset_val"
+            )
 
-            # T079: Build call with _rt, state, _scope, and _start_offset
-            # Note: args handling with offset is complex - for now just handle simple case
-            if args:
-                ctx.emitter.line(
-                    f"{internal_func}(_rt, state, _scope, {args}, _start_offset=_offset_val)"
-                )
-            else:
-                ctx.emitter.line(
-                    f"{internal_func}(_rt, state, _scope, _start_offset=_offset_val)"
-                )
-            continue
-
-        # T060-T062: Check callee signature for byref_outputs and generate destructuring
-        callee_signature = None
-        if hasattr(target, "target") and target.target:
-            callee_label = target.target
-            if hasattr(callee_label, "signature") and callee_label.signature:
-                callee_signature = callee_label.signature
-
-        if callee_signature and callee_signature.byref_outputs:
-            # Map byref formal params to actual variables passed by reference
-            # The callee returns byref params in formal_params order
-            formal_params = callee_signature.formal_params
-            byref_outputs = callee_signature.byref_outputs
-            actual_args = target.arguments or []
-
-            # Build list of caller variables that receive returned values
-            # Only include params that are both:
-            # 1. In byref_outputs (callee modifies them)
-            # 2. Passed by reference at call site (.VAR syntax)
-            return_vars = []
-            for i, formal_name in enumerate(formal_params):
-                if formal_name in byref_outputs:
-                    # Check if corresponding actual was passed by reference
-                    if i < len(actual_args):
-                        actual = actual_args[i]
-                        if actual.passing_mode == PassingMode.BY_REFERENCE:
-                            # Get the caller's variable name
-                            if actual.variable_name:
-                                var_name = actual.variable_name
-                                # T084: Use _scope['X'] for SIMPLE_FUNCTIONS
-                                if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                                    return_vars.append(f"_scope[{var_name!r}]")
-                                else:
-                                    return_vars.append(translate_name(var_name))
-
-            if return_vars:
-                # T079: Generate call and assign returned values to caller variables
-                # T084: Pass _scope for cross-routine variable visibility
-                # Spec 009 (T021): For SIMPLE_FUNCTIONS, use MArray.value via temp var
-                if args:
-                    call_expr = f"{label_name}(_rt, {args}, _scope=_scope)"
-                else:
-                    call_expr = f"{label_name}(_rt, _scope=_scope)"
-
-                if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                    # Use temp variable and assign to MArray.value for each return var
-                    ctx.emitter.line(f"_byref_result = {call_expr}")
-                    if len(return_vars) == 1:
-                        # Single return value
-                        var_name = (
-                            return_vars[0].replace("_scope[", "").replace("]", "")[1:-1]
-                        )  # Extract name from "_scope['X']"
-                        ctx.emitter.line(
-                            f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result"
-                        )
-                    else:
-                        # Tuple unpacking - assign each element
-                        for i, rv in enumerate(return_vars):
-                            var_name = rv.replace("_scope[", "").replace("]", "")[
-                                1:-1
-                            ]  # Extract name
-                            ctx.emitter.line(
-                                f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result[{i}]"
-                            )
-                else:
-                    # TRAMPOLINE: use direct tuple destructuring
-                    lhs = ", ".join(return_vars)
-                    ctx.emitter.line(f"{lhs} = {call_expr}")
-            else:
-                # T079: No by-ref params at call site - just call with _rt
-                # T084: Pass _scope for cross-routine variable visibility
-                if args:
-                    ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
-                else:
-                    ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+        # T079: Build call with _rt, state, _scope, and _start_offset
+        # Note: args handling with offset is complex - for now just handle simple case
+        if args:
+            ctx.emitter.line(
+                f"{internal_func}(_rt, state, _scope, {args}, _start_offset=_offset_val)"
+            )
         else:
-            # T079: No byref_outputs - simple call with _rt
+            ctx.emitter.line(
+                f"{internal_func}(_rt, state, _scope, _start_offset=_offset_val)"
+            )
+        return
+
+    # T060-T062: Check callee signature for byref_outputs and generate destructuring
+    callee_signature = None
+    if hasattr(target, "target") and target.target:
+        callee_label = target.target
+        if hasattr(callee_label, "signature") and callee_label.signature:
+            callee_signature = callee_label.signature
+
+    if callee_signature and callee_signature.byref_outputs:
+        # Map byref formal params to actual variables passed by reference
+        # The callee returns byref params in formal_params order
+        formal_params = callee_signature.formal_params
+        byref_outputs = callee_signature.byref_outputs
+        actual_args = target.arguments or []
+
+        # Build list of caller variables that receive returned values
+        # Only include params that are both:
+        # 1. In byref_outputs (callee modifies them)
+        # 2. Passed by reference at call site (.VAR syntax)
+        return_vars = []
+        for i, formal_name in enumerate(formal_params):
+            if formal_name in byref_outputs:
+                # Check if corresponding actual was passed by reference
+                if i < len(actual_args):
+                    actual = actual_args[i]
+                    if actual.passing_mode == PassingMode.BY_REFERENCE:
+                        # Get the caller's variable name
+                        if actual.variable_name:
+                            var_name = actual.variable_name
+                            # T084: Use _scope['X'] for SIMPLE_FUNCTIONS
+                            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                                return_vars.append(f"_scope[{var_name!r}]")
+                            else:
+                                return_vars.append(translate_name(var_name))
+
+        if return_vars:
+            # T079: Generate call and assign returned values to caller variables
+            # T084: Pass _scope for cross-routine variable visibility
+            # Spec 009 (T021): For SIMPLE_FUNCTIONS, use MArray.value via temp var
+            if args:
+                call_expr = f"{label_name}(_rt, {args}, _scope=_scope)"
+            else:
+                call_expr = f"{label_name}(_rt, _scope=_scope)"
+
+            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                # Use temp variable and assign to MArray.value for each return var
+                ctx.emitter.line(f"_byref_result = {call_expr}")
+                if len(return_vars) == 1:
+                    # Single return value
+                    var_name = (
+                        return_vars[0].replace("_scope[", "").replace("]", "")[1:-1]
+                    )  # Extract name from "_scope['X']"
+                    ctx.emitter.line(
+                        f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result"
+                    )
+                else:
+                    # Tuple unpacking - assign each element
+                    for i, rv in enumerate(return_vars):
+                        var_name = rv.replace("_scope[", "").replace("]", "")[
+                            1:-1
+                        ]  # Extract name
+                        ctx.emitter.line(
+                            f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result[{i}]"
+                        )
+            else:
+                # TRAMPOLINE: use direct tuple destructuring
+                lhs = ", ".join(return_vars)
+                ctx.emitter.line(f"{lhs} = {call_expr}")
+        else:
+            # T079: No by-ref params at call site - just call with _rt
             # T084: Pass _scope for cross-routine variable visibility
             if args:
                 ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
             else:
                 ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+    else:
+        # T079: No byref_outputs - simple call with _rt
+        # T084: Pass _scope for cross-routine variable visibility
+        if args:
+            ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
+        else:
+            ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
 
 
 def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
@@ -2773,11 +2952,25 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
         # Generate destination merge code
         if isinstance(dest, GlobalVariable):
             # Destination is global: ^G or ^G(subs)
-            # For global destination, we need to iterate and set values
-            # This is more complex - for now, raise NotImplementedError
-            raise NotImplementedError(
-                "MERGE to global destination not yet supported (M ^G=...)"
+            # Spec 014 Task C1: MERGE local→global and global→global
+            dest_name = dest.name
+
+            if dest.subscripts:
+                subs_code = []
+                for sub in dest.subscripts:
+                    subs_code.append(f"str({generate_expr(sub, ctx)})")
+                dest_subs = f"({', '.join(subs_code)},)"
+            else:
+                dest_subs = "()"
+
+            # Get source tree and merge into global
+            ctx.emitter.line(f"_merge_src = {src_tree_expr}")
+            ctx.emitter.line("if _merge_src is not None:")
+            ctx.emitter.indent()
+            ctx.emitter.line(
+                f'_rt.globals.merge_tree("{dest_name}", {dest_subs}, _merge_src)'
             )
+            ctx.emitter.dedent()
 
         elif isinstance(dest, NakedGlobal):
             raise NotImplementedError(
@@ -3011,14 +3204,20 @@ def _generate_trollback(stmt: MTRollbackStatement, ctx: "GeneratorContext") -> N
     - Sets $TLEVEL = 0 and $TRESTART = 0
     - Optional level argument specifies transaction level to roll back to
 
-    Note: The level argument is not yet implemented.
+    LIM-016: TROLLBACK:n (with level argument) has zero VistA usage and raises
+    NotImplementedError.
 
     Args:
         stmt: MTRollbackStatement node
         ctx: Generator context
     """
+    # LIM-016: TROLLBACK:n has zero VistA usage
+    if stmt.level is not None:
+        raise NotImplementedError(
+            "LIM-016: TROLLBACK:n (rollback to specific level) not supported"
+        )
+
     # Basic implementation - roll back entire transaction
-    # Note: stmt.level is ignored for now
     ctx.emitter.line("_rt.globals.transaction_rollback()")
 
 
@@ -3103,9 +3302,11 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
             name = target.name
             subscripts = target.subscripts
         elif isinstance(target, NG):
-            # Naked global - use naked reference handling
-            ctx.emitter.line("# LOCK with naked global not yet supported")
-            continue
+            # Naked global - YDB does not support naked reference in LOCK
+            # Error: %YDB-E-LKNAMEXPECTED, An identifier is expected after a ^
+            raise NotImplementedError(
+                "Naked reference not supported in LOCK (YDB restriction: LKNAMEXPECTED)"
+            )
         else:
             # Local variable as lock name
             name = getattr(target, "name", str(target))

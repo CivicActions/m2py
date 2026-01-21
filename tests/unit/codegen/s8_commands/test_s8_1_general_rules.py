@@ -50,14 +50,40 @@ class TestCommandGeneralRulesCodegen:
         result = execute_mumps(source)
         assert result.output == "none\n"
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: timeout codegen")
-    def test_timeout_codegen(self, generate_python):
-        """Timeouts generate timeout handling code (§8.1)."""
-        pytest.fail("Stub - implement test")
+    def test_timeout_codegen(self, generate_python, execute_mumps):
+        """Timeouts generate timeout handling code (§8.1).
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: command sequence")
-    def test_command_sequence(self, generate_python):
-        """Command sequences generate statement sequences (§8.1)."""
-        pytest.fail("Stub - implement test")
+        Per Spec 009: Timeout arguments use m_read_timeout() for READ,
+        m_lock_timeout() for LOCK, and direct timeout parameter for JOB.
+        """
+        # READ with timeout
+        source = "TEST R X:3 W X Q"
+        code = generate_python(source)
+
+        # Should use m_read_timeout with timeout value
+        assert "m_read_timeout" in code
+        assert "3" in code  # timeout value present
+
+        # LOCK with timeout is also working
+        lock_source = 'TEST L +^A:2 W "locked" Q'
+        lock_code = generate_python(lock_source)
+
+        # Should have timeout parameter for lock
+        assert "2" in lock_code  # timeout value
+
+    def test_command_sequence(self, generate_python, execute_mumps):
+        """Command sequences generate statement sequences (§8.1).
+
+        Per §8.1: Multiple commands on same line execute left-to-right.
+        Each command generates a separate Python statement.
+        """
+        source = "TEST S X=1 W X S X=2 W X Q"
+        code = generate_python(source)
+
+        # Should have multiple statements
+        assert code.count("_scope.setdefault('X', MArray()).value") >= 2
+
+        # Execute to verify sequence
+        result = execute_mumps(source)
+        assert result.output == "12"
+        assert result.success is True

@@ -1,400 +1,503 @@
 """Tests for MATH Library Functions codegen (Annex I-2, §7.1.6.5).
 
-Tests verify the generated Python code correctly implements MATH library function behavior.
-MATH library functions are called as $$%FUNC^MATH or $%FUNC^MATH.
-
 Reference: MUMPS 1995 ANSI Standard, Annex I Section 2
-Total: 57 MATH library functions
+
+MATH library functions fall into two categories:
+1. IMPLEMENTED (Spec 013): Basic trig, inverse trig, exp, log, sqrt
+   - These functions generate working Python code that calls m2py.runtime.routines.MATH
+2. NOT IMPLEMENTED (LIM-014): All other MATH functions
+   - These raise NotImplementedError with LIM-014 at codegen time
+
+Implemented functions (13 total):
+  - Trigonometric: %SIN, %COS, %TAN
+  - Inverse trig: %ARCSIN, %ASIN (alias), %ARCCOS, %ACOS (alias), %ARCTAN, %ATAN (alias)
+  - Exponential/logarithmic: %EXP, %LOG, %LN (alias), %SQRT
+
+Unimplemented functions (44 remaining):
+  - Hyperbolic: %SINH, %COSH, %TANH, %COTH, %SECH, %CSCH, %ARCSINH, %ARCCOSH, %ARCTANH, %ARCCOTH
+  - Other trig: %COT, %SEC, %CSC, %ARCSEC, %ARCCSC
+  - Precision-based: %E, %PI, %LOG10, %SIGN, %ABS
+  - Angle conversion: %DEGRAD, %RADDEG, %DECDMS, %DMSDEC
+  - Complex numbers: All %C* functions (COMPLEX, CONJUG, CABS, CADD, CSUB, CMUL, CDIV, etc.)
+  - Matrix operations: All %MTX* functions
+
+Per LIM-014: STRING and CHARACTER libraries are completely blocked;
+MATH library has basic functions implemented, others raise LIM-014.
 """
+
+import math
 
 import pytest
 
+from m2py.codegen import generate_python
 
-@pytest.mark.codegen
-class TestMathLibraryTrigonometricCodegen:
-    """Codegen-level tests for MATH library trigonometric functions (Annex I-2).
 
-    Trigonometric functions: SIN, COS, TAN, COT, SEC, CSC and their inverses/hyperbolics.
-    """
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%SIN^MATH codegen")
-    def test_math_sin_codegen(self):
-        """$%SIN^MATH(X,PREC) generates correct Python code (Annex I-2.47)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%COS^MATH codegen")
-    def test_math_cos_codegen(self):
-        """$%COS^MATH(X,PREC) generates correct Python code (Annex I-2.21)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%TAN^MATH codegen")
-    def test_math_tan_codegen(self):
-        """$%TAN^MATH(X,PREC) generates correct Python code (Annex I-2.50)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%COT^MATH codegen")
-    def test_math_cot_codegen(self):
-        """$%COT^MATH(X,PREC) generates correct Python code (Annex I-2.23)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%SEC^MATH codegen")
-    def test_math_sec_codegen(self):
-        """$%SEC^MATH(X,PREC) generates correct Python code (Annex I-2.44)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CSC^MATH codegen")
-    def test_math_csc_codegen(self):
-        """$%CSC^MATH(X,PREC) generates correct Python code (Annex I-2.25)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%SINH^MATH codegen")
-    def test_math_sinh_codegen(self):
-        """$%SINH^MATH(X,PREC) generates correct Python code (Annex I-2.48)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%COSH^MATH codegen")
-    def test_math_cosh_codegen(self):
-        """$%COSH^MATH(X,PREC) generates correct Python code (Annex I-2.22)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%TANH^MATH codegen")
-    def test_math_tanh_codegen(self):
-        """$%TANH^MATH(X,PREC) generates correct Python code (Annex I-2.51)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%COTH^MATH codegen")
-    def test_math_coth_codegen(self):
-        """$%COTH^MATH(X,PREC) generates correct Python code (Annex I-2.24)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%SECH^MATH codegen")
-    def test_math_sech_codegen(self):
-        """$%SECH^MATH(X,PREC) generates correct Python code (Annex I-2.45)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CSCH^MATH codegen")
-    def test_math_csch_codegen(self):
-        """$%CSCH^MATH(X,PREC) generates correct Python code (Annex I-2.26)."""
-        pytest.fail("Stub - implement test")
+# =============================================================================
+# IMPLEMENTED MATH FUNCTIONS (Spec 013) - Should generate working code
+# =============================================================================
 
 
 @pytest.mark.codegen
-class TestMathLibraryInverseTrigCodegen:
-    """Codegen-level tests for MATH library inverse trigonometric functions (Annex I-2).
+class TestMathLibraryTrigonometricImplemented:
+    """Codegen tests for IMPLEMENTED trigonometric functions (Spec 013).
 
-    Inverse functions: ARCSIN, ARCCOS, ARCTAN, ARCCOT, ARCSEC, ARCCSC and hyperbolics.
+    These generate Python code that calls the bundled MATH routine.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCSIN^MATH codegen")
-    def test_math_arcsin_codegen(self):
-        """$%ARCSIN^MATH(X,PREC) generates correct Python code (Annex I-2.8)."""
-        pytest.fail("Stub - implement test")
+    def test_math_sin_generates_code(self, execute_mumps):
+        """$$%SIN^MATH(x) generates working code (Spec 013 FR-037)."""
+        # sin(0) = 0
+        result = execute_mumps("TEST W $$%SIN^MATH(0) Q")
+        assert float(result.output.strip()) == pytest.approx(0.0, abs=1e-10)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCCOS^MATH codegen")
-    def test_math_arccos_codegen(self):
-        """$%ARCCOS^MATH(X,PREC) generates correct Python code (Annex I-2.2)."""
-        pytest.fail("Stub - implement test")
+        # sin(π/2) = 1
+        result = execute_mumps(f"TEST W $$%SIN^MATH({math.pi / 2}) Q")
+        assert float(result.output.strip()) == pytest.approx(1.0)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCTAN^MATH codegen")
-    def test_math_arctan_codegen(self):
-        """$%ARCTAN^MATH(X,Y,PREC) generates correct Python code (Annex I-2.10)."""
-        pytest.fail("Stub - implement test")
+    def test_math_cos_generates_code(self, execute_mumps):
+        """$$%COS^MATH(x) generates working code (Spec 013 FR-037)."""
+        # cos(0) = 1
+        result = execute_mumps("TEST W $$%COS^MATH(0) Q")
+        assert float(result.output.strip()) == pytest.approx(1.0)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCCOT^MATH codegen")
-    def test_math_arccot_codegen(self):
-        """$%ARCCOT^MATH(X,PREC) generates correct Python code (Annex I-2.4)."""
-        pytest.fail("Stub - implement test")
+        # cos(π) = -1
+        result = execute_mumps(f"TEST W $$%COS^MATH({math.pi}) Q")
+        assert float(result.output.strip()) == pytest.approx(-1.0)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCSEC^MATH codegen")
-    def test_math_arcsec_codegen(self):
-        """$%ARCSEC^MATH(X,PREC) generates correct Python code (Annex I-2.7)."""
-        pytest.fail("Stub - implement test")
+    def test_math_tan_generates_code(self, execute_mumps):
+        """$$%TAN^MATH(x) generates working code (Spec 013 FR-037)."""
+        # tan(0) = 0
+        result = execute_mumps("TEST W $$%TAN^MATH(0) Q")
+        assert float(result.output.strip()) == pytest.approx(0.0, abs=1e-10)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCCSC^MATH codegen")
-    def test_math_arccsc_codegen(self):
-        """$%ARCCSC^MATH(X,PREC) generates correct Python code (Annex I-2.6)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCSINH^MATH codegen")
-    def test_math_arcsinh_codegen(self):
-        """$%ARCSINH^MATH(X,PREC) generates correct Python code (Annex I-2.9)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCCOSH^MATH codegen")
-    def test_math_arccosh_codegen(self):
-        """$%ARCCOSH^MATH(X,PREC) generates correct Python code (Annex I-2.3)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCTANH^MATH codegen")
-    def test_math_arctanh_codegen(self):
-        """$%ARCTANH^MATH(X,PREC) generates correct Python code (Annex I-2.11)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ARCCOTH^MATH codegen")
-    def test_math_arccoth_codegen(self):
-        """$%ARCCOTH^MATH(X,PREC) generates correct Python code (Annex I-2.5)."""
-        pytest.fail("Stub - implement test")
+        # tan(π/4) = 1
+        result = execute_mumps(f"TEST W $$%TAN^MATH({math.pi / 4}) Q")
+        assert float(result.output.strip()) == pytest.approx(1.0)
 
 
 @pytest.mark.codegen
-class TestMathLibraryExponentialCodegen:
-    """Codegen-level tests for MATH library exponential/logarithmic functions (Annex I-2).
+class TestMathLibraryInverseTrigImplemented:
+    """Codegen tests for IMPLEMENTED inverse trigonometric functions (Spec 013)."""
 
-    Functions: EXP, LOG, LOG10, E, PI, SQRT, SIGN, ABS.
-    """
+    def test_math_arcsin_generates_code(self, execute_mumps):
+        """$$%ARCSIN^MATH(x) generates working code (Spec 013 FR-038)."""
+        # arcsin(0) = 0
+        result = execute_mumps("TEST W $$%ARCSIN^MATH(0) Q")
+        assert float(result.output.strip()) == pytest.approx(0.0, abs=1e-10)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%EXP^MATH codegen")
-    def test_math_exp_codegen(self):
-        """$%EXP^MATH(X,PREC) generates correct Python code (Annex I-2.30)."""
-        pytest.fail("Stub - implement test")
+        # arcsin(1) = π/2
+        result = execute_mumps("TEST W $$%ARCSIN^MATH(1) Q")
+        assert float(result.output.strip()) == pytest.approx(math.pi / 2)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%LOG^MATH codegen")
-    def test_math_log_codegen(self):
-        """$%LOG^MATH(X,PREC) generates correct Python code (Annex I-2.31)."""
-        pytest.fail("Stub - implement test")
+    def test_math_asin_alias_generates_code(self, execute_mumps):
+        """$$%ASIN^MATH(x) is alias for %ARCSIN (Spec 013)."""
+        result = execute_mumps("TEST W $$%ASIN^MATH(0.5) Q")
+        assert float(result.output.strip()) == pytest.approx(math.asin(0.5))
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%LOG10^MATH codegen")
-    def test_math_log10_codegen(self):
-        """$%LOG10^MATH(X,PREC) generates correct Python code (Annex I-2.32)."""
-        pytest.fail("Stub - implement test")
+    def test_math_arccos_generates_code(self, execute_mumps):
+        """$$%ARCCOS^MATH(x) generates working code (Spec 013 FR-038)."""
+        # arccos(1) = 0
+        result = execute_mumps("TEST W $$%ARCCOS^MATH(1) Q")
+        assert float(result.output.strip()) == pytest.approx(0.0, abs=1e-10)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%E^MATH codegen")
-    def test_math_e_codegen(self):
-        """$%E^MATH(PREC) generates correct Python code (Annex I-2.29)."""
-        pytest.fail("Stub - implement test")
+        # arccos(0) = π/2
+        result = execute_mumps("TEST W $$%ARCCOS^MATH(0) Q")
+        assert float(result.output.strip()) == pytest.approx(math.pi / 2)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%PI^MATH codegen")
-    def test_math_pi_codegen(self):
-        """$%PI^MATH(PREC) generates correct Python code (Annex I-2.42)."""
-        pytest.fail("Stub - implement test")
+    def test_math_acos_alias_generates_code(self, execute_mumps):
+        """$$%ACOS^MATH(x) is alias for %ARCCOS (Spec 013)."""
+        result = execute_mumps("TEST W $$%ACOS^MATH(0.5) Q")
+        assert float(result.output.strip()) == pytest.approx(math.acos(0.5))
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%SQRT^MATH codegen")
-    def test_math_sqrt_codegen(self):
-        """$%SQRT^MATH(X,PREC) generates correct Python code (Annex I-2.49)."""
-        pytest.fail("Stub - implement test")
+    def test_math_arctan_generates_code(self, execute_mumps):
+        """$$%ARCTAN^MATH(x) generates working code (Spec 013 FR-038)."""
+        # arctan(0) = 0
+        result = execute_mumps("TEST W $$%ARCTAN^MATH(0) Q")
+        assert float(result.output.strip()) == pytest.approx(0.0, abs=1e-10)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%SIGN^MATH codegen")
-    def test_math_sign_codegen(self):
-        """$%SIGN^MATH(X) generates correct Python code (Annex I-2.46)."""
-        pytest.fail("Stub - implement test")
+        # arctan(1) = π/4
+        result = execute_mumps("TEST W $$%ARCTAN^MATH(1) Q")
+        assert float(result.output.strip()) == pytest.approx(math.pi / 4)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%ABS^MATH codegen")
-    def test_math_abs_codegen(self):
-        """$%ABS^MATH(X) generates correct Python code (Annex I-2.1)."""
-        pytest.fail("Stub - implement test")
+    def test_math_atan_alias_generates_code(self, execute_mumps):
+        """$$%ATAN^MATH(x) is alias for %ARCTAN (Spec 013)."""
+        result = execute_mumps("TEST W $$%ATAN^MATH(0.5) Q")
+        assert float(result.output.strip()) == pytest.approx(math.atan(0.5))
 
 
 @pytest.mark.codegen
-class TestMathLibraryAngleConversionCodegen:
-    """Codegen-level tests for MATH library angle conversion functions (Annex I-2).
+class TestMathLibraryExponentialImplemented:
+    """Codegen tests for IMPLEMENTED exponential/logarithmic functions (Spec 013)."""
 
-    Functions: DEGRAD, RADDEG, DECDMS, DMSDEC.
-    """
+    def test_math_exp_generates_code(self, execute_mumps):
+        """$$%EXP^MATH(x) generates working code (Spec 013 FR-034)."""
+        # e^0 = 1
+        result = execute_mumps("TEST W $$%EXP^MATH(0) Q")
+        assert float(result.output.strip()) == pytest.approx(1.0)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%DEGRAD^MATH codegen")
-    def test_math_degrad_codegen(self):
-        """$%DEGRAD^MATH(X,PREC) generates correct Python code (Annex I-2.28)."""
-        pytest.fail("Stub - implement test")
+        # e^1 = e
+        result = execute_mumps("TEST W $$%EXP^MATH(1) Q")
+        assert float(result.output.strip()) == pytest.approx(math.e)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%RADDEG^MATH codegen")
-    def test_math_raddeg_codegen(self):
-        """$%RADDEG^MATH(X,PREC) generates correct Python code (Annex I-2.43)."""
-        pytest.fail("Stub - implement test")
+    def test_math_log_generates_code(self, execute_mumps):
+        """$$%LOG^MATH(x) generates working code (Spec 013 FR-035)."""
+        # ln(1) = 0
+        result = execute_mumps("TEST W $$%LOG^MATH(1) Q")
+        assert float(result.output.strip()) == pytest.approx(0.0)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%DECDMS^MATH codegen")
-    def test_math_decdms_codegen(self):
-        """$%DECDMS^MATH(X,PREC) generates correct Python code (Annex I-2.27)."""
-        pytest.fail("Stub - implement test")
+        # ln(e) = 1
+        result = execute_mumps(f"TEST W $$%LOG^MATH({math.e}) Q")
+        assert float(result.output.strip()) == pytest.approx(1.0)
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%DMSDEC^MATH codegen")
-    def test_math_dmsdec_codegen(self):
-        """$%DMSDEC^MATH(X) generates correct Python code (Annex I-2.28a)."""
-        pytest.fail("Stub - implement test")
+    def test_math_ln_alias_generates_code(self, execute_mumps):
+        """$$%LN^MATH(x) is alias for %LOG (Spec 013)."""
+        result = execute_mumps("TEST W $$%LN^MATH(10) Q")
+        assert float(result.output.strip()) == pytest.approx(math.log(10))
 
+    def test_math_sqrt_generates_code(self, execute_mumps):
+        """$$%SQRT^MATH(x) generates working code (Spec 013 FR-036)."""
+        # sqrt(4) = 2
+        result = execute_mumps("TEST W $$%SQRT^MATH(4) Q")
+        assert float(result.output.strip()) == pytest.approx(2.0)
 
-@pytest.mark.codegen
-class TestMathLibraryComplexNumberCodegen:
-    """Codegen-level tests for MATH library complex number functions (Annex I-2).
-
-    Functions: COMPLEX, CONJUG, CABS, CADD, CSUB, CMUL, CDIV, CEXP, CLOG, CPOWER, CSIN, CCOS.
-    """
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%COMPLEX^MATH codegen")
-    def test_math_complex_codegen(self):
-        """$%COMPLEX^MATH(REAL,IMAG) generates correct Python code (Annex I-2.19)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CONJUG^MATH codegen")
-    def test_math_conjug_codegen(self):
-        """$%CONJUG^MATH(Z) generates correct Python code (Annex I-2.20)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CABS^MATH codegen")
-    def test_math_cabs_codegen(self):
-        """$%CABS^MATH(Z,PREC) generates correct Python code (Annex I-2.12)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CADD^MATH codegen")
-    def test_math_cadd_codegen(self):
-        """$%CADD^MATH(Z1,Z2) generates correct Python code (Annex I-2.13)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CSUB^MATH codegen")
-    def test_math_csub_codegen(self):
-        """$%CSUB^MATH(Z1,Z2) generates correct Python code (Annex I-2.17)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CMUL^MATH codegen")
-    def test_math_cmul_codegen(self):
-        """$%CMUL^MATH(Z1,Z2,PREC) generates correct Python code (Annex I-2.18)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CDIV^MATH codegen")
-    def test_math_cdiv_codegen(self):
-        """$%CDIV^MATH(Z1,Z2,PREC) generates correct Python code (Annex I-2.14)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CEXP^MATH codegen")
-    def test_math_cexp_codegen(self):
-        """$%CEXP^MATH(Z,PREC) generates correct Python code (Annex I-2.15)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CLOG^MATH codegen")
-    def test_math_clog_codegen(self):
-        """$%CLOG^MATH(Z,PREC) generates correct Python code (Annex I-2.16)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CPOWER^MATH codegen")
-    def test_math_cpower_codegen(self):
-        """$%CPOWER^MATH(Z,N,PREC) generates correct Python code (Annex I-2.24a)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CSIN^MATH codegen")
-    def test_math_csin_codegen(self):
-        """$%CSIN^MATH(Z,PREC) generates correct Python code (Annex I-2.17a)."""
-        pytest.fail("Stub - implement test")
-
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%CCOS^MATH codegen")
-    def test_math_ccos_codegen(self):
-        """$%CCOS^MATH(Z,PREC) generates correct Python code (Annex I-2.14a)."""
-        pytest.fail("Stub - implement test")
+        # sqrt(2)
+        result = execute_mumps("TEST W $$%SQRT^MATH(2) Q")
+        assert float(result.output.strip()) == pytest.approx(math.sqrt(2))
 
 
 @pytest.mark.codegen
-class TestMathLibraryMatrixCodegen:
-    """Codegen-level tests for MATH library matrix functions (Annex I-2).
+class TestMathLibraryDomainErrors:
+    """Tests that implemented functions raise domain errors appropriately."""
 
-    Functions: MTXADD, MTXSUB, MTXMUL, MTXSCA, MTXCOPY, MTXTRP, MTXDET, MTXINV, MTXCOF, MTXEQU, MTXUNIT.
+    def test_math_log_domain_error(self, execute_mumps):
+        """$$%LOG^MATH raises domain error for non-positive argument."""
+        result = execute_mumps("TEST W $$%LOG^MATH(0) Q")
+        assert result.success is False
+        assert "DOMAIN" in result.error
+
+        result = execute_mumps("TEST W $$%LOG^MATH(-1) Q")
+        assert result.success is False
+        assert "DOMAIN" in result.error
+
+    def test_math_sqrt_domain_error(self, execute_mumps):
+        """$$%SQRT^MATH raises domain error for negative argument."""
+        result = execute_mumps("TEST W $$%SQRT^MATH(-1) Q")
+        assert result.success is False
+        assert "DOMAIN" in result.error
+
+    def test_math_arcsin_domain_error(self, execute_mumps):
+        """$$%ARCSIN^MATH raises domain error for |x| > 1."""
+        result = execute_mumps("TEST W $$%ARCSIN^MATH(2) Q")
+        assert result.success is False
+        assert "DOMAIN" in result.error
+
+    def test_math_arccos_domain_error(self, execute_mumps):
+        """$$%ARCCOS^MATH raises domain error for |x| > 1."""
+        result = execute_mumps("TEST W $$%ARCCOS^MATH(2) Q")
+        assert result.success is False
+        assert "DOMAIN" in result.error
+
+
+@pytest.mark.codegen
+class TestMathLibraryCodegenDetails:
+    """Tests for code generation details of MATH library functions."""
+
+    def test_generated_code_imports_math_routine(self, generate_python):
+        """Generated Python code imports MATH from bundled routines."""
+        python_code = generate_python("TEST W $$%SQRT^MATH(4) Q")
+        assert "from m2py.runtime.routines import MATH" in python_code
+
+    def test_math_functions_in_expressions(self, execute_mumps):
+        """Math library functions can be used in expressions."""
+        # Use math result in arithmetic
+        result = execute_mumps("TEST W $$%SQRT^MATH(16)+1 Q")
+        assert float(result.output.strip()) == pytest.approx(5.0)
+
+    def test_math_functions_nested(self, execute_mumps):
+        """Math library functions can be nested."""
+        # sqrt(sqrt(16)) = sqrt(4) = 2
+        result = execute_mumps("TEST W $$%SQRT^MATH($$%SQRT^MATH(16)) Q")
+        assert float(result.output.strip()) == pytest.approx(2.0)
+
+        # ln(e^2) = 2
+        result = execute_mumps("TEST W $$%LOG^MATH($$%EXP^MATH(2)) Q")
+        assert float(result.output.strip()) == pytest.approx(2.0)
+
+
+# =============================================================================
+# UNIMPLEMENTED MATH FUNCTIONS (LIM-014) - Should raise NotImplementedError
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestMathLibraryHyperbolicUnimplemented:
+    """Codegen tests for UNIMPLEMENTED hyperbolic functions (LIM-014).
+
+    All should raise NotImplementedError with LIM-014.
     """
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXADD^MATH codegen")
-    def test_math_mtxadd_codegen(self):
-        """$%MTXADD^MATH(A,B,C) generates correct Python code (Annex I-2.33)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_sinh_raises_error(self):
+        """$%SINH^MATH(X,PREC) raises NotImplementedError (Annex I-2.48)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%SINH^MATH(1,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXSUB^MATH codegen")
-    def test_math_mtxsub_codegen(self):
-        """$%MTXSUB^MATH(A,B,C) generates correct Python code (Annex I-2.40)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_cosh_raises_error(self):
+        """$%COSH^MATH(X,PREC) raises NotImplementedError (Annex I-2.22)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%COSH^MATH(1,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXMUL^MATH codegen")
-    def test_math_mtxmul_codegen(self):
-        """$%MTXMUL^MATH(A,B,C,PREC) generates correct Python code (Annex I-2.38)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_tanh_raises_error(self):
+        """$%TANH^MATH(X,PREC) raises NotImplementedError (Annex I-2.51)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%TANH^MATH(1,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXSCA^MATH codegen")
-    def test_math_mtxsca_codegen(self):
-        """$%MTXSCA^MATH(A,S,B) generates correct Python code (Annex I-2.39)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_coth_raises_error(self):
+        """$%COTH^MATH(X,PREC) raises NotImplementedError (Annex I-2.24)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%COTH^MATH(1,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXCOPY^MATH codegen")
-    def test_math_mtxcopy_codegen(self):
-        """$%MTXCOPY^MATH(A,B) generates correct Python code (Annex I-2.35)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_sech_raises_error(self):
+        """$%SECH^MATH(X,PREC) raises NotImplementedError (Annex I-2.45)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%SECH^MATH(1,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXTRP^MATH codegen")
-    def test_math_mtxtrp_codegen(self):
-        """$%MTXTRP^MATH(A,B) generates correct Python code (Annex I-2.41)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_csch_raises_error(self):
+        """$%CSCH^MATH(X,PREC) raises NotImplementedError (Annex I-2.26)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%CSCH^MATH(1,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXDET^MATH codegen")
-    def test_math_mtxdet_codegen(self):
-        """$%MTXDET^MATH(A,PREC) generates correct Python code (Annex I-2.36)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_arcsinh_raises_error(self):
+        """$%ARCSINH^MATH(X,PREC) raises NotImplementedError (Annex I-2.9)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%ARCSINH^MATH(1,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXINV^MATH codegen")
-    def test_math_mtxinv_codegen(self):
-        """$%MTXINV^MATH(A,B,PREC) generates correct Python code (Annex I-2.37)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_arccosh_raises_error(self):
+        """$%ARCCOSH^MATH(X,PREC) raises NotImplementedError (Annex I-2.3)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%ARCCOSH^MATH(2,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXCOF^MATH codegen")
-    def test_math_mtxcof_codegen(self):
-        """$%MTXCOF^MATH(A,B,PREC) generates correct Python code (Annex I-2.34)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_arctanh_raises_error(self):
+        """$%ARCTANH^MATH(X,PREC) raises NotImplementedError (Annex I-2.11)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%ARCTANH^MATH(0.5,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXEQU^MATH codegen")
-    def test_math_mtxequ_codegen(self):
-        """$%MTXEQU^MATH(A,B) generates correct Python code (Annex I-2.36a)."""
-        pytest.fail("Stub - implement test")
+    def test_lim014_math_arccoth_raises_error(self):
+        """$%ARCCOTH^MATH(X,PREC) raises NotImplementedError (Annex I-2.5)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%ARCCOTH^MATH(2,2) Q")
 
-    @pytest.mark.stub
-    @pytest.mark.xfail(reason="Not yet implemented: $%MTXUNIT^MATH codegen")
-    def test_math_mtxunit_codegen(self):
-        """$%MTXUNIT^MATH(A,N) generates correct Python code (Annex I-2.41a)."""
-        pytest.fail("Stub - implement test")
+
+@pytest.mark.codegen
+class TestMathLibraryOtherTrigUnimplemented:
+    """Codegen tests for UNIMPLEMENTED other trig functions (LIM-014).
+
+    COT, SEC, CSC and their inverses are not implemented.
+    """
+
+    def test_lim014_math_cot_raises_error(self):
+        """$%COT^MATH(X,PREC) raises NotImplementedError (Annex I-2.23)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%COT^MATH(1,2) Q")
+
+    def test_lim014_math_sec_raises_error(self):
+        """$%SEC^MATH(X,PREC) raises NotImplementedError (Annex I-2.44)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%SEC^MATH(1,2) Q")
+
+    def test_lim014_math_csc_raises_error(self):
+        """$%CSC^MATH(X,PREC) raises NotImplementedError (Annex I-2.25)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%CSC^MATH(1,2) Q")
+
+    def test_lim014_math_arcsec_raises_error(self):
+        """$%ARCSEC^MATH(X,PREC) raises NotImplementedError (Annex I-2.7)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%ARCSEC^MATH(2,2) Q")
+
+    def test_lim014_math_arccsc_raises_error(self):
+        """$%ARCCSC^MATH(X,PREC) raises NotImplementedError (Annex I-2.6)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%ARCCSC^MATH(2,2) Q")
+
+
+@pytest.mark.codegen
+class TestMathLibraryConstantsUnimplemented:
+    """Codegen tests for UNIMPLEMENTED mathematical constants (LIM-014).
+
+    E, PI, LOG10, SIGN, ABS functions are not implemented.
+    """
+
+    def test_lim014_math_e_raises_error(self):
+        """$%E^MATH(PREC) raises NotImplementedError (Annex I-2.29)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%E^MATH(10) Q")
+
+    def test_lim014_math_pi_raises_error(self):
+        """$%PI^MATH(PREC) raises NotImplementedError (Annex I-2.42)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%PI^MATH(10) Q")
+
+    def test_lim014_math_log10_raises_error(self):
+        """$%LOG10^MATH(X,PREC) raises NotImplementedError (Annex I-2.32)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%LOG10^MATH(100,2) Q")
+
+    def test_lim014_math_sign_raises_error(self):
+        """$%SIGN^MATH(X) raises NotImplementedError (Annex I-2.46)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%SIGN^MATH(-5) Q")
+
+    def test_lim014_math_abs_raises_error(self):
+        """$%ABS^MATH(X) raises NotImplementedError (Annex I-2.1)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%ABS^MATH(-5) Q")
+
+
+@pytest.mark.codegen
+class TestMathLibraryAngleConversionUnimplemented:
+    """Codegen tests for UNIMPLEMENTED angle conversion functions (LIM-014)."""
+
+    def test_lim014_math_degrad_raises_error(self):
+        """$%DEGRAD^MATH(X,PREC) raises NotImplementedError (Annex I-2.28)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%DEGRAD^MATH(180,10) Q")
+
+    def test_lim014_math_raddeg_raises_error(self):
+        """$%RADDEG^MATH(X,PREC) raises NotImplementedError (Annex I-2.43)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%RADDEG^MATH(3.14159,2) Q")
+
+    def test_lim014_math_decdms_raises_error(self):
+        """$%DECDMS^MATH(X,PREC) raises NotImplementedError (Annex I-2.27)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%DECDMS^MATH(45.5,4) Q")
+
+    def test_lim014_math_dmsdec_raises_error(self):
+        """$%DMSDEC^MATH(X) raises NotImplementedError (Annex I-2.28a)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%DMSDEC^MATH(453000) Q")
+
+
+@pytest.mark.codegen
+class TestMathLibraryComplexNumberUnimplemented:
+    """Codegen tests for UNIMPLEMENTED complex number functions (LIM-014)."""
+
+    def test_lim014_math_complex_raises_error(self):
+        """$%COMPLEX^MATH(REAL,IMAG) raises NotImplementedError (Annex I-2.19)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python("TEST S X=$$%COMPLEX^MATH(3,4) Q")
+
+    def test_lim014_math_conjug_raises_error(self):
+        """$%CONJUG^MATH(Z) raises NotImplementedError (Annex I-2.20)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CONJUG^MATH("3,4") Q')
+
+    def test_lim014_math_cabs_raises_error(self):
+        """$%CABS^MATH(Z,PREC) raises NotImplementedError (Annex I-2.12)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CABS^MATH("3,4",2) Q')
+
+    def test_lim014_math_cadd_raises_error(self):
+        """$%CADD^MATH(Z1,Z2) raises NotImplementedError (Annex I-2.13)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CADD^MATH("1,2","3,4") Q')
+
+    def test_lim014_math_csub_raises_error(self):
+        """$%CSUB^MATH(Z1,Z2) raises NotImplementedError (Annex I-2.17)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CSUB^MATH("3,4","1,2") Q')
+
+    def test_lim014_math_cmul_raises_error(self):
+        """$%CMUL^MATH(Z1,Z2,PREC) raises NotImplementedError (Annex I-2.18)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CMUL^MATH("1,2","3,4",2) Q')
+
+    def test_lim014_math_cdiv_raises_error(self):
+        """$%CDIV^MATH(Z1,Z2,PREC) raises NotImplementedError (Annex I-2.14)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CDIV^MATH("3,4","1,2",2) Q')
+
+    def test_lim014_math_cexp_raises_error(self):
+        """$%CEXP^MATH(Z,PREC) raises NotImplementedError (Annex I-2.15)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CEXP^MATH("0,3.14159",2) Q')
+
+    def test_lim014_math_clog_raises_error(self):
+        """$%CLOG^MATH(Z,PREC) raises NotImplementedError (Annex I-2.16)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CLOG^MATH("1,1",2) Q')
+
+    def test_lim014_math_cpower_raises_error(self):
+        """$%CPOWER^MATH(Z,N,PREC) raises NotImplementedError (Annex I-2.24a)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CPOWER^MATH("1,1",2,2) Q')
+
+    def test_lim014_math_csin_raises_error(self):
+        """$%CSIN^MATH(Z,PREC) raises NotImplementedError (Annex I-2.17a)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CSIN^MATH("0,1",2) Q')
+
+    def test_lim014_math_ccos_raises_error(self):
+        """$%CCOS^MATH(Z,PREC) raises NotImplementedError (Annex I-2.14a)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%CCOS^MATH("0,1",2) Q')
+
+
+@pytest.mark.codegen
+class TestMathLibraryMatrixUnimplemented:
+    """Codegen tests for UNIMPLEMENTED matrix functions (LIM-014)."""
+
+    def test_lim014_math_mtxadd_raises_error(self):
+        """$%MTXADD^MATH(A,B,C) raises NotImplementedError (Annex I-2.33)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXADD^MATH("A","B","C") Q')
+
+    def test_lim014_math_mtxsub_raises_error(self):
+        """$%MTXSUB^MATH(A,B,C) raises NotImplementedError (Annex I-2.40)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXSUB^MATH("A","B","C") Q')
+
+    def test_lim014_math_mtxmul_raises_error(self):
+        """$%MTXMUL^MATH(A,B,C,PREC) raises NotImplementedError (Annex I-2.38)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXMUL^MATH("A","B","C",2) Q')
+
+    def test_lim014_math_mtxsca_raises_error(self):
+        """$%MTXSCA^MATH(A,S,B) raises NotImplementedError (Annex I-2.39)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXSCA^MATH("A",2,"B") Q')
+
+    def test_lim014_math_mtxcopy_raises_error(self):
+        """$%MTXCOPY^MATH(A,B) raises NotImplementedError (Annex I-2.35)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXCOPY^MATH("A","B") Q')
+
+    def test_lim014_math_mtxtrp_raises_error(self):
+        """$%MTXTRP^MATH(A,B) raises NotImplementedError (Annex I-2.41)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXTRP^MATH("A","B") Q')
+
+    def test_lim014_math_mtxdet_raises_error(self):
+        """$%MTXDET^MATH(A,PREC) raises NotImplementedError (Annex I-2.36)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXDET^MATH("A",2) Q')
+
+    def test_lim014_math_mtxinv_raises_error(self):
+        """$%MTXINV^MATH(A,B,PREC) raises NotImplementedError (Annex I-2.37)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXINV^MATH("A","B",2) Q')
+
+    def test_lim014_math_mtxcof_raises_error(self):
+        """$%MTXCOF^MATH(A,B,PREC) raises NotImplementedError (Annex I-2.34)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXCOF^MATH("A","B",2) Q')
+
+    def test_lim014_math_mtxequ_raises_error(self):
+        """$%MTXEQU^MATH(A,B) raises NotImplementedError (Annex I-2.36a)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXEQU^MATH("A","B") Q')
+
+    def test_lim014_math_mtxunit_raises_error(self):
+        """$%MTXUNIT^MATH(A,N) raises NotImplementedError (Annex I-2.41a)."""
+        with pytest.raises(NotImplementedError, match="LIM-014"):
+            generate_python('TEST S X=$$%MTXUNIT^MATH("A",3) Q')

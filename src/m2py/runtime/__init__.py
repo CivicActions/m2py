@@ -1455,6 +1455,103 @@ class MUMPSRuntime:
         """
         self._zerror = value
 
+    def _exception_to_ecode(self, exc: Exception) -> str:
+        """Map Python exception to MUMPS $ECODE format.
+
+        Spec 014 (T055): Converts Python exceptions to MUMPS error codes
+        in the comma-delimited $ECODE format: ",Mnn," or ",Zxxx,"
+
+        Error Code Mapping:
+        | Python Exception          | MUMPS $ECODE       | Description              |
+        |--------------------------|-------------------|--------------------------|
+        | ZeroDivisionError         | ,M9,              | Divide by zero           |
+        | KeyError                  | ,M6,              | Undefined local variable |
+        | MRuntimeError(SELECTFALSE)| ,M4,              | No $SELECT argument true |
+        | MRuntimeError(RANDARGNEG) | ,M28,             | $RANDOM argument negative|
+        | IndirectionError          | ,M26,             | Non-existent environment |
+        | LabelNotFoundError        | ,M13,             | Label not found          |
+        | RuntimeError("NAKEDERR")  | ,M1,              | Naked reference error    |
+        | RuntimeError("M44")       | ,M44,             | TCOMMIT without TSTART   |
+        | Other                     | ,Z150373210,      | Generic system error     |
+
+        Args:
+            exc: The Python exception to map
+
+        Returns:
+            MUMPS $ECODE format string (e.g., ",M9,")
+        """
+        # Import MRuntimeError locally to avoid circular imports
+        from m2py.runtime.exceptions import MRuntimeError
+
+        if isinstance(exc, ZeroDivisionError):
+            return ",M9,"  # Divide by zero
+        elif isinstance(exc, KeyError):
+            return ",M6,"  # Undefined local variable
+        elif isinstance(exc, MRuntimeError):
+            # Map MRuntimeError codes to MUMPS standard codes
+            code_map = {
+                "SELECTFALSE": "M4",  # $SELECT with no true condition
+                "RANDARGNEG": "M28",  # $RANDOM argument must be > 0
+            }
+            mcode = code_map.get(exc.code, f"Z{exc.code}")
+            return f",{mcode},"
+        elif isinstance(exc, IndirectionError):
+            return ",M26,"  # Non-existent environment
+        elif isinstance(exc, LabelNotFoundError):
+            return ",M13,"  # Label not found
+        elif isinstance(exc, RuntimeError):
+            # Check for specific RuntimeError messages
+            msg = str(exc)
+            if "NAKEDERR" in msg or "naked" in msg.lower():
+                return ",M1,"  # Naked reference error
+            elif "M44" in msg or "TCOMMIT" in msg:
+                return ",M44,"  # TCOMMIT without TSTART
+            return ",Z150373210,"  # Generic system error
+        else:
+            return ",Z150373210,"  # Generic system error (YDB code)
+
+    def _handle_etrap(self, exc: Exception, _scope: dict) -> bool:
+        """Handle an exception using $ETRAP if set.
+
+        Spec 014 (T055): Implements MUMPS error handling semantics:
+        1. If $ETRAP is empty, return False (exception should propagate)
+        2. Set $ECODE based on exception type
+        3. Set $ZERROR to exception message
+        4. Execute $ETRAP code via execute_mumps()
+        5. Return True if $ECODE was cleared (error handled), False otherwise
+
+        When True is returned, the calling code should perform an implicit QUIT.
+        When False is returned, the exception should propagate to the caller.
+
+        Args:
+            exc: The Python exception that occurred
+            _scope: Current variable scope for execute_mumps()
+
+        Returns:
+            True if error was handled ($ECODE cleared), False otherwise
+
+        Side Effects:
+            - Sets $ECODE based on exception type
+            - Sets $ZERROR to exception message
+            - Executes $ETRAP code which may modify $ECODE and variables
+        """
+        if not self._etrap:
+            return False  # No handler, propagate exception
+
+        # Map Python exception to MUMPS $ECODE
+        self._ecode = self._exception_to_ecode(exc)
+        self._zerror = str(exc)
+
+        # Execute $ETRAP code
+        try:
+            self.execute_mumps(self._etrap, _scope)
+        except Exception:
+            # Error in $ETRAP itself - propagate original error
+            return False
+
+        # Check if handler cleared $ECODE
+        return self._ecode == ""
+
     def push_frame(self) -> None:
         """Push a new stack frame (for DO/extrinsic calls)."""
         self._stack_level += 1

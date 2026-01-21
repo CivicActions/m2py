@@ -35,6 +35,41 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
+# Limitation Constants (Spec 014)
+# =============================================================================
+
+# ANSI Standard Library routines (LIM-014)
+# STRING and CHARACTER libraries have zero VistA usage - all functions blocked.
+# MATH library has basic functions implemented (Spec 013), others blocked.
+ANSI_LIBRARY_ROUTINES_BLOCKED: frozenset[str] = frozenset({"STRING", "CHARACTER"})
+
+# Implemented MATH library functions (Spec 013 Phase 13)
+# These are the functions defined in m2py/runtime/routines/MATH.py
+MATH_FUNCTIONS_IMPLEMENTED: frozenset[str] = frozenset(
+    {
+        "%EXP",
+        "%LOG",
+        "%LN",
+        "%SQRT",
+        "%SIN",
+        "%COS",
+        "%TAN",
+        "%ARCSIN",
+        "%ASIN",
+        "%ARCCOS",
+        "%ACOS",
+        "%ARCTAN",
+        "%ATAN",
+    }
+)
+
+# YDB Z-functions with zero VistA usage (LIM-015)
+# These are implementation-defined per FR-017 and parsed but not implemented.
+# Codegen raises NotImplementedError for these functions.
+Z_FUNCTIONS_UNIMPLEMENTED: frozenset[str] = frozenset({"ZDATE", "ZMESSAGE", "ZWIDTH"})
+
+
+# =============================================================================
 # Intrinsic Function Dispatch Table (Spec 010)
 # =============================================================================
 
@@ -72,6 +107,10 @@ def generate_intrinsic_function(
     # Check dispatch table first
     if func_name in INTRINSIC_GENERATORS:
         return INTRINSIC_GENERATORS[func_name](expr, ctx)
+
+    # LIM-015: Unimplemented Z-functions
+    if func_name in Z_FUNCTIONS_UNIMPLEMENTED:
+        raise NotImplementedError(f"LIM-015: ${expr.name} function not supported")
 
     raise NotImplementedError(f"Intrinsic function ${expr.name} not yet implemented")
 
@@ -321,10 +360,12 @@ def _generate_ssvn(ssvn: MStructuredSystemVariable, ctx: "GeneratorContext") -> 
         return "''"
     elif name in ("EVENT", "E", "WINDOW", "W", "DISPLAY", "DI"):
         # MWAPI SSVNs - documented limitation (LIM-003)
-        return "''"
+        raise NotImplementedError(
+            "LIM-003: MWAPI SSVNs (^$EVENT, ^$WINDOW, ^$DISPLAY) not supported"
+        )
     elif name in ("LIBRARY", "LI"):
         # ^$LIBRARY - documented limitation (LIM-011)
-        return "''"
+        raise NotImplementedError("LIM-011: ^$LIBRARY SSVN not supported")
     else:
         raise NotImplementedError(f"Unsupported SSVN: ^${name}")
 
@@ -636,15 +677,44 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     if expr.target.routine:
         routine_name = expr.target.routine
 
+        # LIM-014: ANSI library routines with zero VistA usage
+        # STRING and CHARACTER libraries are completely blocked.
+        # MATH library: only unimplemented functions are blocked (implemented ones pass through).
+        if label_name.startswith("%"):
+            upper_routine = routine_name.upper()
+            if upper_routine in ANSI_LIBRARY_ROUTINES_BLOCKED:
+                # STRING and CHARACTER: completely blocked
+                raise NotImplementedError(
+                    f"LIM-014: ANSI library routine ^{routine_name} not supported "
+                    f"(use VistA Kernel Library Functions instead)"
+                )
+            elif (
+                upper_routine == "MATH"
+                and label_name.upper() not in MATH_FUNCTIONS_IMPLEMENTED
+            ):
+                # MATH: only unimplemented functions blocked
+                raise NotImplementedError(
+                    f"LIM-014: ANSI library function {label_name}^MATH not implemented "
+                    f"(only basic trig/exp/log functions supported)"
+                )
+
         # Spec 013 Phase 13: Check for bundled routines first (e.g., MATH for $$%SIN^MATH)
         # Bundled routines are in m2py.runtime.routines package
         bundled_routines = {"MATH"}  # Add more as needed
+
+        # T068-T070: Translate routine name to valid Python module name
+        # %ROUTINE becomes _pct_ROUTINE for Python import compatibility
+        python_module_name = translate_name(routine_name)
+
         if routine_name in bundled_routines:
             # Import from bundled routines package
             ctx.emitter.line(f"from m2py.runtime.routines import {routine_name}")
+            # Bundled routines don't need name translation (they're Python modules)
+            module_ref = routine_name
         else:
             # T044: Generate import statement for external routine
-            ctx.emitter.line(f"import {routine_name}")
+            ctx.emitter.line(f"import {python_module_name}")
+            module_ref = python_module_name
 
         # Translate label name to Python function name
         func_name = translate_name(label_name)
@@ -653,9 +723,9 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         # The _call_extrinsic helper provides $TEST save/restore and by-ref unpacking
         # Phase 13 (T081): Pass _rt as first parameter
         if args:
-            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, {args}, _scope=_scope{byref_param})"
+            return f"_call_extrinsic(_rt, {module_ref}.{func_name}, {args}, _scope=_scope{byref_param})"
         else:
-            return f"_call_extrinsic(_rt, {routine_name}.{func_name}, _scope=_scope{byref_param})"
+            return f"_call_extrinsic(_rt, {module_ref}.{func_name}, _scope=_scope{byref_param})"
 
     # Internal extrinsic (within same routine)
     # Translate label name to Python function name
@@ -670,12 +740,13 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         else:
             return f"_call_extrinsic(_rt, {func_name}, _scope=_scope{byref_param})"
 
-    # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2)
+    # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2, _scope=_scope)
     # Phase 13 (T081): Pass _rt as first parameter
+    # T076-T078: Always pass _scope for cross-routine variable visibility
     if args:
-        return f"_call_extrinsic(_rt, {func_name}, {args})"
+        return f"_call_extrinsic(_rt, {func_name}, {args}, _scope=_scope)"
     else:
-        return f"_call_extrinsic(_rt, {func_name})"
+        return f"_call_extrinsic(_rt, {func_name}, _scope=_scope)"
 
 
 def _generate_extrinsic_arguments_with_byref(
@@ -809,6 +880,13 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_data_global(_rt.globals, 'NAME', subscripts)
         return f"m_data_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve then call m_data_global
+        # Spec 014 (T061): Naked references in $DATA
+        return (
+            f"(lambda _n, _s: m_data_global(_rt.globals, _n, _s))"
+            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+        )
     else:
         # Fallback for any other variable type - treat as local
         python_name = translate_name(var_name)
@@ -878,6 +956,13 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_get_global(_rt.globals, 'NAME', subscripts, default)
         return f"m_get_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {default_code})"
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve then call m_get_global
+        # Spec 014 (T061): Naked references in $GET
+        return (
+            f"(lambda _n, _s: m_get_global(_rt.globals, _n, _s, {default_code}))"
+            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+        )
     else:
         # Fallback for any other variable type - treat as local
         python_name = translate_name(var_name)
@@ -949,6 +1034,13 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_order_global(_rt.globals, 'NAME', subscripts, direction)
         return f"m_order_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {direction_code})"
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve then call m_order_global
+        # Spec 014 (T061): Naked references in $ORDER
+        return (
+            f"(lambda _n, _s: m_order_global(_rt.globals, _n, _s, {direction_code}))"
+            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+        )
     else:
         # Fallback for any other variable type - treat as local
         python_name = translate_name(var_name)
@@ -1009,6 +1101,13 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_query_global(_rt.globals, 'NAME', subscripts)
         return f"m_query_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve then call m_query_global
+        # Spec 014 (T061): Naked references in $QUERY
+        return (
+            f"(lambda _n, _s: m_query_global(_rt.globals, _n, _s))"
+            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+        )
     else:
         # Fallback for any other variable type - treat as local
         python_name = translate_name(var_name)
@@ -1078,8 +1177,9 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
 
     # Handle external routine
     if routine is not None:
-        # Use __import__() to get module reference inline
-        params.append(f"module=__import__('{routine}')")
+        # Use importlib.import_module() for reliable module loading in exec() contexts
+        # __import__() has issues with dynamically modified sys.path
+        params.append(f"module=__import__('importlib').import_module('{routine}')")
 
     return f"_rt.get_text({', '.join(params)})"
 
