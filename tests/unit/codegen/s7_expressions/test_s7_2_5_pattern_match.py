@@ -217,3 +217,91 @@ class TestPatternMatchOptimization:
         result = execute_mumps('TEST\n S P="1N" W "ABC"?@P,!\n Q\n')
         assert result.output == "0\n"
         assert result.success is True
+
+    def test_pattern_single_alternation_edge(self, execute_mumps):
+        """Pattern alternation with single element exercises alternation parsing (§7.2.5).
+
+        T063: Single alternation pattern edge case
+        Given: W "A"?1(1A,1N)
+        When: executed
+        Then: output is "1" - alternation (1A OR 1N) matches single letter
+
+        Reference: Finding 44 from research.md
+        Alternation patterns like (1A,1N) allow matching one of multiple options.
+        This exercises pattern_compiler.py _parse_alternation edge cases.
+        """
+        result = execute_mumps('TEST\n W "A"?1(1A,1N),!\n Q\n')
+        assert result.output == "1\n"
+        assert result.success is True
+
+    def test_pattern_single_alternation_numeric(self, execute_mumps):
+        """Pattern alternation matches numeric alternative (§7.2.5).
+
+        T063 complement: Same alternation with numeric input.
+        """
+        result = execute_mumps('TEST\n W "5"?1(1A,1N),!\n Q\n')
+        assert result.output == "1\n"
+        assert result.success is True
+
+    def test_pattern_single_alternation_non_match(self, execute_mumps):
+        """Pattern alternation returns 0 when no alternative matches (§7.2.5).
+
+        T063 complement: When neither alternative matches.
+        """
+        result = execute_mumps('TEST\n W "!"?1(1A,1N),!\n Q\n')
+        assert result.output == "0\n"
+        assert result.success is True
+
+    def test_pattern_quantifiers_dot_max_edge(self, execute_mumps):
+        """Pattern quantifier .N (0 to N) exercises quantifier parsing (§7.2.5).
+
+        T064: Pattern quantifier edge case - .5A means 0 to 5 letters
+        Given: W "ABC"?.5A
+        When: executed
+        Then: output is "1" - 3 letters is within 0-5 range
+        """
+        result = execute_mumps('TEST\n W "ABC"?.5A,!\n Q\n')
+        assert result.output == "1\n"
+        assert result.success is True
+
+    def test_pattern_quantifiers_dot_max_exceeds(self, execute_mumps):
+        """Pattern quantifier .N fails when count exceeds max (§7.2.5).
+
+        T064 complement: 6 letters exceeds .5A (0-5 limit).
+        """
+        result = execute_mumps('TEST\n W "ABCDEF"?.5A,!\n Q\n')
+        assert result.output == "0\n"
+        assert result.success is True
+
+    def test_pattern_quantifiers_min_dot_edge(self, execute_mumps):
+        """Pattern quantifier N. (N or more) exercises quantifier parsing (§7.2.5).
+
+        T064: Pattern quantifier edge case - 3.N means 3 or more numbers
+        Given: W "12345"?3.N
+        When: executed
+        Then: output is "1" - 5 numbers is at least 3
+        """
+        result = execute_mumps('TEST\n W "12345"?3.N,!\n Q\n')
+        assert result.output == "1\n"
+        assert result.success is True
+
+    def test_pattern_quantifiers_min_dot_below_min(self, execute_mumps):
+        """Pattern quantifier N. fails when count is below minimum (§7.2.5).
+
+        T064 complement: 2 numbers is below 3.N (minimum 3) limit.
+        """
+        result = execute_mumps('TEST\n W "12"?3.N,!\n Q\n')
+        assert result.output == "0\n"
+        assert result.success is True
+
+    def test_pattern_quantifiers_range_edge(self, execute_mumps):
+        """Pattern quantifier M.N (M to N) exercises range quantifier (§7.2.5).
+
+        T064: Pattern quantifier edge case - 3.5A means 3 to 5 letters
+        Given: W "ABC"?3.5A
+        When: executed
+        Then: output is "1" - 3 letters is within 3-5 range
+        """
+        result = execute_mumps('TEST\n W "ABC"?3.5A,!\n Q\n')
+        assert result.output == "1\n"
+        assert result.success is True

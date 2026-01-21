@@ -264,10 +264,10 @@
 
 ### Implementation
 
-- [ ] T063 [P] [US1] Add `test_pattern_single_alternation_edge` to tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py (`?(1A)`)
-- [ ] T064 [P] [US1] Add `test_pattern_quantifiers_edge` to tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py (`.5A`, `3.N`)
+- [x] T063 [P] [US1] Add `test_pattern_single_alternation_edge` to tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py (`?1(1A,1N)`)
+- [x] T064 [P] [US1] Add `test_pattern_quantifiers_edge` to tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py (`.5A`, `3.N`, `3.5A`)
 
-**Checkpoint**: Pattern edge cases covered
+**Checkpoint**: ✅ Pattern edge cases covered with 9 new tests (3 for alternation, 6 for quantifiers)
 
 ---
 
