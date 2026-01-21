@@ -15,6 +15,7 @@ from m2py.asg.expressions import (
     MActualParameter,
     MBinaryOp,
     MExpr,
+    MExternalFunction,
     MExtrinsicFunction,
     MIndirection,
     MIntrinsicFunction,
@@ -151,6 +152,9 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_unary_op(expr, ctx)
     elif isinstance(expr, MExtrinsicFunction):
         return _generate_extrinsic(expr, ctx)
+    # Spec 015: External C functions ($&name, $&package.name)
+    elif isinstance(expr, MExternalFunction):
+        return _generate_external_function(expr, ctx)
     elif isinstance(expr, MSpecialVariable):
         return _generate_special_variable(expr, ctx)
     # Spec 010: Dispatch all intrinsic functions through unified handler
@@ -756,6 +760,41 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         return f"_call_extrinsic(_rt, {func_name}, {args}, _scope=_scope)"
     else:
         return f"_call_extrinsic(_rt, {func_name}, _scope=_scope)"
+
+
+def _generate_external_function(
+    expr: MExternalFunction, ctx: "GeneratorContext"
+) -> str:
+    """Generate Python call for external C function ($&name, $&package.name).
+
+    Spec 015: External C functions call native code linked into the MUMPS runtime.
+    These are implementation-specific and cannot be directly transpiled to Python.
+
+    Examples:
+        $&RAND(1)                          - Simple external function
+        $&ydbposix.signalval("SIGTERM",.x) - Package-qualified external function
+
+    For Python transpilation, these raise NotImplementedError since they require
+    native C bindings that don't exist in the pure Python runtime.
+
+    Args:
+        expr: MExternalFunction node with package, name, and arguments
+        ctx: Generator context
+
+    Raises:
+        NotImplementedError: External C functions are not supported in Python transpilation
+    """
+    # Build function identifier for error message
+    if expr.package:
+        func_id = f"$&{expr.package}.{expr.name}"
+    else:
+        func_id = f"$&{expr.name}"
+
+    raise NotImplementedError(
+        f"External C function '{func_id}' not supported. "
+        f"External functions ($&) call native C code linked into the MUMPS runtime "
+        f"and cannot be transpiled to pure Python."
+    )
 
 
 def _generate_extrinsic_arguments_with_byref(

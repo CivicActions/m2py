@@ -108,6 +108,27 @@ class TestForCommandCodegen:
         assert result.output == "369"
         assert result.success is True
 
+    def test_for_byref_modification_detected(self, execute_mumps):
+        """FOR with by-ref modification in callee uses while pattern.
+
+        When a FOR loop passes the loop variable by reference to a subroutine
+        that modifies it, the analysis detects this and generates a while loop.
+        """
+        # MOD(X) adds 10 to X via by-ref, so I goes 1->11 (> end=3)
+        result = execute_mumps(
+            "TEST\n F I=1:1:3 D MOD(.I) W I,!\n Q\nMOD(X) S X=X+10 Q\n"
+        )
+        assert result.output == "11\n"
+        assert result.success is True
+
+    def test_for_byref_modification_generates_while(self, generate_python):
+        """FOR with by-ref modification generates while loop pattern."""
+        code = generate_python(
+            "TEST\n F I=1:1:3 D MOD(.I) W I\n Q\nMOD(X) S X=X+10 Q\n"
+        )
+        # Should use while loop because callee modifies loop var via by-ref
+        assert "while" in code.lower()
+
     def test_for_negative_step_bounds(self, execute_mumps):
         """FOR negative step iterates correctly (§8.2.5).
 
@@ -251,3 +272,43 @@ class TestForGenContextCodegen:
 
         ctx = ForGenContext.from_statement(stmt)
         assert ctx.use_while is True
+
+
+@pytest.mark.codegen
+class TestForIndirectionCodegen:
+    """Tests for FOR with indirect loop variable (T068)."""
+
+    def test_for_indirect_loop_var_bounded(self, execute_mumps):
+        """FOR with indirect loop variable bounded range (T068).
+
+        FOR @A=1:1:3 sets the variable whose name is in A.
+        """
+        result = execute_mumps('TEST\n S V="X" F @V=1:1:3 W X\n Q\n')
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_for_indirect_loop_var_string_list(self, execute_mumps):
+        """FOR with indirect loop variable string list (T068).
+
+        FOR @A="X","Y","Z" iterates through strings.
+        """
+        result = execute_mumps('TEST\n S V="I" F @V="A","B","C" W I\n Q\n')
+        assert result.output == "ABC"
+        assert result.success is True
+
+    def test_for_indirect_loop_var_open_ended(self, execute_mumps):
+        """FOR with indirect loop variable open-ended (T068).
+
+        FOR @A=1:1 with QUIT in body.
+        """
+        result = execute_mumps('TEST\n S V="X" F @V=1:1 W X Q:X>3\n Q\n')
+        assert result.output == "1234"
+        assert result.success is True
+
+    def test_for_indirect_loop_var_codegen(self, generate_python):
+        """FOR with indirect loop variable generates correct code (T068)."""
+        code = generate_python('TEST\n S V="X" F @V=1:1:3 W X\n Q\n')
+        # Should resolve indirection before loop
+        assert "_for_indirect_var" in code
+        # Should use the resolved variable name
+        assert "get_indirection_source" in code
