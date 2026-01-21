@@ -169,6 +169,36 @@ class TestForCommandCodegen:
         # The loop should have pass or minimal body
         assert "pass" in code or "_for_step" in code
 
+    def test_for_single_value_edge(self, execute_mumps):
+        """FOR with single string value executes body once (§8.2.5).
+
+        T057: Single-value FOR parameter
+        Given: F I="X" W I,!
+        When: executed
+        Then: output is "X\n" - the string value is iterated once
+
+        Reference: Finding 34 from research.md
+        A FOR loop with just a value (no step/end) iterates once with that value.
+        """
+        result = execute_mumps('TEST\n F I="X" W I,!\n Q\n')
+        assert result.output == "X\n"
+        assert result.success is True
+
+    def test_for_multi_range_edge(self, execute_mumps):
+        """FOR with multiple ranges iterates all in sequence (§8.2.5).
+
+        T058: Multi-range FOR parameters
+        Given: F I=1:1:2,3:1:4 W I
+        When: executed
+        Then: output is "1234" - both ranges are iterated in order
+
+        Reference: Finding 36 from research.md
+        Multiple comma-separated range parameters are iterated sequentially.
+        """
+        result = execute_mumps("TEST\n F I=1:1:2,3:1:4 W I\n Q\n")
+        assert result.output == "1234"
+        assert result.success is True
+
 
 @pytest.mark.codegen
 class TestForGenContextCodegen:

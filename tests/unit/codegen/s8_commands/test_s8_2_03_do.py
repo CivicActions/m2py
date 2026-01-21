@@ -75,6 +75,31 @@ class TestDoCommandCodegen:
         assert result.output == "12"
         assert result.success is True
 
+    def test_nested_do_in_if_edge(self, execute_mumps):
+        """Nested DO in IF executes dot-block when condition is true (§8.2.3).
+
+        T059: IF-DO with dot-indented block
+        Given: I 1 D (followed by dot-indented lines)
+        When: executed
+        Then: the dot-block executes because condition is true
+
+        Reference: Finding 59 from research.md
+        An IF followed by argumentless DO collects subsequent dot-lines as the DO block,
+        and the block executes only if the IF condition is true.
+        """
+        result = execute_mumps('TEST\n I 1 D\n . W "dot-line",!\n W "after",!\n Q\n')
+        assert result.output == "dot-line\nafter\n"
+        assert result.success is True
+
+    def test_nested_do_in_if_false_edge(self, execute_mumps):
+        """Nested DO in IF skips dot-block when condition is false (§8.2.3).
+
+        T059 complement: When IF condition is false, the DO block is skipped.
+        """
+        result = execute_mumps('TEST\n I 0 D\n . W "dot-line",!\n W "after",!\n Q\n')
+        assert result.output == "after\n"
+        assert result.success is True
+
     def test_do_external_routine(self, generate_python):
         """DO external routine generates import and call (§8.2.3).
 

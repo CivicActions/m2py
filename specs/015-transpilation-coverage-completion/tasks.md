@@ -228,11 +228,11 @@
 
 ### Implementation
 
-- [ ] T057 [P] [US1] Add `test_for_single_value_edge` to tests/unit/codegen/s8_commands/test_s8_2_05_for.py (`F I="X" W I`)
-- [ ] T058 [P] [US1] Add `test_for_multi_range_edge` to tests/unit/codegen/s8_commands/test_s8_2_05_for.py (`F I=1:1:2,3:1:4 W I`)
-- [ ] T059 [P] [US1] Add `test_nested_do_in_if_edge` to tests/unit/codegen/s8_commands/test_s8_2_03_do.py (`I 1 D` with dot-lines)
+- [x] T057 [P] [US1] Add `test_for_single_value_edge` to tests/unit/codegen/s8_commands/test_s8_2_05_for.py (`F I="X" W I`)
+- [x] T058 [P] [US1] Add `test_for_multi_range_edge` to tests/unit/codegen/s8_commands/test_s8_2_05_for.py (`F I=1:1:2,3:1:4 W I`)
+- [x] T059 [P] [US1] Add `test_nested_do_in_if_edge` to tests/unit/codegen/s8_commands/test_s8_2_03_do.py (`I 1 D` with dot-lines)
 
-**Checkpoint**: FOR edge cases covered, for_analysis.py coverage improved
+**Checkpoint**: ✅ FOR edge cases covered with 4 new tests. All patterns verified with YDB docker.
 
 ---
 
