@@ -6,7 +6,7 @@ that certain MStatement subclasses have specific attributes.
 
 from typing import TYPE_CHECKING, TypeGuard, Union
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from m2py.asg.elements import MScope
     from m2py.asg.statements import (
         MDoStatement,

@@ -84,6 +84,23 @@ class TestIndirectionCodegen:
         result = execute_mumps('TEST S ARG="X=5" S @ARG W X Q')
         assert result.output == "5"
 
+    def test_name_indirection_subscripts_edge(self, execute_mumps):
+        """Name indirection with subscripts @X@(subs) (§7.3).
+
+        T060: Name indirection with additional subscripts
+        Given: S Y(1)=99 S X="Y" W @X@(1)
+        When: executed
+        Then: output is "99" - @X evaluates to "Y", then @(1) adds subscript
+
+        Reference: Finding 39 from research.md
+        The @X@(subs) syntax evaluates X to get the variable name, then
+        appends the subscripts to form the final variable reference.
+        This exercises semantic_analyzer.py lines 267-275.
+        """
+        result = execute_mumps('TEST\n S Y(1)=99 S X="Y" W @X@(1),!\n Q\n')
+        assert result.output == "99\n"
+        assert result.success is True
+
 
 @pytest.mark.codegen
 class TestPatternIndirectionCodegen:
@@ -128,13 +145,19 @@ class TestPatternIndirectionCodegen:
         # Negated match uses int(not ...) wrapper
         assert "int(not" in code
 
-    def test_literal_pattern_uses_m_pattern_match(self, generate_python):
-        """Literal pattern (not indirect) also uses m_pattern_match (T063).
+    def test_literal_pattern_uses_inline_regex(self, generate_python):
+        """Literal pattern (not indirect) uses inline re.fullmatch (T063).
 
-        m_pattern_match helper handles both direct and indirect patterns.
-        Example: I "123"?1N.N uses m_pattern_match
+        Direct patterns are pre-compiled during analysis and use inline
+        re.fullmatch() for better performance. Only indirect patterns
+        use m_pattern_match() runtime helper.
+        Example: I "123"?1N.N uses re.fullmatch with pre-compiled regex
         """
         code = generate_python('TEST I "123"?1N.N W "MATCH" Q\n')
 
-        # Should use m_pattern_match helper
-        assert "m_pattern_match" in code
+        # Direct patterns use inline re.fullmatch (not m_pattern_match)
+        assert "re.fullmatch(" in code
+        # The pattern match expression should NOT call m_pattern_match function
+        # (it may still be in imports, but not used for the expression)
+        assert "m_pattern_match(_scope" not in code
+        assert "m_pattern_match(str(" not in code

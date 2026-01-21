@@ -172,12 +172,12 @@ MPatternMatch(
 **Generated Python:**
 ```python
 _scope['PAT'] = "1N.N"
-_test = m_truth((1 if re.fullmatch(_rt.compile_pattern_indirect(str(_scope.get('PAT', ''))), str("123"), re.DOTALL) is not None else 0))
+_test = m_truth(m_pattern_match("123", _scope.get('PAT', '')))
 if _test:
     _rt.write("MATCH")
 ```
 
-The runtime `compile_pattern_indirect` method uses the pattern compiler to convert MUMPS patterns to Python regex at runtime.
+The runtime `m_pattern_match()` helper uses the pattern compiler to convert MUMPS patterns to Python regex at runtime. Note: Direct (non-indirect) pattern matches use pre-compiled regex for better performance.
 
 ### Negated Pattern Indirection
 
@@ -190,7 +190,7 @@ I "A"'?@PAT W "NOT NUMERIC"   ; "A" does not match "1N"
 
 **Generated Python:**
 ```python
-_test = m_truth((1 if re.fullmatch(_rt.compile_pattern_indirect(str(_scope.get('PAT', ''))), str("A"), re.DOTALL) is None else 0))
+_test = m_truth(int(not m_pattern_match("A", _scope.get('PAT', ''))))
 ```
 
 ---

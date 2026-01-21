@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, List, Optional, Union
 from m2py.asg.elements import ASGElement, MScope
 from m2py.asg.enums import ForLoopType, ForParamType, GotoCodegenPattern, GotoType
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from m2py.asg.elements import MCall
     from m2py.asg.expressions import MExpr, MVariable, MGlobal, MIndirection
 

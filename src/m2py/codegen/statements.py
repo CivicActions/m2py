@@ -39,6 +39,7 @@ from m2py.asg.statements import (
     MHangStatement,
     MIfStatement,
     MJobStatement,
+    MJobTarget,
     MKillStatement,
     MKSubscriptsStatement,
     MKValueStatement,
@@ -249,6 +250,8 @@ class ForGenContext:
     Attributes:
         stmt: The MForStatement being generated
         loop_var: Translated Python name for loop variable
+        loop_var_name: Original MUMPS variable name (for _scope access)
+        loop_var_subscripts: List of subscript expressions (for I(1), I(1,2), etc.)
         use_while: True if loop_var_modified_in_body requires while loop
         needs_break: True if has_internal_quit or exit GOTOs need break
         is_infinite: True for argumentless FOR (F)
@@ -259,6 +262,8 @@ class ForGenContext:
 
     stmt: MForStatement
     loop_var: str
+    loop_var_name: str  # Original MUMPS name for _scope access
+    loop_var_subscripts: List[str]  # Subscript expressions (empty if simple variable)
     use_while: bool  # True if loop_var_modified_in_body
     needs_break: bool  # True if has_internal_quit or has_internal_goto
     is_infinite: bool
@@ -286,10 +291,12 @@ class ForGenContext:
         """
         # Import here to avoid circular import
         from m2py.asg.expressions import MIndirection as MIndirectionType
+        from m2py.codegen.expressions import generate_expr
 
         # T068: Check for indirection loop variable (F @A=1:1:3)
         loop_var_indirect = False
         loop_var_expr: Optional[str] = None
+        loop_var_subscripts: List[str] = []
 
         if isinstance(stmt.loop_var, MIndirectionType):
             # Indirect loop variable: F @A=1:1:3 where A contains "B"
@@ -308,6 +315,11 @@ class ForGenContext:
         elif isinstance(stmt.loop_var, MVariable):
             var_name = stmt.loop_var.name
             loop_var = translate_name(var_name)
+            # T032: Extract subscripts for subscripted loop variables (F I(1)=1:1:3)
+            if stmt.loop_var.subscripts and ctx is not None:
+                loop_var_subscripts = [
+                    generate_expr(sub, ctx) for sub in stmt.loop_var.subscripts
+                ]
         else:
             var_name = "_"
             loop_var = "_"  # Fallback for complex expressions
@@ -336,6 +348,8 @@ class ForGenContext:
         return cls(
             stmt=stmt,
             loop_var=loop_var,
+            loop_var_name=var_name,
+            loop_var_subscripts=loop_var_subscripts,
             use_while=use_while,
             needs_break=needs_break,
             is_infinite=is_infinite,
@@ -1510,10 +1524,15 @@ def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     work correctly. This is NOT needed for while loops (when loop_var_modified_in_body
     is True) because while loops already use _scope directly.
 
+    T032: Handle subscripted loop variables (F I(1)=1:1:3) by using .set() instead
+    of .value assignment.
+
     Args:
         stmt: MForStatement node
         ctx: Generator context
     """
+    from m2py.codegen.expressions import generate_expr
+
     # T084: Sync for-loop variable to _scope for SIMPLE_FUNCTIONS strategy
     # Only needed when using Python's `for` loop (not while loop)
     # When loop_var_modified_in_body is True, we use while loop with _scope directly
@@ -1525,15 +1544,27 @@ def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     ):
         if isinstance(stmt.loop_var, str):
             var_name = stmt.loop_var
+            subscripts = []
         elif isinstance(stmt.loop_var, MVariable):
             var_name = stmt.loop_var.name
+            # T032: Extract subscripts for subscripted loop variables
+            subscripts = [generate_expr(sub, ctx) for sub in stmt.loop_var.subscripts]
         else:
             var_name = None  # Complex case (indirection) - skip sync
+            subscripts = []
         if var_name:
             python_name = translate_name(var_name)
-            ctx.emitter.line(
-                f"_scope.setdefault({var_name!r}, MArray()).value = {python_name}"
-            )
+            if subscripts:
+                # T032: Subscripted loop var - use .set(sub1, sub2, ..., value=val)
+                subs_str = ", ".join(subscripts)
+                ctx.emitter.line(
+                    f"_scope.setdefault({var_name!r}, MArray()).set({subs_str}, value={python_name})"
+                )
+            else:
+                # Simple variable - use .value
+                ctx.emitter.line(
+                    f"_scope.setdefault({var_name!r}, MArray()).value = {python_name}"
+                )
 
     if stmt.body and stmt.body.statements:
         for body_stmt in stmt.body.statements:
@@ -3155,17 +3186,34 @@ def _generate_tstart(stmt: MTStartStatement, ctx: "GeneratorContext") -> None:
 
     Generated: _rt.globals.transaction_start()
 
-    Note: Restart variables and parameters are not yet implemented -
-    they require additional runtime infrastructure for transaction
-    restart handling.
+    Note: Restart variables (A,B) and restart_all (*) require transaction
+    restart infrastructure that is not yet implemented.
 
     Args:
         stmt: MTStartStatement node
         ctx: Generator context
+
+    Raises:
+        NotImplementedError: If restart_vars or restart_all is specified
     """
+    # Check for restart variables or restart_all - these require infrastructure
+    # for saving and restoring variable state on TRESTART which is not implemented
+    if stmt.restart_vars or stmt.restart_all:
+        if stmt.restart_all:
+            raise NotImplementedError(
+                "TSTART (*) restart variables not implemented - "
+                "transaction restart infrastructure required"
+            )
+        else:
+            # restart_vars contains MVariable instances (which have .name)
+            # Use getattr for type safety since the type annotation is MExpr
+            var_names = ", ".join(getattr(v, "name", str(v)) for v in stmt.restart_vars)
+            raise NotImplementedError(
+                f"TSTART ({var_names}) restart variables not implemented - "
+                "transaction restart infrastructure required"
+            )
+
     # Basic implementation - call transaction_start on global storage
-    # Note: restart_vars, restart_all, and parameters are ignored for now
-    # A full implementation would need to save variable state for restart
     ctx.emitter.line("_rt.globals.transaction_start()")
 
 
@@ -3681,6 +3729,11 @@ def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
 
         call = job_target.call
 
+        # Check for indirection - handle like indirect GOTO
+        if call.label_is_indirect or call.routine_is_indirect:
+            _generate_indirect_job(job_target, ctx)
+            continue
+
         # Build label/routine reference
         label_name = repr(call.name) if call.name else "None"
         routine_name = repr(call.routine) if call.routine else "None"
@@ -3723,6 +3776,104 @@ def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
                 f"_rt.start_job({label_name}, {routine_name}, {args_str}, "
                 f"{params_str}, {timeout_expr})"
             )
+
+
+def _generate_indirect_job(job_target: "MJobTarget", ctx: "GeneratorContext") -> None:
+    """Generate Python code for indirect JOB (J @TARGET).
+
+    Spec 015 Phase 5 (T027-T031): Generate runtime dispatch for indirect JOB.
+    Handles various patterns:
+    - J @TARGET: Full indirection (label comes from variable)
+    - J LABEL^@RTN: Partial indirection (routine from variable)
+    - J @LBL^@RTN: Double indirection (both from variables)
+
+    Similar to indirect GOTO but starts a background job instead of
+    transferring control.
+
+    Args:
+        job_target: MJobTarget ASG node with indirect call
+        ctx: Generator context
+    """
+    call = job_target.call
+    if call is None:
+        return
+
+    # Determine what's indirect and what's static
+    label_is_indirect = call.label_is_indirect
+    routine_is_indirect = call.routine_is_indirect
+
+    # Generate the target expression
+    if label_is_indirect and call.indirection:
+        # Label comes from indirection: J @TARGET or J @TARGET^ROUTINE
+        label_expr = generate_expr(call.indirection, ctx)
+    elif call.name:
+        # Static label name
+        label_expr = repr(call.name)
+    else:
+        label_expr = "''"
+
+    if routine_is_indirect and call.routine_indirection:
+        # Routine comes from indirection: J LABEL^@RTN or J @LBL^@RTN
+        routine_expr = generate_expr(call.routine_indirection, ctx)
+    elif call.routine:
+        # Static routine name
+        routine_expr = repr(call.routine)
+    else:
+        routine_expr = None
+
+    # Build the target string for parsing
+    # Format: "LABEL^ROUTINE" (any part may be absent)
+    if routine_expr is None:
+        # Simple case: just label (J @TARGET)
+        target_str_expr = label_expr
+    else:
+        # Need to build a compound target string
+        ctx.emitter.line(f"_indirect_label = str({label_expr})")
+        ctx.emitter.line("_indirect_target = _indirect_label")
+        ctx.emitter.line(f"_indirect_routine = str({routine_expr})")
+        ctx.emitter.line(
+            '_indirect_target = _indirect_target + "^" + _indirect_routine'
+        )
+        target_str_expr = "_indirect_target"
+
+    # Parse the target string
+    ctx.emitter.line(f"_call_target = _rt.parse_call_target({target_str_expr})")
+
+    # Generate arguments if any
+    args_parts = []
+    for arg in call.arguments:
+        if arg.expression is not None:
+            arg_expr = generate_expr(arg.expression, ctx)
+        else:
+            arg_expr = "None"
+        args_parts.append(arg_expr)
+    args_str = f"[{', '.join(args_parts)}]" if args_parts else "[]"
+
+    # Generate process parameters if any
+    params_parts = []
+    for param in job_target.processparameters:
+        param_expr = generate_expr(param, ctx)
+        params_parts.append(param_expr)
+    params_str = f"[{', '.join(params_parts)}]" if params_parts else "None"
+
+    # Generate timeout expression
+    has_timeout = job_target.timeout is not None
+    if has_timeout and job_target.timeout is not None:
+        timeout_expr = generate_expr(job_target.timeout, ctx)
+    else:
+        timeout_expr = "None"
+
+    # Generate JOB call with resolved target
+    if has_timeout:
+        ctx.emitter.line(
+            f"_test = _rt.start_job(_call_target.label, _call_target.routine, "
+            f"{args_str}, {params_str}, {timeout_expr})"
+        )
+    else:
+        ctx.emitter.line(
+            f"_rt.start_job(_call_target.label, _call_target.routine, "
+            f"{args_str}, {params_str}, {timeout_expr})"
+        )
 
 
 def _generate_view(stmt: MViewStatement, ctx: "GeneratorContext") -> None:

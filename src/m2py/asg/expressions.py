@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, List, Optional, Union
 from m2py.asg.elements import ASGElement
 from m2py.asg.enums import LiteralType, FormatControlType, IndirectionType, PassingMode
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from m2py.asg.elements import MCall
 
 

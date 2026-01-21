@@ -108,6 +108,27 @@ class TestForCommandCodegen:
         assert result.output == "369"
         assert result.success is True
 
+    def test_for_byref_modification_detected(self, execute_mumps):
+        """FOR with by-ref modification in callee uses while pattern.
+
+        When a FOR loop passes the loop variable by reference to a subroutine
+        that modifies it, the analysis detects this and generates a while loop.
+        """
+        # MOD(X) adds 10 to X via by-ref, so I goes 1->11 (> end=3)
+        result = execute_mumps(
+            "TEST\n F I=1:1:3 D MOD(.I) W I,!\n Q\nMOD(X) S X=X+10 Q\n"
+        )
+        assert result.output == "11\n"
+        assert result.success is True
+
+    def test_for_byref_modification_generates_while(self, generate_python):
+        """FOR with by-ref modification generates while loop pattern."""
+        code = generate_python(
+            "TEST\n F I=1:1:3 D MOD(.I) W I\n Q\nMOD(X) S X=X+10 Q\n"
+        )
+        # Should use while loop because callee modifies loop var via by-ref
+        assert "while" in code.lower()
+
     def test_for_negative_step_bounds(self, execute_mumps):
         """FOR negative step iterates correctly (§8.2.5).
 
@@ -147,6 +168,36 @@ class TestForCommandCodegen:
         assert "for I in range(" in code
         # The loop should have pass or minimal body
         assert "pass" in code or "_for_step" in code
+
+    def test_for_single_value_edge(self, execute_mumps):
+        """FOR with single string value executes body once (§8.2.5).
+
+        T057: Single-value FOR parameter
+        Given: F I="X" W I,!
+        When: executed
+        Then: output is "X\n" - the string value is iterated once
+
+        Reference: Finding 34 from research.md
+        A FOR loop with just a value (no step/end) iterates once with that value.
+        """
+        result = execute_mumps('TEST\n F I="X" W I,!\n Q\n')
+        assert result.output == "X\n"
+        assert result.success is True
+
+    def test_for_multi_range_edge(self, execute_mumps):
+        """FOR with multiple ranges iterates all in sequence (§8.2.5).
+
+        T058: Multi-range FOR parameters
+        Given: F I=1:1:2,3:1:4 W I
+        When: executed
+        Then: output is "1234" - both ranges are iterated in order
+
+        Reference: Finding 36 from research.md
+        Multiple comma-separated range parameters are iterated sequentially.
+        """
+        result = execute_mumps("TEST\n F I=1:1:2,3:1:4 W I\n Q\n")
+        assert result.output == "1234"
+        assert result.success is True
 
 
 @pytest.mark.codegen
@@ -251,3 +302,71 @@ class TestForGenContextCodegen:
 
         ctx = ForGenContext.from_statement(stmt)
         assert ctx.use_while is True
+
+
+@pytest.mark.codegen
+class TestForIndirectionCodegen:
+    """Tests for FOR with indirect loop variable (T068)."""
+
+    def test_for_indirect_loop_var_bounded(self, execute_mumps):
+        """FOR with indirect loop variable bounded range (T068).
+
+        FOR @A=1:1:3 sets the variable whose name is in A.
+        """
+        result = execute_mumps('TEST\n S V="X" F @V=1:1:3 W X\n Q\n')
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_for_indirect_loop_var_string_list(self, execute_mumps):
+        """FOR with indirect loop variable string list (T068).
+
+        FOR @A="X","Y","Z" iterates through strings.
+        """
+        result = execute_mumps('TEST\n S V="I" F @V="A","B","C" W I\n Q\n')
+        assert result.output == "ABC"
+        assert result.success is True
+
+    def test_for_indirect_loop_var_open_ended(self, execute_mumps):
+        """FOR with indirect loop variable open-ended (T068).
+
+        FOR @A=1:1 with QUIT in body.
+        """
+        result = execute_mumps('TEST\n S V="X" F @V=1:1 W X Q:X>3\n Q\n')
+        assert result.output == "1234"
+        assert result.success is True
+
+    def test_for_indirect_loop_var_codegen(self, generate_python):
+        """FOR with indirect loop variable generates correct code (T068)."""
+        code = generate_python('TEST\n S V="X" F @V=1:1:3 W X\n Q\n')
+        # Should resolve indirection before loop
+        assert "_for_indirect_var" in code
+        # Should use the resolved variable name
+        assert "get_indirection_source" in code
+
+    def test_for_subscripted_loop_variable(self, execute_mumps):
+        """FOR with subscripted loop variable (§8.2.5).
+
+        T034: Subscripted FOR loop variables (F I(1)=1:1:3) should work correctly.
+        The loop value is stored in the subscripted variable, not the root.
+        """
+        result = execute_mumps("TEST\n F I(1)=1:1:3 W I(1)\n Q\n")
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_for_subscripted_loop_variable_multiple_subs(self, execute_mumps):
+        """FOR with multiple subscripts on loop variable (§8.2.5).
+
+        T034: Multiple subscripts should also work.
+        """
+        result = execute_mumps("TEST\n F I(1,2)=1:1:3 W I(1,2)\n Q\n")
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_for_subscripted_loop_variable_codegen(self, generate_python):
+        """FOR with subscripted loop variable generates .set() call (§8.2.5).
+
+        T034: Subscripted loop var should use MArray.set() not .value.
+        """
+        code = generate_python("TEST\n F I(1)=1:1:3 W I(1)\n Q\n")
+        # Should use .set() with subscript and value= keyword
+        assert ".set(1, value=I)" in code

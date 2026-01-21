@@ -70,14 +70,11 @@ def _combine_patcodes(patcodes: List[str]) -> str:
     if "E" in patcodes:
         return r"."
 
-    # Combine ranges
+    # Combine ranges for all patcodes (grammar ensures only valid codes)
     ranges = []
     for code in patcodes:
         if code in PATCODE_RANGES and PATCODE_RANGES[code]:
             ranges.append(PATCODE_RANGES[code])
-
-    if not ranges:
-        return r"."  # Defensive fallback (unreachable with valid grammar input)
 
     return f"[{''.join(ranges)}]"
 

@@ -82,3 +82,42 @@ class TestJobCommandCodegen:
         # $ZJOB should be a positive integer (process ID)
         assert result.output.isdigit()
         assert int(result.output) > 0
+
+    def test_job_indirect_label(self, generate_python):
+        """JOB with indirect label generates parse_call_target (§8.2.10).
+
+        J @X  ; Label comes from variable X at runtime
+        """
+        code = 'TEST S X="LABEL" J @X Q'
+        result = generate_python(code)
+        # Should generate _rt.parse_call_target() to resolve indirection
+        assert "_rt.parse_call_target(" in result
+        # Should use the resolved target for start_job
+        assert "_call_target.label" in result
+        assert "_call_target.routine" in result
+
+    def test_job_indirect_routine(self, generate_python):
+        """JOB with indirect routine generates parse_call_target (§8.2.10).
+
+        J LABEL^@R  ; Routine comes from variable R at runtime
+        """
+        code = 'TEST S R="ROUTINE" J LABEL^@R Q'
+        result = generate_python(code)
+        # Should build compound target string
+        assert "_indirect_routine" in result
+        # Should generate _rt.parse_call_target() to resolve indirection
+        assert "_rt.parse_call_target(" in result
+
+    def test_job_indirect_with_timeout(self, generate_python):
+        """JOB with indirect label and timeout (§8.2.10).
+
+        J @X::5  ; Indirect label with 5 second timeout
+        """
+        code = 'TEST S X="LABEL" J @X::5 Q'
+        result = generate_python(code)
+        # Should generate _rt.parse_call_target() for indirection
+        assert "_rt.parse_call_target(" in result
+        # Should set _test for timeout handling
+        assert "_test = _rt.start_job(" in result
+        # Should have timeout value
+        assert "5)" in result

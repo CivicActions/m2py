@@ -1247,6 +1247,10 @@ def m_sorts_after(left: Any, right: Any) -> int:
 def m_pattern_match(string: Any, pattern: str) -> int:
     """Match string against MUMPS pattern (MUMPS ? operator).
 
+    This runtime helper is used only for **indirect patterns** (X?@Y) where
+    the pattern is determined at runtime. For direct/literal patterns (X?1A.N),
+    codegen inlines a pre-compiled regex via re.fullmatch() for better performance.
+
     Uses compile_pattern_to_regex() from analysis module to convert
     MUMPS pattern to Python regex, then performs fullmatch.
 

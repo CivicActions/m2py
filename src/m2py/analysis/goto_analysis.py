@@ -420,7 +420,9 @@ def _compute_codegen_fields(
         stmt.codegen_pattern = GotoCodegenPattern.FUNCTION_CALL
 
 
-def get_loop_exiting_gotos(routine: MRoutine) -> List[MGotoStatement]:
+def get_loop_exiting_gotos(
+    routine: MRoutine,
+) -> List[MGotoStatement]:
     """Get all GOTOs that exit FOR loops.
 
     Args:

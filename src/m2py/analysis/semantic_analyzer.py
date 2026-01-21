@@ -253,12 +253,8 @@ class SemanticAnalyzer:
                 new_args.append(self.analyze(arg, expr))
             object.__setattr__(expr, "arguments", new_args)
 
-        elif isinstance(expr, MBinaryOp):
-            object.__setattr__(expr, "left", self.analyze(expr.left, expr))
-            object.__setattr__(expr, "right", self.analyze(expr.right, expr))
-
-        elif isinstance(expr, MUnaryOp):
-            object.__setattr__(expr, "operand", self.analyze(expr.operand, expr))
+        # Note: MBinaryOp and MUnaryOp are created during analysis with
+        # already-analyzed children, so they never re-enter this method.
 
         elif isinstance(expr, MIndirection):
             object.__setattr__(expr, "expression", self.analyze(expr.expression, expr))
@@ -1009,49 +1005,46 @@ class SemanticAnalyzer:
         return stmt
 
     def _simple_var_to_asg(self, var: Any) -> Any:
-        """Convert a simple variable (no subscripts) to ASG form.
+        """Convert a simple FOR loop variable (no subscripts) to ASG form.
+
+        Note: MUMPS spec requires FOR loop variables to be local (lvn),
+        not global (glvn). Global FOR loop variables are invalid syntax.
 
         Args:
-            var: A LocalVariable, GlobalVariable, or string name
+            var: A LocalVariable or string name
 
         Returns:
-            MVariable or MGlobal ASG node
+            MVariable ASG node
         """
-        from ..asg.expressions import MVariable, MGlobal
+        from ..asg.expressions import MVariable
 
         # Handle string names
         if isinstance(var, str):
-            if var.startswith("^"):
-                new_var = MGlobal()
-                new_var.name = var.lstrip("^")
-            else:
-                new_var = MVariable()
-                new_var.name = var
+            new_var = MVariable()
+            new_var.name = var
             return new_var
 
         # Handle variable objects
         var_name = var.name if hasattr(var, "name") else str(var)
-
-        if var_name.startswith("^") or isinstance(var, MGlobal):
-            new_var = MGlobal()
-            new_var.name = (
-                var_name.lstrip("^") if var_name.startswith("^") else var_name
-            )
-        else:
-            new_var = MVariable()
-            new_var.name = var_name
+        new_var = MVariable()
+        new_var.name = var_name
 
         return new_var
 
     def _convert_loop_var_subscripts(self, var: Any) -> Any:
-        """Convert a loop variable's subscripts to proper ASG expressions.
+        """Convert a FOR loop variable's subscripts to proper ASG expressions.
+
+        Note: MUMPS spec requires FOR loop variables to be local (lvn),
+        not global (glvn). Global FOR loop variables are invalid syntax.
 
         Args:
-            var: A LocalVariable or GlobalVariable with subscripts
+            var: A LocalVariable with subscripts
 
         Returns:
-            A new variable with subscripts converted to ASG expressions
+            MVariable with subscripts converted to ASG expressions
         """
+        from ..asg.expressions import MVariable
+
         converted_subscripts = []
         for sub in var.subscripts:
             if sub is None:
@@ -1064,16 +1057,10 @@ class SemanticAnalyzer:
                 converted_subscripts.append(self.analyze(sub, var))
 
         # Create new variable with converted subscripts
-        if isinstance(var, MGlobal):
-            new_var = MGlobal()
-            new_var.name = var.name
-            new_var.subscripts = converted_subscripts
-            return new_var
-        else:
-            new_var = MVariable()
-            new_var.name = var.name
-            new_var.subscripts = converted_subscripts
-            return new_var
+        new_var = MVariable()
+        new_var.name = var.name
+        new_var.subscripts = converted_subscripts
+        return new_var
 
     def _classify_for_params(self, params: List[MForParameter]) -> ForLoopType:
         """Classify FOR loop type from parameters."""

@@ -13,7 +13,7 @@ from abc import ABC
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Iterator, List, Optional
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from m2py.asg.statements import MStatement
     from m2py.asg.enums import CallType
     from m2py.asg.expressions import MActualParameter, MExpr
