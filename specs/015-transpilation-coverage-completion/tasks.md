@@ -111,13 +111,13 @@
 
 ### Implementation
 
-- [ ] T027 [US1] Analyze indirect GOTO handling in _generate_goto() as reference in src/m2py/codegen/statements.py
-- [ ] T028 [US1] Update _generate_job() to check call.label_is_indirect in src/m2py/codegen/statements.py
-- [ ] T029 [US1] Generate _rt.parse_call_target() for indirect JOB labels in src/m2py/codegen/statements.py
-- [ ] T030 [US1] Add test_job_indirect_label to TestJobCommandCodegen in tests/unit/codegen/s8_commands/test_s8_2_10_job.py
-- [ ] T031 Validate fix with YDB: `uv run python utils/validate.py --code 'TEST S X="LABEL" J @X Q'`
+- [x] T027 [US1] Analyze indirect GOTO handling in _generate_goto() as reference in src/m2py/codegen/statements.py
+- [x] T028 [US1] Update _generate_job() to check call.label_is_indirect in src/m2py/codegen/statements.py
+- [x] T029 [US1] Generate _rt.parse_call_target() for indirect JOB labels in src/m2py/codegen/statements.py
+- [x] T030 [US1] Add test_job_indirect_label to TestJobCommandCodegen in tests/unit/codegen/s8_commands/test_s8_2_10_job.py
+- [x] T031 Validate fix with YDB: `uv run python utils/validate.py --code 'TEST S X="LABEL" J @X Q'`
 
-**Checkpoint**: Indirect JOB (`J @X`) works correctly (+0.5% raw coverage)
+**Checkpoint**: ✅ Indirect JOB (`J @X`) works correctly. Added _generate_indirect_job() function with 3 new tests (label, routine, timeout indirection).
 
 ---
 

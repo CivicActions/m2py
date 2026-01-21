@@ -39,6 +39,7 @@ from m2py.asg.statements import (
     MHangStatement,
     MIfStatement,
     MJobStatement,
+    MJobTarget,
     MKillStatement,
     MKSubscriptsStatement,
     MKValueStatement,
@@ -3681,6 +3682,11 @@ def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
 
         call = job_target.call
 
+        # Check for indirection - handle like indirect GOTO
+        if call.label_is_indirect or call.routine_is_indirect:
+            _generate_indirect_job(job_target, ctx)
+            continue
+
         # Build label/routine reference
         label_name = repr(call.name) if call.name else "None"
         routine_name = repr(call.routine) if call.routine else "None"
@@ -3723,6 +3729,104 @@ def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
                 f"_rt.start_job({label_name}, {routine_name}, {args_str}, "
                 f"{params_str}, {timeout_expr})"
             )
+
+
+def _generate_indirect_job(job_target: "MJobTarget", ctx: "GeneratorContext") -> None:
+    """Generate Python code for indirect JOB (J @TARGET).
+
+    Spec 015 Phase 5 (T027-T031): Generate runtime dispatch for indirect JOB.
+    Handles various patterns:
+    - J @TARGET: Full indirection (label comes from variable)
+    - J LABEL^@RTN: Partial indirection (routine from variable)
+    - J @LBL^@RTN: Double indirection (both from variables)
+
+    Similar to indirect GOTO but starts a background job instead of
+    transferring control.
+
+    Args:
+        job_target: MJobTarget ASG node with indirect call
+        ctx: Generator context
+    """
+    call = job_target.call
+    if call is None:
+        return
+
+    # Determine what's indirect and what's static
+    label_is_indirect = call.label_is_indirect
+    routine_is_indirect = call.routine_is_indirect
+
+    # Generate the target expression
+    if label_is_indirect and call.indirection:
+        # Label comes from indirection: J @TARGET or J @TARGET^ROUTINE
+        label_expr = generate_expr(call.indirection, ctx)
+    elif call.name:
+        # Static label name
+        label_expr = repr(call.name)
+    else:
+        label_expr = "''"
+
+    if routine_is_indirect and call.routine_indirection:
+        # Routine comes from indirection: J LABEL^@RTN or J @LBL^@RTN
+        routine_expr = generate_expr(call.routine_indirection, ctx)
+    elif call.routine:
+        # Static routine name
+        routine_expr = repr(call.routine)
+    else:
+        routine_expr = None
+
+    # Build the target string for parsing
+    # Format: "LABEL^ROUTINE" (any part may be absent)
+    if routine_expr is None:
+        # Simple case: just label (J @TARGET)
+        target_str_expr = label_expr
+    else:
+        # Need to build a compound target string
+        ctx.emitter.line(f"_indirect_label = str({label_expr})")
+        ctx.emitter.line("_indirect_target = _indirect_label")
+        ctx.emitter.line(f"_indirect_routine = str({routine_expr})")
+        ctx.emitter.line(
+            '_indirect_target = _indirect_target + "^" + _indirect_routine'
+        )
+        target_str_expr = "_indirect_target"
+
+    # Parse the target string
+    ctx.emitter.line(f"_call_target = _rt.parse_call_target({target_str_expr})")
+
+    # Generate arguments if any
+    args_parts = []
+    for arg in call.arguments:
+        if arg.expression is not None:
+            arg_expr = generate_expr(arg.expression, ctx)
+        else:
+            arg_expr = "None"
+        args_parts.append(arg_expr)
+    args_str = f"[{', '.join(args_parts)}]" if args_parts else "[]"
+
+    # Generate process parameters if any
+    params_parts = []
+    for param in job_target.processparameters:
+        param_expr = generate_expr(param, ctx)
+        params_parts.append(param_expr)
+    params_str = f"[{', '.join(params_parts)}]" if params_parts else "None"
+
+    # Generate timeout expression
+    has_timeout = job_target.timeout is not None
+    if has_timeout and job_target.timeout is not None:
+        timeout_expr = generate_expr(job_target.timeout, ctx)
+    else:
+        timeout_expr = "None"
+
+    # Generate JOB call with resolved target
+    if has_timeout:
+        ctx.emitter.line(
+            f"_test = _rt.start_job(_call_target.label, _call_target.routine, "
+            f"{args_str}, {params_str}, {timeout_expr})"
+        )
+    else:
+        ctx.emitter.line(
+            f"_rt.start_job(_call_target.label, _call_target.routine, "
+            f"{args_str}, {params_str}, {timeout_expr})"
+        )
 
 
 def _generate_view(stmt: MViewStatement, ctx: "GeneratorContext") -> None:
