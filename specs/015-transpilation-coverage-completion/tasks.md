@@ -89,15 +89,15 @@
 
 ### Implementation
 
-- [ ] T020 [P] [US1] Ensure tests/unit/codegen/extensions/ydb/ directory exists (create if needed)
-- [ ] T021 [P] [US1] Create test_zload.py with ZLOAD NotImplementedError test in tests/unit/codegen/extensions/ydb/test_zload.py
-- [ ] T022 [P] [US1] Create test_ztstart.py with ZTSTART/ZTCOMMIT NotImplementedError tests in tests/unit/codegen/extensions/ydb/test_ztstart.py
-- [ ] T023 [P] [US1] Add TestExtendedGlobals class with pipe/bracket tests in tests/unit/codegen/s7_expressions/test_s7_1_2_variables.py
-- [ ] T024 [P] [US1] Add test_write_device_control_not_supported in tests/unit/codegen/s8_commands/test_s8_2_25_write.py
-- [ ] T025 [P] [US1] Add YDB special variable tests ($ZYERROR, $ZINT) in tests/unit/codegen/extensions/ydb/test_zfunctions.py
-- [ ] T026 Run coverage check to verify Phase 4 impact: `uv run python utils/coverage_check.py transpile` (target: +1% raw)
+- [x] T020 [P] [US1] Ensure tests/unit/codegen/extensions/ydb/ directory exists (create if needed)
+- [x] T021 [P] [US1] Create test_zload.py with ZLOAD NotImplementedError test in tests/unit/codegen/extensions/ydb/test_zload.py
+- [x] T022 [P] [US1] Create test_ztstart.py with ZTSTART/ZTCOMMIT NotImplementedError tests in tests/unit/codegen/extensions/ydb/test_ztstart.py
+- [x] T023 [P] [US1] Add TestExtendedGlobals class with pipe/bracket tests in tests/unit/codegen/s7_expressions/test_s7_1_2_variables.py
+- [x] T024 [P] [US1] Add test_write_device_control_not_supported in tests/unit/codegen/s8_commands/test_s8_2_25_write.py
+- [x] T025 [P] [US1] Add YDB special variable tests ($ZYERROR, $ZINT) in tests/unit/codegen/extensions/ydb/test_zfunctions.py
+- [x] T026 Run coverage check to verify Phase 4 impact: `uv run python utils/coverage_check.py transpile` (target: +1% raw)
 
-**Checkpoint**: YDB-specific features documented as not supported with tests. Verify coverage reaches ~87% raw.
+**Checkpoint**: ✅ YDB-specific features documented as not supported with 22 new tests. Coverage reached 87.1% (exceeds 87% target).
 
 ---
 

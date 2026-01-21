@@ -53,3 +53,23 @@ class TestWriteCommandCodegen:
         result = execute_mumps("TEST\n W *65\n Q\n")
         assert result.output == "A"
         assert result.success is True
+
+    def test_write_device_control_not_supported(self, generate_python):
+        """WRITE device control (/mnemonic) raises NotImplementedError.
+
+        Device control mnemonics like /CUP(row,col) are terminal-specific
+        sequences that cannot be transpiled to pure Python.
+
+        Spec 015: Document that device control mnemonics are not supported.
+        """
+        code = "TEST\n W /CUP(10,5)\n Q\n"
+        with pytest.raises(NotImplementedError, match="DeviceControl"):
+            generate_python(code)
+
+    def test_write_device_control_with_string_raises_not_implemented(
+        self, generate_python
+    ):
+        """WRITE with device control mnemonic and string raises NotImplementedError."""
+        code = 'TEST\n W /BOLD,"text",/NORMAL\n Q\n'
+        with pytest.raises(NotImplementedError, match="DeviceControl"):
+            generate_python(code)

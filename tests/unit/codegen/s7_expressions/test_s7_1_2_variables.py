@@ -45,3 +45,59 @@ class TestVariablesCodegen:
         result = execute_mumps("TEST\n S ^G(1)=1,^G(2)=2\n W ^G(1),^(2)\n Q\n")
         assert result.output == "12"
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestExtendedGlobalsCodegen:
+    """Codegen-level tests for extended global references (YDB extension).
+
+    Extended globals use pipe (^|"env"|X) or bracket (^["env"]X) syntax
+    to reference globals in different environments/databases.
+    These are YDB-specific features that cannot be transpiled to pure Python.
+
+    Spec 015: Document YDB extensions as not supported with proper test coverage.
+    """
+
+    def test_extended_global_pipe_raises_not_implemented(self, generate_python):
+        """Extended global with pipe syntax raises NotImplementedError.
+
+        The ^|"env"|X syntax selects a global from a specific environment.
+        This is a YDB extension for multi-database access.
+        """
+        code = 'TEST\n S ^|"env"|X=1\n Q\n'
+        with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
+            generate_python(code)
+
+    def test_extended_global_bracket_raises_not_implemented(self, generate_python):
+        """Extended global with bracket syntax raises NotImplementedError.
+
+        The ^["env"]X syntax is an alternative way to select a global
+        from a specific environment. This is a YDB extension.
+        """
+        code = 'TEST\n S ^["env"]X=1\n Q\n'
+        with pytest.raises(NotImplementedError, match="ExtendedGlobalBracket"):
+            generate_python(code)
+
+    def test_extended_global_pipe_with_subscripts_raises_not_implemented(
+        self, generate_python
+    ):
+        """Extended global with subscripts raises NotImplementedError."""
+        code = 'TEST\n S ^|"env"|X(1,2)=1\n Q\n'
+        with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
+            generate_python(code)
+
+    def test_extended_global_bracket_with_subscripts_raises_not_implemented(
+        self, generate_python
+    ):
+        """Extended global bracket with subscripts raises NotImplementedError."""
+        code = 'TEST\n S ^["env"]X(1,2)=1\n Q\n'
+        with pytest.raises(NotImplementedError, match="ExtendedGlobalBracket"):
+            generate_python(code)
+
+    def test_extended_global_in_expression_raises_not_implemented(
+        self, generate_python
+    ):
+        """Extended global in expression context raises NotImplementedError."""
+        code = 'TEST\n W ^|"env"|X\n Q\n'
+        with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
+            generate_python(code)

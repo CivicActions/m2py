@@ -35,3 +35,46 @@ class TestZfunctionsCodegen:
         code = 'TEST\n S X=$ZWIDTH("ABC")\n Q'
         with pytest.raises(NotImplementedError, match="LIM-015"):
             generate_python(code)
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestYdbSpecialVariablesCodegen:
+    """Codegen-level tests for YDB-specific special variables.
+
+    YDB provides implementation-specific special variables ($Z...).
+    These are not part of the MUMPS standard and cannot be transpiled
+    to pure Python.
+
+    Spec 015: Document YDB special variables as not supported.
+    """
+
+    def test_zyerror_raises_not_implemented(self):
+        """$ZYERROR raises NotImplementedError (YDB-specific variable)."""
+        code = "TEST\n W $ZYERROR\n Q"
+        with pytest.raises(NotImplementedError, match="ZYERROR"):
+            generate_python(code)
+
+    def test_zinterrupt_raises_not_implemented(self):
+        """$ZINTERRUPT raises NotImplementedError (YDB-specific variable)."""
+        code = "TEST\n W $ZINTERRUPT\n Q"
+        with pytest.raises(NotImplementedError, match="ZINTERRUPT"):
+            generate_python(code)
+
+    def test_zmode_raises_not_implemented(self):
+        """$ZMODE raises NotImplementedError (YDB-specific variable)."""
+        code = "TEST\n W $ZMODE\n Q"
+        with pytest.raises(NotImplementedError, match="ZMODE"):
+            generate_python(code)
+
+    def test_zstatus_raises_not_implemented(self):
+        """$ZSTATUS raises NotImplementedError (YDB-specific variable)."""
+        code = "TEST\n W $ZSTATUS\n Q"
+        with pytest.raises(NotImplementedError, match="ZSTATUS"):
+            generate_python(code)
+
+    def test_zsystem_variable_raises_not_implemented(self):
+        """$ZSYSTEM raises NotImplementedError (YDB-specific variable)."""
+        code = "TEST\n W $ZSYSTEM\n Q"
+        with pytest.raises(NotImplementedError, match="ZSYSTEM"):
+            generate_python(code)
