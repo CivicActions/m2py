@@ -250,6 +250,8 @@ class ForGenContext:
     Attributes:
         stmt: The MForStatement being generated
         loop_var: Translated Python name for loop variable
+        loop_var_name: Original MUMPS variable name (for _scope access)
+        loop_var_subscripts: List of subscript expressions (for I(1), I(1,2), etc.)
         use_while: True if loop_var_modified_in_body requires while loop
         needs_break: True if has_internal_quit or exit GOTOs need break
         is_infinite: True for argumentless FOR (F)
@@ -260,6 +262,8 @@ class ForGenContext:
 
     stmt: MForStatement
     loop_var: str
+    loop_var_name: str  # Original MUMPS name for _scope access
+    loop_var_subscripts: List[str]  # Subscript expressions (empty if simple variable)
     use_while: bool  # True if loop_var_modified_in_body
     needs_break: bool  # True if has_internal_quit or has_internal_goto
     is_infinite: bool
@@ -287,10 +291,12 @@ class ForGenContext:
         """
         # Import here to avoid circular import
         from m2py.asg.expressions import MIndirection as MIndirectionType
+        from m2py.codegen.expressions import generate_expr
 
         # T068: Check for indirection loop variable (F @A=1:1:3)
         loop_var_indirect = False
         loop_var_expr: Optional[str] = None
+        loop_var_subscripts: List[str] = []
 
         if isinstance(stmt.loop_var, MIndirectionType):
             # Indirect loop variable: F @A=1:1:3 where A contains "B"
@@ -309,6 +315,11 @@ class ForGenContext:
         elif isinstance(stmt.loop_var, MVariable):
             var_name = stmt.loop_var.name
             loop_var = translate_name(var_name)
+            # T032: Extract subscripts for subscripted loop variables (F I(1)=1:1:3)
+            if stmt.loop_var.subscripts and ctx is not None:
+                loop_var_subscripts = [
+                    generate_expr(sub, ctx) for sub in stmt.loop_var.subscripts
+                ]
         else:
             var_name = "_"
             loop_var = "_"  # Fallback for complex expressions
@@ -337,6 +348,8 @@ class ForGenContext:
         return cls(
             stmt=stmt,
             loop_var=loop_var,
+            loop_var_name=var_name,
+            loop_var_subscripts=loop_var_subscripts,
             use_while=use_while,
             needs_break=needs_break,
             is_infinite=is_infinite,
@@ -1511,10 +1524,15 @@ def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     work correctly. This is NOT needed for while loops (when loop_var_modified_in_body
     is True) because while loops already use _scope directly.
 
+    T032: Handle subscripted loop variables (F I(1)=1:1:3) by using .set() instead
+    of .value assignment.
+
     Args:
         stmt: MForStatement node
         ctx: Generator context
     """
+    from m2py.codegen.expressions import generate_expr
+
     # T084: Sync for-loop variable to _scope for SIMPLE_FUNCTIONS strategy
     # Only needed when using Python's `for` loop (not while loop)
     # When loop_var_modified_in_body is True, we use while loop with _scope directly
@@ -1526,15 +1544,27 @@ def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     ):
         if isinstance(stmt.loop_var, str):
             var_name = stmt.loop_var
+            subscripts = []
         elif isinstance(stmt.loop_var, MVariable):
             var_name = stmt.loop_var.name
+            # T032: Extract subscripts for subscripted loop variables
+            subscripts = [generate_expr(sub, ctx) for sub in stmt.loop_var.subscripts]
         else:
             var_name = None  # Complex case (indirection) - skip sync
+            subscripts = []
         if var_name:
             python_name = translate_name(var_name)
-            ctx.emitter.line(
-                f"_scope.setdefault({var_name!r}, MArray()).value = {python_name}"
-            )
+            if subscripts:
+                # T032: Subscripted loop var - use .set(sub1, sub2, ..., value=val)
+                subs_str = ", ".join(subscripts)
+                ctx.emitter.line(
+                    f"_scope.setdefault({var_name!r}, MArray()).set({subs_str}, value={python_name})"
+                )
+            else:
+                # Simple variable - use .value
+                ctx.emitter.line(
+                    f"_scope.setdefault({var_name!r}, MArray()).value = {python_name}"
+                )
 
     if stmt.body and stmt.body.statements:
         for body_stmt in stmt.body.statements:

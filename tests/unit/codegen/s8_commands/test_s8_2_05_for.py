@@ -312,3 +312,31 @@ class TestForIndirectionCodegen:
         assert "_for_indirect_var" in code
         # Should use the resolved variable name
         assert "get_indirection_source" in code
+
+    def test_for_subscripted_loop_variable(self, execute_mumps):
+        """FOR with subscripted loop variable (§8.2.5).
+
+        T034: Subscripted FOR loop variables (F I(1)=1:1:3) should work correctly.
+        The loop value is stored in the subscripted variable, not the root.
+        """
+        result = execute_mumps("TEST\n F I(1)=1:1:3 W I(1)\n Q\n")
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_for_subscripted_loop_variable_multiple_subs(self, execute_mumps):
+        """FOR with multiple subscripts on loop variable (§8.2.5).
+
+        T034: Multiple subscripts should also work.
+        """
+        result = execute_mumps("TEST\n F I(1,2)=1:1:3 W I(1,2)\n Q\n")
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_for_subscripted_loop_variable_codegen(self, generate_python):
+        """FOR with subscripted loop variable generates .set() call (§8.2.5).
+
+        T034: Subscripted loop var should use MArray.set() not .value.
+        """
+        code = generate_python("TEST\n F I(1)=1:1:3 W I(1)\n Q\n")
+        # Should use .set() with subscript and value= keyword
+        assert ".set(1, value=I)" in code

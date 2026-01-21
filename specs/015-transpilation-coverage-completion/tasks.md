@@ -131,12 +131,12 @@
 
 ### Implementation
 
-- [ ] T032 [US1] Update ForGenContext to track loop_var subscripts in src/m2py/codegen/for_loop.py
-- [ ] T033 [US1] Update FOR codegen to generate subscripted assignment in src/m2py/codegen/statements.py
-- [ ] T034 [US1] Add test_for_subscripted_loop_variable to TestForCommandCodegen in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
-- [ ] T035 Validate fix with YDB: `uv run python utils/validate.py --code 'TEST F I(1)=1:1:3 W I(1) Q'`
+- [x] T032 [US1] Update ForGenContext to track loop_var subscripts in src/m2py/codegen/statements.py
+- [x] T033 [US1] Update FOR codegen to generate subscripted assignment in src/m2py/codegen/statements.py
+- [x] T034 [US1] Add test_for_subscripted_loop_variable to TestForCommandCodegen in tests/unit/codegen/s8_commands/test_s8_2_05_for.py
+- [x] T035 Validate fix with YDB: `uv run python utils/validate.py --code 'TEST F I(1)=1:1:3 W I(1) Q'`
 
-**Checkpoint**: Subscripted FOR loop variables (`F I(1)=1:1:3`) work correctly (+0.5% raw coverage)
+**Checkpoint**: ✅ Subscripted FOR loop variables (`F I(1)=1:1:3`) work correctly. ForGenContext tracks subscripts, _generate_for_body uses .set(subs, value=val) for subscripted vars. 3 new tests added.
 
 ---
 
