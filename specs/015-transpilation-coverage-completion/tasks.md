@@ -7,6 +7,18 @@
 
 **Organization**: Tasks grouped by category (C/A/B) matching the implementation phases in plan.md
 
+## Current Status
+
+- **Baseline Coverage**: 81.4% (after pragma removal on 2026-01-22)
+- **Target**: 85% raw (100% normalized)
+- **Phases 1-8**: ✅ COMPLETE (pragmas added then removed, bug fixes done)
+- **Remaining**: Phases 9-13 (18 tasks: T057-T074)
+
+**Post-Pragma Removal Update (2026-01-22)**: The original pragma-heavy approach was removed as it excluded code with existing tests. Current strategy focuses on:
+- Adding tests for valid MUMPS patterns (Phases 9-11)
+- Removing genuinely dead code (Phase 12)
+- Final verification (Phase 13)
+
 ## Format: `[ID] [P?] [Story?] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
@@ -206,16 +218,96 @@
 
 ---
 
-## Phase 9: Verification & Polish
+## Phase 9: FOR Loop Edge Case Tests (NEW)
 
-**Purpose**: Confirm 100% metric achieved and no regressions
+**Purpose**: Add tests for unusual but valid FOR loop patterns identified in research
 
-- [ ] T057 Run `uv run python utils/coverage_check.py transpile` and verify progress reaches 100% (85% raw)
-- [ ] T058 Run `uv run pytest` to verify full test suite passes with no regressions
-- [ ] T059 Verify overall test coverage remains ≥85% with `uv run pytest --cov`
-- [ ] T060 Update docs/coverage-matrix.md if needed to reflect changes
-- [ ] T061 Update research.md with final status and mark completed findings
-- [ ] T062 Document any remaining exceptions with justification in research.md
+**Goal**: Exercise for_analysis.py edge cases with targeted tests
+
+**Independent Test**: Run `uv run pytest tests/unit/codegen/s8_commands/test_s8_2_05_for.py -v -k "edge"`
+
+### Implementation
+
+- [ ] T057 [P] [US1] Add `test_for_single_value_edge` to tests/unit/codegen/s8_commands/test_s8_2_05_for.py (`F I="X" W I`)
+- [ ] T058 [P] [US1] Add `test_for_multi_range_edge` to tests/unit/codegen/s8_commands/test_s8_2_05_for.py (`F I=1:1:2,3:1:4 W I`)
+- [ ] T059 [P] [US1] Add `test_nested_do_in_if_edge` to tests/unit/codegen/s8_commands/test_s8_2_03_do.py (`I 1 D` with dot-lines)
+
+**Checkpoint**: FOR edge cases covered, for_analysis.py coverage improved
+
+---
+
+## Phase 10: Indirection Pattern Tests (NEW)
+
+**Purpose**: Add tests for complex indirection patterns
+
+**Goal**: Exercise semantic_analyzer.py and variables.py indirection handling
+
+**Independent Test**: Run `uv run pytest tests/unit/codegen/s7_expressions/ -v -k "indirect"`
+
+### Implementation
+
+- [ ] T060 [P] [US1] Add `test_name_indirection_subscripts_edge` to tests/unit/codegen/s7_expressions/test_s7_3_indirection.py (`@X@(1)`)
+- [ ] T061 [P] [US1] Add `test_indirect_pattern_match_edge` to tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py (`X?@P`)
+- [ ] T062 [P] [US1] Add `test_indirect_routine_call_edge` to tests/unit/codegen/s8_commands/test_s8_2_03_do.py (`D @X` with routine ref)
+
+**Checkpoint**: Complex indirection patterns covered
+
+---
+
+## Phase 11: Pattern Compiler Edge Cases (NEW)
+
+**Purpose**: Add tests for MUMPS pattern matching edge cases
+
+**Goal**: Exercise pattern_compiler.py edge cases
+
+**Independent Test**: Run `uv run pytest tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py -v -k "edge"`
+
+### Implementation
+
+- [ ] T063 [P] [US1] Add `test_pattern_single_alternation_edge` to tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py (`?(1A)`)
+- [ ] T064 [P] [US1] Add `test_pattern_quantifiers_edge` to tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py (`.5A`, `3.N`)
+
+**Checkpoint**: Pattern edge cases covered
+
+---
+
+## Phase 12: Dead Code Removal (NEW)
+
+**Purpose**: Remove genuinely unreachable code identified in research
+
+**Goal**: Remove ~20 lines of dead code to improve raw coverage
+
+**Independent Test**: Run full test suite `uv run pytest` - all tests pass
+
+### Implementation
+
+- [ ] T065 [US2] Remove MBinaryOp/MUnaryOp re-analysis handlers from src/m2py/analysis/semantic_analyzer.py lines 256-261
+- [ ] T066 [US2] Remove unreachable else branch from src/m2py/analysis/for_analysis.py line 59
+- [ ] T067 [US2] Remove unreachable defensive fallback from src/m2py/analysis/pattern_compiler.py line 80
+- [ ] T068 [US2] Run full test suite to verify no regressions: `uv run pytest`
+
+**Checkpoint**: Dead code removed, all tests pass, coverage improved
+
+---
+
+## Phase 13: Verification & Cleanup (NEW)
+
+**Purpose**: Confirm coverage target achieved and no regressions
+
+**Goal**: Verify 85% raw (100% normalized) coverage achieved
+
+**Independent Test**: `uv run python utils/coverage_check.py transpile` shows ≥85% raw
+
+### Implementation
+
+- [ ] T069 [US1] Run coverage check: `uv run python utils/coverage_check.py transpile`
+- [ ] T070 [US1] Run full test suite: `uv run pytest`
+- [ ] T071 [US1] Verify overall coverage: `uv run pytest --cov`
+- [ ] T072 [US1] Run linter: `uv run ruff check src/`
+- [ ] T073 [US1] Update research.md with final coverage status
+- [ ] T074 [US1] Document any remaining uncovered code with justification
+
+**Checkpoint**: Coverage target achieved, documentation complete
 
 ---
 
@@ -224,51 +316,43 @@
 ### Phase Dependencies
 
 ```
-Phase 1 (C pragmas) ──┬──► Phase 2 (A tests) ──► Phase 3 (B optimization)
-                      │
-                      ├──► Phase 4 (YDB tests) [parallel with 2,3]
-                      │
-                      ├──► Phase 5 (JOB fix) - uses GOTO as reference [after 2]
-                      │
-                      ├──► Phase 6 (FOR fix) [parallel with 4,5,7]
-                      │
-                      └──► Phase 7 (TSTART) [parallel with 4,5,6]
-
-Phases 1-7 ──► Phase 8 (more pragmas) ──► Phase 9 (verification)
+Phases 1-8 (complete) ──► Phase 9 (FOR tests) ──┬──► Phase 12 (dead code)
+                         Phase 10 (indirection) ──┤
+                         Phase 11 (pattern)     ──┘
+                                                    │
+                                                    ▼
+                                               Phase 13 (verification)
 ```
 
-- **Phase 1 (Category C)**: No dependencies - can start immediately. All T001-T007 are independent.
-- **Phase 2 (Category A)**: Can start after Phase 1. T008 first, then T009-T015.
-- **Phase 3 (Category B)**: Can start in parallel with Phase 2. T016 first, then T017-T019.
-- **Phase 4 (YDB)**: Can start after Phase 1. All tasks independent.
-- **Phase 5 (JOB)**: Should start after Phase 2 (uses indirect GOTO as reference). Sequential.
-- **Phase 6 (FOR)**: Can start after Phase 1. Sequential.
-- **Phase 7 (TSTART)**: Can start after Phase 1. Sequential.
-- **Phase 8 (more pragmas)**: Should wait for Phases 1-7. All tasks independent.
-- **Phase 9 (Verification)**: Depends on Phases 1-8 completion.
+- **Phases 1-8**: ✅ COMPLETE - pragmas and bug fixes done
+- **Phase 9 (FOR tests)**: Can start immediately. All T057-T059 are independent.
+- **Phase 10 (Indirection)**: Can start in parallel with Phase 9. All T060-T062 are independent.
+- **Phase 11 (Pattern)**: Can start in parallel with Phases 9-10. T063-T064 are independent.
+- **Phase 12 (Dead Code)**: Should wait for Phases 9-11 tests to pass. Sequential.
+- **Phase 13 (Verification)**: Depends on Phases 9-12 completion.
 
 ### User Story Mapping
 
-- **US1** (Complete Transpilation Pipeline): T008-T015 codegen tests, T020-T038 YDB/bug fixes
-- **US2** (Remove Dead Code): T001-T007 initial pragmas, T039-T055 additional pragmas
+- **US1** (Complete Transpilation Pipeline): T008-T015 codegen tests, T020-T038 YDB/bug fixes, T057-T064 edge case tests, T069-T074 verification
+- **US2** (Remove Dead Code): T001-T007 initial pragmas, T040-T056 additional pragmas, T065-T068 dead code removal
 - **US3** (Improve Codegen Using Analysis): T016-T019 pattern optimization
 
 ### Parallel Opportunities
 
 **Within-phase parallelization:**
 
-- **Phase 1**: T001-T007 (7 tasks) - all different files
-- **Phase 2**: T009-T015 (7 tasks) - after T008 creates test file
-- **Phase 4**: T020-T024 (5 tasks) - all different files
-- **Phase 8**: T039-T054 (16 tasks) - all different files
+- **Phase 9**: T057-T059 (3 tasks) - all different test files
+- **Phase 10**: T060-T062 (3 tasks) - all different test files
+- **Phase 11**: T063-T064 (2 tasks) - same file, parallel patterns
 
 **Cross-phase parallelization:**
 
-After Phase 1 completes, can run in parallel:
-- Phase 2, Phase 4, Phase 6, Phase 7
+Can run in parallel now (Phases 1-8 complete):
+- Phase 9, Phase 10, Phase 11 (all test additions)
 
-After Phase 2 completes:
-- Phase 3, Phase 5
+After Phases 9-11 complete:
+- Phase 12 (dead code removal)
+- Then Phase 13 (verification)
 
 ---
 
@@ -276,33 +360,33 @@ After Phase 2 completes:
 
 ### Recommended Order (Single Developer)
 
-1. **Phase 1 first**: Pragma exclusions provide immediate metric improvement with low risk
-2. **Phase 2 second**: Add codegen tests to exercise real analysis code
-3. **Phase 3 third**: Optimization requires understanding pattern flow
-4. **Phases 4-7 in priority order**: Fix bugs and add YDB tests
-5. **Phase 8**: Additional pragma exclusions for remaining gaps
-6. **Phase 9 last**: Verification confirms success
+**Phases 1-8**: ✅ COMPLETE
 
-### MVP Checkpoint
+1. **Phase 9-11 in parallel**: Add edge case tests (low risk, test-only changes)
+2. **Phase 12**: Remove dead code (verify tests pass first)
+3. **Phase 13 last**: Verification confirms success
 
-After completing Phases 1-3 (T001-T019):
-- Run `uv run python utils/coverage_check.py transpile`
-- Expect ~84-86% raw coverage from initial pragmas and tests
-- Phases 4-8 provide remaining ~4-6% to reach 85% target
+### Current Status
+
+After completing Phases 1-8 (T001-T056):
+- Pragmas removed (baseline now 81.4%)
+- Bug fixes complete (indirect JOB, subscripted FOR, TSTART)
+- YDB extension tests added
+- Remaining: Add edge case tests (Phases 9-11), remove dead code (Phase 12), verify (Phase 13)
 
 ### Coverage Impact Estimates
 
-| Phase | Impact | Cumulative |
-|-------|--------|------------|
-| 1 | +5.7% | ~84.3% |
-| 2 | +1-2% | ~85-86% |
-| 3 | +0.5% | ~86% |
-| 4 | +1% | ~87% |
-| 5 | +0.5% | ~87.5% |
-| 6 | +0.5% | ~88% |
-| 7 | +0.3% | ~88.3% |
-| 8 | +2.5% | ~90% |
-| **Target** | | 85% raw (100% norm) |
+| Phase | Impact | Cumulative | Status |
+|-------|--------|------------|--------|
+| 1-8 | - | 81.4% | ✅ Done (pragmas removed) |
+| 9 | +0.5% | ~82% | Pending |
+| 10 | +0.5% | ~82.5% | Pending |
+| 11 | +0.3% | ~83% | Pending |
+| 12 | +0.3% | ~83.3% | Pending |
+| 13 | - | Verify | Pending |
+| **Target** | | 85% raw (100% norm) | |
+
+**Note**: Current baseline is 81.4% after pragma removal. Target is achievable through test additions and dead code removal.
 
 ### Risk Mitigation
 
@@ -314,18 +398,22 @@ After completing Phases 1-3 (T001-T019):
 
 ## Summary
 
-| Phase | Description | Tasks | Parallel | Impact |
-|-------|-------------|-------|----------|--------|
-| 1 | Category C Pragmas (initial) | T001-T007 (7) | 7 | +5.7% ✅ |
-| 2 | Category A Tests | T008-T015 (8) | 7 | +1-2% ✅ |
-| 3 | Category B Optimization | T016-T019 (4) | 1 | +0.5% ✅ |
-| 4 | YDB Extension Tests | T020-T026 (7) | 6 | +1% |
-| 5 | Fix Indirect JOB | T027-T031 (5) | 1 | +0.5% |
-| 6 | Fix Subscripted FOR | T032-T035 (4) | 1 | +0.5% |
-| 7 | TSTART Restart Vars | T036-T039 (4) | 1 | +0.3% |
-| 8 | Category C Pragmas (more) | T040-T056 (17) | 16 | +2.5% |
-| 9 | Verification | T057-T062 (6) | 1 | Verify |
-| **Total** | | **62 tasks** | | **~10-12% raw** |
+| Phase | Description | Tasks | Parallel | Impact | Status |
+|-------|-------------|-------|----------|--------|--------|
+| 1 | Category C Pragmas (initial) | T001-T007 (7) | 7 | - | ✅ Done |
+| 2 | Category A Tests | T008-T015 (8) | 7 | - | ✅ Done |
+| 3 | Category B Optimization | T016-T019 (4) | 1 | - | ✅ Done |
+| 4 | YDB Extension Tests | T020-T026 (7) | 6 | - | ✅ Done |
+| 5 | Fix Indirect JOB | T027-T031 (5) | 1 | - | ✅ Done |
+| 6 | Fix Subscripted FOR | T032-T035 (4) | 1 | - | ✅ Done |
+| 7 | TSTART Restart Vars | T036-T039 (4) | 1 | - | ✅ Done |
+| 8 | Category C Pragmas (more) | T040-T056 (17) | 16 | - | ✅ Done (removed) |
+| 9 | FOR Edge Case Tests | T057-T059 (3) | 3 | +0.5% | Pending |
+| 10 | Indirection Pattern Tests | T060-T062 (3) | 3 | +0.5% | Pending |
+| 11 | Pattern Compiler Tests | T063-T064 (2) | 2 | +0.3% | Pending |
+| 12 | Dead Code Removal | T065-T068 (4) | 1 | +0.3% | Pending |
+| 13 | Verification | T069-T074 (6) | 1 | Verify | Pending |
+| **Total** | | **74 tasks** | | **~2% raw remaining** |
 
 ---
 
@@ -335,7 +423,8 @@ After completing Phases 1-3 (T001-T019):
 - [US1/US2/US3] maps to user stories from spec.md
 - Commit after each task for easy rollback
 - Target: 100% transpilation readiness (85% raw coverage)
-- Current: 84.3% raw (after Phases 1-3)
-- Gap: ~1% raw to reach normalized 100%
-- Phases 1-3 completed, providing strong foundation
-- Total: 62 tasks (T001-T062)
+- Current: 81.4% raw (after pragma removal)
+- Gap: ~3.6% raw to reach 85% target
+- Phases 1-8 completed (pragmas removed, bug fixes done)
+- Remaining: Phases 9-13 (18 tasks: T057-T074)
+- Total: 74 tasks (T001-T074)
