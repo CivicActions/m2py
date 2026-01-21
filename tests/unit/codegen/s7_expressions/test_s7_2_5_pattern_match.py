@@ -191,3 +191,29 @@ class TestPatternMatchOptimization:
         result = execute_mumps('TEST S X="999",P="3N" W X?@P,! Q\n')
         assert result.success is True
         assert result.output == "1\n"
+
+    def test_indirect_pattern_match_edge(self, execute_mumps):
+        """Indirect pattern match with variables exercises walk_expressions (§7.2.5).
+
+        T061: Indirect pattern match edge case
+        Given: S P="3N" W "123"?@P
+        When: executed
+        Then: output is "1" - pattern "3N" compiled at runtime matches "123"
+
+        Reference: Finding 46 from research.md
+        This exercises variables.py walk_expressions for MPatternMatch
+        with pattern_indirect set. The walk yields from pattern_indirect
+        to track variable dependencies.
+        """
+        result = execute_mumps('TEST\n S P="3N" W "123"?@P,!\n Q\n')
+        assert result.output == "1\n"
+        assert result.success is True
+
+    def test_indirect_pattern_match_non_matching(self, execute_mumps):
+        """Indirect pattern match returns 0 for non-match (§7.2.5).
+
+        T061 complement: When the indirect pattern doesn't match.
+        """
+        result = execute_mumps('TEST\n S P="1N" W "ABC"?@P,!\n Q\n')
+        assert result.output == "0\n"
+        assert result.success is True

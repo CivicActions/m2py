@@ -742,6 +742,28 @@ class TestIndirectDoCodegen:
         assert result.output == "HelloAfter"
         assert result.success is True
 
+    def test_indirect_routine_call_edge(self, execute_mumps):
+        """Indirect DO with dynamically computed label exercises full dispatch (§8.2.3).
+
+        T062: Indirect DO with dynamically computed label
+        Given: F I=1:1:3 S X="L"_I D @X
+        When: executed
+        Then: output is "1\\n2\\n3\\n" - labels L1, L2, L3 are called in sequence
+
+        Reference: Finding from research.md
+        This exercises the full indirect DO dispatch path where the label
+        is computed at runtime using string concatenation. Each iteration
+        computes a different label name and dispatches to it.
+        """
+        result = execute_mumps(
+            'TEST\n N I F I=1:1:3 S X="L"_I D @X\n Q\n'
+            "L1 W 1,! Q\n"
+            "L2 W 2,! Q\n"
+            "L3 W 3,! Q\n"
+        )
+        assert result.output == "1\n2\n3\n"
+        assert result.success is True
+
 
 @pytest.mark.codegen
 class TestIndirectDoWithOffset:

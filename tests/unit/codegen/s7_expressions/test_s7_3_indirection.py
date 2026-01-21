@@ -84,6 +84,23 @@ class TestIndirectionCodegen:
         result = execute_mumps('TEST S ARG="X=5" S @ARG W X Q')
         assert result.output == "5"
 
+    def test_name_indirection_subscripts_edge(self, execute_mumps):
+        """Name indirection with subscripts @X@(subs) (§7.3).
+
+        T060: Name indirection with additional subscripts
+        Given: S Y(1)=99 S X="Y" W @X@(1)
+        When: executed
+        Then: output is "99" - @X evaluates to "Y", then @(1) adds subscript
+
+        Reference: Finding 39 from research.md
+        The @X@(subs) syntax evaluates X to get the variable name, then
+        appends the subscripts to form the final variable reference.
+        This exercises semantic_analyzer.py lines 267-275.
+        """
+        result = execute_mumps('TEST\n S Y(1)=99 S X="Y" W @X@(1),!\n Q\n')
+        assert result.output == "99\n"
+        assert result.success is True
+
 
 @pytest.mark.codegen
 class TestPatternIndirectionCodegen:

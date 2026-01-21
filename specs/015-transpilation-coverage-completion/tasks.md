@@ -246,11 +246,11 @@
 
 ### Implementation
 
-- [ ] T060 [P] [US1] Add `test_name_indirection_subscripts_edge` to tests/unit/codegen/s7_expressions/test_s7_3_indirection.py (`@X@(1)`)
-- [ ] T061 [P] [US1] Add `test_indirect_pattern_match_edge` to tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py (`X?@P`)
-- [ ] T062 [P] [US1] Add `test_indirect_routine_call_edge` to tests/unit/codegen/s8_commands/test_s8_2_03_do.py (`D @X` with routine ref)
+- [x] T060 [P] [US1] Add `test_name_indirection_subscripts_edge` to tests/unit/codegen/s7_expressions/test_s7_3_indirection.py (`@X@(1)`)
+- [x] T061 [P] [US1] Add `test_indirect_pattern_match_edge` to tests/unit/codegen/s7_expressions/test_s7_2_5_pattern_match.py (`X?@P`)
+- [x] T062 [P] [US1] Add `test_indirect_routine_call_edge` to tests/unit/codegen/s8_commands/test_s8_2_03_do.py (`D @X` with routine ref)
 
-**Checkpoint**: Complex indirection patterns covered
+**Checkpoint**: ✅ Complex indirection patterns covered with 4 new tests. All patterns verified with YDB docker.
 
 ---
 
