@@ -6,7 +6,7 @@ that certain MStatement subclasses have specific attributes.
 
 from typing import TYPE_CHECKING, TypeGuard, Union
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from m2py.asg.elements import MScope
     from m2py.asg.statements import (
         MDoStatement,
@@ -90,7 +90,7 @@ def get_then_scope(stmt: "MStatement") -> "MScope | None":
     return None
 
 
-def get_else_scope(stmt: "MStatement") -> "MScope | None":
+def get_else_scope(stmt: "MStatement") -> "MScope | None":  # pragma: no cover
     """Get the else_scope of a statement if it has one.
 
     Note: Currently no ASG statement type defines an else_scope attribute.

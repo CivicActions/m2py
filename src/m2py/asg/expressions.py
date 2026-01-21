@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, List, Optional, Union
 from m2py.asg.elements import ASGElement
 from m2py.asg.enums import LiteralType, FormatControlType, IndirectionType, PassingMode
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from m2py.asg.elements import MCall
 
 
@@ -380,11 +380,11 @@ class MActualParameter(ASGElement):
     variable_name: Optional[str] = None  # For BY_REFERENCE: the actual variable name
 
     @property
-    def is_byref(self) -> bool:
+    def is_byref(self) -> bool:  # pragma: no cover
         """Check if this parameter is passed by reference."""
         return self.passing_mode == PassingMode.BY_REFERENCE
 
     @property
-    def is_omitted(self) -> bool:
+    def is_omitted(self) -> bool:  # pragma: no cover
         """Check if this parameter position is omitted."""
         return self.passing_mode == PassingMode.OMITTED

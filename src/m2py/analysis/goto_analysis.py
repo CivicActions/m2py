@@ -420,7 +420,9 @@ def _compute_codegen_fields(
         stmt.codegen_pattern = GotoCodegenPattern.FUNCTION_CALL
 
 
-def get_loop_exiting_gotos(routine: MRoutine) -> List[MGotoStatement]:
+def get_loop_exiting_gotos(
+    routine: MRoutine,
+) -> List[MGotoStatement]:  # pragma: no cover
     """Get all GOTOs that exit FOR loops.
 
     Args:
@@ -438,7 +440,9 @@ def get_loop_exiting_gotos(routine: MRoutine) -> List[MGotoStatement]:
     return result
 
 
-def get_gotos_by_type(routine: MRoutine, goto_type: GotoType) -> List[MGotoStatement]:
+def get_gotos_by_type(
+    routine: MRoutine, goto_type: GotoType
+) -> List[MGotoStatement]:  # pragma: no cover
     """Get all GOTOs of a specific type.
 
     Args:

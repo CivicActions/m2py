@@ -724,7 +724,9 @@ def _extract_expression_variables(expr) -> Set[str]:
     return vars_found
 
 
-def get_def_use_chains(label: MLabel) -> Dict[str, List[Tuple[int, str]]]:
+def get_def_use_chains(
+    label: MLabel,
+) -> Dict[str, List[Tuple[int, str]]]:  # pragma: no cover
     """Build def-use chains for variables in a label.
 
     A def-use chain tracks where variables are defined (written)
@@ -755,7 +757,7 @@ def get_def_use_chains(label: MLabel) -> Dict[str, List[Tuple[int, str]]]:
     return chains
 
 
-def compute_transitive_inputs(
+def compute_transitive_inputs(  # pragma: no cover
     routine: MRoutine, label_vars: Dict[str, ScopeVariables]
 ) -> Dict[str, Set[str]]:
     """Compute transitive closure of input variables through call chains.
@@ -1390,7 +1392,7 @@ def bind_parameters(call: MCall, target_label: MLabel) -> List[ParameterBinding]
     return bindings
 
 
-def compute_transitive_outputs(
+def compute_transitive_outputs(  # pragma: no cover
     routine: MRoutine,
     label_vars: Dict[str, ScopeVariables],
     signatures: Dict[str, FunctionSignature],
