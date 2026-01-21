@@ -171,7 +171,7 @@ class FunctionSignature:
     transitive_outputs: Set[str] = field(default_factory=set)
 
 
-class RoutineAnalysisCache:  # pragma: no cover
+class RoutineAnalysisCache:
     """Cached analysis results for a routine with incremental update support.
 
     For IDE scenarios where single labels change, this cache avoids
@@ -724,9 +724,7 @@ def _extract_expression_variables(expr) -> Set[str]:
     return vars_found
 
 
-def get_def_use_chains(
-    label: MLabel,
-) -> Dict[str, List[Tuple[int, str]]]:  # pragma: no cover
+def get_def_use_chains(label: MLabel) -> Dict[str, List[Tuple[int, str]]]:
     """Build def-use chains for variables in a label.
 
     A def-use chain tracks where variables are defined (written)
@@ -757,7 +755,7 @@ def get_def_use_chains(
     return chains
 
 
-def compute_transitive_inputs(  # pragma: no cover
+def compute_transitive_inputs(
     routine: MRoutine, label_vars: Dict[str, ScopeVariables]
 ) -> Dict[str, Set[str]]:
     """Compute transitive closure of input variables through call chains.
@@ -1392,7 +1390,7 @@ def bind_parameters(call: MCall, target_label: MLabel) -> List[ParameterBinding]
     return bindings
 
 
-def compute_transitive_outputs(  # pragma: no cover
+def compute_transitive_outputs(
     routine: MRoutine,
     label_vars: Dict[str, ScopeVariables],
     signatures: Dict[str, FunctionSignature],

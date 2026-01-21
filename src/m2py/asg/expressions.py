@@ -380,11 +380,11 @@ class MActualParameter(ASGElement):
     variable_name: Optional[str] = None  # For BY_REFERENCE: the actual variable name
 
     @property
-    def is_byref(self) -> bool:  # pragma: no cover
+    def is_byref(self) -> bool:
         """Check if this parameter is passed by reference."""
         return self.passing_mode == PassingMode.BY_REFERENCE
 
     @property
-    def is_omitted(self) -> bool:  # pragma: no cover
+    def is_omitted(self) -> bool:
         """Check if this parameter position is omitted."""
         return self.passing_mode == PassingMode.OMITTED

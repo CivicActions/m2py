@@ -66,7 +66,7 @@ class ASGElement(ABC):
     # Tree structure
     parent: Optional["ASGElement"] = field(default=None, repr=False)
 
-    def to_dict(  # pragma: no cover
+    def to_dict(
         self, include_position: bool = False, max_depth: int = 10
     ) -> dict[str, Any]:
         """Serialize this ASG element to a dictionary.
@@ -116,7 +116,7 @@ class ASGElement(ABC):
 
         return result
 
-    def _serialize_value(  # pragma: no cover
+    def _serialize_value(
         self, value: Any, include_position: bool, max_depth: int
     ) -> Any:
         """Recursively serialize a value for to_dict()."""

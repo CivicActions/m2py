@@ -400,7 +400,7 @@ def _unwrap_zwrite_subscripts(subscripts):
         return []
 
     result = []
-    for arg in subscripts.args:  # pragma: no cover
+    for arg in subscripts.args:
         # ZWRITE subscript wildcards and ranges - YDB extension edge case
         # Check for wildcard (all='*')
         if hasattr(arg, "all") and arg.all:

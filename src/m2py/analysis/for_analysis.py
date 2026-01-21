@@ -260,12 +260,12 @@ def _get_callee_signature(
         return None
 
     # External calls (label^routine) - signature not available
-    if call.routine:  # pragma: no cover
+    if call.routine:
         return None
 
     # Get callee name
     callee_name = call.name
-    if not callee_name:  # pragma: no cover
+    if not callee_name:
         return None
 
     return signatures.get(callee_name)
@@ -307,7 +307,7 @@ def _check_var_passed_byref_in_scope(
                                 callee_sig = _get_callee_signature(
                                     call, routine, signatures
                                 )
-                                if callee_sig is None:  # pragma: no cover
+                                if callee_sig is None:
                                     # No signature (external call or not computed)
                                     # Fall back to conservative: assume modified
                                     return True
@@ -319,7 +319,7 @@ def _check_var_passed_byref_in_scope(
                                     if formal_name in callee_sig.byref_outputs:
                                         return True
                                     # Callee doesn't modify it - don't flag as modified
-                                else:  # pragma: no cover
+                                else:
                                     # More args than formals - conservative
                                     return True
 

@@ -90,7 +90,7 @@ def get_then_scope(stmt: "MStatement") -> "MScope | None":
     return None
 
 
-def get_else_scope(stmt: "MStatement") -> "MScope | None":  # pragma: no cover
+def get_else_scope(stmt: "MStatement") -> "MScope | None":
     """Get the else_scope of a statement if it has one.
 
     Note: Currently no ASG statement type defines an else_scope attribute.
