@@ -128,13 +128,19 @@ class TestPatternIndirectionCodegen:
         # Negated match uses int(not ...) wrapper
         assert "int(not" in code
 
-    def test_literal_pattern_uses_m_pattern_match(self, generate_python):
-        """Literal pattern (not indirect) also uses m_pattern_match (T063).
+    def test_literal_pattern_uses_inline_regex(self, generate_python):
+        """Literal pattern (not indirect) uses inline re.fullmatch (T063).
 
-        m_pattern_match helper handles both direct and indirect patterns.
-        Example: I "123"?1N.N uses m_pattern_match
+        Direct patterns are pre-compiled during analysis and use inline
+        re.fullmatch() for better performance. Only indirect patterns
+        use m_pattern_match() runtime helper.
+        Example: I "123"?1N.N uses re.fullmatch with pre-compiled regex
         """
         code = generate_python('TEST I "123"?1N.N W "MATCH" Q\n')
 
-        # Should use m_pattern_match helper
-        assert "m_pattern_match" in code
+        # Direct patterns use inline re.fullmatch (not m_pattern_match)
+        assert "re.fullmatch(" in code
+        # The pattern match expression should NOT call m_pattern_match function
+        # (it may still be in imports, but not used for the expression)
+        assert "m_pattern_match(_scope" not in code
+        assert "m_pattern_match(str(" not in code

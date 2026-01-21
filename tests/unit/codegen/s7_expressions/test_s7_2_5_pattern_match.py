@@ -117,3 +117,77 @@ class TestPatternMatchCodegen:
         result = execute_mumps('TEST\n W "12"?1(1(1l,1u),2N)\n Q\n')
         assert result.output == "1"
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestPatternMatchOptimization:
+    """Tests for pre-compiled pattern match optimization (§7.2.5).
+
+    Spec 015 Phase 3: Verifies codegen uses pre-compiled regex for direct
+    patterns instead of calling m_pattern_match() at runtime.
+
+    Direct patterns (X?1A.N) are pre-compiled during semantic analysis and
+    stored in MPatternMatch.compiled_regex. Codegen then uses inline
+    re.fullmatch() for better performance.
+
+    Indirect patterns (X?@Y) still use m_pattern_match() runtime helper
+    since the pattern is determined at runtime.
+    """
+
+    def test_direct_pattern_uses_inline_regex(self, generate_python):
+        """Direct pattern (X?1A.N) uses inline re.fullmatch (§7.2.5).
+
+        During semantic analysis, the pattern is compiled to regex and stored
+        in MPatternMatch.compiled_regex. Codegen uses this to generate inline
+        re.fullmatch() instead of calling m_pattern_match().
+        """
+        code = generate_python('TEST S X="ABC" W X?1A.N Q\n')
+        # Should use inline re.fullmatch with pre-compiled regex
+        assert "re.fullmatch(" in code
+        # The compiled regex for 1A.N includes letter class
+        assert "[A-Za-z]" in code or "A-Za-z" in code
+        # The pattern match expression should NOT call m_pattern_match function
+        # (it may still be in imports, but not used for the expression)
+        assert "m_pattern_match(_scope" not in code
+        assert "m_pattern_match(str(" not in code
+
+    def test_indirect_pattern_uses_runtime_helper(self, generate_python):
+        """Indirect pattern (X?@Y) uses m_pattern_match runtime helper (§7.2.5).
+
+        Indirect patterns cannot be pre-compiled since the pattern string
+        is determined at runtime. These use m_pattern_match() which calls
+        compile_pattern_to_regex() at runtime.
+        """
+        code = generate_python('TEST S X="ABC",P="1A.N" W X?@P Q\n')
+        # Indirect pattern must use m_pattern_match (compiles at runtime)
+        assert "m_pattern_match" in code
+
+    def test_negated_pattern_uses_inline_regex(self, generate_python):
+        """Negated pattern (X'?3N) uses inline re.fullmatch with not (§7.2.5).
+
+        Negated direct patterns also use pre-compiled regex with int(not ...)
+        wrapper to invert the boolean result.
+        """
+        code = generate_python('TEST S X="ABC" W X\'?3N Q\n')
+        # Should use inline re.fullmatch
+        assert "re.fullmatch(" in code
+        # Should wrap in int(not ...) for negation
+        assert "int(not" in code
+
+    def test_pattern_match_execution_direct(self, execute_mumps):
+        """Direct pattern match executes correctly with pre-compiled regex (§7.2.5).
+
+        Validates that the inline re.fullmatch() produces correct results.
+        """
+        result = execute_mumps('TEST S X="Test123" W X?1A.AN,! Q\n')
+        assert result.success is True
+        assert result.output == "1\n"
+
+    def test_pattern_match_execution_indirect(self, execute_mumps):
+        """Indirect pattern match executes correctly with runtime compilation (§7.2.5).
+
+        Validates that m_pattern_match() runtime helper produces correct results.
+        """
+        result = execute_mumps('TEST S X="999",P="3N" W X?@P,! Q\n')
+        assert result.success is True
+        assert result.output == "1\n"

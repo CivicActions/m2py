@@ -70,12 +70,12 @@
 
 ### Implementation
 
-- [ ] T016 [US3] Investigate how compiled_pattern is stored in ASG by pattern_compiler in src/m2py/analysis/pattern_compiler.py
-- [ ] T017 [US3] Update pattern match codegen in src/m2py/codegen/expressions.py to use pre-compiled regex from ASG
-- [ ] T018 [US3] Update runtime helper in src/m2py/runtime/helpers.py to accept pre-compiled pattern (or remove re-compilation)
-- [ ] T019 [US3] Add test verifying pre-compiled pattern is used in tests/unit/codegen/test_coverage_gaps.py
+- [x] T016 [US3] Investigate how compiled_pattern is stored in ASG by pattern_compiler in src/m2py/analysis/pattern_compiler.py
+- [x] T017 [US3] Update pattern match codegen in src/m2py/codegen/expressions.py to use pre-compiled regex from ASG
+- [x] T018 [US3] Update runtime helper in src/m2py/runtime/helpers.py to accept pre-compiled pattern (or remove re-compilation)
+- [x] T019 [US3] Add test verifying pre-compiled pattern is used in tests/unit/codegen/test_coverage_gaps.py
 
-**Checkpoint**: Pattern compilation analysis is now exercised by codegen path
+**Checkpoint**: ✅ Pattern match codegen now uses pre-compiled regex (re.fullmatch) for direct patterns, avoiding runtime re-compilation. Indirect patterns (X?@Y) still use m_pattern_match() for runtime compilation. 5 new tests added to verify.
 
 ---
 

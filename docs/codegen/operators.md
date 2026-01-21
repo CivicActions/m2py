@@ -270,17 +270,29 @@ W "AB12"?2A2N   ; 1 (exactly 2 letters, 2 digits)
 W "ABC"'?1N.N   ; 1 (negated - ABC doesn't match numeric)
 ```
 
-The codegen generates `m_pattern_match()` calls:
+### Direct Patterns (Pre-compiled)
+
+For direct/literal patterns, codegen uses the pre-compiled regex from the ASG
+and generates inline `re.fullmatch()` calls for better performance:
 
 ```python
-m_pattern_match("ABC", "1A.A")   # Returns 1 (match)
-m_pattern_match("A1B", "1A.A")   # Returns 0 (no match)
+# X?1A.N compiles to:
+(1 if re.fullmatch('[A-Za-z][0-9]*', str(x), re.DOTALL) else 0)
+
+# Negated pattern X'?3N:
+int(not (1 if re.fullmatch('[0-9]{3}', str(x), re.DOTALL) else 0))
 ```
 
-Negated pattern match (`'?`) wraps the result:
+The `re.DOTALL` flag ensures the E pattern code matches newlines per MUMPS spec.
+
+### Indirect Patterns (Runtime)
+
+For indirect patterns (`X?@Y`), where the pattern is determined at runtime,
+codegen uses the `m_pattern_match()` runtime helper:
 
 ```python
-int(not m_pattern_match("ABC", "1N.N"))  # Returns 1 (doesn't match)
+# X?@P compiles to:
+m_pattern_match(x, p)  # p contains the pattern string
 ```
 
 See [pattern_compiler.md](../analysis/pattern_compiler.md) for pattern translation.

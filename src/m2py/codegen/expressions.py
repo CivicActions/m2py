@@ -592,7 +592,10 @@ def _generate_unary_op(op: MUnaryOp, ctx: "GeneratorContext") -> str:
 def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str:
     """Generate Python pattern match expression from MPatternMatch.
 
-    Spec 011 Phase 12: Pattern match operator generates m_pattern_match() call.
+    Spec 011 Phase 12: Pattern match operator.
+    Spec 015 Phase 3: Uses pre-compiled regex for direct patterns to avoid
+    runtime re-compilation.
+
     Supports both direct patterns (literal) and indirect patterns (@X).
     Also handles negated pattern match ('?) which returns the inverse.
 
@@ -606,14 +609,20 @@ def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str
     subject = generate_expr(expr.subject, ctx) if expr.subject else '""'
 
     if expr.pattern_indirect:
-        # Indirect pattern: X?@Y - pattern is in variable Y
+        # Indirect pattern: X?@Y - pattern determined at runtime
+        # Use runtime helper which compiles the pattern dynamically
         pattern = generate_expr(expr.pattern_indirect, ctx)
+        result = f"m_pattern_match({subject}, {pattern})"
+    elif expr.compiled_regex is not None:
+        # Direct pattern with pre-compiled regex - inline the fullmatch call
+        # Use re.DOTALL so E pattern code matches newlines per MUMPS spec
+        regex = repr(expr.compiled_regex)
+        result = f"(1 if re.fullmatch({regex}, str({subject}), re.DOTALL) else 0)"
     else:
-        # Direct pattern: use pre-compiled regex if available, else use pattern string
-        # Pattern is a literal string like "1A.N"
+        # Direct pattern without compiled regex (shouldn't happen normally)
+        # Fall back to runtime helper
         pattern = repr(expr.pattern)
-
-    result = f"m_pattern_match({subject}, {pattern})"
+        result = f"m_pattern_match({subject}, {pattern})"
 
     # Handle negated pattern match ('?)
     if expr.operator == "'?":
