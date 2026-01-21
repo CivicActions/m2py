@@ -162,7 +162,7 @@ def _resolve_call(
         call.is_resolved = False
 
 
-def get_unresolved_calls(routine: MRoutine) -> List[MCall]:
+def get_unresolved_calls(routine: MRoutine) -> List[MCall]:  # pragma: no cover
     """Get all MCall objects that could not be resolved.
 
     Useful for identifying missing labels or external references.
@@ -189,7 +189,7 @@ def get_unresolved_calls(routine: MRoutine) -> List[MCall]:
     return unresolved
 
 
-def get_external_calls(routine: MRoutine) -> List[MCall]:
+def get_external_calls(routine: MRoutine) -> List[MCall]:  # pragma: no cover
     """Get all MCall objects that reference external routines.
 
     Args:

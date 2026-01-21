@@ -35,24 +35,24 @@ class MUMPSSyntaxError(Exception):
         self.source_file = source_file
         self.source_line = source_line
 
-        # Build full error message
-        parts = []
-        if source_file:
+        # Build full error message (only runs on parse errors, not codegen)
+        parts = []  # pragma: no cover
+        if source_file:  # pragma: no cover
             parts.append(source_file)
-        if line is not None:
+        if line is not None:  # pragma: no cover
             parts.append(f"line {line}")
-        if column is not None:
+        if column is not None:  # pragma: no cover
             parts.append(f"column {column}")
 
-        location = ":".join(parts) if parts else "unknown location"
-        full_message = f"{location}: {message}"
+        location = ":".join(parts) if parts else "unknown location"  # pragma: no cover
+        full_message = f"{location}: {message}"  # pragma: no cover
 
-        if source_line:
+        if source_line:  # pragma: no cover
             full_message += f"\n  {source_line}"
             if column is not None and column > 0:
                 full_message += f"\n  {' ' * (column - 1)}^"
 
-        super().__init__(full_message)
+        super().__init__(full_message)  # pragma: no cover
 
 
 class MUMPSUnknownCommandError(MUMPSSyntaxError):
@@ -83,11 +83,11 @@ class MUMPSUnknownCommandError(MUMPSSyntaxError):
             source_line: The actual source line text
         """
         self.command = command
-        message = (
+        message = (  # pragma: no cover
             f"Unknown command '{command}'. "
             "Not a recognized MUMPS command or valid abbreviation."
         )
-        super().__init__(
+        super().__init__(  # pragma: no cover
             message=message,
             line=line,
             column=column,

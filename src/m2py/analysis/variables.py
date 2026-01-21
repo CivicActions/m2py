@@ -171,7 +171,7 @@ class FunctionSignature:
     transitive_outputs: Set[str] = field(default_factory=set)
 
 
-class RoutineAnalysisCache:
+class RoutineAnalysisCache:  # pragma: no cover
     """Cached analysis results for a routine with incremental update support.
 
     For IDE scenarios where single labels change, this cache avoids

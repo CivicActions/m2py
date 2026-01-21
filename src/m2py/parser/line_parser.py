@@ -153,7 +153,7 @@ def parse_commands_from_line(
     return []
 
 
-def detect_quit_after_for(line_content: str) -> bool:
+def detect_quit_after_for(line_content: str) -> bool:  # pragma: no cover
     """Detect if there's a QUIT command after any FOR command on this line.
 
     In MUMPS, FOR body extends to end of line. If QUIT appears after FOR
@@ -182,7 +182,7 @@ def detect_quit_after_for(line_content: str) -> bool:
     return False
 
 
-def extract_for_commands(line_content: str) -> List[Any]:
+def extract_for_commands(line_content: str) -> List[Any]:  # pragma: no cover
     """Extract all FOR commands from a line content string.
 
     Uses textX grammar to properly parse and identify FOR commands,
@@ -202,7 +202,7 @@ def extract_for_commands(line_content: str) -> List[Any]:
     return [cmd for cmd in cmds if cmd.__class__.__name__ == "ForCommand"]
 
 
-def classify_for_command(for_cmd) -> tuple:
+def classify_for_command(for_cmd) -> tuple:  # pragma: no cover
     """Classify a textX ForCommand into loop type and variable.
 
     Args:

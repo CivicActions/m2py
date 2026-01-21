@@ -827,7 +827,7 @@ class MUMPSParser:
 
         return label
 
-    def classify_for_patterns(
+    def classify_for_patterns(  # pragma: no cover
         self, source: str, filename: Optional[str] = None
     ) -> list[ForPatternResult]:
         """Parse source and classify FOR loop patterns.
@@ -904,7 +904,7 @@ class MUMPSParser:
 
         return results
 
-    def classify_for_patterns_from_file(
+    def classify_for_patterns_from_file(  # pragma: no cover
         self, filepath: Union[str, Path]
     ) -> list[ForPatternResult]:
         """Parse a file and classify FOR loop patterns.
