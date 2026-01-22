@@ -2778,8 +2778,38 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     """
     # Handle exclusive NEW: N (X,Y) - NEW all except X,Y
     if stmt.exclusive:
-        # Build set of variables to keep
-        keep_vars_repr = repr(set(stmt.except_list))
+        # Import MIndirection here to avoid circular imports at module level
+        from m2py.asg.expressions import MIndirection as MIndirectionType
+
+        # Check if any element in except_list is an MIndirection
+        has_indirection = any(isinstance(v, MIndirectionType) for v in stmt.except_list)
+
+        if has_indirection:
+            from m2py.codegen.indirection import _generate_inner_name_expr
+
+            # Build the keep set dynamically at runtime
+            # Start with known string variables
+            string_vars = [v for v in stmt.except_list if isinstance(v, str)]
+            indirection_vars = [
+                v for v in stmt.except_list if isinstance(v, MIndirectionType)
+            ]
+
+            if string_vars:
+                ctx.emitter.line(f"_keep_vars = {repr(set(string_vars))}")
+            else:
+                ctx.emitter.line("_keep_vars = set()")
+
+            # Add indirection-resolved names at runtime
+            for ind_var in indirection_vars:
+                if ind_var.expression is None:
+                    raise ValueError("NEW indirection has no expression")
+                target_name_expr = _generate_inner_name_expr(ind_var.expression, ctx)
+                ctx.emitter.line(f"_keep_vars.add({target_name_expr})")
+
+            keep_vars_repr = "_keep_vars"
+        else:
+            # All elements are strings - use static set
+            keep_vars_repr = repr(set(stmt.except_list))
 
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             if ctx.new_scope_manager_var:
