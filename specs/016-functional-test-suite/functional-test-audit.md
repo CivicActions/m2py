@@ -1,9 +1,16 @@
 # Functional Test Failure Audit
 
 **Date**: 2026-01-22
-**Total Failures**: 147
+**Total Failures**: 147 (unchanged - some fixed, others newly visible)
 **Total Passed**: 336
 **Total xfailed**: 5
+
+## Fixes Applied
+
+1. **V1RN SyntaxError** - Translate % routine names to valid Python module names
+2. **new TypeError** - Handle MIndirection in exclusive NEW except_list  
+3. **VV2LHP1 ValueError** - Default LHS $PIECE piece_from to 1 when not specified
+4. **for/forloop Timeout** - Fixed m_num/m_compare to normalize floats to ints (0.0 → 0)
 
 ## Priority 1: SyntaxErrors (Codegen Bugs) - 2 routines
 
@@ -17,7 +24,12 @@ These generate invalid Python and must be fixed.
 - [X] **new** - `TypeError: unhashable type: 'MIndirection'` - **FIXED** (handle MIndirection in exclusive NEW except_list)
 - [X] **VV2LHP1** - `ValueError: LHS $PIECE requires at least 3 arguments, got 2` - **FIXED** (default piece_from to 1), now fails on NakedGlobal (functional gap)
 
-## Priority 3: UnsupportedFeatureError - 2 routines
+## Priority 3: Timeout Issues - 2 routines
+
+- [X] **for** - `Execution timed out after 30s` - **FIXED** (m_compare float normalization), now has output mismatch
+- [X] **forloop** - `Execution timed out after 30s` - **FIXED** (same)
+
+## Priority 4: UnsupportedFeatureError - 2 routines
 
 - [ ] **V1NST1** - `UnsupportedFeatureError: UNRESOLVED GOTO not supported - See Spec 012`
 - [ ] **V1NST2** - `UnsupportedFeatureError: UNRESOLVED GOTO not supported - See Spec 012`
