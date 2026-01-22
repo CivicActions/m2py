@@ -27,11 +27,11 @@
 
 **⚠️ CRITICAL**: US1 (TRAMPOLINE enhancement) depends on these analysis flags
 
-- [ ] T004 Add `has_argumentless_kill: bool = False` field to MRoutine in src/m2py/asg/elements.py
-- [ ] T005 Add `has_argumentless_new: bool = False` field to MRoutine in src/m2py/asg/elements.py
-- [ ] T006 Update variable analysis to detect and set `has_argumentless_kill` in src/m2py/analysis/variables.py
-- [ ] T007 Update variable analysis to detect and set `has_argumentless_new` in src/m2py/analysis/variables.py
-- [ ] T008 Add unit tests for argumentless KILL/NEW detection in tests/unit/analysis/
+- [x] T004 Add `has_argumentless_kill: bool = False` field to MRoutine in src/m2py/asg/elements.py
+- [x] T005 Add `has_argumentless_new: bool = False` field to MRoutine in src/m2py/asg/elements.py
+- [x] T006 Update variable analysis to detect and set `has_argumentless_kill` in src/m2py/analysis/variables.py
+- [x] T007 Update variable analysis to detect and set `has_argumentless_new` in src/m2py/analysis/variables.py
+- [x] T008 Add unit tests for argumentless KILL/NEW detection in tests/unit/analysis/
 
 **Checkpoint**: Analysis flags available - US1 TRAMPOLINE work can begin
 

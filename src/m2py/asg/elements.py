@@ -320,6 +320,14 @@ class MRoutine(ASGElement):
     # Triggers TRAMPOLINE strategy and _line_map generation for line-based dispatch
     has_offset_calls: bool = False
 
+    # Spec 017: True if any argumentless KILL (K with no args) exists in routine
+    # Requires runtime local variable tracking (state._locals dict) in TRAMPOLINE mode
+    has_argumentless_kill: bool = False
+
+    # Spec 017: True if any argumentless NEW (N with no args) exists in routine
+    # Requires runtime scope stack (state._new_stack) in TRAMPOLINE mode
+    has_argumentless_new: bool = False
+
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.
 

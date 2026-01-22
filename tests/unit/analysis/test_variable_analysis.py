@@ -2409,3 +2409,180 @@ class TestHasNewStatements:
         analyze_variables(routine)
 
         assert label.has_new_statements is True
+
+
+@pytest.mark.analysis
+class TestArgumentlessKillNewDetection:
+    """Tests for Spec 017: argumentless KILL/NEW detection in routines.
+
+    These flags are used to determine when TRAMPOLINE mode needs
+    runtime scope management (state._locals dict, state._new_stack).
+    """
+
+    def test_has_argumentless_kill_default(self):
+        """Empty routine has no argumentless KILL."""
+        routine = MRoutine(name="TEST", labels=[])
+        analyze_variables(routine)
+        assert routine.has_argumentless_kill is False
+
+    def test_has_argumentless_kill_with_selective_kill(self):
+        """Selective KILL (K X) does not set has_argumentless_kill."""
+        from m2py.asg.statements import MKillStatement
+        from m2py.asg.expressions import MVariable
+
+        # K X - selective kill
+        kill_stmt = MKillStatement(targets=[MVariable(name="X")])
+        scope = MScope(statements=[kill_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_kill is False
+
+    def test_has_argumentless_kill_with_argumentless_kill(self):
+        """Argumentless KILL (K with no args) sets has_argumentless_kill."""
+        from m2py.asg.statements import MKillStatement
+
+        # K - argumentless kill (kills all locals)
+        kill_stmt = MKillStatement(targets=[], exclusive=False)
+        scope = MScope(statements=[kill_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_kill is True
+
+    def test_has_argumentless_kill_with_exclusive_kill(self):
+        """Exclusive KILL (K (X)) does not set has_argumentless_kill."""
+        from m2py.asg.statements import MKillStatement
+
+        # K (X) - exclusive kill (keep only X)
+        kill_stmt = MKillStatement(targets=[], exclusive=True, except_list=["X"])
+        scope = MScope(statements=[kill_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_kill is False
+
+    def test_has_argumentless_kill_nested_in_for(self):
+        """Argumentless KILL nested in FOR body is detected."""
+        from m2py.asg.statements import MKillStatement
+
+        # F I=1:1:10 K
+        kill_stmt = MKillStatement(targets=[], exclusive=False)
+        for_body = MScope(statements=[kill_stmt])
+        for_stmt = MForStatement(loop_var="I", body=for_body)
+        scope = MScope(statements=[for_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+        for_body.parent = for_stmt
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_kill is True
+
+    def test_has_argumentless_new_default(self):
+        """Empty routine has no argumentless NEW."""
+        routine = MRoutine(name="TEST", labels=[])
+        analyze_variables(routine)
+        assert routine.has_argumentless_new is False
+
+    def test_has_argumentless_new_with_selective_new(self):
+        """Selective NEW (N X) does not set has_argumentless_new."""
+        # N X - selective new
+        new_stmt = MNewStatement(variables=["X"])
+        scope = MScope(statements=[new_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_new is False
+
+    def test_has_argumentless_new_with_argumentless_new(self):
+        """Argumentless NEW (N with no args) sets has_argumentless_new."""
+        # N - argumentless new (saves all locals)
+        new_stmt = MNewStatement(variables=[], exclusive=False)
+        scope = MScope(statements=[new_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_new is True
+
+    def test_has_argumentless_new_with_exclusive_new(self):
+        """Exclusive NEW (N (X)) does not set has_argumentless_new."""
+        # N (X) - exclusive new (all except X)
+        new_stmt = MNewStatement(variables=[], exclusive=True, except_list=["X"])
+        scope = MScope(statements=[new_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_new is False
+
+    def test_has_argumentless_new_nested_in_if(self):
+        """Argumentless NEW nested in IF body is detected."""
+        # I 1 N
+        new_stmt = MNewStatement(variables=[], exclusive=False)
+        then_scope = MScope(statements=[new_stmt])
+        if_stmt = MIfStatement(condition=MLiteral(value="1"), then_scope=then_scope)
+        scope = MScope(statements=[if_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+        then_scope.parent = if_stmt
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_new is True
+
+    def test_both_argumentless_kill_and_new(self):
+        """Routine with both argumentless KILL and NEW sets both flags."""
+        from m2py.asg.statements import MKillStatement
+
+        # N ... K
+        new_stmt = MNewStatement(variables=[], exclusive=False)
+        kill_stmt = MKillStatement(targets=[], exclusive=False)
+        scope = MScope(statements=[new_stmt, kill_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_new is True
+        assert routine.has_argumentless_kill is True
+
+    def test_argumentless_kill_in_second_label(self):
+        """Argumentless KILL in any label sets routine flag."""
+        from m2py.asg.statements import MKillStatement
+
+        # First label: nothing special
+        scope1 = MScope(statements=[])
+        label1 = MLabel(name="FIRST", body=scope1)
+        scope1.parent = label1
+
+        # Second label: argumentless KILL
+        kill_stmt = MKillStatement(targets=[], exclusive=False)
+        scope2 = MScope(statements=[kill_stmt])
+        label2 = MLabel(name="SECOND", body=scope2)
+        scope2.parent = label2
+
+        routine = MRoutine(name="TEST", labels=[label1, label2])
+        analyze_variables(routine)
+
+        assert routine.has_argumentless_kill is True

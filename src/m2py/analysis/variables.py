@@ -375,6 +375,11 @@ def analyze_variables(routine: MRoutine) -> Dict[str, ScopeVariables]:
         # Used by codegen to determine if NewScopeManager context is needed
         label.has_new_statements = _label_has_new_statements(label)
 
+    # Spec 017: Detect argumentless KILL/NEW for runtime scope management
+    # These require special handling in TRAMPOLINE mode (state._locals dict)
+    routine.has_argumentless_kill = _routine_has_argumentless_kill(routine)
+    routine.has_argumentless_new = _routine_has_argumentless_new(routine)
+
     return result
 
 
@@ -402,6 +407,65 @@ def _label_has_new_statements(label: MLabel) -> bool:
     for stmt in label.body.walk_statements():
         if isinstance(stmt, MNewStatement):
             return True
+    return False
+
+
+def _routine_has_argumentless_kill(routine: MRoutine) -> bool:
+    """Check if a routine contains any argumentless KILL statements.
+
+    Argumentless KILL (K with no arguments) kills ALL local variables.
+    This requires special handling in TRAMPOLINE mode because we cannot
+    enumerate statically which variables will be killed.
+
+    In TRAMPOLINE mode, this triggers use of state._locals dict for
+    runtime variable tracking.
+
+    Args:
+        routine: MRoutine ASG node to check
+
+    Returns:
+        True if the routine contains any argumentless KILL statements
+    """
+    for label in routine.labels:
+        if not label.body:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MKillStatement):
+                if stmt.is_kill_all:
+                    return True
+    return False
+
+
+def _routine_has_argumentless_new(routine: MRoutine) -> bool:
+    """Check if a routine contains any argumentless NEW statements.
+
+    Argumentless NEW (N with no arguments) saves ALL local variables
+    and creates a fresh scope. This requires special handling in
+    TRAMPOLINE mode because we cannot enumerate statically which
+    variables are being stacked.
+
+    In TRAMPOLINE mode, this triggers use of state._new_stack for
+    runtime scope management.
+
+    Note: Exclusive NEW (N (X)) is NOT argumentless - it specifies
+    which variables to exclude from the NEW operation.
+
+    Args:
+        routine: MRoutine ASG node to check
+
+    Returns:
+        True if the routine contains any argumentless NEW statements
+    """
+    from m2py.asg.statements import MNewStatement
+
+    for label in routine.labels:
+        if not label.body:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MNewStatement):
+                # Argumentless NEW: no variables specified AND not exclusive
+                if not stmt.variables and not stmt.exclusive:
+                    return True
     return False
 
 

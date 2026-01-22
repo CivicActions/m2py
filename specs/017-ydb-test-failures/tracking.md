@@ -18,7 +18,7 @@
 ## Phase Progress
 
 - [x] Phase 1: Setup (T001-T003)
-- [ ] Phase 2: Foundational (T004-T008)
+- [x] Phase 2: Foundational (T004-T008)
 - [ ] Phase 3: US1 - TRAMPOLINE (T009-T016)
 - [ ] Phase 4: US9 - Codegen Syntax (T017-T020)
 - [ ] Phase 5: US2 - Sorts-After (T021-T025)
@@ -48,4 +48,6 @@
 
 | Date | Phase | Tests Fixed | Notes |
 |------|-------|-------------|-------|
+| 2025-01-22 | Phase 1 | 0 | Setup complete, baseline established |
+| 2025-01-22 | Phase 2 | 0 | Analysis infrastructure complete - added has_argumentless_kill/new flags to MRoutine |
 | 2026-01-22 | Setup | - | Baseline established |
