@@ -122,7 +122,7 @@ class TestMvtsSuite:
         # MVTS routines print their label like "1---V1WR"
         if result.success:
             expected_prefix = routine_def.label
-            compare_output(result.stdout, expected_prefix)
+            compare_output(result.output, expected_prefix)
 
 
 # =============================================================================

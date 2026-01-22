@@ -2291,6 +2291,7 @@ class MUMPSRuntime:
         *,
         capture_output: bool = True,
         entry_point: str | None = None,
+        entry_args: tuple | None = None,
     ) -> ExecutionResult:
         """Execute generated Python code.
 
@@ -2302,6 +2303,7 @@ class MUMPSRuntime:
             python_code: Generated Python source code
             capture_output: If True, capture WRITE output
             entry_point: Label to execute (default: first label)
+            entry_args: Optional tuple of arguments to pass to entry point
 
         Returns:
             ExecutionResult with output, status, and error info
@@ -2347,7 +2349,10 @@ class MUMPSRuntime:
             if entry_point and entry_point in namespace:
                 func = namespace[entry_point]
                 if callable(func):
-                    func(self)
+                    if entry_args:
+                        func(self, *entry_args)
+                    else:
+                        func(self)
 
             # Get final $TEST value
             test_value = namespace.get("_test", False)

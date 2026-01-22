@@ -131,11 +131,14 @@ def load_basic_expected_outputs() -> dict[str, str]:
 # =============================================================================
 
 
-def execute_basic_routine(routine_name: str) -> ExecutionResult:
+def execute_basic_routine(
+    routine_name: str, args: str | None = None
+) -> ExecutionResult:
     """Execute a single basic routine via m2py.
 
     Args:
         routine_name: Name of the routine (e.g., "fact")
+        args: Optional arguments to pass to the routine entry point
 
     Returns:
         ExecutionResult with output and status
@@ -145,7 +148,7 @@ def execute_basic_routine(routine_name: str) -> ExecutionResult:
     except FileNotFoundError as e:
         return ExecutionResult(output="", success=False, error=str(e))
 
-    return run_mumps(source)
+    return run_mumps(source, args=args)
 
 
 # =============================================================================
@@ -191,8 +194,8 @@ class TestBasicSuite:
         # Check for known limitation (for xfail on failure)
         xfail_reason = get_routine_xfail_reason(routine_name)
 
-        # Execute via m2py
-        result = execute_basic_routine(routine_name)
+        # Execute via m2py (pass args if defined)
+        result = execute_basic_routine(routine_name, routine_def.args)
 
         # Check for complete failure (no output at all)
         if not result.output and not result.success:

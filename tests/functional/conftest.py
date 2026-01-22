@@ -230,6 +230,7 @@ class ExecutionResult(NamedTuple):
 def _run_m2py_worker(
     source: str,
     result_queue: multiprocessing.Queue,
+    args: str | None = None,
 ) -> None:
     """Worker function for m2py execution in a subprocess."""
     try:
@@ -239,9 +240,30 @@ def _run_m2py_worker(
         # Generate Python code
         python_code = generate_python(source)
 
+        # Parse args string into tuple if provided (e.g., "18" -> (18,))
+        entry_args = None
+        if args:
+            # Split by comma, convert numeric strings to numbers
+            parsed_args = []
+            for arg in args.split(","):
+                arg = arg.strip()
+                try:
+                    # Try as integer first
+                    parsed_args.append(int(arg))
+                except ValueError:
+                    try:
+                        # Try as float
+                        parsed_args.append(float(arg))
+                    except ValueError:
+                        # Keep as string
+                        parsed_args.append(arg)
+            entry_args = tuple(parsed_args)
+
         # Execute and capture output
         runtime = MUMPSRuntime()
-        result = runtime.execute(python_code, capture_output=True)
+        result = runtime.execute(
+            python_code, capture_output=True, entry_args=entry_args
+        )
 
         result_queue.put(ExecutionResult(output=result.output, success=result.success))
     except Exception as e:
@@ -250,12 +272,15 @@ def _run_m2py_worker(
         )
 
 
-def run_mumps(source: str, timeout: int = 30) -> ExecutionResult:
+def run_mumps(
+    source: str, timeout: int = 30, args: str | None = None
+) -> ExecutionResult:
     """Execute MUMPS source via m2py transpilation with timeout protection.
 
     Args:
         source: MUMPS source code
         timeout: Timeout in seconds (process killed if exceeded)
+        args: Optional comma-separated arguments for the entry point
 
     Returns:
         ExecutionResult with output and status
@@ -263,7 +288,7 @@ def run_mumps(source: str, timeout: int = 30) -> ExecutionResult:
     result_queue: multiprocessing.Queue = multiprocessing.Queue()
     process = multiprocessing.Process(
         target=_run_m2py_worker,
-        args=(source, result_queue),
+        args=(source, result_queue, args),
     )
 
     try:
