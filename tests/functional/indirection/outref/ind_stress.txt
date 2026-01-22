@@ -1,0 +1,6 @@
+
+YDB>
+run-time indirection stress for long names
+run-time indirection stress for long names PASS
+
+YDB>

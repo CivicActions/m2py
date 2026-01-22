@@ -1,0 +1,225 @@
+Files Created in ##TEST_PATH##:
+Using: ##SOURCE_PATH##/mumps -run GDE
+mumps.gld
+Using: ##SOURCE_PATH##/mupip
+mumps.dat
+##SUSPEND_OUTPUT NON_REPLIC
+Files Created in ##REMOTE_TEST_PATH##:
+Using: ##SOURCE_PATH##/mumps -run GDE
+mumps.gld
+Using: ##SOURCE_PATH##/mupip
+mumps.dat
+Starting Primary Source Server in ##TEST_PATH##
+Starting Passive Source Server and Receiver Server in ##REMOTE_TEST_PATH##
+##ALLOW_OUTPUT NON_REPLIC
+###################################################################
+Invalid M code in the Xecute string
+	 set $ZTRIggerop=99
+	      ^-----
+##TEST_AWK		At column 7, line 1, source module .*trgtmp.*
+%YDB-E-SVNOSET, Cannot SET this special variable
+	 for quit:x=0 set x=0
+	         ^-----
+##TEST_AWK		At column 10, line 1, source module .*trgtmp.*
+%YDB-E-EQUAL, Equal sign expected but not found
+	 set "=0
+	        ^-----
+##TEST_AWK		At column 9, line 1, source module .*trgtmp.*
+%YDB-E-SPOREOL, Either a space or an end-of-line was expected but not found
+	 set a=1 write a!
+	                 ^-----
+##TEST_AWK		At column 18, line 1, source module .*trgtmp.*
+%YDB-E-RHMISSING, Right-hand side of expression expected
+%YDB-E-LABELMISSING, Label referenced but not defined: DoesNotExist
+##TEST_AWK%YDB-I-SRCNAM, in source module .*trgtmp.*
+	 TPRestart
+	 ^-----
+##TEST_AWK		At column 2, line 1, source module .*trgtmp.*
+%YDB-E-INVCMD, Invalid command keyword encountered
+Error : Parsing XECUTE string: " set $ZTRIggerop=99"
+Error : Parsing XECUTE string: " for quit:x=0 set x=0"
+Error : Parsing XECUTE string: " set ""=0"
+Error : Parsing XECUTE string: " set a=1 write a!"
+Error : Parsing XECUTE string: " do DoesNotExist"
+Error : Parsing XECUTE string: " TPRestart"
+=========================================
+6 trigger file entries have errors
+0 trigger file entries have no errors
+=========================================
+###################################################################
+Invalid code the will pass compilation
+	 TPRestart:(2>$TRestart)
+	 ^-----
+##TEST_AWK		At column 2, line 1, source module .*trgtmp.*
+%YDB-W-INVCMD, Invalid command keyword encountered
+File compile_badpass.trg, Line 2: Added SET trigger on ^b named b#1
+File compile_badpass.trg, Line 3: Added SET trigger on ^c named c#1
+File compile_badpass.trg, Line 4: Added SET trigger on ^d named d#1
+Error : Parsing XECUTE string: " TPRestart:(2>$TRestart)"
+File compile_badpass.trg, Line 8: No errors processing trigger for global ^z
+=========================================
+1 trigger file entries have errors
+4 trigger file entries have no errors
+=========================================
+###################################################################
+Routines that will and won't pass compilation
+;trigger name: dobad (region DEFAULT)  cycle: 4
++^r(subs=*) -name=dobad -commands=S -xecute="set level=2 do ^badcompile"
+;trigger name: gotobad (region DEFAULT)  cycle: 4
++^r(subs=*) -name=gotobad -commands=S -xecute="set level=1 goto ^badcompile"
+;trigger name: dogood (region DEFAULT)  cycle: 4
++^r(subs=*) -name=dogood -commands=S -xecute="set level=2 do good^compile"
+;trigger name: gotogood (region DEFAULT)  cycle: 4
++^r(subs=*) -name=gotogood -commands=S -xecute="set level=1 goto good^compile"
+###################################################################
+Valid M code in the Xecute string
+;trigger name: a#1 (region DEFAULT)  cycle: 2
++^a -commands=S -xecute="xecute ""write $ZTCOde,!"" ztrigger ^a"
+;trigger name: a#2 (region DEFAULT)  cycle: 2
++^a -commands=ZTR -xecute="set b=""$ztco"" xecute ""write @b,!"""
+;trigger name: dobad (region DEFAULT)  cycle: 4
++^r(subs=*) -name=dobad -commands=S -xecute="set level=2 do ^badcompile"
+;trigger name: gotobad (region DEFAULT)  cycle: 4
++^r(subs=*) -name=gotobad -commands=S -xecute="set level=1 goto ^badcompile"
+;trigger name: dogood (region DEFAULT)  cycle: 4
++^r(subs=*) -name=dogood -commands=S -xecute="set level=2 do good^compile"
+;trigger name: gotogood (region DEFAULT)  cycle: 4
++^r(subs=*) -name=gotogood -commands=S -xecute="set level=1 goto good^compile"
+###################################################################
+###################################################################
+failing cases first (none of these updates would fail because their triggers were not installed in the first place)
+
+Stepping STARTED
+failing+4^compile   :	set (^c,^b,^d,^e)="FAIL"
+failing+5^compile   :	kill ^c,^b,^d,^e
+failing+6^compile   :	set ^c="FAIL"
+failing+7^compile   :	set ^b="FAIL"
+failing+8^compile   :	set ^d="FAIL"
+failing+9^compile   :	set ^e="FAIL"
+failing+10^compile  :	set ^z="FAIL"
+failing+11^compile  :	kill ^z
+failing+12^compile  :	zb -*  set $zstep=""	; stop display of M lines
+failing+13^compile  :	do ^echoline
+###################################################################
+###################################################################
+These will suceed
+a#1#
+a#2#
+###################################################################
+###################################################################
+Testing compilation failures in sub routines
+		badcommand
+		^-----
+		At column 2, line 16, source module ##IN_TEST_PATH##/inref/badcompile.m
+%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+^fired("dobad#")=4
+^fired("dogood#")=4
+^fired("gotobad#")=4
+^fired("gotogood#")=4
+^r(1)=1
+^r(2)=",4"
+^r(3)=",,9"
+^r(4)=",,,16"
+^s(1,1)=1
+^s(2,1)=",4"
+^s(3,1)=",,9"
+^s(4,1)=",,,16"
+###################################################################
+###################################################################
+##ALLOW_OUTPUT NON_UTF8
+##SUSPEND_OUTPUT HOST_OSF1_ALPHA HOST_OS390_S390 HOST_LINUX_IX86
+###################################################################
+Checking what happens when GTM_DEFAULT_TMP / P_tmpdir don't exist
+##TEST_AWKTrigger load for compile_pass.trg FAILED see  ./compile_pass.trg.trigout_[0-9]*
+##TEST_AWK%YDB-E-FILENOTFND, File /tmp/trg.*compile[0-9]*/deny/trgtmp.* not found
+%YDB-I-TEXT, No such file or directory
+##TEST_AWK%YDB-E-FILENOTFND, File /tmp/trg.*compile[0-9]*/deny/trgtmp.* not found
+%YDB-I-TEXT, No such file or directory
+Error : Parsing XECUTE string: " xecute ""write $ZTCOde,!"" ztrigger ^a"
+Error : Parsing XECUTE string: " set b=""$ztco"" xecute ""write @b,!"""
+=========================================
+2 trigger file entries have errors
+0 trigger file entries have no errors
+=========================================
+%YDB-E-MUNOACTION, MUPIP unable to perform requested action
+
+Checking what happens with bad permissions on GTM_DEFAULT_TMP / P_tmpdir
+No perms at all
+##TEST_AWKTrigger load for compile_pass.trg FAILED see  ./compile_pass.trg.trigout_[0-9]*
+##TEST_AWK%YDB-E-FILENOTFND, File /tmp/trg.*compile[0-9]*/deny/trgtmp.* not found
+%YDB-I-TEXT, Permission denied
+##TEST_AWK%YDB-E-FILENOTFND, File /tmp/trg.*compile[0-9]*/deny/trgtmp.* not found
+%YDB-I-TEXT, Permission denied
+Error : Parsing XECUTE string: " xecute ""write $ZTCOde,!"" ztrigger ^a"
+Error : Parsing XECUTE string: " set b=""$ztco"" xecute ""write @b,!"""
+=========================================
+2 trigger file entries have errors
+0 trigger file entries have no errors
+=========================================
+%YDB-E-MUNOACTION, MUPIP unable to perform requested action
+
+No write perms
+##TEST_AWKTrigger load for compile_pass.trg FAILED see  ./compile_pass.trg.trigout_[0-9]*
+##TEST_AWK%YDB-E-FILENOTFND, File /tmp/trg.*compile[0-9]*/deny/trgtmp.* not found
+%YDB-I-TEXT, Permission denied
+##TEST_AWK%YDB-E-FILENOTFND, File /tmp/trg.*compile[0-9]*/deny/trgtmp.* not found
+%YDB-I-TEXT, Permission denied
+Error : Parsing XECUTE string: " xecute ""write $ZTCOde,!"" ztrigger ^a"
+Error : Parsing XECUTE string: " set b=""$ztco"" xecute ""write @b,!"""
+=========================================
+2 trigger file entries have errors
+0 trigger file entries have no errors
+=========================================
+%YDB-E-MUNOACTION, MUPIP unable to perform requested action
+
+Checking what happens when GTM_DEFAULT_TMP / P_tmpdir is a file
+##TEST_AWKTrigger load for compile_pass.trg FAILED see  ./compile_pass.trg.trigout_[0-9]*
+##TEST_AWK%YDB-E-FILENOTFND, File /tmp/trg.*compile[0-9]*/deny/trgtmp.* not found
+%YDB-I-TEXT, Not a directory
+##TEST_AWK%YDB-E-FILENOTFND, File /tmp/trg.*compile[0-9]*/deny/trgtmp.* not found
+%YDB-I-TEXT, Not a directory
+Error : Parsing XECUTE string: " xecute ""write $ZTCOde,!"" ztrigger ^a"
+Error : Parsing XECUTE string: " set b=""$ztco"" xecute ""write @b,!"""
+=========================================
+2 trigger file entries have errors
+0 trigger file entries have no errors
+=========================================
+%YDB-E-MUNOACTION, MUPIP unable to perform requested action
+##ALLOW_OUTPUT HOST_ALL
+###################################################################
+##SUSPEND_OUTPUT NON_REPLIC
+Shutting down Passive Source Server and Receiver Server in ##REMOTE_TEST_PATH##
+Shutting down Primary Source Server Server in ##TEST_PATH##
+DATABASE EXTRACT PASSED
+##SOURCE_PATH##/mupip
+##SOURCE_PATH##/mupip integ -REG *
+No errors detected by integ.
+##ALLOW_OUTPUT NON_REPLIC
+##SOURCE_PATH##/mupip
+##SOURCE_PATH##/mupip integ -REG *
+No errors detected by integ.
+##SUSPEND_OUTPUT NON_REPLIC
+##TEST_AWK##TEST_HOST_SHORT##:##REMOTE_TEST_PATH##/RCVR_[0-9][0-9]_[0-9][0-9]_[0-9][0-9].log.updproc
+##SUSPEND_OUTPUT HOST_ALL
+##ALLOW_OUTPUT HOST_LINUX_IX86
+##SUSPEND_OUTPUT NON_REPLIC
+	$ZSTATUS=150373234,selflink+3^selflink,%YDB-E-LOADRUNNING, Cannot ZLINK an active routine selflink
+##ALLOW_OUTPUT HOST_ALL
+##SUSPEND_OUTPUT NON_REPLIC
+%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered
+	$ZSTATUS=150373050,badcompile+4^badcompile,%YDB-E-INVCMD, Invalid command keyword encountered

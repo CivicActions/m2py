@@ -390,79 +390,51 @@ MVTS_ROUTINES: list[RoutineDefinition] = (
 # Tests the MERGE command with various source/target combinations
 #
 # Structure:
-# - 23 driver scripts in u_inref/ (shell scripts, not MUMPS)
-# - 25 outref files contain YDB infrastructure output (DB creation, replication)
-# - 54 routines in inref/ (pure MUMPS, can be transpiled)
+# - 23 driver scripts in u_inref/ (shell scripts for YDB infrastructure)
+# - 25 outref files (contain YDB prompts + actual MUMPS output)
+# - 54 routines in inref/ (pure MUMPS)
 #
-# SUBTESTS are skipped because outrefs contain YDB infrastructure output
-# that cannot be compared against m2py output.
-#
-# ROUTINES can be tested directly for transpilation coverage.
+# The outrefs include YDB infrastructure output (DB creation, replication)
+# but the actual test output (STEP 1, ZWR results, etc.) can be extracted
+# and compared. Use normalize_outref() to strip infrastructure markers.
 
 # Sub-test definitions with their primary test routines
-# These are SKIPPED because outrefs include YDB infrastructure output
 MERGE_SUBTESTS: list[RoutineDefinition] = [
     # Basic merge operations
-    RoutineDefinition("gbl2gbl", "mbyexam", skip_reason="YDB infrastructure in outref"),
-    RoutineDefinition("gbl2lcl", "mbyexam", skip_reason="YDB infrastructure in outref"),
-    RoutineDefinition("lcl2gbl", "mbyexam", skip_reason="YDB infrastructure in outref"),
-    RoutineDefinition("lcl2lcl", "mbyexam", skip_reason="YDB infrastructure in outref"),
+    RoutineDefinition("gbl2gbl", "mbyexam"),
+    RoutineDefinition("gbl2lcl", "mbyexam"),
+    RoutineDefinition("lcl2gbl", "mbyexam"),
+    RoutineDefinition("lcl2lcl", "mbyexam"),
     # Error handling
-    RoutineDefinition("errors", "errors", skip_reason="YDB infrastructure in outref"),
+    RoutineDefinition("errors", "errors"),
     # Extended global tests
-    RoutineDefinition("extgbl1", "extgbl1", skip_reason="YDB infrastructure in outref"),
-    RoutineDefinition("extgbl2", "extgbl2", skip_reason="YDB infrastructure in outref"),
+    RoutineDefinition("extgbl1", "extgbl1"),
+    RoutineDefinition("extgbl2", "extgbl2"),
     # Collation tests
-    RoutineDefinition("gblcol", "gblcol", skip_reason="YDB infrastructure in outref"),
-    RoutineDefinition("lclcol", "lclcol", skip_reason="YDB infrastructure in outref"),
-    RoutineDefinition(
-        "polgblcol", "gblcol", skip_reason="YDB infrastructure in outref"
-    ),
-    RoutineDefinition(
-        "pollclcol", "lclcol", skip_reason="YDB infrastructure in outref"
-    ),
+    RoutineDefinition("gblcol", "gblcol"),
+    RoutineDefinition("lclcol", "lclcol"),
+    RoutineDefinition("polgblcol", "gblcol"),
+    RoutineDefinition("pollclcol", "lclcol"),
     # Indirection tests
-    RoutineDefinition(
-        "indirection", "MINDR1", skip_reason="YDB infrastructure in outref"
-    ),
+    RoutineDefinition("indirection", "MINDR1"),
     # Miscellaneous
-    RoutineDefinition(
-        "falsedsc", "falsedsc", skip_reason="YDB infrastructure in outref"
-    ),
-    RoutineDefinition("misclv", "mergelv", skip_reason="YDB infrastructure in outref"),
-    RoutineDefinition(
-        "mrgclnup", "mrgclnup", skip_reason="YDB infrastructure in outref"
-    ),
-    RoutineDefinition(
-        "nullsubs", "nullfill", skip_reason="YDB infrastructure in outref"
-    ),
+    RoutineDefinition("falsedsc", "falsedsc"),
+    RoutineDefinition("misclv", "mergelv"),
+    RoutineDefinition("mrgclnup", "mrgclnup"),
+    RoutineDefinition("nullsubs", "nullfill"),
     # MVTS merge tests
-    RoutineDefinition(
-        "MVTS_MERGE", "V4MERGE", skip_reason="MVTS framework + YDB infrastructure"
-    ),
+    RoutineDefinition("MVTS_MERGE", "V4MERGE"),
     # Transaction processing tests
-    RoutineDefinition(
-        "tp_simple", "MRGITP", skip_reason="Transaction processing required"
-    ),
-    RoutineDefinition(
-        "tp_stress", "mrgstp", skip_reason="Transaction processing required"
-    ),
+    RoutineDefinition("tp_simple", "MRGITP"),
+    RoutineDefinition("tp_stress", "mrgstp"),
     # Unicode merge tests
-    RoutineDefinition(
-        "ugbl2gbl", "mbyexam", skip_reason="Unicode + YDB infrastructure"
-    ),
-    RoutineDefinition(
-        "ugbl2lcl", "mbyexam", skip_reason="Unicode + YDB infrastructure"
-    ),
-    RoutineDefinition(
-        "ulcl2gbl", "mbyexam", skip_reason="Unicode + YDB infrastructure"
-    ),
-    RoutineDefinition(
-        "ulcl2lcl", "mbyexam", skip_reason="Unicode + YDB infrastructure"
-    ),
+    RoutineDefinition("ugbl2gbl", "mbyexam"),
+    RoutineDefinition("ugbl2lcl", "mbyexam"),
+    RoutineDefinition("ulcl2gbl", "mbyexam"),
+    RoutineDefinition("ulcl2lcl", "mbyexam"),
     # ZSHOW tests
-    RoutineDefinition("zshowgbl", "list", skip_reason="ZSHOW + YDB infrastructure"),
-    RoutineDefinition("zshowlcl", "list", skip_reason="ZSHOW + YDB infrastructure"),
+    RoutineDefinition("zshowgbl", "list"),
+    RoutineDefinition("zshowlcl", "list"),
 ]
 
 # Individual merge routines (for direct testing if needed)

@@ -1,0 +1,242 @@
+Files Created in ##TEST_PATH##:
+Using: ##SOURCE_PATH##/mumps -run GDE
+mumps.gld
+Using: ##SOURCE_PATH##/mupip
+mumps.dat
+unsetenv gtm_chset
+unset echo
+###################################################################
+
+YDB>
+setenv gtm_chset whatever
+
+YDB>
+ZCHSET=M
+
+YDB>
+
+YDB>
+setenv gtm_chset UTF-8
+unset echo
+###################################################################
+
+YDB>
+setenv gtm_chset UTF-8
+
+YDB>
+ZCHSET=UTF-8
+
+YDB>
+
+YDB>
+setenv gtm_chset UTF-8
+unset echo
+###################################################################
+
+YDB>
+setenv gtm_chset utf-8
+
+YDB>
+ZCHSET=UTF-8
+
+YDB>
+
+YDB>
+unsetenv gtm_chset
+unset echo
+###################################################################
+
+YDB>
+setenv gtm_chset binary
+
+YDB>
+ZCHSET=M
+
+YDB>
+
+YDB>
+setenv gtm_chset M
+unset echo
+###################################################################
+
+YDB>
+setenv gtm_chset m
+
+YDB>
+ZCHSET=M
+
+YDB>
+
+YDB>
+unsetenv gtm_chset
+unset echo
+###################################################################
+
+YDB>
+setenv gtm_chset MUTF-8
+
+YDB>
+ZCHSET=M
+
+YDB>
+
+YDB>
+###################################################################
+SVNOSET error expected here
+----------
+Error SVNOSET seen in svnoset.out as expected:
+%YDB-E-SVNOSET, Cannot SET this special variable
+----------
+setenv gtm_chset UTF-8
+unset echo
+###################################################################
+Testing gtm_chset with UTF-8
+
+YDB>
+UTF-8
+
+YDB>
+Testing two byte א
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+Testing three byte ☺
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+Testing four byte 𝐀
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+Testing an invalid character 
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+setenv gtm_chset M
+unset echo
+###################################################################
+Testing gtm_chset with M
+
+YDB>
+M
+
+YDB>
+Testing two byte
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+Testing three byte
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+Testing four byte
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+Testing an invalid character 
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+unsetenv gtm_chset
+unset echo
+###################################################################
+Testing gtm_chset with binary
+
+YDB>
+M
+
+YDB>
+Testing two byte
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+Testing three byte
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+Testing four byte
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+Testing an invalid character 
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+setenv gtm_chset UTF-8
+unset echo
+Try and load a pattable that has 128 and above code in it
+----------
+Error PATTABSYNTAX seen in patcode_error.out as expected:
+%YDB-E-PATTABSYNTAX, Error in pattable at line 4
+----------
+##SOURCE_PATH##/mupip
+##SOURCE_PATH##/mupip integ -REG *
+No errors detected by integ.

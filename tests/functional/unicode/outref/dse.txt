@@ -1,0 +1,307 @@
+setenv gtm_chset UTF-8
+unset echo
+###################################################################
+#- Block layouts and block splits.
+Files Created in ##TEST_PATH##:
+Using: ##SOURCE_PATH##/mumps -run GDE
+mumps.gld
+Using: ##SOURCE_PATH##/mupip
+mumps.dat
+inserting key: a
+inserting key: b
+inserting key: e
+inserting key: f
+inserting key: g
+inserting key: h
+inserting key: y
+inserting key: z
+inserting key: 一
+inserting key: 丁
+inserting key: 丄
+inserting key: 丅
+inserting key: 丆
+inserting key: 万
+inserting key: 仿
+inserting key: 帀
+inserting key: 怀
+inserting key: 思
+inserting key: 漀
+inserting key: 炍
+inserting key: ꀀ
+inserting key: 뀀
+inserting key: 𐀀
+inserting key: 𠀀
+inserting key: 𠀁
+inserting key: 𠀅
+TEST-I-PASS, DSE dump of level 1 blocks is correct
+##SOURCE_PATH##/mupip
+##SOURCE_PATH##/mupip integ -REG *
+No errors detected by integ.
+###################################################################
+#- DSE DUMP
+Files Created in ##TEST_PATH##:
+Using: ##SOURCE_PATH##/mumps -run GDE
+mumps.gld
+Using: ##SOURCE_PATH##/mupip
+mumps.dat
+TEST-I-PASS, DSE dump behavior on ydb_chset M is correct
+TEST-I-PASS, DSE dump behavior for selected blocks/records on ydb_chset M is correct
+TEST-I-PASS, DSE dump behavior on ydb_chset UTF-8 is correct
+TEST-I-PASS, DSE dump behavior for selected blocks/records on ydb_chset UTF-8 is correct
+###################################################################
+#- DSE OPEN
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> DSE> 
+4 ZWR records written.
+
+DSE> 
+3 ZWR records written.
+
+DSE> Closing output file:  ｄｕｍｐ1.out
+DSE> # Contents of ｄｕｍｐ1.out i.e dump of blocks 22 and 6 in zwr format
+; DSE EXTRACT UTF-8
+; ZWR
+^samplegbl("能")="能"
+^samplegbl("色")="Kanji"
+^samplegbl($C(57344))=$C(57344)_", U+E000 - private use section"
+^samplegbl($C(57344,57345,57345,57346,57353))=$C(57344,57345,57345,57346,57353)
+^samplegbl("在青铜器专家的修复下")="在青铜器专家的修复下，这把断成六块，分离了12 年的青铜古剑终于合六为一，"
+^samplegbl("恢复了本来面目")="恢复了本来面目，剑上12阴刻镶嵌篆书金字铭文也完整出现在人们面前。从铭文得知，此剑是春秋末吴国君主阖闾在位时期所造，"
+^samplegbl("我")="我"
+###################################################################
+#- DSE OPEN and OCHSET
+Error expected for the below DSE dump
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> Error:  must open an output file before dump.
+DSE> DSE> 
+Error:  cannot perform GLO/ZWR dump on index block.
+DSE> 
+Error:  cannot perform GLO/ZWR dump on index block.
+DSE> Closing output file:  ｄｕｍｐ3.out
+DSE> Error:  must open an output file before dump.
+DSE> 
+##SUSPEND_OUTPUT HOST_ALL
+##ALLOW_OUTPUT HOST_LINUX_IX86 HOST_LINUX_IA64 HOST_LINUX_ARMVXL HOST_LINUX_AARCH64 HOST_LINUX_X86_64 HOST_LINUX_S390X
+TEST-I-PASS dse dump for encoding M in ZWR passed
+TEST-I-PASS dse dump for encoding UTF8 in ZWR passed
+TEST-I-PASS dse dump for encoding UTF16 in ZWR passed
+TEST-I-PASS dse dump for encoding UTF16LE in ZWR passed
+TEST-I-PASS dse dump for encoding UTF16BE in ZWR passed
+##ALLOW_OUTPUT HOST_ALL
+###################################################################
+#- DSE OVERWRITE
+^testgbl before OVERWITE
+
+YDB>
+^testgbl(1)="0ab3456789 -- ０ａｂ２３４５６７８９"
+^testgbl("four byte char1")="a󠄀a"
+^testgbl("four byte char2")="a𐄀a"
+^testgbl("three byte chars")="Ａ ＢＥＡＵＴＩＸ*Ｌ ＤＡＹ"
+^testgbl("two byte chars")="ŞİŞLİ"
+^testgbl("０１２３４５_１")="dataa -- ０１２３４５６７８９"
+^testgbl("０１２３４５_３")="datab -- ０１２３４５６７８９"
+^testgbl("０１２３４５_５")="datac -- ０１２３４５６７８９"
+
+YDB>
+changing single byte on globals ^testgbl("０１２３４５_１") , ^testgbl(1)
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> DSE> DSE> 
+changing two bytes on global ^testgbl("０１２３４５_５")
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> DSE> 
+changing a complete multi byte character ^testgbl("two byte chars")
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> DSE> DSE> DSE> DSE> 
+changing four byte character to something invalid
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> DSE> 
+Rec:3  Blk 30  Off 6B  Size D  Cmpc 17  Key ^testgbl("four byte char2")
+##TEST_AWK     ... : . .. .. .. .. 32  0  0 61 61 76 84 80 61                     .
+##TEST_AWK           .  .  .  .  .  .  .  .  a  a  v  .  .  a                     .
+
+DSE> 
+changing the whole data completely for ^testgbl("０１２３４５_３")
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> DSE> 
+^testgbl after OVERWITE
+
+YDB>
+^testgbl(1)="0ab3456789 -- ０！ｂ２３４５６７８９"
+^testgbl("four byte char1")="aŞŞa"
+^testgbl("four byte char2")="aav"_$ZCH(132,128)_"a"
+^testgbl("three byte chars")="Ａ ＢＥＡＵＴＩＦuＬ ＤＡＹ"
+^testgbl("two byte chars")="ŞAAİLİ"
+^testgbl("０１２３４５_１")="dataa -- ０２２３４５６７８９"
+^testgbl("０１２３４５_３")="ａ ｎｅｗ ｄａｔａ ｖａｌ９"
+^testgbl("０１２３４５_５")="datac -- ０１２３４ｊ６７８９"
+
+YDB>
+
+
+Integ of region DEFAULT
+
+No errors detected by integ.
+
+Type           Blocks         Records          % Used      Adjacent
+
+Directory           2               6          15.722            NA
+Index               7              42          23.158             2
+Data               40             264          63.754            23
+Free               51              NA              NA            NA
+Total             100             312              NA            25
+###################################################################
+#- DSE ADD
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> DSE> DSE> 
+
+Integ of region DEFAULT
+
+No errors detected by integ.
+
+Type           Blocks         Records          % Used      Adjacent
+
+Directory           2               6          15.722            NA
+Index               7              42          23.158             2
+Data               40             266          64.248            23
+Free               51              NA              NA            NA
+Total             100             314              NA            25
+TEST-I-PASS, DSE add key passed
+
+YDB>
+^testgbl(1)="0ab3456789 -- ０！ｂ２３４５６７８９"
+^testgbl("four byte char1")="aŞŞa"
+^testgbl("four byte char2")="aav"_$ZCH(132,128)_"a"
+^testgbl("three byte chars")="Ａ ＢＥＡＵＴＩＦuＬ ＤＡＹ"
+^testgbl("two byte chars")="ŞAAİLİ"
+^testgbl("０１２３４５_１")="dataa -- ０２２３４５６７８９"
+^testgbl("０１２３４５_３")="ａ ｎｅｗ ｄａｔａ ｖａｌ９"
+^testgbl("０１２３４５_４",$ZCH(251)_$C(12)_$ZCH(200,198))="data_444: ｄａｔａ＿４４４"_$ZCH(239,239,239)_"４"
+^testgbl("０１２３４５_４４４","４４４","ａａ")="aaa  -- ａａａ"
+^testgbl("０１２３４５_４４４","ａｂｃ")=1234567
+^testgbl("０１２３４５_５")="datac -- ０１２３４ｊ６７８９"
+
+YDB>
+
+
+Integ of region DEFAULT
+
+No errors detected by integ.
+
+Type           Blocks         Records          % Used      Adjacent
+
+Directory           2               6          15.722            NA
+Index               7              42          23.158             2
+Data               40             267          64.350            23
+Free               51              NA              NA            NA
+Total             100             315              NA            25
+###################################################################
+#- DSE FIND
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> 
+Key found in block  30.
+    Directory path
+    Path--blk:off
+	1:10,	2:6C,
+    Global tree path
+    Path--blk:off
+	31:10,	30:114,
+DSE> 
+Key found in block  30.
+    Directory path
+    Path--blk:off
+	1:10,	2:6C,
+    Global tree path
+    Path--blk:off
+	31:10,	30:142,
+DSE> 
+Key found in block  30.
+    Directory path
+    Path--blk:off
+	1:10,	2:6C,
+    Global tree path
+    Path--blk:off
+	31:10,	30:177,
+DSE> 
+Key found in block  30.
+    Directory path
+    Path--blk:off
+	1:10,	2:6C,
+    Global tree path
+    Path--blk:off
+	31:10,	30:1A7,
+DSE> 
+###################################################################
+#- DSE RANGE
+
+File  	##TEST_PATH##/mumps.dat
+Region	DEFAULT
+
+DSE> 
+Blocks in the specified key range:
+Block:  0x000000000000000A Level:  0
+Found 1 blocks
+DSE> None found.
+DSE> 
+Blocks in the specified key range:
+Block:  0x0000000000000003 Level:  0
+Block:  0x0000000000000005 Level:  0
+Block:  0x0000000000000006 Level:  0
+Block:  0x0000000000000007 Level:  0
+Block:  0x0000000000000008 Level:  0
+Block:  0x0000000000000009 Level:  0
+Block:  0x000000000000000A Level:  0
+Block:  0x000000000000000C Level:  0
+Block:  0x000000000000000D Level:  0
+Block:  0x000000000000000E Level:  0
+Block:  0x000000000000000F Level:  0
+Block:  0x0000000000000010 Level:  0
+Block:  0x0000000000000012 Level:  0
+Block:  0x0000000000000014 Level:  0
+Block:  0x0000000000000015 Level:  0
+Block:  0x0000000000000016 Level:  0
+Block:  0x000000000000001C Level:  0
+Block:  0x000000000000001D Level:  0
+Block:  0x000000000000001E Level:  0
+Block:  0x000000000000001F Level:  0
+Block:  0x0000000000000024 Level:  0
+Block:  0x0000000000000025 Level:  0
+Block:  0x000000000000002F Level:  0
+Block:  0x0000000000000030 Level:  0
+Found 24 blocks
+DSE> 
+Blocks in the specified key range:
+Block:  0x000000000000001C Level:  0
+Found 1 blocks
+DSE> None found.
+DSE> None found.
+DSE> 
+##SOURCE_PATH##/mupip
+##SOURCE_PATH##/mupip integ -REG *
+No errors detected by integ.

@@ -131,13 +131,20 @@
 
 ### Implementation for User Story 3
 
-- [ ] T029 [US3] Review tests/integration/test_external_calls.py for useful patterns to preserve
-- [ ] T030 [US3] Review tests/integration/test_indirection_edge_cases.py for useful patterns to preserve
-- [ ] T031 [US3] Delete tests/integration/test_ydb_suites.py (obsolete parsing tests)
-- [ ] T032 [US3] Delete tests/integration/test_mugj.py (obsolete ASG structure tests)
-- [ ] T033 [US3] Verify remaining tests still pass: `uv run pytest tests/integration/ -v`
+- [X] T029 [US3] Review tests/integration/test_external_calls.py for useful patterns to preserve
+- [X] T030 [US3] Review tests/integration/test_indirection_edge_cases.py for useful patterns to preserve
+- [X] T031 [US3] Delete tests/integration/test_ydb_suites.py (obsolete parsing tests)
+- [X] T032 [US3] Delete tests/integration/test_mugj.py (obsolete ASG structure tests)
+- [X] T033 [US3] Verify remaining tests still pass: `uv run pytest tests/integration/ -v`
 
-**Checkpoint**: Legacy parsing tests removed, useful integration tests preserved
+**Checkpoint**: Legacy parsing tests removed, useful integration tests preserved ✅
+
+**Results**:
+- test_external_calls.py: **KEPT** - 43 valuable integration tests for cross-routine coordination (Spec 008)
+- test_indirection_edge_cases.py: **KEPT** - 10 valuable integration tests for indirection edge cases (Spec 012)
+- test_ydb_suites.py: **DELETED** - Obsolete parsing-only tests, replaced by functional tests
+- test_mugj.py: **DELETED** - Obsolete ASG structure tests, replaced by functional tests
+- Remaining tests pass: 48 passed in 0.97s
 
 ---
 

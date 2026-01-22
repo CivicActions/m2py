@@ -1,0 +1,8 @@
+
+YDB>
+file1.txt $ZEOF:0
+Was able to read from the file:
+blah
+
+YDB>
+PASS
