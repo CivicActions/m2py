@@ -28,6 +28,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - Database abstraction layer with Memory (testing), YottaDB (production), IRIS (future) backends (013-test-consolidation)
 - N/A (codegen focus) (014-xfail-elimination)
 - Python 3.10+ + extX (parser), pytest (testing), coverage.py (015-transpilation-coverage-completion)
+- Python 3.10+ + pytest, textX (existing m2py deps) (016-functional-test-suite)
+- N/A (in-memory global storage via m2py runtime) (016-functional-test-suite)
 
 - (001-textx-semantic-graph)
 
@@ -48,9 +50,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 016-functional-test-suite: Added Python 3.10+ + pytest, textX (existing m2py deps)
 - 015-transpilation-coverage-completion: Added Python 3.10+ + extX (parser), pytest (testing), coverage.py
 - 014-xfail-elimination: Added Python 3.10+ + extX (parser), pytest (testing)
-- 013-test-consolidation: Added Python 3.10+ + extX (parser), pytest (testing), yottadb (YDB backend via YDBPython)
 
 
 <!-- MANUAL ADDITIONS START -->
