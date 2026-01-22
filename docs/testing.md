@@ -220,7 +220,45 @@ The project includes multiple MUMPS test suites from YottaDB (YDBTest) for compr
 
 **Total: 1,694 test files**
 
-### Running YDBTest Suite Tests
+### Functional Tests (End-to-End)
+
+The `tests/functional/` directory contains end-to-end tests that execute MUMPS routines via m2py transpilation and compare output against YottaDB reference files (outrefs).
+
+```bash
+# Run all functional tests
+uv run pytest tests/functional/ -v
+
+# Run specific suite
+uv run pytest tests/functional/test_mugj.py -v
+uv run pytest tests/functional/test_basic.py -v
+uv run pytest tests/functional/test_mvts.py -v
+uv run pytest tests/functional/test_merge.py -v
+
+# Run specific routine
+uv run pytest tests/functional/test_basic.py -k fact -v
+```
+
+**Test markers for filtering:**
+- `@pytest.mark.mugj` - MUGJ suite tests
+- `@pytest.mark.basic` - Basic suite tests
+- `@pytest.mark.mvts` - MVTS suite tests
+- `@pytest.mark.merge` - MERGE command tests
+- `@pytest.mark.functional` - All functional tests
+
+**Known limitation handling:**
+Tests using features with documented limitations (VIEW command, Z-commands) are marked as `xfail` with references to limitation IDs:
+
+```bash
+# View xfailed tests
+uv run pytest tests/functional/ --tb=no 2>&1 | grep xfail
+
+# Run xfailed tests to verify they fail
+uv run pytest tests/functional/ -k "view or zstep" --runxfail -v
+```
+
+### Integration Tests (Parsing Only)
+
+The `tests/integration/` directory contains parsing-focused tests:
 
 All YDB test suites are tested via `test_ydb_suites.py`. Each `.m` file is tested individually for efficient parallel execution:
 

@@ -21,6 +21,7 @@ from tests.functional.conftest import (
     FUNCTIONAL_BASE,
     ExecutionResult,
     compare_output,
+    get_routine_xfail_reason,
     load_routine_source,
     normalize_outref,
     run_mumps,
@@ -187,11 +188,16 @@ class TestBasicSuite:
         routine_name = routine_def.routine
         label = routine_def.label
 
+        # Check for known limitation (for xfail on failure)
+        xfail_reason = get_routine_xfail_reason(routine_name)
+
         # Execute via m2py
         result = execute_basic_routine(routine_name)
 
         # Check for complete failure (no output at all)
         if not result.output and not result.success:
+            if xfail_reason:
+                pytest.xfail(f"{xfail_reason} - {result.error}")
             pytest.fail(f"Routine {routine_name} failed to execute: {result.error}")
 
         # Get expected output using the label format from outref
@@ -226,6 +232,10 @@ class TestBasicSuite:
             if result.error:
                 msg += f"Execution error: {result.error}\n"
             msg += f"\nDiff:\n{comparison.diff}"
+
+            # Mark as xfail if known limitation
+            if xfail_reason:
+                pytest.xfail(f"{xfail_reason} - Output mismatch")
             pytest.fail(msg)
 
 

@@ -48,6 +48,49 @@ YDB_PATH_MARKERS = frozenset(
 
 
 # =============================================================================
+# T022: Routine → Limitation Mapping
+# =============================================================================
+
+# Map routine names to limitation IDs for xfail markers.
+# Routines are categorized by the feature they use that triggers a limitation.
+#
+# LIM-005: VIEW command - implementation-defined keywords
+# LIM-003: MWAPI SSVNs - ^$EVENT, ^$WINDOW, ^$DISPLAY (none found in test suites)
+# LIM-012: Unknown Z-extensions - Z-commands from other implementations
+# LIM-015: Zero-VistA-usage YDB Z-commands
+
+ROUTINE_LIMITATIONS: dict[str, str] = {
+    # LIM-005: VIEW command (implementation-defined keywords)
+    # basic suite
+    "view": "LIM-005",
+    "view2": "LIM-005",
+    # merge suite - these use VIEW for LVNULLSUBS
+    "nullntp": "LIM-005",
+    "nulllc": "LIM-005",
+    "nulltp": "LIM-005",
+    # LIM-015: Zero-VistA-usage YDB Z-commands
+    # basic suite - ZBREAK, ZSTEP debugging commands
+    "zbrk": "LIM-015",
+    "zstep": "LIM-015",
+    "zstep1": "LIM-015",
+    # basic suite - uses $VIEW function which is also LIM-005
+    # (already covered by view/view2 above)
+}
+
+
+def get_routine_limitation(routine_name: str) -> str | None:
+    """Get limitation ID for a routine if it uses a known limited feature.
+
+    Args:
+        routine_name: Name of the routine (without .m extension)
+
+    Returns:
+        Limitation ID (e.g., "LIM-005") or None if no known limitation
+    """
+    return ROUTINE_LIMITATIONS.get(routine_name.lower())
+
+
+# =============================================================================
 # T002: Outref Normalization
 # =============================================================================
 
@@ -482,6 +525,24 @@ def skip_limitation(limitation_id: str) -> pytest.MarkDecorator:
     """
     reason = get_limitation_reason(limitation_id)
     return pytest.mark.skip(reason=reason)
+
+
+def get_routine_xfail_reason(routine_name: str) -> str | None:
+    """Get xfail reason for a routine if it uses a known limited feature.
+
+    Looks up the routine in ROUTINE_LIMITATIONS mapping and returns the
+    formatted reason string from limitations.py.
+
+    Args:
+        routine_name: Name of the routine (without .m extension)
+
+    Returns:
+        Formatted xfail reason or None if no known limitation
+    """
+    limitation_id = get_routine_limitation(routine_name)
+    if limitation_id:
+        return get_limitation_reason(limitation_id)
+    return None
 
 
 # =============================================================================

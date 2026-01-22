@@ -72,13 +72,20 @@
 - [X] T020 [US2] Update tests/functional/suite_definitions.py with static routine definitions
 - [X] T021 [US2] Verify suite isolation: `uv run pytest tests/functional/ -k basic -v`
 
-**Checkpoint**: Individual suites can run independently via pytest selection
+**Checkpoint**: Individual suites can run independently via pytest selection ✅
+
+**Results**:
+- Total: 489 tests collected across all functional test suites
+- MUGJ: 72 routines (10 pass, 62 fail due to unsupported features)
+- BASIC: 57 routines (all transpile, varying pass/fail on output comparison)
+- MVTS: 135 sub-drivers (all transpile - VV1-VV4 sequences)
+- MERGE: 25 subtests + 19 routines (all transpile)
 
 **Notes**:
-- mvts: Complex framework (VV1-VSR sequence with ZCONTINUE) - infrastructure tests only
-- merge: 25 sub-tests with separate outrefs - infrastructure tests only  
+- MVTS framework (V1PRESET, VEXAMINE, VENVIRON) is pure MUMPS and fully transpilable
+- Merge outrefs contain YDB infrastructure markers but actual test output can be extracted
 - Created suite_definitions.py with RoutineDefinition NamedTuple and static routine lists
-- MUGJ_ROUTINES (72), BASIC_ROUTINES (57) moved from runtime parsing to static definitions
+- All suites use static Python definitions rather than runtime driver parsing
 
 ---
 
@@ -90,15 +97,29 @@
 
 ### Implementation for User Story 4
 
-- [ ] T022 [US4] Create limitation mapping dict in tests/functional/conftest.py (routine → limitation ID)
-- [ ] T023 [US4] Implement xfail decorator factory using limitations.py data
-- [ ] T024 [US4] Apply xfail markers to routines using VIEW keywords (LIM-005)
-- [ ] T025 [US4] Apply xfail markers to routines using MWAPI SSVNs (LIM-003)
-- [ ] T026 [US4] Apply xfail markers to routines using unknown Z-extensions (LIM-012)
-- [ ] T027 [US4] Apply xfail markers to routines using YDB-specific Z-commands (LIM-015)
-- [ ] T028 [US4] Verify xfail reporting: `uv run pytest tests/functional/ --runxfail -v`
+- [X] T022 [US4] Create limitation mapping dict in tests/functional/conftest.py (routine → limitation ID)
+- [X] T023 [US4] Implement xfail decorator factory using limitations.py data
+- [X] T024 [US4] Apply xfail markers to routines using VIEW keywords (LIM-005)
+- [X] T025 [US4] Apply xfail markers to routines using MWAPI SSVNs (LIM-003)
+- [X] T026 [US4] Apply xfail markers to routines using unknown Z-extensions (LIM-012)
+- [X] T027 [US4] Apply xfail markers to routines using YDB-specific Z-commands (LIM-015)
+- [X] T028 [US4] Verify xfail reporting: `uv run pytest tests/functional/ --runxfail -v`
 
-**Checkpoint**: Known limitations show as xfail with clear reason referencing limitation ID
+**Checkpoint**: Known limitations show as xfail with clear reason referencing limitation ID ✅
+
+**Results**:
+- 5 routines marked as xfail:
+  - LIM-005 (VIEW): view, view2
+  - LIM-015 (Z-commands): zbrk, zstep, zstep1
+- No MWAPI SSVN usage (LIM-003) found in test suites
+- No unknown Z-extensions (LIM-012) found in test suites
+- Test summary: 334 passed, 149 failed, 5 xfailed, 1 skipped
+
+**Notes**:
+- ROUTINE_LIMITATIONS dict in conftest.py maps routine names to limitation IDs
+- get_routine_xfail_reason() looks up limitation details from limitations.py
+- Tests call pytest.xfail() dynamically when failure matches a known limitation
+- Merge subtests are more complex (multiple routines per test) so some VIEW-using routines not exercised individually
 
 ---
 
