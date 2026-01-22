@@ -14,8 +14,8 @@ These generate invalid Python and must be fixed.
 
 ## Priority 2: TypeError/ValueError (Likely Codegen Bugs) - 2 routines
 
-- [ ] **new** - `TypeError: unhashable type: 'MIndirection'`
-- [ ] **VV2LHP1** - `ValueError: LHS $PIECE requires at least 3 arguments, got 2`
+- [X] **new** - `TypeError: unhashable type: 'MIndirection'` - **FIXED** (handle MIndirection in exclusive NEW except_list)
+- [X] **VV2LHP1** - `ValueError: LHS $PIECE requires at least 3 arguments, got 2` - **FIXED** (default piece_from to 1), now fails on NakedGlobal (functional gap)
 
 ## Priority 3: UnsupportedFeatureError - 2 routines
 
