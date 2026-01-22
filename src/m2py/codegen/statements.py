@@ -941,9 +941,10 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     func = assignment.target
     args = func.arguments
 
-    # $PIECE(var, delimiter, piece_from [, piece_to])
-    if len(args) < 3:
-        raise ValueError(f"LHS $PIECE requires at least 3 arguments, got {len(args)}")
+    # $PIECE(var, delimiter [, piece_from [, piece_to]])
+    # Per MUMPS standard, piece_from defaults to 1 if not specified
+    if len(args) < 2:
+        raise ValueError(f"LHS $PIECE requires at least 2 arguments, got {len(args)}")
 
     # First argument must be a variable (local or global)
     first_arg = args[0]
@@ -987,8 +988,11 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     # Generate delimiter expression
     delimiter_expr = generate_expr(args[1], ctx)
 
-    # Generate piece_from expression
-    piece_from_expr = generate_expr(args[2], ctx)
+    # Generate piece_from expression (defaults to 1 per MUMPS standard)
+    if len(args) >= 3:
+        piece_from_expr = generate_expr(args[2], ctx)
+    else:
+        piece_from_expr = "1"
 
     # Generate piece_to expression (optional, 4th argument)
     if len(args) >= 4:
