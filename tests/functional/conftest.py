@@ -8,10 +8,12 @@ Key Fixtures:
 - parse_driver: Extract routine execution sequence from test driver scripts
 - run_mumps: Execute MUMPS source via m2py and capture output
 - compare_output: Byte-for-byte comparison with clear diff reporting
+- xfail_limitation: Mark tests as expected failures with limitation IDs
 """
 
 from __future__ import annotations
 
+import difflib
 import multiprocessing
 import queue
 import re
@@ -28,6 +30,9 @@ if TYPE_CHECKING:
 # =============================================================================
 
 FUNCTIONAL_BASE = Path(__file__).parent
+
+# Default timeout for MUMPS execution (seconds)
+DEFAULT_TIMEOUT = 30
 
 # YDB infrastructure markers to strip from outref content
 YDB_PATH_MARKERS = frozenset(
@@ -243,6 +248,229 @@ def run_mumps(source: str, timeout: int = 30) -> ExecutionResult:
 
 
 # =============================================================================
+# T005: Base Test Class/Fixtures for Parametrized Suite Execution
+# =============================================================================
+
+
+class SuiteConfig(NamedTuple):
+    """Configuration for a test suite."""
+
+    name: str  # Suite name (e.g., "mugj", "basic")
+    inref_dir: Path  # Directory containing .m source files
+    outref_path: Path  # Path to reference output file
+    driver_path: Path | None  # Path to driver script (.csh), if any
+
+
+def load_suite_config(suite_name: str) -> SuiteConfig:
+    """Load configuration for a test suite.
+
+    Args:
+        suite_name: Name of the suite (e.g., "mugj", "basic")
+
+    Returns:
+        SuiteConfig with paths resolved
+
+    Raises:
+        FileNotFoundError: If required directories/files don't exist
+    """
+    suite_dir = FUNCTIONAL_BASE / suite_name
+    if not suite_dir.exists():
+        msg = f"Suite directory not found: {suite_dir}"
+        raise FileNotFoundError(msg)
+
+    inref_dir = suite_dir / "inref"
+    if not inref_dir.exists():
+        msg = f"Suite inref directory not found: {inref_dir}"
+        raise FileNotFoundError(msg)
+
+    # Outref can be suite_name.txt or in outref/ subdirectory
+    outref_path = suite_dir / "outref" / f"{suite_name}.txt"
+    if not outref_path.exists():
+        outref_path = suite_dir / f"{suite_name}.txt"
+
+    # Driver script is optional
+    driver_path = suite_dir / "u_inref" / f"{suite_name}.csh"
+    if not driver_path.exists():
+        driver_path = None
+
+    return SuiteConfig(
+        name=suite_name,
+        inref_dir=inref_dir,
+        outref_path=outref_path,
+        driver_path=driver_path,
+    )
+
+
+def load_routine_source(inref_dir: Path, routine_name: str) -> str:
+    """Load MUMPS source for a routine.
+
+    Args:
+        inref_dir: Directory containing .m files
+        routine_name: Routine name (without .m extension)
+
+    Returns:
+        MUMPS source code
+
+    Raises:
+        FileNotFoundError: If routine file doesn't exist
+    """
+    routine_path = inref_dir / f"{routine_name}.m"
+    if not routine_path.exists():
+        # Try lowercase
+        routine_path = inref_dir / f"{routine_name.lower()}.m"
+    if not routine_path.exists():
+        msg = f"Routine not found: {routine_name} in {inref_dir}"
+        raise FileNotFoundError(msg)
+    return routine_path.read_text()
+
+
+# =============================================================================
+# T006: Output Comparison with Clear Diff Reporting
+# =============================================================================
+
+
+class ComparisonResult(NamedTuple):
+    """Result of comparing actual vs expected output."""
+
+    match: bool
+    diff: str | None  # Unified diff if mismatch, None if match
+    actual_lines: int
+    expected_lines: int
+
+
+def compare_output(actual: str, expected: str) -> ComparisonResult:
+    """Compare actual output against expected with clear diff reporting.
+
+    Uses unified diff format for easy reading. Normalizes line endings
+    before comparison.
+
+    Args:
+        actual: Actual output from m2py execution
+        expected: Expected output (typically from normalized outref)
+
+    Returns:
+        ComparisonResult with match status and diff if mismatched
+    """
+    # Normalize line endings and trailing whitespace
+    actual_lines = [line.rstrip() for line in actual.splitlines()]
+    expected_lines = [line.rstrip() for line in expected.splitlines()]
+
+    if actual_lines == expected_lines:
+        return ComparisonResult(
+            match=True,
+            diff=None,
+            actual_lines=len(actual_lines),
+            expected_lines=len(expected_lines),
+        )
+
+    # Generate unified diff
+    diff = difflib.unified_diff(
+        expected_lines,
+        actual_lines,
+        fromfile="expected (outref)",
+        tofile="actual (m2py)",
+        lineterm="",
+    )
+    diff_text = "\n".join(diff)
+
+    return ComparisonResult(
+        match=False,
+        diff=diff_text,
+        actual_lines=len(actual_lines),
+        expected_lines=len(expected_lines),
+    )
+
+
+# =============================================================================
+# T007: Timeout Handling (Enhanced)
+# =============================================================================
+
+# Timeout handling is built into run_mumps() via the timeout parameter.
+# DEFAULT_TIMEOUT constant defined at module level (30 seconds).
+# Additional utilities for test-level timeout control:
+
+
+def run_mumps_with_timeout(
+    source: str,
+    timeout: int | None = None,
+) -> ExecutionResult:
+    """Execute MUMPS with explicit timeout.
+
+    Convenience wrapper that uses DEFAULT_TIMEOUT if not specified.
+
+    Args:
+        source: MUMPS source code
+        timeout: Timeout in seconds (None = use DEFAULT_TIMEOUT)
+
+    Returns:
+        ExecutionResult with output and status
+    """
+    if timeout is None:
+        timeout = DEFAULT_TIMEOUT
+    return run_mumps(source, timeout=timeout)
+
+
+# =============================================================================
+# T008: Xfail Helper Referencing limitations.py IDs
+# =============================================================================
+
+
+def get_limitation_reason(limitation_id: str) -> str:
+    """Get xfail reason string from a limitation ID.
+
+    Imports limitations.py to get the canonical limitation description.
+
+    Args:
+        limitation_id: Limitation ID (e.g., "LIM-003")
+
+    Returns:
+        Formatted reason string for pytest.xfail
+    """
+    from m2py.limitations import LIMITATIONS
+
+    if limitation_id in LIMITATIONS:
+        lim = LIMITATIONS[limitation_id]
+        return f"{limitation_id}: {lim.short_description}"
+    return f"{limitation_id}: Unknown limitation"
+
+
+def xfail_limitation(
+    limitation_id: str, *, strict: bool = False
+) -> pytest.MarkDecorator:
+    """Create an xfail marker for a known limitation.
+
+    Usage:
+        @xfail_limitation("LIM-003")
+        def test_mwapi_ssvn():
+            ...
+
+    Args:
+        limitation_id: Limitation ID from limitations.py (e.g., "LIM-003")
+        strict: If True, unexpected passes will fail the test
+
+    Returns:
+        pytest.mark.xfail decorator with reason from limitations.py
+    """
+    reason = get_limitation_reason(limitation_id)
+    return pytest.mark.xfail(reason=reason, strict=strict)
+
+
+def skip_limitation(limitation_id: str) -> pytest.MarkDecorator:
+    """Create a skip marker for a known limitation.
+
+    Use when the test cannot run at all (vs xfail for tests that run but fail).
+
+    Args:
+        limitation_id: Limitation ID from limitations.py (e.g., "LIM-003")
+
+    Returns:
+        pytest.mark.skip decorator with reason from limitations.py
+    """
+    reason = get_limitation_reason(limitation_id)
+    return pytest.mark.skip(reason=reason)
+
+
+# =============================================================================
 # Pytest Fixtures
 # =============================================================================
 
@@ -263,3 +491,21 @@ def driver_parser() -> Callable[[str], list[RoutineCall]]:
 def mumps_runner() -> Callable[[str, int], ExecutionResult]:
     """Fixture providing MUMPS execution function."""
     return run_mumps
+
+
+@pytest.fixture
+def output_comparator() -> Callable[[str, str], ComparisonResult]:
+    """Fixture providing output comparison function."""
+    return compare_output
+
+
+@pytest.fixture
+def suite_loader() -> Callable[[str], SuiteConfig]:
+    """Fixture providing suite configuration loader."""
+    return load_suite_config
+
+
+@pytest.fixture
+def routine_loader() -> Callable[[Path, str], str]:
+    """Fixture providing routine source loader."""
+    return load_routine_source

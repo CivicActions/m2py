@@ -28,10 +28,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Create base test class/fixtures for parametrized suite execution in tests/functional/conftest.py
-- [ ] T006 Implement output comparison with clear diff reporting in tests/functional/conftest.py
-- [ ] T007 Add timeout handling for runaway tests (default 30s) in tests/functional/conftest.py
-- [ ] T008 Create xfail helper that references limitations.py IDs in tests/functional/conftest.py
+- [X] T005 Create base test class/fixtures for parametrized suite execution in tests/functional/conftest.py
+- [X] T006 Implement output comparison with clear diff reporting in tests/functional/conftest.py
+- [X] T007 Add timeout handling for runaway tests (default 30s) in tests/functional/conftest.py
+- [X] T008 Create xfail helper that references limitations.py IDs in tests/functional/conftest.py
 
 **Checkpoint**: Foundation ready - test suite implementation can begin
 

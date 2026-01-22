@@ -1,11 +1,21 @@
-"""Test Phase 1 implementations."""
+"""Test functional test infrastructure implementations."""
+
+import pytest
 
 from tests.functional.conftest import (
     ExecutionResult,
     RoutineCall,
+    SuiteConfig,
+    compare_output,
+    get_limitation_reason,
+    load_routine_source,
+    load_suite_config,
     normalize_outref,
     parse_driver,
     run_mumps,
+    run_mumps_with_timeout,
+    xfail_limitation,
+    skip_limitation,
 )
 
 
@@ -149,3 +159,132 @@ class TestRunMumps:
         assert hasattr(result, "output")
         assert hasattr(result, "success")
         assert hasattr(result, "error")
+
+
+# =============================================================================
+# Phase 2 Tests
+# =============================================================================
+
+
+class TestSuiteConfig:
+    """Test suite configuration loading (T005)."""
+
+    def test_load_suite_config_returns_config(self):
+        """Should return SuiteConfig for valid suite."""
+        # mugj is a known suite in the tests/functional directory
+        config = load_suite_config("mugj")
+        assert isinstance(config, SuiteConfig)
+        assert config.name == "mugj"
+        assert config.inref_dir.exists()
+
+    def test_load_suite_config_invalid_suite(self):
+        """Should raise FileNotFoundError for invalid suite."""
+        with pytest.raises(FileNotFoundError, match="Suite directory not found"):
+            load_suite_config("nonexistent_suite_xyz")
+
+    def test_load_routine_source_loads_file(self):
+        """Should load .m file content."""
+        config = load_suite_config("mugj")
+        # V1WR should exist in mugj suite
+        source = load_routine_source(config.inref_dir, "V1WR")
+        assert len(source) > 0
+        assert "V1WR" in source or "v1wr" in source.lower()
+
+    def test_load_routine_source_not_found(self):
+        """Should raise FileNotFoundError for missing routine."""
+        config = load_suite_config("mugj")
+        with pytest.raises(FileNotFoundError, match="Routine not found"):
+            load_routine_source(config.inref_dir, "NONEXISTENT_ROUTINE_XYZ")
+
+
+class TestCompareOutput:
+    """Test output comparison (T006)."""
+
+    def test_matching_output(self):
+        """Identical output should match."""
+        actual = "Line 1\nLine 2\nLine 3"
+        expected = "Line 1\nLine 2\nLine 3"
+        result = compare_output(actual, expected)
+        assert result.match is True
+        assert result.diff is None
+        assert result.actual_lines == 3
+        assert result.expected_lines == 3
+
+    def test_mismatched_output(self):
+        """Different output should not match and provide diff."""
+        actual = "Line 1\nLine 2 modified\nLine 3"
+        expected = "Line 1\nLine 2\nLine 3"
+        result = compare_output(actual, expected)
+        assert result.match is False
+        assert result.diff is not None
+        assert "Line 2" in result.diff
+        assert "-Line 2" in result.diff  # Expected line removed
+        assert "+Line 2 modified" in result.diff  # Actual line added
+
+    def test_trailing_whitespace_ignored(self):
+        """Trailing whitespace should be ignored."""
+        actual = "Line 1  \nLine 2\t\nLine 3"
+        expected = "Line 1\nLine 2\nLine 3"
+        result = compare_output(actual, expected)
+        assert result.match is True
+
+    def test_different_line_counts(self):
+        """Reports correct line counts for different lengths."""
+        actual = "Line 1\nLine 2"
+        expected = "Line 1\nLine 2\nLine 3\nLine 4"
+        result = compare_output(actual, expected)
+        assert result.match is False
+        assert result.actual_lines == 2
+        assert result.expected_lines == 4
+
+
+class TestTimeoutHandling:
+    """Test timeout handling (T007)."""
+
+    def test_run_mumps_with_timeout_uses_default(self):
+        """Should use DEFAULT_TIMEOUT when not specified."""
+        source = """TEST
+ W "Quick",!
+ Q
+"""
+        # Just verify it runs without timeout error
+        result = run_mumps_with_timeout(source)
+        assert result.success
+        assert "Quick" in result.output
+
+    def test_run_mumps_with_explicit_timeout(self):
+        """Should use explicit timeout when specified."""
+        source = """TEST
+ W "Quick",!
+ Q
+"""
+        result = run_mumps_with_timeout(source, timeout=10)
+        assert result.success
+
+
+class TestXfailHelper:
+    """Test xfail/skip helpers (T008)."""
+
+    def test_get_limitation_reason_known_id(self):
+        """Should return formatted reason for known limitation."""
+        reason = get_limitation_reason("LIM-003")
+        assert "LIM-003" in reason
+        # Should include the short description from limitations.py
+        assert len(reason) > len("LIM-003: ")
+
+    def test_get_limitation_reason_unknown_id(self):
+        """Should return fallback for unknown limitation."""
+        reason = get_limitation_reason("LIM-999")
+        assert "LIM-999" in reason
+        assert "Unknown limitation" in reason
+
+    def test_xfail_limitation_returns_marker(self):
+        """Should return a pytest mark decorator."""
+        marker = xfail_limitation("LIM-003")
+        # Verify it's a mark decorator
+        assert hasattr(marker, "mark")
+
+    def test_skip_limitation_returns_marker(self):
+        """Should return a pytest skip marker."""
+        marker = skip_limitation("LIM-003")
+        assert hasattr(marker, "mark")
