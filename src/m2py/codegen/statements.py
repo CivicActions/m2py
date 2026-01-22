@@ -2244,7 +2244,12 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
         target: The MCall target with routine field set
         ctx: Generator context
     """
-    routine_name = target.routine
+    # Translate routine name to valid Python module name (%FOO → _pct_FOO)
+    # Note: target.routine is guaranteed non-None by caller (checked before calling this function)
+    assert target.routine is not None, (
+        "_generate_external_goto requires target.routine to be set"
+    )
+    routine_name = translate_name(target.routine)
 
     # Generate import statement for external routine
     ctx.emitter.line(f"import {routine_name}")
@@ -2376,7 +2381,10 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
 
     # Spec 008 (T018-T029): Handle external routine reference D ^ROUTINE
     if target.routine:
-        routine_name = target.routine
+        # Translate routine name to valid Python module name (%FOO → _pct_FOO)
+        # Note: target.routine is guaranteed non-None by the if check above
+        assert target.routine is not None  # Help type checker
+        routine_name = translate_name(target.routine)
 
         # Generate import statement
         ctx.emitter.line(f"import {routine_name}")
