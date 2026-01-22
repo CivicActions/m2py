@@ -2873,14 +2873,22 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
             target_name_expr = _generate_inner_name_expr(var.expression, ctx)
 
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                if ctx.new_scope_manager_var:
-                    # Use NewScopeManager for proper save/restore semantics
-                    ctx.emitter.line(
-                        f"{ctx.new_scope_manager_var}.new_var({target_name_expr})"
-                    )
-                else:
-                    # Fallback: simple pop by resolved name
-                    ctx.emitter.line(f"_scope.pop({target_name_expr}, None)")
+                # NEW indirection can contain comma-separated variable lists
+                # For example: S A="X,Y" N @A should NEW both X and Y
+                # We need to split the resolved string at runtime
+                ctx.emitter.line(f"_ind_var_list = str({target_name_expr}).split(',')")
+                ctx.emitter.line("for _ind_var in _ind_var_list:")
+                with ctx.emitter.indented():
+                    # Strip whitespace from each variable name
+                    ctx.emitter.line("_ind_var = _ind_var.strip()")
+                    if ctx.new_scope_manager_var:
+                        # Use NewScopeManager for proper save/restore semantics
+                        ctx.emitter.line(
+                            f"{ctx.new_scope_manager_var}.new_var(_ind_var)"
+                        )
+                    else:
+                        # Fallback: simple pop by resolved name
+                        ctx.emitter.line("_scope.pop(_ind_var, None)")
             else:
                 raise NotImplementedError(
                     "NEW indirection not supported in TRAMPOLINE strategy"

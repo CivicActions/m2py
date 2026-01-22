@@ -122,14 +122,11 @@ class TestNewCommandCodegen:
         result = execute_mumps('TEST\n S LIST="X",X=1 N @LIST W $D(X),!\n Q\n')
         assert result.output == "0\n"
 
-    @pytest.mark.xfail(
-        reason="NEW indirection doesn't expand comma-separated variable lists yet"
-    )
     def test_new_with_indirection_multiple_variables(self, execute_mumps):
         """NEW with indirection for multiple comma-separated variables (§8.2.14).
 
-        S LIST="X,Y" N @LIST should expand to N X,Y making both undefined.
-        Current limitation: indirection treated as single variable name.
+        S LIST="X,Y" N @LIST expands to N X,Y making both undefined.
+        The indirected string is parsed at runtime and split on commas.
         """
         result = execute_mumps(
             'TEST\n S LIST="X,Y",X=1,Y=2 N @LIST W $D(X),$D(Y),!\n Q\n'
@@ -156,14 +153,11 @@ class TestNewCommandCodegen:
         )
         assert result.output == "12z\n"
 
-    @pytest.mark.xfail(
-        reason="NEW indirection doesn't expand comma-separated variable lists yet"
-    )
     def test_new_mixed_direct_and_indirection(self, execute_mumps):
         """NEW with mix of direct and indirected variables (§8.2.14).
 
-        N X,@LIST where LIST="Y,Z" should expand to N X,Y,Z.
-        Current limitation: indirection treated as single variable name.
+        N X,@LIST where LIST="Y,Z" expands to N X,Y,Z.
+        The indirected string is parsed and expanded at runtime.
         """
         result = execute_mumps(
             'TEST\n S LIST="Y,Z",X=1,Y=2,Z=3 N X,@LIST W $D(X),$D(Y),$D(Z),!\n Q\n'
