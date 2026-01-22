@@ -45,15 +45,15 @@
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Create mugj test runner in tests/functional/test_mugj.py
-- [ ] T010 [US1] Parse mugj.csh driver to extract routine execution order
-- [ ] T011 [US1] Implement parametrized tests for each mugj routine
-- [ ] T012 [US1] Load and normalize mugj outref content
-- [ ] T013 [US1] Execute routines in driver order, concatenating output
-- [ ] T014 [US1] Compare m2py output against normalized outref with diff on failure
-- [ ] T015 [US1] Verify end-to-end execution: `uv run pytest tests/functional/test_mugj.py -v`
+- [X] T009 [US1] Create mugj test runner in tests/functional/test_mugj.py
+- [X] T010 [US1] Parse mugj.csh driver to extract routine execution order
+- [X] T011 [US1] Implement parametrized tests for each mugj routine
+- [X] T012 [US1] Load and normalize mugj outref content
+- [X] T013 [US1] Execute routines in driver order, concatenating output
+- [X] T014 [US1] Compare m2py output against normalized outref with diff on failure
+- [X] T015 [US1] Verify end-to-end execution: `uv run pytest tests/functional/test_mugj.py -v`
 
-**Checkpoint**: mugj suite runs with clear pass/fail/xfail results
+**Checkpoint**: mugj suite runs with clear pass/fail/xfail results (10 pass, 65 fail)
 
 ---
 

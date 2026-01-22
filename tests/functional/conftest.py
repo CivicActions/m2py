@@ -338,7 +338,9 @@ class ComparisonResult(NamedTuple):
     expected_lines: int
 
 
-def compare_output(actual: str, expected: str) -> ComparisonResult:
+def compare_output(
+    actual: str, expected: str, *, strip_blank_lines: bool = True
+) -> ComparisonResult:
     """Compare actual output against expected with clear diff reporting.
 
     Uses unified diff format for easy reading. Normalizes line endings
@@ -347,6 +349,7 @@ def compare_output(actual: str, expected: str) -> ComparisonResult:
     Args:
         actual: Actual output from m2py execution
         expected: Expected output (typically from normalized outref)
+        strip_blank_lines: If True, strip leading/trailing blank lines
 
     Returns:
         ComparisonResult with match status and diff if mismatched
@@ -354,6 +357,17 @@ def compare_output(actual: str, expected: str) -> ComparisonResult:
     # Normalize line endings and trailing whitespace
     actual_lines = [line.rstrip() for line in actual.splitlines()]
     expected_lines = [line.rstrip() for line in expected.splitlines()]
+
+    # Strip leading/trailing blank lines if requested
+    if strip_blank_lines:
+        while actual_lines and not actual_lines[0]:
+            actual_lines.pop(0)
+        while actual_lines and not actual_lines[-1]:
+            actual_lines.pop()
+        while expected_lines and not expected_lines[0]:
+            expected_lines.pop(0)
+        while expected_lines and not expected_lines[-1]:
+            expected_lines.pop()
 
     if actual_lines == expected_lines:
         return ComparisonResult(
