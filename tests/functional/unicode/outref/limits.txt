@@ -1,0 +1,89 @@
+%GDE-I-GDUSEDEFS, Using defaults for Global Directory 
+	##TEST_PATH##/mumps.gld
+%GDE-I-EXECOM, Executing command file ##TEST_PATH##/dbcreate.gde
+%GDE-I-VERIFY, Verification OK
+
+%GDE-I-GDCREATE, Creating Global Directory file 
+	##TEST_PATH##/mumps.gld
+%YDB-I-DBFILECREATED, Database file ##TEST_PATH##/mumps.dat created
+##SUSPEND_OUTPUT MUTEX_TYPE_RANDOM MUTEX_TYPE_DEFAULT
+# Running [mupip set -mutex_type=$ydb_test_mutex_type -region "*"]
+##ALLOW_OUTPUT MUTEX_TYPE_RANDOM MUTEX_TYPE_DEFAULT
+##SUSPEND_OUTPUT MUTEX_TYPE_RANDOM MUTEX_TYPE_DEFAULT MUTEX_TYPE_YDB MUTEX_TYPE_PTHREAD
+Database file ##TEST_PATH##/mumps.dat now has mutex type set to ADAPTIVE
+##ALLOW_OUTPUT MUTEX_TYPE_RANDOM MUTEX_TYPE_DEFAULT MUTEX_TYPE_YDB MUTEX_TYPE_PTHREAD
+##SUSPEND_OUTPUT MUTEX_TYPE_RANDOM MUTEX_TYPE_DEFAULT MUTEX_TYPE_YDB MUTEX_TYPE_ADAPTIVE
+Database file ##TEST_PATH##/mumps.dat now has mutex type set to PTHREAD
+##ALLOW_OUTPUT MUTEX_TYPE_RANDOM MUTEX_TYPE_DEFAULT MUTEX_TYPE_YDB MUTEX_TYPE_ADAPTIVE
+##SUSPEND_OUTPUT MUTEX_TYPE_RANDOM MUTEX_TYPE_DEFAULT MUTEX_TYPE_ADAPTIVE MUTEX_TYPE_PTHREAD
+Database file ##TEST_PATH##/mumps.dat now has mutex type set to YDB
+##ALLOW_OUTPUT MUTEX_TYPE_RANDOM MUTEX_TYPE_DEFAULT MUTEX_TYPE_ADAPTIVE MUTEX_TYPE_PTHREAD
+###################################################################
+---- Expected Error on ¨ exceeding 1MB at I = 24577 ----
+---- Expected Error on 夁 exceeding 1MB at I = 12289 ----
+---- Expected Error on 𝔹 exceeding 1MB at I = 8193 ----
+###################################################################
+----------
+Error YDB-W-LSINSERTED seen in str2byteerror.out as expected:
+%YDB-W-LSINSERTED, Line 2, source module ##TEST_PATH##/str2byteerror.m exceeds maximum source line length; line seperator inserted, terminating scope of any prior IF, ELSE, or FOR
+----------
+----------
+Error YDB-E-LSEXPECTED seen in str2byteerror.out as expected:
+%YDB-E-LSEXPECTED, A line separator is expected here
+----------
+----------
+Error YDB-E-EXPR seen in str2byteerror.out as expected:
+%YDB-E-EXPR, Expression expected but not found
+%YDB-E-EXPR, Expression expected but not found
+----------
+----------
+Error YDB-W-LSINSERTED seen in str3byteerror.out as expected:
+%YDB-W-LSINSERTED, Line 2, source module ##TEST_PATH##/str3byteerror.m exceeds maximum source line length; line seperator inserted, terminating scope of any prior IF, ELSE, or FOR
+----------
+----------
+Error YDB-E-LSEXPECTED seen in str3byteerror.out as expected:
+%YDB-E-LSEXPECTED, A line separator is expected here
+----------
+----------
+Error YDB-E-EXPR seen in str3byteerror.out as expected:
+%YDB-E-EXPR, Expression expected but not found
+%YDB-E-EXPR, Expression expected but not found
+----------
+----------
+Error YDB-W-LSINSERTED seen in str4byteerror.out as expected:
+%YDB-W-LSINSERTED, Line 2, source module ##TEST_PATH##/str4byteerror.m exceeds maximum source line length; line seperator inserted, terminating scope of any prior IF, ELSE, or FOR
+----------
+----------
+Error YDB-E-LSEXPECTED seen in str4byteerror.out as expected:
+%YDB-E-LSEXPECTED, A line separator is expected here
+----------
+----------
+Error YDB-E-EXPR seen in str4byteerror.out as expected:
+%YDB-E-EXPR, Expression expected but not found
+%YDB-E-EXPR, Expression expected but not found
+----------
+----------
+Error YDB-W-LSINSERTED seen in strunicode1error.out as expected:
+%YDB-W-LSINSERTED, Line 2, source module ##TEST_PATH##/strunicode1error.m exceeds maximum source line length; line seperator inserted, terminating scope of any prior IF, ELSE, or FOR
+----------
+----------
+Error YDB-E-LSEXPECTED seen in strunicode1error.out as expected:
+%YDB-E-LSEXPECTED, A line separator is expected here
+----------
+----------
+Error YDB-E-EXPR seen in strunicode1error.out as expected:
+%YDB-E-EXPR, Expression expected but not found
+%YDB-E-EXPR, Expression expected but not found
+----------
+----------
+Error YDB-E-REC2BIG seen in rec_error.out as expected:
+%YDB-E-REC2BIG, Record size (32768) is greater than maximum (32767) for region: DEFAULT
+----------
+----------
+Error YDB-E-GVSUBOFLOW seen in key_error.out as expected:
+%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded
+%YDB-E-GVSUBOFLOW, Maximum combined length of subscripts exceeded
+----------
+##SOURCE_PATH##/mupip
+##SOURCE_PATH##/mupip integ -REG *
+No errors detected by integ.

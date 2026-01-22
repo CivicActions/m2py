@@ -232,6 +232,14 @@ def m_set_extract(
     if to_pos is None:
         to_pos = from_pos
 
+    # Per YDB behavior: if from_pos <= 0 AND to_pos <= 0, no modification
+    # If from_pos <= 0 but to_pos > 0, treat from_pos as 1
+    if from_pos <= 0:
+        if to_pos <= 0:
+            return  # No-op: both positions are non-positive
+        else:
+            from_pos = 1  # Treat negative/zero start as 1 when end is positive
+
     # Per YDB behavior: if from_pos > to_pos, no modification occurs
     if from_pos > to_pos:
         return

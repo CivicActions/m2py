@@ -1,0 +1,121 @@
+setenv gtm_chset UTF-8
+unset echo
+%GDE-I-GDUSEDEFS, Using defaults for Global Directory 
+	##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/ＡＢＣＤ.ＥＦＧ
+
+GDE> 
+GDE> 
+%GDE-I-VERIFY, Verification OK
+
+%GDE-I-GDCREATE, Creating Global Directory file 
+	##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/ＡＢＣＤ.ＥＦＧ
+%YDB-I-DBFILECREATED, Database file ##TEST_PATH##/αβγδε能吞/ＡＢＣＤ.db created
+##TEST_PATH##/αβγδε能吞/getunitemplate.m
+##TEST_PATH##/αβγδε能吞/udbfill.m
+##TEST_PATH##/αβγδε能吞/unicodedir.m
+
+YDB>
+zcompile "udbfill.m"
+
+YDB>
+%YDB-E-FILENOTFND, File ##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/udbfill.m not found
+
+YDB>
+$zcstatus = -150372730
+
+YDB>
+zlink "udbfill.m"
+YDB>
+
+YDB>
+zcompile "$msrc_dir/udbfill.m"
+YDB>
+
+YDB>
+$zcstatus = 1
+
+YDB>
+zlink "$msrc_dir/udbfill.m"
+YDB>
+
+YDB>
+
+YDB>
+do in1^udbfill("set")
+
+YDB>
+set PASS
+
+YDB>
+do in1^udbfill("ver")
+
+YDB>
+ver PASS
+
+YDB>
+##FILTERED##GTM_TEST_DEBUGINFO.*
+getunitemplate.o
+udbfill.o
+%YDB-E-FILENOTFND, File ##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/unicodedir.m not found
+%YDB-E-ZLINKFILE, Error while zlinking "unicodedir"
+%YDB-E-FILENOTFND, File unicodedir.m not found
+%YDB-E-FILENOTFND, File unicodedir.o not found
+%YDB-E-ZLINKFILE, Error while zlinking "unicodedir"
+%YDB-E-FILENOTFND, File unicodedir.m not found
+%YDB-E-FILENOTFND, File unicodedir.o not found
+##FILTERED##GTM_TEST_DEBUGINFO.*
+##TEST_PATH##/αβγδε能吞/getunitemplate.m
+##TEST_PATH##/αβγδε能吞/udbfill.m
+##TEST_PATH##/αβγδε能吞/unicodedir.m
+%YDB-E-FILENOTFND, File ##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/unicodedir.m not found
+
+Start of unicodedir
+$zcmdline=##TEST_PATH##/αβγδε能吞
+$zdir=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/
+$zgbldir=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/ＡＢＣＤ.ＥＦＧ
+$zsearch=
+$zparse=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/*.o
+$zsearch=##TEST_PATH##/αβγδε能吞/unicodedir.o
+$zparse=##TEST_PATH##/αβγδε能吞/*.o
+unicodedir finished
+
+Start of unicodedir
+$zcmdline=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷
+$zdir=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/
+$zgbldir=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/ＡＢＣＤ.ＥＦＧ
+$zsearch=
+$zparse=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/*.o
+$zsearch=
+$zparse=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/*.o
+unicodedir finished
+##FILTERED##GTM_TEST_DEBUGINFO.*
+ls: No match.
+%YDB-E-FILENOTFND, File ##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/unicodedir.m not found
+%YDB-E-ZLINKFILE, Error while zlinking "unicodedir"
+%YDB-E-FILENOTFND, File unicodedir.m not found
+%YDB-E-FILENOTFND, File unicodedir.o not found
+%YDB-E-ZLINKFILE, Error while zlinking "unicodedir"
+%YDB-E-FILENOTFND, File unicodedir.m not found
+%YDB-E-FILENOTFND, File unicodedir.o not found
+##FILTERED##GTM_TEST_DEBUGINFO.*
+ls: No match.
+
+Start of unicodedir
+$zcmdline=##TEST_PATH##/αβγδε能吞
+$zdir=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/
+$zgbldir=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/ＡＢＣＤ.ＥＦＧ
+$zsearch=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/unicodedir.o
+$zparse=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/*.o
+$zsearch=##TEST_PATH##/αβγδε能吞/unicodedir.o
+$zparse=##TEST_PATH##/αβγδε能吞/*.o
+unicodedir finished
+
+Start of unicodedir
+$zcmdline=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷
+$zdir=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/
+$zgbldir=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/ＡＢＣＤ.ＥＦＧ
+$zsearch=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/unicodedir.o
+$zparse=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/*.o
+$zsearch=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/unicodedir.o
+$zparse=##TEST_PATH##/αβγδε能吞/αβγＡＢＧ玻璃而傷/*.o
+unicodedir finished

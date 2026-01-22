@@ -54,8 +54,12 @@ def m_num(value: Any) -> Union[int, float]:
         >>> m_num("3.14ABC")
         3.14
     """
-    # Already numeric - return as-is
-    if isinstance(value, (int, float)):
+    # Already numeric - normalize float to int if it's a whole number
+    if isinstance(value, float):
+        if value == int(value):
+            return int(value)
+        return value
+    if isinstance(value, int):
         return value
 
     # Convert to string for processing
@@ -142,8 +146,13 @@ def m_compare(left: Any, op: str, right: Any) -> bool:
     """Perform MUMPS comparison with appropriate coercion.
 
     MUMPS comparison rules:
-    - "=": String equality (exact match, no coercion)
+    - "=": Canonical string equality - numeric values are normalized first
     - "<", ">": Numeric comparison (both operands coerced via m_num)
+
+    For "=" operator, MUMPS normalizes numeric values to their canonical
+    string form before comparison. For example:
+    - 3.0 = 3 → True (both normalize to "3")
+    - "3.0" = 3 → False (string "3.0" vs canonical "3")
 
     Args:
         left: Left operand
@@ -157,17 +166,31 @@ def m_compare(left: Any, op: str, right: Any) -> bool:
         >>> m_compare("3", "=", "3")
         True
         >>> m_compare("3", "=", 3)
-        False  # string "3" ≠ int 3
+        True  # string "3" = canonical "3"
         >>> m_compare(3, "=", 3)
         True
+        >>> m_compare(3.0, "=", 3)
+        True  # 3.0 normalizes to 3
+        >>> m_compare("3.0", "=", 3)
+        False  # string "3.0" ≠ canonical "3"
         >>> m_compare("3A", "<", 5)
         True  # 3 < 5
         >>> m_compare("", "<", 1)
         True  # 0 < 1
     """
     if op == "=":
-        # String equality - convert both to string for comparison
-        return str(left) == str(right)
+        # MUMPS "=" compares canonical string representations
+        # Numeric values (int, float) are normalized first via m_num
+        # Strings remain as-is (they're already the canonical form)
+        if isinstance(left, (int, float)):
+            left = str(m_num(left))
+        else:
+            left = str(left)
+        if isinstance(right, (int, float)):
+            right = str(m_num(right))
+        else:
+            right = str(right)
+        return left == right
     elif op == "<":
         return m_num(left) < m_num(right)
     elif op == ">":

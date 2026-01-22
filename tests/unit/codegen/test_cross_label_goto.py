@@ -194,30 +194,25 @@ A W "done" Q"""
         assert result.output == "done"
         assert result.success is True
 
-    def test_trampoline_no_recursion_error_1000_iterations(self, execute_mumps):
-        """T089: Trampoline handles 1000+ cyclic iterations without RecursionError.
+    @pytest.mark.parametrize(
+        "iterations",
+        [
+            pytest.param(1000, id="1000_iterations"),
+            pytest.param(10000, id="10000_iterations"),
+        ],
+    )
+    def test_trampoline_no_recursion_error(self, execute_mumps, iterations):
+        """T089: Trampoline handles many cyclic iterations without RecursionError.
 
-        Pattern: TEST -> LOOP -> LOOP -> ... (1000 times)
+        Pattern: TEST -> LOOP -> LOOP -> ... (N times)
         Uses trampoline dispatch, not Python recursion.
+        Python default recursion limit is ~1000, so 10000 would fail with naive calls.
         """
-        source = """TEST S N=0 G LOOP Q
-LOOP S N=N+1 I N<1000 G LOOP
+        source = f"""TEST S N=0 G LOOP Q
+LOOP S N=N+1 I N<{iterations} G LOOP
  W N Q"""
         result = execute_mumps(source)
-        assert result.output == "1000"
-        assert result.success is True
-
-    def test_trampoline_no_recursion_error_10000_iterations(self, execute_mumps):
-        """T089 extended: Trampoline handles 10000+ cyclic iterations.
-
-        This would cause RecursionError with naive function calls.
-        Python default recursion limit is ~1000.
-        """
-        source = """TEST S N=0 G LOOP Q
-LOOP S N=N+1 I N<10000 G LOOP
- W N Q"""
-        result = execute_mumps(source)
-        assert result.output == "10000"
+        assert result.output == str(iterations)
         assert result.success is True
 
 

@@ -941,9 +941,10 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     func = assignment.target
     args = func.arguments
 
-    # $PIECE(var, delimiter, piece_from [, piece_to])
-    if len(args) < 3:
-        raise ValueError(f"LHS $PIECE requires at least 3 arguments, got {len(args)}")
+    # $PIECE(var, delimiter [, piece_from [, piece_to]])
+    # Per MUMPS standard, piece_from defaults to 1 if not specified
+    if len(args) < 2:
+        raise ValueError(f"LHS $PIECE requires at least 2 arguments, got {len(args)}")
 
     # First argument must be a variable (local or global)
     first_arg = args[0]
@@ -987,8 +988,11 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     # Generate delimiter expression
     delimiter_expr = generate_expr(args[1], ctx)
 
-    # Generate piece_from expression
-    piece_from_expr = generate_expr(args[2], ctx)
+    # Generate piece_from expression (defaults to 1 per MUMPS standard)
+    if len(args) >= 3:
+        piece_from_expr = generate_expr(args[2], ctx)
+    else:
+        piece_from_expr = "1"
 
     # Generate piece_to expression (optional, 4th argument)
     if len(args) >= 4:
@@ -2244,7 +2248,12 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
         target: The MCall target with routine field set
         ctx: Generator context
     """
-    routine_name = target.routine
+    # Translate routine name to valid Python module name (%FOO → _pct_FOO)
+    # Note: target.routine is guaranteed non-None by caller (checked before calling this function)
+    assert target.routine is not None, (
+        "_generate_external_goto requires target.routine to be set"
+    )
+    routine_name = translate_name(target.routine)
 
     # Generate import statement for external routine
     ctx.emitter.line(f"import {routine_name}")
@@ -2376,7 +2385,10 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
 
     # Spec 008 (T018-T029): Handle external routine reference D ^ROUTINE
     if target.routine:
-        routine_name = target.routine
+        # Translate routine name to valid Python module name (%FOO → _pct_FOO)
+        # Note: target.routine is guaranteed non-None by the if check above
+        assert target.routine is not None  # Help type checker
+        routine_name = translate_name(target.routine)
 
         # Generate import statement
         ctx.emitter.line(f"import {routine_name}")
@@ -2770,8 +2782,38 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     """
     # Handle exclusive NEW: N (X,Y) - NEW all except X,Y
     if stmt.exclusive:
-        # Build set of variables to keep
-        keep_vars_repr = repr(set(stmt.except_list))
+        # Import MIndirection here to avoid circular imports at module level
+        from m2py.asg.expressions import MIndirection as MIndirectionType
+
+        # Check if any element in except_list is an MIndirection
+        has_indirection = any(isinstance(v, MIndirectionType) for v in stmt.except_list)
+
+        if has_indirection:
+            from m2py.codegen.indirection import _generate_inner_name_expr
+
+            # Build the keep set dynamically at runtime
+            # Start with known string variables
+            string_vars = [v for v in stmt.except_list if isinstance(v, str)]
+            indirection_vars = [
+                v for v in stmt.except_list if isinstance(v, MIndirectionType)
+            ]
+
+            if string_vars:
+                ctx.emitter.line(f"_keep_vars = {repr(set(string_vars))}")
+            else:
+                ctx.emitter.line("_keep_vars = set()")
+
+            # Add indirection-resolved names at runtime
+            for ind_var in indirection_vars:
+                if ind_var.expression is None:
+                    raise ValueError("NEW indirection has no expression")
+                target_name_expr = _generate_inner_name_expr(ind_var.expression, ctx)
+                ctx.emitter.line(f"_keep_vars.add({target_name_expr})")
+
+            keep_vars_repr = "_keep_vars"
+        else:
+            # All elements are strings - use static set
+            keep_vars_repr = repr(set(stmt.except_list))
 
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             if ctx.new_scope_manager_var:
@@ -2831,14 +2873,22 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
             target_name_expr = _generate_inner_name_expr(var.expression, ctx)
 
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                if ctx.new_scope_manager_var:
-                    # Use NewScopeManager for proper save/restore semantics
-                    ctx.emitter.line(
-                        f"{ctx.new_scope_manager_var}.new_var({target_name_expr})"
-                    )
-                else:
-                    # Fallback: simple pop by resolved name
-                    ctx.emitter.line(f"_scope.pop({target_name_expr}, None)")
+                # NEW indirection can contain comma-separated variable lists
+                # For example: S A="X,Y" N @A should NEW both X and Y
+                # We need to split the resolved string at runtime
+                ctx.emitter.line(f"_ind_var_list = str({target_name_expr}).split(',')")
+                ctx.emitter.line("for _ind_var in _ind_var_list:")
+                with ctx.emitter.indented():
+                    # Strip whitespace from each variable name
+                    ctx.emitter.line("_ind_var = _ind_var.strip()")
+                    if ctx.new_scope_manager_var:
+                        # Use NewScopeManager for proper save/restore semantics
+                        ctx.emitter.line(
+                            f"{ctx.new_scope_manager_var}.new_var(_ind_var)"
+                        )
+                    else:
+                        # Fallback: simple pop by resolved name
+                        ctx.emitter.line("_scope.pop(_ind_var, None)")
             else:
                 raise NotImplementedError(
                     "NEW indirection not supported in TRAMPOLINE strategy"

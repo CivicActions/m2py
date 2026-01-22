@@ -113,3 +113,53 @@ class TestNewCommandCodegen:
         """
         result = execute_mumps("TEST\n S X=1 D SUB W X Q\nSUB\n N\n S X=99 Q\n")
         assert result.output == "1"
+
+    def test_new_with_indirection_single_variable(self, execute_mumps):
+        """NEW with indirection for single variable (§8.2.14).
+
+        S LIST="X" N @LIST S X=99 W $D(X) → "0" (X is NEWed)
+        """
+        result = execute_mumps('TEST\n S LIST="X",X=1 N @LIST W $D(X),!\n Q\n')
+        assert result.output == "0\n"
+
+    def test_new_with_indirection_multiple_variables(self, execute_mumps):
+        """NEW with indirection for multiple comma-separated variables (§8.2.14).
+
+        S LIST="X,Y" N @LIST expands to N X,Y making both undefined.
+        The indirected string is parsed at runtime and split on commas.
+        """
+        result = execute_mumps(
+            'TEST\n S LIST="X,Y",X=1,Y=2 N @LIST W $D(X),$D(Y),!\n Q\n'
+        )
+        assert result.output == "00\n"
+
+    def test_new_exclusive_with_indirection(self, execute_mumps):
+        """NEW exclusive with indirection in except list (§8.2.14).
+
+        S KEEP="X" N (@KEEP) keeps X, NEWs all others.
+        """
+        result = execute_mumps(
+            'TEST\n S KEEP="X",X=1,Y=2 N (@KEEP) W $G(X,"x"),$G(Y,"y"),!\n Q\n'
+        )
+        assert result.output == "1y\n"
+
+    def test_new_exclusive_with_indirection_multiple(self, execute_mumps):
+        """NEW exclusive with multiple indirected variables (§8.2.14).
+
+        S K1="X",K2="Y" N (@K1,@K2) keeps both X and Y.
+        """
+        result = execute_mumps(
+            'TEST\n S K1="X",K2="Y",X=1,Y=2,Z=3 N (@K1,@K2) W $G(X,"x"),$G(Y,"y"),$G(Z,"z"),!\n Q\n'
+        )
+        assert result.output == "12z\n"
+
+    def test_new_mixed_direct_and_indirection(self, execute_mumps):
+        """NEW with mix of direct and indirected variables (§8.2.14).
+
+        N X,@LIST where LIST="Y,Z" expands to N X,Y,Z.
+        The indirected string is parsed and expanded at runtime.
+        """
+        result = execute_mumps(
+            'TEST\n S LIST="Y,Z",X=1,Y=2,Z=3 N X,@LIST W $D(X),$D(Y),$D(Z),!\n Q\n'
+        )
+        assert result.output == "000\n"

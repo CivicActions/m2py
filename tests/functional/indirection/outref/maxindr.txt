@@ -1,0 +1,6 @@
+
+YDB>
+Long Name test for Max indirection
+indtest="PASSED"
+
+YDB>

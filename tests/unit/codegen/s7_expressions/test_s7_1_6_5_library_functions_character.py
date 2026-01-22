@@ -24,27 +24,44 @@ class TestCharacterLibraryFunctionsCodegen:
     All should raise NotImplementedError with LIM-014.
     """
 
-    def test_lim014_character_collate_raises_error(self):
-        """$%COLLATE^CHARACTER(A,B,CHARMOD) raises NotImplementedError (Annex I-1.1)."""
+    @pytest.mark.parametrize(
+        "func_name,mumps_code,annex_ref",
+        [
+            pytest.param(
+                "COLLATE^CHARACTER",
+                'TEST S X=$$%COLLATE^CHARACTER("a","b","ASCII") Q',
+                "Annex I-1.1",
+                id="character_collate",
+            ),
+            pytest.param(
+                "COMPARE^CHARACTER",
+                'TEST S X=$$%COMPARE^CHARACTER("abc","def","ASCII") Q',
+                "Annex I-1.2",
+                id="character_compare",
+            ),
+            pytest.param(
+                "LOWER^STRING",
+                'TEST S X=$$%LOWER^STRING("HELLO","ASCII") Q',
+                "Annex I-1.3",
+                id="string_lower",
+            ),
+            pytest.param(
+                "PATCODE^STRING",
+                'TEST S X=$$%PATCODE^STRING("test","1N","ASCII") Q',
+                "Annex I-1.4",
+                id="string_patcode",
+            ),
+            pytest.param(
+                "UPPER^STRING",
+                'TEST S X=$$%UPPER^STRING("hello","ASCII") Q',
+                "Annex I-1.5",
+                id="string_upper",
+            ),
+        ],
+    )
+    def test_lim014_library_function_raises_error(
+        self, func_name, mumps_code, annex_ref
+    ):
+        """$$%{func}(...) raises NotImplementedError with LIM-014 ({annex_ref})."""
         with pytest.raises(NotImplementedError, match="LIM-014"):
-            generate_python('TEST S X=$$%COLLATE^CHARACTER("a","b","ASCII") Q')
-
-    def test_lim014_character_compare_raises_error(self):
-        """$%COMPARE^CHARACTER(A,B,CHARMOD) raises NotImplementedError (Annex I-1.2)."""
-        with pytest.raises(NotImplementedError, match="LIM-014"):
-            generate_python('TEST S X=$$%COMPARE^CHARACTER("abc","def","ASCII") Q')
-
-    def test_lim014_string_lower_raises_error(self):
-        """$%LOWER^STRING(A,CHARMOD) raises NotImplementedError (Annex I-1.3)."""
-        with pytest.raises(NotImplementedError, match="LIM-014"):
-            generate_python('TEST S X=$$%LOWER^STRING("HELLO","ASCII") Q')
-
-    def test_lim014_string_patcode_raises_error(self):
-        """$%PATCODE^STRING(A,PAT,CHARMOD) raises NotImplementedError (Annex I-1.4)."""
-        with pytest.raises(NotImplementedError, match="LIM-014"):
-            generate_python('TEST S X=$$%PATCODE^STRING("test","1N","ASCII") Q')
-
-    def test_lim014_string_upper_raises_error(self):
-        """$%UPPER^STRING(A,CHARMOD) raises NotImplementedError (Annex I-1.5)."""
-        with pytest.raises(NotImplementedError, match="LIM-014"):
-            generate_python('TEST S X=$$%UPPER^STRING("hello","ASCII") Q')
+            generate_python(mumps_code)

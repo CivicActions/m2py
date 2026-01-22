@@ -1,0 +1,86 @@
+##SUSPEND_OUTPUT  NON_UTF8
+setenv gtm_chset M
+unset echo
+Files Created in ##TEST_PATH##:
+Using: ##SOURCE_PATH##/mumps -run GDE
+load.gld
+Using: ##SOURCE_PATH##/mupip
+a.dat
+b.dat
+load.dat
+Files Created in ##REMOTE_TEST_PATH##:
+Using: ##SOURCE_PATH##/mumps -run GDE
+load.gld
+Using: ##SOURCE_PATH##/mupip
+a.dat
+b.dat
+load.dat
+Starting Primary Source Server in ##TEST_PATH##
+Starting Passive Source Server and Receiver Server in ##REMOTE_TEST_PATH##
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+unicodeJnlrec Starts
+SET,TSET,USET
+KILL,TKILL,UKILL
+Passed SET and KILL
+SET,TSET,USET
+ZKILL,TZKILL,UZKILL
+Passed from unicodeJnlrec
+
+YDB>
+setenv gtm_chset UTF-8
+unset echo
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+unicodeJnlrec Starts
+SET,TSET,USET
+KILL,TKILL,UKILL
+Passed SET and KILL
+SET,TSET,USET
+ZKILL,TZKILL,UZKILL
+Passed from unicodeJnlrec
+
+YDB>
+Shutting down Passive Source Server and Receiver Server in ##REMOTE_TEST_PATH##
+Shutting down Primary Source Server Server in ##TEST_PATH##
+DATABASE EXTRACT PASSED
+##SOURCE_PATH##/mupip
+##SOURCE_PATH##/mupip integ -REG *
+No errors detected by integ.
+##SOURCE_PATH##/mupip
+##SOURCE_PATH##/mupip integ -REG *
+No errors detected by integ.
+extract file on secondary side on the journal file during c002201a
+##FILTERED##%YDB-I-MUJNLSTAT, Initial processing started at ... ... .. ..:..:.. 20..
+##FILTERED##%YDB-I-MUJNLSTAT, Backward processing started at ... ... .. ..:..:.. 20..
+##FILTERED##%YDB-I-MUJNLSTAT, Forward processing started at ... ... .. ..:..:.. 20..
+%YDB-I-FILECREATE, Journal extract file load2.mjf created
+%YDB-S-JNLSUCCESS, Extract successful
+%YDB-S-JNLSUCCESS, Verify successful
+##FILTERED##%YDB-I-MUJNLSTAT, End processing at ... ... .. ..:..:.. 20..
+verify the secondary side extract file
+^x="1"
+online
+^y="1"
+BA
+^z="1"
+BATCH
+^tptype1="chinese"
+我能
+##ALLOW_OUTPUT  NON_UTF8

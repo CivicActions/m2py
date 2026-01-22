@@ -1,0 +1,313 @@
+
+Region	DEFAULT
+
+DSE> 
+Block 5   Size 1ED   Level 0   TN ## V#
+
+Rec:1  Blk 5  Off 10  Size 6A  Cmpc 0  Key ^samplegbl("我能吞下..玻璃而不伤身体")
+     ... : | .. .. .. .. 73 61 6D 70 6C 65 67 62 6C  0 FF E6 88 91 E8 83|
+           |  .  .  . ..  s  a  m  p  l  e  g  b  l  .  .       我      |
+      24 : | BD E5 90 9E E4 B8 8B E5 AE E7 8E BB E7 92 83 E8 80 8C E4 B8|
+           | 能       吞       下  .  .       玻       璃       而      |
+      38 : | 8D E4 BC A4 E8 BA AB E4 BD 93  0  0 6F 6E 65 20 6D 6F 72 65|
+           | 不       伤       身       体  .  .  o  n  e     m  o  r  e|
+      4C : | 20 63 68 61 72 20 69 6E 73 65 72 74 65 64 2C 20 31 37 34 3D|
+           |     c  h  a  r     i  n  s  e  r  t  e  d  ,     1  7  4  =|
+      60 : | 30 78 61 65 2C 20 6F 6E 65 20 6D 6F 72 65 20 62 79 74 65 20|
+           |  0  x  a  e  ,     o  n  e     m  o  r  e     b  y  t  e   |
+      74 : | 6F 66 20 E5 AE 89                                          |
+           |  o  f          安                                          |
+
+Rec:2  Blk 5  Off 7A  Size 7C  Cmpc 18  Key ^samplegbl("我能吞下.玻璃而不伤身体")
+     ... : | .. .. .. .. E7 8E BB E7 92 83 E8 80 8C E4 B8 8D E4 BC A4 E8|
+           |  .  .  . ..       玻       璃       而       不       伤   |
+      8E : | BA AB E4 BD 93  0  0 73 6F 6D 65 20 72 61 6E 64 6F 6D 20 63|
+           |    身       体  .  .  s  o  m  e     r  a  n  d  o  m     c|
+      A2 : | 68 61 72 20 69 6E 73 65 72 74 65 64 20 69 6E 20 62 65 74 77|
+           |  h  a  r     i  n  s  e  r  t  e  d     i  n     b  e  t  w|
+      B6 : | 65 65 6E 2C 20 32 32 39 3D 30 78 65 35 2C 20 77 68 69 63 68|
+           |  e  e  n  ,     2  2  9  =  0  x  e  5  ,     w  h  i  c  h|
+      CA : | 20 69 73 20 74 68 65 20 6C 65 61 64 69 6E 67 20 62 79 74 65|
+           |     i  s     t  h  e     l  e  a  d  i  n  g     b  y  t  e|
+      DE : | 20 6F 66 20 E5 AE 89 20 28 55 2B 35 42 38 39 2C 20 65 35 61|
+           |     o  f          安     (  U  +  5  B  8  9  ,     e  5  a|
+      F2 : | 65 38 39 29                                                |
+           |  e  8  9  )                                                |
+
+Rec:3  Blk 5  Off F6  Size 3A  Cmpc 17  Key ^samplegbl("我能吞下玻a璃而不伤身体")
+     ... : | .. .. .. .. E7 8E BB 61 E7 92 83 E8 80 8C E4 B8 8D E4 BC A4|
+           |  .  .  . ..       玻  a       璃       而       不       伤|
+     10A : | E8 BA AB E4 BD 93  0  0 73 6F 6D 65 20 63 68 61 72 73 20 69|
+           |       身       体  .  .  s  o  m  e     c  h  a  r  s     i|
+     11E : | 6E 73 65 72 74 65 64 20 69 6E 20 62 65 74 77 65 65 6E      |
+           |  n  s  e  r  t  e  d     i  n     b  e  t  w  e  e  n      |
+
+Rec:4  Blk 5  Off 130  Size 4A  Cmpc 1A  Key ^samplegbl("我能吞下玻璃而不伤身体")
+     ... : | .. .. .. .. E7 92 83 E8 80 8C E4 B8 8D E4 BC A4 E8 BA AB E4|
+           |  .  .  . ..       璃       而       不       伤       身   |
+     144 : | BD 93  0  0 49 20 63 61 6E 20 65 61 74 20 67 6C 61 73 73 20|
+           |    体  .  .  I     c  a  n     e  a  t     g  l  a  s  s   |
+     158 : | 61 6E 64 20 69 74 20 64 6F 65 73 6E 27 74 20 68 75 72 74 20|
+           |  a  n  d     i  t     d  o  e  s  n  '  t     h  u  r  t   |
+     16C : | 6D 65 2C 20 69 6E 20 43 68 69 6E 65 73 65                  |
+           |  m  e  ,     i  n     C  h  i  n  e  s  e                  |
+
+Rec:5  Blk 5  Off 17A  Size 39  Cmpc 2C  Key ^samplegbl("我能吞下玻璃而不伤身体a")
+     ... : | .. .. .. .. 61  0  0 49 20 63 61 6E 20 65 61 74 20 67 6C 61|
+           |  .  .  . ..  a  .  .  I     c  a  n     e  a  t     g  l  a|
+     18E : | 73 73 20 61 6E 64 20 69 74 20 64 6F 65 73 6E 27 74 20 68 75|
+           |  s  s     a  n  d     i  t     d  o  e  s  n  '  t     h  u|
+     1A2 : | 72 74 20 6D 65 2C 20 69 6E 20 43 68 69 6E 65 73 65         |
+           |  r  t     m  e  ,     i  n     C  h  i  n  e  s  e         |
+
+Rec:6  Blk 5  Off 1B3  Size 3A  Cmpc 2D  Key ^samplegbl("我能吞下玻璃而不伤身体aaa")
+     ... : | .. .. .. .. 61 61  0  0 49 20 63 61 6E 20 65 61 74 20 67 6C|
+           |  .  .  . ..  a  a  .  .  I     c  a  n     e  a  t     g  l|
+     1C7 : | 61 73 73 20 61 6E 64 20 69 74 20 64 6F 65 73 6E 27 74 20 68|
+           |  a  s  s     a  n  d     i  t     d  o  e  s  n  '  t     h|
+     1DB : | 75 72 74 20 6D 65 2C 20 69 6E 20 43 68 69 6E 65 73 65      |
+           |  u  r  t     m  e  ,     i  n     C  h  i  n  e  s  e      |
+
+DSE> 
+Block E   Size ED   Level 0   TN ## V#
+
+Rec:1  Blk E  Off 10  Size DD  Cmpc 0  Key ^samplegbl("因吴王阖闾名光")
+     ... : | .. .. .. .. 73 61 6D 70 6C 65 67 62 6C  0 FF E5 9B A0 E5 90|
+           |  .  .  . ..  s  a  m  p  l  e  g  b  l  .  .       因      |
+      24 : | B4 E7 8E 8B E9 98 96 E9 97 BE E5 90 8D E5 85 89  0  0 E5 9B|
+           | 吴       王       阖       闾       名       光  .  .      |
+      38 : | A0 E5 90 B4 E7 8E 8B E9 98 96 E9 97 BE E5 90 8D E5 85 89 EF|
+           | 因       吴       王       阖       闾       名       光   |
+      4C : | BC 8C E6 95 85 E6 AD A4 E5 89 91 E7 A7 B0 E4 B8 BA E2 80 9C|
+           |    ，       故       此       剑       称       为        “|
+      60 : | E5 90 B4 E7 8E 8B E5 85 89 E5 89 91 E2 80 9D E3 80 82 E5 90|
+           |       吴       王       光       剑        ”       。      |
+      74 : | B4 E7 8E 8B E5 85 89 E5 89 91 E5 9F 8B E8 97 8F E5 9C B0 E4|
+           | 吴       王       光       剑       埋       藏       地   |
+      88 : | B8 8B 32 30 30 30 E5 A4 9A E5 B9 B4 EF BC 8C E8 87 B3 E4 BB|
+           |    下  2  0  0  0       多       年       ，       至      |
+      9C : | 8A E4 BB 8D E9 9D 92 E5 85 89 E7 86 A0 E7 86 A0 EF BC 8C E9|
+           | 今       仍       青       光       熠       熠       ，   |
+      B0 : | 94 8B E5 88 A9 E6 97 A0 E6 AF 94 E3 80 82 EF BC 88 E8 BD AC|
+           |    锋       利       无       比       。       （       转|
+      C4 : | E8 87 AA E3 80 8A E6 96 B0 E6 B0 91 E6 99 9A E6 8A A5 E3 80|
+           |       自       《       新       民       晚       报      |
+      D8 : | 8B 32 30 30 35 E5 B9 B4 32 E6 9C 88 32 31 E6 97 A5 EF BC 89|
+           | 》  2  0  0  5       年  2       月  2  1       日       ）|
+      EC : | 20                                                         |
+           |                                                            |
+
+DSE> DSE> 
+Block 4   Size 3C   Level 2   TN ## V#
+
+Rec:1  Blk 4  Off 10  Size 20  Cmpc 0  Ptr 22  Key ^samplegbl("ltrs",".")
+     ... : | .. .. .. .. 73 61 6D 70 6C 65 67 62 6C  0 FF 6C 74 72 73  0|
+           |  .  .  . ..  s  a  m  p  l  e  g  b  l  .  .  l  t  r  s  .|
+      24 : | FF 89  0  0 22  0  0  0  0  0  0  0                        |
+           |  .  .  .  .  "  .  .  .  .  .  .  .                        |
+
+Rec:2  Blk 4  Off 30  Size C  Cmpc 0  Ptr 23  Key *
+     ... : | .. .. .. .. 23  0  0  0  0  0  0  0                        |
+           |  .  .  . ..  #  .  .  .  .  .  .  .                        |
+
+DSE> 
+Block 25   Size 1C9   Level 0   TN ## V#
+
+Rec:1  Blk 25  Off 10  Size 27  Cmpc 0  Key ^samplegbl("ｆ","ａ","ｌ","ｌ")
+     ... : | .. .. .. .. 73 61 6D 70 6C 65 67 62 6C  0 FF EF BD 86  0 FF|
+           |  .  .  . ..  s  a  m  p  l  e  g  b  l  .  .       ｆ  .  .|
+      24 : | EF BD 81  0 FF EF BD 8C  0 FF EF BD 8C  0  0 63 6F 6F 6C   |
+           |       ａ  .  .       ｌ  .  .       ｌ  .  .  c  o  o  l   |
+
+Rec:2  Blk 25  Off 37  Size 24  Cmpc D  Key ^samplegbl("ｓ","ｐ","ｒ","ｉ","ｎ","ｇ")
+     ... : | .. .. .. .. 93  0 FF EF BD 90  0 FF EF BD 92  0 FF EF BD 89|
+           |  .  .  . ..  .  .  .       ｐ  .  .       ｒ  .  .       ｉ|
+      4B : |  0 FF EF BD 8E  0 FF EF BD 87  0  0 77 61 72 6D            |
+           |  .  .       ｎ  .  .       ｇ  .  .  w  a  r  m            |
+
+Rec:3  Blk 25  Off 5B  Size 1E  Cmpc 12  Key ^samplegbl("ｓ","ｕ","ｍ","ｍ","ｅ","ｒ")
+     ... : | .. .. .. .. 95  0 FF EF BD 8D  0 FF EF BD 8D  0 FF EF BD 85|
+           |  .  .  . ..  .  .  .       ｍ  .  .       ｍ  .  .       ｅ|
+      6F : |  0 FF EF BD 92  0  0 68 6F 74                              |
+           |  .  .       ｒ  .  .  h  o  t                              |
+
+Rec:4  Blk 25  Off 79  Size 24  Cmpc D  Key ^samplegbl("ｗ","ｉ","ｎ","ｔ","ｅ","ｒ")
+     ... : | .. .. .. .. 97  0 FF EF BD 89  0 FF EF BD 8E  0 FF EF BD 94|
+           |  .  .  . ..  .  .  .       ｉ  .  .       ｎ  .  .       ｔ|
+      8D : |  0 FF EF BD 85  0 FF EF BD 92  0  0 63 6F 6C 64            |
+           |  .  .       ｅ  .  .       ｒ  .  .  c  o  l  d            |
+
+Rec:5  Blk 25  Off 9D  Size 13  Cmpc C  Key ^samplegbl("...")
+     ... : | .. .. .. .. BF B0  0  0 EF BF B0 2C 20 55 2B 46 46 46 30   |
+           |  .  .  . ..  .  .  .  .  .  .  .  ,     U  +  F  F  F  0   |
+
+Rec:6  Blk 25  Off B0  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. B1  0  0 EF BF B1 2C 20 55 2B 46 46 46 31      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  1      |
+
+Rec:7  Blk 25  Off C2  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. B2  0  0 EF BF B2 2C 20 55 2B 46 46 46 32      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  2      |
+
+Rec:8  Blk 25  Off D4  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. B3  0  0 EF BF B3 2C 20 55 2B 46 46 46 33      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  3      |
+
+Rec:9  Blk 25  Off E6  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. B4  0  0 EF BF B4 2C 20 55 2B 46 46 46 34      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  4      |
+
+Rec:A  Blk 25  Off F8  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. B5  0  0 EF BF B5 2C 20 55 2B 46 46 46 35      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  5      |
+
+Rec:B  Blk 25  Off 10A  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. B6  0  0 EF BF B6 2C 20 55 2B 46 46 46 36      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  6      |
+
+Rec:C  Blk 25  Off 11C  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. B7  0  0 EF BF B7 2C 20 55 2B 46 46 46 37      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  7      |
+
+Rec:D  Blk 25  Off 12E  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. B8  0  0 EF BF B8 2C 20 55 2B 46 46 46 38      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  8      |
+
+Rec:E  Blk 25  Off 140  Size 12  Cmpc D  Key ^samplegbl("�")
+     ... : | .. .. .. .. BD  0  0 EF BF BD 2C 20 55 2B 44 38 30 31      |
+           |  .  .  . ..  .  .  .        �  ,     U  +  D  8  0  1      |
+
+Rec:F  Blk 25  Off 152  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. BE  0  0 EF BF BE 2C 20 55 2B 46 46 46 45      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  E      |
+
+Rec:10  Blk 25  Off 164  Size 12  Cmpc D  Key ^samplegbl("...")
+     ... : | .. .. .. .. BF  0  0 EF BF BF 2C 20 55 2B 46 46 46 46      |
+           |  .  .  . ..  .  .  .  .  .  .  ,     U  +  F  F  F  F      |
+
+Rec:11  Blk 25  Off 176  Size 17  Cmpc B  Key ^samplegbl("𐀀")
+     ... : | .. .. .. .. F0 90 80 80  0  0 F0 90 80 80 2C 20 55 2B 31 30|
+           |  .  .  . ..           𐀀  .  .           𐀀  ,     U  +  1  0|
+     18A : | 30 30 30                                                   |
+           |  0  0  0                                                   |
+
+Rec:12  Blk 25  Off 18D  Size 14  Cmpc E  Key ^samplegbl("𐀁")
+     ... : | .. .. .. .. 81  0  0 F0 90 80 81 2C 20 55 2B 31 30 30 30 31|
+           |  .  .  . ..  .  .  .           𐀁  ,     U  +  1  0  0  0  1|
+
+Rec:13  Blk 25  Off 1A1  Size 14  Cmpc E  Key ^samplegbl("𐀂")
+     ... : | .. .. .. .. 82  0  0 F0 90 80 82 2C 20 55 2B 31 30 30 30 32|
+           |  .  .  . ..  .  .  .           𐀂  ,     U  +  1  0  0  0  2|
+
+Rec:14  Blk 25  Off 1B5  Size 14  Cmpc E  Key ^samplegbl("𐀃")
+     ... : | .. .. .. .. 83  0  0 F0 90 80 83 2C 20 55 2B 31 30 30 30 33|
+           |  .  .  . ..  .  .  .           𐀃  ,     U  +  1  0  0  0  3|
+
+DSE> 
+Block 27   Size 1C   Level 1   TN ## V#
+
+Rec:1  Blk 27  Off 10  Size C  Cmpc 0  Ptr 26  Key *
+     ... : | .. .. .. .. 26  0  0  0  0  0  0  0                        |
+           |  .  .  . ..  &  .  .  .  .  .  .  .                        |
+
+DSE> 
+Block 29   Size 1C   Level 1   TN ## V#
+
+Rec:1  Blk 29  Off 10  Size C  Cmpc 0  Ptr 28  Key *
+     ... : | .. .. .. .. 28  0  0  0  0  0  0  0                        |
+           |  .  .  . ..  (  .  .  .  .  .  .  .                        |
+
+DSE> DSE> 
+Block 19   Size 4D   Level 0   TN ## V#
+
+Rec:1  Blk 19  Off 10  Size 3D  Cmpc 0  Key ^samplegbl("ltrs","ｽ......","......Y","....EAAH.")
+     ... : | .. .. .. .. 73 61 6D 70 6C 65 67 62 6C  0 FF 6C 74 72 73  0|
+           |  .  .  . ..  s  a  m  p  l  e  g  b  l  .  .  l  t  r  s  .|
+      24 : | FF EF BD BD EF EF 86 86 BD 8C  0 FF BD BD 8C 83 EF EF 59  0|
+           |  .        ｽ  .  .  .  .  .  .  .  .  .  .  .  .  .  .  Y  .|
+      38 : | FF 9A EF EF 8D 45 41 41 48 EF  0  0 EF BD BD EF EF 86 86 BD|
+           |  .  .  .  .  .  E  A  A  H  .  .  .        ｽ  .  .  .  .  .|
+      4C : | 8C                                                         |
+           |  .                                                         |
+
+DSE> 
+Block 22   Size 7D   Level 1   TN ## V#
+
+Rec:1  Blk 22  Off 10  Size 19  Cmpc 0  Ptr 13  Key ^samplegbl(0000*)
+     ... : | .. .. .. .. 73 61 6D 70 6C 65 67 62 6C  0 FE  0  0 13  0  0|
+           |  .  .  . ..  s  a  m  p  l  e  g  b  l  .  .  .  .  .  .  .|
+      24 : |  0  0  0  0  0                                             |
+           |  .  .  .  .  .                                             |
+
+Rec:2  Blk 22  Off 29  Size 11  Cmpc A  Ptr 1B  Key ^samplegbl("14")
+     ... : | .. .. .. .. FF 31 34  0  0 1B  0  0  0  0  0  0  0         |
+           |  .  .  . ..  .  1  4  .  .  .  .  .  .  .  .  .  .         |
+
+Rec:3  Blk 22  Off 3A  Size F  Cmpc B  Ptr B  Key ^samplegbl("U")
+     ... : | .. .. .. .. 55  0  0  B  0  0  0  0  0  0  0               |
+           |  .  .  . ..  U  .  .  .  .  .  .  .  .  .  .               |
+
+Rec:4  Blk 22  Off 49  Size F  Cmpc B  Ptr 20  Key ^samplegbl("e")
+     ... : | .. .. .. .. 65  0  0 20  0  0  0  0  0  0  0               |
+           |  .  .  . ..  e  .  .     .  .  .  .  .  .  .               |
+
+Rec:5  Blk 22  Off 58  Size 19  Cmpc B  Ptr 21  Key ^samplegbl("levels","▇")
+     ... : | .. .. .. .. 6C 65 76 65 6C 73  0 FF E2 96 87  0  0 21  0  0|
+           |  .  .  . ..  l  e  v  e  l  s  .  .        ▇  .  .  !  .  .|
+      6C : |  0  0  0  0  0                                             |
+           |  .  .  .  .  .                                             |
+
+Rec:6  Blk 22  Off 71  Size C  Cmpc 0  Ptr 17  Key *
+     ... : | .. .. .. .. 17  0  0  0  0  0  0  0                        |
+           |  .  .  . ..  .  .  .  .  .  .  .  .                        |
+
+DSE> 
+Block 6   Size 98   Level 0   TN ## V#
+
+Rec:1  Blk 6  Off 10  Size 88  Cmpc 0  Key ^samplegbl("Β","Α","Ε","Ζ","Μ","Ν","Ο","Τ","Υ","Χ","Β","Α","Ε")
+     ... : | .. .. .. .. 73 61 6D 70 6C 65 67 62 6C  0 FF CE 92  0 FF CE|
+           |  .  .  . ..  s  a  m  p  l  e  g  b  l  .  .     Β  .  .   |
+      24 : | 91  0 FF CE 95  0 FF CE 96  0 FF CE 9C  0 FF CE 9D  0 FF CE|
+           |  Α  .  .     Ε  .  .     Ζ  .  .     Μ  .  .     Ν  .  .   |
+      38 : | 9F  0 FF CE A4  0 FF CE A5  0 FF CE A7  0 FF CE 92  0 FF CE|
+           |  Ο  .  .     Τ  .  .     Υ  .  .     Χ  .  .     Β  .  .   |
+      4C : | 91  0 FF CE 95  0  0 74 68 69 73 20 69 73 20 61 63 74 75 61|
+           |  Α  .  .     Ε  .  .  t  h  i  s     i  s     a  c  t  u  a|
+      60 : | 6C 6C 79 20 69 6E 20 47 72 65 65 6B 2C 20 73 68 6F 75 6C 64|
+           |  l  l  y     i  n     G  r  e  e  k  ,     s  h  o  u  l  d|
+      74 : | 20 6C 6F 6F 6B 20 6C 69 6B 65 20 42 2C 41 2C 45 2C 5A 2C 4D|
+           |     l  o  o  k     l  i  k  e     B  ,  A  ,  E  ,  Z  ,  M|
+      88 : | 2C 4E 2C 4F 2C 54 2C 59 2C 58 2C 42 2C 41 2C 45            |
+           |  ,  N  ,  O  ,  T  ,  Y  ,  X  ,  B  ,  A  ,  E            |
+
+DSE> DSE> 
+Rec:2  Blk 2B  Off 24  Size 10  Cmpc 5  Ptr 2E  Key ^fox("J@")
+     ... : | .. .. .. .. 4A 40  0  0 2E  0  0  0  0  0  0  0            |
+           |  .  .  . ..  J  @  .  .  .  .  .  .  .  .  .  .            |
+
+Rec:3  Blk 2B  Off 34  Size F  Cmpc 5  Ptr 2D  Key ^fox("Q")
+     ... : | .. .. .. .. 51  0  0 2D  0  0  0  0  0  0  0               |
+           |  .  .  . ..  Q  .  .  -  .  .  .  .  .  .  .               |
+
+Rec:4  Blk 2B  Off 43  Size C  Cmpc 0  Ptr 2A  Key *
+     ... : | .. .. .. .. 2A  0  0  0  0  0  0  0                        |
+           |  .  .  . ..  *  .  .  .  .  .  .  .                        |
+
+DSE> Error: last record in blk is 1
+DSE> 
+Rec:8  Blk 17  Off 137  Size 2C  Cmpc 28  Key ^samplegbl("levels","█▇▆▅▄▃▂▁")
+     ... : | .. .. .. .. E2 96 81  0  0 64 65 63 72 65 61 73 69 6E 67 20|
+           |  .  .  . ..        ▁  .  .  d  e  c  r  e  a  s  i  n  g   |
+     14B : | E2 96 88 E2 96 87 E2 96 86 E2 96 85 E2 96 84 E2 96 83 E2 96|
+           |        █        ▇        ▆        ▅        ▄        ▃      |
+     15F : | 82 E2 96 81                                                |
+           |  ▂        ▁                                                |
+
+DSE> 
+Rec:1  Blk 12  Off 10  Size 22  Cmpc 0  Key ^samplegbl("𐀄")
+     ... : | .. .. .. .. 73 61 6D 70 6C 65 67 62 6C  0 FF F0 90 80 84  0|
+           |  .  .  . ..  s  a  m  p  l  e  g  b  l  .  .           𐀄  .|
+      24 : |  0 F0 90 80 84 2C 20 55 2B 31 30 30 30 34                  |
+           |  .           𐀄  ,     U  +  1  0  0  0  4                  |
+
+DSE> 

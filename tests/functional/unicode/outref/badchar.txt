@@ -1,0 +1,179 @@
+###################################################################
+Files Created in ##TEST_PATH##:
+Using: ##SOURCE_PATH##/mumps -run GDE
+mumps.gld
+Using: ##SOURCE_PATH##/mupip
+mumps.dat
+
+YDB>
+
+YDB>
+write $VIEW(BADCHAR)
+YDB>
+Expcted output 0
+YDB>
+0
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+write $VIEW(BADCHAR)
+YDB>
+Expected output 1
+YDB>
+1
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+write $VIEW(BADCHAR)
+YDB>
+Expected output 1
+YDB>
+1
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+write $VIEW(BADCHAR)
+YDB>
+Expected output 0
+YDB>
+0
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+write $VIEW(BADCHAR)
+YDB>
+Expected output 0
+YDB>
+0
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+write $VIEW(BADCHAR)
+YDB>
+Expected output 1
+YDB>
+1
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+write $VIEW(BADCHAR)
+YDB>
+Expected output 1
+YDB>
+1
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+write $VIEW(BADCHAR)
+YDB>
+Expected output 0
+YDB>
+0
+YDB>
+
+YDB>
+
+YDB>
+BADCHAR PASSED
+PASS. Expected error YDB-E-BADCHAR seen and not other errors detected
+PASS. Expected error YDB-E-INVDLRCVAL seen and not other errors detected
+###################################################################
+Test for zconvert BADCHAR error when on three arguments
+Processing $ZCHAR(150,151,152) for UTF-8
+Processing $ZCHAR(150,151,152) for UTF-16LE
+Processing $ZCHAR(150,151,152) for UTF-16BE
+Processing $ZCHAR(239,188,161) for UTF-8
+Processing $ZCHAR(239,188,161) for UTF-16LE
+Processing $ZCHAR(239,188,161) for UTF-16BE
+Processing $ZCHAR(255,33) for UTF-8
+Processing $ZCHAR(255,33) for UTF-16LE
+Processing $ZCHAR(255,33) for UTF-16BE
+Processing $ZCHAR(33,255) for UTF-8
+Processing $ZCHAR(33,255) for UTF-16LE
+Processing $ZCHAR(33,255) for UTF-16BE
+Processing $ZCHAR(224,174,133) for UTF-8
+Processing $ZCHAR(224,174,133) for UTF-16LE
+Processing $ZCHAR(224,174,133) for UTF-16BE
+Processing $ZCHAR(11,133) for UTF-8
+Processing $ZCHAR(11,133) for UTF-16LE
+Processing $ZCHAR(11,133) for UTF-16BE
+Processing $ZCHAR(133,11) for UTF-8
+Processing $ZCHAR(133,11) for UTF-16LE
+Processing $ZCHAR(133,11) for UTF-16BE
+Processing $ZCHAR(224,176,133) for UTF-8
+Processing $ZCHAR(224,176,133) for UTF-16LE
+Processing $ZCHAR(224,176,133) for UTF-16BE
+Processing $ZCHAR(12,5) for UTF-8
+Processing $ZCHAR(12,5) for UTF-16LE
+Processing $ZCHAR(12,5) for UTF-16BE
+Processing $ZCHAR(5,12) for UTF-8
+Processing $ZCHAR(5,12) for UTF-16LE
+Processing $ZCHAR(5,12) for UTF-16BE
+Processing $ZCHAR(227,129,130) for UTF-8
+Processing $ZCHAR(227,129,130) for UTF-16LE
+Processing $ZCHAR(227,129,130) for UTF-16BE
+Processing $ZCHAR(48,66) for UTF-8
+Processing $ZCHAR(48,66) for UTF-16LE
+Processing $ZCHAR(48,66) for UTF-16BE
+Processing $ZCHAR(66,48) for UTF-8
+Processing $ZCHAR(66,48) for UTF-16LE
+Processing $ZCHAR(66,48) for UTF-16BE
+###################################################################
+PASS. Expected error YDB-E-BADCHAR seen and not other errors detected for ZCONVERT
+###################################################################
+Test compiling UTF-16 encoded m routine produces YDB-E-LSEXPECTED 
+
+YDB>
+BEGIN UTF-16 WRITE
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+
+YDB>
+END OF UTF-16 WRITE
+
+YDB>
+----------
+Error YDB-E-LSEXPECTED seen in testutf16.out as expected:
+%YDB-E-LSEXPECTED, A line separator is expected here
+----------
+##SOURCE_PATH##/mupip
+##SOURCE_PATH##/mupip integ -REG *
+No errors detected by integ.

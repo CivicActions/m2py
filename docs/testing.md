@@ -204,106 +204,72 @@ The project includes multiple MUMPS test suites from YottaDB (YDBTest) for compr
 
 ### Test Suite Summary
 
-| Suite | Files | Description | Location |
+| Suite | Tests | Description | Location |
 |-------|-------|-------------|----------|
-| **MUGJ** | 376 | MUMPS User Group Japan validation suite | `tests/functional/mugj/inref/` |
-| **MVTS** | 714 | MUMPS Validation Test Suite | `tests/functional/mvts_inref/` |
-| **basic** | 107 | Core language tests (FOR, KILL, arithmetic) | `tests/functional/basic_inref/` |
-| **merge** | 54 | MERGE command tests | `tests/functional/merge_inref/` |
-| **indirection** | 9 | Indirection operator (@) tests | `tests/functional/indirection_inref/` |
-| **m_commands** | 27 | M command tests including Z-commands | `tests/functional/m_commands_inref/` |
-| **io** | 116 | I/O operation tests | `tests/functional/io_inref/` |
-| **tp** | 109 | Transaction processing tests | `tests/functional/tp_inref/` |
-| **triggers** | 101 | Trigger tests | `tests/functional/triggers_inref/` |
-| **longname** | 34 | Long variable name tests | `tests/functional/longname_inref/` |
-| **unicode** | 47 | Unicode handling tests | `tests/functional/unicode_inref/` |
+| **MUGJ** | 76 | MUMPS User Group Japan validation suite | `tests/functional/mugj/` |
+| **MVTS** | 354 | MUMPS Validation Test Suite | `tests/functional/mvts/` |
+| **basic** | 61 | Core language tests (FOR, KILL, arithmetic) | `tests/functional/basic/` |
+| **merge** | 25 | MERGE command tests | `tests/functional/merge/` |
 
-**Total: 1,694 test files**
+### Functional Tests (End-to-End)
 
-### Running YDBTest Suite Tests
-
-All YDB test suites are tested via `test_ydb_suites.py`. Each `.m` file is tested individually for efficient parallel execution:
+The `tests/functional/` directory contains end-to-end tests that execute MUMPS routines via m2py transpilation and compare output against YottaDB reference files (outrefs).
 
 ```bash
-# Run all file parsing tests (1694 tests, parallel)
-uv run pytest tests/integration/test_ydb_suites.py -v
+# Run all functional tests (~489 tests, ~37 seconds)
+uv run pytest tests/functional/ -q
 
-# Run the summary report (marked slow, must be explicitly included)
-uv run pytest -m slow tests/integration/test_ydb_suites.py -v -s
+# Run specific suite
+uv run pytest tests/functional/test_mugj.py -v
+uv run pytest tests/functional/test_basic.py -v
+uv run pytest tests/functional/test_mvts.py -v
+uv run pytest tests/functional/test_merge.py -v
 
-# Run tests for a specific suite
-uv run pytest tests/integration/test_ydb_suites.py -k mugj -v
-uv run pytest tests/integration/test_ydb_suites.py -k mvts -v
-
-# Run a specific file's test
-uv run pytest tests/integration/test_ydb_suites.py -k "mugj/V1SET.m" -v
+# Run specific routine by pattern
+uv run pytest tests/functional/ -k "V1WR" -v
 ```
 
-The test class provides:
-- `test_file_parses[<suite>/<file>]` - Validates each `.m` file parses without exceptions
-- `test_all_suites_summary` - Displays parsing status across all 11 suites (slow, skipped by default)
+**Test markers for filtering:**
+- `@pytest.mark.mugj` - MUGJ suite tests
+- `@pytest.mark.basic` - Basic suite tests
+- `@pytest.mark.mvts` - MVTS suite tests
+- `@pytest.mark.merge` - MERGE command tests
+- `@pytest.mark.functional` - All functional tests
 
-The summary displays:
-- **Parsed**: Files that parsed without raising exceptions
-- **Clean**: Files with zero `parse_errors` (no masked failures)
-- **Clean%**: Percentage of files that are truly error-free
+**Known limitation handling:**
+Tests using features with documented limitations (VIEW command, Z-commands) are marked as `xfail` with references to limitation IDs:
 
-**Note**: `tests/integration/test_mugj.py` contains 90 detailed semantic tests for specific MUGJ files (FOR loop classification, GOTO targets, DO blocks, pattern matching, variable analysis, etc.).
-
-### Parse Result Tracking API
-
-The test infrastructure provides reusable classes for tracking parse results:
-
-```python
-from tests.integration.test_ydb_suites import (
-    ParseResult,
-    SuiteParseResults,
-    parse_suite,
-)
-from m2py.parser import MUMPSParser
-
-# Parse an entire suite and get detailed results
-parser = MUMPSParser()
-results = parse_suite("mugj", parser)
-
-# Check aggregate statistics
-print(f"Total files: {results.total_files}")
-print(f"Parsed (no exceptions): {results.parsed_count}")
-print(f"Clean (zero errors): {results.clean_count}")
-print(f"Success rate: {results.success_rate:.1f}%")
-print(f"Clean rate: {results.clean_rate:.1f}%")
-
-# Get files with masked parse errors
-for r in results.files_with_errors:
-    print(f"{r.filename}: {r.error_count} error(s)")
-
-# Get files that failed to parse
-for r in results.files_that_failed:
-    print(f"{r.filename}: {r.exception}")
+```bash
+# View xfailed tests
+uv run pytest tests/functional/ -k "view" -v
+# 2 xfailed in 1.10s
 ```
 
-**Classes**:
-- `ParseResult` - Result for a single file (filename, success, error_count, exception)
-- `SuiteParseResults` - Aggregate results for a suite with computed properties
-- `parse_suite(suite_name, parser)` - Parse all files in a suite
+### Integration Tests
+
+The `tests/integration/` directory contains cross-module tests:
+
+- `test_external_calls.py` - Cross-routine coordination (43 tests)
+- `test_indirection_edge_cases.py` - Indirection edge cases (10 tests)
+
+```bash
+# Run all integration tests
+uv run pytest tests/integration/ -v
+# 48 passed
+```
 
 ### Test Fixtures
 
-Each test suite has corresponding fixtures in `tests/conftest.py`:
+Each test directory has corresponding fixtures in `tests/functional/conftest.py`:
 
 ```python
-# Directory fixtures
-mvts_inref_dir      # Path to MVTS test directory
-basic_inref_dir     # Path to basic test directory
-# ... etc
-
-# File loader fixtures
-mvts_file("filename.m")    # Load a specific file
-basic_file("filename.m")   # Load a specific file
-
-# Iterator fixtures
-for name, content in mvts_files():
-    # Process each file
+# Core functions (not fixtures)
+from tests.functional.conftest import (
+    normalize_outref,   # Strip YDB infrastructure from outref content
+    run_mumps,          # Execute MUMPS via m2py transpilation
+    compare_output,     # Byte-for-byte comparison with diff reporting
+    load_routine_source,  # Load MUMPS routine source
+)
 ```
 
 ## Validating Parser Output

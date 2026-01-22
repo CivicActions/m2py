@@ -1,0 +1,6 @@
+
+YDB>
+Long Name test for label/routines indirection
+Long Name test for label/routines indirection PASS 
+
+YDB>
