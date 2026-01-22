@@ -15,10 +15,10 @@
 
 **Purpose**: Create functional test infrastructure and fixtures
 
-- [ ] T001 Create functional test conftest with core fixtures in tests/functional/conftest.py
-- [ ] T002 [P] Implement outref normalization function (strip YDB markers, preamble, suspend blocks) in tests/functional/conftest.py
-- [ ] T003 [P] Implement test driver parser (extract routine sequence from u_inref/*.csh) in tests/functional/conftest.py
-- [ ] T004 [P] Implement MUMPS execution helper using generate_python() and MUMPSRuntime.execute() in tests/functional/conftest.py
+- [X] T001 Create functional test conftest with core fixtures in tests/functional/conftest.py
+- [X] T002 [P] Implement outref normalization function (strip YDB markers, preamble, suspend blocks) in tests/functional/conftest.py
+- [X] T003 [P] Implement test driver parser (extract routine sequence from u_inref/*.csh) in tests/functional/conftest.py
+- [X] T004 [P] Implement MUMPS execution helper using generate_python() and MUMPSRuntime.execute() in tests/functional/conftest.py
 
 ---
 
