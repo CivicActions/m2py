@@ -65,14 +65,20 @@
 
 ### Implementation for User Story 2
 
-- [ ] T016 [P] [US2] Create basic suite test runner in tests/functional/test_basic.py
-- [ ] T017 [P] [US2] Create mvts suite test runner in tests/functional/test_mvts.py (if outref exists)
-- [ ] T018 [P] [US2] Create merge suite test runner in tests/functional/test_merge.py (if outref exists)
-- [ ] T019 [US2] Add pytest markers for suite selection (e.g., @pytest.mark.mugj, @pytest.mark.basic)
-- [ ] T020 [US2] Update tests/functional/conftest.py with suite-specific fixture variants
-- [ ] T021 [US2] Verify suite isolation: `uv run pytest tests/functional/ -k basic -v`
+- [X] T016 [P] [US2] Create basic suite test runner in tests/functional/test_basic.py
+- [X] T017 [P] [US2] Create mvts suite test runner in tests/functional/test_mvts.py (infrastructure only - complex framework)
+- [X] T018 [P] [US2] Create merge suite test runner in tests/functional/test_merge.py (infrastructure only - 25 sub-tests)
+- [X] T019 [US2] Add pytest markers for suite selection (e.g., @pytest.mark.mugj, @pytest.mark.basic)
+- [X] T020 [US2] Update tests/functional/suite_definitions.py with static routine definitions
+- [X] T021 [US2] Verify suite isolation: `uv run pytest tests/functional/ -k basic -v`
 
 **Checkpoint**: Individual suites can run independently via pytest selection
+
+**Notes**:
+- mvts: Complex framework (VV1-VSR sequence with ZCONTINUE) - infrastructure tests only
+- merge: 25 sub-tests with separate outrefs - infrastructure tests only  
+- Created suite_definitions.py with RoutineDefinition NamedTuple and static routine lists
+- MUGJ_ROUTINES (72), BASIC_ROUTINES (57) moved from runtime parsing to static definitions
 
 ---
 

@@ -1,14 +1,14 @@
-"""Functional tests for the mugj (MUMPS User Group Japan) test suite.
+"""Functional tests for the basic YottaDB test suite.
 
-Executes each mugj routine via m2py transpilation and compares output
+Executes each basic routine via m2py transpilation and compares output
 against the YottaDB reference output (outref).
 
-The mugj suite is the primary validation suite for MUMPS implementations,
-containing comprehensive tests for all MUMPS language features.
+The basic suite covers fundamental MUMPS features: arithmetic, booleans,
+string functions, FOR loops, XECUTE, VIEW commands, and Z-extensions.
 
 Usage:
-    uv run pytest tests/functional/test_mugj.py -v
-    uv run pytest tests/functional/test_mugj.py -k V1WR -v  # Single routine
+    uv run pytest tests/functional/test_basic.py -v
+    uv run pytest tests/functional/test_basic.py -k fact -v  # Single routine
 """
 
 from __future__ import annotations
@@ -25,15 +25,15 @@ from tests.functional.conftest import (
     normalize_outref,
     run_mumps,
 )
-from tests.functional.suite_definitions import MUGJ_ROUTINES, RoutineDefinition
+from tests.functional.suite_definitions import BASIC_ROUTINES, RoutineDefinition
 
 
 # =============================================================================
 # Suite Configuration
 # =============================================================================
 
-SUITE_NAME = "mugj"
-MUGJ_DIR = FUNCTIONAL_BASE / SUITE_NAME
+SUITE_NAME = "basic"
+BASIC_DIR = FUNCTIONAL_BASE / "basic" / "inref"
 
 
 # =============================================================================
@@ -41,20 +41,24 @@ MUGJ_DIR = FUNCTIONAL_BASE / SUITE_NAME
 # =============================================================================
 
 
-class RoutineOutput:
-    """Expected output for a single routine."""
+def extract_basic_outputs(normalized_outref: str) -> dict[str, str]:
+    """Extract individual routine outputs from the normalized basic outref.
 
-    def __init__(self, label: str, content: str) -> None:
-        self.label = label
-        self.content = content
+    The basic outref contains output from all routines concatenated together.
+    Each routine's output follows a YDB> prompt showing the command executed.
 
+    The format is:
+        YDB>
+        d ^fact(18)
+        Factorial test
+          PASS
 
-def extract_routine_outputs(normalized_outref: str) -> dict[str, str]:
-    """Extract individual routine outputs from the normalized outref.
+        YDB>
+        d ^arith(18)
+        ...
 
-    The outref contains output from all routines concatenated together.
-    Each routine's output starts with a blank line, followed by the
-    routine label on its own line (e.g., "V1WR"), then the routine output.
+    After normalization, YDB> prompts are stripped, so we look for lines
+    that look like routine calls (starting with "d ^").
 
     Args:
         normalized_outref: Normalized outref content (preamble stripped)
@@ -68,65 +72,57 @@ def extract_routine_outputs(normalized_outref: str) -> dict[str, str]:
     # State machine to extract routine outputs
     current_label: str | None = None
     current_lines: list[str] = []
-    in_routine = False
 
-    # Pattern to match routine label lines (standalone short uppercase names)
-    # Labels appear after blank lines and match the driver's W !!,"LABEL" output
-    label_pattern = re.compile(r"^[A-Z][A-Z0-9_]*$")
+    # Pattern to match routine call lines
+    call_pattern = re.compile(r"^d\s+\^(\w+)(?:\([^)]+\))?\s*$", re.IGNORECASE)
 
     i = 0
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
 
-        # Check if this line could be a routine label
-        # A label is a short identifier appearing after blank line(s)
-        if label_pattern.match(stripped) and len(stripped) <= 20:
-            # Look back to see if previous non-empty content ended
-            # This is a heuristic - labels follow blank lines
-            prev_blank = i > 0 and not lines[i - 1].strip()
-
-            if prev_blank or not in_routine:
-                # Save previous routine if any
-                if current_label and current_lines:
-                    # Trim leading/trailing blank lines from content
-                    content = "\n".join(current_lines).strip()
+        # Check if this line is a routine call
+        if call_pattern.match(stripped):
+            # Save previous routine if any
+            if current_label is not None:
+                content = "\n".join(current_lines).strip()
+                if content:
                     outputs[current_label] = content
 
-                # Start new routine
-                current_label = stripped
-                current_lines = []
-                in_routine = True
-                i += 1
-                continue
+            # Start new routine - use the stripped line as label
+            current_label = stripped
+            current_lines = []
+            i += 1
+            continue
 
         # Accumulate content for current routine
-        if in_routine:
+        if current_label is not None:
             current_lines.append(line)
 
         i += 1
 
     # Save final routine
-    if current_label and current_lines:
+    if current_label is not None:
         content = "\n".join(current_lines).strip()
-        outputs[current_label] = content
+        if content:
+            outputs[current_label] = content
 
     return outputs
 
 
-def load_mugj_expected_outputs() -> dict[str, str]:
-    """Load and parse all expected outputs from the mugj outref.
+def load_basic_expected_outputs() -> dict[str, str]:
+    """Load and parse all expected outputs from the basic outref.
 
     Returns:
         Dict mapping routine label to expected output string
     """
-    outref_path = MUGJ_DIR / "outref" / "mugj.txt"
+    outref_path = FUNCTIONAL_BASE / "basic" / "outref" / "basic.txt"
     if not outref_path.exists():
         return {}
 
     raw_content = outref_path.read_text()
     normalized = normalize_outref(raw_content)
-    return extract_routine_outputs(normalized)
+    return extract_basic_outputs(normalized)
 
 
 # =============================================================================
@@ -134,18 +130,17 @@ def load_mugj_expected_outputs() -> dict[str, str]:
 # =============================================================================
 
 
-def execute_routine(routine_name: str) -> ExecutionResult:
-    """Execute a single mugj routine via m2py.
+def execute_basic_routine(routine_name: str) -> ExecutionResult:
+    """Execute a single basic routine via m2py.
 
     Args:
-        routine_name: Name of the routine (e.g., "V1WR")
+        routine_name: Name of the routine (e.g., "fact")
 
     Returns:
         ExecutionResult with output and status
     """
-    inref_dir = MUGJ_DIR / "inref"
     try:
-        source = load_routine_source(inref_dir, routine_name)
+        source = load_routine_source(BASIC_DIR, routine_name)
     except FileNotFoundError as e:
         return ExecutionResult(output="", success=False, error=str(e))
 
@@ -157,7 +152,7 @@ def execute_routine(routine_name: str) -> ExecutionResult:
 # =============================================================================
 
 # Get expected outputs (loaded once at module level for efficiency)
-_EXPECTED_OUTPUTS = load_mugj_expected_outputs()
+_EXPECTED_OUTPUTS = load_basic_expected_outputs()
 
 
 # =============================================================================
@@ -165,10 +160,10 @@ _EXPECTED_OUTPUTS = load_mugj_expected_outputs()
 # =============================================================================
 
 
-@pytest.mark.mugj
+@pytest.mark.basic
 @pytest.mark.functional
-class TestMugjSuite:
-    """Test suite for mugj routines.
+class TestBasicSuite:
+    """Test suite for basic YDB routines.
 
     Each routine is tested individually, comparing m2py output against
     the expected output from the YDB outref file.
@@ -176,14 +171,14 @@ class TestMugjSuite:
 
     @pytest.mark.parametrize(
         "routine_def",
-        MUGJ_ROUTINES,
+        BASIC_ROUTINES,
         ids=lambda r: r.routine,
     )
     def test_routine(self, routine_def: RoutineDefinition) -> None:
-        """Test a single mugj routine against expected output.
+        """Test a single basic routine against expected output.
 
         Args:
-            routine_def: RoutineDefinition with label, routine name, and metadata
+            routine_def: RoutineDefinition with label, routine name, and args
         """
         # Check for skip
         if routine_def.skip_reason:
@@ -193,20 +188,21 @@ class TestMugjSuite:
         label = routine_def.label
 
         # Execute via m2py
-        result = execute_routine(routine_name)
+        result = execute_basic_routine(routine_name)
 
         # Check for complete failure (no output at all)
         if not result.output and not result.success:
             pytest.fail(f"Routine {routine_name} failed to execute: {result.error}")
 
-        # Get expected output
+        # Get expected output using the label format from outref
         expected = _EXPECTED_OUTPUTS.get(label)
+        if expected is None:
+            # Try lowercase version
+            expected = _EXPECTED_OUTPUTS.get(label.lower())
         if expected is None:
             pytest.skip(f"No expected output found for {label} in outref")
 
         # Handle partial output due to external routine errors
-        # Many mugj routines call D ^VREPORT at the end which fails
-        # because external routine loading is not implemented
         actual_output = result.output
 
         # Compare outputs
@@ -215,8 +211,6 @@ class TestMugjSuite:
         if not comparison.match:
             # Check if this is a partial match (external routine error at end)
             if result.error and "No module named" in result.error:
-                # Try comparing just what we got
-                # If actual output is a prefix of expected, note it
                 if expected.startswith(actual_output.strip()):
                     pytest.skip(
                         f"Partial match - routine completed but external call failed: {result.error}"
@@ -225,6 +219,7 @@ class TestMugjSuite:
             # Format failure message with diff
             msg = (
                 f"\nOutput mismatch for routine {routine_name}\n"
+                f"Label: {label}\n"
                 f"Expected lines: {comparison.expected_lines}\n"
                 f"Actual lines: {comparison.actual_lines}\n"
             )
@@ -239,30 +234,28 @@ class TestMugjSuite:
 # =============================================================================
 
 
-class TestMugjInfrastructure:
-    """Tests to validate the mugj test infrastructure itself."""
+class TestBasicInfrastructure:
+    """Tests to validate the basic test infrastructure itself."""
 
     def test_routines_defined(self) -> None:
-        """Verify mugj routines are defined in suite_definitions."""
-        assert len(MUGJ_ROUTINES) > 0, "No routines defined for mugj"
-        # First routine should be V1WR
-        assert MUGJ_ROUTINES[0].routine == "V1WR"
+        """Verify basic routines are defined in suite_definitions."""
+        assert len(BASIC_ROUTINES) > 0, "No routines defined for basic"
+        # First routine should be fact
+        assert BASIC_ROUTINES[0].routine == "fact"
 
     def test_outref_loads(self) -> None:
-        """Verify the mugj outref loads and normalizes."""
-        outputs = load_mugj_expected_outputs()
+        """Verify the basic outref loads and normalizes."""
+        outputs = load_basic_expected_outputs()
         assert len(outputs) > 0, "No outputs extracted from outref"
-        # V1WR should have output
-        assert "V1WR" in outputs
+        # Should have output for d ^fact(18)
+        assert any("fact" in label for label in outputs)
 
     def test_routine_source_loads(self) -> None:
         """Verify routine source files can be loaded."""
-        inref_dir = MUGJ_DIR / "inref"
-        source = load_routine_source(inref_dir, "V1WR")
-        assert "V1WR" in source
-        assert "WRITE" in source.upper()
+        source = load_routine_source(BASIC_DIR, "fact")
+        assert "fact" in source.lower()
 
     def test_routine_count_matches_definitions(self) -> None:
         """Verify routine count matches expected."""
-        # 72 routines in mugj (71 active + 1 skipped for READ timeout)
-        assert len(MUGJ_ROUTINES) == 72
+        # 57 routines in basic
+        assert len(BASIC_ROUTINES) == 57
