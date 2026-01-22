@@ -15,9 +15,9 @@
 
 **Purpose**: Baseline validation and environment preparation
 
-- [ ] T001 Run baseline test suite and capture current failure count: `uv run pytest tests/functional/ -v --tb=no 2>&1 | tee /tmp/baseline-failures.txt`
-- [ ] T002 [P] Verify YDB Docker container available: `docker run --rm ydb echo "YDB ready"`
-- [ ] T003 [P] Create tracking spreadsheet/document mapping 147 tests to resolution status
+- [x] T001 Run baseline test suite and capture current failure count: `uv run pytest tests/functional/ -v --tb=no 2>&1 | tee /tmp/baseline-failures.txt`
+- [x] T002 [P] Verify YDB Docker container available: `docker run --rm ydb echo "YDB ready"`
+- [x] T003 [P] Create tracking spreadsheet/document mapping 147 tests to resolution status
 
 ---
 
