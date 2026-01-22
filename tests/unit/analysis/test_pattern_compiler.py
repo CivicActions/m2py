@@ -24,62 +24,27 @@ from m2py.analysis.pattern_compiler import (
 class TestBasicPatternCodes:
     """Test individual pattern codes."""
 
-    def test_single_alpha(self):
-        """Test single alphabetic character."""
-        regex = compile_pattern_to_regex("1A")
-        assert re.fullmatch(regex, "A")
-        assert re.fullmatch(regex, "z")
-        assert not re.fullmatch(regex, "1")
-        assert not re.fullmatch(regex, " ")
-
-    def test_single_numeric(self):
-        """Test single numeric character."""
-        regex = compile_pattern_to_regex("1N")
-        assert re.fullmatch(regex, "5")
-        assert re.fullmatch(regex, "0")
-        assert not re.fullmatch(regex, "A")
-        assert not re.fullmatch(regex, "-")
-
-    def test_single_lowercase(self):
-        """Test single lowercase alphabetic."""
-        regex = compile_pattern_to_regex("1L")
-        assert re.fullmatch(regex, "a")
-        assert re.fullmatch(regex, "z")
-        assert not re.fullmatch(regex, "A")
-        assert not re.fullmatch(regex, "5")
-
-    def test_single_uppercase(self):
-        """Test single uppercase alphabetic."""
-        regex = compile_pattern_to_regex("1U")
-        assert re.fullmatch(regex, "A")
-        assert re.fullmatch(regex, "Z")
-        assert not re.fullmatch(regex, "a")
-        assert not re.fullmatch(regex, "5")
-
-    def test_single_everything(self):
-        """Test single everything character."""
-        regex = compile_pattern_to_regex("1E")
-        assert re.fullmatch(regex, "A")
-        assert re.fullmatch(regex, "5")
-        assert re.fullmatch(regex, " ")
-        assert re.fullmatch(regex, "#")
-
-    def test_single_punctuation(self):
-        """Test single punctuation character."""
-        regex = compile_pattern_to_regex("1P")
-        assert re.fullmatch(regex, " ")
-        assert re.fullmatch(regex, "!")
-        assert re.fullmatch(regex, "-")
-        assert not re.fullmatch(regex, "A")
-        assert not re.fullmatch(regex, "5")
-
-    def test_single_control(self):
-        """Test single control character."""
-        regex = compile_pattern_to_regex("1C")
-        assert re.fullmatch(regex, "\t")
-        assert re.fullmatch(regex, "\n")
-        assert re.fullmatch(regex, "\x00")
-        assert not re.fullmatch(regex, "A")
+    @pytest.mark.parametrize(
+        "pattern,valid_chars,invalid_chars",
+        [
+            pytest.param("1A", ["A", "z"], ["1", " "], id="alpha"),
+            pytest.param("1N", ["5", "0"], ["A", "-"], id="numeric"),
+            pytest.param("1L", ["a", "z"], ["A", "5"], id="lowercase"),
+            pytest.param("1U", ["A", "Z"], ["a", "5"], id="uppercase"),
+            pytest.param("1E", ["A", "5", " ", "#"], [], id="everything"),
+            pytest.param("1P", [" ", "!", "-"], ["A", "5"], id="punctuation"),
+            pytest.param("1C", ["\t", "\n", "\x00"], ["A"], id="control"),
+        ],
+    )
+    def test_single_pattern_code(self, pattern, valid_chars, invalid_chars):
+        """Test single character pattern codes (1A, 1N, 1L, 1U, 1E, 1P, 1C)."""
+        regex = compile_pattern_to_regex(pattern)
+        for char in valid_chars:
+            assert re.fullmatch(regex, char), f"{pattern} should match '{repr(char)}'"
+        for char in invalid_chars:
+            assert not re.fullmatch(regex, char), (
+                f"{pattern} should not match '{repr(char)}'"
+            )
 
 
 # =============================================================================

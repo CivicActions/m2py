@@ -48,17 +48,6 @@ TEST
         )
         assert "input()" in python_code
 
-    def test_read_with_timeout_generates_m_read_timeout(self) -> None:
-        """R X:5 generates m_read_timeout call."""
-        source = """\
-TEST
- R X:5
- Q
-"""
-        python_code = generate_python(source)
-        # Should use m_read_timeout helper
-        assert "m_read_timeout(5)" in python_code
-
     def test_read_with_format_control_newline(self) -> None:
         """R !,X generates newline then input."""
         source = """\

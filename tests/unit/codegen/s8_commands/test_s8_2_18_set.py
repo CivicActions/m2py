@@ -379,3 +379,297 @@ class TestSetArgumentIndirectionCodegen:
         code = generate_python('TEST\n S A="X=1" S @A\n Q\n')
         assert "execute_mumps" in code
         assert '"S "' in code
+
+
+# =============================================================================
+# LHS $EXTRACT Tests (consolidated from test_spec_009_lhs_extract.py)
+# =============================================================================
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSExtractBasic:
+    """Tests for basic LHS $EXTRACT assignment."""
+
+    def test_basic_character_replacement(self, execute_mumps):
+        """Scenario 1: Replace first two characters of string.
+
+        S X="HELLO" S $E(X,1,2)="YO" W X → "YOLLO"
+        """
+        result = execute_mumps('TEST S X="HELLO" S $E(X,1,2)="YO" W X Q')
+        assert result.output == "YOLLO"
+
+    def test_undefined_variable_creates_it(self, execute_mumps):
+        """Scenario 2: LHS $EXTRACT on undefined variable creates it.
+
+        S $E(Z,1,3)="ABC" W Z → "ABC"
+        """
+        result = execute_mumps('TEST S $E(Z,1,3)="ABC" W Z Q')
+        assert result.output == "ABC"
+
+    def test_space_padding(self, execute_mumps):
+        """Scenario 3: Pad existing variable with spaces to reach position.
+
+        S W="AB" S $E(W,5,6)="XY" W W → "AB  XY"
+        """
+        result = execute_mumps('TEST S W="AB" S $E(W,5,6)="XY" W W Q')
+        assert result.output == "AB  XY"
+
+    def test_single_position(self, execute_mumps):
+        """Scenario 4: Single position replacement (no to_pos specified).
+
+        S X="ABCDE" S $E(X,2)="X" W X → "AXCDE"
+        """
+        result = execute_mumps('TEST S X="ABCDE" S $E(X,2)="X" W X Q')
+        assert result.output == "AXCDE"
+
+    def test_replacement_longer_than_range(self, execute_mumps):
+        """Scenario 5: Replacement string is longer than original range.
+
+        S X="ABC" S $E(X,1,5)="HELLO" W X → "HELLO"
+        """
+        result = execute_mumps('TEST S X="ABC" S $E(X,1,5)="HELLO" W X Q')
+        assert result.output == "HELLO"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSExtractEdgeCases:
+    """Edge case tests for LHS $EXTRACT assignment."""
+
+    def test_replacement_longer_than_original_range_middle(self, execute_mumps):
+        """Replacement longer than range in middle of string expands it.
+
+        S X="HELLO" S $E(X,2,3)="ABCD" W X → "HABCDLO"
+        """
+        result = execute_mumps('TEST S X="HELLO" S $E(X,2,3)="ABCD" W X Q')
+        assert result.output == "HABCDLO"
+
+    def test_replacement_shorter_than_range(self, execute_mumps):
+        """Replacement shorter than range shrinks the string.
+
+        S X="HELLO" S $E(X,2,4)="X" W X → "HXO"
+        """
+        result = execute_mumps('TEST S X="HELLO" S $E(X,2,4)="X" W X Q')
+        assert result.output == "HXO"
+
+    def test_same_length_replacement(self, execute_mumps):
+        """Same length replacement keeps string length.
+
+        S X="HELLO" S $E(X,2,3)="XX" W X → "HXXLO"
+        """
+        result = execute_mumps('TEST S X="HELLO" S $E(X,2,3)="XX" W X Q')
+        assert result.output == "HXXLO"
+
+    def test_empty_string_position_one(self, execute_mumps):
+        """Set position 1 on empty string.
+
+        S X="" S $E(X,1)="A" W X → "A"
+        """
+        result = execute_mumps('TEST S X="" S $E(X,1)="A" W X Q')
+        assert result.output == "A"
+
+    def test_replace_at_end(self, execute_mumps):
+        """Replace characters at end of string.
+
+        S X="HELLO" S $E(X,4,5)="XX" W X → "HELXX"
+        """
+        result = execute_mumps('TEST S X="HELLO" S $E(X,4,5)="XX" W X Q')
+        assert result.output == "HELXX"
+
+    def test_extend_string_beyond_end(self, execute_mumps):
+        """Extend string by setting position beyond end.
+
+        S X="ABC" S $E(X,5)="X" W X → "ABC X"
+        """
+        result = execute_mumps('TEST S X="ABC" S $E(X,5)="X" W X Q')
+        assert result.output == "ABC X"
+
+    def test_lhs_extract_position_zero_is_noop(self, execute_mumps):
+        """LHS $EXTRACT with position 0 should be no-op (YDB verified).
+
+        S X="abc" S $E(X,0)="X" W X → "abc" (unchanged)
+        Unlike RHS $E(X,0) which returns "", LHS $E(X,0)=val is a no-op.
+        """
+        result = execute_mumps('TEST S X="abc" S $E(X,0)="X" W X Q')
+        assert result.output == "abc"
+
+    def test_lhs_extract_negative_start_treated_as_one(self, execute_mumps):
+        """LHS $EXTRACT with negative start should map to position 1 (YDB verified).
+
+        S X="abc" S $E(X,-1,2)="XX" W X → "XXc"
+        YDB treats negative start as 1, so this replaces positions 1-2.
+        """
+        result = execute_mumps('TEST S X="abc" S $E(X,-1,2)="XX" W X Q')
+        assert result.output == "XXc"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSExtractGlobals:
+    """Tests for LHS $EXTRACT on global variables (FR-009)."""
+
+    def test_lhs_extract_on_global(self, execute_mumps):
+        """LHS $EXTRACT works on global variables.
+
+        S $E(^G,1,3)="ABC" W ^G → "ABC"
+        """
+        result = execute_mumps('TEST S $E(^G,1,3)="ABC" W ^G Q')
+        assert result.output == "ABC"
+
+    def test_lhs_extract_on_subscripted_global(self, execute_mumps):
+        """LHS $EXTRACT on subscripted global variable."""
+        result = execute_mumps('TEST S ^G(1)="HELLO" S $E(^G(1),2,3)="XX" W ^G(1) Q')
+        assert result.output == "HXXLO"
+
+    def test_lhs_extract_global_padding(self, execute_mumps):
+        """LHS $EXTRACT on undefined global pads with spaces."""
+        result = execute_mumps('TEST S $E(^H,3)="X" W ^H Q')
+        assert result.output == "  X"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSExtractStartGreaterThanEnd:
+    """Tests for LHS $EXTRACT with start > end edge case."""
+
+    def test_start_greater_than_end_no_modification(self, execute_mumps):
+        """When start > end, no modification occurs per YDB behavior.
+
+        S X="HELLO" S $E(X,4,2)="XX" W X → "HELLO" (unchanged)
+        """
+        result = execute_mumps('TEST S X="HELLO" S $E(X,4,2)="XX" W X Q')
+        assert result.output == "HELLO"
+
+    def test_start_greater_than_end_with_value(self, execute_mumps):
+        """Start > end with existing value is a no-op.
+
+        S X="ABCDE" S $E(X,3,1)="XXX" W X → "ABCDE" (unchanged)
+        """
+        result = execute_mumps('TEST S X="ABCDE" S $E(X,3,1)="XXX" W X Q')
+        assert result.output == "ABCDE"
+
+
+# =============================================================================
+# LHS $PIECE Tests (consolidated from test_spec_009_lhs_piece.py)
+# =============================================================================
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSPieceBasic:
+    """Tests for basic LHS $PIECE assignment."""
+
+    def test_basic_piece_replacement(self, execute_mumps):
+        """Scenario 1: Replace second piece of delimited string.
+
+        S X="A^B^C" S $P(X,"^",2)="NEW" W X → "A^NEW^C"
+        """
+        result = execute_mumps('TEST S X="A^B^C" S $P(X,"^",2)="NEW" W X Q')
+        assert result.output == "A^NEW^C"
+
+    def test_undefined_variable_with_padding(self, execute_mumps):
+        """Scenario 2: LHS $PIECE on undefined variable pads with delimiters.
+
+        S $P(Y,"^",3)="C" W Y → "^^C"
+        """
+        result = execute_mumps('TEST S $P(Y,"^",3)="C" W Y Q')
+        assert result.output == "^^C"
+
+    def test_existing_variable_needs_padding(self, execute_mumps):
+        """Scenario 3: Pad existing variable to reach target piece.
+
+        S X="A" S $P(X,"^",3)="C" W X → "A^^C"
+        """
+        result = execute_mumps('TEST S X="A" S $P(X,"^",3)="C" W X Q')
+        assert result.output == "A^^C"
+
+    def test_range_replacement(self, execute_mumps):
+        """Scenario 4: Range replacement collapses multiple pieces.
+
+        S X="A^B^C^D^E" S $P(X,"^",2,4)="X" W X → "A^X^E"
+        """
+        result = execute_mumps('TEST S X="A^B^C^D^E" S $P(X,"^",2,4)="X" W X Q')
+        assert result.output == "A^X^E"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSPieceEdgeCases:
+    """Edge case tests for LHS $PIECE assignment."""
+
+    def test_piece_one_replacement(self, execute_mumps):
+        """Replace first piece of string."""
+        result = execute_mumps('TEST S X="A^B^C" S $P(X,"^",1)="NEW" W X Q')
+        assert result.output == "NEW^B^C"
+
+    def test_empty_string_piece_one(self, execute_mumps):
+        """Set piece 1 on empty string."""
+        result = execute_mumps('TEST S X="" S $P(X,"^",1)="A" W X Q')
+        assert result.output == "A"
+
+    def test_range_beyond_existing_pieces(self, execute_mumps):
+        """Range replacement where end is beyond existing pieces."""
+        result = execute_mumps('TEST S X="A^B" S $P(X,"^",2,5)="X" W X Q')
+        assert result.output == "A^X"
+
+    def test_range_starting_beyond_existing(self, execute_mumps):
+        """Range replacement starting beyond existing pieces adds padding."""
+        result = execute_mumps('TEST S X="A^B" S $P(X,"^",4,5)="X" W X Q')
+        assert result.output == "A^B^^X"
+
+    def test_different_delimiter(self, execute_mumps):
+        """Use a different delimiter character."""
+        result = execute_mumps('TEST S X="A:B:C" S $P(X,":",2)="NEW" W X Q')
+        assert result.output == "A:NEW:C"
+
+    def test_multi_char_delimiter(self, execute_mumps):
+        """Use multi-character delimiter."""
+        result = execute_mumps('TEST S X="A||B||C" S $P(X,"||",2)="NEW" W X Q')
+        assert result.output == "A||NEW||C"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSPieceGlobals:
+    """Tests for LHS $PIECE on global variables (FR-009)."""
+
+    def test_lhs_piece_on_global(self, execute_mumps):
+        """Scenario 5: LHS $PIECE works on global variables.
+
+        S $P(^G,"^",2)="B" W ^G → "^B"
+        """
+        result = execute_mumps('TEST S $P(^G,"^",2)="B" W ^G Q')
+        assert result.output == "^B"
+
+    def test_lhs_piece_on_subscripted_global(self, execute_mumps):
+        """LHS $PIECE on subscripted global variable."""
+        result = execute_mumps('TEST S ^G(1)="A^B^C" S $P(^G(1),"^",2)="NEW" W ^G(1) Q')
+        assert result.output == "A^NEW^C"
+
+    def test_lhs_piece_global_padding(self, execute_mumps):
+        """LHS $PIECE on undefined global pads with delimiters."""
+        result = execute_mumps('TEST S $P(^H,"^",3)="C" W ^H Q')
+        assert result.output == "^^C"
+
+
+@pytest.mark.codegen
+@pytest.mark.spec009
+class TestLHSPieceInvalidInputs:
+    """Tests for LHS $PIECE edge cases with invalid piece numbers."""
+
+    def test_piece_zero_no_modification(self, execute_mumps):
+        """Piece number 0 results in no modification per MUMPS spec.
+
+        S X="A^B^C" S $P(X,"^",0)="NEW" W X → "A^B^C" (unchanged)
+        """
+        result = execute_mumps('TEST S X="A^B^C" S $P(X,"^",0)="NEW" W X Q')
+        assert result.output == "A^B^C"
+
+    def test_negative_piece_no_modification(self, execute_mumps):
+        """Negative piece number results in no modification per MUMPS spec.
+
+        S X="A^B^C" S $P(X,"^",-1)="NEW" W X → "A^B^C" (unchanged)
+        """
+        result = execute_mumps('TEST S X="A^B^C" S $P(X,"^",-1)="NEW" W X Q')
+        assert result.output == "A^B^C"
