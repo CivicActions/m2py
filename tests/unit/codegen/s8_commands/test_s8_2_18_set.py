@@ -169,6 +169,34 @@ class TestLhsFunctionAssignmentCodegen:
         assert result.output == "AB  XY"
         assert result.success is True
 
+    def test_lhs_piece_omitted_piece_from_defaults_to_one(self, execute_mumps):
+        """SET $PIECE with omitted piece_from defaults to piece 1 (§8.2.18).
+
+        S $P(X,"^")="NEW" sets piece 1 to "NEW".
+        YDB verified: S X="A^B^C" S $P(X,"^")="NEW" W X → "NEW^B^C"
+        """
+        result = execute_mumps('TEST\n S X="A^B^C" S $P(X,"^")="NEW"\n W X\n Q\n')
+        assert result.output == "NEW^B^C"
+        assert result.success is True
+
+    def test_lhs_piece_omitted_on_undefined_creates_piece_one(self, execute_mumps):
+        """SET $PIECE on undefined variable with omitted piece creates piece 1 (§8.2.18).
+
+        YDB verified: S $P(Y,"^")="FIRST" W Y → "FIRST"
+        """
+        result = execute_mumps('TEST\n S $P(Y,"^")="FIRST"\n W Y\n Q\n')
+        assert result.output == "FIRST"
+        assert result.success is True
+
+    def test_lhs_piece_omitted_with_global(self, execute_mumps):
+        """SET $PIECE on global with omitted piece_from defaults to 1 (§8.2.18).
+
+        YDB verified: S ^G="X^Y^Z" S $P(^G,"^")="A" W ^G → "A^Y^Z"
+        """
+        result = execute_mumps('TEST\n S ^G="X^Y^Z" S $P(^G,"^")="A"\n W ^G\n Q\n')
+        assert result.output == "A^Y^Z"
+        assert result.success is True
+
 
 @pytest.mark.codegen
 class TestComputedOffsetCodegen:
