@@ -2597,8 +2597,14 @@ class MUMPSRuntime:
     def _find_first_function(self, python_code: str) -> str | None:
         """Find the name of the first user function defined in the code.
 
-        Skips helper functions (those starting with _) to find the first
-        MUMPS label function.
+        Skips internal helper functions to find the first MUMPS label function.
+        Recognizes translated MUMPS label names:
+        - _m_xxx: Python keywords (e.g., _m_for from MUMPS label "for")
+        - _n_xxx: Pure numeric labels (e.g., _n_01 from MUMPS label "01")
+        - _pct_xxx: Percent-prefixed labels (e.g., _pct_START from MUMPS label "%START")
+        - _preamble: Labelless preamble code
+
+        Skips codegen helper functions like _call_extrinsic, _labels, etc.
 
         Args:
             python_code: Python source code
@@ -2606,11 +2612,16 @@ class MUMPSRuntime:
         Returns:
             Name of first user function, or None if no functions found
         """
+        # Prefixes used by NameTranslator for MUMPS → Python translation
+        mumps_translated_prefixes = ("_m_", "_n_", "_pct_", "_preamble")
+
         # Look for all "def FUNCNAME(" patterns
         for match in re.finditer(r"^def\s+(\w+)\s*\(", python_code, re.MULTILINE):
             func_name = match.group(1)
-            # Skip helper functions (prefixed with _)
-            if not func_name.startswith("_"):
+            # Accept functions that don't start with _ OR are translated MUMPS names
+            if not func_name.startswith("_") or func_name.startswith(
+                mumps_translated_prefixes
+            ):
                 return func_name
         return None
 

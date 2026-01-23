@@ -151,6 +151,68 @@ class TestForCommandCodegen:
         assert result.output == "11122122"
         assert result.success is True
 
+    def test_for_nested_different_ranges(self, execute_mumps):
+        """Nested FOR with different step directions iterates correctly (Spec 017).
+
+        Spec 017 Phase 11: Before fix, nested FOR loops were using shared
+        variable names (_for_start, _for_step, _for_end) causing the inner
+        loop to clobber the outer loop's iteration state.
+
+        Given: F K=-1:1:1 F J=1:-1:-1 (outer: -1,0,1; inner: 1,0,-1)
+        When: executed
+        Then: total iterations = 3 * 3 = 9
+        """
+        result = execute_mumps(
+            "TEST\n S C=0 F K=-1:1:1 F J=1:-1:-1 S C=C+1\n W C\n Q\n"
+        )
+        assert result.output == "9"
+        assert result.success is True
+
+    def test_for_nested_unique_var_names(self, generate_python):
+        """Nested FOR generates unique variable names for each loop (Spec 017).
+
+        Spec 017 Phase 11: Each FOR loop must use unique names for its
+        iteration variables (_for_start_N, _for_step_N, _for_end_N) to
+        prevent variable collision in nested loops.
+        """
+        code = generate_python("TEST\n F I=1:1:3 F J=1:1:2 W I,J\n Q\n")
+        # Should have two different sets of loop variables (0-indexed)
+        assert "_for_start_0" in code or "_for_step_0" in code
+        assert "_for_start_1" in code or "_for_step_1" in code
+
+    def test_for_list_lazy_evaluation(self, execute_mumps):
+        """FOR list evaluates values lazily at each iteration (Spec 017).
+
+        Spec 017 Phase 11: MUMPS FOR with comma-separated values evaluates
+        each value expression at the start of its iteration, not all at once.
+
+        Given: F K="a",K_"b",K_"c" S K=K_"*"
+        When: executed
+        Then: K is "a*b*c*" (each iteration uses current K value)
+
+        Before fix, all values were pre-computed giving K="0c*" because
+        K was undefined (empty) when K_"b" and K_"c" were evaluated.
+        """
+        result = execute_mumps('TEST\n F K="a",K_"b",K_"c" S K=K_"*"\n W K\n Q\n')
+        assert result.output == "a*b*c*"
+        assert result.success is True
+
+    def test_routine_named_for_executes(self, execute_mumps):
+        """Routine named 'for' (Python keyword) executes correctly (Spec 017).
+
+        Spec 017 Phase 11: When a MUMPS routine is named with a Python keyword
+        (like 'for', 'if', 'while'), it gets translated to '_m_for', '_m_if', etc.
+        The runtime's entry point finder must recognize these as valid user functions.
+
+        Given: A routine with first label 'for' (a Python keyword)
+        When: executed
+        Then: the routine runs correctly starting at the 'for' label
+        """
+        # Use 'for' as label name - translated to _m_for internally
+        result = execute_mumps('for\n W "PASS"\n Q\n')
+        assert result.output == "PASS"
+        assert result.success is True
+
     def test_for_zero_step(self, execute_mumps):
         """FOR with zero step iterates infinitely at same value (T081).
 

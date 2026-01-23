@@ -260,6 +260,7 @@ class ForGenContext:
         loop_type: Classification from analysis for pattern selection
         loop_var_indirect: True if loop variable uses indirection (@A)
         loop_var_expr: For indirect, the expression to get the target var name
+        loop_id: Unique ID for this loop to generate unique variable names
     """
 
     stmt: MForStatement
@@ -272,6 +273,7 @@ class ForGenContext:
     loop_type: ForLoopType
     loop_var_indirect: bool = False  # T068: True if loop_var is @A
     loop_var_expr: Optional[str] = None  # T068: Expression to get target var name
+    loop_id: int = 0  # Unique ID for this loop (for generating unique var names)
 
     @classmethod
     def from_statement(
@@ -347,6 +349,9 @@ class ForGenContext:
                 "MForStatement.loop_type not set - ensure analyze_for_loops() was called"
             )
 
+        # Spec 017 Phase 11: Get unique loop ID from context for variable naming
+        loop_id = ctx.next_for_loop_id() if ctx else 0
+
         return cls(
             stmt=stmt,
             loop_var=loop_var,
@@ -358,6 +363,7 @@ class ForGenContext:
             loop_type=loop_type,
             loop_var_indirect=loop_var_indirect,
             loop_var_expr=loop_var_expr,
+            loop_id=loop_id,
         )
 
 
@@ -1763,6 +1769,9 @@ def _generate_for_bounded(
     even when the loop body doesn't execute (e.g., F I=2:-1:3 sets I=2).
     We must set the loop variable before the loop.
 
+    Spec 017 Phase 11: Use unique variable names (_for_start_N, etc.) to prevent
+    nested FOR loops from clobbering each other's loop control variables.
+
     T068: For indirect loop variables (F @A=1:1:3), resolve the target
     variable name at runtime and update via _rt.set_var().
 
@@ -1784,52 +1793,58 @@ def _generate_for_bounded(
     step_expr = generate_expr(param.step, ctx)
     end_expr = generate_expr(param.end, ctx)
 
+    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    lid = for_ctx.loop_id
+    start_var = f"_for_start_{lid}"
+    step_var = f"_for_step_{lid}"
+    end_var = f"_for_end_{lid}"
+
     # Spec 017: Set loop variable to start value before the loop
     # This ensures the variable is set even when the loop doesn't execute
-    ctx.emitter.line(f"_for_start = m_num({start_expr})")
-    ctx.emitter.line(f"_for_step = m_num({step_expr})")
-    ctx.emitter.line(f"_for_end = m_num({end_expr})")
+    ctx.emitter.line(f"{start_var} = m_num({start_expr})")
+    ctx.emitter.line(f"{step_var} = m_num({step_expr})")
+    ctx.emitter.line(f"{end_var} = m_num({end_expr})")
     # Set loop var to start value (MUMPS semantics)
-    ctx.emitter.line(f"{for_ctx.loop_var} = _for_start")
+    ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
     # Also sync to _scope for SIMPLE_FUNCTIONS strategy
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS and for_ctx.loop_var_name:
         ctx.emitter.line(
-            f"_scope.setdefault({for_ctx.loop_var_name!r}, MArray()).value = _for_start"
+            f"_scope.setdefault({for_ctx.loop_var_name!r}, MArray()).value = {start_var}"
         )
 
     # MUMPS FOR is end-inclusive, use while loop to support fractional steps
-    # Condition: (_for_step > 0 and loop_var <= _for_end) or (_for_step < 0 and loop_var >= _for_end)
+    # Condition: (step > 0 and loop_var <= end) or (step < 0 and loop_var >= end)
 
     # T068: Handle indirect loop variable (F @A=1:1:3)
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         # Resolve the target variable name once before the loop
-        ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+        ctx.emitter.line(f"_for_indirect_var_{lid} = {for_ctx.loop_var_expr}")
         # Set indirect var to start value
-        ctx.emitter.line("_rt.set_var(_for_indirect_var, _for_start, _scope)")
+        ctx.emitter.line(f"_rt.set_var(_for_indirect_var_{lid}, {start_var}, _scope)")
         ctx.emitter.line(
-            f"while (_for_step > 0 and {for_ctx.loop_var} <= _for_end) or "
-            f"(_for_step < 0 and {for_ctx.loop_var} >= _for_end):"
+            f"while ({step_var} > 0 and {for_ctx.loop_var} <= {end_var}) or "
+            f"({step_var} < 0 and {for_ctx.loop_var} >= {end_var}):"
         )
         with ctx.emitter.indented():
             # Update the indirect variable at start of each iteration
             ctx.emitter.line(
-                f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+                f"_rt.set_var(_for_indirect_var_{lid}, {for_ctx.loop_var}, _scope)"
             )
             _generate_for_body(stmt, ctx)
             # Increment loop variable at end of iteration using m_add for precision
             ctx.emitter.line(
-                f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, _for_step)"
+                f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, {step_var})"
             )
     else:
         ctx.emitter.line(
-            f"while (_for_step > 0 and {for_ctx.loop_var} <= _for_end) or "
-            f"(_for_step < 0 and {for_ctx.loop_var} >= _for_end):"
+            f"while ({step_var} > 0 and {for_ctx.loop_var} <= {end_var}) or "
+            f"({step_var} < 0 and {for_ctx.loop_var} >= {end_var}):"
         )
         with ctx.emitter.indented():
             _generate_for_body(stmt, ctx)
             # Increment loop variable at end of iteration using m_add for precision
             ctx.emitter.line(
-                f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, _for_step)"
+                f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, {step_var})"
             )
 
 
@@ -2070,7 +2085,10 @@ def _generate_for_while_range(
     loop_ref: str,
     param: MForParameter,
 ) -> None:
-    """Generate while loop for RANGE FOR with modified loop variable."""
+    """Generate while loop for RANGE FOR with modified loop variable.
+
+    Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions.
+    """
     if param.start is None or param.step is None or param.end is None:
         raise NotImplementedError("Incomplete FOR range parameters for while loop")
 
@@ -2078,15 +2096,20 @@ def _generate_for_while_range(
     step_expr = generate_expr(param.step, ctx)
     end_expr = generate_expr(param.end, ctx)
 
+    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    lid = for_ctx.loop_id
+    step_var = f"_for_step_{lid}"
+    end_var = f"_for_end_{lid}"
+
     # Initialize loop variable and step/end values
     ctx.emitter.line(f"{loop_ref} = m_num({start_expr})")
-    ctx.emitter.line(f"_for_step = m_num({step_expr})")
-    ctx.emitter.line(f"_for_end = m_num({end_expr})")
+    ctx.emitter.line(f"{step_var} = m_num({step_expr})")
+    ctx.emitter.line(f"{end_var} = m_num({end_expr})")
 
     # While condition: check bounds based on step direction
     in_range_cond = (
-        f"(_for_step > 0 and {loop_ref} <= _for_end) or "
-        f"(_for_step < 0 and {loop_ref} >= _for_end)"
+        f"({step_var} > 0 and {loop_ref} <= {end_var}) or "
+        f"({step_var} < 0 and {loop_ref} >= {end_var})"
     )
     ctx.emitter.line(f"while {in_range_cond}:")
 
@@ -2095,14 +2118,14 @@ def _generate_for_while_range(
         _generate_for_body(stmt, ctx)
         # Check if the NEXT value would be in range BEFORE incrementing
         next_val_cond = (
-            f"(_for_step > 0 and {loop_ref} + _for_step <= _for_end) or "
-            f"(_for_step < 0 and {loop_ref} + _for_step >= _for_end)"
+            f"({step_var} > 0 and {loop_ref} + {step_var} <= {end_var}) or "
+            f"({step_var} < 0 and {loop_ref} + {step_var} >= {end_var})"
         )
         ctx.emitter.line(f"if not ({next_val_cond}):")
         with ctx.emitter.indented():
             ctx.emitter.line("break")
         # Increment loop variable at end of iteration
-        ctx.emitter.line(f"{loop_ref} = {loop_ref} + _for_step")
+        ctx.emitter.line(f"{loop_ref} = {loop_ref} + {step_var}")
 
 
 def _generate_for_while_string_list(
@@ -2117,6 +2140,11 @@ def _generate_for_while_string_list(
     1. Build the list of values
     2. Use an index-based while loop
     3. Assign the current value to the indirect variable on each iteration
+
+    Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions.
+    Also, evaluate each list value LAZILY at iteration time, not upfront, since
+    MUMPS FOR list semantics require evaluating k_"b" when k already contains
+    the modified value from previous iteration.
     """
     # Collect all values from parameters
     values = []
@@ -2127,20 +2155,30 @@ def _generate_for_while_string_list(
     if not values:
         raise NotImplementedError("Empty string list FOR")
 
-    values_str = ", ".join(values)
+    # Spec 017 Phase 11: Use unique variable names
+    lid = for_ctx.loop_id
+    idx_var = f"_for_idx_{lid}"
 
-    # Create the value list and use index-based iteration
-    ctx.emitter.line(f"_for_values = [{values_str}]")
-    ctx.emitter.line("_for_idx = 0")
-    ctx.emitter.line("while _for_idx < len(_for_values):")
+    # MUMPS FOR list semantics: evaluate each value LAZILY at iteration time
+    # This is needed because F K="a",K_"b",K_"c" should evaluate K_"b" after
+    # K has been modified by the first iteration's body
+    ctx.emitter.line(f"{idx_var} = 0")
+    ctx.emitter.line(f"while {idx_var} < {len(values)}:")
 
     with ctx.emitter.indented():
-        # Assign current value to loop variable
-        ctx.emitter.line(f"{loop_ref} = _for_values[_for_idx]")
+        # Lazy evaluation: compute current value based on index
+        # Generate if/elif chain for each value
+        for i, val_expr in enumerate(values):
+            if i == 0:
+                ctx.emitter.line(f"if {idx_var} == 0:")
+            else:
+                ctx.emitter.line(f"elif {idx_var} == {i}:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(f"{loop_ref} = {val_expr}")
         # Execute body
         _generate_for_body(stmt, ctx)
         # Increment index
-        ctx.emitter.line("_for_idx += 1")
+        ctx.emitter.line(f"{idx_var} += 1")
 
 
 def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:

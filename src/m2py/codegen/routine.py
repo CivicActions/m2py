@@ -68,6 +68,16 @@ class GeneratorContext:
     # This happens when routine contains argumentless KILL or argumentless NEW
     uses_dynamic_locals: bool = False
 
+    # Spec 017 Phase 11: Counter for generating unique FOR loop variable names
+    # Prevents nested FOR loops from clobbering each other's _for_start/_for_step/_for_end
+    _for_loop_counter: int = 0
+
+    def next_for_loop_id(self) -> int:
+        """Return a unique ID for FOR loop variable names and increment counter."""
+        loop_id = self._for_loop_counter
+        self._for_loop_counter += 1
+        return loop_id
+
 
 class AnalysisNotCompleteError(ValueError):
     """Raised when code generation is attempted without complete analysis.
