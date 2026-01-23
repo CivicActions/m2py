@@ -36,6 +36,7 @@ class GeneratorContext:
     Carries state needed by expression and statement generators.
     Extended for Spec 005 with signatures and loop tracking.
     Extended for Spec 006 with strategy and state variable tracking.
+    Extended for Spec 017 with dynamic locals support.
     """
 
     routine: MRoutine
@@ -62,6 +63,10 @@ class GeneratorContext:
     # Spec 011: Name of the NewScopeManager variable when inside a NEW-managed block
     # If set, _generate_new() should use _new_mgr.new_var() instead of _scope.pop()
     new_scope_manager_var: Optional[str] = None
+
+    # Spec 017: True when routine uses dynamic _locals dict instead of static fields
+    # This happens when routine contains argumentless KILL or argumentless NEW
+    uses_dynamic_locals: bool = False
 
 
 class AnalysisNotCompleteError(ValueError):
@@ -222,9 +227,14 @@ class RoutineGenerator:
         # Compute state vars and array vars for trampoline pattern
         state_vars: set[str] = set()
         array_vars: set[str] = set()
+        uses_dynamic_locals = False
         if self._strategy == GotoStrategy.TRAMPOLINE:
             state_vars = self._routine.routine_state_vars or set()
             array_vars = self._routine.array_vars or set()
+            # Spec 017: Check if routine needs dynamic _locals dict
+            from m2py.codegen.shared_state import routine_uses_dynamic_locals
+
+            uses_dynamic_locals = routine_uses_dynamic_locals(self._routine)
 
         ctx = GeneratorContext(
             routine=self._routine,
@@ -233,6 +243,7 @@ class RoutineGenerator:
             strategy=self._strategy,
             state_vars=state_vars,
             array_vars=array_vars,
+            uses_dynamic_locals=uses_dynamic_locals,
         )
 
         # Generate module preamble

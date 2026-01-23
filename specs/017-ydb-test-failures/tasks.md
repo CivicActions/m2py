@@ -43,20 +43,21 @@
 
 **Independent Test**: Run v1call, v1nst3, v1ov through m2py and verify output matches YDB
 
-**Affected Tests**: v1call, v1nst3, v1ov, v1prgd, v1seq, vv2lcc1, vv2vnib, fifo, per02397, setpiece (10 tests)
+**Affected Tests**: v1call, v1nst3, v1ov, v1prgd, v1seq, vv2lcc1, vv2vnib (7 MVTS tests)
+**Note**: fifo, per02397, setpiece were originally listed but have DIFFERENT issues (Z-extensions/external deps, addressed in US8/other phases)
 
 ### Implementation
 
-- [ ] T009 [US1] Modify `generate_routine_state_class()` to add `_locals: dict[str, Any]` field in src/m2py/codegen/shared_state.py
-- [ ] T010 [US1] Add `_new_stack: list[dict]` field to RoutineState for NEW scope management in src/m2py/codegen/shared_state.py
-- [ ] T011 [US1] Implement argumentless KILL codegen to clear `state._locals.clear()` in src/m2py/codegen/statements.py
-- [ ] T012 [US1] Implement argumentless NEW codegen to push/clear `state._locals` in src/m2py/codegen/statements.py
-- [ ] T013 [US1] Implement NEW scope restoration on QUIT in src/m2py/codegen/statements.py
-- [ ] T014 [US1] Update variable access codegen to check `state._locals` dict when in TRAMPOLINE mode in src/m2py/codegen/expressions.py
-- [ ] T015 [US1] Add unit tests for argumentless KILL/NEW with cross-label GOTO in tests/unit/codegen/
-- [ ] T016 [US1] Validate all 10 affected tests pass: `uv run pytest tests/functional/ -k "v1call or v1nst3 or v1ov or v1prgd or v1seq or vv2lcc1 or vv2vnib or fifo or per02397 or setpiece" -v`
+- [x] T009 [US1] Modify `generate_routine_state_class()` to add `_locals: dict[str, Any]` field in src/m2py/codegen/shared_state.py
+- [x] T010 [US1] Add `_new_stack: list[dict]` field to RoutineState for NEW scope management in src/m2py/codegen/shared_state.py
+- [x] T011 [US1] Implement argumentless KILL codegen to clear `state._locals.clear()` in src/m2py/codegen/statements.py
+- [x] T012 [US1] Implement argumentless NEW codegen to push/clear `state._locals` in src/m2py/codegen/statements.py
+- [x] T013 [US1] Implement NEW scope restoration on QUIT in src/m2py/codegen/statements.py
+- [x] T014 [US1] Update variable access codegen to check `state._locals` dict when in TRAMPOLINE mode in src/m2py/codegen/expressions.py
+- [x] T015 [US1] Add unit tests for argumentless KILL/NEW with cross-label GOTO in tests/unit/codegen/
+- [x] T016 [US1] Validate 7 MVTS tests pass: `uv run pytest tests/functional/test_mvts.py -k "V1CALL or V1NST3 or V1OV or V1PRGD or V1SEQ or V2LCC1 or V2VNIB" -v`
 
-**Checkpoint**: 10 TRAMPOLINE tests pass - argumentless KILL/NEW working
+**Checkpoint**: 7 TRAMPOLINE tests pass - argumentless KILL/NEW working ✅
 
 ---
 

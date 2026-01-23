@@ -211,6 +211,9 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     Spec 008 (T085): For SIMPLE_FUNCTIONS strategy, read variables from _scope
     dictionary for cross-routine visibility: _scope.get('VAR', '')
 
+    Spec 017 (T014): For routines with argumentless KILL/NEW in TRAMPOLINE strategy,
+    use state._locals dict for dynamic variable access.
+
     Args:
         var: MVariable node
         ctx: Generator context
@@ -220,6 +223,18 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     """
     # Translate name to valid Python identifier
     python_name = translate_name(var.name)
+
+    # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+    if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+        if var.subscripts:
+            # Generate subscript expressions
+            subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+            # Access MArray from _locals dict, default to empty MArray
+            base = f"state._locals.get({python_name!r}, MArray())"
+            return f"{base}.get({', '.join(subscript_exprs)})"
+        else:
+            # Simple variable: get from _locals dict, default to empty string
+            return f"state._locals.get({python_name!r}, '')"
 
     # Spec 006 (T075): Handle subscripted array access
     if var.subscripts:

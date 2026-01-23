@@ -19,7 +19,7 @@
 
 - [x] Phase 1: Setup (T001-T003)
 - [x] Phase 2: Foundational (T004-T008)
-- [ ] Phase 3: US1 - TRAMPOLINE (T009-T016)
+- [x] Phase 3: US1 - TRAMPOLINE (T009-T016) - 7 tests fixed
 - [ ] Phase 4: US9 - Codegen Syntax (T017-T020)
 - [ ] Phase 5: US2 - Sorts-After (T021-T025)
 - [ ] Phase 6: US3 - LHS $PIECE (T026-T031)
@@ -35,8 +35,14 @@
 
 ## Detailed Test Mapping
 
-### TRAMPOLINE Tests (10)
-- v1call, v1nst3, v1ov, v1prgd, v1seq, vv2lcc1, vv2vnib, fifo, per02397, setpiece
+### TRAMPOLINE Tests (7 - US1)
+- v1call, v1nst3, v1ov, v1prgd, v1seq, v2lcc1, v2vnib
+- **Status**: FIXED in Phase 3
+
+### Related but Separate Issues (moved to other phases)
+- fifo: $ZVERSION Z-function → US8 (LIM-015)
+- setpiece: NEW $ZTRAP Z-extension → US8 (LIM-015)
+- per02397: External dependency issue
 
 ### LIM-015 Z-extension Tests (12)
 - From failure-analysis.md: ZSYSTEM (3), $ZTRAP (6), Z-functions (3)
@@ -50,4 +56,4 @@
 |------|-------|-------------|-------|
 | 2025-01-22 | Phase 1 | 0 | Setup complete, baseline established |
 | 2025-01-22 | Phase 2 | 0 | Analysis infrastructure complete - added has_argumentless_kill/new flags to MRoutine |
-| 2026-01-22 | Setup | - | Baseline established |
+| 2025-01-22 | Phase 3 | 7 | Argumentless KILL/NEW in TRAMPOLINE - V1CALL, V1NST3, V1OV, V1PRGD, V1SEQ, V2LCC1, V2VNIB |

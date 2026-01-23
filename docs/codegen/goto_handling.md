@@ -403,6 +403,77 @@ def TEST():
 - Fall-through to next label returns that label's name instead of `None`
 - FOR loop variables in state use `state.VAR` for loop counter when cross-label visible
 
+### Dynamic Locals Mode (Spec 017)
+
+When a routine contains **argumentless KILL** or **argumentless NEW**, variables cannot be
+enumerated at compile time. In this case, RoutineState uses dynamic dict-based storage:
+
+```python
+@dataclass
+class RoutineState:
+    """Dynamic state for routines with argumentless KILL/NEW."""
+    _locals: dict[str, Any] = field(default_factory=dict)
+    _new_stack: list[dict[str, Any]] = field(default_factory=list)
+```
+
+**Variable Access Pattern:**
+
+```python
+# Static mode (default):
+x = state.X  # Direct attribute access
+
+# Dynamic mode (argumentless KILL/NEW):
+x = state._locals.get("X", "")  # Dict lookup with default
+```
+
+**Argumentless KILL:**
+
+```mumps
+TEST K  ; Kill all local variables
+```
+
+```python
+# Generated code:
+state._locals.clear()
+```
+
+**Argumentless NEW:**
+
+```mumps
+TEST N  ; Save and clear all locals
+     ; ... work with fresh scope ...
+     Q  ; Restore saved locals on QUIT
+```
+
+```python
+# At NEW:
+state._new_stack.append(dict(state._locals))
+state._locals.clear()
+
+# At QUIT:
+if state._new_stack:
+    state._locals.update(state._new_stack.pop())
+return (None, state)
+```
+
+**Detection:**
+
+The semantic analyzer populates `has_argumentless_kill` and `has_argumentless_new` flags
+on MRoutine. The codegen checks these via `routine_uses_dynamic_locals()` to decide:
+
+- Static mode: Fixed dataclass fields, direct attribute access
+- Dynamic mode: `_locals` dict with `_new_stack` for scope management
+
+**Selective Application:**
+
+Dynamic locals mode is only enabled for routines that actually need it. This preserves
+the performance benefits of static dataclass fields for the majority of routines while
+correctly handling dynamic scoping when required.
+- **Spec 007**: Label functions accept `_start_offset=0` parameter for entry at offset
+- QUIT returns `(None, state)` to exit the trampoline loop
+- Fall-through to next label returns that label's name instead of `None`
+- FOR loop variables in state use `state.VAR` for loop counter when cross-label visible
+
 ## Computed Offsets (Spec 007)
 
 GOTO/DO with computed offsets (`G LABEL+N`, `D SUB+expr`) dispatches by source line number:

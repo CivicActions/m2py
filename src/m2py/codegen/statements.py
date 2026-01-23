@@ -840,8 +840,11 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
                     generate_expr(sub, ctx) for sub in assignment.target.subscripts
                 ]
 
-                # Determine base variable access
-                if (
+                # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+                if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                    # Access MArray from _locals dict, auto-vivify if needed
+                    base = f"state._locals.setdefault({target_name!r}, MArray())"
+                elif (
                     ctx.strategy == GotoStrategy.TRAMPOLINE
                     and var_name in ctx.array_vars
                 ):
@@ -866,8 +869,14 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
                 ctx.emitter.line(f"{target_expr} = {value_expr}")
                 continue
 
+            # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                # Store in _locals dict as MArray for consistency with subscripted access
+                target_name = (
+                    f"state._locals.setdefault({target_name!r}, MArray()).value"
+                )
             # Spec 006: Check if variable should be accessed via state (TRAMPOLINE)
-            if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
                 target_name = f"state.{target_name}"
             elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 # Spec 009 (T021): Store variables in _scope using MArray for consistency
@@ -2636,8 +2645,15 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                 ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
                 with ctx.emitter.indented():
                     ctx.emitter.line("_scope.pop(_var_name, None)")
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            # Spec 017 (T011): Iterate over _locals and remove non-kept variables
+            ctx.emitter.line("for _var_name in list(state._locals.keys()):")
+            with ctx.emitter.indented():
+                ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("state._locals.pop(_var_name, None)")
         else:
-            # TRAMPOLINE strategy - not supported for exclusive KILL
+            # TRAMPOLINE strategy without dynamic locals - not supported
             raise NotImplementedError(
                 "Exclusive KILL not supported in TRAMPOLINE strategy"
             )
@@ -2648,8 +2664,11 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Clear all local variables from _scope
             ctx.emitter.line("_scope.clear()")
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            # Spec 017 (T011): Clear _locals dict for dynamic locals mode
+            ctx.emitter.line("state._locals.clear()")
         else:
-            # TRAMPOLINE strategy - not supported for argumentless KILL
+            # TRAMPOLINE strategy without dynamic locals - not supported
             raise NotImplementedError(
                 "Argumentless KILL not supported in TRAMPOLINE strategy"
             )
@@ -2832,8 +2851,18 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
                     ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
                     with ctx.emitter.indented():
                         ctx.emitter.line("_scope.pop(_var_name, None)")
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            # Spec 017 (T012): Push _locals state to _new_stack (only non-kept vars)
+            ctx.emitter.line(
+                f"state._new_stack.append({{k: v.copy() if hasattr(v, 'copy') else v for k, v in state._locals.items() if k not in {keep_vars_repr}}})"
+            )
+            ctx.emitter.line("for _var_name in list(state._locals.keys()):")
+            with ctx.emitter.indented():
+                ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("state._locals.pop(_var_name, None)")
         else:
-            # TRAMPOLINE strategy - not supported for exclusive NEW
+            # TRAMPOLINE strategy without dynamic locals - not supported
             raise NotImplementedError(
                 "Exclusive NEW not supported in TRAMPOLINE strategy"
             )
@@ -2853,8 +2882,15 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
             else:
                 # Simple clear of all local variables
                 ctx.emitter.line("_scope.clear()")
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            # Spec 017 (T012): Push _locals state to _new_stack, then clear
+            # Deep copy to preserve MArray state
+            ctx.emitter.line(
+                "state._new_stack.append({k: v.copy() if hasattr(v, 'copy') else v for k, v in state._locals.items()})"
+            )
+            ctx.emitter.line("state._locals.clear()")
         else:
-            # TRAMPOLINE strategy - not supported for argumentless NEW
+            # TRAMPOLINE strategy without dynamic locals - not supported
             raise NotImplementedError(
                 "Argumentless NEW not supported in TRAMPOLINE strategy"
             )
