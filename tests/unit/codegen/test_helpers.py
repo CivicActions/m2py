@@ -9,7 +9,16 @@ from decimal import Decimal
 
 import pytest
 
-from m2py.codegen.helpers import m_compare, m_num, m_str, m_truth
+from m2py.codegen.helpers import (
+    m_add,
+    m_compare,
+    m_div,
+    m_mul,
+    m_num,
+    m_str,
+    m_sub,
+    m_truth,
+)
 
 
 @pytest.mark.codegen
@@ -335,3 +344,396 @@ class TestMNumExponential:
         result = m_num("1E2A")
         # 1E2 = 100, 'A' is ignored
         assert result == 100
+
+
+# =============================================================================
+# Arithmetic Helper Function Tests - m_add, m_sub, m_mul, m_div
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestMAdd:
+    """Tests for m_add() - MUMPS addition with 18-digit precision.
+
+    All test cases verified against YDB output.
+    """
+
+    # Basic integer addition
+    def test_basic_integer_addition(self):
+        """Integer addition returns integer.
+
+        YDB: W 2+3 → 5
+        """
+        assert m_add(2, 3) == 5
+        assert isinstance(m_add(2, 3), int)
+
+    def test_zero_addition(self):
+        """Adding zero returns the other operand.
+
+        YDB: W 0+5 → 5
+        """
+        assert m_add(0, 5) == 5
+        assert m_add(5, 0) == 5
+        assert m_add(0, 0) == 0
+
+    def test_negative_addition(self):
+        """Addition with negative numbers.
+
+        YDB: W -5+-3 → -8
+        """
+        assert m_add(-5, -3) == -8
+        assert m_add(-5, 3) == -2
+        assert m_add(5, -3) == 2
+
+    # Decimal addition (precision tests)
+    def test_decimal_addition_basic(self):
+        """Decimal addition preserves precision.
+
+        YDB: W 0.001+0.001 → .002
+        """
+        result = m_add(0.001, 0.001)
+        assert result == Decimal("0.002")
+
+    def test_decimal_addition_no_float_error(self):
+        """Avoids classic 0.1+0.2 != 0.3 float error.
+
+        YDB: W 0.1+0.2 → .3
+        NOTE: Python float gives 0.30000000000000004
+        """
+        result = m_add(0.1, 0.2)
+        assert result == Decimal("0.3")
+
+    def test_decimal_repeated_addition(self):
+        """Repeated small additions don't accumulate float errors.
+
+        YDB: W .1+.1+.1+.1+.1+.1+.1+.1+.1+.1 → 1
+        """
+        # Simulate repeated addition
+        result = Decimal("0.1")
+        for _ in range(9):
+            result = m_add(result, Decimal("0.1"))
+        assert result == 1
+        assert isinstance(result, int)
+
+    # String coercion (m_num)
+    def test_string_coercion_numeric_prefix(self):
+        """Strings with numeric prefix are coerced.
+
+        YDB: W "3A"+4 → 7
+        """
+        assert m_add("3A", 4) == 7
+        assert m_add(4, "3A") == 7
+
+    def test_string_coercion_empty_string(self):
+        """Empty string coerces to 0.
+
+        YDB: W ""+5 → 5
+        """
+        assert m_add("", 5) == 5
+        assert m_add(5, "") == 5
+
+    def test_string_coercion_non_numeric(self):
+        """Non-numeric strings coerce to 0.
+
+        YDB: W "ABC"+5 → 5
+        """
+        assert m_add("ABC", 5) == 5
+        assert m_add("XYZ", "ABC") == 0
+
+    # Integer normalization
+    def test_whole_number_result_normalized(self):
+        """Whole number results normalize to int.
+
+        YDB: W 1.5+1.5 → 3
+        """
+        result = m_add(1.5, 1.5)
+        assert result == 3
+        assert isinstance(result, int)
+
+
+@pytest.mark.codegen
+class TestMSub:
+    """Tests for m_sub() - MUMPS subtraction with 18-digit precision.
+
+    All test cases verified against YDB output.
+    """
+
+    # Basic integer subtraction
+    def test_basic_integer_subtraction(self):
+        """Integer subtraction returns integer.
+
+        YDB: W 5-3 → 2
+        """
+        assert m_sub(5, 3) == 2
+        assert isinstance(m_sub(5, 3), int)
+
+    def test_zero_subtraction(self):
+        """Subtracting zero returns operand.
+
+        YDB: W 5-0 → 5
+        """
+        assert m_sub(5, 0) == 5
+        assert m_sub(0, 5) == -5
+        assert m_sub(0, 0) == 0
+
+    def test_negative_subtraction(self):
+        """Subtraction resulting in negative.
+
+        YDB: W 3-5 → -2
+        """
+        assert m_sub(3, 5) == -2
+
+    def test_double_negative_subtraction(self):
+        """Subtracting negative (addition).
+
+        YDB: W 5-(-3) → 8
+        """
+        assert m_sub(5, -3) == 8
+        assert m_sub(-2, -3) == 1
+
+    # Decimal subtraction
+    def test_decimal_subtraction_basic(self):
+        """Decimal subtraction preserves precision.
+
+        YDB: W 0.003-0.001 → .002
+        """
+        result = m_sub(0.003, 0.001)
+        assert result == Decimal("0.002")
+
+    def test_decimal_subtraction_no_float_error(self):
+        """Avoids float precision errors.
+
+        YDB: W 0.3-0.1 → .2
+        NOTE: Python float can have small errors here
+        """
+        result = m_sub(0.3, 0.1)
+        assert result == Decimal("0.2")
+
+    # String coercion
+    def test_string_coercion(self):
+        """Strings coerced via m_num.
+
+        YDB: W "10X"-3 → 7
+        """
+        assert m_sub("10X", 3) == 7
+        assert m_sub("10", "3A") == 7
+
+    # Integer normalization
+    def test_whole_number_result_normalized(self):
+        """Whole number results normalize to int.
+
+        YDB: W 5.5-2.5 → 3
+        """
+        result = m_sub(5.5, 2.5)
+        assert result == 3
+        assert isinstance(result, int)
+
+
+@pytest.mark.codegen
+class TestMMul:
+    """Tests for m_mul() - MUMPS multiplication with 18-digit precision.
+
+    All test cases verified against YDB output.
+    """
+
+    # Basic integer multiplication
+    def test_basic_integer_multiplication(self):
+        """Integer multiplication returns integer.
+
+        YDB: W 3*4 → 12
+        """
+        assert m_mul(3, 4) == 12
+        assert isinstance(m_mul(3, 4), int)
+
+    def test_zero_multiplication(self):
+        """Multiplying by zero returns 0.
+
+        YDB: W 5*0 → 0
+        """
+        assert m_mul(5, 0) == 0
+        assert m_mul(0, 5) == 0
+        assert m_mul(0, 0) == 0
+
+    def test_one_multiplication(self):
+        """Multiplying by 1 returns operand.
+
+        YDB: W 5*1 → 5
+        """
+        assert m_mul(5, 1) == 5
+        assert m_mul(1, 5) == 5
+
+    def test_negative_multiplication(self):
+        """Negative number multiplication.
+
+        YDB: W -2*3 → -6
+        YDB: W -2*-3 → 6
+        """
+        assert m_mul(-2, 3) == -6
+        assert m_mul(-2, -3) == 6
+        assert m_mul(2, -3) == -6
+
+    # Decimal multiplication
+    def test_decimal_multiplication_basic(self):
+        """Decimal multiplication preserves precision.
+
+        YDB: W 0.01*0.02 → .0002
+        """
+        result = m_mul(0.01, 0.02)
+        assert result == Decimal("0.0002")
+
+    def test_decimal_multiplication_squares(self):
+        """Squaring decimals.
+
+        YDB: W 0.1*0.1 → .01
+        """
+        result = m_mul(0.1, 0.1)
+        assert result == Decimal("0.01")
+
+    def test_large_number_multiplication(self):
+        """Large number multiplication.
+
+        YDB: W 1E10*1E8 → 1000000000000000000
+        """
+        result = m_mul(1e10, 1e8)
+        assert result == 1000000000000000000
+
+    # String coercion
+    def test_string_coercion(self):
+        """Strings coerced via m_num.
+
+        YDB: W "5A"*"3B" → 15
+        """
+        assert m_mul("5A", "3B") == 15
+        assert m_mul("5", 3) == 15
+
+    # Integer normalization
+    def test_whole_number_result_normalized(self):
+        """Whole number results normalize to int.
+
+        YDB: W 2.5*4 → 10
+        """
+        result = m_mul(2.5, 4)
+        assert result == 10
+        assert isinstance(result, int)
+
+
+@pytest.mark.codegen
+class TestMDiv:
+    """Tests for m_div() - MUMPS division with 18-digit precision.
+
+    All test cases verified against YDB output.
+    MUMPS uses 18 significant digits for division precision.
+    """
+
+    # Basic division
+    def test_basic_even_division(self):
+        """Even division returns exact result.
+
+        YDB: W 10/2 → 5
+        """
+        result = m_div(10, 2)
+        assert result == Decimal("5")
+
+    def test_basic_division_with_remainder(self):
+        """Division with remainder produces decimal.
+
+        YDB: W 10/4 → 2.5
+        """
+        result = m_div(10, 4)
+        assert result == Decimal("2.5")
+
+    def test_zero_dividend(self):
+        """Zero divided by anything is 0.
+
+        YDB: W 0/5 → 0
+        """
+        result = m_div(0, 5)
+        assert result == Decimal("0")
+
+    def test_negative_division(self):
+        """Division with negative numbers.
+
+        YDB: W -6/2 → -3
+        """
+        result = m_div(-6, 2)
+        assert result == Decimal("-3")
+
+    # 18-digit precision tests
+    def test_repeating_decimal_precision(self):
+        """Repeating decimals show 18-digit precision.
+
+        YDB: W 4/3 → 1.33333333333333333
+        YDB: W 1/3 → .333333333333333333
+        """
+        result = m_div(4, 3)
+        assert str(result) == "1.33333333333333333"
+
+        result = m_div(1, 3)
+        assert str(result) == "0.333333333333333333"
+
+    def test_simple_fraction(self):
+        """Simple fractions.
+
+        YDB: W 1/10 → .1
+        """
+        result = m_div(1, 10)
+        assert result == Decimal("0.1")
+
+    # String coercion
+    def test_string_coercion(self):
+        """Strings coerced via m_num.
+
+        YDB: W "15X"/"3Y" → 5
+        """
+        result = m_div("15X", "3Y")
+        assert result == Decimal("5")
+
+    def test_divide_by_zero_raises(self):
+        """Division by zero raises error.
+
+        YDB: W 1/0 → %YDB-E-DIVZERO
+        """
+        with pytest.raises(ZeroDivisionError):
+            m_div(1, 0)
+
+
+@pytest.mark.codegen
+class TestArithmeticMStrFormatting:
+    """Tests for m_str() formatting of arithmetic results.
+
+    Ensures arithmetic results format correctly without scientific notation.
+    """
+
+    def test_small_decimal_formatting(self):
+        """Small decimals don't use scientific notation.
+
+        YDB: S X=0.0002 W X → .0002
+        """
+        result = m_mul(0.01, 0.02)
+        assert m_str(result) == ".0002"
+
+    def test_large_number_formatting(self):
+        """Large numbers don't use scientific notation.
+
+        YDB: S X=1000000000000000000 W X → 1000000000000000000
+        """
+        result = m_mul(1e10, 1e8)
+        assert m_str(result) == "1000000000000000000"
+
+    def test_repeating_decimal_formatting(self):
+        """Repeating decimals format correctly.
+
+        YDB: S X=1/3 W X → .333333333333333333
+        """
+        result = m_div(1, 3)
+        formatted = m_str(result)
+        # Should start with 0. (or just .) and have 18 3's
+        assert "e" not in formatted.lower()
+        assert formatted == ".333333333333333333"
+
+    def test_very_small_number_formatting(self):
+        """Very small numbers format without scientific notation.
+
+        YDB: W 7E-15 → .000000000000007
+        """
+        assert m_str(7e-15) == ".000000000000007"

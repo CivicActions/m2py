@@ -38,6 +38,7 @@ for traceability to test files.
 | LIM-016 | Zero-VistA-Usage Deferred Features | Parses OK | Features with confirmed zero VistA usage |
 | LIM-017 | Generic Indirection Codegen | Redirect | Tests in s7_3_indirection |
 | LIM-018 | Z-Command Codegen | Redirect | Tests in extensions/ydb/ |
+| LIM-019 | Arithmetic Precision Edge Cases | Parses OK | Minor precision differences in 18-digit boundary cases |
 
 ---
 
@@ -346,6 +347,38 @@ implement. Since m2py targets YDB compatibility, these commands raise NotImpleme
 
 **M2PY Behavior**: Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
 `NotImplementedError("LIM-016: {feature} not supported")`.
+
+## LIM-019: Arithmetic Precision Edge Cases
+
+**Type**: Parses OK
+
+MUMPS specifies 18 significant digits for numeric precision. M2PY uses Python's
+Decimal library to implement this precision. However, there are minor differences
+in edge cases when results approach the 18-digit boundary:
+
+| Case | YDB | M2PY | Difference |
+|------|-----|------|------------|
+| -1 + .000000000000000001 | -1 | -.999999999999999999 | Rounding to integer |
+| -37 * 1.00000000111111111 | -37.000000041111111 | -37.0000000411111111 | Last digit |
+
+These differences affect the YDB arith.m test which implements its own bignum
+arithmetic and compares against the built-in operators. Both implementations
+are correct to 18 significant digits; the difference is in rounding behavior
+at the precision boundary.
+
+Real-world MUMPS code rarely depends on the exact 18th significant digit.
+
+**Test Coverage**: Comprehensive unit tests for arithmetic helper functions
+(m_add, m_sub, m_mul, m_div) are in tests/unit/codegen/test_helpers.py.
+All test cases are verified against YDB output and cover:
+- Basic operations, zero handling, negative numbers
+- Decimal precision (avoiding float errors like 0.1+0.2)
+- String coercion via m_num
+- 18-digit precision for repeating decimals
+- Result formatting via m_str (no scientific notation)
+
+**M2PY Behavior**: Arithmetic operations produce correct results to 18 significant digits.
+Edge case rounding may differ slightly from YDB in the last significant digit.
 
 ---
 

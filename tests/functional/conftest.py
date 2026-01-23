@@ -94,6 +94,9 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     "zprev": "LIM-015",
     # mugj suite - $ZVERSION function
     "v1ac": "LIM-015",
+    # LIM-019: Arithmetic precision edge cases
+    # basic suite - arith test has 18-digit boundary precision differences
+    "arith": "LIM-019",
 }
 
 

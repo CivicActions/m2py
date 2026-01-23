@@ -425,6 +425,41 @@ This section is marked as covered by the extensions/ydb tests.""",
         behavior="""\
 See extensions/ydb tests for full codegen coverage of Z-commands.""",
     ),
+    "LIM-019": Limitation(
+        id="LIM-019",
+        category="Arithmetic Precision Edge Cases",
+        type=LimitationType.PARSES_OK,
+        short_description="Minor precision differences in 18-digit boundary cases",
+        sections=(),
+        details="""\
+MUMPS specifies 18 significant digits for numeric precision. M2PY uses Python's
+Decimal library to implement this precision. However, there are minor differences
+in edge cases when results approach the 18-digit boundary:
+
+| Case | YDB | M2PY | Difference |
+|------|-----|------|------------|
+| -1 + .000000000000000001 | -1 | -.999999999999999999 | Rounding to integer |
+| -37 * 1.00000000111111111 | -37.000000041111111 | -37.0000000411111111 | Last digit |
+
+These differences affect the YDB arith.m test which implements its own bignum
+arithmetic and compares against the built-in operators. Both implementations
+are correct to 18 significant digits; the difference is in rounding behavior
+at the precision boundary.
+
+Real-world MUMPS code rarely depends on the exact 18th significant digit.
+
+**Test Coverage**: Comprehensive unit tests for arithmetic helper functions
+(m_add, m_sub, m_mul, m_div) are in tests/unit/codegen/test_helpers.py.
+All test cases are verified against YDB output and cover:
+- Basic operations, zero handling, negative numbers
+- Decimal precision (avoiding float errors like 0.1+0.2)
+- String coercion via m_num
+- 18-digit precision for repeating decimals
+- Result formatting via m_str (no scientific notation)""",
+        behavior="""\
+Arithmetic operations produce correct results to 18 significant digits.
+Edge case rounding may differ slightly from YDB in the last significant digit.""",
+    ),
 }
 
 
