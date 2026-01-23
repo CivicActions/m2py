@@ -916,6 +916,9 @@ class MUMPSRuntime:
         self._zerror: str = ""
         # Spec 013 Phase 19: Routine registry for ZLINK
         self._routines: Dict[str, Any] = {}
+        # Spec 012: $TEST value for tracking IF/ELSE condition results
+        # This is synced from/to generated code via execute_mumps
+        self._test: bool = False
 
     @property
     def globals(self) -> GlobalStorageBackend:
@@ -1747,6 +1750,97 @@ class MUMPSRuntime:
         # Convert to string for use as variable name
         return str(value) if value is not None else ""
 
+    def append_subscripts(self, base_name: str, *additional_subscripts: Any) -> str:
+        """Append additional subscripts to a variable name.
+
+        Spec 017 Phase 6: Properly handles name indirection with subscripts
+        like @A@(1,2) where A="B(3,4)" should produce "B(3,4,1,2)".
+
+        The naive string concatenation "B(3,4)" + "(1,2)" = "B(3,4)(1,2)"
+        is invalid. This method properly parses and merges subscripts.
+
+        Args:
+            base_name: Variable name possibly with existing subscripts
+            *additional_subscripts: Additional subscripts to append
+
+        Returns:
+            str: Variable name with merged subscripts
+
+        Examples:
+            >>> rt.append_subscripts("X", 1, 2)
+            "X(1,2)"
+            >>> rt.append_subscripts("ARR(1)", 2, 3)
+            "ARR(1,2,3)"
+            >>> rt.append_subscripts("B(1,1)", 3)
+            "B(1,1,3)"
+        """
+        if not additional_subscripts:
+            return base_name
+
+        # Parse existing subscripts from base_name
+        existing_base, existing_subs = _parse_subscripted_name(base_name)
+
+        # Combine existing subscripts with new ones
+        all_subs: list[Any] = []
+        if existing_subs:
+            all_subs.extend(existing_subs)
+        all_subs.extend(additional_subscripts)
+
+        # Format subscripts - handle strings properly
+        formatted_subs = []
+        for sub in all_subs:
+            if isinstance(sub, str):
+                # Quote strings for proper variable name format
+                escaped = sub.replace('"', '""')
+                formatted_subs.append(f'"{escaped}"')
+            else:
+                formatted_subs.append(str(sub))
+
+        return f"{existing_base}({','.join(formatted_subs)})"
+
+    def get_data(self, name: str, _scope: Dict[str, Any]) -> int:
+        """Get $DATA value for variable by name (indirection support).
+
+        Spec 017 Phase 6 (T027): Implements $DATA for indirected variables.
+
+        Returns:
+        - 0: Undefined, no descendants
+        - 1: Defined, no descendants
+        - 10: Undefined, has descendants
+        - 11: Defined AND has descendants
+
+        Args:
+            name: Variable name, optionally with subscripts
+                  Examples: "X", "ARR(1,2)", "^GLO", "^GLO(1)"
+            _scope: Current scope dictionary
+
+        Returns:
+            $DATA value (0, 1, 10, or 11)
+        """
+        from m2py.runtime.helpers import m_data, m_data_global
+
+        if not name:
+            return 0
+
+        # Parse subscripts if present
+        base_name, subscripts = _parse_subscripted_name(name)
+        subs = subscripts if subscripts else ()
+
+        # Handle global variables
+        if base_name.startswith("^"):
+            key = base_name[1:]
+            return m_data_global(self._globals, key, tuple(str(s) for s in subs))
+
+        # Handle local variables
+        arr = _scope.get(base_name, MArray())
+        if not isinstance(arr, MArray):
+            # Non-MArray value: defined with no descendants if truthy, else undefined
+            if arr:
+                return 1 if not subs else 0
+            else:
+                return 0
+        return m_data(arr, tuple(str(s) for s in subs))
+
     def get_var(self, name: str, _scope: Dict[str, Any]) -> Any:
         """Get variable value by name (name indirection).
 
@@ -1945,6 +2039,65 @@ class MUMPSRuntime:
         # Use the GlobalStorageBackend interface
         subs = () if subscripts is None else tuple(str(s) for s in subscripts)
         self._globals.set(key, subs, str(value))
+
+    def kill_var(self, name: str, _scope: Dict[str, Any]) -> None:
+        """Kill variable by name (name indirection).
+
+        Spec 017 Phase 6: Implements KILL with indirection.
+
+        Behavior:
+        - Local variables: Remove from _scope dict or kill subscript
+        - Global variables (^prefix): Use global storage kill
+        - Subscripted variables: Kill at that subscript level
+        - Creates variable if doesn't exist (no-op for kill)
+
+        Args:
+            name: Variable name, optionally with subscripts
+            _scope: Current scope dictionary
+
+        Raises:
+            IndirectionError: If name is not a valid variable name
+
+        Examples:
+            >>> scope = {"X": MArray(value=5)}
+            >>> rt.kill_var("X", scope)
+            >>> "X" in scope
+            False
+            >>> scope = {"ARR": MArray()}
+            >>> scope["ARR"][1, 2].value = 10
+            >>> rt.kill_var("ARR(1,2)", scope)
+            >>> scope["ARR"].get(1, 2)
+            ""
+        """
+        if not name:
+            raise IndirectionError("", "empty variable name")
+
+        # Parse subscripts if present
+        base_name, subscripts = _parse_subscripted_name(name)
+
+        # Validate the base name
+        if not _is_valid_varname(base_name):
+            raise IndirectionError(
+                name,
+                f"invalid variable name - must start with letter or %, got '{base_name}'",
+            )
+
+        # Handle global variables
+        if base_name.startswith("^"):
+            key = base_name[1:]
+            subs = () if subscripts is None else tuple(str(s) for s in subscripts)
+            self._globals.kill(key, subs)
+            return
+
+        # Handle local variables
+        if subscripts is None:
+            # Kill entire variable - remove from scope
+            _scope.pop(base_name, None)
+        else:
+            # Kill at subscript - use MArray.kill()
+            arr = _scope.get(base_name)
+            if isinstance(arr, MArray):
+                arr.kill(*subscripts)
 
     def resolve_indirection(
         self, expr: str, levels: int, _scope: Dict[str, Any]

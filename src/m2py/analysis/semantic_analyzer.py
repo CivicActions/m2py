@@ -765,7 +765,11 @@ class SemanticAnalyzer:
     # =========================================================================
 
     def _analyze_SetCommand(self, cmd: Any, parent: Any) -> MSetStatement:
-        """Analyze SET command into MSetStatement."""
+        """Analyze SET command into MSetStatement.
+
+        Spec 017: Maintains ordered_items list for correct left-to-right evaluation
+        of SET arguments including interleaved argument indirections.
+        """
         stmt = MSetStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -782,6 +786,8 @@ class SemanticAnalyzer:
 
                     indir.indirection_type = IndirectionType.ARGUMENT
                     stmt.argument_indirections.append(indir)
+                    # Track in ordered_items for left-to-right evaluation
+                    stmt.ordered_items.append(indir)
                 # Handle regular assignments with targets
                 elif hasattr(assign, "targets") and assign.targets:
                     targets = assign.targets
@@ -801,6 +807,8 @@ class SemanticAnalyzer:
                             if hasattr(t, "name"):
                                 self._track_variable(t.name, t, is_set=True)
                             stmt.assignments.append(asg_assign)
+                            # Track in ordered_items for left-to-right evaluation
+                            stmt.ordered_items.append(asg_assign)
                     else:
                         # Single target assignment
                         asg_assign = MAssignment()
@@ -812,6 +820,8 @@ class SemanticAnalyzer:
                             asg_assign.value = self.analyze(assign.value, asg_assign)
 
                         stmt.assignments.append(asg_assign)
+                        # Track in ordered_items for left-to-right evaluation
+                        stmt.ordered_items.append(asg_assign)
 
         return stmt
 

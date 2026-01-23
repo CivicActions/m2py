@@ -227,9 +227,9 @@ class TestGenerateNameIndirection:
 
         result = generate_name_indirection(expr, mock_ctx)
         # T065: Now uses get_indirection_source for the inner name expression
-        # Uses concatenation instead of f-string to avoid escaping issues with complex subscripts
+        # Uses append_subscripts to properly merge subscripts at runtime
         assert (
-            '_rt.get_var(_rt.get_indirection_source("NAME", _scope) + "("1")", _scope)'
+            '_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1"), _scope)'
             == result
         )
 
@@ -246,9 +246,9 @@ class TestGenerateNameIndirection:
 
         result = generate_name_indirection(expr, mock_ctx)
         # T065: Now uses get_indirection_source for the inner name expression
-        # Uses concatenation instead of f-string to avoid escaping issues with complex subscripts
+        # Uses append_subscripts to properly merge subscripts at runtime
         assert (
-            '_rt.get_var(_rt.get_indirection_source("NAME", _scope) + "("1", "2")", _scope)'
+            '_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", "2"), _scope)'
             == result
         )
 
@@ -267,9 +267,9 @@ class TestGenerateNameIndirection:
         )
 
         result = generate_name_indirection(outer, mock_ctx)
-        # Multi-level with subscripts resolves first then adds subscripts
+        # Multi-level with subscripts resolves first then adds subscripts via append_subscripts
         assert "_rt.resolve_indirection" in result
-        assert '("1")' in result  # Subscript with quoted string
+        assert "_rt.append_subscripts" in result
 
     def test_with_literal_expression(self, mock_ctx):
         """@"VAR" uses the literal value directly."""
@@ -338,9 +338,9 @@ class TestGenerateNameIndirectionWrite:
 
         result = generate_name_indirection_write(expr, "5", mock_ctx)
         # T065: Now uses get_indirection_source for the inner name expression
-        # Uses concatenation instead of f-string to avoid escaping issues with complex subscripts
+        # Uses append_subscripts to properly merge subscripts at runtime
         assert (
-            '_rt.set_var(_rt.get_indirection_source("NAME", _scope) + "("1")", 5, _scope)'
+            '_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1"), 5, _scope)'
             == result
         )
 
@@ -372,9 +372,9 @@ class TestGenerateNameIndirectionWrite:
 
         result = generate_name_indirection_write(expr, "5", mock_ctx)
         # T065: Now uses get_indirection_source for the inner name expression
-        # Uses concatenation instead of f-string to avoid escaping issues with complex subscripts
+        # Uses append_subscripts to properly merge subscripts at runtime
         assert (
-            '_rt.set_var(_rt.get_indirection_source("NAME", _scope) + "("1", "2")", 5, _scope)'
+            '_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", "2"), 5, _scope)'
             == result
         )
 
@@ -455,9 +455,9 @@ class TestGenerateSubscriptedIndirection:
 
         result = generate_subscripted_indirection(expr, ["1"], mock_ctx)
         # T065: Now uses get_indirection_source for the inner name expression
-        # Uses concatenation instead of f-string to avoid escaping issues with complex subscripts
+        # Uses f-string to build the subscript expression at runtime
         assert (
-            '_rt.get_var(_rt.get_indirection_source("NAME", _scope) + "(1)", _scope)'
+            "_rt.get_var(_rt.get_indirection_source(\"NAME\", _scope) + f'({1})', _scope)"
             == result
         )
 
@@ -471,9 +471,9 @@ class TestGenerateSubscriptedIndirection:
 
         result = generate_subscripted_indirection(expr, ["1", "2", "3"], mock_ctx)
         # T065: Now uses get_indirection_source for the inner name expression
-        # Uses concatenation instead of f-string to avoid escaping issues with complex subscripts
+        # Uses f-string for subscripts
         assert (
-            '_rt.get_var(_rt.get_indirection_source("ARRAY", _scope) + "(1, 2, 3)", _scope)'
+            "_rt.get_var(_rt.get_indirection_source(\"ARRAY\", _scope) + f'({1}, {2}, {3})', _scope)"
             == result
         )
 
@@ -486,8 +486,8 @@ class TestGenerateSubscriptedIndirection:
         )
 
         result = generate_subscripted_indirection(expr, ['"key"'], mock_ctx)
-        # Uses concatenation instead of f-string to avoid escaping issues with complex subscripts
-        assert '_rt.get_var(str("MYVAR") + "("key")", _scope)' == result
+        # Uses f-string for subscripts
+        assert '_rt.get_var(str("MYVAR") + f\'({"key"})\', _scope)' == result
 
 
 # =============================================================================

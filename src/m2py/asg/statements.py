@@ -75,11 +75,18 @@ class MSetStatement(MStatement):
 
     Supports argument indirection (Spec 012 Phase 9):
     SET @A where A contains "X=1,Y=2"
+
+    The ordered_items list maintains original left-to-right order of all
+    assignment items (both MAssignment and MIndirection). This is critical
+    for correct MUMPS semantics where S X=1,@A,Y=2 must execute X=1 first,
+    then @A, then Y=2.
     """
 
     assignments: List[MAssignment] = field(default_factory=list)
     # Argument indirections: @A where A contains complete SET args like "X=1"
     argument_indirections: List["MIndirection"] = field(default_factory=list)
+    # Ordered list of all items (MAssignment | MIndirection) for left-to-right eval
+    ordered_items: List[Any] = field(default_factory=list)
 
 
 # =============================================================================

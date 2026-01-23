@@ -334,11 +334,11 @@ class RoutineGenerator:
 
         # _routine_name: Name of this routine for $TEXT(+0) and error messages
         # Falls back to first label name if routine.name is not set
-        # Lowercased to match YDB convention (routine names are case-insensitive file names)
+        # Preserves original case for $TEXT(+0) which returns source-accurate routine name
         routine_name = self._routine.name or (
             self._routine.labels[0].name if self._routine.labels else ""
         )
-        ctx.emitter.line(f'_routine_name = "{routine_name.lower()}"')
+        ctx.emitter.line(f'_routine_name = "{routine_name}"')
         ctx.emitter.blank()
 
         # _label_lines: Maps label names to 0-indexed line numbers for $TEXT(LABEL+offset)

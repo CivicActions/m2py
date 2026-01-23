@@ -195,25 +195,44 @@ def m_set_piece(
         m_set_piece(lambda: "", setter, "^", 3, None, "X")
 
     Note:
-        Per MUMPS spec, piece numbers <= 0 result in no modification.
+        Per MUMPS spec:
+        - If piece_from <= 0 and piece_to <= 0: no modification
+        - If piece_from <= 0 and piece_to >= 1: clamp piece_from to 1
+        - If piece_from > piece_to: no modification
     """
-    # Per MUMPS spec: piece numbers <= 0 result in no modification
-    if piece_from <= 0:
-        return
-
-    # Get current value (empty string if undefined/None)
-    current = var_getter() or ""
-
     # Normalize piece_to: if None, single piece replacement
     if piece_to is None:
         piece_to = piece_from
 
+    # Per MUMPS spec: if piece_from <= 0 and piece_to <= 0, no modification
+    # AND the glvn is NOT evaluated (naked indicator not updated)
+    if piece_from <= 0 and piece_to <= 0:
+        return
+
+    # Per MUMPS spec: if piece_from > piece_to, no modification occurs
+    # AND the glvn is NOT evaluated (naked indicator not updated)
+    if piece_from > piece_to:
+        return
+
+    # Clamp piece_from to 1 if it's <= 0 but piece_to >= 1
+    if piece_from <= 0:
+        piece_from = 1
+
+    # Get current value (empty string if undefined/None)
+    # This is where the glvn is evaluated and naked indicator is updated
+    current = var_getter() or ""
+
+    # Handle empty delimiter specially per YDB behavior
+    if not delimiter:
+        # Empty delimiter: intexpr2=1 replaces entire string, intexpr2>1 appends
+        if piece_from == 1:
+            var_setter(value)
+        else:
+            var_setter(current + value)
+        return
+
     # Split by delimiter (preserving all parts)
-    if delimiter:
-        parts = current.split(delimiter)
-    else:
-        # Empty delimiter edge case - treat each character as a delimiter
-        parts = list(current) if current else [""]
+    parts = current.split(delimiter)
 
     # Convert to 0-indexed
     from_idx = piece_from - 1

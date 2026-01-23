@@ -267,12 +267,13 @@ class TestTextWithOffsetsCodegen:
         assert result.output == "TEST W $T(+1) Q"
 
     def test_text_line_zero_returns_routine_name(self, execute_mumps):
-        """$TEXT(+0) returns the routine name.
+        """$TEXT(+0) returns the routine name preserving original case.
 
-        S A=$T(+0) returns the routine name (lowercase convention).
+        S A=$T(+0) returns the routine name as it appears in source.
+        Bug fix II-133: Previously returned lowercase, now preserves case.
         """
         result = execute_mumps("TEST W $T(+0) Q")
-        assert result.output == "test"
+        assert result.output == "TEST"
 
     def test_text_different_label(self, execute_mumps):
         """$TEXT(LABEL) retrieves source from another label in same routine.

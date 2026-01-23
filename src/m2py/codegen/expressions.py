@@ -938,6 +938,7 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $D(^G) → m_data_global(_rt.globals, 'G', ())
         $D(^G(1)) → m_data_global(_rt.globals, 'G', (str(1),))
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get first argument (the variable to check)
@@ -948,7 +949,56 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     var = args[0]
 
-    # Generate subscript tuple
+    # Handle MIndirection: $D(@A@(1)) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # For indirection, we need to use _rt.get_data which resolves the variable name at runtime
+        from m2py.codegen.indirection import _count_indirection_levels
+
+        levels, inner_expr = _count_indirection_levels(var)
+
+        # Build subscript expressions from name_indirection_subscripts if present
+        if var.name_indirection_subscripts:
+            all_subs = []
+            for sub_list in var.name_indirection_subscripts:
+                sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+                all_subs.extend(sub_exprs)
+            # Use single quotes for the f-string so double-quoted strings inside work
+            if len(all_subs) == 1:
+                subs_fstr = f"f'({{{all_subs[0]}}})'"
+            else:
+                subs_parts = ", ".join(f"{{{s}}}" for s in all_subs)
+                subs_fstr = f"f'({subs_parts})'"
+        else:
+            # No subscripts - use empty string, not "()"
+            subs_fstr = "''"
+
+        # Generate the variable name resolution
+        # Must distinguish between local variables (use get_indirection_source)
+        # and global variables (read value directly)
+        from m2py.asg.expressions import MVariable
+        from m2py.parser.textx_classes import LocalVariable as MLocalVariable
+
+        if isinstance(inner_expr, GlobalVariable):
+            # Global variable as indirection source: @^V reads ^V value
+            global_name = inner_expr.name
+            # Read the global variable value - this returns the string to use as var name
+            name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+        elif isinstance(inner_expr, (MVariable, MLocalVariable)):
+            base_name = inner_expr.name
+            if levels > 1:
+                name_expr = (
+                    f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
+                )
+            else:
+                name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
+        else:
+            name_expr_base = generate_expr(inner_expr, ctx)
+            name_expr = f"str({name_expr_base})"
+
+        # Use _rt.get_data which handles indirected variable names
+        return f"_rt.get_data({name_expr} + {subs_fstr}, _scope)"
+
+    # Generate subscript tuple for non-indirection cases
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
@@ -1244,11 +1294,12 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
             params.append(f"offset={offset_val}")
         else:
             # Offset is an expression (variable, etc.)
+            # Must convert to int since expressions return strings
             offset_code = generate_expr(offset, ctx)
             if offset_sign == "-":
-                params.append(f"offset=-({offset_code})")
+                params.append(f"offset=-int(m_num({offset_code}))")
             else:
-                params.append(f"offset={offset_code}")
+                params.append(f"offset=int(m_num({offset_code}))")
     elif offset_sign is not None and label is None:
         # Sign without offset value - $T(+) or $T(-) defaults to 0
         # This handles $T(+0) or $T(-0) which both equal 0
