@@ -160,11 +160,16 @@
 
 ### Implementation (⚠️ HUMAN REVIEW REQUIRED for conftest.py changes)
 
-- [ ] T037 [US8] Identify all 12 LIM-015 affected tests from failure-analysis.md
-- [ ] T038 [US8] Add entries to ROUTINE_LIMITATIONS dict in tests/functional/conftest.py for each affected routine mapped to "LIM-015"
-- [ ] T039 [US8] Validate 12 tests show skip: `uv run pytest tests/functional/ -v 2>&1 | grep -c "LIM-015"`
+- [X] T037 [US8] Identify all 12 LIM-015 affected tests from failure-analysis.md
+- [X] T038 [US8] Add entries to ROUTINE_LIMITATIONS dict in tests/functional/conftest.py for each affected routine mapped to "LIM-015"
+- [X] T039 [US8] Validate tests show xfail: 17 total LIM-015 tests now xfailing across basic and mugj suites
 
-**Checkpoint**: LIM-015 tests properly configured - 12 tests xfail'd
+**Additional Findings**:
+- Added fifo (uses $ZVERSION) and setpiece (uses NEW $ZTRAP) which were originally miscategorized
+- 3 tests (zbrk, zstep, zstep1) were already in ROUTINE_LIMITATIONS from previous work
+- Total LIM-015 coverage: 17 tests
+
+**Checkpoint**: LIM-015 tests properly configured - 17 tests xfail'd ✅
 
 ---
 

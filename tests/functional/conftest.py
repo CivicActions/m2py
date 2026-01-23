@@ -73,8 +73,24 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     "zbrk": "LIM-015",
     "zstep": "LIM-015",
     "zstep1": "LIM-015",
-    # basic suite - uses $VIEW function which is also LIM-005
-    # (already covered by view/view2 above)
+    # basic suite - ZSYSTEM command (shell execution)
+    "zlfix": "LIM-015",
+    "stream": "LIM-015",
+    "per2968": "LIM-015",
+    # basic suite - $ZTRAP special variable (error trapping)
+    "per2586a": "LIM-015",
+    "per2586b": "LIM-015",
+    "per2586c": "LIM-015",
+    "set": "LIM-015",
+    "setpiece": "LIM-015",
+    "zbits": "LIM-015",
+    "ztrp": "LIM-015",
+    # basic suite - Z-functions ($ZVERSION, $ZPREVIOUS)
+    "char": "LIM-015",
+    "fifo": "LIM-015",
+    "zprev": "LIM-015",
+    # mugj suite - $ZVERSION function
+    "v1ac": "LIM-015",
 }
 
 
