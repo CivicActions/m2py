@@ -292,3 +292,214 @@ class TestRuntimeAppendSubscripts:
         """Negative number as subscript."""
         result = rt.append_subscripts("ARR", -1)
         assert result == "ARR(-1)"
+
+
+# =============================================================================
+# MUMPSRuntime.merge_var() Tests (Phase 13)
+# =============================================================================
+
+
+class TestRuntimeMergeVar:
+    """Tests for MUMPSRuntime.merge_var() method.
+
+    Spec 017 Phase 13: merge_var() implements MERGE with indirection
+    destination, merging a source MArray tree into a variable by name.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_merge_var_to_local_simple(self, rt):
+        """merge_var copies source tree to local variable."""
+        scope = {}
+        src = MArray()
+        src[1].value = "one"
+        src[2].value = "two"
+        rt.merge_var("B", src, scope)
+        assert "B" in scope
+        assert scope["B"].get(1) == "one"
+        assert scope["B"].get(2) == "two"
+
+    def test_merge_var_to_local_subscripted(self, rt):
+        """merge_var with subscripted destination name."""
+        scope = {"B": MArray()}
+        src = MArray()
+        src[1].value = "one"
+        src[2].value = "two"
+        rt.merge_var("B(3)", src, scope)
+        assert scope["B"].get(3, 1) == "one"
+        assert scope["B"].get(3, 2) == "two"
+
+    def test_merge_var_to_local_preserves_existing(self, rt):
+        """merge_var preserves existing nodes in destination."""
+        scope = {"B": MArray()}
+        scope["B"][5].value = "old"
+        src = MArray()
+        src[1].value = "new"
+        rt.merge_var("B", src, scope)
+        assert scope["B"].get(1) == "new"  # Merged
+        assert scope["B"].get(5) == "old"  # Preserved
+
+    def test_merge_var_to_global_simple(self, rt):
+        """merge_var copies source tree to global variable."""
+        scope = {}
+        src = MArray()
+        src[1].value = "one"
+        src[2].value = "two"
+        rt.merge_var("^G", src, scope)
+        assert rt.globals.get("G", ("1",)) == "one"
+        assert rt.globals.get("G", ("2",)) == "two"
+
+    def test_merge_var_to_global_subscripted(self, rt):
+        """merge_var with subscripted global destination."""
+        scope = {}
+        src = MArray()
+        src[1].value = "one"
+        rt.merge_var("^G(3)", src, scope)
+        assert rt.globals.get("G", ("3", "1")) == "one"
+
+    def test_merge_var_merges_root_value(self, rt):
+        """merge_var copies source root value if present."""
+        scope = {}
+        src = MArray()
+        src.value = "root"
+        src[1].value = "child"
+        rt.merge_var("B", src, scope)
+        assert scope["B"].value == "root"
+        assert scope["B"].get(1) == "child"
+
+    def test_merge_var_none_source_is_noop(self, rt):
+        """merge_var with None source does nothing."""
+        scope = {}
+        rt.merge_var("B", None, scope)
+        assert "B" not in scope
+
+    def test_merge_var_empty_name_raises(self, rt):
+        """merge_var raises IndirectionError for empty name."""
+        scope = {}
+        src = MArray()
+        with pytest.raises(IndirectionError):
+            rt.merge_var("", src, scope)
+
+    def test_merge_var_invalid_name_raises(self, rt):
+        """merge_var raises IndirectionError for invalid variable name."""
+        scope = {}
+        src = MArray()
+        with pytest.raises(IndirectionError):
+            rt.merge_var("123BAD", src, scope)
+
+    def test_merge_var_creates_destination_if_missing(self, rt):
+        """merge_var creates destination variable if it doesn't exist."""
+        scope = {}
+        src = MArray()
+        src[1].value = "one"
+        rt.merge_var("NEWVAR", src, scope)
+        assert "NEWVAR" in scope
+        assert scope["NEWVAR"].get(1) == "one"
+
+    def test_merge_var_deep_subscripts(self, rt):
+        """merge_var with deeply nested subscripted destination."""
+        scope = {"ARR": MArray()}
+        src = MArray()
+        src[1].value = "deep"
+        rt.merge_var("ARR(1,2,3)", src, scope)
+        assert scope["ARR"].get(1, 2, 3, 1) == "deep"
+
+
+# =============================================================================
+# MUMPSRuntime.get_tree_var() Tests (Phase 13)
+# =============================================================================
+
+
+class TestRuntimeGetTreeVar:
+    """Tests for MUMPSRuntime.get_tree_var() method.
+
+    Spec 017 Phase 13: get_tree_var() implements MERGE with indirection
+    source, returning an MArray tree for a variable by name.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_get_tree_var_local_simple(self, rt):
+        """get_tree_var returns local variable tree."""
+        scope = {"A": MArray()}
+        scope["A"][1].value = "one"
+        scope["A"][2].value = "two"
+        result = rt.get_tree_var("A", scope)
+        assert result is not None
+        assert result.get(1) == "one"
+        assert result.get(2) == "two"
+
+    def test_get_tree_var_local_subscripted(self, rt):
+        """get_tree_var with subscripted name returns subtree."""
+        scope = {"A": MArray()}
+        scope["A"][1, 1].value = "deep1"
+        scope["A"][1, 2].value = "deep2"
+        result = rt.get_tree_var("A(1)", scope)
+        assert result is not None
+        assert result.get(1) == "deep1"
+        assert result.get(2) == "deep2"
+
+    def test_get_tree_var_global_simple(self, rt):
+        """get_tree_var returns global variable tree."""
+        scope = {}
+        rt.globals.set("G", ("1",), "one")
+        rt.globals.set("G", ("2",), "two")
+        result = rt.get_tree_var("^G", scope)
+        assert result is not None
+        # Global trees are MArray copies
+        assert result.get(1) == "one" or result.get("1") == "one"
+
+    def test_get_tree_var_global_subscripted(self, rt):
+        """get_tree_var with subscripted global returns subtree."""
+        scope = {}
+        rt.globals.set("G", ("1", "1"), "deep1")
+        rt.globals.set("G", ("1", "2"), "deep2")
+        result = rt.get_tree_var("^G(1)", scope)
+        assert result is not None
+
+    def test_get_tree_var_undefined_local_returns_none(self, rt):
+        """get_tree_var returns None for undefined local."""
+        scope = {}
+        result = rt.get_tree_var("NOTHERE", scope)
+        assert result is None
+
+    def test_get_tree_var_undefined_global_returns_none(self, rt):
+        """get_tree_var returns None for undefined global."""
+        scope = {}
+        result = rt.get_tree_var("^NOTHERE", scope)
+        assert result is None
+
+    def test_get_tree_var_empty_name_raises(self, rt):
+        """get_tree_var raises IndirectionError for empty name."""
+        scope = {}
+        with pytest.raises(IndirectionError):
+            rt.get_tree_var("", scope)
+
+    def test_get_tree_var_invalid_name_raises(self, rt):
+        """get_tree_var raises IndirectionError for invalid name."""
+        scope = {}
+        with pytest.raises(IndirectionError):
+            rt.get_tree_var("123BAD", scope)
+
+    def test_get_tree_var_includes_root_value(self, rt):
+        """get_tree_var returns tree including root value."""
+        scope = {"A": MArray()}
+        scope["A"].value = "root"
+        scope["A"][1].value = "child"
+        result = rt.get_tree_var("A", scope)
+        assert result is not None
+        assert result.value == "root"
+        assert result.get(1) == "child"
+
+    def test_get_tree_var_non_array_returns_none(self, rt):
+        """get_tree_var returns None if variable is not an MArray."""
+        # This shouldn't normally happen, but test defensive behavior
+        scope = {"X": "just a string"}
+        result = rt.get_tree_var("X", scope)
+        assert result is None
