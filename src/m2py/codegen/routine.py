@@ -403,21 +403,27 @@ class RoutineGenerator:
                     ctx.emitter.line("_result = _ef(_rt, *args)")
                 # Spec 010 (T020): Handle by-ref unpacking
                 ctx.emitter.line("# Unpack by-ref values if result is a tuple")
-                ctx.emitter.line(
-                    "if _byref and _scope is not None and isinstance(_result, tuple) and len(_result) > 1:"
-                )
+                ctx.emitter.line("if isinstance(_result, tuple) and len(_result) > 1:")
                 with ctx.emitter.indented():
-                    ctx.emitter.line("_byref_idx = 1")
-                    ctx.emitter.line("for _name in _byref:")
+                    ctx.emitter.line(
+                        "# Only unpack to caller scope if _byref is provided"
+                    )
+                    ctx.emitter.line("if _byref and _scope is not None:")
                     with ctx.emitter.indented():
-                        ctx.emitter.line(
-                            "if _name is not None and _byref_idx < len(_result):"
-                        )
+                        ctx.emitter.line("_byref_idx = 1")
+                        ctx.emitter.line("for _name in _byref:")
                         with ctx.emitter.indented():
                             ctx.emitter.line(
-                                "_scope.setdefault(_name, MArray()).value = _result[_byref_idx]"
+                                "if _name is not None and _byref_idx < len(_result):"
                             )
-                            ctx.emitter.line("_byref_idx += 1")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    "_scope.setdefault(_name, MArray()).value = _result[_byref_idx]"
+                                )
+                                ctx.emitter.line("_byref_idx += 1")
+                    ctx.emitter.line(
+                        "# Always return just the first element (return value)"
+                    )
                     ctx.emitter.line("return _result[0]")
                 ctx.emitter.line("return _result")
             ctx.emitter.line("finally:")
