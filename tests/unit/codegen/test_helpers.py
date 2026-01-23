@@ -58,11 +58,15 @@ class TestMNum:
         assert m_num("0042") == 42
         assert m_num("00.5") == 0.5
 
-    def test_leading_whitespace_stripped(self):
-        """Leading whitespace is stripped per §7.1.4.5."""
-        assert m_num("  42") == 42
-        assert m_num("\t5") == 5
-        assert m_num("   -3") == -3
+    def test_leading_whitespace_returns_zero(self):
+        """Leading whitespace makes string non-numeric (returns 0).
+
+        NOTE: MUMPS does NOT strip leading whitespace! A space or tab is a
+        non-numeric character that stops left-to-right parsing immediately.
+        """
+        assert m_num("  42") == 0  # Space is not numeric
+        assert m_num("\t5") == 0  # Tab is not numeric
+        assert m_num("   -3") == 0  # Spaces before sign are not numeric
 
     def test_trailing_non_numeric_ignored(self):
         """Trailing non-numeric characters are ignored."""
@@ -143,85 +147,88 @@ class TestMTruth:
 
 @pytest.mark.codegen
 class TestMCompare:
-    """Tests for m_compare() - MUMPS comparison with coercion."""
+    """Tests for m_compare() - MUMPS comparison with coercion.
+
+    NOTE: m_compare returns int (0 or 1) per MUMPS semantics, not Python bool.
+    """
 
     # Tests for "=" operator (canonical string equality)
 
     def test_equal_identical_integers(self):
         """Identical integers are equal."""
-        assert m_compare(3, "=", 3) is True
-        assert m_compare(0, "=", 0) is True
-        assert m_compare(-5, "=", -5) is True
+        assert m_compare(3, "=", 3) == 1
+        assert m_compare(0, "=", 0) == 1
+        assert m_compare(-5, "=", -5) == 1
 
     def test_equal_integer_and_float(self):
         """Integer and equivalent float are equal (both normalize)."""
-        assert m_compare(3, "=", 3.0) is True
-        assert m_compare(3.0, "=", 3) is True
-        assert m_compare(0, "=", 0.0) is True
+        assert m_compare(3, "=", 3.0) == 1
+        assert m_compare(3.0, "=", 3) == 1
+        assert m_compare(0, "=", 0.0) == 1
 
     def test_equal_string_and_integer(self):
         """String and integer compare by canonical form."""
-        assert m_compare("3", "=", 3) is True
-        assert m_compare(3, "=", "3") is True
-        assert m_compare("0", "=", 0) is True
+        assert m_compare("3", "=", 3) == 1
+        assert m_compare(3, "=", "3") == 1
+        assert m_compare("0", "=", 0) == 1
 
     def test_equal_string_float_not_equal_to_integer(self):
         """String "3.0" is not equal to canonical "3"."""
-        assert m_compare("3.0", "=", 3) is False
-        assert m_compare(3, "=", "3.0") is False
+        assert m_compare("3.0", "=", 3) == 0
+        assert m_compare(3, "=", "3.0") == 0
 
     def test_equal_identical_strings(self):
         """Identical string values are equal."""
-        assert m_compare("hello", "=", "hello") is True
-        assert m_compare("", "=", "") is True
+        assert m_compare("hello", "=", "hello") == 1
+        assert m_compare("", "=", "") == 1
 
     def test_equal_different_strings(self):
         """Different strings are not equal."""
-        assert m_compare("hello", "=", "world") is False
-        assert m_compare("3", "=", "4") is False
+        assert m_compare("hello", "=", "world") == 0
+        assert m_compare("3", "=", "4") == 0
 
     # Tests for "<" operator (numeric comparison)
 
     def test_less_than_numeric(self):
         """Numeric less-than comparison."""
-        assert m_compare(1, "<", 2) is True
-        assert m_compare(2, "<", 1) is False
-        assert m_compare(1, "<", 1) is False
+        assert m_compare(1, "<", 2) == 1
+        assert m_compare(2, "<", 1) == 0
+        assert m_compare(1, "<", 1) == 0
 
     def test_less_than_with_string_coercion(self):
         """Strings are coerced to numbers for less-than."""
-        assert m_compare("3A", "<", 5) is True  # 3 < 5
-        assert m_compare("5", "<", "3A") is False  # 5 < 3 is False
+        assert m_compare("3A", "<", 5) == 1  # 3 < 5
+        assert m_compare("5", "<", "3A") == 0  # 5 < 3 is False
 
     def test_less_than_empty_string_is_zero(self):
         """Empty string coerces to 0 for comparison."""
-        assert m_compare("", "<", 1) is True  # 0 < 1
-        assert m_compare(1, "<", "") is False  # 1 < 0 is False
+        assert m_compare("", "<", 1) == 1  # 0 < 1
+        assert m_compare(1, "<", "") == 0  # 1 < 0 is False
 
     def test_less_than_negative_numbers(self):
         """Negative numbers compare correctly."""
-        assert m_compare(-5, "<", -1) is True
-        assert m_compare(-1, "<", -5) is False
-        assert m_compare(-1, "<", 0) is True
+        assert m_compare(-5, "<", -1) == 1
+        assert m_compare(-1, "<", -5) == 0
+        assert m_compare(-1, "<", 0) == 1
 
     # Tests for ">" operator (numeric comparison)
 
     def test_greater_than_numeric(self):
         """Numeric greater-than comparison."""
-        assert m_compare(2, ">", 1) is True
-        assert m_compare(1, ">", 2) is False
-        assert m_compare(1, ">", 1) is False
+        assert m_compare(2, ">", 1) == 1
+        assert m_compare(1, ">", 2) == 0
+        assert m_compare(1, ">", 1) == 0
 
     def test_greater_than_with_string_coercion(self):
         """Strings are coerced to numbers for greater-than."""
-        assert m_compare(5, ">", "3A") is True  # 5 > 3
-        assert m_compare("3A", ">", 5) is False  # 3 > 5 is False
+        assert m_compare(5, ">", "3A") == 1  # 5 > 3
+        assert m_compare("3A", ">", 5) == 0  # 3 > 5 is False
 
     def test_greater_than_negative_numbers(self):
         """Negative numbers compare correctly."""
-        assert m_compare(-1, ">", -5) is True
-        assert m_compare(-5, ">", -1) is False
-        assert m_compare(0, ">", -1) is True
+        assert m_compare(-1, ">", -5) == 1
+        assert m_compare(-5, ">", -1) == 0
+        assert m_compare(0, ">", -1) == 1
 
     # Edge cases and error handling
 

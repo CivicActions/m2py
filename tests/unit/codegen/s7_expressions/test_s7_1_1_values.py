@@ -102,7 +102,9 @@ class TestNumericCoercionCodegen:
         """Numeric coercion canonicalizes signs.
 
         Phase 10 validation: Test sign handling edge cases.
-        '  +42' coerces to 42, '--5' coerces to 5, '+-5' coerces to -5.
+        '+42' coerces to 42, '--5' coerces to 5, '+-5' coerces to -5.
+        NOTE: Leading whitespace makes a string non-numeric in MUMPS!
+        '  +42' → 0 (space is non-numeric, stops parsing immediately)
         """
         from m2py.codegen.helpers import m_num
 
@@ -113,8 +115,8 @@ class TestNumericCoercionCodegen:
         # Mixed signs
         assert m_num("+-5") == -5
         assert m_num("-+5") == -5
-        # Leading whitespace with sign
-        assert m_num("  +42") == 42
+        # Leading whitespace with sign - CRITICAL: whitespace makes it non-numeric!
+        assert m_num("  +42") == 0  # Space is first char, not numeric
         # Just signs (no digits)
         assert m_num("++") == 0
         assert m_num("-") == 0
@@ -201,24 +203,26 @@ class TestComparisonCodegen:
         """Less-than/greater-than use numeric coercion.
 
         Phase 10 validation: '3' < '10' is true (3 < 10), 'A' < 'B' compares 0 < 0.
+        NOTE: m_compare returns int (0 or 1) per MUMPS semantics, not Python bool.
         """
         from m2py.codegen.helpers import m_compare
 
-        assert m_compare("3", "<", "10") is True
-        assert m_compare("3", ">", "10") is False
-        assert m_compare("A", "<", "B") is False  # 0 < 0 is false
-        assert m_compare("3A", "<", 5) is True  # 3 < 5
+        assert m_compare("3", "<", "10") == 1  # 3 < 10
+        assert m_compare("3", ">", "10") == 0  # 3 > 10 is false
+        assert m_compare("A", "<", "B") == 0  # 0 < 0 is false
+        assert m_compare("3A", "<", 5) == 1  # 3 < 5
 
     def test_string_equality(self):
         """Equality compares string values directly.
 
         Phase 10 validation: '3' = '03' is false (string comparison).
+        NOTE: m_compare returns int (0 or 1) per MUMPS semantics, not Python bool.
         """
         from m2py.codegen.helpers import m_compare
 
-        assert m_compare("3", "=", "3") is True
-        assert m_compare("3", "=", "03") is False  # String comparison
-        assert m_compare(3, "=", 3) is True
+        assert m_compare("3", "=", "3") == 1
+        assert m_compare("3", "=", "03") == 0  # String comparison
+        assert m_compare(3, "=", 3) == 1
 
     def test_invalid_operator_raises(self):
         """Invalid comparison operator raises ValueError.

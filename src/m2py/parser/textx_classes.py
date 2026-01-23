@@ -269,6 +269,10 @@ class NumericLiteral(MLiteral):
     """textX custom class for NumericLiteral grammar rule.
 
     Grammar: NumericLiteral: value=NUMBER;
+
+    For numbers with exponent notation, we store both the parsed value
+    and the original string representation to preserve precision for
+    large numbers that exceed float64 precision.
     """
 
     def __init__(self, parent=None, value: str = ""):
@@ -278,19 +282,28 @@ class NumericLiteral(MLiteral):
         # Parse the numeric value
         try:
             if "." in value or "E" in value.upper():
+                # Store as float for numeric operations, but flag that we have
+                # an exact decimal representation for string operations
                 parsed_value = float(value)
                 lit_type = LiteralType.DECIMAL
+                # Store exact string representation for precise formatting
+                # This is used by m_str() to avoid float precision loss
+                original_string = value
             else:
                 parsed_value = int(value)
                 lit_type = LiteralType.INTEGER
+                original_string = None
         except (ValueError, TypeError):
             parsed_value = value
             lit_type = LiteralType.STRING
+            original_string = None
 
         # Set dataclass fields directly
         object.__setattr__(self, "value", parsed_value)
         object.__setattr__(self, "literal_type", lit_type)
         object.__setattr__(self, "result_type", None)
+        # Store original string for precise formatting
+        object.__setattr__(self, "_original_string", original_string)
 
 
 class StringLiteral(MLiteral):

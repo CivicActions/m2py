@@ -289,8 +289,11 @@ class RoutineGenerator:
         # Imports
         ctx.emitter.line("import re")
         ctx.emitter.line("import time")
+        ctx.emitter.line("from decimal import Decimal")
         ctx.emitter.line("from itertools import chain, count")
-        ctx.emitter.line("from m2py.codegen.helpers import m_num, m_truth, m_compare")
+        ctx.emitter.line(
+            "from m2py.codegen.helpers import m_str, m_num, m_truth, m_compare"
+        )
         # Spec 009 (T024): Import MArray for subscripted local variable support
         ctx.emitter.line("from m2py.runtime import MUMPSRuntime, MArray")
         # Spec 009: Import LHS function helpers (Phase 3-4) and $DATA helpers (Phase 8)

@@ -69,6 +69,7 @@ def m_format_output(value: Any) -> str:
     - No unnecessary decimal point for integers
     - No leading zero before decimal for values < 1 (0.5 → ".5")
     - Negative numbers keep the minus sign (-0.5 → "-.5")
+    - No scientific notation (1E+2 → "100")
 
     Spec 011 Phase 9: Ensures numeric output matches MUMPS formatting.
 
@@ -83,7 +84,10 @@ def m_format_output(value: Any) -> str:
         m_format_output(0.5) → ".5"
         m_format_output(-0.5) → "-.5"
         m_format_output(3.14) → "3.14"
+        m_format_output(Decimal("1E2")) → "100"
     """
+    from decimal import Decimal
+
     # If not numeric, just convert to string
     if isinstance(value, str):
         return value
@@ -91,6 +95,42 @@ def m_format_output(value: Any) -> str:
     if isinstance(value, bool):
         # Convert boolean to MUMPS 1/0
         return "1" if value else "0"
+
+    # Handle Decimal type (used for large numbers and scientific notation)
+    if isinstance(value, Decimal):
+        # Check if it's effectively an integer
+        if value == int(value):
+            return str(int(value))
+        # Format without scientific notation
+        # Convert to tuple: (sign, digits, exponent)
+        sign, digits, exponent = value.as_tuple()
+        # Handle special Decimal values (NaN, Infinity) - exponent is a string code
+        if not isinstance(exponent, int):
+            return str(value)
+        # Reconstruct the number
+        if exponent >= 0:
+            # Integer or large number
+            return str(int(value))
+        else:
+            # Decimal number
+            int_part = digits[:exponent] if exponent else ()
+            frac_part = digits[exponent:]
+            int_str = "".join(str(d) for d in int_part) if int_part else ""
+            frac_str = "".join(str(d) for d in frac_part)
+            # Pad with leading zeros if needed
+            if not int_str:
+                int_str = ""
+                frac_str = "0" * (-exponent - len(digits)) + frac_str
+            # Build result
+            result = int_str + "." + frac_str
+            # Remove trailing zeros
+            result = result.rstrip("0").rstrip(".")
+            # Remove leading zero before decimal
+            if result.startswith("0."):
+                result = result[1:]
+            if sign:
+                result = "-" + result
+            return result
 
     if isinstance(value, (int, float)):
         # Check if it's effectively an integer

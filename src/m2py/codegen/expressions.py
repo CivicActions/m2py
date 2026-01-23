@@ -179,6 +179,11 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
 def _generate_literal(lit: MLiteral) -> str:
     """Generate Python literal from MLiteral.
 
+    For numbers with exponent notation, we generate a Decimal representation
+    to preserve precision for large numbers that exceed float64 precision.
+    This is critical for string operations like concatenation and the follows
+    operator which depend on exact string representations.
+
     Args:
         lit: MLiteral node
 
@@ -192,6 +197,12 @@ def _generate_literal(lit: MLiteral) -> str:
     elif lit.literal_type == LiteralType.INTEGER:
         return str(lit.value)
     elif lit.literal_type == LiteralType.DECIMAL:
+        # Check if literal has stored original string (for precise large numbers)
+        original = getattr(lit, "_original_string", None)
+        if original and "E" in original.upper():
+            # Use Decimal for exact precision with exponent notation
+            # This avoids float precision loss for large numbers like 9999997799E14
+            return f'Decimal("{original}")'
         return str(lit.value)
     else:
         # Default: treat as string
@@ -547,8 +558,8 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         # Comparison: use m_compare helper
         return f'm_compare({left}, "{op.operator}", {right})'
     elif op.operator == "_":
-        # String concatenation
-        return f"(str({left}) + str({right}))"
+        # String concatenation - use m_str for MUMPS-style number formatting
+        return f"(m_str({left}) + m_str({right}))"
     elif op.operator == "&":
         # Logical AND - must return int (0/1), not Python bool
         return f"int(m_truth({left}) and m_truth({right}))"
@@ -566,16 +577,31 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         return f'int(not m_compare({left}, ">", {right}))'
     elif op.operator == "[":
         # Contains: A[B returns 1 if B is substring of A
-        # Inline Python - no runtime helper needed
-        return f"int(str({right}) in str({left}))"
+        # Use m_str for MUMPS-style number formatting
+        return f"int(m_str({right}) in m_str({left}))"
+    elif op.operator == "'[":
+        # Not contains: A'[B returns 1 if B is NOT substring of A
+        return f"int(m_str({right}) not in m_str({left}))"
     elif op.operator == "]":
         # Follows: A]B returns 1 if A sorts after B (ASCII string comparison)
-        # Inline Python - no runtime helper needed
-        return f"int(str({left}) > str({right}))"
+        # Use m_str for MUMPS-style number formatting (critical for large numbers)
+        return f"int(m_str({left}) > m_str({right}))"
+    elif op.operator == "']":
+        # Not follows: A']B returns 1 if A does NOT sort after B
+        return f"int(m_str({left}) <= m_str({right}))"
     elif op.operator == "]]":
         # Sorts after: A]]B returns 1 if A strictly sorts after B
         # Uses MUMPS collation (numerics before strings), empty string never sorts after
         return f"m_sorts_after({left}, {right})"
+    elif op.operator == "']]":
+        # Not sorts after: A']]B returns 1 if A does NOT strictly sort after B
+        return f"int(not m_sorts_after({left}, {right}))"
+    elif op.operator == "'&":
+        # NAND: returns 1 if NOT (A AND B)
+        return f"int(not (m_truth({left}) and m_truth({right})))"
+    elif op.operator == "'!":
+        # NOR: returns 1 if NOT (A OR B)
+        return f"int(not (m_truth({left}) or m_truth({right})))"
     elif op.operator == "?":
         # Pattern match: A?pattern returns 1 if A matches pattern
         return f"m_pattern_match({left}, {right})"

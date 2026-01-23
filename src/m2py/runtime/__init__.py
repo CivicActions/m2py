@@ -2316,8 +2316,9 @@ class MUMPSRuntime:
         namespace: dict[str, Any] = {"_rt": self}
 
         # Inject helpers
-        from m2py.codegen.helpers import m_compare, m_num, m_truth
+        from m2py.codegen.helpers import m_str, m_compare, m_num, m_truth
 
+        namespace["m_str"] = m_str
         namespace["m_num"] = m_num
         namespace["m_truth"] = m_truth
         namespace["m_compare"] = m_compare

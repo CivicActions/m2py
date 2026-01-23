@@ -115,7 +115,7 @@ def generate_python(
     Example:
         >>> code = generate_python("TEST S X=1 W X Q")
         >>> print(code)
-        from m2py.codegen.helpers import m_num, m_truth, m_compare
+        from m2py.codegen.helpers import m_str, m_num, m_truth, m_compare
         ...
     """
     # Parse MUMPS source
