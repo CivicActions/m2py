@@ -25,7 +25,7 @@ from m2py.asg.expressions import (
     MSpecialVariable,
     MVariable,
 )
-from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
+from m2py.parser.textx_classes import GlobalVariable, NakedGlobal, ExtendedGlobalBracket
 from m2py.asg.statements import (
     MAssignment,
     MBreakStatement,
@@ -66,6 +66,8 @@ from m2py.asg.statements import (
     MZShowStatement,
     MZWithdrawStatement,
     MZWriteStatement,
+    MZWriteSubscriptAll,
+    MZWriteSubscriptRange,
     # Z-commands - Unimplemented (LIM-015)
     MZAllocateStatement,
     MZBreakStatement,
@@ -909,6 +911,13 @@ def _generate_single_assignment(
         _generate_global_set(assignment, ctx)
         return
 
+    elif isinstance(assignment.target, ExtendedGlobalBracket):
+        # Spec 017: Handle extended global reference SET targets
+        # For m2py, environment is ignored - treat as regular global
+        # Generate: _rt.globals.set("NAME", (subscripts,), value)
+        _generate_extended_global_set(assignment, ctx)
+        return
+
     elif isinstance(assignment.target, NakedGlobal):
         # Spec 009 (T031): Handle naked global reference SET targets
         # Generate: resolve_naked then set
@@ -1248,6 +1257,50 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
     if global_var.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in global_var.subscripts]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+        else:
+            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+    else:
+        subscripts_tuple = "()"
+
+    # Generate value expression
+    assert assignment.value is not None, "Global SET requires a value"
+    value_expr = generate_expr(assignment.value, ctx)
+
+    # Emit _rt.globals.set() call
+    ctx.emitter.line(
+        f"_rt.globals.set({global_name!r}, {subscripts_tuple}, str({value_expr}))"
+    )
+
+
+def _generate_extended_global_set(
+    assignment: MAssignment, ctx: "GeneratorContext"
+) -> None:
+    """Generate _rt.globals.set() call for extended global reference SET.
+
+    Spec 017: Generate code for S ^["env"]NAME(subscripts)=value
+
+    For m2py, the environment parameter is ignored - the global is accessed
+    as a regular global. This handles the syntax but doesn't implement
+    multi-environment global access.
+
+    Args:
+        assignment: MAssignment with ExtendedGlobalBracket target
+        ctx: Generator context
+
+    The generated code calls _rt.globals.set() ignoring the environment:
+        _rt.globals.set("NAME", ("sub1", "sub2"), "value")
+    """
+    assert isinstance(assignment.target, ExtendedGlobalBracket)
+    ext_global = assignment.target
+
+    # Get global name (environment is ignored)
+    global_name = ext_global.name
+
+    # Generate subscript expressions
+    if ext_global.subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in ext_global.subscripts]
         if len(subscript_exprs) == 1:
             subscripts_tuple = f"(str({subscript_exprs[0]}),)"
         else:
@@ -4185,20 +4238,46 @@ def _generate_zwrite(stmt: MZWriteStatement, ctx: "GeneratorContext") -> None:
                 # Global variable: ZW ^NAME or ZW ^NAME(subs)
                 name = target.name
                 if target.subscripts:
-                    subs = ", ".join(
-                        f"str({generate_expr(s, ctx)})" for s in target.subscripts
-                    )
-                    ctx.emitter.line(f"_rt.zwrite_global('{name}', ({subs},))")
+                    # Filter out wildcard subscripts (*, ranges)
+                    # When * is encountered, stop - it means "show all descendants"
+                    concrete_subs = []
+                    for s in target.subscripts:
+                        if isinstance(s, MZWriteSubscriptAll):
+                            # * means all descendants from this point - stop here
+                            break
+                        elif isinstance(s, MZWriteSubscriptRange):
+                            # TODO: Range support would need runtime filtering
+                            # For now treat like * (show all)
+                            break
+                        else:
+                            concrete_subs.append(f"str({generate_expr(s, ctx)})")
+                    if concrete_subs:
+                        subs = ", ".join(concrete_subs)
+                        ctx.emitter.line(f"_rt.zwrite_global('{name}', ({subs},))")
+                    else:
+                        ctx.emitter.line(f"_rt.zwrite_global('{name}', ())")
                 else:
                     ctx.emitter.line(f"_rt.zwrite_global('{name}', ())")
             elif isinstance(target, (LocalVariable, ZWriteLocal)):
                 # Local variable: ZW X or ZW X(subs)
                 name = target.name
                 if target.subscripts:
-                    subs = ", ".join(
-                        f"str({generate_expr(s, ctx)})" for s in target.subscripts
-                    )
-                    ctx.emitter.line(f"_rt.zwrite_local('{name}', ({subs},), _scope)")
+                    # Filter out wildcard subscripts (*, ranges)
+                    concrete_subs = []
+                    for s in target.subscripts:
+                        if isinstance(s, MZWriteSubscriptAll):
+                            break
+                        elif isinstance(s, MZWriteSubscriptRange):
+                            break
+                        else:
+                            concrete_subs.append(f"str({generate_expr(s, ctx)})")
+                    if concrete_subs:
+                        subs = ", ".join(concrete_subs)
+                        ctx.emitter.line(
+                            f"_rt.zwrite_local('{name}', ({subs},), _scope)"
+                        )
+                    else:
+                        ctx.emitter.line(f"_rt.zwrite_local('{name}', (), _scope)")
                 else:
                     ctx.emitter.line(f"_rt.zwrite_local('{name}', (), _scope)")
             else:

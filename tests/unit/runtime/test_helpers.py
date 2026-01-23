@@ -251,3 +251,75 @@ class TestMGetGlobal:
         backend = InMemoryGlobalStorage()
         backend.set("G", ("1",), "VALUE")
         assert m_get_global(backend, "G", ("2",), "DEFAULT") == "DEFAULT"
+
+
+class TestMFormatOutput:
+    """Tests for m_format_output helper function.
+
+    Spec 017 Phase 7: Proper numeric output formatting matching YDB behavior.
+    """
+
+    def test_integer_output(self):
+        """Integers are output as-is."""
+        from m2py.runtime.helpers import m_format_output
+
+        assert m_format_output(123) == "123"
+        assert m_format_output(-456) == "-456"
+        assert m_format_output(0) == "0"
+
+    def test_string_output(self):
+        """Strings are output as-is."""
+        from m2py.runtime.helpers import m_format_output
+
+        assert m_format_output("hello") == "hello"
+        assert m_format_output("123") == "123"
+
+    def test_decimal_expansion(self):
+        """Decimals with exponents are expanded to full notation."""
+        from decimal import Decimal
+
+        from m2py.runtime.helpers import m_format_output
+
+        assert m_format_output(Decimal("1E+11")) == "100000000000"
+        assert m_format_output(Decimal("1E-2")) == ".01"
+        assert m_format_output(Decimal("5E+2")) == "500"
+
+    def test_decimal_leading_dot(self):
+        """Decimals less than 1 start with dot (no leading zero)."""
+        from decimal import Decimal
+
+        from m2py.runtime.helpers import m_format_output
+
+        assert m_format_output(Decimal("0.5")) == ".5"
+        assert m_format_output(Decimal("0.123")) == ".123"
+        assert m_format_output(Decimal("-0.5")) == "-.5"
+
+    def test_extreme_negative_exponent_returns_zero(self):
+        """Very small exponents (< -43) return "0" to match YDB behavior.
+
+        YDB outputs 0 for numbers smaller than ~1E-43 because they're
+        beyond the precision threshold. This also prevents MemoryError
+        from trying to create strings with trillions of digits.
+        """
+        from decimal import Decimal
+
+        from m2py.runtime.helpers import m_format_output
+
+        # 1E-44 and smaller should return "0"
+        assert m_format_output(Decimal("1E-44")) == "0"
+        assert m_format_output(Decimal("1E-100")) == "0"
+        assert m_format_output(Decimal("1E-11111111111111111")) == "0"
+
+    def test_borderline_exponents(self):
+        """Test exponents around the -43 boundary."""
+        from decimal import Decimal
+
+        from m2py.runtime.helpers import m_format_output
+
+        # 1E-43 should still work (not return 0)
+        result_43 = m_format_output(Decimal("1E-43"))
+        assert result_43 != "0"
+        assert len(result_43) > 40  # Should have 43+ digits
+
+        # 1E-44 should return 0
+        assert m_format_output(Decimal("1E-44")) == "0"

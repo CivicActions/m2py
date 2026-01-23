@@ -797,3 +797,128 @@ class TestMUMPSRuntimeTextMethod:
         assert rt.get_text(1, module=target_module) == "EXT W 'external' Q"
         assert rt.get_text(2, module=target_module) == "EXT2 W 'line2' Q"
         assert rt.get_text(0, label="EXT2", module=target_module) == "EXT2 W 'line2' Q"
+
+
+@pytest.mark.runtime
+class TestZWriteFormatting:
+    """Tests for ZWRITE value and subscript formatting.
+
+    Spec 017 Phase 7: ZWRITE output formatting fixes.
+    These tests verify correct MUMPS ZWRITE semantics:
+    - Numeric subscripts are unquoted and expanded (1E+11 → 100000000000)
+    - String subscripts are quoted (even if they look like numbers without E+/E-)
+    - Numeric values are unquoted (even if stored as strings)
+    - Non-numeric string values are quoted
+    """
+
+    def test_format_subscript_integer(self):
+        """Integer subscripts are unquoted."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt._format_subscript("123") == "123"
+        assert rt._format_subscript("-456") == "-456"
+        assert rt._format_subscript("0") == "0"
+
+    def test_format_subscript_decimal(self):
+        """Decimal subscripts are unquoted."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt._format_subscript(".5") == ".5"
+        assert rt._format_subscript("-.123") == "-.123"
+        assert rt._format_subscript("3.14159") == "3.14159"
+
+    def test_format_subscript_scientific_with_sign(self):
+        """Scientific notation with E+/E- (from Decimal) is expanded."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        # These represent numeric subscripts (from str(Decimal(...)))
+        assert rt._format_subscript("1E+11") == "100000000000"
+        assert rt._format_subscript("1E-2") == ".01"
+        assert rt._format_subscript("-1E+3") == "-1000"
+
+    def test_format_subscript_scientific_without_sign(self):
+        """Scientific notation without +/- is a string subscript (quoted)."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        # These represent string literals (user wrote "1E60" in quotes)
+        assert rt._format_subscript("1E60") == '"1E60"'
+        assert rt._format_subscript("1E11") == '"1E11"'
+
+    def test_format_subscript_string(self):
+        """Non-numeric strings are quoted."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt._format_subscript("hello") == '"hello"'
+        assert rt._format_subscript("A") == '"A"'
+        assert rt._format_subscript("test123") == '"test123"'
+
+    def test_format_subscript_string_with_quotes(self):
+        """Strings containing quotes are escaped."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt._format_subscript('say "hi"') == '"say ""hi"""'
+
+    def test_quote_value_numeric(self):
+        """Numeric-looking values are unquoted."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt._quote_value("123") == "123"
+        assert rt._quote_value("-456") == "-456"
+        assert rt._quote_value(".5") == ".5"
+
+    def test_quote_value_scientific_with_sign(self):
+        """Scientific notation values with E+/E- are expanded (not quoted)."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt._quote_value("1E+11") == "100000000000"
+        assert rt._quote_value("1E-2") == ".01"
+
+    def test_quote_value_non_numeric(self):
+        """Non-numeric strings are quoted."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt._quote_value("hello") == '"hello"'
+        assert rt._quote_value("A") == '"A"'
+
+    def test_quote_value_empty(self):
+        """Empty strings and None are quoted as empty string."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt._quote_value("") == '""'
+        assert rt._quote_value(None) == '""'
+
+    def test_zwrite_global_subscript_formatting(self):
+        """ZWRITE globals formats subscripts correctly."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        # Set a global with numeric subscript that stores as "1E+11"
+        rt.globals.set("f", ("1E+11",), "1E11")
+
+        # ZWRITE should expand the subscript to full number
+        rt.zwrite_global("f", ())
+        output = rt.get_output()
+        assert "^f(100000000000)=" in output
+
+    def test_zwrite_global_string_subscript_preserved(self):
+        """ZWRITE preserves string subscripts that look like numbers."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        # Set a global with string subscript "1E60" (no +/- in exponent)
+        rt.globals.set("x", ("1E60", "1"), "23")
+
+        rt.zwrite_global("x", ())
+        output = rt.get_output()
+        # String subscript should be quoted
+        assert '^x("1E60",1)=23' in output

@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import types
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 if TYPE_CHECKING:
@@ -1056,22 +1057,45 @@ class MUMPSRuntime:
     def _quote_value(self, value: Any) -> str:
         """Quote a value for ZWRITE output format.
 
+        MUMPS ZWRITE outputs:
+        - Numeric values unquoted (e.g., X=123)
+        - Numeric-looking strings unquoted (e.g., SET X="123" → ZWRITE X=123)
+        - Non-numeric strings quoted (e.g., X="hello")
+
+        The output format is designed to be valid as input to SET @.
+
         Args:
             value: Value to quote
 
         Returns:
-            Quoted string suitable for SET @ input
+            Formatted string suitable for SET @ input
         """
+        from m2py.runtime.helpers import m_format_output
+        import re
+
         if value is None or value == "":
             return '""'
+
+        # Actual numeric types don't get quoted
+        if isinstance(value, (int, float, Decimal)):
+            return m_format_output(value)
+
+        # For strings, check if it looks numeric
         s = str(value)
-        # Check if it's a number (doesn't need quoting)
-        try:
-            float(s)
-            return s
-        except ValueError:
-            pass
-        # Quote strings, escaping internal quotes
+
+        # Plain integers: -?[0-9]+
+        if re.match(r"^-?[0-9]+$", s):
+            return m_format_output(Decimal(s))
+
+        # Decimals: -?[0-9]*\.[0-9]+
+        if re.match(r"^-?[0-9]*\.[0-9]+$", s):
+            return m_format_output(Decimal(s))
+
+        # Scientific notation with explicit sign (from str(Decimal()))
+        if re.match(r"^-?[0-9]+(\.[0-9]+)?E[+-][0-9]+$", s):
+            return m_format_output(Decimal(s))
+
+        # Non-numeric strings get quoted
         escaped = s.replace('"', '""')
         return f'"{escaped}"'
 
@@ -1092,7 +1116,18 @@ class MUMPSRuntime:
     def _format_subscript(self, sub: Any) -> str:
         """Format a subscript value for ZWRITE output.
 
-        Numeric subscripts are not quoted, string subscripts are.
+        Numeric subscripts are not quoted, string subscripts are quoted.
+        Uses m_format_output to ensure Decimals are formatted without
+        scientific notation (e.g., 1E+11 → 100000000000).
+
+        The key challenge is distinguishing numeric from string subscripts
+        when both are stored as strings. We use these heuristics:
+        - Plain integers/decimals are numeric: "123", ".5", "-1"
+        - Scientific notation WITH explicit sign is numeric: "1E+60", "1E-60"
+        - Scientific notation WITHOUT sign is a string: "1E60" (user wrote it quoted)
+
+        This works because Python's str(Decimal(...)) always includes the sign
+        in the exponent (E+/E-), while literal strings preserve their original form.
 
         Args:
             sub: Subscript value
@@ -1100,15 +1135,34 @@ class MUMPSRuntime:
         Returns:
             Formatted subscript (quoted if string, unquoted if numeric)
         """
+        from m2py.runtime.helpers import m_format_output
+        import re
+
+        # If it's already a Decimal, format it directly
+        if isinstance(sub, Decimal):
+            return m_format_output(sub)
+
+        # Other numeric types
+        if isinstance(sub, (int, float)):
+            return m_format_output(sub)
+
+        # For strings, check if it looks like a numeric subscript
+        if isinstance(sub, str):
+            # Plain integers: -?[0-9]+
+            if re.match(r"^-?[0-9]+$", sub):
+                return m_format_output(Decimal(sub))
+            # Decimals: -?[0-9]*\.[0-9]+
+            if re.match(r"^-?[0-9]*\.[0-9]+$", sub):
+                return m_format_output(Decimal(sub))
+            # Scientific notation with explicit sign (from str(Decimal()))
+            if re.match(r"^-?[0-9]+(\.[0-9]+)?E[+-][0-9]+$", sub):
+                return m_format_output(Decimal(sub))
+            # Otherwise it's a string subscript - quote it
+            escaped = sub.replace('"', '""')
+            return f'"{escaped}"'
+
+        # Fallback: quote non-numeric values
         s = str(sub)
-        # Check if it's numeric
-        try:
-            float(s)
-            # Return numeric subscripts unquoted
-            return s
-        except ValueError:
-            pass
-        # Quote string subscripts
         escaped = s.replace('"', '""')
         return f'"{escaped}"'
 
@@ -1187,18 +1241,21 @@ class MUMPSRuntime:
                 self.write(f"^{name}={self._quote_value(value)}\n")
 
         # Get descendants using $ORDER
-        current = subscripts
+        # To get first subscript at this level, use ("",) as the "starting from" marker
+        # For subsequent subscripts, use the last found subscript
+        current_sub = ""  # Empty string = get first
         while True:
-            # Find next subscript at this level (direction=1 means forward)
-            next_sub = self.globals.order(name, current, direction=1)
+            # Find next subscript at this level
+            # ORDER expects (parent_subscripts..., starting_point)
+            next_sub = self.globals.order(
+                name, subscripts + (current_sub,), direction=1
+            )
             if not next_sub:
                 break
-            # Construct new subscripts tuple
-            new_subs = subscripts + (next_sub,)
             # Recursively output this subtree
-            self.zwrite_global(name, new_subs)
-            # Move to next sibling
-            current = subscripts + (next_sub,)
+            self.zwrite_global(name, subscripts + (next_sub,))
+            # Move to next sibling at this level
+            current_sub = next_sub
 
     def _zwrite_var(self, name: str, value: Any) -> None:
         """Output a single variable in ZWRITE format."""

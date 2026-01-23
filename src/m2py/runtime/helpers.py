@@ -107,6 +107,10 @@ def m_format_output(value: Any) -> str:
         # Handle special Decimal values (NaN, Infinity) - exponent is a string code
         if not isinstance(exponent, int):
             return str(value)
+        # YDB has a limit of ~43 decimal places. Beyond that, output is "0"
+        # This prevents memory errors from trying to format 1E-111111111...
+        if exponent < -43:
+            return "0"
         # Reconstruct the number
         if exponent >= 0:
             # Integer or large number

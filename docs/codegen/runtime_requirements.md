@@ -427,8 +427,10 @@ m_format_output(3.14)   # → "3.14"
 - Leading zero removed for decimals < 1: `0.5` → `".5"`
 - Negative values preserve sign: `-0.5` → `"-.5"`
 - Non-numeric values converted with `str()`
+- Decimal values expanded without scientific notation: `1E+11` → `"100000000000"`
+- Extreme negative exponents (< -43) return `"0"` matching YDB precision limits
 
-This function is used internally by `MUMPSRuntime.write()` to ensure numeric output matches MUMPS formatting conventions.
+This function is used internally by `MUMPSRuntime.write()` and ZWRITE formatting to ensure numeric output matches MUMPS formatting conventions.
 
 ### $ORDER Traversal
 

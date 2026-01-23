@@ -68,15 +68,16 @@ class TestExtendedGlobalsCodegen:
         with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
             generate_python(code)
 
-    def test_extended_global_bracket_raises_not_implemented(self, generate_python):
-        """Extended global with bracket syntax raises NotImplementedError.
+    def test_extended_global_bracket_set_supported(self, generate_python):
+        """Extended global with bracket syntax is now supported.
 
-        The ^["env"]X syntax is an alternative way to select a global
-        from a specific environment. This is a YDB extension.
+        The ^["env"]X syntax selects a global from a specific environment.
+        For m2py, the environment is ignored and the global is accessed normally.
         """
         code = 'TEST\n S ^["env"]X=1\n Q\n'
-        with pytest.raises(NotImplementedError, match="ExtendedGlobalBracket"):
-            generate_python(code)
+        # Should not raise - environment is ignored, treated as regular global
+        result = generate_python(code)
+        assert "_rt.globals.set('X', (), str(1))" in result
 
     def test_extended_global_pipe_with_subscripts_raises_not_implemented(
         self, generate_python
@@ -86,13 +87,14 @@ class TestExtendedGlobalsCodegen:
         with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
             generate_python(code)
 
-    def test_extended_global_bracket_with_subscripts_raises_not_implemented(
-        self, generate_python
-    ):
-        """Extended global bracket with subscripts raises NotImplementedError."""
+    def test_extended_global_bracket_with_subscripts_supported(self, generate_python):
+        """Extended global bracket with subscripts is now supported.
+
+        For m2py, the environment is ignored and the global is accessed normally.
+        """
         code = 'TEST\n S ^["env"]X(1,2)=1\n Q\n'
-        with pytest.raises(NotImplementedError, match="ExtendedGlobalBracket"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.globals.set('X'," in result
 
     def test_extended_global_in_expression_raises_not_implemented(
         self, generate_python
