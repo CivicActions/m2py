@@ -116,50 +116,126 @@ class TestQuitFollowedBySetParsing:
 
 @pytest.mark.parser
 class TestQuitFollowedByTransactionParsing:
-    """Parser-level tests for QUIT followed by transaction commands (§8.2.16)."""
+    """Parser-level tests for QUIT followed by transaction commands (§8.2.16).
 
-    def test_quit_then_tstart(self):
-        """Q TS - QUIT followed by TSTART (abbreviated) (§8.2.16)."""
+    IMPORTANT: In MUMPS, single space after command indicates argument follows.
+    Double space indicates end of command, next command follows.
+
+    So:
+    - "Q TS" = QUIT with return value TS (variable)
+    - "Q  TS" = QUIT (argumentless) then TSTART command
+
+    These tests verify the correct YDB-compatible behavior.
+    """
+
+    def test_quit_with_ts_variable(self):
+        """Q TS - QUIT with return value TS (the variable, not TSTART) (§8.2.16).
+
+        Single space between Q and TS means TS is the return value.
+        YDB confirms this: Q TS throws 'Undefined local variable: TS' error.
+        """
         from m2py.parser.line_parser import parse_commands_from_line
 
         cmds = parse_commands_from_line("Q TS")
+        assert len(cmds) == 1
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[0].value is not None  # Q has return value TS
+        # Value is wrapped: Expr > UnaryExpr > LocalVariable
+        assert cmds[0].value.left.operand.name == "TS"
+
+    def test_quit_then_tstart_double_space(self):
+        """Q  TS - QUIT (argumentless) followed by TSTART (double space) (§8.2.16).
+
+        Double space after Q means argumentless QUIT, then TS is a new command.
+        """
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q  TS")
         assert len(cmds) == 2
         assert cmds[0].__class__.__name__ == "QuitCommand"
         assert cmds[0].value is None  # Q has no return value
         assert cmds[1].__class__.__name__ == "TStartCommand"
 
-    def test_quit_then_tstart_full(self):
-        """Q TSTART - QUIT followed by TSTART (full keyword) (§8.2.16)."""
+    def test_quit_with_tstart_variable(self):
+        """Q TSTART - QUIT with return value TSTART (the variable) (§8.2.16).
+
+        Single space means TSTART is the return value (a variable named TSTART).
+        """
         from m2py.parser.line_parser import parse_commands_from_line
 
         cmds = parse_commands_from_line("Q TSTART")
+        assert len(cmds) == 1
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[0].value is not None
+        # Value is wrapped: Expr > UnaryExpr > LocalVariable
+        assert cmds[0].value.left.operand.name == "TSTART"
+
+    def test_quit_then_tstart_full_double_space(self):
+        """Q  TSTART - QUIT (argumentless) followed by TSTART (double space) (§8.2.16)."""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q  TSTART")
         assert len(cmds) == 2
         assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[0].value is None
         assert cmds[1].__class__.__name__ == "TStartCommand"
 
-    def test_quit_then_tcommit(self):
-        """Q TC - QUIT followed by TCOMMIT (abbreviated) (§8.2.16)."""
+    def test_quit_with_tc_variable(self):
+        """Q TC - QUIT with return value TC (the variable) (§8.2.16)."""
         from m2py.parser.line_parser import parse_commands_from_line
 
         cmds = parse_commands_from_line("Q TC")
+        assert len(cmds) == 1
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[0].value is not None
+        # Value is wrapped: Expr > UnaryExpr > LocalVariable
+        assert cmds[0].value.left.operand.name == "TC"
+
+    def test_quit_then_tcommit_double_space(self):
+        """Q  TC - QUIT (argumentless) followed by TCOMMIT (double space) (§8.2.16)."""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q  TC")
         assert len(cmds) == 2
         assert cmds[0].__class__.__name__ == "QuitCommand"
         assert cmds[1].__class__.__name__ == "TCommitCommand"
 
-    def test_quit_then_trestart(self):
-        """Q TRE - QUIT followed by TRESTART (abbreviated) (§8.2.16)."""
+    def test_quit_with_tre_variable(self):
+        """Q TRE - QUIT with return value TRE (the variable) (§8.2.16)."""
         from m2py.parser.line_parser import parse_commands_from_line
 
         cmds = parse_commands_from_line("Q TRE")
+        assert len(cmds) == 1
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[0].value is not None
+        # Value is wrapped: Expr > UnaryExpr > LocalVariable
+        assert cmds[0].value.left.operand.name == "TRE"
+
+    def test_quit_then_trestart_double_space(self):
+        """Q  TRE - QUIT (argumentless) followed by TRESTART (double space) (§8.2.16)."""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q  TRE")
         assert len(cmds) == 2
         assert cmds[0].__class__.__name__ == "QuitCommand"
         assert cmds[1].__class__.__name__ == "TRestartCommand"
 
-    def test_quit_then_trollback(self):
-        """Q TRO - QUIT followed by TROLLBACK (abbreviated) (§8.2.16)."""
+    def test_quit_with_tro_variable(self):
+        """Q TRO - QUIT with return value TRO (the variable) (§8.2.16)."""
         from m2py.parser.line_parser import parse_commands_from_line
 
         cmds = parse_commands_from_line("Q TRO")
+        assert len(cmds) == 1
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[0].value is not None
+        # Value is wrapped: Expr > UnaryExpr > LocalVariable
+        assert cmds[0].value.left.operand.name == "TRO"
+
+    def test_quit_then_trollback_double_space(self):
+        """Q  TRO - QUIT (argumentless) followed by TROLLBACK (double space) (§8.2.16)."""
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q  TRO")
         assert len(cmds) == 2
         assert cmds[0].__class__.__name__ == "QuitCommand"
         assert cmds[1].__class__.__name__ == "TRollbackCommand"
@@ -182,12 +258,31 @@ class TestQuitFollowedByTransactionParsing:
         assert cmds[0].__class__.__name__ == "TRollbackCommand"
         assert cmds[0].level is not None
 
-    def test_quit_postcond_then_tstart(self):
-        """Q:DONE TS - postconditioned QUIT then TSTART (§8.2.16)."""
+    def test_quit_postcond_with_ts_variable(self):
+        """Q:DONE TS - postconditioned QUIT with return value TS (§8.2.16).
+
+        Postconditioned QUIT with single space means TS is the return value.
+        """
         from m2py.parser.line_parser import parse_commands_from_line
 
         cmds = parse_commands_from_line("Q:DONE TS")
+        assert len(cmds) == 1
+        assert cmds[0].__class__.__name__ == "QuitCommand"
+        assert cmds[0].postcond is not None
+        assert cmds[0].value is not None
+        # Value is wrapped: Expr > UnaryExpr > LocalVariable
+        assert cmds[0].value.left.operand.name == "TS"
+
+    def test_quit_postcond_then_tstart_double_space(self):
+        """Q:DONE  TS - postconditioned QUIT then TSTART (double space) (§8.2.16).
+
+        Double space after postconditioned QUIT means argumentless QUIT, then TSTART.
+        """
+        from m2py.parser.line_parser import parse_commands_from_line
+
+        cmds = parse_commands_from_line("Q:DONE  TS")
         assert len(cmds) == 2
         assert cmds[0].__class__.__name__ == "QuitCommand"
         assert cmds[0].postcond is not None
+        assert cmds[0].value is None
         assert cmds[1].__class__.__name__ == "TStartCommand"
