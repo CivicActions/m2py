@@ -35,7 +35,8 @@ FUNCTIONAL_BASE = Path(__file__).parent
 COM_DIR = FUNCTIONAL_BASE / "com"
 
 # Default timeout for MUMPS execution (seconds)
-DEFAULT_TIMEOUT = 30
+# Increased from 30 to 60 to handle slow tests under parallel load
+DEFAULT_TIMEOUT = 60
 
 # YDB infrastructure markers to strip from outref content
 YDB_PATH_MARKERS = frozenset(
@@ -323,7 +324,7 @@ def _run_m2py_worker(
 
 def run_mumps(
     source: str,
-    timeout: int = 30,
+    timeout: int = DEFAULT_TIMEOUT,
     args: str | None = None,
     helper_sources: dict[str, str] | None = None,
 ) -> ExecutionResult:
