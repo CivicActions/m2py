@@ -541,12 +541,18 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
     left = generate_expr(op.left, ctx) if op.left else "0"
     right = generate_expr(op.right, ctx) if op.right else "0"
 
-    if op.operator in ("+", "-"):
-        # Arithmetic: coerce both operands to numeric
-        return f"(m_num({left}) {op.operator} m_num({right}))"
-    elif op.operator in ("*", "/"):
-        # Multiplication/Division: coerce both operands
-        return f"(m_num({left}) {op.operator} m_num({right}))"
+    if op.operator == "+":
+        # Addition: use m_add for Decimal precision
+        return f"m_add({left}, {right})"
+    elif op.operator == "-":
+        # Subtraction: use m_sub for Decimal precision
+        return f"m_sub({left}, {right})"
+    elif op.operator == "*":
+        # Multiplication: use m_mul for Decimal precision
+        return f"m_mul({left}, {right})"
+    elif op.operator == "/":
+        # Division: use m_div for 18-digit precision (MUMPS standard)
+        return f"m_div({left}, {right})"
     elif op.operator == "\\":
         # Integer division in MUMPS - uses truncation towards zero, not floor division
         return f"(int(m_num({left}) / m_num({right})))"

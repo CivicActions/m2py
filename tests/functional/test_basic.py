@@ -130,15 +130,29 @@ def load_basic_expected_outputs() -> dict[str, str]:
 # Routine Execution
 # =============================================================================
 
+# Load common helpers once at module level
+_COMMON_HELPERS = None
+
+
+def _get_common_helpers() -> dict[str, str]:
+    """Get common helper routines, loading once on first access."""
+    global _COMMON_HELPERS
+    if _COMMON_HELPERS is None:
+        from tests.functional.conftest import load_common_helpers
+
+        _COMMON_HELPERS = load_common_helpers()
+    return _COMMON_HELPERS
+
 
 def execute_basic_routine(
-    routine_name: str, args: str | None = None
+    routine_name: str, args: str | None = None, use_helpers: bool = True
 ) -> ExecutionResult:
     """Execute a single basic routine via m2py.
 
     Args:
         routine_name: Name of the routine (e.g., "fact")
         args: Optional arguments to pass to the routine entry point
+        use_helpers: If True, make common helpers (examine, header) available
 
     Returns:
         ExecutionResult with output and status
@@ -148,7 +162,8 @@ def execute_basic_routine(
     except FileNotFoundError as e:
         return ExecutionResult(output="", success=False, error=str(e))
 
-    return run_mumps(source, args=args)
+    helpers = _get_common_helpers() if use_helpers else None
+    return run_mumps(source, args=args, helper_sources=helpers)
 
 
 # =============================================================================

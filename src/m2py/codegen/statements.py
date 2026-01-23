@@ -1754,13 +1754,14 @@ def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
 def _generate_for_bounded(
     stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
 ) -> None:
-    """Generate Python for loop from bounded FOR (F I=1:1:10).
+    """Generate Python while loop from bounded FOR (F I=1:1:10).
 
-    Uses range() with adjusted end for MUMPS end-inclusive semantics.
+    Uses while loop to support non-integer step values (MUMPS allows fractional steps).
+    Python's range() only works with integers, but MUMPS FOR i=.001:.01:1 is valid.
 
     Spec 017: MUMPS FOR always sets the loop variable to the start value,
     even when the loop body doesn't execute (e.g., F I=2:-1:3 sets I=2).
-    We must set the loop variable before the for loop.
+    We must set the loop variable before the loop.
 
     T068: For indirect loop variables (F @A=1:1:3), resolve the target
     variable name at runtime and update via _rt.set_var().
@@ -1787,7 +1788,7 @@ def _generate_for_bounded(
     # This ensures the variable is set even when the loop doesn't execute
     ctx.emitter.line(f"_for_start = m_num({start_expr})")
     ctx.emitter.line(f"_for_step = m_num({step_expr})")
-    ctx.emitter.line(f"_for_end = m_num({end_expr}) + (1 if _for_step > 0 else -1)")
+    ctx.emitter.line(f"_for_end = m_num({end_expr})")
     # Set loop var to start value (MUMPS semantics)
     ctx.emitter.line(f"{for_ctx.loop_var} = _for_start")
     # Also sync to _scope for SIMPLE_FUNCTIONS strategy
@@ -1796,9 +1797,8 @@ def _generate_for_bounded(
             f"_scope.setdefault({for_ctx.loop_var_name!r}, MArray()).value = _for_start"
         )
 
-    # MUMPS FOR is end-inclusive, Python range is end-exclusive
-    # For positive step: range(start, end + 1, step)
-    # For negative step: range(start, end - 1, step)
+    # MUMPS FOR is end-inclusive, use while loop to support fractional steps
+    # Condition: (_for_step > 0 and loop_var <= _for_end) or (_for_step < 0 and loop_var >= _for_end)
 
     # T068: Handle indirect loop variable (F @A=1:1:3)
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
@@ -1807,7 +1807,8 @@ def _generate_for_bounded(
         # Set indirect var to start value
         ctx.emitter.line("_rt.set_var(_for_indirect_var, _for_start, _scope)")
         ctx.emitter.line(
-            f"for {for_ctx.loop_var} in range(_for_start, _for_end, _for_step):"
+            f"while (_for_step > 0 and {for_ctx.loop_var} <= _for_end) or "
+            f"(_for_step < 0 and {for_ctx.loop_var} >= _for_end):"
         )
         with ctx.emitter.indented():
             # Update the indirect variable at start of each iteration
@@ -1815,12 +1816,21 @@ def _generate_for_bounded(
                 f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
             )
             _generate_for_body(stmt, ctx)
+            # Increment loop variable at end of iteration using m_add for precision
+            ctx.emitter.line(
+                f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, _for_step)"
+            )
     else:
         ctx.emitter.line(
-            f"for {for_ctx.loop_var} in range(_for_start, _for_end, _for_step):"
+            f"while (_for_step > 0 and {for_ctx.loop_var} <= _for_end) or "
+            f"(_for_step < 0 and {for_ctx.loop_var} >= _for_end):"
         )
         with ctx.emitter.indented():
             _generate_for_body(stmt, ctx)
+            # Increment loop variable at end of iteration using m_add for precision
+            ctx.emitter.line(
+                f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, _for_step)"
+            )
 
 
 def _generate_for_string_list(
@@ -1958,13 +1968,8 @@ def _generate_for_mixed(
             start_expr = generate_expr(param.start, ctx)
             step_expr = generate_expr(param.step, ctx)
             end_expr = generate_expr(param.end, ctx)
-            # Generate range with adjusted end for MUMPS end-inclusive semantics
-            # We need to evaluate step to determine direction
-            iterables.append(
-                f"range(m_num({start_expr}), "
-                f"m_num({end_expr}) + (1 if m_num({step_expr}) > 0 else -1), "
-                f"m_num({step_expr}))"
-            )
+            # Use m_range for MUMPS end-inclusive semantics with fractional support
+            iterables.append(f"m_range({start_expr}, {end_expr}, {step_expr})")
         elif param.param_type == ForParamType.OPEN_RANGE:
             if param.start is None or param.step is None:
                 raise NotImplementedError("Incomplete open range in mixed loop")

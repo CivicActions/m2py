@@ -10,10 +10,14 @@ import pytest
 class TestForCommandCodegen:
     """Codegen-level tests for FOR command code generation (§8.2.5)."""
 
-    def test_for_counted_to_range(self, generate_python):
-        """FOR counted generates Python range loop (§8.2.5)."""
+    def test_for_counted_to_while(self, generate_python):
+        """FOR counted generates Python while loop (§8.2.5).
+
+        We use while loops instead of range() to support non-integer steps.
+        MUMPS allows F I=.001:.01:1 which would fail with Python's range().
+        """
         code = generate_python("TEST\n F I=1:1:3 W I\n Q\n")
-        assert "for I in range(" in code
+        assert "while (" in code
         assert "_for_step" in code
         assert "_for_end" in code
 
@@ -165,7 +169,7 @@ class TestForCommandCodegen:
         """
         code = generate_python("TEST\n F I=1:1:3\n Q\n")
         # Should compile without error
-        assert "for I in range(" in code
+        assert "while (" in code
         # The loop should have pass or minimal body
         assert "pass" in code or "_for_step" in code
 

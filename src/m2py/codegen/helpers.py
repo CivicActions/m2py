@@ -247,6 +247,161 @@ def m_truth(value: Any) -> bool:
     return m_num(value) != 0
 
 
+def m_div(left: Any, right: Any) -> Decimal:
+    """Perform MUMPS division with 18-digit precision.
+
+    MUMPS uses 18 significant digits for arithmetic operations.
+    Python float only provides ~15-16 digits. To match MUMPS/YDB precision,
+    we use Decimal with precision 18 for division.
+
+    Args:
+        left: Dividend (any value, will be coerced via m_num)
+        right: Divisor (any value, will be coerced via m_num)
+
+    Returns:
+        Decimal result with 18 significant digits
+
+    Examples:
+        >>> m_div(4, 3)
+        Decimal('1.33333333333333333')
+        >>> m_div("10", "3")
+        Decimal('3.33333333333333333')
+    """
+    from decimal import localcontext
+
+    # Coerce operands to numeric
+    left_num = m_num(left)
+    right_num = m_num(right)
+
+    # Use Decimal for precise 18-digit division (MUMPS precision)
+    with localcontext() as ctx:
+        ctx.prec = 18
+        left_dec = (
+            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
+        )
+        right_dec = (
+            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
+        )
+        return left_dec / right_dec
+
+
+def m_add(left: Any, right: Any) -> Union[int, Decimal]:
+    """Perform MUMPS addition with 18-digit precision.
+
+    MUMPS uses 18 significant digits for arithmetic operations.
+    Using Decimal prevents floating point accumulation errors.
+
+    Args:
+        left: First operand (any value, will be coerced via m_num)
+        right: Second operand (any value, will be coerced via m_num)
+
+    Returns:
+        Integer if result is whole number, otherwise Decimal
+
+    Examples:
+        >>> m_add(1, 2)
+        3
+        >>> m_add(0.001, 0.001)
+        Decimal('0.002')
+    """
+    from decimal import localcontext
+
+    left_num = m_num(left)
+    right_num = m_num(right)
+
+    with localcontext() as ctx:
+        ctx.prec = 18
+        left_dec = (
+            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
+        )
+        right_dec = (
+            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
+        )
+        result = left_dec + right_dec
+        # Normalize: return int for whole numbers
+        if result == int(result):
+            return int(result)
+        return result
+
+
+def m_sub(left: Any, right: Any) -> Union[int, Decimal]:
+    """Perform MUMPS subtraction with 18-digit precision.
+
+    MUMPS uses 18 significant digits for arithmetic operations.
+    Using Decimal prevents floating point accumulation errors.
+
+    Args:
+        left: First operand (any value, will be coerced via m_num)
+        right: Second operand (any value, will be coerced via m_num)
+
+    Returns:
+        Integer if result is whole number, otherwise Decimal
+
+    Examples:
+        >>> m_sub(3, 2)
+        1
+        >>> m_sub(0.003, 0.001)
+        Decimal('0.002')
+    """
+    from decimal import localcontext
+
+    left_num = m_num(left)
+    right_num = m_num(right)
+
+    with localcontext() as ctx:
+        ctx.prec = 18
+        left_dec = (
+            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
+        )
+        right_dec = (
+            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
+        )
+        result = left_dec - right_dec
+        # Normalize: return int for whole numbers
+        if result == int(result):
+            return int(result)
+        return result
+
+
+def m_mul(left: Any, right: Any) -> Union[int, Decimal]:
+    """Perform MUMPS multiplication with 18-digit precision.
+
+    MUMPS uses 18 significant digits for arithmetic operations.
+    Using Decimal prevents floating point precision loss.
+
+    Args:
+        left: First operand (any value, will be coerced via m_num)
+        right: Second operand (any value, will be coerced via m_num)
+
+    Returns:
+        Integer if result is whole number, otherwise Decimal
+
+    Examples:
+        >>> m_mul(3, 4)
+        12
+        >>> m_mul(0.01, 0.02)
+        Decimal('0.0002')
+    """
+    from decimal import localcontext
+
+    left_num = m_num(left)
+    right_num = m_num(right)
+
+    with localcontext() as ctx:
+        ctx.prec = 18
+        left_dec = (
+            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
+        )
+        right_dec = (
+            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
+        )
+        result = left_dec * right_dec
+        # Normalize: return int for whole numbers
+        if result == int(result):
+            return int(result)
+        return result
+
+
 def m_compare(left: Any, op: str, right: Any) -> int:
     """Perform MUMPS comparison with appropriate coercion.
 
@@ -285,14 +440,14 @@ def m_compare(left: Any, op: str, right: Any) -> int:
     """
     if op == "=":
         # MUMPS "=" compares canonical string representations
-        # Numeric values (int, float) are normalized first via m_num
+        # Numeric values (int, float, Decimal) are normalized via m_str
         # Strings remain as-is (they're already the canonical form)
-        if isinstance(left, (int, float)):
-            left = str(m_num(left))
+        if isinstance(left, (int, float, Decimal)):
+            left = m_str(left)
         else:
             left = str(left)
-        if isinstance(right, (int, float)):
-            right = str(m_num(right))
+        if isinstance(right, (int, float, Decimal)):
+            right = m_str(right)
         else:
             right = str(right)
         return int(left == right)
@@ -304,4 +459,53 @@ def m_compare(left: Any, op: str, right: Any) -> int:
         raise ValueError(f"Unsupported comparison operator: {op}")
 
 
-__all__ = ["m_str", "m_num", "m_truth", "m_compare"]
+def m_range(start: Any, end: Any, step: Any):
+    """Generate values from start to end with step (MUMPS FOR semantics).
+
+    Unlike Python's range(), this supports non-integer values for all arguments.
+    MUMPS FOR is end-inclusive:
+    - F I=1:1:3 iterates I=1,2,3 (not 1,2 like Python range)
+    - F I=.001:.01:1 works with fractional steps
+
+    Args:
+        start: Starting value (will be coerced via m_num)
+        end: Ending value, inclusive (will be coerced via m_num)
+        step: Step value (will be coerced via m_num)
+
+    Yields:
+        Numeric values from start to end (inclusive) by step
+
+    Examples:
+        >>> list(m_range(1, 3, 1))
+        [1, 2, 3]
+        >>> list(m_range(0, 0.03, 0.01))  # Fractional step
+        [0, 0.01, 0.02, 0.03]
+        >>> list(m_range(3, 1, -1))  # Negative step
+        [3, 2, 1]
+    """
+    current = m_num(start)
+    end_val = m_num(end)
+    step_val = m_num(step)
+
+    if step_val > 0:
+        while current <= end_val:
+            yield current
+            current = m_add(current, step_val)
+    elif step_val < 0:
+        while current >= end_val:
+            yield current
+            current = m_add(current, step_val)
+    # step == 0 would cause infinite loop, yield nothing
+
+
+__all__ = [
+    "m_str",
+    "m_num",
+    "m_truth",
+    "m_compare",
+    "m_div",
+    "m_add",
+    "m_sub",
+    "m_mul",
+    "m_range",
+]

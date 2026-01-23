@@ -31,6 +31,9 @@ if TYPE_CHECKING:
 
 FUNCTIONAL_BASE = Path(__file__).parent
 
+# Directory containing common helper routines (examine.m, header.m, etc.)
+COM_DIR = FUNCTIONAL_BASE / "com"
+
 # Default timeout for MUMPS execution (seconds)
 DEFAULT_TIMEOUT = 30
 
@@ -247,13 +250,38 @@ def _run_m2py_worker(
     source: str,
     result_queue: multiprocessing.Queue,
     args: str | None = None,
+    helper_sources: dict[str, str] | None = None,
 ) -> None:
-    """Worker function for m2py execution in a subprocess."""
+    """Worker function for m2py execution in a subprocess.
+
+    Args:
+        source: MUMPS source code for the main routine
+        result_queue: Queue to put results
+        args: Optional arguments string (comma-separated)
+        helper_sources: Dict mapping routine name to MUMPS source code
+            for helper routines that should be available for external calls.
+            These are transpiled and injected into sys.modules before execution.
+    """
     try:
+        import sys
+        import types
+
         from m2py.codegen import generate_python
         from m2py.runtime import MUMPSRuntime
 
-        # Generate Python code
+        # Transpile and inject helper routines into sys.modules
+        if helper_sources:
+            for routine_name, helper_source in helper_sources.items():
+                helper_code = generate_python(helper_source)
+
+                # Create a module and execute the generated code in it
+                module = types.ModuleType(routine_name)
+                exec(helper_code, module.__dict__)
+
+                # Inject into sys.modules so "import routine_name" will find it
+                sys.modules[routine_name] = module
+
+        # Generate Python code for main routine
         python_code = generate_python(source)
 
         # Parse args string into tuple if provided (e.g., "18" -> (18,))
@@ -289,7 +317,10 @@ def _run_m2py_worker(
 
 
 def run_mumps(
-    source: str, timeout: int = 30, args: str | None = None
+    source: str,
+    timeout: int = 30,
+    args: str | None = None,
+    helper_sources: dict[str, str] | None = None,
 ) -> ExecutionResult:
     """Execute MUMPS source via m2py transpilation with timeout protection.
 
@@ -297,6 +328,8 @@ def run_mumps(
         source: MUMPS source code
         timeout: Timeout in seconds (process killed if exceeded)
         args: Optional comma-separated arguments for the entry point
+        helper_sources: Dict mapping routine name to MUMPS source code
+            for helper routines that should be available for external calls.
 
     Returns:
         ExecutionResult with output and status
@@ -304,7 +337,7 @@ def run_mumps(
     result_queue: multiprocessing.Queue = multiprocessing.Queue()
     process = multiprocessing.Process(
         target=_run_m2py_worker,
-        args=(source, result_queue, args),
+        args=(source, result_queue, args, helper_sources),
     )
 
     try:
@@ -329,6 +362,23 @@ def run_mumps(
         success=False,
         error=f"Execution timed out after {timeout}s",
     )
+
+
+def load_common_helpers() -> dict[str, str]:
+    """Load common helper routines from tests/functional/com/.
+
+    These helpers (examine.m, header.m) are used by many tests in the
+    basic suite for test assertions and reporting.
+
+    Returns:
+        Dict mapping routine name to MUMPS source code
+    """
+    helpers = {}
+    if COM_DIR.exists():
+        for m_file in COM_DIR.glob("*.m"):
+            routine_name = m_file.stem
+            helpers[routine_name] = m_file.read_text()
+    return helpers
 
 
 # =============================================================================
