@@ -302,6 +302,35 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST W $PIECE("X-Y-Z","-",2) Q')
         assert result.output == "Y"
 
+    def test_function_piece_two_args_defaults_to_first(self, execute_mumps):
+        """$PIECE with 2 arguments defaults to piece 1 (§7.1.5).
+
+        When only string and delimiter are provided (no position argument),
+        $PIECE defaults to extracting the first piece (position 1).
+
+        Spec 011 Phase 10 (T047): Pattern matching fixes revealed this bug
+        where 2-arg $P was returning empty string instead of piece 1.
+        """
+        # Test 1: Simple 2-argument case - should return first piece
+        result = execute_mumps('TEST W $P("ABC/DDD","/") Q')
+        assert result.output == "ABC"
+
+        # Test 2: Another 2-arg case
+        result = execute_mumps('TEST W $P("A^B^C","^") Q')
+        assert result.output == "A"
+
+        # Test 3: No delimiter found - returns entire string
+        result = execute_mumps('TEST W $P("ABC","/") Q')
+        assert result.output == "ABC"
+
+        # Test 4: Empty first piece
+        result = execute_mumps('TEST W $P("/ABC","/") Q')
+        assert result.output == ""
+
+        # Test 5: Abbreviation with 2 args
+        result = execute_mumps('TEST W $PIECE("X-Y-Z","-") Q')
+        assert result.output == "X"
+
     def test_function_query(self, execute_mumps):
         """$QUERY generates tree traversal (§7.1.5).
 

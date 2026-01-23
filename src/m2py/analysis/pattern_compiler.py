@@ -142,7 +142,19 @@ def _parse_pattern_atom(pattern: str, pos: int) -> Tuple[str, int]:
     if char == '"':
         # String literal
         literal, pos = _parse_string_literal(pattern, pos)
-        base_regex = re.escape(literal)
+
+        # Special case: empty string literal
+        # Any number of empty strings is still empty string, so n"" only matches ""
+        # regardless of the quantifier. Return empty regex which fullmatch matches to "".
+        if literal == "":
+            return "", pos
+
+        # Wrap in non-capturing group if literal has multiple chars and quantifier needed
+        escaped = re.escape(literal)
+        if len(literal) > 1 and not (min_count == 1 and max_count == 1):
+            base_regex = f"(?:{escaped})"
+        else:
+            base_regex = escaped
     elif char == "(":
         # Alternation
         alt_regex, pos = _parse_alternation(pattern, pos)

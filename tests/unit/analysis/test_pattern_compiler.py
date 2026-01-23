@@ -152,6 +152,65 @@ class TestStringLiterals:
         regex = compile_pattern_to_regex('1"say ""hello"""')
         assert re.fullmatch(regex, 'say "hello"')
 
+    def test_empty_string_literal(self):
+        """Test empty string literal pattern.
+
+        Per MUMPS standard, patterns with empty string literals only match
+        the empty string regardless of repeat count. The empty string literal
+        can only match zero characters, so any count of it still matches zero.
+
+        YDB behavior verified:
+          ""?."" → 1 (empty matches any count of empty strings)
+          "A"?."" → 0 (non-empty cannot match empty string literal)
+          ""?0"" → 1 (zero occurrences matches empty)
+          ""?.11"" → 1 (0-11 occurrences matches empty)
+        """
+        # .""  - any number of empty strings (matches only empty string)
+        regex = compile_pattern_to_regex('.""')
+        assert regex == ""  # Empty regex matches only empty via fullmatch
+        assert re.fullmatch(regex, "")
+        assert not re.fullmatch(regex, "A")
+        assert not re.fullmatch(regex, "hello")
+
+        # 0"" - zero empty strings (matches only empty string)
+        regex = compile_pattern_to_regex('0""')
+        assert regex == ""
+        assert re.fullmatch(regex, "")
+        assert not re.fullmatch(regex, "X")
+
+        # .11"" - 0 to 11 empty strings (matches only empty string)
+        regex = compile_pattern_to_regex('.11""')
+        assert regex == ""
+        assert re.fullmatch(regex, "")
+        assert not re.fullmatch(regex, "X")
+
+        # 1"" - exactly one empty string (matches only empty string)
+        regex = compile_pattern_to_regex('1""')
+        assert regex == ""
+        assert re.fullmatch(regex, "")
+        assert not re.fullmatch(regex, "A")
+
+    def test_empty_string_literal_in_sequence(self):
+        """Test empty string literal combined with other patterns.
+
+        Pattern like 1N."" should match a single digit (the empty string
+        literal adds nothing to the match).
+        """
+        # 1N."" - one digit followed by any number of empty strings
+        regex = compile_pattern_to_regex('1N.""')
+        assert re.fullmatch(regex, "5")
+        assert re.fullmatch(regex, "0")
+        assert not re.fullmatch(regex, "55")
+        assert not re.fullmatch(regex, "A")
+        assert not re.fullmatch(regex, "")
+
+        # .""1A - any empty strings followed by one alpha
+        regex = compile_pattern_to_regex('.""1A')
+        assert re.fullmatch(regex, "A")
+        assert re.fullmatch(regex, "z")
+        assert not re.fullmatch(regex, "5")
+        assert not re.fullmatch(regex, "")
+
 
 # =============================================================================
 # Alternation

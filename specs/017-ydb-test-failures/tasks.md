@@ -225,14 +225,26 @@ thanks to multi-routine support and Decimal arithmetic helpers.
 
 ### Implementation
 
-- [ ] T045 [P] [US5] Debug pattst to identify failing patterns: `uv run python utils/validate.py --debug tests/functional/basic/inref/pattst.m`
-- [ ] T046 [P] [US5] Debug v1pat for additional pattern failure cases
-- [ ] T047 [US5] Fix pattern compilation bugs in src/m2py/analysis/pattern_compiler.py
-- [ ] T048 [US5] Fix pattern matching runtime if applicable in src/m2py/runtime/helpers.py (m_pattern_match)
-- [ ] T049 [US5] Add unit tests for identified pattern edge cases in tests/unit/analysis/test_pattern_compiler.py
-- [ ] T050 [US5] Validate pattern tests pass: `uv run pytest tests/functional/ -k "pattst or v1pat or vv2pat" -v`
+- [X] T045 [P] [US5] Debug pattst to identify failing patterns: `uv run python utils/validate.py --debug tests/functional/basic/inref/pattst.m`
+- [X] T046 [P] [US5] Debug v1pat for additional pattern failure cases
+  - **Note**: v1pat requires V1PAT1/V1PAT2 external routines (multi-routine infrastructure needed, not a pattern bug)
+- [X] T047 [US5] Fix pattern compilation bugs in src/m2py/analysis/pattern_compiler.py
+  - Fixed: $PIECE with 2 arguments now defaults to piece 1 (was returning empty string)
+  - Fixed: Empty string literal patterns (`.""`) now return empty regex (was generating invalid `*` or `{0}`)
+- [X] T048 [US5] Fix pattern matching runtime if applicable in src/m2py/runtime/helpers.py (m_pattern_match)
+  - **Result**: No runtime changes needed - m_pattern_match works correctly
+- [X] T049 [US5] Add unit tests for identified pattern edge cases in tests/unit/analysis/test_pattern_compiler.py
+  - Added test_empty_string_literal and test_empty_string_literal_in_sequence
+  - Added test_function_piece_two_args_defaults_to_first in test_s7_1_5_intrinsic_functions.py
+- [X] T050 [US5] Validate pattern tests pass: `uv run pytest tests/functional/ -k "pattst or v1pat or vv2pat" -v`
+  - **pattst**: ✅ PASSED
+  - **VV2PAT2**: ✅ PASSED (all 9 tests including II-156 nested indirection)
+  - **VV2PAT1**: All 7 pattern tests PASS, but 3 missing newlines due to `$Y>55` pagination tracking (separate issue)
+  - **VV2PAT3**: All 15 pattern tests PASS, but 3 missing newlines due to `$Y>55` pagination tracking (separate issue)
+  - **v1pat**: Requires V1PAT1/V1PAT2 external routines (multi-routine test infrastructure, separate issue)
 
-**Checkpoint**: Pattern matching fixed - 5 tests resolved
+**Checkpoint**: Core pattern matching fixed - pattst and VV2PAT2 fully pass ✅
+**Known Gaps**: VV2PAT1/VV2PAT3 pagination ($Y tracking), v1pat multi-routine support
 
 ---
 

@@ -1449,7 +1449,10 @@ def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $PIECE/$P function.
 
     Spec 010 Phase 5 (T027-T030): $PIECE extracts delimited pieces.
-    $P(string, delimiter, from [, to])
+    $P(string, delimiter [, from [, to]])
+
+    Per MUMPS spec, `from` defaults to 1 when omitted.
+    $P("A^B","^") is equivalent to $P("A^B","^",1) and returns "A".
 
     Args:
         expr: MIntrinsicFunction ASG node with 2-4 arguments
@@ -1459,18 +1462,24 @@ def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         Python expression calling m_piece() helper
 
     Examples:
+        $P("A^B^C","^") → m_piece("A^B^C", "^", 1)
         $P("A^B^C","^",2) → m_piece("A^B^C", "^", 2)
         $P("A^B^C","^",2,3) → m_piece("A^B^C", "^", 2, 3)
     """
     args = getattr(expr, "arguments", [])
 
-    if len(args) < 3:
+    if len(args) < 2:
         # Not enough arguments - return empty string
         return '""'
 
     string_expr = generate_expr(args[0], ctx)
     delimiter_expr = generate_expr(args[1], ctx)
-    from_expr = generate_expr(args[2], ctx)
+
+    # Default from=1 when only 2 arguments provided
+    if len(args) >= 3:
+        from_expr = generate_expr(args[2], ctx)
+    else:
+        from_expr = "1"
 
     if len(args) >= 4:
         to_expr = generate_expr(args[3], ctx)
