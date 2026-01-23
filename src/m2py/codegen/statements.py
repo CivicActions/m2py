@@ -1758,6 +1758,10 @@ def _generate_for_bounded(
 
     Uses range() with adjusted end for MUMPS end-inclusive semantics.
 
+    Spec 017: MUMPS FOR always sets the loop variable to the start value,
+    even when the loop body doesn't execute (e.g., F I=2:-1:3 sets I=2).
+    We must set the loop variable before the for loop.
+
     T068: For indirect loop variables (F @A=1:1:3), resolve the target
     variable name at runtime and update via _rt.set_var().
 
@@ -1766,6 +1770,7 @@ def _generate_for_bounded(
         for_ctx: FOR loop context with analysis
         ctx: Generator context
     """
+
     # Get the single range parameter
     if not stmt.parameters or stmt.parameters[0].param_type != ForParamType.RANGE:
         raise NotImplementedError("Expected RANGE parameter for bounded FOR")
@@ -1778,18 +1783,31 @@ def _generate_for_bounded(
     step_expr = generate_expr(param.step, ctx)
     end_expr = generate_expr(param.end, ctx)
 
+    # Spec 017: Set loop variable to start value before the loop
+    # This ensures the variable is set even when the loop doesn't execute
+    ctx.emitter.line(f"_for_start = m_num({start_expr})")
+    ctx.emitter.line(f"_for_step = m_num({step_expr})")
+    ctx.emitter.line(f"_for_end = m_num({end_expr}) + (1 if _for_step > 0 else -1)")
+    # Set loop var to start value (MUMPS semantics)
+    ctx.emitter.line(f"{for_ctx.loop_var} = _for_start")
+    # Also sync to _scope for SIMPLE_FUNCTIONS strategy
+    if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS and for_ctx.loop_var_name:
+        ctx.emitter.line(
+            f"_scope.setdefault({for_ctx.loop_var_name!r}, MArray()).value = _for_start"
+        )
+
     # MUMPS FOR is end-inclusive, Python range is end-exclusive
     # For positive step: range(start, end + 1, step)
     # For negative step: range(start, end - 1, step)
-    ctx.emitter.line(f"_for_step = m_num({step_expr})")
-    ctx.emitter.line(f"_for_end = m_num({end_expr}) + (1 if _for_step > 0 else -1)")
 
     # T068: Handle indirect loop variable (F @A=1:1:3)
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         # Resolve the target variable name once before the loop
         ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+        # Set indirect var to start value
+        ctx.emitter.line("_rt.set_var(_for_indirect_var, _for_start, _scope)")
         ctx.emitter.line(
-            f"for {for_ctx.loop_var} in range(m_num({start_expr}), _for_end, _for_step):"
+            f"for {for_ctx.loop_var} in range(_for_start, _for_end, _for_step):"
         )
         with ctx.emitter.indented():
             # Update the indirect variable at start of each iteration
@@ -1799,7 +1817,7 @@ def _generate_for_bounded(
             _generate_for_body(stmt, ctx)
     else:
         ctx.emitter.line(
-            f"for {for_ctx.loop_var} in range(m_num({start_expr}), _for_end, _for_step):"
+            f"for {for_ctx.loop_var} in range(_for_start, _for_end, _for_step):"
         )
         with ctx.emitter.indented():
             _generate_for_body(stmt, ctx)

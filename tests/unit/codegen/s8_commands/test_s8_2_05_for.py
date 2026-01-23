@@ -199,6 +199,35 @@ class TestForCommandCodegen:
         assert result.output == "1234"
         assert result.success is True
 
+    def test_for_empty_range_sets_loop_var(self, execute_mumps):
+        """FOR with empty range (start > end for positive step) still sets loop var (Spec 017).
+
+        Spec 017: MUMPS FOR always sets the loop variable to the start value,
+        even when the loop body doesn't execute (e.g., F I=2:-1:3 never executes
+        because 2 > 3 with step -1).
+
+        Given: S K=99 F K=2:-1:3 W "loop"
+        When: executed
+        Then: K is set to 2 even though loop doesn't execute (body never runs)
+        """
+        result = execute_mumps("TEST\n S K=99\n F K=2:-1:3 W K\n W !,K\n Q\n")
+        # The loop body (W K) never executes because range is empty
+        # But K should be 2 (the start value), not 99
+        assert result.output == "\n2"
+        assert result.success is True
+
+    def test_for_empty_range_positive_step_sets_loop_var(self, execute_mumps):
+        """FOR with empty range (start > end for positive step) sets loop var (Spec 017).
+
+        Given: S K=99 F K=10:1:5 W K
+        When: executed
+        Then: K is set to 10 even though loop doesn't execute
+        """
+        result = execute_mumps("TEST\n S K=99\n F K=10:1:5 W K\n W !,K\n Q\n")
+        # Loop never executes (10 > 5), but K should be 10
+        assert result.output == "\n10"
+        assert result.success is True
+
 
 @pytest.mark.codegen
 class TestForGenContextCodegen:

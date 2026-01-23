@@ -536,6 +536,7 @@ class RoutineGenerator:
             # T084: Copy formal parameters into _scope for variable reads
             # Use original MUMPS names for _scope keys, translated names for Python vars
             # Spec 009 (T021): Use MArray for consistency with subscripted variables
+            # Spec 017: Formal parameters are implicitly NEWed per MUMPS spec
             original_formal_params = label.formal_list or []
             if (
                 label.signature
@@ -543,23 +544,29 @@ class RoutineGenerator:
                 and not label.formal_list
             ):
                 original_formal_params = label.signature.formal_params
-            for orig_name in original_formal_params:
-                python_name = translate_name(orig_name)
-                ctx.emitter.line(
-                    f"_scope.setdefault({orig_name!r}, MArray()).value = {python_name}"
-                )
 
             # Spec 014 (T055): Wrap body in try/except for error handling
             # This implements MUMPS $ETRAP error handling at stack frame boundaries
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
-                # Spec 011: Check if label has NEW statements - if so, wrap body
-                # in NewScopeManager to ensure proper save/restore semantics
-                # (has_new_statements is populated by variable analysis)
-                if label.has_new_statements:
+                # Spec 011/017: Use NewScopeManager if label has:
+                # - Explicit NEW statements, OR
+                # - Formal parameters (implicitly NEWed per MUMPS spec)
+                needs_scope_manager = label.has_new_statements or bool(
+                    original_formal_params
+                )
+                if needs_scope_manager:
                     ctx.emitter.line("with NewScopeManager(_scope) as _new_mgr:")
                     ctx.new_scope_manager_var = "_new_mgr"
                     with ctx.emitter.indented():
+                        # Spec 017: NEW formal parameters first (saves caller's values)
+                        # Then assign parameter values to _scope
+                        for orig_name in original_formal_params:
+                            ctx.emitter.line(f"_new_mgr.new_var({orig_name!r})")
+                            python_name = translate_name(orig_name)
+                            ctx.emitter.line(
+                                f"_scope[{orig_name!r}] = MArray(value={python_name})"
+                            )
                         self._generate_label_body(label, ctx)
                     ctx.new_scope_manager_var = None
                 else:
