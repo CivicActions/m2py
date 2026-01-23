@@ -2156,6 +2156,123 @@ class MUMPSRuntime:
             if isinstance(arr, MArray):
                 arr.kill(*subscripts)
 
+    def merge_var(self, name: str, source: "MArray", _scope: Dict[str, Any]) -> None:
+        """Merge source tree into variable by name (name indirection for MERGE).
+
+        Spec 017 Phase 13: Implements MERGE with indirection destination.
+
+        Behavior:
+        - Local variables: Merge into local variable tree in _scope
+        - Global variables (^prefix): Merge into global storage
+        - Subscripted variables: Merge at that subscript level
+        - Creates destination variable if doesn't exist
+        - Does NOT delete existing nodes - only adds/overwrites values
+
+        Args:
+            name: Variable name, optionally with subscripts
+            source: MArray source tree to merge from
+            _scope: Current scope dictionary
+
+        Raises:
+            IndirectionError: If name is not a valid variable name
+
+        Examples:
+            >>> scope = {"X": MArray()}
+            >>> scope["X"][1].value = "old"
+            >>> src = MArray()
+            >>> src[2].value = "new"
+            >>> rt.merge_var("X", src, scope)
+            >>> scope["X"].get(1)  # Old value preserved
+            "old"
+            >>> scope["X"].get(2)  # New value added
+            "new"
+        """
+        if source is None:
+            return  # Nothing to merge
+
+        if not name:
+            raise IndirectionError("", "empty variable name")
+
+        # Parse subscripts if present
+        base_name, subscripts = _parse_subscripted_name(name)
+
+        # Validate the base name
+        if not _is_valid_varname(base_name):
+            raise IndirectionError(
+                name,
+                f"invalid variable name - must start with letter or %, got '{base_name}'",
+            )
+
+        # Handle global variables
+        if base_name.startswith("^"):
+            key = base_name[1:]
+            subs = () if subscripts is None else tuple(str(s) for s in subscripts)
+            self._globals.merge_tree(key, subs, source)
+            return
+
+        # Handle local variables
+        if base_name not in _scope or not isinstance(_scope[base_name], MArray):
+            _scope[base_name] = MArray()
+
+        if subscripts is None:
+            # Merge at root level
+            _scope[base_name].merge_from(source)
+        else:
+            # Merge at subscript level
+            _scope[base_name][subscripts].merge_from(source)
+
+    def get_tree_var(self, name: str, _scope: Dict[str, Any]) -> Optional["MArray"]:
+        """Get variable tree by name (name indirection for MERGE source).
+
+        Spec 017 Phase 13: Implements MERGE with indirection source.
+
+        Behavior:
+        - Local variables: Return MArray from _scope (or subtree)
+        - Global variables (^prefix): Return tree from global storage
+        - Subscripted variables: Return subtree at that subscript level
+        - Undefined variables: Return None
+
+        Args:
+            name: Variable name, optionally with subscripts
+            _scope: Current scope dictionary
+
+        Returns:
+            MArray tree, or None if variable doesn't exist
+
+        Raises:
+            IndirectionError: If name is not a valid variable name
+        """
+        if not name:
+            raise IndirectionError("", "empty variable name")
+
+        # Parse subscripts if present
+        base_name, subscripts = _parse_subscripted_name(name)
+
+        # Validate the base name
+        if not _is_valid_varname(base_name):
+            raise IndirectionError(
+                name,
+                f"invalid variable name - must start with letter or %, got '{base_name}'",
+            )
+
+        # Handle global variables
+        if base_name.startswith("^"):
+            key = base_name[1:]
+            subs = () if subscripts is None else tuple(str(s) for s in subscripts)
+            return self._globals.get_tree(key, subs)
+
+        # Handle local variables
+        raw_value = _scope.get(base_name)
+        if raw_value is None or not isinstance(raw_value, MArray):
+            return None
+
+        if subscripts is None:
+            # Return entire tree
+            return raw_value
+        else:
+            # Return subtree at subscript
+            return raw_value[subscripts]
+
     def resolve_indirection(
         self, expr: str, levels: int, _scope: Dict[str, Any]
     ) -> Any:

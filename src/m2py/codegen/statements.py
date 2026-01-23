@@ -25,7 +25,12 @@ from m2py.asg.expressions import (
     MSpecialVariable,
     MVariable,
 )
-from m2py.parser.textx_classes import GlobalVariable, NakedGlobal, ExtendedGlobalBracket
+from m2py.parser.textx_classes import (
+    GlobalVariable,
+    NakedGlobal,
+    ExtendedGlobalBracket,
+    ExtendedGlobalPipe,
+)
 from m2py.asg.statements import (
     MAssignment,
     MBreakStatement,
@@ -3299,6 +3304,66 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
                     src_tree_expr = f"{src_translated}[{', '.join(subs_code)}]"
                 else:
                     src_tree_expr = src_translated
+
+        elif isinstance(src, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
+            # Source is extended global: ^|"env"|name or ^["gld"]name
+            # For now, ignore environment and treat as regular global
+            src_name = src.name
+
+            if src.subscripts:
+                subs_code = []
+                for sub in src.subscripts:
+                    subs_code.append(f"str({generate_expr(sub, ctx)})")
+                src_subs = f"({', '.join(subs_code)},)"
+            else:
+                src_subs = "()"
+
+            src_tree_expr = f'_rt.globals.get_tree("{src_name}", {src_subs})'
+
+        elif isinstance(src, MIndirection):
+            # Source is indirection: @VAR or @VAR@(subs)
+            # Use runtime get_tree_var to resolve variable name and get tree
+            from m2py.codegen.indirection import (
+                _count_indirection_levels,
+                _generate_inner_name_expr,
+            )
+
+            levels, inner_expr = _count_indirection_levels(src)
+
+            # Handle name+subscript syntax: @NAME@(1,2)
+            if src.name_indirection_subscripts:
+                all_subs = []
+                for sub_list in src.name_indirection_subscripts:
+                    sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+                    all_subs.extend(sub_exprs)
+                subs_args = ", ".join(all_subs)
+
+                if isinstance(inner_expr, MVariable):
+                    base_name = inner_expr.name
+                    if levels > 1:
+                        name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
+                    else:
+                        name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
+                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args})"
+                else:
+                    inner_name_expr = generate_expr(inner_expr, ctx)
+                    name_expr = (
+                        f"_rt.append_subscripts(str({inner_name_expr}), {subs_args})"
+                    )
+            elif levels > 1:
+                # Multi-level indirection (@@X, @@@X)
+                if isinstance(inner_expr, MVariable):
+                    var_name = inner_expr.name
+                    name_expr = f'str(_rt.resolve_indirection("{var_name}", {levels - 1}, _scope))'
+                else:
+                    inner_name_expr = generate_expr(inner_expr, ctx)
+                    name_expr = f"str(_rt.resolve_indirection(str({inner_name_expr}), {levels - 1}, _scope))"
+            else:
+                # Simple single-level indirection: @X
+                name_expr = _generate_inner_name_expr(inner_expr, ctx)
+
+            src_tree_expr = f"_rt.get_tree_var({name_expr}, _scope)"
+
         else:
             raise NotImplementedError(
                 f"MERGE source type not supported: {type(src).__name__}"
@@ -3328,9 +3393,31 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
             ctx.emitter.dedent()
 
         elif isinstance(dest, NakedGlobal):
-            raise NotImplementedError(
-                "MERGE to naked global destination not yet supported (M ^(...)=...)"
+            # Destination is naked global: ^(subs)
+            # IMPORTANT: Must evaluate source FIRST (including get_tree which updates
+            # naked indicator), THEN resolve destination naked reference.
+            # This matches MUMPS semantics where source side-effects occur before
+            # destination is resolved.
+            if dest.subscripts:
+                subs_code = []
+                for sub in dest.subscripts:
+                    subs_code.append(f"str({generate_expr(sub, ctx)})")
+                dest_subs = f"({', '.join(subs_code)},)"
+            else:
+                dest_subs = "()"
+
+            # Get source tree FIRST (this updates naked indicator)
+            ctx.emitter.line(f"_merge_src = {src_tree_expr}")
+            # THEN resolve destination naked using updated indicator
+            ctx.emitter.line(
+                f"_naked_dest_name, _naked_dest_subs = _rt.globals.resolve_naked({dest_subs})"
             )
+            ctx.emitter.line("if _merge_src is not None:")
+            ctx.emitter.indent()
+            ctx.emitter.line(
+                "_rt.globals.merge_tree(_naked_dest_name, _naked_dest_subs, _merge_src)"
+            )
+            ctx.emitter.dedent()
 
         elif isinstance(dest, MVariable):
             # Destination is local variable: B or B(subs)
@@ -3373,6 +3460,77 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
                 ctx.emitter.indent()
                 ctx.emitter.line(f"{dest_expr}.merge_from(_merge_src)")
                 ctx.emitter.dedent()
+
+        elif isinstance(dest, MIndirection):
+            # Destination is indirection: @VAR or @VAR@(subs)
+            # Use runtime merge_var to resolve variable name and merge
+            from m2py.codegen.indirection import (
+                _count_indirection_levels,
+                _generate_inner_name_expr,
+            )
+
+            levels, inner_expr = _count_indirection_levels(dest)
+
+            # Handle name+subscript syntax: @NAME@(1,2)
+            if dest.name_indirection_subscripts:
+                all_subs = []
+                for sub_list in dest.name_indirection_subscripts:
+                    sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+                    all_subs.extend(sub_exprs)
+                subs_args = ", ".join(all_subs)
+
+                if isinstance(inner_expr, MVariable):
+                    base_name = inner_expr.name
+                    if levels > 1:
+                        name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
+                    else:
+                        name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
+                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args})"
+                else:
+                    inner_name_expr = generate_expr(inner_expr, ctx)
+                    name_expr = (
+                        f"_rt.append_subscripts(str({inner_name_expr}), {subs_args})"
+                    )
+            elif levels > 1:
+                # Multi-level indirection (@@X, @@@X)
+                if isinstance(inner_expr, MVariable):
+                    var_name = inner_expr.name
+                    name_expr = f'str(_rt.resolve_indirection("{var_name}", {levels - 1}, _scope))'
+                else:
+                    inner_name_expr = generate_expr(inner_expr, ctx)
+                    name_expr = f"str(_rt.resolve_indirection(str({inner_name_expr}), {levels - 1}, _scope))"
+            else:
+                # Simple single-level indirection: @X
+                name_expr = _generate_inner_name_expr(inner_expr, ctx)
+
+            ctx.emitter.line(f"_merge_src = {src_tree_expr}")
+            ctx.emitter.line("if _merge_src is not None:")
+            ctx.emitter.indent()
+            ctx.emitter.line(f"_rt.merge_var({name_expr}, _merge_src, _scope)")
+            ctx.emitter.dedent()
+
+        elif isinstance(dest, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
+            # Extended global: ^|"env"|name or ^["gld"]name
+            # For now, ignore environment and treat as regular global
+            # (m2py uses single global namespace)
+            dest_name = dest.name
+
+            if dest.subscripts:
+                subs_code = []
+                for sub in dest.subscripts:
+                    subs_code.append(f"str({generate_expr(sub, ctx)})")
+                dest_subs = f"({', '.join(subs_code)},)"
+            else:
+                dest_subs = "()"
+
+            ctx.emitter.line(f"_merge_src = {src_tree_expr}")
+            ctx.emitter.line("if _merge_src is not None:")
+            ctx.emitter.indent()
+            ctx.emitter.line(
+                f'_rt.globals.merge_tree("{dest_name}", {dest_subs}, _merge_src)'
+            )
+            ctx.emitter.dedent()
+
         else:
             raise NotImplementedError(
                 f"MERGE destination type not supported: {type(dest).__name__}"

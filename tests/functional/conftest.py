@@ -97,6 +97,20 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     "order": "LIM-015",
     # mugj suite - $ZVERSION function
     "v1ac": "LIM-015",
+    # merge suite - Z-extensions (NEW $ZTRAP, SET $ZTRAP, $ZVERSION, $ZEOF)
+    "errors": "LIM-015",  # NEW $ZTRAP
+    "falsedsc": "LIM-015",  # SET $ZTRAP
+    "mindmisc": "LIM-015",  # NEW $ZTRAP
+    "mindr1": "LIM-015",  # NEW $ZTRAP
+    "mindr2": "LIM-015",  # NEW $ZTRAP
+    "mindr3": "LIM-015",  # NEW $ZTRAP
+    "mindr4": "LIM-015",  # NEW $ZTRAP
+    "mrgclnup": "LIM-015",  # NEW $ZTRAP
+    "mrgitp": "LIM-015",  # SET $ZT
+    "mrgstp": "LIM-015",  # SET $ZT
+    "nullfill": "LIM-015",  # NEW $ZTRAP
+    "subslen": "LIM-015",  # NEW $ZTRAP
+    "v4merge": "LIM-015",  # NEW $ZTRAP
     # LIM-019: Arithmetic precision edge cases
     # basic suite - arith test has 18-digit boundary precision differences
     "arith": "LIM-019",

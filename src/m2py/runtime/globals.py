@@ -176,6 +176,34 @@ class GlobalStorageBackend(Protocol):
         """
         ...
 
+    def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
+        """Get subtree as MArray for MERGE source.
+
+        Spec 017 Phase 13: Protocol for MERGE global→local and global→global.
+
+        Args:
+            name: Global name without caret
+            subscripts: Path to the subtree root
+
+        Returns:
+            MArray containing the subtree, or None if undefined.
+        """
+        ...
+
+    def merge_tree(
+        self, name: str, subscripts: tuple[str, ...], source: "MArray"
+    ) -> None:
+        """Merge MArray tree into global at ^NAME(subscripts).
+
+        Spec 017 Phase 13: Protocol for MERGE local→global and global→global.
+
+        Args:
+            name: Global name without caret
+            subscripts: Path to the destination root
+            source: MArray containing the source tree to merge
+        """
+        ...
+
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts).
 
@@ -1081,6 +1109,16 @@ class YottaDBGlobalStorage:
         """Return next node reference. Stub raises NotImplementedError."""
         raise NotImplementedError("YottaDB backend not yet implemented")
 
+    def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
+        """Get subtree as MArray. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def merge_tree(
+        self, name: str, subscripts: tuple[str, ...], source: "MArray"
+    ) -> None:
+        """Merge MArray tree into global. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value. Stub raises NotImplementedError."""
         raise NotImplementedError("YottaDB backend not yet implemented")
@@ -1229,6 +1267,16 @@ class IRISGlobalStorage:
 
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return next node reference. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
+        """Get subtree as MArray. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def merge_tree(
+        self, name: str, subscripts: tuple[str, ...], source: "MArray"
+    ) -> None:
+        """Merge MArray tree into global. Stub raises NotImplementedError."""
         raise NotImplementedError("IRIS backend not yet implemented")
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
