@@ -138,11 +138,12 @@ def generate_name_indirection(
                 return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", _scope)'
             else:
                 # Single level with subscripts - T065: validate source exists
-                return f"_rt.get_var(f'{{_rt.get_indirection_source(\"{base_name}\", _scope)}}{subs_str}', _scope)"
+                # Use concatenation to avoid f-string escaping issues with complex subscripts
+                return f'_rt.get_var(_rt.get_indirection_source("{base_name}", _scope) + "{subs_str}", _scope)'
         else:
-            # Complex expression
+            # Complex expression - use concatenation to avoid f-string escaping issues
             name_expr = generate_expr(inner_expr, ctx)
-            return f'_rt.get_var(f"{{str({name_expr})}}{subs_str}", _scope)'
+            return f'_rt.get_var(str({name_expr}) + "{subs_str}", _scope)'
 
     # Handle multi-level indirection (@@X, @@@X)
     if levels > 1:
@@ -210,13 +211,12 @@ def generate_name_indirection_write(
                 return f'_rt.set_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", {value_expr}, _scope)'
             else:
                 # Single level with subscripts - T065: validate source exists
-                return f"_rt.set_var(f'{{_rt.get_indirection_source(\"{base_name}\", _scope)}}{subs_str}', {value_expr}, _scope)"
+                # Use concatenation to avoid f-string escaping issues with complex subscripts
+                return f'_rt.set_var(_rt.get_indirection_source("{base_name}", _scope) + "{subs_str}", {value_expr}, _scope)'
         else:
-            # Complex expression
+            # Complex expression - use concatenation to avoid f-string escaping issues
             name_expr = generate_expr(inner_expr, ctx)
-            return (
-                f'_rt.set_var(f"{{str({name_expr})}}{subs_str}", {value_expr}, _scope)'
-            )
+            return f'_rt.set_var(str({name_expr}) + "{subs_str}", {value_expr}, _scope)'
 
     # Handle multi-level indirection (@@X, @@@X) for write
     # For @@X=val, we resolve one fewer level to get the target variable name
@@ -325,11 +325,13 @@ def generate_subscripted_indirection(
             return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + "{subs_str}", _scope)'
         else:
             # T065: Use _generate_inner_name_expr for better error messages
+            # Use concatenation to avoid f-string escaping issues with complex subscripts
             inner_name = _generate_inner_name_expr(inner_expr, ctx)
-            return f"_rt.get_var(f'{{{inner_name}}}{subs_str}', _scope)"
+            return f'_rt.get_var({inner_name} + "{subs_str}", _scope)'
     else:
+        # Complex expression - use concatenation to avoid f-string escaping issues
         name_expr = generate_expr(inner_expr, ctx)
-        return f'_rt.get_var(f"{{str({name_expr})}}{subs_str}", _scope)'
+        return f'_rt.get_var(str({name_expr}) + "{subs_str}", _scope)'
 
 
 def generate_xecute_constant(

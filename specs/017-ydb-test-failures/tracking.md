@@ -20,7 +20,7 @@
 - [x] Phase 1: Setup (T001-T003)
 - [x] Phase 2: Foundational (T004-T008)
 - [x] Phase 3: US1 - TRAMPOLINE (T009-T016) - 7 tests fixed
-- [ ] Phase 4: US9 - Codegen Syntax (T017-T020)
+- [x] Phase 4: US9 - Codegen Syntax (T017-T020) - 1 test fixed
 - [ ] Phase 5: US2 - Sorts-After (T021-T025)
 - [ ] Phase 6: US3 - LHS $PIECE (T026-T031)
 - [ ] Phase 7: US10 - Expression Types (T032-T036)
@@ -57,3 +57,4 @@
 | 2025-01-22 | Phase 1 | 0 | Setup complete, baseline established |
 | 2025-01-22 | Phase 2 | 0 | Analysis infrastructure complete - added has_argumentless_kill/new flags to MRoutine |
 | 2025-01-22 | Phase 3 | 7 | Argumentless KILL/NEW in TRAMPOLINE - V1CALL, V1NST3, V1OV, V1PRGD, V1SEQ, V2LCC1, V2VNIB |
+| 2025-01-23 | Phase 4 | 1 | V2VNIA - Fixed f-string syntax error in indirection codegen (subscripts with `)` or `"` chars) |
