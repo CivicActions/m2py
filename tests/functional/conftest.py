@@ -92,6 +92,8 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     "char": "LIM-015",
     "fifo": "LIM-015",
     "zprev": "LIM-015",
+    # basic suite - outref requires ZTRAP external routines (ztvref*, zticmd*)
+    "order": "LIM-015",
     # mugj suite - $ZVERSION function
     "v1ac": "LIM-015",
     # LIM-019: Arithmetic precision edge cases

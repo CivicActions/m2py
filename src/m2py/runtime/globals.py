@@ -669,10 +669,13 @@ class InMemoryGlobalStorage:
         if result is None:
             return ""
 
-        # Format as global reference: "^G(1,2,3)"
+        # Format as global reference: "^G(1,2,3)" with proper quoting
+        from m2py.runtime.helpers import _format_subscript
+
         if len(result) == 0:
             return f"^{name}"
-        return f"^{name}({','.join(result)})"
+        formatted_subs = [_format_subscript(sub) for sub in result]
+        return f"^{name}({','.join(formatted_subs)})"
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts).

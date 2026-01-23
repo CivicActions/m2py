@@ -611,10 +611,11 @@ def m_query(
     if result is None:
         return ""
 
-    # Format as variable reference: "A(1,2,3)"
+    # Format as variable reference: "A(1,2,3)" with proper quoting
     if len(result) == 0:
         return var_name
-    return f"{var_name}({','.join(result)})"
+    formatted_subs = [_format_subscript(sub) for sub in result]
+    return f"{var_name}({','.join(formatted_subs)})"
 
 
 def m_query_global(

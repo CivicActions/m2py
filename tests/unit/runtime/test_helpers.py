@@ -149,6 +149,31 @@ class TestMQuery:
         """None array returns empty string."""
         assert m_query(None, "A", ("",)) == ""
 
+    def test_subscript_with_embedded_quote(self):
+        """Query formats subscripts with embedded quotes correctly (Spec 017 Phase 12).
+
+        $QUERY must return canonical MUMPS name format where string subscripts
+        are quoted and internal quotes are doubled.
+        """
+        arr = MArray()
+        arr['a"b'].value = 1
+        # Subscript a"b should be formatted as "a""b" in output
+        assert m_query(arr, "x", ("",)) == 'x("a""b")'
+
+    def test_subscript_with_special_chars(self):
+        """Query formats subscripts with special characters correctly (Spec 017 Phase 12).
+
+        Complex subscripts like those with backslashes, quotes, and commas must
+        be properly quoted in canonical MUMPS name format.
+        """
+        arr = MArray()
+        arr["\\^AGCOM"].value = 1
+        arr["\\^AGCOM", ']"G"'].value = 2
+        # First subscript: \^AGCOM -> "\^AGCOM"
+        assert m_query(arr, "a", ("",)) == 'a("\\^AGCOM")'
+        # After first node, should get the nested one
+        assert m_query(arr, "a", ("\\^AGCOM",)) == 'a("\\^AGCOM","]""G""")'
+
 
 class TestMQueryGlobal:
     """Tests for m_query_global() helper function."""
