@@ -29,6 +29,7 @@ Usage:
 
 from __future__ import annotations
 
+
 import pytest
 
 from tests.functional.conftest import (
@@ -55,6 +56,41 @@ MERGE_DIR = FUNCTIONAL_BASE / "merge"
 MERGE_INREF = MERGE_DIR / "inref"
 MERGE_OUTREF = MERGE_DIR / "outref"
 MERGE_UINREF = MERGE_DIR / "u_inref"
+
+
+# =============================================================================
+# Merge-Specific Helper Loading
+# =============================================================================
+
+# Routines that need the lfill helper for database filling operations
+_LFILL_DEPENDENT_ROUTINES = frozenset({"mergelv", "misclv"})
+
+# Cache for merge helpers
+_MERGE_HELPERS: dict[str, str] | None = None
+
+
+def _load_merge_helpers() -> dict[str, str]:
+    """Load merge-specific helper routines from inref/.
+
+    The lfill.m helper is used by mergelv and other tests for
+    database filling operations.
+
+    Returns:
+        Dict mapping routine name to MUMPS source code
+    """
+    global _MERGE_HELPERS
+    if _MERGE_HELPERS is None:
+        _MERGE_HELPERS = {}
+        # Load lfill.m helper
+        lfill_path = MERGE_INREF / "lfill.m"
+        if lfill_path.exists():
+            _MERGE_HELPERS["lfill"] = lfill_path.read_text()
+    return _MERGE_HELPERS
+
+
+def _needs_helpers(routine_name: str) -> bool:
+    """Check if a routine needs helper routines to run."""
+    return routine_name.lower() in _LFILL_DEPENDENT_ROUTINES
 
 
 # =============================================================================
@@ -148,8 +184,11 @@ class TestMergeSuite:
             f"Failed to load routine {subtest_def.routine} for {subtest_def.label}"
         )
 
+        # Load helpers if needed (lfill.m for mergelv tests)
+        helpers = _load_merge_helpers() if _needs_helpers(subtest_def.routine) else None
+
         # Run through m2py
-        result = run_mumps(source, timeout=30)
+        result = run_mumps(source, timeout=30, helper_sources=helpers)
 
         if result is None or (not result.output and not result.success):
             if xfail_reason:
@@ -193,8 +232,11 @@ class TestMergeRoutines:
         source = load_routine_source(MERGE_INREF, routine_def.routine)
         assert source is not None, f"Failed to load routine {routine_def.routine}"
 
+        # Load helpers if needed (lfill.m for mergelv tests)
+        helpers = _load_merge_helpers() if _needs_helpers(routine_def.routine) else None
+
         # Run through m2py
-        result = run_mumps(source, timeout=30)
+        result = run_mumps(source, timeout=30, helper_sources=helpers)
 
         if result is None or (not result.output and not result.success):
             if xfail_reason:

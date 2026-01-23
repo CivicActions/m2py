@@ -111,6 +111,8 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     "nullfill": "LIM-015",  # NEW $ZTRAP
     "subslen": "LIM-015",  # NEW $ZTRAP
     "v4merge": "LIM-015",  # NEW $ZTRAP
+    # merge suite - ^%G utility (YDB system routine)
+    "list": "LIM-015",  # D ^%G (global display utility)
     # LIM-019: Arithmetic precision edge cases
     # basic suite - arith test has 18-digit boundary precision differences
     "arith": "LIM-019",

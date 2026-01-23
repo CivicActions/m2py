@@ -343,8 +343,8 @@ instead of ANSI standard library routines.""",
             "extensions_ydb_zfunctions",
         ),
         details="""\
-The following YDB Z-commands and Z-functions are parsed but have **zero usage**
-in the VA VistA codebase (33,951 routine files analyzed):
+The following YDB Z-commands, Z-functions, and utility routines are parsed but
+have **zero usage** in the VA VistA codebase (33,951 routine files analyzed):
 
 | Command/Function | Description | VistA Usage |
 |------------------|-------------|-------------|
@@ -363,9 +363,14 @@ in the VA VistA codebase (33,951 routine files analyzed):
 | $ZDATE | Date formatting | 0 files |
 | $ZMESSAGE | Error message lookup | 0 files |
 | $ZWIDTH | String width | 0 files |
+| ^%G | Global display utility | 0 files |
 
 These commands are recognized to support complete YDB compatibility but are
-not a priority for implementation due to zero real-world usage.""",
+not a priority for implementation due to zero real-world usage.
+
+**^%G Utility**: This is a YottaDB system utility routine that displays global
+variables interactively. It is not part of the MUMPS standard and requires
+YDB-specific infrastructure (terminal I/O, menu system) that m2py does not provide.""",
         behavior="""\
 Parser accepts these commands (valid YDB grammar). ASG produces appropriate nodes.
 Codegen raises `NotImplementedError("LIM-015: {command} command not supported")`.""",
