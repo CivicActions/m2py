@@ -125,14 +125,17 @@ class TestNumericCoercionCodegen:
         """Numeric coercion handles decimals correctly.
 
         Phase 10 validation: Test decimal number parsing.
-        '3.14ABC' coerces to 3.14, '.5' coerces to 0.5.
+        '3.14ABC' coerces to Decimal('3.14'), '.5' coerces to Decimal('0.5').
+        m_num returns Decimal for decimal strings to preserve precision.
         """
+        from decimal import Decimal
+
         from m2py.codegen.helpers import m_num
 
         # Decimal with trailing text
-        assert m_num("3.14ABC") == 3.14
+        assert m_num("3.14ABC") == Decimal("3.14")
         # Leading decimal
-        assert m_num(".5") == 0.5
+        assert m_num(".5") == Decimal("0.5")
         # Integer that looks like float
         assert m_num("3.0") == 3  # Returns int when possible
         # Lone decimal point

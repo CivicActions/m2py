@@ -3345,7 +3345,7 @@ def _generate_hang(stmt: MHangStatement, ctx: "GeneratorContext") -> None:
     Examples:
         H 5     -> time.sleep(5)
         H 0.1   -> time.sleep(0.1)
-        H X     -> time.sleep(m_num(X))
+        H X     -> time.sleep(float(m_num(X)))
 
     Args:
         stmt: MHangStatement node with durations list
@@ -3354,7 +3354,8 @@ def _generate_hang(stmt: MHangStatement, ctx: "GeneratorContext") -> None:
     # HANG can have multiple durations: H 1,2,3 hangs for 1+2+3=6 seconds total
     for duration in stmt.durations:
         duration_expr = generate_expr(duration, ctx)
-        ctx.emitter.line(f"time.sleep(m_num({duration_expr}))")
+        # Use float() to ensure time.sleep() works with Decimal values
+        ctx.emitter.line(f"time.sleep(float(m_num({duration_expr})))")
 
 
 def _generate_halt(stmt: MHaltStatement, ctx: "GeneratorContext") -> None:

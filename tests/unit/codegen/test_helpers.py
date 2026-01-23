@@ -47,18 +47,18 @@ class TestMNum:
         assert isinstance(m_num("3"), int)
 
     def test_numeric_string_float(self):
-        """Numeric strings with decimals convert to float or int."""
-        assert m_num("3.14") == 3.14
+        """Numeric strings with decimals convert to Decimal or int."""
+        assert m_num("3.14") == Decimal("3.14")
         assert m_num("3.0") == 3  # Normalized to int
-        assert m_num("0.5") == 0.5
-        assert isinstance(m_num("3.14"), float)
+        assert m_num("0.5") == Decimal("0.5")
+        assert isinstance(m_num("3.14"), Decimal)
         assert isinstance(m_num("3.0"), int)
 
     def test_leading_zeros_stripped(self):
         """Leading zeros are stripped per MUMPS canonical form."""
         assert m_num("007") == 7
         assert m_num("0042") == 42
-        assert m_num("00.5") == 0.5
+        assert m_num("00.5") == Decimal("0.5")
 
     def test_leading_whitespace_returns_zero(self):
         """Leading whitespace makes string non-numeric (returns 0).
@@ -74,7 +74,7 @@ class TestMNum:
         """Trailing non-numeric characters are ignored."""
         assert m_num("3A") == 3
         assert m_num("42XYZ") == 42
-        assert m_num("3.14ABC") == 3.14
+        assert m_num("3.14ABC") == Decimal("3.14")
 
     def test_non_numeric_prefix_returns_zero(self):
         """Strings without numeric prefix return 0."""
@@ -315,9 +315,9 @@ class TestMNumExponential:
         assert m_num("2.5e2") == 250
 
     def test_exponential_negative_exponent(self):
-        """Negative exponents."""
-        assert m_num("1E-2") == 0.01
-        assert m_num("5e-1") == 0.5
+        """Negative exponents - returns Decimal to preserve precision."""
+        assert m_num("1E-2") == Decimal("0.01")
+        assert m_num("5e-1") == Decimal("0.5")
 
     def test_exponential_positive_exponent_explicit(self):
         """Explicit positive exponent sign."""
@@ -327,7 +327,7 @@ class TestMNumExponential:
     def test_exponential_with_decimal_base(self):
         """Decimal number as base with exponent."""
         assert m_num("1.5E2") == 150
-        assert m_num("2.5E-1") == 0.25
+        assert m_num("2.5E-1") == Decimal("0.25")
 
     def test_exponential_trailing_non_numeric(self):
         """Exponential notation with trailing non-numeric."""

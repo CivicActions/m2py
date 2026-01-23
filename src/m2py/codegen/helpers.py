@@ -200,14 +200,13 @@ def m_num(value: Any) -> Union[int, float, Decimal]:
     # Parse and apply sign
     try:
         if "." in num_str or exp_str:
-            # Use Decimal for precise handling of exponential notation
+            # Use Decimal for precise handling - preserves exact precision
+            # and avoids scientific notation on output (m_format_output handles Decimal)
             result = Decimal(full_num_str) * sign
             # Normalize: if it's an integer value, return int
             if result == int(result):
                 return int(result)
-            # For small floats, convert to float for normal handling
-            if abs(result) < Decimal("1e15") and abs(result) > Decimal("1e-15"):
-                return float(result)
+            # Keep as Decimal to preserve precision and formatting
             return result
         else:
             return int(num_str) * sign

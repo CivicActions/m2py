@@ -179,10 +179,11 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
 def _generate_literal(lit: MLiteral) -> str:
     """Generate Python literal from MLiteral.
 
-    For numbers with exponent notation, we generate a Decimal representation
-    to preserve precision for large numbers that exceed float64 precision.
-    This is critical for string operations like concatenation and the follows
-    operator which depend on exact string representations.
+    For decimal numbers, we generate a Decimal representation to preserve
+    precision. This is critical for:
+    - Large numbers that exceed float64 precision
+    - High-precision decimal literals (e.g., 1.00000000111111111)
+    - String operations like concatenation and the follows operator
 
     Args:
         lit: MLiteral node
@@ -197,12 +198,13 @@ def _generate_literal(lit: MLiteral) -> str:
     elif lit.literal_type == LiteralType.INTEGER:
         return str(lit.value)
     elif lit.literal_type == LiteralType.DECIMAL:
-        # Check if literal has stored original string (for precise large numbers)
+        # Check if literal has stored original string (for precise numbers)
         original = getattr(lit, "_original_string", None)
-        if original and "E" in original.upper():
-            # Use Decimal for exact precision with exponent notation
-            # This avoids float precision loss for large numbers like 9999997799E14
+        if original:
+            # Use Decimal for exact precision - this avoids float precision loss
+            # for numbers like 1.00000000111111111 or 9999997799E14
             return f'Decimal("{original}")'
+        # Fallback: use the already-parsed value (may have lost precision)
         return str(lit.value)
     else:
         # Default: treat as string
