@@ -251,6 +251,104 @@ class TestOperatorsCodegen:
         assert result.success is True
 
     # =========================================================================
+    # Negated Contains, Follows, and Logical Operators Tests
+    # =========================================================================
+
+    def test_not_contains_true(self, execute_mumps):
+        """Not-contains operator returns 1 when substring not found (§7.2).
+
+        YDB verified: "ABC"'["X" → 1
+        """
+        result = execute_mumps('TEST\n W "ABC"\'["X"\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_not_contains_false(self, execute_mumps):
+        """Not-contains operator returns 0 when substring found (§7.2).
+
+        YDB verified: "ABC"'["B" → 0
+        """
+        result = execute_mumps('TEST\n W "ABC"\'["B"\n Q\n')
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_not_follows_true(self, execute_mumps):
+        """Not-follows operator returns 1 when left does not sort after right (§7.2).
+
+        YDB verified: "A"']"B" → 1
+        """
+        result = execute_mumps('TEST\n W "A"\']"B"\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_not_follows_false(self, execute_mumps):
+        """Not-follows operator returns 0 when left sorts after right (§7.2).
+
+        YDB verified: "B"']"A" → 0
+        """
+        result = execute_mumps('TEST\n W "B"\']"A"\n Q\n')
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_not_sorts_after_true(self, execute_mumps):
+        """Not-sorts-after operator returns 1 when left does not strictly sort after right (§7.2).
+
+        YDB verified: "A"']]"A" → 1 (same values)
+        """
+        result = execute_mumps('TEST\n W "A"\']]"A"\n Q\n')
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_not_sorts_after_false(self, execute_mumps):
+        """Not-sorts-after operator returns 0 when left strictly sorts after right (§7.2).
+
+        YDB verified: "B"']]"A" → 0
+        """
+        result = execute_mumps('TEST\n W "B"\']]"A"\n Q\n')
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_not_and_true(self, execute_mumps):
+        """Not-and operator returns 1 when either operand is falsy (§7.2).
+
+        '& is NAND: returns 1 unless both operands are truthy.
+
+        YDB verified: 1'&0 → 1
+        """
+        result = execute_mumps("TEST\n W 1'&0\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_not_and_false(self, execute_mumps):
+        """Not-and operator returns 0 when both operands are truthy (§7.2).
+
+        YDB verified: 1'&1 → 0
+        """
+        result = execute_mumps("TEST\n W 1'&1\n Q\n")
+        assert result.output == "0"
+        assert result.success is True
+
+    def test_not_or_true(self, execute_mumps):
+        """Not-or operator returns 1 when both operands are falsy (§7.2).
+
+        '! is NOR: returns 1 only when both operands are falsy.
+
+        YDB verified: 0'!0 → 1
+        """
+        result = execute_mumps("TEST\n W 0'!0\n Q\n")
+        assert result.output == "1"
+        assert result.success is True
+
+    def test_not_or_false(self, execute_mumps):
+        """Not-or operator returns 0 when either operand is truthy (§7.2).
+
+        YDB verified: 1'!0 → 0
+        """
+        result = execute_mumps("TEST\n W 1'!0\n Q\n")
+        assert result.output == "0"
+        assert result.success is True
+
+    # =========================================================================
     # Contains and Follows Operators Tests (Spec 011 Phase 10)
     # =========================================================================
 

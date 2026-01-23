@@ -5,9 +5,11 @@ Tests the helper functions used by generated code to implement MUMPS semantics.
 Reference: ANSI MUMPS 7.1.4.5 (numeric coercion), 1.2.4 (truth values)
 """
 
+from decimal import Decimal
+
 import pytest
 
-from m2py.codegen.helpers import m_compare, m_num, m_truth
+from m2py.codegen.helpers import m_compare, m_num, m_str, m_truth
 
 
 @pytest.mark.codegen
@@ -238,3 +240,98 @@ class TestMCompare:
             m_compare(1, "!=", 2)
         with pytest.raises(ValueError, match="Unsupported comparison operator"):
             m_compare(1, "<=", 2)
+
+
+@pytest.mark.codegen
+class TestMStr:
+    """Tests for m_str() - MUMPS string conversion (no scientific notation).
+
+    Spec 017: Bug fix from commit 768a80e1 - Python uses scientific notation
+    for very large/small numbers (7e-15, 1e15) but MUMPS never does.
+    m_str() ensures consistent MUMPS-style decimal output.
+    """
+
+    def test_integer_passthrough(self):
+        """Integers convert to simple string."""
+        assert m_str(0) == "0"
+        assert m_str(1) == "1"
+        assert m_str(-5) == "-5"
+        assert m_str(42) == "42"
+
+    def test_float_no_scientific_notation(self):
+        """Floats that Python would format as scientific stay decimal."""
+        # Python str() would give '7e-15' but MUMPS needs decimal
+        result = m_str(7e-15)
+        assert "e" not in result.lower()
+        assert result == ".000000000000007"
+
+        # Large number: Python str() gives '1e+15' but MUMPS needs full form
+        result = m_str(1e15)
+        assert "e" not in result.lower()
+        assert result == "1000000000000000"
+
+    def test_regular_float_preserved(self):
+        """Regular floats without scientific notation preserved."""
+        assert m_str(3.14) == "3.14"
+        assert m_str(-2.5) == "-2.5"
+        assert m_str(0.5) == ".5"  # MUMPS canonical: no leading zero
+
+    def test_zero_float(self):
+        """Float zero converts to simple '0'."""
+        assert m_str(0.0) == "0"
+
+    def test_decimal_type(self):
+        """Decimal type for precise large numbers."""
+        # Very large number that exceeds float64 precision
+        d = Decimal("9999997799E14")
+        result = m_str(d)
+        assert "e" not in result.lower()
+        assert "E" not in result
+        assert result == "999999779900000000000000"
+
+    def test_string_passthrough(self):
+        """Non-numeric values pass through str()."""
+        assert m_str("hello") == "hello"
+        assert m_str("") == ""
+
+
+@pytest.mark.codegen
+class TestMNumExponential:
+    """Tests for m_num() exponential notation handling.
+
+    Spec 017: Bug fix from commit 768a80e1 - m_num must recognize
+    scientific notation in strings like '1E2' → 100.
+    """
+
+    def test_exponential_notation_uppercase(self):
+        """Uppercase E exponential notation."""
+        assert m_num("1E2") == 100
+        assert m_num("1E3") == 1000
+        assert m_num("5E1") == 50
+
+    def test_exponential_notation_lowercase(self):
+        """Lowercase e exponential notation."""
+        assert m_num("1e2") == 100
+        assert m_num("2.5e2") == 250
+
+    def test_exponential_negative_exponent(self):
+        """Negative exponents."""
+        assert m_num("1E-2") == 0.01
+        assert m_num("5e-1") == 0.5
+
+    def test_exponential_positive_exponent_explicit(self):
+        """Explicit positive exponent sign."""
+        assert m_num("1E+2") == 100
+        assert m_num("1e+3") == 1000
+
+    def test_exponential_with_decimal_base(self):
+        """Decimal number as base with exponent."""
+        assert m_num("1.5E2") == 150
+        assert m_num("2.5E-1") == 0.25
+
+    def test_exponential_trailing_non_numeric(self):
+        """Exponential notation with trailing non-numeric."""
+        # After the exponent value, parsing stops
+        result = m_num("1E2A")
+        # 1E2 = 100, 'A' is ignored
+        assert result == 100
