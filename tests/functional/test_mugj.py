@@ -115,6 +115,12 @@ def extract_routine_outputs(normalized_outref: str) -> dict[str, str]:
     return outputs
 
 
+# Mapping of driver routines to their sub-routines whose outputs should be combined
+DRIVER_SUBROUTINES: dict[str, list[str]] = {
+    "V1PAT": ["V1PAT1", "V1PAT2"],  # mugj V1PAT calls only V1PAT1 and V1PAT2
+}
+
+
 def load_mugj_expected_outputs() -> dict[str, str]:
     """Load and parse all expected outputs from the mugj outref.
 
@@ -127,12 +133,64 @@ def load_mugj_expected_outputs() -> dict[str, str]:
 
     raw_content = outref_path.read_text()
     normalized = normalize_outref(raw_content)
-    return extract_routine_outputs(normalized)
+    outputs = extract_routine_outputs(normalized)
+
+    # Combine outputs for driver routines
+    for driver, subroutines in DRIVER_SUBROUTINES.items():
+        if driver in outputs and not outputs[driver]:
+            # Driver has empty output - combine from subroutines
+            combined_parts = []
+            for sub in subroutines:
+                if sub in outputs:
+                    combined_parts.append(sub + "\n\n" + outputs[sub])
+            if combined_parts:
+                outputs[driver] = "\n\n".join(combined_parts)
+
+    return outputs
 
 
 # =============================================================================
 # Routine Execution
 # =============================================================================
+
+# Mapping of driver routines to their required sub-routines
+# These routines call external sub-drivers that must be loaded as helpers
+# Also includes framework helpers like VREPORT that many tests depend on
+ROUTINE_HELPERS: dict[str, list[str]] = {
+    "V1PAT": ["V1PAT1", "V1PAT2", "VREPORT"],
+}
+
+
+def load_routine_helpers(routine_name: str) -> dict[str, str] | None:
+    """Load helper routines required by a driver routine.
+
+    Some mugj routines (like V1PAT) are drivers that call sub-routines.
+    This function loads those sub-routines so they can be injected during
+    transpilation.
+
+    Args:
+        routine_name: Name of the main routine
+
+    Returns:
+        Dict mapping helper routine name to source, or None if no helpers needed
+    """
+    helper_names = ROUTINE_HELPERS.get(routine_name)
+    if not helper_names:
+        return None
+
+    inref_dir = MUGJ_DIR / "inref"
+    helpers = {}
+    for helper_name in helper_names:
+        try:
+            helpers[helper_name] = load_routine_source(inref_dir, helper_name)
+        except FileNotFoundError:
+            # Try YDBTest directory as fallback
+            try:
+                ydb_inref = FUNCTIONAL_BASE.parent / "YDBTest" / "mugj" / "inref"
+                helpers[helper_name] = load_routine_source(ydb_inref, helper_name)
+            except FileNotFoundError:
+                pass  # Skip missing helpers
+    return helpers if helpers else None
 
 
 def execute_routine(routine_name: str) -> ExecutionResult:
@@ -150,7 +208,10 @@ def execute_routine(routine_name: str) -> ExecutionResult:
     except FileNotFoundError as e:
         return ExecutionResult(output="", success=False, error=str(e))
 
-    return run_mumps(source)
+    # Load any required helper routines
+    helpers = load_routine_helpers(routine_name)
+
+    return run_mumps(source, helper_sources=helpers)
 
 
 # =============================================================================

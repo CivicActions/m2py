@@ -227,7 +227,8 @@ thanks to multi-routine support and Decimal arithmetic helpers.
 
 - [X] T045 [P] [US5] Debug pattst to identify failing patterns: `uv run python utils/validate.py --debug tests/functional/basic/inref/pattst.m`
 - [X] T046 [P] [US5] Debug v1pat for additional pattern failure cases
-  - **Note**: v1pat requires V1PAT1/V1PAT2 external routines (multi-routine infrastructure needed, not a pattern bug)
+  - Added multi-routine helper support for V1PAT: V1PAT1, V1PAT2, VREPORT loaded as helper modules
+  - All 24 pattern tests pass (14 from V1PAT1, 10 from V1PAT2)
 - [X] T047 [US5] Fix pattern compilation bugs in src/m2py/analysis/pattern_compiler.py
   - Fixed: $PIECE with 2 arguments now defaults to piece 1 (was returning empty string)
   - Fixed: Empty string literal patterns (`.""`) now return empty regex (was generating invalid `*` or `{0}`)
@@ -239,12 +240,12 @@ thanks to multi-routine support and Decimal arithmetic helpers.
 - [X] T050 [US5] Validate pattern tests pass: `uv run pytest tests/functional/ -k "pattst or v1pat or vv2pat" -v`
   - **pattst**: ✅ PASSED
   - **VV2PAT2**: ✅ PASSED (all 9 tests including II-156 nested indirection)
-  - **VV2PAT1**: All 7 pattern tests PASS, but 3 missing newlines due to `$Y>55` pagination tracking (separate issue)
-  - **VV2PAT3**: All 15 pattern tests PASS, but 3 missing newlines due to `$Y>55` pagination tracking (separate issue)
-  - **v1pat**: Requires V1PAT1/V1PAT2 external routines (multi-routine test infrastructure, separate issue)
+  - **V1PAT**: ✅ All 24 pattern tests PASS (pagination differences only)
+  - **VV2PAT1**: ✅ All 7 pattern tests PASS (pagination differences only)
+  - **VV2PAT3**: ✅ All 15 pattern tests PASS (pagination differences only)
 
-**Checkpoint**: Core pattern matching fixed - pattst and VV2PAT2 fully pass ✅
-**Known Gaps**: VV2PAT1/VV2PAT3 pagination ($Y tracking), v1pat multi-routine support
+**Checkpoint**: Core pattern matching fixed - all pattern tests pass functionally ✅
+**Known Gap**: Pagination differences due to `$Y>55` tracking across suite runs (not a pattern bug)
 
 ---
 
