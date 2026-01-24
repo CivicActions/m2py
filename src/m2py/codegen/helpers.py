@@ -50,6 +50,9 @@ def m_str(value: Any) -> str:
     # Handle Decimal type directly for precise large numbers
     if isinstance(value, Decimal):
         d = value
+        # Handle negative zero - MUMPS doesn't distinguish -0 from 0
+        if d == 0:
+            return "0"
     elif isinstance(value, int):
         # Integer values: simple string conversion
         return str(value)
@@ -90,6 +93,9 @@ def m_str(value: Any) -> str:
         # Strip trailing zeros after decimal point
         if "." in result:
             result = result.rstrip("0").rstrip(".")
+            # If we stripped everything (e.g., ".000000" -> ""), use "0"
+            if not result:
+                result = "0"
 
         if sign:
             result = "-" + result
@@ -182,8 +188,10 @@ def m_num(value: Any) -> Union[int, float, Decimal]:
 
     # Find longest numeric prefix including optional exponential notation
     # Pattern: optional digits, optional decimal point, optional more digits,
-    # optional exponent (E/e followed by optional sign and digits)
-    match = re.match(r"(\d*\.?\d*)([Ee][+-]?\d+)?", s)
+    # optional exponent (E followed by optional sign and digits)
+    # MUMPS SPEC: Only uppercase E is recognized for scientific notation!
+    # "123e2" → 123, "123E2" → 12300
+    match = re.match(r"(\d*\.?\d*)(E[+-]?\d+)?", s)
     if not match:
         return 0
 
@@ -402,6 +410,61 @@ def m_mul(left: Any, right: Any) -> Union[int, Decimal]:
         return result
 
 
+def m_mod(left: Any, right: Any) -> Union[int, float, Decimal]:
+    """Perform MUMPS modulo operation (# operator).
+
+    MUMPS modulo uses floor division semantics:
+        result = dividend - (divisor * floor(dividend / divisor))
+
+    This differs from Python's Decimal % which uses truncation towards zero.
+    Python's float % operator happens to match MUMPS semantics (floor division).
+
+    Args:
+        left: Dividend (will be coerced via m_num)
+        right: Divisor (will be coerced via m_num)
+
+    Returns:
+        Modulo result - integer if possible, otherwise Decimal
+
+    Examples:
+        >>> m_mod(7, 3)
+        1
+        >>> m_mod(-597.5, 25)
+        Decimal('2.5')
+        >>> m_mod(-7, 3)
+        2
+    """
+    import math
+    from decimal import localcontext
+
+    left_num = m_num(left)
+    right_num = m_num(right)
+
+    # Use high precision for Decimal operations
+    with localcontext() as ctx:
+        ctx.prec = 18
+
+        # Convert both to Decimal for consistent precision
+        left_dec = (
+            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
+        )
+        right_dec = (
+            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
+        )
+
+        # MUMPS modulo: dividend - (divisor * floor(dividend / divisor))
+        # Note: Decimal's % uses truncation, but MUMPS wants floor division
+        quotient = left_dec / right_dec
+        # Use math.floor on the float representation for correct floor semantics
+        floored = Decimal(str(math.floor(float(quotient))))
+        result = left_dec - (right_dec * floored)
+
+        # Normalize: return int for whole numbers
+        if result == int(result):
+            return int(result)
+        return result
+
+
 def m_compare(left: Any, op: str, right: Any) -> int:
     """Perform MUMPS comparison with appropriate coercion.
 
@@ -507,5 +570,6 @@ __all__ = [
     "m_add",
     "m_sub",
     "m_mul",
+    "m_mod",
     "m_range",
 ]

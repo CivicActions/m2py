@@ -373,6 +373,16 @@ def _run_m2py_worker(
                 runtime._capture_output = True
                 runtime.clear()
                 _scope: dict = {}
+
+                # T075a: Set up runtime context for $TEXT function support
+                runtime._current_routine = getattr(
+                    main_module, "_routine_name", main_routine_name
+                )
+                runtime._current_source_lines = getattr(
+                    main_module, "_source_lines", []
+                )
+                runtime._current_label_lines = getattr(main_module, "_label_lines", {})
+
                 try:
                     from m2py.runtime import run_with_goto_support
 

@@ -570,8 +570,8 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         # Integer division in MUMPS - uses truncation towards zero, not floor division
         return f"(int(m_num({left}) / m_num({right})))"
     elif op.operator == "#":
-        # Modulo in MUMPS
-        return f"(m_num({left}) % m_num({right}))"
+        # Modulo in MUMPS - uses floor division semantics (unlike Decimal %)
+        return f"m_mod({left}, {right})"
     elif op.operator == "**":
         # Exponentiation in MUMPS - base ** exponent
         return f"(m_num({left}) ** m_num({right}))"

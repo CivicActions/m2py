@@ -302,7 +302,7 @@ class RoutineGenerator:
         ctx.emitter.line("from decimal import Decimal")
         ctx.emitter.line("from itertools import chain, count")
         ctx.emitter.line(
-            "from m2py.codegen.helpers import m_str, m_num, m_truth, m_compare, m_div, m_add, m_sub, m_mul, m_range"
+            "from m2py.codegen.helpers import m_str, m_num, m_truth, m_compare, m_div, m_add, m_sub, m_mul, m_mod, m_range"
         )
         # Spec 009 (T024): Import MArray for subscripted local variable support
         ctx.emitter.line("from m2py.runtime import MUMPSRuntime, MArray")

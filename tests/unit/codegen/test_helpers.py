@@ -13,6 +13,7 @@ from m2py.codegen.helpers import (
     m_add,
     m_compare,
     m_div,
+    m_mod,
     m_mul,
     m_num,
     m_str,
@@ -177,6 +178,17 @@ class TestMCompare:
         assert m_compare(3.0, "=", 3) == 1
         assert m_compare(0, "=", 0.0) == 1
 
+    def test_equal_decimal_zero_with_trailing_zeros(self):
+        """Decimal zero with trailing zeros equals integer zero.
+
+        Spec 017: Bug fix - Decimal('0.000000') was failing equality with int 0
+        because m_str was returning '' instead of '0' for such values.
+        """
+        assert m_compare(Decimal("0.000000"), "=", 0) == 1
+        assert m_compare(0, "=", Decimal("0.000000")) == 1
+        assert m_compare(Decimal("0E-6"), "=", 0) == 1
+        assert m_compare(Decimal("000000.000000E+000000"), "=", 0) == 1
+
     def test_equal_string_and_integer(self):
         """String and integer compare by canonical form."""
         assert m_compare("3", "=", 3) == 1
@@ -298,6 +310,29 @@ class TestMStr:
         assert "E" not in result
         assert result == "999999779900000000000000"
 
+    def test_decimal_zero_with_trailing_zeros(self):
+        """Decimal zero values with trailing zeros canonicalize to '0'.
+
+        Spec 017: Bug fix - Decimal('0.000000') was returning '' after
+        stripping trailing zeros from '.000000'. Now correctly returns '0'.
+        """
+        # Various ways of representing zero as a Decimal
+        assert m_str(Decimal("0.000000")) == "0"
+        assert m_str(Decimal("0.0")) == "0"
+        assert m_str(Decimal("0")) == "0"
+        assert m_str(Decimal("0E-6")) == "0"
+        assert m_str(Decimal("000000.000000E+000000")) == "0"
+
+    def test_negative_zero_canonicalizes(self):
+        """Decimal negative zero canonicalizes to '0'.
+
+        Spec 017: Bug fix - Decimal('-0') from operations like 0/-6
+        was returning '-0' but MUMPS doesn't have negative zero.
+        """
+        assert m_str(Decimal("-0")) == "0"
+        assert m_str(Decimal("-0.0")) == "0"
+        assert m_str(Decimal("-0E-6")) == "0"
+
     def test_string_passthrough(self):
         """Non-numeric values pass through str()."""
         assert m_str("hello") == "hello"
@@ -310,6 +345,9 @@ class TestMNumExponential:
 
     Spec 017: Bug fix from commit 768a80e1 - m_num must recognize
     scientific notation in strings like '1E2' → 100.
+
+    IMPORTANT: MUMPS only recognizes UPPERCASE 'E' for scientific notation.
+    Lowercase 'e' is treated as a non-numeric character that stops parsing.
     """
 
     def test_exponential_notation_uppercase(self):
@@ -318,20 +356,27 @@ class TestMNumExponential:
         assert m_num("1E3") == 1000
         assert m_num("5E1") == 50
 
-    def test_exponential_notation_lowercase(self):
-        """Lowercase e exponential notation."""
-        assert m_num("1e2") == 100
-        assert m_num("2.5e2") == 250
+    def test_lowercase_e_not_exponential(self):
+        """Lowercase 'e' is NOT scientific notation in MUMPS - stops parsing.
+
+        MUMPS specification requires uppercase E only. Lowercase 'e' is a
+        non-numeric character that terminates left-to-right numeric parsing.
+        """
+        assert m_num("1e2") == 1  # 'e' stops parsing, result is just 1
+        assert m_num("2.5e2") == Decimal("2.5")  # Stops at 'e'
+        assert m_num("1234e2") == 1234  # Not 123400!
 
     def test_exponential_negative_exponent(self):
         """Negative exponents - returns Decimal to preserve precision."""
         assert m_num("1E-2") == Decimal("0.01")
-        assert m_num("5e-1") == Decimal("0.5")
+        # Lowercase e does not work:
+        assert m_num("5e-1") == 5  # Stops at 'e', result is 5
 
     def test_exponential_positive_exponent_explicit(self):
         """Explicit positive exponent sign."""
         assert m_num("1E+2") == 100
-        assert m_num("1e+3") == 1000
+        # Lowercase e does not work:
+        assert m_num("1e+3") == 1  # Stops at 'e', result is 1
 
     def test_exponential_with_decimal_base(self):
         """Decimal number as base with exponent."""
@@ -737,3 +782,79 @@ class TestArithmeticMStrFormatting:
         YDB: W 7E-15 → .000000000000007
         """
         assert m_str(7e-15) == ".000000000000007"
+
+
+@pytest.mark.codegen
+class TestMMod:
+    """Tests for m_mod() - MUMPS modulo (#) operator.
+
+    MUMPS modulo uses floor division semantics, not truncation towards zero.
+    This differs from Python's Decimal % operator.
+
+    All test cases verified against YDB output.
+    """
+
+    def test_basic_positive_modulo(self):
+        """Basic positive modulo.
+
+        YDB: W 7#3 → 1
+        """
+        assert m_mod(7, 3) == 1
+
+    def test_zero_dividend(self):
+        """Zero modulo anything is 0.
+
+        YDB: W 0#5 → 0
+        """
+        assert m_mod(0, 5) == 0
+        assert m_mod(0, -6) == 0
+
+    def test_negative_dividend_positive_divisor(self):
+        """Negative dividend with positive divisor uses floor division.
+
+        YDB: W -7#3 → 2
+        YDB: W -597.5#25 → 2.5
+
+        This is the key difference from truncation semantics:
+        -7 / 3 = -2.333... floor is -3, so -7 - (3 * -3) = -7 + 9 = 2
+        With truncation: -7 - (3 * -2) = -7 + 6 = -1 (WRONG)
+        """
+        assert m_mod(-7, 3) == 2
+        assert m_mod(-597.5, 25) == Decimal("2.5")
+
+    def test_negative_divisor(self):
+        """Modulo with negative divisor.
+
+        YDB: W -50.3#-0.25 → -.05
+        """
+        result = m_mod(-50.3, -0.25)
+        assert m_str(result) == "-.05"
+
+    def test_decimal_operands(self):
+        """Modulo with decimal operands.
+
+        YDB: W 1E1#1.10 → .1
+        """
+        result = m_mod("1E1", "1.10")
+        assert m_str(result) == ".1"
+
+    def test_string_coercion(self):
+        """String operands coerced via m_num.
+
+        YDB: W "10X"#"3Y" → 1
+        """
+        assert m_mod("10X", "3Y") == 1
+
+    def test_positive_dividend_negative_divisor(self):
+        """Positive dividend with negative divisor.
+
+        YDB: W 7#-3 → -2
+        """
+        assert m_mod(7, -3) == -2
+
+    def test_exact_division(self):
+        """When dividend is exactly divisible, result is 0.
+
+        YDB: W 9#3 → 0
+        """
+        assert m_mod(9, 3) == 0
