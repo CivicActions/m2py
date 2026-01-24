@@ -305,3 +305,34 @@ class TestPatternMatchOptimization:
         result = execute_mumps('TEST\n W "ABC"?3.5A,!\n Q\n')
         assert result.output == "1\n"
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestPatternMatchWithMStr:
+    """Tests for pattern match using m_str (MUMPS canonical formatting).
+
+    Fix: Changed pattern match from str() to m_str() so numeric values
+    are formatted in MUMPS canonical form before pattern matching.
+    """
+
+    def test_pattern_match_leading_zero_removed(self, execute_mumps):
+        """Pattern match on 0.5 uses ".5" not "0.5"."""
+        # 0.5 in MUMPS is canonically ".5" so it matches ".5"?1P1N
+        result = execute_mumps("TEST S X=0.5 W X?1P1N Q")
+        assert result.success is True
+        # ".5" matches 1P (period) 1N (digit) - should be true (1)
+        assert result.output == "1"
+
+    def test_pattern_match_negative_leading_zero(self, execute_mumps):
+        """Pattern match on -0.5 uses "-.5" not "-0.5"."""
+        result = execute_mumps('TEST S X=-0.5 W X?1"-"1P1N Q')
+        assert result.success is True
+        # "-.5" matches 1"-" 1P (period) 1N (digit) - should be true (1)
+        assert result.output == "1"
+
+    def test_pattern_match_integer_no_decimal(self, execute_mumps):
+        """Pattern match on 1.0 uses "1" not "1.0"."""
+        result = execute_mumps("TEST S X=1.0 W X?1N Q")
+        assert result.success is True
+        # "1" matches 1N - should be true (1)
+        assert result.output == "1"

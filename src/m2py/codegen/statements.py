@@ -333,6 +333,12 @@ class ForGenContext:
             var_name = "_"
             loop_var = "_"  # Fallback for complex expressions
 
+        # T075n: When inside inline XECUTE, prefix loop var to avoid shadowing
+        # module-level label functions. E.g. "F I=1:1:3 G I" - the FOR loop
+        # variable I would shadow def I() if we use bare "I".
+        if ctx and ctx.in_inline_xecute and loop_var not in ("_", "_for_val"):
+            loop_var = f"_xec_{loop_var}"
+
         # Spec 006: Check if loop var should use state for trampoline
         if (
             ctx
@@ -1543,11 +1549,19 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
 
     # Spec 006: Trampoline pattern - return (None, state) to signal exit
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
-        ctx.emitter.line("return (None, state)")
+        # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
+        if ctx.in_inline_xecute:
+            ctx.emitter.line("raise _XecuteExit()")
+        else:
+            ctx.emitter.line("return (None, state)")
         return
 
     # Plain QUIT outside FOR/DO block - return from function/routine
-    ctx.emitter.line("return")
+    # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
+    if ctx.in_inline_xecute:
+        ctx.emitter.line("raise _XecuteExit()")
+    else:
+        ctx.emitter.line("return")
 
 
 def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
@@ -1705,7 +1719,9 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
                 ctx.emitter.line("return")
 
 
-def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
+def _generate_for_body(
+    stmt: MForStatement, ctx: "GeneratorContext", for_ctx: "ForGenContext | None" = None
+) -> None:
     """Generate the body of a FOR loop.
 
     The QUIT context (exits_for) is set by analyze_quit_context() during analysis,
@@ -1719,9 +1735,13 @@ def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     T032: Handle subscripted loop variables (F I(1)=1:1:3) by using .set() instead
     of .value assignment.
 
+    T075n: When for_ctx is provided, use for_ctx.loop_var instead of translate_name()
+    to handle inline XECUTE prefixing (e.g. _xec_I instead of I).
+
     Args:
         stmt: MForStatement node
         ctx: Generator context
+        for_ctx: Optional ForGenContext with actual Python variable name
     """
     from m2py.codegen.expressions import generate_expr
 
@@ -1745,7 +1765,8 @@ def _generate_for_body(stmt: MForStatement, ctx: "GeneratorContext") -> None:
             var_name = None  # Complex case (indirection) - skip sync
             subscripts = []
         if var_name:
-            python_name = translate_name(var_name)
+            # T075n: Use for_ctx.loop_var if provided (handles _xec_ prefix in inline XECUTE)
+            python_name = for_ctx.loop_var if for_ctx else translate_name(var_name)
             if subscripts:
                 # T032: Subscripted loop var - use .set(sub1, sub2, ..., value=val)
                 subs_str = ", ".join(subscripts)
@@ -1821,7 +1842,8 @@ def _generate_for_bounded(
         )
 
     # MUMPS FOR is end-inclusive, use while loop to support fractional steps
-    # Condition: (step > 0 and loop_var <= end) or (step < 0 and loop_var >= end)
+    # Condition: (step > 0 and loop_var <= end) or (step < 0 and loop_var >= end) or (step == 0 and loop_var <= end)
+    # When step == 0, loop is infinite (until QUIT) but only enters if start <= end
 
     # T068: Handle indirect loop variable (F @A=1:1:3)
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
@@ -1831,14 +1853,15 @@ def _generate_for_bounded(
         ctx.emitter.line(f"_rt.set_var(_for_indirect_var_{lid}, {start_var}, _scope)")
         ctx.emitter.line(
             f"while ({step_var} > 0 and {for_ctx.loop_var} <= {end_var}) or "
-            f"({step_var} < 0 and {for_ctx.loop_var} >= {end_var}):"
+            f"({step_var} < 0 and {for_ctx.loop_var} >= {end_var}) or "
+            f"({step_var} == 0 and {for_ctx.loop_var} <= {end_var}):"
         )
         with ctx.emitter.indented():
             # Update the indirect variable at start of each iteration
             ctx.emitter.line(
                 f"_rt.set_var(_for_indirect_var_{lid}, {for_ctx.loop_var}, _scope)"
             )
-            _generate_for_body(stmt, ctx)
+            _generate_for_body(stmt, ctx, for_ctx)
             # Increment loop variable at end of iteration using m_add for precision
             ctx.emitter.line(
                 f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, {step_var})"
@@ -1846,10 +1869,11 @@ def _generate_for_bounded(
     else:
         ctx.emitter.line(
             f"while ({step_var} > 0 and {for_ctx.loop_var} <= {end_var}) or "
-            f"({step_var} < 0 and {for_ctx.loop_var} >= {end_var}):"
+            f"({step_var} < 0 and {for_ctx.loop_var} >= {end_var}) or "
+            f"({step_var} == 0 and {for_ctx.loop_var} <= {end_var}):"
         )
         with ctx.emitter.indented():
-            _generate_for_body(stmt, ctx)
+            _generate_for_body(stmt, ctx, for_ctx)
             # Increment loop variable at end of iteration using m_add for precision
             ctx.emitter.line(
                 f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, {step_var})"
@@ -1889,11 +1913,11 @@ def _generate_for_string_list(
             ctx.emitter.line(
                 f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
             )
-            _generate_for_body(stmt, ctx)
+            _generate_for_body(stmt, ctx, for_ctx)
     else:
         ctx.emitter.line(f"for {for_ctx.loop_var} in [{values_str}]:")
         with ctx.emitter.indented():
-            _generate_for_body(stmt, ctx)
+            _generate_for_body(stmt, ctx, for_ctx)
 
 
 def _generate_for_open_ended(
@@ -1936,13 +1960,13 @@ def _generate_for_open_ended(
             ctx.emitter.line(
                 f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
             )
-            _generate_for_body(stmt, ctx)
+            _generate_for_body(stmt, ctx, for_ctx)
     else:
         ctx.emitter.line(
             f"for {for_ctx.loop_var} in count(m_num({start_expr}), m_num({step_expr})):"
         )
         with ctx.emitter.indented():
-            _generate_for_body(stmt, ctx)
+            _generate_for_body(stmt, ctx, for_ctx)
 
 
 def _generate_for_argumentless(
@@ -1958,7 +1982,7 @@ def _generate_for_argumentless(
     ctx.emitter.line("while True:")
 
     with ctx.emitter.indented():
-        _generate_for_body(stmt, ctx)
+        _generate_for_body(stmt, ctx, for_ctx)
 
 
 def _generate_for_mixed(
@@ -2015,11 +2039,11 @@ def _generate_for_mixed(
             ctx.emitter.line(
                 f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
             )
-            _generate_for_body(stmt, ctx)
+            _generate_for_body(stmt, ctx, for_ctx)
     else:
         ctx.emitter.line(f"for {for_ctx.loop_var} in chain({chain_args}):")
         with ctx.emitter.indented():
-            _generate_for_body(stmt, ctx)
+            _generate_for_body(stmt, ctx, for_ctx)
 
 
 def _generate_for_while(
@@ -2115,19 +2139,23 @@ def _generate_for_while_range(
     ctx.emitter.line(f"{end_var} = m_num({end_expr})")
 
     # While condition: check bounds based on step direction
+    # When step == 0, loop is infinite (until QUIT) but only enters if start <= end
     in_range_cond = (
         f"({step_var} > 0 and {loop_ref} <= {end_var}) or "
-        f"({step_var} < 0 and {loop_ref} >= {end_var})"
+        f"({step_var} < 0 and {loop_ref} >= {end_var}) or "
+        f"({step_var} == 0 and {loop_ref} <= {end_var})"
     )
     ctx.emitter.line(f"while {in_range_cond}:")
 
     with ctx.emitter.indented():
         # Execute body
-        _generate_for_body(stmt, ctx)
+        _generate_for_body(stmt, ctx, for_ctx)
         # Check if the NEXT value would be in range BEFORE incrementing
+        # For step == 0, we never break (infinite loop until QUIT)
         next_val_cond = (
             f"({step_var} > 0 and {loop_ref} + {step_var} <= {end_var}) or "
-            f"({step_var} < 0 and {loop_ref} + {step_var} >= {end_var})"
+            f"({step_var} < 0 and {loop_ref} + {step_var} >= {end_var}) or "
+            f"({step_var} == 0)"
         )
         ctx.emitter.line(f"if not ({next_val_cond}):")
         with ctx.emitter.indented():
@@ -2184,7 +2212,7 @@ def _generate_for_while_string_list(
             with ctx.emitter.indented():
                 ctx.emitter.line(f"{loop_ref} = {val_expr}")
         # Execute body
-        _generate_for_body(stmt, ctx)
+        _generate_for_body(stmt, ctx, for_ctx)
         # Increment index
         ctx.emitter.line(f"{idx_var} += 1")
 
@@ -2361,14 +2389,19 @@ def _generate_single_target_goto(
             # The trampoline dispatcher will call the target label
             ctx.emitter.line(f'return ("{target.name}", state)')
     else:
-        # SIMPLE_FUNCTIONS pattern: function call + return
+        # SIMPLE_FUNCTIONS pattern: function call + exit
         # Get the label name and translate it
         label_name = translate_name(target.name)
 
-        # Generate: label(); return
-        # The return ensures control doesn't continue after GOTO
-        ctx.emitter.line(f"{label_name}()")
-        ctx.emitter.line("return")
+        # Generate: label(_rt, _scope=_scope); exit_statement
+        # T075l: Pass _rt and _scope so XECUTE inline GOTO works correctly
+        ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+        # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
+        # Outside inline XECUTE, return exits the entire function
+        if ctx.in_inline_xecute:
+            ctx.emitter.line("raise _XecuteExit()")
+        else:
+            ctx.emitter.line("return")
 
 
 def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
@@ -2460,7 +2493,7 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
 
     This generates just the jump statement without any condition checks.
     For trampoline: return (label_name, state)
-    For simple functions: function_call(); return
+    For simple functions: function_call(_rt, _scope=_scope); return
 
     Args:
         target: The MCall target to jump to
@@ -2470,8 +2503,14 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f'return ("{target.name}", state)')
     else:
         label_name = translate_name(target.name)
-        ctx.emitter.line(f"{label_name}()")
-        ctx.emitter.line("return")
+        # T075l: Pass _rt and _scope so XECUTE inline GOTO works correctly
+        ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+        # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
+        # Outside inline XECUTE, return exits the entire function
+        if ctx.in_inline_xecute:
+            ctx.emitter.line("raise _XecuteExit()")
+        else:
+            ctx.emitter.line("return")
 
 
 def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
@@ -2713,8 +2752,18 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
 
         # T075b: For TRAMPOLINE with dynamic locals, sync _scope back to state._locals
         # after returning from external routine so caller can see callee's modifications
+        # T075k: Wrap plain values in MArray when syncing back (callee may use static state)
         if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            ctx.emitter.line("state._locals.update({k: v for k, v in _scope.items()})")
+            ctx.emitter.line("for _k, _v in _scope.items():")
+            with ctx.emitter.indented():
+                ctx.emitter.line("if isinstance(_v, MArray):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("state._locals[_k] = _v")
+                ctx.emitter.line("else:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("_m = MArray()")
+                    ctx.emitter.line("_m.value = _v")
+                    ctx.emitter.line("state._locals[_k] = _m")
 
         # T075f: Restore runtime context after external call returns
         ctx.emitter.line("_rt._current_routine = _saved_routine")
@@ -2774,15 +2823,22 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             )
 
         # T079: Build call with _rt, state, _scope, and _start_offset
-        # Note: args handling with offset is complex - for now just handle simple case
+        # T075i: Capture return value and follow trampoline loop
+        # The internal function may return a label transition (e.g., when offset
+        # lands at end of label block and execution should continue to next label)
         if args:
             ctx.emitter.line(
-                f"{internal_func}(_rt, state, _scope, {args}, _start_offset=_offset_val)"
+                f"_do_target, state = {internal_func}(_rt, state, _scope, {args}, _start_offset=_offset_val)"
             )
         else:
             ctx.emitter.line(
-                f"{internal_func}(_rt, state, _scope, _start_offset=_offset_val)"
+                f"_do_target, state = {internal_func}(_rt, state, _scope, _start_offset=_offset_val)"
             )
+        # T075i: Follow trampoline loop if internal function returned a label
+        ctx.emitter.line("while _do_target is not None:")
+        with ctx.emitter.indented():
+            ctx.emitter.line("_do_func = _labels[_do_target]")
+            ctx.emitter.line("_do_target, state = _do_func(_rt, state, _scope)")
         return
 
     # T060-T062: Check callee signature for byref_outputs and generate destructuring
@@ -2866,6 +2922,12 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 for var_name in sorted(ctx.state_vars):
                     py_name = translate_name(var_name)
                     ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
+            # T075h: For TRAMPOLINE with dynamic_locals, sync state._locals to _scope
+            # before internal DO calls so subroutine sees current variable values
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                ctx.emitter.line(
+                    "_scope.update({k: v for k, v in state._locals.items()})"
+                )
             if args:
                 ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
             else:
@@ -2881,6 +2943,19 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                     ctx.emitter.line(
                         f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
                     )
+            # T075h: For TRAMPOLINE with dynamic_locals, sync _scope back to state._locals
+            # T075k: Wrap plain values in MArray when syncing back (callee may use static state)
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                ctx.emitter.line("for _k, _v in _scope.items():")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("if isinstance(_v, MArray):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("state._locals[_k] = _v")
+                    ctx.emitter.line("else:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_m = MArray()")
+                        ctx.emitter.line("_m.value = _v")
+                        ctx.emitter.line("state._locals[_k] = _m")
     else:
         # T079: No byref_outputs - simple call with _rt
         # T084: Pass _scope for cross-routine variable visibility
@@ -2893,6 +2968,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             for var_name in sorted(ctx.state_vars):
                 py_name = translate_name(var_name)
                 ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
+        # T075h: For TRAMPOLINE with dynamic_locals, sync state._locals to _scope
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
         if args:
             ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
         else:
@@ -2908,6 +2986,19 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 ctx.emitter.line(
                     f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
                 )
+        # T075h: For TRAMPOLINE with dynamic_locals, sync _scope back to state._locals
+        # T075k: Wrap plain values in MArray when syncing back (callee may use static state)
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            ctx.emitter.line("for _k, _v in _scope.items():")
+            with ctx.emitter.indented():
+                ctx.emitter.line("if isinstance(_v, MArray):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("state._locals[_k] = _v")
+                ctx.emitter.line("else:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("_m = MArray()")
+                    ctx.emitter.line("_m.value = _v")
+                    ctx.emitter.line("state._locals[_k] = _m")
 
 
 def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
@@ -4180,8 +4271,39 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
     from m2py.analysis.semantic_analyzer import analyze_command
     from m2py.parser.line_parser import parse_commands_from_line
 
+    def contains_control_flow(mumps_code: str) -> bool:
+        """Check if MUMPS code contains control flow that affects XECUTE scope.
+
+        Detects:
+        - GOTO (G/GOTO) - transfers control to label
+        - DO (D/DO) - calls subroutine
+        - QUIT (Q/QUIT) - exits current scope
+        - Nested XECUTE (X/XECUTE) - may contain any of the above
+        """
+        import re
+
+        # Pattern: G, GOTO, D, DO followed by label/target
+        # or Q, QUIT (bare or with condition/value)
+        # or X, XECUTE (nested XECUTE may contain control flow)
+        goto_do_pattern = re.compile(r"\b(G|GOTO|D|DO)\s+[A-Za-z0-9^]+", re.IGNORECASE)
+        quit_pattern = re.compile(r"\b(Q|QUIT)\b", re.IGNORECASE)
+        xecute_pattern = re.compile(r'\b(X|XECUTE)\s+"', re.IGNORECASE)
+        return bool(
+            goto_do_pattern.search(mumps_code)
+            or quit_pattern.search(mumps_code)
+            or xecute_pattern.search(mumps_code)
+        )
+
     def generate_inline_code(mumps_code: str) -> None:
-        """Parse and generate inline Python for constant MUMPS code."""
+        """Parse and generate inline Python for constant MUMPS code.
+
+        T075o: Handle FOR/IF/ELSE body nesting in inline XECUTE.
+        MUMPS commands after FOR/IF/ELSE on the same line are the body
+        of that control flow statement. We must structure the flat command
+        list into proper nesting before code generation.
+        """
+        from m2py.parser.parser import _structure_commands_with_bodies
+
         # Parse the MUMPS code string
         commands = parse_commands_from_line(mumps_code)
         if isinstance(commands, MParseError):
@@ -4198,12 +4320,46 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
             # Empty string - no-op
             return
 
-        # Analyze each command and generate Python
+        # Convert textX commands to ASG statements
+        asg_statements = []
         for textx_cmd in commands:
             asg_stmt = analyze_command(textx_cmd, None)
             if asg_stmt is not None:
-                # Recursively generate Python for the statement
-                generate_statement(asg_stmt, ctx)
+                asg_statements.append(asg_stmt)
+
+        # T075o: Structure flat list into proper FOR/IF/ELSE nesting
+        structured_statements = _structure_commands_with_bodies(asg_statements)
+
+        # Generate Python for each structured statement
+        for asg_stmt in structured_statements:
+            generate_statement(asg_stmt, ctx)
+
+    def generate_inline_with_control_flow(code_strings: list) -> None:
+        """Generate inline XECUTE code that contains GOTO/DO.
+
+        T075m: GOTO/DO inside inline XECUTE needs special handling.
+        We wrap the inline code in a try/except block and use _XecuteExit
+        exception to exit just the XECUTE context without returning from
+        the enclosing function.
+
+        T075s: Each XECUTE argument has its own control flow scope.
+        QUIT in one argument should not skip subsequent arguments.
+        Generate a separate try/except for each code string.
+        """
+        # Set flag so GOTO/DO generate raise _XecuteExit instead of return
+        old_in_inline_xecute = ctx.in_inline_xecute
+        ctx.in_inline_xecute = True
+
+        # T075s: Each code string gets its own try/except
+        for code_str in code_strings:
+            ctx.emitter.line("try:")
+            with ctx.emitter.indented():
+                generate_inline_code(code_str)
+            ctx.emitter.line("except _XecuteExit:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("pass  # GOTO/DO exited XECUTE block")
+
+        ctx.in_inline_xecute = old_in_inline_xecute
 
     def generate_dynamic_xecute() -> None:
         """Generate runtime calls for dynamic XECUTE expressions.
@@ -4214,35 +4370,171 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         Spec 012 Phase 6 (T038): XECUTE does NOT stack $TEST.
         After execute_mumps(), sync _test from _rt._test so mutations
         made by XECUTEd code are visible to caller.
-        """
-        for code_expr in stmt.code_expressions:
-            expr_code = generate_expr(code_expr, ctx)
-            # Call runtime execute_mumps with evaluated expression and shared scope
-            ctx.emitter.line(f"_rt.execute_mumps({expr_code}, _scope)")
-            # Sync $TEST back from runtime - XECUTE does NOT stack $TEST
-            ctx.emitter.line("_test = _rt._test")
 
-    # Handle postcondition if present
+        T075p: Pass globals() to execute_mumps so it can access module labels
+        for DO/GOTO commands in dynamic XECUTE.
+
+        T075q: Handle per-argument postconditions.
+        """
+        # T075q: Use arguments if available (has postconditions), else fall back
+        if stmt.arguments:
+            for xecute_arg in stmt.arguments:
+                expr_code = generate_expr(xecute_arg.expression, ctx)
+                if xecute_arg.postcondition is not None:
+                    # T075q: Wrap in postcondition check
+                    cond_code = generate_expr(xecute_arg.postcondition, ctx)
+                    ctx.emitter.line(f"if m_truth({cond_code}):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            f"_rt.execute_mumps({expr_code}, _scope, globals())"
+                        )
+                        ctx.emitter.line("_test = _rt._test")
+                else:
+                    ctx.emitter.line(
+                        f"_rt.execute_mumps({expr_code}, _scope, globals())"
+                    )
+                    ctx.emitter.line("_test = _rt._test")
+        else:
+            # Legacy path: no arguments structure, use code_expressions
+            for code_expr in stmt.code_expressions:
+                expr_code = generate_expr(code_expr, ctx)
+                ctx.emitter.line(f"_rt.execute_mumps({expr_code}, _scope, globals())")
+                ctx.emitter.line("_test = _rt._test")
+
+    # Check if any constant strings contain control flow
+    has_control_flow = False
+    if stmt.is_constant:
+        for code_str in stmt.constant_values:
+            if contains_control_flow(code_str):
+                has_control_flow = True
+                break
+
+    # T075r: Check if any argument has a postcondition (per-argument postcond)
+    has_arg_postconditions = False
+    if stmt.arguments:
+        for xarg in stmt.arguments:
+            if xarg.postcondition is not None:
+                has_arg_postconditions = True
+                break
+
+    # Handle postcondition if present (statement-level postcondition)
     if stmt.postcondition:
         cond_expr = generate_expr(stmt.postcondition, ctx)
         ctx.emitter.line(f"if m_truth({cond_expr}):")
         with ctx.emitter.indented():
-            if stmt.is_constant:
+            if has_arg_postconditions:
+                # T075r: Per-argument postconditions - must process each individually
+                _generate_xecute_args_with_postconds(
+                    stmt,
+                    ctx,
+                    has_control_flow,
+                    generate_inline_code,
+                    generate_inline_with_control_flow,
+                    contains_control_flow,
+                )
+            elif stmt.is_constant:
                 # Phase 4: Inline constant strings
-                for code_str in stmt.constant_values:
-                    generate_inline_code(code_str)
+                if has_control_flow:
+                    generate_inline_with_control_flow(stmt.constant_values)
+                else:
+                    for code_str in stmt.constant_values:
+                        generate_inline_code(code_str)
             else:
                 # Phase 5: Dynamic XECUTE - call runtime
                 generate_dynamic_xecute()
     else:
-        # No postcondition - generate code directly
-        if stmt.is_constant:
+        # No statement-level postcondition - generate code directly
+        if has_arg_postconditions:
+            # T075r: Per-argument postconditions - must process each individually
+            _generate_xecute_args_with_postconds(
+                stmt,
+                ctx,
+                has_control_flow,
+                generate_inline_code,
+                generate_inline_with_control_flow,
+                contains_control_flow,
+            )
+        elif stmt.is_constant:
             # Phase 4: Inline constant strings
-            for code_str in stmt.constant_values:
-                generate_inline_code(code_str)
+            if has_control_flow:
+                generate_inline_with_control_flow(stmt.constant_values)
+            else:
+                for code_str in stmt.constant_values:
+                    generate_inline_code(code_str)
         else:
             # Phase 5: Dynamic XECUTE - call runtime
             generate_dynamic_xecute()
+
+
+def _generate_xecute_args_with_postconds(
+    stmt: MXecuteStatement,
+    ctx: "GeneratorContext",
+    has_control_flow: bool,
+    generate_inline_code,
+    generate_inline_with_control_flow,
+    contains_control_flow,
+) -> None:
+    """Generate XECUTE handling arguments with per-argument postconditions.
+
+    T075r: When XECUTE has arguments with postconditions like:
+      X "code1":postcond1,"code2":postcond2,"code3"
+    Each argument must be checked individually.
+
+    For constant strings, we still inline if possible, but wrap each
+    in its postcondition check. For control flow, we use the
+    try/except _XecuteExit pattern.
+    """
+    from m2py.codegen.expressions import generate_expr
+    from m2py.asg.expressions import MLiteral
+    from m2py.asg.enums import LiteralType
+
+    # Group consecutive arguments by whether they have postconditions
+    # and whether they contain control flow
+    for xarg in stmt.arguments:
+        # Check if this argument is a constant string
+        is_constant = (
+            isinstance(xarg.expression, MLiteral)
+            and xarg.expression.literal_type == LiteralType.STRING
+        )
+
+        if xarg.postcondition is not None:
+            # Has postcondition - wrap in if block
+            cond_code = generate_expr(xarg.postcondition, ctx)
+            ctx.emitter.line(f"if m_truth({cond_code}):")
+            with ctx.emitter.indented():
+                if is_constant:
+                    # We verified it's an MLiteral above, so cast is safe
+                    literal = xarg.expression
+                    assert isinstance(literal, MLiteral)
+                    code_str = literal.value
+                    if contains_control_flow(code_str):
+                        # Inline with control flow handling
+                        generate_inline_with_control_flow([code_str])
+                    else:
+                        generate_inline_code(code_str)
+                else:
+                    # Dynamic - use runtime
+                    expr_code = generate_expr(xarg.expression, ctx)
+                    ctx.emitter.line(
+                        f"_rt.execute_mumps({expr_code}, _scope, globals())"
+                    )
+                    ctx.emitter.line("_test = _rt._test")
+        else:
+            # No postcondition - execute directly
+            if is_constant:
+                # We verified it's an MLiteral above, so cast is safe
+                literal = xarg.expression
+                assert isinstance(literal, MLiteral)
+                code_str = literal.value
+                if contains_control_flow(code_str):
+                    generate_inline_with_control_flow([code_str])
+                else:
+                    generate_inline_code(code_str)
+            else:
+                # Dynamic - use runtime
+                expr_code = generate_expr(xarg.expression, ctx)
+                ctx.emitter.line(f"_rt.execute_mumps({expr_code}, _scope, globals())")
+                ctx.emitter.line("_test = _rt._test")
 
 
 def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:

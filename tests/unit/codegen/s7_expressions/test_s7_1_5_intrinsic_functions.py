@@ -908,3 +908,101 @@ class TestDataSubscriptedAccess:
         """$DATA of undefined subscript returns 0."""
         result = execute_mumps("TEST S X(1)=1 W $D(X(99)) Q")
         assert result.output == "0"
+
+
+@pytest.mark.codegen
+class TestFnumberCodeCombinations:
+    """Tests for $FNUMBER code combinations including +T.
+
+    Fix: Added handling for +T combination - trailing + for positive numbers.
+    Priority order is: P > - > (T with +) > T > + > default
+    """
+
+    def test_fnumber_t_positive_trailing_space(self, execute_mumps):
+        """$FN(42,"T") gives trailing space for positive numbers."""
+        result = execute_mumps('TEST W "|",$FN(42,"T"),"|" Q')
+        assert result.success is True
+        assert result.output == "|42 |"
+
+    def test_fnumber_t_negative_trailing_minus(self, execute_mumps):
+        """$FN(-42,"T") gives trailing minus for negative numbers."""
+        result = execute_mumps('TEST W $FN(-42,"T") Q')
+        assert result.success is True
+        assert result.output == "42-"
+
+    def test_fnumber_plus_t_positive_trailing_plus(self, execute_mumps):
+        """$FN(42,"+T") gives trailing + for positive numbers."""
+        result = execute_mumps('TEST W $FN(42,"+T") Q')
+        assert result.success is True
+        assert result.output == "42+"
+
+    def test_fnumber_plus_t_negative_trailing_minus(self, execute_mumps):
+        """$FN(-42,"+T") gives trailing minus for negative numbers."""
+        result = execute_mumps('TEST W $FN(-42,"+T") Q')
+        assert result.success is True
+        assert result.output == "42-"
+
+    def test_fnumber_t_plus_same_as_plus_t(self, execute_mumps):
+        """$FN(42,"T+") is same as $FN(42,"+T") - trailing +."""
+        result = execute_mumps('TEST W $FN(42,"T+") Q')
+        assert result.success is True
+        assert result.output == "42+"
+
+    def test_fnumber_plus_alone_leading_plus(self, execute_mumps):
+        """$FN(42,"+") gives leading + (not trailing)."""
+        result = execute_mumps('TEST W $FN(42,"+") Q')
+        assert result.success is True
+        assert result.output == "+42"
+
+
+@pytest.mark.codegen
+class TestOrderIndirectionCodegen:
+    """Tests for $ORDER with indirection ($O(@X)).
+
+    Fix: Added handling for MIndirection in _gen_order to use
+    _rt.get_order() for runtime name resolution.
+    """
+
+    def test_order_indirection_basic(self, execute_mumps):
+        """$O(@X) where X='A("")' returns first subscript."""
+        result = execute_mumps('''TEST
+ S A(1)="a",A(2)="b"
+ S X="A("""")"
+ W $O(@X)
+ Q
+''')
+        assert result.success is True
+        assert result.output == "1"
+
+    def test_order_indirection_with_start(self, execute_mumps):
+        """$O(@X) where X='A(1)' returns next subscript."""
+        result = execute_mumps("""TEST
+ S A(1)="a",A(2)="b",A(3)="c"
+ S X="A(1)"
+ W $O(@X)
+ Q
+""")
+        assert result.success is True
+        assert result.output == "2"
+
+    def test_order_indirection_reverse(self, execute_mumps):
+        """$O(@X,-1) returns previous subscript."""
+        result = execute_mumps("""TEST
+ S A(1)="a",A(2)="b",A(3)="c"
+ S X="A(3)"
+ W $O(@X,-1)
+ Q
+""")
+        assert result.success is True
+        assert result.output == "2"
+
+    def test_order_indirection_global(self, execute_mumps):
+        """$O(@X) where X='^G("")' works for globals."""
+        result = execute_mumps('''TEST
+ S ^G(1)="a",^G(2)="b"
+ S X="^G("""")"
+ W $O(@X)
+ Q
+''')
+        assert result.success is True
+        assert result.output == "1"

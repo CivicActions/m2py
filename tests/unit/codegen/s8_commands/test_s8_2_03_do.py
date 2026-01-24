@@ -871,3 +871,120 @@ class TestPartialIndirection:
 
         # Should handle the call target via runtime
         assert "parse_call_target" in code
+
+
+@pytest.mark.codegen
+class TestDoWithOffsetTrampoline:
+    """Tests for DO label+offset following trampoline transitions (T075i).
+
+    When DO label+offset lands at the end of a label block, the internal
+    function returns a label transition to continue execution. The generated
+    code must follow this trampoline loop rather than ignoring the return.
+
+    Fix: Changed DO offset codegen to capture return value and follow
+    trampoline loop: `target, state = func(...); while target: ...`
+    """
+
+    def test_do_offset_follows_label_transition(self, execute_mumps):
+        """D 12+3 where offset lands after label 12 block, before label IF.
+
+        Label 12 has 3 offset lines (0,1,2), then label IF starts.
+        D 12+3 should execute the IF label's first line.
+        """
+        result = execute_mumps("""TEST
+ S V=""
+ D LABEL+3
+ W V
+ Q
+LABEL S V=V_"LABEL " Q
+ S V=V_"LINE1 " Q
+ S V=V_"LINE2 " Q
+NEXT S V=V_"NEXT " Q
+ S V=V_"LINE4 " Q
+""")
+        assert result.success is True
+        assert result.output == "NEXT "
+
+    def test_do_offset_with_unary_expression(self, execute_mumps):
+        """D label+++-expr computes offset correctly and follows transition.
+
+        This is the actual test case from V1DO3 I-246.
+        D 12+++-"-.037E+2" = D 12+3 (unary chain evaluates to 3.7, int to 3)
+        """
+        result = execute_mumps("""TEST
+ S V=""
+ D LABEL+++-"-.037E+2"
+ W V
+ Q
+LABEL S V=V_"LABEL " Q
+ S V=V_"LINE1 " Q
+ S V=V_"LINE2 " Q
+ S V=V_"LINE3 " Q
+ S V=V_"LINE4 " Q
+""")
+        assert result.success is True
+        assert result.output == "LINE3 "
+
+    def test_do_offset_direct_execution(self, execute_mumps):
+        """D LABEL+1 executes offset 1 directly without transition."""
+        result = execute_mumps("""TEST
+ S V=""
+ D LABEL+1
+ W V
+ Q
+LABEL S V=V_"LABEL " Q
+ S V=V_"LINE1 " Q
+ S V=V_"LINE2 " Q
+""")
+        assert result.success is True
+        assert result.output == "LINE1 "
+
+
+@pytest.mark.codegen
+class TestCrossRoutineScopeSync:
+    """Tests for T075k: Cross-routine scope sync with MArray wrapping.
+
+    When a routine using dynamic_locals calls an external routine that uses
+    static state variables, the callee stores raw values back to _scope.
+    The caller must wrap these raw values in MArray when syncing back to
+    state._locals, since the caller's expression codegen expects MArray.value.
+
+    Fix: Changed scope sync from simple update() to a loop that wraps non-MArray
+    values in MArray before storing in state._locals.
+    """
+
+    def test_cross_routine_variable_visibility(self, execute_mumps):
+        """Variable set in callee is visible to dynamic_locals caller.
+
+        This simulates the V1PRGD/V1PRGD3 scenario where:
+        - V1PRGD uses dynamic_locals (KILL clears all)
+        - V1PRGD3 uses static state (sets VCOMP)
+        - After D ^V1PRGD3, V1PRGD should see VCOMP value
+
+        We test with argumentless KILL to force dynamic_locals usage.
+        """
+        result = execute_mumps("""TEST
+ K
+ S X=1
+ D SUB
+ W VCOMP
+ Q
+SUB S VCOMP=1234
+ Q
+""")
+        assert result.success is True
+        assert result.output == "1234"
+
+    def test_variable_set_after_kill_visible(self, execute_mumps):
+        """Variables set after KILL are properly MArray wrapped."""
+        result = execute_mumps("""TEST
+ K
+ S A=1,B=2,C=3
+ D SUB
+ W A,"-",B,"-",C
+ Q
+SUB S A=10,C=30
+ Q
+""")
+        assert result.success is True
+        assert result.output == "10-2-30"

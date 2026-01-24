@@ -28,6 +28,7 @@ from m2py.asg.expressions import (
     MLiteral,
     MVariable,
     MGlobal,
+    MNakedGlobal,
     MIntrinsicFunction,
     MExtrinsicFunction,
     MExternalFunction,
@@ -228,6 +229,13 @@ class SemanticAnalyzer:
 
         elif isinstance(expr, MGlobal):
             self._track_global(expr.name, expr)
+            new_subscripts = []
+            for sub in expr.subscripts:
+                new_subscripts.append(self.analyze(sub, expr))
+            object.__setattr__(expr, "subscripts", new_subscripts)
+
+        elif isinstance(expr, MNakedGlobal):
+            # Naked globals have subscripts but no name - analyze subscripts
             new_subscripts = []
             for sub in expr.subscripts:
                 new_subscripts.append(self.analyze(sub, expr))
@@ -1533,7 +1541,13 @@ class SemanticAnalyzer:
         return stmt
 
     def _analyze_XecuteCommand(self, cmd: Any, parent: Any) -> MXecuteStatement:
-        """Analyze XECUTE command into MXecuteStatement."""
+        """Analyze XECUTE command into MXecuteStatement.
+
+        T075q: Capture per-argument postconditions for XECUTE.
+        X P,Q:X=10,R:X=10,S  -- Q and R only execute if X=10
+        """
+        from m2py.asg.statements import MXecuteArg
+
         stmt = MXecuteStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -1541,9 +1555,22 @@ class SemanticAnalyzer:
         if hasattr(cmd, "args") and cmd.args:
             for arg in cmd.args:
                 if hasattr(arg, "expr") and arg.expr:
-                    stmt.code_expressions.append(self.analyze(arg.expr, stmt))
+                    expr = self.analyze(arg.expr, stmt)
+                    # T075q: Capture argument postcondition
+                    postcond = None
+                    if hasattr(arg, "postcond") and arg.postcond:
+                        # Postcondition has a .condition field with the actual expression
+                        postcond = self.analyze(arg.postcond.condition, stmt)
+                    xecute_arg = MXecuteArg(expression=expr, postcondition=postcond)
+                    stmt.arguments.append(xecute_arg)
+                    # Also add to code_expressions for backwards compatibility
+                    stmt.code_expressions.append(expr)
                 else:
-                    stmt.code_expressions.append(self.analyze(arg, stmt))
+                    expr = self.analyze(arg, stmt)
+                    stmt.arguments.append(
+                        MXecuteArg(expression=expr, postcondition=None)
+                    )
+                    stmt.code_expressions.append(expr)
 
         # Check if all code expressions are constant string literals
         all_constant = True

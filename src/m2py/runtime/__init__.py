@@ -2532,7 +2532,12 @@ class MUMPSRuntime:
 
         return CallTarget(label=label, routine=routine, offset=offset)
 
-    def execute_mumps(self, mumps_code: str, _scope: Dict[str, Any]) -> Any:
+    def execute_mumps(
+        self,
+        mumps_code: str,
+        _scope: Dict[str, Any],
+        caller_globals: Optional[Dict[str, Any]] = None,
+    ) -> Any:
         """Execute MUMPS code string at runtime (XECUTE).
 
         Spec 012 (T011): Implements dynamic MUMPS code execution.
@@ -2548,9 +2553,14 @@ class MUMPSRuntime:
         which runs Python code. The contract specifies execute() but we
         need a different name to avoid shadowing the existing method.
 
+        T075p: When caller_globals is provided, include it in the execution
+        namespace so XECUTE'd code can call module-level label functions
+        (DO/GOTO to labels in the calling routine).
+
         Args:
             mumps_code: MUMPS code to execute (one or more commands)
             _scope: Scope dictionary shared with caller
+            caller_globals: Optional caller's globals() for label access
 
         Returns:
             Return value if code contains QUIT with value, else None
@@ -2614,6 +2624,14 @@ class MUMPSRuntime:
             "m_compare": m_compare,
             "MArray": MArray,
         }
+
+        # T075p: Include caller's globals so XECUTE can access module labels
+        # This allows DO/GOTO to labels in the calling routine
+        if caller_globals:
+            # Only include callable items (functions) to avoid polluting namespace
+            for name, value in caller_globals.items():
+                if callable(value) and not name.startswith("_"):
+                    namespace[name] = value
 
         # Copy scope variables into namespace for direct access
         # Generated code uses _scope.get("VAR", "") pattern, so this works

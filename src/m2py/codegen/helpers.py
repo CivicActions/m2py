@@ -47,6 +47,12 @@ def m_str(value: Any) -> str:
         >>> m_str(Decimal("9999997799E14"))
         '999999779900000000000000'
     """
+    # T075h: Handle MArray objects by extracting their value
+    # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
+    # and expressions like m_str(state._locals.get('V', '')) receive MArray objects
+    if hasattr(value, "value"):
+        # Recursively extract value in case of nested MArrays
+        return m_str(value.value)
     # Handle Decimal type directly for precise large numbers
     if isinstance(value, Decimal):
         d = value
@@ -152,6 +158,11 @@ def m_num(value: Any) -> Union[int, float, Decimal]:
         >>> m_num("3.14ABC")
         3.14
     """
+    # T075h: Handle MArray objects by extracting their value
+    # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
+    if hasattr(value, "value"):
+        return m_num(value.value)
+
     # Decimal values - keep as Decimal for precision (large numbers)
     if isinstance(value, Decimal):
         # Normalize: if it's an integer value, return int
@@ -501,6 +512,12 @@ def m_compare(left: Any, op: str, right: Any) -> int:
         >>> m_compare("", "<", 1)
         1  # 0 < 1
     """
+    # T075h: Handle MArray objects by extracting their value (recursively)
+    while hasattr(left, "value"):
+        left = left.value
+    while hasattr(right, "value"):
+        right = right.value
+
     if op == "=":
         # MUMPS "=" compares canonical string representations
         # Numeric values (int, float, Decimal) are normalized via m_str

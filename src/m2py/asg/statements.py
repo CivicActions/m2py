@@ -556,13 +556,32 @@ class MBreakStatement(MStatement):
 
 
 @dataclass
+class MXecuteArg:
+    """Single XECUTE argument with optional postcondition.
+
+    T075q: XECUTE arguments can have individual postconditions:
+    X arg1,arg2:cond,arg3  -- arg2 only executes if cond is true
+    """
+
+    expression: "MExpr"
+    postcondition: Optional["MExpr"] = None
+
+
+@dataclass
 class MXecuteStatement(MStatement):
     """XECUTE command - runtime code execution.
 
     Executes code from string:
     X "SET X=1", XECUTE code
+
+    T075q: Arguments can have individual postconditions:
+    X P,Q:X=10,R:X=10,S  -- Q and R only execute if X=10
     """
 
+    # T075q: Changed from code_expressions to arguments with postconditions
+    arguments: List[MXecuteArg] = field(default_factory=list)
+
+    # Legacy field for backwards compatibility - populated from arguments
     code_expressions: List["MExpr"] = field(default_factory=list)
 
     # Always requires runtime support

@@ -249,8 +249,11 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
             base = f"state._locals.get({python_name!r}, MArray())"
             return f"{base}.get({', '.join(subscript_exprs)})"
         else:
-            # Simple variable: get from _locals dict, default to empty string
-            return f"state._locals.get({python_name!r}, '')"
+            # T075h: Simple variable - get MArray from _locals dict, access .value
+            # state._locals stores MArray objects for SET consistency, so we need
+            # to get the MArray (or create empty one) and return its .value
+            # This ensures S X=Y correctly copies Y's value, not the MArray object
+            return f"state._locals.get({python_name!r}, MArray()).value"
 
     # Spec 006 (T075): Handle subscripted array access
     if var.subscripts:

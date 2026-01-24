@@ -223,6 +223,34 @@ class TestForCommandCodegen:
         assert result.output == "6"
         assert result.success is True
 
+    def test_for_zero_step_with_end(self, execute_mumps):
+        """FOR with zero step and end value enters if start <= end (T075).
+
+        F I=4:0:5 - zero step with start=4, end=5
+        Loop enters because 4 <= 5, but never increments (step=0)
+        Must be terminated by QUIT.
+
+        This tests the fix where step=0 bounded FOR only enters if start <= end.
+        """
+        result = execute_mumps(
+            'TEST\n S C=0\n F I=4:0:5 S C=C+1 I C>3 Q\n W C,"-",I,!\n Q\n'
+        )
+        # Loop enters 4 times (C=1,2,3,4), exits when C>3 (C=4)
+        # I stays at 4 (never increments with step=0)
+        assert result.output == "4-4\n"
+        assert result.success is True
+
+    def test_for_zero_step_with_end_empty_range(self, execute_mumps):
+        """FOR with zero step and start > end never enters (T075).
+
+        F I=6:0:5 - zero step with start=6, end=5
+        Loop never enters because 6 > 5 (even though step=0 would infinite loop).
+        """
+        result = execute_mumps("TEST\n S C=0\n F I=6:0:5 S C=C+1\n W C,!\n Q\n")
+        # Loop never enters because start > end
+        assert result.output == "0\n"
+        assert result.success is True
+
     def test_for_empty_body(self, generate_python):
         """FOR with no body compiles correctly (T082).
 

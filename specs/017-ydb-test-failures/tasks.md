@@ -408,6 +408,16 @@ thanks to multi-routine support and Decimal arithmetic helpers.
     1. Whitespace/pagination differences (`W:$Y>55 #` pagination tracking)
     2. Some tests still need helper routine mappings
     3. GotoExternal issue in V1SEQ
+    4. Timeouts (4 tests): larray, V1FORA, V1NX, V1FORC
+    5. External routine in multi-target GOTO (2 tests): V1OV, V1PC
+    6. Indirect target in multi-target GOTO (1 test): V1IDGO
+    7. UNRESOLVED GOTO (2 tests): V1NST1, V1NST2
+- [X] T075g Fix MNakedGlobal subscript analysis (UnaryExpr bug)
+  - **Scope**: Naked global subscripts like `^(3,-1)` had raw UnaryExpr instead of MUnaryOp
+  - **Root cause**: `_analyze_expression()` had no handler for MNakedGlobal (only MGlobal)
+  - **Fix**: Added MNakedGlobal handler in semantic_analyzer.py `_analyze_expression()` method
+  - **Tests**: Added 3 unit tests in test_expression_analysis.py for naked global subscripts
+  - **Affects**: V1NX (now times out instead of crashing), other tests using naked globals with expressions
 - [ ] T075a Implement $Y (vertical position) tracking and `W:$Y>N #` pagination
   - **Scope**: Track $Y position in runtime, implement form feed on overflow
   - **Affects**: ~20-30 tests with pagination differences
@@ -439,8 +449,32 @@ thanks to multi-routine support and Decimal arithmetic helpers.
     3. $TEXT converts tabs to single space (YDB behavior)
   - **Changes**: routine.py (label entry context), statements.py (save/restore), runtime/__init__.py (tab→space)
   - **Tests**: test_cross_routine_visibility.py (2 tests), test_runtime.py::test_text_converts_tabs_to_spaces
+- [X] T075h Fix MArray value extraction in helper functions (dynamic locals bug)
+  - **Scope**: TRAMPOLINE routines with dynamic_locals store variables as MArray objects
+  - **Root cause**: Helper functions (m_str, m_num, m_compare, m_format_output) were not extracting .value from MArray objects
+  - **Symptoms**: Output like `MArray(value=MArray(value='A '))` instead of actual values; comparisons always failing
+  - **Fixes applied**:
+    1. codegen/helpers.py: m_str(), m_num(), m_compare() now extract .value recursively from MArray objects
+    2. runtime/helpers.py: m_format_output() now extracts .value from MArray objects  
+    3. codegen/expressions.py: Simple variable read uses `.value` (state._locals.get(name, MArray()).value)
+    4. codegen/statements.py: Sync state._locals ↔ _scope before/after internal DO calls
+  - **Tests**: Added TestMArrayHandling class with 11 unit tests in test_helpers.py
+  - **Affects**: V1DO and other TRAMPOLINE tests with dynamic_locals - now produce correct output
+- [X] T075i Fix DO label+offset trampoline transitions
+  - **Scope**: DO label+offset where offset lands at end of label block (requires transition to next label)
+  - **Root cause**: Generated code called internal function directly but ignored the returned label transition
+  - **Symptom**: V1DO3 I-246 test failed - `D 12+3` should execute label IF but V was empty
+  - **Fix**: Changed DO offset codegen to capture return value and follow trampoline loop:
+    ```python
+    _do_target, state = __func(_rt, state, _scope, _start_offset=_offset_val)
+    while _do_target is not None:
+        _do_func = _labels[_do_target]
+        _do_target, state = _do_func(_rt, state, _scope)
+    ```
+  - **Tests**: Added TestDoWithOffsetTrampoline class with 3 tests in test_phase14_fixes.py
+  - **Affects**: V1DO3 I-246 now passes (unary operator offset test)
 
-**Checkpoint**: 59 failures remain (down from 65). Unit tests: 3586 passed.
+**Checkpoint**: 57 failures remain (tests pass functionally but whitespace/pagination differ). Unit tests: 3603 passed.
 
 ---
 

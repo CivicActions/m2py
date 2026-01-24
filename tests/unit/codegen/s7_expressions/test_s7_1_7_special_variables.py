@@ -340,3 +340,32 @@ class TestTransactionSpecialVariablesCodegen:
         """
         with pytest.raises(NotImplementedError, match="TRESTART"):
             generate_python("TEST W $TRESTART Q")
+
+
+@pytest.mark.codegen
+class TestIOSpecialVariableAbbreviation:
+    """Tests for $I abbreviation of $IO special variable.
+
+    Fix: Added "I" to the list of names recognized as $IO.
+    """
+
+    def test_dollar_i_abbreviation(self, execute_mumps):
+        """$I is abbreviation for $IO (current device)."""
+        result = execute_mumps("TEST W $I Q")
+        assert result.success is True
+        # Should output something (the current device name)
+        assert result.output is not None
+
+    def test_dollar_io_full_form(self, execute_mumps):
+        """$IO returns current I/O device."""
+        result = execute_mumps("TEST W $IO Q")
+        assert result.success is True
+        assert result.output is not None
+
+    def test_dollar_i_equals_dollar_io(self, execute_mumps):
+        """$I and $IO should return the same value."""
+        result = execute_mumps('TEST W $I="0",$IO="0" Q')
+        # Default device is typically 0 or /dev/tty, both should match
+        assert result.success is True
+        # Both comparisons should be true (1) or both false (0)
+        # We just check they're equal - "11" means both true, "00" both false

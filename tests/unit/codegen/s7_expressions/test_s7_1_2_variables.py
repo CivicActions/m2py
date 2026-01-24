@@ -269,3 +269,39 @@ class TestSubscriptedLocalsEdgeCases:
         """Set value at root and at deep subscript level."""
         result = execute_mumps('TEST S X="root" S X(1,2,3)="deep" W X,"-",X(1,2,3) Q')
         assert result.output == "root-deep"
+
+
+@pytest.mark.codegen
+class TestMGlobalAsExpression:
+    """Tests for MGlobal appearing directly as expression (not GlobalVariable).
+
+    Fix: Changed generate_expr to check MGlobal before GlobalVariable since
+    GlobalVariable inherits from MGlobal, and MGlobal can appear in contexts
+    like GOTO offsets.
+    """
+
+    def test_global_in_do_offset(self, execute_mumps):
+        """D L+^G uses global value as offset (MGlobal in expression)."""
+        # Set global to 1, then DO should jump to L1+1 which writes "LINE2"
+        result = execute_mumps("""TEST
+ S ^G=1
+ D L1+^G
+ Q
+L1 W "LINE1" Q
+ W "LINE2" Q
+""")
+        assert result.success is True
+        assert result.output == "LINE2"
+
+    def test_global_in_arithmetic(self, execute_mumps):
+        """Arithmetic with global variable in expression."""
+        result = execute_mumps("TEST\n S ^X=5 W ^X+10\n Q\n")
+        assert result.success is True
+        assert result.output == "15"
+
+    def test_extended_global_in_expression_raises(self, generate_python):
+        """Extended global ^|env| in expression raises NotImplementedError."""
+        # Extended globals are not yet supported
+        code = 'TEST\n W ^|"ENV"|X\n Q\n'
+        with pytest.raises(NotImplementedError, match="Extended global"):
+            generate_python(code)

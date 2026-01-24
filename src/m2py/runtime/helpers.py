@@ -91,6 +91,12 @@ def m_format_output(value: Any) -> str:
     import re
     from decimal import Decimal, InvalidOperation
 
+    # T075h: Handle MArray objects by extracting their value
+    # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
+    # and _rt.write(state._locals.get('V', '')) passes MArray objects
+    if hasattr(value, "value"):
+        return m_format_output(value.value)
+
     # If string, try to parse as number ONLY if it looks like a MUMPS canonical number
     # Pattern: optional leading minus, optional digits, optional decimal point with digits
     # Examples: "123", "-45", "0.5", ".5", "-.5", "-0.5"

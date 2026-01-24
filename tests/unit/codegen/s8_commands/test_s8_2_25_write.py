@@ -73,3 +73,61 @@ class TestWriteCommandCodegen:
         code = 'TEST\n W /BOLD,"text",/NORMAL\n Q\n'
         with pytest.raises(NotImplementedError, match="DeviceControl"):
             generate_python(code)
+
+
+@pytest.mark.codegen
+class TestFormatControlNumericCoercion:
+    """Tests for ?intexpr and *intexpr with MUMPS numeric coercion.
+
+    In MUMPS, format controls like ?intexpr and *intexpr expect a numeric
+    expression. When a string is provided, it should be coerced using MUMPS
+    rules: leading numeric portion extracted, non-numeric strings become 0.
+
+    Fix: Changed from int(expr) to int(m_num(expr)) in codegen.
+    """
+
+    def test_tab_with_numeric_string(self, execute_mumps):
+        """W ?"10" tabs to column 10 (string coerces to 10)."""
+        result = execute_mumps('TEST\n W ?"10","X"\n Q\n')
+        assert result.success is True
+        assert result.output == "          X"  # 10 spaces + X
+
+    def test_tab_with_non_numeric_string(self, execute_mumps):
+        """W ?"ABC" tabs to column 0 (string coerces to 0).
+
+        "ABC" has no leading numeric portion, so m_num("ABC") = 0.
+        ?0 means column 0, so X appears at position 0 (no leading spaces).
+        """
+        result = execute_mumps('TEST\n W ?"ABC","X"\n Q\n')
+        assert result.success is True
+        assert result.output == "X"
+
+    def test_tab_with_leading_numeric_string(self, execute_mumps):
+        """W ?"3ABC" tabs to column 3 (string coerces to 3)."""
+        result = execute_mumps('TEST\n W ?"3ABC","X"\n Q\n')
+        assert result.success is True
+        assert result.output == "   X"  # 3 spaces + X
+
+    def test_tab_with_variable_string(self, execute_mumps):
+        """W ?X where X="ABC" tabs to column 0."""
+        result = execute_mumps('TEST\n S X="ABC" W ?X,"Y"\n Q\n')
+        assert result.success is True
+        assert result.output == "Y"
+
+    def test_charcode_with_numeric_string(self, execute_mumps):
+        """W *"65" outputs 'A' (string coerces to 65)."""
+        result = execute_mumps('TEST\n W *"65"\n Q\n')
+        assert result.success is True
+        assert result.output == "A"
+
+    def test_charcode_with_non_numeric_string(self, execute_mumps):
+        """W *"XYZ" outputs NUL character (string coerces to 0)."""
+        result = execute_mumps('TEST\n W *"XYZ"\n Q\n')
+        assert result.success is True
+        assert result.output == "\x00"  # chr(0) = NUL
+
+    def test_charcode_with_leading_numeric_string(self, execute_mumps):
+        """W *"66ABC" outputs 'B' (string coerces to 66)."""
+        result = execute_mumps('TEST\n W *"66ABC"\n Q\n')
+        assert result.success is True
+        assert result.output == "B"

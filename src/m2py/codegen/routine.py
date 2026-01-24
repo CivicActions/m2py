@@ -68,6 +68,10 @@ class GeneratorContext:
     # This happens when routine contains argumentless KILL or argumentless NEW
     uses_dynamic_locals: bool = False
 
+    # Spec 017 Phase 14 (T075m): True when generating code inside inline XECUTE
+    # GOTO/DO inside inline XECUTE should raise _XecuteExit instead of return
+    in_inline_xecute: bool = False
+
     # Spec 017 Phase 11: Counter for generating unique FOR loop variable names
     # Prevents nested FOR loops from clobbering each other's _for_start/_for_step/_for_end
     _for_loop_counter: int = 0
@@ -456,6 +460,17 @@ class RoutineGenerator:
                     ctx.emitter.line("self.target = target")
             ctx.emitter.blank()
 
+        # T075m: _XecuteExit exception for GOTO/DO inside inline XECUTE
+        # This allows GOTO inside XECUTE to exit just the XECUTE block
+        # without returning from the enclosing function
+        ctx.emitter.line("class _XecuteExit(Exception):")
+        with ctx.emitter.indented():
+            ctx.emitter.line(
+                '"""Exception for control flow exit from inline XECUTE."""'
+            )
+            ctx.emitter.line("pass")
+        ctx.emitter.blank()
+
     def _generate_label_docstring(self, label: MLabel, ctx: GeneratorContext) -> None:
         """Generate Python docstring with MUMPS source info.
 
@@ -776,10 +791,19 @@ class RoutineGenerator:
                 # T075b: Initialize state from _scope for cross-routine visibility
                 # When called from another routine, variables may already exist in _scope
                 if ctx.uses_dynamic_locals:
-                    # For dynamic locals, copy _scope into state._locals
-                    ctx.emitter.line(
-                        "state._locals.update({k: v for k, v in _scope.items()})"
-                    )
+                    # T075j: For dynamic locals, copy _scope into state._locals
+                    # Values must be wrapped in MArray if they aren't already,
+                    # since the expression codegen expects MArray.value access
+                    ctx.emitter.line("for k, v in _scope.items():")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("if isinstance(v, MArray):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("state._locals[k] = v")
+                        ctx.emitter.line("else:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("_m = MArray()")
+                            ctx.emitter.line("_m.value = v")
+                            ctx.emitter.line("state._locals[k] = _m")
                 else:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
@@ -875,10 +899,19 @@ class RoutineGenerator:
 
                 # T075b: Initialize state from _scope for cross-routine visibility
                 if ctx.uses_dynamic_locals:
-                    # For dynamic locals, copy _scope into state._locals
-                    ctx.emitter.line(
-                        "state._locals.update({k: v for k, v in _scope.items()})"
-                    )
+                    # T075j: For dynamic locals, copy _scope into state._locals
+                    # Values must be wrapped in MArray if they aren't already,
+                    # since the expression codegen expects MArray.value access
+                    ctx.emitter.line("for k, v in _scope.items():")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("if isinstance(v, MArray):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("state._locals[k] = v")
+                        ctx.emitter.line("else:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("_m = MArray()")
+                            ctx.emitter.line("_m.value = v")
+                            ctx.emitter.line("state._locals[k] = _m")
                 else:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
