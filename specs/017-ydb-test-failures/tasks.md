@@ -347,7 +347,7 @@ thanks to multi-routine support and Decimal arithmetic helpers.
   - **Remaining**: 5 tests need helper routines (test infrastructure issue)
 - [X] T065 [US11] **HUMAN REVIEW**: Present findings before implementing test harness changes
   - **Result**: Helper dependencies identified but require test infrastructure changes
-  - **Deferred**: misclv (needs lfill), zshowgbl/zshowlcl (need ^%G system utility)
+  - **Deferred**: misclv (needs lfill, now resolved), zshowgbl/zshowlcl (need ^%G system utility)
 - [X] T066 [US11] Implement approved fixes (conditional on T065 outcome)
   - **Implemented**: All MERGE codegen gaps fixed in src/m2py/codegen/statements.py
   - **Implemented**: Runtime functions in src/m2py/runtime/__init__.py
@@ -363,7 +363,7 @@ thanks to multi-routine support and Decimal arithmetic helpers.
 - All MERGE codegen issues resolved (naked globals, indirection, extended globals)
 - Z-extension routines properly xfailed with LIM-015
 - 5 remaining failures are test infrastructure issues:
-  - misclv, mergelv: Need lfill.m helper
+  - misclv, mergelv: Need lfill.m helper (resolved)
   - zshowgbl, zshowlcl, list: Need ^%G system utility (cannot provide)
 
 ---
@@ -376,16 +376,61 @@ thanks to multi-routine support and Decimal arithmetic helpers.
 
 ### Implementation
 
-- [ ] T068 Triage remaining failures into categories: arithmetic, pattern, control flow, variable, boolean, other
-- [ ] T069 Fix remaining arithmetic bugs (batch processing)
-- [ ] T070 Fix remaining pattern matching bugs (batch processing)
-- [ ] T071 Fix remaining control flow bugs (batch processing)
-- [ ] T072 [FR-022] Fix remaining variable storage/retrieval bugs to preserve correct values across scopes
-- [ ] T073 [FR-021] Fix remaining boolean/comparison operation bugs to match MUMPS truth semantics
-- [ ] T074 Fix any other uncategorized bugs
+- [X] T068 Triage remaining failures into categories: arithmetic, pattern, control flow, variable, boolean, other
+  - **Finding**: Categorized 73 failures into:
+    - ~55 need helper routine dependencies (VREPORT, sub-routines)
+    - ~10 have actual bugs requiring code fixes
+    - ~5 should be xfailed (BREAK, Z-extensions, file I/O)
+    - ~3 infrastructure issues (YDB test harness dependencies)
+- [X] T069 Fix remaining arithmetic bugs (batch processing)
+  - **Fix**: str() → m_str() in intrinsic function codegen ($E, $P, $F, $TR, $A, $L, pattern match)
+  - **Fix**: ?intexpr and *intexpr now use m_num() for MUMPS numeric coercion before int()
+- [X] T070 Fix remaining pattern matching bugs (batch processing)
+  - **Fix**: Pattern match subject now uses m_str() for canonical formatting
+- [X] T071 Fix remaining control flow bugs (batch processing)
+  - **Fix**: MGlobal expression handling for GOTO offsets with global references
+  - **Fix**: Extended global rejection (^|env| syntax) in expression generation
+- [X] T072 [FR-022] Fix remaining variable storage/retrieval bugs to preserve correct values across scopes
+  - **Fix**: Dataclass module injection - sys.modules injection BEFORE exec() for @dataclass decorator
+  - **Finding**: Cross-routine variable visibility (RoutineState vs _scope) is fundamental architectural issue
+- [X] T073 [FR-021] Fix remaining boolean/comparison operation bugs to match MUMPS truth semantics
+  - (Already handled in prior phases)
+- [X] T074 Fix any other uncategorized bugs
+  - **Fix**: ROUTINE_HELPERS expanded from 1 to ~50 entries for helper routine dependencies
+  - **Fix**: DRIVER_SUBROUTINES expanded for expected output combining
+  - **Fix**: V1PRGD helper list corrected (was missing V1PRGD1)
+- [X] T074a Add unit tests for Phase 14 fixes
+  - **Added**: tests/unit/codegen/test_phase14_fixes.py (23 new tests)
+  - **Coverage**: ?intexpr/*intexpr numeric coercion, m_format_output strings, m_piece negative positions, MGlobal expressions
 - [ ] T075 Validate no failures remain: `uv run pytest tests/functional/ -v --tb=short`
+  - **Status**: 65 failed, 366 passed, 6 skipped, 52 xfailed
+  - **Remaining issues**:
+    1. Whitespace/pagination differences (`W:$Y>55 #` pagination tracking)
+    2. Some tests still need helper routine mappings
+- [ ] T075a Implement $Y (vertical position) tracking and `W:$Y>N #` pagination
+  - **Scope**: Track $Y position in runtime, implement form feed on overflow
+  - **Affects**: ~20-30 tests with pagination differences
+- [X] T075b Audit and fix cross-routine variable visibility
+  - **Scope**: When D ^ROUTINE is called, variables should be visible via _scope
+  - **Root cause**: Each routine creates isolated RoutineState, not sharing _scope
+  - **Fix**: Added sync logic between state and _scope for both static (state_vars) and dynamic (_locals) patterns
+  - **Changes**: routine.py (init/sync state from _scope), statements.py (sync before/after DO calls)
+  - **Affects**: V1PRGD now passes (was failing due to VCOMP not visible across routines)
+- [ ] T075c Expand ROUTINE_HELPERS for remaining tests
+  - **Scope**: Add missing helper routine mappings in test_mugj.py
+- [X] T075d Add unit tests for T075b cross-routine visibility fixes
+  - **Added**: tests/unit/codegen/test_cross_routine_visibility.py (9 tests)
+  - **Coverage**: Variable visibility across DO calls, nested calls, GOTO after DO
+  - **Added**: tests/unit/runtime/test_runtime.py::TestGetOrderMethod (11 tests)
+  - **Coverage**: get_order() method for $ORDER indirection support
+- [ ] T075e Handle GotoExternal from within DO calls
+  - **Scope**: When `D label+offset` triggers external GOTO, handle exception in DO wrapper
+  - **Root cause**: DO wrappers don't catch GotoExternal, exception propagates up and execution terminates
+  - **Example**: V1SEQ does `DO DO788+2` → `G G788^V1SEQ1` raises GotoExternal that isn't caught
+  - **Affects**: V1SEQ and tests with `DO label+offset` → external GOTO patterns
+  - **Complexity**: HIGH - requires architectural changes to DO wrapper codegen
 
-**Checkpoint**: All behavioral bugs resolved
+**Checkpoint**: 65 failures remain (down from 73). Unit tests: 3553 passed.
 
 ---
 

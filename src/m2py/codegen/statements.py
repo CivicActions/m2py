@@ -1426,7 +1426,8 @@ def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> Non
         # Spec 011 (T028): CHARCODE format control (*n)
         if fc.expression is not None:
             expr = generate_expr(fc.expression, ctx)
-            ctx.emitter.line(f"_rt.write(chr(int({expr})))")
+            # Apply MUMPS numeric coercion before int() for *intexpr
+            ctx.emitter.line(f"_rt.write(chr(int(m_num({expr}))))")
         else:
             # No expression - shouldn't happen but handle gracefully
             pass
@@ -1435,7 +1436,8 @@ def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> Non
         # Spec 011 (T029): TAB format control (?n)
         if fc.expression is not None:
             expr = generate_expr(fc.expression, ctx)
-            ctx.emitter.line(f"_rt.write_tab(int({expr}))")
+            # Apply MUMPS numeric coercion before int() for ?intexpr
+            ctx.emitter.line(f"_rt.write_tab(int(m_num({expr})))")
         else:
             # No expression - shouldn't happen but handle gracefully
             pass
@@ -2633,6 +2635,11 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # Generate import statement
         ctx.emitter.line(f"import {routine_name}")
 
+        # T075b: For TRAMPOLINE with dynamic locals, sync state._locals to _scope
+        # before calling external routine so callee can see caller's variables
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
+
         # Handle different external DO patterns
         if target.offset is not None:
             # D LABEL+N^ROUTINE or D +N^ROUTINE - uses line dispatch
@@ -2696,6 +2703,11 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 )
             else:
                 ctx.emitter.line(f"{routine_name}.{entry_label}(_rt, _scope=_scope)")
+
+        # T075b: For TRAMPOLINE with dynamic locals, sync _scope back to state._locals
+        # after returning from external routine so caller can see callee's modifications
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            ctx.emitter.line("state._locals.update({k: v for k, v in _scope.items()})")
         return
 
     # Get the label name and translate it
@@ -2831,17 +2843,59 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         else:
             # T079: No by-ref params at call site - just call with _rt
             # T084: Pass _scope for cross-routine variable visibility
+            # T075b: For TRAMPOLINE with state_vars, sync state to _scope before call
+            # and sync _scope back to state after call for intra-routine DO
+            if (
+                ctx.strategy == GotoStrategy.TRAMPOLINE
+                and ctx.state_vars
+                and not ctx.uses_dynamic_locals
+            ):
+                # Sync state to _scope before call
+                for var_name in sorted(ctx.state_vars):
+                    py_name = translate_name(var_name)
+                    ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
             if args:
                 ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
             else:
                 ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+            # T075b: Sync _scope back to state after call
+            if (
+                ctx.strategy == GotoStrategy.TRAMPOLINE
+                and ctx.state_vars
+                and not ctx.uses_dynamic_locals
+            ):
+                for var_name in sorted(ctx.state_vars):
+                    py_name = translate_name(var_name)
+                    ctx.emitter.line(
+                        f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
+                    )
     else:
         # T079: No byref_outputs - simple call with _rt
         # T084: Pass _scope for cross-routine variable visibility
+        # T075b: For TRAMPOLINE with state_vars, sync state to _scope before call
+        if (
+            ctx.strategy == GotoStrategy.TRAMPOLINE
+            and ctx.state_vars
+            and not ctx.uses_dynamic_locals
+        ):
+            for var_name in sorted(ctx.state_vars):
+                py_name = translate_name(var_name)
+                ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
         if args:
             ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
         else:
             ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+        # T075b: Sync _scope back to state after call
+        if (
+            ctx.strategy == GotoStrategy.TRAMPOLINE
+            and ctx.state_vars
+            and not ctx.uses_dynamic_locals
+        ):
+            for var_name in sorted(ctx.state_vars):
+                py_name = translate_name(var_name)
+                ctx.emitter.line(
+                    f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
+                )
 
 
 def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:

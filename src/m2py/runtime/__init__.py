@@ -1898,6 +1898,34 @@ class MUMPSRuntime:
                 return 0
         return m_data(arr, tuple(str(s) for s in subs))
 
+    def get_order(self, name: str, _scope: Dict[str, Any], direction: int = 1) -> str:
+        """Get $ORDER value for variable by name (indirection support).
+
+        Args:
+            name: Variable name with subscripts, e.g. "A(1)", "^G(sub)"
+            _scope: Current scope dictionary
+            direction: 1 for forward, -1 for reverse
+
+        Returns:
+            Next subscript in collation order, or "" if no more
+        """
+        from m2py.runtime.helpers import m_order, m_order_global
+
+        if not name:
+            return ""
+
+        base_name, subscripts = _parse_subscripted_name(name)
+        subs = tuple(str(s) for s in subscripts) if subscripts else ("",)
+
+        if base_name.startswith("^"):
+            key = base_name[1:]
+            return m_order_global(self._globals, key, subs, direction)
+
+        arr = _scope.get(base_name, MArray())
+        if not isinstance(arr, MArray):
+            return ""
+        return m_order(arr, subs, direction)
+
     def get_var(self, name: str, _scope: Dict[str, Any]) -> Any:
         """Get variable value by name (name indirection).
 
@@ -2554,8 +2582,12 @@ class MUMPSRuntime:
         lines = mumps_code.strip().split("\n")
         first_line = lines[0].strip()
 
-        # If first line starts with a command (space or tab), wrap it
-        if first_line and (first_line[0].isspace() or first_line[0] in "SWRKQIDG"):
+        # If first line starts with a command (space or tab, or command letter), wrap it
+        # Common MUMPS commands (case-insensitive)
+        command_letters = "SWRKQIDGNFXMEHUCO"
+        if first_line and (
+            first_line[0].isspace() or first_line[0].upper() in command_letters
+        ):
             # Wrap in a temporary routine with label
             wrapped_code = "XECUTE " + mumps_code.strip() + " Q"
         else:
@@ -2674,13 +2706,20 @@ class MUMPSRuntime:
 
             # Call entry point if found
             # Phase 13 (T076): Entry point functions now require _rt as first parameter
+            # T075b: Use run_with_goto_support to handle external GOTOs
             if entry_point and entry_point in namespace:
                 func = namespace[entry_point]
                 if callable(func):
-                    if entry_args:
-                        func(self, *entry_args)
-                    else:
-                        func(self)
+                    _scope: dict = {}
+
+                    # Define wrapper function (avoid lambda per E731)
+                    def wrapped_func(_rt: "MUMPSRuntime", _scope: dict = _scope) -> Any:
+                        if entry_args:
+                            return func(_rt, *entry_args, _scope=_scope)
+                        return func(_rt, _scope=_scope)
+
+                    # Use run_with_goto_support to handle G ^ROUTINE patterns
+                    run_with_goto_support(wrapped_func, self, _scope)
 
             # Get final $TEST value
             test_value = namespace.get("_test", False)

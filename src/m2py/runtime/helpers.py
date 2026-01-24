@@ -19,6 +19,7 @@ These helpers are imported in generated code and called at runtime.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Tuple
 
 if TYPE_CHECKING:
@@ -38,13 +39,13 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
     - sort_value: the value to compare within the type
 
     Args:
-        value: A subscript value (string, int, or float)
+        value: A subscript value (string, int, float, or Decimal)
 
     Returns:
         Tuple for comparison in sorted()
     """
-    # Check if value is numeric (can be int, float, or numeric string)
-    if isinstance(value, (int, float)):
+    # Check if value is numeric (can be int, float, Decimal, or numeric string)
+    if isinstance(value, (int, float, Decimal)):
         return (0, float(value))
 
     # Try to parse string as a number
@@ -85,11 +86,28 @@ def m_format_output(value: Any) -> str:
         m_format_output(-0.5) → "-.5"
         m_format_output(3.14) → "3.14"
         m_format_output(Decimal("1E2")) → "100"
+        m_format_output("0.5") → ".5"  # Numeric strings also formatted
     """
-    from decimal import Decimal
+    import re
+    from decimal import Decimal, InvalidOperation
 
-    # If not numeric, just convert to string
+    # If string, try to parse as number ONLY if it looks like a MUMPS canonical number
+    # Pattern: optional leading minus, optional digits, optional decimal point with digits
+    # Examples: "123", "-45", "0.5", ".5", "-.5", "-0.5"
+    # NOT: "+42", "1E5", "   12", "12   ", etc.
     if isinstance(value, str):
+        # Only canonicalize strings that look like MUMPS numbers:
+        # - No leading/trailing whitespace
+        # - Optional leading minus (not plus)
+        # - At least one digit somewhere
+        # - No scientific notation (e, E)
+        if value and re.match(r"^-?(\d+\.?\d*|\.\d+)$", value):
+            try:
+                d = Decimal(value)
+                # Recursively format the parsed number
+                return m_format_output(d)
+            except InvalidOperation:
+                pass
         return value
 
     if isinstance(value, bool):
@@ -463,7 +481,7 @@ def m_order(
 
     if start_key == "":
         # Empty string means get first key in the current direction
-        return str(keys[0]) if keys else ""
+        return m_format_output(keys[0]) if keys else ""
 
     # Find the next key after start_key
     # First, locate start_key in the sorted list
@@ -474,11 +492,11 @@ def m_order(
         if direction == 1:
             # Forward: find first key greater than start_key
             if key_sort > start_sort_key:
-                return str(key)
+                return m_format_output(key)
         else:
             # Reverse: find first key less than start_key
             if key_sort < start_sort_key:
-                return str(key)
+                return m_format_output(key)
 
     return ""
 
@@ -666,20 +684,26 @@ def m_piece(
         m_piece("A^B^C", "^", 2, 3) → "B^C"
         m_piece("A^B^C", "^", 4) → ""
         m_piece("A::B::C", "::", 2) → "B"
+        m_piece("A^B^C", "^", -1, 2) → "A^B" (negative from_pos clamps to 1)
+        m_piece("A^B^C", "^", 0, 2) → "A^B" (zero from_pos clamps to 1)
 
     Note:
-        - Piece numbers <= 0 return empty string
+        - Single-arg piece numbers <= 0 return empty string
+        - Range with from_pos <= 0 but valid to_pos clamps from_pos to 1
         - Multi-character delimiters are supported
         - Empty delimiter returns empty string (edge case)
     """
-    # Handle edge cases
-    if from_pos <= 0:
-        return ""
-
     if to_pos is None:
         to_pos = from_pos
+        # Single piece: positions <= 0 return empty string
+        if from_pos <= 0:
+            return ""
+    else:
+        # Range extraction: clamp from_pos to 1 if <= 0
+        if from_pos <= 0:
+            from_pos = 1
 
-    # Invalid range
+    # Invalid range (to_pos < from_pos after clamping)
     if to_pos < from_pos:
         return ""
 
@@ -1225,7 +1249,7 @@ def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
             formatted = int_with_commas
 
     # Handle sign formatting based on codes
-    # Priority: P > - > T > + > default
+    # Priority: P > - > (T with +) > T > + > default
     if "P" in codes_upper:
         # Parentheses for negative, space padding for positive
         if is_negative:
@@ -1236,10 +1260,14 @@ def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
         # Suppress the minus sign on negative values (return absolute value)
         return formatted
     elif "T" in codes_upper:
-        # Trailing sign: space for positive, - for negative
+        # Trailing sign
         if is_negative:
             return f"{formatted}-"
+        elif "+" in codes_upper:
+            # +T combination: trailing + for positive
+            return f"{formatted}+"
         else:
+            # T alone: trailing space for positive
             return f"{formatted} "
     elif "+" in codes_upper:
         # Force + sign for positive

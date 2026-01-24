@@ -39,8 +39,9 @@ class TestMUMPSRuntimeBasic:
 
         rt = MUMPSRuntime()
         # Phase 13 (T076): Functions now require _rt as first parameter
+        # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt):
+def TEST(_rt, _scope=None, **_kwargs):
     global _test
     _rt.write("PASS")
 
@@ -57,8 +58,9 @@ _test = False
 
         rt = MUMPSRuntime()
         # Phase 13 (T076): Functions now require _rt as first parameter
+        # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt):
+def TEST(_rt, _scope=None, **_kwargs):
     global _test
     _test = True
 
@@ -74,8 +76,9 @@ _test = False
 
         rt = MUMPSRuntime()
         # Phase 13 (T076): Functions now require _rt as first parameter
+        # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt):
+def TEST(_rt, _scope=None, **_kwargs):
     global _test
     raise ValueError("intentional error")
 
@@ -91,12 +94,13 @@ _test = False
 
         rt = MUMPSRuntime()
         # Phase 13 (T076): Functions now require _rt as first parameter
+        # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt):
+def TEST(_rt, _scope=None, **_kwargs):
     global _test
     _rt.write("FIRST")
 
-def OTHER(_rt):
+def OTHER(_rt, _scope=None, **_kwargs):
     global _test
     _rt.write("OTHER")
 
@@ -112,8 +116,9 @@ _test = False
 
         rt = MUMPSRuntime()
         # Phase 13 (T076): Functions now require _rt as first parameter
+        # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt):
+def TEST(_rt, _scope=None, **_kwargs):
     global _test
     _rt.write("test")
 
@@ -922,3 +927,136 @@ class TestZWriteFormatting:
         output = rt.get_output()
         # String subscript should be quoted
         assert '^x("1E60",1)=23' in output
+
+
+@pytest.mark.runtime
+class TestGetOrderMethod:
+    """Tests for MUMPSRuntime.get_order() - $ORDER with indirection support.
+
+    T075b: Added get_order() method to support $O(@X) indirection patterns.
+    This method resolves variable names at runtime and performs $ORDER.
+    """
+
+    def test_get_order_local_array_first(self):
+        """get_order("A(\"\")", _scope) returns first subscript."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[1] = "one"
+        arr[2] = "two"
+        arr[3] = "three"
+        _scope = {"A": arr}
+
+        result = rt.get_order('A("")', _scope, 1)
+        assert result == "1"
+
+    def test_get_order_local_array_next(self):
+        """get_order("A(1)", _scope) returns next subscript after 1."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[1] = "one"
+        arr[2] = "two"
+        _scope = {"A": arr}
+
+        result = rt.get_order("A(1)", _scope, 1)
+        assert result == "2"
+
+    def test_get_order_local_array_last(self):
+        """get_order at last subscript returns empty string."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[1] = "one"
+        _scope = {"A": arr}
+
+        result = rt.get_order("A(1)", _scope, 1)
+        assert result == ""
+
+    def test_get_order_local_array_reverse(self):
+        """get_order with direction -1 returns previous subscript."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[1] = "one"
+        arr[2] = "two"
+        arr[3] = "three"
+        _scope = {"A": arr}
+
+        result = rt.get_order("A(2)", _scope, -1)
+        assert result == "1"
+
+    def test_get_order_undefined_array(self):
+        """get_order on undefined variable returns empty string."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        _scope = {}
+
+        result = rt.get_order('UNDEF("")', _scope, 1)
+        assert result == ""
+
+    def test_get_order_non_array_returns_empty(self):
+        """get_order on non-array variable returns empty string."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        _scope = {"X": "scalar"}
+
+        result = rt.get_order('X("")', _scope, 1)
+        assert result == ""
+
+    def test_get_order_global_array(self):
+        """get_order("^G(\"\")", _scope) works for globals."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt.globals.set("G", ("1",), "value1")
+        rt.globals.set("G", ("2",), "value2")
+        _scope = {}
+
+        result = rt.get_order('^G("")', _scope, 1)
+        assert result == "1"
+
+    def test_get_order_global_next_subscript(self):
+        """get_order on global returns next subscript."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt.globals.set("G", ("A",), "a")
+        rt.globals.set("G", ("B",), "b")
+        _scope = {}
+
+        result = rt.get_order('^G("A")', _scope, 1)
+        assert result == "B"
+
+    def test_get_order_empty_name_returns_empty(self):
+        """get_order with empty name returns empty string."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        _scope = {}
+
+        result = rt.get_order("", _scope, 1)
+        assert result == ""
+
+    def test_get_order_numeric_collation(self):
+        """get_order respects MUMPS numeric collation."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr["1"] = "one"
+        arr["10"] = "ten"
+        arr["2"] = "two"
+        _scope = {"A": arr}
+
+        # Numeric collation: 1 < 2 < 10
+        result = rt.get_order("A(1)", _scope, 1)
+        assert result == "2"
+        result = rt.get_order("A(2)", _scope, 1)
+        assert result == "10"

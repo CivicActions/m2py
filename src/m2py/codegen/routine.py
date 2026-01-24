@@ -763,6 +763,20 @@ class RoutineGenerator:
                 # T030: Initialize _scope if not provided (entry point behavior)
                 ctx.emitter.line("_scope = _scope if _scope is not None else {}")
                 ctx.emitter.line("state = RoutineState()")
+                # T075b: Initialize state from _scope for cross-routine visibility
+                # When called from another routine, variables may already exist in _scope
+                if ctx.uses_dynamic_locals:
+                    # For dynamic locals, copy _scope into state._locals
+                    ctx.emitter.line(
+                        "state._locals.update({k: v for k, v in _scope.items()})"
+                    )
+                else:
+                    for var_name in sorted(ctx.state_vars):
+                        py_name = translate_name(var_name)
+                        # Check if variable exists in _scope and initialize from it
+                        ctx.emitter.line(
+                            f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
+                        )
                 # Spec 007 (T018): Target can be str (label) or int (line number)
                 ctx.emitter.line(f'target: str | int | None = "{entry_label}"')
                 ctx.emitter.blank()
@@ -806,6 +820,16 @@ class RoutineGenerator:
                             )
                         ctx.emitter.line("raise  # Propagate to caller")
                 ctx.emitter.blank()
+                # T075b: Sync state back to _scope before returning for cross-routine visibility
+                if ctx.uses_dynamic_locals:
+                    # For dynamic locals, copy state._locals back to _scope
+                    ctx.emitter.line(
+                        "_scope.update({k: v for k, v in state._locals.items()})"
+                    )
+                else:
+                    for var_name in sorted(ctx.state_vars):
+                        py_name = translate_name(var_name)
+                        ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
                 ctx.emitter.line("return state")
             ctx.emitter.blank()
 
@@ -835,6 +859,19 @@ class RoutineGenerator:
                 ctx.emitter.line("_scope = _scope if _scope is not None else {}")
                 ctx.emitter.line("state = RoutineState()")
 
+                # T075b: Initialize state from _scope for cross-routine visibility
+                if ctx.uses_dynamic_locals:
+                    # For dynamic locals, copy _scope into state._locals
+                    ctx.emitter.line(
+                        "state._locals.update({k: v for k, v in _scope.items()})"
+                    )
+                else:
+                    for var_name in sorted(ctx.state_vars):
+                        py_name = translate_name(var_name)
+                        ctx.emitter.line(
+                            f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
+                        )
+
                 # Call internal function and get next target
                 if args_str:
                     ctx.emitter.line(
@@ -851,6 +888,16 @@ class RoutineGenerator:
                     ctx.emitter.line("func = _labels[target]")
                     ctx.emitter.line("target, state = func(_rt, state, _scope)")
 
+                # T075b: Sync state back to _scope before returning
+                if ctx.uses_dynamic_locals:
+                    # For dynamic locals, copy state._locals back to _scope
+                    ctx.emitter.line(
+                        "_scope.update({k: v for k, v in state._locals.items()})"
+                    )
+                else:
+                    for var_name in sorted(ctx.state_vars):
+                        py_name = translate_name(var_name)
+                        ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
                 ctx.emitter.line("return state")
             ctx.emitter.blank()
 

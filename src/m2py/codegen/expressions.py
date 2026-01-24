@@ -17,6 +17,7 @@ from m2py.asg.expressions import (
     MExpr,
     MExternalFunction,
     MExtrinsicFunction,
+    MGlobal,
     MIndirection,
     MIntrinsicFunction,
     MLiteral,
@@ -142,7 +143,9 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_literal(expr)
     elif isinstance(expr, MVariable):
         return _generate_variable(expr, ctx)
-    elif isinstance(expr, GlobalVariable):
+    # Check MGlobal before GlobalVariable since GlobalVariable inherits from MGlobal
+    # and MGlobal can appear directly in some contexts (e.g., GOTO offsets)
+    elif isinstance(expr, MGlobal):
         return _generate_global_variable(expr, ctx)
     elif isinstance(expr, NakedGlobal):
         return _generate_naked_global_variable(expr, ctx)
@@ -283,13 +286,13 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     return python_name
 
 
-def _generate_global_variable(var: GlobalVariable, ctx: "GeneratorContext") -> str:
+def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     """Generate Python expression for global variable READ.
 
     Spec 009 (T027): Generate _rt.globals.get() call for global variable reads.
 
     Args:
-        var: GlobalVariable node
+        var: MGlobal or GlobalVariable node (GlobalVariable inherits from MGlobal)
         ctx: Generator context
 
     Returns:
@@ -297,7 +300,17 @@ def _generate_global_variable(var: GlobalVariable, ctx: "GeneratorContext") -> s
 
     The generated code reads from the global storage backend and returns
     empty string for undefined globals (MUMPS implicit $GET semantics).
+
+    Raises:
+        NotImplementedError: For extended globals (^|env| or ^[gld]) which have
+        an environment field - these are not yet implemented.
     """
+    # Check for extended global references (not yet supported)
+    if hasattr(var, "environment") and var.environment is not None:
+        raise NotImplementedError(
+            f"Extended global references not implemented: {type(var).__name__}"
+        )
+
     # Get global name (without caret)
     global_name = var.name
 
@@ -446,8 +459,8 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("JOB", "J"):
         return "_rt.job()"
 
-    # $IO - current I/O device
-    if name == "IO":
+    # $IO / $I - current I/O device
+    if name in ("IO", "I"):
         return "_rt.io()"
 
     # $X - current column position
@@ -669,8 +682,9 @@ def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str
     elif expr.compiled_regex is not None:
         # Direct pattern with pre-compiled regex - inline the fullmatch call
         # Use re.DOTALL so E pattern code matches newlines per MUMPS spec
+        # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
         regex = repr(expr.compiled_regex)
-        result = f"(1 if re.fullmatch({regex}, str({subject}), re.DOTALL) else 0)"
+        result = f"(1 if re.fullmatch({regex}, m_str({subject}), re.DOTALL) else 0)"
     else:
         # Direct pattern without compiled regex (shouldn't happen normally)
         # Fall back to runtime helper
@@ -1142,7 +1156,9 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $O(A(1)) → m_order(_scope.get('A', MArray()), (str(1),))
         $O(A(""),-1) → m_order(_scope.get('A', MArray()), ("",), -1)
         $O(^G("")) → m_order_global(_rt.globals, 'G', ("",))
+        $O(@X) → _rt.get_order(X_value, _scope, direction)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get arguments
@@ -1158,7 +1174,54 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     if len(args) >= 2:
         direction_code = generate_expr(args[1], ctx)
 
-    # Generate subscript tuple
+    # Handle MIndirection: $O(@X) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        from m2py.codegen.indirection import _count_indirection_levels
+
+        levels, inner_expr = _count_indirection_levels(var)
+
+        # Build subscript expressions from name_indirection_subscripts if present
+        # For $O(@X@(1)), we need to append the extra subscripts to the resolved name
+        if var.name_indirection_subscripts:
+            all_subs = []
+            for sub_list in var.name_indirection_subscripts:
+                sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+                all_subs.extend(sub_exprs)
+            # Build f-string to append subscripts: f'({sub1}, {sub2})'
+            if len(all_subs) == 1:
+                subs_fstr = f"f'({{{all_subs[0]}}})'"
+            else:
+                subs_parts = ", ".join(f"{{{s}}}" for s in all_subs)
+                subs_fstr = f"f'({subs_parts})'"
+            # We'll append these subscripts to the resolved name
+            append_subs = f" + {subs_fstr}"
+        else:
+            append_subs = ""
+
+        # Generate the variable name resolution
+        from m2py.asg.expressions import MVariable
+        from m2py.parser.textx_classes import LocalVariable as MLocalVariable
+
+        if isinstance(inner_expr, GlobalVariable):
+            # Global variable as indirection source: @^V reads ^V value
+            global_name = inner_expr.name
+            name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+        elif isinstance(inner_expr, (MVariable, MLocalVariable)):
+            base_name = inner_expr.name
+            if levels > 1:
+                name_expr = (
+                    f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
+                )
+            else:
+                name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
+        else:
+            name_expr_base = generate_expr(inner_expr, ctx)
+            name_expr = f"str({name_expr_base})"
+
+        # Use _rt.get_order which handles indirected variable names
+        return f"_rt.get_order({name_expr}{append_subs}, _scope, {direction_code})"
+
+    # Generate subscript tuple for non-indirection cases
     # For $ORDER, subscripts include the starting point for iteration
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
@@ -1435,14 +1498,15 @@ def _gen_length(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # First argument is the string
     string_expr = generate_expr(args[0], ctx)
 
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) == 1:
         # Single argument - character count
-        return f"len(str({string_expr}))"
+        return f"len(m_str({string_expr}))"
     else:
         # Two arguments - piece count
         # Piece count = delimiter occurrences + 1
         delimiter_expr = generate_expr(args[1], ctx)
-        return f"(str({string_expr}).count(str({delimiter_expr})) + 1)"
+        return f"(m_str({string_expr}).count(m_str({delimiter_expr})) + 1)"
 
 
 def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1481,11 +1545,12 @@ def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     else:
         from_expr = "1"
 
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) >= 4:
         to_expr = generate_expr(args[3], ctx)
-        return f"m_piece(str({string_expr}), str({delimiter_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
+        return f"m_piece(m_str({string_expr}), m_str({delimiter_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
     else:
-        return f"m_piece(str({string_expr}), str({delimiter_expr}), int(m_num({from_expr})))"
+        return f"m_piece(m_str({string_expr}), m_str({delimiter_expr}), int(m_num({from_expr})))"
 
 
 def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1518,16 +1583,17 @@ def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     if len(args) == 1:
         # $E(string) - default to first character
-        return f"m_extract(str({string_expr}), 1, 1)"
+        # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
+        return f"m_extract(m_str({string_expr}), 1, 1)"
     elif len(args) == 2:
         # $E(string, from) - single character at position from
         from_expr = generate_expr(args[1], ctx)
-        return f"m_extract(str({string_expr}), int(m_num({from_expr})), int(m_num({from_expr})))"
+        return f"m_extract(m_str({string_expr}), int(m_num({from_expr})), int(m_num({from_expr})))"
     else:
         # $E(string, from, to) - substring
         from_expr = generate_expr(args[1], ctx)
         to_expr = generate_expr(args[2], ctx)
-        return f"m_extract(str({string_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
+        return f"m_extract(m_str({string_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
 
 
 def _gen_find(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1558,13 +1624,12 @@ def _gen_find(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     string_expr = generate_expr(args[0], ctx)
     target_expr = generate_expr(args[1], ctx)
 
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) >= 3:
         start_expr = generate_expr(args[2], ctx)
-        return (
-            f"m_find(str({string_expr}), str({target_expr}), int(m_num({start_expr})))"
-        )
+        return f"m_find(m_str({string_expr}), m_str({target_expr}), int(m_num({start_expr})))"
     else:
-        return f"m_find(str({string_expr}), str({target_expr}), 1)"
+        return f"m_find(m_str({string_expr}), m_str({target_expr}), 1)"
 
 
 def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1594,19 +1659,22 @@ def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     if len(args) < 2:
         # Not enough arguments - return original string
         if args:
-            return f"str({generate_expr(args[0], ctx)})"
+            return f"m_str({generate_expr(args[0], ctx)})"
         return '""'
 
     string_expr = generate_expr(args[0], ctx)
     from_expr = generate_expr(args[1], ctx)
 
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) >= 3:
         to_expr = generate_expr(args[2], ctx)
         # Build translation table with replacement
-        return f"str({string_expr}).translate(str.maketrans(str({from_expr}), str({to_expr}).ljust(len(str({from_expr})), chr(0)), ''.join(chr(0) if i < len(str({to_expr})) else c for i, c in enumerate(str({from_expr})))))"
+        return f"m_str({string_expr}).translate(str.maketrans(m_str({from_expr}), m_str({to_expr}).ljust(len(m_str({from_expr})), chr(0)), ''.join(chr(0) if i < len(m_str({to_expr})) else c for i, c in enumerate(m_str({from_expr})))))"
     else:
         # No 'to' argument - delete all characters in 'from'
-        return f"str({string_expr}).translate(str.maketrans('', '', str({from_expr})))"
+        return (
+            f"m_str({string_expr}).translate(str.maketrans('', '', m_str({from_expr})))"
+        )
 
 
 def _gen_ascii(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1637,13 +1705,14 @@ def _gen_ascii(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     string_expr = generate_expr(args[0], ctx)
 
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) >= 2:
         pos_expr = generate_expr(args[1], ctx)
         # 1-indexed position, -1 if out of range
-        return f"(ord(str({string_expr})[int(m_num({pos_expr}))-1]) if 0 < int(m_num({pos_expr})) <= len(str({string_expr})) else -1)"
+        return f"(ord(m_str({string_expr})[int(m_num({pos_expr}))-1]) if 0 < int(m_num({pos_expr})) <= len(m_str({string_expr})) else -1)"
     else:
         # Default position 1 (first character)
-        return f"(ord(str({string_expr})[0]) if str({string_expr}) else -1)"
+        return f"(ord(m_str({string_expr})[0]) if m_str({string_expr}) else -1)"
 
 
 def _gen_char(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:

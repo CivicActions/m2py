@@ -93,6 +93,9 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     "char": "LIM-015",
     "fifo": "LIM-015",
     "zprev": "LIM-015",
+    # basic suite - $ZPOSITION special variable
+    "new": "LIM-015",
+    "kill1": "LIM-015",
     # basic suite - outref requires ZTRAP external routines (ztvref*, zticmd*)
     "order": "LIM-015",
     # mugj suite - $ZVERSION function
@@ -116,6 +119,21 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     # LIM-019: Arithmetic precision edge cases
     # basic suite - arith test has 18-digit boundary precision differences
     "arith": "LIM-019",
+    # LIM-015: Interactive debugger / Z-extensions
+    # basic suite - BREAK command requires YDB interactive debugger
+    "v1br": "LIM-015",
+    # LIM-020: YDB-specific numeric overflow behavior
+    # basic suite - tests YDB error handling for numbers >1E47
+    "largeexp2": "LIM-020",
+    "largeexp3": "LIM-020",
+    # LIM-021: File I/O with YDB device parameters
+    # basic suite - OPEN with YDB-specific device parameters
+    "iowrite": "LIM-021",
+    # LIM-022: YDB test harness infrastructure
+    # basic suite - requires YDB JOBLABOFF / test harness
+    "stpfail": "LIM-022",
+    # basic suite - requires ^ASW database pre-populated
+    "per02397": "LIM-022",
 }
 
 
@@ -285,6 +303,7 @@ def _run_m2py_worker(
             These are transpiled and injected into sys.modules before execution.
     """
     try:
+        import re
         import sys
         import types
 
@@ -298,13 +317,29 @@ def _run_m2py_worker(
 
                 # Create a module and execute the generated code in it
                 module = types.ModuleType(routine_name)
-                exec(helper_code, module.__dict__)
 
-                # Inject into sys.modules so "import routine_name" will find it
+                # IMPORTANT: Inject into sys.modules BEFORE executing
+                # This is needed because the generated code may define dataclasses,
+                # and the @dataclass decorator looks up the module via sys.modules
                 sys.modules[routine_name] = module
+
+                exec(helper_code, module.__dict__)
 
         # Generate Python code for main routine
         python_code = generate_python(source)
+
+        # T075b: Extract routine name and inject main routine into sys.modules
+        # This enables helper routines to GOTO back to the main routine
+        # (e.g., V1SEQ1.E5 does G A7902^V1SEQ)
+        routine_name_match = re.search(
+            r'^_routine_name\s*=\s*["\'](\w+)["\']', python_code, re.MULTILINE
+        )
+        main_routine_name = None
+        if routine_name_match:
+            main_routine_name = routine_name_match.group(1)
+            main_module = types.ModuleType(main_routine_name)
+            sys.modules[main_routine_name] = main_module
+            exec(python_code, main_module.__dict__)
 
         # Parse args string into tuple if provided (e.g., "18" -> (18,))
         entry_args = None
@@ -327,14 +362,58 @@ def _run_m2py_worker(
 
         # Execute and capture output
         runtime = MUMPSRuntime()
+
+        # T075b: If main routine was injected as a module, execute via the module
+        # This ensures the module namespace is shared for mutual recursion
+        if main_routine_name and main_routine_name in sys.modules:
+            main_module = sys.modules[main_routine_name]
+            # Get the entry function
+            entry_func = getattr(main_module, main_routine_name, None)
+            if entry_func and callable(entry_func):
+                runtime._capture_output = True
+                runtime.clear()
+                _scope: dict = {}
+                try:
+                    from m2py.runtime import run_with_goto_support
+
+                    # Define wrapper function (avoid lambda per E731)
+                    def wrapped_func(_rt, _scope=_scope):
+                        if entry_args:
+                            return entry_func(_rt, *entry_args, _scope=_scope)
+                        return entry_func(_rt, _scope=_scope)
+
+                    run_with_goto_support(wrapped_func, runtime, _scope)
+                    result_queue.put(
+                        ExecutionResult(
+                            output=runtime.get_output(), success=True, error=None
+                        )
+                    )
+                except Exception as e:
+                    result_queue.put(
+                        ExecutionResult(
+                            output=runtime.get_output(), success=False, error=str(e)
+                        )
+                    )
+                return
+
+        # Fallback to standard execute() if module injection failed
         result = runtime.execute(
             python_code, capture_output=True, entry_args=entry_args
         )
 
-        result_queue.put(ExecutionResult(output=result.output, success=result.success))
-    except Exception as e:
         result_queue.put(
-            ExecutionResult(output="", success=False, error=f"{type(e).__name__}: {e}")
+            ExecutionResult(
+                output=result.output, success=result.success, error=result.error
+            )
+        )
+    except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        result_queue.put(
+            ExecutionResult(
+                output="", success=False, error=f"{type(e).__name__}: {e}\n{tb}"
+            )
         )
 
 

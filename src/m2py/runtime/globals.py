@@ -18,7 +18,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 # Spec 010: Import collation key and query helper for $ORDER/$QUERY
-from m2py.runtime.helpers import _mumps_collation_key, _find_next_valued_node
+from m2py.runtime.helpers import (
+    _mumps_collation_key,
+    _find_next_valued_node,
+    m_format_output,
+)
 
 if TYPE_CHECKING:
     from m2py.runtime import MArray
@@ -436,12 +440,13 @@ class InMemoryGlobalStorage:
         self._transaction_snapshots: list[dict[str, MArray]] = []
 
     def _canonicalize_subscript(self, subscript: str | int | float) -> str:
-        """Convert subscript to canonical string form.
+        """Convert subscript to MUMPS canonical string form.
 
         MUMPS subscripts are always strings internally. Numbers are
-        converted to their canonical string representation.
+        converted to their MUMPS canonical string representation
+        (e.g., 0.001 → ".001", 1.0 → "1").
         """
-        return str(subscript)
+        return m_format_output(subscript)
 
     def _canonicalize_subscripts(
         self, subscripts: tuple[str | int | float, ...]
@@ -648,7 +653,7 @@ class InMemoryGlobalStorage:
 
         if start_key == "":
             # Empty string means get first key in current direction
-            return keys[0] if keys else ""
+            return m_format_output(keys[0]) if keys else ""
 
         # Find next key after start_key in collation order
         start_sort_key = _mumps_collation_key(start_key)
@@ -658,11 +663,11 @@ class InMemoryGlobalStorage:
             if direction == 1:
                 # Forward: find first key greater than start_key
                 if key_sort > start_sort_key:
-                    return str(key)
+                    return m_format_output(key)
             else:
                 # Reverse: find first key less than start_key
                 if key_sort < start_sort_key:
-                    return str(key)
+                    return m_format_output(key)
 
         return ""
 
