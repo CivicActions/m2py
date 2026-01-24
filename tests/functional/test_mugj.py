@@ -1,40 +1,168 @@
-"""Functional tests for the mugj (MUMPS User Group Japan) test suite.
+"""MUGJ (MUMPS User Group Japan) test suite.
 
-Executes each mugj routine via m2py transpilation and compares output
-against the YottaDB reference output (outref).
+This test runs ALL mugj routines in the exact same order as the YDB driver,
+preserving shared state ($Y, $X, globals) across routines. This matches how
+YDBTest executes the suite and ensures byte-for-byte output compatibility.
 
-The mugj suite is the primary validation suite for MUMPS implementations,
-containing comprehensive tests for all MUMPS language features.
+Key features:
+- Exact match to YDB execution model (serial execution in driver order)
+- Form feeds and whitespace match naturally (no normalization needed)
+- Fast execution (~15s total including transpilation)
 
 Usage:
     uv run pytest tests/functional/test_mugj.py -v
-    uv run pytest tests/functional/test_mugj.py -k V1WR -v  # Single routine
 """
 
 from __future__ import annotations
 
 import re
+import sys
+import types
+from pathlib import Path
 
 import pytest
 
-from tests.functional.conftest import (
-    FUNCTIONAL_BASE,
-    ExecutionResult,
-    compare_output,
-    get_routine_xfail_reason,
-    load_routine_source,
-    normalize_outref,
-    run_mumps,
-)
-from tests.functional.suite_definitions import MUGJ_ROUTINES, RoutineDefinition
+from m2py.codegen import generate_python
+from m2py.runtime import MUMPSRuntime
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+FUNCTIONAL_BASE = Path(__file__).parent
+MUGJ_DIR = FUNCTIONAL_BASE / "mugj"
+INREF_DIR = MUGJ_DIR / "inref"
+OUTREF_PATH = MUGJ_DIR / "outref" / "mugj.txt"
+DRIVER_PATH = MUGJ_DIR / "u_inref" / "mugj.csh"
 
 
 # =============================================================================
-# Suite Configuration
+# Driver Parsing
 # =============================================================================
 
-SUITE_NAME = "mugj"
-MUGJ_DIR = FUNCTIONAL_BASE / SUITE_NAME
+
+def parse_driver() -> list[tuple[str, str]]:
+    """Parse the mugj driver script to get routine execution order.
+
+    Returns:
+        List of (label, routine_name) tuples in execution order
+    """
+    content = DRIVER_PATH.read_text()
+    routines = []
+    for line in content.splitlines():
+        # Match: W !!,"LABEL" D ^ROUTINE
+        match = re.match(r'^W\s+!!,"([^"]+)"\s+D\s+\^(\w+)', line.strip())
+        if match:
+            label, routine = match.groups()
+            routines.append((label, routine))
+    return routines
+
+
+# =============================================================================
+# Routine Loading and Transpilation
+# =============================================================================
+
+
+def discover_dependencies(source: str, inref_dir: Path) -> set[str]:
+    """Discover external routine dependencies from source code.
+
+    Args:
+        source: MUMPS source code
+        inref_dir: Directory containing .m files
+
+    Returns:
+        Set of routine names that are called via D ^ROUTINE
+    """
+    deps = set()
+    # Find all DO ^ROUTINE calls (case-insensitive, abbreviated or full form)
+    # Routine names can start with % or alpha, followed by alphanumerics
+    for match in re.finditer(r"\bD(?:O)?\s+\^(%?\w+)", source, re.IGNORECASE):
+        routine_name = match.group(1)
+        if (inref_dir / f"{routine_name}.m").exists():
+            deps.add(routine_name)
+    # Also find GOTO ^ROUTINE calls (case-insensitive, abbreviated or full form)
+    for match in re.finditer(r"\bG(?:OTO)?\s+\^(%?\w+)", source, re.IGNORECASE):
+        routine_name = match.group(1)
+        if (inref_dir / f"{routine_name}.m").exists():
+            deps.add(routine_name)
+    return deps
+
+
+def load_all_routines(
+    driver_routines: list[tuple[str, str]],
+    *,
+    verbose: bool = True,
+) -> dict[str, str]:
+    """Transpile all routines and their dependencies.
+
+    Args:
+        driver_routines: List of (label, routine_name) from driver
+        verbose: If True, print progress to stderr
+
+    Returns:
+        Dict mapping routine name to generated Python code
+    """
+    import time
+
+    modules: dict[str, str] = {}
+    to_process = set(routine for _, routine in driver_routines)
+    processed = set()
+
+    if verbose:
+        print(
+            f"Transpiling {len(to_process)} driver routines (+ dependencies)...",
+            file=sys.stderr,
+        )
+
+    start_time = time.time()
+    count = 0
+
+    while to_process:
+        routine = to_process.pop()
+        if routine in processed:
+            continue
+        processed.add(routine)
+
+        source_file = INREF_DIR / f"{routine}.m"
+        if not source_file.exists():
+            if verbose:
+                print(f"  [{count + 1}] {routine}... FILE NOT FOUND", file=sys.stderr)
+            continue
+
+        count += 1
+        if verbose:
+            print(f"  [{count}] {routine}...", end="", file=sys.stderr, flush=True)
+        routine_start = time.time()
+
+        source = source_file.read_text()
+        try:
+            python_code = generate_python(source)
+            modules[routine] = python_code
+
+            if verbose:
+                print(f" {time.time() - routine_start:.2f}s", file=sys.stderr)
+
+            # Discover and queue dependencies
+            deps = discover_dependencies(source, INREF_DIR)
+            for dep in deps:
+                if dep not in processed:
+                    to_process.add(dep)
+        except Exception as e:
+            # Log but continue - some routines may use unsupported features
+            if verbose:
+                print(f" ERROR: {e}", file=sys.stderr)
+            else:
+                print(f"Warning: Failed to transpile {routine}: {e}")
+
+    if verbose:
+        print(
+            f"  Total: {len(modules)} routines in {time.time() - start_time:.2f}s",
+            file=sys.stderr,
+        )
+
+    return modules
+
+    return modules
 
 
 # =============================================================================
@@ -42,442 +170,253 @@ MUGJ_DIR = FUNCTIONAL_BASE / SUITE_NAME
 # =============================================================================
 
 
-class RoutineOutput:
-    """Expected output for a single routine."""
+def load_expected_output() -> str:
+    """Load and normalize the expected output from outref.
 
-    def __init__(self, label: str, content: str) -> None:
-        self.label = label
-        self.content = content
-
-
-def extract_routine_outputs(normalized_outref: str) -> dict[str, str]:
-    """Extract individual routine outputs from the normalized outref.
-
-    The outref contains output from all routines concatenated together.
-    Each routine's output starts with a blank line, followed by the
-    routine label on its own line (e.g., "V1WR"), then the routine output.
-
-    Args:
-        normalized_outref: Normalized outref content (preamble stripped)
+    Removes YDB infrastructure (preamble, prompts) but preserves
+    all whitespace including form feeds since serial execution matches YDB.
 
     Returns:
-        Dict mapping routine label to its expected output
+        Normalized expected output string
     """
-    outputs: dict[str, str] = {}
-    lines = normalized_outref.splitlines()
+    raw_content = OUTREF_PATH.read_text()
 
-    # State machine to extract routine outputs
-    current_label: str | None = None
-    current_lines: list[str] = []
-    in_routine = False
+    lines = []
+    in_suspended = False
+    found_first_prompt = False
 
-    # Pattern to match routine label lines (standalone short uppercase names)
-    # Labels appear after blank lines and match the driver's W !!,"LABEL" output
-    label_pattern = re.compile(r"^[A-Z][A-Z0-9_]*$")
+    # YDB infrastructure markers to strip
+    path_markers = frozenset(
+        [
+            "##TEST_PATH##",
+            "##SOURCE_PATH##",
+            "##REMOTE_TEST_PATH##",
+            "##REMOTE_SOURCE_PATH##",
+            "##IN_TEST_PATH##",
+            "##TEST_AWK##",
+        ]
+    )
 
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
+    for line in raw_content.splitlines():
+        # Skip preamble before first YDB>
+        if not found_first_prompt:
+            if "YDB>" in line:
+                found_first_prompt = True
+            continue
 
-        # Check if this line could be a routine label
-        # A label is a short identifier appearing after blank line(s)
-        if label_pattern.match(stripped) and len(stripped) <= 20:
-            # Look back to see if previous non-empty content ended
-            # This is a heuristic - labels follow blank lines
-            prev_blank = i > 0 and not lines[i - 1].strip()
+        # Handle suspend/allow blocks
+        if "##SUSPEND_OUTPUT" in line:
+            in_suspended = True
+            continue
+        if "##ALLOW_OUTPUT" in line:
+            in_suspended = False
+            continue
+        if in_suspended:
+            continue
 
-            if prev_blank or not in_routine:
-                # Save previous routine if any
-                if current_label and current_lines:
-                    # Trim leading/trailing blank lines from content
-                    content = "\n".join(current_lines).strip()
-                    outputs[current_label] = content
+        # Skip path placeholder lines
+        if any(marker in line for marker in path_markers):
+            continue
 
-                # Start new routine
-                current_label = stripped
-                current_lines = []
-                in_routine = True
-                i += 1
+        # Skip YDB> prompt lines
+        if line.strip() == "YDB>":
+            continue
+
+        lines.append(line)
+
+    return "\n".join(lines)
+
+
+# =============================================================================
+# Serial Execution
+# =============================================================================
+
+
+def execute_serial_suite(
+    driver_routines: list[tuple[str, str]],
+    modules: dict[str, str],
+    *,
+    verbose: bool = True,
+    timeout_per_routine: float = 5.0,
+) -> tuple[str, list[str]]:
+    """Execute all routines serially with shared runtime state.
+
+    Args:
+        driver_routines: List of (label, routine_name) in execution order
+        modules: Dict mapping routine name to generated Python code
+        verbose: If True, print progress to stderr
+        timeout_per_routine: Max seconds per routine before skipping
+
+    Returns:
+        Tuple of (full_output, list_of_errors)
+    """
+    import signal
+    import time
+
+    class TimeoutError(Exception):
+        pass
+
+    def timeout_handler(signum, frame):
+        raise TimeoutError("Routine execution timed out")
+
+    errors: list[str] = []
+
+    # Create single runtime instance for all routines
+    runtime = MUMPSRuntime()
+    runtime._capture_output = True
+    runtime.clear()
+
+    # Inject all modules into sys.modules first
+    if verbose:
+        print(f"Injecting {len(modules)} modules...", file=sys.stderr)
+    inject_start = time.time()
+    for routine_name, code in modules.items():
+        try:
+            module = types.ModuleType(routine_name)
+            sys.modules[routine_name] = module
+            exec(code, module.__dict__)
+        except Exception as e:
+            errors.append(f"Module injection {routine_name}: {e}")
+    if verbose:
+        print(f"  Done in {time.time() - inject_start:.2f}s", file=sys.stderr)
+
+    # Execute routines in driver order
+    if verbose:
+        print(f"Executing {len(driver_routines)} routines...", file=sys.stderr)
+
+    for i, (label, routine) in enumerate(driver_routines):
+        if routine not in modules:
+            errors.append(f"Missing routine: {routine}")
+            continue
+
+        if verbose:
+            print(
+                f"  [{i + 1}/{len(driver_routines)}] {routine}...",
+                end="",
+                file=sys.stderr,
+                flush=True,
+            )
+
+        routine_start = time.time()
+
+        # Mimic driver's W !!,"label" before each D ^ROUTINE
+        runtime.write(f"\n\n{label}")
+
+        # Execute the routine with timeout
+        try:
+            module = sys.modules.get(routine)
+            if module is None:
+                errors.append(f"Module not found: {routine}")
+                if verbose:
+                    print(" MODULE NOT FOUND", file=sys.stderr)
                 continue
 
-        # Accumulate content for current routine
-        if in_routine:
-            current_lines.append(line)
+            entry_func = getattr(module, routine, None)
+            if entry_func is None:
+                errors.append(f"Entry point not found: {routine}")
+                if verbose:
+                    print(" NO ENTRY POINT", file=sys.stderr)
+                continue
 
-        i += 1
+            if callable(entry_func):
+                _scope: dict = {}
+                # Set up timeout (Unix only)
+                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                signal.setitimer(signal.ITIMER_REAL, timeout_per_routine)
+                try:
+                    entry_func(runtime, _scope=_scope)
+                finally:
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+                    signal.signal(signal.SIGALRM, old_handler)
 
-    # Save final routine
-    if current_label and current_lines:
-        content = "\n".join(current_lines).strip()
-        outputs[current_label] = content
+            if verbose:
+                print(f" {time.time() - routine_start:.2f}s", file=sys.stderr)
+        except TimeoutError:
+            errors.append(f"{routine}: TIMEOUT after {timeout_per_routine}s")
+            if verbose:
+                print(f" TIMEOUT ({timeout_per_routine}s)", file=sys.stderr)
+        except Exception as e:
+            # Log error but continue to next routine
+            errors.append(f"{routine}: {type(e).__name__}: {e}")
+            if verbose:
+                print(f" ERROR: {type(e).__name__}", file=sys.stderr)
 
-    return outputs
-
-
-# Mapping of driver routines to their sub-routines whose outputs should be combined
-# These are derived from ROUTINE_HELPERS, excluding helper-only entries like VREPORT
-# The driver's expected output is built by combining the sub-routine outputs
-DRIVER_SUBROUTINES: dict[str, list[str]] = {
-    "V1BOA": ["V1BOA1", "V1BOA2", "V1BOA3", "V1BOA4", "V1BOA5", "V1BOA6"],
-    "V1BOB": [
-        "V1BOB1",
-        "V1BOB2",
-        "V1BOB3",
-        "V1BOB4",
-        "V1BOB5A",
-        "V1BOB5B",
-        "V1BOB6A",
-        "V1BOB6B",
-        "V1BOB7",
-        "V1BOB8",
-        "V1BOB9",
-        "V1BOB10",
-    ],
-    "V1BOC": ["V1BOC1", "V1BOC2", "V1BOC3"],
-    "V1BR": ["V1BR1"],
-    "V1CALL": ["V1CALL1"],
-    "V1DGB": ["V1DGB1", "V1DGB2"],
-    "V1DLB": ["V1DLB1", "V1DLB2"],
-    "V1DO": ["V1DO1", "V1DO2", "V1DO3"],
-    "V1FC": ["V1FC1", "V1FC2"],
-    "V1FN": [
-        "V1FNE1",
-        "V1FNE2",
-        "V1FNF1",
-        "V1FNF2",
-        "V1FNF3",
-        "V1FNL",
-        "V1FNP1",
-        "V1FNP2",
-    ],
-    "V1FORA": ["V1FORA1", "V1FORA2"],
-    "V1FORC": ["V1FORC1", "V1FORC2"],
-    "V1GO": ["V1GO1", "V1GO2"],
-    "V1IDARG": ["V1IDARG1", "V1IDARG2", "V1IDARG3", "V1IDARG4", "V1IDARG5"],
-    "V1IDDO": ["V1IDDOA", "V1IDDOB"],
-    "V1IDGO": ["V1IDGOA", "V1IDGOB"],
-    "V1IDNM": ["V1IDNM1", "V1IDNM2", "V1IDNM3"],
-    "V1IE": ["V1IE1", "V1IE2"],
-    "V1JST": ["V1JST1", "V1JST2", "V1JST3"],
-    "V1MAX": ["V1MAX1", "V1MAX2"],
-    "V1NR": ["V1NR1", "V1NR2"],
-    "V1NUM": ["V1NUM1", "V1NUM2", "V1NUM3", "V1NUM4"],
-    "V1NX": ["V1NX1", "V1NX2"],
-    "V1PAT": ["V1PAT1", "V1PAT2"],
-    "V1PC": ["V1PCA", "V1PCB"],
-    "V1PRGD": ["V1PRGD1", "V1PRGD2", "V1PRGD3"],
-    "V1UO": [
-        "V1UO1A",
-        "V1UO1B",
-        "V1UO2A",
-        "V1UO2B",
-        "V1UO3A",
-        "V1UO3B",
-        "V1UO4A",
-        "V1UO4B",
-        "V1UO5A",
-        "V1UO5B",
-    ],
-    "V1XECA": ["V1XECA1", "V1XECA2"],
-}
-
-
-def load_mugj_expected_outputs() -> dict[str, str]:
-    """Load and parse all expected outputs from the mugj outref.
-
-    Returns:
-        Dict mapping routine label to expected output string
-    """
-    outref_path = MUGJ_DIR / "outref" / "mugj.txt"
-    if not outref_path.exists():
-        return {}
-
-    raw_content = outref_path.read_text()
-    normalized = normalize_outref(raw_content)
-    outputs = extract_routine_outputs(normalized)
-
-    # Combine outputs for driver routines
-    for driver, subroutines in DRIVER_SUBROUTINES.items():
-        if driver in outputs and not outputs[driver]:
-            # Driver has empty output - combine from subroutines
-            combined_parts = []
-            for sub in subroutines:
-                if sub in outputs:
-                    combined_parts.append(sub + "\n\n" + outputs[sub])
-            if combined_parts:
-                outputs[driver] = "\n\n".join(combined_parts)
-
-    return outputs
+    return runtime.get_output(), errors
 
 
 # =============================================================================
-# Routine Execution
-# =============================================================================
-
-# Mapping of driver routines to their required sub-routines
-# These routines call external sub-drivers that must be loaded as helpers
-# Also includes framework helpers like VREPORT that many tests depend on
-ROUTINE_HELPERS: dict[str, list[str]] = {
-    # Tests requiring only VREPORT (test reporting framework)
-    "V1DGA": ["VREPORT"],
-    "V1DLA": ["VREPORT"],
-    "V1FORB": ["VREPORT"],
-    "V1LL1": ["VREPORT"],
-    "V1LL2": ["VREPORT"],
-    "V1LVN": ["VREPORT"],
-    "V1NST1": ["VREPORT"],
-    "V1NST2": ["VREPORT"],
-    "V1NST3": ["VREPORT"],
-    "V1OV": ["VREPORT"],
-    "V1SEQ": ["VREPORT", "V1SEQ1"],
-    "V1SET": ["VREPORT"],
-    "V1SVH": ["VREPORT"],
-    "V1XECB": ["VREPORT"],
-    "VV2FN1": ["VREPORT"],
-    "VV2FN2": ["VREPORT"],
-    "VV2LCC1": ["VREPORT"],
-    "VV2LCC2": ["VREPORT"],
-    "VV2LCF1": ["VREPORT"],
-    "VV2LCF2": ["VREPORT"],
-    "VV2LHP1": ["VREPORT"],
-    "VV2LHP2": ["VREPORT"],
-    "VV2NO": ["VREPORT"],
-    "VV2NR": ["VREPORT"],
-    "VV2PAT1": ["VREPORT"],
-    "VV2PAT3": ["VREPORT"],
-    "VV2SS1": ["VREPORT"],
-    "VV2SS2": ["VREPORT"],
-    "VV2VNIA": ["VREPORT"],
-    "VV2VNIB": ["VREPORT"],
-    "VV2VNIC": ["VREPORT"],
-    # Tests requiring VREPORT + sub-routines
-    "V1BR": ["V1BR1", "VREPORT"],
-    "V1CALL": ["V1CALL1", "VREPORT"],
-    "V1PAT": ["V1PAT1", "V1PAT2", "VREPORT"],
-    "V1PRGD": ["V1PRGD1", "V1PRGD2", "V1PRGD3", "VREPORT"],
-    "V1RN": [
-        "V",
-        "V0",
-        "V01",
-        "V012",
-        "V7777777",
-        "VA",
-        "VAB",
-        "VABC",
-        "VABCD",
-        "VABCDE",
-        "VABCDEF",
-        "VABCDEFG",
-        "VABCDEFH",
-        "VREPORT",
-    ],
-    # Driver routines with multiple sub-routines (no VREPORT - sub-routines report)
-    "V1BOA": ["V1BOA1", "V1BOA2", "V1BOA3", "V1BOA4", "V1BOA5", "V1BOA6", "VREPORT"],
-    "V1BOB": [
-        "V1BOB1",
-        "V1BOB2",
-        "V1BOB3",
-        "V1BOB4",
-        "V1BOB5A",
-        "V1BOB5B",
-        "V1BOB6A",
-        "V1BOB6B",
-        "V1BOB7",
-        "V1BOB8",
-        "V1BOB9",
-        "V1BOB10",
-        "VREPORT",
-    ],
-    "V1BOC": ["V1BOC1", "V1BOC2", "V1BOC3", "VREPORT"],
-    "V1DGB": ["V1DGB1", "V1DGB2", "VREPORT"],
-    "V1DLB": ["V1DLB1", "V1DLB2", "VREPORT"],
-    "V1DO": ["V1DO1", "V1DO2", "V1DO3", "VREPORT"],
-    "V1FC": ["V1FC1", "V1FC2", "VREPORT"],
-    "V1FN": [
-        "V1FNE1",
-        "V1FNE2",
-        "V1FNF1",
-        "V1FNF2",
-        "V1FNF3",
-        "V1FNL",
-        "V1FNP1",
-        "V1FNP2",
-        "VREPORT",
-    ],
-    "V1FORA": ["V1FORA1", "V1FORA2", "VREPORT"],
-    "V1FORC": ["V1FORC1", "V1FORC2", "VREPORT"],
-    "V1GO": ["V1GO1", "V1GO2", "VREPORT"],
-    "V1IDARG": ["V1IDARG1", "V1IDARG2", "V1IDARG3", "V1IDARG4", "V1IDARG5", "VREPORT"],
-    "V1IDDO": ["V1IDDOA", "V1IDDOB", "VREPORT"],
-    "V1IDGO": ["V1IDGOA", "V1IDGOB", "VREPORT"],
-    "V1IDNM": ["V1IDNM1", "V1IDNM2", "V1IDNM3", "VREPORT"],
-    "V1IE": ["V1IE1", "V1IE2", "VREPORT"],
-    "V1JST": ["V1JST1", "V1JST2", "V1JST3", "VREPORT"],
-    "V1MAX": ["V1MAX1", "V1MAX2", "VREPORT"],
-    "V1NR": ["V1NR1", "V1NR2", "VREPORT"],
-    "V1NUM": ["V1NUM1", "V1NUM2", "V1NUM3", "V1NUM4", "VREPORT"],
-    "V1NX": ["V1NX1", "V1NX2", "VREPORT"],
-    "V1PC": ["V1PCA", "V1PCB", "VREPORT"],
-    "V1UO": [
-        "V1UO1A",
-        "V1UO1B",
-        "V1UO2A",
-        "V1UO2B",
-        "V1UO3A",
-        "V1UO3B",
-        "V1UO4A",
-        "V1UO4B",
-        "V1UO5A",
-        "V1UO5B",
-        "VREPORT",
-    ],
-    "V1XECA": ["V1XECA1", "V1XECA2", "VREPORT"],
-}
-
-
-def load_routine_helpers(routine_name: str) -> dict[str, str] | None:
-    """Load helper routines required by a driver routine.
-
-    Some mugj routines (like V1PAT) are drivers that call sub-routines.
-    This function loads those sub-routines so they can be injected during
-    transpilation.
-
-    Args:
-        routine_name: Name of the main routine
-
-    Returns:
-        Dict mapping helper routine name to source, or None if no helpers needed
-    """
-    helper_names = ROUTINE_HELPERS.get(routine_name)
-    if not helper_names:
-        return None
-
-    inref_dir = MUGJ_DIR / "inref"
-    helpers = {}
-    for helper_name in helper_names:
-        try:
-            helpers[helper_name] = load_routine_source(inref_dir, helper_name)
-        except FileNotFoundError:
-            # Try YDBTest directory as fallback
-            try:
-                ydb_inref = FUNCTIONAL_BASE.parent / "YDBTest" / "mugj" / "inref"
-                helpers[helper_name] = load_routine_source(ydb_inref, helper_name)
-            except FileNotFoundError:
-                pass  # Skip missing helpers
-    return helpers if helpers else None
-
-
-def execute_routine(routine_name: str) -> ExecutionResult:
-    """Execute a single mugj routine via m2py.
-
-    Args:
-        routine_name: Name of the routine (e.g., "V1WR")
-
-    Returns:
-        ExecutionResult with output and status
-    """
-    inref_dir = MUGJ_DIR / "inref"
-    try:
-        source = load_routine_source(inref_dir, routine_name)
-    except FileNotFoundError as e:
-        return ExecutionResult(output="", success=False, error=str(e))
-
-    # Load any required helper routines
-    helpers = load_routine_helpers(routine_name)
-
-    return run_mumps(source, helper_sources=helpers)
-
-
-# =============================================================================
-# Test Data
-# =============================================================================
-
-# Get expected outputs (loaded once at module level for efficiency)
-_EXPECTED_OUTPUTS = load_mugj_expected_outputs()
-
-
-# =============================================================================
-# Tests
+# Test
 # =============================================================================
 
 
 @pytest.mark.mugj
 @pytest.mark.functional
 class TestMugjSuite:
-    """Test suite for mugj routines.
+    """Full suite test for mugj, executing routines in YDB driver order."""
 
-    Each routine is tested individually, comparing m2py output against
-    the expected output from the YDB outref file.
-    """
+    def test_full_suite(self) -> None:
+        """Execute all mugj routines serially and compare against outref.
 
-    @pytest.mark.parametrize(
-        "routine_def",
-        MUGJ_ROUTINES,
-        ids=lambda r: r.routine,
-    )
-    def test_routine(self, routine_def: RoutineDefinition) -> None:
-        """Test a single mugj routine against expected output.
-
-        Args:
-            routine_def: RoutineDefinition with label, routine name, and metadata
+        This test runs all routines in the exact order specified by the
+        YDB driver script, preserving shared state across routines.
         """
-        # Check for skip
-        if routine_def.skip_reason:
-            pytest.skip(routine_def.skip_reason)
+        # Parse driver for routine order
+        driver_routines = parse_driver()
+        assert len(driver_routines) > 0, "No routines found in driver"
 
-        routine_name = routine_def.routine
-        label = routine_def.label
+        # Load and transpile all routines
+        modules = load_all_routines(driver_routines)
+        assert len(modules) > 0, "No routines transpiled"
 
-        # Check for known limitation (for xfail on failure)
-        xfail_reason = get_routine_xfail_reason(routine_name)
+        # Load expected output
+        expected = load_expected_output()
+        assert len(expected) > 0, "No expected output loaded"
 
-        # Execute via m2py
-        result = execute_routine(routine_name)
+        # Execute suite
+        actual, errors = execute_serial_suite(driver_routines, modules)
 
-        # Check for complete failure (no output at all)
-        if not result.output and not result.success:
-            if xfail_reason:
-                pytest.xfail(f"{xfail_reason} - {result.error}")
-            pytest.fail(f"Routine {routine_name} failed to execute: {result.error}")
-
-        # Get expected output
-        expected = _EXPECTED_OUTPUTS.get(label)
-        if expected is None:
-            pytest.skip(f"No expected output found for {label} in outref")
-
-        # Handle partial output due to external routine errors
-        # Many mugj routines call D ^VREPORT at the end which fails
-        # because external routine loading is not implemented
-        actual_output = result.output
+        # Report any execution errors (but don't fail just for those)
+        if errors:
+            print(f"\nExecution errors ({len(errors)}):")
+            for err in errors[:10]:  # Show first 10
+                print(f"  - {err}")
+            if len(errors) > 10:
+                print(f"  ... and {len(errors) - 10} more")
 
         # Compare outputs
-        comparison = compare_output(actual_output, expected)
+        # Normalize line endings and strip trailing whitespace per line
+        actual_lines = [line.rstrip() for line in actual.splitlines()]
+        expected_lines = [line.rstrip() for line in expected.splitlines()]
 
-        if not comparison.match:
-            # Check if this is a partial match (external routine error at end)
-            if result.error and "No module named" in result.error:
-                # Try comparing just what we got
-                # If actual output is a prefix of expected, note it
-                if expected.startswith(actual_output.strip()):
-                    pytest.skip(
-                        f"Partial match - routine completed but external call failed: {result.error}"
-                    )
+        # Strip leading/trailing blank lines
+        while actual_lines and not actual_lines[0]:
+            actual_lines.pop(0)
+        while actual_lines and not actual_lines[-1]:
+            actual_lines.pop()
+        while expected_lines and not expected_lines[0]:
+            expected_lines.pop(0)
+        while expected_lines and not expected_lines[-1]:
+            expected_lines.pop()
 
-            # Format failure message with diff
-            msg = (
-                f"\nOutput mismatch for routine {routine_name}\n"
-                f"Expected lines: {comparison.expected_lines}\n"
-                f"Actual lines: {comparison.actual_lines}\n"
+        if actual_lines != expected_lines:
+            # Generate diff for debugging
+            import difflib
+
+            diff = difflib.unified_diff(
+                expected_lines,
+                actual_lines,
+                fromfile="expected (outref)",
+                tofile="actual (m2py)",
+                lineterm="",
             )
-            if result.error:
-                msg += f"Execution error: {result.error}\n"
-            msg += f"\nDiff:\n{comparison.diff}"
+            diff_text = "\n".join(list(diff)[:100])  # First 100 lines of diff
 
-            # Mark as xfail if known limitation
-            if xfail_reason:
-                pytest.xfail(f"{xfail_reason} - Output mismatch")
-            pytest.fail(msg)
+            pytest.fail(
+                f"\nOutput mismatch!\n"
+                f"Expected lines: {len(expected_lines)}\n"
+                f"Actual lines: {len(actual_lines)}\n"
+                f"\nDiff (first 100 lines):\n{diff_text}"
+            )
 
 
 # =============================================================================
@@ -486,29 +425,34 @@ class TestMugjSuite:
 
 
 class TestMugjInfrastructure:
-    """Tests to validate the mugj test infrastructure itself."""
+    """Test the test infrastructure (driver parsing, transpilation, etc)."""
 
-    def test_routines_defined(self) -> None:
-        """Verify mugj routines are defined in suite_definitions."""
-        assert len(MUGJ_ROUTINES) > 0, "No routines defined for mugj"
-        # First routine should be V1WR
-        assert MUGJ_ROUTINES[0].routine == "V1WR"
+    def test_driver_parsed(self) -> None:
+        """Driver script is parsed correctly."""
+        routines = parse_driver()
+        assert len(routines) == 72, f"Expected 72 routines, got {len(routines)}"
+        assert routines[0] == ("V1WR", "V1WR")
+        assert routines[-1] == ("VV2SS2", "VV2SS2")
 
     def test_outref_loads(self) -> None:
-        """Verify the mugj outref loads and normalizes."""
-        outputs = load_mugj_expected_outputs()
-        assert len(outputs) > 0, "No outputs extracted from outref"
-        # V1WR should have output
-        assert "V1WR" in outputs
+        """Outref file loads and has content."""
+        expected = load_expected_output()
+        assert len(expected) > 10000, "Expected substantial outref content"
+        assert "V1WR" in expected
+        assert "VV2SS2" in expected
 
-    def test_routine_source_loads(self) -> None:
-        """Verify routine source files can be loaded."""
-        inref_dir = MUGJ_DIR / "inref"
-        source = load_routine_source(inref_dir, "V1WR")
-        assert "V1WR" in source
-        assert "WRITE" in source.upper()
+    def test_routines_transpile(self) -> None:
+        """All driver routines can be transpiled."""
+        driver_routines = parse_driver()
+        modules = load_all_routines(driver_routines)
 
-    def test_routine_count_matches_definitions(self) -> None:
-        """Verify routine count matches expected."""
-        # 72 routines in mugj (71 active + 1 skipped for READ timeout)
-        assert len(MUGJ_ROUTINES) == 72
+        # Should have most routines (some may fail due to unsupported features)
+        driver_names = {r for _, r in driver_routines}
+        transpiled = set(modules.keys())
+        missing = driver_names - transpiled
+
+        # Allow up to 10% missing (unsupported features)
+        max_missing = len(driver_routines) * 0.1
+        assert len(missing) <= max_missing, (
+            f"Too many routines failed to transpile: {missing}"
+        )

@@ -154,44 +154,36 @@ def get_routine_limitation(routine_name: str) -> str | None:
 # =============================================================================
 
 
-def normalize_outref(content: str) -> str:
+def normalize_outref(content: str, *, normalize_formfeed: bool = True) -> str:
     """Strip YDB infrastructure from outref content.
 
     Removes:
-    - Form feed characters (pagination artifacts from sequential test runs)
-    - Excessive consecutive newlines (pagination artifacts, normalized to max 2)
     - Preamble before first YDB> prompt (dbcreate, GDE, mupip output)
     - Path placeholder lines (##TEST_PATH##, etc.)
     - Conditional output blocks (##SUSPEND_OUTPUT...##ALLOW_OUTPUT)
     - YDB> prompts themselves
 
-    Note: Form feeds are removed because YDBTest runs all routines sequentially
-    in a single session, accumulating $Y. When $Y > 55, routines output form
-    feeds for pagination. Since m2py runs each routine independently, $Y never
-    accumulates enough to trigger these form feeds. The form feed character and
-    surrounding newlines are terminal pagination artifacts.
+    Optionally removes (when normalize_formfeed=True, for per-routine tests):
+    - Form feed pagination artifacts (replaced with double newline)
 
-    The pattern in outref is consistently: \\n\\x0c\\n\\n (newline, form feed,
-    two newlines). We replace this with \\n\\n to preserve the visual spacing
-    that the original code intended (via W !! before the conditional form feed).
-
-    IMPORTANT: We do NOT collapse legitimate multiple newlines (W !!!, W !!!!, etc.)
-    Those are valid MUMPS output that must be preserved exactly.
+    For serial suite execution (matching exact YDB driver behavior), set
+    normalize_formfeed=False to preserve form feeds exactly as in outref.
 
     Args:
         content: Raw outref file content
+        normalize_formfeed: If True, normalize form feed pagination artifacts.
+            Use False for serial execution tests that match YDB's exact output.
 
     Returns:
         Normalized content suitable for comparison with m2py output
     """
     import re
 
-    # Remove form feed pagination artifacts (pattern: \n\x0c\n+ → \n\n)
+    # Optionally remove form feed pagination artifacts (for per-routine tests)
     # Form feed (\x0c) is output by W # when $Y > 55 in EXAMINER subroutines
-    # The pattern in outref is: \n\x0c\n\n (newline, form feed, 1-2 newlines)
-    # We replace with \n\n to preserve visual spacing (the W !! that typically
-    # precedes the conditional form feed would output 2 newlines)
-    content = re.sub(r"\n\x0c\n+", "\n\n", content)
+    # In serial mode, m2py's $Y tracking should match YDB, so form feeds align
+    if normalize_formfeed:
+        content = re.sub(r"\n\x0c\n+", "\n\n", content)
 
     lines = []
     in_suspended = False
@@ -607,32 +599,28 @@ class ComparisonResult(NamedTuple):
     expected_lines: int
 
 
-def normalize_m2py_output(content: str) -> str:
+def normalize_m2py_output(content: str, *, normalize_formfeed: bool = True) -> str:
     """Normalize m2py output for comparison with normalized outref.
 
-    Removes form feed characters and their adjacent newlines, matching
+    Optionally removes form feed characters and adjacent newlines, matching
     the normalization applied to outref content by normalize_outref().
 
-    This is needed because:
-    1. m2py correctly outputs form feeds for W # commands
-    2. The outref has form feeds from pagination (W:$Y>55 #)
-    3. Both are normalized to remove form feeds for comparison
-
-    The actual output from W # in m2py is '\n\x0c' (newline then form feed).
-    After normalization this becomes '\n\n' which matches what the
-    normalized outref expects (preserving visual spacing from W !!).
+    For serial suite execution where form feeds should match exactly,
+    set normalize_formfeed=False.
 
     Args:
         content: Raw m2py output
+        normalize_formfeed: If True, normalize form feeds to double newlines.
+            Use False for serial execution tests that match YDB's exact output.
 
     Returns:
         Normalized content suitable for comparison with normalized outref
     """
     import re
 
-    # Remove form feed and adjacent newlines (same pattern as normalize_outref)
-    # Pattern: \n\x0c\n* → \n\n (preserves visual spacing)
-    content = re.sub(r"\n\x0c\n*", "\n\n", content)
+    # Optionally remove form feed and adjacent newlines
+    if normalize_formfeed:
+        content = re.sub(r"\n\x0c\n*", "\n\n", content)
 
     return content
 
