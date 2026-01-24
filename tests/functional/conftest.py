@@ -158,10 +158,18 @@ def normalize_outref(content: str) -> str:
     """Strip YDB infrastructure from outref content.
 
     Removes:
+    - Form feed characters (pagination artifacts from sequential test runs)
+    - Excessive consecutive newlines (pagination artifacts, normalized to max 2)
     - Preamble before first YDB> prompt (dbcreate, GDE, mupip output)
     - Path placeholder lines (##TEST_PATH##, etc.)
     - Conditional output blocks (##SUSPEND_OUTPUT...##ALLOW_OUTPUT)
     - YDB> prompts themselves
+
+    Note: Form feeds are removed because YDBTest runs all routines sequentially
+    in a single session, accumulating $Y. When $Y > 55, routines output form
+    feeds for pagination. Since m2py runs each routine independently, $Y never
+    accumulates enough to trigger these form feeds. The form feed character and
+    surrounding newlines are terminal pagination artifacts.
 
     Args:
         content: Raw outref file content
@@ -169,6 +177,18 @@ def normalize_outref(content: str) -> str:
     Returns:
         Normalized content suitable for comparison with m2py output
     """
+    import re
+
+    # Remove form feed characters (pagination artifacts from sequential runs)
+    # Form feed (\x0c) is output by W # when $Y > 55 in EXAMINER subroutines
+    content = content.replace("\x0c", "")
+
+    # Normalize excessive consecutive newlines (more than 2) to exactly 2
+    # This handles the pagination artifacts around form feeds where the terminal
+    # outputs extra blank lines. MUMPS W !! outputs at most 2 newlines, so
+    # anything more is a pagination artifact.
+    content = re.sub(r"\n{3,}", "\n\n", content)
+
     lines = []
     in_suspended = False
     found_first_prompt = False
