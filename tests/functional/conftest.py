@@ -171,6 +171,13 @@ def normalize_outref(content: str) -> str:
     accumulates enough to trigger these form feeds. The form feed character and
     surrounding newlines are terminal pagination artifacts.
 
+    The pattern in outref is consistently: \\n\\x0c\\n\\n (newline, form feed,
+    two newlines). We replace this with \\n\\n to preserve the visual spacing
+    that the original code intended (via W !! before the conditional form feed).
+
+    IMPORTANT: We do NOT collapse legitimate multiple newlines (W !!!, W !!!!, etc.)
+    Those are valid MUMPS output that must be preserved exactly.
+
     Args:
         content: Raw outref file content
 
@@ -179,15 +186,12 @@ def normalize_outref(content: str) -> str:
     """
     import re
 
-    # Remove form feed characters (pagination artifacts from sequential runs)
+    # Remove form feed pagination artifacts (pattern: \n\x0c\n+ → \n\n)
     # Form feed (\x0c) is output by W # when $Y > 55 in EXAMINER subroutines
-    content = content.replace("\x0c", "")
-
-    # Normalize excessive consecutive newlines (more than 2) to exactly 2
-    # This handles the pagination artifacts around form feeds where the terminal
-    # outputs extra blank lines. MUMPS W !! outputs at most 2 newlines, so
-    # anything more is a pagination artifact.
-    content = re.sub(r"\n{3,}", "\n\n", content)
+    # The pattern in outref is: \n\x0c\n\n (newline, form feed, 1-2 newlines)
+    # We replace with \n\n to preserve visual spacing (the W !! that typically
+    # precedes the conditional form feed would output 2 newlines)
+    content = re.sub(r"\n\x0c\n+", "\n\n", content)
 
     lines = []
     in_suspended = False
@@ -603,6 +607,36 @@ class ComparisonResult(NamedTuple):
     expected_lines: int
 
 
+def normalize_m2py_output(content: str) -> str:
+    """Normalize m2py output for comparison with normalized outref.
+
+    Removes form feed characters and their adjacent newlines, matching
+    the normalization applied to outref content by normalize_outref().
+
+    This is needed because:
+    1. m2py correctly outputs form feeds for W # commands
+    2. The outref has form feeds from pagination (W:$Y>55 #)
+    3. Both are normalized to remove form feeds for comparison
+
+    The actual output from W # in m2py is '\n\x0c' (newline then form feed).
+    After normalization this becomes '\n\n' which matches what the
+    normalized outref expects (preserving visual spacing from W !!).
+
+    Args:
+        content: Raw m2py output
+
+    Returns:
+        Normalized content suitable for comparison with normalized outref
+    """
+    import re
+
+    # Remove form feed and adjacent newlines (same pattern as normalize_outref)
+    # Pattern: \n\x0c\n* → \n\n (preserves visual spacing)
+    content = re.sub(r"\n\x0c\n*", "\n\n", content)
+
+    return content
+
+
 def compare_output(
     actual: str, expected: str, *, strip_blank_lines: bool = True
 ) -> ComparisonResult:
@@ -610,6 +644,10 @@ def compare_output(
 
     Uses unified diff format for easy reading. Normalizes line endings
     before comparison.
+
+    Note: Both actual (m2py output) and expected (outref) should be normalized
+    for form feeds before calling this function, or the actual will be
+    normalized here.
 
     Args:
         actual: Actual output from m2py execution
@@ -619,6 +657,9 @@ def compare_output(
     Returns:
         ComparisonResult with match status and diff if mismatched
     """
+    # Normalize m2py output (remove form feeds to match outref normalization)
+    actual = normalize_m2py_output(actual)
+
     # Normalize line endings and trailing whitespace
     actual_lines = [line.rstrip() for line in actual.splitlines()]
     expected_lines = [line.rstrip() for line in expected.splitlines()]
