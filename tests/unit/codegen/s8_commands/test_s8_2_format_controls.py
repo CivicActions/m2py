@@ -55,7 +55,7 @@ class TestFormatControlsCodegen:
     # =========================================================================
 
     def test_write_formfeed_basic(self, execute_mumps):
-        """WRITE # outputs newline + form feed (§8.2.25).
+        """WRITE # outputs newline + form feed when $X>0 (§8.2.25).
 
         YDB verified: W "A",#,"B" outputs A\n\x0cB (newline before form feed).
         Form feed is ASCII 12 (\\x0c).
@@ -65,12 +65,45 @@ class TestFormatControlsCodegen:
         assert result.success is True
 
     def test_write_formfeed_only(self, execute_mumps):
-        """WRITE # alone outputs newline + form feed (§8.2.25).
+        """WRITE # alone outputs just form feed when $X=0 (§8.2.25).
 
-        YDB verified: W # outputs \n\x0c (newline before form feed).
+        YDB verified: W # outputs \x0c (form feed only, no preceding newline
+        when already at start of line).
         """
         result = execute_mumps("TEST\n W #\n Q\n")
-        assert result.output == "\n\x0c"
+        assert result.output == "\x0c"
+        assert result.success is True
+
+    def test_write_formfeed_after_newline(self, execute_mumps):
+        """WRITE !,# outputs newline then just form feed (§8.2.25).
+
+        YDB verified: After ! sets $X=0, # outputs just \x0c (no extra newline).
+        """
+        result = execute_mumps('TEST\n W "A",!,#,"B"\n Q\n')
+        assert result.output == "A\n\x0cB"
+        assert result.success is True
+
+    def test_write_consecutive_formfeeds(self, execute_mumps):
+        """WRITE ## outputs newline + two form feeds (§8.2.25).
+
+        YDB verified: W "A",##,"B" outputs A\n\x0c\x0cB.
+        First # outputs \n\x0c (because $X>0), second # outputs just \x0c
+        (because $X=0 after first form feed).
+        """
+        result = execute_mumps('TEST\n W "A",##,"B"\n Q\n')
+        assert result.output == "A\n\x0c\x0cB"
+        assert result.success is True
+
+    def test_write_formfeed_resets_x_and_y(self, execute_mumps):
+        """WRITE # resets both $X and $Y to 0 (§8.2.25).
+
+        YDB verified: After # both $X=0 and $Y=0.
+        """
+        result = execute_mumps('TEST\n W "ABC",!,!,!,#,$X,",",$Y\n Q\n')
+        # After "ABC": $X=3, $Y=0
+        # After three !: $X=0, $Y=3
+        # After #: $X=0, $Y=0
+        assert result.output == "ABC\n\n\n\x0c0,0"
         assert result.success is True
 
     # =========================================================================

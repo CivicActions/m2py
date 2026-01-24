@@ -1419,8 +1419,9 @@ def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> Non
 
     elif fc.control_type == FormatControlType.FORMFEED:
         # Spec 011 (T027): FORMFEED format control
-        # YDB outputs newline before form feed (\n\f)
-        ctx.emitter.line('_rt.write("\\n\\x0c")')
+        # YDB: conditional newline before form feed only if $X > 0
+        # (iorm_cond_wteol in YDB source code)
+        ctx.emitter.line('_rt.write(("\\n" if _rt.x() > 0 else "") + "\\x0c")')
 
     elif fc.control_type == FormatControlType.CHARCODE:
         # Spec 011 (T028): CHARCODE format control (*n)
