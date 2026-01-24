@@ -2444,15 +2444,22 @@ class MUMPSRuntime:
             # Naked reference like "^(3)"
             if name.startswith("^("):
                 return True
-            # Global or local: must start with ^ or letter
+            # Global or local: must start with ^ or letter or % (system vars)
             if name.startswith("^"):
-                return len(name) > 1 and (name[1].isalpha() or name[1] == "(")
-            return name[0].isalpha()
+                return len(name) > 1 and (
+                    name[1].isalpha() or name[1] == "(" or name[1] == "%"
+                )
+            return name[0].isalpha() or name[0] == "%"
 
         # Each level of indirection does one lookup in the chain
         # If an intermediate value is not a valid var name, stop early
 
         for level in range(levels):
+            # Check if current_name is a valid var name before trying to look it up
+            # If not valid (e.g., numeric string), stop the chain and return as-is
+            if not _is_valid_var_name(current_name):
+                return current_name
+
             # Validate the variable exists before dereferencing
             # Skip validation for naked references (base_name == "^") - get_var handles those
             base_name, _ = _parse_subscripted_name(current_name)
@@ -2503,13 +2510,14 @@ class MUMPSRuntime:
 
         # It's a valid var name, so look it up
         # Skip validation for naked references (base_name == "^") - get_var handles those
-        base_name, _ = _parse_subscripted_name(current_name)
+        base_name, subscripts = _parse_subscripted_name(current_name)
         if base_name == "^":
             # Naked reference - get_var will resolve
             pass
         elif base_name.startswith("^"):
             key = base_name[1:]
-            if self._globals.get(key, ()) is None:
+            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            if self._globals.get(key, subs) is None:
                 raise IndirectionError(
                     expr,
                     "undefined final target variable in indirection",
