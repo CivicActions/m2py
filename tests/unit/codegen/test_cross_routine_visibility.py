@@ -55,6 +55,30 @@ NEXT
         # Entry function should be generated
         assert "def TEST(_rt, _scope=None):" in python_code
 
+    def test_label_functions_set_runtime_context(self):
+        """Label functions set runtime context for $TEXT support.
+
+        T075f: Each label entry point should set _rt._current_routine,
+        _rt._current_source_lines, and _rt._current_label_lines so that
+        $TEXT works correctly when the routine is called externally.
+        """
+        code = """
+TEST
+ W "hello"
+ Q
+SUB
+ W "world"
+ Q
+"""
+        routine = parse(code)
+        generator = RoutineGenerator(routine, strategy=GotoStrategy.SIMPLE_FUNCTIONS)
+        python_code = generator.generate()
+
+        # Should set runtime context in label functions
+        assert "_rt._current_routine = _routine_name" in python_code
+        assert "_rt._current_source_lines = _source_lines" in python_code
+        assert "_rt._current_label_lines = _label_lines" in python_code
+
     def test_external_do_generates_import(self):
         """D ^ROUTINE generates import statement."""
         code = """
@@ -68,6 +92,32 @@ TEST
 
         # Should have import for external routine
         assert "import OTHER" in python_code
+
+    def test_external_do_generates_context_save_restore(self):
+        """D ^ROUTINE generates save/restore of runtime context for $TEXT.
+
+        T075f: When calling an external routine, the current routine's
+        $TEXT context must be saved and restored so $TEXT(+N) works
+        correctly after the call returns.
+        """
+        code = """
+TEST
+ D ^OTHER
+ Q
+"""
+        routine = parse(code)
+        generator = RoutineGenerator(routine, strategy=GotoStrategy.TRAMPOLINE)
+        python_code = generator.generate()
+
+        # Should save context before call
+        assert "_saved_routine = _rt._current_routine" in python_code
+        assert "_saved_source_lines = _rt._current_source_lines" in python_code
+        assert "_saved_label_lines = _rt._current_label_lines" in python_code
+
+        # Should restore context after call
+        assert "_rt._current_routine = _saved_routine" in python_code
+        assert "_rt._current_source_lines = _saved_source_lines" in python_code
+        assert "_rt._current_label_lines = _saved_label_lines" in python_code
 
 
 @pytest.mark.codegen

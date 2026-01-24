@@ -803,6 +803,23 @@ class TestMUMPSRuntimeTextMethod:
         assert rt.get_text(2, module=target_module) == "EXT2 W 'line2' Q"
         assert rt.get_text(0, label="EXT2", module=target_module) == "EXT2 W 'line2' Q"
 
+    def test_text_converts_tabs_to_spaces(self):
+        """$TEXT converts tabs to single space (YDB behavior).
+
+        T075f: MUMPS/YDB converts tabs in source lines to single spaces
+        when returning $TEXT values.
+        """
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        # Source with tabs
+        rt._current_source_lines = ["TEST\tW 'hello' Q", "NEXT\t\tW 'world' Q"]
+        rt._current_label_lines = {"TEST": 0, "NEXT": 1}
+
+        # Tabs should be converted to single spaces
+        assert rt.get_text(1) == "TEST W 'hello' Q"
+        assert rt.get_text(2) == "NEXT  W 'world' Q"  # Two tabs -> two spaces
+
 
 @pytest.mark.runtime
 class TestZWriteFormatting:

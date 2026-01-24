@@ -988,7 +988,8 @@ class MUMPSRuntime:
 
         # Bounds check and return
         if 0 <= line_idx < len(lines):
-            return lines[line_idx]
+            # T075f: YDB converts tabs to single space in $TEXT output
+            return lines[line_idx].replace("\t", " ")
         return ""
 
     def write(self, value: Any) -> None:

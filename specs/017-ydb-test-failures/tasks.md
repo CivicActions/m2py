@@ -403,10 +403,11 @@ thanks to multi-routine support and Decimal arithmetic helpers.
   - **Added**: tests/unit/codegen/test_phase14_fixes.py (23 new tests)
   - **Coverage**: ?intexpr/*intexpr numeric coercion, m_format_output strings, m_piece negative positions, MGlobal expressions
 - [ ] T075 Validate no failures remain: `uv run pytest tests/functional/ -v --tb=short`
-  - **Status**: 65 failed, 366 passed, 6 skipped, 52 xfailed
+  - **Status**: 59 failed, 371 passed, 7 skipped, 52 xfailed
   - **Remaining issues**:
     1. Whitespace/pagination differences (`W:$Y>55 #` pagination tracking)
     2. Some tests still need helper routine mappings
+    3. GotoExternal issue in V1SEQ
 - [ ] T075a Implement $Y (vertical position) tracking and `W:$Y>N #` pagination
   - **Scope**: Track $Y position in runtime, implement form feed on overflow
   - **Affects**: ~20-30 tests with pagination differences
@@ -429,8 +430,17 @@ thanks to multi-routine support and Decimal arithmetic helpers.
   - **Example**: V1SEQ does `DO DO788+2` → `G G788^V1SEQ1` raises GotoExternal that isn't caught
   - **Affects**: V1SEQ and tests with `DO label+offset` → external GOTO patterns
   - **Complexity**: HIGH - requires architectural changes to DO wrapper codegen
+- [X] T075f Fix $TEXT function cross-routine context
+  - **Scope**: $TEXT should return lines from the current routine, even after DO ^ROUTINE calls
+  - **Root cause**: _current_source_lines not updated when calling external routine, not restored on return
+  - **Fix**: 
+    1. Label functions now set _rt._current_routine/source_lines/label_lines on entry
+    2. External DO calls save/restore context around the call
+    3. $TEXT converts tabs to single space (YDB behavior)
+  - **Changes**: routine.py (label entry context), statements.py (save/restore), runtime/__init__.py (tab→space)
+  - **Tests**: test_cross_routine_visibility.py (2 tests), test_runtime.py::test_text_converts_tabs_to_spaces
 
-**Checkpoint**: 65 failures remain (down from 73). Unit tests: 3553 passed.
+**Checkpoint**: 59 failures remain (down from 65). Unit tests: 3586 passed.
 
 ---
 

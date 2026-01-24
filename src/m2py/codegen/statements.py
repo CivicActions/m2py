@@ -2636,6 +2636,12 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # Generate import statement
         ctx.emitter.line(f"import {routine_name}")
 
+        # T075f: Save runtime context before external call for $TEXT support
+        # This ensures $TEXT(+N) in the caller still works after the callee returns
+        ctx.emitter.line("_saved_routine = _rt._current_routine")
+        ctx.emitter.line("_saved_source_lines = _rt._current_source_lines")
+        ctx.emitter.line("_saved_label_lines = _rt._current_label_lines")
+
         # T075b: For TRAMPOLINE with dynamic locals, sync state._locals to _scope
         # before calling external routine so callee can see caller's variables
         if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
@@ -2709,6 +2715,11 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # after returning from external routine so caller can see callee's modifications
         if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             ctx.emitter.line("state._locals.update({k: v for k, v in _scope.items()})")
+
+        # T075f: Restore runtime context after external call returns
+        ctx.emitter.line("_rt._current_routine = _saved_routine")
+        ctx.emitter.line("_rt._current_source_lines = _saved_source_lines")
+        ctx.emitter.line("_rt._current_label_lines = _saved_label_lines")
         return
 
     # Get the label name and translate it

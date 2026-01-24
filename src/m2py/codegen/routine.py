@@ -548,6 +548,10 @@ class RoutineGenerator:
             ctx.emitter.line("global _test")
             # T030: Initialize _scope if not provided (entry point behavior)
             ctx.emitter.line("_scope = _scope if _scope is not None else {}")
+            # T075f: Update runtime context for $TEXT support in external routine calls
+            ctx.emitter.line("_rt._current_routine = _routine_name")
+            ctx.emitter.line("_rt._current_source_lines = _source_lines")
+            ctx.emitter.line("_rt._current_label_lines = _label_lines")
 
             # T084: Copy formal parameters into _scope for variable reads
             # Use original MUMPS names for _scope keys, translated names for Python vars
@@ -762,6 +766,12 @@ class RoutineGenerator:
                 ctx.emitter.line('"""Trampoline dispatcher for routine execution."""')
                 # T030: Initialize _scope if not provided (entry point behavior)
                 ctx.emitter.line("_scope = _scope if _scope is not None else {}")
+                # T075f: Update runtime context for $TEXT support in external routine calls
+                # When this routine is called via DO ^ROUTINE, $TEXT should return
+                # lines from THIS routine, not the calling routine
+                ctx.emitter.line("_rt._current_routine = _routine_name")
+                ctx.emitter.line("_rt._current_source_lines = _source_lines")
+                ctx.emitter.line("_rt._current_label_lines = _label_lines")
                 ctx.emitter.line("state = RoutineState()")
                 # T075b: Initialize state from _scope for cross-routine visibility
                 # When called from another routine, variables may already exist in _scope
@@ -857,6 +867,10 @@ class RoutineGenerator:
             with ctx.emitter.indented():
                 ctx.emitter.line(f'"""Entry point for DO {label.name} calls."""')
                 ctx.emitter.line("_scope = _scope if _scope is not None else {}")
+                # T075f: Update runtime context for $TEXT support in external routine calls
+                ctx.emitter.line("_rt._current_routine = _routine_name")
+                ctx.emitter.line("_rt._current_source_lines = _source_lines")
+                ctx.emitter.line("_rt._current_label_lines = _label_lines")
                 ctx.emitter.line("state = RoutineState()")
 
                 # T075b: Initialize state from _scope for cross-routine visibility
