@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from m2py.codegen import generate_python
+from m2py.codegen.names import translate_name
 from m2py.runtime import MUMPSRuntime
 
 # =============================================================================
@@ -75,13 +76,23 @@ def discover_dependencies(source: str, inref_dir: Path) -> set[str]:
     """
     deps = set()
     # Find all DO ^ROUTINE calls (case-insensitive, abbreviated or full form)
-    # Routine names can start with % or alpha, followed by alphanumerics
-    for match in re.finditer(r"\bD(?:O)?\s+\^(%?\w+)", source, re.IGNORECASE):
+    # Routine names: % alone, %followed by alphanumerics, or alpha followed by alphanumerics
+    # Pattern: %\w* matches % or %1A or %FOO; [a-zA-Z]\w* matches V or V1 or ROUTINE
+    for match in re.finditer(
+        r"\bD(?:O)?\s+\^(%\w*|[a-zA-Z]\w*)", source, re.IGNORECASE
+    ):
+        routine_name = match.group(1)
+        if (inref_dir / f"{routine_name}.m").exists():
+            deps.add(routine_name)
+    # Also find comma-separated routine calls: D ^A,^B,^C
+    for match in re.finditer(r",\^(%\w*|[a-zA-Z]\w*)", source, re.IGNORECASE):
         routine_name = match.group(1)
         if (inref_dir / f"{routine_name}.m").exists():
             deps.add(routine_name)
     # Also find GOTO ^ROUTINE calls (case-insensitive, abbreviated or full form)
-    for match in re.finditer(r"\bG(?:OTO)?\s+\^(%?\w+)", source, re.IGNORECASE):
+    for match in re.finditer(
+        r"\bG(?:OTO)?\s+\^(%\w*|[a-zA-Z]\w*)", source, re.IGNORECASE
+    ):
         routine_name = match.group(1)
         if (inref_dir / f"{routine_name}.m").exists():
             deps.add(routine_name)
@@ -267,13 +278,16 @@ def execute_serial_suite(
     runtime.clear()
 
     # Inject all modules into sys.modules first
+    # Use translated names for % routines since codegen emits `import _pct_FOO`
     if verbose:
         print(f"Injecting {len(modules)} modules...", file=sys.stderr)
     inject_start = time.time()
     for routine_name, code in modules.items():
         try:
-            module = types.ModuleType(routine_name)
-            sys.modules[routine_name] = module
+            # Translate routine name to Python module name (%FOO → _pct_FOO)
+            python_module_name = translate_name(routine_name)
+            module = types.ModuleType(python_module_name)
+            sys.modules[python_module_name] = module
             exec(code, module.__dict__)
         except Exception as e:
             errors.append(f"Module injection {routine_name}: {e}")
@@ -304,14 +318,22 @@ def execute_serial_suite(
 
         # Execute the routine with timeout
         try:
-            module = sys.modules.get(routine)
+            # Use translated name to get module (%FOO → _pct_FOO)
+            python_module_name = translate_name(routine)
+            module = sys.modules.get(python_module_name)
             if module is None:
                 errors.append(f"Module not found: {routine}")
                 if verbose:
                     print(" MODULE NOT FOUND", file=sys.stderr)
                 continue
 
-            entry_func = getattr(module, routine, None)
+            # When a routine has a labelless first line, codegen emits _preamble()
+            # which executes line 1 before falling through to the named label.
+            # D ^ROUTINE in MUMPS starts at line 1, so we call _preamble if present.
+            entry_func = getattr(module, "_preamble", None)
+            if entry_func is None:
+                # Also translate the entry function name (%FOO → _pct_FOO)
+                entry_func = getattr(module, python_module_name, None)
             if entry_func is None:
                 errors.append(f"Entry point not found: {routine}")
                 if verbose:

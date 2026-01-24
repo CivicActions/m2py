@@ -32,13 +32,20 @@ def routine_uses_dynamic_locals(routine: "MRoutine") -> bool:
     statically. These routines use state._locals dict for all variable
     access instead of state.VAR individual fields.
 
+    Also required when routine has name indirection that references local
+    variables, since we need runtime variable name resolution.
+
     Args:
         routine: MRoutine to check
 
     Returns:
         True if routine needs _locals dict, False for static fields
     """
-    return routine.has_argumentless_kill or routine.has_argumentless_new
+    return (
+        routine.has_argumentless_kill
+        or routine.has_argumentless_new
+        or routine.has_name_indirection_on_locals
+    )
 
 
 def generate_routine_state_class(routine: "MRoutine") -> str:

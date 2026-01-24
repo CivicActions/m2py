@@ -7,7 +7,7 @@ Handles SET, WRITE, QUIT, IF, ELSE, FOR, and other basic commands.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, cast
 
 from m2py.asg.enums import (
     ForLoopType,
@@ -309,13 +309,25 @@ class ForGenContext:
 
         if isinstance(stmt.loop_var, MIndirectionType):
             # Indirect loop variable: F @A=1:1:3 where A contains "B"
+            # Also handles multi-level: F @@A=1:1:5, F @@@A=1:1:5
             loop_var_indirect = True
             # Generate expression to get target variable name at runtime
-            # This requires ctx to be provided
+            # Use _generate_for_indirection_target which handles nested indirection
+            # (e.g., A="@$E(""ABCDEF"",3)" should resolve to "C")
             if ctx is not None and stmt.loop_var.expression is not None:
-                from m2py.codegen.indirection import _generate_inner_name_expr
+                from m2py.codegen.indirection import (
+                    _generate_for_indirection_target,
+                    _count_indirection_levels,
+                )
 
-                loop_var_expr = _generate_inner_name_expr(stmt.loop_var.expression, ctx)
+                # Count indirection levels and get innermost expression
+                # F @A uses level 1, F @@A uses level 2, etc.
+                levels, inner_expr = _count_indirection_levels(stmt.loop_var)
+
+                # Generate code to resolve the full indirection chain
+                loop_var_expr = _generate_for_indirection_target(
+                    inner_expr, ctx, indirection_levels=levels
+                )
             var_name = "_for_indirect_var"
             loop_var = "_for_val"  # Temporary for range iteration
         elif isinstance(stmt.loop_var, str):
@@ -1769,10 +1781,15 @@ def _generate_for_body(
     # Only needed when using Python's `for` loop (not while loop)
     # When loop_var_modified_in_body is True, we use while loop with _scope directly
     # Spec 009 (T021): Use MArray.value for consistency with subscripted variables
+    #
+    # NOTE: For subscripted loop vars (F A(B)=1:1:3), the sync is handled in
+    # _generate_for_bounded which re-evaluates subscripts at each access.
+    # Skip the sync here to avoid double-syncing with potentially stale subscripts.
     if (
         ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS
         and stmt.loop_var
         and not stmt.loop_var_modified_in_body
+        and not (for_ctx and for_ctx.loop_var_subscripts)  # Skip for subscripted vars
     ):
         if isinstance(stmt.loop_var, str):
             var_name = stmt.loop_var
@@ -1853,40 +1870,103 @@ def _generate_for_bounded(
     ctx.emitter.line(f"{start_var} = m_num({start_expr})")
     ctx.emitter.line(f"{step_var} = m_num({step_expr})")
     ctx.emitter.line(f"{end_var} = m_num({end_expr})")
-    # Set loop var to start value (MUMPS semantics)
-    ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
-    # Also sync to _scope for SIMPLE_FUNCTIONS strategy
-    if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS and for_ctx.loop_var_name:
-        ctx.emitter.line(
-            f"_scope.setdefault({for_ctx.loop_var_name!r}, MArray()).value = {start_var}"
-        )
 
-    # MUMPS FOR is end-inclusive, use while loop to support fractional steps
-    # Condition: (step > 0 and loop_var <= end) or (step < 0 and loop_var >= end) or (step == 0 and loop_var <= end)
-    # When step == 0, loop is infinite (until QUIT) but only enters if start <= end
+    # Determine how to handle the loop variable
+    # Three cases:
+    # 1. Indirect loop var (F @A=1:1:3) - resolve target name, use _scope access
+    # 2. Subscripted loop var (F A(1)=1:1:3 or F A(@B)=1:1:3) - subscripts re-evaluated each iteration
+    # 3. Simple loop var (F I=1:1:3) - direct Python variable
 
-    # T068: Handle indirect loop variable (F @A=1:1:3)
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
+        # T068: Handle indirect loop variable (F @A=1:1:3)
         # Resolve the target variable name once before the loop
         ctx.emitter.line(f"_for_indirect_var_{lid} = {for_ctx.loop_var_expr}")
+        # Set loop var to start value (MUMPS semantics)
+        ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
         # Set indirect var to start value
-        ctx.emitter.line(f"_rt.set_var(_for_indirect_var_{lid}, {start_var}, _scope)")
         ctx.emitter.line(
-            f"while ({step_var} > 0 and {for_ctx.loop_var} <= {end_var}) or "
-            f"({step_var} < 0 and {for_ctx.loop_var} >= {end_var}) or "
-            f"({step_var} == 0 and {for_ctx.loop_var} <= {end_var}):"
+            f"_scope.setdefault(_for_indirect_var_{lid}, MArray()).value = m_num({start_var})"
+        )
+        ctx.emitter.line(
+            f"while ({step_var} > 0 and _scope.setdefault(_for_indirect_var_{lid}, MArray()).value <= {end_var}) or "
+            f"({step_var} < 0 and _scope.setdefault(_for_indirect_var_{lid}, MArray()).value >= {end_var}) or "
+            f"({step_var} == 0 and _scope.setdefault(_for_indirect_var_{lid}, MArray()).value <= {end_var}):"
         )
         with ctx.emitter.indented():
-            # Update the indirect variable at start of each iteration
-            ctx.emitter.line(
-                f"_rt.set_var(_for_indirect_var_{lid}, {for_ctx.loop_var}, _scope)"
-            )
             _generate_for_body(stmt, ctx, for_ctx)
-            # Increment loop variable at end of iteration using m_add for precision
+            # Check if should continue before incrementing
             ctx.emitter.line(
-                f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, {step_var})"
+                f"if not (({step_var} > 0 and _scope.setdefault(_for_indirect_var_{lid}, MArray()).value + {step_var} <= {end_var}) or "
+                f"({step_var} < 0 and _scope.setdefault(_for_indirect_var_{lid}, MArray()).value + {step_var} >= {end_var}) or "
+                f"({step_var} == 0)):"
             )
+            with ctx.emitter.indented():
+                ctx.emitter.line("break")
+            # Increment loop variable
+            ctx.emitter.line(
+                f"_scope.setdefault(_for_indirect_var_{lid}, MArray()).value = _scope.setdefault(_for_indirect_var_{lid}, MArray()).value + {step_var}"
+            )
+    elif for_ctx.loop_var_subscripts:
+        # Handle subscripted loop variable (F A(1)=1:1:3 or F A(@B)=1:1:3)
+        # MUMPS re-evaluates subscripts on EVERY access - initial, condition, increment
+        # We must always access via _scope with re-evaluated subscripts, never use a
+        # Python temp var for the condition/increment.
+        subs_str = ", ".join(for_ctx.loop_var_subscripts)
+        var_name = for_ctx.loop_var_name
+
+        # Helper expressions for accessing the subscripted variable
+        # These will re-evaluate subscripts each time they appear in generated code
+        get_expr = f"_scope.setdefault({var_name!r}, MArray()).get({subs_str})"
+
+        def make_set_expr(val: str) -> str:
+            return f"_scope.setdefault({var_name!r}, MArray()).set({subs_str}, value={val})"
+
+        # Initial assignment - evaluate subscripts and set value
+        ctx.emitter.line(make_set_expr(start_var))
+
+        # Also set Python temp var for body access (some body code may use it)
+        ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
+
+        # While loop - condition re-evaluates subscripts each iteration
+        ctx.emitter.line(
+            f"while ({step_var} > 0 and {get_expr} <= {end_var}) or "
+            f"({step_var} < 0 and {get_expr} >= {end_var}) or "
+            f"({step_var} == 0 and {get_expr} <= {end_var}):"
+        )
+        with ctx.emitter.indented():
+            # Sync Python temp var from _scope at start of each iteration
+            # (in case subscript changed and we need current value)
+            ctx.emitter.line(f"{for_ctx.loop_var} = {get_expr}")
+
+            # Generate loop body (may modify subscript source variables)
+            _generate_for_body(stmt, ctx, for_ctx)
+
+            # Check if should continue before incrementing
+            # Re-evaluate subscripts for both current value read and next value check
+            ctx.emitter.line(
+                f"if not (({step_var} > 0 and {get_expr} + {step_var} <= {end_var}) or "
+                f"({step_var} < 0 and {get_expr} + {step_var} >= {end_var}) or "
+                f"({step_var} == 0)):"
+            )
+            with ctx.emitter.indented():
+                ctx.emitter.line("break")
+
+            # Increment - read current value (re-eval subscripts), add step,
+            # write new value (re-eval subscripts again for write)
+            ctx.emitter.line(f"_for_cur_{lid} = {get_expr} + {step_var}")
+            ctx.emitter.line(make_set_expr(f"_for_cur_{lid}"))
+
+            # Sync Python temp var for next iteration
+            ctx.emitter.line(f"{for_ctx.loop_var} = _for_cur_{lid}")
     else:
+        # Simple loop variable (F I=1:1:3)
+        # Set loop var to start value (MUMPS semantics)
+        ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
+        # Also sync to _scope for SIMPLE_FUNCTIONS strategy
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS and for_ctx.loop_var_name:
+            ctx.emitter.line(
+                f"_scope.setdefault({for_ctx.loop_var_name!r}, MArray()).value = {start_var}"
+            )
         ctx.emitter.line(
             f"while ({step_var} > 0 and {for_ctx.loop_var} <= {end_var}) or "
             f"({step_var} < 0 and {for_ctx.loop_var} >= {end_var}) or "
@@ -3801,14 +3881,43 @@ def _generate_read(stmt: MReadStatement, ctx: "GeneratorContext") -> None:
 def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
     """Generate Python input for a single READ target.
 
-    Handles basic reads, timeout reads, and char reads.
+    Handles basic reads, timeout reads, char reads, and indirection targets.
     For SIMPLE_FUNCTIONS strategy, stores into _scope dictionary.
+    For indirection targets, uses _rt.set_var() for runtime name resolution.
 
     Args:
         target: MReadTarget with variable and optional timeout
         ctx: Generator context
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.codegen.indirection import generate_name_indirection_write
+
     if target.variable is None:
+        return
+
+    # Check if target is indirection - needs special handling with set_var
+    is_indirection = isinstance(target.variable, MIndirectionType)
+
+    if is_indirection:
+        # Indirection target: R @A - need to use set_var at runtime
+        # Type narrowing: we know target.variable is MIndirection from is_indirection check
+        ind_var = cast(MIndirectionType, target.variable)
+        if target.timeout is not None:
+            # Timeout read with indirection: R @A:n
+            timeout_expr = generate_expr(target.timeout, ctx)
+            ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
+            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
+            ctx.emitter.line(set_stmt)
+        elif target.is_char_read:
+            # Single character read with indirection: R *@A
+            ctx.emitter.line("_read_val = m_read_char()")
+            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
+            ctx.emitter.line(set_stmt)
+        else:
+            # Basic read with indirection: R @A
+            ctx.emitter.line("_read_val = input()")
+            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
+            ctx.emitter.line(set_stmt)
         return
 
     # Get the target variable name and determine storage location

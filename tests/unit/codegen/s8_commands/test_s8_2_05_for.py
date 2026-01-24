@@ -463,8 +463,8 @@ class TestForIndirectionCodegen:
         code = generate_python('TEST\n S V="X" F @V=1:1:3 W X\n Q\n')
         # Should resolve indirection before loop
         assert "_for_indirect_var" in code
-        # Should use the resolved variable name
-        assert "get_indirection_source" in code
+        # Should use resolve_indirection_name for FOR loop indirection
+        assert "resolve_indirection_name" in code
 
     def test_for_subscripted_loop_variable(self, execute_mumps):
         """FOR with subscripted loop variable (§8.2.5).
@@ -488,8 +488,10 @@ class TestForIndirectionCodegen:
     def test_for_subscripted_loop_variable_codegen(self, generate_python):
         """FOR with subscripted loop variable generates .set() call (§8.2.5).
 
-        T034: Subscripted loop var should use MArray.set() not .value.
+        T034: Subscripted loop var should use MArray.set() for initial and increment.
         """
         code = generate_python("TEST\n F I(1)=1:1:3 W I(1)\n Q\n")
-        # Should use .set() with subscript and value= keyword
-        assert ".set(1, value=I)" in code
+        # Should use .set() for initial value assignment
+        assert ".set(1, value=_for_start_0)" in code
+        # Should use .set() for increment assignment
+        assert ".set(1, value=_for_cur_0)" in code

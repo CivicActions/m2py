@@ -380,6 +380,11 @@ def analyze_variables(routine: MRoutine) -> Dict[str, ScopeVariables]:
     routine.has_argumentless_kill = _routine_has_argumentless_kill(routine)
     routine.has_argumentless_new = _routine_has_argumentless_new(routine)
 
+    # Detect name indirection that references local variables
+    routine.has_name_indirection_on_locals = _routine_has_name_indirection_on_locals(
+        routine
+    )
+
     return result
 
 
@@ -466,6 +471,103 @@ def _routine_has_argumentless_new(routine: MRoutine) -> bool:
                 # Argumentless NEW: no variables specified AND not exclusive
                 if not stmt.variables and not stmt.exclusive:
                     return True
+    return False
+
+
+def _routine_has_name_indirection_on_locals(routine: MRoutine) -> bool:
+    """Check if a routine has name indirection that reads local variables.
+
+    When name indirection like @X reads another local variable (X="Y", and Y
+    is also a local), the runtime needs to be able to look up variables by
+    name at runtime. This is incompatible with Python locals in TRAMPOLINE
+    mode, so it triggers dynamic_locals mode.
+
+    Note: This is a conservative check - we flag any name indirection that
+    involves local variables, even if the target might be known at compile
+    time.
+
+    Args:
+        routine: MRoutine ASG node to check
+
+    Returns:
+        True if name indirection references local variables
+    """
+    from m2py.asg.statements import MDoStatement
+    from m2py.asg.elements import MCall
+
+    for label in routine.labels:
+        if not label.body:
+            continue
+        for stmt in label.body.walk_statements():
+            # Check DO statements with indirect offsets
+            if isinstance(stmt, MDoStatement):
+                for target in stmt.targets:
+                    if not isinstance(target, MCall):
+                        continue
+                    # Check if offset uses indirection on a local
+                    if (
+                        target.offset is not None
+                        and _expr_has_name_indirection_on_local(target.offset)
+                    ):
+                        return True
+                    # Check if label uses indirection with potential local reference
+                    if target.label_is_indirect and target.indirection:
+                        if _expr_has_name_indirection_on_local(target.indirection):
+                            return True
+    return False
+
+
+def _expr_has_name_indirection_on_local(
+    expr: Any, visited: Optional[Set[int]] = None
+) -> bool:
+    """Check if expression contains name indirection on a local variable.
+
+    Uses visited set to prevent infinite recursion on circular references.
+    """
+    from m2py.asg.expressions import MIndirection, MVariable
+    from m2py.asg.enums import IndirectionType
+
+    if visited is None:
+        visited = set()
+
+    # Prevent infinite recursion
+    expr_id = id(expr)
+    if expr_id in visited:
+        return False
+    visited.add(expr_id)
+
+    if isinstance(expr, MIndirection):
+        if expr.indirection_type == IndirectionType.NAME:
+            # Name indirection - expression attribute contains the inner expression
+            if isinstance(expr.expression, MVariable):
+                return True
+        # Check nested expression
+        if expr.expression and _expr_has_name_indirection_on_local(
+            expr.expression, visited
+        ):
+            return True
+    elif hasattr(expr, "__dict__"):
+        for key, value in vars(expr).items():
+            # Skip parent/source_file references that could cause cycles
+            if key in (
+                "parent",
+                "source_file",
+                "_tx_parser",
+                "_tx_attrs",
+                "_tx_position",
+                "_tx_position_end",
+            ):
+                continue
+            if isinstance(value, list):
+                for item in value:
+                    if hasattr(
+                        item, "__dict__"
+                    ) and _expr_has_name_indirection_on_local(item, visited):
+                        return True
+            elif hasattr(value, "__dict__") and _expr_has_name_indirection_on_local(
+                value, visited
+            ):
+                return True
     return False
 
 

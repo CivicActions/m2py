@@ -28,6 +28,21 @@ if TYPE_CHECKING:
 from m2py.codegen.enums import GotoStrategy
 
 
+def _get_scope_expr(ctx: "GeneratorContext") -> str:
+    """Get the appropriate scope expression for the current context.
+
+    In TRAMPOLINE mode with dynamic_locals, local variables are stored in
+    state._locals dict. Otherwise they're in _scope (cross-routine visibility).
+
+    Returns:
+        "state._locals" in TRAMPOLINE+dynamic_locals mode, "_scope" otherwise
+    """
+    is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
+    if is_trampoline and ctx.uses_dynamic_locals:
+        return "state._locals"
+    return "_scope"
+
+
 def _count_indirection_levels(expr: "MIndirection") -> Tuple[int, "MExpr"]:
     """Count nested indirection levels and find the innermost expression.
 
@@ -116,11 +131,69 @@ def _count_indirection_levels_with_subscripts(
     return levels, inner, all_subscripts
 
 
+def _generate_for_indirection_target(
+    inner_expr: "MExpr", ctx: "GeneratorContext", indirection_levels: int = 1
+) -> str:
+    """Generate Python expression for FOR loop indirection target.
+
+    FOR loop indirection like F @A=1:1:3 requires special handling because
+    the resolved name may itself be an indirection expression. For example,
+    if A="@$E(""ABCDEF"",3)", we need to further resolve that to "C".
+
+    Multi-level indirection (F @@A, F @@@A) requires resolving multiple
+    levels of variable references.
+
+    This function generates code that uses resolve_indirection_name to handle
+    multi-level and nested indirection at runtime, returning the final variable
+    NAME to use for iteration.
+
+    Args:
+        inner_expr: The innermost expression inside the indirection (e.g., variable A)
+        ctx: Generator context
+        indirection_levels: Number of indirection levels (1 for @A, 2 for @@A, etc.)
+
+    Returns:
+        Python expression string that evaluates to the final variable name
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.codegen.expressions import generate_expr
+    from m2py.codegen.enums import GotoStrategy
+
+    scope_expr = _get_scope_expr(ctx)
+
+    if isinstance(inner_expr, MVariable):
+        var_name = inner_expr.name
+        if inner_expr.subscripts:
+            # Subscripted variable - get value and resolve nested indirection
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            # Build the subscripted variable name at runtime
+            var_ref = f'"{var_name}(" + ",".join([str(s) for s in [{subs_str}]]) + ")"'
+            # Use resolve_indirection_name to get the final variable name
+            return f"_rt.resolve_indirection_name({var_ref}, {indirection_levels}, {scope_expr})"
+        else:
+            # Simple variable - use resolve_indirection_name
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                return f'_rt.resolve_indirection_name("{var_name}", {indirection_levels}, state._locals)'
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE:
+                # Python locals - need to get the string name first
+                return f'_rt.resolve_indirection_name("{var_name}", {indirection_levels}, {scope_expr})'
+            else:
+                return f'_rt.resolve_indirection_name("{var_name}", {indirection_levels}, _scope)'
+    else:
+        # Other expression - generate and convert to string
+        expr = generate_expr(inner_expr, ctx)
+        return f"_rt.resolve_indirection_name(str({expr}), {indirection_levels}, {scope_expr})"
+
+
 def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> str:
     """Generate the Python expression for the variable name to look up.
 
     For a simple variable like X, generates a call to _rt.get_indirection_source
     which validates that the source variable exists (T065: error for @UNDEF).
+
+    For TRAMPOLINE mode without dynamic_locals, variables are Python locals,
+    so we use the Python variable directly.
 
     For a subscripted variable like A(1,2), generates the full variable reference
     to get the value at that location using get_var.
@@ -135,9 +208,15 @@ def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> s
     # Import here to avoid circular import
     from m2py.asg.expressions import MVariable
     from m2py.codegen.expressions import generate_expr
+    from m2py.codegen.names import translate_name
+    from m2py.codegen.enums import GotoStrategy
+
+    # Get the appropriate scope expression for this context
+    scope_expr = _get_scope_expr(ctx)
 
     if isinstance(inner_expr, MVariable):
         var_name = inner_expr.name
+        python_name = translate_name(var_name)
         if inner_expr.subscripts:
             # Subscripted variable like A(1,2) - need to get the value at that location
             # Generate the subscript expressions
@@ -145,11 +224,20 @@ def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> s
             subs_str = ", ".join(sub_exprs)
             # Build the full variable name like "A(1,2)" and use get_var
             # We need to build the name string dynamically
-            return f'str(_rt.get_var("{var_name}(" + ",".join([str(s) for s in [{subs_str}]]) + ")", _scope))'
+            return f'str(_rt.get_var("{var_name}(" + ",".join([str(s) for s in [{subs_str}]]) + ")", {scope_expr}))'
         else:
-            # Simple variable reference - use get_indirection_source to validate
-            # existence and get the value (T065: error for undefined indirection source)
-            return f'_rt.get_indirection_source("{var_name}", _scope)'
+            # Simple variable reference
+            # In TRAMPOLINE mode without dynamic_locals, variables are Python locals
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                # Dynamic locals - use state._locals dict
+                return f'_rt.get_indirection_source("{var_name}", state._locals)'
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE:
+                # Python locals - use the variable directly
+                return f"str({python_name})"
+            else:
+                # Use get_indirection_source to validate existence and get value
+                # (T065: error for undefined indirection source)
+                return f'_rt.get_indirection_source("{var_name}", _scope)'
     else:
         # Other expression - generate and convert to string if needed
         return generate_expr(inner_expr, ctx)
@@ -165,10 +253,12 @@ def generate_name_indirection(
     name at runtime and read its value.
 
     Handles:
-    - Simple indirection: @X → _rt.get_var(_rt.get_indirection_source("X", _scope), _scope)
-    - Multi-level: @@X → _rt.resolve_indirection("X", 2, _scope)
-    - With subscripts: @NAME@(1,2) → _rt.get_var(append_subscripts(...), _scope)
-    - Multi-level with per-level subscripts: @@X@(1,2)@(5,6) → _rt.get_var(resolve_with_per_level_subscripts(...), _scope)
+    - Simple indirection: @X → _rt.get_var(_rt.get_indirection_source("X", scope), scope)
+    - Multi-level: @@X → _rt.resolve_indirection("X", 2, scope)
+    - With subscripts: @NAME@(1,2) → _rt.get_var(append_subscripts(...), scope)
+    - Multi-level with per-level subscripts: @@X@(1,2)@(5,6) → _rt.get_var(resolve_with_per_level_subscripts(...), scope)
+
+    Where 'scope' is state._locals in TRAMPOLINE+dynamic_locals mode, _scope otherwise.
 
     Args:
         expr: MIndirection ASG node with indirection_type=NAME
@@ -180,6 +270,9 @@ def generate_name_indirection(
     from m2py.asg.expressions import MVariable
     from m2py.parser.textx_classes import GlobalVariable
     from m2py.codegen.expressions import generate_expr
+
+    # Get the appropriate scope expression for this context
+    scope_expr = _get_scope_expr(ctx)
 
     # Count indirection levels and collect ALL subscripts (inner and outer)
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
@@ -216,7 +309,7 @@ def generate_name_indirection(
             subs_per_level_str = ", ".join(per_level_subs)
             # For global variables, the value is already resolved (skip initial resolution)
             skip_flag = "True" if is_global else "False"
-            return f"_rt.get_var(str(_rt.resolve_with_per_level_subscripts({base_name_expr}, [{subs_per_level_str}], _scope, {skip_flag})), _scope)"
+            return f"_rt.get_var(str(_rt.resolve_with_per_level_subscripts({base_name_expr}, [{subs_per_level_str}], {scope_expr}, {skip_flag})), {scope_expr})"
         elif levels > 1:
             # Multi-level with subscripts at only one level
             all_subs_exprs = []
@@ -225,7 +318,7 @@ def generate_name_indirection(
                 all_subs_exprs.extend(sub_exprs)
             subs_args = ", ".join(all_subs_exprs)
 
-            return f"_rt.get_var(_rt.append_subscripts(str(_rt.resolve_indirection({base_name_expr}, {levels}, _scope)), {subs_args}), _scope)"
+            return f"_rt.get_var(_rt.append_subscripts(str(_rt.resolve_indirection({base_name_expr}, {levels}, {scope_expr})), {subs_args}), {scope_expr})"
         else:
             # Single level with subscripts: @NAME@(1,2)
             all_subs_exprs = []
@@ -235,26 +328,28 @@ def generate_name_indirection(
             subs_args = ", ".join(all_subs_exprs)
 
             if is_simple_name:
-                return f"_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source({base_name_expr}, _scope), {subs_args}), _scope)"
+                return f"_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source({base_name_expr}, {scope_expr}), {subs_args}), {scope_expr})"
             else:
-                return f"_rt.get_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}), _scope)"
+                return f"_rt.get_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}), {scope_expr})"
     else:
         # No subscripts
         if levels > 1:
             if is_simple_name:
-                return f"_rt.resolve_indirection({base_name_expr}, {levels}, _scope)"
+                return (
+                    f"_rt.resolve_indirection({base_name_expr}, {levels}, {scope_expr})"
+                )
             else:
                 # For non-simple names (like globals), the value is already retrieved
                 # by base_name_expr, so we need one less level of resolution
-                return f"_rt.resolve_indirection(str({base_name_expr}), {levels - 1}, _scope)"
+                return f"_rt.resolve_indirection(str({base_name_expr}), {levels - 1}, {scope_expr})"
         else:
             # Simple single-level indirection: @X
             name_expr = _generate_inner_name_expr(inner_expr, ctx)
-            return f"_rt.get_var({name_expr}, _scope)"
+            return f"_rt.get_var({name_expr}, {scope_expr})"
 
     # Simple single-level indirection: @X
     name_expr = _generate_inner_name_expr(inner_expr, ctx)
-    return f"_rt.get_var({name_expr}, _scope)"
+    return f"_rt.get_var({name_expr}, {scope_expr})"
 
 
 def generate_name_indirection_write(
@@ -268,11 +363,13 @@ def generate_name_indirection_write(
     name at runtime and write a value to it.
 
     Handles:
-    - Simple indirection: S @X=1 → _rt.set_var(_rt.get_indirection_source("X", _scope), 1, _scope)
-    - Multi-level: S @@X=1 → _rt.set_var(_rt.resolve_indirection("X", 1, _scope), 1, _scope)
-    - With subscripts: S @NAME@(1,2)=5 → _rt.set_var(append_subscripts(...), 5, _scope)
+    - Simple indirection: S @X=1 → _rt.set_var(_rt.get_indirection_source("X", scope), 1, scope)
+    - Multi-level: S @@X=1 → _rt.set_var(_rt.resolve_indirection("X", 1, scope), 1, scope)
+    - With subscripts: S @NAME@(1,2)=5 → _rt.set_var(append_subscripts(...), 5, scope)
     - Multi-level with inner subscripts: S @@^VV@(3)=99
       The inner @^VV@(3) has subscripts that need to be applied BEFORE the outer resolution
+
+    Where 'scope' is state._locals in TRAMPOLINE+dynamic_locals mode, _scope otherwise.
 
     Args:
         expr: MIndirection ASG node with indirection_type=NAME
@@ -285,6 +382,9 @@ def generate_name_indirection_write(
     from m2py.asg.expressions import MVariable
     from m2py.parser.textx_classes import GlobalVariable
     from m2py.codegen.expressions import generate_expr
+
+    # Get the appropriate scope expression for this context
+    scope_expr = _get_scope_expr(ctx)
 
     # Count indirection levels and collect ALL subscripts (inner and outer)
     # all_subscripts is a list of lists, one per level (inner to outer)
@@ -336,7 +436,7 @@ def generate_name_indirection_write(
                     per_level_subs.append("[]")
             subs_per_level_str = ", ".join(per_level_subs)
             # For WRITE, base_name_expr is always a literal name string, so we DON'T skip initial resolution
-            return f"_rt.set_var(str(_rt.resolve_with_per_level_subscripts({base_name_expr}, [{subs_per_level_str}], _scope)), {value_expr}, _scope)"
+            return f"_rt.set_var(str(_rt.resolve_with_per_level_subscripts({base_name_expr}, [{subs_per_level_str}], {scope_expr})), {value_expr}, {scope_expr})"
         elif levels > 1:
             # Multi-level with subscripts at only one level: @@^VV@(3)=val (subs only at outer level)
             # Flatten all subscripts (there's only one non-empty level anyway)
@@ -352,9 +452,9 @@ def generate_name_indirection_write(
             # 3. Resolve (levels-1) more times → value of "^VV(1,3)" = "^VV(2,3)"
             # 4. SET that target
             if is_simple_name:
-                return f"_rt.set_var(str(_rt.resolve_with_subscripts({base_name_expr}, [{subs_args}], {levels - 1}, _scope)), {value_expr}, _scope)"
+                return f"_rt.set_var(str(_rt.resolve_with_subscripts({base_name_expr}, [{subs_args}], {levels - 1}, {scope_expr})), {value_expr}, {scope_expr})"
             else:
-                return f"_rt.set_var(str(_rt.resolve_with_subscripts({base_name_expr}, [{subs_args}], {levels - 1}, _scope)), {value_expr}, _scope)"
+                return f"_rt.set_var(str(_rt.resolve_with_subscripts({base_name_expr}, [{subs_args}], {levels - 1}, {scope_expr})), {value_expr}, {scope_expr})"
         else:
             # Single level with subscripts: @NAME@(1,2)=val
             # Get the name from variable, append subscripts, set
@@ -367,30 +467,26 @@ def generate_name_indirection_write(
             if is_global_var:
                 # Global variable: get its VALUE (which is the target name), append subscripts
                 # @^V@(1)=0 where ^V="^VV" → SET ^VV(1)=0
-                return f"_rt.set_var(_rt.append_subscripts(str(_rt.get_var({base_name_expr}, _scope)), {subs_args}), {value_expr}, _scope)"
+                return f"_rt.set_var(_rt.append_subscripts(str(_rt.get_var({base_name_expr}, {scope_expr})), {subs_args}), {value_expr}, {scope_expr})"
             elif is_simple_name:
                 # Local variable: use get_indirection_source to get the name from local var
-                return f"_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source({base_name_expr}, _scope), {subs_args}), {value_expr}, _scope)"
+                return f"_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source({base_name_expr}, {scope_expr}), {subs_args}), {value_expr}, {scope_expr})"
             else:
-                return f"_rt.set_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}), {value_expr}, _scope)"
+                return f"_rt.set_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}), {value_expr}, {scope_expr})"
     else:
         # No subscripts
         if levels > 1:
             # Multi-level without subscripts: @@X=val
             # Resolve levels-1 times to get the target variable name
             if is_simple_name:
-                resolved_name = (
-                    f"_rt.resolve_indirection({base_name_expr}, {levels - 1}, _scope)"
-                )
+                resolved_name = f"_rt.resolve_indirection({base_name_expr}, {levels - 1}, {scope_expr})"
             else:
-                resolved_name = (
-                    f"_rt.resolve_indirection({base_name_expr}, {levels - 1}, _scope)"
-                )
-            return f"_rt.set_var(str({resolved_name}), {value_expr}, _scope)"
+                resolved_name = f"_rt.resolve_indirection({base_name_expr}, {levels - 1}, {scope_expr})"
+            return f"_rt.set_var(str({resolved_name}), {value_expr}, {scope_expr})"
         else:
             # Simple single-level indirection: @X=val
             name_expr = _generate_inner_name_expr(inner_expr, ctx)
-            return f"_rt.set_var({name_expr}, {value_expr}, _scope)"
+            return f"_rt.set_var({name_expr}, {value_expr}, {scope_expr})"
 
 
 def generate_multi_level_indirection(
@@ -413,13 +509,16 @@ def generate_multi_level_indirection(
         ctx: Generator context
 
     Returns:
-        Python expression string like: _rt.resolve_indirection("X", 2, _scope)
+        Python expression string like: _rt.resolve_indirection("X", 2, scope)
 
     Raises:
         ValueError: If indirection has no inner expression
     """
     from m2py.asg.expressions import MVariable
     from m2py.codegen.expressions import generate_expr
+
+    # Get the appropriate scope expression for this context
+    scope_expr = _get_scope_expr(ctx)
 
     # Get the innermost expression by unwrapping all indirection levels
     inner_expr = expr.expression
@@ -429,10 +528,10 @@ def generate_multi_level_indirection(
 
     if isinstance(inner_expr, MVariable):
         var_name = inner_expr.name
-        return f'_rt.resolve_indirection("{var_name}", {levels}, _scope)'
+        return f'_rt.resolve_indirection("{var_name}", {levels}, {scope_expr})'
     else:
         name_expr = generate_expr(inner_expr, ctx)
-        return f"_rt.resolve_indirection(str({name_expr}), {levels}, _scope)"
+        return f"_rt.resolve_indirection(str({name_expr}), {levels}, {scope_expr})"
 
 
 def generate_subscripted_indirection(
@@ -463,6 +562,9 @@ def generate_subscripted_indirection(
     from m2py.asg.expressions import MVariable
     from m2py.codegen.expressions import generate_expr
 
+    # Get the appropriate scope expression for this context
+    scope_expr = _get_scope_expr(ctx)
+
     # Count indirection levels
     levels, inner_expr = _count_indirection_levels(expr)
 
@@ -478,15 +580,15 @@ def generate_subscripted_indirection(
     if isinstance(inner_expr, MVariable):
         base_name = inner_expr.name
         if levels > 1:
-            return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + {subs_fstr}, _scope)'
+            return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, {scope_expr})) + {subs_fstr}, {scope_expr})'
         else:
             # T065: Use _generate_inner_name_expr for better error messages
             inner_name = _generate_inner_name_expr(inner_expr, ctx)
-            return f"_rt.get_var({inner_name} + {subs_fstr}, _scope)"
+            return f"_rt.get_var({inner_name} + {subs_fstr}, {scope_expr})"
     else:
         # Complex expression
         name_expr = generate_expr(inner_expr, ctx)
-        return f"_rt.get_var(str({name_expr}) + {subs_fstr}, _scope)"
+        return f"_rt.get_var(str({name_expr}) + {subs_fstr}, {scope_expr})"
 
 
 def generate_xecute_constant(
@@ -612,8 +714,22 @@ def generate_indirect_do(
 
         target_str_expr = "_indirect_target"
 
-    # Parse the target string
-    ctx.emitter.line(f"_call_target = _rt.parse_call_target({target_str_expr})")
+    # Resolve nested indirection (e.g., @L where L="@L(1)")
+    # This handles MUMPS's recursive indirection resolution
+    # In TRAMPOLINE mode with dynamic_locals, variables are in state._locals
+    # Otherwise they're in _scope (cross-routine) or local Python variables
+    is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
+    if is_trampoline and ctx.uses_dynamic_locals:
+        ctx.emitter.line(
+            f"_resolved_target = _rt.resolve_nested_indirection({target_str_expr}, state._locals)"
+        )
+    else:
+        ctx.emitter.line(
+            f"_resolved_target = _rt.resolve_nested_indirection({target_str_expr}, _scope)"
+        )
+
+    # Parse the resolved target string
+    ctx.emitter.line("_call_target = _rt.parse_call_target(_resolved_target)")
 
     # Generate dispatch code
     # Check if it's an external or local call
@@ -621,10 +737,15 @@ def generate_indirect_do(
     with ctx.emitter.indented():
         # External call: import routine and call label
         ctx.emitter.line("import importlib")
+        # Import translate helper for numeric/% label lookup
+        ctx.emitter.line("from m2py.runtime import _translate_label_to_func")
         ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
         ctx.emitter.line("if _call_target.label:")
         with ctx.emitter.indented():
-            ctx.emitter.line("_func = getattr(_module, _call_target.label, None)")
+            # Translate label (e.g., "1" → "_n_1", "%X" → "_pct_X")
+            ctx.emitter.line(
+                "_func = getattr(_module, _translate_label_to_func(_call_target.label), None)"
+            )
             ctx.emitter.line("if _func is None:")
             with ctx.emitter.indented():
                 ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
@@ -634,8 +755,10 @@ def generate_indirect_do(
                 )
         ctx.emitter.line("else:")
         with ctx.emitter.indented():
-            # Entry label (same name as routine)
-            ctx.emitter.line("_func = getattr(_module, _call_target.routine, None)")
+            # Entry label (same name as routine) - also needs translation
+            ctx.emitter.line(
+                "_func = getattr(_module, _translate_label_to_func(_call_target.routine), None)"
+            )
             ctx.emitter.line("if _func is None:")
             with ctx.emitter.indented():
                 ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
@@ -666,9 +789,15 @@ def generate_indirect_do(
         # In TRAMPOLINE mode, functions are in _labels dict; in SIMPLE mode, in globals()
         is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
         if is_trampoline:
+            # _labels dict uses MUMPS label names as keys
             ctx.emitter.line("_func = _labels.get(_call_target.label)")
         else:
-            ctx.emitter.line("_func = globals().get(_call_target.label)")
+            # globals() uses Python function names (e.g., _n_1 for label "1")
+            # Import was already done above (or add it if this is local-only)
+            ctx.emitter.line("from m2py.runtime import _translate_label_to_func")
+            ctx.emitter.line(
+                "_func = globals().get(_translate_label_to_func(_call_target.label))"
+            )
         ctx.emitter.line("if _func is None:")
         with ctx.emitter.indented():
             ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
@@ -688,8 +817,10 @@ def generate_indirect_do(
                 ctx.emitter.line("_label_name, _line_offset = _line_map[_target_line]")
                 if is_trampoline:
                     # In TRAMPOLINE mode, call internal function with state
+                    # _line_map stores Python function names (e.g., "_n_1"), and we need
+                    # to call the internal function (e.g., "__n_1") with an extra underscore
                     ctx.emitter.line(
-                        "_labels[_label_name](_rt, state, _scope, _start_offset=_line_offset)"
+                        "globals()['_' + _label_name](_rt, state, _scope, _start_offset=_line_offset)"
                     )
                 else:
                     # In SIMPLE mode, call function directly (must support _start_offset)
@@ -705,7 +836,11 @@ def generate_indirect_do(
                 )
         ctx.emitter.line("else:")
         with ctx.emitter.indented():
-            ctx.emitter.line("_func(_rt, _scope=_scope)")
+            if is_trampoline:
+                # In TRAMPOLINE mode, pass state to the function
+                ctx.emitter.line("_func(_rt, state, _scope)")
+            else:
+                ctx.emitter.line("_func(_rt, _scope=_scope)")
 
 
 def generate_indirect_goto(
@@ -783,8 +918,21 @@ def generate_indirect_goto(
 
         target_str_expr = "_indirect_target"
 
-    # Parse the target string
-    ctx.emitter.line(f"_call_target = _rt.parse_call_target({target_str_expr})")
+    # Resolve nested indirection (e.g., @L where L="@L(1)")
+    # This handles MUMPS's recursive indirection resolution
+    # In TRAMPOLINE mode, variables are in state._locals; in SIMPLE mode, they're in _scope
+    is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
+    if is_trampoline and ctx.uses_dynamic_locals:
+        ctx.emitter.line(
+            f"_resolved_target = _rt.resolve_nested_indirection({target_str_expr}, state._locals)"
+        )
+    else:
+        ctx.emitter.line(
+            f"_resolved_target = _rt.resolve_nested_indirection({target_str_expr}, _scope)"
+        )
+
+    # Parse the resolved target string
+    ctx.emitter.line("_call_target = _rt.parse_call_target(_resolved_target)")
 
     # Generate dispatch code
     # Check if it's an external or local GOTO

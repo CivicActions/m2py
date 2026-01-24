@@ -1010,12 +1010,29 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
         elif isinstance(inner_expr, (MVariable, MLocalVariable)):
             base_name = inner_expr.name
+            python_name = translate_name(base_name)
             if levels > 1:
-                name_expr = (
-                    f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
-                )
+                # Multi-level indirection: @@X
+                if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, state._locals))'
+                elif ctx.strategy == GotoStrategy.TRAMPOLINE:
+                    # Python locals - build a temporary scope dict with the variable
+                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, {{"{base_name}": MArray(value={python_name})}}))'
+                else:
+                    name_expr = (
+                        f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
+                    )
             else:
-                name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
+                # Single-level indirection: @X
+                if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                    name_expr = (
+                        f'_rt.get_indirection_source("{base_name}", state._locals)'
+                    )
+                elif ctx.strategy == GotoStrategy.TRAMPOLINE:
+                    # Python locals - use the variable directly as string
+                    name_expr = f"str({python_name})"
+                else:
+                    name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
         else:
             name_expr_base = generate_expr(inner_expr, ctx)
             name_expr = f"str({name_expr_base})"

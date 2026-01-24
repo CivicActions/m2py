@@ -328,6 +328,10 @@ class MRoutine(ASGElement):
     # Requires runtime scope stack (state._new_stack) in TRAMPOLINE mode
     has_argumentless_new: bool = False
 
+    # True if routine has name indirection that references local variables
+    # This requires dynamic_locals mode for runtime variable name resolution
+    has_name_indirection_on_locals: bool = False
+
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.
 
