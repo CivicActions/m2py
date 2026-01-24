@@ -488,10 +488,11 @@ class TestForIndirectionCodegen:
     def test_for_subscripted_loop_variable_codegen(self, generate_python):
         """FOR with subscripted loop variable generates .set() call (§8.2.5).
 
-        T034: Subscripted loop var should use MArray.set() for initial and increment.
+        T034: Subscripted loop var should use MArray.set() with cached subscript.
+        Per MUMPS spec: subscripts are evaluated once at FOR loop start.
         """
         code = generate_python("TEST\n F I(1)=1:1:3 W I(1)\n Q\n")
-        # Should use .set() for initial value assignment
-        assert ".set(1, value=_for_start_0)" in code
-        # Should use .set() for increment assignment
-        assert ".set(1, value=_for_cur_0)" in code
+        # Should cache subscript value at start
+        assert "_for_sub_0_0 = 1" in code
+        # Should use cached subscript for .set() calls
+        assert ".set(_for_sub_0_0, value=_for_val_0)" in code

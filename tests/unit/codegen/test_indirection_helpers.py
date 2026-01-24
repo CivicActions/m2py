@@ -71,10 +71,14 @@ class TestForIndirectionTargetGeneration:
         assert "_for_indirect_var" in code
 
     def test_subscripted_loop_var_uses_set(self):
-        """Subscripted loop var uses MArray.set() for access."""
+        """Subscripted loop var uses MArray.set() with cached subscript.
+
+        Per MUMPS spec: subscripts are evaluated once at FOR loop start.
+        """
         code = generate_python("TEST\n F I(1)=1:1:3 W I(1)\n Q\n")
-        # Should use .set() for initial value
-        assert ".set(1, value=" in code
+        # Should cache subscript and use .set() with cached value
+        assert "_for_sub_0_0 = 1" in code
+        assert ".set(_for_sub_0_0, value=" in code
 
 
 # =============================================================================

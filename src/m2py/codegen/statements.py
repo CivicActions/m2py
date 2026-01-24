@@ -1716,6 +1716,12 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
         _generate_for_open_ended(stmt, for_ctx, ctx)
     elif for_ctx.loop_type == ForLoopType.MIXED:
         _generate_for_mixed(stmt, for_ctx, ctx)
+    elif for_ctx.loop_var_subscripts and for_ctx.loop_type == ForLoopType.BOUNDED:
+        # Subscripted loop variables (F A(B)=1:1:3) use bounded path which handles
+        # subscripts specially - counter tracked separately from array storage.
+        # Per MUMPS spec, subscripts are evaluated ONCE at start, so loop var
+        # modifications in body don't affect the subscript (no need for while pattern).
+        _generate_for_bounded(stmt, for_ctx, ctx)
     elif for_ctx.use_while:
         # BOUNDED or STRING_LIST with loop var modification needs while loop
         _generate_for_while(stmt, for_ctx, ctx)
@@ -1896,68 +1902,78 @@ def _generate_for_bounded(
             _generate_for_body(stmt, ctx, for_ctx)
             # Check if should continue before incrementing
             ctx.emitter.line(
-                f"if not (({step_var} > 0 and _scope.setdefault(_for_indirect_var_{lid}, MArray()).value + {step_var} <= {end_var}) or "
-                f"({step_var} < 0 and _scope.setdefault(_for_indirect_var_{lid}, MArray()).value + {step_var} >= {end_var}) or "
+                f"if not (({step_var} > 0 and m_add(_scope.setdefault(_for_indirect_var_{lid}, MArray()).value, {step_var}) <= {end_var}) or "
+                f"({step_var} < 0 and m_add(_scope.setdefault(_for_indirect_var_{lid}, MArray()).value, {step_var}) >= {end_var}) or "
                 f"({step_var} == 0)):"
             )
             with ctx.emitter.indented():
                 ctx.emitter.line("break")
             # Increment loop variable
             ctx.emitter.line(
-                f"_scope.setdefault(_for_indirect_var_{lid}, MArray()).value = _scope.setdefault(_for_indirect_var_{lid}, MArray()).value + {step_var}"
+                f"_scope.setdefault(_for_indirect_var_{lid}, MArray()).value = m_add(_scope.setdefault(_for_indirect_var_{lid}, MArray()).value, {step_var})"
             )
     elif for_ctx.loop_var_subscripts:
         # Handle subscripted loop variable (F A(1)=1:1:3 or F A(@B)=1:1:3)
-        # MUMPS re-evaluates subscripts on EVERY access - initial, condition, increment
-        # We must always access via _scope with re-evaluated subscripts, never use a
-        # Python temp var for the condition/increment.
-        subs_str = ", ".join(for_ctx.loop_var_subscripts)
+        # Per MUMPS spec: "Any expressions occurring in lvn, such as might occur in subscripts
+        # or indirection, are evaluated once per execution of the For command, prior to the
+        # first execution of any forparameter."
+        # This means subscripts are cached ONCE at the start, not re-evaluated each iteration.
+        # The loop COUNTER is tracked separately and stored to the SAME subscript location.
         var_name = for_ctx.loop_var_name
 
-        # Helper expressions for accessing the subscripted variable
-        # These will re-evaluate subscripts each time they appear in generated code
-        get_expr = f"_scope.setdefault({var_name!r}, MArray()).get({subs_str})"
+        # Cache subscript values at the start (evaluate once per spec)
+        cached_subs = []
+        for i, sub_expr in enumerate(for_ctx.loop_var_subscripts):
+            cache_var = f"_for_sub_{lid}_{i}"
+            ctx.emitter.line(f"{cache_var} = {sub_expr}")
+            cached_subs.append(cache_var)
+        cached_subs_str = ", ".join(cached_subs)
+
+        # Track the loop counter separately from the variable storage
+        counter_var = f"_for_val_{lid}"
 
         def make_set_expr(val: str) -> str:
-            return f"_scope.setdefault({var_name!r}, MArray()).set({subs_str}, value={val})"
+            return f"_scope.setdefault({var_name!r}, MArray()).set({cached_subs_str}, value={val})"
 
-        # Initial assignment - evaluate subscripts and set value
-        ctx.emitter.line(make_set_expr(start_var))
+        # Initial assignment - set counter and store to subscripted variable
+        ctx.emitter.line(f"{counter_var} = {start_var}")
+        ctx.emitter.line(make_set_expr(counter_var))
 
         # Also set Python temp var for body access (some body code may use it)
         ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
 
-        # While loop - condition re-evaluates subscripts each iteration
+        # While loop - condition uses the counter, not the variable value
         ctx.emitter.line(
-            f"while ({step_var} > 0 and {get_expr} <= {end_var}) or "
-            f"({step_var} < 0 and {get_expr} >= {end_var}) or "
-            f"({step_var} == 0 and {get_expr} <= {end_var}):"
+            f"while ({step_var} > 0 and {counter_var} <= {end_var}) or "
+            f"({step_var} < 0 and {counter_var} >= {end_var}) or "
+            f"({step_var} == 0 and {counter_var} <= {end_var}):"
         )
         with ctx.emitter.indented():
-            # Sync Python temp var from _scope at start of each iteration
-            # (in case subscript changed and we need current value)
-            ctx.emitter.line(f"{for_ctx.loop_var} = {get_expr}")
+            # Sync Python temp var at start of each iteration
+            ctx.emitter.line(f"{for_ctx.loop_var} = {counter_var}")
 
             # Generate loop body (may modify subscript source variables)
             _generate_for_body(stmt, ctx, for_ctx)
 
             # Check if should continue before incrementing
-            # Re-evaluate subscripts for both current value read and next value check
+            # Use the counter variable for termination check, not the stored value
             ctx.emitter.line(
-                f"if not (({step_var} > 0 and {get_expr} + {step_var} <= {end_var}) or "
-                f"({step_var} < 0 and {get_expr} + {step_var} >= {end_var}) or "
+                f"if not (({step_var} > 0 and m_add({counter_var}, {step_var}) <= {end_var}) or "
+                f"({step_var} < 0 and m_add({counter_var}, {step_var}) >= {end_var}) or "
                 f"({step_var} == 0)):"
             )
             with ctx.emitter.indented():
                 ctx.emitter.line("break")
 
-            # Increment - read current value (re-eval subscripts), add step,
-            # write new value (re-eval subscripts again for write)
-            ctx.emitter.line(f"_for_cur_{lid} = {get_expr} + {step_var}")
-            ctx.emitter.line(make_set_expr(f"_for_cur_{lid}"))
+            # Increment the counter
+            ctx.emitter.line(f"{counter_var} = m_add({counter_var}, {step_var})")
+
+            # Store the new counter value to the subscripted variable
+            # (subscript is re-evaluated here)
+            ctx.emitter.line(make_set_expr(counter_var))
 
             # Sync Python temp var for next iteration
-            ctx.emitter.line(f"{for_ctx.loop_var} = _for_cur_{lid}")
+            ctx.emitter.line(f"{for_ctx.loop_var} = {counter_var}")
     else:
         # Simple loop variable (F I=1:1:3)
         # Set loop var to start value (MUMPS semantics)

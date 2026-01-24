@@ -562,6 +562,30 @@ def load_suite_config(suite_name: str) -> SuiteConfig:
     )
 
 
+def routine_to_filename(routine_name: str) -> str:
+    """Convert MUMPS routine name to filename.
+
+    % prefix becomes _ in filename since % is not safe in all filesystems.
+
+    Args:
+        routine_name: MUMPS routine name (e.g., %, %1A, V1RN)
+
+    Returns:
+        Filename (e.g., _, _1A, V1RN)
+
+    Examples:
+        >>> routine_to_filename("%")
+        '_'
+        >>> routine_to_filename("%1A")
+        '_1A'
+        >>> routine_to_filename("V1RN")
+        'V1RN'
+    """
+    if routine_name.startswith("%"):
+        return "_" + routine_name[1:]
+    return routine_name
+
+
 def load_routine_source(inref_dir: Path, routine_name: str) -> str:
     """Load MUMPS source for a routine.
 
@@ -575,10 +599,12 @@ def load_routine_source(inref_dir: Path, routine_name: str) -> str:
     Raises:
         FileNotFoundError: If routine file doesn't exist
     """
-    routine_path = inref_dir / f"{routine_name}.m"
+    # Translate routine name to filename (% -> _)
+    filename = routine_to_filename(routine_name)
+    routine_path = inref_dir / f"{filename}.m"
     if not routine_path.exists():
         # Try lowercase
-        routine_path = inref_dir / f"{routine_name.lower()}.m"
+        routine_path = inref_dir / f"{filename.lower()}.m"
     if not routine_path.exists():
         msg = f"Routine not found: {routine_name} in {inref_dir}"
         raise FileNotFoundError(msg)

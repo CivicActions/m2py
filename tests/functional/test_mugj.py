@@ -26,6 +26,8 @@ from m2py.codegen import generate_python
 from m2py.codegen.names import translate_name
 from m2py.runtime import MUMPSRuntime
 
+from tests.functional.conftest import routine_to_filename
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -82,19 +84,22 @@ def discover_dependencies(source: str, inref_dir: Path) -> set[str]:
         r"\bD(?:O)?\s+\^(%\w*|[a-zA-Z]\w*)", source, re.IGNORECASE
     ):
         routine_name = match.group(1)
-        if (inref_dir / f"{routine_name}.m").exists():
+        filename = routine_to_filename(routine_name)
+        if (inref_dir / f"{filename}.m").exists():
             deps.add(routine_name)
     # Also find comma-separated routine calls: D ^A,^B,^C
     for match in re.finditer(r",\^(%\w*|[a-zA-Z]\w*)", source, re.IGNORECASE):
         routine_name = match.group(1)
-        if (inref_dir / f"{routine_name}.m").exists():
+        filename = routine_to_filename(routine_name)
+        if (inref_dir / f"{filename}.m").exists():
             deps.add(routine_name)
     # Also find GOTO ^ROUTINE calls (case-insensitive, abbreviated or full form)
     for match in re.finditer(
         r"\bG(?:OTO)?\s+\^(%\w*|[a-zA-Z]\w*)", source, re.IGNORECASE
     ):
         routine_name = match.group(1)
-        if (inref_dir / f"{routine_name}.m").exists():
+        filename = routine_to_filename(routine_name)
+        if (inref_dir / f"{filename}.m").exists():
             deps.add(routine_name)
     return deps
 
@@ -134,7 +139,8 @@ def load_all_routines(
             continue
         processed.add(routine)
 
-        source_file = INREF_DIR / f"{routine}.m"
+        filename = routine_to_filename(routine)
+        source_file = INREF_DIR / f"{filename}.m"
         if not source_file.exists():
             if verbose:
                 print(f"  [{count + 1}] {routine}... FILE NOT FOUND", file=sys.stderr)
