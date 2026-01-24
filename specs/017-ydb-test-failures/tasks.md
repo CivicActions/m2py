@@ -418,6 +418,19 @@ thanks to multi-routine support and Decimal arithmetic helpers.
   - **Fix**: Added MNakedGlobal handler in semantic_analyzer.py `_analyze_expression()` method
   - **Tests**: Added 3 unit tests in test_expression_analysis.py for naked global subscripts
   - **Affects**: V1NX (now times out instead of crashing), other tests using naked globals with expressions
+- [X] T075j Fix multi-level indirection with per-level subscripts and naked references
+  - **Scope**: VV2VNIA test cases II-127, II-128, II-129 failing due to multi-level indirection issues
+  - **Root cause (II-127/II-128)**: `resolve_with_per_level_subscripts` not returning target name for SET operations
+  - **Root cause (II-129)**: Naked reference strings like "^(3)" in indirection context not being resolved
+  - **Fixes applied**:
+    1. codegen/indirection.py: Use `levels - 1` for non-simple names (globals) in resolve_indirection since value already retrieved
+    2. runtime/__init__.py: Added `_is_valid_var_name()` helper to detect when resolved value is not a var name
+    3. runtime/__init__.py: `resolve_indirection` now returns value as-is if not a valid var name (stops chain early)
+    4. runtime/__init__.py: `get_var`, `set_var`, `kill_var`, `merge_var`, `get_tree_var` handle naked reference strings
+    5. runtime/__init__.py: `resolve_with_subscripts` handles naked reference strings without getting value first
+    6. runtime/__init__.py: `resolve_indirection` skips validation for naked references (base_name == "^")
+  - **Tests**: Added 12 unit tests in test_s7_3_multi_level_indirection_subscripts.py
+  - **Affects**: VV2VNIA test now passes all 10 test cases (II-120 through II-129), only whitespace diff remains
 - [ ] T075a Implement $Y (vertical position) tracking and `W:$Y>N #` pagination
   - **Scope**: Track $Y position in runtime, implement form feed on overflow
   - **Affects**: ~20-30 tests with pagination differences

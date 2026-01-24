@@ -1038,8 +1038,10 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable: m_data(_scope.get('VAR', MArray()), subscripts)
+        # Spec 017 (T014): Use state._locals for dynamic locals in TRAMPOLINE
         python_name = translate_name(var_name)
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            return f"m_data(state._locals.get({python_name!r}, MArray()), {subscripts_tuple})"
         return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
     elif isinstance(var, GlobalVariable):
         # Global variable: m_data_global(_rt.globals, 'NAME', subscripts)
@@ -1053,7 +1055,10 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         )
     else:
         # Fallback for any other variable type - treat as local
+        # Spec 017 (T014): Use state._locals for dynamic locals in TRAMPOLINE
         python_name = translate_name(var_name)
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            return f"m_data(state._locals.get({python_name!r}, MArray()), {subscripts_tuple})"
         return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
 
 
@@ -1363,8 +1368,8 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
     # Handle offset parameter
     if offset is not None:
         if isinstance(offset, MLiteral):
-            # Apply sign to literal value
-            offset_val = offset.value if offset_sign == "+" else -offset.value
+            # Apply sign to literal value, truncating to integer for MUMPS semantics
+            offset_val = int(offset.value) if offset_sign == "+" else -int(offset.value)
             params.append(f"offset={offset_val}")
         else:
             # Offset is an expression (variable, etc.)

@@ -550,8 +550,8 @@ class RoutineGenerator:
         # T030: Add _scope parameter for cross-routine variable visibility
         # All labels accept _rt and _scope so they can be called externally (D LABEL^ROUTINE)
         # _scope must come AFTER formal params since it has a default value
-        # **_kwargs allows external callers to pass _start_offset (TRAMPOLINE) which is ignored
-        all_params = ["_rt"] + formal_params + ["_scope=None", "**_kwargs"]
+        # _start_offset allows external callers to pass offset for D LABEL+N^ROUTINE calls
+        all_params = ["_rt"] + formal_params + ["_scope=None", "_start_offset=0"]
         params_str = ", ".join(all_params)
         ctx.emitter.line(f"def {func_name}({params_str}):")
 
@@ -627,17 +627,27 @@ class RoutineGenerator:
         Labels without explicit exit (QUIT/GOTO/HALT) call the next label
         function directly at the end, implementing MUMPS fall-through behavior.
 
+        T075a: External offset support for SIMPLE_FUNCTIONS strategy.
+        Pass label.line_number to generate_scope_statements so it can wrap
+        statements with offset guards (if _start_offset <= offset:). This allows
+        external callers to enter at any line via D LABEL+N^ROUTINE calls.
+
         Args:
             label: MLabel ASG node
             ctx: Generator context
         """
+        # Get label line for offset support
+        label_line = label.line_number
+
         # Spec 006 (T069a): Check for self-loop pattern
         if label.has_self_loop:
             # Wrap body in while True: for self-loop pattern
             ctx.emitter.line("while True:")
             with ctx.emitter.indented():
                 if label.body and label.body.statements:
-                    generate_scope_statements(label.body.statements, ctx)
+                    generate_scope_statements(
+                        label.body.statements, ctx, label_line=label_line
+                    )
                 else:
                     ctx.emitter.line("pass")
                 # If no explicit exit, add break to prevent infinite loop
@@ -650,9 +660,11 @@ class RoutineGenerator:
                 ctx.emitter.line(f"return {next_func}(_rt, _scope=_scope)")
         else:
             # Generate body statements using scope-aware generator
-            # This handles forward GOTO restructuring automatically
+            # This handles forward GOTO restructuring and offset guards automatically
             if label.body and label.body.statements:
-                generate_scope_statements(label.body.statements, ctx)
+                generate_scope_statements(
+                    label.body.statements, ctx, label_line=label_line
+                )
             else:
                 # Empty function needs pass
                 ctx.emitter.line("pass")
@@ -827,7 +839,9 @@ class RoutineGenerator:
                                 ctx.emitter.line(
                                     "label_name, offset = _line_map[target]"
                                 )
-                                ctx.emitter.line("func = _labels[label_name]")
+                                # _line_map stores Python function names (entry points)
+                                # Internal trampoline functions have _ prefix, so add it
+                                ctx.emitter.line("func = globals()['_' + label_name]")
                                 # T076: Pass _rt and _scope to inner functions
                                 ctx.emitter.line(
                                     "target, state = func(_rt, state, _scope, _start_offset=offset)"
@@ -930,10 +944,26 @@ class RoutineGenerator:
                     )
 
                 # Run trampoline until subroutine returns (target is None)
+                # T075: Handle both int targets (line numbers from GOTO+offset)
+                # and string targets (label names from GOTO label)
                 ctx.emitter.line("while target is not None:")
                 with ctx.emitter.indented():
-                    ctx.emitter.line("func = _labels[target]")
-                    ctx.emitter.line("target, state = func(_rt, state, _scope)")
+                    # Only handle int targets if routine has offset calls
+                    if self._routine.has_offset_calls:
+                        ctx.emitter.line("if isinstance(target, int):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("label_name, offset = _line_map[target]")
+                            ctx.emitter.line("func = globals()['_' + label_name]")
+                            ctx.emitter.line(
+                                "target, state = func(_rt, state, _scope, _start_offset=offset)"
+                            )
+                        ctx.emitter.line("else:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("func = _labels[target]")
+                            ctx.emitter.line("target, state = func(_rt, state, _scope)")
+                    else:
+                        ctx.emitter.line("func = _labels[target]")
+                        ctx.emitter.line("target, state = func(_rt, state, _scope)")
 
                 # T075b: Sync state back to _scope before returning
                 if ctx.uses_dynamic_locals:

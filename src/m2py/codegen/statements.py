@@ -556,6 +556,7 @@ def _restructure_forward_goto(
 def generate_scope_statements(
     statements: List["MStatement"],
     ctx: "GeneratorContext",
+    label_line: int | None = None,
 ) -> None:
     """Generate statements for a scope, handling forward GOTO restructuring.
 
@@ -574,9 +575,15 @@ def generate_scope_statements(
             _rt.write("skipped")
         _rt.write("target")
 
+    When label_line is provided, statements are also wrapped with offset guards
+    for D LABEL+N^ROUTINE support. This allows external callers to enter at
+    any line within the label by passing _start_offset parameter.
+
     Args:
         statements: List of statements to generate
         ctx: Generator context
+        label_line: Optional line number of the containing label. If provided,
+                   statements are wrapped with offset guards for _start_offset support.
     """
     i = 0
     while i < len(statements):
@@ -590,8 +597,21 @@ def generate_scope_statements(
                 i = _restructure_forward_goto(stmt, i, statements, goto, ctx)
                 continue
 
-        # Normal statement generation
-        generate_statement(stmt, ctx)
+        # Apply offset guard if label_line provided (for external offset calls)
+        if label_line is not None and stmt.line_number is not None:
+            offset = stmt.line_number - label_line
+            ctx.emitter.line(f"if _start_offset <= {offset}:")
+            with ctx.emitter.indented():
+                # Track line count to detect if statement emits nothing
+                lines_before = len(ctx.emitter._lines)
+                generate_statement(stmt, ctx)
+                lines_after = len(ctx.emitter._lines)
+                # If statement emitted nothing (e.g., empty XECUTE), add pass
+                if lines_after == lines_before:
+                    ctx.emitter.line("pass")
+        else:
+            # Normal statement generation
+            generate_statement(stmt, ctx)
         i += 1
 
 
@@ -2393,6 +2413,14 @@ def _generate_single_target_goto(
         # Get the label name and translate it
         label_name = translate_name(target.name)
 
+        # Check for offset GOTO - should not reach here (strategy selection uses TRAMPOLINE)
+        if target.offset is not None:
+            # Strategy selection ensures TRAMPOLINE for offset calls, but add safety check
+            raise UnsupportedFeatureError(
+                f"Offset GOTO in SIMPLE_FUNCTIONS mode is not supported: G {target.name}+N. "
+                "Strategy selection should have chosen TRAMPOLINE."
+            )
+        # No offset - simple function call
         # Generate: label(_rt, _scope=_scope); exit_statement
         # T075l: Pass _rt and _scope so XECUTE inline GOTO works correctly
         ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
@@ -2704,12 +2732,18 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                         f"list({routine_name}._label_lines.keys()))"
                     )
                 # Calculate target line from label's line + offset
+                # _label_lines stores 0-indexed line numbers, _line_map uses 1-indexed
+                # So we add 1 to convert to 1-indexed before adding offset
+                # T075a: Offset must be truncated to integer per MUMPS spec
+                # Use m_num() for MUMPS-style numeric conversion (extracts leading numeric)
                 ctx.emitter.line(
-                    f"_target_line = {routine_name}._label_lines[{target.name!r}] + {offset_code}"
+                    f"_target_line = {routine_name}._label_lines[{target.name!r}] + 1 + int(m_num({offset_code}))"
                 )
             else:
-                # T025: D +N^ROUTINE - absolute line offset (1-based to 0-indexed)
-                ctx.emitter.line(f"_target_line = {offset_code} - 1")
+                # T025: D +N^ROUTINE - absolute line offset (already 1-indexed, use directly)
+                # T075a: Offset must be truncated to integer per MUMPS spec
+                # Use m_num() for MUMPS-style numeric conversion (extracts leading numeric)
+                ctx.emitter.line(f"_target_line = int(m_num({offset_code}))")
 
             # T079: Call via line dispatch map, passing _rt and _scope
             # _line_map returns (label_name, offset) tuple - extract and call

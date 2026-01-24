@@ -26,7 +26,7 @@ class TestRoutineHeadCodegen:
         Phase 13 (T076): _rt is now first parameter.
         """
         code = generate_python("ADD(A,B) Q A+B\n")
-        assert "def ADD(_rt, A, B, _scope=None, **_kwargs):" in code
+        assert "def ADD(_rt, A, B, _scope=None, _start_offset=0):" in code
 
     def test_routine_docstring(self, generate_python):
         """Routine generates docstring with source info (§6.1).
@@ -240,7 +240,7 @@ class TestScopeStrategyGeneration:
         Phase 13 (T076): _rt is now first parameter.
         """
         code = generate_python("ADD(A,B) Q A+B\n")
-        assert "def ADD(_rt, A, B, _scope=None, **_kwargs):" in code
+        assert "def ADD(_rt, A, B, _scope=None, _start_offset=0):" in code
         # Should have return with expression (m_num(A) + m_num(B))
         assert "return" in code
         assert "m_num(A)" in code or "A" in code
@@ -258,7 +258,7 @@ class TestScopeStrategyGeneration:
         """
         # Use a subroutine that sets a local but doesn't modify formals
         code = generate_python("PRINT(MSG) W MSG Q\n")
-        assert "def PRINT(_rt, MSG, _scope=None, **_kwargs):" in code
+        assert "def PRINT(_rt, MSG, _scope=None, _start_offset=0):" in code
         # Should have plain return (not return <expr>)
         # Find lines that are just 'return' without a value
         lines = code.split("\n")
@@ -294,7 +294,7 @@ class TestScopeStrategyGeneration:
         # Use a simple example without NEW statement (not yet implemented)
         code = generate_python("INCR(N) S N=N+1 Q\\n")
         # Verifies formal params are generated correctly
-        assert "def INCR(_rt, N, _scope=None, **_kwargs):" in code
+        assert "def INCR(_rt, N, _scope=None, _start_offset=0):" in code
 
 
 @pytest.mark.codegen

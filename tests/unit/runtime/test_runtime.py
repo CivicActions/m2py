@@ -41,7 +41,7 @@ class TestMUMPSRuntimeBasic:
         # Phase 13 (T076): Functions now require _rt as first parameter
         # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt, _scope=None, **_kwargs):
+def TEST(_rt, _scope=None, _start_offset=0):
     global _test
     _rt.write("PASS")
 
@@ -60,7 +60,7 @@ _test = False
         # Phase 13 (T076): Functions now require _rt as first parameter
         # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt, _scope=None, **_kwargs):
+def TEST(_rt, _scope=None, _start_offset=0):
     global _test
     _test = True
 
@@ -78,7 +78,7 @@ _test = False
         # Phase 13 (T076): Functions now require _rt as first parameter
         # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt, _scope=None, **_kwargs):
+def TEST(_rt, _scope=None, _start_offset=0):
     global _test
     raise ValueError("intentional error")
 
@@ -96,11 +96,11 @@ _test = False
         # Phase 13 (T076): Functions now require _rt as first parameter
         # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt, _scope=None, **_kwargs):
+def TEST(_rt, _scope=None, _start_offset=0):
     global _test
     _rt.write("FIRST")
 
-def OTHER(_rt, _scope=None, **_kwargs):
+def OTHER(_rt, _scope=None, _start_offset=0):
     global _test
     _rt.write("OTHER")
 
@@ -118,7 +118,7 @@ _test = False
         # Phase 13 (T076): Functions now require _rt as first parameter
         # T075b: Functions now receive _scope for cross-routine variable visibility
         code = """
-def TEST(_rt, _scope=None, **_kwargs):
+def TEST(_rt, _scope=None, _start_offset=0):
     global _test
     _rt.write("test")
 
@@ -328,7 +328,8 @@ class TestMArrayOrder:
         arr[2] = 20
         arr[3] = 30
 
-        assert arr.order() == 1
+        # MArray canonicalizes subscripts to strings, so order returns "1" not 1
+        assert arr.order() == "1"
 
     def test_order_next_subscript(self):
         """order(start=x) returns next subscript after x."""
@@ -339,8 +340,10 @@ class TestMArrayOrder:
         arr[2] = 20
         arr[3] = 30
 
-        assert arr.order(start=1) == 2
-        assert arr.order(start=2) == 3
+        # Start can be int or string, result is always string
+        assert arr.order(start=1) == "2"
+        assert arr.order(start=2) == "3"
+        assert arr.order(start="1") == "2"
 
     def test_order_last_returns_empty(self):
         """order() past last subscript returns empty string."""
@@ -370,8 +373,9 @@ class TestMArrayOrder:
         arr[2] = 4
 
         # Numbers first (1, 2), then strings (A, B)
-        assert arr.order() == 1
-        assert arr.order(start=1) == 2
+        # order() always returns strings since subscripts are strings
+        assert arr.order() == "1"
+        assert arr.order(start=1) == "2"
         assert arr.order(start=2) == "A"
         assert arr.order(start="A") == "B"
         assert arr.order(start="B") == ""
@@ -398,10 +402,11 @@ class TestMArrayOrder:
         arr[3] = 30
         arr[5] = 50
 
-        # Start=2 not found, should return 3 (next greater)
-        assert arr.order(start=2) == 3
-        # Start=4 not found, should return 5
-        assert arr.order(start=4) == 5
+        # Start=2 not found, should return "3" (next greater)
+        # order() always returns strings
+        assert arr.order(start=2) == "3"
+        # Start=4 not found, should return "5"
+        assert arr.order(start=4) == "5"
         # Start=6 not found, no greater keys, return ""
         assert arr.order(start=6) == ""
 

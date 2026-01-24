@@ -1007,9 +1007,6 @@ class InMemoryGlobalStorage:
     def _deep_copy_tree(self, source: "MArray") -> "MArray":
         """Deep copy an MArray tree.
 
-        Converts string subscript keys to numeric types when possible,
-        for consistency with local MArray operations.
-
         Args:
             source: Source MArray to copy
 
@@ -1022,20 +1019,8 @@ class InMemoryGlobalStorage:
         result._value = source._value
 
         for key, child in source._children.items():
-            # Convert numeric string keys to int/float for local use
-            if isinstance(key, str):
-                try:
-                    # Try integer first
-                    if "." in key:
-                        canonical_key: int | float | str = float(key)
-                    else:
-                        canonical_key = int(key)
-                except ValueError:
-                    canonical_key = key
-            else:
-                canonical_key = key
-
-            result._children[canonical_key] = self._deep_copy_tree(child)
+            # Keys are already canonical strings, just copy them
+            result._children[str(key)] = self._deep_copy_tree(child)
 
         return result
 

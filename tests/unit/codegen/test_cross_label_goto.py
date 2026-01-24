@@ -145,7 +145,7 @@ NEXT W "done" Q"""
         # Entry point should be named after first label (with _rt and _scope param)
         # Phase 13 (T076): _rt is now first parameter
         assert (
-            "def TEST(_rt, _scope=None, **_kwargs):" in code
+            "def TEST(_rt, _scope=None, _start_offset=0):" in code
             or "def TEST(_rt, _scope=None):" in code
         )
         # Spec 007: 'target' is now used instead of 'label' to support int line dispatch
@@ -229,7 +229,7 @@ class TestSimpleFunctionsNotAffected:
         assert "RoutineState" not in code
         assert "_labels" not in code
         # Phase 13 (T076): _rt is now first parameter
-        assert "def TEST(_rt, _scope=None, **_kwargs):" in code
+        assert "def TEST(_rt, _scope=None, _start_offset=0):" in code
         assert "def _TEST(" not in code
 
     def test_intra_label_goto_no_trampoline(self):
@@ -251,11 +251,12 @@ class TestSimpleFunctionsNotAffected:
         ast.parse(code)
 
         # Either pattern is acceptable:
-        # - Simple function with if/else: def TEST(_rt, _scope=None, **_kwargs):
+        # - Simple function with if/else: def TEST(_rt, _scope=None, _start_offset=0):
         # - Trampoline with offset guards: _labels, _start_offset
         # Phase 13 (T076): _rt is now first parameter
         has_simple_pattern = (
-            "def TEST(_rt, _scope=None, **_kwargs):" in code and "_labels" not in code
+            "def TEST(_rt, _scope=None, _start_offset=0):" in code
+            and "_labels" not in code
         )
         has_trampoline_pattern = "_labels" in code and "_start_offset" in code
         assert has_simple_pattern or has_trampoline_pattern, (

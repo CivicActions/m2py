@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, Tuple
 
+from m2py.codegen.names import translate_name
+
 if TYPE_CHECKING:
     from m2py.asg.elements import MRoutine
     from m2py.codegen.emitter import CodeEmitter
@@ -53,18 +55,25 @@ def generate_line_map(routine: "MRoutine") -> Dict[int, Tuple[str, int]]:
 
         Returns:
             {1: ("STAR", 0), 2: ("STAR", 1), 3: ("STAR", 2), 4: ("STAR", 3)}
+
+        Note:
+            Label names are translated to valid Python identifiers using translate_name().
+            For example, numeric label "2" becomes "_n_2" so getattr() works correctly
+            when accessing the label function on the imported module.
     """
     line_map: Dict[int, Tuple[str, int]] = {}
 
     for label in routine.labels:
-        label_name = label.name
+        # Translate MUMPS label name to valid Python identifier
+        # e.g., "2" -> "_n_2", "%FOO" -> "_pct_FOO"
+        python_label_name = translate_name(label.name)
         label_line = label.line_number
 
         if label_line is None:
             continue
 
         # Label line itself is offset 0
-        line_map[label_line] = (label_name, 0)
+        line_map[label_line] = (python_label_name, 0)
 
         # Add statements with their offsets (based on line difference)
         if label.body and label.body.statements:
@@ -73,7 +82,7 @@ def generate_line_map(routine: "MRoutine") -> Dict[int, Tuple[str, int]]:
                 if stmt_line is not None:
                     # Offset is the distance from label line
                     offset = stmt_line - label_line
-                    line_map[stmt_line] = (label_name, offset)
+                    line_map[stmt_line] = (python_label_name, offset)
 
     return line_map
 

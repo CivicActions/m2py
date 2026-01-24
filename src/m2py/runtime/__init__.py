@@ -372,8 +372,10 @@ class MArray:
         """Get child node, creating if needed.
 
         Supports both single and tuple keys:
-            arr[1]      -> arr._children[1]
-            arr[1, 2]   -> arr._children[1]._children[2]
+            arr[1]      -> arr._children['1']
+            arr[1, 2]   -> arr._children['1']._children['2']
+
+        Subscripts are canonicalized to strings for consistent lookup.
 
         Args:
             key: Subscript (single value or tuple of values)
@@ -387,16 +389,33 @@ class MArray:
                 node = node[k]
             return node
 
-        if key not in self._children:
-            self._children[key] = MArray()
-        return self._children[key]
+        key_str = self._canonicalize_subscript(key)
+        if key_str not in self._children:
+            self._children[key_str] = MArray()
+        return self._children[key_str]
+
+    def _canonicalize_subscript(self, key: Any) -> str:
+        """Convert subscript to canonical string form.
+
+        In MUMPS, all subscripts are strings. This ensures consistent
+        lookup regardless of whether the caller passes int or str.
+
+        Args:
+            key: Subscript value (int, str, or other)
+
+        Returns:
+            Canonical string representation of the subscript
+        """
+        return str(key)
 
     def __setitem__(self, key: Any, value: Any) -> None:
         """Set value at subscript.
 
         Supports both single and tuple keys:
-            arr[1] = 10         -> arr._children[1]._value = 10
-            arr[1, 2] = 20      -> arr._children[1]._children[2]._value = 20
+            arr[1] = 10         -> arr._children['1']._value = 10
+            arr[1, 2] = 20      -> arr._children['1']._children['2']._value = 20
+
+        Subscripts are canonicalized to strings for consistent lookup.
 
         Args:
             key: Subscript (single value or tuple of values)
@@ -405,15 +424,24 @@ class MArray:
         if isinstance(key, tuple):
             node = self
             for k in key[:-1]:
-                node = node[k]
-            node[key[-1]] = value
+                k_str = self._canonicalize_subscript(k)
+                if k_str not in node._children:
+                    node._children[k_str] = MArray()
+                node = node._children[k_str]
+            last_key = self._canonicalize_subscript(key[-1])
+            if last_key not in node._children:
+                node._children[last_key] = MArray()
+            node._children[last_key]._value = value
         else:
-            if key not in self._children:
-                self._children[key] = MArray()
-            self._children[key]._value = value
+            key_str = self._canonicalize_subscript(key)
+            if key_str not in self._children:
+                self._children[key_str] = MArray()
+            self._children[key_str]._value = value
 
     def get(self, *subscripts: Any) -> Any:
         """Get value at subscripts (empty string if undefined).
+
+        Subscripts are canonicalized to strings for consistent lookup.
 
         Args:
             *subscripts: Path to the value (empty for root)
@@ -423,17 +451,18 @@ class MArray:
 
         Examples:
             arr.get()       -> arr.value (root value)
-            arr.get(1)      -> arr[1].value
-            arr.get(1, 2)   -> arr[1, 2].value
+            arr.get(1)      -> arr['1'].value
+            arr.get(1, 2)   -> arr['1', '2'].value
         """
         if not subscripts:
             return self.value
 
         node = self
         for sub in subscripts:
-            if sub not in node._children:
+            sub_str = self._canonicalize_subscript(sub)
+            if sub_str not in node._children:
                 return ""  # Undefined subscript
-            node = node._children[sub]
+            node = node._children[sub_str]
         return node.value
 
     def set(self, *args: Any, value: Any = None) -> None:
@@ -468,6 +497,8 @@ class MArray:
             10 - Has children only (no value at this node)
             11 - Has both value and children
 
+        Subscripts are canonicalized to strings for consistent lookup.
+
         Args:
             *subscripts: Path to check (empty for root)
 
@@ -479,9 +510,10 @@ class MArray:
         else:
             node = self
             for sub in subscripts:
-                if sub not in node._children:
+                sub_str = self._canonicalize_subscript(sub)
+                if sub_str not in node._children:
                     return 0  # Path doesn't exist
-                node = node._children[sub]
+                node = node._children[sub_str]
 
         has_value = node._value is not None
         has_children = bool(node._children)
@@ -526,11 +558,12 @@ class MArray:
         else:
             parent = self
             for sub in subscripts[:-1]:
-                if sub not in parent._children:
+                sub_str = self._canonicalize_subscript(sub)
+                if sub_str not in parent._children:
                     return  # Path doesn't exist
-                parent = parent._children[sub]
+                parent = parent._children[sub_str]
 
-            last = subscripts[-1]
+            last = self._canonicalize_subscript(subscripts[-1])
             if last in parent._children:
                 del parent._children[last]
 
@@ -542,6 +575,8 @@ class MArray:
         Unlike kill() which removes the entire subtree, kill_node()
         only removes the value at the specified node, leaving all
         subscripted descendants intact.
+
+        Subscripts are canonicalized to strings for consistent lookup.
 
         Args:
             subscripts: Path to the node to zkill (empty for root)
@@ -559,11 +594,12 @@ class MArray:
         # Navigate to parent of target
         parent = self
         for sub in subscripts[:-1]:
-            if sub not in parent._children:
+            sub_str = self._canonicalize_subscript(sub)
+            if sub_str not in parent._children:
                 return  # Path doesn't exist
-            parent = parent._children[sub]
+            parent = parent._children[sub_str]
 
-        last = subscripts[-1]
+        last = self._canonicalize_subscript(subscripts[-1])
         if last in parent._children:
             # Only remove value, keep children intact
             parent._children[last]._value = None
@@ -573,6 +609,8 @@ class MArray:
 
         Returns the next subscript after 'start' in collation order.
         MUMPS collation: numbers before strings, sorted within type.
+
+        Subscripts are canonicalized to strings for consistent lookup.
 
         Args:
             *subscripts: Path to the array level to search
@@ -586,24 +624,27 @@ class MArray:
         else:
             node = self
             for sub in subscripts:
-                if sub not in node._children:
+                sub_str = self._canonicalize_subscript(sub)
+                if sub_str not in node._children:
                     return ""
-                node = node._children[sub]
+                node = node._children[sub_str]
             children = node._children
 
         # Get sorted keys (MUMPS collation: numbers before strings)
         keys = sorted(children.keys(), key=lambda x: (isinstance(x, str), x))
 
-        if start == "":
+        start_str = self._canonicalize_subscript(start) if start != "" else ""
+
+        if start_str == "":
             return keys[0] if keys else ""
 
         try:
-            idx = keys.index(start)
+            idx = keys.index(start_str)
             return keys[idx + 1] if idx + 1 < len(keys) else ""
         except ValueError:
             # Start not found, return first key greater than start
             for k in keys:
-                if (isinstance(start, str), start) < (isinstance(k, str), k):
+                if start_str < k:
                     return k
             return ""
 
@@ -1964,6 +2005,16 @@ class MUMPSRuntime:
         # Parse subscripts if present
         base_name, subscripts = _parse_subscripted_name(name)
 
+        # Handle naked global references: ^(subscripts)
+        # The base_name is just "^" when parsing "^(5)" etc.
+        if base_name == "^":
+            if subscripts is None:
+                raise IndirectionError(name, "naked reference requires subscripts")
+            # Resolve naked reference using current naked indicator
+            naked_subs = tuple(str(s) for s in subscripts)
+            resolved_name, full_subs = self._globals.resolve_naked(naked_subs)
+            return self._globals.get(resolved_name, full_subs) or ""
+
         # Validate the base name
         if not _is_valid_varname(base_name):
             raise IndirectionError(
@@ -2065,6 +2116,17 @@ class MUMPSRuntime:
         # Parse subscripts if present
         base_name, subscripts = _parse_subscripted_name(name)
 
+        # Handle naked global references: ^(subscripts)
+        # The base_name is just "^" when parsing "^(5)" etc.
+        if base_name == "^":
+            if subscripts is None:
+                raise IndirectionError(name, "naked reference requires subscripts")
+            # Resolve naked reference using current naked indicator
+            naked_subs = tuple(str(s) for s in subscripts)
+            resolved_name, full_subs = self._globals.resolve_naked(naked_subs)
+            self._globals.set(resolved_name, full_subs, value)
+            return
+
         # Validate the base name
         if not _is_valid_varname(base_name):
             raise IndirectionError(
@@ -2161,6 +2223,17 @@ class MUMPSRuntime:
         # Parse subscripts if present
         base_name, subscripts = _parse_subscripted_name(name)
 
+        # Handle naked global references: ^(subscripts)
+        # The base_name is just "^" when parsing "^(5)" etc.
+        if base_name == "^":
+            if subscripts is None:
+                raise IndirectionError(name, "naked reference requires subscripts")
+            # Resolve naked reference using current naked indicator
+            naked_subs = tuple(str(s) for s in subscripts)
+            resolved_name, full_subs = self._globals.resolve_naked(naked_subs)
+            self._globals.kill(resolved_name, full_subs)
+            return
+
         # Validate the base name
         if not _is_valid_varname(base_name):
             raise IndirectionError(
@@ -2225,6 +2298,17 @@ class MUMPSRuntime:
         # Parse subscripts if present
         base_name, subscripts = _parse_subscripted_name(name)
 
+        # Handle naked global references: ^(subscripts)
+        # The base_name is just "^" when parsing "^(5)" etc.
+        if base_name == "^":
+            if subscripts is None:
+                raise IndirectionError(name, "naked reference requires subscripts")
+            # Resolve naked reference using current naked indicator
+            naked_subs = tuple(str(s) for s in subscripts)
+            resolved_name, full_subs = self._globals.resolve_naked(naked_subs)
+            self._globals.merge_tree(resolved_name, full_subs, source)
+            return
+
         # Validate the base name
         if not _is_valid_varname(base_name):
             raise IndirectionError(
@@ -2277,6 +2361,16 @@ class MUMPSRuntime:
         # Parse subscripts if present
         base_name, subscripts = _parse_subscripted_name(name)
 
+        # Handle naked global references: ^(subscripts)
+        # The base_name is just "^" when parsing "^(5)" etc.
+        if base_name == "^":
+            if subscripts is None:
+                raise IndirectionError(name, "naked reference requires subscripts")
+            # Resolve naked reference using current naked indicator
+            naked_subs = tuple(str(s) for s in subscripts)
+            resolved_name, full_subs = self._globals.resolve_naked(naked_subs)
+            return self._globals.get_tree(resolved_name, full_subs)
+
         # Validate the base name
         if not _is_valid_varname(base_name):
             raise IndirectionError(
@@ -2310,13 +2404,13 @@ class MUMPSRuntime:
         Spec 012 (T009): Resolves multi-level indirection like @X, @@X, @@@X.
 
         MUMPS indirection semantics:
-        - @X means: evaluate X to get a name, then get value of that variable
-        - @@X means: evaluate @X to get a name, then get value of that variable
+        - @X means: get value of X, if that's a valid var name get its value
+        - @@X means: get value of @X, if that's a valid var name get its value
         - Each @ adds one level of dereferencing
+        - If an intermediate value is not a valid var name (e.g., numeric), return it as-is
 
-        For levels=1 (@X): X → name → get value of that name
-        For levels=2 (@@X): X → name1 → get value → name2 → get value of that name
-        For levels=3 (@@@X): X → name1 → name2 → name3 → get value of that name
+        For levels=1 (@X): X → value → (if var name) → final value
+        For levels=2 (@@X): X → name1 → name2 → (if var name) → final value
 
         Args:
             expr: Initial variable name to start resolving
@@ -2327,15 +2421,14 @@ class MUMPSRuntime:
             Final resolved value
 
         Raises:
-            IndirectionError: If any resolution step fails
+            IndirectionError: If any resolution step fails on a valid var name
 
         Examples:
             >>> scope = {"A": "B", "B": "C", "C": 100}
-            >>> rt.resolve_indirection("A", 1, scope)  # @A
+            >>> rt.resolve_indirection("A", 1, scope)  # @A: A → "B" → C
             "C"
-            >>> rt.resolve_indirection("A", 2, scope)  # @@A
+            >>> rt.resolve_indirection("A", 2, scope)  # @@A: A → "B" → "C" → 100
             100
-            >>> # @@@A would be: A→"B"→"C"→100→get value of "100" (error: 100 is not a var name)
         """
         if levels < 1:
             raise IndirectionError(
@@ -2344,15 +2437,29 @@ class MUMPSRuntime:
 
         current_name = expr
 
-        # Each level of indirection means:
-        # 1. Get the value of the current variable (this gives us a new name)
-        # 2. Use that name for the next level
-        # After all levels, we have the final value (which might be a name or a value)
+        def _is_valid_var_name(name: str) -> bool:
+            """Check if name looks like a valid MUMPS variable name."""
+            if not name:
+                return False
+            # Naked reference like "^(3)"
+            if name.startswith("^("):
+                return True
+            # Global or local: must start with ^ or letter
+            if name.startswith("^"):
+                return len(name) > 1 and (name[1].isalpha() or name[1] == "(")
+            return name[0].isalpha()
+
+        # Each level of indirection does one lookup in the chain
+        # If an intermediate value is not a valid var name, stop early
 
         for level in range(levels):
             # Validate the variable exists before dereferencing
+            # Skip validation for naked references (base_name == "^") - get_var handles those
             base_name, _ = _parse_subscripted_name(current_name)
-            if base_name.startswith("^"):
+            if base_name == "^":
+                # Naked reference like "^(3)" - get_var will resolve using naked indicator
+                pass
+            elif base_name.startswith("^"):
                 # Global: check via GlobalStorageBackend
                 key = base_name[1:]
                 if self._globals.get(key, ()) is None:
@@ -2389,9 +2496,18 @@ class MUMPSRuntime:
             current_name = value
 
         # After all indirection levels, get the final value
-        # Validate final name exists
+        # current_name now holds a variable name (or non-var-name value)
+        # If it's not a valid var name, return it as-is
+        if not _is_valid_var_name(current_name):
+            return current_name
+
+        # It's a valid var name, so look it up
+        # Skip validation for naked references (base_name == "^") - get_var handles those
         base_name, _ = _parse_subscripted_name(current_name)
-        if base_name.startswith("^"):
+        if base_name == "^":
+            # Naked reference - get_var will resolve
+            pass
+        elif base_name.startswith("^"):
             key = base_name[1:]
             if self._globals.get(key, ()) is None:
                 raise IndirectionError(
@@ -2408,6 +2524,161 @@ class MUMPSRuntime:
                 )
 
         return self.get_var(current_name, _scope)
+
+    def resolve_with_subscripts(
+        self,
+        base_name: str,
+        subscripts: List[Any],
+        additional_levels: int,
+        _scope: Dict[str, Any],
+    ) -> str:
+        """Resolve indirection with subscripts appended before additional resolution.
+
+        Used for cases like @@^VV@(3)=val where:
+        1. base_name is already the resolved value from inner indirection (e.g., "^VV(1)")
+        2. Append subscripts (3) → "^VV(1,3)"
+        3. Resolve additional_levels more times → value of "^VV(1,3)" = "^VV(2,3)"
+
+        Special handling for naked references:
+        - If base_name is a naked reference string like "^(5)", resolve it to a full name
+          using the current naked indicator (e.g., "^V(5)"), then append subscripts
+        - This handles cases like @@^(1)@(n) where the inner indirection yields a naked
+          reference string that needs to be interpreted as a name
+
+        Args:
+            base_name: Initial variable name string (already resolved from inner indirection)
+            subscripts: List of subscript values to append (may be numbers or strings)
+            additional_levels: Number of additional indirection levels to resolve
+            _scope: Current scope dictionary
+
+        Returns:
+            The final resolved name string
+
+        Raises:
+            IndirectionError: If any resolution step fails
+        """
+        # Check if base_name is a naked reference string like "^(5)"
+        # This happens when inner indirection yields a value that IS a naked reference
+        parsed_base, parsed_subs = _parse_subscripted_name(base_name)
+        if parsed_base == "^" and parsed_subs is not None:
+            # base_name is a naked reference string - resolve to full name
+            # DON'T get its value - treat the resolved name as the base for subscripts
+            naked_subs = tuple(str(s) for s in parsed_subs)
+            resolved_name, full_subs = self._globals.resolve_naked(naked_subs)
+            # Build the full name string
+            if full_subs:
+                current_name = (
+                    f"^{resolved_name}({','.join(str(s) for s in full_subs)})"
+                )
+            else:
+                current_name = f"^{resolved_name}"
+        else:
+            # Normal variable - get its value first, which becomes the name to append to
+            current_name = self.get_var(base_name, _scope)
+            if not isinstance(current_name, str):
+                current_name = str(current_name)
+
+            if not current_name:
+                raise IndirectionError(
+                    base_name,
+                    "empty value from base variable",
+                    variable_name=base_name,
+                )
+
+        # Append subscripts using append_subscripts
+        # Keep subscripts as their original types (int/float stay numeric, strings stay strings)
+        # so append_subscripts knows how to format them correctly
+        current_name = self.append_subscripts(current_name, *subscripts)
+
+        # Resolve additional_levels times
+        for level in range(additional_levels):
+            value = self.get_var(current_name, _scope)
+            if not isinstance(value, str):
+                value = str(value)
+            if not value:
+                raise IndirectionError(
+                    base_name,
+                    f"empty value at level {level + 1}",
+                    variable_name=current_name,
+                )
+            current_name = value
+
+        return current_name
+
+    def resolve_with_per_level_subscripts(
+        self,
+        base_name: str,
+        subscripts_per_level: List[List[Any]],
+        _scope: Dict[str, Any],
+        skip_initial_resolution: bool = False,
+    ) -> str:
+        """Resolve multi-level indirection with subscripts at each level.
+
+        Used for cases like @@X@(1,2)@(5,6)=val where:
+        1. Get value of X → "A"
+        2. Append inner subscripts (1,2) → "A(1,2)"
+        3. Resolve → get value of A(1,2) → "B(3,4)"
+        4. Append outer subscripts (5,6) → "B(3,4,5,6)"
+        5. This is the final target
+
+        The subscripts_per_level is ordered from innermost to outermost.
+        For @@X@(1,2)@(5,6), it would be [[1, 2], [5, 6]]:
+        - [1, 2] are applied after getting X's value
+        - [5, 6] are applied after the first resolution
+
+        Args:
+            base_name: Initial variable name to start with, OR the already-resolved value
+            subscripts_per_level: List of subscript lists, one per level (inner to outer)
+            _scope: Current scope dictionary
+            skip_initial_resolution: If True, base_name is already the resolved value,
+                                    so skip the first get_var call. Used when the
+                                    indirection source is a global variable whose
+                                    value was already obtained.
+
+        Returns:
+            The final resolved name string
+
+        Raises:
+            IndirectionError: If any resolution step fails
+        """
+        # Step 1: Get value of base_name (unless it's already the resolved value)
+        if skip_initial_resolution:
+            current_name = base_name
+        else:
+            current_name = self.get_var(base_name, _scope)
+
+        if not isinstance(current_name, str):
+            current_name = str(current_name)
+
+        if not current_name:
+            raise IndirectionError(
+                base_name,
+                "empty value from base variable",
+                variable_name=base_name,
+            )
+
+        # Process each level of subscripts
+        # For n subscript levels, we need n-1 resolutions between them
+        # (the last subscript level just appends without further resolution)
+        for i, subscripts in enumerate(subscripts_per_level):
+            if subscripts:
+                # Append subscripts at this level
+                current_name = self.append_subscripts(current_name, *subscripts)
+
+            # If there are more levels after this, resolve
+            if i < len(subscripts_per_level) - 1:
+                value = self.get_var(current_name, _scope)
+                if not isinstance(value, str):
+                    value = str(value)
+                if not value:
+                    raise IndirectionError(
+                        base_name,
+                        f"empty value at level {i + 1}",
+                        variable_name=current_name,
+                    )
+                current_name = value
+
+        return current_name
 
     def compile_pattern_indirect(self, pattern_str: str) -> str:
         """Compile MUMPS pattern string to regex at runtime.

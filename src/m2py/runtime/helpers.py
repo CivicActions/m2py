@@ -373,15 +373,8 @@ def m_data(array: MArray | None, subscripts: tuple[str, ...] = ()) -> int:
     # Navigate to target node via subscripts
     node = array
     for sub in subscripts:
-        # MArray may use string or numeric keys depending on how SET was generated
-        # Try the subscript as-is first, then try numeric conversion
-        key = sub
-        if key not in node._children:
-            # Try converting string to int for numeric subscripts
-            try:
-                key = int(sub)
-            except (ValueError, TypeError):
-                pass
+        # MArray canonicalizes all subscripts to strings
+        key = str(sub)
         if key not in node._children:
             return 0
         node = node._children[key]
@@ -463,18 +456,8 @@ def m_order(
     # Navigate to parent node
     node = array
     for sub in parent_subs:
-        # Try to find the subscript (handle string/int key mismatches)
-        key = sub
-        if key not in node._children:
-            try:
-                key = int(sub)
-            except (ValueError, TypeError):
-                pass
-        if key not in node._children:
-            try:
-                key = float(sub)
-            except (ValueError, TypeError):
-                pass
+        # MArray canonicalizes all subscripts to strings
+        key = str(sub)
         if key not in node._children:
             return ""
         node = node._children[key]
@@ -876,15 +859,8 @@ def m_get(
     # Traverse subscripts
     node = array
     for sub in subscripts:
-        # MArray may use string or numeric keys depending on how SET was generated
-        # Try the subscript as-is first, then try numeric conversion
-        key = sub
-        if key not in node._children:
-            # Try converting string to int for numeric subscripts
-            try:
-                key = int(sub)
-            except (ValueError, TypeError):
-                pass
+        # MArray canonicalizes all subscripts to strings
+        key = str(sub)
         if key not in node._children:
             return default  # Subscript path doesn't exist
         node = node._children[key]

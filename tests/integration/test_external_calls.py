@@ -351,9 +351,9 @@ class TestCrossRoutineVariableVisibility:
  Q
 """
         code = generate_python(source)
-        # Entry function should have _rt and _scope=None parameter (with **_kwargs for flexibility)
+        # Entry function should have _rt and _scope=None parameter (with _start_offset=0 for flexibility)
         # Phase 13 (T076): _rt is now first parameter
-        assert "def ext1(_rt, _scope=None, **_kwargs):" in code
+        assert "def ext1(_rt, _scope=None, _start_offset=0):" in code
         # Should initialize _scope if not provided
         assert "_scope = _scope if _scope is not None else {}" in code
 
