@@ -229,7 +229,7 @@ class TestGenerateNameIndirection:
         # T065: Now uses get_indirection_source for the inner name expression
         # Uses append_subscripts to properly merge subscripts at runtime
         assert (
-            '_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1"), _scope)'
+            '_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", _scope=_scope), _scope)'
             == result
         )
 
@@ -248,7 +248,7 @@ class TestGenerateNameIndirection:
         # T065: Now uses get_indirection_source for the inner name expression
         # Uses append_subscripts to properly merge subscripts at runtime
         assert (
-            '_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", "2"), _scope)'
+            '_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", "2", _scope=_scope), _scope)'
             == result
         )
 
@@ -340,7 +340,7 @@ class TestGenerateNameIndirectionWrite:
         # T065: Now uses get_indirection_source for the inner name expression
         # Uses append_subscripts to properly merge subscripts at runtime
         assert (
-            '_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1"), 5, _scope)'
+            '_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", _scope=_scope), 5, _scope)'
             == result
         )
 
@@ -374,7 +374,7 @@ class TestGenerateNameIndirectionWrite:
         # T065: Now uses get_indirection_source for the inner name expression
         # Uses append_subscripts to properly merge subscripts at runtime
         assert (
-            '_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", "2"), 5, _scope)'
+            '_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", "2", _scope=_scope), 5, _scope)'
             == result
         )
 

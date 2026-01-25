@@ -8,7 +8,7 @@ where I is a variable that needs to be looked up at runtime.
 """
 
 import pytest
-from m2py.runtime import MArray
+from m2py.runtime import MArray, MUMPSRuntime
 from m2py.runtime import (
     VarRef,
     _evaluate_subscript,
@@ -259,3 +259,389 @@ class TestSubscriptedNameParsing:
         """Empty subscripts raise error."""
         with pytest.raises(IndirectionError):
             _parse_subscripted_name("ARR()")
+
+
+# =============================================================================
+# Name Indirection in Subscripts Tests
+# =============================================================================
+
+
+class TestSubscriptIndirectionWithRuntime:
+    """Tests for name indirection (@X) in subscripts requiring runtime resolution.
+
+    MUMPS allows @X in subscripts where X contains a variable name that
+    should be resolved and its value used. For complex nested indirection
+    patterns like @@H1@(@G)@("-"), we need the full MUMPSRuntime machinery.
+
+    Reference: II-132.2 from VV2VNIB test suite demonstrates these patterns.
+    """
+
+    @pytest.fixture
+    def runtime(self):
+        """Create a MUMPSRuntime instance for tests."""
+        return MUMPSRuntime()
+
+    # -------------------------------------------------------------------------
+    # Simple @ Indirection Tests
+    # -------------------------------------------------------------------------
+
+    def test_simple_at_indirection_value(self, runtime):
+        """@X resolves to value of X when X contains a simple value.
+
+        MUMPS: S X="A" W @X  ; writes value of A
+        """
+        scope = {"X": MArray(), "A": MArray()}
+        scope["X"].value = "A"
+        scope["A"].value = "hello"
+        ref = VarRef("@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == "hello"
+
+    def test_simple_at_indirection_numeric(self, runtime):
+        """@X resolves numeric value correctly.
+
+        MUMPS: S X="N" S N=42 W @X  ; writes 42
+        Note: MUMPS returns values as strings in subscript context.
+        """
+        scope = {"X": MArray(), "N": MArray()}
+        scope["X"].value = "N"
+        scope["N"].value = 42
+        ref = VarRef("@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        # MUMPS returns numeric as string in indirection resolution
+        assert result == "42"
+
+    def test_at_indirection_undefined_target(self, runtime):
+        """@X where target variable is undefined returns empty string.
+
+        MUMPS: S X="UNDEF" W @X  ; writes empty
+        """
+        scope = {"X": MArray()}
+        scope["X"].value = "UNDEF"
+        ref = VarRef("@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == ""
+
+    def test_at_indirection_subscripted_target(self, runtime):
+        """@X where X contains subscripted name resolves correctly.
+
+        MUMPS: S X="A(1)" S A(1)=99 W @X  ; writes 99
+        """
+        scope = {"X": MArray(), "A": MArray()}
+        scope["X"].value = "A(1)"
+        scope["A"].set(1, value=99)
+        ref = VarRef("@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == "99"
+
+    def test_at_indirection_multi_subscripted_target(self, runtime):
+        """@X where X contains multi-subscripted name resolves correctly.
+
+        MUMPS: S X="A(1,2,3)" S A(1,2,3)="deep" W @X  ; writes "deep"
+        """
+        scope = {"X": MArray(), "A": MArray()}
+        scope["X"].value = "A(1,2,3)"
+        scope["A"].set(1, 2, 3, value="deep")
+        ref = VarRef("@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == "deep"
+
+    # -------------------------------------------------------------------------
+    # Double @@ Indirection Tests
+    # -------------------------------------------------------------------------
+
+    def test_double_at_indirection(self, runtime):
+        """@@X resolves two levels of indirection.
+
+        MUMPS: S X="Y" S Y="Z" S Z="value" W @@X  ; writes "value"
+        """
+        scope = {"X": MArray(), "Y": MArray(), "Z": MArray()}
+        scope["X"].value = "Y"
+        scope["Y"].value = "Z"
+        scope["Z"].value = "value"
+        ref = VarRef("@@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == "value"
+
+    def test_double_at_with_numeric_chain(self, runtime):
+        """@@X with numeric values through the chain.
+
+        MUMPS: S X="Y" S Y="N" S N=123 W @@X  ; writes 123
+        """
+        scope = {"X": MArray(), "Y": MArray(), "N": MArray()}
+        scope["X"].value = "Y"
+        scope["Y"].value = "N"
+        scope["N"].value = 123
+        ref = VarRef("@@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        # MUMPS returns numeric as string in indirection resolution
+        assert result == "123"
+
+    def test_double_at_with_subscripted_intermediate(self, runtime):
+        """@@X where X points to subscripted variable.
+
+        MUMPS: S X="A(1)" S A(1)="B" S B=42 W @@X  ; writes 42
+        """
+        scope = {"X": MArray(), "A": MArray(), "B": MArray()}
+        scope["X"].value = "A(1)"
+        scope["A"].set(1, value="B")
+        scope["B"].value = 42
+        ref = VarRef("@@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        # MUMPS returns numeric as string in indirection resolution
+        assert result == "42"
+
+    # -------------------------------------------------------------------------
+    # Triple @@@ and Deep Nesting Tests
+    # -------------------------------------------------------------------------
+
+    def test_triple_at_indirection(self, runtime):
+        """@@@X resolves three levels of indirection.
+
+        MUMPS: S X="Y" S Y="Z" S Z="W" S W="final" W @@@X  ; writes "final"
+        """
+        scope = {"X": MArray(), "Y": MArray(), "Z": MArray(), "W": MArray()}
+        scope["X"].value = "Y"
+        scope["Y"].value = "Z"
+        scope["Z"].value = "W"
+        scope["W"].value = "final"
+        ref = VarRef("@@@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == "final"
+
+    def test_quad_at_indirection(self, runtime):
+        """@@@@X resolves four levels of indirection.
+
+        With 4 @ symbols, we need 5 variables in the chain:
+        - @A = C (A->"B", B->"C")
+        - @@A = D (A->"B", B->"C", C->"D")
+        - @@@A = E (A->"B", B->"C", C->"D", D->"E")
+        - @@@@A = "final" (A->"B", B->"C", C->"D", D->"E", E->"final")
+        """
+        scope = {
+            "A": MArray(),
+            "B": MArray(),
+            "C": MArray(),
+            "D": MArray(),
+            "E": MArray(),
+        }
+        scope["A"].value = "B"
+        scope["B"].value = "C"
+        scope["C"].value = "D"
+        scope["D"].value = "E"
+        scope["E"].value = "final"
+        ref = VarRef("@@@@A")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == "final"
+
+    # -------------------------------------------------------------------------
+    # Complex Nested Indirection with Subscripts (II-132.2 Pattern)
+    # -------------------------------------------------------------------------
+
+    def test_at_indirection_with_subscript_group(self, runtime):
+        """@X@(1) pattern: resolve X then append subscript.
+
+        MUMPS: S X="A" S A(1)=99 W @X@(1)  ; writes 99
+        """
+        scope = {"X": MArray(), "A": MArray()}
+        scope["X"].value = "A"
+        scope["A"].set(1, value=99)
+        # This is tested via resolve_nested_indirection directly
+        result = runtime.resolve_nested_indirection("@X@(1)", scope, return_value=True)
+        assert result == "99"
+
+    def test_complex_ii_132_2_pattern_g_chain(self, runtime):
+        """Test @G chain where G="@G1", G1="Z", Z="B".
+
+        From II-132.2: @G should follow the @ chain and return "B"
+        """
+        scope = {"G": MArray(), "G1": MArray(), "Z": MArray()}
+        scope["G"].value = "@G1"
+        scope["G1"].value = "Z"
+        scope["Z"].value = "B"
+        ref = VarRef("@G")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == "B"
+
+    def test_complex_ii_132_2_pattern_h_expression(self, runtime):
+        """Test H="@@H1@(@G)@("-")" resolves correctly.
+
+        From II-132.2: The complex nested indirection pattern.
+        Setup: G="@G1", G1="Z", Z="B", H1="H(1)", H(1,"B")="I(1)", I(1,"-")="C"
+        @H should resolve to "C"
+        """
+        scope = {
+            "G": MArray(),
+            "G1": MArray(),
+            "Z": MArray(),
+            "H": MArray(),
+            "H1": MArray(),
+            "I": MArray(),
+        }
+        # From MUMPS:
+        # S G="@G1",G1="Z",Z="B",H1="H(1)",H="@@H1@(@G)@("-")",H(1,"B")="I(1)",I(1,"-")="C"
+        scope["G"].value = "@G1"
+        scope["G1"].value = "Z"
+        scope["Z"].value = "B"
+        scope["H1"].value = "H(1)"
+        scope["H"].value = '@@H1@(@G)@("-")'
+        scope["H"].set(1, "B", value="I(1)")
+        scope["I"].set(1, "-", value="C")
+
+        ref = VarRef("@H")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == "C"
+
+    def test_full_ii_132_2_e_expression(self, runtime):
+        """Test full E="@A@(@H)" pattern from II-132.2.
+
+        E contains @H which must resolve through the complex chain.
+        """
+        scope = {
+            "G": MArray(),
+            "G1": MArray(),
+            "Z": MArray(),
+            "H": MArray(),
+            "H1": MArray(),
+            "I": MArray(),
+            "A": MArray(),
+            "E": MArray(),
+            "D": MArray(),
+        }
+        # Setup from II-132.2
+        scope["G"].value = "@G1"
+        scope["G1"].value = "Z"
+        scope["Z"].value = "B"
+        scope["H1"].value = "H(1)"
+        scope["H"].value = '@@H1@(@G)@("-")'
+        scope["H"].set(1, "B", value="I(1)")
+        scope["I"].set(1, "-", value="C")
+        scope["A"].value = "D(1,2,3,4,5)"
+        scope["E"].value = "@A@(@H)"
+        # D(1,2,3,4,5,"C") needs to exist for the final resolution
+        scope["D"].set(1, 2, 3, 4, 5, "C", value="result_value")
+
+        # Resolve @E to get the final target name
+        resolved = runtime.resolve_nested_indirection("@E", scope, return_value=False)
+        assert resolved == 'D(1,2,3,4,5,"C")'
+
+        # Now resolve with return_value=True to get the actual value
+        result = runtime.resolve_nested_indirection("@E", scope, return_value=True)
+        assert result == "result_value"
+
+    # -------------------------------------------------------------------------
+    # Edge Cases and Error Handling
+    # -------------------------------------------------------------------------
+
+    def test_at_indirection_empty_value(self, runtime):
+        """@X where X is empty string returns empty.
+
+        MUMPS: S X="" W @X  ; writes empty
+        """
+        scope = {"X": MArray()}
+        scope["X"].value = ""
+        ref = VarRef("@X")
+        result = _evaluate_subscript(ref, scope, runtime)
+        assert result == ""
+
+    def test_at_indirection_undefined_source(self, runtime):
+        """@X where X is undefined raises IndirectionError."""
+        scope = {}  # X not defined
+        ref = VarRef("@X")
+        with pytest.raises(IndirectionError):
+            _evaluate_subscript(ref, scope, runtime)
+
+    def test_at_indirection_with_quoted_string_subscript(self, runtime):
+        """@X@("key") pattern with quoted string subscript."""
+        scope = {"X": MArray(), "A": MArray()}
+        scope["X"].value = "A"
+        scope["A"].set("key", value="value_for_key")
+        result = runtime.resolve_nested_indirection(
+            '@X@("key")', scope, return_value=True
+        )
+        assert result == "value_for_key"
+
+    def test_fallback_without_runtime_simple_case(self):
+        """Test fallback code path when runtime is None (simple indirection)."""
+        scope = {"X": MArray(), "A": MArray()}
+        scope["X"].value = "A"
+        scope["A"].value = "fallback_value"
+        ref = VarRef("@X")
+        # Call without runtime - uses fallback logic
+        result = _evaluate_subscript(ref, scope, runtime=None)
+        assert result == "fallback_value"
+
+    def test_fallback_without_runtime_nested(self):
+        """Test fallback code path for nested indirection without runtime."""
+        scope = {"X": MArray(), "Y": MArray(), "Z": MArray()}
+        scope["X"].value = "@Y"
+        scope["Y"].value = "Z"
+        scope["Z"].value = "nested_value"
+        ref = VarRef("@X")
+        # Call without runtime - uses fallback logic
+        result = _evaluate_subscript(ref, scope, runtime=None)
+        assert result == "nested_value"
+
+
+# =============================================================================
+# _evaluate_subscripts with Runtime Tests
+# =============================================================================
+
+
+class TestEvaluateSubscriptsWithRuntime:
+    """Tests for _evaluate_subscripts with runtime parameter."""
+
+    @pytest.fixture
+    def runtime(self):
+        """Create a MUMPSRuntime instance for tests."""
+        return MUMPSRuntime()
+
+    def test_evaluate_subscripts_passes_runtime(self, runtime):
+        """Ensure runtime is passed through to individual subscript evaluation."""
+        scope = {"X": MArray(), "A": MArray()}
+        scope["X"].value = "A"
+        scope["A"].value = "resolved"
+
+        subs = (1, VarRef("@X"), "key")
+        result = _evaluate_subscripts(subs, scope, runtime)
+        assert result == (1, "resolved", "key")
+
+    def test_evaluate_subscripts_multiple_indirections(self, runtime):
+        """Multiple indirection subscripts all resolve correctly."""
+        scope = {
+            "X": MArray(),
+            "Y": MArray(),
+            "A": MArray(),
+            "B": MArray(),
+        }
+        scope["X"].value = "A"
+        scope["A"].value = "val_a"
+        scope["Y"].value = "B"
+        scope["B"].value = "val_b"
+
+        subs = (VarRef("@X"), VarRef("@Y"))
+        result = _evaluate_subscripts(subs, scope, runtime)
+        assert result == ("val_a", "val_b")
+
+    def test_evaluate_subscripts_complex_indirection(self, runtime):
+        """Complex nested indirection in subscript resolves correctly."""
+        scope = {
+            "X": MArray(),
+            "Y": MArray(),
+            "Z": MArray(),
+        }
+        scope["X"].value = "@Y"
+        scope["Y"].value = "Z"
+        scope["Z"].value = "final"
+
+        subs = (VarRef("@X"),)
+        result = _evaluate_subscripts(subs, scope, runtime)
+        assert result == ("final",)
+
+    def test_evaluate_subscripts_none_with_runtime(self, runtime):
+        """None input returns None even with runtime."""
+        assert _evaluate_subscripts(None, {}, runtime) is None
+
+    def test_evaluate_subscripts_empty_with_runtime(self, runtime):
+        """Empty tuple returns empty tuple with runtime."""
+        assert _evaluate_subscripts((), {}, runtime) == ()

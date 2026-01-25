@@ -298,15 +298,19 @@ def _convert_subscript(value: str, original_name: str) -> Any:
     return VarRef(value)
 
 
-def _evaluate_subscript(sub: Any, _scope: Dict[str, Any]) -> Any:
+def _evaluate_subscript(
+    sub: Any, _scope: Dict[str, Any], runtime: Optional["MUMPSRuntime"] = None
+) -> Any:
     """Evaluate a single subscript value, resolving variable references.
 
     When a subscript is a VarRef, look it up in the scope.
     This enables indirection like "A(I)" where I is a variable.
+    Also handles name indirection like "A(@X)" where @X resolves to a variable name.
 
     Args:
         sub: Subscript value (int, float, string, or VarRef)
         _scope: Scope dictionary for variable lookup
+        runtime: MUMPSRuntime instance for complex indirection resolution
 
     Returns:
         Evaluated subscript value
@@ -317,6 +321,50 @@ def _evaluate_subscript(sub: Any, _scope: Dict[str, Any]) -> Any:
 
     # Look up variable in scope
     var_name = sub.name
+
+    # Handle indirection in subscript: @X means resolve and get the value
+    if var_name.startswith("@"):
+        # Use resolve_nested_indirection with return_value=True for GET semantics
+        if runtime is not None:
+            return runtime.resolve_nested_indirection(
+                var_name, _scope, return_value=True
+            )
+
+        # Fallback for cases without runtime - simple resolution only
+        # Strip the @ and look up the variable
+        inner_var = var_name[1:]
+        raw_value = _scope.get(inner_var, "")
+        if isinstance(raw_value, MArray):
+            raw_value = raw_value.value
+
+        # Now raw_value might itself be an indirection (@...) or a variable name
+        # Keep resolving until we get an actual value
+        while isinstance(raw_value, str) and raw_value.startswith("@"):
+            # This is nested indirection
+            next_var = raw_value[1:]
+            base_name, subs = _parse_subscripted_name(next_var)
+            next_raw = _scope.get(base_name, "")
+            if isinstance(next_raw, MArray):
+                if subs:
+                    evaluated_subs = _evaluate_subscripts(subs, _scope)
+                    raw_value = next_raw.get(*evaluated_subs)
+                else:
+                    raw_value = next_raw.value
+            else:
+                raw_value = next_raw
+
+        # raw_value should now be the final variable name - look it up
+        if raw_value:
+            base_name, subs = _parse_subscripted_name(str(raw_value))
+            final_raw = _scope.get(base_name, "")
+            if isinstance(final_raw, MArray):
+                if subs:
+                    evaluated_subs = _evaluate_subscripts(subs, _scope)
+                    return final_raw.get(*evaluated_subs)
+                return final_raw.value
+            return final_raw
+        return ""
+
     raw_value = _scope.get(var_name, "")
     if isinstance(raw_value, MArray):
         return raw_value.value
@@ -324,20 +372,23 @@ def _evaluate_subscript(sub: Any, _scope: Dict[str, Any]) -> Any:
 
 
 def _evaluate_subscripts(
-    subscripts: Optional[Tuple[Any, ...]], _scope: Dict[str, Any]
+    subscripts: Optional[Tuple[Any, ...]],
+    _scope: Dict[str, Any],
+    runtime: Optional["MUMPSRuntime"] = None,
 ) -> Optional[Tuple[Any, ...]]:
     """Evaluate all subscripts in a tuple, resolving variable references.
 
     Args:
         subscripts: Tuple of subscript values, or None
         _scope: Scope dictionary for variable lookup
+        runtime: MUMPSRuntime instance for complex indirection resolution
 
     Returns:
         Tuple of evaluated subscript values, or None if input was None
     """
     if subscripts is None:
         return None
-    return tuple(_evaluate_subscript(s, _scope) for s in subscripts)
+    return tuple(_evaluate_subscript(s, _scope, runtime) for s in subscripts)
 
 
 # =============================================================================
@@ -2086,7 +2137,12 @@ class MUMPSRuntime:
 
         return current_name
 
-    def append_subscripts(self, base_name: str, *additional_subscripts: Any) -> str:
+    def append_subscripts(
+        self,
+        base_name: str,
+        *additional_subscripts: Any,
+        _scope: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """Append additional subscripts to a variable name.
 
         Spec 017 Phase 6: Properly handles name indirection with subscripts
@@ -2095,9 +2151,14 @@ class MUMPSRuntime:
         The naive string concatenation "B(3,4)" + "(1,2)" = "B(3,4)(1,2)"
         is invalid. This method properly parses and merges subscripts.
 
+        When base_name starts with @, this indicates an indirection pattern.
+        If _scope is provided, we resolve the indirection first, then append
+        subscripts to the resolved variable name.
+
         Args:
             base_name: Variable name possibly with existing subscripts
             *additional_subscripts: Additional subscripts to append
+            _scope: Optional scope for resolving @ patterns
 
         Returns:
             str: Variable name with merged subscripts
@@ -2109,9 +2170,16 @@ class MUMPSRuntime:
             "ARR(1,2,3)"
             >>> rt.append_subscripts("B(1,1)", 3)
             "B(1,1,3)"
+            >>> rt.append_subscripts("@C", 2, _scope=scope)  # Resolves @C first
+            "A(1,1,2)"  # If @C resolves to A(1,1)
         """
         if not additional_subscripts:
             return base_name
+
+        # If base_name starts with @, resolve it first to get the actual variable name
+        if base_name.startswith("@") and _scope is not None:
+            resolved = self.resolve_nested_indirection(base_name, _scope)
+            base_name = resolved
 
         # Parse existing subscripts from base_name
         existing_base, existing_subs = _parse_subscripted_name(base_name)
@@ -2240,11 +2308,9 @@ class MUMPSRuntime:
             raise IndirectionError("", "empty variable name")
 
         # Handle nested indirection: if name starts with @, resolve it first
-        # This handles cases like @B where B="@$E(""ABCDEF"",4)" which should
-        # resolve to "D" and then get D's value
+        # With return_value=True, resolve_nested_indirection returns the final VALUE
         if name.startswith("@"):
-            resolved_name = self.resolve_nested_indirection(name, _scope)
-            return self.get_var(resolved_name, _scope)
+            return self.resolve_nested_indirection(name, _scope, return_value=True)
 
         # Parse subscripts if present
         base_name, subscripts = _parse_subscripted_name(name)
@@ -2366,6 +2432,16 @@ class MUMPSRuntime:
         """
         if not name:
             raise IndirectionError("", "empty variable name")
+
+        # Handle nested indirection: if name starts with @, resolve it first
+        # This handles cases like @B where B="@C" or @B@(1) where B="A(2)"
+        if name.startswith("@"):
+            resolved_name = self.resolve_nested_indirection(name, _scope)
+            if not resolved_name:
+                raise IndirectionError(
+                    name, "indirection resolved to empty variable name"
+                )
+            return self.set_var(resolved_name, value, _scope)
 
         # Parse subscripts if present
         base_name, subscripts = _parse_subscripted_name(name)
@@ -2733,6 +2809,17 @@ class MUMPSRuntime:
         # If an intermediate value is not a valid var name, stop early
 
         for level in range(levels):
+            # Check if current_name starts with @ - it needs to be resolved as an indirection pattern
+            if current_name.startswith("@"):
+                # Resolve the indirection pattern to get the target variable name
+                resolved_name = self.resolve_nested_indirection(current_name, _scope)
+                # Now get the VALUE at that resolved name
+                value = self.get_var(resolved_name, _scope)
+                if not isinstance(value, str):
+                    value = str(value)
+                current_name = value
+                continue
+
             # Check if current_name is a valid var name before trying to look it up
             # If not valid (e.g., numeric string), stop the chain and return as-is
             if not _is_valid_var_name(current_name):
@@ -2782,6 +2869,12 @@ class MUMPSRuntime:
 
         # After all indirection levels, get the final value
         # current_name now holds a variable name (or non-var-name value)
+
+        # If current_name starts with @, resolve it as an indirection pattern and get value
+        if current_name.startswith("@"):
+            resolved_name = self.resolve_nested_indirection(current_name, _scope)
+            return self.get_var(resolved_name, _scope)
+
         # If it's not a valid var name, return it as-is
         if not _is_valid_var_name(current_name):
             return current_name
@@ -3019,6 +3112,7 @@ class MUMPSRuntime:
         target_str: str,
         scope: Dict[str, Any],
         max_depth: int = 100,
+        return_value: bool = False,
     ) -> str:
         """Recursively resolve nested name indirection for DO/GOTO targets.
 
@@ -3031,105 +3125,323 @@ class MUMPSRuntime:
             S L="@$P(""ONE/TWO"",""/\"",1)"
             D @L  ; Evaluates $PIECE → "ONE", then DO ONE
 
+        For multiple @ levels with name indirection subscripts like @@H1@(@G)@("-"):
+        - The @(@G) subscript belongs to the inner @ level
+        - The @("-") subscript belongs to the outer @ level
+        - Processing: @H1@(@G) → H(1,B) → "I(1)", then @"I(1)"@("-") → I(1,-) → "C"
+
         Args:
             target_str: Initial target string (may contain leading @)
             scope: Variable scope for resolving names
             max_depth: Maximum recursion depth to prevent infinite loops
+            return_value: If True, always return the final VALUE (for GET operations)
+                         If False, return the variable NAME when possible (for SET/DO)
 
         Returns:
-            Final resolved target string (no leading @)
+            Final resolved target string (no leading @). This is either:
+            - A variable NAME for SET/DO operations (return_value=False)
+            - A VALUE for GET operations (return_value=True)
 
         Raises:
             IndirectionError: If resolution fails or max depth exceeded
         """
         from m2py.runtime import MArray
 
-        depth = 0
         current = str(target_str) if target_str is not None else ""
 
-        while current.startswith("@") and depth < max_depth:
-            depth += 1
-            # Strip the @ prefix to get the reference/expression
-            ref = current[1:]
-            if not ref:
-                raise IndirectionError(current, "empty indirection target")
+        if not current.startswith("@"):
+            return current
 
-            # Check if this is a function call (starts with $)
-            if ref.startswith("$"):
-                # Expression indirection - need to evaluate as MUMPS expression
-                # Use XECUTE to evaluate and capture result
-                # Use a valid MUMPS variable name (no underscores)
-                temp_var = "ZINDRES"
-                temp_scope: Dict[str, Any] = dict(scope)  # Copy scope
-                mumps_code = f"S {temp_var}={ref}"
-                try:
-                    self.execute_mumps(mumps_code, temp_scope)
-                    result_var = temp_scope.get(temp_var)
-                    if isinstance(result_var, MArray):
-                        value = result_var.value
-                    else:
-                        value = result_var
-                    if value is None:
-                        raise IndirectionError(
-                            current,
-                            f"expression '{ref}' returned null",
-                        )
-                    current = str(value)
-                    continue
-                except Exception as e:
-                    if isinstance(e, IndirectionError):
-                        raise
-                    raise IndirectionError(
-                        current,
-                        f"failed to evaluate expression '{ref}': {e}",
-                    ) from e
+        # Count leading @ symbols
+        at_count = 0
+        while at_count < len(current) and current[at_count] == "@":
+            at_count += 1
 
-            # Handle subscripted references like @L(1) or @A(AA)
-            base_name, subscripts = _parse_subscripted_name(ref)
-
-            # Evaluate subscripts - they may be variable references like AA
-            evaluated_subs = _evaluate_subscripts(subscripts, scope)
-
-            # Look up the variable in scope or globals
-            if base_name.startswith("^"):
-                # Global variable
-                global_name = base_name[1:]
-                if evaluated_subs:
-                    value = self.globals.get(global_name, evaluated_subs)
-                else:
-                    value = self.globals.get(global_name, ())
-            else:
-                # Local variable
-                var = scope.get(base_name)
-                if var is None:
-                    raise IndirectionError(
-                        current,
-                        f"undefined variable '{base_name}'",
-                    )
-                if isinstance(var, MArray):
-                    if evaluated_subs:
-                        value = var.get(*evaluated_subs)
-                    else:
-                        value = var.value
-                else:
-                    # Plain value (shouldn't normally happen)
-                    value = var
-
-            if value is None:
-                raise IndirectionError(
-                    current,
-                    f"undefined value for '{ref}'",
-                )
-
-            current = str(value)
-
-        if depth >= max_depth:
+        if at_count >= max_depth:
             raise IndirectionError(
                 target_str,
                 f"nested indirection exceeded max depth ({max_depth})",
             )
 
-        return current
+        # Strip all leading @s to get the base expression
+        base_expr = current[at_count:]
+        if not base_expr:
+            raise IndirectionError(current, "empty indirection target")
+
+        # Check if this is a function call (starts with $)
+        if base_expr.startswith("$"):
+            # Expression indirection - need to evaluate as MUMPS expression
+            temp_var = "ZINDRES"
+            temp_scope: Dict[str, Any] = dict(scope)
+            # Prepend @s back for proper expression context
+            mumps_code = (
+                f"S {temp_var}=" + ("@" * (at_count - 1)) + base_expr
+                if at_count > 1
+                else f"S {temp_var}={base_expr}"
+            )
+            try:
+                self.execute_mumps(mumps_code, temp_scope)
+                result_var = temp_scope.get(temp_var)
+                if isinstance(result_var, MArray):
+                    value = result_var.value
+                else:
+                    value = result_var
+                if value is None:
+                    raise IndirectionError(
+                        current,
+                        f"expression '{base_expr}' returned null",
+                    )
+                return str(value)
+            except Exception as e:
+                if isinstance(e, IndirectionError):
+                    raise
+                raise IndirectionError(
+                    current,
+                    f"failed to evaluate expression '{base_expr}': {e}",
+                ) from e
+
+        # Parse ALL @(...) groups from the base expression
+        # These will be distributed among the @ levels
+        all_subscript_groups: list[tuple[Any, ...]] = []
+        remaining_expr = base_expr
+
+        while "@(" in remaining_expr:
+            # Find the LAST @( to process right-to-left
+            last_at_paren = remaining_expr.rfind("@(")
+            # Find the matching close paren
+            paren_depth = 0
+            close_pos = -1
+            in_string = False
+            i = last_at_paren + 2
+            while i < len(remaining_expr):
+                c = remaining_expr[i]
+                if c == '"':
+                    if in_string:
+                        # Check for escaped quote
+                        if i + 1 < len(remaining_expr) and remaining_expr[i + 1] == '"':
+                            i += 2
+                            continue
+                        in_string = False
+                    else:
+                        in_string = True
+                elif not in_string:
+                    if c == "(":
+                        paren_depth += 1
+                    elif c == ")":
+                        if paren_depth == 0:
+                            close_pos = i
+                            break
+                        paren_depth -= 1
+                i += 1
+
+            if close_pos == -1:
+                break
+
+            # Extract the subscript content
+            subs_content = remaining_expr[last_at_paren + 2 : close_pos]
+            parsed_subs = tuple(_parse_subscript_list(subs_content, base_expr))
+            # Prepend (since we're going right-to-left)
+            all_subscript_groups.insert(0, parsed_subs)
+            # Remove this @(...) from expression
+            remaining_expr = (
+                remaining_expr[:last_at_paren] + remaining_expr[close_pos + 1 :]
+            )
+
+        # remaining_expr is now the variable part (possibly with regular subscripts)
+        # Parse the variable name and any regular subscripts like X(1,2)
+        base_name, regular_subs = _parse_subscripted_name(remaining_expr)
+
+        # Evaluate regular subscripts
+        evaluated_regular_subs = _evaluate_subscripts(regular_subs, scope, self)
+
+        # Now process from innermost @ to outermost
+        # Level 1 (innermost): look up variable, apply first @(...) group if available
+        # Level 2: apply @ to result, apply second @(...) group if available
+        # etc.
+
+        # Get the innermost subscript group (if any)
+        level1_subs = all_subscript_groups[0] if all_subscript_groups else None
+
+        # Look up the base variable
+        if base_name.startswith("^"):
+            global_name = base_name[1:]
+            if evaluated_regular_subs:
+                value = self.globals.get(global_name, evaluated_regular_subs)
+            else:
+                value = self.globals.get(global_name, ())
+        else:
+            var = scope.get(base_name)
+            if var is None:
+                raise IndirectionError(
+                    current,
+                    f"undefined variable '{base_name}'",
+                )
+            if isinstance(var, MArray):
+                if evaluated_regular_subs:
+                    value = var.get(*evaluated_regular_subs)
+                else:
+                    value = var.value
+            else:
+                value = var
+
+        if value is None:
+            value = ""
+
+        value_str = str(value)
+
+        # Apply level 1 subscripts if present
+        if level1_subs:
+            evaluated_level1_subs = _evaluate_subscripts(level1_subs, scope, self)
+            if evaluated_level1_subs:
+                # If value starts with @, resolve it first
+                if value_str.startswith("@"):
+                    value_str = self.resolve_nested_indirection(
+                        value_str, scope, max_depth - 1
+                    )
+                # Parse value as variable name and append subscripts
+                val_base, val_subs = _parse_subscripted_name(value_str)
+                if val_subs:
+                    combined_subs = val_subs + evaluated_level1_subs
+                else:
+                    combined_subs = evaluated_level1_subs
+                subs_formatted = ",".join(
+                    self._format_subscript(s) for s in combined_subs
+                )
+                value_str = f"{val_base}({subs_formatted})"
+
+        # Track whether we've done the final value lookup
+        final_lookup_done = False
+
+        # Now process remaining @ levels
+        # For at_count = 2, we've done level 1, now do level 2 (one more @)
+        for level in range(2, at_count + 1):
+            # Look up the current value_str
+            lookup_base, lookup_subs = _parse_subscripted_name(value_str)
+            evaluated_lookup_subs = _evaluate_subscripts(lookup_subs, scope, self)
+
+            if lookup_base.startswith("^"):
+                global_name = lookup_base[1:]
+                if evaluated_lookup_subs:
+                    value = self.globals.get(global_name, evaluated_lookup_subs)
+                else:
+                    value = self.globals.get(global_name, ())
+            else:
+                var = scope.get(lookup_base)
+                if var is None:
+                    raise IndirectionError(
+                        current,
+                        f"undefined variable '{lookup_base}' at level {level}",
+                    )
+                if isinstance(var, MArray):
+                    if evaluated_lookup_subs:
+                        value = var.get(*evaluated_lookup_subs)
+                    else:
+                        value = var.value
+                else:
+                    value = var
+
+            if value is None:
+                value = ""
+            value_str = str(value)
+
+            # Apply subscripts for this level if available
+            subs_index = level - 1  # level 2 uses index 1, etc.
+            if subs_index < len(all_subscript_groups):
+                level_subs = all_subscript_groups[subs_index]
+                evaluated_level_subs = _evaluate_subscripts(level_subs, scope, self)
+                if evaluated_level_subs:
+                    # If value starts with @, resolve it first
+                    if value_str.startswith("@"):
+                        value_str = self.resolve_nested_indirection(
+                            value_str, scope, max_depth - level
+                        )
+                    # Parse value as variable name and append subscripts
+                    val_base, val_subs = _parse_subscripted_name(value_str)
+                    if val_subs:
+                        combined_subs = val_subs + evaluated_level_subs
+                    else:
+                        combined_subs = evaluated_level_subs
+                    subs_formatted = ",".join(
+                        self._format_subscript(s) for s in combined_subs
+                    )
+                    value_str = f"{val_base}({subs_formatted})"
+
+                    # If this is the last @ level, we need to look up the final value
+                    if level == at_count:
+                        final_base, final_subs = _parse_subscripted_name(value_str)
+                        evaluated_final_subs = _evaluate_subscripts(final_subs, scope)
+
+                        if final_base.startswith("^"):
+                            global_name = final_base[1:]
+                            if evaluated_final_subs:
+                                value = self.globals.get(
+                                    global_name, evaluated_final_subs
+                                )
+                            else:
+                                value = self.globals.get(global_name, ())
+                        else:
+                            final_var = scope.get(final_base)
+                            if final_var is None:
+                                raise IndirectionError(
+                                    current,
+                                    f"undefined variable '{final_base}' in final lookup",
+                                )
+                            if isinstance(final_var, MArray):
+                                if evaluated_final_subs:
+                                    value = final_var.get(*evaluated_final_subs)
+                                else:
+                                    value = final_var.value
+                            else:
+                                value = final_var
+
+                        if value is None:
+                            value = ""
+                        value_str = str(value)
+                        final_lookup_done = True
+
+        # If value_str still starts with @, continue resolving
+        if value_str.startswith("@"):
+            return self.resolve_nested_indirection(
+                value_str, scope, max_depth - at_count, return_value
+            )
+
+        # If we did the final lookup in the loop (for cases with @-subscripts at last level),
+        # the value_str is already the final VALUE, not a name
+        if final_lookup_done:
+            return value_str
+
+        # For GET operations (return_value=True), do the final lookup
+        if return_value:
+            # value_str is a variable name - look it up to get the value
+            final_base, final_subs = _parse_subscripted_name(value_str)
+            evaluated_final_subs = _evaluate_subscripts(final_subs, scope)
+
+            if final_base.startswith("^"):
+                global_name = final_base[1:]
+                if evaluated_final_subs:
+                    value = self.globals.get(global_name, evaluated_final_subs)
+                else:
+                    value = self.globals.get(global_name, ())
+            else:
+                final_var = scope.get(final_base)
+                if final_var is None:
+                    # For GET, undefined variable returns empty string
+                    return ""
+                if isinstance(final_var, MArray):
+                    if evaluated_final_subs:
+                        value = final_var.get(*evaluated_final_subs)
+                    else:
+                        value = final_var.value
+                else:
+                    value = final_var
+
+            if value is None:
+                return ""
+            return str(value)
+
+        # value_str is a variable name - return it for the caller to look up
+        # This handles cases like @X where X="Y" - we return "Y" as the variable name
+        return value_str
 
     def parse_call_target(self, target_str: str) -> CallTarget:
         """Parse indirect DO/GOTO target into components.

@@ -318,7 +318,7 @@ def generate_name_indirection(
                 all_subs_exprs.extend(sub_exprs)
             subs_args = ", ".join(all_subs_exprs)
 
-            return f"_rt.get_var(_rt.append_subscripts(str(_rt.resolve_indirection({base_name_expr}, {levels}, {scope_expr})), {subs_args}), {scope_expr})"
+            return f"_rt.get_var(_rt.append_subscripts(str(_rt.resolve_indirection({base_name_expr}, {levels}, {scope_expr})), {subs_args}, _scope={scope_expr}), {scope_expr})"
         else:
             # Single level with subscripts: @NAME@(1,2)
             all_subs_exprs = []
@@ -328,9 +328,9 @@ def generate_name_indirection(
             subs_args = ", ".join(all_subs_exprs)
 
             if is_simple_name:
-                return f"_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source({base_name_expr}, {scope_expr}), {subs_args}), {scope_expr})"
+                return f"_rt.get_var(_rt.append_subscripts(_rt.get_indirection_source({base_name_expr}, {scope_expr}), {subs_args}, _scope={scope_expr}), {scope_expr})"
             else:
-                return f"_rt.get_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}), {scope_expr})"
+                return f"_rt.get_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}, _scope={scope_expr}), {scope_expr})"
     else:
         # No subscripts
         if levels > 1:
@@ -467,12 +467,12 @@ def generate_name_indirection_write(
             if is_global_var:
                 # Global variable: get its VALUE (which is the target name), append subscripts
                 # @^V@(1)=0 where ^V="^VV" → SET ^VV(1)=0
-                return f"_rt.set_var(_rt.append_subscripts(str(_rt.get_var({base_name_expr}, {scope_expr})), {subs_args}), {value_expr}, {scope_expr})"
+                return f"_rt.set_var(_rt.append_subscripts(str(_rt.get_var({base_name_expr}, {scope_expr})), {subs_args}, _scope={scope_expr}), {value_expr}, {scope_expr})"
             elif is_simple_name:
                 # Local variable: use get_indirection_source to get the name from local var
-                return f"_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source({base_name_expr}, {scope_expr}), {subs_args}), {value_expr}, {scope_expr})"
+                return f"_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source({base_name_expr}, {scope_expr}), {subs_args}, _scope={scope_expr}), {value_expr}, {scope_expr})"
             else:
-                return f"_rt.set_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}), {value_expr}, {scope_expr})"
+                return f"_rt.set_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}, _scope={scope_expr}), {value_expr}, {scope_expr})"
     else:
         # No subscripts
         if levels > 1:
@@ -1048,7 +1048,9 @@ def generate_argument_indirection(
 
     # Generate the SET command string and execute it
     # Use execute_mumps which handles parsing and execution
-    ctx.emitter.line(f'_rt.execute_mumps("S " + str({target_expr}), _scope)')
+    # Use appropriate scope based on context (state._locals in TRAMPOLINE mode)
+    scope_expr = _get_scope_expr(ctx)
+    ctx.emitter.line(f'_rt.execute_mumps("S " + str({target_expr}), {scope_expr})')
 
 
 def generate_pattern_indirection(

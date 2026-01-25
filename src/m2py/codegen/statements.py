@@ -3631,12 +3631,10 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
                         name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
                     else:
                         name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
-                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args})"
+                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args}, _scope=_scope)"
                 else:
                     inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = (
-                        f"_rt.append_subscripts(str({inner_name_expr}), {subs_args})"
-                    )
+                    name_expr = f"_rt.append_subscripts(str({inner_name_expr}), {subs_args}, _scope=_scope)"
             elif levels > 1:
                 # Multi-level indirection (@@X, @@@X)
                 if isinstance(inner_expr, MVariable):
@@ -3772,12 +3770,10 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
                         name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
                     else:
                         name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
-                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args})"
+                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args}, _scope=_scope)"
                 else:
                     inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = (
-                        f"_rt.append_subscripts(str({inner_name_expr}), {subs_args})"
-                    )
+                    name_expr = f"_rt.append_subscripts(str({inner_name_expr}), {subs_args}, _scope=_scope)"
             elif levels > 1:
                 # Multi-level indirection (@@X, @@@X)
                 if isinstance(inner_expr, MVariable):
