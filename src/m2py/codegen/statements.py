@@ -2175,7 +2175,9 @@ def _generate_for_while(
     inside the body are visible to the loop condition and stepping.
 
     T068: For indirect loop variables (F @A=1:1:3 with body modifying A),
-    resolve the target variable name once at the start.
+    resolve the target variable name once at the start. When the resolved
+    name might be a subscripted variable (like "A(22)"), use _rt.get_var
+    and _rt.set_var for proper subscript handling.
 
     MUMPS FOR semantics: After the loop exits, the loop variable retains
     the last value it held during iteration, NOT the value that would have
@@ -2195,8 +2197,20 @@ def _generate_for_while(
     # T068: Handle indirect loop variable setup
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         # Resolve the target variable name once before the loop
+        # The resolved name might be subscripted (e.g., "A(22)"), so we use
+        # _rt.get_var and _rt.set_var which handle subscript parsing at runtime
         ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
-        loop_ref = "_scope.setdefault(_for_indirect_var, MArray()).value"
+        # Dispatch to special indirect handler that uses get_var/set_var
+        param = stmt.parameters[0]
+        if param.param_type == ForParamType.RANGE:
+            _generate_for_while_range_indirect(stmt, for_ctx, ctx, param)
+        elif for_ctx.loop_type == ForLoopType.STRING_LIST:
+            _generate_for_while_string_list_indirect(stmt, for_ctx, ctx)
+        else:
+            raise NotImplementedError(
+                f"While loop for indirect var doesn't support {for_ctx.loop_type}"
+            )
+        return
     # T084: For SIMPLE_FUNCTIONS, use _scope directly for loop variable
     elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
         # Get the original MUMPS variable name for _scope key
@@ -2278,6 +2292,111 @@ def _generate_for_while_range(
             ctx.emitter.line("break")
         # Increment loop variable at end of iteration
         ctx.emitter.line(f"{loop_ref} = {loop_ref} + {step_var}")
+
+
+def _generate_for_while_range_indirect(
+    stmt: MForStatement,
+    for_ctx: ForGenContext,
+    ctx: "GeneratorContext",
+    param: MForParameter,
+) -> None:
+    """Generate while loop for RANGE FOR with indirect loop variable.
+
+    When the loop variable is indirect (F @A=1:1:3) and the resolved name
+    might be subscripted (e.g., "A(22)"), we need to use _rt.get_var and
+    _rt.set_var for proper subscript handling at runtime.
+
+    This is separate from _generate_for_while_range because we can't use
+    a simple assignment expression like `loop_ref = value` when the variable
+    name contains subscripts that need to be parsed.
+    """
+    if param.start is None or param.step is None or param.end is None:
+        raise NotImplementedError("Incomplete FOR range parameters for while loop")
+
+    start_expr = generate_expr(param.start, ctx)
+    step_expr = generate_expr(param.step, ctx)
+    end_expr = generate_expr(param.end, ctx)
+
+    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    lid = for_ctx.loop_id
+    step_var = f"_for_step_{lid}"
+    end_var = f"_for_end_{lid}"
+
+    # Initialize loop variable using set_var for proper subscript handling
+    ctx.emitter.line(f"_rt.set_var(_for_indirect_var, m_num({start_expr}), _scope)")
+    ctx.emitter.line(f"{step_var} = m_num({step_expr})")
+    ctx.emitter.line(f"{end_var} = m_num({end_expr})")
+
+    # While condition: use get_var to read the current value
+    get_var_expr = "_rt.get_var(_for_indirect_var, _scope)"
+    in_range_cond = (
+        f"({step_var} > 0 and {get_var_expr} <= {end_var}) or "
+        f"({step_var} < 0 and {get_var_expr} >= {end_var}) or "
+        f"({step_var} == 0 and {get_var_expr} <= {end_var})"
+    )
+    ctx.emitter.line(f"while {in_range_cond}:")
+
+    with ctx.emitter.indented():
+        # Execute body
+        _generate_for_body(stmt, ctx, for_ctx)
+        # Check if the NEXT value would be in range BEFORE incrementing
+        # For step == 0, we never break (infinite loop until QUIT)
+        next_val_cond = (
+            f"({step_var} > 0 and m_add({get_var_expr}, {step_var}) <= {end_var}) or "
+            f"({step_var} < 0 and m_add({get_var_expr}, {step_var}) >= {end_var}) or "
+            f"({step_var} == 0)"
+        )
+        ctx.emitter.line(f"if not ({next_val_cond}):")
+        with ctx.emitter.indented():
+            ctx.emitter.line("break")
+        # Increment loop variable using set_var
+        ctx.emitter.line(
+            f"_rt.set_var(_for_indirect_var, m_add({get_var_expr}, {step_var}), _scope)"
+        )
+
+
+def _generate_for_while_string_list_indirect(
+    stmt: MForStatement,
+    for_ctx: ForGenContext,
+    ctx: "GeneratorContext",
+) -> None:
+    """Generate while loop for STRING_LIST FOR with indirect loop variable.
+
+    Similar to _generate_for_while_string_list but uses _rt.set_var for
+    proper subscript handling when the resolved variable name is subscripted.
+    """
+    # Collect all values from parameters
+    values = []
+    for param in stmt.parameters:
+        if param.param_type == ForParamType.VALUE and param.value is not None:
+            values.append(generate_expr(param.value, ctx))
+
+    if not values:
+        raise NotImplementedError("Empty string list FOR")
+
+    # Spec 017 Phase 11: Use unique variable names
+    lid = for_ctx.loop_id
+    idx_var = f"_for_idx_{lid}"
+
+    # MUMPS FOR list semantics: evaluate each value LAZILY at iteration time
+    ctx.emitter.line(f"{idx_var} = 0")
+    ctx.emitter.line(f"while {idx_var} < {len(values)}:")
+
+    with ctx.emitter.indented():
+        # Lazy evaluation: compute current value based on index
+        # Generate if/elif chain for each value
+        for i, val_expr in enumerate(values):
+            if i == 0:
+                ctx.emitter.line(f"if {idx_var} == 0:")
+            else:
+                ctx.emitter.line(f"elif {idx_var} == {i}:")
+            with ctx.emitter.indented():
+                # Use set_var for proper subscript handling
+                ctx.emitter.line(f"_rt.set_var(_for_indirect_var, {val_expr}, _scope)")
+        # Execute body
+        _generate_for_body(stmt, ctx, for_ctx)
+        # Increment index
+        ctx.emitter.line(f"{idx_var} += 1")
 
 
 def _generate_for_while_string_list(

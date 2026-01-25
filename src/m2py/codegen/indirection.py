@@ -243,6 +243,44 @@ def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> s
         return generate_expr(inner_expr, ctx)
 
 
+def _build_subscripted_name_expr(
+    base_name: str, subscripts: list, ctx: "GeneratorContext", is_global: bool = False
+) -> str:
+    """Build a Python expression that evaluates to a subscripted variable name string.
+
+    For example, for base_name="B" and subscripts=[1], generates code that
+    produces the string "B(1)" at runtime.
+
+    For subscripts containing variable references, generates f-string code
+    like f"B({sub1})" that evaluates the subscript at runtime.
+
+    Args:
+        base_name: The variable name (e.g., "B" or "^GLO")
+        subscripts: List of subscript expressions (ASG nodes)
+        ctx: Generator context
+        is_global: True if this is a global variable
+
+    Returns:
+        Python expression string that evaluates to the full variable name
+    """
+    from m2py.codegen.expressions import generate_expr
+
+    if not subscripts:
+        # No subscripts - just return the name
+        return f'"{base_name}"'
+
+    # Generate expressions for each subscript
+    sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+
+    # Build f-string that constructs the name with subscripts at runtime
+    # E.g., f"B({sub1}, {sub2})" for B(I, J)
+    if len(sub_exprs) == 1:
+        return f'f"{base_name}({{{sub_exprs[0]}}})"'
+    else:
+        subs_parts = ", ".join(f"{{{s}}}" for s in sub_exprs)
+        return f'f"{base_name}({subs_parts})"'
+
+
 def generate_name_indirection(
     expr: "MIndirection",
     ctx: "GeneratorContext",
@@ -257,6 +295,7 @@ def generate_name_indirection(
     - Multi-level: @@X → _rt.resolve_indirection("X", 2, scope)
     - With subscripts: @NAME@(1,2) → _rt.get_var(append_subscripts(...), scope)
     - Multi-level with per-level subscripts: @@X@(1,2)@(5,6) → _rt.get_var(resolve_with_per_level_subscripts(...), scope)
+    - Innermost subscripts: @@@B(1) → _rt.resolve_indirection("B(1)", 3, scope)
 
     Where 'scope' is state._locals in TRAMPOLINE+dynamic_locals mode, _scope otherwise.
 
@@ -280,19 +319,40 @@ def generate_name_indirection(
     # Count how many levels have subscripts
     levels_with_subs = sum(1 for s in all_subscripts if s)
 
+    # Check if innermost expression has subscripts (e.g., B(1) in @@@B(1))
+    innermost_subscripts = getattr(inner_expr, "subscripts", None) or []
+
     # Get the base name expression and check if it's a global variable
+    # Track whether base_name_expr retrieves a VALUE vs just builds a NAME string
+    # - is_simple_name: True if just a literal name string like "B"
+    # - retrieves_value: True if base_name_expr already does a lookup (like for globals)
     is_global = isinstance(inner_expr, GlobalVariable)
+    retrieves_value = False  # Does base_name_expr retrieve a value vs just a name?
+
     if isinstance(inner_expr, MVariable):
         base_name = inner_expr.name
-        base_name_expr = f'"{base_name}"'
-        is_simple_name = True
+        # If innermost has subscripts, build a name expression that includes them
+        if innermost_subscripts:
+            base_name_expr = _build_subscripted_name_expr(
+                base_name, innermost_subscripts, ctx, is_global
+            )
+            is_simple_name = False  # Now it's a dynamic expression
+            # But it's still just building a NAME string, not retrieving a value
+        else:
+            base_name_expr = f'"{base_name}"'
+            is_simple_name = True
     elif is_global:
-        # Global variable - the generated expression will be the VALUE (e.g., "^VV")
+        # Global variable - generate_expr retrieves the VALUE
+        # For example, generate_expr(^V(1)) produces code that gets the value at ^V(1)
+        # This is what we want even if there are innermost subscripts,
+        # because the value retrieval handles those subscripts correctly
         base_name_expr = generate_expr(inner_expr, ctx)
         is_simple_name = False
+        retrieves_value = True  # generate_expr for global retrieves the VALUE
     else:
         base_name_expr = generate_expr(inner_expr, ctx)
         is_simple_name = False
+        retrieves_value = True  # Complex expression likely retrieves a value
 
     # Handle different cases
     if levels_with_subs > 0:
@@ -332,16 +392,18 @@ def generate_name_indirection(
             else:
                 return f"_rt.get_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}, _scope={scope_expr}), {scope_expr})"
     else:
-        # No subscripts
+        # No subscripts (from name_indirection_subscripts)
         if levels > 1:
-            if is_simple_name:
+            if retrieves_value:
+                # base_name_expr already retrieves a VALUE (e.g., for globals)
+                # so we need one less level of resolution
+                return f"_rt.resolve_indirection(str({base_name_expr}), {levels - 1}, {scope_expr})"
+            else:
+                # base_name_expr is just a NAME string (literal or f-string)
+                # need full levels of resolution
                 return (
                     f"_rt.resolve_indirection({base_name_expr}, {levels}, {scope_expr})"
                 )
-            else:
-                # For non-simple names (like globals), the value is already retrieved
-                # by base_name_expr, so we need one less level of resolution
-                return f"_rt.resolve_indirection(str({base_name_expr}), {levels - 1}, {scope_expr})"
         else:
             # Simple single-level indirection: @X
             name_expr = _generate_inner_name_expr(inner_expr, ctx)
@@ -393,25 +455,34 @@ def generate_name_indirection_write(
     # Count how many levels have subscripts
     levels_with_subs = sum(1 for s in all_subscripts if s)
 
+    # Check if innermost expression has subscripts (e.g., B(1) in S @@@B(1)=val)
+    innermost_subscripts = getattr(inner_expr, "subscripts", None) or []
+
     # Get the base name expression - need the NAME string, not the value
     # For local variables: use get_indirection_source to get the name from the local
     # For global variables: use get_var to get the value (which is the target name)
     is_global_var = False
     if isinstance(inner_expr, MVariable):
         base_name = inner_expr.name
-        base_name_expr = f'"{base_name}"'
-        is_simple_name = True
+        # If innermost has subscripts, build a name expression that includes them
+        if innermost_subscripts:
+            base_name_expr = _build_subscripted_name_expr(
+                base_name, innermost_subscripts, ctx, is_global=False
+            )
+            is_simple_name = False  # Now it's a dynamic expression
+        else:
+            base_name_expr = f'"{base_name}"'
+            is_simple_name = True
     elif isinstance(inner_expr, GlobalVariable):
         # For global variables like ^VV, we need to GET the VALUE, which is the target name
         # Example: ^V="^VV", then @^V means "get value of ^V and use as name"
         base_name = f"^{inner_expr.name}"
         is_global_var = True
-        if inner_expr.subscripts:
+        if innermost_subscripts:
             # Has subscripts like ^VV(1) - need to include them in the name
-            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
-            # Build the full name with subscripts like "^VV(" + str(sub1) + "," + str(sub2) + ")"
-            sub_parts = ' + "," + '.join([f"str({s})" for s in sub_exprs])
-            base_name_expr = f'"^{inner_expr.name}(" + {sub_parts} + ")"'
+            base_name_expr = _build_subscripted_name_expr(
+                base_name, innermost_subscripts, ctx, is_global=True
+            )
             is_simple_name = False
         else:
             base_name_expr = f'"{base_name}"'

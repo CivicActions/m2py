@@ -486,8 +486,20 @@ thanks to multi-routine support and Decimal arithmetic helpers.
     ```
   - **Tests**: Added TestDoWithOffsetTrampoline class with 3 tests in test_phase14_fixes.py
   - **Affects**: V1DO3 I-246 now passes (unary operator offset test)
+- [X] T075k Fix V1IDNM1 name-level indirection test failures (I-491, I-492, I-494)
+  - **Scope**: V1IDNM1 tests name-level indirection; 3 of 8 test cases were failing
+  - **Root cause (I-491)**: FOR loops with indirect variables that resolve to subscripted names (e.g., `F @A(@A(2))=4:1:7` where resolved name is "A(22)") were using `_scope.setdefault()` pattern which doesn't handle subscripted names
+  - **Root cause (I-492)**: Function-based indirection like `@$E("ABCDEF",4)` with `return_value=True` returned the variable name ("D") instead of the value (4)
+  - **Root cause (I-494)**: `get_var("A(A(1))")` returned empty because `_evaluate_subscript()` didn't handle subscripted VarRef names like "A(1)" in subscript position
+  - **Fixes applied**:
+    1. codegen/statements.py: Added `_generate_for_while_range_indirect()` - uses `_rt.set_var()/_rt.get_var()` instead of direct scope access for proper subscript handling
+    2. codegen/statements.py: Added `_generate_for_while_string_list_indirect()` - same pattern for string list FOR loops
+    3. runtime/__init__.py: `resolve_nested_indirection()` now does final variable lookup when `base_expr` starts with `$` and `return_value=True`
+    4. runtime/__init__.py: `_evaluate_subscript()` now parses and recursively evaluates subscripted variable references like "A(1)"
+  - **Tests**: Added tests in test_v1idnm1_fixes.py
+  - **Affects**: V1IDNM1 all 8 tests now pass (I-489 through I-496)
 
-**Checkpoint**: 57 failures remain (tests pass functionally but whitespace/pagination differ). Unit tests: 3603 passed.
+**Checkpoint**: 57 failures remain (tests pass functionally but whitespace/pagination differ). Unit tests: 3881 passed.
 
 ---
 

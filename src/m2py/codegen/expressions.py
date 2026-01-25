@@ -1233,12 +1233,29 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
         elif isinstance(inner_expr, (MVariable, MLocalVariable)):
             base_name = inner_expr.name
-            if levels > 1:
-                name_expr = (
-                    f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
-                )
+            # Check if inner_expr has subscripts (e.g., @@@A(0) -> A(0), not A)
+            inner_subscripts = getattr(inner_expr, "subscripts", [])
+            if inner_subscripts:
+                # Build the subscripted variable name at runtime
+                # For @@@A(0): base_name="A", subscripts=[0] -> "A(0)"
+                sub_exprs = [generate_expr(sub, ctx) for sub in inner_subscripts]
+                if len(sub_exprs) == 1:
+                    full_name_expr = f'f"{base_name}({{{sub_exprs[0]}}})"'
+                else:
+                    subs_parts = ",".join(f"{{{s}}}" for s in sub_exprs)
+                    full_name_expr = f'f"{base_name}({subs_parts})"'
             else:
-                name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
+                full_name_expr = f'"{base_name}"'
+
+            if levels > 1:
+                # Use resolve_indirection_name (not resolve_indirection) because
+                # $ORDER/$NEXT don't need the target variable to exist - they just
+                # need the name. resolve_indirection validates existence which fails
+                # for cases like $N(@@C) where C(1)="^V1A(22,44,-1)" since that exact
+                # subscript may not exist (but $NEXT finds the next one).
+                name_expr = f"str(_rt.resolve_indirection_name({full_name_expr}, {levels}, _scope))"
+            else:
+                name_expr = f"_rt.get_indirection_source({full_name_expr}, _scope)"
         else:
             name_expr_base = generate_expr(inner_expr, ctx)
             name_expr = f"str({name_expr_base})"

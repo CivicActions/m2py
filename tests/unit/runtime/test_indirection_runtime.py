@@ -740,8 +740,14 @@ class TestIndirectionEdgeCases:
         return MUMPSRuntime()
 
     def test_valid_var_name_starting_with_percent(self, rt):
-        """Variables starting with % are valid MUMPS system variables."""
-        scope = {"%A": "B", "B": 10}
+        """Variables starting with % are valid MUMPS system variables.
+
+        Note: In _scope, MUMPS %A is stored as Python name _pct_A (to match codegen).
+        The runtime functions translate MUMPS names internally.
+        """
+        # Scope uses Python-translated keys (as codegen produces)
+        scope = {"_pct_A": "B", "B": 10}
+        # But resolve_indirection receives MUMPS names
         result = rt.resolve_indirection("%A", 1, scope)
         assert result == 10
 

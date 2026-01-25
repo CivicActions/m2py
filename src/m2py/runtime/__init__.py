@@ -365,6 +365,21 @@ def _evaluate_subscript(
             return final_raw
         return ""
 
+    # Handle subscripted variable references like "A(1)"
+    # Parse the variable name to extract base name and subscripts
+    if "(" in var_name:
+        base_name, subs = _parse_subscripted_name(var_name)
+        raw_value = _scope.get(base_name, "")
+        if isinstance(raw_value, MArray):
+            if subs:
+                # Recursively evaluate subscripts (they might be variable refs too)
+                evaluated_subs = _evaluate_subscripts(subs, _scope, runtime)
+                if evaluated_subs:
+                    return raw_value.get(*evaluated_subs)
+                return raw_value.value
+            return raw_value.value
+        return raw_value if raw_value != "" else ""
+
     raw_value = _scope.get(var_name, "")
     if isinstance(raw_value, MArray):
         return raw_value.value
@@ -2034,15 +2049,19 @@ class MUMPSRuntime:
                 )
             return str(value) if value is not None else ""
 
+        # Translate MUMPS varname to Python scope key
+        # MUMPS %Z is stored in _scope as "_pct_Z"
+        scope_key = _translate_label_to_func(varname)
+
         # Simple variable - check existence in _scope
-        if varname not in _scope:
+        if scope_key not in _scope:
             raise IndirectionError(
                 varname,
                 f"Undefined local variable: {varname}",
                 variable_name=varname,
             )
 
-        raw_value = _scope[varname]
+        raw_value = _scope[scope_key]
 
         # Extract value from MArray if present
         if isinstance(raw_value, MArray):
@@ -2216,6 +2235,8 @@ class MUMPSRuntime:
         Args:
             name: Variable name, optionally with subscripts
                   Examples: "X", "ARR(1,2)", "^GLO", "^GLO(1)"
+                  May also be a nested indirection like "@V1A(20)"
+                  May also be a naked reference like "^(1)"
             _scope: Current scope dictionary
 
         Returns:
@@ -2226,14 +2247,26 @@ class MUMPSRuntime:
         if not name:
             return 0
 
+        # Handle nested indirection: if name starts with @, resolve it first
+        if name.startswith("@"):
+            name = self.resolve_nested_indirection(name, _scope)
+            if not name:
+                return 0
+
         # Parse subscripts if present
         base_name, subscripts = _parse_subscripted_name(name)
-        subs = subscripts if subscripts else ()
+        # Evaluate subscripts - resolve variable references like A(3) to their values
+        evaluated_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
+        subs = tuple(str(s) for s in evaluated_subs) if evaluated_subs else ()
 
         # Handle global variables
         if base_name.startswith("^"):
             key = base_name[1:]
-            return m_data_global(self._globals, key, tuple(str(s) for s in subs))
+            # Handle naked global reference: ^(subs) where base_name is just "^"
+            if not key:
+                resolved_name, full_subs = self._globals.resolve_naked(subs)
+                return m_data_global(self._globals, resolved_name, full_subs)
+            return m_data_global(self._globals, key, subs)
 
         # Handle local variables
         arr = _scope.get(base_name, MArray())
@@ -2243,13 +2276,15 @@ class MUMPSRuntime:
                 return 1 if not subs else 0
             else:
                 return 0
-        return m_data(arr, tuple(str(s) for s in subs))
+        return m_data(arr, subs)
 
     def get_order(self, name: str, _scope: Dict[str, Any], direction: int = 1) -> str:
         """Get $ORDER value for variable by name (indirection support).
 
         Args:
             name: Variable name with subscripts, e.g. "A(1)", "^G(sub)"
+                  May also be a nested indirection like "@V1A(20)"
+                  May also be a naked reference like "^(1)"
             _scope: Current scope dictionary
             direction: 1 for forward, -1 for reverse
 
@@ -2261,11 +2296,28 @@ class MUMPSRuntime:
         if not name:
             return ""
 
+        # Handle nested indirection: if name starts with @, resolve it first
+        # This happens for $N(@B) where B="@V1A(20)" - the indirection source
+        # itself is an indirection expression
+        if name.startswith("@"):
+            name = self.resolve_nested_indirection(name, _scope)
+            if not name:
+                return ""
+
         base_name, subscripts = _parse_subscripted_name(name)
-        subs = tuple(str(s) for s in subscripts) if subscripts else ("",)
+        # Evaluate subscripts first - resolve variable references like A(3) to their values
+        evaluated_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
+        subs = tuple(str(s) for s in evaluated_subs) if evaluated_subs else ("",)
 
         if base_name.startswith("^"):
             key = base_name[1:]
+            # Handle naked global reference: ^(subs) where base_name is just "^"
+            if not key:
+                # Naked reference - resolve using the naked indicator
+                resolved_name, full_subs = self._globals.resolve_naked(subs)
+                return m_order_global(
+                    self._globals, resolved_name, full_subs, direction
+                )
             return m_order_global(self._globals, key, subs, direction)
 
         arr = _scope.get(base_name, MArray())
@@ -2346,14 +2398,16 @@ class MUMPSRuntime:
         """Get local variable value from scope.
 
         Args:
-            name: Base variable name (no subscripts)
+            name: Base variable name (no subscripts) - MUMPS name like "%Z"
             subscripts: Optional tuple of subscript values (may contain variable refs)
             _scope: Scope dictionary
 
         Returns:
             Variable value, or "" if undefined
         """
-        raw_value = _scope.get(name, "")
+        # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
+        scope_key = _translate_label_to_func(name)
+        raw_value = _scope.get(scope_key, "")
 
         # Evaluate subscripts - resolve variable references like "I" to their values
         eval_subs = _evaluate_subscripts(subscripts, _scope)
@@ -2483,27 +2537,30 @@ class MUMPSRuntime:
         """Set local variable value in scope.
 
         Args:
-            name: Base variable name (no subscripts)
+            name: Base variable name (no subscripts) - MUMPS name like "%Z"
             subscripts: Optional tuple of subscript values (may contain variable refs)
             value: Value to set
             _scope: Scope dictionary
         """
+        # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
+        scope_key = _translate_label_to_func(name)
+
         # Evaluate subscripts - resolve variable references like "I" to their values
         eval_subs = _evaluate_subscripts(subscripts, _scope)
 
         if eval_subs is None:
             # Simple variable assignment - use MArray for consistency with codegen
-            if name not in _scope or not isinstance(_scope[name], MArray):
-                _scope[name] = MArray()
-            _scope[name].value = value
+            if scope_key not in _scope or not isinstance(_scope[scope_key], MArray):
+                _scope[scope_key] = MArray()
+            _scope[scope_key].value = value
             return
 
         # Subscripted assignment - ensure MArray exists
-        if name not in _scope or not isinstance(_scope[name], MArray):
-            _scope[name] = MArray()
+        if scope_key not in _scope or not isinstance(_scope[scope_key], MArray):
+            _scope[scope_key] = MArray()
 
         # Set value at subscript
-        _scope[name][eval_subs].value = value
+        _scope[scope_key][eval_subs].value = value
 
     def _set_global_var(
         self,
@@ -2595,12 +2652,14 @@ class MUMPSRuntime:
             return
 
         # Handle local variables
+        # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
+        scope_key = _translate_label_to_func(base_name)
         if eval_subs is None:
             # Kill entire variable - remove from scope
-            _scope.pop(base_name, None)
+            _scope.pop(scope_key, None)
         else:
             # Kill at subscript - use MArray.kill()
-            arr = _scope.get(base_name)
+            arr = _scope.get(scope_key)
             if isinstance(arr, MArray):
                 arr.kill(*eval_subs)
 
@@ -2674,15 +2733,17 @@ class MUMPSRuntime:
             return
 
         # Handle local variables
-        if base_name not in _scope or not isinstance(_scope[base_name], MArray):
-            _scope[base_name] = MArray()
+        # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
+        scope_key = _translate_label_to_func(base_name)
+        if scope_key not in _scope or not isinstance(_scope[scope_key], MArray):
+            _scope[scope_key] = MArray()
 
         if eval_subs is None:
             # Merge at root level
-            _scope[base_name].merge_from(source)
+            _scope[scope_key].merge_from(source)
         else:
             # Merge at subscript level
-            _scope[base_name][eval_subs].merge_from(source)
+            _scope[scope_key][eval_subs].merge_from(source)
 
     def get_tree_var(self, name: str, _scope: Dict[str, Any]) -> Optional["MArray"]:
         """Get variable tree by name (name indirection for MERGE source).
@@ -2739,7 +2800,9 @@ class MUMPSRuntime:
             return self._globals.get_tree(key, subs)
 
         # Handle local variables
-        raw_value = _scope.get(base_name)
+        # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
+        scope_key = _translate_label_to_func(base_name)
+        raw_value = _scope.get(scope_key)
         if raw_value is None or not isinstance(raw_value, MArray):
             return None
 
@@ -2827,22 +2890,27 @@ class MUMPSRuntime:
 
             # Validate the variable exists before dereferencing
             # Skip validation for naked references (base_name == "^") - get_var handles those
-            base_name, _ = _parse_subscripted_name(current_name)
+            base_name, subscripts = _parse_subscripted_name(current_name)
             if base_name == "^":
                 # Naked reference like "^(3)" - get_var will resolve using naked indicator
                 pass
             elif base_name.startswith("^"):
                 # Global: check via GlobalStorageBackend
+                # Need to check the actual subscripted value, not just the root
                 key = base_name[1:]
-                if self._globals.get(key, ()) is None:
+                # Evaluate subscripts - resolve variable references
+                eval_subs = _evaluate_subscripts(subscripts, _scope)
+                subs = tuple(str(s) for s in eval_subs) if eval_subs else ()
+                if self._globals.get(key, subs) is None:
                     raise IndirectionError(
                         expr,
                         f"undefined variable in indirection chain at level {level}",
                         variable_name=current_name,
                     )
             else:
-                # Local: check in _scope
-                if base_name not in _scope:
+                # Local: check in _scope (translate MUMPS name to Python scope key)
+                scope_key = _translate_label_to_func(base_name)
+                if scope_key not in _scope:
                     raise IndirectionError(
                         expr,
                         f"undefined variable in indirection chain at level {level}",
@@ -3191,7 +3259,43 @@ class MUMPSRuntime:
                         current,
                         f"expression '{base_expr}' returned null",
                     )
-                return str(value)
+                value_str = str(value)
+                # For return_value=True, the result is a variable NAME that we need to look up
+                if return_value and value_str and not value_str.startswith("@"):
+                    # Look up the variable to get its VALUE
+                    final_base, final_subs = _parse_subscripted_name(value_str)
+                    evaluated_final_subs = _evaluate_subscripts(final_subs, scope)
+
+                    if final_base.startswith("^"):
+                        global_name = final_base[1:]
+                        if evaluated_final_subs:
+                            final_value = self.globals.get(
+                                global_name, evaluated_final_subs
+                            )
+                        else:
+                            final_value = self.globals.get(global_name, ())
+                    else:
+                        final_var = scope.get(final_base)
+                        if final_var is None:
+                            # For GET, undefined variable returns empty string
+                            return ""
+                        if isinstance(final_var, MArray):
+                            if evaluated_final_subs:
+                                final_value = final_var.get(*evaluated_final_subs)
+                            else:
+                                final_value = final_var.value
+                        else:
+                            final_value = final_var
+
+                    if final_value is None:
+                        return ""
+                    return str(final_value)
+                # If result still starts with @, recurse
+                if value_str.startswith("@"):
+                    return self.resolve_nested_indirection(
+                        value_str, scope, max_depth - 1, return_value
+                    )
+                return value_str
             except Exception as e:
                 if isinstance(e, IndirectionError):
                     raise

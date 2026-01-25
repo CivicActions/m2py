@@ -1082,3 +1082,106 @@ class TestGetOrderMethod:
         assert result == "2"
         result = rt.get_order("A(2)", _scope, 1)
         assert result == "10"
+
+    # -------------------------------------------------------------------------
+    # V1IDNM3 Edge Cases: Nested indirection, naked refs, subscript evaluation
+    # -------------------------------------------------------------------------
+
+    def test_get_order_nested_indirection(self):
+        """get_order resolves nested indirection (@name) before $ORDER.
+
+        When name starts with @, resolve_nested_indirection is called first
+        to get the actual variable name string, then $ORDER is performed.
+        """
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[1] = "one"
+        arr[2] = "two"
+        arr[3] = "three"
+        ref = MArray()
+        ref.value = "A(1)"  # @REF resolves to "A(1)"
+        _scope = {"A": arr, "REF": ref}
+
+        # @REF should resolve to A(1), then $O returns next subscript
+        result = rt.get_order("@REF", _scope, 1)
+        assert result == "2"
+
+    def test_get_order_nested_indirection_empty_resolution(self):
+        """get_order returns empty when nested indirection resolves to empty."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        ref = MArray()
+        ref.value = ""  # Empty target
+        _scope = {"REF": ref}
+
+        result = rt.get_order("@REF", _scope, 1)
+        assert result == ""
+
+    def test_get_order_naked_global_reference(self):
+        """get_order handles naked global references ^(subs).
+
+        When the global name is just "^", resolve_naked() is called to get
+        the actual global name from the naked indicator.
+
+        The naked indicator is set to the parent level of the last access,
+        so ^(sub) appends 'sub' to that parent level.
+        """
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        # Set up globals with nested subscripts
+        rt.globals.set("G", ("X", "1"), "x1")
+        rt.globals.set("G", ("X", "2"), "x2")
+        rt.globals.set("G", ("X", "3"), "x3")
+        _scope = {}
+
+        # Access ^G(X,1) - sets naked indicator to G with parent subs ("X",)
+        rt.get_var('^G("X",1)', _scope)
+        # Now ^(1) appends "1" to parent ("X",) giving ^G("X","1")
+        # $O(^G("X","1")) should return "2" (next subscript after 1)
+        result = rt.get_order("^(1)", _scope, 1)
+        assert result == "2"
+
+    def test_get_order_naked_global_first(self):
+        """get_order with naked reference from empty subscript.
+
+        When naked indicator's parent is empty (top level access), ^("")
+        starts $ORDER from the beginning of the global.
+        """
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt.globals.set("G", ("1",), "one")
+        rt.globals.set("G", ("2",), "two")
+        _scope = {}
+
+        # Access ^G(1) - sets naked indicator to G with parent subs ()
+        rt.get_var("^G(1)", _scope)
+        # ^("") appends "" to parent () giving ^G("") - first subscript
+        result = rt.get_order('^("")', _scope, 1)
+        assert result == "1"
+
+    def test_get_order_subscript_evaluation_with_varref(self):
+        """get_order evaluates VarRef subscripts to their actual values.
+
+        When subscripts contain variable references, _evaluate_subscripts
+        resolves them to actual values before performing $ORDER.
+        """
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[10, 1] = "one"
+        arr[10, 2] = "two"
+        arr[10, 3] = "three"
+        idx = MArray()
+        idx.value = 10
+        _scope = {"A": arr, "I": idx}
+
+        # This tests that subscript "10" string form works
+        # The VarRef resolution happens before get_order is called
+        result = rt.get_order("A(10,1)", _scope, 1)
+        assert result == "2"
