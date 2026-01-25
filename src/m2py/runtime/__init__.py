@@ -2813,6 +2813,80 @@ class MUMPSRuntime:
             # Return subtree at subscript
             return raw_value[eval_subs]
 
+    def resolve_argument_indirection(
+        self, initial_value: str, levels: int, _scope: Dict[str, Any]
+    ) -> Any:
+        """Resolve argument-level indirection for IF conditions.
+
+        Argument indirection resolves the value and evaluates it as an expression,
+        NOT as a variable name to look up. This is different from name indirection:
+        - Name indirection (@A): A's value is used as a VARIABLE NAME to look up
+        - Argument indirection (I @A): A's value is EVALUATED as an expression
+
+        For simple values (numbers, booleans), the value IS the result.
+        For complex expressions stored as strings, we evaluate them at runtime.
+
+        Args:
+            initial_value: The value from the source variable (already resolved once)
+            levels: Number of additional indirection levels to resolve
+            _scope: Current scope dictionary
+
+        Returns:
+            Final resolved value to be evaluated as truth value
+
+        Examples:
+            >>> scope = {"A": "1", "B": "A", "C": "X>5"}
+            >>> # I @A where A=1: initial_value="1", levels=0
+            >>> rt.resolve_argument_indirection("1", 0, scope)
+            "1"  # Returned to m_truth(), which evaluates 1 as truthy
+            >>> # I @@B where B="A" and A="1": initial_value="A", levels=1
+            >>> rt.resolve_argument_indirection("A", 1, scope)
+            "1"  # A resolves to "1"
+        """
+        current_value = initial_value
+
+        for level in range(levels):
+            # For argument indirection, the current_value should be treated as
+            # a variable name to look up, getting the next value in the chain
+            if not current_value:
+                raise IndirectionError(
+                    str(initial_value),
+                    f"empty value in argument indirection chain at level {level}",
+                )
+
+            # Try to look up the value as a variable name
+            # If it's not a valid var name, return it as-is
+            if current_value.startswith("@"):
+                # Nested indirection - resolve it
+                resolved_name = self.resolve_nested_indirection(current_value, _scope)
+                current_value = self.get_var(resolved_name, _scope)
+            elif self._is_valid_var_name(current_value):
+                # Valid variable name - look it up
+                current_value = self.get_var(current_value, _scope)
+            else:
+                # Not a variable name - this IS the value (e.g., "1" or "X>5")
+                break
+
+            # Convert to string for next iteration
+            if not isinstance(current_value, str):
+                current_value = str(current_value)
+
+        return current_value
+
+    def _is_valid_var_name(self, name: str) -> bool:
+        """Check if name looks like a valid MUMPS variable name."""
+        if not name:
+            return False
+        # Naked reference like "^(3)"
+        if name.startswith("^("):
+            return True
+        # Global or local: must start with ^ or letter or % (system vars)
+        if name.startswith("^"):
+            return len(name) > 1 and (
+                name[1].isalpha() or name[1] == "(" or name[1] == "%"
+            )
+        return name[0].isalpha() or name[0] == "%"
+
     def resolve_indirection(
         self, expr: str, levels: int, _scope: Dict[str, Any]
     ) -> Any:
@@ -3236,8 +3310,34 @@ class MUMPSRuntime:
         if not base_expr:
             raise IndirectionError(current, "empty indirection target")
 
-        # Check if this is a function call (starts with $)
-        if base_expr.startswith("$"):
+        # Check if this is expression indirection FIRST
+        # Expression indirection occurs when:
+        # 1. @$func(...) - function call (starts with $)
+        # 2. @(expr) - parenthesized expression (starts with ()
+        #    Note: @(expr)+offset^routine is valid - we evaluate @(expr) and append the rest
+        is_expression_indirection = base_expr.startswith("$")
+        expr_suffix = ""  # For @(expr)+offset^routine - the "+offset^routine" part
+        if not is_expression_indirection and base_expr.startswith("("):
+            # Find the matching close paren to determine what's the expression
+            # and what's the suffix (e.g., +1^V1IDDO1)
+            paren_depth = 0
+            close_pos = -1
+            for i, c in enumerate(base_expr):
+                if c == "(":
+                    paren_depth += 1
+                elif c == ")":
+                    paren_depth -= 1
+                    if paren_depth == 0:
+                        close_pos = i
+                        break
+            if close_pos > 0:
+                is_expression_indirection = True
+                expr_suffix = base_expr[
+                    close_pos + 1 :
+                ]  # Everything after the closing )
+                base_expr = base_expr[: close_pos + 1]  # Just the (expr) part
+
+        if is_expression_indirection:
             # Expression indirection - need to evaluate as MUMPS expression
             temp_var = "ZINDRES"
             temp_scope: Dict[str, Any] = dict(scope)
@@ -3259,7 +3359,7 @@ class MUMPSRuntime:
                         current,
                         f"expression '{base_expr}' returned null",
                     )
-                value_str = str(value)
+                value_str = str(value) + expr_suffix  # Append suffix like +1^V1IDDO1
                 # For return_value=True, the result is a variable NAME that we need to look up
                 if return_value and value_str and not value_str.startswith("@"):
                     # Look up the variable to get its VALUE
@@ -3303,6 +3403,97 @@ class MUMPSRuntime:
                     current,
                     f"failed to evaluate expression '{base_expr}': {e}",
                 ) from e
+
+        # Check for DO/GOTO target with ^ separator and indirect parts
+        # Pattern: @label^@routine or @label^routine or label^@routine
+        # Examples: @B^@B(1) where B="0098" and B(1)="V1IDDO1" → "0098^V1IDDO1"
+        if "^" in base_expr:
+            # Find the ^ that separates label from routine
+            # Note: ^ could be inside subscripts like @A(^X)^ROUTINE - we need the OUTER ^
+            # Walk through finding unbracketed ^
+            paren_depth = 0
+            caret_pos = -1
+            in_string = False
+            i = 0
+            while i < len(base_expr):
+                c = base_expr[i]
+                if c == '"':
+                    if in_string:
+                        # Check for escaped quote
+                        if i + 1 < len(base_expr) and base_expr[i + 1] == '"':
+                            i += 2
+                            continue
+                        in_string = False
+                    else:
+                        in_string = True
+                elif not in_string:
+                    if c == "(":
+                        paren_depth += 1
+                    elif c == ")":
+                        paren_depth -= 1
+                    elif c == "^" and paren_depth == 0:
+                        caret_pos = i
+                        break
+                i += 1
+
+            # Only treat as label^routine if caret_pos > 0 (there's a label before ^)
+            # caret_pos == 0 means ^GLO which is a global variable reference, not label^routine
+            if caret_pos > 0:
+                # Split into label and routine parts
+                label_part = base_expr[
+                    :caret_pos
+                ]  # e.g., "B" from "B^@B(1)" or "B+1" from "B+1^V1IDDO1"
+                routine_part = base_expr[
+                    caret_pos + 1 :
+                ]  # e.g., "@B(1)" from "B^@B(1)"
+
+                # Check if label_part contains a + (offset suffix)
+                # E.g., "B+1" means variable B with offset +1
+                label_suffix = ""
+                plus_pos = label_part.find("+")
+                if plus_pos > 0:
+                    label_suffix = label_part[plus_pos:]  # "+1" or "+@B+1" etc
+                    label_part = label_part[:plus_pos]  # "B"
+
+                # Resolve label part if it's a variable reference (not a literal)
+                resolved_label = label_part
+                if label_part and not label_part[0].isdigit():
+                    # It's a variable name, look it up
+                    label_base, label_subs = _parse_subscripted_name(label_part)
+                    evaluated_label_subs = _evaluate_subscripts(label_subs, scope, self)
+
+                    # Translate MUMPS name to Python scope key (%X -> _pct_X)
+                    py_label_name = _translate_label_to_func(label_base)
+                    label_var = scope.get(py_label_name)
+                    if label_var is not None:
+                        if isinstance(label_var, MArray):
+                            if evaluated_label_subs:
+                                resolved_label = str(
+                                    label_var.get(*evaluated_label_subs) or ""
+                                )
+                            else:
+                                resolved_label = str(label_var.value or "")
+                        else:
+                            resolved_label = str(label_var)
+                    # If undefined, keep the literal name (will error in parse_call_target)
+
+                # Resolve routine part - may start with @
+                if routine_part.startswith("@"):
+                    # Recursively resolve the routine indirection
+                    resolved_routine = self.resolve_nested_indirection(
+                        routine_part, scope, max_depth - 1
+                    )
+                else:
+                    resolved_routine = routine_part
+
+                # Combine with label suffix (offset) and check for nested indirection in result
+                result = f"{resolved_label}{label_suffix}^{resolved_routine}"
+                if result.startswith("@") or "^@" in result:
+                    # Result still has indirection, recurse
+                    return self.resolve_nested_indirection(
+                        result, scope, max_depth - 1, return_value
+                    )
+                return result
 
         # Parse ALL @(...) groups from the base expression
         # These will be distributed among the @ levels
@@ -3374,7 +3565,9 @@ class MUMPSRuntime:
             else:
                 value = self.globals.get(global_name, ())
         else:
-            var = scope.get(base_name)
+            # Translate MUMPS name to Python scope key (%X -> _pct_X)
+            py_name = _translate_label_to_func(base_name)
+            var = scope.get(py_name)
             if var is None:
                 raise IndirectionError(
                     current,
@@ -3546,6 +3739,273 @@ class MUMPSRuntime:
         # value_str is a variable name - return it for the caller to look up
         # This handles cases like @X where X="Y" - we return "Y" as the variable name
         return value_str
+
+    def resolve_do_targets(
+        self, target_str: str, scope: Dict[str, Any]
+    ) -> List[CallTarget]:
+        """Resolve and parse DO targets, handling multiple comma-separated targets.
+
+        MUMPS argument indirection can produce multiple targets separated by commas.
+        For example: D @A where A="^R1,^@B",B="R2"
+        This resolves to calling ^R1 and ^R2.
+
+        Also handles @(expr) for expression indirection in targets:
+        D @A where A="@^V1A,@(^V1A_0)" where ^V1A="0098"
+        This resolves to calling 0098 and 00980.
+
+        Args:
+            target_str: Target string which may contain multiple comma-separated targets
+            scope: Variable scope for resolving indirection
+
+        Returns:
+            List of CallTarget objects to execute
+
+        Example:
+            >>> rt.resolve_do_targets("^R1,^@B", {"B": "R2"})
+            [CallTarget(label=None, routine="R1"), CallTarget(label=None, routine="R2")]
+        """
+        # target_str is already the VALUE from the indirection (e.g., A.value)
+        # It may contain commas separating multiple targets, each of which
+        # may have further indirection (@)
+        #
+        # DON'T call resolve_nested_indirection on the whole string when it
+        # contains commas - that would try to process it as one unit.
+        # Instead, split first, then resolve each part.
+
+        # Convert to string (MUMPS values can be numeric)
+        to_split = str(target_str) if target_str is not None else ""
+
+        # Split on commas, respecting parentheses
+        targets: List[str] = []
+        current = ""
+        paren_depth = 0
+        in_string = False
+        i = 0
+        while i < len(to_split):
+            c = to_split[i]
+            if c == '"':
+                if in_string:
+                    if i + 1 < len(to_split) and to_split[i + 1] == '"':
+                        current += c
+                        i += 1
+                    else:
+                        in_string = False
+                else:
+                    in_string = True
+                current += c
+            elif not in_string:
+                if c == "(":
+                    paren_depth += 1
+                    current += c
+                elif c == ")":
+                    paren_depth -= 1
+                    current += c
+                elif c == "," and paren_depth == 0:
+                    # Found a comma outside parentheses - this separates targets
+                    if current.strip():
+                        targets.append(current.strip())
+                    current = ""
+                else:
+                    current += c
+            else:
+                current += c
+            i += 1
+
+        # Add the last target
+        if current.strip():
+            targets.append(current.strip())
+
+        # Helper function to check if a string contains commas outside parens
+        def contains_unparenthesized_comma(s: str) -> bool:
+            depth = 0
+            in_str = False
+            for c in s:
+                if c == '"':
+                    in_str = not in_str
+                elif not in_str:
+                    if c == "(":
+                        depth += 1
+                    elif c == ")":
+                        depth -= 1
+                    elif c == "," and depth == 0:
+                        return True
+            return False
+
+        # Helper to strip postconditions from a target
+        # Postconditions follow : after the target (e.g., "LABEL:condition")
+        # But : can appear in strings and subscripts, so we need to be careful
+        def strip_postcondition(s: str) -> tuple[str, str]:
+            """Split target from postcondition. Returns (target, postcondition)."""
+            depth = 0
+            in_str = False
+            for i, c in enumerate(s):
+                if c == '"':
+                    in_str = not in_str
+                elif not in_str:
+                    if c == "(":
+                        depth += 1
+                    elif c == ")":
+                        depth -= 1
+                    elif c == ":" and depth == 0:
+                        return s[:i], s[i + 1 :]
+            return s, ""
+
+        # Resolve any remaining indirection in each target and parse
+        # Use a queue because resolution may produce multiple targets
+        result: List[CallTarget] = []
+        targets_to_process = list(targets)
+
+        while targets_to_process:
+            target = targets_to_process.pop(0)
+            postcondition = ""
+
+            # Strip postcondition first (e.g., "LABEL^ROUTINE:condition")
+            target, postcondition = strip_postcondition(target)
+
+            # If target starts with @, resolve the indirection
+            if target.startswith("@"):
+                resolved = self.resolve_nested_indirection(target, scope)
+                # The resolved result may itself contain multiple comma-separated targets
+                if contains_unparenthesized_comma(resolved):
+                    # Re-split and queue for processing
+                    # Recursively call ourselves to properly split and process
+                    sub_targets = self.resolve_do_targets(resolved, scope)
+                    result.extend(sub_targets)
+                    continue
+                target = resolved
+
+            # Also handle ^@routine (routine is indirect)
+            # This includes targets like "^@B" (just routine) and "LABEL^@B" (label + indirect routine)
+            if "^@" in target:
+                # Find the position of ^@ to split label from routine
+                caret_at_pos = target.find("^@")
+                label_part = target[:caret_at_pos]  # May be empty for "^@B"
+                routine_part = target[caret_at_pos + 1 :]  # "@B" - includes the @
+                if routine_part.startswith("@"):
+                    # Resolve the indirect routine
+                    resolved_routine = self.resolve_nested_indirection(
+                        routine_part, scope
+                    )
+                    target = (
+                        f"{label_part}^{resolved_routine}"
+                        if label_part
+                        else f"^{resolved_routine}"
+                    )
+
+            # Handle offset expressions that need evaluation
+            # Pattern: LABEL+expr^ROUTINE where expr may contain @, strings, or expressions
+            # Example: SIEBEN7+@C-@C+1 where C="D", D=10 → SIEBEN7+1
+            # Example: ZEHN+"1ABCDE"^V1IDDO1 → ZEHN+1^V1IDDO1 (string converted to number)
+            if "+" in target:
+                # Find first + outside parens and strings (offset separator)
+                plus_pos = -1
+                depth = 0
+                in_str = False
+                for i, c in enumerate(target):
+                    if c == '"':
+                        in_str = not in_str
+                    elif not in_str:
+                        if c == "(":
+                            depth += 1
+                        elif c == ")":
+                            depth -= 1
+                        elif c == "+" and depth == 0:
+                            plus_pos = i
+                            break
+
+                if plus_pos > 0:
+                    label_part = target[:plus_pos]
+                    offset_and_rest = target[plus_pos + 1 :]  # Everything after first +
+
+                    # Check if offset needs evaluation (contains @, ", or is not a simple integer)
+                    # Split off routine if present (find ^ outside strings that's NOT preceded by @)
+                    # We need to find the routine-separator ^, not ^ in global refs like @^GLO
+                    # The routine separator is ^ NOT preceded by @
+                    routine_sep = -1
+                    depth = 0
+                    in_str = False
+                    for i, c in enumerate(offset_and_rest):
+                        if c == '"':
+                            in_str = not in_str
+                        elif not in_str:
+                            if c == "(":
+                                depth += 1
+                            elif c == ")":
+                                depth -= 1
+                            elif c == "^" and depth == 0:
+                                # Check if this ^ is NOT preceded by @
+                                # If preceded by @, it's a global ref like @^GLO
+                                if i == 0 or offset_and_rest[i - 1] != "@":
+                                    routine_sep = i
+                                    # Don't break - we want the LAST routine separator
+                                    # Actually, find the first one that's not @^
+
+                    if routine_sep >= 0:
+                        offset_expr = offset_and_rest[:routine_sep]
+                        routine_suffix = offset_and_rest[routine_sep:]  # includes ^
+                    else:
+                        offset_expr = offset_and_rest
+                        routine_suffix = ""
+
+                    # Check if offset is a simple integer or needs evaluation
+                    needs_evaluation = False
+                    if "@" in offset_expr or '"' in offset_expr:
+                        needs_evaluation = True
+                    else:
+                        # Try to parse as int - if it fails, needs evaluation
+                        try:
+                            int(offset_expr)
+                        except ValueError:
+                            needs_evaluation = True
+
+                    if needs_evaluation:
+                        # Evaluate the offset expression
+                        try:
+                            from m2py.codegen.helpers import m_num
+
+                            temp_var = "ZOFFSET"
+                            temp_scope: Dict[str, Any] = dict(scope)
+                            self.execute_mumps(
+                                f"S {temp_var}={offset_expr}", temp_scope
+                            )
+                            offset_result = temp_scope.get(temp_var)
+                            if isinstance(offset_result, MArray):
+                                offset_val = offset_result.value
+                            else:
+                                offset_val = offset_result
+                            # Use MUMPS numeric conversion (e.g., "1ABCDE" → 1)
+                            offset_int = int(m_num(offset_val))
+                            # Reconstruct target with evaluated offset
+                            target = f"{label_part}+{offset_int}{routine_suffix}"
+                        except Exception as e:
+                            raise IndirectionError(
+                                target,
+                                f"failed to evaluate offset expression '{offset_expr}': {e}",
+                            )
+
+            # Evaluate postcondition if present - skip this target if false
+            if postcondition:
+                try:
+                    temp_var = "ZPOSTCOND"
+                    temp_scope: Dict[str, Any] = dict(scope)
+                    self.execute_mumps(f"S {temp_var}={postcondition}", temp_scope)
+                    pc_result = temp_scope.get(temp_var)
+                    if isinstance(pc_result, MArray):
+                        pc_value = pc_result.value
+                    else:
+                        pc_value = pc_result
+                    # MUMPS truthiness: 0 or empty string is false, anything else is true
+                    if pc_value in (0, "", "0", None):
+                        continue  # Skip this target - postcondition is false
+                except Exception:
+                    # If postcondition evaluation fails, skip the target
+                    continue
+
+            # Parse the target
+            call_target = self.parse_call_target(target)
+            result.append(call_target)
+
+        return result
 
     def parse_call_target(self, target_str: str) -> CallTarget:
         """Parse indirect DO/GOTO target into components.
@@ -3814,6 +4274,16 @@ class MUMPSRuntime:
             # These are module-level variables set by generated code
             if "_routine_name" in namespace:
                 self._current_routine = namespace["_routine_name"]
+                # Register routine in sys.modules so external calls can find it
+                # This allows D ^ROUTINE to work when routines are exec'd
+                import sys
+                import types
+
+                routine_name = namespace["_routine_name"]
+                module = types.ModuleType(routine_name)
+                module.__dict__.update(namespace)
+                sys.modules[routine_name] = module
+                self._routines[routine_name.upper()] = module
             if "_source_lines" in namespace:
                 self._current_source_lines = namespace["_source_lines"]
             if "_label_lines" in namespace:

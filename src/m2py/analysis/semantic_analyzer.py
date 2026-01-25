@@ -940,15 +940,28 @@ class SemanticAnalyzer:
 
         MUMPS allows comma-separated conditions which act as AND:
         IF cond1,cond2 is equivalent to IF cond1 IF cond2
+
+        Indirections in IF conditions are argument-level indirection, meaning
+        the resolved value is evaluated as an expression (truth value), NOT
+        used as a variable name to look up.
         """
+        from m2py.asg.enums import IndirectionType
+        from m2py.asg.expressions import MIndirection
+
         stmt = MIfStatement()
         object.__setattr__(stmt, "parent", parent)
 
         # Grammar: conditions+=Expr[/,/] (comma-separated AND conditions)
         if hasattr(cmd, "conditions") and cmd.conditions:
-            analyzed_conditions = [
-                self.analyze(c, stmt) for c in cmd.conditions if c is not None
-            ]
+            analyzed_conditions = []
+            for c in cmd.conditions:
+                if c is not None:
+                    analyzed = self.analyze(c, stmt)
+                    # Mark top-level indirections as ARGUMENT type
+                    # This means @A evaluates A's value as expression, not var lookup
+                    if isinstance(analyzed, MIndirection):
+                        analyzed.indirection_type = IndirectionType.ARGUMENT
+                    analyzed_conditions.append(analyzed)
             # Filter out any None results
             stmt.conditions = [c for c in analyzed_conditions if c is not None]
             # Convenience: also set single condition if only one

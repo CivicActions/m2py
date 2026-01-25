@@ -523,9 +523,10 @@ def _generate_indirection(ind: MIndirection, ctx: "GeneratorContext") -> str:
     runtime indirection handling.
 
     Handles:
-    - Simple: @X → _rt.get_var(_scope.get("X", ""), _scope)
-    - Multi-level: @@X → _rt.resolve_indirection("X", 2, _scope)
+    - Simple NAME: @X → _rt.get_var(_scope.get("X", ""), _scope)
+    - Multi-level NAME: @@X → _rt.resolve_indirection("X", 2, _scope)
     - With subscripts: @NAME@(1,2) → _rt.get_var(f'{...}(1,2)', _scope)
+    - ARGUMENT type: @A in IF → evaluates value of A as expression
 
     Args:
         ind: MIndirection ASG node
@@ -534,9 +535,18 @@ def _generate_indirection(ind: MIndirection, ctx: "GeneratorContext") -> str:
     Returns:
         Python expression string
     """
-    from m2py.codegen.indirection import generate_name_indirection
+    from m2py.asg.enums import IndirectionType
+    from m2py.codegen.indirection import (
+        generate_name_indirection,
+        generate_argument_indirection,
+    )
 
-    return generate_name_indirection(ind, ctx)
+    # Dispatch based on indirection type
+    if ind.indirection_type == IndirectionType.ARGUMENT:
+        return generate_argument_indirection(ind, ctx)
+    else:
+        # NAME type (default) - look up variable by resolved name
+        return generate_name_indirection(ind, ctx)
 
 
 def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:

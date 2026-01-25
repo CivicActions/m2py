@@ -843,7 +843,7 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
     from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.asg.statements import MAssignment
     from m2py.codegen.indirection import (
-        generate_argument_indirection,
+        generate_set_argument_indirection,
     )
 
     # Spec 017: Use ordered_items for correct left-to-right evaluation
@@ -852,7 +852,7 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
         for item in stmt.ordered_items:
             if isinstance(item, MIndirectionType):
                 # Argument indirection: S @A where A contains "target=value"
-                generate_argument_indirection(item, ctx)
+                generate_set_argument_indirection(item, ctx)
             elif isinstance(item, MAssignment):
                 # Regular assignment
                 _generate_single_assignment(item, ctx)
@@ -860,7 +860,7 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
         # Legacy fallback: process argument_indirections first, then assignments
         # This is incorrect for interleaved indirections but maintains compatibility
         for indir in stmt.argument_indirections:
-            generate_argument_indirection(indir, ctx)
+            generate_set_argument_indirection(indir, ctx)
 
         for assignment in stmt.assignments:
             _generate_single_assignment(assignment, ctx)

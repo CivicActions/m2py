@@ -705,17 +705,17 @@ class TestIndirectDoCodegen:
     """
 
     def test_indirect_do_generates_runtime_dispatch(self, generate_python):
-        """D @CMD generates runtime parse_call_target dispatch (T042).
+        """D @CMD generates runtime resolve_do_targets dispatch (T042).
 
         The generated code should:
         1. Evaluate the indirection expression
-        2. Call _rt.parse_call_target() to parse label/routine
-        3. Dispatch to the resolved function
+        2. Call _rt.resolve_do_targets() to resolve and parse targets
+        3. Loop over targets and dispatch to resolved functions
         """
         code = generate_python('TEST S CMD="SUB" D @CMD Q\nSUB W "Hello" Q\n')
 
-        # Should call parse_call_target
-        assert "parse_call_target" in code
+        # Should call resolve_do_targets (handles multi-target and nested indirection)
+        assert "resolve_do_targets" in code
         # Should have dispatch logic
         assert "_func" in code or "_labels" in code
 
@@ -790,8 +790,8 @@ class TestIndirectDoWithOffset:
 
         # Should reference _label_lines for offset calculation
         assert "_label_line" in code or "offset" in code.lower()
-        # Should have parse_call_target
-        assert "parse_call_target" in code
+        # Should have resolve_do_targets (which handles multi-target and nested indirection)
+        assert "resolve_do_targets" in code
 
     def test_indirect_do_with_offset_execution(self, execute_mumps):
         """D @CMD+1 enters subroutine at offset +1 (T045).
@@ -837,8 +837,8 @@ class TestPartialIndirection:
         """
         code = generate_python('TEST S LBL="SUB" D @LBL Q\nSUB W "OK" Q\n')
 
-        # Should evaluate LBL variable
-        assert "parse_call_target" in code
+        # Should use resolve_do_targets for runtime resolution
+        assert "resolve_do_targets" in code
         # Generated code handles local dispatch
         assert "_labels" in code or "_func" in code
 
@@ -869,8 +869,8 @@ class TestPartialIndirection:
         # Should evaluate the RTN variable
         assert "_scope.get('RTN'" in code
 
-        # Should handle the call target via runtime
-        assert "parse_call_target" in code
+        # Should handle the call target via runtime resolve_do_targets
+        assert "resolve_do_targets" in code
 
 
 @pytest.mark.codegen

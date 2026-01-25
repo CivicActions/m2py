@@ -251,8 +251,8 @@ def _build_subscripted_name_expr(
     For example, for base_name="B" and subscripts=[1], generates code that
     produces the string "B(1)" at runtime.
 
-    For subscripts containing variable references, generates f-string code
-    like f"B({sub1})" that evaluates the subscript at runtime.
+    For subscripts containing variable references or complex expressions,
+    generates string concatenation code that evaluates subscripts at runtime.
 
     Args:
         base_name: The variable name (e.g., "B" or "^GLO")
@@ -272,13 +272,12 @@ def _build_subscripted_name_expr(
     # Generate expressions for each subscript
     sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
 
-    # Build f-string that constructs the name with subscripts at runtime
-    # E.g., f"B({sub1}, {sub2})" for B(I, J)
-    if len(sub_exprs) == 1:
-        return f'f"{base_name}({{{sub_exprs[0]}}})"'
-    else:
-        subs_parts = ", ".join(f"{{{s}}}" for s in sub_exprs)
-        return f'f"{base_name}({subs_parts})"'
+    # Build string concatenation that constructs the name with subscripts at runtime
+    # E.g., "B(" + ",".join([str(s) for s in [sub1, sub2]]) + ")"
+    # This approach handles complex expressions (including nested indirections)
+    # that can't be safely embedded in f-strings
+    subs_joined = ", ".join(sub_exprs)
+    return f'"{base_name}(" + ",".join([str(s) for s in [{subs_joined}]]) + ")"'
 
 
 def generate_name_indirection(
@@ -412,6 +411,69 @@ def generate_name_indirection(
     # Simple single-level indirection: @X
     name_expr = _generate_inner_name_expr(inner_expr, ctx)
     return f"_rt.get_var({name_expr}, {scope_expr})"
+
+
+def generate_argument_indirection(
+    expr: "MIndirection",
+    ctx: "GeneratorContext",
+) -> str:
+    """Generate Python code for argument-level indirection in IF conditions.
+
+    Argument indirection evaluates the resolved value as an expression,
+    NOT as a variable name to look up. For example:
+    - I @A where A=1 → evaluates 1 as truth value
+    - I @A where A="X>5" → evaluates "X>5" expression
+    - I @@A where A="B" and B="1=1" → evaluates "1=1" expression
+
+    The key difference from name indirection:
+    - Name indirection: @A means "get value of variable whose name is in A"
+    - Argument indirection: @A means "evaluate the expression stored in A"
+
+    For simple values like numbers, we just get the value and evaluate it.
+    For complex expressions stored as strings, we use runtime evaluation.
+
+    Args:
+        expr: MIndirection ASG node with indirection_type=ARGUMENT
+        ctx: Generator context
+
+    Returns:
+        Python expression string
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.codegen.expressions import generate_expr
+
+    # Get the appropriate scope expression for this context
+    scope_expr = _get_scope_expr(ctx)
+
+    # Count indirection levels
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
+
+    # For argument indirection, we need to resolve the value and evaluate it
+    # as an expression, not look it up as a variable name
+
+    if isinstance(inner_expr, MVariable):
+        base_name = inner_expr.name
+        if inner_expr.subscripts:
+            # Subscripted variable - get value at that subscript
+            # Use string concatenation to handle complex subscript expressions
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_args = ", ".join(sub_exprs)
+            value_expr = f'_rt.get_var("{base_name}(" + ",".join([str(s) for s in [{subs_args}]]) + ")", {scope_expr})'
+        else:
+            # Simple variable - get value directly from scope
+            value_expr = f'_rt.get_indirection_source("{base_name}", {scope_expr})'
+    else:
+        # Complex expression - generate and evaluate
+        value_expr = generate_expr(inner_expr, ctx)
+
+    # For multi-level indirection, we need to resolve nested levels
+    if levels > 1:
+        # Resolve through multiple levels, returning the VALUE (not a var name)
+        return f"_rt.resolve_argument_indirection({value_expr}, {levels - 1}, {scope_expr})"
+    else:
+        # Single level - just return the resolved value
+        # It will be passed to m_truth() by the IF code generator
+        return value_expr
 
 
 def generate_name_indirection_write(
@@ -785,133 +847,137 @@ def generate_indirect_do(
 
         target_str_expr = "_indirect_target"
 
-    # Resolve nested indirection (e.g., @L where L="@L(1)")
-    # This handles MUMPS's recursive indirection resolution
-    # In TRAMPOLINE mode with dynamic_locals, variables are in state._locals
-    # Otherwise they're in _scope (cross-routine) or local Python variables
+    # Resolve and parse all targets (handles comma-separated multiple targets)
+    # This also handles nested indirection like @L where L="@L(1),^@R"
     is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
     if is_trampoline and ctx.uses_dynamic_locals:
         ctx.emitter.line(
-            f"_resolved_target = _rt.resolve_nested_indirection({target_str_expr}, state._locals)"
+            f"_call_targets = _rt.resolve_do_targets({target_str_expr}, state._locals)"
         )
     else:
         ctx.emitter.line(
-            f"_resolved_target = _rt.resolve_nested_indirection({target_str_expr}, _scope)"
+            f"_call_targets = _rt.resolve_do_targets({target_str_expr}, _scope)"
         )
 
-    # Parse the resolved target string
-    ctx.emitter.line("_call_target = _rt.parse_call_target(_resolved_target)")
-
-    # Generate dispatch code
-    # Check if it's an external or local call
-    ctx.emitter.line("if _call_target.routine:")
+    # Loop over all targets (usually just one, but argument indirection can produce multiple)
+    ctx.emitter.line("for _call_target in _call_targets:")
     with ctx.emitter.indented():
-        # External call: import routine and call label
-        ctx.emitter.line("import importlib")
-        # Import translate helper for numeric/% label lookup
-        ctx.emitter.line("from m2py.runtime import _translate_label_to_func")
-        ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
-        ctx.emitter.line("if _call_target.label:")
+        # Generate dispatch code
+        # Check if it's an external or local call
+        ctx.emitter.line("if _call_target.routine:")
         with ctx.emitter.indented():
-            # Translate label (e.g., "1" → "_n_1", "%X" → "_pct_X")
-            ctx.emitter.line(
-                "_func = getattr(_module, _translate_label_to_func(_call_target.label), None)"
-            )
-            ctx.emitter.line("if _func is None:")
-            with ctx.emitter.indented():
-                ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
-                ctx.emitter.line(
-                    "raise LabelNotFoundError(_call_target.label, _call_target.routine, "
-                    "list(getattr(_module, '_label_lines', {}).keys()))"
-                )
-        ctx.emitter.line("else:")
-        with ctx.emitter.indented():
-            # Entry label (same name as routine) - also needs translation
-            ctx.emitter.line(
-                "_func = getattr(_module, _translate_label_to_func(_call_target.routine), None)"
-            )
-            ctx.emitter.line("if _func is None:")
-            with ctx.emitter.indented():
-                ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
-                ctx.emitter.line(
-                    "raise LabelNotFoundError(_call_target.routine, _call_target.routine, "
-                    "list(getattr(_module, '_label_lines', {}).keys()))"
-                )
-        # Handle offset for external calls
-        ctx.emitter.line("if _call_target.offset is not None:")
-        with ctx.emitter.indented():
-            ctx.emitter.line(
-                "_label_line = _module._label_lines.get(_call_target.label or _call_target.routine, 0)"
-            )
-            ctx.emitter.line("_target_line = _label_line + _call_target.offset")
-            ctx.emitter.line(
-                "_label_name, _line_offset = _module._line_map[_target_line]"
-            )
-            ctx.emitter.line(
-                "getattr(_module, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
-            )
-        ctx.emitter.line("else:")
-        with ctx.emitter.indented():
-            ctx.emitter.line("_func(_rt, _scope=_scope)")
-
-    ctx.emitter.line("else:")
-    with ctx.emitter.indented():
-        # Local call: use current module's functions
-        # In TRAMPOLINE mode, functions are in _labels dict; in SIMPLE mode, in globals()
-        is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
-        if is_trampoline:
-            # _labels dict uses MUMPS label names as keys
-            ctx.emitter.line("_func = _labels.get(_call_target.label)")
-        else:
-            # globals() uses Python function names (e.g., _n_1 for label "1")
-            # Import was already done above (or add it if this is local-only)
+            # External call: import routine and call label
+            ctx.emitter.line("import importlib")
+            # Import translate helper for numeric/% label lookup
             ctx.emitter.line("from m2py.runtime import _translate_label_to_func")
-            ctx.emitter.line(
-                "_func = globals().get(_translate_label_to_func(_call_target.label))"
-            )
-        ctx.emitter.line("if _func is None:")
-        with ctx.emitter.indented():
-            ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
-            ctx.emitter.line(
-                "raise LabelNotFoundError(_call_target.label, _routine_name, "
-                "list(_label_lines.keys()))"
-            )
-        # Handle offset for local calls
-        ctx.emitter.line("if _call_target.offset is not None:")
-        with ctx.emitter.indented():
-            # _label_lines uses 0-indexed line numbers, _line_map uses 1-indexed
-            # So we need to add 1 to convert before adding offset
-            ctx.emitter.line("_label_line = _label_lines.get(_call_target.label, 0)")
-            ctx.emitter.line("_target_line = (_label_line + 1) + _call_target.offset")
-            ctx.emitter.line("if _target_line in _line_map:")
+            ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
+            ctx.emitter.line("if _call_target.label:")
             with ctx.emitter.indented():
-                ctx.emitter.line("_label_name, _line_offset = _line_map[_target_line]")
-                if is_trampoline:
-                    # In TRAMPOLINE mode, call internal function with state
-                    # _line_map stores Python function names (e.g., "_n_1"), and we need
-                    # to call the internal function (e.g., "__n_1") with an extra underscore
+                # Translate label (e.g., "1" → "_n_1", "%X" → "_pct_X")
+                ctx.emitter.line(
+                    "_func = getattr(_module, _translate_label_to_func(_call_target.label), None)"
+                )
+                ctx.emitter.line("if _func is None:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
                     ctx.emitter.line(
-                        "globals()['_' + _label_name](_rt, state, _scope, _start_offset=_line_offset)"
-                    )
-                else:
-                    # In SIMPLE mode, call function directly (must support _start_offset)
-                    # Note: SIMPLE mode doesn't support offset calls by design
-                    # This should not be reached as offset calls force TRAMPOLINE
-                    ctx.emitter.line(
-                        "globals()[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
+                        "raise LabelNotFoundError(_call_target.label, _call_target.routine, "
+                        "list(getattr(_module, '_label_lines', {}).keys()))"
                     )
             ctx.emitter.line("else:")
             with ctx.emitter.indented():
+                # Entry label (same name as routine) - also needs translation
                 ctx.emitter.line(
-                    'raise ValueError(f"Entry point {_call_target.label}+{_call_target.offset} not valid")'
+                    "_func = getattr(_module, _translate_label_to_func(_call_target.routine), None)"
                 )
+                ctx.emitter.line("if _func is None:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+                    ctx.emitter.line(
+                        "raise LabelNotFoundError(_call_target.routine, _call_target.routine, "
+                        "list(getattr(_module, '_label_lines', {}).keys()))"
+                    )
+            # Handle offset for external calls
+            ctx.emitter.line("if _call_target.offset is not None:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    "_label_line = _module._label_lines.get(_call_target.label or _call_target.routine, 0)"
+                )
+                ctx.emitter.line("_target_line = _label_line + _call_target.offset")
+                ctx.emitter.line(
+                    "_label_name, _line_offset = _module._line_map[_target_line]"
+                )
+                ctx.emitter.line(
+                    "getattr(_module, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
+                )
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("_func(_rt, _scope=_scope)")
+
         ctx.emitter.line("else:")
         with ctx.emitter.indented():
+            # Local call: use current module's functions
+            # In TRAMPOLINE mode, functions are in _labels dict; in SIMPLE mode, in globals()
+            is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
             if is_trampoline:
-                # In TRAMPOLINE mode, pass state to the function
-                ctx.emitter.line("_func(_rt, state, _scope)")
+                # _labels dict uses MUMPS label names as keys
+                ctx.emitter.line("_func = _labels.get(_call_target.label)")
             else:
-                ctx.emitter.line("_func(_rt, _scope=_scope)")
+                # globals() uses Python function names (e.g., _n_1 for label "1")
+                # Import was already done above (or add it if this is local-only)
+                ctx.emitter.line("from m2py.runtime import _translate_label_to_func")
+                ctx.emitter.line(
+                    "_func = globals().get(_translate_label_to_func(_call_target.label))"
+                )
+            ctx.emitter.line("if _func is None:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+                ctx.emitter.line(
+                    "raise LabelNotFoundError(_call_target.label, _routine_name, "
+                    "list(_label_lines.keys()))"
+                )
+            # Handle offset for local calls
+            ctx.emitter.line("if _call_target.offset is not None:")
+            with ctx.emitter.indented():
+                # _label_lines uses 0-indexed line numbers, _line_map uses 1-indexed
+                # So we need to add 1 to convert before adding offset
+                ctx.emitter.line(
+                    "_label_line = _label_lines.get(_call_target.label, 0)"
+                )
+                ctx.emitter.line(
+                    "_target_line = (_label_line + 1) + _call_target.offset"
+                )
+                ctx.emitter.line("if _target_line in _line_map:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        "_label_name, _line_offset = _line_map[_target_line]"
+                    )
+                    if is_trampoline:
+                        # In TRAMPOLINE mode, call internal function with state
+                        # _line_map stores Python function names (e.g., "_n_1"), and we need
+                        # to call the internal function (e.g., "__n_1") with an extra underscore
+                        ctx.emitter.line(
+                            "globals()['_' + _label_name](_rt, state, _scope, _start_offset=_line_offset)"
+                        )
+                    else:
+                        # In SIMPLE mode, call function directly (must support _start_offset)
+                        # Note: SIMPLE mode doesn't support offset calls by design
+                        # This should not be reached as offset calls force TRAMPOLINE
+                        ctx.emitter.line(
+                            "globals()[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
+                        )
+                ctx.emitter.line("else:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        'raise ValueError(f"Entry point {_call_target.label}+{_call_target.offset} not valid")'
+                    )
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
+                if is_trampoline:
+                    # In TRAMPOLINE mode, pass state to the function
+                    ctx.emitter.line("_func(_rt, state, _scope)")
+                else:
+                    ctx.emitter.line("_func(_rt, _scope=_scope)")
 
 
 def generate_indirect_goto(
@@ -1080,7 +1146,7 @@ def generate_indirect_goto(
                 ctx.emitter.line("return")
 
 
-def generate_argument_indirection(
+def generate_set_argument_indirection(
     expr: "MIndirection",
     ctx: "GeneratorContext",
 ) -> None:
@@ -1180,5 +1246,6 @@ __all__ = [
     "generate_indirect_do",
     "generate_indirect_goto",
     "generate_argument_indirection",
+    "generate_set_argument_indirection",
     "generate_pattern_indirection",
 ]

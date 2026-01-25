@@ -38,6 +38,14 @@ INREF_DIR = MUGJ_DIR / "inref"
 OUTREF_PATH = MUGJ_DIR / "outref" / "mugj.txt"
 DRIVER_PATH = MUGJ_DIR / "u_inref" / "mugj.csh"
 
+# Routines with runtime-resolved dependencies that can't be detected statically.
+# Maps parent routine to list of helper routine names needed at runtime.
+EXTRA_HELPERS: dict[str, list[str]] = {
+    # V1IDDO* tests use indirection to call V1IDDO1 at runtime
+    "V1IDDOA": ["V1IDDO1"],
+    "V1IDDOB": ["V1IDDO1"],
+}
+
 
 # =============================================================================
 # Driver Parsing
@@ -66,12 +74,15 @@ def parse_driver() -> list[tuple[str, str]]:
 # =============================================================================
 
 
-def discover_dependencies(source: str, inref_dir: Path) -> set[str]:
+def discover_dependencies(
+    source: str, inref_dir: Path, routine_name: str = ""
+) -> set[str]:
     """Discover external routine dependencies from source code.
 
     Args:
         source: MUMPS source code
         inref_dir: Directory containing .m files
+        routine_name: Name of the source routine (for EXTRA_HELPERS lookup)
 
     Returns:
         Set of routine names that are called via D ^ROUTINE
@@ -83,24 +94,32 @@ def discover_dependencies(source: str, inref_dir: Path) -> set[str]:
     for match in re.finditer(
         r"\bD(?:O)?\s+\^(%\w*|[a-zA-Z]\w*)", source, re.IGNORECASE
     ):
-        routine_name = match.group(1)
-        filename = routine_to_filename(routine_name)
+        routine_name_match = match.group(1)
+        filename = routine_to_filename(routine_name_match)
         if (inref_dir / f"{filename}.m").exists():
-            deps.add(routine_name)
+            deps.add(routine_name_match)
     # Also find comma-separated routine calls: D ^A,^B,^C
     for match in re.finditer(r",\^(%\w*|[a-zA-Z]\w*)", source, re.IGNORECASE):
-        routine_name = match.group(1)
-        filename = routine_to_filename(routine_name)
+        routine_name_match = match.group(1)
+        filename = routine_to_filename(routine_name_match)
         if (inref_dir / f"{filename}.m").exists():
-            deps.add(routine_name)
+            deps.add(routine_name_match)
     # Also find GOTO ^ROUTINE calls (case-insensitive, abbreviated or full form)
     for match in re.finditer(
         r"\bG(?:OTO)?\s+\^(%\w*|[a-zA-Z]\w*)", source, re.IGNORECASE
     ):
-        routine_name = match.group(1)
-        filename = routine_to_filename(routine_name)
+        routine_name_match = match.group(1)
+        filename = routine_to_filename(routine_name_match)
         if (inref_dir / f"{filename}.m").exists():
-            deps.add(routine_name)
+            deps.add(routine_name_match)
+
+    # Add any explicitly listed extra helpers for this routine
+    if routine_name in EXTRA_HELPERS:
+        for helper in EXTRA_HELPERS[routine_name]:
+            filename = routine_to_filename(helper)
+            if (inref_dir / f"{filename}.m").exists():
+                deps.add(helper)
+
     return deps
 
 
@@ -160,7 +179,7 @@ def load_all_routines(
                 print(f" {time.time() - routine_start:.2f}s", file=sys.stderr)
 
             # Discover and queue dependencies
-            deps = discover_dependencies(source, INREF_DIR)
+            deps = discover_dependencies(source, INREF_DIR, routine)
             for dep in deps:
                 if dep not in processed:
                     to_process.add(dep)
