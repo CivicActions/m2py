@@ -18,9 +18,9 @@
 
 **Purpose**: Verify research.md findings remain current before writing code
 
-- [ ] T000 Verify research.md findings are current: review `codegen/indirection.py` functions, confirm Challenge 6 bug still exists, confirm three scope mechanisms documented in research.md Section 11 match actual code
-- [ ] T000a [P] Re-run YDB verification: `S A="1=0" I @A W "TRUE" E  W "FALSE"` to confirm expected behavior
-- [ ] T000b [P] Verify MUGJ test patterns in YDBTest/ are accessible and match research.md references
+- [x] T000 Verify research.md findings are current: review `codegen/indirection.py` functions, confirm Challenge 6 bug still exists, confirm three scope mechanisms documented in research.md Section 11 match actual code
+- [x] T000a [P] Re-run YDB verification: `S A="1=0" I @A W "TRUE" E  W "FALSE"` to confirm expected behavior
+- [x] T000b [P] Verify MUGJ test patterns in YDBTest/ are accessible and match research.md references
 
 **Checkpoint**: Research validated against current codebase. Ready to begin implementation.
 
@@ -30,11 +30,11 @@
 
 **Purpose**: Create the new `core/` module structure and mark deprecated code
 
-- [ ] T001 Create `src/m2py/core/__init__.py` with module docstring and exports
-- [ ] T002 [P] Create `tests/unit/core/__init__.py` test directory structure
-- [ ] T003 [P] Add `# UNIFIED_VAR_DEPRECATED` markers to `codegen/indirection.py` functions: `generate_name_indirection`, `generate_argument_indirection`, `_get_scope_expr`
-- [ ] T004 [P] Add `# UNIFIED_VAR_DEPRECATED` markers to `runtime/__init__.py` functions: `_translate_label_to_func`, `resolve_indirection`, `resolve_argument_indirection`, `resolve_indirection_name`, `get_var`, `set_var`
-- [ ] T005 [P] Add `# UNIFIED_VAR_DEPRECATED` markers to `codegen/names.py` (entire file will be replaced by core/names.py)
+- [x] T001 Create `src/m2py/core/__init__.py` with module docstring and exports
+- [x] T002 [P] Create `tests/unit/core/__init__.py` test directory structure
+- [x] T003 [P] Add `# UNIFIED_VAR_DEPRECATED` markers to `codegen/indirection.py` functions: `generate_name_indirection`, `generate_argument_indirection`, `_get_scope_expr`
+- [x] T004 [P] Add `# UNIFIED_VAR_DEPRECATED` markers to `runtime/__init__.py` functions: `_translate_label_to_func`, `resolve_indirection`, `resolve_argument_indirection`, `resolve_indirection_name`, `get_var`, `set_var`
+- [x] T005 [P] Add `# UNIFIED_VAR_DEPRECATED` markers to `codegen/names.py` (entire file will be replaced by core/names.py)
 
 **Checkpoint**: Core module skeleton created, deprecated code tagged for tracking
 
@@ -48,54 +48,54 @@
 
 ### NameTranslator (FR-005 through FR-009)
 
-- [ ] T006 Create `src/m2py/core/names.py` with `NameTranslator` class per [contracts/name-translator.md](contracts/name-translator.md)
-- [ ] T007 [P] Implement `NameTranslator.to_python()` - translate MUMPS→Python identifiers
-- [ ] T008 [P] Implement `NameTranslator.from_python()` - translate Python→MUMPS identifiers
-- [ ] T009 [P] Implement `NameTranslator.is_valid_mumps_name()` - validate MUMPS variable names
-- [ ] T010 Create `tests/unit/core/test_names.py` with unit tests for all translation rules
-- [ ] T011 Update `codegen/names.py` to import and re-export from `core/names.py` (backward compatibility)
+- [x] T006 Create `src/m2py/core/names.py` with `NameTranslator` class per [contracts/name-translator.md](contracts/name-translator.md)
+- [x] T007 [P] Implement `NameTranslator.to_python()` - translate MUMPS→Python identifiers
+- [x] T008 [P] Implement `NameTranslator.from_python()` - translate Python→MUMPS identifiers
+- [x] T009 [P] Implement `NameTranslator.is_valid_mumps_name()` - validate MUMPS variable names
+- [x] T010 Create `tests/unit/core/test_names.py` with unit tests for all translation rules
+- [x] T011 Update `codegen/names.py` to import and re-export from `core/names.py` (backward compatibility)
 - [ ] T012 Update `runtime/__init__.py` to use `core.names.NameTranslator` instead of `_translate_label_to_func`
 
 ### SubscriptCanonicalizer (FR-003, FR-004)
 
-- [ ] T013 Create `src/m2py/core/subscripts.py` with `SubscriptCanonicalizer` class per [contracts/subscript-canonicalizer.md](contracts/subscript-canonicalizer.md)
-- [ ] T014 [P] Implement `SubscriptCanonicalizer.canonicalize()` - normalize subscript values
-- [ ] T015 [P] Implement `SubscriptCanonicalizer.canonicalize_numeric()` - handle numeric canonicalization
-- [ ] T016 [P] Implement `SubscriptCanonicalizer.is_canonical_numeric_string()` - detect canonical numeric strings
-- [ ] T017 [P] Implement `SubscriptCanonicalizer.subscripts_equal()` - compare subscript equivalence
-- [ ] T018 Create `tests/unit/core/test_subscripts.py` with unit tests including YDB-verified edge cases
+- [x] T013 Create `src/m2py/core/subscripts.py` with `SubscriptCanonicalizer` class per [contracts/subscript-canonicalizer.md](contracts/subscript-canonicalizer.md)
+- [x] T014 [P] Implement `SubscriptCanonicalizer.canonicalize()` - normalize subscript values
+- [x] T015 [P] Implement `SubscriptCanonicalizer.canonicalize_numeric()` - handle numeric canonicalization
+- [x] T016 [P] Implement `SubscriptCanonicalizer.is_canonical_numeric_string()` - detect canonical numeric strings
+- [x] T017 [P] Implement `SubscriptCanonicalizer.subscripts_equal()` - compare subscript equivalence
+- [x] T018 Create `tests/unit/core/test_subscripts.py` with unit tests including YDB-verified edge cases
 
 ### CurrentScope (FR-036, FR-037, FR-038)
 
-- [ ] T019 Create `src/m2py/core/scope.py` with `CurrentScope` class per [contracts/current-scope.md](contracts/current-scope.md)
-- [ ] T020 [P] Implement `CurrentScope.__init__()` with three storage mechanism support
-- [ ] T021 [P] Implement `CurrentScope.get()` and `CurrentScope.get_subscripted()` with MArray .value extraction
-- [ ] T022 [P] Implement `CurrentScope.set()` and `CurrentScope.set_subscripted()` 
-- [ ] T023 [P] Implement `CurrentScope.exists()` and `CurrentScope.kill()`
-- [ ] T024 Implement `CurrentScope.from_generated_context()` factory method for codegen usage
-- [ ] T025 Create `tests/unit/core/test_scope.py` with unit tests for all three storage mechanisms
+- [x] T019 Create `src/m2py/core/scope.py` with `CurrentScope` class per [contracts/current-scope.md](contracts/current-scope.md)
+- [x] T020 [P] Implement `CurrentScope.__init__()` with three storage mechanism support
+- [x] T021 [P] Implement `CurrentScope.get()` and `CurrentScope.get_subscripted()` with MArray .value extraction
+- [x] T022 [P] Implement `CurrentScope.set()` and `CurrentScope.set_subscripted()` 
+- [x] T023 [P] Implement `CurrentScope.exists()` and `CurrentScope.kill()`
+- [x] T024 Implement `CurrentScope.from_generated_context()` factory method for codegen usage
+- [x] T025 Create `tests/unit/core/test_scope.py` with unit tests for all three storage mechanisms
 
 ### IndirectionResolver (FR-010 through FR-019)
 
-- [ ] T026 Create `src/m2py/core/indirection.py` with `IndirectionContext` enum and `IndirectionResolver` class
-- [ ] T027 Implement `IndirectionResolver.__init__()` with MState and CurrentScope dependencies
-- [ ] T028 Implement `IndirectionResolver.resolve()` core method with context-aware finalization
-- [ ] T029 [P] Implement multi-level resolution logic (@@X, @@@X)
-- [ ] T030 [P] Implement per-level subscript application (@X@(1,2)@(5,6))
-- [ ] T031 [P] Implement recursive @-expression handling (value contains @)
-- [ ] T032 **CRITICAL** Implement `evaluate_expression()` for ARGUMENT context (FR-020, FR-021, FR-022) - fixes Challenge 6 bug
-- [ ] T033 [P] Implement `resolve_name_indirection()` convenience method
-- [ ] T034 [P] Implement `resolve_argument_indirection()` convenience method
-- [ ] T035 Create `tests/unit/core/test_indirection.py` with comprehensive unit tests
+- [x] T026 Create `src/m2py/core/indirection.py` with `IndirectionContext` enum and `IndirectionResolver` class
+- [x] T027 Implement `IndirectionResolver.__init__()` with MState and CurrentScope dependencies
+- [x] T028 Implement `IndirectionResolver.resolve()` core method with context-aware finalization
+- [x] T029 [P] Implement multi-level resolution logic (@@X, @@@X)
+- [x] T030 [P] Implement per-level subscript application (@X@(1,2)@(5,6))
+- [x] T031 [P] Implement recursive @-expression handling (value contains @)
+- [x] T032 **CRITICAL** Implement `evaluate_expression()` for ARGUMENT context (FR-020, FR-021, FR-022) - fixes Challenge 6 bug
+- [x] T033 [P] Implement `resolve_name_indirection()` convenience method
+- [x] T034 [P] Implement `resolve_argument_indirection()` convenience method
+- [x] T035 Create `tests/unit/core/test_indirection.py` with comprehensive unit tests
 
 ### Update core/__init__.py exports
 
-- [ ] T036 Update `src/m2py/core/__init__.py` to export all public classes and functions
+- [x] T036 Update `src/m2py/core/__init__.py` to export all public classes and functions
 
 ### VarRef Data Model (FR-001)
 
-- [ ] T036a Implement `VarRef` dataclass in `src/m2py/core/scope.py` per [data-model.md](data-model.md) with `name`, `subscripts`, `is_global` fields
-- [ ] T036b [P] Create `tests/unit/core/test_varref.py` with VarRef construction and equality tests
+- [x] T036a Implement `VarRef` dataclass in `src/m2py/core/scope.py` per [data-model.md](data-model.md) with `name`, `subscripts`, `is_global` fields
+- [x] T036b [P] Create `tests/unit/core/test_varref.py` with VarRef construction and equality tests
 
 ### Subscript Indirection Support (FR-018)
 
@@ -124,9 +124,9 @@
 
 ### Tests for User Story 1
 
-- [ ] T037 [P] [US1] Create `tests/unit/core/test_name_indirection_basic.py` with V1IDNM1/2 patterns
-- [ ] T038 [P] [US1] Create torture test: `S @"A(1)"=5` produces identical result to `S A(1)=5`
-- [ ] T039 [P] [US1] Create YDB validation test for static vs dynamic variable access equivalence
+- [x] T037 [P] [US1] Create `tests/unit/core/test_name_indirection_basic.py` with V1IDNM1/2 patterns
+- [x] T038 [P] [US1] Create torture test: `S @"A(1)"=5` produces identical result to `S A(1)=5`
+- [x] T039 [P] [US1] Create YDB validation test for static vs dynamic variable access equivalence
 
 ### Implementation for User Story 1 - SET Command Migration
 

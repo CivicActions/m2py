@@ -1,0 +1,559 @@
+"""Indirection Resolution for @-expressions.
+
+This module provides the IndirectionResolver class for resolving MUMPS
+@-expressions at runtime. It supports single-level, multi-level,
+per-level subscripts, recursive @-expressions, and context-aware
+finalization (NAME vs ARGUMENT).
+
+Constitution VII: Used ONLY for truly dynamic cases where codegen
+cannot statically resolve the indirection.
+
+Feature: 018-unified-variable-system
+Requirements: FR-010 through FR-022
+"""
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+from m2py.core.subscripts import SubscriptCanonicalizer
+
+if TYPE_CHECKING:
+    from m2py.core.scope import CurrentScope
+
+    # MState is only used for type hints, defined here to avoid circular import
+    class MState:
+        """Type stub for MState - actual implementation in runtime."""
+
+        _globals: Any
+
+        def execute_mumps(
+            self, code: str, scope: Dict[str, Any], *args: Any
+        ) -> Any: ...
+
+        def get_var(self, name: str, scope: Dict[str, Any]) -> Any: ...
+
+
+class IndirectionContext(Enum):
+    """Context for indirection final step.
+
+    NAME: Result used as variable identifier
+          SET @X=, WRITE @X, KILL @X, $DATA(@X)
+          Error if result is not valid variable name
+
+    ARGUMENT: Result evaluated as MUMPS expression
+              IF @A, FOR args, XECUTE @A, postconditions
+              Empty string allowed (evaluates to false)
+
+    SUBSCRIPT: Result used as subscript value
+               A(1,@B,3) - indirection within subscript
+
+    PATTERN: Result used as pattern for pattern match
+             X?@P - pattern indirection
+    """
+
+    NAME = "name"
+    ARGUMENT = "argument"
+    SUBSCRIPT = "subscript"
+    PATTERN = "pattern"
+
+
+class VarExpectedError(Exception):
+    """Raised when NAME context requires a variable name but got expression."""
+
+    def __init__(self, value: str, message: str = ""):
+        self.value = value
+        self.message = message or f"VAREXPECTED: '{value}' is not a valid variable name"
+        super().__init__(self.message)
+
+
+@dataclass
+class IndirectionResult:
+    """Result from indirection resolution.
+
+    Attributes:
+        value: The resolved value
+        var_name: If NAME context, the variable name string
+        resolved_levels: How many levels were actually resolved
+    """
+
+    value: Any
+    var_name: Optional[str] = None
+    resolved_levels: int = 0
+
+
+class IndirectionResolver:
+    """Runtime resolver for @-expressions.
+
+    Constitution VII: Used ONLY for truly dynamic cases where
+    codegen cannot statically resolve the indirection.
+
+    Supports:
+    - Single level: @X
+    - Multi-level: @@X, @@@X, etc.
+    - Direct subscripts: @X(1,2)
+    - Name indirection subscripts: @X@(1,2), @X@(1)@(2,3)
+    - Recursive @-expressions: Value contains @, re-evaluated
+    - Context-aware: NAME (variable lookup) vs ARGUMENT (expression eval)
+    """
+
+    def __init__(self, state: "MState", scope: "CurrentScope"):
+        """Initialize resolver with runtime state and scope.
+
+        Args:
+            state: MState instance for global state, naked indicator, etc.
+            scope: CurrentScope instance for unified variable access
+        """
+        self._state = state
+        self._scope = scope
+
+    def resolve(
+        self,
+        source: str,
+        levels: int = 1,
+        context: IndirectionContext = IndirectionContext.NAME,
+        direct_subscripts: Optional[List[Any]] = None,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> Any:
+        """Resolve indirection and return final value.
+
+        Args:
+            source: Initial variable name or expression string
+            levels: Number of @ levels (1 for @X, 2 for @@X, etc.)
+            context: How to use final resolved value
+            direct_subscripts: Subscripts for @X(subs) form
+            per_level_subscripts: Subscripts per resolution level for @X@(s1)@(s2)
+
+        Returns:
+            - NAME context: Variable value (string, MArray, etc.)
+            - ARGUMENT context: Expression evaluation result
+
+        Raises:
+            VarExpectedError: NAME context and result not valid variable name
+            ValueError: If levels < 1
+
+        Examples:
+            # @X where X="Y", Y=5
+            resolve("X", 1, NAME) → 5
+
+            # @@X where X="Y", Y="Z", Z=99
+            resolve("X", 2, NAME) → 99
+
+            # @X@(1,2) where X="A", A(1,2)="hello"
+            resolve("X", 1, NAME, per_level_subscripts=[[1,2]]) → "hello"
+
+            # @A where A="1=0" in IF context
+            resolve("A", 1, ARGUMENT) → False
+        """
+        if levels < 1:
+            raise ValueError(f"Indirection levels must be >= 1, got {levels}")
+
+        current = source
+
+        # 1. Resolve intermediate levels (NAME semantics)
+        for i in range(levels):
+            # Get value at current name
+            value = self._get_value(current)
+
+            # Convert to string for processing
+            if not isinstance(value, str):
+                value = str(value)
+
+            # Handle recursive @-expression (value contains @)
+            while value.startswith("@"):
+                value = self._resolve_recursive_at(value)
+
+            # Apply per-level subscripts if any
+            if per_level_subscripts and i < len(per_level_subscripts):
+                value = self._append_subscripts(value, per_level_subscripts[i])
+
+            current = value
+
+        # 2. Apply direct subscripts to final reference
+        if direct_subscripts:
+            current = self._append_subscripts(current, direct_subscripts)
+
+        # 3. Final resolution based on context
+        if context == IndirectionContext.NAME:
+            # Validate that result is valid variable name
+            if not self._is_valid_var_name(current):
+                raise VarExpectedError(current)
+            return self._get_value(current)
+
+        elif context == IndirectionContext.ARGUMENT:
+            # Evaluate as MUMPS expression
+            # The current value IS the expression string to evaluate
+            return self.evaluate_expression(current)
+
+        elif context == IndirectionContext.SUBSCRIPT:
+            # Return the resolved value for use as subscript
+            return current
+
+        elif context == IndirectionContext.PATTERN:
+            # Return the pattern string
+            return current
+
+        # Fallback - return as-is
+        return current
+
+    def resolve_name_indirection(
+        self, name: str, subscripts: Optional[List[Any]] = None
+    ) -> Any:
+        """Convenience method for simple NAME indirection.
+
+        Equivalent to resolve(name, 1, NAME, direct_subscripts=subscripts)
+
+        Args:
+            name: Variable name to resolve (source of @name)
+            subscripts: Optional direct subscripts for @name(subs)
+
+        Returns:
+            Value at the indirected variable
+        """
+        return self.resolve(
+            name,
+            levels=1,
+            context=IndirectionContext.NAME,
+            direct_subscripts=subscripts,
+        )
+
+    def resolve_argument_indirection(self, name: str) -> Any:
+        """Convenience method for ARGUMENT indirection.
+
+        Equivalent to resolve(name, 1, ARGUMENT)
+
+        This is the FIX for Challenge 6 bug. When A="1=0",
+        @A in IF context evaluates "1=0" as expression → FALSE.
+
+        Args:
+            name: Variable name containing expression to evaluate
+
+        Returns:
+            Evaluated result of the expression
+        """
+        return self.resolve(name, levels=1, context=IndirectionContext.ARGUMENT)
+
+    def evaluate_expression(self, expr_string: str) -> Any:
+        """Evaluate MUMPS expression string and return result.
+
+        This is the CRITICAL method for fixing Challenge 6 bug.
+        Instead of returning the string to m_truth(), we parse and
+        evaluate the actual MUMPS expression.
+
+        Args:
+            expr_string: MUMPS expression like "1=0", "X>5", "$E(S,1,3)"
+
+        Returns:
+            Evaluated result (number, string, etc.)
+
+        Examples:
+            evaluate_expression("1=0") → 0  # False
+            evaluate_expression("X>5") → 1  # True if X=10
+            evaluate_expression("$E(\"ABC\",2)") → "B"
+        """
+        # Handle empty string - MUMPS treats as FALSE
+        if not expr_string or not expr_string.strip():
+            return 0
+
+        # Try to parse as a simple literal first
+        stripped = expr_string.strip()
+
+        # Numeric literal check
+        if self._is_numeric_literal(stripped):
+            return self._parse_numeric(stripped)
+
+        # String literal (quoted)
+        if stripped.startswith('"') and stripped.endswith('"'):
+            return stripped[1:-1]
+
+        # Simple variable reference - just get its value
+        if self._is_valid_var_name(stripped) and not any(
+            op in stripped for op in ["=", "<", ">", "+", "-", "*", "/", "_", "[", "#"]
+        ):
+            value = self._get_value(stripped)
+            # Return the truthiness as MUMPS boolean (0 or 1)
+            return self._to_mumps_bool(value)
+
+        # Complex expression - use execute_mumps to evaluate
+        return self._evaluate_complex_expression(expr_string)
+
+    def _evaluate_complex_expression(self, expr_string: str) -> Any:
+        """Evaluate complex MUMPS expression using full parser.
+
+        Uses MState.execute_mumps to parse and evaluate the expression.
+
+        Args:
+            expr_string: MUMPS expression string
+
+        Returns:
+            Evaluated result
+        """
+        # Build MUMPS code that evaluates the expression and stores result
+        # We use a special temp variable to capture the result
+        temp_var = "_ARGINDIRECT_RESULT"
+
+        # Build the SET command
+        mumps_code = f"S {temp_var}={expr_string}"
+
+        # Get scope dict from CurrentScope for execute_mumps
+        scope_dict = self._get_scope_dict()
+
+        try:
+            # Execute the SET to evaluate the expression
+            self._state.execute_mumps(mumps_code, scope_dict)
+
+            # Get the result and clean up
+            result = scope_dict.get(temp_var, 0)
+            if temp_var in scope_dict:
+                del scope_dict[temp_var]
+
+            return result
+
+        except Exception:
+            # If evaluation fails, return 0 (FALSE)
+            # This matches MUMPS behavior for invalid expressions
+            return 0
+
+    def _get_scope_dict(self) -> Dict[str, Any]:
+        """Get the underlying scope dictionary for execute_mumps.
+
+        Returns:
+            The primary scope dictionary
+        """
+        # Access the internal scope_dict from CurrentScope
+        scope_dict = self._scope._scope_dict
+        if scope_dict is None:
+            return {}
+        return scope_dict
+
+    def _get_value(self, name: str) -> Any:
+        """Get variable value using CurrentScope.
+
+        Args:
+            name: Variable name (may include subscripts)
+
+        Returns:
+            Variable value or empty string if undefined
+        """
+        # Handle subscripted names
+        if "(" in name:
+            base_name, subscripts = self._parse_subscripted_name(name)
+
+            # Handle global references
+            if base_name.startswith("^"):
+                return self._get_global_value(base_name, subscripts)
+
+            return self._scope.get_subscripted(base_name, subscripts)
+
+        # Handle global references
+        if name.startswith("^"):
+            return self._get_global_value(name, [])
+
+        return self._scope.get(name)
+
+    def _get_global_value(self, base_name: str, subscripts: List[Any]) -> Any:
+        """Get global variable value from MState.
+
+        Args:
+            base_name: Global name including ^ prefix
+            subscripts: List of subscript values
+
+        Returns:
+            Global value or empty string if undefined
+        """
+        # Handle naked reference
+        if base_name == "^":
+            # Use state's naked indicator to resolve
+            # For now, delegate to state's get_var
+            full_name = base_name
+            if subscripts:
+                subs_str = ",".join(
+                    str(SubscriptCanonicalizer.canonicalize(s)) for s in subscripts
+                )
+                full_name = f"^({subs_str})"
+            # Use state's get_var which handles naked resolution
+            scope_dict = self._get_scope_dict()
+            return self._state.get_var(full_name, scope_dict)
+
+        # Regular global
+        key = base_name[1:]  # Remove ^ prefix
+        canonical_subs = tuple(
+            str(SubscriptCanonicalizer.canonicalize(s)) for s in subscripts
+        )
+        return self._state._globals.get(key, canonical_subs) or ""
+
+    def _resolve_recursive_at(self, value: str) -> str:
+        """Resolve recursive @-expression in value.
+
+        When a resolved value itself starts with @, we need to
+        evaluate that as an expression/variable reference.
+
+        Args:
+            value: String starting with @
+
+        Returns:
+            Resolved value after handling the @ prefix
+        """
+        # Strip the @ and recursively resolve
+        inner = value[1:]
+
+        # If it's @$E(...) or other function, evaluate it
+        if inner.startswith("$"):
+            # Use evaluate_expression to handle function calls
+            return str(self.evaluate_expression(inner))
+
+        # Otherwise it's another variable reference
+        return str(self._get_value(inner))
+
+    def _append_subscripts(self, name: str, subscripts: List[Any]) -> str:
+        """Append subscripts to a variable name.
+
+        Args:
+            name: Base variable name (may already have subscripts)
+            subscripts: Subscripts to append
+
+        Returns:
+            Variable name with appended subscripts
+        """
+        if not subscripts:
+            return name
+
+        # Canonicalize subscripts
+        canonical_subs = [SubscriptCanonicalizer.canonicalize(s) for s in subscripts]
+        subs_str = ",".join(str(s) for s in canonical_subs)
+
+        if "(" in name:
+            # Already has subscripts - append
+            # Remove trailing ) and add new subscripts
+            return f"{name[:-1]},{subs_str})"
+        else:
+            # No subscripts yet
+            return f"{name}({subs_str})"
+
+    def _parse_subscripted_name(self, name: str) -> tuple[str, List[str]]:
+        """Parse a subscripted variable name into base and subscripts.
+
+        Args:
+            name: Variable name like "A(1,2)" or "^GLO(x,y)"
+
+        Returns:
+            Tuple of (base_name, list_of_subscripts)
+        """
+        if "(" not in name:
+            return name, []
+
+        paren_pos = name.index("(")
+        base = name[:paren_pos]
+        subs_str = name[paren_pos + 1 : -1]  # Remove ( and )
+
+        # Parse subscripts (simple split for now - doesn't handle nested parens)
+        subscripts = []
+        if subs_str:
+            # Handle nested expressions with parentheses
+            depth = 0
+            current = ""
+            for char in subs_str:
+                if char == "(" or char == "[":
+                    depth += 1
+                    current += char
+                elif char == ")" or char == "]":
+                    depth -= 1
+                    current += char
+                elif char == "," and depth == 0:
+                    subscripts.append(current.strip())
+                    current = ""
+                else:
+                    current += char
+            if current:
+                subscripts.append(current.strip())
+
+        return base, subscripts
+
+    def _is_valid_var_name(self, name: str) -> bool:
+        """Check if name is a valid MUMPS variable name.
+
+        Args:
+            name: String to check
+
+        Returns:
+            True if valid variable name
+        """
+        if not name:
+            return False
+
+        # Strip subscripts for validation
+        base = name.split("(")[0] if "(" in name else name
+
+        # Naked reference like "^(3)"
+        if base == "^":
+            return True
+
+        # Global: must start with ^
+        if base.startswith("^"):
+            rest = base[1:]
+            if not rest:
+                return False
+            return rest[0].isalpha() or rest[0] == "%"
+
+        # Local: must start with letter or %
+        return base[0].isalpha() or base[0] == "%"
+
+    def _is_numeric_literal(self, s: str) -> bool:
+        """Check if string is a numeric literal.
+
+        Args:
+            s: String to check
+
+        Returns:
+            True if numeric literal
+        """
+        if not s:
+            return False
+        try:
+            float(s)
+            return True
+        except ValueError:
+            return False
+
+    def _parse_numeric(self, s: str) -> Any:
+        """Parse numeric string to number.
+
+        Args:
+            s: Numeric string
+
+        Returns:
+            int or float value
+        """
+        try:
+            # Try int first
+            if "." not in s and "e" not in s.lower():
+                return int(s)
+            return float(s)
+        except ValueError:
+            return 0
+
+    def _to_mumps_bool(self, value: Any) -> int:
+        """Convert value to MUMPS boolean (0 or 1).
+
+        Args:
+            value: Any value
+
+        Returns:
+            0 or 1
+        """
+        if value is None or value == "":
+            return 0
+
+        if isinstance(value, (int, float)):
+            return 1 if value != 0 else 0
+
+        if isinstance(value, str):
+            # MUMPS: numeric-looking strings are truthy if non-zero
+            try:
+                return 1 if float(value) != 0 else 0
+            except ValueError:
+                # Non-numeric strings are truthy if non-empty
+                return 1 if value else 0
+
+        # Other values - check truthiness
+        return 1 if value else 0

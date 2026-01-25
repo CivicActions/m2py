@@ -110,6 +110,8 @@ def _is_valid_label(name: str) -> bool:
     return bool(_LABEL_PATTERN.match(name))
 
 
+# UNIFIED_VAR_DEPRECATED: T004 - Replace with core.names.NameTranslator.to_python()
+# This duplicates codegen/names.py logic. After migration, import from core/names.py
 def _translate_label_to_func(label: str) -> str:
     """Translate a MUMPS label name to its Python function name.
 
@@ -2111,6 +2113,7 @@ class MUMPSRuntime:
 
         return value
 
+    # UNIFIED_VAR_DEPRECATED: T004 - Replace with IndirectionResolver.resolve()
     def resolve_indirection_name(
         self, varname: str, levels: int, _scope: Dict[str, Any]
     ) -> str:
@@ -2325,6 +2328,7 @@ class MUMPSRuntime:
             return ""
         return m_order(arr, subs, direction)
 
+    # UNIFIED_VAR_DEPRECATED: T004 - Replace with CurrentScope.get()
     def get_var(self, name: str, _scope: Dict[str, Any]) -> Any:
         """Get variable value by name (name indirection).
 
@@ -2455,6 +2459,7 @@ class MUMPSRuntime:
         result = self._globals.get(key, subs)
         return result if result is not None else ""
 
+    # UNIFIED_VAR_DEPRECATED: T004 - Replace with CurrentScope.set()
     def set_var(self, name: str, value: Any, _scope: Dict[str, Any]) -> None:
         """Set variable value by name (name indirection).
 
@@ -2813,6 +2818,10 @@ class MUMPSRuntime:
             # Return subtree at subscript
             return raw_value[eval_subs]
 
+    # UNIFIED_VAR_DEPRECATED: T004 - Replace with IndirectionResolver.resolve(context=ARGUMENT)
+    # KNOWN BUG (Challenge 6): This does NOT evaluate expressions, just resolves variable chain.
+    # I @A where A="1=0" returns "1=0" string to m_truth(), which evaluates to TRUE (WRONG).
+    # Should evaluate "1=0" as expression → FALSE. Fix: IndirectionResolver.evaluate_expression()
     def resolve_argument_indirection(
         self, initial_value: str, levels: int, _scope: Dict[str, Any]
     ) -> Any:
@@ -2887,6 +2896,7 @@ class MUMPSRuntime:
             )
         return name[0].isalpha() or name[0] == "%"
 
+    # UNIFIED_VAR_DEPRECATED: T004 - Replace with IndirectionResolver.resolve()
     def resolve_indirection(
         self, expr: str, levels: int, _scope: Dict[str, Any]
     ) -> Any:

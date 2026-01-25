@@ -13,6 +13,13 @@ Code generation strategy:
 - Dynamic XECUTE: Call _rt.execute() at runtime
 - Name indirection: Call _rt.get_var()/_rt.set_var() at runtime
 - Pattern indirection: Call _rt.compile_pattern_indirect() at runtime
+
+# UNIFIED_VAR_DEPRECATED: Several functions in this module will be replaced
+# by core/indirection.py (IndirectionResolver):
+#   - generate_name_indirection (T003)
+#   - generate_argument_indirection (T003)
+#   - _get_scope_expr (T003)
+# Spec: 018-unified-variable-system, Phase 2
 """
 
 from __future__ import annotations
@@ -28,6 +35,7 @@ if TYPE_CHECKING:
 from m2py.codegen.enums import GotoStrategy
 
 
+# UNIFIED_VAR_DEPRECATED: T003 - Replace with CurrentScope.scope_expr()
 def _get_scope_expr(ctx: "GeneratorContext") -> str:
     """Get the appropriate scope expression for the current context.
 
@@ -280,6 +288,7 @@ def _build_subscripted_name_expr(
     return f'"{base_name}(" + ",".join([str(s) for s in [{subs_joined}]]) + ")"'
 
 
+# UNIFIED_VAR_DEPRECATED: T003 - Replace with IndirectionResolver.resolve() calls
 def generate_name_indirection(
     expr: "MIndirection",
     ctx: "GeneratorContext",
@@ -413,6 +422,11 @@ def generate_name_indirection(
     return f"_rt.get_var({name_expr}, {scope_expr})"
 
 
+# UNIFIED_VAR_DEPRECATED: T003 - Replace with IndirectionResolver.resolve() calls
+# KNOWN BUG (Challenge 6): This function treats string values as variable names
+# instead of evaluating them as expressions. I @A where A="1=0" returns TRUE
+# (treating "1=0" as truthy string) instead of FALSE (evaluating 1=0 expression).
+# Fix: IndirectionResolver.evaluate_expression() in core/indirection.py
 def generate_argument_indirection(
     expr: "MIndirection",
     ctx: "GeneratorContext",
