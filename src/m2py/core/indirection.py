@@ -12,10 +12,10 @@ Feature: 018-unified-variable-system
 Requirements: FR-010 through FR-022
 """
 
-from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from m2py.core.exceptions import VarExpectedError
 from m2py.core.subscripts import SubscriptCanonicalizer
 
 if TYPE_CHECKING:
@@ -47,6 +47,7 @@ class IndirectionContext(Enum):
 
     SUBSCRIPT: Result used as subscript value
                A(1,@B,3) - indirection within subscript
+               Returns the resolved VALUE, not a variable reference
 
     PATTERN: Result used as pattern for pattern match
              X?@P - pattern indirection
@@ -56,30 +57,6 @@ class IndirectionContext(Enum):
     ARGUMENT = "argument"
     SUBSCRIPT = "subscript"
     PATTERN = "pattern"
-
-
-class VarExpectedError(Exception):
-    """Raised when NAME context requires a variable name but got expression."""
-
-    def __init__(self, value: str, message: str = ""):
-        self.value = value
-        self.message = message or f"VAREXPECTED: '{value}' is not a valid variable name"
-        super().__init__(self.message)
-
-
-@dataclass
-class IndirectionResult:
-    """Result from indirection resolution.
-
-    Attributes:
-        value: The resolved value
-        var_name: If NAME context, the variable name string
-        resolved_levels: How many levels were actually resolved
-    """
-
-    value: Any
-    var_name: Optional[str] = None
-    resolved_levels: int = 0
 
 
 class IndirectionResolver:
@@ -186,7 +163,12 @@ class IndirectionResolver:
             return self.evaluate_expression(current)
 
         elif context == IndirectionContext.SUBSCRIPT:
-            # Return the resolved value for use as subscript
+            # Return the actual value at the resolved variable
+            # For subscript indirection like A(1,@B,3), we want the VALUE at B
+            # to use as a subscript, not B's value treated as a variable name
+            if self._is_valid_var_name(current):
+                return self._get_value(current)
+            # If not a valid variable name, return as-is (might be a literal)
             return current
 
         elif context == IndirectionContext.PATTERN:
@@ -232,6 +214,56 @@ class IndirectionResolver:
             Evaluated result of the expression
         """
         return self.resolve(name, levels=1, context=IndirectionContext.ARGUMENT)
+
+    def resolve_subscript_indirection(self, name: str) -> Any:
+        """Resolve indirection within a subscript position.
+
+        Used for A(1,@B,3) patterns where @B appears within a subscript list.
+        Gets the VALUE at B and returns it for use as a subscript.
+
+        Unlike NAME indirection, this does NOT perform multi-level resolution.
+        @B in a subscript simply means "get the value of B and use it as subscript".
+
+        Args:
+            name: Variable name to resolve (source of @name in subscript)
+
+        Returns:
+            Value at the variable, for use as subscript
+
+        Example:
+            S B=2
+            W A(1,@B,3)  ; @B resolves to 2, accessing A(1,2,3)
+        """
+        # For subscript indirection, we simply get the value directly
+        # No multi-level resolution, no variable name validation
+        return self._get_value(name)
+
+    def resolve_subscript_list(self, subscripts: List[Any]) -> List[Any]:
+        """Resolve indirection within a list of subscripts.
+
+        Processes subscripts that may contain @ indirection and returns
+        a list with all indirections resolved to their values.
+
+        Args:
+            subscripts: List of subscript values, some may be "@VAR" strings
+
+        Returns:
+            List with indirections resolved to values
+
+        Examples:
+            ["1", "@B", "3"] where B=2 → ["1", 2, "3"]
+            ["@X", "@Y"] where X="a", Y=5 → ["a", 5]
+        """
+        result = []
+        for sub in subscripts:
+            if isinstance(sub, str) and sub.startswith("@"):
+                # Subscript indirection - resolve the variable
+                var_name = sub[1:]  # Remove @
+                resolved = self.resolve_subscript_indirection(var_name)
+                result.append(resolved)
+            else:
+                result.append(sub)
+        return result
 
     def evaluate_expression(self, expr_string: str) -> Any:
         """Evaluate MUMPS expression string and return result.

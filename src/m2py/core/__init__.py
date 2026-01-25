@@ -15,6 +15,7 @@ Components:
     IndirectionResolver: Runtime @-expression resolution
     IndirectionContext: Enum for indirection context types
     VarExpectedError: Error for invalid variable name in NAME context
+    LVUNDEFError: Error for undefined local variable in strict mode
 
 Feature: 018-unified-variable-system
 """
@@ -22,13 +23,13 @@ Feature: 018-unified-variable-system
 # Import components as they become available
 # Phase 2 implementation adds these incrementally
 
+from m2py.core.exceptions import LVUNDEFError, VarExpectedError
 from m2py.core.names import NameTranslator
 from m2py.core.subscripts import SubscriptCanonicalizer
 from m2py.core.scope import CurrentScope, VarRef
 from m2py.core.indirection import (
     IndirectionResolver,
     IndirectionContext,
-    VarExpectedError,
 )
 
 __all__ = [
@@ -39,4 +40,5 @@ __all__ = [
     "IndirectionResolver",
     "IndirectionContext",
     "VarExpectedError",
+    "LVUNDEFError",
 ]

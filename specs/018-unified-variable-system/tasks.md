@@ -54,7 +54,7 @@
 - [x] T009 [P] Implement `NameTranslator.is_valid_mumps_name()` - validate MUMPS variable names
 - [x] T010 Create `tests/unit/core/test_names.py` with unit tests for all translation rules
 - [x] T011 Update `codegen/names.py` to import and re-export from `core/names.py` (backward compatibility)
-- [ ] T012 Update `runtime/__init__.py` to use `core.names.NameTranslator` instead of `_translate_label_to_func`
+- ~~T012~~ *Moved to Phase 7 (T074a)* - runtime NameTranslator integration deferred until name translation consistency phase
 
 ### SubscriptCanonicalizer (FR-003, FR-004)
 
@@ -99,18 +99,18 @@
 
 ### Subscript Indirection Support (FR-018)
 
-- [ ] T036c Implement subscript-level indirection `A(1,@B,3)` in `IndirectionResolver.resolve()` - resolve @B within subscript list
-- [ ] T036d [P] Create test: `S B=2 W A(1,@B,3)` resolves to `A(1,2,3)`
+- [x] T036c Implement subscript-level indirection `A(1,@B,3)` in `IndirectionResolver.resolve_subscript_indirection()` and `resolve_subscript_list()` methods
+- [x] T036d [P] Create test: `tests/unit/core/test_subscript_indirection.py` with 12 tests for subscript indirection patterns
 
 ### Error Handling (FR-025)
 
-- [ ] T036e Implement LVUNDEF error detection in `CurrentScope.get()` when accessing undefined local variable in strict mode
-- [ ] T036f [P] Create `tests/unit/core/test_errors.py` with LVUNDEF trigger test case
+- [x] T036e Implement LVUNDEF error detection in `CurrentScope.get()` with `strict_mode` parameter and `LVUNDEFError` exception
+- [x] T036f [P] Create `tests/unit/core/test_errors.py` with 20 LVUNDEF test cases including MArray integration
 
 ### $DATA Function Support (FR-027)
 
-- [ ] T036g Ensure `CurrentScope.exists()` returns values compatible with $DATA function semantics (0=none, 1=value, 10=descendants, 11=both)
-- [ ] T036h [P] Create test: `$D(A)` returns correct values for all four $DATA states
+- [x] T036g Implement `CurrentScope.data()` method returning full $DATA semantics (0, 1, 10, 11)
+- [x] T036h [P] Create `tests/unit/core/test_data.py` with 20 tests for all four $DATA states and YDB compatibility
 
 **Checkpoint**: All four core components implemented and tested. Ready for user story implementation.
 
@@ -229,6 +229,7 @@
 - [ ] T072 [US5] Verify `codegen/names.py` now uses `core.names.NameTranslator`
 - [ ] T073 [US5] Verify `runtime/__init__.py` uses same `NameTranslator` (no duplicate logic)
 - [ ] T074 [US5] Remove the now-dead `_translate_label_to_func()` from runtime (was `# UNIFIED_VAR_DEPRECATED`)
+- [ ] T074a [US5] Update `runtime/__init__.py` to use `core.names.NameTranslator` (moved from Phase 2 T012)
 - [ ] T075 [US5] Run cross-component name translation tests
 
 **Checkpoint**: Single source of truth for name translation. No more sync bugs.
