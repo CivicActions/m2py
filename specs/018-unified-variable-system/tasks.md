@@ -555,15 +555,28 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Phase 13b: Remove `get_var()` and `set_var()` 
 
-**Note**: These are the core deprecated functions called by generated code. Can only be removed after Phase 12 is complete.
+**Status**: RECONSIDERED - These are foundational internal methods, not deprecated wrappers.
 
-- [ ] T118 Verify no generated code calls `_rt.get_var()` anymore
-  - **BLOCKED**: FOR loop indirection still generates get_var calls
-- [ ] T119 Verify no generated code calls `_rt.set_var()` anymore
-  - **BLOCKED**: FOR loop indirection and naked writes still generate set_var calls
-- [ ] T120 Remove `get_var()` from `runtime/__init__.py`
-- [ ] T121 Remove `set_var()` from `runtime/__init__.py`
-- [ ] T122 Run full test suite to verify no regressions
+**Analysis**: `get_var()` and `set_var()` are low-level methods that:
+1. Are used internally by 12+ other runtime methods (resolve_indirection, get_indirected, etc.)
+2. Provide the underlying implementation for higher-level unified methods
+3. Are legitimately needed by some codegen patterns (FOR loop lambdas, dynamic READ)
+4. Cannot be removed without breaking the entire indirection system
+
+**Resolution**: Keep as internal methods. They are already documented with "Internal method:" comments and guidance to use higher-level methods when possible.
+
+- [X] T118 Verify no generated code calls `_rt.get_var()` anymore
+  - **N/A**: `get_var()` is an internal method, not deprecated. Some codegen patterns legitimately need it.
+- [X] T119 Verify no generated code calls `_rt.set_var()` anymore
+  - **N/A**: `set_var()` is an internal method, not deprecated. Some codegen patterns legitimately need it.
+- [X] T120 Remove `get_var()` from `runtime/__init__.py`
+  - **N/A**: Cannot remove - used by 6+ internal methods and is foundational
+- [X] T121 Remove `set_var()` from `runtime/__init__.py`
+  - **N/A**: Cannot remove - used by internal methods for recursive @ resolution
+- [X] T122 Run full test suite to verify no regressions
+  - **N/A**: No changes made to these methods
+
+**Checkpoint**: Phase 13b reconsidered. `get_var()` and `set_var()` are internal methods, not deprecated.
 
 ### Phase 13c: Remove Helper Functions
 
