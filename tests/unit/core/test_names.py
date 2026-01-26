@@ -90,6 +90,22 @@ class TestFromPython:
         """Empty string stays empty."""
         assert NameTranslator.from_python("") == ""
 
+    def test_unknown_prefix_unchanged(self):
+        """Unknown prefixes pass through unchanged (identity fallback).
+
+        Names that start with underscore but don't match known prefixes
+        (_pct_, _n_, _m_, _preamble) are returned unchanged. This ensures
+        internal Python names like _scope, _rt don't get corrupted.
+        """
+        assert NameTranslator.from_python("_unknown_FOO") == "_unknown_FOO"
+        assert NameTranslator.from_python("_xyz_bar") == "_xyz_bar"
+        # Partial prefix matches should not translate
+        assert NameTranslator.from_python("_p_FOO") == "_p_FOO"  # Not _pct_
+        assert NameTranslator.from_python("_pc_FOO") == "_pc_FOO"  # Not _pct_
+        # Internal runtime names should be unchanged
+        assert NameTranslator.from_python("_scope") == "_scope"
+        assert NameTranslator.from_python("_rt") == "_rt"
+
 
 class TestRoundTrip:
     """Tests that to_python and from_python are inverses."""
