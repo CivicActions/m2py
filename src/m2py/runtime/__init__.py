@@ -2637,39 +2637,47 @@ class MUMPSRuntime:
         if levels == 0:
             return self.get_var(source, _scope)
 
-        # Handle per_level_subscripts by building the subscript string
-        # For @X@(1,2) where X="A", we need to get A(1,2)
-        if per_level_subscripts:
-            from m2py.core.scope import CurrentScope
-            from m2py.core.indirection import IndirectionResolver
+        # Use unified IndirectionResolver for all cases
+        # Feature: 018-unified-variable-system (T115)
+        # This eliminates the dependency on deprecated resolve_indirection()
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+        from m2py.core.exceptions import LVUNDEFError
 
-            # For per-level subscripts, we use the resolver which handles them properly
-            cs = CurrentScope.from_generated_context(_scope)
-            resolver = IndirectionResolver(self, cs)
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
 
-            # Resolve to get target variable NAME with subscripts applied
-            try:
-                target = resolver.resolve_to_name(
-                    source, levels=levels, per_level_subscripts=per_level_subscripts
+        # First resolve to get the target NAME
+        try:
+            target_name = resolver.resolve_to_name(
+                source,
+                levels=levels,
+                per_level_subscripts=per_level_subscripts,
+            )
+        except LVUNDEFError as e:
+            # Convert LVUNDEF to IndirectionError to preserve backward compatibility
+            # The source variable in the indirection chain is undefined
+            raise IndirectionError(
+                source,
+                f"undefined variable in indirection chain: {e.name}",
+                variable_name=e.name,
+            )
+
+        # Validate the target exists (MUMPS UNDEF semantics)
+        # Skip validation for globals (they return empty if undefined)
+        if not target_name.startswith("^"):
+            # Parse subscripted names properly
+            base_name = target_name.split("(")[0] if "(" in target_name else target_name
+            scope_key = NameTranslator.to_python(base_name)
+            if scope_key not in _scope:
+                raise IndirectionError(
+                    source,
+                    "undefined final target variable in indirection",
+                    variable_name=target_name,
                 )
 
-                # Handle global variables
-                if target.startswith("^"):
-                    base_name, subscripts = _parse_subscripted_name(target)
-                    subs = tuple(str(s) for s in subscripts) if subscripts else ()
-                    key = base_name[1:]  # Remove ^ prefix
-                    return self._globals.get(key, subs) or ""
-
-                # Get via CurrentScope for locals
-                return cs.get(target)
-            except Exception:
-                # If resolution fails, return empty string (MUMPS undefined behavior)
-                return ""
-
-        # For simple multi-level indirection without per-level subscripts,
-        # use the existing resolve_indirection which has the correct semantics
-        # for READ operations (returns the final VALUE, not NAME)
-        return self.resolve_indirection(source, levels, _scope)
+        # Now get the value from the target
+        return self.get_var(target_name, _scope)
 
     def kill_indirected(
         self,

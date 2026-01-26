@@ -543,11 +543,13 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 - [ ] T114 Remove `resolve_indirection_name()` from `runtime/__init__.py` (replaced by `IndirectionResolver.resolve()`)
   - **BLOCKED**: Still used by codegen/expressions.py for $ORDER/$NEXT indirection
 - [ ] T115 Remove `resolve_indirection()` from `runtime/__init__.py` (replaced by `IndirectionResolver.resolve()`)
-  - **BLOCKED**: Still used by get_indirected() for multi-level indirection
+  - **PARTIALLY UNBLOCKED**: `get_indirected()` now uses `IndirectionResolver.resolve_to_name()`
+  - Still BLOCKED by codegen/statements.py and codegen/indirection.py which generate `_rt.resolve_indirection()` calls
 - [X] T116 Remove `resolve_argument_indirection()` from `runtime/__init__.py` (replaced by `evaluate_argument_indirection()`)
   - ✅ Removed - was not used by any generated code or internal runtime calls
 - [ ] T117 Update any internal runtime calls that still use removed functions
-  - **BLOCKED**: Cannot proceed until T114/T115 are removed
+  - **PARTIALLY COMPLETE**: `get_indirected()` now uses unified IndirectionResolver
+  - Still BLOCKED by T114/T115 codegen migration
 
 ### Phase 13b: Remove `get_var()` and `set_var()` 
 
