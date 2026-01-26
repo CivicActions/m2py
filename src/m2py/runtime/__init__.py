@@ -2532,6 +2532,72 @@ class MUMPSRuntime:
         # Handle local variables
         self._set_local_var(base_name, subscripts, value, _scope)
 
+    def set_indirected(
+        self,
+        source: str,
+        value: Any,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> None:
+        """Set variable via indirection using unified components.
+
+        Feature: 018-unified-variable-system (T040)
+        Replaces scattered set_var + resolve calls with unified approach.
+
+        Uses IndirectionResolver.resolve_to_name() to determine the target,
+        then CurrentScope.set() to perform the assignment.
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X)
+            value: Value to set
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Raises:
+            VarExpectedError: If resolved name is not a valid variable name
+
+        Examples:
+            # @X=5 where X="Y"
+            set_indirected("X", 5, scope, levels=1)
+            # Sets Y=5
+
+            # @@X=5 where X="Y", Y="Z"
+            set_indirected("X", 5, scope, levels=2)
+            # Sets Z=5
+
+            # @X@(1,2)=5 where X="A"
+            set_indirected("X", 5, scope, levels=1, per_level_subscripts=[[1, 2]])
+            # Sets A(1,2)=5
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve to get target variable NAME (not value)
+        target = resolver.resolve_to_name(
+            source, levels=levels, per_level_subscripts=per_level_subscripts
+        )
+
+        # Convert value to string (MUMPS semantics - all values are strings)
+        str_value = str(value)
+
+        # Handle global variables
+        if target.startswith("^"):
+            # Parse subscripts from target if present
+            base_name, subscripts = _parse_subscripted_name(target)
+            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            key = base_name[1:]  # Remove ^ prefix
+            self._globals.set(key, subs, str_value)
+            return
+
+        # Set via CurrentScope for locals
+        cs.set(target, str_value)
+
     def _set_local_var(
         self,
         name: str,

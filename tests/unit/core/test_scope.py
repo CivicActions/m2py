@@ -207,12 +207,16 @@ class TestFactoryMethod:
 
     def test_creates_from_scope(self):
         """Factory creates scope from _scope dict."""
+        from m2py.runtime import MArray
+
         _scope = {"X": 5}
         cs = CurrentScope.from_generated_context(_scope)
 
         assert cs.get("X") == 5
         cs.set("Y", 10)
-        assert _scope["Y"] == 10
+        # Value is wrapped in MArray for generated code compatibility
+        assert isinstance(_scope["Y"], MArray)
+        assert _scope["Y"].value == 10
 
     def test_creates_with_locals(self):
         """Factory accepts locals dict."""
@@ -245,13 +249,17 @@ class TestStoragePriority:
 
     def test_set_uses_primary(self):
         """Set stores in primary (first non-None) storage."""
+        from m2py.runtime import MArray
+
         scope_dict = {}
         locals_dict = {}
 
         cs = CurrentScope(scope_dict=scope_dict, locals_dict=locals_dict)
         cs.set("X", 42)
 
-        assert scope_dict["X"] == 42
+        # Value is wrapped in MArray for generated code compatibility
+        assert isinstance(scope_dict["X"], MArray)
+        assert scope_dict["X"].value == 42
         assert "X" not in locals_dict
 
 
@@ -285,3 +293,40 @@ class TestSubscriptParsing:
         base, subs = cs._parse_subscripted_name("A(foo,bar)")
         assert base == "A"
         assert subs == ["foo", "bar"]
+
+    def test_parse_quoted_string_subscripts(self):
+        """Quoted string subscripts have quotes stripped.
+
+        Bug fix: B("key","sub") was returning ['\"key\"', '\"sub\"'] with quotes.
+        Feature: 018-unified-variable-system
+        """
+        cs = CurrentScope(scope_dict={})
+        base, subs = cs._parse_subscripted_name('B("key","sub")')
+        assert base == "B"
+        # Quotes should be stripped from the subscripts
+        assert subs == ["key", "sub"]
+
+    def test_parse_mixed_quoted_and_unquoted_subscripts(self):
+        """Mixed quoted and unquoted subscripts."""
+        cs = CurrentScope(scope_dict={})
+        base, subs = cs._parse_subscripted_name('A(1,"two",3)')
+        assert base == "A"
+        assert subs == ["1", "two", "3"]
+
+    def test_parse_subscript_with_escaped_quotes(self):
+        """Subscript with escaped quotes inside string.
+
+        MUMPS uses "" to escape quotes inside strings.
+        """
+        cs = CurrentScope(scope_dict={})
+        # "he""llo" in MUMPS means he"llo
+        base, subs = cs._parse_subscripted_name('A("he""llo")')
+        assert base == "A"
+        assert subs == ['he"llo']
+
+    def test_parse_global_with_quoted_subscripts(self):
+        """Global variable with quoted subscripts."""
+        cs = CurrentScope(scope_dict={})
+        base, subs = cs._parse_subscripted_name('^GLO("a","b")')
+        assert base == "^GLO"
+        assert subs == ["a", "b"]

@@ -466,3 +466,116 @@ class TestHelperMethods:
         # Empty subscripts
         result = resolver._append_subscripts("A", [])
         assert result == "A"
+
+
+class TestResolveToName:
+    """Tests for resolve_to_name() for SET operations.
+
+    resolve_to_name() returns the TARGET VARIABLE NAME for SET,
+    not the value at that location.
+    """
+
+    def test_single_level_returns_name(self):
+        """@X where X="Y" → "Y" (the name to SET)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "Y", "Y": 5})
+        resolver = IndirectionResolver(state, scope)
+
+        target = resolver.resolve_to_name("X", levels=1)
+        assert target == "Y"
+
+    def test_two_level_returns_final_name(self):
+        """@@X where X="Y", Y="Z" → "Z" (the name to SET)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "Y", "Y": "Z", "Z": 99})
+        resolver = IndirectionResolver(state, scope)
+
+        target = resolver.resolve_to_name("X", levels=2)
+        assert target == "Z"
+
+    def test_three_level_returns_final_name(self):
+        """@@@X where X→Y→Z→W → "W" (the name to SET)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "Y", "Y": "Z", "Z": "W", "W": 42})
+        resolver = IndirectionResolver(state, scope)
+
+        target = resolver.resolve_to_name("X", levels=3)
+        assert target == "W"
+
+    def test_with_per_level_subscripts(self):
+        """@X@(1,2) where X="A" → "A(1,2)" (the name to SET)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "A"})
+        resolver = IndirectionResolver(state, scope)
+
+        target = resolver.resolve_to_name("X", levels=1, per_level_subscripts=[[1, 2]])
+        assert target == "A(1,2)"
+
+    def test_two_level_with_subscripts(self):
+        """@@X@(1)@(2) where X="A", A(1)="B" → "B(2)" (the name to SET)."""
+        state = MockMState()
+        from m2py.runtime import MArray
+
+        A = MArray()
+        A[1].value = "B"
+        scope = CurrentScope(scope_dict={"X": "A", "A": A, "B": 0})
+        resolver = IndirectionResolver(state, scope)
+
+        target = resolver.resolve_to_name(
+            "X", levels=2, per_level_subscripts=[[1], [2]]
+        )
+        assert target == "B(2)"
+
+    def test_invalid_name_raises_varexpected(self):
+        """resolve_to_name raises VarExpectedError for invalid names."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "1+1"})
+        resolver = IndirectionResolver(state, scope)
+
+        with pytest.raises(VarExpectedError):
+            resolver.resolve_to_name("X", levels=1)
+
+    def test_empty_name_raises_varexpected(self):
+        """resolve_to_name raises VarExpectedError for empty names."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": ""})
+        resolver = IndirectionResolver(state, scope)
+
+        with pytest.raises(VarExpectedError):
+            resolver.resolve_to_name("X", levels=1)
+
+    def test_numeric_name_raises_varexpected(self):
+        """resolve_to_name raises VarExpectedError for numeric names."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "123"})
+        resolver = IndirectionResolver(state, scope)
+
+        with pytest.raises(VarExpectedError):
+            resolver.resolve_to_name("X", levels=1)
+
+    def test_global_name_is_valid(self):
+        """resolve_to_name handles global variable names."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "^GLO"})
+        resolver = IndirectionResolver(state, scope)
+
+        target = resolver.resolve_to_name("X", levels=1)
+        assert target == "^GLO"
+
+    def test_global_name_with_subscripts(self):
+        """@X@(1) where X="^GLO" → "^GLO(1)"."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "^GLO"})
+        resolver = IndirectionResolver(state, scope)
+
+        target = resolver.resolve_to_name("X", levels=1, per_level_subscripts=[[1]])
+        assert target == "^GLO(1)"
+
+    def test_percent_name_is_valid(self):
+        """resolve_to_name handles percent-prefixed names."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "%ZX"})
+        resolver = IndirectionResolver(state, scope)
+
+        target = resolver.resolve_to_name("X", levels=1)
+        assert target == "%ZX"

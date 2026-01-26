@@ -785,3 +785,121 @@ class TestIndirectionEdgeCases:
         # @A: A → "^G(1,2)" → 42 (numeric, chain stops)
         result = rt.resolve_indirection("A", 1, scope)
         assert result == "42"
+
+
+# =============================================================================
+# T040: MUMPSRuntime.set_indirected() Tests (Unified Variable System)
+# =============================================================================
+
+
+class TestSetIndirected:
+    """Tests for MUMPSRuntime.set_indirected() unified SET method.
+
+    Feature: 018-unified-variable-system
+    Task: T040 - Create unified SET operation using IndirectionResolver
+
+    Note: Values are stored in MArray objects for generated code compatibility.
+    Tests verify the .value attribute of the MArray.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Provide fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_single_level_local(self, rt):
+        """@X=5 where X="Y" sets Y="5" (string per MUMPS semantics)."""
+        scope = {"X": "Y"}
+        rt.set_indirected("X", 5, scope, levels=1)
+        assert "Y" in scope
+        # MUMPS stores values as strings, wrapped in MArray
+        assert scope["Y"].value == "5"
+
+    def test_two_level_local(self, rt):
+        """@@X=5 where X="Y", Y="Z" sets Z="5" (string per MUMPS)."""
+        scope = {"X": "Y", "Y": "Z"}
+        rt.set_indirected("X", 5, scope, levels=2)
+        assert "Z" in scope
+        assert scope["Z"].value == "5"
+
+    def test_three_level_local(self, rt):
+        """@@@X=5 where X→Y→Z→W sets W="5" (string per MUMPS)."""
+        scope = {"X": "Y", "Y": "Z", "Z": "W"}
+        rt.set_indirected("X", 5, scope, levels=3)
+        assert "W" in scope
+        assert scope["W"].value == "5"
+
+    def test_single_level_with_subscripts(self, rt):
+        """@X@(1,2)=5 where X="A" sets A(1,2)="5" (string per MUMPS)."""
+        scope = {"X": "A"}
+        rt.set_indirected("X", 5, scope, levels=1, per_level_subscripts=[[1, 2]])
+        assert "A" in scope
+        assert scope["A"][1, 2].value == "5"
+
+    def test_two_level_with_subscripts(self, rt):
+        """@@X@(1)@(2)=5 where X="A", A(1)="B" sets B(2)="5" (string per MUMPS)."""
+        scope = {"X": "A", "A": MArray()}
+        scope["A"][1].value = "B"
+        rt.set_indirected("X", 5, scope, levels=2, per_level_subscripts=[[1], [2]])
+        assert "B" in scope
+        assert scope["B"][2].value == "5"
+
+    def test_invalid_name_raises_error(self, rt):
+        """Invalid resolved name raises VarExpectedError."""
+        from m2py.core.exceptions import VarExpectedError
+
+        scope = {"X": "1+1"}  # Invalid variable name
+        with pytest.raises(VarExpectedError):
+            rt.set_indirected("X", 5, scope, levels=1)
+
+    def test_empty_name_raises_error(self, rt):
+        """Empty resolved name raises VarExpectedError."""
+        from m2py.core.exceptions import VarExpectedError
+
+        scope = {"X": ""}
+        with pytest.raises(VarExpectedError):
+            rt.set_indirected("X", 5, scope, levels=1)
+
+    def test_global_target(self, rt):
+        """@X=5 where X="^GLO" sets global as string per MUMPS."""
+        scope = {"X": "^GLO"}
+        rt.set_indirected("X", 5, scope, levels=1)
+        # Value stored in globals as string per MUMPS semantics
+        assert rt.globals.get("GLO", ()) == "5"
+
+    def test_global_target_with_subscripts(self, rt):
+        """@X@(1)=5 where X="^GLO" sets ^GLO(1)="5" (string per MUMPS)."""
+        scope = {"X": "^GLO"}
+        rt.set_indirected("X", 5, scope, levels=1, per_level_subscripts=[[1]])
+        assert rt.globals.get("GLO", ("1",)) == "5"
+
+    def test_percent_name(self, rt):
+        """@X=5 where X="%Z" sets %Z="5" (string per MUMPS)."""
+        scope = {"X": "%Z"}
+        rt.set_indirected("X", 5, scope, levels=1)
+        # %Z stored as _pct_Z in scope
+        assert "_pct_Z" in scope
+        assert scope["_pct_Z"].value == "5"
+
+    def test_zero_value_stored_as_string(self, rt):
+        """@X=0 must store "0" not 0 to preserve truthiness in WRITE.
+
+        Bug fix: Integer 0 is falsy in Python, so (0 or '') evaluates to ''.
+        But string "0" is truthy, so ("0" or '') evaluates to "0".
+        This bug caused WRITE @Y to print empty instead of "0".
+        Feature: 018-unified-variable-system
+        """
+        scope = {"X": "Y"}
+        rt.set_indirected("X", 0, scope, levels=1)
+        # Must be string "0", not int 0, wrapped in MArray
+        assert scope["Y"].value == "0"
+        assert type(scope["Y"].value) is str
+        # This is the real test - ensures (value or '') works in WRITE
+        assert (scope["Y"].value or "") == "0"
+
+    def test_empty_string_preserved(self, rt):
+        """@X="" stores empty string correctly."""
+        scope = {"X": "Y"}
+        rt.set_indirected("X", "", scope, levels=1)
+        assert scope["Y"].value == ""
+        assert type(scope["Y"].value) is str

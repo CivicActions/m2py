@@ -874,17 +874,20 @@ def _generate_single_assignment(
     Extracted from _generate_set to support ordered_items iteration.
     """
     from m2py.asg.expressions import MIndirection as MIndirectionType
-    from m2py.codegen.indirection import generate_name_indirection_write
+    from m2py.codegen.indirection import generate_name_indirection_write_unified
 
     if assignment.target is None or assignment.value is None:
         return
 
-    # Spec 012 (T017): Handle indirection targets (@VAR, @@VAR, @NAME@(1,2))
+    # Spec 012 (T017) + 018 (T041): Handle indirection targets (@VAR, @@VAR, @NAME@(1,2))
+    # Uses unified set_indirected() which internally uses IndirectionResolver
     if isinstance(assignment.target, MIndirectionType):
         # Generate value expression first
         value_expr = generate_expr(assignment.value, ctx)
-        # Generate the set_var call via indirection module
-        set_stmt = generate_name_indirection_write(assignment.target, value_expr, ctx)
+        # Generate the set_indirected call via unified indirection module
+        set_stmt = generate_name_indirection_write_unified(
+            assignment.target, value_expr, ctx
+        )
         ctx.emitter.line(set_stmt)
         return
 
@@ -4021,33 +4024,39 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     from m2py.asg.expressions import MIndirection as MIndirectionType
-    from m2py.codegen.indirection import generate_name_indirection_write
+    from m2py.codegen.indirection import generate_name_indirection_write_unified
 
     if target.variable is None:
         return
 
-    # Check if target is indirection - needs special handling with set_var
+    # Check if target is indirection - needs special handling with set_indirected
     is_indirection = isinstance(target.variable, MIndirectionType)
 
     if is_indirection:
-        # Indirection target: R @A - need to use set_var at runtime
+        # Spec 018 (T041): Indirection target: R @A - uses unified set_indirected
         # Type narrowing: we know target.variable is MIndirection from is_indirection check
         ind_var = cast(MIndirectionType, target.variable)
         if target.timeout is not None:
             # Timeout read with indirection: R @A:n
             timeout_expr = generate_expr(target.timeout, ctx)
             ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
-            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
+            set_stmt = generate_name_indirection_write_unified(
+                ind_var, "_read_val", ctx
+            )
             ctx.emitter.line(set_stmt)
         elif target.is_char_read:
             # Single character read with indirection: R *@A
             ctx.emitter.line("_read_val = m_read_char()")
-            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
+            set_stmt = generate_name_indirection_write_unified(
+                ind_var, "_read_val", ctx
+            )
             ctx.emitter.line(set_stmt)
         else:
             # Basic read with indirection: R @A
             ctx.emitter.line("_read_val = input()")
-            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
+            set_stmt = generate_name_indirection_write_unified(
+                ind_var, "_read_val", ctx
+            )
             ctx.emitter.line(set_stmt)
         return
 

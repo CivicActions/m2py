@@ -25,15 +25,17 @@ class TestIndirectionCodegen:
         assert "_scope" in code
 
     def test_name_indirection_write(self, generate_python):
-        """Name indirection write generates _rt.set_var call (T021).
+        """Name indirection write generates _rt.set_indirected call (T021, T041).
 
         In MUMPS, S @X=1 where X contains a variable name sets that variable.
         Example: S X="VAR",@X=1 means VAR gets the value 1
+
+        Spec 018 (T041): Uses unified set_indirected() with IndirectionResolver.
         """
         code = generate_python('TEST S X="VAR",@X=1 Q\n')
 
-        # Should generate runtime set_var call for @X=1
-        assert "_rt.set_var" in code
+        # Should generate runtime set_indirected call for @X=1
+        assert "_rt.set_indirected" in code
         # Should include scope reference
         assert "_scope" in code
 
@@ -309,3 +311,78 @@ class TestPatternIndirectionExecution:
             'TEST S PAT="3N1""-""3N1""-""4N" I "555-123-4567"?@PAT W "VALID" Q\n'
         )
         assert result.output == "VALID"
+
+
+@pytest.mark.codegen
+class TestSetIndirectionEndToEnd:
+    """End-to-end tests for SET indirection patterns.
+
+    Feature: 018-unified-variable-system
+    These tests verify the complete transpile->execute->output path
+    for SET commands with @VAR targets, matching YDB behavior.
+    """
+
+    def test_set_single_indirection(self, execute_mumps):
+        """S X="Y" S @X=5 W Y outputs 5.
+
+        Basic SET indirection: @X resolves X to get "Y", then sets Y=5.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S X="Y" S @X=5 W Y Q')
+        assert result.output == "5"
+
+    def test_set_double_indirection(self, execute_mumps):
+        """S X="Y",Y="Z" S @@X=5 W Z outputs 5.
+
+        Double indirection: @@X resolves X→"Y"→"Z", then sets Z=5.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S X="Y",Y="Z" S @@X=5 W Z Q')
+        assert result.output == "5"
+
+    def test_set_indirection_with_subscripts(self, execute_mumps):
+        """S X="A" S @X@(1,2)=5 W A(1,2) outputs 5.
+
+        Subscripted indirection: @X@(1,2) resolves X to get "A",
+        then sets A(1,2)=5.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S X="A" S @X@(1,2)=5 W A(1,2) Q')
+        assert result.output == "5"
+
+    def test_set_indirection_zero_value(self, execute_mumps):
+        """S X="Y" S @X=0 W Y outputs 0.
+
+        Bug fix: Zero value must be stored as string "0" so that
+        WRITE's (value or '') pattern outputs "0" not "".
+        """
+        result = execute_mumps('TEST S X="Y" S @X=0 W Y Q')
+        assert result.output == "0"
+
+    def test_set_indirection_global_target(self, execute_mumps):
+        """S X="^GLO" S @X=99 W ^GLO outputs 99.
+
+        Global target: @X resolves to "^GLO", sets global variable.
+        """
+        result = execute_mumps('TEST S X="^GLO" S @X=99 W ^GLO Q')
+        assert result.output == "99"
+
+    def test_set_indirection_global_with_subscripts(self, execute_mumps):
+        """S X="^GLO" S @X@(1)=42 W ^GLO(1) outputs 42.
+
+        Global with subscripts: Sets ^GLO(1)=42.
+        """
+        result = execute_mumps('TEST S X="^GLO" S @X@(1)=42 W ^GLO(1) Q')
+        assert result.output == "42"
+
+    def test_set_indirection_equivalent_to_static(self, execute_mumps):
+        """S @"A(1)"=5 produces identical result to S A(1)=5.
+
+        T038: Static vs dynamic equivalence - both paths must produce
+        identical results.
+        """
+        # Dynamic path
+        result_dynamic = execute_mumps('TEST S @"A(1)"=5 W A(1) Q')
+        # Static path
+        result_static = execute_mumps("TEST S A(1)=5 W A(1) Q")
+        assert result_dynamic.output == result_static.output == "5"

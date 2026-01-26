@@ -21,18 +21,6 @@ from m2py.core.subscripts import SubscriptCanonicalizer
 if TYPE_CHECKING:
     from m2py.core.scope import CurrentScope
 
-    # MState is only used for type hints, defined here to avoid circular import
-    class MState:
-        """Type stub for MState - actual implementation in runtime."""
-
-        _globals: Any
-
-        def execute_mumps(
-            self, code: str, scope: Dict[str, Any], *args: Any
-        ) -> Any: ...
-
-        def get_var(self, name: str, scope: Dict[str, Any]) -> Any: ...
-
 
 class IndirectionContext(Enum):
     """Context for indirection final step.
@@ -74,11 +62,11 @@ class IndirectionResolver:
     - Context-aware: NAME (variable lookup) vs ARGUMENT (expression eval)
     """
 
-    def __init__(self, state: "MState", scope: "CurrentScope"):
+    def __init__(self, state: Any, scope: "CurrentScope"):
         """Initialize resolver with runtime state and scope.
 
         Args:
-            state: MState instance for global state, naked indicator, etc.
+            state: MState/MUMPSRuntime instance for global state, naked indicator, etc.
             scope: CurrentScope instance for unified variable access
         """
         self._state = state
@@ -214,6 +202,72 @@ class IndirectionResolver:
             Evaluated result of the expression
         """
         return self.resolve(name, levels=1, context=IndirectionContext.ARGUMENT)
+
+    def resolve_to_name(
+        self,
+        source: str,
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> str:
+        """Resolve indirection to get TARGET VARIABLE NAME (not value).
+
+        Used for SET operations where we need the name to assign to,
+        not the value at that location.
+
+        For SET @X=5 where X="Y": resolve_to_name("X", 1) → "Y"
+        For SET @@X=5 where X="Y", Y="Z": resolve_to_name("X", 2) → "Z"
+
+        Args:
+            source: Initial variable name (source of @source)
+            levels: Number of @ levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per resolution level for @X@(s1)@(s2)
+
+        Returns:
+            Target variable name as string
+
+        Raises:
+            VarExpectedError: If resolved name is not a valid variable name
+            ValueError: If levels < 1
+
+        Examples:
+            # @X where X="Y" → "Y" (the name to SET)
+            resolve_to_name("X", 1) → "Y"
+
+            # @@X where X="Y", Y="Z" → "Z" (the name to SET)
+            resolve_to_name("X", 2) → "Z"
+
+            # @X@(1,2) where X="A" → "A(1,2)" (the name to SET)
+            resolve_to_name("X", 1, per_level_subscripts=[[1,2]]) → "A(1,2)"
+        """
+        if levels < 1:
+            raise ValueError(f"Indirection levels must be >= 1, got {levels}")
+
+        current = source
+
+        # Resolve each level to get the target variable name
+        for i in range(levels):
+            # Get value at current name (this gives us the next name)
+            value = self._get_value(current)
+
+            # Convert to string for processing
+            if not isinstance(value, str):
+                value = str(value)
+
+            # Handle recursive @-expression (value contains @)
+            while value.startswith("@"):
+                value = self._resolve_recursive_at(value)
+
+            # Apply per-level subscripts if any
+            if per_level_subscripts and i < len(per_level_subscripts):
+                value = self._append_subscripts(value, per_level_subscripts[i])
+
+            current = value
+
+        # Validate that result is a valid variable name
+        if not self._is_valid_var_name(current):
+            raise VarExpectedError(current)
+
+        return current
 
     def resolve_subscript_indirection(self, name: str) -> Any:
         """Resolve indirection within a subscript position.
@@ -446,13 +500,27 @@ class IndirectionResolver:
 
         Returns:
             Variable name with appended subscripts
+
+        Note:
+            String subscripts must be quoted in MUMPS-style name syntax.
+            B("key") + ["sub"] → B("key","sub")
         """
         if not subscripts:
             return name
 
-        # Canonicalize subscripts
-        canonical_subs = [SubscriptCanonicalizer.canonicalize(s) for s in subscripts]
-        subs_str = ",".join(str(s) for s in canonical_subs)
+        # Format subscripts for MUMPS name syntax
+        # Numeric subscripts don't need quotes, strings do
+        formatted_subs = []
+        for s in subscripts:
+            canonical = SubscriptCanonicalizer.canonicalize(s)
+            # Check if it's a canonical numeric string
+            if SubscriptCanonicalizer.is_canonical_numeric_string(canonical):
+                formatted_subs.append(canonical)
+            else:
+                # String subscripts need quotes - escape internal quotes
+                escaped = canonical.replace('"', '""')
+                formatted_subs.append(f'"{escaped}"')
+        subs_str = ",".join(formatted_subs)
 
         if "(" in name:
             # Already has subscripts - append

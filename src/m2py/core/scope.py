@@ -256,9 +256,12 @@ class CurrentScope:
 
         Args:
             name: MUMPS variable name (may include subscripts)
-            value: Value to set
+            value: Value to set (scalar value or MArray)
 
         Creates intermediate MArray structures as needed for subscripted vars.
+        For simple (non-subscripted) variables, wraps value in MArray for
+        consistency with generated code which expects .value attribute.
+        If value is already an MArray, stores it directly.
         """
         # Handle subscripted names
         if "(" in name:
@@ -269,8 +272,24 @@ class CurrentScope:
         # Translate MUMPS name to Python identifier
         py_name = NameTranslator.to_python(name)
 
-        # Store in primary storage
-        self._store(py_name, value)
+        from m2py.runtime import MArray
+
+        # If value is already an MArray, store it directly
+        if isinstance(value, MArray):
+            self._store(py_name, value)
+            return
+
+        # Wrap in MArray for consistency with generated code
+        # (generated code expects _scope[key].value)
+        existing = self._lookup(py_name, None)
+        if existing is not None and isinstance(existing, MArray):
+            # Update existing MArray
+            existing.value = value
+        else:
+            # Create new MArray with value
+            arr = MArray()
+            arr.value = value
+            self._store(py_name, arr)
 
     def set_subscripted(self, name: str, subscripts: List[Any], value: Any) -> None:
         """Set subscripted variable value.
@@ -620,8 +639,13 @@ class CurrentScope:
     def _parse_subscripted_name(self, name: str) -> Tuple[str, List[str]]:
         """Parse 'A(1,2)' into ('A', ['1', '2']).
 
-        Handles simple cases. Complex nested parentheses or quoted strings
-        would need more sophisticated parsing.
+        Handles quoted string subscripts by removing surrounding quotes.
+        MUMPS name syntax uses "..." for string subscripts.
+
+        Examples:
+            'A(1,2)' -> ('A', ['1', '2'])
+            'B("key")' -> ('B', ['key'])
+            'B("key","sub")' -> ('B', ['key', 'sub'])
         """
         paren_idx = name.find("(")
         if paren_idx == -1:
@@ -636,13 +660,66 @@ class CurrentScope:
 
         subs_str = name[paren_idx + 1 : -1]
 
-        # Simple split by comma (doesn't handle nested parens in subscripts)
-        # For complex cases, would need recursive parsing
         if not subs_str:
             return (base_name, [])
 
-        subscripts = [s.strip() for s in subs_str.split(",")]
+        # Parse subscripts, handling quoted strings and nested parens
+        subscripts = self._parse_subscript_list(subs_str)
         return (base_name, subscripts)
+
+    def _parse_subscript_list(self, subs_str: str) -> List[str]:
+        """Parse a comma-separated list of subscripts.
+
+        Handles:
+        - Quoted strings: "hello" -> hello
+        - Unquoted values: 123 -> 123
+        - Nested parentheses: (a,b) stays intact within a subscript
+
+        Args:
+            subs_str: String like '1,"key",3' or '"hello"'
+
+        Returns:
+            List of subscript values with quotes removed from strings
+        """
+        subscripts = []
+        current = ""
+        depth = 0
+        in_quotes = False
+        i = 0
+
+        while i < len(subs_str):
+            ch = subs_str[i]
+
+            if ch == '"' and depth == 0:
+                if in_quotes:
+                    # Check for escaped quote ""
+                    if i + 1 < len(subs_str) and subs_str[i + 1] == '"':
+                        current += '"'  # Add single quote for escaped ""
+                        i += 2
+                        continue
+                    else:
+                        in_quotes = False
+                else:
+                    in_quotes = True
+                i += 1
+                continue
+            elif ch == "(" and not in_quotes:
+                depth += 1
+                current += ch
+            elif ch == ")" and not in_quotes:
+                depth -= 1
+                current += ch
+            elif ch == "," and depth == 0 and not in_quotes:
+                subscripts.append(current.strip())
+                current = ""
+            else:
+                current += ch
+            i += 1
+
+        if current or subscripts:  # Handle last subscript
+            subscripts.append(current.strip())
+
+        return subscripts
 
 
 # Sentinel for distinguishing "not found" from None
