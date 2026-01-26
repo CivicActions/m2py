@@ -727,3 +727,111 @@ class TestWriteIndirectionEndToEnd:
         """W @A where A="^V", ^V=123 → 123."""
         result = execute_mumps('TEST K ^V S ^V=123,A="^V" W @A Q')
         assert result.output == "123"
+
+
+@pytest.mark.codegen
+class TestSubscriptCanonicalizationEndToEnd:
+    """End-to-end tests for subscript canonicalization.
+
+    Feature: 018-unified-variable-system (US4)
+    These tests verify that subscripts canonicalize correctly so that
+    A(1), A(01), A(1.0), A("1") all reference the same node, while
+    A("01") is DISTINCT from A(1).
+    """
+
+    def test_int_and_canonical_string_same_node(self, execute_mumps):
+        """S A(1)="one" W A("1") outputs one.
+
+        A(1) and A("1") access the same node.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(1)="one" W A("1") Q')
+        assert result.output == "one"
+
+    def test_float_equal_to_int_same_node(self, execute_mumps):
+        """S A(1.0)="x" W A(1) outputs x.
+
+        A(1.0) canonicalizes to A(1), so they access the same node.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(1.0)="x" W A(1) Q')
+        assert result.output == "x"
+
+    def test_leading_zero_string_different_from_int(self, execute_mumps):
+        """S A(1)="one" S A("01")="zero-one" W A(1),":",A("01") outputs one:zero-one.
+
+        A("01") is DIFFERENT from A(1) because "01" is non-canonical.
+        YDB verified.
+        """
+        result = execute_mumps(
+            'TEST S A(1)="one" S A("01")="zero-one" W A(1),":",A("01") Q'
+        )
+        assert result.output == "one:zero-one"
+
+    def test_leading_zero_decimal_different(self, execute_mumps):
+        """S A("0.5")="str" S A(.5)="num" W A("0.5"),":",A(.5) outputs str:num.
+
+        A("0.5") has leading zero so it's non-canonical, different from A(.5).
+        YDB verified.
+        """
+        result = execute_mumps(
+            'TEST S A("0.5")="str" S A(.5)="num" W A("0.5"),":",A(.5) Q'
+        )
+        assert result.output == "str:num"
+
+    def test_trailing_zero_decimal_different(self, execute_mumps):
+        """S A(1)="int" S A("1.0")="str" W A(1),":",A("1.0") outputs int:str.
+
+        A("1.0") has trailing zero so it's non-canonical, different from A(1).
+        YDB verified.
+        """
+        result = execute_mumps(
+            'TEST S A(1)="int" S A("1.0")="str" W A(1),":",A("1.0") Q'
+        )
+        assert result.output == "int:str"
+
+    def test_decimal_canonical_form(self, execute_mumps):
+        """S A(0.5)="half" W A(.5) outputs half.
+
+        0.5 canonicalizes to .5, so A(0.5) and A(.5) access the same node.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(0.5)="half" W A(.5) Q')
+        assert result.output == "half"
+
+    def test_negative_decimal_canonical_form(self, execute_mumps):
+        """S A(-0.5)="neg" W A(-.5) outputs neg.
+
+        -0.5 canonicalizes to -.5, so they access the same node.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(-0.5)="neg" W A(-.5) Q')
+        assert result.output == "neg"
+
+    def test_multiple_subscripts_canonicalization(self, execute_mumps):
+        """S A(1,2,3)="v" W A(1.0,2.0,3.0) outputs v.
+
+        All subscripts canonicalize: 1.0→1, 2.0→2, 3.0→3.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(1,2,3)="v" W A(1.0,2.0,3.0) Q')
+        assert result.output == "v"
+
+    def test_subscript_canonicalization_with_indirection(self, execute_mumps):
+        """S X="A(1)" S A(1)="val" W @X outputs val.
+
+        Indirection with subscripts: @"A(1)" accesses A(1).
+        The subscript in the resolved string must match canonical form.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S X="A(1)",A(1)="val" W @X Q')
+        assert result.output == "val"
+
+    def test_global_subscript_canonicalization(self, execute_mumps):
+        """S ^G(1)="v" W ^G(1.0) outputs v.
+
+        Global subscript canonicalization: ^G(1.0) → ^G(1).
+        YDB verified.
+        """
+        result = execute_mumps('TEST K ^G S ^G(1)="v" W ^G(1.0) Q')
+        assert result.output == "v"

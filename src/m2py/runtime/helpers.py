@@ -22,9 +22,26 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Tuple
 
+from m2py.core.subscripts import SubscriptCanonicalizer
+
 if TYPE_CHECKING:
     from m2py.runtime import MArray
     from m2py.runtime.globals import GlobalStorageBackend
+
+
+def _canonicalize_subscript(sub: Any) -> str:
+    """Canonicalize a subscript value for consistent MArray lookup.
+
+    Uses SubscriptCanonicalizer for proper MUMPS subscript canonicalization
+    so that A(1), A(1.0), and A("1") all access the same node.
+
+    Args:
+        sub: Subscript value (int, float, Decimal, str, etc.)
+
+    Returns:
+        Canonical string representation
+    """
+    return SubscriptCanonicalizer.canonicalize(sub)
 
 
 def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
@@ -373,8 +390,8 @@ def m_data(array: MArray | None, subscripts: tuple[str, ...] = ()) -> int:
     # Navigate to target node via subscripts
     node = array
     for sub in subscripts:
-        # MArray canonicalizes all subscripts to strings
-        key = str(sub)
+        # Canonicalize subscript for consistent lookup
+        key = _canonicalize_subscript(sub)
         if key not in node._children:
             return 0
         node = node._children[key]
@@ -456,8 +473,8 @@ def m_order(
     # Navigate to parent node
     node = array
     for sub in parent_subs:
-        # MArray canonicalizes all subscripts to strings
-        key = str(sub)
+        # Canonicalize subscript for consistent lookup
+        key = _canonicalize_subscript(sub)
         if key not in node._children:
             return ""
         node = node._children[key]
@@ -468,13 +485,16 @@ def m_order(
     if direction == -1:
         keys = list(reversed(keys))
 
-    if start_key == "":
+    # Canonicalize start_key for comparison
+    start_key_canonical = _canonicalize_subscript(start_key) if start_key != "" else ""
+
+    if start_key_canonical == "":
         # Empty string means get first key in the current direction
         return m_format_output(keys[0]) if keys else ""
 
     # Find the next key after start_key
     # First, locate start_key in the sorted list
-    start_sort_key = _mumps_collation_key(start_key)
+    start_sort_key = _mumps_collation_key(start_key_canonical)
 
     for key in keys:
         key_sort = _mumps_collation_key(key)
@@ -859,8 +879,8 @@ def m_get(
     # Traverse subscripts
     node = array
     for sub in subscripts:
-        # MArray canonicalizes all subscripts to strings
-        key = str(sub)
+        # Canonicalize subscript for consistent lookup
+        key = _canonicalize_subscript(sub)
         if key not in node._children:
             return default  # Subscript path doesn't exist
         node = node._children[key]

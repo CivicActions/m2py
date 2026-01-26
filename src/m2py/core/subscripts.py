@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 import re
+from decimal import Decimal
 from typing import Any, Union
 
 
@@ -63,8 +64,8 @@ class SubscriptCanonicalizer:
         if hasattr(value, "value"):
             value = value.value
 
-        # Numeric types: always canonicalize
-        if isinstance(value, (int, float)):
+        # Numeric types: always canonicalize (including Decimal)
+        if isinstance(value, (int, float, Decimal)):
             return SubscriptCanonicalizer.canonicalize_numeric(value)
 
         # String types: only canonicalize if already in canonical form
@@ -80,7 +81,7 @@ class SubscriptCanonicalizer:
         return str(value)
 
     @staticmethod
-    def canonicalize_numeric(n: Union[int, float]) -> str:
+    def canonicalize_numeric(n: Union[int, float, Decimal]) -> str:
         """Canonicalize a numeric value.
 
         Rules per MUMPS specification:
@@ -89,7 +90,7 @@ class SubscriptCanonicalizer:
         - Float with fractional: Remove trailing zeros, no leading zero before decimal
 
         Args:
-            n: Numeric value
+            n: Numeric value (int, float, or Decimal)
 
         Returns:
             Canonical string representation
@@ -108,6 +109,14 @@ class SubscriptCanonicalizer:
             >>> SubscriptCanonicalizer.canonicalize_numeric(-.5)
             '-.5'
         """
+        # Handle Decimal type
+        if isinstance(n, Decimal):
+            # Check if it's effectively an integer
+            if n == int(n):
+                return str(int(n))
+            # Convert to float for canonical formatting
+            n = float(n)
+
         # Handle integer or float that equals integer
         if isinstance(n, int) or (
             isinstance(n, float) and n == int(n) and math.isfinite(n)

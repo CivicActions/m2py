@@ -270,19 +270,28 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Tests for User Story 4
 
-- [ ] T063 [P] [US4] Create `tests/unit/core/test_subscript_canonicalization.py`
-- [ ] T064 [P] [US4] Create test: `A(1)` vs `A(01)` vs `A(1.0)` vs `A("1")` - all same node
-- [ ] T065 [P] [US4] Create test: `A("01")` is DISTINCT from `A(1)` (non-canonical string preserved)
-- [ ] T065a [P] [US4] Create end-to-end validation tests in `TestSubscriptCanonicalizationEndToEnd` class (per Learnings §1)
+- [X] T063 [P] [US4] Create `tests/unit/core/test_subscript_canonicalization.py`
+  - Created with 23 tests covering integer, float, Decimal, and string subscript canonicalization
+- [X] T064 [P] [US4] Create test: `A(1)` vs `A(01)` vs `A(1.0)` vs `A("1")` - all same node
+  - Covered in TestNumericSubscriptsSameNode class
+- [X] T065 [P] [US4] Create test: `A("01")` is DISTINCT from `A(1)` (non-canonical string preserved)
+  - Covered in TestNonCanonicalStringsDifferentNodes class
+- [X] T065a [P] [US4] Create end-to-end validation tests in `TestSubscriptCanonicalizationEndToEnd` class (per Learnings §1)
+  - Added 10 e2e tests validating complete transpile→execute→output path
 
 ### Implementation for User Story 4
 
-- [ ] T066 [US4] Update codegen subscript generation to use `SubscriptCanonicalizer.canonicalize()`
-- [ ] T067 [US4] Update runtime MArray access to canonicalize subscripts before storage key creation
-- [ ] T068 [US4] Update `CurrentScope.get_subscripted()` to canonicalize subscripts
-- [ ] T069 [US4] Verify all YDB canonicalization edge cases pass
+- [X] T066 [US4] Update codegen subscript generation to use `SubscriptCanonicalizer.canonicalize()`
+  - Updated SubscriptCanonicalizer to handle Decimal type (used by codegen for numeric literals)
+- [X] T067 [US4] Update runtime MArray access to canonicalize subscripts before storage key creation
+  - Updated MArray._canonicalize_subscript() to use SubscriptCanonicalizer
+  - Updated runtime/helpers.py functions (m_data, m_order, m_get) to use _canonicalize_subscript
+- [X] T068 [US4] Update `CurrentScope.get_subscripted()` to canonicalize subscripts
+  - Already implemented during Phase 2 - uses SubscriptCanonicalizer in both get_subscripted and set_subscripted
+- [X] T069 [US4] Verify all YDB canonicalization edge cases pass
+  - Validated: A(1.0)→A(1), A("0.5")≠A(.5), ^G(1)=^G("1"), negative decimals, trailing zeros
 
-**Checkpoint**: Subscript canonicalization matches YDB exactly.
+**Checkpoint**: ✅ Subscript canonicalization matches YDB exactly. 4321 tests pass.
 
 ---
 

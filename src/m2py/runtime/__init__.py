@@ -597,16 +597,22 @@ class MArray:
     def _canonicalize_subscript(self, key: Any) -> str:
         """Convert subscript to canonical string form.
 
-        In MUMPS, all subscripts are strings. This ensures consistent
-        lookup regardless of whether the caller passes int or str.
+        In MUMPS, all subscripts are strings. Numeric values are canonicalized
+        so that A(1), A(1.0), and A("1") all access the same node.
+        Non-canonical string forms like "01" are preserved as-is.
+
+        Uses SubscriptCanonicalizer for consistent canonicalization across
+        runtime and codegen.
 
         Args:
-            key: Subscript value (int, str, or other)
+            key: Subscript value (int, float, str, or other)
 
         Returns:
             Canonical string representation of the subscript
         """
-        return str(key)
+        from m2py.core.subscripts import SubscriptCanonicalizer
+
+        return SubscriptCanonicalizer.canonicalize(key)
 
     def __setitem__(self, key: Any, value: Any) -> None:
         """Set value at subscript.

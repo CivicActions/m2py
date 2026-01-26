@@ -7,6 +7,8 @@ Feature: 018-unified-variable-system
 Requirements: FR-003, FR-004
 """
 
+from decimal import Decimal
+
 from m2py.core.subscripts import SubscriptCanonicalizer
 
 
@@ -86,6 +88,19 @@ class TestCanonicalize:
         assert SubscriptCanonicalizer.canonicalize(MockMArray(1)) == "1"
         assert SubscriptCanonicalizer.canonicalize(MockMArray("01")) == "01"
         assert SubscriptCanonicalizer.canonicalize(MockMArray("test")) == "test"
+
+    def test_decimal_equal_to_int(self):
+        """Decimal values equal to integers canonicalize as integers."""
+        assert SubscriptCanonicalizer.canonicalize(Decimal("1.0")) == "1"
+        assert SubscriptCanonicalizer.canonicalize(Decimal("1.00")) == "1"
+        assert SubscriptCanonicalizer.canonicalize(Decimal("5.0")) == "5"
+        assert SubscriptCanonicalizer.canonicalize(Decimal("-3.0")) == "-3"
+
+    def test_decimal_with_fractional(self):
+        """Decimal values with fractional parts."""
+        assert SubscriptCanonicalizer.canonicalize(Decimal("1.5")) == "1.5"
+        assert SubscriptCanonicalizer.canonicalize(Decimal("0.5")) == ".5"
+        assert SubscriptCanonicalizer.canonicalize(Decimal("-0.5")) == "-.5"
 
 
 class TestCanonicalizeNumeric:
