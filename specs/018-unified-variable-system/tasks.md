@@ -692,21 +692,24 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 - [X] T143h Removed `_rt.append_subscripts()` calls - now using per_level_subscripts parameter
   - MERGE source/dest indirection now handled by unified API
   - $DATA indirection uses simpler append-after-resolution pattern
+- [X] T143i Migrated remaining `resolve_indirection`/`get_indirection_source` calls to unified API
+  - $ORDER indirection now uses `resolve_for_target` consistently for all levels
+  - SET $PIECE indirection now uses `resolve_for_target` for name resolution
+  - `_generate_inner_name_expr` now uses `resolve_for_target` for NEW command
+  - Updated module docstring in indirection.py to reflect current architecture
 
 **Notes**: 
 - Removed `_generate_name_indirection_write_legacy()` (137 lines) - confirmed dead code with no callers
 - Removed `_generate_name_indirection_legacy()` (138 lines) - inlined logic using unified get_indirected() with levels-1
 - Removed `_build_subscripted_name_expr()` (35 lines) - no longer needed
-- Simplified `_generate_inner_name_expr()` (58→35 lines) - kept for NEW/MERGE commands
+- Simplified `_generate_inner_name_expr()` (58→35 lines) - now uses resolve_for_target
 - Removed `generate_multi_level_indirection()` (45 lines) - dead code, only tested directly
 - Updated outdated UNIFIED_VAR_DEPRECATED markers to reflect current state
 - Added missing public functions to `__all__` in indirection.py
 - `codegen/names.py` kept as re-export wrapper for backward compatibility
 - Added `generate_merge_indirection_name()` for MERGE indirection using unified API
 - Added `generate_data_indirection_name()` for $DATA indirection using unified API
-
-**Remaining old patterns** (in codegen):
-- SET $PIECE indirection handling (complex lambda case - requires further analysis)
+- **All codegen now uses unified API** - no more `resolve_indirection` or `get_indirection_source` calls
 
 ### Phase 15b: Remove Remaining Deprecated Markers
 

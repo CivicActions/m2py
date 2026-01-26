@@ -1068,8 +1068,8 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
         getter = f'lambda: _rt.globals.get({temp_name}, {temp_subs}) or ""'
         setter = f"lambda v: _rt.globals.set({temp_name}, {temp_subs}, v)"
     elif isinstance(first_arg, MIndirection):
-        # Spec 017 Phase 6 (T027): Indirection: use _rt.get_var/_rt.set_var
-        # Generate the indirected variable name expression at runtime
+        # Feature: 018-unified-variable-system
+        # Indirection: use resolve_for_target to get NAME, then get_var/set_var for VALUE
         from m2py.codegen.indirection import _count_indirection_levels
 
         levels, inner_expr = _count_indirection_levels(first_arg)
@@ -1082,8 +1082,6 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
                 sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
                 all_subs.extend(sub_exprs)
             # Build f-string for subscripts to avoid escaping issues with quotes
-            # Use single quotes for the f-string so double-quoted strings inside work
-            # subs_fstr generates code like: f'({expr1}, {expr2})' which evaluates at runtime
             if len(all_subs) == 1:
                 subs_fstr = f"f'({{{all_subs[0]}}})'"
             else:
@@ -1092,10 +1090,8 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
 
             if isinstance(inner_expr, MVariable):
                 base_name = inner_expr.name
-                if levels > 1:
-                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + {subs_fstr}'
-                else:
-                    name_expr = f'_rt.get_indirection_source("{base_name}", _scope) + {subs_fstr}'
+                # Use resolve_for_target for consistent name resolution
+                name_expr = f'_rt.resolve_for_target("{base_name}", _scope, levels={levels}) + {subs_fstr}'
             else:
                 name_expr_base = generate_expr(inner_expr, ctx)
                 name_expr = f"str({name_expr_base}) + {subs_fstr}"
@@ -1103,14 +1099,15 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
             # Simple indirection without subscripts
             if isinstance(inner_expr, MVariable):
                 base_name = inner_expr.name
-                if levels > 1:
-                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels - 1}, _scope))'
-                else:
-                    name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
+                # Use resolve_for_target with appropriate levels
+                name_expr = (
+                    f'_rt.resolve_for_target("{base_name}", _scope, levels={levels})'
+                )
             else:
                 name_expr_base = generate_expr(inner_expr, ctx)
                 if levels > 1:
-                    name_expr = f"str(_rt.resolve_indirection(str({name_expr_base}), {levels - 1}, _scope))"
+                    # For non-variable expressions with multi-level, use resolve_for_target
+                    name_expr = f"_rt.resolve_for_target(str({name_expr_base}), _scope, levels={levels - 1})"
                 else:
                     name_expr = f"str({name_expr_base})"
 

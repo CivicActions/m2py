@@ -533,10 +533,10 @@ def _generate_indirection(
     Spec 012 Phase 3 (T016): Dispatches to codegen/indirection.py for
     runtime indirection handling.
 
-    Handles:
-    - Simple NAME: @X → _rt.get_var(_scope.get("X", ""), _scope)
-    - Multi-level NAME: @@X → _rt.resolve_indirection("X", 2, _scope)
-    - With subscripts: @NAME@(1,2) → _rt.get_var(f'{...}(1,2)', _scope)
+    Feature: 018-unified-variable-system - Now uses unified runtime methods:
+    - Simple NAME: @X → _rt.get_indirected("X", _scope, levels=1)
+    - Multi-level NAME: @@X → _rt.get_indirected("X", _scope, levels=2)
+    - With subscripts: @NAME@(1,2) → handled via per_level_subscripts
     - ARGUMENT type: @A in IF → evaluates value of A as expression
 
     Args:
@@ -1213,15 +1213,12 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             else:
                 full_name_expr = f'"{base_name}"'
 
-            if levels > 1:
-                # Use resolve_for_target (unified method) to get the variable NAME
-                # without validating its existence. $ORDER/$NEXT just need the name
-                # to find the next subscript - the target doesn't need to exist.
-                # For cases like $N(@@C) where C(1)="^V1A(22,44,-1)", the exact
-                # subscript may not exist, but $NEXT finds the next one.
-                name_expr = f"str(_rt.resolve_for_target({full_name_expr}, _scope, levels={levels}))"
-            else:
-                name_expr = f"_rt.get_indirection_source({full_name_expr}, _scope)"
+            # Feature: 018-unified-variable-system
+            # Use resolve_for_target (unified method) to get the variable NAME.
+            # $ORDER/$NEXT just need the name to find the next subscript.
+            name_expr = (
+                f"_rt.resolve_for_target({full_name_expr}, _scope, levels={levels})"
+            )
         else:
             name_expr_base = generate_expr(inner_expr, ctx)
             name_expr = f"str({name_expr_base})"

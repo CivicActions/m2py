@@ -11,12 +11,12 @@ Spec 012: This module provides code generation support for:
 Code generation strategy:
 - Constant XECUTE strings: Inline the generated Python code
 - Dynamic XECUTE: Call _rt.execute() at runtime
-- Name indirection: Call _rt.get_var()/_rt.set_var() at runtime
+- Name indirection: Call unified runtime methods (set_indirected, get_indirected,
+  kill_indirected, resolve_for_target) which use IndirectionResolver internally
 - Pattern indirection: Call _rt.compile_pattern_indirect() at runtime
 
-Note: This module implements the unified variable system from
-Spec 018-unified-variable-system. Functions with "_legacy" suffix
-are kept only as fallbacks for edge cases.
+Spec 018-unified-variable-system: All indirection handling now uses the unified
+variable system. Legacy functions have been removed or migrated.
 """
 
 from __future__ import annotations
@@ -138,10 +138,11 @@ def _count_indirection_levels_with_subscripts(
 def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> str:
     """Generate Python expression that evaluates to the indirection target variable name.
 
+    Feature: 018-unified-variable-system
     This helper is used by commands that need to resolve an indirection to a variable
-    name at runtime (e.g., NEW @A, MERGE @X=Y).
+    name at runtime (e.g., NEW @A).
 
-    For MVariable: Returns get_indirection_source call to get the VALUE of the variable,
+    For MVariable: Returns resolve_for_target call to get the VALUE of the variable,
     which is the target name for indirection.
 
     For other expressions: Uses generate_expr to evaluate the expression, which gives
@@ -162,13 +163,17 @@ def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> s
     if isinstance(inner_expr, MVariable):
         var_name = inner_expr.name
         if inner_expr.subscripts:
-            # Subscripted variable like A(1,2) - get the value at that subscript
+            # Subscripted variable like A(1,2) - build dynamic name expression
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            return f'str(_rt.get_var("{var_name}(" + ",".join([str(s) for s in [{subs_str}]]) + ")", {scope_expr}))'
+            # Build name string like "A(1,2)" at runtime and resolve
+            full_name_expr = (
+                f'f"{var_name}(" + ",".join([str(s) for s in [{subs_str}]]) + ")"'
+            )
+            return f"_rt.resolve_for_target({full_name_expr}, {scope_expr}, levels=1)"
         else:
-            # Simple variable - use get_indirection_source for validation + value
-            return f'_rt.get_indirection_source("{var_name}", {scope_expr})'
+            # Simple variable - use resolve_for_target for validation + value
+            return f'_rt.resolve_for_target("{var_name}", {scope_expr}, levels=1)'
     else:
         # Other expressions - generate_expr gives the value directly
         return generate_expr(inner_expr, ctx)
