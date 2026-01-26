@@ -340,16 +340,28 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Tests for User Story 6
 
-- [ ] T076 [P] [US6] Create torture test II-129: naked indicator after `@A@(subs)` indirection
-- [ ] T077 [P] [US6] Create test: global access via indirection updates naked indicator
+- [X] T076 [P] [US6] Create torture test II-129: naked indicator after `@A@(subs)` indirection
+  - Created `tests/integration/test_naked_global_indirection.py` with 10 tests
+  - Tests cover: II-129 independent test, full MUGJ pattern, edge cases
+  - Validated against YDB: MATCH
+- [X] T077 [P] [US6] Create test: global access via indirection updates naked indicator
+  - Added `TestGlobalAccessViaIndirectionUpdatesNaked` class with 4 tests
+  - Tests cover: simple indirection, multi-level, per-level subscripts, naked ref strings
 
 ### Implementation for User Story 6
 
-- [ ] T078 [US6] Ensure `IndirectionResolver` updates naked indicator when resolving global references
-- [ ] T079 [US6] Verify `^(subs)` resolves correctly after indirected global access
-- [ ] T080 [US6] Run relevant MUGJ global indirection tests
+- [X] T078 [US6] Ensure `IndirectionResolver` updates naked indicator when resolving global references
+  - Already implemented: `IndirectionResolver._get_global_value()` calls `GlobalManager.get()`
+  - `GlobalManager.get()` and `set()` both call `_update_naked_indicator()`
+- [X] T079 [US6] Verify `^(subs)` resolves correctly after indirected global access
+  - Verified via integration tests: naked refs work correctly after indirected access
+  - `TestNakedIndicatorEdgeCases` covers read/kill/data via indirection
+- [X] T080 [US6] Run relevant MUGJ global indirection tests
+  - All 14 tests in `test_s7_3_multi_level_indirection_subscripts.py` pass
+  - II-127, II-128, II-129 all pass
+  - 4354 total tests pass
 
-**Checkpoint**: Naked indicator works correctly with all forms of indirection.
+**Checkpoint**: ✅ Naked indicator works correctly with all forms of indirection.
 
 ---
 
