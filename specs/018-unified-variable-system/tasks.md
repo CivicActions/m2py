@@ -541,6 +541,65 @@ Compare m2py output against YDB for each checkpoint scenario listed in the phase
 
 ---
 
+## Implementation Learnings (Phase 5 US3)
+
+The following patterns were discovered during Phase 5 US3 implementation:
+
+### 7. Unit Tests for Bug Fix Methods
+
+**Pattern**: When a bug fix introduces or modifies internal methods (especially private helper methods), add dedicated unit tests for those specific methods, not just e2e tests that exercise them indirectly.
+
+**Example**: Bug fix in `_strip_mumps_quotes()` and `_parse_subscripted_name()` for MUMPS-style quoted subscripts required direct unit tests:
+```python
+class TestStripMumpsQuotes:
+    def test_empty_string(self):
+        assert IndirectionResolver._strip_mumps_quotes('""') == ""
+    
+    def test_escaped_quote_inside(self):
+        assert IndirectionResolver._strip_mumps_quotes('"A""B"') == 'A"B'
+```
+
+**Rationale**: E2E tests validate behavior but may not cover all edge cases of internal methods. Unit tests for bug-fix methods ensure the fix is complete and prevent regressions.
+
+**Apply to**: All future bug fixes should include dedicated unit tests for modified internal methods.
+
+### 8. Match Codegen Code Paths in Unit Tests
+
+**Pattern**: When writing unit tests for runtime behavior, use the same resolution mechanism that generated code uses.
+
+**Discovery**: `IndirectionResolver.resolve()` and `MUMPSRuntime.resolve_indirection()` have different semantics for recursive `@`-expressions. Unit tests using `IndirectionResolver.resolve()` for `@@A` where `A="@B"` failed with VAREXPECTED, while generated code (using `MUMPSRuntime.resolve_indirection()`) worked correctly.
+
+**Example**:
+```python
+# WRONG: Unit test using IndirectionResolver (different semantics)
+result = IndirectionResolver.resolve("@A", scope)  # Fails for recursive @
+
+# RIGHT: Unit test using MUMPSRuntime (matches codegen)
+result = _rt.resolve_indirection("A", scope)  # Works for recursive @
+```
+
+**Apply to**: T063-T069 (US4), T070-T075 (US5), T076-T080 (US6)
+
+### 9. Complete Resolution Tests, Not Just Setup
+
+**Pattern**: Tests for complex indirection patterns should verify the final resolved result, not just that the scope was set up correctly.
+
+**Example** (II-132.3 pattern):
+```python
+# INCOMPLETE: Only verifies scope setup
+assert scope.get_local("A") == "@B"  # Doesn't test resolution
+
+# COMPLETE: Verifies actual resolution behavior
+_rt = MUMPSRuntime()
+_rt._scope = scope
+result = _rt.resolve_indirection("@@@A")
+assert result == expected_value
+```
+
+**Apply to**: All torture tests (T055-T057, T076-T077, etc.)
+
+---
+
 ## Notes
 
 - **Total Tasks**: 114 (T000-T000b + T001-T103 + T036a-T036h)
