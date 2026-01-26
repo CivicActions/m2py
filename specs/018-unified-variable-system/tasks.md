@@ -373,16 +373,28 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Tests for User Story 7
 
-- [ ] T081 [P] [US7] Create codegen test: static `S X=1` generates direct assignment
-- [ ] T082 [P] [US7] Create codegen test: dynamic `S @Y=1` generates runtime call
+- [X] T081 [P] [US7] Create codegen test: static `S X=1` generates direct assignment
+  - Created `tests/unit/codegen/test_static_resolution.py` with 19 tests
+  - Tests verify: direct `_scope.setdefault()` calls for static, `set_indirected()` for dynamic
+- [X] T082 [P] [US7] Create codegen test: dynamic `S @Y=1` generates runtime call
+  - Added `TestDynamicResolution` class verifying runtime calls for all indirection patterns
 
 ### Implementation for User Story 7
 
-- [ ] T083 [US7] Implement static resolution detection in codegen for variable references
-- [ ] T084 [US7] Generate direct Python code for statically-resolvable cases
-- [ ] T085 [US7] Ensure performance does not regress vs current implementation
+- [X] T083 [US7] Implement static resolution detection in codegen for variable references
+  - Already implemented: `_generate_single_assignment()` in `codegen/statements.py`
+  - Detection via `isinstance(assignment.target, MIndirectionType)` check at line 882
+  - Static paths: MVariable, GlobalVariable, NakedGlobal → direct Python code
+  - Dynamic paths: MIndirection → `generate_name_indirection_write_unified()` → runtime call
+- [X] T084 [US7] Generate direct Python code for statically-resolvable cases
+  - Direct assignments: `_scope.setdefault('X', MArray()).value = 1`
+  - Direct subscripted: `_scope.setdefault('A', MArray())[subscripts] = value`
+  - Globals via runtime API: `_rt.globals.set()` (always runtime, but no indirection)
+- [X] T085 [US7] Ensure performance does not regress vs current implementation
+  - Verified via `TestCodegenEfficiency` class - no unnecessary runtime calls for static cases
+  - 4373 tests pass (up from 4354)
 
-**Checkpoint**: Optimal codegen for static cases while correctly handling dynamic cases.
+**Checkpoint**: ✅ Optimal codegen for static cases while correctly handling dynamic cases.
 
 ---
 
