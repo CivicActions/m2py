@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
+from m2py.core.names import NameTranslator
+
 if TYPE_CHECKING:
     pass  # Reserved for future type imports
 
@@ -110,42 +112,9 @@ def _is_valid_label(name: str) -> bool:
     return bool(_LABEL_PATTERN.match(name))
 
 
-# UNIFIED_VAR_DEPRECATED: T004 - Replace with core.names.NameTranslator.to_python()
-# This duplicates codegen/names.py logic. After migration, import from core/names.py
-def _translate_label_to_func(label: str) -> str:
-    """Translate a MUMPS label name to its Python function name.
-
-    MUMPS labels can have forms that aren't valid Python identifiers:
-    - Numeric labels: 1, 461, 0123 → _n_1, _n_461, _n_0123
-    - %names: %BREAK, % → _pct_BREAK, _pct_
-
-    This mirrors the logic in m2py.codegen.names.translate_name but
-    is provided here for runtime use to avoid circular imports.
-
-    Args:
-        label: MUMPS label name
-
-    Returns:
-        Python function name
-
-    Examples:
-        >>> _translate_label_to_func("ENTRY")
-        "ENTRY"
-        >>> _translate_label_to_func("1")
-        "_n_1"
-        >>> _translate_label_to_func("%BREAK")
-        "_pct_BREAK"
-    """
-    if not label:
-        return label
-    # Pure numeric: prepend _n_
-    if label[0].isdigit():
-        return "_n_" + label
-    # Starts with %: replace % with _pct_
-    if label[0] == "%":
-        return "_pct_" + label[1:]
-    # Already valid Python identifier
-    return label
+# T074a: Now uses NameTranslator.to_python() from core.names module.
+# The deprecated _translate_label_to_func() function has been removed.
+# All name translation now goes through the single source of truth.
 
 
 def _parse_subscripted_name(name: str) -> Tuple[str, Optional[Tuple[Any, ...]]]:
@@ -2059,7 +2028,7 @@ class MUMPSRuntime:
 
         # Translate MUMPS varname to Python scope key
         # MUMPS %Z is stored in _scope as "_pct_Z"
-        scope_key = _translate_label_to_func(varname)
+        scope_key = NameTranslator.to_python(varname)
 
         # Simple variable - check existence in _scope
         if scope_key not in _scope:
@@ -2416,7 +2385,7 @@ class MUMPSRuntime:
             Variable value, or "" if undefined
         """
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(name)
+        scope_key = NameTranslator.to_python(name)
         raw_value = _scope.get(scope_key, "")
 
         # Evaluate subscripts - resolve variable references like "I" to their values
@@ -2683,7 +2652,7 @@ class MUMPSRuntime:
             _scope: Scope dictionary
         """
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(name)
+        scope_key = NameTranslator.to_python(name)
 
         # Evaluate subscripts - resolve variable references like "I" to their values
         eval_subs = _evaluate_subscripts(subscripts, _scope)
@@ -2793,7 +2762,7 @@ class MUMPSRuntime:
 
         # Handle local variables
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(base_name)
+        scope_key = NameTranslator.to_python(base_name)
         if eval_subs is None:
             # Kill entire variable - remove from scope
             _scope.pop(scope_key, None)
@@ -2874,7 +2843,7 @@ class MUMPSRuntime:
 
         # Handle local variables
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(base_name)
+        scope_key = NameTranslator.to_python(base_name)
         if scope_key not in _scope or not isinstance(_scope[scope_key], MArray):
             _scope[scope_key] = MArray()
 
@@ -2941,7 +2910,7 @@ class MUMPSRuntime:
 
         # Handle local variables
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(base_name)
+        scope_key = NameTranslator.to_python(base_name)
         raw_value = _scope.get(scope_key)
         if raw_value is None or not isinstance(raw_value, MArray):
             return None
@@ -3128,7 +3097,7 @@ class MUMPSRuntime:
                     )
             else:
                 # Local: check in _scope (translate MUMPS name to Python scope key)
-                scope_key = _translate_label_to_func(base_name)
+                scope_key = NameTranslator.to_python(base_name)
                 if scope_key not in _scope:
                     raise IndirectionError(
                         expr,
@@ -3184,7 +3153,9 @@ class MUMPSRuntime:
                     variable_name=current_name,
                 )
         else:
-            if base_name not in _scope:
+            # Translate MUMPS name to Python scope key (%DEF -> _pct_DEF)
+            scope_key = NameTranslator.to_python(base_name)
+            if scope_key not in _scope:
                 raise IndirectionError(
                     expr,
                     "undefined final target variable in indirection",
@@ -3608,7 +3579,7 @@ class MUMPSRuntime:
                     evaluated_label_subs = _evaluate_subscripts(label_subs, scope, self)
 
                     # Translate MUMPS name to Python scope key (%X -> _pct_X)
-                    py_label_name = _translate_label_to_func(label_base)
+                    py_label_name = NameTranslator.to_python(label_base)
                     label_var = scope.get(py_label_name)
                     if label_var is not None:
                         if isinstance(label_var, MArray):
@@ -3711,7 +3682,7 @@ class MUMPSRuntime:
                 value = self.globals.get(global_name, ())
         else:
             # Translate MUMPS name to Python scope key (%X -> _pct_X)
-            py_name = _translate_label_to_func(base_name)
+            py_name = NameTranslator.to_python(base_name)
             var = scope.get(py_name)
             if var is None:
                 raise IndirectionError(

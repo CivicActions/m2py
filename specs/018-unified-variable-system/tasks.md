@@ -303,16 +303,30 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Tests for User Story 5
 
-- [ ] T070 [P] [US5] Create integration test: `@"%ABC"` resolves correctly at runtime
-- [ ] T071 [P] [US5] Create test: codegen and runtime produce same translation for all edge cases
+- [X] T070 [P] [US5] Create integration test: `@"%ABC"` resolves correctly at runtime
+  - Created `tests/integration/test_name_translation_consistency.py` with 18 tests
+  - Tests cover: percent names, multi-level indirection, keyword collision avoidance, direct vs indirect equivalence
+- [X] T071 [P] [US5] Create test: codegen and runtime produce same translation for all edge cases
+  - Added `TestCodegenRuntimeConsistency` and `TestCodegenRuntimeNameTranslatorIdentity` classes
+  - Verified that `codegen.names.NameTranslator is core.names.NameTranslator`
 
 ### Implementation for User Story 5
 
-- [ ] T072 [US5] Verify `codegen/names.py` now uses `core.names.NameTranslator`
-- [ ] T073 [US5] Verify `runtime/__init__.py` uses same `NameTranslator` (no duplicate logic)
-- [ ] T074 [US5] Remove the now-dead `_translate_label_to_func()` from runtime (was `# UNIFIED_VAR_DEPRECATED`)
-- [ ] T074a [US5] Update `runtime/__init__.py` to use `core.names.NameTranslator` (moved from Phase 2 T012)
-- [ ] T075 [US5] Run cross-component name translation tests
+- [X] T072 [US5] Verify `codegen/names.py` now uses `core.names.NameTranslator`
+  - Already implemented: `codegen/names.py` re-exports from `core/names.py`
+- [X] T073 [US5] Verify `runtime/__init__.py` uses same `NameTranslator` (no duplicate logic)
+  - Updated all 11 usages of `_translate_label_to_func()` to use `NameTranslator.to_python()`
+  - Added import for `NameTranslator` from `m2py.core.names`
+- [X] T074 [US5] Remove the now-dead `_translate_label_to_func()` from runtime (was `# UNIFIED_VAR_DEPRECATED`)
+  - Removed function definition (lines 113-148)
+  - Updated test file `tests/unit/runtime/test_label_validation.py` to use `NameTranslator`
+- [X] T074a [US5] Update `runtime/__init__.py` to use `core.names.NameTranslator` (moved from Phase 2 T012)
+  - Completed as part of T073/T074
+- [X] T075 [US5] Run cross-component name translation tests
+  - All 4339 tests pass (4339 passed, 1 xfailed)
+  - All 18 new name translation consistency tests pass
+
+**Checkpoint**: ✅ Single source of truth for name translation. No more sync bugs. 4339 tests pass.
 
 **Checkpoint**: Single source of truth for name translation. No more sync bugs.
 

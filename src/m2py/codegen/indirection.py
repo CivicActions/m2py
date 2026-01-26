@@ -1027,14 +1027,14 @@ def generate_indirect_do(
         with ctx.emitter.indented():
             # External call: import routine and call label
             ctx.emitter.line("import importlib")
-            # Import translate helper for numeric/% label lookup
-            ctx.emitter.line("from m2py.runtime import _translate_label_to_func")
+            # Import NameTranslator for numeric/% label lookup
+            ctx.emitter.line("from m2py.core.names import NameTranslator")
             ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
             ctx.emitter.line("if _call_target.label:")
             with ctx.emitter.indented():
                 # Translate label (e.g., "1" → "_n_1", "%X" → "_pct_X")
                 ctx.emitter.line(
-                    "_func = getattr(_module, _translate_label_to_func(_call_target.label), None)"
+                    "_func = getattr(_module, NameTranslator.to_python(_call_target.label), None)"
                 )
                 ctx.emitter.line("if _func is None:")
                 with ctx.emitter.indented():
@@ -1047,7 +1047,7 @@ def generate_indirect_do(
             with ctx.emitter.indented():
                 # Entry label (same name as routine) - also needs translation
                 ctx.emitter.line(
-                    "_func = getattr(_module, _translate_label_to_func(_call_target.routine), None)"
+                    "_func = getattr(_module, NameTranslator.to_python(_call_target.routine), None)"
                 )
                 ctx.emitter.line("if _func is None:")
                 with ctx.emitter.indented():
@@ -1083,10 +1083,10 @@ def generate_indirect_do(
                 ctx.emitter.line("_func = _labels.get(_call_target.label)")
             else:
                 # globals() uses Python function names (e.g., _n_1 for label "1")
-                # Import was already done above (or add it if this is local-only)
-                ctx.emitter.line("from m2py.runtime import _translate_label_to_func")
+                # Import NameTranslator for translation
+                ctx.emitter.line("from m2py.core.names import NameTranslator")
                 ctx.emitter.line(
-                    "_func = globals().get(_translate_label_to_func(_call_target.label))"
+                    "_func = globals().get(NameTranslator.to_python(_call_target.label))"
                 )
             ctx.emitter.line("if _func is None:")
             with ctx.emitter.indented():
