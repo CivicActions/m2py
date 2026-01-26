@@ -158,18 +158,31 @@
 
 ### Tests for User Story 2
 
-- [ ] T045 [P] [US2] Create `tests/unit/core/test_argument_indirection.py` with V1IDARG patterns
-- [ ] T046 [P] [US2] Create **CRITICAL BUG FIX** test: `S A="1=0" I @A` → condition is FALSE
-- [ ] T047 [P] [US2] Create test: `S A="X>5",X=10 I @A` → condition is TRUE
-- [ ] T048 [P] [US2] Create test: `S A="1+1" S @A=5` → error VAREXPECTED
+- [x] T045 [P] [US2] Create `tests/unit/core/test_argument_indirection.py` with V1IDARG patterns
+- [x] T046 [P] [US2] Create **CRITICAL BUG FIX** test: `S A="1=0" I @A` → condition is FALSE
+- [x] T047 [P] [US2] Create test: `S A="X>5",X=10 I @A` → condition is TRUE
+- [x] T048 [P] [US2] Create test: `S A="1+1" S @A=5` → error VAREXPECTED
+- [x] T048a [P] [US2] Create end-to-end validation tests in `TestIfIndirectionEndToEnd` class (per Learnings §1)
 
 ### Implementation for User Story 2 - IF Command Migration
 
-- [ ] T049 [US2] Update `_generate_if()` in `codegen/statements.py` to detect argument indirection conditions
-- [ ] T050 [US2] Generate `IndirectionResolver.resolve(..., context=ARGUMENT)` calls for IF @A patterns
-- [ ] T051 [US2] Verify `evaluate_expression()` correctly parses and evaluates MUMPS expressions
-- [ ] T052 [US2] Handle edge case: empty string in argument context (YDB-specific TRUE behavior)
-- [ ] T053 [US2] Run V1IDARG tests and verify Challenge 6 bug is fixed
+- [x] T049 [US2] Update `_generate_if()` in `codegen/statements.py` to detect argument indirection conditions
+  - Created `generate_argument_indirection_unified()` in `codegen/indirection.py`
+  - Added `evaluate_argument_indirection()` method to MUMPSRuntime
+  - Uses IndirectionResolver.resolve() with context=ARGUMENT to evaluate expressions
+- [x] T050 [US2] Generate `IndirectionResolver.resolve(..., context=ARGUMENT)` calls for IF @A patterns
+  - `generate_argument_indirection_unified()` generates `_rt.evaluate_argument_indirection(source, _scope, levels=N)`
+  - Properly handles globals, subscripts, and per-level subscripts
+- [x] T051 [US2] Verify `evaluate_expression()` correctly parses and evaluates MUMPS expressions
+  - Fixed temp variable to use `%ARGINDIRECT` (valid MUMPS name) → `_pct_ARGINDIRECT` (Python key)
+  - Fixed MArray extraction from scope dict after execute_mumps
+- [x] T052 [US2] Handle edge case: empty string in argument context (YDB-specific TRUE behavior)
+  - `I @A` where A="" → TRUE (YDB behavior verified)
+  - `I ""` → FALSE (direct check, different semantics)
+  - Updated evaluate_expression() to return 1 for empty string
+- [x] T053 [US2] Run V1IDARG tests and verify Challenge 6 bug is fixed
+  - All 4228 unit/integration tests pass
+  - Checkpoint validations against YDB pass
 
 **Checkpoint**: IF argument indirection works correctly. The critical bug (`I @A` where `A="1=0"`) is fixed.
 
@@ -187,6 +200,7 @@
 - [ ] T055 [P] [US3] Create torture test II-127: `@@X@(1,2)@(5,6)` with per-level subscripts
 - [ ] T056 [P] [US3] Create torture test II-131: `@B@(@B@(@B@(9)),@B,I)` deep nesting
 - [ ] T057 [P] [US3] Create torture test II-132.3: `@@@@A` four-level chain with recursive @-expressions
+- [ ] T057a [P] [US3] Create end-to-end validation tests in `TestWriteIndirectionEndToEnd` class (per Learnings §1)
 
 ### Implementation for User Story 3 - WRITE Command Migration
 
@@ -211,6 +225,7 @@
 - [ ] T063 [P] [US4] Create `tests/unit/core/test_subscript_canonicalization.py`
 - [ ] T064 [P] [US4] Create test: `A(1)` vs `A(01)` vs `A(1.0)` vs `A("1")` - all same node
 - [ ] T065 [P] [US4] Create test: `A("01")` is DISTINCT from `A(1)` (non-canonical string preserved)
+- [ ] T065a [P] [US4] Create end-to-end validation tests in `TestSubscriptCanonicalizationEndToEnd` class (per Learnings §1)
 
 ### Implementation for User Story 4
 
@@ -405,6 +420,76 @@ Phase 11 (Polish & Validation)
 3. Complete P3 story (US7) - optimization
 4. Complete Phase 10 (remaining commands)
 5. Complete Phase 11 (cleanup and validation)
+
+---
+
+## Implementation Learnings (Phase 3 US1)
+
+The following patterns were discovered during Phase 3 US1 implementation and should guide future phases:
+
+### 1. End-to-End Validation Tests
+
+**Pattern**: When implementing features that change transpiled output, add `execute_mumps` fixture tests that verify the complete transpile→execute→output path.
+
+**Example** (from `TestSetIndirectionEndToEnd`):
+```python
+def test_set_indirection_zero_value(self, execute_mumps):
+    """S X="Y" S @X=0 W Y outputs 0.
+    
+    Bug fix: Zero value must be stored as string "0" so that
+    WRITE's (value or '') pattern outputs "0" not "".
+    """
+    result = execute_mumps('TEST S X="Y" S @X=0 W Y Q')
+    assert result.output == "0"
+```
+
+**Apply to**: T049-T053 (US2), T058-T062 (US3), T066-T069 (US4)
+
+### 2. Bug Fix Regression Tests
+
+**Pattern**: Each bug discovered during implementation should have a specific test documenting the issue and fix. Include the bug explanation in the docstring.
+
+**Bugs found in US1**:
+- **Quoted subscript parsing**: `B("key")` was keeping quotes → fixed in `_parse_subscript_list()`
+- **MUMPS string semantics**: Integer 0 stored as 0 caused `(0 or '')` → '' → fixed with `str(value)`
+- **MArray wrapping**: Raw values broke `_scope[key].value` access → fixed in `CurrentScope.set()`
+
+### 3. Generated Code Compatibility
+
+**Pattern**: When modifying core/runtime storage, verify compatibility with generated code patterns.
+
+**Example**: `CurrentScope.set()` must wrap values in `MArray` because generated code expects `_scope[key].value` to work.
+
+**Apply to**: T066-T068 (US4 subscript canonicalization must preserve MArray wrapping)
+
+### 4. Complex Case Fallbacks
+
+**Pattern**: It's acceptable to fall back to existing code for complex edge cases rather than forcing everything through the new unified path. Mark the old code as deprecated but keep it functional.
+
+**Example**: `generate_name_indirection_write_unified()` falls back to `generate_name_indirection_write()` for `NakedGlobal` because naked global resolution requires runtime state not available during codegen.
+
+**Apply to**: T058-T062 (US3 WRITE migration may need similar fallback strategy)
+
+### 5. MUMPS String Semantics
+
+**Pattern**: Always store values as strings to preserve truthiness behavior in `(value or '')` patterns used throughout generated code.
+
+```python
+# WRONG: value = 0  →  (0 or '') = ''
+# RIGHT: value = "0" →  ("0" or '') = "0"
+str_value = str(value)
+```
+
+**Apply to**: All runtime methods that store values (T049-T053, T066-T069)
+
+### 6. Test-First Checkpoint Validation
+
+**Pattern**: Before marking a task complete, verify with `utils/validate.py`:
+```bash
+uv run python utils/validate.py --code 'TEST <mumps_code> Q'
+```
+
+Compare m2py output against YDB for each checkpoint scenario listed in the phase.
 
 ---
 

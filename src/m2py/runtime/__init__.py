@@ -2598,6 +2598,69 @@ class MUMPSRuntime:
         # Set via CurrentScope for locals
         cs.set(target, str_value)
 
+    def evaluate_argument_indirection(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> Any:
+        """Evaluate argument indirection using unified components.
+
+        Feature: 018-unified-variable-system (T050, T051)
+        This is the FIX for Challenge 6 bug.
+
+        Argument indirection evaluates the resolved value AS AN EXPRESSION,
+        not as a variable name to look up. For example:
+        - I @A where A="1=0" → evaluates "1=0" → 0 (FALSE)
+        - I @A where A="X>5" and X=10 → evaluates "X>5" → 1 (TRUE)
+
+        The OLD behavior passed the string "1=0" to m_truth(), which
+        converted to 1 (TRUE) because it starts with "1".
+
+        The CORRECT behavior parses "1=0" as a MUMPS expression and
+        evaluates it, resulting in 0 (FALSE) because 1 ≠ 0.
+
+        Uses IndirectionResolver.resolve() with context=ARGUMENT to
+        properly evaluate the expression.
+
+        Args:
+            source: Source variable name for indirection (e.g., "A" for @A)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @A, 2 for @@A, etc.)
+            per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
+
+        Returns:
+            Evaluated result of the expression
+
+        Examples:
+            # I @A where A="1=0"
+            evaluate_argument_indirection("A", scope, levels=1)
+            # Returns 0 (FALSE) because 1=0 is false
+
+            # I @A where A="X>5" and X=10
+            evaluate_argument_indirection("A", scope, levels=1)
+            # Returns 1 (TRUE) because 10>5 is true
+
+            # I @@A where A="B", B="1=1"
+            evaluate_argument_indirection("A", scope, levels=2)
+            # Returns 1 (TRUE) because 1=1 is true
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionContext, IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve with ARGUMENT context to evaluate expression
+        return resolver.resolve(
+            source,
+            levels=levels,
+            context=IndirectionContext.ARGUMENT,
+            per_level_subscripts=per_level_subscripts,
+        )
+
     def _set_local_var(
         self,
         name: str,

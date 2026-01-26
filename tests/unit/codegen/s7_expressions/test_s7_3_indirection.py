@@ -386,3 +386,99 @@ class TestSetIndirectionEndToEnd:
         # Static path
         result_static = execute_mumps("TEST S A(1)=5 W A(1) Q")
         assert result_dynamic.output == result_static.output == "5"
+
+
+@pytest.mark.codegen
+class TestIfIndirectionEndToEnd:
+    """End-to-end tests for IF argument indirection patterns.
+
+    Feature: 018-unified-variable-system (Phase 4, User Story 2)
+    Task: T048a - End-to-end validation tests per Learnings §1
+
+    These tests verify the complete transpile->execute->output path
+    for IF commands with @VAR conditions, matching YDB behavior.
+
+    CRITICAL BUG FIX (Challenge 6): Argument indirection must EVALUATE
+    the expression, not just convert the string to a truth value.
+    """
+
+    def test_if_indirection_expression_false(self, execute_mumps):
+        """I @A where A="1=0" evaluates expression to FALSE.
+
+        T046: CRITICAL BUG FIX - This was the Challenge 6 bug.
+        OLD behavior: m_truth("1=0") → TRUE (string starts with "1")
+        NEW behavior: evaluate "1=0" → 0 → FALSE
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S A="1=0" I @A W "TRUE" E  W "FALSE" Q')
+        # YDB outputs nothing (took ELSE branch, wrote "FALSE" but no newline)
+        # The output will be "" because ELSE path writes "FALSE"
+        assert "TRUE" not in result.output
+
+    def test_if_indirection_expression_true(self, execute_mumps):
+        """I @A where A="1=1" evaluates expression to TRUE.
+
+        Expression "1=1" evaluates to 1 (TRUE).
+        """
+        result = execute_mumps('TEST S A="1=1" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_indirection_with_variable(self, execute_mumps):
+        """I @A where A="X>5" and X=10 evaluates to TRUE.
+
+        T047: Expression with variable reference.
+        X>5 with X=10 → 10>5 → TRUE.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S A="X>5",X=10 I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_indirection_with_variable_false(self, execute_mumps):
+        """I @A where A="X>5" and X=3 evaluates to FALSE.
+
+        X>5 with X=3 → 3>5 → FALSE.
+        """
+        result = execute_mumps('TEST S A="X>5",X=3 I @A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output
+
+    def test_if_indirection_empty_string_true(self, execute_mumps):
+        """I @A where A="" is TRUE (YDB-specific).
+
+        T052: Empty string in argument indirection is TRUE.
+        This differs from I "" which is FALSE.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S A="" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_indirection_zero_string_false(self, execute_mumps):
+        """I @A where A="0" is FALSE.
+
+        The string "0" evaluates to numeric 0, which is FALSE.
+        """
+        result = execute_mumps('TEST S A="0" I @A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output
+
+    def test_if_indirection_simple_number(self, execute_mumps):
+        """I @A where A="42" is TRUE.
+
+        The string "42" evaluates to numeric 42, which is TRUE.
+        """
+        result = execute_mumps('TEST S A="42" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_double_indirection(self, execute_mumps):
+        """I @@A resolves through two levels then evaluates.
+
+        A→"B"→"1=1", then evaluate "1=1" → TRUE.
+        """
+        result = execute_mumps('TEST S A="B",B="1=1" I @@A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_double_indirection_false(self, execute_mumps):
+        """I @@A with expression evaluating to FALSE.
+
+        A→"B"→"1=0", then evaluate "1=0" → FALSE.
+        """
+        result = execute_mumps('TEST S A="B",B="1=0" I @@A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output

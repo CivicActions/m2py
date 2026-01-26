@@ -326,6 +326,12 @@ class IndirectionResolver:
         Instead of returning the string to m_truth(), we parse and
         evaluate the actual MUMPS expression.
 
+        T052 (Challenge 7): Empty string in argument context is TRUE in YDB.
+        This is YDB-specific behavior where `I @A` where A="" returns TRUE,
+        even though `I ""` returns FALSE. The distinction appears to be:
+        - Successful indirection resolution (even to empty) → TRUE
+        - Direct empty string evaluation → FALSE
+
         Args:
             expr_string: MUMPS expression like "1=0", "X>5", "$E(S,1,3)"
 
@@ -336,10 +342,13 @@ class IndirectionResolver:
             evaluate_expression("1=0") → 0  # False
             evaluate_expression("X>5") → 1  # True if X=10
             evaluate_expression("$E(\"ABC\",2)") → "B"
+            evaluate_expression("") → 1  # YDB-specific: empty argument indirection is TRUE
         """
-        # Handle empty string - MUMPS treats as FALSE
+        # T052: Empty string in argument context is TRUE (YDB-specific)
+        # This handles I @A where A="" → TRUE
+        # Note: This differs from I "" → FALSE (direct empty string check)
         if not expr_string or not expr_string.strip():
-            return 0
+            return 1  # YDB treats empty argument indirection as TRUE
 
         # Try to parse as a simple literal first
         stripped = expr_string.strip()
@@ -374,12 +383,15 @@ class IndirectionResolver:
         Returns:
             Evaluated result
         """
+        from m2py.runtime import MArray
+
         # Build MUMPS code that evaluates the expression and stores result
-        # We use a special temp variable to capture the result
-        temp_var = "_ARGINDIRECT_RESULT"
+        # Use % prefix for valid MUMPS name, which becomes _pct_ in Python
+        mumps_temp_var = "%ARGINDIRECT"
+        python_temp_var = "_pct_ARGINDIRECT"
 
         # Build the SET command
-        mumps_code = f"S {temp_var}={expr_string}"
+        mumps_code = f"S {mumps_temp_var}={expr_string}"
 
         # Get scope dict from CurrentScope for execute_mumps
         scope_dict = self._get_scope_dict()
@@ -388,12 +400,20 @@ class IndirectionResolver:
             # Execute the SET to evaluate the expression
             self._state.execute_mumps(mumps_code, scope_dict)
 
-            # Get the result and clean up
-            result = scope_dict.get(temp_var, 0)
-            if temp_var in scope_dict:
-                del scope_dict[temp_var]
+            # Get the result - it will be an MArray, need to extract .value
+            result_raw = scope_dict.get(python_temp_var, 0)
 
-            return result
+            # Extract value from MArray if present
+            if isinstance(result_raw, MArray):
+                result = result_raw.value
+            else:
+                result = result_raw
+
+            # Clean up temp variable
+            if python_temp_var in scope_dict:
+                del scope_dict[python_temp_var]
+
+            return result if result is not None else 0
 
         except Exception:
             # If evaluation fails, return 0 (FALSE)

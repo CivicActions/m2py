@@ -27,6 +27,8 @@ class MockMState:
 
     def execute_mumps(self, code: str, scope: dict) -> None:
         """Mock execute_mumps that handles simple expressions."""
+        from m2py.runtime import MArray
+
         # Parse simple SET commands: S VAR=EXPR
         if code.startswith("S "):
             rest = code[2:]
@@ -36,7 +38,15 @@ class MockMState:
                 expr = rest[eq_pos + 1 :].strip()
                 # Evaluate simple expressions
                 result = self._eval_expr(expr, scope)
-                scope[var_name] = result
+                # Store as MArray with .value like real runtime
+                ma = MArray()
+                ma.value = result
+                # Handle % prefix translation
+                if var_name.startswith("%"):
+                    python_name = "_pct_" + var_name[1:]
+                else:
+                    python_name = var_name
+                scope[python_name] = ma
 
     def _eval_expr(self, expr: str, scope: dict) -> Any:
         """Evaluate simple MUMPS expressions."""
@@ -204,13 +214,18 @@ class TestArgumentIndirection:
         assert result == 1
 
     def test_argument_indirection_empty_string(self):
-        """@A where A="" → FALSE (empty string)."""
+        """@A where A="" → TRUE (YDB-specific behavior).
+
+        T052: Empty string in argument indirection is TRUE.
+        This differs from direct `I ""` which is FALSE.
+        YDB treats successful indirection resolution (even to empty) as truthy.
+        """
         state = MockMState()
         scope = CurrentScope(scope_dict={"A": ""})
         resolver = IndirectionResolver(state, scope)
 
         result = resolver.resolve("A", levels=1, context=IndirectionContext.ARGUMENT)
-        assert result == 0
+        assert result == 1  # YDB-specific: empty argument indirection is TRUE
 
 
 class TestArgumentIndirectionConvenience:
@@ -307,13 +322,18 @@ class TestEvaluateExpression:
         assert resolver.evaluate_expression("0") == 0
 
     def test_empty_string_is_false(self):
-        """Empty string evaluates to FALSE (0)."""
+        """Empty string evaluates to TRUE (YDB-specific).
+
+        T052: Empty string in argument context is TRUE.
+        This is YDB-specific behavior for argument indirection.
+        """
         state = MockMState()
         scope = CurrentScope(scope_dict={})
         resolver = IndirectionResolver(state, scope)
 
-        assert resolver.evaluate_expression("") == 0
-        assert resolver.evaluate_expression("  ") == 0
+        # YDB-specific: empty string in evaluate_expression returns TRUE
+        assert resolver.evaluate_expression("") == 1
+        assert resolver.evaluate_expression("  ") == 1
 
     def test_comparison_expression(self):
         """Comparison expressions evaluate correctly."""

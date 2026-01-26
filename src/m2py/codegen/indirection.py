@@ -433,18 +433,12 @@ def generate_argument_indirection(
 ) -> str:
     """Generate Python code for argument-level indirection in IF conditions.
 
-    Argument indirection evaluates the resolved value as an expression,
-    NOT as a variable name to look up. For example:
-    - I @A where A=1 → evaluates 1 as truth value
-    - I @A where A="X>5" → evaluates "X>5" expression
-    - I @@A where A="B" and B="1=1" → evaluates "1=1" expression
+    DEPRECATED: Use generate_argument_indirection_unified() instead.
+    This function is kept for backward compatibility but has a CRITICAL BUG
+    (Challenge 6): It returns the string value to m_truth() instead of
+    evaluating it as a MUMPS expression.
 
-    The key difference from name indirection:
-    - Name indirection: @A means "get value of variable whose name is in A"
-    - Argument indirection: @A means "evaluate the expression stored in A"
-
-    For simple values like numbers, we just get the value and evaluate it.
-    For complex expressions stored as strings, we use runtime evaluation.
+    Feature: 018-unified-variable-system - replaced by unified version.
 
     Args:
         expr: MIndirection ASG node with indirection_type=ARGUMENT
@@ -453,41 +447,100 @@ def generate_argument_indirection(
     Returns:
         Python expression string
     """
+    # Delegate to unified version which fixes Challenge 6 bug
+    return generate_argument_indirection_unified(expr, ctx)
+
+
+def generate_argument_indirection_unified(
+    expr: "MIndirection",
+    ctx: "GeneratorContext",
+) -> str:
+    """Generate Python code for argument-level indirection using unified components.
+
+    Feature: 018-unified-variable-system (T049, T050)
+    This is the FIX for Challenge 6 bug.
+
+    Argument indirection evaluates the resolved value AS AN EXPRESSION,
+    NOT as a variable name to look up. For example:
+    - I @A where A="1=0" → evaluates "1=0" → 0 (FALSE)
+    - I @A where A="X>5" and X=10 → evaluates "X>5" → 1 (TRUE)
+
+    The OLD behavior passed the string "1=0" to m_truth(), which
+    converted to 1 (TRUE) because it starts with "1".
+
+    The CORRECT behavior uses _rt.evaluate_argument_indirection() which:
+    1. Resolves the indirection through all levels
+    2. Parses the final string as a MUMPS expression
+    3. Evaluates the expression with access to current scope
+    4. Returns the evaluated result (not the string)
+
+    Args:
+        expr: MIndirection ASG node with indirection_type=ARGUMENT
+        ctx: Generator context
+
+    Returns:
+        Python expression string that calls _rt.evaluate_argument_indirection()
+    """
     from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import GlobalVariable
     from m2py.codegen.expressions import generate_expr
 
     # Get the appropriate scope expression for this context
     scope_expr = _get_scope_expr(ctx)
 
-    # Count indirection levels
+    # Count indirection levels and collect per-level subscripts
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
-    # For argument indirection, we need to resolve the value and evaluate it
-    # as an expression, not look it up as a variable name
-
+    # Get the source variable name
     if isinstance(inner_expr, MVariable):
-        base_name = inner_expr.name
+        source_name = inner_expr.name
+        # Include innermost subscripts in the source name if present
         if inner_expr.subscripts:
-            # Subscripted variable - get value at that subscript
-            # Use string concatenation to handle complex subscript expressions
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
-            subs_args = ", ".join(sub_exprs)
-            value_expr = f'_rt.get_var("{base_name}(" + ",".join([str(s) for s in [{subs_args}]]) + ")", {scope_expr})'
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
+            )
         else:
-            # Simple variable - get value directly from scope
-            value_expr = f'_rt.get_indirection_source("{base_name}", {scope_expr})'
+            source_expr = f'"{source_name}"'
+    elif isinstance(inner_expr, GlobalVariable):
+        source_name = f"^{inner_expr.name}"
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
+            )
+        else:
+            source_expr = f'"{source_name}"'
     else:
-        # Complex expression - generate and evaluate
+        # Complex expression - generate and evaluate directly
+        # This handles cases like @(expr) where expr is computed
         value_expr = generate_expr(inner_expr, ctx)
+        # For computed expressions, we still need to evaluate them
+        return (
+            f"_rt.evaluate_argument_indirection({value_expr}, {scope_expr}, levels=1)"
+        )
 
-    # For multi-level indirection, we need to resolve nested levels
-    if levels > 1:
-        # Resolve through multiple levels, returning the VALUE (not a var name)
-        return f"_rt.resolve_argument_indirection({value_expr}, {levels - 1}, {scope_expr})"
+    # Build per-level subscripts argument if needed
+    if all_subscripts and any(all_subscripts):
+        # Filter to only include subscript lists from @X@(subs) syntax
+        # Note: inner subscripts are already included in source_expr
+        per_level_subs = []
+        for subs in all_subscripts[1:] if len(all_subscripts) > 1 else all_subscripts:
+            if subs:
+                sub_exprs = [generate_expr(s, ctx) for s in subs]
+                per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+
+        if per_level_subs:
+            subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+        else:
+            subs_arg = ""
     else:
-        # Single level - just return the resolved value
-        # It will be passed to m_truth() by the IF code generator
-        return value_expr
+        subs_arg = ""
+
+    # Generate call to unified evaluate_argument_indirection
+    return f"_rt.evaluate_argument_indirection({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
 
 def generate_name_indirection_write_unified(
