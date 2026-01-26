@@ -840,23 +840,14 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
     )
 
     # Spec 017: Use ordered_items for correct left-to-right evaluation
-    # If ordered_items is populated, use it; otherwise fall back to old behavior
-    if stmt.ordered_items:
-        for item in stmt.ordered_items:
-            if isinstance(item, MIndirectionType):
-                # Argument indirection: S @A where A contains "target=value"
-                generate_set_argument_indirection(item, ctx)
-            elif isinstance(item, MAssignment):
-                # Regular assignment
-                _generate_single_assignment(item, ctx)
-    else:
-        # Legacy fallback: process argument_indirections first, then assignments
-        # This is incorrect for interleaved indirections but maintains compatibility
-        for indir in stmt.argument_indirections:
-            generate_set_argument_indirection(indir, ctx)
-
-        for assignment in stmt.assignments:
-            _generate_single_assignment(assignment, ctx)
+    # ordered_items is always populated by the semantic analyzer
+    for item in stmt.ordered_items:
+        if isinstance(item, MIndirectionType):
+            # Argument indirection: S @A where A contains "target=value"
+            generate_set_argument_indirection(item, ctx)
+        elif isinstance(item, MAssignment):
+            # Regular assignment
+            _generate_single_assignment(item, ctx)
 
 
 def _generate_single_assignment(
