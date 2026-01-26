@@ -1324,11 +1324,19 @@ class MUMPSRuntime:
         Args:
             scope: Variable scope dictionary
         """
-        for name in sorted(scope.keys()):
-            if name.startswith("_"):
-                continue  # Skip internal variables
-            value = scope[name]
-            self._zwrite_var(name, value)
+        for py_name in sorted(scope.keys()):
+            # Skip truly internal variables (runtime internals like _scope, _rt, etc.)
+            # but NOT NameTranslator-prefixed names (_pct_, _n_, _m_) which are user variables
+            if py_name.startswith("_") and not (
+                py_name.startswith("_pct_")
+                or py_name.startswith("_n_")
+                or py_name.startswith("_m_")
+            ):
+                continue
+            # Translate Python name back to MUMPS name for display
+            mumps_name = NameTranslator.from_python(py_name)
+            value = scope[py_name]
+            self._zwrite_var(mumps_name, value)
 
     def _format_subscript(self, sub: Any) -> str:
         """Format a subscript value for ZWRITE output.
@@ -1389,19 +1397,22 @@ class MUMPSRuntime:
         """ZWRITE - display a local variable and its descendants.
 
         Args:
-            name: Variable name
+            name: Variable name (Python scope key, e.g., "_pct_FOO" for %FOO)
             subscripts: Subscript path (empty for unsubscripted)
             scope: Variable scope dictionary
         """
         if name not in scope:
             return  # Variable not defined
 
+        # Translate Python name back to MUMPS name for display
+        mumps_name = NameTranslator.from_python(name)
+
         var = scope[name]
         if not isinstance(var, MArray):
             # Simple value
             if subscripts:
                 return  # Can't subscript a simple value
-            self.write(f"{name}={self._quote_value(var)}\n")
+            self.write(f"{mumps_name}={self._quote_value(var)}\n")
             return
 
         # Navigate to subscript position and collect path
@@ -1413,7 +1424,7 @@ class MUMPSRuntime:
             node = node._children[sub]
 
         # Output this node and descendants
-        self._zwrite_marray(name, subs_list, node)
+        self._zwrite_marray(mumps_name, subs_list, node)
 
     def _zwrite_marray(
         self, base_name: str, subscripts: list[Any], node: "MArray"

@@ -232,6 +232,48 @@ class TestNameTranslationEndToEnd:
 
 
 @pytest.mark.integration
+class TestZwriteNameTranslation:
+    """Tests that ZWRITE properly displays MUMPS names, not Python names."""
+
+    def test_zwrite_percent_variable(self, execute_mumps):
+        """ZWRITE should display %VAR not _pct_VAR.
+
+        This was a bug where zwrite() filtered names starting with "_"
+        which incorrectly excluded _pct_, _n_, _m_ prefixed names, and
+        also didn't translate Python names back to MUMPS format.
+        """
+        # Note: Double space before Q indicates argumentless ZWRITE
+        result = execute_mumps("TEST S %ABC=123 ZWR  Q")
+        # Output should show %ABC=123, not _pct_ABC=123
+        assert "%ABC=123" in result
+        assert "_pct_ABC" not in result
+
+    def test_zwrite_shows_all_percent_variables(self, execute_mumps):
+        """ZWRITE should show all percent-prefixed variables."""
+        result = execute_mumps("TEST S %A=1,%B=2,%C=3 ZWR  Q")
+        assert "%A=1" in result
+        assert "%B=2" in result
+        assert "%C=3" in result
+
+    def test_zwrite_mixed_variables(self, execute_mumps):
+        """ZWRITE shows regular and percent variables correctly."""
+        result = execute_mumps("TEST S X=1,%Y=2,Z=3 ZWR  Q")
+        assert "X=1" in result
+        assert "%Y=2" in result
+        assert "Z=3" in result
+        # Should NOT show Python internal names
+        assert "_pct_" not in result
+
+    def test_zwrite_keyword_variable(self, execute_mumps):
+        """ZWRITE should display 'if' not '_m_if' for keyword variables."""
+        result = execute_mumps("TEST S if=42 ZWR  Q")
+        # Note: MUMPS is case-insensitive, variable "if" is valid
+        # Output should show if=42, not _m_if=42
+        assert "if=42" in result
+        assert "_m_if" not in result
+
+
+@pytest.mark.integration
 class TestCodegenRuntimeNameTranslatorIdentity:
     """Verify that codegen/names.py and runtime both use core.names.NameTranslator."""
 
