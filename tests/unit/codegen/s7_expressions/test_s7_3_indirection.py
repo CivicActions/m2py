@@ -482,3 +482,88 @@ class TestIfIndirectionEndToEnd:
         """
         result = execute_mumps('TEST S A="B",B="1=0" I @@A W "TRUE" E  W "FALSE" Q')
         assert "TRUE" not in result.output
+
+    # T053d: Argument List Indirection E2E Tests
+
+    def test_if_argument_list_all_true(self, execute_mumps):
+        """I @B where B="00.1,2" expands to I 00.1,2 → TRUE.
+
+        T053d: Argument list indirection - both conditions truthy.
+        00.1 = 0.1 (TRUE), 2 (TRUE) → TRUE AND TRUE = TRUE.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S B="00.1,2" I @B W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_argument_list_with_false(self, execute_mumps):
+        """I @A where A="1=1,0" → FALSE.
+
+        T053b: V1IDARG1 I-418 pattern.
+        1=1 is TRUE, 0 is FALSE → TRUE AND FALSE = FALSE.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S A="1=1,0" I @A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output
+
+    def test_if_argument_list_first_false(self, execute_mumps):
+        """I @A where A="0,1" → FALSE (first fails, short-circuit).
+
+        First condition FALSE means whole thing is FALSE.
+        """
+        result = execute_mumps('TEST S A="0,1" I @A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output
+
+    def test_if_argument_list_three_conditions(self, execute_mumps):
+        """I @A where A="1,2,3" → TRUE (all truthy)."""
+        result = execute_mumps('TEST S A="1,2,3" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_argument_list_with_expressions(self, execute_mumps):
+        """I @A where A="1=1,2>1" → TRUE.
+
+        Both expressions are TRUE.
+        """
+        result = execute_mumps('TEST S A="1=1,2>1" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    # T053e-T053j: V1IDARG Complex Pattern Tests
+
+    def test_recursive_at_expression(self, execute_mumps):
+        """I @A where A="@A(1)" and A(1) contains expression.
+
+        T053e: V1IDARG1 I-420 pattern - recursive @-expression.
+        A → "@A(1)" → A(1)="$E(A(2),2,3)+0" → evaluates $E(9876,2,3)+0 = 87+0 = 87 → TRUE
+        Validated against YDB.
+        """
+        result = execute_mumps(
+            'TEST S A="@A(1)",A(1)="$E(A(2),2,3)+0",A(2)=9876 I @A W "TRUE" E  W "FALSE" Q'
+        )
+        assert result.output == "TRUE"
+
+    def test_recursive_at_expression_false(self, execute_mumps):
+        """I @A recursive case resulting in FALSE.
+
+        T053e: When A(2)=2000, $E(2000,2,3) = "00", +0 = 0 → FALSE.
+        Validated against YDB.
+        """
+        result = execute_mumps(
+            'TEST S A="@A(1)",A(1)="$E(A(2),2,3)+0",A(2)=2000 I @A W "TRUE" E  W "FALSE" Q'
+        )
+        assert "TRUE" not in result.output
+
+    def test_subscripted_indirection_arg(self, execute_mumps):
+        """I @A(1,1,1) with subscripted variable containing expression.
+
+        T053j: V1IDARG1 I-425 - Subscripted variable in argument indirection.
+        """
+        result = execute_mumps(
+            'TEST S A(1,1,1)="1=1" I @A(1,1,1) W "TRUE" E  W "FALSE" Q'
+        )
+        assert result.output == "TRUE"
+
+    def test_subscripted_indirection_arg_false(self, execute_mumps):
+        """I @A(1,1,1) evaluating to FALSE."""
+        result = execute_mumps(
+            'TEST S A(1,1,1)="1=0" I @A(1,1,1) W "TRUE" E  W "FALSE" Q'
+        )
+        assert "TRUE" not in result.output

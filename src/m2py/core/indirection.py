@@ -332,8 +332,13 @@ class IndirectionResolver:
         - Successful indirection resolution (even to empty) → TRUE
         - Direct empty string evaluation → FALSE
 
+        T053a: Argument list indirection - when @A contains comma-separated
+        values like "00.1,2", it expands to multiple IF conditions ANDed.
+        Example: I @B where B="00.1,2" → I 00.1,2 → (0.1 AND 2) → TRUE
+
         Args:
             expr_string: MUMPS expression like "1=0", "X>5", "$E(S,1,3)"
+                        Can also be comma-separated list: "1=1,0" (AND of conditions)
 
         Returns:
             Evaluated result (number, string, etc.)
@@ -343,6 +348,8 @@ class IndirectionResolver:
             evaluate_expression("X>5") → 1  # True if X=10
             evaluate_expression("$E(\"ABC\",2)") → "B"
             evaluate_expression("") → 1  # YDB-specific: empty argument indirection is TRUE
+            evaluate_expression("00.1,2") → 1  # Both 0.1 and 2 are truthy → TRUE
+            evaluate_expression("1=1,0") → 0  # 1=1 is TRUE but 0 is FALSE → FALSE
         """
         # T052: Empty string in argument context is TRUE (YDB-specific)
         # This handles I @A where A="" → TRUE
@@ -350,8 +357,79 @@ class IndirectionResolver:
         if not expr_string or not expr_string.strip():
             return 1  # YDB treats empty argument indirection as TRUE
 
-        # Try to parse as a simple literal first
         stripped = expr_string.strip()
+
+        # T053a: Check for comma-separated argument list (IF argument expansion)
+        # In MUMPS, I @A where A="cond1,cond2" expands to I cond1,cond2
+        # which means evaluate cond1 AND cond2 (all must be truthy)
+        args = self._split_argument_list(stripped)
+        if len(args) > 1:
+            # Multiple conditions - evaluate each and AND them together
+            for arg in args:
+                result = self._evaluate_single_expression(arg.strip())
+                if not self._to_mumps_bool(result):
+                    return 0  # Short-circuit: any FALSE makes whole thing FALSE
+            return 1  # All conditions were truthy
+
+        # Single expression
+        return self._evaluate_single_expression(stripped)
+
+    def _split_argument_list(self, expr_string: str) -> List[str]:
+        """Split expression on commas that are outside quotes and parentheses.
+
+        T053a: For IF argument indirection, "00.1,2" should split into ["00.1", "2"].
+        But "$P(X,Y)" should NOT split (comma inside parens).
+        And '"A,B"' should NOT split (comma inside quotes).
+
+        Args:
+            expr_string: Expression string potentially containing comma-separated args
+
+        Returns:
+            List of argument strings (1 element if no splitting needed)
+        """
+        result = []
+        current = ""
+        depth = 0  # Parenthesis depth
+        in_quotes = False
+
+        for char in expr_string:
+            if char == '"' and (not current or current[-1] != "\\"):
+                in_quotes = not in_quotes
+                current += char
+            elif char == "(" and not in_quotes:
+                depth += 1
+                current += char
+            elif char == ")" and not in_quotes:
+                depth -= 1
+                current += char
+            elif char == "," and not in_quotes and depth == 0:
+                # This is a top-level comma - split here
+                if current.strip():
+                    result.append(current)
+                current = ""
+            else:
+                current += char
+
+        # Don't forget the last segment
+        if current.strip():
+            result.append(current)
+
+        return result if result else [expr_string]
+
+    def _evaluate_single_expression(self, expr_string: str) -> Any:
+        """Evaluate a single MUMPS expression (no comma-separated list).
+
+        Args:
+            expr_string: Single MUMPS expression
+
+        Returns:
+            Evaluated result
+        """
+        stripped = expr_string.strip()
+
+        # Empty after stripping
+        if not stripped:
+            return 1  # YDB-specific: empty is TRUE in argument context
 
         # Numeric literal check
         if self._is_numeric_literal(stripped):
