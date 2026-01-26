@@ -1272,12 +1272,12 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
                 full_name_expr = f'"{base_name}"'
 
             if levels > 1:
-                # Use resolve_indirection_name (not resolve_indirection) because
-                # $ORDER/$NEXT don't need the target variable to exist - they just
-                # need the name. resolve_indirection validates existence which fails
-                # for cases like $N(@@C) where C(1)="^V1A(22,44,-1)" since that exact
-                # subscript may not exist (but $NEXT finds the next one).
-                name_expr = f"str(_rt.resolve_indirection_name({full_name_expr}, {levels}, _scope))"
+                # Use resolve_for_target (unified method) to get the variable NAME
+                # without validating its existence. $ORDER/$NEXT just need the name
+                # to find the next subscript - the target doesn't need to exist.
+                # For cases like $N(@@C) where C(1)="^V1A(22,44,-1)", the exact
+                # subscript may not exist, but $NEXT finds the next one.
+                name_expr = f"str(_rt.resolve_for_target({full_name_expr}, _scope, levels={levels}))"
             else:
                 name_expr = f"_rt.get_indirection_source({full_name_expr}, _scope)"
         else:

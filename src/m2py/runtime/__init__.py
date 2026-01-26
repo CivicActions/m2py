@@ -2067,13 +2067,15 @@ class MUMPSRuntime:
         # Convert to string for use as variable name
         return str(value) if value is not None else ""
 
-    # Internal method: Used by codegen for $ORDER/$NEXT indirection targets.
-    # Returns variable NAME (not value) which is needed when the target
-    # doesn't need to exist (e.g., $NEXT iterates to next key).
+    # UNIFIED_VAR_DEPRECATED: Use resolve_for_target() instead
+    # This function is kept for backward compatibility with existing tests.
+    # All codegen should use resolve_for_target() which uses IndirectionResolver.
     def resolve_indirection_name(
         self, varname: str, levels: int, _scope: Dict[str, Any]
     ) -> str:
         """Resolve multi-level indirection and return the final variable NAME.
+
+        DEPRECATED: Use resolve_for_target() instead for new code.
 
         For FOR loop indirection targets: F @A, F @@A, F @@@A.
         Unlike resolve_indirection which returns the VALUE, this returns the NAME

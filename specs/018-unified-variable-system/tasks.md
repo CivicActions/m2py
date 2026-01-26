@@ -541,7 +541,9 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 ### Phase 13a: Remove Deprecated Wrapper Functions
 
 - [ ] T114 Remove `resolve_indirection_name()` from `runtime/__init__.py` (replaced by `IndirectionResolver.resolve()`)
-  - **BLOCKED**: Still used by codegen/expressions.py for $ORDER/$NEXT indirection
+  - **PARTIALLY COMPLETE**: All codegen migrated to use `resolve_for_target()`
+  - Function marked DEPRECATED, kept only for test backward compatibility
+  - Tests in `test_indirection_resolution.py` still call it directly - need migration
 - [ ] T115 Remove `resolve_indirection()` from `runtime/__init__.py` (replaced by `IndirectionResolver.resolve()`)
   - **PARTIALLY UNBLOCKED**: `get_indirected()` now uses `IndirectionResolver.resolve_to_name()`
   - Still BLOCKED by codegen/statements.py and codegen/indirection.py which generate `_rt.resolve_indirection()` calls
@@ -549,7 +551,7 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
   - ✅ Removed - was not used by any generated code or internal runtime calls
 - [ ] T117 Update any internal runtime calls that still use removed functions
   - **PARTIALLY COMPLETE**: `get_indirected()` now uses unified IndirectionResolver
-  - Still BLOCKED by T114/T115 codegen migration
+  - Still BLOCKED by T115 codegen migration
 
 ### Phase 13b: Remove `get_var()` and `set_var()` 
 
