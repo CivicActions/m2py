@@ -11,7 +11,6 @@ from m2py.asg.expressions import MVariable, MIndirection, MLiteral
 from m2py.asg.enums import IndirectionType
 from m2py.codegen.indirection import (
     _count_indirection_levels,
-    _generate_inner_name_expr,
     generate_name_indirection,
     generate_name_indirection_write,
     generate_multi_level_indirection,
@@ -119,39 +118,6 @@ class TestCountIndirectionLevels:
 
         with pytest.raises(ValueError, match="Nested indirection has no inner"):
             _count_indirection_levels(outer_indir)
-
-
-# =============================================================================
-# Tests for _generate_inner_name_expr()
-# =============================================================================
-
-
-@pytest.mark.codegen
-class TestGenerateInnerNameExpr:
-    """Tests for _generate_inner_name_expr() helper function.
-
-    T065: _generate_inner_name_expr now uses get_indirection_source() for
-    variables to provide better error messages for undefined variables.
-    """
-
-    def test_simple_variable_generates_indirection_source(self, mock_ctx):
-        """Simple variable X generates _rt.get_indirection_source("X", _scope)."""
-        var = MVariable(name="X")
-        result = _generate_inner_name_expr(var, mock_ctx)
-        assert result == '_rt.get_indirection_source("X", _scope)'
-
-    def test_variable_with_long_name(self, mock_ctx):
-        """Variable with longer name works correctly."""
-        var = MVariable(name="VARNAME")
-        result = _generate_inner_name_expr(var, mock_ctx)
-        assert result == '_rt.get_indirection_source("VARNAME", _scope)'
-
-    def test_literal_uses_generate_expr(self, mock_ctx):
-        """Literal expressions use generate_expr."""
-        literal = MLiteral(value="test")
-        result = _generate_inner_name_expr(literal, mock_ctx)
-        # generate_expr returns quoted string for literals
-        assert result == '"test"'
 
 
 # =============================================================================
@@ -268,7 +234,12 @@ class TestGenerateNameIndirection:
         assert "per_level_subscripts" in result
 
     def test_with_literal_expression(self, mock_ctx):
-        """@"VAR" uses the legacy path for complex expressions."""
+        """@"VAR" uses unified path with levels=0 (expression already evaluates to name).
+
+        Feature: 018-unified-variable-system (T140)
+        Complex expressions (like literals) that evaluate to a target name directly
+        use get_indirected with levels=0, which is equivalent to get_var.
+        """
         literal = MLiteral(value="VAR")
         expr = MIndirection(
             expression=literal,
@@ -276,8 +247,9 @@ class TestGenerateNameIndirection:
         )
 
         result = generate_name_indirection(expr, mock_ctx)
-        # Literals fall back to legacy which uses get_var
-        assert "_rt.get_var" in result
+        # Complex expressions now use unified get_indirected with levels=0
+        assert "_rt.get_indirected" in result
+        assert "levels=0" in result
 
 
 # =============================================================================
