@@ -339,3 +339,91 @@ class TestInvalidVariableNameIndirection:
             or "invalid" in result_lower
             or "error" in result_lower
         )
+
+
+# =============================================================================
+# T091-T093: DO/GOTO Command Indirection Tests
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestDoGotoIndirection:
+    """Tests for DO and GOTO command indirection (D @A, G @A).
+
+    T091: DO command label indirection
+    T092: GOTO command indirection
+    T093: V1IDDO, V1IDGO test patterns
+    """
+
+    def test_do_simple_label_indirection(self, execute_mumps):
+        """D @A where A="LABEL" calls LABEL (I-461 pattern)."""
+        code = """TEST
+ S A="SUB",R=""
+ D @A
+ W R
+ Q
+SUB S R="CALLED" Q
+"""
+        result = execute_mumps(code)
+        assert result == "CALLED"
+
+    def test_do_nested_indirection(self, execute_mumps):
+        """D @A where A contains @B resolves nested indirection (I-462 pattern)."""
+        code = """TEST
+ S L="@L(1)",L(1)="SUB",R=""
+ D @L
+ W R
+ Q
+SUB S R="NESTED" Q
+"""
+        result = execute_mumps(code)
+        assert result == "NESTED"
+
+    def test_do_double_indirection(self, execute_mumps):
+        """D @@A where A="B", B="LABEL" (I-465 pattern)."""
+        code = """TEST
+ S A="B",B="SUB",R=""
+ D @@A
+ W R
+ Q
+SUB S R="DOUBLE" Q
+"""
+        result = execute_mumps(code)
+        assert result == "DOUBLE"
+
+    def test_goto_simple_label_indirection(self, execute_mumps):
+        """G @A where A="LABEL" transfers to LABEL."""
+        code = """TEST
+ S A="TARGET"
+ G @A
+ W "WRONG"
+ Q
+TARGET W "CORRECT" Q
+"""
+        result = execute_mumps(code)
+        assert result == "CORRECT"
+
+    def test_goto_nested_indirection(self, execute_mumps):
+        """G @A where A contains nested @ resolves correctly."""
+        code = """TEST
+ S L="@L(1)",L(1)="TARGET"
+ G @L
+ W "WRONG"
+ Q
+TARGET W "NESTED_GOTO" Q
+"""
+        result = execute_mumps(code)
+        assert result == "NESTED_GOTO"
+
+    def test_do_multiple_targets_comma_separated(self, execute_mumps):
+        """D @A where A="SUB1,SUB2" calls both subroutines (argument indirection)."""
+        code = """TEST
+ S A="SUB1,SUB2",R=""
+ D @A
+ W R
+ Q
+SUB1 S R=R_"1" Q
+SUB2 S R=R_"2" Q
+"""
+        result = execute_mumps(code)
+        assert result == "12"

@@ -432,9 +432,24 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### DO/GOTO Migration
 
-- [ ] T091 Migrate DO command label indirection to use `IndirectionResolver`
-- [ ] T092 Migrate GOTO command to use `IndirectionResolver`
-- [ ] T093 Run V1IDDO, V1IDGO tests
+- [X] T091 Migrate DO command label indirection to use `IndirectionResolver`
+  - Verified: DO indirection uses `resolve_do_targets()` and `resolve_nested_indirection()`
+  - These resolve TARGET STRINGS (like "LABEL^ROUTINE"), not variable names
+  - This is correct behavior - different from variable name indirection
+  - No code changes needed - implementation is appropriate
+- [X] T092 Migrate GOTO command to use `IndirectionResolver`
+  - Verified: GOTO indirection uses `resolve_nested_indirection()` and `parse_call_target()`
+  - Same pattern as DO - resolves target strings, not variable names
+  - No code changes needed - implementation is appropriate
+- [X] T093 Run V1IDDO, V1IDGO tests
+  - All 4 functional tests pass (V1IDDO, V1IDGO in TestMvtsSuite and TestMvtsVV1)
+  - Added 6 new integration tests in `test_indirection_edge_cases.py`:
+    - DO simple label indirection (I-461 pattern)
+    - DO nested indirection (I-462 pattern)
+    - DO double indirection (I-465 pattern)
+    - GOTO simple label indirection
+    - GOTO nested indirection
+    - DO multiple comma-separated targets
 
 **Checkpoint**: All commands migrated to unified components.
 
