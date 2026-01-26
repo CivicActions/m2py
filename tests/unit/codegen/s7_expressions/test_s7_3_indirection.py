@@ -567,3 +567,163 @@ class TestIfIndirectionEndToEnd:
             'TEST S A(1,1,1)="1=0" I @A(1,1,1) W "TRUE" E  W "FALSE" Q'
         )
         assert "TRUE" not in result.output
+
+
+# =============================================================================
+# Multi-Level Indirection E2E Tests (Spec 018 Phase 5, US3)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestMultiLevelIndirectionE2E:
+    """End-to-end tests for multi-level indirection (@@X, @@@X).
+
+    Feature: 018-unified-variable-system
+    User Story: US3 - Multi-Level Indirection Resolution
+
+    T054-T057: VV2VNIA/VV2VNIB torture test patterns.
+    """
+
+    def test_double_indirection_write(self, execute_mumps):
+        """W @@A where A="B", B="C", C=99 → 99."""
+        result = execute_mumps('TEST S A="B",B="C",C=99 W @@A Q')
+        assert result.output == "99"
+
+    def test_triple_indirection_write(self, execute_mumps):
+        """W @@@A where A="B", B="C", C="D", D=42 → 42."""
+        result = execute_mumps('TEST S A="B",B="C",C="D",D=42 W @@@A Q')
+        assert result.output == "42"
+
+    def test_ii131_deep_nesting(self, execute_mumps):
+        """T056: II-131 @B@(@B@(@B@(9)),@B,I) deep nesting pattern.
+
+        Setup: B="A", I=3, A=5, A(9)="X", A("X")="FOO", A("FOO",5,3)=99
+        Resolution: @B@(9)=A(9)="X", @B@("X")=A("X")="FOO", @B=A=5
+        Final: A("FOO",5,3)=99
+        """
+        code = """TEST
+ S B="A",I=3,A=5
+ S A(9)="X"
+ S A("X")="FOO"
+ S A("FOO",5,3)=99
+ W @B@(@B@(@B@(9)),@B,I)
+ Q
+"""
+        result = execute_mumps(code)
+        assert result.output == "99"
+
+    def test_ii132_3_four_level_at_expressions(self, execute_mumps):
+        """T057: II-132.3 @@@@A with recursive @-expressions in values.
+
+        Setup: B="A(1)", A="@B@(1)", A(1,1..4) contain chain ending in "#"
+        """
+        code = """TEST
+ S B="A(1)"
+ S A="@B@(1)"
+ S A(1,1)="@B@(2)"
+ S A(1,2)="@B@(3)"
+ S A(1,3)="@B@(4)"
+ S A(1,4)="#"
+ W @@@@A
+ Q
+"""
+        result = execute_mumps(code)
+        assert result.output == "#"
+
+    def test_ii127_per_level_subscripts(self, execute_mumps):
+        """T055: II-127 @@X@(1,2)@(5,6) with per-level subscripts.
+
+        X="A", A(1,2)="B(3,4)" → set B(3,4,5,6)=1
+        """
+        code = """TEST
+ S X="A",A(1,2)="B(3,4)"
+ S @@X@(1,2)@(5,6)=1
+ W B(3,4,5,6)
+ Q
+"""
+        result = execute_mumps(code)
+        assert result.output == "1"
+
+
+@pytest.mark.codegen
+class TestWriteIndirectionEndToEnd:
+    """End-to-end tests for WRITE command indirection (T057a).
+
+    Feature: 018-unified-variable-system
+    User Story: US3 - Multi-Level Indirection Resolution
+
+    Per Learnings §1: Name indirection in WRITE evaluates the variable value
+    as a MUMPS expression to get the identifier, then outputs the value at
+    that identifier.
+    """
+
+    def test_simple_write_indirection(self, execute_mumps):
+        """W @A where A="B", B=42 → 42."""
+        result = execute_mumps('TEST S A="B",B=42 W @A Q')
+        assert result.output == "42"
+
+    def test_write_indirection_with_subscripts(self, execute_mumps):
+        """W @A@(1,2) where A="B", B(1,2)=99 → 99."""
+        result = execute_mumps('TEST S A="B",B(1,2)=99 W @A@(1,2) Q')
+        assert result.output == "99"
+
+    def test_write_double_indirection(self, execute_mumps):
+        """W @@A where A="B", B="C", C=123 → 123."""
+        result = execute_mumps('TEST S A="B",B="C",C=123 W @@A Q')
+        assert result.output == "123"
+
+    @pytest.mark.xfail(
+        reason="m2py doesn't yet support function expressions in name indirection"
+    )
+    def test_write_indirection_function_eval(self, execute_mumps):
+        """W @A where A='$E("ABC",3)' → C (the function result).
+
+        In WRITE context, @A evaluates the expression "$E(""ABC"",3)".
+        $EXTRACT("ABC",3) returns "C" - the third character.
+        This is expression evaluation, not variable lookup.
+        YDB verified: outputs "C", not the value of variable C.
+        """
+        result = execute_mumps('TEST S C=99 S A="$E(""ABC"",3)" W @A Q')
+        assert result.output == "C"
+
+    def test_write_indirection_value_with_at(self, execute_mumps):
+        """W @@A where A="@B", B="C", C=50 → 50.
+
+        @A = "@B" (value of A)
+        @@A = @"@B" = resolve @B recursively → "C" → C → 50
+        """
+        result = execute_mumps('TEST S A="@B",B="C",C=50 W @@A Q')
+        assert result.output == "50"
+
+    def test_write_triple_indirection_with_subscripts(self, execute_mumps):
+        """W @@A where A="B", B="C(1)", C(1)=777 → 777.
+
+        Triple indirection with subscript IN the resolved value:
+        - @A = "B"
+        - @@A = @"B" = B = "C(1)"
+        - @@@A would need @"C(1)" but we use @@A since B contains subscript
+        YDB verified: subscript must be in resolved string, not appended.
+        """
+        code = """TEST
+ S A="B",B="C(1)"
+ S C(1)=777
+ W @@A
+ Q
+"""
+        result = execute_mumps(code)
+        assert result.output == "777"
+
+    def test_write_multiple_indirections_in_statement(self, execute_mumps):
+        """W @A,@B where A="X", X=1, B="Y", Y=2 → 12."""
+        result = execute_mumps('TEST S A="X",X=1,B="Y",Y=2 W @A,@B Q')
+        assert result.output == "12"
+
+    def test_write_indirection_with_literal(self, execute_mumps):
+        """W @"A" where A=42 → 42."""
+        result = execute_mumps('TEST S A=42 W @"A" Q')
+        assert result.output == "42"
+
+    def test_write_indirection_global_var(self, execute_mumps):
+        """W @A where A="^V", ^V=123 → 123."""
+        result = execute_mumps('TEST K ^V S ^V=123,A="^V" W @A Q')
+        assert result.output == "123"

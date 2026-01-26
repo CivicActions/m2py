@@ -636,6 +636,10 @@ class IndirectionResolver:
 
         Returns:
             Tuple of (base_name, list_of_subscripts)
+
+        Note:
+            String subscripts in MUMPS-style name syntax are quoted (e.g. "key").
+            This method strips those quotes to return raw subscript values.
         """
         if "(" not in name:
             return name, []
@@ -658,14 +662,33 @@ class IndirectionResolver:
                     depth -= 1
                     current += char
                 elif char == "," and depth == 0:
-                    subscripts.append(current.strip())
+                    subscripts.append(self._strip_mumps_quotes(current.strip()))
                     current = ""
                 else:
                     current += char
             if current:
-                subscripts.append(current.strip())
+                subscripts.append(self._strip_mumps_quotes(current.strip()))
 
         return base, subscripts
+
+    def _strip_mumps_quotes(self, s: str) -> str:
+        """Strip MUMPS-style quotes from a string subscript.
+
+        Args:
+            s: String that may be surrounded by double quotes
+
+        Returns:
+            String with surrounding quotes removed and escaped quotes unescaped
+
+        Examples::
+
+            "FOO" (in MUMPS) -> FOO
+            5 -> 5  (unchanged)
+        """
+        if len(s) >= 2 and s.startswith('"') and s.endswith('"'):
+            # Remove surrounding quotes and unescape doubled quotes
+            return s[1:-1].replace('""', '"')
+        return s
 
     def _is_valid_var_name(self, name: str) -> bool:
         """Check if name is a valid MUMPS variable name.

@@ -244,18 +244,18 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Tests for User Story 3
 
-- [ ] T054 [P] [US3] Create `tests/unit/core/test_name_indirection_multilevel.py` with VV2VNIA patterns
-- [ ] T055 [P] [US3] Create torture test II-127: `@@X@(1,2)@(5,6)` with per-level subscripts
-- [ ] T056 [P] [US3] Create torture test II-131: `@B@(@B@(@B@(9)),@B,I)` deep nesting
-- [ ] T057 [P] [US3] Create torture test II-132.3: `@@@@A` four-level chain with recursive @-expressions
-- [ ] T057a [P] [US3] Create end-to-end validation tests in `TestWriteIndirectionEndToEnd` class (per Learnings §1)
+- [X] T054 [P] [US3] Create `tests/unit/core/test_name_indirection_multilevel.py` with VV2VNIA patterns
+- [X] T055 [P] [US3] Create torture test II-127: `@@X@(1,2)@(5,6)` with per-level subscripts
+- [X] T056 [P] [US3] Create torture test II-131: `@B@(@B@(@B@(9)),@B,I)` deep nesting
+- [X] T057 [P] [US3] Create torture test II-132.3: `@@@@A` four-level chain with recursive @-expressions
+- [X] T057a [P] [US3] Create end-to-end validation tests in `TestWriteIndirectionEndToEnd` class (per Learnings §1)
 
 ### Implementation for User Story 3 - WRITE Command Migration
 
-- [ ] T058 [US3] Update WRITE command codegen to use `IndirectionResolver` for @VAR output
-- [ ] T059 [US3] Ensure multi-level indirection resolves through all levels correctly
-- [ ] T060 [US3] Ensure per-level subscripts are applied at correct resolution points
-- [ ] T061 [US3] Run VV2VNIA, VV2VNIB tests and fix any regressions
+- [X] T058 [US3] Update WRITE command codegen to use `IndirectionResolver` for @VAR output
+- [X] T059 [US3] Ensure multi-level indirection resolves through all levels correctly
+- [X] T060 [US3] Ensure per-level subscripts are applied at correct resolution points
+- [X] T061 [US3] Run VV2VNIA, VV2VNIB tests and fix any regressions
 - [ ] T062 [US3] Remove `# UNIFIED_VAR_DEPRECATED` code for WRITE indirection
 
 **Checkpoint**: Multi-level indirection works. `@@X`, `@@@X`, `@@X@(1,2)@(5,6)` all resolve correctly.
