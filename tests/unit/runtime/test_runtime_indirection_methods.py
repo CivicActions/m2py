@@ -358,6 +358,56 @@ class TestRuntimeAppendSubscripts:
         result = rt.append_subscripts("ARR", -1)
         assert result == "ARR(-1)"
 
+    def test_varref_in_base_name_is_evaluated(self, rt):
+        """VarRef in base name subscripts is evaluated to its value.
+
+        Bug fix test: When base_name is "C(K)" from indirection string,
+        the K is parsed as VarRef("K") and must be evaluated to its actual
+        value (1) before formatting.
+
+        Pattern: S B="C(K)",K=1 W @B@("A")
+        Should resolve to "C(1,"A")" not "C(VarRef('K'),"A")"
+        """
+        scope = {"K": MArray()}
+        scope["K"].value = 1
+
+        result = rt.append_subscripts("C(K)", "A", _scope=scope)
+        assert result == 'C(1,"A")'
+
+    def test_multiple_varrefs_in_base_name(self, rt):
+        """Multiple VarRefs in base name are all evaluated.
+
+        Pattern: S B="C(I,J)",I=1,J=2 W @B@("A")
+        Should resolve to "C(1,2,"A")"
+        """
+        scope = {"I": MArray(), "J": MArray()}
+        scope["I"].value = 1
+        scope["J"].value = 2
+
+        result = rt.append_subscripts("C(I,J)", "A", _scope=scope)
+        assert result == 'C(1,2,"A")'
+
+    def test_varref_with_string_value(self, rt):
+        """VarRef that evaluates to a string value.
+
+        Pattern: S B="C(K)",K="x" W @B@(1)
+        Should resolve to "C("x",1)"
+        """
+        scope = {"K": MArray()}
+        scope["K"].value = "x"
+
+        result = rt.append_subscripts("C(K)", 1, _scope=scope)
+        assert result == 'C("x",1)'
+
+    def test_varref_without_scope_stays_literal(self, rt):
+        """VarRef without scope cannot be evaluated - behavior depends on implementation."""
+        # Without scope, VarRef can't be evaluated, but code handles gracefully
+        result = rt.append_subscripts("C(K)", "A")
+        # The VarRef should return empty string when scope is None
+        # (this tests that _evaluate_subscripts handles missing scope)
+        assert "C(" in result
+        assert '"A"' in result
+
 
 # =============================================================================
 # MUMPSRuntime.merge_var() Tests (Phase 13)

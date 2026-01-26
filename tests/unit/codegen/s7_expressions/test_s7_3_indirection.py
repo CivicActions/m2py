@@ -12,15 +12,19 @@ class TestIndirectionCodegen:
     """Codegen-level tests for indirection code generation (§7.3)."""
 
     def test_name_indirection_read(self, generate_python):
-        """Name indirection read generates _rt.get_var call (T020).
+        """Name indirection read generates _rt.get_indirected call.
+
+        Feature: 018-unified-variable-system (T108)
 
         In MUMPS, @X where X contains a variable name accesses that variable.
         Example: S X="VAR",Y=@X means Y gets the value of VAR
+
+        Unified implementation uses _rt.get_indirected() instead of _rt.get_var().
         """
         code = generate_python('TEST S X="VAR",VAR=5,Y=@X Q\n')
 
-        # Should generate runtime get_var call for @X
-        assert "_rt.get_var" in code
+        # Should generate runtime get_indirected call for @X
+        assert "_rt.get_indirected" in code
         # Should include scope reference
         assert "_scope" in code
 
@@ -47,10 +51,10 @@ class TestIndirectionCodegen:
         """
         code = generate_python('TEST S A="B",B="C",C=100,X=@@A Q\n')
 
-        # Should generate runtime resolve_indirection call for @@A
-        assert "_rt.resolve_indirection" in code
+        # Should generate runtime resolve_indirection or get_indirected call for @@A
+        assert "_rt.resolve_indirection" in code or "_rt.get_indirected" in code
         # Should include levels=2 for double indirection
-        assert ", 2," in code
+        assert "levels=2" in code or ", 2," in code
         # Should include scope reference
         assert "_scope" in code
 

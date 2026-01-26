@@ -525,7 +525,7 @@ D @A^@B            ; Doubly indirect
 - `MCall.is_resolved`: False (cannot validate externally)
 - `MCall.call_type`: `ROUTINE_CALL`
 
-### External DO (Spec 008 Phases 3-4)
+### External DO
 
 External DO calls transfer control to another routine and return:
 
@@ -563,7 +563,7 @@ ext2._dispatch_line(10, _rt, _scope)
 - Label+offset patterns validated at runtime
 - Line dispatch uses `_dispatch_line()` function in target module
 
-### External GOTO (Spec 008 Phase 6)
+### External GOTO
 
 External GOTO transfers control permanently without return:
 
@@ -597,7 +597,7 @@ raise GotoExternal(handler._dispatch_line, _rt, _scope, 10)
 - No return to caller - control fully transferred
 - Runtime unwinds stack and executes target
 
-### External Extrinsic Functions (Spec 008 Phase 7)
+### External Extrinsic Functions
 
 External extrinsic functions call functions in other routines and return values:
 
@@ -619,7 +619,7 @@ X = _call_extrinsic(MATH.ADD, 3, 5, _scope=_scope)
 - `_scope` parameter passed for cross-routine variable visibility
 - Return value from external function becomes expression value
 
-### Cross-Routine Variable Visibility (Spec 008 Phase 5)
+### Cross-Routine Variable Visibility
 
 Variables are visible across routine calls via `_scope` parameter:
 
@@ -638,20 +638,20 @@ HELPER W X,!
 ```python
 # main.py
 def MAIN(_rt, _scope):
-    _scope["X"] = 42
+    _scope.setdefault('X', MArray()).value = 42
     import helper
     helper.SHOW(_rt, _scope)
 
 # helper.py
 def SHOW(_rt, _scope):
-    _rt.write(str(_scope.get("X", "")))
+    _rt.write(str(_scope.get('X', MArray()).value))
 ```
 
 **Key Implementation Details:**
 - All routines receive `_scope` dictionary parameter
-- Variables stored in `_scope` instead of local scope
+- Variables stored via `_scope.setdefault('varname', MArray()).value`
 - `_scope` shared across all external calls
-- NEW command creates temporary scope overlay (Spec 005)
+- NEW command creates temporary scope overlay
 
 ---
 
@@ -676,7 +676,7 @@ R !,"Prompt:",X  ; Prompts and format controls
 
 ## $TEXT Function
 
-Returns source code lines for the current routine (Spec 008 Phase 8):
+Returns source code lines for the current routine:
 
 ```mumps
 S X=$T(+0)          ; Routine name

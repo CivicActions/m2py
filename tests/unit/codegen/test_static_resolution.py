@@ -170,7 +170,11 @@ class TestDynamicResolution:
         """
         code = generate_python('TEST\n S X="Y"\n S Y=42\n W @X\n Q')
         # Should use runtime for indirection read
-        assert "resolve_indirection" in code or "get_var" in code
+        assert (
+            "resolve_indirection" in code
+            or "get_var" in code
+            or "get_indirected" in code
+        )
 
     def test_argument_indirection_generates_runtime_call(self, generate_python):
         """Argument indirection `I @A` generates runtime evaluation call.

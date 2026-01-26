@@ -1,4 +1,4 @@
-"""Unified Variable System Core Components.
+"""Variable System Core Components.
 
 This module provides the shared foundation for MUMPS variable semantics,
 ensuring consistent behavior across compile-time (codegen) and runtime

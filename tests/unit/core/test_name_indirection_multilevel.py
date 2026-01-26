@@ -83,22 +83,26 @@ class TestParseSubscriptedName:
         assert subs == ["1", "2", "3"]
 
     def test_quoted_string_subscripts(self, resolver):
-        """MUMPS-style quoted string subscripts have quotes stripped."""
+        """MUMPS-style quoted string subscripts preserve quotes for later processing.
+
+        Note: _parse_subscripted_name no longer strips quotes. Quote stripping
+        happens in _evaluate_subscripts() to distinguish literals from variables.
+        """
         base, subs = resolver._parse_subscripted_name('A("FOO","BAR")')
         assert base == "A"
-        assert subs == ["FOO", "BAR"]
+        assert subs == ['"FOO"', '"BAR"']  # Quotes preserved
 
     def test_mixed_subscripts(self, resolver):
-        """Mixed numeric and string subscripts."""
+        """Mixed numeric and string subscripts preserve quotes."""
         base, subs = resolver._parse_subscripted_name('A(1,"key",3)')
         assert base == "A"
-        assert subs == ["1", "key", "3"]
+        assert subs == ["1", '"key"', "3"]  # Quote preserved
 
     def test_escaped_quotes_in_subscript(self, resolver):
-        """MUMPS escaped quotes ("") become single quote (")."""
+        """MUMPS escaped quotes preserved for later processing."""
         base, subs = resolver._parse_subscripted_name('A("say ""hi""")')
         assert base == "A"
-        assert subs == ['say "hi"']
+        assert subs == ['"say ""hi"""']  # Raw, unprocessed
 
     def test_global_with_subscripts(self, resolver):
         """Global variable with subscripts."""
@@ -107,16 +111,16 @@ class TestParseSubscriptedName:
         assert subs == ["1", "2"]
 
     def test_empty_subscript_string(self, resolver):
-        """Empty quoted string subscript."""
+        """Empty quoted string subscript preserved."""
         base, subs = resolver._parse_subscripted_name('A("")')
         assert base == "A"
-        assert subs == [""]
+        assert subs == ['""']  # Empty quoted string preserved
 
     def test_subscript_with_only_escaped_quote(self, resolver):
-        """Subscript that is just an escaped quote (""" ")." ""
+        """Subscript that is just an escaped quote preserved."""
         base, subs = resolver._parse_subscripted_name('A("""")')
         assert base == "A"
-        assert subs == ['"']  # Single quote character
+        assert subs == ['""""']  # Raw escaped quote preserved
 
     def test_nested_parentheses_preserved(self, resolver):
         """Expressions with nested parentheses are preserved."""

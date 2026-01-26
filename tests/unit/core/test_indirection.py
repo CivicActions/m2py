@@ -599,3 +599,109 @@ class TestResolveToName:
 
         target = resolver.resolve_to_name("X", levels=1)
         assert target == "%ZX"
+
+
+class TestSubscriptEvaluation:
+    """Tests for subscript evaluation in indirection strings.
+
+    When indirection resolves to a string like "A(AA)", the subscript AA
+    must be evaluated as a variable reference, not treated as a literal.
+
+    Feature: 018-unified-variable-system
+    Bug: V1IDNM1 I-494 pattern: @B where B="@A(AA)" failed with VAREXPECTED
+    """
+
+    def test_subscript_variable_is_evaluated(self):
+        """@X where X="A(AA)" and AA=11 → get A(11).
+
+        This is the V1IDNM1 I-494 pattern (simplified).
+        """
+        from m2py.runtime import MArray
+
+        state = MockMState()
+        # Set up: X="A(AA)", AA=11, A(11)=42
+        arr = MArray()
+        arr[(11,)].value = 42
+        scope = CurrentScope(scope_dict={"X": "A(AA)", "AA": 11, "A": arr})
+        resolver = IndirectionResolver(state, scope)
+
+        # _get_value("A(AA)") should evaluate AA to 11, then get A(11)
+        result = resolver._get_value("A(AA)")
+        assert result == 42
+
+    def test_subscript_variable_in_recursive_indirection(self):
+        """@B where B="@A(AA)" should resolve @A(AA) correctly.
+
+        This is the full V1IDNM1 I-494 pattern.
+        B contains "@A(AA)" which starts with @, triggering recursive resolution.
+        """
+        from m2py.runtime import MArray
+
+        state = MockMState()
+        # Set up: B="@A(AA)", AA=11, A(11)="D"
+        arr = MArray()
+        arr[(11,)].value = "D"
+        scope = CurrentScope(scope_dict={"B": "@A(AA)", "AA": 11, "A": arr})
+        resolver = IndirectionResolver(state, scope)
+
+        # resolve_to_name("B", 1) should:
+        # 1. Get B → "@A(AA)"
+        # 2. Recognize @ prefix, call _resolve_recursive_at
+        # 3. Strip @, call _get_value("A(AA)")
+        # 4. _get_value parses subscript AA, evaluates it to 11
+        # 5. Returns A(11) → "D"
+        target = resolver.resolve_to_name("B", levels=1)
+        assert target == "D"
+
+    def test_multiple_subscripts_with_variables(self):
+        """@X where X="A(I,J)" and I=1, J=2 → get A(1,2)."""
+        from m2py.runtime import MArray
+
+        state = MockMState()
+        arr = MArray()
+        arr[(1, 2)].value = "found"
+        scope = CurrentScope(scope_dict={"X": "A(I,J)", "I": 1, "J": 2, "A": arr})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._get_value("A(I,J)")
+        assert result == "found"
+
+    def test_numeric_literal_subscript_not_evaluated(self):
+        """Numeric subscripts should work as literals."""
+        from m2py.runtime import MArray
+
+        state = MockMState()
+        arr = MArray()
+        arr[(5,)].value = "five"
+        scope = CurrentScope(scope_dict={"X": "A(5)", "A": arr})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._get_value("A(5)")
+        assert result == "five"
+
+    def test_string_literal_subscript(self):
+        """Quoted string subscripts work as literals."""
+        from m2py.runtime import MArray
+
+        state = MockMState()
+        arr = MArray()
+        arr[("key",)].value = "value"
+        scope = CurrentScope(scope_dict={"A": arr})
+        resolver = IndirectionResolver(state, scope)
+
+        # In MUMPS notation, A("key") has quoted subscript
+        result = resolver._get_value('A("key")')
+        assert result == "value"
+
+    def test_indirection_in_subscript(self):
+        """@X where X="A(@Y)" and Y="1" → get A(1)."""
+        from m2py.runtime import MArray
+
+        state = MockMState()
+        arr = MArray()
+        arr[(1,)].value = "indirect_sub"
+        scope = CurrentScope(scope_dict={"X": "A(@Y)", "Y": "1", "A": arr})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._get_value("A(@Y)")
+        assert result == "indirect_sub"

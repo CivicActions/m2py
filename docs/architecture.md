@@ -204,7 +204,7 @@ if __name__ == "__main__":
     LABEL(_rt, _scope)
 ```
 
-### Cross-Routine Infrastructure (Spec 008)
+### Cross-Routine Infrastructure
 
 External routine calls require coordinated code generation across multiple modules:
 
@@ -237,21 +237,21 @@ All routine functions accept `_rt` and `_scope` parameters for runtime and cross
 def MAIN(_rt, _scope=None, **_kwargs):
     _scope = _scope if _scope is not None else {}
     
-    _scope["X"] = 42
+    _scope.setdefault('X', MArray()).value = 42
     import helper
     helper.SHOW(_rt, _scope=_scope)
 
 # helper.py
 def SHOW(_rt, _scope=None, **_kwargs):
     _scope = _scope if _scope is not None else {}
-    _rt.write(str(_scope.get("X", "")))
+    _rt.write(str(_scope.get('X', MArray()).value))
 ```
 
 Key design points:
 - `_rt` passed as first parameter to all functions
 - `_scope` shared across all external calls
-- Variables stored in `_scope['varname']` instead of local Python scope
-- Variable reads use `_scope.get('varname', '')` for undefined safety
+- Variables stored via `_scope.setdefault('varname', MArray()).value`
+- Variable reads use `_scope.get('varname', MArray()).value`
 - Entry points have `_scope=None` default for standalone execution
 - Internal and external calls pass `_rt` and `_scope` explicitly
 

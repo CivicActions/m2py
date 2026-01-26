@@ -13,14 +13,13 @@ Indirection (`@`) allows runtime evaluation of names, subscripts, and arguments.
 | Name Indirection (`@X`) | ✅ Implemented | Read and write supported |
 | Multi-level (`@@X`) | ✅ Implemented | Arbitrary nesting depth |
 | Name + Subscripts (`@NAME@(1,2)`) | ✅ Implemented | Uses `name_indirection_subscripts` |
-| Indirect DO (`D @TARGET`) | ✅ Implemented | Spec 012 Phase 7 |
-| Indirect GOTO (`G @TARGET`) | ✅ Implemented | Spec 012 Phase 8 |
-| SET Argument Indirection (`S @A`) | ✅ Implemented | Spec 012 Phase 9 |
-| Pattern Indirection (`X?@PAT`) | ✅ Implemented | Spec 012 Phase 10 |
-| FOR Loop Variable (`F @A=1:1:3`) | ✅ Implemented | Spec 012 Phase 11 |
-| KILL Indirection (`K @X`) | ✅ Implemented | Spec 012 Phase 11 |
-| NEW Indirection (`N @X`) | ✅ Implemented | Spec 012 Phase 11 |
-| Subscript Indirection (`A(@I)`) | ❌ Not yet | Future phase |
+| Indirect DO (`D @TARGET`) | ✅ Implemented | Local and external calls |
+| Indirect GOTO (`G @TARGET`) | ✅ Implemented | Local and external targets |
+| SET Argument Indirection (`S @A`) | ✅ Implemented | Dynamic assignment strings |
+| Pattern Indirection (`X?@PAT`) | ✅ Implemented | Runtime pattern compilation |
+| FOR Loop Variable (`F @A=1:1:3`) | ✅ Implemented | Dynamic loop variable |
+| KILL Indirection (`K @X`) | ✅ Implemented | Dynamic kill target |
+| NEW Indirection (`N @X`) | ✅ Implemented | Dynamic NEW target |
 | XECUTE Constant (`X "S X=1"`) | ✅ Implemented | Inlined at transpile time |
 | XECUTE Dynamic (`X CODE`) | ✅ Implemented | Via runtime execute_mumps() |
 
@@ -44,32 +43,22 @@ MIndirection(
 
 **Generated Python:**
 ```python
-_scope["X"] = "VAR"
-_rt.set_var(_scope.get("X", ""), 1, _scope)  # S @X=1
-_rt.write(_rt.get_var(_scope.get("X", ""), _scope))  # W @X
+_scope.setdefault('X', MArray()).value = "VAR"
+_rt.set_indirected("X", 1, _scope, levels=1)  # S @X=1
+_rt.write(_rt.get_var(_rt.get_indirection_source("X", _scope), _scope))  # W @X
 ```
 
-### Subscript Indirection
+### Name Indirection with Subscripts
+
+To use a variable value as a subscript, use name indirection with the `@X@(subs)` syntax:
 
 ```mumps
-S I=2
-S A(@I)=5   ; Sets A(2)=5
+S X="A",I=2
+S @X@(I)=5    ; Sets A(2)=5
+W @X@(I)      ; Writes 5
 ```
 
-**ASG Structure:**
-```
-MVariable(
-    name="A",
-    subscripts=[
-        MIndirection(
-            expression=MVariable(name="I"),
-            indirection_type=IndirectionType.SUBSCRIPT
-        )
-    ]
-)
-```
-
-This is simpler - just evaluate I at runtime.
+**Note**: Direct subscript indirection (`A(@I)`) is not valid MUMPS syntax.
 
 ### Full Name Indirection
 
@@ -321,7 +310,7 @@ MXecuteStatement(
 
 **Generated Python:**
 ```python
-_scope["X"] = 1  # Inlined from "S X=1"
+_scope.setdefault('X', MArray()).value = 1  # Inlined from "S X=1"
 ```
 
 ### Multiple Arguments
@@ -334,8 +323,8 @@ Each argument is processed in order:
 
 **Generated Python:**
 ```python
-_scope["A"] = 1
-_scope["B"] = 2
+_scope.setdefault('A', MArray()).value = 1
+_scope.setdefault('B', MArray()).value = 2
 ```
 
 ### XECUTE with Postcondition
@@ -347,7 +336,7 @@ X:cond "S X=1"  ; Execute only if cond is true
 **Generated Python:**
 ```python
 if m_truth(cond_expr):
-    _scope["X"] = 1
+    _scope.setdefault('X', MArray()).value = 1
 ```
 
 ### Dynamic XECUTE
@@ -370,7 +359,7 @@ MXecuteStatement(
 
 **Generated Python:**
 ```python
-_rt.execute_mumps(_scope.get("CODE", ""), _scope)
+_rt.execute_mumps(_scope.get('CODE', MArray()).value, _scope, globals())
 ```
 
 ### Scope Sharing in XECUTE
@@ -385,9 +374,9 @@ W INNER               ; Outputs 11
 
 **Generated Python:**
 ```python
-_scope["OUTER"] = 10
+_scope.setdefault('OUTER', MArray()).value = 10
 _rt.execute_mumps("S INNER=OUTER+1", _scope)  # _scope passed
-_rt.write(_scope.get("INNER", ""))
+_rt.write(_scope.get('INNER', MArray()).value)
 ```
 
 The `_scope` dictionary is passed to `execute_mumps()`, allowing the executed
@@ -448,15 +437,16 @@ The `MUMPSRuntime` class provides these methods for indirection:
 | Method | Purpose |
 |--------|---------|
 | `get_var(name, _scope)` | Read variable by dynamic name |
-| `set_var(name, value, _scope)` | Write variable by dynamic name |
+| `set_indirected(name, value, _scope, levels)` | Write variable by dynamic name |
+| `get_indirection_source(name, _scope)` | Get variable value for reading |
 | `resolve_indirection(name, levels, _scope)` | Multi-level indirection |
 
 ### Generation Strategies
 
 | Scenario | Generated Code |
 |----------|----------------|
-| `@X` read | `_rt.get_var(_scope.get("X", ""), _scope)` |
-| `S @X=1` | `_rt.set_var(_scope.get("X", ""), 1, _scope)` |
+| `@X` read | `_rt.get_var(_rt.get_indirection_source("X", _scope), _scope)` |
+| `S @X=1` | `_rt.set_indirected("X", 1, _scope, levels=1)` |
 | `@@X` | `_rt.resolve_indirection("X", 2, _scope)` |
 | `@@@X` | `_rt.resolve_indirection("X", 3, _scope)` |
 
@@ -466,10 +456,9 @@ Labels using indirection have `ScopeStrategy.REQUIRES_RUNTIME`, which generates
 functions with `_scope` parameter for runtime variable access:
 
 ```python
-def TEST(_rt, _scope=None, **_kwargs):
-    if _scope is None:
-        _scope = {}
-    # ... code using _rt.get_var()/_rt.set_var() ...
+def TEST(_rt, _scope=None, _start_offset=0):
+    _scope = _scope if _scope is not None else {}
+    # ... code using _rt.get_var()/_rt.set_indirected() ...
 ```
 
 ---
@@ -636,10 +625,12 @@ W @A          ; Error: empty variable name
 | Type | Example | Status |
 |------|---------|--------|
 | `NAME` | `@X` | ✅ Implemented |
-| `SUBSCRIPT` | `A(@I)` | ❌ Not yet |
 | `ARGUMENT` | `S @A` | ✅ Implemented |
 | `PATTERN` | `X?@PAT` | ✅ Implemented |
 | `UNKNOWN` | | Analysis fallback |
+
+**Note**: Direct subscript indirection (`A(@I)`) is not valid MUMPS syntax.
+Use name indirection with subscripts: `@X@(1,2)` where X contains the base name.
 
 ---
 

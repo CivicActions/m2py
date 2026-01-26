@@ -264,7 +264,7 @@ G LABEL1,LABEL2:COND
 | `is_restructurable` | `bool` | True if can be restructured to if/else |
 | `codegen_pattern` | `Optional[GotoCodegenPattern]` | Pre-computed pattern for codegen |
 
-**Pre-computed codegen fields** (Phase 14 refactoring):
+**Pre-computed codegen fields**:
 
 The `is_restructurable` and `codegen_pattern` fields are populated during analysis
 to avoid recomputing at code generation time:
@@ -301,7 +301,7 @@ conditional execution (`I cond <commands>`) or QUIT from within a DO block.
 - `MULTI_LOOP_EXIT`: Exception or state machine
 - `FORWARD_JUMP` + `is_cross_label=False`: If/elif chain (restructurable)
 - `FORWARD_JUMP` + `is_cross_label=True`: Function call with return
-- `BACKWARD_JUMP` + `is_cross_label=False`: Implicit loop (deferred to Spec 006)
+- `BACKWARD_JUMP` + `is_cross_label=False`: Implicit loop with `while True`/`continue`
 - `BACKWARD_JUMP` + `is_cross_label=True`: While loop wrapper or state machine
 
 ---

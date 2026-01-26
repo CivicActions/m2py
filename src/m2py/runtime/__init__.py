@@ -218,14 +218,17 @@ def _parse_subscript_list(subscript_str: str, original_name: str) -> List[Any]:
     return subscripts
 
 
-class VarRef:
+class SubscriptVarRef:
     """Wrapper to mark a subscript as a variable reference to be evaluated.
 
     Used in _convert_subscript to distinguish:
     - "key" → literal string "key" (from quoted MUMPS string)
-    - I → VarRef("I") (unquoted MUMPS variable reference)
+    - I → SubscriptVarRef("I") (unquoted MUMPS variable reference)
 
     This allows _evaluate_subscript to only look up actual variable references.
+
+    Note: This is distinct from core.scope.VarRef which represents a complete
+    variable reference for codegen/runtime unified access patterns.
     """
 
     __slots__ = ("name",)
@@ -234,7 +237,11 @@ class VarRef:
         self.name = name
 
     def __repr__(self) -> str:
-        return f"VarRef({self.name!r})"
+        return f"SubscriptVarRef({self.name!r})"
+
+
+# Backward compatibility alias - tests may import VarRef
+VarRef = SubscriptVarRef
 
 
 def _convert_subscript(value: str, original_name: str) -> Any:
@@ -245,7 +252,7 @@ def _convert_subscript(value: str, original_name: str) -> Any:
         original_name: Original name for error messages
 
     Returns:
-        Converted value (int, float, string, or VarRef for variable references)
+        Converted value (int, float, string, or SubscriptVarRef for variable references)
     """
     if not value:
         raise IndirectionError(original_name, "empty subscript value")
@@ -265,8 +272,8 @@ def _convert_subscript(value: str, original_name: str) -> Any:
         return value[1:-1]
 
     # Unquoted non-numeric string - this is a variable reference
-    # Wrap in VarRef so _evaluate_subscript knows to look it up
-    return VarRef(value)
+    # Wrap in SubscriptVarRef so _evaluate_subscript knows to look it up
+    return SubscriptVarRef(value)
 
 
 def _evaluate_subscript(
@@ -274,20 +281,20 @@ def _evaluate_subscript(
 ) -> Any:
     """Evaluate a single subscript value, resolving variable references.
 
-    When a subscript is a VarRef, look it up in the scope.
+    When a subscript is a SubscriptVarRef, look it up in the scope.
     This enables indirection like "A(I)" where I is a variable.
     Also handles name indirection like "A(@X)" where @X resolves to a variable name.
 
     Args:
-        sub: Subscript value (int, float, string, or VarRef)
+        sub: Subscript value (int, float, string, or SubscriptVarRef)
         _scope: Scope dictionary for variable lookup
         runtime: MUMPSRuntime instance for complex indirection resolution
 
     Returns:
         Evaluated subscript value
     """
-    # Only evaluate VarRef wrappers - they mark actual variable references
-    if not isinstance(sub, VarRef):
+    # Only evaluate SubscriptVarRef wrappers - they mark actual variable references
+    if not isinstance(sub, SubscriptVarRef):
         return sub
 
     # Look up variable in scope
@@ -2060,45 +2067,6 @@ class MUMPSRuntime:
         # Convert to string for use as variable name
         return str(value) if value is not None else ""
 
-    def resolve_for_indirection(self, varname: str, _scope: Dict[str, Any]) -> str:
-        """Resolve name indirection for FOR loop variables with nested resolution.
-
-        Spec 017: FOR loop indirection like F @A=1:1:3 where A's value may itself
-        be an indirection expression (e.g., "@$E(""ABCDEF"",3)" which evaluates
-        to "C", making the loop variable C).
-
-        This method:
-        1. Gets the value of the source variable (validates existence)
-        2. Resolves any nested indirection (value starting with @)
-        3. Returns the final variable name for the FOR loop
-
-        Args:
-            varname: Source variable name for the indirection
-            _scope: Current scope dictionary
-
-        Returns:
-            str: Final resolved variable name for the FOR loop
-
-        Raises:
-            IndirectionError: If varname is undefined or resolution fails
-
-        Examples:
-            >>> scope = {"A": MArray("B"), "B": MArray(0)}
-            >>> rt.resolve_for_indirection("A", scope)  # Simple case
-            "B"
-            >>> scope = {"A": MArray('@$E("XYZ",2)'), "Y": MArray(0)}
-            >>> rt.resolve_for_indirection("A", scope)  # Nested case
-            "Y"
-        """
-        # Get the source variable's value (validates existence)
-        value = self.get_indirection_source(varname, _scope)
-
-        # If the value is itself an indirection, resolve it
-        if value.startswith("@"):
-            return self.resolve_nested_indirection(value, _scope)
-
-        return value
-
     # UNIFIED_VAR_DEPRECATED: T004 - Replace with IndirectionResolver.resolve()
     def resolve_indirection_name(
         self, varname: str, levels: int, _scope: Dict[str, Any]
@@ -2192,10 +2160,19 @@ class MUMPSRuntime:
         # Parse existing subscripts from base_name
         existing_base, existing_subs = _parse_subscripted_name(base_name)
 
+        # Evaluate existing subscripts to resolve SubscriptVarRef objects (variable references)
+        # This is critical for indirection: if base_name is "C(K)" where K=1,
+        # existing_subs will be (SubscriptVarRef('K'),) and we need to evaluate it to (1,)
+        evaluated_existing = (
+            _evaluate_subscripts(existing_subs, _scope or {}, runtime=self)
+            if existing_subs
+            else None
+        )
+
         # Combine existing subscripts with new ones
         all_subs: list[Any] = []
-        if existing_subs:
-            all_subs.extend(existing_subs)
+        if evaluated_existing:
+            all_subs.extend(evaluated_existing)
         all_subs.extend(additional_subscripts)
 
         # Format subscripts - handle strings properly
@@ -2583,6 +2560,79 @@ class MUMPSRuntime:
 
         # Set via CurrentScope for locals
         cs.set(target, str_value)
+
+    def get_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> Any:
+        """Get variable value via indirection using unified components.
+
+        Feature: 018-unified-variable-system (T104)
+        Replaces scattered get_var + resolve calls with unified approach.
+
+        For READ operations (getting values), we need different semantics than
+        WRITE operations (setting values). For N levels of indirection:
+        - READ: Dereference N times, returning the final VALUE
+        - WRITE: Resolve N-1 times to get the target NAME to write to
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Returns:
+            Value at the resolved variable, or "" if undefined
+
+        Examples:
+            # @X where X="Y", Y=5
+            get_indirected("X", scope, levels=1)
+            # Returns 5
+
+            # @@X where X="Y", Y="Z", Z=99
+            get_indirected("X", scope, levels=2)
+            # Returns 99
+
+            # @X@(1,2) where X="A", A(1,2)="hello"
+            get_indirected("X", scope, levels=1, per_level_subscripts=[[1, 2]])
+            # Returns "hello"
+        """
+        # Handle per_level_subscripts by building the subscript string
+        # For @X@(1,2) where X="A", we need to get A(1,2)
+        if per_level_subscripts:
+            from m2py.core.scope import CurrentScope
+            from m2py.core.indirection import IndirectionResolver
+
+            # For per-level subscripts, we use the resolver which handles them properly
+            cs = CurrentScope.from_generated_context(_scope)
+            resolver = IndirectionResolver(self, cs)
+
+            # Resolve to get target variable NAME with subscripts applied
+            try:
+                target = resolver.resolve_to_name(
+                    source, levels=levels, per_level_subscripts=per_level_subscripts
+                )
+
+                # Handle global variables
+                if target.startswith("^"):
+                    base_name, subscripts = _parse_subscripted_name(target)
+                    subs = tuple(str(s) for s in subscripts) if subscripts else ()
+                    key = base_name[1:]  # Remove ^ prefix
+                    return self._globals.get(key, subs) or ""
+
+                # Get via CurrentScope for locals
+                return cs.get(target)
+            except Exception:
+                # If resolution fails, return empty string (MUMPS undefined behavior)
+                return ""
+
+        # For simple multi-level indirection without per-level subscripts,
+        # use the existing resolve_indirection which has the correct semantics
+        # for READ operations (returns the final VALUE, not NAME)
+        return self.resolve_indirection(source, levels, _scope)
 
     def kill_indirected(
         self,
@@ -4657,4 +4707,7 @@ __all__ = [
     # Spec 012: Indirection & XECUTE
     "IndirectionError",
     "CallTarget",
+    # Spec 018: SubscriptVarRef for subscript variable references
+    "SubscriptVarRef",
+    "VarRef",  # Backward compatibility alias for SubscriptVarRef
 ]

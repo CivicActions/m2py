@@ -523,17 +523,98 @@ class IndirectionResolver:
         if "(" in name:
             base_name, subscripts = self._parse_subscripted_name(name)
 
+            # Evaluate subscripts as MUMPS expressions (handles variable refs)
+            evaluated_subs = self._evaluate_subscripts(subscripts)
+
             # Handle global references
             if base_name.startswith("^"):
-                return self._get_global_value(base_name, subscripts)
+                return self._get_global_value(base_name, evaluated_subs)
 
-            return self._scope.get_subscripted(base_name, subscripts)
+            return self._scope.get_subscripted(base_name, evaluated_subs)
 
         # Handle global references
         if name.startswith("^"):
             return self._get_global_value(name, [])
 
         return self._scope.get(name)
+
+    def _evaluate_subscripts(self, subscripts: List[str]) -> List[Any]:
+        """Evaluate subscripts as MUMPS expressions.
+
+        When subscripts come from an indirection string like "A(AA)",
+        each subscript may be a variable reference that needs evaluation.
+
+        Args:
+            subscripts: List of subscript strings from parsing
+
+        Returns:
+            List of evaluated subscript values
+
+        Examples:
+            ["1", "2"] → [1, 2]  (numeric literals)
+            ["AA", "BB"] → [11, 22]  (variable values if AA=11, BB=22)
+            ["@X", "5"] → [value_of_X, 5]  (indirection + literal)
+            ['"key"'] → ["key"]  (quoted string literal)
+        """
+        result = []
+        for sub in subscripts:
+            # Skip empty subscripts
+            if not sub:
+                result.append("")
+                continue
+
+            # Quoted string literal - treat as literal, not variable
+            if sub.startswith('"') and sub.endswith('"'):
+                # Strip quotes and unescape doubled quotes
+                result.append(self._strip_mumps_quotes(sub))
+                continue
+
+            # Numeric literal
+            if self._is_numeric_literal(sub):
+                result.append(self._parse_numeric(sub))
+            elif sub.startswith("@"):
+                # Subscript indirection - resolve
+                var_name = sub[1:]
+                result.append(self._get_value(var_name))
+            elif sub.startswith("$"):
+                # Function call - evaluate as expression
+                result.append(self.evaluate_expression(sub))
+            elif self._is_valid_subscript_literal(sub):
+                # Could be a variable reference - try to evaluate
+                # But first check if it's just a simple identifier (variable)
+                if sub.isidentifier() or (sub[0] == "%" and sub[1:].isidentifier()):
+                    # This is a variable name - get its value
+                    result.append(self._scope.get(sub))
+                else:
+                    # Complex expression - use evaluate_expression
+                    result.append(self.evaluate_expression(sub))
+            else:
+                # String literal that doesn't look like a variable
+                result.append(sub)
+
+        return result
+
+    def _is_valid_subscript_literal(self, s: str) -> bool:
+        """Check if string could be a subscript expression to evaluate.
+
+        Args:
+            s: String to check
+
+        Returns:
+            True if it looks like it needs evaluation
+        """
+        if not s:
+            return False
+        # Variable names start with letter or %
+        if s[0].isalpha() or s[0] == "%":
+            return True
+        # Expressions with operators
+        if any(
+            op in s
+            for op in ["+", "-", "*", "/", "_", "#", "\\", "=", "<", ">", "&", "!", "'"]
+        ):
+            return True
+        return False
 
     def _get_global_value(self, base_name: str, subscripts: List[Any]) -> Any:
         """Get global variable value from MState.
@@ -572,11 +653,16 @@ class IndirectionResolver:
         When a resolved value itself starts with @, we need to
         evaluate that as an expression/variable reference.
 
+        Handles patterns like:
+        - @VAR → get value of VAR
+        - @VAR@(subs) → get value of VAR, append subs (name indirection subscripts)
+        - @$E(...) → evaluate MUMPS function
+
         Args:
             value: String starting with @
 
         Returns:
-            Resolved value after handling the @ prefix
+            Resolved value (either the value at a variable, or a name with subscripts appended)
         """
         # Strip the @ and recursively resolve
         inner = value[1:]
@@ -586,8 +672,125 @@ class IndirectionResolver:
             # Use evaluate_expression to handle function calls
             return str(self.evaluate_expression(inner))
 
-        # Otherwise it's another variable reference
+        # Check for name indirection subscripts pattern: VAR@(subs)
+        # This is different from VAR(subs) - the @() means "append these subscripts
+        # to whatever VAR resolves to"
+        at_paren_pos = inner.find("@(")
+        if at_paren_pos > 0:
+            # Pattern: VAR@(subs) or VAR@(subs)@(more_subs)
+            var_name = inner[:at_paren_pos]
+            subscript_part = inner[at_paren_pos:]
+
+            # Get value of VAR (which should be a variable name)
+            resolved_name = str(self._get_value(var_name))
+
+            # Parse and append all @(subs) groups
+            remaining = subscript_part
+            while remaining.startswith("@("):
+                # Find matching close paren
+                close_pos = self._find_matching_paren(remaining, 1)
+                if close_pos < 0:
+                    # Malformed - just return what we have
+                    return resolved_name + remaining
+
+                subs_str = remaining[2:close_pos]  # Contents inside @(...)
+                subs = self._parse_subscript_list(subs_str)
+
+                # Append subscripts to resolved name
+                resolved_name = self._append_subscripts(resolved_name, subs)
+
+                remaining = remaining[close_pos + 1 :]
+
+            return resolved_name
+
+        # Otherwise it's a simple variable reference
         return str(self._get_value(inner))
+
+    def _find_matching_paren(self, s: str, start_pos: int) -> int:
+        """Find the position of the closing paren matching the one at start_pos.
+
+        Args:
+            s: String to search
+            start_pos: Position of the opening '('
+
+        Returns:
+            Position of matching ')' or -1 if not found
+        """
+        depth = 1
+        i = start_pos + 1
+        in_quotes = False
+        while i < len(s):
+            c = s[i]
+            if c == '"' and (i == 0 or s[i - 1] != "\\"):
+                in_quotes = not in_quotes
+            elif not in_quotes:
+                if c == "(":
+                    depth += 1
+                elif c == ")":
+                    depth -= 1
+                    if depth == 0:
+                        return i
+            i += 1
+        return -1
+
+    def _parse_subscript_list(self, subs_str: str) -> List[Any]:
+        """Parse a comma-separated subscript list.
+
+        Args:
+            subs_str: String like "1,2" or "1,@B,3"
+
+        Returns:
+            List of subscript values (resolving any @VAR references)
+        """
+        if not subs_str:
+            return []
+
+        result = []
+        current = ""
+        depth = 0
+        in_quotes = False
+
+        for char in subs_str:
+            if char == '"' and (not current or current[-1] != "\\"):
+                in_quotes = not in_quotes
+                current += char
+            elif char == "(" and not in_quotes:
+                depth += 1
+                current += char
+            elif char == ")" and not in_quotes:
+                depth -= 1
+                current += char
+            elif char == "," and depth == 0 and not in_quotes:
+                result.append(self._evaluate_subscript_value(current.strip()))
+                current = ""
+            else:
+                current += char
+
+        if current:
+            result.append(self._evaluate_subscript_value(current.strip()))
+
+        return result
+
+    def _evaluate_subscript_value(self, value: str) -> Any:
+        """Evaluate a single subscript value, handling @VAR references.
+
+        Args:
+            value: Subscript value string, may be "@VAR" or a literal
+
+        Returns:
+            Evaluated subscript value
+        """
+        if value.startswith("@"):
+            # Subscript indirection - resolve the variable
+            var_name = value[1:]
+            return self._get_value(var_name)
+
+        # Check if it's a quoted string - remove quotes
+        if value.startswith('"') and value.endswith('"'):
+            return value[1:-1].replace('""', '"')
+
+        # Return as-is (might be numeric or other literal)
+        return value
 
     def _append_subscripts(self, name: str, subscripts: List[Any]) -> str:
         """Append subscripts to a variable name.
@@ -639,7 +842,8 @@ class IndirectionResolver:
 
         Note:
             String subscripts in MUMPS-style name syntax are quoted (e.g. "key").
-            This method strips those quotes to return raw subscript values.
+            This method preserves quotes to distinguish literals from variables.
+            Quote stripping is handled in _evaluate_subscripts().
         """
         if "(" not in name:
             return name, []
@@ -662,12 +866,14 @@ class IndirectionResolver:
                     depth -= 1
                     current += char
                 elif char == "," and depth == 0:
-                    subscripts.append(self._strip_mumps_quotes(current.strip()))
+                    # Don't strip quotes here - let _evaluate_subscripts handle it
+                    subscripts.append(current.strip())
                     current = ""
                 else:
                     current += char
             if current:
-                subscripts.append(self._strip_mumps_quotes(current.strip()))
+                # Don't strip quotes here - let _evaluate_subscripts handle it
+                subscripts.append(current.strip())
 
         return base, subscripts
 

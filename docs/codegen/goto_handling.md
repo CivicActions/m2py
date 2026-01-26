@@ -3,8 +3,8 @@
 Python code generation for MUMPS GOTO statements.
 
 > **Note**: Code examples in this document show simplified patterns for clarity.
-> The actual implementation uses `_scope['varname']` for variable storage (SIMPLE_FUNCTIONS strategy)
-> or `state.varname` (TRAMPOLINE strategy) per Phase 13 execution model.
+> The actual implementation uses `_scope.setdefault('varname', MArray()).value` for variable storage
+> (SIMPLE_FUNCTIONS strategy) or `state.varname` (TRAMPOLINE strategy).
 > See [architecture.md](../architecture.md) for current function signatures.
 
 ## Overview
@@ -23,8 +23,8 @@ After `classify_gotos()`, each MGotoStatement has a `goto_type`:
 | `FORWARD_JUMP` (cross-label) | To later label | Trampoline: `return (label, state)` |
 | `BACKWARD_JUMP` (intra-label) | To earlier code in same label | `while True:` + `continue` |
 | `BACKWARD_JUMP` (cross-label) | To earlier label | Trampoline: `return (label, state)` |
-| `EXTERNAL` | To other routine | `raise GotoExternal(module, label)` (Spec 008) |
-| `UNRESOLVED` | Dynamic target | Not yet supported (Spec 012) |
+| `EXTERNAL` | To other routine | `raise GotoExternal(module, label)` |
+| `UNRESOLVED` | Dynamic target | Not yet supported |
 
 ## Intra-Label Forward Jump
 
@@ -307,7 +307,7 @@ The trampoline dispatcher handles the cycle:
 
 This pattern prevents stack overflow - no recursion occurs.
 
-## Strategy Selection (Spec 006)
+## Strategy Selection
 
 The code generator selects a strategy based on ASG analysis:
 
@@ -326,11 +326,11 @@ def _select_goto_strategy(routine: MRoutine) -> GotoStrategy:
 | `SIMPLE_FUNCTIONS` | No cross-label GOTOs | Labels become simple functions (current behavior) |
 | `TRAMPOLINE` | Any cross-label GOTOs | Labels return target, dispatcher loop handles control |
 
-Unsupported patterns raise `UnsupportedFeatureError` referencing future specs:
-- `UNRESOLVED` GOTOs → "See Spec 012"
-- `EXTERNAL` GOTOs → "See Spec 008"
+Unsupported patterns raise `UnsupportedFeatureError`:
+- `UNRESOLVED` GOTOs → Dynamic target not yet supported
+- `EXTERNAL` GOTOs → Cross-routine GOTOs use GotoExternal exception
 
-## Trampoline Pattern (Spec 006 Phase 5+)
+## Trampoline Pattern
 
 When `needs_trampoline=True`, the code generator produces:
 
@@ -338,7 +338,7 @@ When `needs_trampoline=True`, the code generator produces:
 2. **Label functions** - Prefixed with `_`, accept state parameter, return `(next_target, state)` tuple
 3. **Entry point function** - Named after first label, creates state and runs trampoline dispatcher
 4. **Labels dictionary** - Maps label names to their functions
-5. **Line map** (Spec 007) - Maps source line numbers to (label, offset) tuples for offset dispatch
+5. **Line map** - Maps source line numbers to (label, offset) tuples for offset dispatch
 
 ```python
 from dataclasses import dataclass, field
@@ -368,7 +368,7 @@ _labels = {
     "NEXT": _NEXT,
 }
 
-# Spec 007: Line map for offset dispatch
+# Line map for offset dispatch
 _line_map: dict[int, tuple[str, int]] = {
     1: ("TEST", 0),
     2: ("NEXT", 0),
@@ -396,14 +396,14 @@ def TEST():
 - Label functions are prefixed with `_` (e.g., `_TEST`) to distinguish from entry point
 - The entry point (`TEST()`) has the original label name for external callers
 - Cross-label GOTOs return the target label as a string: `return ("NEXT", state)`
-- **Spec 007**: Offset GOTOs return line number: `return (label_line + offset, state)`
-- **Spec 007**: Dispatcher handles `int` targets via `_line_map` lookup
-- **Spec 007**: Label functions accept `_start_offset=0` parameter for entry at offset
+- Offset GOTOs return line number: `return (label_line + offset, state)`
+- Dispatcher handles `int` targets via `_line_map` lookup
+- Label functions accept `_start_offset=0` parameter for entry at offset
 - QUIT returns `(None, state)` to exit the trampoline loop
 - Fall-through to next label returns that label's name instead of `None`
 - FOR loop variables in state use `state.VAR` for loop counter when cross-label visible
 
-### Dynamic Locals Mode (Spec 017)
+### Dynamic Locals Mode
 
 When a routine contains **argumentless KILL** or **argumentless NEW**, variables cannot be
 enumerated at compile time. In this case, RoutineState uses dynamic dict-based storage:
@@ -469,12 +469,8 @@ on MRoutine. The codegen checks these via `routine_uses_dynamic_locals()` to dec
 Dynamic locals mode is only enabled for routines that actually need it. This preserves
 the performance benefits of static dataclass fields for the majority of routines while
 correctly handling dynamic scoping when required.
-- **Spec 007**: Label functions accept `_start_offset=0` parameter for entry at offset
-- QUIT returns `(None, state)` to exit the trampoline loop
-- Fall-through to next label returns that label's name instead of `None`
-- FOR loop variables in state use `state.VAR` for loop counter when cross-label visible
 
-## Computed Offsets (Spec 007)
+## Computed Offsets
 
 GOTO/DO with computed offsets (`G LABEL+N`, `D SUB+expr`) dispatches by source line number:
 
@@ -616,7 +612,7 @@ The `MArray` class supports:
 | `_generate_external_goto()` | Generate `raise GotoExternal()` for external GOTOs |
 | `generate_scope_statements()` | Statement generation with GOTO restructuring |
 
-## External GOTO (Spec 008)
+## External GOTO
 
 External GOTOs transfer control to another routine permanently (no return). They raise `GotoExternal` exception which must be caught by `run_with_goto_support()`.
 

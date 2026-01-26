@@ -788,7 +788,7 @@ class TestIndirectionEdgeCases:
 
 
 # =============================================================================
-# T040: MUMPSRuntime.set_indirected() Tests (Unified Variable System)
+# T040: MUMPSRuntime.set_indirected() Tests (Variable System)
 # =============================================================================
 
 

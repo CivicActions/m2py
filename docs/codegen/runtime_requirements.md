@@ -83,9 +83,9 @@ rt.push_frame()        # Enter new scope (increments $STACK)
 rt.pop_frame()         # Exit scope (decrements $STACK)
 ```
 
-**Note**: Dynamic variable access via `runtime.get_var()` / `runtime.set_var()` 
-is reserved for indirection and global variables. Local variables use Python 
-locals for refactorability.
+**Note**: Dynamic variable access via `runtime.get_var()` / `runtime.set_indirected()` 
+is used for indirection and global variables. Local variables use 
+`_scope.setdefault('name', MArray()).value` for reliable MArray semantics.
 
 ## XECUTE Command
 
@@ -132,7 +132,7 @@ S ^A(1,2)=1   ; Sets last global context
 S ^(3)=2      ; Actually ^A(1,3)
 ```
 
-**Runtime Tracking (Spec 009):**
+**Runtime Tracking:**
 
 Global variable storage uses the `GlobalStorageBackend` protocol with `InMemoryGlobalStorage` as the default implementation:
 

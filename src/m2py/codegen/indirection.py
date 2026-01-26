@@ -139,61 +139,6 @@ def _count_indirection_levels_with_subscripts(
     return levels, inner, all_subscripts
 
 
-def _generate_for_indirection_target(
-    inner_expr: "MExpr", ctx: "GeneratorContext", indirection_levels: int = 1
-) -> str:
-    """Generate Python expression for FOR loop indirection target.
-
-    FOR loop indirection like F @A=1:1:3 requires special handling because
-    the resolved name may itself be an indirection expression. For example,
-    if A="@$E(""ABCDEF"",3)", we need to further resolve that to "C".
-
-    Multi-level indirection (F @@A, F @@@A) requires resolving multiple
-    levels of variable references.
-
-    This function generates code that uses resolve_indirection_name to handle
-    multi-level and nested indirection at runtime, returning the final variable
-    NAME to use for iteration.
-
-    Args:
-        inner_expr: The innermost expression inside the indirection (e.g., variable A)
-        ctx: Generator context
-        indirection_levels: Number of indirection levels (1 for @A, 2 for @@A, etc.)
-
-    Returns:
-        Python expression string that evaluates to the final variable name
-    """
-    from m2py.asg.expressions import MVariable
-    from m2py.codegen.expressions import generate_expr
-    from m2py.codegen.enums import GotoStrategy
-
-    scope_expr = _get_scope_expr(ctx)
-
-    if isinstance(inner_expr, MVariable):
-        var_name = inner_expr.name
-        if inner_expr.subscripts:
-            # Subscripted variable - get value and resolve nested indirection
-            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
-            subs_str = ", ".join(sub_exprs)
-            # Build the subscripted variable name at runtime
-            var_ref = f'"{var_name}(" + ",".join([str(s) for s in [{subs_str}]]) + ")"'
-            # Use resolve_indirection_name to get the final variable name
-            return f"_rt.resolve_indirection_name({var_ref}, {indirection_levels}, {scope_expr})"
-        else:
-            # Simple variable - use resolve_indirection_name
-            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                return f'_rt.resolve_indirection_name("{var_name}", {indirection_levels}, state._locals)'
-            elif ctx.strategy == GotoStrategy.TRAMPOLINE:
-                # Python locals - need to get the string name first
-                return f'_rt.resolve_indirection_name("{var_name}", {indirection_levels}, {scope_expr})'
-            else:
-                return f'_rt.resolve_indirection_name("{var_name}", {indirection_levels}, _scope)'
-    else:
-        # Other expression - generate and convert to string
-        expr = generate_expr(inner_expr, ctx)
-        return f"_rt.resolve_indirection_name(str({expr}), {indirection_levels}, {scope_expr})"
-
-
 def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> str:
     """Generate the Python expression for the variable name to look up.
 
@@ -294,6 +239,28 @@ def generate_name_indirection(
     ctx: "GeneratorContext",
 ) -> str:
     """Generate Python code for name indirection read (@VAR).
+
+    Feature: 018-unified-variable-system (T108)
+    Delegates to unified implementation which uses get_indirected().
+
+    Args:
+        expr: MIndirection ASG node with indirection_type=NAME
+        ctx: Generator context
+
+    Returns:
+        Python expression string
+    """
+    return generate_name_indirection_unified(expr, ctx)
+
+
+def _generate_name_indirection_legacy(
+    expr: "MIndirection",
+    ctx: "GeneratorContext",
+) -> str:
+    """Legacy implementation of name indirection read (@VAR).
+
+    DEPRECATED: Used only as fallback for complex cases that
+    generate_name_indirection_unified() cannot handle.
 
     Spec 012 Phase 3 (T014): Generates runtime call to resolve variable
     name at runtime and read its value.
@@ -541,6 +508,90 @@ def generate_argument_indirection_unified(
 
     # Generate call to unified evaluate_argument_indirection
     return f"_rt.evaluate_argument_indirection({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
+
+
+def generate_name_indirection_unified(
+    expr: "MIndirection",
+    ctx: "GeneratorContext",
+) -> str:
+    """Generate Python code for name indirection READ using unified components.
+
+    Feature: 018-unified-variable-system (T106)
+    Uses _rt.get_indirected() which internally uses IndirectionResolver.
+
+    This replaces the complex logic in generate_name_indirection() with
+    a single unified call that handles all cases:
+    - Simple: @X → _rt.get_indirected("X", _scope, levels=1)
+    - Multi-level: @@X → _rt.get_indirected("X", _scope, levels=2)
+    - With subscripts: @X@(1,2) → _rt.get_indirected("X", _scope, levels=1, per_level_subscripts=[[1,2]])
+
+    For complex cases (naked globals, complex expressions), falls back to
+    the original generate_name_indirection() to handle runtime resolution.
+
+    Args:
+        expr: MIndirection ASG node with indirection_type=NAME
+        ctx: Generator context
+
+    Returns:
+        Python expression string for get_indirected call
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
+    from m2py.codegen.expressions import generate_expr
+
+    # Count indirection levels and collect subscripts
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
+
+    # For complex inner expressions (naked globals, nested indirection, etc.),
+    # fall back to the legacy function which handles runtime resolution
+    if isinstance(inner_expr, NakedGlobal):
+        # Naked global - use legacy function
+        return _generate_name_indirection_legacy(expr, ctx)
+
+    # Get the appropriate scope expression
+    scope_expr = _get_scope_expr(ctx)
+
+    # Get the source variable name
+    if isinstance(inner_expr, MVariable):
+        source_name = inner_expr.name
+        # Include innermost subscripts in the source name if present
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            # Build name with subscripts at runtime
+            source_expr = (
+                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
+            )
+        else:
+            source_expr = f'"{source_name}"'
+    elif isinstance(inner_expr, GlobalVariable):
+        source_name = f"^{inner_expr.name}"
+        if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
+            )
+        else:
+            source_expr = f'"{source_name}"'
+    else:
+        # For complex expressions (like $EXTRACT), use the legacy function
+        return _generate_name_indirection_legacy(expr, ctx)
+
+    # Build per_level_subscripts argument if needed
+    if any(all_subscripts):
+        per_level_subs = []
+        for sub_list in all_subscripts:
+            if sub_list:
+                sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+            else:
+                per_level_subs.append("[]")
+        subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+    else:
+        subs_arg = ""
+
+    return f"_rt.get_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
 
 def generate_name_indirection_write_unified(
@@ -979,63 +1030,6 @@ def generate_multi_level_indirection(
     else:
         name_expr = generate_expr(inner_expr, ctx)
         return f"_rt.resolve_indirection(str({name_expr}), {levels}, {scope_expr})"
-
-
-def generate_subscripted_indirection(
-    expr: "MIndirection",
-    subscript_exprs: List[str],
-    ctx: "GeneratorContext",
-) -> str:
-    """Generate Python code for subscripted indirection (@NAME@(1,2)).
-
-    Spec 012 Phase 3 (T019): Generates runtime call to resolve variable
-    name and then access with explicit subscripts.
-
-    T065: Uses _generate_inner_name_expr for the variable name expression
-    which provides better error messages for undefined source variables.
-
-    Note: This is now handled directly in generate_name_indirection(),
-    which handles name_indirection_subscripts. This function is kept
-    for explicit subscript control when needed.
-
-    Args:
-        expr: MIndirection ASG node with name_indirection_subscripts
-        subscript_exprs: List of Python expressions for subscripts
-        ctx: Generator context
-
-    Returns:
-        Python expression string
-    """
-    from m2py.asg.expressions import MVariable
-    from m2py.codegen.expressions import generate_expr
-
-    # Get the appropriate scope expression for this context
-    scope_expr = _get_scope_expr(ctx)
-
-    # Count indirection levels
-    levels, inner_expr = _count_indirection_levels(expr)
-
-    # Build f-string for subscripts to avoid escaping issues with quotes
-    # Use single quotes for the f-string so double-quoted strings inside work
-    # subs_fstr generates code like: f'({expr1}, {expr2})' which evaluates at runtime
-    if len(subscript_exprs) == 1:
-        subs_fstr = f"f'({{{subscript_exprs[0]}}})'"
-    else:
-        subs_parts = ", ".join(f"{{{s}}}" for s in subscript_exprs)
-        subs_fstr = f"f'({subs_parts})'"
-
-    if isinstance(inner_expr, MVariable):
-        base_name = inner_expr.name
-        if levels > 1:
-            return f'_rt.get_var(str(_rt.resolve_indirection("{base_name}", {levels}, {scope_expr})) + {subs_fstr}, {scope_expr})'
-        else:
-            # T065: Use _generate_inner_name_expr for better error messages
-            inner_name = _generate_inner_name_expr(inner_expr, ctx)
-            return f"_rt.get_var({inner_name} + {subs_fstr}, {scope_expr})"
-    else:
-        # Complex expression
-        name_expr = generate_expr(inner_expr, ctx)
-        return f"_rt.get_var(str({name_expr}) + {subs_fstr}, {scope_expr})"
 
 
 def generate_xecute_constant(
@@ -1557,12 +1551,4 @@ __all__ = [
     "generate_name_indirection_kill_unified",
     "generate_name_indirection_for_unified",
     "generate_multi_level_indirection",
-    "generate_subscripted_indirection",
-    "generate_xecute_constant",
-    "generate_xecute_dynamic",
-    "generate_indirect_do",
-    "generate_indirect_goto",
-    "generate_argument_indirection",
-    "generate_set_argument_indirection",
-    "generate_pattern_indirection",
 ]
