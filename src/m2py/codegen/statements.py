@@ -312,17 +312,15 @@ class ForGenContext:
             # Also handles multi-level: F @@A=1:1:5, F @@@A=1:1:5
             loop_var_indirect = True
             # Generate expression to get target variable name at runtime
-            # Feature: 018-unified-variable-system (T089)
-            # Use generate_name_indirection_for_unified which uses IndirectionResolver
+            # Feature: 018-unified-variable-system (T089, T134)
+            # Use generate_name_indirection_for which uses IndirectionResolver
             if ctx is not None and stmt.loop_var.expression is not None:
                 from m2py.codegen.indirection import (
-                    generate_name_indirection_for_unified,
+                    generate_name_indirection_for,
                 )
 
                 # Generate code to resolve the full indirection chain
-                loop_var_expr = generate_name_indirection_for_unified(
-                    stmt.loop_var, ctx
-                )
+                loop_var_expr = generate_name_indirection_for(stmt.loop_var, ctx)
             var_name = "_for_indirect_var"
             loop_var = "_for_val"  # Temporary for range iteration
         elif isinstance(stmt.loop_var, str):
@@ -869,7 +867,7 @@ def _generate_single_assignment(
     Extracted from _generate_set to support ordered_items iteration.
     """
     from m2py.asg.expressions import MIndirection as MIndirectionType
-    from m2py.codegen.indirection import generate_name_indirection_write_unified
+    from m2py.codegen.indirection import generate_name_indirection_write
 
     if assignment.target is None or assignment.value is None:
         return
@@ -880,9 +878,7 @@ def _generate_single_assignment(
         # Generate value expression first
         value_expr = generate_expr(assignment.value, ctx)
         # Generate the set_indirected call via unified indirection module
-        set_stmt = generate_name_indirection_write_unified(
-            assignment.target, value_expr, ctx
-        )
+        set_stmt = generate_name_indirection_write(assignment.target, value_expr, ctx)
         ctx.emitter.line(set_stmt)
         return
 
@@ -3385,16 +3381,16 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                     ctx.emitter.line(f"{translated} = MArray()")
 
         elif isinstance(target, MIndirection):
-            # T086: Indirection target: K @A or K @A@(subs) using unified components
+            # T086, T133: Indirection target: K @A or K @A@(subs) using unified components
             # Uses _rt.kill_indirected() which handles multi-level indirection and
             # per-level subscripts via IndirectionResolver
-            from m2py.codegen.indirection import generate_name_indirection_kill_unified
+            from m2py.codegen.indirection import generate_name_indirection_kill
 
             if target.expression is None:
                 raise ValueError("KILL indirection has no expression")
 
             # Generate unified kill_indirected call
-            kill_stmt = generate_name_indirection_kill_unified(target, ctx)
+            kill_stmt = generate_name_indirection_kill(target, ctx)
             ctx.emitter.line(kill_stmt)
 
         else:
@@ -3999,7 +3995,7 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     from m2py.asg.expressions import MIndirection as MIndirectionType
-    from m2py.codegen.indirection import generate_name_indirection_write_unified
+    from m2py.codegen.indirection import generate_name_indirection_write
 
     if target.variable is None:
         return
@@ -4015,23 +4011,17 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
             # Timeout read with indirection: R @A:n
             timeout_expr = generate_expr(target.timeout, ctx)
             ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
-            set_stmt = generate_name_indirection_write_unified(
-                ind_var, "_read_val", ctx
-            )
+            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
             ctx.emitter.line(set_stmt)
         elif target.is_char_read:
             # Single character read with indirection: R *@A
             ctx.emitter.line("_read_val = m_read_char()")
-            set_stmt = generate_name_indirection_write_unified(
-                ind_var, "_read_val", ctx
-            )
+            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
             ctx.emitter.line(set_stmt)
         else:
             # Basic read with indirection: R @A
             ctx.emitter.line("_read_val = input()")
-            set_stmt = generate_name_indirection_write_unified(
-                ind_var, "_read_val", ctx
-            )
+            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
             ctx.emitter.line(set_stmt)
         return
 

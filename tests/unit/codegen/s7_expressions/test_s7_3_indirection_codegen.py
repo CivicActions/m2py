@@ -163,9 +163,8 @@ class TestGenerateInnerNameExpr:
 class TestGenerateNameIndirection:
     """Tests for generate_name_indirection() - reads via @VAR.
 
-    Feature: 018-unified-variable-system (T108)
-    Tests now verify delegation to generate_name_indirection_unified(),
-    which generates _rt.get_indirected() calls.
+    Feature: 018-unified-variable-system (T108, T131)
+    Tests verify unified implementation that generates _rt.get_indirected() calls.
     """
 
     def test_simple_indirection_read(self, mock_ctx):
@@ -290,12 +289,12 @@ class TestGenerateNameIndirection:
 class TestGenerateNameIndirectionWrite:
     """Tests for generate_name_indirection_write() - writes via S @VAR=val.
 
-    T065: Inner expressions now use get_indirection_source() for better
-    error messages on undefined source variables.
+    Feature: 018-unified-variable-system (T132)
+    Now uses unified set_indirected() calls.
     """
 
     def test_simple_indirection_write(self, mock_ctx):
-        """S @X=1 generates _rt.set_var with get_indirection_source."""
+        """S @X=1 generates _rt.set_indirected with levels=1."""
         var = MVariable(name="X")
         expr = MIndirection(
             expression=var,
@@ -303,12 +302,10 @@ class TestGenerateNameIndirectionWrite:
         )
 
         result = generate_name_indirection_write(expr, "1", mock_ctx)
-        assert (
-            result == '_rt.set_var(_rt.get_indirection_source("X", _scope), 1, _scope)'
-        )
+        assert result == '_rt.set_indirected("X", 1, _scope, levels=1)'
 
     def test_double_indirection_write(self, mock_ctx):
-        """S @@X=1 generates _rt.set_var with resolved indirection."""
+        """S @@X=1 generates _rt.set_indirected with levels=2."""
         var = MVariable(name="X")
         inner = MIndirection(
             expression=var,
@@ -320,12 +317,11 @@ class TestGenerateNameIndirectionWrite:
         )
 
         result = generate_name_indirection_write(outer, "1", mock_ctx)
-        # For @@X=1, resolve 1 level to get target name, then set
-        assert '_rt.resolve_indirection("X", 1, _scope)' in result
-        assert "_rt.set_var" in result
+        # For @@X=1, use levels=2 with set_indirected
+        assert result == '_rt.set_indirected("X", 1, _scope, levels=2)'
 
     def test_single_subscript_indirection_write(self, mock_ctx):
-        """S @NAME@(1)=5 generates subscripted set_var."""
+        """S @NAME@(1)=5 generates set_indirected with per_level_subscripts."""
         var = MVariable(name="NAME")
         sub = MLiteral(value=1)
         expr = MIndirection(
@@ -335,11 +331,10 @@ class TestGenerateNameIndirectionWrite:
         )
 
         result = generate_name_indirection_write(expr, "5", mock_ctx)
-        # T065: Now uses get_indirection_source for the inner name expression
-        # Uses append_subscripts to properly merge subscripts at runtime
+        # T132: Uses set_indirected with per_level_subscripts
         assert (
-            '_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", _scope=_scope), 5, _scope)'
-            == result
+            result
+            == '_rt.set_indirected("NAME", 5, _scope, levels=1, per_level_subscripts=[["1"]])'
         )
 
     def test_string_value_expression(self, mock_ctx):
@@ -351,14 +346,11 @@ class TestGenerateNameIndirectionWrite:
         )
 
         result = generate_name_indirection_write(expr, '"hello"', mock_ctx)
-        # T065: Now uses get_indirection_source for the inner name expression
-        assert (
-            result
-            == '_rt.set_var(_rt.get_indirection_source("X", _scope), "hello", _scope)'
-        )
+        # T132: Uses set_indirected
+        assert result == '_rt.set_indirected("X", "hello", _scope, levels=1)'
 
     def test_multiple_subscripts_write(self, mock_ctx):
-        """S @NAME@(1,2)=5 generates subscripted set_var with multiple subs."""
+        """S @NAME@(1,2)=5 generates set_indirected with multiple subs."""
         var = MVariable(name="NAME")
         sub1 = MLiteral(value=1)
         sub2 = MLiteral(value=2)
@@ -369,11 +361,10 @@ class TestGenerateNameIndirectionWrite:
         )
 
         result = generate_name_indirection_write(expr, "5", mock_ctx)
-        # T065: Now uses get_indirection_source for the inner name expression
-        # Uses append_subscripts to properly merge subscripts at runtime
+        # T132: Uses set_indirected with per_level_subscripts
         assert (
-            '_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source("NAME", _scope), "1", "2", _scope=_scope), 5, _scope)'
-            == result
+            result
+            == '_rt.set_indirected("NAME", 5, _scope, levels=1, per_level_subscripts=[["1", "2"]])'
         )
 
 
@@ -546,32 +537,32 @@ class TestEdgeCases:
         )
 
         # Value expression is already generated Python code (variable Y)
-        # T065: Now uses get_indirection_source for the inner name expression
+        # T132: Now uses set_indirected
         result = generate_name_indirection_write(
             expr, '_scope.get("Y", MArray()).value', mock_ctx
         )
         assert (
-            '_rt.set_var(_rt.get_indirection_source("X", _scope), _scope.get("Y", MArray()).value, _scope)'
+            '_rt.set_indirected("X", _scope.get("Y", MArray()).value, _scope, levels=1)'
             == result
         )
 
 
 # =============================================================================
-# Tests for generate_name_indirection_unified()
+# Tests for generate_name_indirection() unified implementation
 # =============================================================================
 
 
 @pytest.mark.codegen
 class TestGenerateNameIndirectionUnified:
-    """Tests for generate_name_indirection_unified() function.
+    """Tests for generate_name_indirection() function (unified implementation).
 
-    Feature: 018-unified-variable-system (T106, T107)
+    Feature: 018-unified-variable-system (T106, T107, T131)
     Tests the unified code generation for NAME indirection reads.
     """
 
     def test_simple_single_level(self, mock_ctx):
         """@X generates get_indirected call with levels=1."""
-        from m2py.codegen.indirection import generate_name_indirection_unified
+        from m2py.codegen.indirection import generate_name_indirection
 
         var = MVariable(name="X")
         expr = MIndirection(
@@ -579,12 +570,12 @@ class TestGenerateNameIndirectionUnified:
             indirection_type=IndirectionType.NAME,
         )
 
-        result = generate_name_indirection_unified(expr, mock_ctx)
+        result = generate_name_indirection(expr, mock_ctx)
         assert result == '_rt.get_indirected("X", _scope, levels=1)'
 
     def test_double_level(self, mock_ctx):
         """@@X generates get_indirected call with levels=2."""
-        from m2py.codegen.indirection import generate_name_indirection_unified
+        from m2py.codegen.indirection import generate_name_indirection
 
         var = MVariable(name="X")
         inner_indir = MIndirection(
@@ -596,12 +587,12 @@ class TestGenerateNameIndirectionUnified:
             indirection_type=IndirectionType.NAME,
         )
 
-        result = generate_name_indirection_unified(outer_indir, mock_ctx)
+        result = generate_name_indirection(outer_indir, mock_ctx)
         assert result == '_rt.get_indirected("X", _scope, levels=2)'
 
     def test_triple_level(self, mock_ctx):
         """@@@X generates get_indirected call with levels=3."""
-        from m2py.codegen.indirection import generate_name_indirection_unified
+        from m2py.codegen.indirection import generate_name_indirection
 
         var = MVariable(name="X")
         current = var
@@ -611,12 +602,12 @@ class TestGenerateNameIndirectionUnified:
                 indirection_type=IndirectionType.NAME,
             )
 
-        result = generate_name_indirection_unified(current, mock_ctx)
+        result = generate_name_indirection(current, mock_ctx)
         assert result == '_rt.get_indirected("X", _scope, levels=3)'
 
     def test_with_single_subscript(self, mock_ctx):
         """@X@(1) generates get_indirected with per_level_subscripts."""
-        from m2py.codegen.indirection import generate_name_indirection_unified
+        from m2py.codegen.indirection import generate_name_indirection
 
         var = MVariable(name="X")
         expr = MIndirection(
@@ -626,7 +617,7 @@ class TestGenerateNameIndirectionUnified:
             name_indirection_subscripts=[[MLiteral(value=1)]],
         )
 
-        result = generate_name_indirection_unified(expr, mock_ctx)
+        result = generate_name_indirection(expr, mock_ctx)
         assert (
             '_rt.get_indirected("X", _scope, levels=1, per_level_subscripts=' in result
         )
@@ -634,7 +625,7 @@ class TestGenerateNameIndirectionUnified:
 
     def test_with_multiple_subscripts(self, mock_ctx):
         """@X@(1,2) generates get_indirected with per_level_subscripts."""
-        from m2py.codegen.indirection import generate_name_indirection_unified
+        from m2py.codegen.indirection import generate_name_indirection
 
         var = MVariable(name="X")
         expr = MIndirection(
@@ -644,7 +635,7 @@ class TestGenerateNameIndirectionUnified:
             name_indirection_subscripts=[[MLiteral(value=1), MLiteral(value=2)]],
         )
 
-        result = generate_name_indirection_unified(expr, mock_ctx)
+        result = generate_name_indirection(expr, mock_ctx)
         assert (
             '_rt.get_indirected("X", _scope, levels=1, per_level_subscripts=' in result
         )
@@ -652,7 +643,7 @@ class TestGenerateNameIndirectionUnified:
 
     def test_global_variable(self, mock_ctx):
         """@^GLO generates get_indirected for global."""
-        from m2py.codegen.indirection import generate_name_indirection_unified
+        from m2py.codegen.indirection import generate_name_indirection
         from m2py.parser.textx_classes import GlobalVariable
 
         gvar = GlobalVariable(name="GLO", subscripts=[])
@@ -661,12 +652,12 @@ class TestGenerateNameIndirectionUnified:
             indirection_type=IndirectionType.NAME,
         )
 
-        result = generate_name_indirection_unified(expr, mock_ctx)
+        result = generate_name_indirection(expr, mock_ctx)
         assert '_rt.get_indirected("^GLO", _scope, levels=1)' == result
 
     def test_percent_variable(self, mock_ctx):
         """@%Z generates get_indirected for percent variable."""
-        from m2py.codegen.indirection import generate_name_indirection_unified
+        from m2py.codegen.indirection import generate_name_indirection
 
         var = MVariable(name="%Z")
         expr = MIndirection(
@@ -674,12 +665,12 @@ class TestGenerateNameIndirectionUnified:
             indirection_type=IndirectionType.NAME,
         )
 
-        result = generate_name_indirection_unified(expr, mock_ctx)
+        result = generate_name_indirection(expr, mock_ctx)
         assert '_rt.get_indirected("%Z", _scope, levels=1)' == result
 
     def test_variable_with_innermost_subscripts(self, mock_ctx):
         """@A(1) generates get_indirected with subscripted source name."""
-        from m2py.codegen.indirection import generate_name_indirection_unified
+        from m2py.codegen.indirection import generate_name_indirection
 
         var = MVariable(name="A", subscripts=[MLiteral(value=1)])
         expr = MIndirection(
@@ -687,7 +678,7 @@ class TestGenerateNameIndirectionUnified:
             indirection_type=IndirectionType.NAME,
         )
 
-        result = generate_name_indirection_unified(expr, mock_ctx)
+        result = generate_name_indirection(expr, mock_ctx)
         # Should build the source name with subscripts
         # The literal 1 becomes "1" when generated
         assert '"A(" + ",".join(str(s) for s in ["1"]) + ")"' in result

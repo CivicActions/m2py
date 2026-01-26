@@ -621,11 +621,22 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Phase 14b: Rename Unified Codegen Functions
 
-- [ ] T131 Rename `generate_name_indirection_unified()` → `generate_name_indirection()` (after T108 is complete)
-- [ ] T132 Rename `generate_name_indirection_write_unified()` → `generate_name_indirection_write()`
-- [ ] T133 Rename `generate_name_indirection_kill_unified()` → `generate_name_indirection_kill()`
-- [ ] T134 Rename `generate_name_indirection_for_unified()` → `generate_name_indirection_for()`
-- [ ] T135 Update `__all__` export list in `codegen/indirection.py`
+- [X] T131 Rename `generate_name_indirection_unified()` → `generate_name_indirection()` (after T108 is complete)
+  - ✅ Removed wrapper function that delegated to unified
+  - ✅ Renamed unified function to `generate_name_indirection()`
+  - ✅ Updated docstring to reflect unified implementation
+- [X] T132 Rename `generate_name_indirection_write_unified()` → `generate_name_indirection_write()`
+  - ✅ Renamed function (legacy became `_generate_name_indirection_write_legacy`)
+  - ✅ Updated callers in `statements.py`
+  - ✅ Updated tests in `test_s7_3_indirection_codegen.py`
+- [X] T133 Rename `generate_name_indirection_kill_unified()` → `generate_name_indirection_kill()`
+  - ✅ Renamed function
+  - ✅ Updated caller in `statements.py`
+- [X] T134 Rename `generate_name_indirection_for_unified()` → `generate_name_indirection_for()`
+  - ✅ Renamed function
+  - ✅ Updated callers in `statements.py`
+- [X] T135 Update `__all__` export list in `codegen/indirection.py`
+  - ✅ Removed `_unified` suffixes from exports
 
 ### Phase 14c: Rename Unified Runtime Methods (if needed)
 
@@ -637,9 +648,13 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Phase 14d: Update All Tests
 
-- [ ] T137 Update all test imports to use new function names
-- [ ] T138 Update test assertions that check for specific function names in generated code
-- [ ] T139 Run full test suite to verify all renames are complete
+- [X] T137 Update all test imports to use new function names
+  - ✅ Updated `TestGenerateNameIndirectionUnified` to use `generate_name_indirection`
+- [X] T138 Update test assertions that check for specific function names in generated code
+  - ✅ Updated `TestGenerateNameIndirectionWrite` to expect `set_indirected()` calls
+  - ✅ Updated `TestEdgeCases.test_write_with_variable_value` to expect `set_indirected()` calls
+- [X] T139 Run full test suite to verify all renames are complete
+  - ✅ All 4416 tests pass
 
 **Checkpoint**: Clean, consistent API with no `_unified` suffixes or adapter wrappers.
 

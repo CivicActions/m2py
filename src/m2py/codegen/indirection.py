@@ -233,26 +233,6 @@ def _build_subscripted_name_expr(
     return f'"{base_name}(" + ",".join([str(s) for s in [{subs_joined}]]) + ")"'
 
 
-# UNIFIED_VAR_DEPRECATED: T003 - Replace with IndirectionResolver.resolve() calls
-def generate_name_indirection(
-    expr: "MIndirection",
-    ctx: "GeneratorContext",
-) -> str:
-    """Generate Python code for name indirection read (@VAR).
-
-    Feature: 018-unified-variable-system (T108)
-    Delegates to unified implementation which uses get_indirected().
-
-    Args:
-        expr: MIndirection ASG node with indirection_type=NAME
-        ctx: Generator context
-
-    Returns:
-        Python expression string
-    """
-    return generate_name_indirection_unified(expr, ctx)
-
-
 def _generate_name_indirection_legacy(
     expr: "MIndirection",
     ctx: "GeneratorContext",
@@ -490,17 +470,16 @@ def generate_argument_indirection(
     return f"_rt.evaluate_argument_indirection({source_expr}, {scope_expr}, levels={levels}{subs_arg}{empty_flag})"
 
 
-def generate_name_indirection_unified(
+def generate_name_indirection(
     expr: "MIndirection",
     ctx: "GeneratorContext",
 ) -> str:
     """Generate Python code for name indirection READ using unified components.
 
-    Feature: 018-unified-variable-system (T106, T111)
+    Feature: 018-unified-variable-system (T106, T108, T111)
     Uses _rt.get_indirected() which internally uses IndirectionResolver.
 
-    This replaces the complex logic in generate_name_indirection() with
-    a single unified call that handles all cases:
+    Handles all cases:
     - Simple: @X → _rt.get_indirected("X", _scope, levels=1)
     - Multi-level: @@X → _rt.get_indirected("X", _scope, levels=2)
     - With subscripts: @X@(1,2) → _rt.get_indirected("X", _scope, levels=1, per_level_subscripts=[[1,2]])
@@ -601,18 +580,17 @@ def generate_name_indirection_unified(
     return f"_rt.get_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
 
-def generate_name_indirection_write_unified(
+def generate_name_indirection_write(
     expr: "MIndirection",
     value_expr: str,
     ctx: "GeneratorContext",
 ) -> str:
     """Generate Python code for name indirection write using unified components.
 
-    Feature: 018-unified-variable-system (T041, T111)
+    Feature: 018-unified-variable-system (T041, T111, T132)
     Uses _rt.set_indirected() which internally uses IndirectionResolver.
 
-    This replaces the complex logic in generate_name_indirection_write() with
-    a single unified call that handles all cases:
+    Handles all cases:
     - Simple: @X=val → _rt.set_indirected("X", val, _scope, levels=1)
     - Multi-level: @@X=val → _rt.set_indirected("X", val, _scope, levels=2)
     - With subscripts: @X@(1,2)=val → _rt.set_indirected("X", val, _scope, levels=1, per_level_subscripts=[[1,2]])
@@ -737,16 +715,16 @@ def generate_name_indirection_write_unified(
     return f"_rt.set_indirected({source_expr}, {value_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
 
-def generate_name_indirection_kill_unified(
+def generate_name_indirection_kill(
     expr: "MIndirection",
     ctx: "GeneratorContext",
 ) -> str:
     """Generate Python code for name indirection KILL using unified components.
 
-    Feature: 018-unified-variable-system (T086)
+    Feature: 018-unified-variable-system (T086, T133)
     Uses _rt.kill_indirected() which internally uses IndirectionResolver.
 
-    This handles all KILL indirection cases:
+    Handles all KILL indirection cases:
     - Simple: K @X → _rt.kill_indirected("X", _scope, levels=1)
     - Multi-level: K @@X → _rt.kill_indirected("X", _scope, levels=2)
     - With subscripts: K @X@(1,2) → _rt.kill_indirected("X", _scope, levels=1, per_level_subscripts=[[1,2]])
@@ -814,19 +792,19 @@ def generate_name_indirection_kill_unified(
     )
 
 
-def generate_name_indirection_for_unified(
+def generate_name_indirection_for(
     expr: "MIndirection",
     ctx: "GeneratorContext",
 ) -> str:
     """Generate Python expression for FOR loop indirection target using unified components.
 
-    Feature: 018-unified-variable-system (T089)
+    Feature: 018-unified-variable-system (T089, T134)
     Uses _rt.resolve_for_target() which internally uses IndirectionResolver.
 
     FOR loop indirection like F @A=1:1:3 requires resolving the target variable
     name. For example, if A="B", the loop iterates over B.
 
-    This handles all FOR indirection cases:
+    Handles all FOR indirection cases:
     - Simple: F @A → _rt.resolve_for_target("A", _scope, levels=1)
     - Multi-level: F @@A → _rt.resolve_for_target("A", _scope, levels=2)
     - With subscripts: F @A@(1) → _rt.resolve_for_target("A", _scope, levels=1, per_level_subscripts=[[1]])
@@ -892,30 +870,16 @@ def generate_name_indirection_for_unified(
     return f"_rt.resolve_for_target({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
 
-def generate_name_indirection_write(
+def _generate_name_indirection_write_legacy(
     expr: "MIndirection",
     value_expr: str,
     ctx: "GeneratorContext",
 ) -> str:
-    """Generate Python code for name indirection write (S @VAR=value).
+    """Legacy implementation of name indirection write (S @VAR=value).
 
-    .. deprecated::
-        Use `generate_name_indirection_write_unified()` instead. This function
-        is kept for complex cases (e.g., naked global references) that require
-        runtime resolution logic not yet migrated to the unified approach.
-        Feature: 018-unified-variable-system (T043)
-
-    Spec 012 Phase 3 (T015): Generates runtime call to resolve variable
-    name at runtime and write a value to it.
-
-    Handles:
-    - Simple indirection: S @X=1 → _rt.set_var(_rt.get_indirection_source("X", scope), 1, scope)
-    - Multi-level: S @@X=1 → _rt.set_var(_rt.resolve_indirection("X", 1, scope), 1, scope)
-    - With subscripts: S @NAME@(1,2)=5 → _rt.set_var(append_subscripts(...), 5, scope)
-    - Multi-level with inner subscripts: S @@^VV@(3)=99
-      The inner @^VV@(3) has subscripts that need to be applied BEFORE the outer resolution
-
-    Where 'scope' is state._locals in TRAMPOLINE+dynamic_locals mode, _scope otherwise.
+    DEPRECATED: This function was kept for complex cases, but is no longer used.
+    The unified implementation handles all cases.
+    Feature: 018-unified-variable-system (T043, T132)
 
     Args:
         expr: MIndirection ASG node with indirection_type=NAME
@@ -1605,8 +1569,7 @@ __all__ = [
     "generate_name_indirection",
     "generate_argument_indirection",
     "generate_name_indirection_write",
-    "generate_name_indirection_write_unified",
-    "generate_name_indirection_kill_unified",
-    "generate_name_indirection_for_unified",
+    "generate_name_indirection_kill",
+    "generate_name_indirection_for",
     "generate_multi_level_indirection",
 ]
