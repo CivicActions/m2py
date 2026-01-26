@@ -2067,15 +2067,15 @@ class MUMPSRuntime:
         # Convert to string for use as variable name
         return str(value) if value is not None else ""
 
-    # UNIFIED_VAR_DEPRECATED: Use resolve_for_target() instead
-    # This function is kept for backward compatibility with existing tests.
-    # All codegen should use resolve_for_target() which uses IndirectionResolver.
+    # Internal method: Returns variable NAME after multi-level indirection.
+    # Used by tests and internal methods. New code should prefer resolve_for_target()
+    # which uses IndirectionResolver for consistent error handling.
     def resolve_indirection_name(
         self, varname: str, levels: int, _scope: Dict[str, Any]
     ) -> str:
         """Resolve multi-level indirection and return the final variable NAME.
 
-        DEPRECATED: Use resolve_for_target() instead for new code.
+        Note: Consider using resolve_for_target() for new code.
 
         For FOR loop indirection targets: F @A, F @@A, F @@@A.
         Unlike resolve_indirection which returns the VALUE, this returns the NAME
@@ -3169,8 +3169,9 @@ class MUMPSRuntime:
         return name[0].isalpha() or name[0] == "%"
 
     # Internal method: Multi-level name indirection resolution.
-    # Used by get_indirected() for simple multi-level cases without per-level subscripts.
+    # Used by codegen for generated code and internal methods.
     # Returns the final VALUE after N levels of dereferencing.
+    # New code should prefer get_indirected() or IndirectionResolver.
     def resolve_indirection(
         self, expr: str, levels: int, _scope: Dict[str, Any]
     ) -> Any:
