@@ -3702,44 +3702,11 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(src, MIndirection):
             # Source is indirection: @VAR or @VAR@(subs)
-            # Use runtime get_tree_var to resolve variable name and get tree
-            from m2py.codegen.indirection import (
-                _count_indirection_levels,
-                _generate_inner_name_expr,
-            )
+            # Feature: 018-unified-variable-system (T143e)
+            # Use unified resolve_for_target API to resolve variable name
+            from m2py.codegen.indirection import generate_merge_indirection_name
 
-            levels, inner_expr = _count_indirection_levels(src)
-
-            # Handle name+subscript syntax: @NAME@(1,2)
-            if src.name_indirection_subscripts:
-                all_subs = []
-                for sub_list in src.name_indirection_subscripts:
-                    sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                    all_subs.extend(sub_exprs)
-                subs_args = ", ".join(all_subs)
-
-                if isinstance(inner_expr, MVariable):
-                    base_name = inner_expr.name
-                    if levels > 1:
-                        name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
-                    else:
-                        name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
-                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args}, _scope=_scope)"
-                else:
-                    inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = f"_rt.append_subscripts(str({inner_name_expr}), {subs_args}, _scope=_scope)"
-            elif levels > 1:
-                # Multi-level indirection (@@X, @@@X)
-                if isinstance(inner_expr, MVariable):
-                    var_name = inner_expr.name
-                    name_expr = f'str(_rt.resolve_indirection("{var_name}", {levels - 1}, _scope))'
-                else:
-                    inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = f"str(_rt.resolve_indirection(str({inner_name_expr}), {levels - 1}, _scope))"
-            else:
-                # Simple single-level indirection: @X
-                name_expr = _generate_inner_name_expr(inner_expr, ctx)
-
+            name_expr = generate_merge_indirection_name(src, ctx)
             src_tree_expr = f"_rt.get_tree_var({name_expr}, _scope)"
 
         else:
@@ -3841,43 +3808,11 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(dest, MIndirection):
             # Destination is indirection: @VAR or @VAR@(subs)
-            # Use runtime merge_var to resolve variable name and merge
-            from m2py.codegen.indirection import (
-                _count_indirection_levels,
-                _generate_inner_name_expr,
-            )
+            # Feature: 018-unified-variable-system (T143e)
+            # Use unified resolve_for_target API to resolve variable name
+            from m2py.codegen.indirection import generate_merge_indirection_name
 
-            levels, inner_expr = _count_indirection_levels(dest)
-
-            # Handle name+subscript syntax: @NAME@(1,2)
-            if dest.name_indirection_subscripts:
-                all_subs = []
-                for sub_list in dest.name_indirection_subscripts:
-                    sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                    all_subs.extend(sub_exprs)
-                subs_args = ", ".join(all_subs)
-
-                if isinstance(inner_expr, MVariable):
-                    base_name = inner_expr.name
-                    if levels > 1:
-                        name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
-                    else:
-                        name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
-                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args}, _scope=_scope)"
-                else:
-                    inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = f"_rt.append_subscripts(str({inner_name_expr}), {subs_args}, _scope=_scope)"
-            elif levels > 1:
-                # Multi-level indirection (@@X, @@@X)
-                if isinstance(inner_expr, MVariable):
-                    var_name = inner_expr.name
-                    name_expr = f'str(_rt.resolve_indirection("{var_name}", {levels - 1}, _scope))'
-                else:
-                    inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = f"str(_rt.resolve_indirection(str({inner_name_expr}), {levels - 1}, _scope))"
-            else:
-                # Simple single-level indirection: @X
-                name_expr = _generate_inner_name_expr(inner_expr, ctx)
+            name_expr = generate_merge_indirection_name(dest, ctx)
 
             ctx.emitter.line(f"_merge_src = {src_tree_expr}")
             ctx.emitter.line("if _merge_src is not None:")

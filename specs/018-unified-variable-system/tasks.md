@@ -678,14 +678,20 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
   - SET $PIECE (1070-1120) uses lambdas for getter/setter, complex case deferred
 - [ ] T143e Migrate MERGE command indirection (statements.py:3700-3750, 3847-3880) to use unified API
   - Deferred: Complex migration requiring careful subscript handling
-- [ ] T143f Migrate $DATA indirection (expressions.py:1020-1070) to use unified API
-  - Deferred: Requires TRAMPOLINE strategy compatibility
+- [X] T143e MERGE command indirection (statements.py:3700-3750, 3847-3880) migrated to unified API
+  - Added `generate_merge_indirection_name()` helper function to indirection.py
+  - MERGE source and destination indirection now use `resolve_for_target()` unified API
+- [X] T143f $DATA indirection (expressions.py:1000-1070) migrated to unified API
+  - Added `generate_data_indirection_name()` helper function to indirection.py
+  - $DATA indirection now uses `resolve_for_target()` unified API
+  - Preserves TRAMPOLINE strategy compatibility
 - [X] T143g Remove `generate_multi_level_indirection()` - dead code only tested directly, not called in production
   - Removed 45-line function from indirection.py
   - Removed TestGenerateMultiLevelIndirection class from tests
   - Removed from __all__ exports
-- [ ] T143h Remove remaining `_rt.append_subscripts()` calls in favor of per_level_subscripts parameter
-  - Deferred: Used internally by MERGE source/dest indirection handling
+- [X] T143h Removed `_rt.append_subscripts()` calls - now using per_level_subscripts parameter
+  - MERGE source/dest indirection now handled by unified API
+  - $DATA indirection uses simpler append-after-resolution pattern
 
 **Notes**: 
 - Removed `_generate_name_indirection_write_legacy()` (137 lines) - confirmed dead code with no callers
@@ -696,11 +702,11 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 - Updated outdated UNIFIED_VAR_DEPRECATED markers to reflect current state
 - Added missing public functions to `__all__` in indirection.py
 - `codegen/names.py` kept as re-export wrapper for backward compatibility
+- Added `generate_merge_indirection_name()` for MERGE indirection using unified API
+- Added `generate_data_indirection_name()` for $DATA indirection using unified API
 
-**Remaining old patterns** (13 `resolve_indirection`, 8 `get_indirection_source`, 4 `append_subscripts` calls):
-- SET $PIECE indirection handling (complex lambda case)
-- MERGE command indirection handling  
-- $DATA indirection handling
+**Remaining old patterns** (in codegen):
+- SET $PIECE indirection handling (complex lambda case - requires further analysis)
 
 ### Phase 15b: Remove Remaining Deprecated Markers
 

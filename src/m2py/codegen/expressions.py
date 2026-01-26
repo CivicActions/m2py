@@ -998,69 +998,11 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Handle MIndirection: $D(@A@(1)) needs runtime resolution
     if isinstance(var, MIndirectionType):
-        # For indirection, we need to use _rt.get_data which resolves the variable name at runtime
-        from m2py.codegen.indirection import _count_indirection_levels
+        # Feature: 018-unified-variable-system (T143f)
+        # For indirection, use unified resolve_for_target API via helper
+        from m2py.codegen.indirection import generate_data_indirection_name
 
-        levels, inner_expr = _count_indirection_levels(var)
-
-        # Build subscript expressions from name_indirection_subscripts if present
-        if var.name_indirection_subscripts:
-            all_subs = []
-            for sub_list in var.name_indirection_subscripts:
-                sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                all_subs.extend(sub_exprs)
-            # Use single quotes for the f-string so double-quoted strings inside work
-            if len(all_subs) == 1:
-                subs_fstr = f"f'({{{all_subs[0]}}})'"
-            else:
-                subs_parts = ", ".join(f"{{{s}}}" for s in all_subs)
-                subs_fstr = f"f'({subs_parts})'"
-        else:
-            # No subscripts - use empty string, not "()"
-            subs_fstr = "''"
-
-        # Generate the variable name resolution
-        # Must distinguish between local variables (use get_indirection_source)
-        # and global variables (read value directly)
-        from m2py.asg.expressions import MVariable
-        from m2py.parser.textx_classes import LocalVariable as MLocalVariable
-
-        if isinstance(inner_expr, GlobalVariable):
-            # Global variable as indirection source: @^V reads ^V value
-            global_name = inner_expr.name
-            # Read the global variable value - this returns the string to use as var name
-            name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
-        elif isinstance(inner_expr, (MVariable, MLocalVariable)):
-            base_name = inner_expr.name
-            python_name = translate_name(base_name)
-            if levels > 1:
-                # Multi-level indirection: @@X
-                if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, state._locals))'
-                elif ctx.strategy == GotoStrategy.TRAMPOLINE:
-                    # Python locals - build a temporary scope dict with the variable
-                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, {{"{base_name}": MArray(value={python_name})}}))'
-                else:
-                    name_expr = (
-                        f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
-                    )
-            else:
-                # Single-level indirection: @X
-                if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                    name_expr = (
-                        f'_rt.get_indirection_source("{base_name}", state._locals)'
-                    )
-                elif ctx.strategy == GotoStrategy.TRAMPOLINE:
-                    # Python locals - use the variable directly as string
-                    name_expr = f"str({python_name})"
-                else:
-                    name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
-        else:
-            name_expr_base = generate_expr(inner_expr, ctx)
-            name_expr = f"str({name_expr_base})"
-
-        # Use _rt.get_data which handles indirected variable names
-        return f"_rt.get_data({name_expr} + {subs_fstr}, _scope)"
+        return generate_data_indirection_name(var, ctx)
 
     # Generate subscript tuple for non-indirection cases
     # DO NOT wrap in str() - let runtime handle canonicalization
