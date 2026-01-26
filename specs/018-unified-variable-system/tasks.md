@@ -671,13 +671,28 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 - [X] T142 Search for dead imports: run `ruff check --select F401` to find unused imports
 - [X] T142b Search for legacy code `grep -r "^legacy " src/m2py/` that should be migrated to use newer code, or removed
 - [X] T143 Run coverage report and investigate any 0% coverage modules/functions
+- [X] T143b Remove `_generate_name_indirection_legacy()` duplicate - inline logic into main function
+- [ ] T143c Remove XECUTE legacy path (statements.py:4646-4650) - `code_expressions` never used, `arguments` always populated
+- [ ] T143d Migrate FOR loop indirection (statements.py:1070-1120) to use unified API instead of `resolve_indirection`/`get_indirection_source`
+- [ ] T143e Migrate MERGE command indirection (statements.py:3700-3750, 3847-3880) to use unified API
+- [ ] T143f Migrate $DATA indirection (expressions.py:1020-1070) to use unified API
+- [ ] T143g Evaluate `generate_multi_level_indirection()` - only used in tests, uses old API, consider deprecation
+- [ ] T143h Remove remaining `_rt.append_subscripts()` calls in favor of per_level_subscripts parameter
 
 **Notes**: 
 - Removed `_generate_name_indirection_write_legacy()` (137 lines) - confirmed dead code with no callers
-- Kept `_generate_name_indirection_legacy()` - used as fallback for complex inner expressions (nested indirection, $EXTRACT)
+- Removed `_generate_name_indirection_legacy()` (138 lines) - inlined logic using unified get_indirected() with levels-1
+- Removed `_build_subscripted_name_expr()` (35 lines) - no longer needed
+- Simplified `_generate_inner_name_expr()` (58→35 lines) - kept for NEW/MERGE commands
 - Updated outdated UNIFIED_VAR_DEPRECATED markers to reflect current state
 - Added missing public functions to `__all__` in indirection.py
 - `codegen/names.py` kept as re-export wrapper for backward compatibility
+
+**Remaining old patterns** (16 `resolve_indirection`, 8 `get_indirection_source`, 4 `append_subscripts` calls):
+- FOR loop indirection handling
+- MERGE command indirection handling  
+- $DATA indirection handling
+- generate_multi_level_indirection() function
 
 ### Phase 15b: Remove Remaining Deprecated Markers
 
