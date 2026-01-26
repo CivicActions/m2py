@@ -629,6 +629,83 @@ def generate_name_indirection_write_unified(
     return f"_rt.set_indirected({source_expr}, {value_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
 
+def generate_name_indirection_kill_unified(
+    expr: "MIndirection",
+    ctx: "GeneratorContext",
+) -> str:
+    """Generate Python code for name indirection KILL using unified components.
+
+    Feature: 018-unified-variable-system (T086)
+    Uses _rt.kill_indirected() which internally uses IndirectionResolver.
+
+    This handles all KILL indirection cases:
+    - Simple: K @X → _rt.kill_indirected("X", _scope, levels=1)
+    - Multi-level: K @@X → _rt.kill_indirected("X", _scope, levels=2)
+    - With subscripts: K @X@(1,2) → _rt.kill_indirected("X", _scope, levels=1, per_level_subscripts=[[1,2]])
+
+    Args:
+        expr: MIndirection ASG node representing KILL target
+        ctx: Generator context
+
+    Returns:
+        Python statement string for kill_indirected call
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import GlobalVariable
+    from m2py.codegen.expressions import generate_expr
+
+    # Count indirection levels and collect subscripts
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
+
+    # Get the appropriate scope expression
+    scope_expr = _get_scope_expr(ctx)
+
+    # Get the source variable name
+    if isinstance(inner_expr, MVariable):
+        source_name = inner_expr.name
+        # Include innermost subscripts in the source name if present
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            # Build name with subscripts at runtime
+            source_expr = (
+                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
+            )
+        else:
+            source_expr = f'"{source_name}"'
+    elif isinstance(inner_expr, GlobalVariable):
+        source_name = f"^{inner_expr.name}"
+        if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
+            )
+        else:
+            source_expr = f'"{source_name}"'
+    else:
+        # For complex expressions, fall back to generating the inner expression
+        inner_expr_code = generate_expr(inner_expr, ctx)
+        source_expr = f"str({inner_expr_code})"
+
+    # Build per_level_subscripts argument if needed
+    if any(all_subscripts):
+        per_level_subs = []
+        for sub_list in all_subscripts:
+            if sub_list:
+                sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+            else:
+                per_level_subs.append("[]")
+        subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+    else:
+        subs_arg = ""
+
+    return (
+        f"_rt.kill_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
+    )
+
+
 def generate_name_indirection_write(
     expr: "MIndirection",
     value_expr: str,

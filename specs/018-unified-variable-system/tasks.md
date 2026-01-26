@@ -404,9 +404,15 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### KILL/READ Migration
 
-- [ ] T086 [P] Migrate KILL command to use `IndirectionResolver` for @VAR targets
-- [ ] T087 [P] Migrate READ command to use `IndirectionResolver` for @VAR targets
-- [ ] T088 Run V1IDNM1, V1IDNM3 tests for KILL/READ
+- [X] T086 [P] Migrate KILL command to use `IndirectionResolver` for @VAR targets
+  - Added `generate_name_indirection_kill_unified()` in `codegen/indirection.py`
+  - Added `kill_indirected()` method in `runtime/__init__.py`
+  - Updated `_generate_kill()` in `statements.py` to use unified function
+- [X] T087 [P] Migrate READ command to use `IndirectionResolver` for @VAR targets
+  - Already implemented: READ uses `generate_name_indirection_write_unified()` with `set_indirected()`
+- [X] T088 Run V1IDNM1, V1IDNM3 tests for KILL/READ
+  - All 4377 tests pass
+  - Added 4 new KILL indirection tests in `test_indirection_edge_cases.py`
 
 ### FOR Migration
 

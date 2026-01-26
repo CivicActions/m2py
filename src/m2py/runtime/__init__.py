@@ -2584,6 +2584,68 @@ class MUMPSRuntime:
         # Set via CurrentScope for locals
         cs.set(target, str_value)
 
+    def kill_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> None:
+        """Kill variable via indirection using unified components.
+
+        Feature: 018-unified-variable-system (T086)
+        Replaces scattered kill_var + resolve calls with unified approach.
+
+        Uses IndirectionResolver.resolve_to_name() to determine the target,
+        then kills the variable/global appropriately.
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Examples:
+            # K @X where X="Y"
+            kill_indirected("X", scope, levels=1)
+            # Kills Y
+
+            # K @@X where X="Y", Y="Z"
+            kill_indirected("X", scope, levels=2)
+            # Kills Z
+
+            # K @X@(1,2) where X="A"
+            kill_indirected("X", scope, levels=1, per_level_subscripts=[[1, 2]])
+            # Kills A(1,2)
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve to get target variable NAME (not value)
+        target = resolver.resolve_to_name(
+            source, levels=levels, per_level_subscripts=per_level_subscripts
+        )
+
+        # Handle global variables
+        if target.startswith("^"):
+            # Parse subscripts from target if present
+            base_name, subscripts = _parse_subscripted_name(target)
+            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            key = base_name[1:]  # Remove ^ prefix
+            self._globals.kill(key, subs)
+            return
+
+        # Handle naked global reference
+        if target == "^":
+            raise IndirectionError(target, "naked reference requires subscripts")
+
+        # Kill local variable via CurrentScope
+        cs.kill(target)
+
     def evaluate_argument_indirection(
         self,
         source: str,

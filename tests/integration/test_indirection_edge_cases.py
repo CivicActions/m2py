@@ -76,13 +76,16 @@ class TestForLoopIndirection:
 
 
 # =============================================================================
-# T069: KILL Indirection Tests
+# T069/T086: KILL Indirection Tests
 # =============================================================================
 
 
 @pytest.mark.integration
 class TestKillIndirection:
-    """Tests for KILL with indirection (K @A)."""
+    """Tests for KILL with indirection (K @A).
+
+    T086: Migrated to use unified kill_indirected() via IndirectionResolver.
+    """
 
     def test_kill_indirect_simple_variable(self, execute_mumps):
         """K @A where A="B" should kill variable B."""
@@ -105,6 +108,53 @@ class TestKillIndirection:
 """
         result = execute_mumps(code)
         assert result == "B"
+
+    def test_kill_multi_level_indirection(self, execute_mumps):
+        """K @@A where A="B" and B="C" kills C."""
+        code = """TEST
+ S A="B",B="C",C=99
+ K @@A
+ W $G(C)
+ Q
+"""
+        result = execute_mumps(code)
+        assert result == ""
+
+    def test_kill_with_subscripts(self, execute_mumps):
+        """K @A@(1,2) kills subscripted variable via indirection.
+
+        VV2VNIC pattern: K @B@(2) where B="VV(1)" kills VV(1,2).
+        """
+        code = """TEST
+ S A="B",B(1,2)=99
+ K @A@(1,2)
+ W $G(B(1,2))
+ Q
+"""
+        result = execute_mumps(code)
+        assert result == ""
+
+    def test_kill_global_via_indirection(self, execute_mumps):
+        """K @A where A="^G" kills global variable."""
+        code = """TEST
+ S A="^G",^G=123
+ K @A
+ W $G(^G)
+ Q
+"""
+        result = execute_mumps(code)
+        assert result == ""
+
+    def test_kill_subscripted_global_via_indirection(self, execute_mumps):
+        """K @A where A="^G(1,2)" kills subscripted global."""
+        code = """TEST
+ S A="^G(1,2)",^G(1,2)=99
+ K @A
+ W $G(^G(1,2))
+ Q
+"""
+        result = execute_mumps(code)
+        assert result == ""
 
 
 # =============================================================================

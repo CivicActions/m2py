@@ -3385,48 +3385,17 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                     ctx.emitter.line(f"{translated} = MArray()")
 
         elif isinstance(target, MIndirection):
-            # T069: Indirection target: K @A or K @A@(subs) where A contains the variable name
-            from m2py.codegen.indirection import _generate_inner_name_expr
+            # T086: Indirection target: K @A or K @A@(subs) using unified components
+            # Uses _rt.kill_indirected() which handles multi-level indirection and
+            # per-level subscripts via IndirectionResolver
+            from m2py.codegen.indirection import generate_name_indirection_kill_unified
 
             if target.expression is None:
                 raise ValueError("KILL indirection has no expression")
 
-            # Get the target variable name at runtime
-            target_name_expr = _generate_inner_name_expr(target.expression, ctx)
-
-            # For SIMPLE_FUNCTIONS strategy, use _rt.kill_var which parses the name
-            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                # Handle subscripts on the indirection if present
-                if target.name_indirection_subscripts:
-                    # Build subscript expressions as a string to append to the variable name
-                    # e.g., K @B@(2) where B="VV(1)" → kill_var("VV(1,2)", _scope)
-                    subs_lists = target.name_indirection_subscripts
-                    all_subs = []
-                    for sub_list in subs_lists:
-                        for sub in sub_list:
-                            all_subs.append(generate_expr(sub, ctx))
-                    # Build the subscript suffix as a runtime f-string
-                    # The name_expr might be "VV(1)" and we need to add ",2)" to make "VV(1,2)"
-                    # This requires parsing and rebuilding - use kill_var with appended subscripts
-                    subs_str = ", ".join(all_subs)
-                    # Check if the indirection result already has subscripts
-                    # If name ends with ), we need to insert before the closing paren
-                    # Use a helper approach: pass subscripts separately
-                    ctx.emitter.line(f"_name = {target_name_expr}")
-                    ctx.emitter.line("if _name.endswith(')'):")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(f"_name = _name[:-1] + f',{{{subs_str}}})'")
-                    ctx.emitter.line("else:")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(f"_name = _name + f'({{{subs_str}}})'")
-                    ctx.emitter.line("_rt.kill_var(_name, _scope)")
-                else:
-                    # Kill entire variable - remove from scope by resolved name
-                    ctx.emitter.line(f"_rt.kill_var({target_name_expr}, _scope)")
-            else:
-                raise NotImplementedError(
-                    "KILL indirection not supported in TRAMPOLINE strategy"
-                )
+            # Generate unified kill_indirected call
+            kill_stmt = generate_name_indirection_kill_unified(target, ctx)
+            ctx.emitter.line(kill_stmt)
 
         else:
             raise NotImplementedError(
