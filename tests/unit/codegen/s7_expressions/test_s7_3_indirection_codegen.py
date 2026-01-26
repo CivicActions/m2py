@@ -13,7 +13,6 @@ from m2py.codegen.indirection import (
     _count_indirection_levels,
     generate_name_indirection,
     generate_name_indirection_write,
-    generate_multi_level_indirection,
     generate_xecute_constant,
     generate_xecute_dynamic,
     generate_indirect_do,
@@ -338,59 +337,6 @@ class TestGenerateNameIndirectionWrite:
             result
             == '_rt.set_indirected("NAME", 5, _scope, levels=1, per_level_subscripts=[["1", "2"]])'
         )
-
-
-# =============================================================================
-# Tests for generate_multi_level_indirection()
-# =============================================================================
-
-
-@pytest.mark.codegen
-class TestGenerateMultiLevelIndirection:
-    """Tests for generate_multi_level_indirection() explicit level control."""
-
-    def test_level_2_with_variable(self, mock_ctx):
-        """Level 2 indirection with variable generates resolve call."""
-        var = MVariable(name="X")
-        expr = MIndirection(
-            expression=var,
-            indirection_type=IndirectionType.NAME,
-        )
-
-        result = generate_multi_level_indirection(expr, 2, mock_ctx)
-        assert result == '_rt.resolve_indirection("X", 2, _scope)'
-
-    def test_level_3_with_variable(self, mock_ctx):
-        """Level 3 indirection with variable generates resolve call."""
-        var = MVariable(name="Y")
-        expr = MIndirection(
-            expression=var,
-            indirection_type=IndirectionType.NAME,
-        )
-
-        result = generate_multi_level_indirection(expr, 3, mock_ctx)
-        assert result == '_rt.resolve_indirection("Y", 3, _scope)'
-
-    def test_level_with_literal_expression(self, mock_ctx):
-        """Multi-level with literal expression generates str() wrapper."""
-        literal = MLiteral(value="VAR")
-        expr = MIndirection(
-            expression=literal,
-            indirection_type=IndirectionType.NAME,
-        )
-
-        result = generate_multi_level_indirection(expr, 2, mock_ctx)
-        assert result == '_rt.resolve_indirection(str("VAR"), 2, _scope)'
-
-    def test_null_expression_raises_error(self, mock_ctx):
-        """Null expression raises ValueError."""
-        expr = MIndirection(
-            expression=None,
-            indirection_type=IndirectionType.NAME,
-        )
-
-        with pytest.raises(ValueError, match="no inner expression"):
-            generate_multi_level_indirection(expr, 2, mock_ctx)
 
 
 # =============================================================================

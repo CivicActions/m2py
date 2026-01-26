@@ -672,40 +672,50 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 - [X] T142b Search for legacy code `grep -r "^legacy " src/m2py/` that should be migrated to use newer code, or removed
 - [X] T143 Run coverage report and investigate any 0% coverage modules/functions
 - [X] T143b Remove `_generate_name_indirection_legacy()` duplicate - inline logic into main function
-- [ ] T143c Remove XECUTE legacy path (statements.py:4646-4650) - `code_expressions` never used, `arguments` always populated
-- [ ] T143d Migrate FOR loop indirection (statements.py:1070-1120) to use unified API instead of `resolve_indirection`/`get_indirection_source`
+- [X] T143c Remove XECUTE legacy path (statements.py:4646-4650) - `code_expressions` never used, `arguments` always populated
+  - Removed 5-line else branch that was never executed (semantic analyzer always populates `arguments`)
+- [X] T143d Migrate FOR loop indirection - **N/A**: Already uses unified API via `generate_name_indirection_for()` → `resolve_for_target()`
+  - SET $PIECE (1070-1120) uses lambdas for getter/setter, complex case deferred
 - [ ] T143e Migrate MERGE command indirection (statements.py:3700-3750, 3847-3880) to use unified API
+  - Deferred: Complex migration requiring careful subscript handling
 - [ ] T143f Migrate $DATA indirection (expressions.py:1020-1070) to use unified API
-- [ ] T143g Evaluate `generate_multi_level_indirection()` - only used in tests, uses old API, consider deprecation
+  - Deferred: Requires TRAMPOLINE strategy compatibility
+- [X] T143g Remove `generate_multi_level_indirection()` - dead code only tested directly, not called in production
+  - Removed 45-line function from indirection.py
+  - Removed TestGenerateMultiLevelIndirection class from tests
+  - Removed from __all__ exports
 - [ ] T143h Remove remaining `_rt.append_subscripts()` calls in favor of per_level_subscripts parameter
+  - Deferred: Used internally by MERGE source/dest indirection handling
 
 **Notes**: 
 - Removed `_generate_name_indirection_write_legacy()` (137 lines) - confirmed dead code with no callers
 - Removed `_generate_name_indirection_legacy()` (138 lines) - inlined logic using unified get_indirected() with levels-1
 - Removed `_build_subscripted_name_expr()` (35 lines) - no longer needed
 - Simplified `_generate_inner_name_expr()` (58→35 lines) - kept for NEW/MERGE commands
+- Removed `generate_multi_level_indirection()` (45 lines) - dead code, only tested directly
 - Updated outdated UNIFIED_VAR_DEPRECATED markers to reflect current state
 - Added missing public functions to `__all__` in indirection.py
 - `codegen/names.py` kept as re-export wrapper for backward compatibility
 
-**Remaining old patterns** (16 `resolve_indirection`, 8 `get_indirection_source`, 4 `append_subscripts` calls):
-- FOR loop indirection handling
+**Remaining old patterns** (13 `resolve_indirection`, 8 `get_indirection_source`, 4 `append_subscripts` calls):
+- SET $PIECE indirection handling (complex lambda case)
 - MERGE command indirection handling  
 - $DATA indirection handling
-- generate_multi_level_indirection() function
 
 ### Phase 15b: Remove Remaining Deprecated Markers
 
 - [X] T144 Search for any remaining `# UNIFIED_VAR_DEPRECATED` markers and remove
-- [ ] T145 Search for any remaining `# DEPRECATED` or `deprecated` comments and evaluate
-- [ ] T146 Search for any `raise NotImplementedError` that should now be implemented
+- [X] T145 Search for any remaining `# DEPRECATED` or `deprecated` comments and evaluate
+  - All are legitimate: deprecated MUMPS functions ($NEXT), backward-compat helper wrappers, historical notes
+- [X] T146 Search for any `raise NotImplementedError` that should now be implemented
+  - 115 occurrences - all legitimate (unsupported features, documented limitations, optimization placeholders)
 
 ### Phase 15c: Final Validation
 
-- [ ] T147 Run full pytest suite: `uv run pytest tests/`
+- [X] T147 Run full pytest suite: `uv run pytest tests/` - 4409 tests pass
 - [ ] T148 Run MUGJ validation: all V1ID*, VV2VNI* tests pass
 - [ ] T149 Run YDB validation for all quickstart.md scenarios
-- [ ] T150 Verify no new failures in pre-commit hooks
+- [X] T150 Verify no new failures in pre-commit hooks - all pass
 
 ### Phase 15d: Documentation Update
 

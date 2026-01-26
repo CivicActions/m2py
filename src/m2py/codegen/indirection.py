@@ -687,51 +687,6 @@ def generate_name_indirection_for(
     return f"_rt.resolve_for_target({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
 
-def generate_multi_level_indirection(
-    expr: "MIndirection",
-    levels: int,
-    ctx: "GeneratorContext",
-) -> str:
-    """Generate Python code for multi-level indirection (@@VAR, @@@VAR).
-
-    Spec 012 Phase 3 (T018): Generates runtime call to resolve multiple
-    levels of indirection before accessing the final variable.
-
-    Note: This is now handled directly in generate_name_indirection(),
-    which counts indirection levels automatically. This function is
-    kept for explicit level control when needed.
-
-    Args:
-        expr: MIndirection ASG node
-        levels: Number of @ symbols (2 for @@, 3 for @@@, etc.)
-        ctx: Generator context
-
-    Returns:
-        Python expression string like: _rt.resolve_indirection("X", 2, scope)
-
-    Raises:
-        ValueError: If indirection has no inner expression
-    """
-    from m2py.asg.expressions import MVariable
-    from m2py.codegen.expressions import generate_expr
-
-    # Get the appropriate scope expression for this context
-    scope_expr = _get_scope_expr(ctx)
-
-    # Get the innermost expression by unwrapping all indirection levels
-    inner_expr = expr.expression
-
-    if inner_expr is None:
-        raise ValueError("Indirection has no inner expression")
-
-    if isinstance(inner_expr, MVariable):
-        var_name = inner_expr.name
-        return f'_rt.resolve_indirection("{var_name}", {levels}, {scope_expr})'
-    else:
-        name_expr = generate_expr(inner_expr, ctx)
-        return f"_rt.resolve_indirection(str({name_expr}), {levels}, {scope_expr})"
-
-
 def generate_xecute_constant(
     stmt: "MXecuteStatement",
     ctx: "GeneratorContext",
@@ -1250,7 +1205,6 @@ __all__ = [
     "generate_name_indirection_write",
     "generate_name_indirection_kill",
     "generate_name_indirection_for",
-    "generate_multi_level_indirection",
     "generate_xecute_constant",
     "generate_xecute_dynamic",
     "generate_indirect_do",

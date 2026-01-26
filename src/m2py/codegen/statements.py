@@ -4624,28 +4624,19 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
 
         T075q: Handle per-argument postconditions.
         """
-        # T075q: Use arguments if available (has postconditions), else fall back
-        if stmt.arguments:
-            for xecute_arg in stmt.arguments:
-                expr_code = generate_expr(xecute_arg.expression, ctx)
-                if xecute_arg.postcondition is not None:
-                    # T075q: Wrap in postcondition check
-                    cond_code = generate_expr(xecute_arg.postcondition, ctx)
-                    ctx.emitter.line(f"if m_truth({cond_code}):")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(
-                            f"_rt.execute_mumps({expr_code}, _scope, globals())"
-                        )
-                        ctx.emitter.line("_test = _rt._test")
-                else:
+        # T075q: Use arguments structure (always populated by semantic analyzer)
+        for xecute_arg in stmt.arguments:
+            expr_code = generate_expr(xecute_arg.expression, ctx)
+            if xecute_arg.postcondition is not None:
+                # T075q: Wrap in postcondition check
+                cond_code = generate_expr(xecute_arg.postcondition, ctx)
+                ctx.emitter.line(f"if m_truth({cond_code}):")
+                with ctx.emitter.indented():
                     ctx.emitter.line(
                         f"_rt.execute_mumps({expr_code}, _scope, globals())"
                     )
                     ctx.emitter.line("_test = _rt._test")
-        else:
-            # Legacy path: no arguments structure, use code_expressions
-            for code_expr in stmt.code_expressions:
-                expr_code = generate_expr(code_expr, ctx)
+            else:
                 ctx.emitter.line(f"_rt.execute_mumps({expr_code}, _scope, globals())")
                 ctx.emitter.line("_test = _rt._test")
 
