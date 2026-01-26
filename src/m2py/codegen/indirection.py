@@ -14,12 +14,9 @@ Code generation strategy:
 - Name indirection: Call _rt.get_var()/_rt.set_var() at runtime
 - Pattern indirection: Call _rt.compile_pattern_indirect() at runtime
 
-# UNIFIED_VAR_DEPRECATED: Several functions in this module will be replaced
-# by core/indirection.py (IndirectionResolver):
-#   - generate_name_indirection (T003) - wrapper removed, unified function active
-#   - generate_argument_indirection (T003, T128-T130) - wrapper removed, unified function active
-#   - _get_scope_expr (T003)
-# Spec: 018-unified-variable-system, Phase 2
+Note: This module implements the unified variable system from
+Spec 018-unified-variable-system. Functions with "_legacy" suffix
+are kept only as fallbacks for edge cases.
 """
 
 from __future__ import annotations
@@ -35,7 +32,6 @@ if TYPE_CHECKING:
 from m2py.codegen.enums import GotoStrategy
 
 
-# UNIFIED_VAR_DEPRECATED: T003 - Replace with CurrentScope.scope_expr()
 def _get_scope_expr(ctx: "GeneratorContext") -> str:
     """Get the appropriate scope expression for the current context.
 
@@ -237,10 +233,11 @@ def _generate_name_indirection_legacy(
     expr: "MIndirection",
     ctx: "GeneratorContext",
 ) -> str:
-    """Legacy implementation of name indirection read (@VAR).
+    """Fallback implementation of name indirection read for complex inner expressions.
 
-    DEPRECATED: Used only as fallback for complex cases that
-    generate_name_indirection_unified() cannot handle.
+    This function handles edge cases where the inner expression is not a simple
+    MVariable or GlobalVariable (e.g., nested indirection, $EXTRACT, etc.).
+    Used as a fallback from generate_name_indirection() at lines 538, 565.
 
     Spec 012 Phase 3 (T014): Generates runtime call to resolve variable
     name at runtime and read its value.
@@ -870,144 +867,6 @@ def generate_name_indirection_for(
     return f"_rt.resolve_for_target({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
 
-def _generate_name_indirection_write_legacy(
-    expr: "MIndirection",
-    value_expr: str,
-    ctx: "GeneratorContext",
-) -> str:
-    """Legacy implementation of name indirection write (S @VAR=value).
-
-    DEPRECATED: This function was kept for complex cases, but is no longer used.
-    The unified implementation handles all cases.
-    Feature: 018-unified-variable-system (T043, T132)
-
-    Args:
-        expr: MIndirection ASG node with indirection_type=NAME
-        value_expr: Python expression for the value to set
-        ctx: Generator context
-
-    Returns:
-        Python statement string
-    """
-    from m2py.asg.expressions import MVariable
-    from m2py.parser.textx_classes import GlobalVariable
-    from m2py.codegen.expressions import generate_expr
-
-    # Get the appropriate scope expression for this context
-    scope_expr = _get_scope_expr(ctx)
-
-    # Count indirection levels and collect ALL subscripts (inner and outer)
-    # all_subscripts is a list of lists, one per level (inner to outer)
-    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
-
-    # Count how many levels have subscripts
-    levels_with_subs = sum(1 for s in all_subscripts if s)
-
-    # Check if innermost expression has subscripts (e.g., B(1) in S @@@B(1)=val)
-    innermost_subscripts = getattr(inner_expr, "subscripts", None) or []
-
-    # Get the base name expression - need the NAME string, not the value
-    # For local variables: use get_indirection_source to get the name from the local
-    # For global variables: use get_var to get the value (which is the target name)
-    is_global_var = False
-    if isinstance(inner_expr, MVariable):
-        base_name = inner_expr.name
-        # If innermost has subscripts, build a name expression that includes them
-        if innermost_subscripts:
-            base_name_expr = _build_subscripted_name_expr(
-                base_name, innermost_subscripts, ctx, is_global=False
-            )
-            is_simple_name = False  # Now it's a dynamic expression
-        else:
-            base_name_expr = f'"{base_name}"'
-            is_simple_name = True
-    elif isinstance(inner_expr, GlobalVariable):
-        # For global variables like ^VV, we need to GET the VALUE, which is the target name
-        # Example: ^V="^VV", then @^V means "get value of ^V and use as name"
-        base_name = f"^{inner_expr.name}"
-        is_global_var = True
-        if innermost_subscripts:
-            # Has subscripts like ^VV(1) - need to include them in the name
-            base_name_expr = _build_subscripted_name_expr(
-                base_name, innermost_subscripts, ctx, is_global=True
-            )
-            is_simple_name = False
-        else:
-            base_name_expr = f'"{base_name}"'
-            is_simple_name = True
-    else:
-        base_name_expr = f"str({generate_expr(inner_expr, ctx)})"
-        is_simple_name = False
-
-    # Build the target name resolution
-    if levels_with_subs > 0:
-        # We have subscripts to append
-        if levels > 1 and levels_with_subs > 1:
-            # Multi-level with subscripts at MULTIPLE levels: @@X@(1,2)@(5,6)=val
-            # Need to use per-level subscript handling
-            # Build the subscripts_per_level list: [[1, 2], [5, 6]]
-            per_level_subs = []
-            for sub_list in all_subscripts:
-                if sub_list:
-                    sub_exprs = [generate_expr(s, ctx) for s in sub_list]
-                    per_level_subs.append(f"[{', '.join(sub_exprs)}]")
-                else:
-                    per_level_subs.append("[]")
-            subs_per_level_str = ", ".join(per_level_subs)
-            # For WRITE, base_name_expr is always a literal name string, so we DON'T skip initial resolution
-            return f"_rt.set_var(str(_rt.resolve_with_per_level_subscripts({base_name_expr}, [{subs_per_level_str}], {scope_expr})), {value_expr}, {scope_expr})"
-        elif levels > 1:
-            # Multi-level with subscripts at only one level: @@^VV@(3)=val (subs only at outer level)
-            # Flatten all subscripts (there's only one non-empty level anyway)
-            all_subs_exprs = []
-            for sub_list in all_subscripts:
-                sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                all_subs_exprs.extend(sub_exprs)
-            subs_args = ", ".join(all_subs_exprs)
-
-            # Process:
-            # 1. Get value of inner variable (^VV) → "^VV(1)"
-            # 2. Append subscripts (3) → "^VV(1,3)"
-            # 3. Resolve (levels-1) more times → value of "^VV(1,3)" = "^VV(2,3)"
-            # 4. SET that target
-            if is_simple_name:
-                return f"_rt.set_var(str(_rt.resolve_with_subscripts({base_name_expr}, [{subs_args}], {levels - 1}, {scope_expr})), {value_expr}, {scope_expr})"
-            else:
-                return f"_rt.set_var(str(_rt.resolve_with_subscripts({base_name_expr}, [{subs_args}], {levels - 1}, {scope_expr})), {value_expr}, {scope_expr})"
-        else:
-            # Single level with subscripts: @NAME@(1,2)=val
-            # Get the name from variable, append subscripts, set
-            all_subs_exprs = []
-            for sub_list in all_subscripts:
-                sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                all_subs_exprs.extend(sub_exprs)
-            subs_args = ", ".join(all_subs_exprs)
-
-            if is_global_var:
-                # Global variable: get its VALUE (which is the target name), append subscripts
-                # @^V@(1)=0 where ^V="^VV" → SET ^VV(1)=0
-                return f"_rt.set_var(_rt.append_subscripts(str(_rt.get_var({base_name_expr}, {scope_expr})), {subs_args}, _scope={scope_expr}), {value_expr}, {scope_expr})"
-            elif is_simple_name:
-                # Local variable: use get_indirection_source to get the name from local var
-                return f"_rt.set_var(_rt.append_subscripts(_rt.get_indirection_source({base_name_expr}, {scope_expr}), {subs_args}, _scope={scope_expr}), {value_expr}, {scope_expr})"
-            else:
-                return f"_rt.set_var(_rt.append_subscripts(str({base_name_expr}), {subs_args}, _scope={scope_expr}), {value_expr}, {scope_expr})"
-    else:
-        # No subscripts
-        if levels > 1:
-            # Multi-level without subscripts: @@X=val
-            # Resolve levels-1 times to get the target variable name
-            if is_simple_name:
-                resolved_name = f"_rt.resolve_indirection({base_name_expr}, {levels - 1}, {scope_expr})"
-            else:
-                resolved_name = f"_rt.resolve_indirection({base_name_expr}, {levels - 1}, {scope_expr})"
-            return f"_rt.set_var(str({resolved_name}), {value_expr}, {scope_expr})"
-        else:
-            # Simple single-level indirection: @X=val
-            name_expr = _generate_inner_name_expr(inner_expr, ctx)
-            return f"_rt.set_var({name_expr}, {value_expr}, {scope_expr})"
-
-
 def generate_multi_level_indirection(
     expr: "MIndirection",
     levels: int,
@@ -1572,4 +1431,10 @@ __all__ = [
     "generate_name_indirection_kill",
     "generate_name_indirection_for",
     "generate_multi_level_indirection",
+    "generate_xecute_constant",
+    "generate_xecute_dynamic",
+    "generate_indirect_do",
+    "generate_indirect_goto",
+    "generate_set_argument_indirection",
+    "generate_pattern_indirection",
 ]

@@ -666,14 +666,22 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Phase 15a: Comprehensive Dead Code Search
 
-- [ ] T140 Search for orphaned functions: `grep -r "^def " src/m2py/ | grep -v "__"` and verify each is called
-- [ ] T141 Search for orphaned classes: `grep -r "^class " src/m2py/` and verify each is used
-- [ ] T142 Search for dead imports: run `ruff check --select F401` to find unused imports
-- [ ] T143 Run coverage report and investigate any 0% coverage modules/functions
+- [X] T140 Search for orphaned functions: `grep -r "^def " src/m2py/ | grep -v "__"` and verify each is called
+- [X] T141 Search for orphaned classes: `grep -r "^class " src/m2py/` and verify each is used
+- [X] T142 Search for dead imports: run `ruff check --select F401` to find unused imports
+- [X] T142b Search for legacy code `grep -r "^legacy " src/m2py/` that should be migrated to use newer code, or removed
+- [X] T143 Run coverage report and investigate any 0% coverage modules/functions
+
+**Notes**: 
+- Removed `_generate_name_indirection_write_legacy()` (137 lines) - confirmed dead code with no callers
+- Kept `_generate_name_indirection_legacy()` - used as fallback for complex inner expressions (nested indirection, $EXTRACT)
+- Updated outdated UNIFIED_VAR_DEPRECATED markers to reflect current state
+- Added missing public functions to `__all__` in indirection.py
+- `codegen/names.py` kept as re-export wrapper for backward compatibility
 
 ### Phase 15b: Remove Remaining Deprecated Markers
 
-- [ ] T144 Search for any remaining `# UNIFIED_VAR_DEPRECATED` markers and remove
+- [X] T144 Search for any remaining `# UNIFIED_VAR_DEPRECATED` markers and remove
 - [ ] T145 Search for any remaining `# DEPRECATED` or `deprecated` comments and evaluate
 - [ ] T146 Search for any `raise NotImplementedError` that should now be implemented
 
