@@ -416,8 +416,19 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### FOR Migration
 
-- [ ] T089 Migrate FOR command argument indirection to use `IndirectionResolver`
-- [ ] T090 Verify FOR with @-expressions in loop bounds works correctly
+- [X] T089 Migrate FOR command argument indirection to use `IndirectionResolver`
+  - Added `generate_name_indirection_for_unified()` in `codegen/indirection.py`
+  - Added `resolve_for_target()` method in `runtime/__init__.py`
+  - Updated `ForGenContext.analyze()` in `statements.py` to use unified function
+- [X] T090 Verify FOR with @-expressions in loop bounds works correctly
+  - All 4383 tests pass
+  - Added 6 new FOR indirection tests in `test_indirection_edge_cases.py`:
+    - I-490: Indirect bounds (start/step/end)
+    - I-490: Indirect loop var with indirect bounds
+    - I-491: Subscripted indirection patterns
+    - I-492: Nested function indirection in bounds
+    - I-495: Double-level indirection (@@A)
+    - I-496: Triple-level indirection (@@@A)
 
 ### DO/GOTO Migration
 

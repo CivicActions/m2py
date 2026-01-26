@@ -39,7 +39,11 @@ def execute_mumps():
 
 @pytest.mark.integration
 class TestForLoopIndirection:
-    """Tests for FOR loop variable indirection (F @A=1:1:3)."""
+    """Tests for FOR loop variable indirection (F @A=1:1:3).
+
+    T089: Migrated to use unified resolve_for_target() via IndirectionResolver.
+    T090: Tests for @-expressions in FOR loop bounds.
+    """
 
     def test_for_bounded_indirect_variable(self, execute_mumps):
         """F @A=1:1:3 where A="I" should iterate using variable I."""
@@ -73,6 +77,78 @@ class TestForLoopIndirection:
 """
         result = execute_mumps(code)
         assert result == "XYZ"
+
+    # T090: FOR with @-expressions in loop bounds
+    def test_for_indirect_bounds_start_step_end(self, execute_mumps):
+        """F B=@C:@D:@E where C,D,E contain values for start, step, end (I-490)."""
+        code = """TEST
+ S C="D1",D="D2",E="D3",D1=4,D2=1,D3=6
+ F B=@C:@D:@E W B
+ Q
+"""
+        result = execute_mumps(code)
+        assert result == "456"
+
+    def test_for_indirect_loop_var_and_bounds(self, execute_mumps):
+        """F @A=@C:@D:@E where A is loop var and C,D,E are bounds (I-490)."""
+        code = """TEST
+ S A="B",C="D1",D="D2",E="D3",D1=7,D2=1,D3=10
+ F @A=@C:@D:@E W B
+ Q
+"""
+        result = execute_mumps(code)
+        assert result == "78910"
+
+    def test_for_double_level_indirection(self, execute_mumps):
+        """F @@A where A="B" and B="C" should iterate using variable C (I-495)."""
+        code = """TEST
+ S A="B",B="C",C=""
+ F @@A=1:1:5 W C
+ Q
+"""
+        result = execute_mumps(code)
+        assert result == "12345"
+
+    def test_for_triple_level_indirection(self, execute_mumps):
+        """F @@@A where A="B", B="C", C="D" should iterate using D (I-496)."""
+        code = """TEST
+ S A="B",B="C",C="D",D=9
+ F @@@A=1:1:5 W D
+ Q
+"""
+        result = execute_mumps(code)
+        assert result == "12345"
+
+    def test_for_indirect_subscripted_loop_var(self, execute_mumps):
+        """F @A(@A(2))=... where indirection resolves subscripted variable (I-491).
+
+        Setup: A(2)="A3", A3=4, A(4)="A(22)"
+        @A(2) resolves to "A3"
+        A(@A(2)) = A("A3") = A(A3) where A3=4 = A(4)
+        @A(4) resolves to "A(22)"
+        So F @A(@A(2))=4:1:7 iterates A(22) from 4 to 7
+        """
+        code = """TEST
+ K A
+ S A(2)="A3",A3=4,A(4)="A(22)"
+ F @A(@A(2))=4:1:7 W A(22)
+ Q
+"""
+        result = execute_mumps(code)
+        # A(22) gets values 4,5,6,7
+        assert result == "4567"
+
+    def test_for_indirect_with_function_in_value(self, execute_mumps):
+        """F @A=... where A contains nested @$E() (I-492)."""
+        code = """TEST
+ S A="@$E(""ABCDEF"",3)",B="@$E(""ABCDEF"",4)",D=4
+ F @A=1:1:@B W C
+ Q
+"""
+        result = execute_mumps(code)
+        # @A resolves to @$E("ABCDEF",3) which is C
+        # @B resolves to @$E("ABCDEF",4) which is D=4
+        assert result == "1234"
 
 
 # =============================================================================

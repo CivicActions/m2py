@@ -2646,6 +2646,60 @@ class MUMPSRuntime:
         # Kill local variable via CurrentScope
         cs.kill(target)
 
+    def resolve_for_target(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> str:
+        """Resolve FOR loop indirection target using unified components.
+
+        Feature: 018-unified-variable-system (T089)
+        Replaces resolve_indirection_name for FOR loop variable indirection.
+
+        FOR loop indirection like F @A=1:1:3 requires resolving to get the
+        target variable NAME (not value). For example, if A="B", we need
+        to return "B" as the variable name to iterate.
+
+        Uses IndirectionResolver.resolve_to_name() to determine the target.
+
+        Args:
+            source: Source variable name for indirection (e.g., "A" for @A)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @A, 2 for @@A, etc.)
+            per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
+
+        Returns:
+            Target variable name as string
+
+        Examples:
+            # F @A=1:1:3 where A="B"
+            resolve_for_target("A", scope, levels=1)
+            # Returns "B"
+
+            # F @@A=1:1:3 where A="X", X="Y"
+            resolve_for_target("A", scope, levels=2)
+            # Returns "Y"
+
+            # F @A@(1)=1:1:3 where A="B"
+            resolve_for_target("A", scope, levels=1, per_level_subscripts=[[1]])
+            # Returns "B(1)"
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve to get target variable NAME (not value)
+        target = resolver.resolve_to_name(
+            source, levels=levels, per_level_subscripts=per_level_subscripts
+        )
+
+        return target
+
     def evaluate_argument_indirection(
         self,
         source: str,

@@ -312,21 +312,16 @@ class ForGenContext:
             # Also handles multi-level: F @@A=1:1:5, F @@@A=1:1:5
             loop_var_indirect = True
             # Generate expression to get target variable name at runtime
-            # Use _generate_for_indirection_target which handles nested indirection
-            # (e.g., A="@$E(""ABCDEF"",3)" should resolve to "C")
+            # Feature: 018-unified-variable-system (T089)
+            # Use generate_name_indirection_for_unified which uses IndirectionResolver
             if ctx is not None and stmt.loop_var.expression is not None:
                 from m2py.codegen.indirection import (
-                    _generate_for_indirection_target,
-                    _count_indirection_levels,
+                    generate_name_indirection_for_unified,
                 )
 
-                # Count indirection levels and get innermost expression
-                # F @A uses level 1, F @@A uses level 2, etc.
-                levels, inner_expr = _count_indirection_levels(stmt.loop_var)
-
                 # Generate code to resolve the full indirection chain
-                loop_var_expr = _generate_for_indirection_target(
-                    inner_expr, ctx, indirection_levels=levels
+                loop_var_expr = generate_name_indirection_for_unified(
+                    stmt.loop_var, ctx
                 )
             var_name = "_for_indirect_var"
             loop_var = "_for_val"  # Temporary for range iteration
