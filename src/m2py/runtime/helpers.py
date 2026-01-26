@@ -599,7 +599,7 @@ def _find_next_valued_node(
 def m_query(
     array: MArray | None,
     var_name: str,
-    subscripts: tuple[str, ...],
+    subscripts: tuple,
 ) -> str:
     """Return full reference of next node in depth-first traversal ($QUERY).
 
@@ -620,20 +620,23 @@ def m_query(
     Examples:
         # arr(1,1)=1, arr(1,2)=2, arr(2,1)=3
         m_query(arr, "A", ("",)) → "A(1,1)"
-        m_query(arr, "A", ("1", "1")) → "A(1,2)"
-        m_query(arr, "A", ("1", "2")) → "A(2,1)"
-        m_query(arr, "A", ("2", "1")) → ""
+        m_query(arr, "A", (1, 1)) → "A(1,2)"
+        m_query(arr, "A", (1, 2)) → "A(2,1)"
+        m_query(arr, "A", (2, 1)) → ""
     """
     if array is None:
         return ""
 
+    # Canonicalize subscripts to strings for comparison
+    canon_subs = tuple(_canonicalize_subscript(s) for s in subscripts)
+
     # Check if we're starting from empty string (find first valued node)
-    if subscripts == ("",) or subscripts == ():
+    if canon_subs == ("",) or canon_subs == ():
         # Start from beginning - find first valued node in entire tree
         result = _find_next_valued_node(array, [], (), at_start=True)
     else:
         # Find next valued node after the given subscripts
-        result = _find_next_valued_node(array, [], subscripts, at_start=False)
+        result = _find_next_valued_node(array, [], canon_subs, at_start=False)
 
     if result is None:
         return ""
@@ -967,27 +970,30 @@ def _is_canonical_numeric(value: str) -> bool:
         return False
 
 
-def _format_subscript(value: str) -> str:
+def _format_subscript(value) -> str:
     """Format a subscript value for canonical name representation.
 
     Args:
-        value: Subscript value (string)
+        value: Subscript value (any type - will be canonicalized)
 
     Returns:
         Canonically formatted subscript - unquoted for numbers, quoted for strings
     """
-    if _is_canonical_numeric(value):
+    # First canonicalize numeric types to string
+    canonical = _canonicalize_subscript(value)
+
+    if _is_canonical_numeric(canonical):
         # Numeric values are not quoted in canonical name
-        return value
+        return canonical
     else:
         # String values are quoted, with internal quotes doubled
-        escaped = value.replace('"', '""')
+        escaped = canonical.replace('"', '""')
         return f'"{escaped}"'
 
 
 def m_name(
     var_name: str,
-    subscripts: tuple[str, ...],
+    subscripts: tuple,
     depth: int | None = None,
     is_global: bool = False,
 ) -> str:
@@ -997,7 +1003,7 @@ def m_name(
 
     Args:
         var_name: Variable name (without caret for globals)
-        subscripts: Tuple of subscript values (as strings)
+        subscripts: Tuple of subscript values (any type - will be canonicalized)
         depth: Number of subscripts to include (None = all, 0 = name only)
         is_global: True if this is a global variable (prepend ^)
 
@@ -1005,10 +1011,10 @@ def m_name(
         Canonical name string like "A(1,2,3)" or "^GLO(1,2)"
 
     Examples:
-        m_name("A", ("1", "2", "3")) → "A(1,2,3)"
-        m_name("A", ("1", "2", "3"), depth=2) → "A(1,2)"
-        m_name("A", ("1", "2", "3"), depth=0) → "A"
-        m_name("GLO", ("1", "2"), is_global=True) → "^GLO(1,2)"
+        m_name("A", (1, 2, 3)) → "A(1,2,3)"
+        m_name("A", (1, 2, 3), depth=2) → "A(1,2)"
+        m_name("A", (1, 2, 3), depth=0) → "A"
+        m_name("GLO", (1, 2), is_global=True) → "^GLO(1,2)"
         m_name("A", ("foo", "bar")) → 'A("foo","bar")'
     """
     # Apply depth limit if specified

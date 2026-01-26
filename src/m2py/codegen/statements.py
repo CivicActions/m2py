@@ -1054,14 +1054,13 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
         # resolve_naked() returns (name, subscripts) from the naked indicator
         # We must capture the resolved name/subscripts BEFORE calling m_set_piece
         # because the getter will update the naked indicator when it reads the value
+        # DO NOT wrap in str() - let runtime handle canonicalization
         if first_arg.subscripts:
             subscript_exprs = [generate_expr(sub, ctx) for sub in first_arg.subscripts]
             if len(subscript_exprs) == 1:
-                subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+                subscripts_tuple = f"({subscript_exprs[0]},)"
             else:
-                subscripts_tuple = (
-                    f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
-                )
+                subscripts_tuple = f"({', '.join(subscript_exprs)},)"
         else:
             subscripts_tuple = "()"
 
@@ -1295,8 +1294,12 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
         ctx: Generator context
 
     The generated code calls _rt.globals.set():
-        _rt.globals.set("NAME", ("sub1", "sub2"), "value")
+        _rt.globals.set("NAME", (sub1, sub2), "value")
         _rt.globals.set("NAME", (), "value")  # No subscripts
+
+    Note: Subscripts are NOT wrapped in str() - the runtime's _canonicalize_subscript
+    handles type-aware canonicalization. Numeric literals canonicalize differently
+    than string literals (e.g., Decimal("1.0") → "1", but "1.0" → "1.0").
     """
     # We know target is GlobalVariable because caller checked isinstance
     assert isinstance(assignment.target, GlobalVariable)
@@ -1306,13 +1309,14 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
     global_name = global_var.name
 
     # Generate subscript expressions
+    # DO NOT wrap in str() - let runtime handle canonicalization
     if global_var.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in global_var.subscripts]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1351,12 +1355,13 @@ def _generate_extended_global_set(
     global_name = ext_global.name
 
     # Generate subscript expressions
+    # DO NOT wrap in str() - let runtime handle canonicalization
     if ext_global.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in ext_global.subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1393,13 +1398,14 @@ def _generate_naked_global_set(
     naked_global = assignment.target
 
     # Generate subscript expressions
+    # DO NOT wrap in str() - let runtime handle canonicalization
     if naked_global.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in naked_global.subscripts]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 

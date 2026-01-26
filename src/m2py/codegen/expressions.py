@@ -318,13 +318,17 @@ def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     global_name = var.name
 
     # Generate subscript expressions
+    # DO NOT wrap in str() - let the runtime's _canonicalize_subscript handle
+    # the type distinction. Numeric literals (Decimal, int, float) should
+    # canonicalize differently than string literals.
+    # Example: Decimal("1.0") → "1" (numeric), but "1.0" → "1.0" (string)
     if var.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -350,13 +354,14 @@ def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -
     resolve_naked() returns (name, base_subscripts + new_subscripts).
     """
     # Generate subscript expressions
+    # DO NOT wrap in str() - let the runtime's _canonicalize_subscript handle it
     if var.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1051,13 +1056,14 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         return f"_rt.get_data({name_expr} + {subs_fstr}, _scope)"
 
     # Generate subscript tuple for non-indirection cases
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1132,13 +1138,14 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         default_code = '""'
 
     # Generate subscript tuple
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1275,13 +1282,14 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Generate subscript tuple for non-indirection cases
     # For $ORDER, subscripts include the starting point for iteration
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         # If no subscripts, use ("",) to get first key at root level
         subscripts_tuple = '("",)'
@@ -1342,13 +1350,14 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     var = args[0]
 
     # Generate subscript tuple
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         # If no subscripts, use ("",) to start from beginning
         subscripts_tuple = '("",)'
@@ -1899,12 +1908,13 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     subscripts = getattr(var, "subscripts", [])
 
     # Build subscripts tuple - evaluate at runtime
+    # DO NOT wrap in str() - let runtime handle canonicalization
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
