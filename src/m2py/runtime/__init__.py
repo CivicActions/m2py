@@ -2511,17 +2511,20 @@ class MUMPSRuntime:
     ) -> None:
         """Set variable via indirection using unified components.
 
-        Feature: 018-unified-variable-system (T040)
+        Feature: 018-unified-variable-system (T040, T111)
         Replaces scattered set_var + resolve calls with unified approach.
 
         Uses IndirectionResolver.resolve_to_name() to determine the target,
         then CurrentScope.set() to perform the assignment.
 
         Args:
-            source: Source variable name for indirection (e.g., "X" for @X)
+            source: Source variable name for indirection (e.g., "X" for @X),
+                or for levels=0, the already-resolved target name directly
             value: Value to set
             _scope: Current scope dictionary
             levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+                Use levels=0 when source is already the resolved target name
+                (e.g., from NakedGlobal expressions where the value was computed)
             per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
 
         Raises:
@@ -2539,6 +2542,10 @@ class MUMPSRuntime:
             # @X@(1,2)=5 where X="A"
             set_indirected("X", 5, scope, levels=1, per_level_subscripts=[[1, 2]])
             # Sets A(1,2)=5
+
+            # NakedGlobal: @^(1)=5 where ^(1) resolves to "X"
+            set_indirected("X", 5, scope, levels=0)
+            # Sets X=5 directly (source is already the target name)
         """
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
@@ -2547,10 +2554,21 @@ class MUMPSRuntime:
         cs = CurrentScope.from_generated_context(_scope)
         resolver = IndirectionResolver(self, cs)
 
-        # Resolve to get target variable NAME (not value)
-        target = resolver.resolve_to_name(
-            source, levels=levels, per_level_subscripts=per_level_subscripts
-        )
+        # Handle levels=0: source is already the resolved target name
+        # This is used for NakedGlobal expressions where the target name
+        # was computed during code generation
+        if levels == 0:
+            # Validate that source is a valid variable name
+            if not resolver._is_valid_var_name(source):
+                from m2py.core.exceptions import VarExpectedError
+
+                raise VarExpectedError(source)
+            target = source
+        else:
+            # Resolve to get target variable NAME (not value)
+            target = resolver.resolve_to_name(
+                source, levels=levels, per_level_subscripts=per_level_subscripts
+            )
 
         # Convert value to string (MUMPS semantics - all values are strings)
         str_value = str(value)
@@ -2576,7 +2594,7 @@ class MUMPSRuntime:
     ) -> Any:
         """Get variable value via indirection using unified components.
 
-        Feature: 018-unified-variable-system (T104)
+        Feature: 018-unified-variable-system (T104, T111)
         Replaces scattered get_var + resolve calls with unified approach.
 
         For READ operations (getting values), we need different semantics than
@@ -2585,9 +2603,12 @@ class MUMPSRuntime:
         - WRITE: Resolve N-1 times to get the target NAME to write to
 
         Args:
-            source: Source variable name for indirection (e.g., "X" for @X)
+            source: Source variable name for indirection (e.g., "X" for @X),
+                or for levels=0, the already-resolved target name directly
             _scope: Current scope dictionary
             levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+                Use levels=0 when source is already the resolved target name
+                (e.g., from NakedGlobal expressions where the value was computed)
             per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
 
         Returns:
@@ -2605,7 +2626,17 @@ class MUMPSRuntime:
             # @X@(1,2) where X="A", A(1,2)="hello"
             get_indirected("X", scope, levels=1, per_level_subscripts=[[1, 2]])
             # Returns "hello"
+
+            # NakedGlobal: @^(1) where ^(1) resolves to "X"
+            get_indirected("X", scope, levels=0)
+            # Returns value of X directly (source is already the target name)
         """
+        # Handle levels=0: source is already the resolved target name
+        # This is used for NakedGlobal expressions where the target name
+        # was computed during code generation
+        if levels == 0:
+            return self.get_var(source, _scope)
+
         # Handle per_level_subscripts by building the subscript string
         # For @X@(1,2) where X="A", we need to get A(1,2)
         if per_level_subscripts:
@@ -2762,6 +2793,7 @@ class MUMPSRuntime:
         _scope: Dict[str, Any],
         levels: int = 1,
         per_level_subscripts: Optional[List[List[Any]]] = None,
+        treat_empty_as_truthy: bool = False,
     ) -> Any:
         """Evaluate argument indirection using unified components.
 
@@ -2787,6 +2819,8 @@ class MUMPSRuntime:
             _scope: Current scope dictionary
             levels: Number of indirection levels (1 for @A, 2 for @@A, etc.)
             per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
+            treat_empty_as_truthy: If True, empty string resolves to 1 (T052 for IF)
+                                   If False, empty string raises error (WRITE, SET, etc.)
 
         Returns:
             Evaluated result of the expression
@@ -2803,6 +2837,10 @@ class MUMPSRuntime:
             # I @@A where A="B", B="1=1"
             evaluate_argument_indirection("A", scope, levels=2)
             # Returns 1 (TRUE) because 1=1 is true
+
+            # I @A where A="" (T052)
+            evaluate_argument_indirection("A", scope, levels=1, treat_empty_as_truthy=True)
+            # Returns 1 (TRUE) - empty indirection in IF is TRUE
         """
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionContext, IndirectionResolver
@@ -2817,6 +2855,7 @@ class MUMPSRuntime:
             levels=levels,
             context=IndirectionContext.ARGUMENT,
             per_level_subscripts=per_level_subscripts,
+            treat_empty_as_truthy=treat_empty_as_truthy,
         )
 
     def _set_local_var(

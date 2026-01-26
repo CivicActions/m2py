@@ -834,7 +834,14 @@ class SemanticAnalyzer:
         return stmt
 
     def _analyze_WriteCommand(self, cmd: Any, parent: Any) -> MWriteStatement:
-        """Analyze WRITE command into MWriteStatement."""
+        """Analyze WRITE command into MWriteStatement.
+
+        WRITE uses ARGUMENT indirection semantics: the indirected value is
+        evaluated as a MUMPS expression, not looked up as a variable name.
+        Example: W @A where A="1+2" outputs "3", not the value of variable "1+2".
+        """
+        from m2py.asg.enums import IndirectionType
+
         stmt = MWriteStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -842,7 +849,11 @@ class SemanticAnalyzer:
         if hasattr(cmd, "args") and cmd.args:
             for arg in cmd.args:
                 if hasattr(arg, "arg") and arg.arg:
-                    stmt.arguments.append(self.analyze(arg.arg, stmt))
+                    analyzed = self.analyze(arg.arg, stmt)
+                    # WRITE uses ARGUMENT indirection - evaluated as expression
+                    if hasattr(analyzed, "indirection_type"):
+                        analyzed.indirection_type = IndirectionType.ARGUMENT
+                    stmt.arguments.append(analyzed)
 
         return stmt
 

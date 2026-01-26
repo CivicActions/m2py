@@ -211,18 +211,24 @@ class TestArgumentIndirectionBasic:
         assert result == 0
 
     def test_empty_string_true(self, resolver, scope):
-        """I @A where A="" evaluates to TRUE (YDB-specific).
+        """I @A where A="" evaluates to TRUE (YDB-specific for IF).
 
-        T052: Empty string in argument context is TRUE.
+        T052: Empty string in argument context is TRUE for IF conditions.
         Per YDB behavior, `I @A` where A="" returns TRUE,
         even though `I ""` returns FALSE. This appears to be
         because successful indirection resolution (even to empty) is truthy.
 
+        For WRITE and other contexts, empty string raises VarExpectedError.
+        T052 behavior requires explicit treat_empty_as_truthy=True.
+
         Note: This differs from direct empty string: `I ""` → FALSE
         """
         scope.set("A", "")
-        result = resolver.resolve("A", 1, IndirectionContext.ARGUMENT)
-        # YDB treats empty argument indirection as TRUE
+        # T052: Must explicitly request IF-like behavior
+        result = resolver.resolve(
+            "A", 1, IndirectionContext.ARGUMENT, treat_empty_as_truthy=True
+        )
+        # YDB treats empty argument indirection as TRUE in IF context
         assert result == 1
 
 
@@ -289,14 +295,15 @@ class TestArgumentVsNameIndirection:
         """Argument indirection @A where A="X" evaluates X as expression.
 
         For ARGUMENT context: @A → A="X" → evaluate "X" as expression.
-        If X is defined, its value is used in the evaluation.
+        If X is defined, its value is returned. The calling context (IF, WRITE)
+        then handles truthiness conversion or printing as needed.
         """
         scope.set("A", "X")
         scope.set("X", "42")
         result = resolver.resolve("A", 1, IndirectionContext.ARGUMENT)
         # ARGUMENT context: Evaluate "X" which gets X's value (42)
-        # Then truthiness of 42 is 1 (TRUE)
-        assert result == 1
+        # Returns the actual value - caller applies m_truth() for IF context
+        assert result == "42"
 
     def test_critical_difference_expression_evaluation(self, resolver, scope):
         """Demonstrate the critical difference in "1=0" handling.

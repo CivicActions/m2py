@@ -515,13 +515,20 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 **Goal**: Eliminate all direct calls to the deprecated `generate_name_indirection_write()` function.
 
-- [ ] T110 Review all call sites of `generate_name_indirection_write()` in codegen
-- [ ] T111 Update `generate_name_indirection_write_unified()` to handle NakedGlobal directly
-  - Remove fallback to deprecated function
-- [ ] T112 [P] Add tests for NakedGlobal write indirection via unified path
-- [ ] T113 Verify no direct calls remain to `generate_name_indirection_write()`
+- [X] T110 Review all call sites of `generate_name_indirection_write()` in codegen
+  - Found 2 fallback calls in `generate_name_indirection_write_unified()` for complex inner expressions
+  - Removed fallbacks by handling NakedGlobal and complex expressions (concatenation, etc.) directly
+- [X] T111 Update `generate_name_indirection_write_unified()` to handle NakedGlobal directly
+  - Implemented naked reference string detection and expansion in IndirectionResolver
+  - NakedGlobal expressions now use unified path with correct `levels` parameter
+- [X] T112 [P] Add tests for NakedGlobal write indirection via unified path
+  - Tests exist: `test_ii129_naked_indicator_in_name_indirection`, `test_naked_reference_with_subscripts_in_indirection`
+  - Removed xfail marker from `test_naked_reference_with_subscripts_in_indirection` (now passing)
+- [X] T113 Verify no direct calls remain to `generate_name_indirection_write()`
+  - Confirmed: all callers in `statements.py` use `generate_name_indirection_write_unified`
+  - No fallback calls remain in the unified function
 
-**Checkpoint**: All codegen now generates unified runtime method calls.
+**Checkpoint**: All codegen now generates unified runtime method calls. ✅
 
 ---
 
@@ -529,7 +536,7 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 **Purpose**: Remove all `UNIFIED_VAR_DEPRECATED` runtime functions now that codegen uses unified methods.
 
-**Status**: Partially complete. Most functions still needed because Phase 12c (T110-T113) is incomplete.
+**Status**: Phase 12c (T110-T113) is now complete. Some blockers remain on T114-T115, T118-T119.
 
 ### Phase 13a: Remove Deprecated Wrapper Functions
 
@@ -678,9 +685,9 @@ Phase 15 (Final Dead Code Removal) ← FINAL PHASE
 
 ### Critical Path (Remaining Work)
 
-1. **T104-T109**: Create `get_indirected()` and migrate `generate_name_indirection()` (Phase 12a-b)
-2. **T110-T113**: Migrate remaining write indirection callers (Phase 12c)
-3. **T114-T127**: Remove deprecated runtime functions (Phase 13)
+1. ~~**T104-T109**: Create `get_indirected()` and migrate `generate_name_indirection()` (Phase 12a-b)~~ ✅
+2. ~~**T110-T113**: Migrate remaining write indirection callers (Phase 12c)~~ ✅
+3. **T114-T127**: Remove deprecated runtime functions (Phase 13) - Some blockers remain
 4. **T128-T139**: Rename unified functions (Phase 14)
 5. **T140-T154**: Final dead code removal (Phase 15)
 

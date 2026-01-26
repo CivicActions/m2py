@@ -214,18 +214,29 @@ class TestArgumentIndirection:
         assert result == 1
 
     def test_argument_indirection_empty_string(self):
-        """@A where A="" → TRUE (YDB-specific behavior).
+        """@A where A="" → TRUE (YDB-specific behavior for IF).
 
-        T052: Empty string in argument indirection is TRUE.
+        T052: Empty string in argument indirection is TRUE for IF context.
         This differs from direct `I ""` which is FALSE.
-        YDB treats successful indirection resolution (even to empty) as truthy.
+        YDB treats successful indirection resolution (even to empty) as truthy
+        when used in IF conditions (treat_empty_as_truthy=True).
+
+        For WRITE and other contexts, empty string raises VarExpectedError.
         """
         state = MockMState()
         scope = CurrentScope(scope_dict={"A": ""})
         resolver = IndirectionResolver(state, scope)
 
-        result = resolver.resolve("A", levels=1, context=IndirectionContext.ARGUMENT)
-        assert result == 1  # YDB-specific: empty argument indirection is TRUE
+        # T052: Must explicitly request IF-like behavior
+        result = resolver.resolve(
+            "A",
+            levels=1,
+            context=IndirectionContext.ARGUMENT,
+            treat_empty_as_truthy=True,
+        )
+        assert (
+            result == 1
+        )  # YDB-specific: empty argument indirection is TRUE in IF context
 
 
 class TestArgumentIndirectionConvenience:
@@ -322,18 +333,29 @@ class TestEvaluateExpression:
         assert resolver.evaluate_expression("0") == 0
 
     def test_empty_string_is_false(self):
-        """Empty string evaluates to TRUE (YDB-specific).
+        """Empty string behavior depends on context.
 
-        T052: Empty string in argument context is TRUE.
-        This is YDB-specific behavior for argument indirection.
+        T052: Empty string in IF argument context is TRUE (YDB-specific).
+        For WRITE and other contexts, empty string raises VarExpectedError.
+
+        This test verifies the T052 behavior when explicitly requested.
         """
         state = MockMState()
         scope = CurrentScope(scope_dict={})
         resolver = IndirectionResolver(state, scope)
 
-        # YDB-specific: empty string in evaluate_expression returns TRUE
-        assert resolver.evaluate_expression("") == 1
-        assert resolver.evaluate_expression("  ") == 1
+        # T052: With treat_empty_as_truthy=True (IF context), empty string is TRUE
+        assert resolver.evaluate_expression("", treat_empty_as_truthy=True) == 1
+        assert resolver.evaluate_expression("  ", treat_empty_as_truthy=True) == 1
+
+        # Without the flag (WRITE, SET context), empty string raises error
+        from m2py.core.exceptions import VarExpectedError
+        import pytest
+
+        with pytest.raises(VarExpectedError):
+            resolver.evaluate_expression("")
+        with pytest.raises(VarExpectedError):
+            resolver.evaluate_expression("  ")
 
     def test_comparison_expression(self):
         """Comparison expressions evaluate correctly."""

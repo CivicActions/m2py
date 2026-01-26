@@ -397,6 +397,7 @@ def _generate_name_indirection_legacy(
 def generate_argument_indirection(
     expr: "MIndirection",
     ctx: "GeneratorContext",
+    if_condition: bool = False,
 ) -> str:
     """Generate Python code for argument-level indirection in IF conditions.
 
@@ -410,17 +411,19 @@ def generate_argument_indirection(
     Args:
         expr: MIndirection ASG node with indirection_type=ARGUMENT
         ctx: Generator context
+        if_condition: If True, pass treat_empty_as_truthy=True for T052 behavior
 
     Returns:
         Python expression string
     """
     # Delegate to unified version which fixes Challenge 6 bug
-    return generate_argument_indirection_unified(expr, ctx)
+    return generate_argument_indirection_unified(expr, ctx, if_condition=if_condition)
 
 
 def generate_argument_indirection_unified(
     expr: "MIndirection",
     ctx: "GeneratorContext",
+    if_condition: bool = False,
 ) -> str:
     """Generate Python code for argument-level indirection using unified components.
 
@@ -441,9 +444,14 @@ def generate_argument_indirection_unified(
     3. Evaluates the expression with access to current scope
     4. Returns the evaluated result (not the string)
 
+    T052: Empty string handling depends on context:
+    - IF condition (if_condition=True): Empty string → 1 (TRUE)
+    - Other contexts (if_condition=False): Empty string → VarExpectedError
+
     Args:
         expr: MIndirection ASG node with indirection_type=ARGUMENT
         ctx: Generator context
+        if_condition: If True, pass treat_empty_as_truthy=True for T052 behavior
 
     Returns:
         Python expression string that calls _rt.evaluate_argument_indirection()
@@ -485,16 +493,17 @@ def generate_argument_indirection_unified(
         # This handles cases like @(expr) where expr is computed
         value_expr = generate_expr(inner_expr, ctx)
         # For computed expressions, we still need to evaluate them
-        return (
-            f"_rt.evaluate_argument_indirection({value_expr}, {scope_expr}, levels=1)"
-        )
+        empty_flag = ", treat_empty_as_truthy=True" if if_condition else ""
+        return f"_rt.evaluate_argument_indirection({value_expr}, {scope_expr}, levels=1{empty_flag})"
 
     # Build per-level subscripts argument if needed
     if all_subscripts and any(all_subscripts):
-        # Filter to only include subscript lists from @X@(subs) syntax
-        # Note: inner subscripts are already included in source_expr
+        # Include ALL indirection subscripts from @X@(subs) syntax
+        # Note: inner_expr.subscripts (variable subscripts like X(1,2)) are
+        # already included in source_expr; all_subscripts contains only
+        # indirection subscripts (after the @).
         per_level_subs = []
-        for subs in all_subscripts[1:] if len(all_subscripts) > 1 else all_subscripts:
+        for subs in all_subscripts:
             if subs:
                 sub_exprs = [generate_expr(s, ctx) for s in subs]
                 per_level_subs.append(f"[{', '.join(sub_exprs)}]")
@@ -507,7 +516,9 @@ def generate_argument_indirection_unified(
         subs_arg = ""
 
     # Generate call to unified evaluate_argument_indirection
-    return f"_rt.evaluate_argument_indirection({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
+    # T052: For IF conditions, pass treat_empty_as_truthy=True so empty strings → TRUE
+    empty_flag = ", treat_empty_as_truthy=True" if if_condition else ""
+    return f"_rt.evaluate_argument_indirection({source_expr}, {scope_expr}, levels={levels}{subs_arg}{empty_flag})"
 
 
 def generate_name_indirection_unified(
@@ -516,7 +527,7 @@ def generate_name_indirection_unified(
 ) -> str:
     """Generate Python code for name indirection READ using unified components.
 
-    Feature: 018-unified-variable-system (T106)
+    Feature: 018-unified-variable-system (T106, T111)
     Uses _rt.get_indirected() which internally uses IndirectionResolver.
 
     This replaces the complex logic in generate_name_indirection() with
@@ -524,9 +535,8 @@ def generate_name_indirection_unified(
     - Simple: @X → _rt.get_indirected("X", _scope, levels=1)
     - Multi-level: @@X → _rt.get_indirected("X", _scope, levels=2)
     - With subscripts: @X@(1,2) → _rt.get_indirected("X", _scope, levels=1, per_level_subscripts=[[1,2]])
-
-    For complex cases (naked globals, complex expressions), falls back to
-    the original generate_name_indirection() to handle runtime resolution.
+    - NakedGlobal: @^(1) → _rt.get_indirected(resolved_name, _scope, levels=0)
+    - Multi-level NakedGlobal: @@^(1) → _rt.get_indirected(resolved_name, _scope, levels=1)
 
     Args:
         expr: MIndirection ASG node with indirection_type=NAME
@@ -542,14 +552,42 @@ def generate_name_indirection_unified(
     # Count indirection levels and collect subscripts
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
-    # For complex inner expressions (naked globals, nested indirection, etc.),
-    # fall back to the legacy function which handles runtime resolution
-    if isinstance(inner_expr, NakedGlobal):
-        # Naked global - use legacy function
-        return _generate_name_indirection_legacy(expr, ctx)
-
     # Get the appropriate scope expression
     scope_expr = _get_scope_expr(ctx)
+
+    # Handle NakedGlobal: @^(1) or @@^(1) or @@^(1)@(subs)
+    # The inner expression is a NakedGlobal, which when evaluated gives a value
+    # that serves as the source for the indirection resolution.
+    # The resolved value (a naked reference string like "^(5)") goes through
+    # all indirection levels - the naked expansion happens inside the resolver.
+    if isinstance(inner_expr, NakedGlobal):
+        # Generate the expression that evaluates the naked global
+        # This produces: (_rt.globals.get(*_rt.globals.resolve_naked((subs,))) or '')
+        naked_expr = generate_expr(inner_expr, ctx)
+
+        # Build per_level_subscripts argument if needed
+        if any(all_subscripts):
+            per_level_subs = []
+            for sub_list in all_subscripts:
+                if sub_list:
+                    sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                    per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+                else:
+                    per_level_subs.append("[]")
+            subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+        else:
+            subs_arg = ""
+
+        # Use full levels - the resolver handles naked reference expansion internally
+        return (
+            f"_rt.get_indirected({naked_expr}, {scope_expr}, levels={levels}{subs_arg})"
+        )
+
+    # For other complex inner expressions (nested indirection, etc.),
+    # fall back to the legacy function which handles runtime resolution
+    if not isinstance(inner_expr, (MVariable, GlobalVariable)):
+        # Complex case - use legacy function
+        return _generate_name_indirection_legacy(expr, ctx)
 
     # Get the source variable name
     if isinstance(inner_expr, MVariable):
@@ -601,7 +639,7 @@ def generate_name_indirection_write_unified(
 ) -> str:
     """Generate Python code for name indirection write using unified components.
 
-    Feature: 018-unified-variable-system (T041)
+    Feature: 018-unified-variable-system (T041, T111)
     Uses _rt.set_indirected() which internally uses IndirectionResolver.
 
     This replaces the complex logic in generate_name_indirection_write() with
@@ -609,9 +647,8 @@ def generate_name_indirection_write_unified(
     - Simple: @X=val → _rt.set_indirected("X", val, _scope, levels=1)
     - Multi-level: @@X=val → _rt.set_indirected("X", val, _scope, levels=2)
     - With subscripts: @X@(1,2)=val → _rt.set_indirected("X", val, _scope, levels=1, per_level_subscripts=[[1,2]])
-
-    For complex cases (naked globals, complex expressions), falls back to
-    the original generate_name_indirection_write() to handle runtime resolution.
+    - NakedGlobal: @^(1)=val → _rt.set_indirected(resolved_name, val, _scope, levels=0)
+    - Multi-level NakedGlobal: @@^(1)=val → _rt.set_indirected(resolved_name, val, _scope, levels=1)
 
     Args:
         expr: MIndirection ASG node
@@ -622,20 +659,69 @@ def generate_name_indirection_write_unified(
         Python statement string
     """
     from m2py.asg.expressions import MVariable
-    from m2py.parser.textx_classes import GlobalVariable
+    from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
     from m2py.codegen.expressions import generate_expr
 
     # Count indirection levels and collect subscripts
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
-    # For complex inner expressions (naked globals, nested indirection, etc.),
-    # fall back to the original function which handles runtime resolution
-    if not isinstance(inner_expr, (MVariable, GlobalVariable)):
-        # Complex case - use original function
-        return generate_name_indirection_write(expr, value_expr, ctx)
-
     # Get the appropriate scope expression
     scope_expr = _get_scope_expr(ctx)
+
+    # Handle NakedGlobal: @^(1)=val or @@^(1)=val or @@^(1)@(subs)=val
+    # The inner expression is a NakedGlobal, which when evaluated gives a value
+    # that serves as the source for the indirection resolution.
+    # The resolved value (a naked reference string like "^(5)") goes through
+    # all indirection levels - the naked expansion happens inside the resolver.
+    if isinstance(inner_expr, NakedGlobal):
+        # Generate the expression that evaluates the naked global
+        # This produces: (_rt.globals.get(*_rt.globals.resolve_naked((subs,))) or '')
+        naked_expr = generate_expr(inner_expr, ctx)
+
+        # Build per_level_subscripts argument if needed
+        if any(all_subscripts):
+            per_level_subs = []
+            for sub_list in all_subscripts:
+                if sub_list:
+                    sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                    per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+                else:
+                    per_level_subs.append("[]")
+            subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+        else:
+            subs_arg = ""
+
+        # Use full levels - the resolver handles naked reference expansion internally
+        return f"_rt.set_indirected({naked_expr}, {value_expr}, {scope_expr}, levels={levels}{subs_arg})"
+
+    # For complex inner expressions (concatenation, etc.) that aren't simple variables,
+    # evaluate the expression at runtime and use levels=0 since the result IS the target
+    if not isinstance(inner_expr, (MVariable, GlobalVariable)):
+        # Generate the expression evaluation - this will be the target name string
+        inner_expr_code = generate_expr(inner_expr, ctx)
+        # Convert to string to handle non-string expressions
+        target_expr = f"str({inner_expr_code})"
+
+        # Build per_level_subscripts argument if any subscripts at intermediate levels
+        # Note: For levels=0 with complex expressions, we need to handle subscripts
+        # that were attached to the outer indirection levels
+        if any(all_subscripts):
+            per_level_subs = []
+            for sub_list in all_subscripts:
+                if sub_list:
+                    sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                    per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+                else:
+                    per_level_subs.append("[]")
+            subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+        else:
+            subs_arg = ""
+
+        # Use levels-1 since evaluating the inner expression already resolves one level
+        # Example: @(A_B)=1 → evaluate A_B="XY", then set XY=1 (levels=0)
+        # Example: @@(A_B)=1 → evaluate A_B="XY", then resolve @XY → target (levels=1)
+        effective_levels = levels - 1
+        return f"_rt.set_indirected({target_expr}, {value_expr}, {scope_expr}, levels={effective_levels}{subs_arg})"
 
     # Get the source variable name
     if isinstance(inner_expr, MVariable):
@@ -661,8 +747,10 @@ def generate_name_indirection_write_unified(
         else:
             source_expr = f'"{source_name}"'
     else:
-        # This shouldn't happen given the check above, but just in case
-        return generate_name_indirection_write(expr, value_expr, ctx)
+        # Should not reach here - complex expressions are handled above
+        raise NotImplementedError(
+            f"Unexpected inner_expr type in SET indirection: {type(inner_expr).__name__}"
+        )
 
     # Build per_level_subscripts argument if needed
     if any(all_subscripts):

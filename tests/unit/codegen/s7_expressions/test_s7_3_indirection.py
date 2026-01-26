@@ -455,6 +455,25 @@ class TestIfIndirectionEndToEnd:
         result = execute_mumps('TEST S A="" I @A W "TRUE" E  W "FALSE" Q')
         assert result.output == "TRUE"
 
+    def test_if_indirection_whitespace_only_true(self, execute_mumps):
+        """I @A where A="  " (whitespace only) is TRUE (YDB-specific).
+
+        T052: Whitespace-only string in argument indirection is also TRUE.
+        Like empty string, whitespace-only is treated as successful indirection.
+        """
+        result = execute_mumps('TEST S A="  " I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_multiple_conditions_with_empty_indirection(self, execute_mumps):
+        """I 1,@A where A="" → TRUE (both conditions TRUE).
+
+        T052: When empty indirection appears in comma-separated IF conditions,
+        each condition is evaluated independently. The empty indirection
+        evaluates to TRUE per T052 behavior.
+        """
+        result = execute_mumps('TEST S A="" I 1,@A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
     def test_if_indirection_zero_string_false(self, execute_mumps):
         """I @A where A="0" is FALSE.
 
@@ -676,9 +695,6 @@ class TestWriteIndirectionEndToEnd:
         result = execute_mumps('TEST S A="B",B="C",C=123 W @@A Q')
         assert result.output == "123"
 
-    @pytest.mark.xfail(
-        reason="m2py doesn't yet support function expressions in name indirection"
-    )
     def test_write_indirection_function_eval(self, execute_mumps):
         """W @A where A='$E("ABC",3)' → C (the function result).
 

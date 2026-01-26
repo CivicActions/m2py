@@ -15,7 +15,7 @@ Requirements: FR-010 through FR-022
 from enum import Enum
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from m2py.core.exceptions import VarExpectedError
+from m2py.core.exceptions import VarExpectedError, LVUNDEFError
 from m2py.core.subscripts import SubscriptCanonicalizer
 
 if TYPE_CHECKING:
@@ -79,15 +79,19 @@ class IndirectionResolver:
         context: IndirectionContext = IndirectionContext.NAME,
         direct_subscripts: Optional[List[Any]] = None,
         per_level_subscripts: Optional[List[List[Any]]] = None,
+        treat_empty_as_truthy: bool = False,
     ) -> Any:
         """Resolve indirection and return final value.
 
         Args:
-            source: Initial variable name or expression string
+            source: Initial variable name or expression string, OR
+                a naked reference string like "^(5)" that needs expansion
             levels: Number of @ levels (1 for @X, 2 for @@X, etc.)
             context: How to use final resolved value
             direct_subscripts: Subscripts for @X(subs) form
             per_level_subscripts: Subscripts per resolution level for @X@(s1)@(s2)
+            treat_empty_as_truthy: T052 - if True, empty string in ARGUMENT context
+                                   returns 1 (TRUE). Used by IF indirection.
 
         Returns:
             - NAME context: Variable value (string, MArray, etc.)
@@ -117,8 +121,25 @@ class IndirectionResolver:
 
         # 1. Resolve intermediate levels (NAME semantics)
         for i in range(levels):
-            # Get value at current name
-            value = self._get_value(current)
+            # Check if current is a naked reference string that needs expansion
+            # rather than value lookup (e.g., "^(5)" should expand to "^V(5)")
+            if self._is_naked_reference_string(current):
+                # Expand the naked reference to full global name
+                value = self._expand_naked_reference_string(current)
+            else:
+                # T065: Check if source variable is defined before getting value
+                # This raises LVUNDEF for @UNDEF (undefined source variable)
+                if self._is_valid_var_name(current) and not self._scope.exists(current):
+                    # Global variables - check via _state
+                    if current.startswith("^"):
+                        # Globals don't raise LVUNDEF, they just return ""
+                        pass
+                    else:
+                        # Local variable is undefined
+                        raise LVUNDEFError(current)
+
+                # Get value at current name
+                value = self._get_value(current)
 
             # Convert to string for processing
             if not isinstance(value, str):
@@ -134,6 +155,12 @@ class IndirectionResolver:
 
             current = value
 
+        # If final result is a naked reference string, expand it to full name
+        # This handles cases like @@^(1)@(1) where the resolution produces "^(3)"
+        # which needs to be expanded to "^V(5,3)" using the current naked indicator
+        if self._is_naked_reference_string(current):
+            current = self._expand_naked_reference_string(current)
+
         # 2. Apply direct subscripts to final reference
         if direct_subscripts:
             current = self._append_subscripts(current, direct_subscripts)
@@ -148,7 +175,9 @@ class IndirectionResolver:
         elif context == IndirectionContext.ARGUMENT:
             # Evaluate as MUMPS expression
             # The current value IS the expression string to evaluate
-            return self.evaluate_expression(current)
+            return self.evaluate_expression(
+                current, treat_empty_as_truthy=treat_empty_as_truthy
+            )
 
         elif context == IndirectionContext.SUBSCRIPT:
             # Return the actual value at the resolved variable
@@ -203,6 +232,71 @@ class IndirectionResolver:
         """
         return self.resolve(name, levels=1, context=IndirectionContext.ARGUMENT)
 
+    def _is_naked_reference_string(self, s: str) -> bool:
+        """Check if string is a naked reference like "^(5)" or "^(1,2)".
+
+        A naked reference string is a string representation of a MUMPS naked
+        global reference that needs to be expanded using the naked indicator.
+
+        Args:
+            s: String to check
+
+        Returns:
+            True if string is a naked reference pattern
+
+        Examples:
+            "^(5)" → True  (naked reference)
+            "^(1,2)" → True  (naked reference with multiple subs)
+            "^V(5)" → False  (regular global, not naked)
+            "X" → False  (local variable)
+            "^V" → False  (unsubscripted global)
+        """
+        # Pattern: starts with ^(, contains subscripts, ends with )
+        # Must be "^(" not "^V(" etc.
+        return s.startswith("^(") and s.endswith(")")
+
+    def _expand_naked_reference_string(self, naked_ref: str) -> str:
+        """Expand a naked reference string to full global name.
+
+        Takes a naked reference string like "^(5)" and uses the current
+        naked indicator to expand it to the full name like "^V(5)".
+
+        Args:
+            naked_ref: Naked reference string like "^(5)" or "^(1,2)"
+
+        Returns:
+            Full global name like "^V(5)" or "^V(1,2)"
+
+        Raises:
+            RuntimeError: If naked indicator is not set
+
+        Examples:
+            With naked indicator ("V", ()):
+            "^(5)" → "^V(5)"
+            "^(1,2)" → "^V(1,2)"
+
+            With naked indicator ("V", ("3",)):
+            "^(5)" → "^V(3,5)"
+        """
+        # Parse subscripts from the naked ref string
+        # "^(5)" → subscripts = ["5"]
+        # "^(1,2)" → subscripts = ["1", "2"]
+        inner = naked_ref[2:-1]  # Strip "^(" and ")"
+        subscripts = self._parse_subscript_list(inner)
+
+        # Convert to tuple for resolve_naked
+        subs_tuple = tuple(str(s) for s in subscripts)
+
+        # Use the globals storage to resolve the naked reference
+        resolved_name, full_subs = self._state._globals.resolve_naked(subs_tuple)
+
+        # Build the full name string
+        if full_subs:
+            subs_str = ",".join(str(s) for s in full_subs)
+            return f"^{resolved_name}({subs_str})"
+        else:
+            return f"^{resolved_name}"
+
     def resolve_to_name(
         self,
         source: str,
@@ -218,7 +312,8 @@ class IndirectionResolver:
         For SET @@X=5 where X="Y", Y="Z": resolve_to_name("X", 2) → "Z"
 
         Args:
-            source: Initial variable name (source of @source)
+            source: Initial variable name (source of @source), OR
+                a naked reference string like "^(5)" that needs expansion
             levels: Number of @ levels (1 for @X, 2 for @@X, etc.)
             per_level_subscripts: Subscripts per resolution level for @X@(s1)@(s2)
 
@@ -238,6 +333,11 @@ class IndirectionResolver:
 
             # @X@(1,2) where X="A" → "A(1,2)" (the name to SET)
             resolve_to_name("X", 1, per_level_subscripts=[[1,2]]) → "A(1,2)"
+
+            # @"^(5)"@(1) where naked=("V",()), ^V(5,1)="^(3)"
+            # → expand "^(5)" to "^V(5)", append (1) → "^V(5,1)"
+            # → lookup "^V(5,1)" → "^(3)", expand → "^V(5,3)"
+            resolve_to_name("^(5)", 2, per_level_subscripts=[["1"], []]) → "^V(5,3)"
         """
         if levels < 1:
             raise ValueError(f"Indirection levels must be >= 1, got {levels}")
@@ -246,8 +346,14 @@ class IndirectionResolver:
 
         # Resolve each level to get the target variable name
         for i in range(levels):
-            # Get value at current name (this gives us the next name)
-            value = self._get_value(current)
+            # Check if current is a naked reference string that needs expansion
+            # rather than value lookup (e.g., "^(5)" should expand to "^V(5)")
+            if self._is_naked_reference_string(current):
+                # Expand the naked reference to full global name
+                value = self._expand_naked_reference_string(current)
+            else:
+                # Get value at current name (this gives us the next name)
+                value = self._get_value(current)
 
             # Convert to string for processing
             if not isinstance(value, str):
@@ -262,6 +368,12 @@ class IndirectionResolver:
                 value = self._append_subscripts(value, per_level_subscripts[i])
 
             current = value
+
+        # If final result is a naked reference string, expand it to full name
+        # This handles cases like @@^(1)@(1) where the resolution produces "^(3)"
+        # which needs to be expanded to "^V(5,3)" using the current naked indicator
+        if self._is_naked_reference_string(current):
+            current = self._expand_naked_reference_string(current)
 
         # Validate that result is a valid variable name
         if not self._is_valid_var_name(current):
@@ -319,7 +431,9 @@ class IndirectionResolver:
                 result.append(sub)
         return result
 
-    def evaluate_expression(self, expr_string: str) -> Any:
+    def evaluate_expression(
+        self, expr_string: str, treat_empty_as_truthy: bool = False
+    ) -> Any:
         """Evaluate MUMPS expression string and return result.
 
         This is the CRITICAL method for fixing Challenge 6 bug.
@@ -339,23 +453,35 @@ class IndirectionResolver:
         Args:
             expr_string: MUMPS expression like "1=0", "X>5", "$E(S,1,3)"
                         Can also be comma-separated list: "1=1,0" (AND of conditions)
+            treat_empty_as_truthy: T052 - if True, empty string returns 1 (TRUE)
+                                   Used by IF indirection. Other contexts (WRITE, SET)
+                                   should pass False to get error on empty.
 
         Returns:
             Evaluated result (number, string, etc.)
+
+        Raises:
+            VarExpectedError: If expr_string is empty and treat_empty_as_truthy=False
 
         Examples:
             evaluate_expression("1=0") → 0  # False
             evaluate_expression("X>5") → 1  # True if X=10
             evaluate_expression("$E(\"ABC\",2)") → "B"
-            evaluate_expression("") → 1  # YDB-specific: empty argument indirection is TRUE
+            evaluate_expression("", treat_empty_as_truthy=True) → 1  # T052
+            evaluate_expression("", treat_empty_as_truthy=False) → VarExpectedError
             evaluate_expression("00.1,2") → 1  # Both 0.1 and 2 are truthy → TRUE
             evaluate_expression("1=1,0") → 0  # 1=1 is TRUE but 0 is FALSE → FALSE
         """
-        # T052: Empty string in argument context is TRUE (YDB-specific)
-        # This handles I @A where A="" → TRUE
-        # Note: This differs from I "" → FALSE (direct empty string check)
+        # Handle empty string based on context
         if not expr_string or not expr_string.strip():
-            return 1  # YDB treats empty argument indirection as TRUE
+            if treat_empty_as_truthy:
+                # T052: Empty string in IF argument indirection is TRUE (YDB-specific)
+                # This handles I @A where A="" → TRUE
+                # Note: This differs from I "" → FALSE (direct empty string check)
+                return 1
+            else:
+                # For WRITE, SET, etc. - empty string is an error
+                raise VarExpectedError("", "Empty expression in indirection")
 
         stripped = expr_string.strip()
 
@@ -423,13 +549,13 @@ class IndirectionResolver:
             expr_string: Single MUMPS expression
 
         Returns:
-            Evaluated result
+            Evaluated result (the actual value, not Boolean-converted)
         """
         stripped = expr_string.strip()
 
-        # Empty after stripping
+        # Empty after stripping - raise error for invalid expression
         if not stripped:
-            return 1  # YDB-specific: empty is TRUE in argument context
+            raise VarExpectedError("", "Empty expression in indirection")
 
         # Numeric literal check
         if self._is_numeric_literal(stripped):
@@ -440,15 +566,15 @@ class IndirectionResolver:
             return stripped[1:-1]
 
         # Simple variable reference - just get its value
+        # Return the actual value, not Boolean conversion - let caller handle Boolean
+        # if needed (e.g., IF uses m_truth() on the result)
         if self._is_valid_var_name(stripped) and not any(
             op in stripped for op in ["=", "<", ">", "+", "-", "*", "/", "_", "[", "#"]
         ):
-            value = self._get_value(stripped)
-            # Return the truthiness as MUMPS boolean (0 or 1)
-            return self._to_mumps_bool(value)
+            return self._get_value(stripped)
 
         # Complex expression - use execute_mumps to evaluate
-        return self._evaluate_complex_expression(expr_string)
+        return self._evaluate_complex_expression(stripped)
 
     def _evaluate_complex_expression(self, expr_string: str) -> Any:
         """Evaluate complex MUMPS expression using full parser.
@@ -478,6 +604,13 @@ class IndirectionResolver:
             # Execute the SET to evaluate the expression
             self._state.execute_mumps(mumps_code, scope_dict)
 
+            # Check if the variable was set - if not, the expression was invalid
+            # (parser silently drops invalid expressions)
+            if python_temp_var not in scope_dict:
+                raise VarExpectedError(
+                    expr_string, f"Invalid expression in indirection: '{expr_string}'"
+                )
+
             # Get the result - it will be an MArray, need to extract .value
             result_raw = scope_dict.get(python_temp_var, 0)
 
@@ -493,10 +626,13 @@ class IndirectionResolver:
 
             return result if result is not None else 0
 
-        except Exception:
-            # If evaluation fails, return 0 (FALSE)
-            # This matches MUMPS behavior for invalid expressions
-            return 0
+        except Exception as e:
+            # If evaluation fails, raise a VarExpectedError with the invalid expression
+            # YDB raises "INDEXTRACHARS: Indirection string contains extra trailing characters"
+            # for invalid expressions in indirection
+            raise VarExpectedError(
+                expr_string, f"Invalid expression in indirection: '{expr_string}' - {e}"
+            )
 
     def _get_scope_dict(self) -> Dict[str, Any]:
         """Get the underlying scope dictionary for execute_mumps.

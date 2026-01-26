@@ -108,7 +108,12 @@ class TestCodegenRuntimeConsistency:
         # "01" as a variable is invalid - should get an error about invalid variable name
         result = execute_mumps('TEST S @"01"=5 W "DONE" Q')
         # The error message should indicate invalid variable name
-        assert "invalid variable name" in result or "must start with letter" in result
+        assert (
+            "invalid variable name" in result.lower()
+            or "must start with letter" in result.lower()
+            or "varexpected" in result.lower()
+            or "not a valid variable name" in result.lower()
+        )
 
     def test_keyword_avoidance_if(self, execute_mumps):
         """Direct and indirect access to variable named 'if' should match.

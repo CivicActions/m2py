@@ -160,13 +160,12 @@ class TestNakedIndicatorEdgeCases:
         )
         assert result == "9"
 
-    @pytest.mark.xfail(
-        reason="Naked reference string in indirection result - edge case"
-    )
     def test_nested_naked_in_indirection(self, execute_mumps):
         """Test nested naked reference resolution in indirection.
 
         ^(1) as indirection source, yielding another naked reference.
+        This test covers an edge case where the indirection result is
+        itself a naked reference string that needs to be expanded.
         """
         code = """TEST
  K ^V

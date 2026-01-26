@@ -190,9 +190,6 @@ class TestNakedReferenceInIndirection:
         # Actually: @^V(1) = "^(3)", then @"^(3)" = ^V(3) = 42
         assert result.output == "42", f"Expected '42', got {result.output!r}"
 
-    @pytest.mark.xfail(
-        reason="Naked reference string in indirection result - edge case"
-    )
     def test_naked_reference_with_subscripts_in_indirection(self, execute_mumps):
         """Test naked reference with subscripts in indirection context."""
         code = """TEST

@@ -166,7 +166,10 @@ class TestDynamicResolution:
     def test_dynamic_read_generates_runtime_call(self, generate_python):
         """Dynamic read via indirection generates runtime call.
 
-        W @X should use resolve_indirection or get_var equivalent.
+        W @X uses ARGUMENT indirection, which evaluates the resolved
+        string as a MUMPS expression. This generates a call to
+        evaluate_argument_indirection (preferred), or legacy
+        resolve_indirection/get_var/get_indirected.
         """
         code = generate_python('TEST\n S X="Y"\n S Y=42\n W @X\n Q')
         # Should use runtime for indirection read
@@ -174,6 +177,7 @@ class TestDynamicResolution:
             "resolve_indirection" in code
             or "get_var" in code
             or "get_indirected" in code
+            or "evaluate_argument_indirection" in code
         )
 
     def test_argument_indirection_generates_runtime_call(self, generate_python):

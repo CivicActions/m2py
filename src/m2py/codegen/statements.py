@@ -1606,17 +1606,22 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
     MUMPS IF evaluates condition, sets $TEST, and conditionally executes body.
     Generated code: _test = m_truth(cond); if _test: ...
 
+    T052: For IF indirection (I @A where A=""), empty string is TRUE.
+    We pass if_condition=True to generate_expr() so indirection codegen
+    adds treat_empty_as_truthy=True to the runtime call.
+
     Args:
         stmt: MIfStatement node
         ctx: Generator context
     """
     # Get condition(s) - single condition uses .condition, multiple uses .conditions
+    # T052: Pass if_condition=True for indirection T052 empty string handling
     if stmt.condition is not None:
-        cond_expr = generate_expr(stmt.condition, ctx)
+        cond_expr = generate_expr(stmt.condition, ctx, if_condition=True)
     elif stmt.conditions:
         # Multiple comma-separated conditions act as AND
         # Each condition is evaluated in sequence
-        cond_parts = [generate_expr(c, ctx) for c in stmt.conditions]
+        cond_parts = [generate_expr(c, ctx, if_condition=True) for c in stmt.conditions]
         cond_expr = " and ".join(f"m_truth({c})" for c in cond_parts)
         # For multiple conditions, we evaluate as AND but still set _test at end
         ctx.emitter.line(f"_test = {cond_expr}")

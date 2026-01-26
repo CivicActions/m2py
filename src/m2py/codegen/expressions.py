@@ -117,7 +117,9 @@ def generate_intrinsic_function(
     raise NotImplementedError(f"Intrinsic function ${expr.name} not yet implemented")
 
 
-def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
+def generate_expr(
+    expr: MExpr, ctx: "GeneratorContext", if_condition: bool = False
+) -> str:
     """Generate Python expression from ASG expression node.
 
     Dispatches based on expression type:
@@ -132,6 +134,8 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     Args:
         expr: ASG expression node
         ctx: Generator context (for name translation, etc.)
+        if_condition: If True, this expression is an IF condition, which
+                     affects how argument indirection handles empty strings (T052)
 
     Returns:
         Python expression string
@@ -171,7 +175,7 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_pattern_match(expr, ctx)
     # Spec 012 Phase 3 (T016): Handle name indirection (@VAR)
     elif isinstance(expr, MIndirection):
-        return _generate_indirection(expr, ctx)
+        return _generate_indirection(expr, ctx, if_condition=if_condition)
     # Spec 013 Phase 16 (FR-029): Handle structured system variables (^$GLOBAL etc)
     elif isinstance(expr, MStructuredSystemVariable):
         return _generate_ssvn(expr, ctx)
@@ -521,7 +525,9 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 
 
-def _generate_indirection(ind: MIndirection, ctx: "GeneratorContext") -> str:
+def _generate_indirection(
+    ind: MIndirection, ctx: "GeneratorContext", if_condition: bool = False
+) -> str:
     """Generate Python expression for name indirection (@VAR).
 
     Spec 012 Phase 3 (T016): Dispatches to codegen/indirection.py for
@@ -536,6 +542,7 @@ def _generate_indirection(ind: MIndirection, ctx: "GeneratorContext") -> str:
     Args:
         ind: MIndirection ASG node
         ctx: Generator context
+        if_condition: If True, this is an IF condition - affects T052 empty handling
 
     Returns:
         Python expression string
@@ -548,7 +555,7 @@ def _generate_indirection(ind: MIndirection, ctx: "GeneratorContext") -> str:
 
     # Dispatch based on indirection type
     if ind.indirection_type == IndirectionType.ARGUMENT:
-        return generate_argument_indirection(ind, ctx)
+        return generate_argument_indirection(ind, ctx, if_condition=if_condition)
     else:
         # NAME type (default) - look up variable by resolved name
         return generate_name_indirection(ind, ctx)

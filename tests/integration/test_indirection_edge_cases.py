@@ -340,6 +340,37 @@ class TestInvalidVariableNameIndirection:
             or "error" in result_lower
         )
 
+    def test_t052_if_vs_write_empty_indirection(self, execute_mumps):
+        """T052: Empty indirection behaves differently in IF vs WRITE.
+
+        This test documents the context-sensitive T052 behavior:
+        - IF @A where A="" → TRUE (YDB-specific: successful indirection is truthy)
+        - W @A where A="" → error (m2py: empty is invalid variable name)
+
+        This is intentionally different behavior based on command context.
+        IF uses treat_empty_as_truthy=True, WRITE does not.
+        """
+        # IF with empty: should be TRUE
+        if_code = """TEST
+ S A=""
+ I @A W "TRUE" E  W "FALSE"
+ Q
+"""
+        if_result = execute_mumps(if_code)
+        assert if_result == "TRUE", "IF @A where A='' should be TRUE (T052)"
+
+        # WRITE with empty: should error
+        write_code = """TEST
+ S A=""
+ W @A
+ Q
+"""
+        write_result = execute_mumps(write_code)
+        write_lower = write_result.lower()
+        assert (
+            "empty" in write_lower or "invalid" in write_lower or "error" in write_lower
+        ), "WRITE @A where A='' should produce error"
+
 
 # =============================================================================
 # T091-T093: DO/GOTO Command Indirection Tests
