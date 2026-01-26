@@ -529,32 +529,45 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 **Purpose**: Remove all `UNIFIED_VAR_DEPRECATED` runtime functions now that codegen uses unified methods.
 
+**Status**: Partially complete. Most functions still needed because Phase 12c (T110-T113) is incomplete.
+
 ### Phase 13a: Remove Deprecated Wrapper Functions
 
 - [ ] T114 Remove `resolve_indirection_name()` from `runtime/__init__.py` (replaced by `IndirectionResolver.resolve()`)
+  - **BLOCKED**: Still used by codegen/expressions.py for $ORDER/$NEXT indirection
 - [ ] T115 Remove `resolve_indirection()` from `runtime/__init__.py` (replaced by `IndirectionResolver.resolve()`)
-- [ ] T116 Remove `resolve_argument_indirection()` from `runtime/__init__.py` (replaced by `evaluate_argument_indirection()`)
+  - **BLOCKED**: Still used by get_indirected() for multi-level indirection
+- [X] T116 Remove `resolve_argument_indirection()` from `runtime/__init__.py` (replaced by `evaluate_argument_indirection()`)
+  - ✅ Removed - was not used by any generated code or internal runtime calls
 - [ ] T117 Update any internal runtime calls that still use removed functions
+  - **BLOCKED**: Cannot proceed until T114/T115 are removed
 
 ### Phase 13b: Remove `get_var()` and `set_var()` 
 
 **Note**: These are the core deprecated functions called by generated code. Can only be removed after Phase 12 is complete.
 
 - [ ] T118 Verify no generated code calls `_rt.get_var()` anymore
+  - **BLOCKED**: FOR loop indirection still generates get_var calls
 - [ ] T119 Verify no generated code calls `_rt.set_var()` anymore
+  - **BLOCKED**: FOR loop indirection and naked writes still generate set_var calls
 - [ ] T120 Remove `get_var()` from `runtime/__init__.py`
 - [ ] T121 Remove `set_var()` from `runtime/__init__.py`
 - [ ] T122 Run full test suite to verify no regressions
 
 ### Phase 13c: Remove Helper Functions
 
-- [ ] T123 Evaluate `resolve_nested_indirection()` - keep if used internally, remove if dead
-- [ ] T124 Evaluate `resolve_with_subscripts()` - keep if used internally, remove if dead  
-- [ ] T125 Evaluate `resolve_with_per_level_subscripts()` - keep if used internally, remove if dead
-- [ ] T126 Evaluate `append_subscripts()` - keep if used internally, remove if dead
-- [ ] T127 Remove `# UNIFIED_VAR_DEPRECATED` markers from any kept functions (no longer deprecated)
+- [X] T123 Evaluate `resolve_nested_indirection()` - keep if used internally, remove if dead
+  - ✅ KEEP: Heavily used internally and in generated code
+- [X] T124 Evaluate `resolve_with_subscripts()` - keep if used internally, remove if dead
+  - ✅ KEEP: Used in codegen/indirection.py  
+- [X] T125 Evaluate `resolve_with_per_level_subscripts()` - keep if used internally, remove if dead
+  - ✅ KEEP: Used in codegen/indirection.py
+- [X] T126 Evaluate `append_subscripts()` - keep if used internally, remove if dead
+  - ✅ KEEP: Heavily used in codegen and internally
+- [X] T127 Remove `# UNIFIED_VAR_DEPRECATED` markers from any kept functions (no longer deprecated)
+  - ✅ Updated markers to "Internal method:" with documentation of why they're needed
 
-**Checkpoint**: All deprecated runtime functions removed or markers cleared.
+**Checkpoint**: Partial - T116 removed, T123-T127 evaluated, markers updated. T114-T115, T117-T122 blocked.
 
 ---
 

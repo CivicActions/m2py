@@ -2067,7 +2067,9 @@ class MUMPSRuntime:
         # Convert to string for use as variable name
         return str(value) if value is not None else ""
 
-    # UNIFIED_VAR_DEPRECATED: T004 - Replace with IndirectionResolver.resolve()
+    # Internal method: Used by codegen for $ORDER/$NEXT indirection targets.
+    # Returns variable NAME (not value) which is needed when the target
+    # doesn't need to exist (e.g., $NEXT iterates to next key).
     def resolve_indirection_name(
         self, varname: str, levels: int, _scope: Dict[str, Any]
     ) -> str:
@@ -2291,7 +2293,9 @@ class MUMPSRuntime:
             return ""
         return m_order(arr, subs, direction)
 
-    # UNIFIED_VAR_DEPRECATED: T004 - Replace with CurrentScope.get()
+    # Internal method: Dynamic variable read by name string.
+    # Used by resolve_indirection() and legacy codegen paths (FOR loops, naked writes).
+    # New code should use get_indirected() or CurrentScope.get() when possible.
     def get_var(self, name: str, _scope: Dict[str, Any]) -> Any:
         """Get variable value by name (name indirection).
 
@@ -2422,7 +2426,9 @@ class MUMPSRuntime:
         result = self._globals.get(key, subs)
         return result if result is not None else ""
 
-    # UNIFIED_VAR_DEPRECATED: T004 - Replace with CurrentScope.set()
+    # Internal method: Dynamic variable write by name string.
+    # Used internally for recursive @ resolution and legacy codegen paths (FOR loops, naked writes).
+    # New code should use set_indirected() or CurrentScope.set() when possible.
     def set_var(self, name: str, value: Any, _scope: Dict[str, Any]) -> None:
         """Set variable value by name (name indirection).
 
@@ -3099,70 +3105,6 @@ class MUMPSRuntime:
             # Return subtree at subscript
             return raw_value[eval_subs]
 
-    # UNIFIED_VAR_DEPRECATED: T004 - Replace with IndirectionResolver.resolve(context=ARGUMENT)
-    # KNOWN BUG (Challenge 6): This does NOT evaluate expressions, just resolves variable chain.
-    # I @A where A="1=0" returns "1=0" string to m_truth(), which evaluates to TRUE (WRONG).
-    # Should evaluate "1=0" as expression → FALSE. Fix: IndirectionResolver.evaluate_expression()
-    def resolve_argument_indirection(
-        self, initial_value: str, levels: int, _scope: Dict[str, Any]
-    ) -> Any:
-        """Resolve argument-level indirection for IF conditions.
-
-        Argument indirection resolves the value and evaluates it as an expression,
-        NOT as a variable name to look up. This is different from name indirection:
-        - Name indirection (@A): A's value is used as a VARIABLE NAME to look up
-        - Argument indirection (I @A): A's value is EVALUATED as an expression
-
-        For simple values (numbers, booleans), the value IS the result.
-        For complex expressions stored as strings, we evaluate them at runtime.
-
-        Args:
-            initial_value: The value from the source variable (already resolved once)
-            levels: Number of additional indirection levels to resolve
-            _scope: Current scope dictionary
-
-        Returns:
-            Final resolved value to be evaluated as truth value
-
-        Examples:
-            >>> scope = {"A": "1", "B": "A", "C": "X>5"}
-            >>> # I @A where A=1: initial_value="1", levels=0
-            >>> rt.resolve_argument_indirection("1", 0, scope)
-            "1"  # Returned to m_truth(), which evaluates 1 as truthy
-            >>> # I @@B where B="A" and A="1": initial_value="A", levels=1
-            >>> rt.resolve_argument_indirection("A", 1, scope)
-            "1"  # A resolves to "1"
-        """
-        current_value = initial_value
-
-        for level in range(levels):
-            # For argument indirection, the current_value should be treated as
-            # a variable name to look up, getting the next value in the chain
-            if not current_value:
-                raise IndirectionError(
-                    str(initial_value),
-                    f"empty value in argument indirection chain at level {level}",
-                )
-
-            # Try to look up the value as a variable name
-            # If it's not a valid var name, return it as-is
-            if current_value.startswith("@"):
-                # Nested indirection - resolve it
-                resolved_name = self.resolve_nested_indirection(current_value, _scope)
-                current_value = self.get_var(resolved_name, _scope)
-            elif self._is_valid_var_name(current_value):
-                # Valid variable name - look it up
-                current_value = self.get_var(current_value, _scope)
-            else:
-                # Not a variable name - this IS the value (e.g., "1" or "X>5")
-                break
-
-            # Convert to string for next iteration
-            if not isinstance(current_value, str):
-                current_value = str(current_value)
-
-        return current_value
-
     def _is_valid_var_name(self, name: str) -> bool:
         """Check if name looks like a valid MUMPS variable name."""
         if not name:
@@ -3177,7 +3119,9 @@ class MUMPSRuntime:
             )
         return name[0].isalpha() or name[0] == "%"
 
-    # UNIFIED_VAR_DEPRECATED: T004 - Replace with IndirectionResolver.resolve()
+    # Internal method: Multi-level name indirection resolution.
+    # Used by get_indirected() for simple multi-level cases without per-level subscripts.
+    # Returns the final VALUE after N levels of dereferencing.
     def resolve_indirection(
         self, expr: str, levels: int, _scope: Dict[str, Any]
     ) -> Any:
