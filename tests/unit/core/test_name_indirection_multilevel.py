@@ -9,6 +9,7 @@ Note: E2E tests that use execute_mumps fixture are in
 tests/unit/codegen/s7_expressions/test_s7_3_indirection.py
 """
 
+import pytest
 from typing import Any
 
 from m2py.core.indirection import (
@@ -47,6 +48,124 @@ class MockGlobalStorage:
     def set(self, key: str, subscripts: tuple, value: Any) -> None:
         full_key = (key, subscripts)
         self._data[full_key] = value
+
+
+class TestParseSubscriptedName:
+    """Unit tests for _parse_subscripted_name and _strip_mumps_quotes.
+
+    These methods were fixed as part of T060 to correctly handle
+    MUMPS-style quoted string subscripts in per-level subscript resolution.
+    """
+
+    @pytest.fixture
+    def resolver(self):
+        """Create resolver for testing private methods."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        return IndirectionResolver(state, scope)
+
+    def test_simple_name_no_subscripts(self, resolver):
+        """Simple variable name without subscripts."""
+        base, subs = resolver._parse_subscripted_name("A")
+        assert base == "A"
+        assert subs == []
+
+    def test_global_name_no_subscripts(self, resolver):
+        """Global variable without subscripts."""
+        base, subs = resolver._parse_subscripted_name("^GLO")
+        assert base == "^GLO"
+        assert subs == []
+
+    def test_numeric_subscripts(self, resolver):
+        """Numeric subscripts are returned as strings."""
+        base, subs = resolver._parse_subscripted_name("A(1,2,3)")
+        assert base == "A"
+        assert subs == ["1", "2", "3"]
+
+    def test_quoted_string_subscripts(self, resolver):
+        """MUMPS-style quoted string subscripts have quotes stripped."""
+        base, subs = resolver._parse_subscripted_name('A("FOO","BAR")')
+        assert base == "A"
+        assert subs == ["FOO", "BAR"]
+
+    def test_mixed_subscripts(self, resolver):
+        """Mixed numeric and string subscripts."""
+        base, subs = resolver._parse_subscripted_name('A(1,"key",3)')
+        assert base == "A"
+        assert subs == ["1", "key", "3"]
+
+    def test_escaped_quotes_in_subscript(self, resolver):
+        """MUMPS escaped quotes ("") become single quote (")."""
+        base, subs = resolver._parse_subscripted_name('A("say ""hi""")')
+        assert base == "A"
+        assert subs == ['say "hi"']
+
+    def test_global_with_subscripts(self, resolver):
+        """Global variable with subscripts."""
+        base, subs = resolver._parse_subscripted_name("^VV(1,2)")
+        assert base == "^VV"
+        assert subs == ["1", "2"]
+
+    def test_empty_subscript_string(self, resolver):
+        """Empty quoted string subscript."""
+        base, subs = resolver._parse_subscripted_name('A("")')
+        assert base == "A"
+        assert subs == [""]
+
+    def test_subscript_with_only_escaped_quote(self, resolver):
+        """Subscript that is just an escaped quote (""" ")." ""
+        base, subs = resolver._parse_subscripted_name('A("""")')
+        assert base == "A"
+        assert subs == ['"']  # Single quote character
+
+    def test_nested_parentheses_preserved(self, resolver):
+        """Expressions with nested parentheses are preserved."""
+        base, subs = resolver._parse_subscripted_name("A(X(1),Y)")
+        assert base == "A"
+        assert subs == ["X(1)", "Y"]
+
+
+class TestStripMumpsQuotes:
+    """Unit tests for _strip_mumps_quotes helper method."""
+
+    @pytest.fixture
+    def resolver(self):
+        """Create resolver for testing private methods."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        return IndirectionResolver(state, scope)
+
+    def test_quoted_string(self, resolver):
+        """Basic quoted string."""
+        assert resolver._strip_mumps_quotes('"FOO"') == "FOO"
+
+    def test_unquoted_string(self, resolver):
+        """Unquoted string unchanged."""
+        assert resolver._strip_mumps_quotes("FOO") == "FOO"
+
+    def test_numeric_string(self, resolver):
+        """Numeric string unchanged."""
+        assert resolver._strip_mumps_quotes("123") == "123"
+
+    def test_escaped_quotes(self, resolver):
+        """Escaped quotes unescaped."""
+        assert resolver._strip_mumps_quotes('"say ""hi"""') == 'say "hi"'
+
+    def test_empty_quoted_string(self, resolver):
+        """Empty quoted string."""
+        assert resolver._strip_mumps_quotes('""') == ""
+
+    def test_single_quote_unchanged(self, resolver):
+        """Single quote character not treated as quoted string."""
+        assert resolver._strip_mumps_quotes('"') == '"'
+
+    def test_partial_quote_at_start(self, resolver):
+        """Quote at start only - not a quoted string."""
+        assert resolver._strip_mumps_quotes('"abc') == '"abc'
+
+    def test_partial_quote_at_end(self, resolver):
+        """Quote at end only - not a quoted string."""
+        assert resolver._strip_mumps_quotes('abc"') == 'abc"'
 
 
 class TestMultiLevelIndirectionBasic:
@@ -160,8 +279,8 @@ class TestDeepNesting:
 class TestRecursiveAtExpressions:
     """Tests for recursive @-expressions from VV2VNIB II-132.3."""
 
-    def test_ii132_3_four_level_with_at_in_values(self):
-        """@@@@A where values contain @-expressions.
+    def test_ii132_3_scope_setup(self):
+        """Verify the II-132.3 scope is set up correctly.
 
         Setup (from VV2VNIB II-132.3):
         - B = "A(1)"
@@ -171,8 +290,7 @@ class TestRecursiveAtExpressions:
         - A(1,3) = "@B@(4)" → resolves to A(1,4)
         - A(1,4) = "#"
 
-        For the unit test, we verify scope access.
-        Full E2E behavior is tested in test_s7_3_indirection.py.
+        This tests the scope setup works correctly.
         """
         from m2py.runtime import MArray
 
@@ -189,6 +307,33 @@ class TestRecursiveAtExpressions:
         # Test that we can at least get the initial value
         result = scope.get("A")
         assert result == "@B@(1)"
+
+    def test_value_with_at_resolved_by_runtime(self):
+        """Test that @-expressions in values are resolved at runtime.
+
+        @@A where A="@B", B="C", C=99 → "99".
+
+        NOTE: This test uses MUMPSRuntime.resolve_indirection() which is
+        what the codegen actually calls. The IndirectionResolver.resolve()
+        method has different semantics for recursive @ resolution.
+
+        Runtime returns string representation for write output.
+        """
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        # Use MArray to match how codegen sets up scope
+        scope = {}
+        scope["A"] = MArray()
+        scope["A"].value = "@B"
+        scope["B"] = MArray()
+        scope["B"].value = "C"
+        scope["C"] = MArray()
+        scope["C"].value = 99
+
+        result = rt.resolve_indirection("A", 2, scope)
+        # Result is string-ified for WRITE output
+        assert str(result) == "99"
 
 
 class TestValueContainsAtExpression:
