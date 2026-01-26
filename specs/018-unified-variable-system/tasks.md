@@ -611,9 +611,13 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Phase 14a: Remove Adapter Wrappers in Codegen
 
-- [ ] T128 Remove `generate_argument_indirection()` wrapper (just calls `generate_argument_indirection_unified()`)
-- [ ] T129 Rename `generate_argument_indirection_unified()` → `generate_argument_indirection()`
-- [ ] T130 Update all imports and call sites
+- [X] T128 Remove `generate_argument_indirection()` wrapper (just calls `generate_argument_indirection_unified()`)
+  - ✅ Removed wrapper function, kept unified implementation
+- [X] T129 Rename `generate_argument_indirection_unified()` → `generate_argument_indirection()`
+  - ✅ Renamed - unified function is now the only `generate_argument_indirection()`
+- [X] T130 Update all imports and call sites
+  - ✅ No changes needed - expressions.py import works automatically
+  - ✅ Added to `__all__` export list
 
 ### Phase 14b: Rename Unified Codegen Functions
 

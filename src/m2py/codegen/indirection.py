@@ -16,8 +16,8 @@ Code generation strategy:
 
 # UNIFIED_VAR_DEPRECATED: Several functions in this module will be replaced
 # by core/indirection.py (IndirectionResolver):
-#   - generate_name_indirection (T003)
-#   - generate_argument_indirection (T003)
+#   - generate_name_indirection (T003) - wrapper removed, unified function active
+#   - generate_argument_indirection (T003, T128-T130) - wrapper removed, unified function active
 #   - _get_scope_expr (T003)
 # Spec: 018-unified-variable-system, Phase 2
 """
@@ -389,45 +389,14 @@ def _generate_name_indirection_legacy(
     return f"_rt.get_var({name_expr}, {scope_expr})"
 
 
-# UNIFIED_VAR_DEPRECATED: T003 - Replace with IndirectionResolver.resolve() calls
-# KNOWN BUG (Challenge 6): This function treats string values as variable names
-# instead of evaluating them as expressions. I @A where A="1=0" returns TRUE
-# (treating "1=0" as truthy string) instead of FALSE (evaluating 1=0 expression).
-# Fix: IndirectionResolver.evaluate_expression() in core/indirection.py
 def generate_argument_indirection(
-    expr: "MIndirection",
-    ctx: "GeneratorContext",
-    if_condition: bool = False,
-) -> str:
-    """Generate Python code for argument-level indirection in IF conditions.
-
-    DEPRECATED: Use generate_argument_indirection_unified() instead.
-    This function is kept for backward compatibility but has a CRITICAL BUG
-    (Challenge 6): It returns the string value to m_truth() instead of
-    evaluating it as a MUMPS expression.
-
-    Feature: 018-unified-variable-system - replaced by unified version.
-
-    Args:
-        expr: MIndirection ASG node with indirection_type=ARGUMENT
-        ctx: Generator context
-        if_condition: If True, pass treat_empty_as_truthy=True for T052 behavior
-
-    Returns:
-        Python expression string
-    """
-    # Delegate to unified version which fixes Challenge 6 bug
-    return generate_argument_indirection_unified(expr, ctx, if_condition=if_condition)
-
-
-def generate_argument_indirection_unified(
     expr: "MIndirection",
     ctx: "GeneratorContext",
     if_condition: bool = False,
 ) -> str:
     """Generate Python code for argument-level indirection using unified components.
 
-    Feature: 018-unified-variable-system (T049, T050)
+    Feature: 018-unified-variable-system (T049, T050, T128-T130)
     This is the FIX for Challenge 6 bug.
 
     Argument indirection evaluates the resolved value AS AN EXPRESSION,
@@ -1634,6 +1603,7 @@ def generate_pattern_indirection(
 
 __all__ = [
     "generate_name_indirection",
+    "generate_argument_indirection",
     "generate_name_indirection_write",
     "generate_name_indirection_write_unified",
     "generate_name_indirection_kill_unified",
