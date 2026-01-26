@@ -1365,6 +1365,8 @@ __all__ = [
     "generate_name_indirection_write",
     "generate_name_indirection_kill",
     "generate_name_indirection_for",
+    "generate_merge_indirection_name",
+    "generate_data_indirection_name",
     "generate_xecute_constant",
     "generate_xecute_dynamic",
     "generate_indirect_do",
