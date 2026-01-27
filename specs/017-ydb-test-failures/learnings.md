@@ -258,3 +258,47 @@ If `A="@B"`, `B="C"`, `C=99`, then `W @@A`:
 2. Evaluate `"@B"` as expression → resolves to value of `C` → `99`
 
 The intermediate value containing `@` triggers recursive indirection evaluation.
+
+---
+
+## 13. Unified Variable System Implementation (Spec 018)
+
+During Spec 017 work, patterns emerged that led to the creation of a dedicated `src/m2py/core/` module consolidating shared variable system components.
+
+### Core Module Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `NameTranslator` | `core/names.py` | Bidirectional MUMPS↔Python identifier translation |
+| `SubscriptCanonicalizer` | `core/subscripts.py` | Normalize subscripts: `A(1)` = `A("1")` = `A(1.0)` |
+| `CurrentScope` | `core/scope.py` | Unified variable access abstraction across modes |
+| `IndirectionResolver` | `core/indirection.py` | Runtime @-expression resolution |
+| `IndirectionContext` | `core/indirection.py` | Enum: NAME, ARGUMENT, SUBSCRIPT, PATTERN |
+
+### Key Design Decisions
+
+1. **Single Source of Truth**: `NameTranslator` is imported by both codegen and runtime, eliminating translation inconsistencies (see Learning #6).
+
+2. **Context-Aware Indirection**: `IndirectionContext` enum distinguishes name indirection (must resolve to variable name) from argument indirection (must evaluate as expression).
+
+3. **Scope Abstraction**: `CurrentScope` hides whether variables are stored in Python locals, `state._locals`, or `_scope` dict, solving cross-routine visibility issues (see Learning #4).
+
+4. **Canonical Subscripts**: `SubscriptCanonicalizer` ensures `A(1)`, `A("1")`, and `A(1.0)` access the same storage location (see Learning #2).
+
+### Exception Hierarchy
+
+```python
+class VarExpectedError(Exception):
+    """Raised when indirection resolves to non-variable (e.g., "1+1" → "2")"""
+
+class LVUNDEFError(Exception):
+    """Raised when accessing undefined local variable"""
+```
+
+These map directly to MUMPS error codes: `%YDB-E-VAREXPECTED`, `%YDB-E-LVUNDEF`.
+
+### Integration Points
+
+- **Codegen** (`src/m2py/codegen/`): Uses `NameTranslator` for identifier generation
+- **Runtime** (`src/m2py/runtime/`): Uses all core components for dynamic operations
+- **Analysis** (`src/m2py/analysis/`): Uses `SubscriptCanonicalizer` for static analysis
