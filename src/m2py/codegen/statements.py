@@ -2498,22 +2498,40 @@ def _generate_single_target_goto(
     """Generate GOTO code for a single target.
 
     This handles all single-target cases including loop exits and cross-label jumps.
+    T086: Same-routine GOTOs (G LABEL^ROUTINE where ROUTINE is current routine)
+          are now treated as local GOTOs instead of external.
 
     Args:
         target: The MCall target to jump to
         stmt: The parent MGotoStatement (for classification info)
         ctx: Generator context
     """
-    # Spec 008 Phase 6 (T034-T038): Handle external routine GOTO
-    if target.routine:
-        _generate_external_goto(target, ctx)
-        return
-
-    # Spec 012 Phase 8 (T049-T052): Check for indirection
+    # Spec 012 Phase 8 (T049-T052): Check for indirection first
+    # Must check before same-routine logic since indirection may also have routine set
     if target.label_is_indirect or target.routine_is_indirect:
         from m2py.codegen.indirection import generate_indirect_goto
 
         generate_indirect_goto(target, ctx)
+        return
+
+    # T086: Check for same-routine GOTO (G LABEL^ROUTINE where ROUTINE matches current)
+    # Only treat as external if it's a DIFFERENT routine
+    is_external = False
+    if target.routine:
+        # T086: Use fallback to first label name (same logic as routine.py line 352-355)
+        current_routine_name = ctx.routine.name or (
+            ctx.routine.labels[0].name if ctx.routine.labels else ""
+        )
+        # Compare case-insensitively since MUMPS routine names are case-insensitive
+        if (
+            not current_routine_name
+            or target.routine.upper() != current_routine_name.upper()
+        ):
+            is_external = True
+
+    # Spec 008 Phase 6 (T034-T038): Handle external routine GOTO
+    if is_external:
+        _generate_external_goto(target, ctx)
         return
 
     # Check for backward intra-label GOTO (creates implicit loops)
@@ -2640,7 +2658,7 @@ def _generate_single_target_goto(
 
 
 def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
-    """Generate GOTO code for multiple targets (Phase 11).
+    """Generate GOTO code for multiple targets (Phase 11 + T085).
 
     Multiple targets are evaluated left-to-right:
     - If target has no postcondition, jump to it unconditionally
@@ -2648,13 +2666,23 @@ def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -
     - If postcondition is false, try next target
     - If all postconditions are false, no jump (fall through)
 
-    Generated pattern (for G A:cond1,B:cond2,C):
+    T085: Now supports external routines and indirect targets in multi-target GOTO.
+
+    Generated pattern (for G A:cond1,B^ROUTINE:cond2,C):
         if m_truth(cond1):
             return ("A", state)
         elif m_truth(cond2):
-            return ("B", state)
+            import ROUTINE
+            raise GotoExternal(ROUTINE, "B", _rt=_rt)
         else:
             return ("C", state)
+
+    For indirect targets (G @X:cond1,Y):
+        if m_truth(cond1):
+            # Runtime resolution of @X with GotoExternal handling
+            ...
+        else:
+            return ("Y", state)
 
     Args:
         stmt: MGotoStatement with multiple targets
@@ -2662,16 +2690,7 @@ def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -
     """
     targets = stmt.targets
 
-    # Check for unsupported patterns in multi-target GOTO
-    for target in targets:
-        if target.routine:
-            raise NotImplementedError(
-                "External routine in multi-target GOTO not supported"
-            )
-        if target.label_is_indirect or target.indirection:
-            raise NotImplementedError(
-                "Indirect target in multi-target GOTO not supported"
-            )
+    # T085: No longer check for unsupported patterns - all target types are now supported
 
     # Check if any targets have postconditions
     has_postconditions = any(t.postcondition is not None for t in targets)
@@ -2727,13 +2746,48 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
     """Generate the actual jump code for a GOTO target.
 
     This generates just the jump statement without any condition checks.
-    For trampoline: return (label_name, state)
-    For simple functions: function_call(_rt, _scope=_scope); return
+    Handles all target types:
+    - Local targets: return (label_name, state) or function call
+    - External targets: raise GotoExternal exception
+    - Indirect targets: runtime resolution with potential external handling
+
+    T085: Extended to support external and indirect targets in multi-target GOTO.
+    T086: Same-routine GOTOs (G LABEL^ROUTINE where ROUTINE is current routine)
+          are now treated as local GOTOs instead of external.
 
     Args:
         target: The MCall target to jump to
         ctx: Generator context
     """
+    # T085: Handle indirect targets (G @VAR) first since they may also have routine set
+    if target.label_is_indirect or target.routine_is_indirect:
+        from m2py.codegen.indirection import generate_indirect_goto
+
+        generate_indirect_goto(target, ctx)
+        return
+
+    # T086: Check if this is a "same-routine" GOTO (G LABEL^ROUTINE where ROUTINE is current)
+    # MUMPS allows explicit routine specification even for local labels.
+    # When the target routine matches the current routine, treat as local GOTO.
+    if target.routine:
+        # T086: Use fallback to first label name (same logic as routine.py line 352-355)
+        current_routine_name = ctx.routine.name or (
+            ctx.routine.labels[0].name if ctx.routine.labels else ""
+        )
+        # Compare case-insensitively since MUMPS routine names are case-insensitive
+        if (
+            current_routine_name
+            and target.routine.upper() == current_routine_name.upper()
+        ):
+            # Same routine - treat as local GOTO
+            # Fall through to local target handling below
+            pass
+        else:
+            # Different routine - genuine external GOTO
+            _generate_external_goto(target, ctx)
+            return
+
+    # Local target - original behavior
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
         ctx.emitter.line(f'return ("{target.name}", state)')
     else:
