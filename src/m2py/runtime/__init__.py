@@ -27,11 +27,8 @@ if TYPE_CHECKING:
 # Spec 012: Variable Name Validation Helper (T012)
 # =============================================================================
 
-# MUMPS variable name pattern: starts with letter or %, followed by alphanumerics
-# Global variables start with ^ followed by the same pattern
-# Examples: X, VAR1, %ZTMP, ^GLO, ^GLO123
-_VARNAME_PATTERN = re.compile(r"^[A-Za-z%][A-Za-z0-9]*$")
-_GLOBAL_VARNAME_PATTERN = re.compile(r"^\^[A-Za-z%][A-Za-z0-9]*$")
+# Import the unified name validation from core
+from m2py.core.names import is_valid_varname as _core_is_valid_varname
 
 # MUMPS label name pattern: starts with letter, %, or digit, followed by alphanumerics
 # Labels can be purely numeric (e.g., 461, 462) or traditional names (e.g., ENTRY, %BREAK)
@@ -42,16 +39,8 @@ _LABEL_PATTERN = re.compile(r"^[A-Za-z%0-9][A-Za-z0-9]*$")
 def _is_valid_varname(name: str) -> bool:
     """Check if name is a valid MUMPS variable name.
 
-    Spec 012 (T012): Validates variable names for name indirection.
-
-    MUMPS variable naming rules:
-    - Must start with letter (A-Z, a-z) or %
-    - Followed by zero or more alphanumeric characters
-    - Global variables start with ^ followed by valid name
-    - Names are case-insensitive but we preserve case
-
-    Does NOT handle subscripted names - call _parse_subscripted_name first
-    to extract the base name and subscripts.
+    Feature: 018-unified-variable-system
+    Now delegates to core.names.is_valid_varname() for unified validation.
 
     Args:
         name: Variable name to validate (without subscripts)
@@ -75,12 +64,7 @@ def _is_valid_varname(name: str) -> bool:
         >>> _is_valid_varname("VAR(1)")  # Subscripts not allowed here
         False
     """
-    if not name:
-        return False
-    # Check global or local pattern
-    if name.startswith("^"):
-        return bool(_GLOBAL_VARNAME_PATTERN.match(name))
-    return bool(_VARNAME_PATTERN.match(name))
+    return _core_is_valid_varname(name, allow_subscripts=False)
 
 
 def _is_valid_label(name: str) -> bool:
@@ -2202,9 +2186,9 @@ class MUMPSRuntime:
             return ""
         return m_query(arr, base_name, all_subs)
 
-    # Internal method: Dynamic variable read by name string.
-    # Used by resolve_indirection() and legacy codegen paths (FOR loops, naked writes).
-    # New code should use get_indirected() or CurrentScope.get() when possible.
+    # Variable access by name string - used AFTER indirection resolution.
+    # Codegen calls this when the variable name is dynamically computed (e.g., FOR @A loops).
+    # Note: This is NOT deprecated - it's the intended way to access a variable by name string.
     def get_var(self, name: str, _scope: Dict[str, Any]) -> Any:
         """Get variable value by name (name indirection).
 
@@ -2335,9 +2319,9 @@ class MUMPSRuntime:
         result = self._globals.get(key, subs)
         return result if result is not None else ""
 
-    # Internal method: Dynamic variable write by name string.
-    # Used internally for recursive @ resolution and legacy codegen paths (FOR loops, naked writes).
-    # New code should use set_indirected() or CurrentScope.set() when possible.
+    # Variable write by name string - used AFTER indirection resolution.
+    # Codegen calls this when the variable name is dynamically computed (e.g., FOR @A loops).
+    # Note: This is NOT deprecated - it's the intended way to write a variable by name string.
     def set_var(self, name: str, value: Any, _scope: Dict[str, Any]) -> None:
         """Set variable value by name (name indirection).
 
@@ -2548,7 +2532,6 @@ class MUMPSRuntime:
 
         # Use unified IndirectionResolver for all cases
         # Feature: 018-unified-variable-system (T115)
-        # This eliminates the dependency on deprecated resolve_indirection()
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
         from m2py.core.exceptions import LVUNDEFError
@@ -3062,18 +3045,18 @@ class MUMPSRuntime:
             return raw_value[eval_subs]
 
     def _is_valid_var_name(self, name: str) -> bool:
-        """Check if name looks like a valid MUMPS variable name."""
-        if not name:
-            return False
-        # Naked reference like "^(3)"
-        if name.startswith("^("):
-            return True
-        # Global or local: must start with ^ or letter or % (system vars)
-        if name.startswith("^"):
-            return len(name) > 1 and (
-                name[1].isalpha() or name[1] == "(" or name[1] == "%"
-            )
-        return name[0].isalpha() or name[0] == "%"
+        """Check if name looks like a valid MUMPS variable name.
+
+        Feature: 018-unified-variable-system
+        Now delegates to core.names.is_valid_varname() for unified validation.
+
+        Args:
+            name: Variable name to validate (may include subscripts)
+
+        Returns:
+            True if valid MUMPS variable name
+        """
+        return _core_is_valid_varname(name, allow_subscripts=True)
 
     def compile_pattern_indirect(self, pattern_str: str) -> str:
         """Compile MUMPS pattern string to regex at runtime.

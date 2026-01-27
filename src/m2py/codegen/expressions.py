@@ -941,25 +941,6 @@ def _generate_extrinsic_arguments_with_byref(
     return ", ".join(parts), byref_names if has_byref else []
 
 
-def _generate_extrinsic_arguments(
-    arguments: List[MActualParameter], ctx: "GeneratorContext"
-) -> str:
-    """Generate Python arguments for extrinsic function call.
-
-    Note: This is the legacy version that doesn't handle by-ref.
-    Use _generate_extrinsic_arguments_with_byref for full by-ref support.
-
-    Args:
-        arguments: List of MActualParameter
-        ctx: Generator context
-
-    Returns:
-        Comma-separated argument string
-    """
-    args, _ = _generate_extrinsic_arguments_with_byref(arguments, ctx)
-    return args
-
-
 def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $DATA/$D function.
 

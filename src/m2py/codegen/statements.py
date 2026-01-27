@@ -3511,19 +3511,24 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     for var in stmt.variables:
         # T070: Handle indirection in NEW (N @A where A contains variable name)
         if isinstance(var, MIndirection):
-            from m2py.codegen.indirection import _generate_inner_name_expr
+            from m2py.codegen.expressions import generate_expr
 
             if var.expression is None:
                 raise ValueError("NEW indirection has no expression")
 
-            # Get the target variable name at runtime
-            target_name_expr = _generate_inner_name_expr(var.expression, ctx)
+            # Get the VALUE of the indirection expression directly.
+            # Unlike FOR @A which expects a single variable name, NEW @A
+            # expects a comma-separated list of variable names.
+            # E.g., S A="X,Y" N @A should NEW both X and Y.
+            # We do NOT use resolve_for_target here because that validates
+            # the result as a single variable name, which would fail for "X,Y".
+            value_expr = generate_expr(var.expression, ctx)
 
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 # NEW indirection can contain comma-separated variable lists
                 # For example: S A="X,Y" N @A should NEW both X and Y
                 # We need to split the resolved string at runtime
-                ctx.emitter.line(f"_ind_var_list = str({target_name_expr}).split(',')")
+                ctx.emitter.line(f"_ind_var_list = str({value_expr}).split(',')")
                 ctx.emitter.line("for _ind_var in _ind_var_list:")
                 with ctx.emitter.indented():
                     # Strip whitespace from each variable name

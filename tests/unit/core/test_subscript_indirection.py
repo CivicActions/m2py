@@ -132,27 +132,53 @@ class TestSubscriptIndirection:
 class TestSubscriptIndirectionContext:
     """Tests for SUBSCRIPT context in resolve() method.
 
+    Feature: 018-unified-variable-system
+
     Note: For typical subscript indirection A(1,@B,3), use resolve_subscript_indirection()
     or resolve_subscript_list() instead of resolve() with SUBSCRIPT context.
 
-    The resolve() with SUBSCRIPT context follows the standard multi-level resolution
-    but returns the final variable name string instead of looking up its value.
+    The resolve() with SUBSCRIPT context follows the standard multi-level resolution.
+    If the final resolved value is a valid MUMPS variable name, it looks up that
+    variable and returns its value. If not a valid name, returns the value as-is.
     """
 
     def test_subscript_context_returns_variable_name_string(self):
-        """SUBSCRIPT context in resolve() returns the resolved variable name."""
-        scope_dict = {"VAR": "test_value"}
+        """SUBSCRIPT context in resolve() looks up the resolved name as a variable.
+
+        Feature: 018-unified-variable-system
+        When the resolved value is a valid MUMPS variable name, SUBSCRIPT context
+        looks it up and returns the variable's value (or "" if undefined).
+        """
+        scope_dict = {"VAR": "TARGET"}  # VAR contains valid MUMPS name "TARGET"
+        scope = CurrentScope(scope_dict=scope_dict)
+        state = MockMState()
+        resolver = IndirectionResolver(state, scope)
+
+        # resolve() with SUBSCRIPT context: VAR contains "TARGET",
+        # so we resolve VAR → "TARGET", then since "TARGET" is a valid
+        # var name, we look it up and get "" (undefined)
+        result = resolver.resolve("VAR", 1, context=IndirectionContext.SUBSCRIPT)
+        # This tries to look up "TARGET" as a variable (which is undefined → "")
+        assert result == ""
+
+    def test_subscript_context_invalid_varname_returns_as_is(self):
+        """SUBSCRIPT context returns non-variable-name values as-is.
+
+        Feature: 018-unified-variable-system
+        When the resolved value is NOT a valid MUMPS variable name (e.g., contains
+        underscores, special characters, or is numeric), it's returned as-is for
+        use as a subscript value.
+        """
+        scope_dict = {"VAR": "test_value"}  # Contains underscore - invalid MUMPS name
         scope = CurrentScope(scope_dict=scope_dict)
         state = MockMState()
         resolver = IndirectionResolver(state, scope)
 
         # resolve() with SUBSCRIPT context: VAR contains "test_value",
-        # so we resolve VAR → "test_value", then since "test_value" is a valid
-        # var name, we look it up and get ""
+        # which is NOT a valid MUMPS variable name (underscores not allowed),
+        # so it's returned as-is to be used as the subscript value
         result = resolver.resolve("VAR", 1, context=IndirectionContext.SUBSCRIPT)
-        # This tries to look up "test_value" as a variable (which is undefined → "")
-        # For subscript use, prefer resolve_subscript_indirection() instead
-        assert result == ""
+        assert result == "test_value"
 
     def test_subscript_indirection_vs_name_indirection(self):
         """Demonstrate difference between subscript and name indirection."""

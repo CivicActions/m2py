@@ -536,8 +536,9 @@ def _detect_cross_label_gotos(routine: MRoutine) -> bool:
     2. Handle cyclic patterns (A→B→A) without RecursionError
     3. Maintain variable visibility across label boundaries via RoutineState
 
-    Note: This is distinct from `has_unstructured_goto` which is a legacy flag.
-    `needs_trampoline` is the sole trigger for trampoline pattern in Spec 006.
+    Note: This is distinct from `has_unstructured_goto` which is set on MRoutine
+    for analysis purposes (used by tests). `needs_trampoline` is the sole trigger
+    for trampoline pattern selection in code generation.
 
     Args:
         routine: The routine to check

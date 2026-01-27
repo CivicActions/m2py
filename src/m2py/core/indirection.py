@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from m2py.core.exceptions import VarExpectedError, LVUNDEFError
+from m2py.core.names import is_valid_varname as _core_is_valid_varname
 from m2py.core.subscripts import SubscriptCanonicalizer
 
 if TYPE_CHECKING:
@@ -1035,31 +1036,16 @@ class IndirectionResolver:
     def _is_valid_var_name(self, name: str) -> bool:
         """Check if name is a valid MUMPS variable name.
 
+        Feature: 018-unified-variable-system
+        Now delegates to core.names.is_valid_varname() for unified validation.
+
         Args:
-            name: String to check
+            name: String to check (may include subscripts)
 
         Returns:
             True if valid variable name
         """
-        if not name:
-            return False
-
-        # Strip subscripts for validation
-        base = name.split("(")[0] if "(" in name else name
-
-        # Naked reference like "^(3)"
-        if base == "^":
-            return True
-
-        # Global: must start with ^
-        if base.startswith("^"):
-            rest = base[1:]
-            if not rest:
-                return False
-            return rest[0].isalpha() or rest[0] == "%"
-
-        # Local: must start with letter or %
-        return base[0].isalpha() or base[0] == "%"
+        return _core_is_valid_varname(name, allow_subscripts=True)
 
     def _is_numeric_literal(self, s: str) -> bool:
         """Check if string is a numeric literal.

@@ -48,6 +48,11 @@ class NameTranslator:
         r"^[%A-Za-z][A-Za-z0-9]*$"
     )
 
+    # Pattern for valid global variable names (^name, not subscripted)
+    _GLOBAL_NAME_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\^[%A-Za-z][A-Za-z0-9]*$"
+    )
+
     @staticmethod
     def to_python(mumps_name: str) -> str:
         """Translate MUMPS identifier to valid Python identifier.
@@ -182,6 +187,64 @@ class NameTranslator:
             return False
         return bool(NameTranslator._MUMPS_NAME_PATTERN.match(name))
 
+    @staticmethod
+    def is_valid_varname(name: str, allow_subscripts: bool = False) -> bool:
+        """Check if string is a valid MUMPS variable name (local or global).
+
+        This is the **unified validation function** for variable names.
+        Handles locals, globals, and naked references.
+
+        Args:
+            name: String to validate
+            allow_subscripts: If True, accept subscripted names like X(1,2)
+
+        Returns:
+            True if valid MUMPS variable name
+
+        Rules:
+        - Local: starts with letter or %, followed by alphanumerics
+        - Global: starts with ^ followed by letter or %, followed by alphanumerics
+        - Naked reference: just "^" (for ^(...) syntax) - returns True
+        - Subscripted: if allow_subscripts=True, strips subscripts before validating
+
+        Examples:
+            >>> NameTranslator.is_valid_varname("X")
+            True
+            >>> NameTranslator.is_valid_varname("%FOO")
+            True
+            >>> NameTranslator.is_valid_varname("^GLO")
+            True
+            >>> NameTranslator.is_valid_varname("^")  # Naked reference
+            True
+            >>> NameTranslator.is_valid_varname("X(1,2)")  # With subscripts
+            False
+            >>> NameTranslator.is_valid_varname("X(1,2)", allow_subscripts=True)
+            True
+            >>> NameTranslator.is_valid_varname("1+1")
+            False
+            >>> NameTranslator.is_valid_varname("")
+            False
+        """
+        if not name:
+            return False
+
+        # Strip subscripts if allowed
+        if allow_subscripts and "(" in name:
+            base = name.split("(")[0]
+        else:
+            base = name
+
+        # Naked reference: just "^" (valid for ^(subscripts) syntax)
+        if base == "^":
+            return True
+
+        # Global variable: ^name
+        if base.startswith("^"):
+            return bool(NameTranslator._GLOBAL_NAME_PATTERN.match(base))
+
+        # Local variable: name (no subscripts allowed in pattern)
+        return bool(NameTranslator._MUMPS_NAME_PATTERN.match(base))
+
     # Instance methods for backward compatibility with old NameTranslator usage
     def translate(self, mumps_name: str) -> str:
         """Instance method wrapper for to_python (backward compatibility)."""
@@ -209,4 +272,22 @@ def reverse_name(python_name: str) -> str:
     return NameTranslator.from_python(python_name)
 
 
-__all__ = ["NameTranslator", "translate_name", "reverse_name"]
+def is_valid_varname(name: str, allow_subscripts: bool = False) -> bool:
+    """Module-level convenience for NameTranslator.is_valid_varname().
+
+    Feature: 018-unified-variable-system
+
+    This is the **single source of truth** for MUMPS variable name validation.
+    Handles local variables, global variables, and naked references.
+
+    Args:
+        name: String to validate
+        allow_subscripts: If True, accept subscripted names like X(1,2)
+
+    Returns:
+        True if valid MUMPS variable name
+    """
+    return NameTranslator.is_valid_varname(name, allow_subscripts)
+
+
+__all__ = ["NameTranslator", "translate_name", "reverse_name", "is_valid_varname"]
