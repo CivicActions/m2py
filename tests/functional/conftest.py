@@ -119,21 +119,18 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     # LIM-019: Arithmetic precision edge cases
     # basic suite - arith test has 18-digit boundary precision differences
     "arith": "LIM-019",
-    # LIM-015: Interactive debugger / Z-extensions
+    # LIM-015: YDB-specific features
     # basic suite - BREAK command requires YDB interactive debugger
     "v1br": "LIM-015",
-    # LIM-020: YDB-specific numeric overflow behavior
     # basic suite - tests YDB error handling for numbers >1E47
-    "largeexp2": "LIM-020",
-    "largeexp3": "LIM-020",
-    # LIM-021: File I/O with YDB device parameters
+    "largeexp2": "LIM-015",
+    "largeexp3": "LIM-015",
     # basic suite - OPEN with YDB-specific device parameters
-    "iowrite": "LIM-021",
-    # LIM-022: YDB test harness infrastructure
+    "iowrite": "LIM-015",
     # basic suite - requires YDB JOBLABOFF / test harness
-    "stpfail": "LIM-022",
+    "stpfail": "LIM-015",
     # basic suite - requires ^ASW database pre-populated
-    "per02397": "LIM-022",
+    "per02397": "LIM-015",
 }
 
 
