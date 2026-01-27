@@ -763,10 +763,10 @@ loop body modified the loop variable. Fixed in T089g by updating `_generate_for_
 
 **Purpose**: Confirm all MUGJ tests pass or are appropriately xfail'd
 
-- [ ] T090a Run full MUGJ suite: `uv run pytest tests/functional/test_mugj.py -v`
-- [ ] T090b Verify all 72 driver routines execute or xfail
-- [ ] T090c Document any remaining gaps for future specs
-- [ ] T090d Update MUGJ Failure Root Causes table in Summary
+- [X] T090a Run full MUGJ suite: `uv run pytest tests/functional/test_mugj.py -v`
+- [X] T090b Verify all 72 driver routines execute or xfail
+- [X] T090c Document any remaining gaps for future specs
+- [X] T090d Update MUGJ Failure Root Causes table in Summary
 
 **Expected Final State**:
 | Category | Count | Status |
@@ -802,10 +802,10 @@ for sub in sorted(node._children.keys(), key=str):  # BUG
 
 **Fix**: Change to `key=_mumps_collation_key` from `m2py.runtime.helpers`
 
-- [ ] T091a Import `_mumps_collation_key` in runtime/__init__.py
-- [ ] T091b Change `_zwrite_marray()` to use MUMPS collation order
-- [ ] T091c Add unit test for ZWRITE subscript ordering with decimals
-- [ ] T091d Validate: `uv run pytest tests/functional/test_basic.py -k locals -v`
+- [x] T091a Import `_mumps_collation_key` in runtime/__init__.py
+- [x] T091b Change `_zwrite_marray()` to use MUMPS collation order
+- [x] T091c Add unit test for ZWRITE subscript ordering with decimals
+- [x] T091d Validate: `uv run pytest tests/functional/test_basic.py -k locals -v`
 
 ---
 
@@ -1012,7 +1012,7 @@ graph TD
 
 | Category | Test | Root Cause | Task | Status |
 |----------|------|------------|------|--------|
-| ZWRITE | locals | Collation key not MUMPS order | T091 | 🔄 Pending |
+| ZWRITE | locals | Collation key not MUMPS order | T091 | ✅ Fixed |
 | ModuleNotFound | extcall | Missing helper routine | T092 | 🔄 Pending |
 | TIMEOUT | larray | FOR fractional step precision | T093 | 🔄 Pending |
 | Infrastructure | miscdb | YDB-specific output | T094 | 🔄 Pending |

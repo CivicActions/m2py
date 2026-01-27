@@ -528,6 +528,7 @@ from m2py.runtime.helpers import (  # noqa: E402
 # Spec 011: Import sorts-after (uses MUMPS collation) and pattern match helpers
 # Note: Contains ([) and Follows (]) are inlined as Python expressions in codegen
 from m2py.runtime.helpers import (  # noqa: E402
+    _mumps_collation_key,
     m_pattern_match,
     m_sorts_after,
 )
@@ -1503,8 +1504,9 @@ class MUMPSRuntime:
         if node._value is not None:
             self.write(f"{path}={self._quote_value(node._value)}\n")
 
-        # Output children recursively in sorted order
-        for sub in sorted(node._children.keys(), key=str):
+        # Output children recursively in MUMPS collation order
+        # (numerics before strings, numerics sorted numerically)
+        for sub in sorted(node._children.keys(), key=_mumps_collation_key):
             child = node._children[sub]
             self._zwrite_marray(base_name, subscripts + [sub], child)
 

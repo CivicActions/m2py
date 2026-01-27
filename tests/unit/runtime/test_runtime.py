@@ -950,6 +950,53 @@ class TestZWriteFormatting:
         # String subscript should be quoted
         assert '^x("1E60",1)=23' in output
 
+    def test_zwrite_local_collation_order_with_decimals(self):
+        """ZWRITE outputs subscripts in MUMPS collation order (numerics sorted numerically).
+
+        T091: This test verifies that ZWRITE sorts subscripts using MUMPS collation:
+        - Numerics before strings
+        - Numerics sorted numerically (0 < .0005 < .001 < 1)
+
+        This reproduces the basic/locals test failure where subscripts like:
+        A(0), A(.0005), A(.001), A(1)
+        Were being sorted as strings (A(.0005), A(.001), A(0), A(1)) instead of
+        numerically (A(0), A(.0005), A(.001), A(1)).
+        """
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        # Create an MArray with decimal subscripts - add in non-sorted order
+        A = MArray()
+        A[".0005"].value = "A(.0005)"  # Would sort first as string
+        A["0"].value = "A(0)"  # Should sort first numerically
+        A[".001"].value = "A(.001)"
+        A["1"].value = "A(1)"
+        A["1.0005"].value = "A(1.0005)"
+        A["2"].value = "A(2)"
+
+        # Use the internal method to test - pass as local scope
+        # zwrite_local expects Python-translated name and tuple of subscripts
+        rt.zwrite_local("A", (), {"A": A})
+        output = rt.get_output()
+
+        # Verify output order is MUMPS collation (numerics sorted numerically)
+        lines = [line for line in output.strip().split("\n") if line]
+        assert len(lines) == 6, f"Expected 6 lines, got: {lines}"
+
+        # Expected order: 0, .0005, .001, 1, 1.0005, 2
+        assert 'A(0)="A(0)"' in lines[0], f"First should be A(0), got: {lines[0]}"
+        assert 'A(.0005)="A(.0005)"' in lines[1], (
+            f"Second should be A(.0005), got: {lines[1]}"
+        )
+        assert 'A(.001)="A(.001)"' in lines[2], (
+            f"Third should be A(.001), got: {lines[2]}"
+        )
+        assert 'A(1)="A(1)"' in lines[3], f"Fourth should be A(1), got: {lines[3]}"
+        assert 'A(1.0005)="A(1.0005)"' in lines[4], (
+            f"Fifth should be A(1.0005), got: {lines[4]}"
+        )
+        assert 'A(2)="A(2)"' in lines[5], f"Sixth should be A(2), got: {lines[5]}"
+
 
 @pytest.mark.runtime
 class TestGetOrderMethod:
