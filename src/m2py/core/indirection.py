@@ -792,17 +792,27 @@ class IndirectionResolver:
 
         Handles patterns like:
         - @VAR → get value of VAR
-        - @VAR@(subs) → get value of VAR, append subs (name indirection subscripts)
+        - @VAR@(subs) → get value of VAR, append subs → return NAME (let caller get value)
+        - @@VAR@(subs) → resolve @VAR first, then append subs → return NAME
         - @$E(...) → evaluate MUMPS function
 
         Args:
             value: String starting with @
 
         Returns:
-            Resolved value (either the value at a variable, or a name with subscripts appended)
+            For @VAR: the VALUE at VAR
+            For @VAR@(subs): the NAME with subs appended (so caller's while loop can continue)
         """
         # Strip the @ and recursively resolve
         inner = value[1:]
+
+        # If inner itself starts with @, recursively resolve it first
+        # This handles @@VAR, @@@VAR, etc. in VALUE strings
+        if inner.startswith("@"):
+            inner = self._resolve_recursive_at(inner)
+            # If the result is empty or not a valid continuation, return it
+            if not inner:
+                return inner
 
         # If it's @$E(...) or other function, evaluate it
         if inner.startswith("$"):
@@ -838,9 +848,12 @@ class IndirectionResolver:
 
                 remaining = remaining[close_pos + 1 :]
 
+            # Return the NAME (with subscripts appended), not the value
+            # The outer while loop will call _get_value on the next iteration
+            # if the value at this name starts with @
             return resolved_name
 
-        # Otherwise it's a simple variable reference
+        # Otherwise it's a simple variable reference - get and return VALUE
         return str(self._get_value(inner))
 
     def _find_matching_paren(self, s: str, start_pos: int) -> int:

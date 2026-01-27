@@ -719,8 +719,14 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 ### Phase 15c: Final Validation
 
 - [X] T147 Run full pytest suite: `uv run pytest tests/` - 4409 tests pass
-- [ ] T148 Run MUGJ validation: all V1ID*, VV2VNI* tests pass
-- [ ] T149 Run YDB validation for all quickstart.md scenarios
+- [X] T148 Run MUGJ validation: all V1ID*, VV2VNI* tests pass
+  - VV2VNIA, VV2VNIB, VV2VNIC all pass
+  - V1IDNM1, V1IDNM2, V1IDNM3, V1IDARG1-5 all pass
+  - Fixed SET $PIECE with indirection subscript merging bug
+- [X] T149 Run YDB validation for all quickstart.md scenarios
+  - Argument indirection I @A where A="1=0" correctly evaluates to FALSE
+  - Argument indirection I @A where A="1=1" correctly evaluates to TRUE
+  - Multi-level indirection patterns verified via MUGJ VV2VNI* tests
 - [X] T150 Verify no new failures in pre-commit hooks - all pass
 
 ### Phase 15d: Documentation Update

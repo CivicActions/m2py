@@ -1067,25 +1067,24 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
 
         # Handle name+subscript syntax: @NAME@(1,2)
         if first_arg.name_indirection_subscripts:
-            # Build the subscript expressions
-            all_subs = []
+            # Build per_level_subscripts for proper subscript merging
+            # This is critical when the resolved name already has subscripts
+            # e.g., @A@(1) where A="ABC(1,2,3)" should become "ABC(1,2,3,1)"
+            # NOT "ABC(1,2,3)(1)" which is what string concatenation produces
+            per_level_subs_code = []
             for sub_list in first_arg.name_indirection_subscripts:
                 sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                all_subs.extend(sub_exprs)
-            # Build f-string for subscripts to avoid escaping issues with quotes
-            if len(all_subs) == 1:
-                subs_fstr = f"f'({{{all_subs[0]}}})'"
-            else:
-                subs_parts = ", ".join(f"{{{s}}}" for s in all_subs)
-                subs_fstr = f"f'({subs_parts})'"
+                per_level_subs_code.append(f"[{', '.join(sub_exprs)}]")
+            per_level_subscripts_str = f"[{', '.join(per_level_subs_code)}]"
 
             if isinstance(inner_expr, MVariable):
                 base_name = inner_expr.name
-                # Use resolve_for_target for consistent name resolution
-                name_expr = f'_rt.resolve_for_target("{base_name}", _scope, levels={levels}) + {subs_fstr}'
+                # Use resolve_for_target with per_level_subscripts for proper subscript merging
+                name_expr = f'_rt.resolve_for_target("{base_name}", _scope, levels={levels}, per_level_subscripts={per_level_subscripts_str})'
             else:
                 name_expr_base = generate_expr(inner_expr, ctx)
-                name_expr = f"str({name_expr_base}) + {subs_fstr}"
+                # For non-variable base, still need per_level_subscripts
+                name_expr = f"_rt.resolve_for_target(str({name_expr_base}), _scope, levels={levels}, per_level_subscripts={per_level_subscripts_str})"
         else:
             # Simple indirection without subscripts
             if isinstance(inner_expr, MVariable):
