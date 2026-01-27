@@ -20,6 +20,7 @@ from m2py.runtime import (
     _evaluate_subscripts,
     _convert_subscript,
     _parse_subscripted_name,
+    _split_argument_list,  # T088: Argument list parsing
     IndirectionError,
 )
 
@@ -654,3 +655,88 @@ class TestEvaluateSubscriptsWithRuntime:
     def test_evaluate_subscripts_empty_with_runtime(self, runtime):
         """Empty tuple returns empty tuple with runtime."""
         assert _evaluate_subscripts((), {}, runtime) == ()
+
+
+# =============================================================================
+# T088: _split_argument_list Tests
+# =============================================================================
+
+
+class TestSplitArgumentList:
+    """Tests for _split_argument_list function (T088).
+
+    Feature: 017 T088 - Argument Indirection Command Lists
+    Used for KILL @X, NEW @X where X may contain comma-separated
+    variable names that include subscripts.
+    """
+
+    @pytest.fixture
+    def split_arg_list(self):
+        """Import the function under test."""
+
+        return _split_argument_list
+
+    def test_simple_single_variable(self, split_arg_list):
+        """Single variable returns list with one element."""
+        assert split_arg_list("X") == ["X"]
+        assert split_arg_list("ABC") == ["ABC"]
+        assert split_arg_list("VAR123") == ["VAR123"]
+
+    def test_simple_comma_separated(self, split_arg_list):
+        """Simple comma-separated variables split correctly."""
+        assert split_arg_list("E,F") == ["E", "F"]
+        assert split_arg_list("A,B,C") == ["A", "B", "C"]
+        assert split_arg_list("X,Y,Z,W") == ["X", "Y", "Z", "W"]
+
+    def test_subscripted_variable_single(self, split_arg_list):
+        """Subscripted variable stays intact."""
+        assert split_arg_list("A(1,2)") == ["A(1,2)"]
+        assert split_arg_list("ARR(1,2,3)") == ["ARR(1,2,3)"]
+
+    def test_subscripted_with_simple(self, split_arg_list):
+        """Subscripted variable combined with simple variable."""
+        assert split_arg_list("A(1,2),B") == ["A(1,2)", "B"]
+        assert split_arg_list("B,A(1,2)") == ["B", "A(1,2)"]
+        assert split_arg_list("A(1,2),B,C") == ["A(1,2)", "B", "C"]
+
+    def test_multiple_subscripted(self, split_arg_list):
+        """Multiple subscripted variables."""
+        assert split_arg_list("A(1,2),B(3)") == ["A(1,2)", "B(3)"]
+        assert split_arg_list("X(1),Y(2,3),Z(4,5,6)") == ["X(1)", "Y(2,3)", "Z(4,5,6)"]
+
+    def test_nested_parentheses(self, split_arg_list):
+        """Nested parentheses are handled correctly."""
+        # ARR(F(1)) where F(1) is an inner function call representation
+        assert split_arg_list("ARR(F(1)),B") == ["ARR(F(1))", "B"]
+        assert split_arg_list("A(B(C(1))),D") == ["A(B(C(1)))", "D"]
+
+    def test_quoted_strings_in_subscripts(self, split_arg_list):
+        """Quoted strings inside subscripts preserve commas."""
+        assert split_arg_list('A("x,y"),B') == ['A("x,y")', "B"]
+        assert split_arg_list("A('a,b'),B") == ["A('a,b')", "B"]
+        assert split_arg_list('A("x,y","z"),B') == ['A("x,y","z")', "B"]
+
+    def test_empty_string(self, split_arg_list):
+        """Empty string returns empty list."""
+        assert split_arg_list("") == []
+
+    def test_whitespace_handling(self, split_arg_list):
+        """Whitespace around items is trimmed."""
+        assert split_arg_list("A , B") == ["A", "B"]
+        assert split_arg_list("  X  ,  Y  ") == ["X", "Y"]
+        assert split_arg_list("A(1, 2) , B") == ["A(1, 2)", "B"]
+
+    def test_global_variables(self, split_arg_list):
+        """Global variables (with ^) are handled."""
+        assert split_arg_list("^GLO,^VAR") == ["^GLO", "^VAR"]
+        assert split_arg_list("^G(1,2),A") == ["^G(1,2)", "A"]
+
+    def test_mixed_globals_and_locals(self, split_arg_list):
+        """Mix of global and local variables."""
+        assert split_arg_list("A,^B,C(1),^D(2,3)") == ["A", "^B", "C(1)", "^D(2,3)"]
+
+    def test_runtime_method_access(self):
+        """_split_argument_list is accessible via MUMPSRuntime."""
+        runtime = MUMPSRuntime()
+        result = runtime._split_argument_list("A,B(1,2),C")
+        assert result == ["A", "B(1,2)", "C"]

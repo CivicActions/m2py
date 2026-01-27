@@ -675,7 +675,7 @@ The bug: When `@^(4)` is inside a subscript position, we need the **VALUE** (55)
 
 ---
 
-### T088: Fix Argument Indirection Command Lists - Priority P2
+### T088: Fix Argument Indirection Command Lists - Priority P2 ✅ COMPLETED
 
 **Root Cause**: `KILL @X` where X="E,F" should kill both E and F (comma-separated list).
 
@@ -700,11 +700,19 @@ The resolved value `"E,F"` is an argument list, not a single variable name.
    - NEW @X (if X contains list)
    - LOCK @X (if X contains list)
 
-- [ ] T088a Update `kill_indirected()` to parse comma-separated variable lists
-- [ ] T088b Handle nested parentheses in lists (e.g., "A(1,2),B" should be ["A(1,2)", "B"])
-- [ ] T088c Add unit tests for argument indirection with lists
-- [ ] T088d Validate V1IDARG: `uv run python utils/test_mugj_routine.py V1IDARG V1IDARG1 V1IDARG2 VREPORT`
-- [ ] T088e Validate V1XECA: `uv run python utils/test_mugj_routine.py V1XECA V1XECA1 V1XECA2 V1XECAE VREPORT` *(V1XECA uses same argument indirection pattern)*
+- [X] T088a Update `kill_indirected()` to parse comma-separated variable lists
+- [X] T088b Handle nested parentheses in lists (e.g., "A(1,2),B" should be ["A(1,2)", "B"])
+- [X] T088c Add unit tests for argument indirection with lists
+- [X] T088d Validate V1IDARG: `uv run python utils/test_mugj_routine.py V1IDARG V1IDARG1 V1IDARG2 VREPORT`
+- [X] T088e Validate V1XECA: `uv run python utils/test_mugj_routine.py V1XECA V1XECA1 V1XECA2 V1XECAE VREPORT` *(V1XECA uses same argument indirection pattern)*
+
+**Solution Summary**:
+- Added `_split_argument_list()` function to runtime that respects parentheses when splitting comma-separated lists
+- Added `resolve_to_argument_list()` method to `IndirectionResolver` that returns a list of variable names
+- Updated `kill_indirected()` to use `resolve_to_argument_list()` and kill each variable in the list
+- Updated NEW indirection codegen to use `_rt._split_argument_list()` instead of naive `.split(',')`
+- Added 12 unit tests for `_split_argument_list` edge cases
+- V1IDARG and V1XECA functional tests pass
 
 ---
 

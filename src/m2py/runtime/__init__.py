@@ -202,6 +202,71 @@ def _parse_subscript_list(subscript_str: str, original_name: str) -> List[Any]:
     return subscripts
 
 
+def _split_argument_list(arg_str: str) -> List[str]:
+    """Split comma-separated argument list respecting parentheses.
+
+    Feature: 017 T088 - Argument Indirection Command Lists
+    Used for KILL @X, NEW @X where X may contain comma-separated
+    variable names that include subscripts.
+
+    Unlike naive str.split(','), this correctly handles:
+    - Simple variables: "A,B,C" → ["A", "B", "C"]
+    - Subscripted vars: "A(1,2),B" → ["A(1,2)", "B"]
+    - Complex: "A(1,2),B(3),C" → ["A(1,2)", "B(3)", "C"]
+    - Quoted strings inside subscripts: 'A("x,y"),B' → ['A("x,y")', "B"]
+
+    Args:
+        arg_str: Comma-separated argument string
+
+    Returns:
+        List of individual argument strings
+
+    Examples:
+        >>> _split_argument_list("E,F")
+        ['E', 'F']
+        >>> _split_argument_list("A(1,2),B")
+        ['A(1,2)', 'B']
+        >>> _split_argument_list("X")
+        ['X']
+    """
+    if not arg_str:
+        return []
+
+    args: List[str] = []
+    current = ""
+    paren_depth = 0
+    in_string = False
+    string_char = ""
+
+    for char in arg_str:
+        if in_string:
+            current += char
+            if char == string_char:
+                in_string = False
+        elif char in ('"', "'"):
+            in_string = True
+            string_char = char
+            current += char
+        elif char == "(":
+            paren_depth += 1
+            current += char
+        elif char == ")":
+            paren_depth -= 1
+            current += char
+        elif char == "," and paren_depth == 0:
+            if current.strip():
+                args.append(current.strip())
+            current = ""
+        else:
+            current += char
+
+    # Don't forget the last argument
+    if current.strip():
+        args.append(current.strip())
+
+    return args
+
+
 class SubscriptVarRef:
     """Wrapper to mark a subscript as a variable reference to be evaluated.
 
@@ -2657,6 +2722,14 @@ class MUMPSRuntime:
             # K @X@(1,2) where X="A"
             kill_indirected("X", scope, levels=1, per_level_subscripts=[[1, 2]])
             # Kills A(1,2)
+
+            # K @X where X="E,F" (argument list)
+            kill_indirected("X", scope, levels=1)
+            # Kills both E and F
+
+            # K @X where X="A(1,2),B" (subscripted vars in list)
+            kill_indirected("X", scope, levels=1)
+            # Kills A(1,2) and B
         """
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
@@ -2665,26 +2738,39 @@ class MUMPSRuntime:
         cs = CurrentScope.from_generated_context(_scope)
         resolver = IndirectionResolver(self, cs)
 
-        # Resolve to get target variable NAME (not value)
-        target = resolver.resolve_to_name(
+        # T088: Resolve to get target variable NAME(s) - may be comma-separated list
+        targets = resolver.resolve_to_argument_list(
             source, levels=levels, per_level_subscripts=per_level_subscripts
         )
 
-        # Handle global variables
-        if target.startswith("^"):
-            # Parse subscripts from target if present
-            base_name, subscripts = _parse_subscripted_name(target)
-            subs = tuple(str(s) for s in subscripts) if subscripts else ()
-            key = base_name[1:]  # Remove ^ prefix
-            self._globals.kill(key, subs)
-            return
+        # Kill each target variable
+        for target in targets:
+            # Handle global variables
+            if target.startswith("^"):
+                # Parse subscripts from target if present
+                base_name, subscripts = _parse_subscripted_name(target)
+                subs = tuple(str(s) for s in subscripts) if subscripts else ()
+                key = base_name[1:]  # Remove ^ prefix
+                self._globals.kill(key, subs)
+                continue
 
-        # Handle naked global reference
-        if target == "^":
-            raise IndirectionError(target, "naked reference requires subscripts")
+            # Handle naked global reference
+            if target == "^":
+                raise IndirectionError(target, "naked reference requires subscripts")
 
-        # Kill local variable via CurrentScope
-        cs.kill(target)
+            # Kill local variable via CurrentScope
+            cs.kill(target)
+
+    @staticmethod
+    def _split_argument_list(arg_str: str) -> List[str]:
+        """Split comma-separated argument list respecting parentheses.
+
+        Feature: 017 T088 - Argument Indirection Command Lists
+        Exposed as staticmethod for use in generated code.
+
+        See module-level _split_argument_list for details.
+        """
+        return _split_argument_list(arg_str)
 
     def resolve_for_target(
         self,
@@ -4323,4 +4409,10 @@ __all__ = [
     # Spec 018: SubscriptVarRef for subscript variable references
     "SubscriptVarRef",
     "VarRef",  # Backward compatibility alias for SubscriptVarRef
+    # T088: Argument list parsing for indirection
+    "_split_argument_list",
+    "_evaluate_subscript",
+    "_evaluate_subscripts",
+    "_convert_subscript",
+    "_parse_subscripted_name",
 ]

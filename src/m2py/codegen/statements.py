@@ -3598,12 +3598,13 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 # NEW indirection can contain comma-separated variable lists
                 # For example: S A="X,Y" N @A should NEW both X and Y
-                # We need to split the resolved string at runtime
-                ctx.emitter.line(f"_ind_var_list = str({value_expr}).split(',')")
+                # T088: Use _split_argument_list to handle subscripted vars
+                # E.g., A="X(1,2),Y" should split to ["X(1,2)", "Y"], not ["X(1", "2)", "Y"]
+                ctx.emitter.line(
+                    f"_ind_var_list = _rt._split_argument_list(str({value_expr}))"
+                )
                 ctx.emitter.line("for _ind_var in _ind_var_list:")
                 with ctx.emitter.indented():
-                    # Strip whitespace from each variable name
-                    ctx.emitter.line("_ind_var = _ind_var.strip()")
                     if ctx.new_scope_manager_var:
                         # Use NewScopeManager for proper save/restore semantics
                         ctx.emitter.line(
