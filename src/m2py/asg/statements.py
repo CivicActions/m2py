@@ -250,6 +250,9 @@ class MForStatement(MStatement):
     # T088-T090: Pre-computed fields for codegen (populated by classify_gotos)
     has_cross_label_exit: bool = False  # True if any exit GOTO targets different label
     needs_exception_wrapper: bool = False  # True if outermost FOR for MULTI_LOOP_EXIT
+    has_same_label_exit: bool = (
+        False  # V1FORC2: True if MULTI_LOOP_EXIT to same label (needs continue)
+    )
     exit_target: Optional[str] = (
         None  # Target label name (MUMPS name, codegen translates)
     )

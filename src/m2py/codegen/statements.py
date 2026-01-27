@@ -1757,6 +1757,11 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
                 else:
                     ctx.emitter.line("_e.target()")
                     ctx.emitter.line("return")
+            # V1FORC2: Same-label exit - continue to restart the while True self-loop
+            if stmt.has_same_label_exit:
+                ctx.emitter.line("else:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("continue")
 
     # FR-018: Handle target after single-loop exit if set
     if has_cross_label_exit and not needs_wrapper:
@@ -2703,6 +2708,15 @@ def _generate_single_target_goto(
 
     # T035/T037: exits_loops determines break vs raise _LoopExit()
     if exits_loops and in_for_loop:
+        # V1FORC2 fix: Handle postcondition on target (e.g., G G379:X=1)
+        # The target postcondition must be checked before the loop exit
+        postcond_ctx = None
+        if target.postcondition is not None:
+            cond_expr = generate_expr(target.postcondition, ctx)
+            ctx.emitter.line(f"if m_truth({cond_expr}):")
+            postcond_ctx = ctx.emitter.indented()
+            postcond_ctx.__enter__()
+
         if len(exits_loops) == 1:
             # Single loop exit - generate break
             # FR-018: For cross-label exits, track target so it can be called after loop
@@ -2715,7 +2729,6 @@ def _generate_single_target_goto(
                     label_name = translate_name(target.name)
                     ctx.emitter.line(f"_goto_target = {label_name}")
             ctx.emitter.line("break")
-            return
         else:
             # Multi-loop exit - generate raise _LoopExit()
             # The exception will be caught by the outermost FOR loop
@@ -2730,7 +2743,11 @@ def _generate_single_target_goto(
                     ctx.emitter.line(f"raise _LoopExit({label_name})")
             else:
                 ctx.emitter.line("raise _LoopExit()")
-            return
+
+        # Close postcondition block if we opened one
+        if postcond_ctx is not None:
+            postcond_ctx.__exit__(None, None, None)
+        return
 
     # Cross-label GOTO: pattern depends on strategy
     # Spec 006 (T055): Check strategy and generate appropriate pattern

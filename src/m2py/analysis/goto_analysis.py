@@ -352,10 +352,9 @@ def _classify_single_goto(
                 # Get target label name for exit_target (raw MUMPS name - codegen translates)
                 target_name = stmt.targets[0].name if stmt.targets else None
 
-                # Set needs_exception_wrapper on outermost FOR for MULTI_LOOP_EXIT
+                # Set exit_target for cross-label exits
                 if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
                     outermost_for = enclosing_fors[0]
-                    outermost_for.needs_exception_wrapper = True
                     # Set exit_target on outermost FOR (for calling after except)
                     if target_name:
                         outermost_for.exit_target = target_name
@@ -363,6 +362,16 @@ def _classify_single_goto(
                     # For single loop exit, set exit_target on that FOR
                     if target_name:
                         enclosing_fors[0].exit_target = target_name
+
+            # V1FORC2 fix: MULTI_LOOP_EXIT always needs exception wrapper, regardless of cross_label
+            # For cross-label: after catching, call target label
+            # For same-label: after catching, continue (restart the while True self-loop)
+            if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
+                outermost_for = enclosing_fors[0]
+                outermost_for.needs_exception_wrapper = True
+                # Mark same-label exit for codegen to generate 'continue' instead of call
+                if not stmt.is_cross_label:
+                    outermost_for.has_same_label_exit = True
 
             # Note: There is no "continue" pattern in MUMPS via GOTO.
             # Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
