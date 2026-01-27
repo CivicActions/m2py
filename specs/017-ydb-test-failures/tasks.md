@@ -408,7 +408,7 @@ thanks to multi-routine support and Decimal arithmetic helpers.
     1. Whitespace/pagination differences (`W:$Y>55 #` pagination tracking)
     2. Some tests still need helper routine mappings
     3. GotoExternal issue in V1SEQ
-    4. Timeouts (4 tests): larray, V1FORA, V1NX, V1FORC
+    4. Timeouts (2 tests): larray, V1FORA
     5. External routine in multi-target GOTO (2 tests): V1OV, V1PC
     6. Indirect target in multi-target GOTO (1 test): V1IDGO
     7. UNRESOLVED GOTO (2 tests): V1NST1, V1NST2
@@ -417,7 +417,7 @@ thanks to multi-routine support and Decimal arithmetic helpers.
   - **Root cause**: `_analyze_expression()` had no handler for MNakedGlobal (only MGlobal)
   - **Fix**: Added MNakedGlobal handler in semantic_analyzer.py `_analyze_expression()` method
   - **Tests**: Added 3 unit tests in test_expression_analysis.py for naked global subscripts
-  - **Affects**: V1NX (now times out instead of crashing), other tests using naked globals with expressions
+  - **Affects**: V1NX (now works correctly after T086/V1FORC fixes), other tests using naked globals with expressions
 - [X] T075j Fix multi-level indirection with per-level subscripts and naked references
   - **Scope**: VV2VNIA test cases II-127, II-128, II-129 failing due to multi-level indirection issues
   - **Root cause (II-127/II-128)**: `resolve_with_per_level_subscripts` not returning target name for SET operations
