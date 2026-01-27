@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
+from m2py.core.names import NameTranslator
+
 if TYPE_CHECKING:
     pass  # Reserved for future type imports
 
@@ -25,11 +27,8 @@ if TYPE_CHECKING:
 # Spec 012: Variable Name Validation Helper (T012)
 # =============================================================================
 
-# MUMPS variable name pattern: starts with letter or %, followed by alphanumerics
-# Global variables start with ^ followed by the same pattern
-# Examples: X, VAR1, %ZTMP, ^GLO, ^GLO123
-_VARNAME_PATTERN = re.compile(r"^[A-Za-z%][A-Za-z0-9]*$")
-_GLOBAL_VARNAME_PATTERN = re.compile(r"^\^[A-Za-z%][A-Za-z0-9]*$")
+# Import the unified name validation from core
+from m2py.core.names import is_valid_varname as _core_is_valid_varname
 
 # MUMPS label name pattern: starts with letter, %, or digit, followed by alphanumerics
 # Labels can be purely numeric (e.g., 461, 462) or traditional names (e.g., ENTRY, %BREAK)
@@ -40,16 +39,8 @@ _LABEL_PATTERN = re.compile(r"^[A-Za-z%0-9][A-Za-z0-9]*$")
 def _is_valid_varname(name: str) -> bool:
     """Check if name is a valid MUMPS variable name.
 
-    Spec 012 (T012): Validates variable names for name indirection.
-
-    MUMPS variable naming rules:
-    - Must start with letter (A-Z, a-z) or %
-    - Followed by zero or more alphanumeric characters
-    - Global variables start with ^ followed by valid name
-    - Names are case-insensitive but we preserve case
-
-    Does NOT handle subscripted names - call _parse_subscripted_name first
-    to extract the base name and subscripts.
+    Feature: 018-unified-variable-system
+    Now delegates to core.names.is_valid_varname() for unified validation.
 
     Args:
         name: Variable name to validate (without subscripts)
@@ -73,12 +64,7 @@ def _is_valid_varname(name: str) -> bool:
         >>> _is_valid_varname("VAR(1)")  # Subscripts not allowed here
         False
     """
-    if not name:
-        return False
-    # Check global or local pattern
-    if name.startswith("^"):
-        return bool(_GLOBAL_VARNAME_PATTERN.match(name))
-    return bool(_VARNAME_PATTERN.match(name))
+    return _core_is_valid_varname(name, allow_subscripts=False)
 
 
 def _is_valid_label(name: str) -> bool:
@@ -110,40 +96,9 @@ def _is_valid_label(name: str) -> bool:
     return bool(_LABEL_PATTERN.match(name))
 
 
-def _translate_label_to_func(label: str) -> str:
-    """Translate a MUMPS label name to its Python function name.
-
-    MUMPS labels can have forms that aren't valid Python identifiers:
-    - Numeric labels: 1, 461, 0123 → _n_1, _n_461, _n_0123
-    - %names: %BREAK, % → _pct_BREAK, _pct_
-
-    This mirrors the logic in m2py.codegen.names.translate_name but
-    is provided here for runtime use to avoid circular imports.
-
-    Args:
-        label: MUMPS label name
-
-    Returns:
-        Python function name
-
-    Examples:
-        >>> _translate_label_to_func("ENTRY")
-        "ENTRY"
-        >>> _translate_label_to_func("1")
-        "_n_1"
-        >>> _translate_label_to_func("%BREAK")
-        "_pct_BREAK"
-    """
-    if not label:
-        return label
-    # Pure numeric: prepend _n_
-    if label[0].isdigit():
-        return "_n_" + label
-    # Starts with %: replace % with _pct_
-    if label[0] == "%":
-        return "_pct_" + label[1:]
-    # Already valid Python identifier
-    return label
+# T074a: Now uses NameTranslator.to_python() from core.names module.
+# The deprecated _translate_label_to_func() function has been removed.
+# All name translation now goes through the single source of truth.
 
 
 def _parse_subscripted_name(name: str) -> Tuple[str, Optional[Tuple[Any, ...]]]:
@@ -247,14 +202,17 @@ def _parse_subscript_list(subscript_str: str, original_name: str) -> List[Any]:
     return subscripts
 
 
-class VarRef:
+class SubscriptVarRef:
     """Wrapper to mark a subscript as a variable reference to be evaluated.
 
     Used in _convert_subscript to distinguish:
     - "key" → literal string "key" (from quoted MUMPS string)
-    - I → VarRef("I") (unquoted MUMPS variable reference)
+    - I → SubscriptVarRef("I") (unquoted MUMPS variable reference)
 
     This allows _evaluate_subscript to only look up actual variable references.
+
+    Note: This is distinct from core.scope.VarRef which represents a complete
+    variable reference for codegen/runtime unified access patterns.
     """
 
     __slots__ = ("name",)
@@ -263,7 +221,11 @@ class VarRef:
         self.name = name
 
     def __repr__(self) -> str:
-        return f"VarRef({self.name!r})"
+        return f"SubscriptVarRef({self.name!r})"
+
+
+# Backward compatibility alias - tests may import VarRef
+VarRef = SubscriptVarRef
 
 
 def _convert_subscript(value: str, original_name: str) -> Any:
@@ -274,7 +236,7 @@ def _convert_subscript(value: str, original_name: str) -> Any:
         original_name: Original name for error messages
 
     Returns:
-        Converted value (int, float, string, or VarRef for variable references)
+        Converted value (int, float, string, or SubscriptVarRef for variable references)
     """
     if not value:
         raise IndirectionError(original_name, "empty subscript value")
@@ -294,8 +256,8 @@ def _convert_subscript(value: str, original_name: str) -> Any:
         return value[1:-1]
 
     # Unquoted non-numeric string - this is a variable reference
-    # Wrap in VarRef so _evaluate_subscript knows to look it up
-    return VarRef(value)
+    # Wrap in SubscriptVarRef so _evaluate_subscript knows to look it up
+    return SubscriptVarRef(value)
 
 
 def _evaluate_subscript(
@@ -303,20 +265,20 @@ def _evaluate_subscript(
 ) -> Any:
     """Evaluate a single subscript value, resolving variable references.
 
-    When a subscript is a VarRef, look it up in the scope.
+    When a subscript is a SubscriptVarRef, look it up in the scope.
     This enables indirection like "A(I)" where I is a variable.
     Also handles name indirection like "A(@X)" where @X resolves to a variable name.
 
     Args:
-        sub: Subscript value (int, float, string, or VarRef)
+        sub: Subscript value (int, float, string, or SubscriptVarRef)
         _scope: Scope dictionary for variable lookup
         runtime: MUMPSRuntime instance for complex indirection resolution
 
     Returns:
         Evaluated subscript value
     """
-    # Only evaluate VarRef wrappers - they mark actual variable references
-    if not isinstance(sub, VarRef):
+    # Only evaluate SubscriptVarRef wrappers - they mark actual variable references
+    if not isinstance(sub, SubscriptVarRef):
         return sub
 
     # Look up variable in scope
@@ -595,16 +557,22 @@ class MArray:
     def _canonicalize_subscript(self, key: Any) -> str:
         """Convert subscript to canonical string form.
 
-        In MUMPS, all subscripts are strings. This ensures consistent
-        lookup regardless of whether the caller passes int or str.
+        In MUMPS, all subscripts are strings. Numeric values are canonicalized
+        so that A(1), A(1.0), and A("1") all access the same node.
+        Non-canonical string forms like "01" are preserved as-is.
+
+        Uses SubscriptCanonicalizer for consistent canonicalization across
+        runtime and codegen.
 
         Args:
-            key: Subscript value (int, str, or other)
+            key: Subscript value (int, float, str, or other)
 
         Returns:
             Canonical string representation of the subscript
         """
-        return str(key)
+        from m2py.core.subscripts import SubscriptCanonicalizer
+
+        return SubscriptCanonicalizer.canonicalize(key)
 
     def __setitem__(self, key: Any, value: Any) -> None:
         """Set value at subscript.
@@ -1347,11 +1315,19 @@ class MUMPSRuntime:
         Args:
             scope: Variable scope dictionary
         """
-        for name in sorted(scope.keys()):
-            if name.startswith("_"):
-                continue  # Skip internal variables
-            value = scope[name]
-            self._zwrite_var(name, value)
+        for py_name in sorted(scope.keys()):
+            # Skip truly internal variables (runtime internals like _scope, _rt, etc.)
+            # but NOT NameTranslator-prefixed names (_pct_, _n_, _m_) which are user variables
+            if py_name.startswith("_") and not (
+                py_name.startswith("_pct_")
+                or py_name.startswith("_n_")
+                or py_name.startswith("_m_")
+            ):
+                continue
+            # Translate Python name back to MUMPS name for display
+            mumps_name = NameTranslator.from_python(py_name)
+            value = scope[py_name]
+            self._zwrite_var(mumps_name, value)
 
     def _format_subscript(self, sub: Any) -> str:
         """Format a subscript value for ZWRITE output.
@@ -1412,19 +1388,22 @@ class MUMPSRuntime:
         """ZWRITE - display a local variable and its descendants.
 
         Args:
-            name: Variable name
+            name: Variable name (Python scope key, e.g., "_pct_FOO" for %FOO)
             subscripts: Subscript path (empty for unsubscripted)
             scope: Variable scope dictionary
         """
         if name not in scope:
             return  # Variable not defined
 
+        # Translate Python name back to MUMPS name for display
+        mumps_name = NameTranslator.from_python(name)
+
         var = scope[name]
         if not isinstance(var, MArray):
             # Simple value
             if subscripts:
                 return  # Can't subscript a simple value
-            self.write(f"{name}={self._quote_value(var)}\n")
+            self.write(f"{mumps_name}={self._quote_value(var)}\n")
             return
 
         # Navigate to subscript position and collect path
@@ -1436,7 +1415,7 @@ class MUMPSRuntime:
             node = node._children[sub]
 
         # Output this node and descendants
-        self._zwrite_marray(name, subs_list, node)
+        self._zwrite_marray(mumps_name, subs_list, node)
 
     def _zwrite_marray(
         self, base_name: str, subscripts: list[Any], node: "MArray"
@@ -1998,229 +1977,6 @@ class MUMPSRuntime:
             # Without timeout, just return True
             return True
 
-    # =========================================================================
-    # Spec 012: Indirection & XECUTE Runtime Methods (Phase 2 - T007-T011)
-    # Phase 11: Edge case handling (T065-T072)
-    # =========================================================================
-
-    def get_indirection_source(self, varname: str, _scope: Dict[str, Any]) -> str:
-        """Get value of an indirection source variable, validating existence.
-
-        Spec 012 Phase 11 (T065): Unlike get_var(), this method raises an error
-        if the source variable is undefined, matching YDB's LVUNDEF behavior.
-
-        In MUMPS, @UNDEF should raise "Undefined local variable: UNDEF"
-        rather than silently using an empty string.
-
-        Handles both simple variables (X) and subscripted variables (X(1,2)).
-        For subscripted variables, uses get_var() to retrieve the value.
-
-        Args:
-            varname: Variable name to get value of (the indirection source)
-                     May be simple (X) or subscripted (X(1,2))
-            _scope: Current scope dictionary
-
-        Returns:
-            str: The variable's value (which becomes the target variable name)
-
-        Raises:
-            IndirectionError: If varname is undefined in _scope
-
-        Examples:
-            >>> scope = {"X": MArray("Y")}
-            >>> rt.get_indirection_source("X", scope)
-            "Y"
-            >>> scope = {"X": MArray()}; scope["X"][1] = "Z"
-            >>> rt.get_indirection_source("X(1)", scope)
-            "Z"
-            >>> rt.get_indirection_source("UNDEF", {})
-            IndirectionError: Undefined local variable: UNDEF
-        """
-        # Check if varname is subscripted (contains parentheses)
-        if "(" in varname:
-            # For subscripted variables, use get_var which handles the lookup
-            value = self.get_var(varname, _scope)
-            if value == "":
-                # get_var returns "" for undefined - convert to error for indirection
-                raise IndirectionError(
-                    varname,
-                    f"Undefined local variable: {varname}",
-                    variable_name=varname,
-                )
-            return str(value) if value is not None else ""
-
-        # Translate MUMPS varname to Python scope key
-        # MUMPS %Z is stored in _scope as "_pct_Z"
-        scope_key = _translate_label_to_func(varname)
-
-        # Simple variable - check existence in _scope
-        if scope_key not in _scope:
-            raise IndirectionError(
-                varname,
-                f"Undefined local variable: {varname}",
-                variable_name=varname,
-            )
-
-        raw_value = _scope[scope_key]
-
-        # Extract value from MArray if present
-        if isinstance(raw_value, MArray):
-            value = raw_value.value
-        else:
-            value = raw_value
-
-        # Convert to string for use as variable name
-        return str(value) if value is not None else ""
-
-    def resolve_for_indirection(self, varname: str, _scope: Dict[str, Any]) -> str:
-        """Resolve name indirection for FOR loop variables with nested resolution.
-
-        Spec 017: FOR loop indirection like F @A=1:1:3 where A's value may itself
-        be an indirection expression (e.g., "@$E(""ABCDEF"",3)" which evaluates
-        to "C", making the loop variable C).
-
-        This method:
-        1. Gets the value of the source variable (validates existence)
-        2. Resolves any nested indirection (value starting with @)
-        3. Returns the final variable name for the FOR loop
-
-        Args:
-            varname: Source variable name for the indirection
-            _scope: Current scope dictionary
-
-        Returns:
-            str: Final resolved variable name for the FOR loop
-
-        Raises:
-            IndirectionError: If varname is undefined or resolution fails
-
-        Examples:
-            >>> scope = {"A": MArray("B"), "B": MArray(0)}
-            >>> rt.resolve_for_indirection("A", scope)  # Simple case
-            "B"
-            >>> scope = {"A": MArray('@$E("XYZ",2)'), "Y": MArray(0)}
-            >>> rt.resolve_for_indirection("A", scope)  # Nested case
-            "Y"
-        """
-        # Get the source variable's value (validates existence)
-        value = self.get_indirection_source(varname, _scope)
-
-        # If the value is itself an indirection, resolve it
-        if value.startswith("@"):
-            return self.resolve_nested_indirection(value, _scope)
-
-        return value
-
-    def resolve_indirection_name(
-        self, varname: str, levels: int, _scope: Dict[str, Any]
-    ) -> str:
-        """Resolve multi-level indirection and return the final variable NAME.
-
-        For FOR loop indirection targets: F @A, F @@A, F @@@A.
-        Unlike resolve_indirection which returns the VALUE, this returns the NAME
-        of the variable that should be used for iteration.
-
-        For levels=1 (@A): A contains "B" → return "B"
-        For levels=2 (@@A): A="X", X="Y" → return "Y"
-        For levels=1 with nested (@A where A="@$E('XYZ',2)"): → return "Y"
-
-        Args:
-            varname: Starting variable name
-            levels: Number of indirection levels (1 for @, 2 for @@, etc.)
-            _scope: Current scope dictionary
-
-        Returns:
-            str: Final variable name to use for iteration
-
-        Raises:
-            IndirectionError: If any variable is undefined or resolution fails
-        """
-        current_name = varname
-
-        for level in range(levels):
-            # Get the value of the current variable
-            value = self.get_indirection_source(current_name, _scope)
-
-            # If the value starts with @, resolve the nested indirection
-            if value.startswith("@"):
-                value = self.resolve_nested_indirection(value, _scope)
-
-            if not value:
-                raise IndirectionError(
-                    varname,
-                    f"empty variable name at indirection level {level + 1}",
-                )
-
-            # The value becomes the name for the next level (or final result)
-            current_name = value
-
-        return current_name
-
-    def append_subscripts(
-        self,
-        base_name: str,
-        *additional_subscripts: Any,
-        _scope: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        """Append additional subscripts to a variable name.
-
-        Spec 017 Phase 6: Properly handles name indirection with subscripts
-        like @A@(1,2) where A="B(3,4)" should produce "B(3,4,1,2)".
-
-        The naive string concatenation "B(3,4)" + "(1,2)" = "B(3,4)(1,2)"
-        is invalid. This method properly parses and merges subscripts.
-
-        When base_name starts with @, this indicates an indirection pattern.
-        If _scope is provided, we resolve the indirection first, then append
-        subscripts to the resolved variable name.
-
-        Args:
-            base_name: Variable name possibly with existing subscripts
-            *additional_subscripts: Additional subscripts to append
-            _scope: Optional scope for resolving @ patterns
-
-        Returns:
-            str: Variable name with merged subscripts
-
-        Examples:
-            >>> rt.append_subscripts("X", 1, 2)
-            "X(1,2)"
-            >>> rt.append_subscripts("ARR(1)", 2, 3)
-            "ARR(1,2,3)"
-            >>> rt.append_subscripts("B(1,1)", 3)
-            "B(1,1,3)"
-            >>> rt.append_subscripts("@C", 2, _scope=scope)  # Resolves @C first
-            "A(1,1,2)"  # If @C resolves to A(1,1)
-        """
-        if not additional_subscripts:
-            return base_name
-
-        # If base_name starts with @, resolve it first to get the actual variable name
-        if base_name.startswith("@") and _scope is not None:
-            resolved = self.resolve_nested_indirection(base_name, _scope)
-            base_name = resolved
-
-        # Parse existing subscripts from base_name
-        existing_base, existing_subs = _parse_subscripted_name(base_name)
-
-        # Combine existing subscripts with new ones
-        all_subs: list[Any] = []
-        if existing_subs:
-            all_subs.extend(existing_subs)
-        all_subs.extend(additional_subscripts)
-
-        # Format subscripts - handle strings properly
-        formatted_subs = []
-        for sub in all_subs:
-            if isinstance(sub, str):
-                # Quote strings for proper variable name format
-                escaped = sub.replace('"', '""')
-                formatted_subs.append(f'"{escaped}"')
-            else:
-                formatted_subs.append(str(sub))
-
-        return f"{existing_base}({','.join(formatted_subs)})"
-
     def get_data(self, name: str, _scope: Dict[str, Any]) -> int:
         """Get $DATA value for variable by name (indirection support).
 
@@ -2325,6 +2081,114 @@ class MUMPSRuntime:
             return ""
         return m_order(arr, subs, direction)
 
+    def get_name(
+        self,
+        name: str,
+        extra_subscripts: tuple,
+        _scope: Dict[str, Any],
+        depth: int | None = None,
+    ) -> str:
+        """Get $NAME value for variable by name (indirection support).
+
+        Feature: 018-unified-variable-system
+
+        For $NAME(@A) where A="X(1,2)", returns "X(1,2)".
+        For $NAME(@A@(3)) where A="X(1,2)", returns "X(1,2,3)".
+        For $NAME(@A,2) where A="X(1,2,3)", returns "X(1,2)".
+
+        Args:
+            name: Variable name (e.g., "X(1,2)", "^G")
+            extra_subscripts: Additional subscripts to append
+            _scope: Current scope dictionary
+            depth: Optional depth parameter (None = all subscripts)
+
+        Returns:
+            Canonical name string
+        """
+        from m2py.runtime.helpers import m_name
+
+        if not name:
+            return ""
+
+        # Handle nested indirection
+        if name.startswith("@"):
+            name = self.resolve_nested_indirection(name, _scope)
+            if not name:
+                return ""
+
+        # Parse the name into base + subscripts
+        base_name, name_subs = _parse_subscripted_name(name)
+        evaluated_name_subs = _evaluate_subscripts(name_subs, _scope, runtime=self)
+
+        # Combine with extra subscripts
+        all_subs = (
+            tuple(evaluated_name_subs) if evaluated_name_subs else ()
+        ) + extra_subscripts
+
+        # Check if global
+        is_global = base_name.startswith("^")
+        if is_global:
+            base_name = base_name[1:]
+
+        # Use m_name to build canonical form
+        return m_name(base_name, all_subs, depth=depth, is_global=is_global)
+
+    def get_query(self, name: str, subscripts: tuple, _scope: Dict[str, Any]) -> str:
+        """Get $QUERY value for variable by name (indirection support).
+
+        Feature: 018-unified-variable-system
+
+        Args:
+            name: Variable name (e.g., "A", "^G")
+            subscripts: Starting subscripts for query
+            _scope: Current scope dictionary
+
+        Returns:
+            Full variable reference of next valued node, or "" if none
+        """
+        from m2py.runtime.helpers import m_query, m_query_global
+
+        if not name:
+            return ""
+
+        # Handle nested indirection: if name starts with @, resolve it first
+        if name.startswith("@"):
+            name = self.resolve_nested_indirection(name, _scope)
+            if not name:
+                return ""
+
+        # Parse any subscripts that are part of the resolved name
+        if "(" in name:
+            base_name, name_subs = _parse_subscripted_name(name)
+            # Combine name subscripts with additional subscripts
+            evaluated_name_subs = _evaluate_subscripts(name_subs, _scope, runtime=self)
+            all_subs = (
+                tuple(str(s) for s in evaluated_name_subs) + subscripts
+                if evaluated_name_subs is not None
+                else subscripts
+            )
+        else:
+            base_name = name
+            all_subs = subscripts
+
+        # Handle global variables
+        if base_name.startswith("^"):
+            key = base_name[1:]
+            if not key:
+                # Naked reference
+                resolved_name, full_subs = self._globals.resolve_naked(all_subs)
+                return m_query_global(self._globals, resolved_name, full_subs)
+            return m_query_global(self._globals, key, all_subs)
+
+        # Handle local variables
+        arr = _scope.get(base_name, MArray())
+        if not isinstance(arr, MArray):
+            return ""
+        return m_query(arr, base_name, all_subs)
+
+    # Variable access by name string - used AFTER indirection resolution.
+    # Codegen calls this when the variable name is dynamically computed (e.g., FOR @A loops).
+    # Note: This is NOT deprecated - it's the intended way to access a variable by name string.
     def get_var(self, name: str, _scope: Dict[str, Any]) -> Any:
         """Get variable value by name (name indirection).
 
@@ -2406,7 +2270,7 @@ class MUMPSRuntime:
             Variable value, or "" if undefined
         """
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(name)
+        scope_key = NameTranslator.to_python(name)
         raw_value = _scope.get(scope_key, "")
 
         # Evaluate subscripts - resolve variable references like "I" to their values
@@ -2455,6 +2319,9 @@ class MUMPSRuntime:
         result = self._globals.get(key, subs)
         return result if result is not None else ""
 
+    # Variable write by name string - used AFTER indirection resolution.
+    # Codegen calls this when the variable name is dynamically computed (e.g., FOR @A loops).
+    # Note: This is NOT deprecated - it's the intended way to write a variable by name string.
     def set_var(self, name: str, value: Any, _scope: Dict[str, Any]) -> None:
         """Set variable value by name (name indirection).
 
@@ -2527,6 +2394,370 @@ class MUMPSRuntime:
         # Handle local variables
         self._set_local_var(base_name, subscripts, value, _scope)
 
+    def set_indirected(
+        self,
+        source: str,
+        value: Any,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> None:
+        """Set variable via indirection using unified components.
+
+        Feature: 018-unified-variable-system (T040, T111)
+        Replaces scattered set_var + resolve calls with unified approach.
+
+        Uses IndirectionResolver.resolve_to_name() to determine the target,
+        then CurrentScope.set() to perform the assignment.
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X),
+                or for levels=0, the already-resolved target name directly
+            value: Value to set
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+                Use levels=0 when source is already the resolved target name
+                (e.g., from NakedGlobal expressions where the value was computed)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Raises:
+            VarExpectedError: If resolved name is not a valid variable name
+
+        Examples:
+            # @X=5 where X="Y"
+            set_indirected("X", 5, scope, levels=1)
+            # Sets Y=5
+
+            # @@X=5 where X="Y", Y="Z"
+            set_indirected("X", 5, scope, levels=2)
+            # Sets Z=5
+
+            # @X@(1,2)=5 where X="A"
+            set_indirected("X", 5, scope, levels=1, per_level_subscripts=[[1, 2]])
+            # Sets A(1,2)=5
+
+            # NakedGlobal: @^(1)=5 where ^(1) resolves to "X"
+            set_indirected("X", 5, scope, levels=0)
+            # Sets X=5 directly (source is already the target name)
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Handle levels=0: source is already the resolved target name
+        # This is used for NakedGlobal expressions where the target name
+        # was computed during code generation
+        if levels == 0:
+            # Validate that source is a valid variable name
+            if not resolver._is_valid_var_name(source):
+                from m2py.core.exceptions import VarExpectedError
+
+                raise VarExpectedError(source)
+            target = source
+        else:
+            # Resolve to get target variable NAME (not value)
+            target = resolver.resolve_to_name(
+                source, levels=levels, per_level_subscripts=per_level_subscripts
+            )
+
+        # Convert value to string (MUMPS semantics - all values are strings)
+        str_value = str(value)
+
+        # Handle global variables
+        if target.startswith("^"):
+            # Parse subscripts from target if present
+            base_name, subscripts = _parse_subscripted_name(target)
+            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            key = base_name[1:]  # Remove ^ prefix
+            self._globals.set(key, subs, str_value)
+            return
+
+        # Set via CurrentScope for locals
+        cs.set(target, str_value)
+
+    def get_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> Any:
+        """Get variable value via indirection using unified components.
+
+        Feature: 018-unified-variable-system (T104, T111)
+        Replaces scattered get_var + resolve calls with unified approach.
+
+        For READ operations (getting values), we need different semantics than
+        WRITE operations (setting values). For N levels of indirection:
+        - READ: Dereference N times, returning the final VALUE
+        - WRITE: Resolve N-1 times to get the target NAME to write to
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X),
+                or for levels=0, the already-resolved target name directly
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+                Use levels=0 when source is already the resolved target name
+                (e.g., from NakedGlobal expressions where the value was computed)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Returns:
+            Value at the resolved variable, or "" if undefined
+
+        Examples:
+            # @X where X="Y", Y=5
+            get_indirected("X", scope, levels=1)
+            # Returns 5
+
+            # @@X where X="Y", Y="Z", Z=99
+            get_indirected("X", scope, levels=2)
+            # Returns 99
+
+            # @X@(1,2) where X="A", A(1,2)="hello"
+            get_indirected("X", scope, levels=1, per_level_subscripts=[[1, 2]])
+            # Returns "hello"
+
+            # NakedGlobal: @^(1) where ^(1) resolves to "X"
+            get_indirected("X", scope, levels=0)
+            # Returns value of X directly (source is already the target name)
+        """
+        # Handle levels=0: source is already the resolved target name
+        # This is used for NakedGlobal expressions where the target name
+        # was computed during code generation
+        if levels == 0:
+            return self.get_var(source, _scope)
+
+        # Use unified IndirectionResolver for all cases
+        # Feature: 018-unified-variable-system (T115)
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+        from m2py.core.exceptions import LVUNDEFError
+
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # First resolve to get the target NAME
+        try:
+            target_name = resolver.resolve_to_name(
+                source,
+                levels=levels,
+                per_level_subscripts=per_level_subscripts,
+            )
+        except LVUNDEFError as e:
+            # Convert LVUNDEF to IndirectionError to preserve backward compatibility
+            # The source variable in the indirection chain is undefined
+            raise IndirectionError(
+                source,
+                f"undefined variable in indirection chain: {e.name}",
+                variable_name=e.name,
+            )
+
+        # Validate the target exists (MUMPS UNDEF semantics)
+        # Skip validation for globals (they return empty if undefined)
+        if not target_name.startswith("^"):
+            # Parse subscripted names properly
+            base_name = target_name.split("(")[0] if "(" in target_name else target_name
+            scope_key = NameTranslator.to_python(base_name)
+            if scope_key not in _scope:
+                raise IndirectionError(
+                    source,
+                    "undefined final target variable in indirection",
+                    variable_name=target_name,
+                )
+
+        # Now get the value from the target
+        return self.get_var(target_name, _scope)
+
+    def kill_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> None:
+        """Kill variable via indirection using unified components.
+
+        Feature: 018-unified-variable-system (T086)
+        Replaces scattered kill_var + resolve calls with unified approach.
+
+        Uses IndirectionResolver.resolve_to_name() to determine the target,
+        then kills the variable/global appropriately.
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Examples:
+            # K @X where X="Y"
+            kill_indirected("X", scope, levels=1)
+            # Kills Y
+
+            # K @@X where X="Y", Y="Z"
+            kill_indirected("X", scope, levels=2)
+            # Kills Z
+
+            # K @X@(1,2) where X="A"
+            kill_indirected("X", scope, levels=1, per_level_subscripts=[[1, 2]])
+            # Kills A(1,2)
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve to get target variable NAME (not value)
+        target = resolver.resolve_to_name(
+            source, levels=levels, per_level_subscripts=per_level_subscripts
+        )
+
+        # Handle global variables
+        if target.startswith("^"):
+            # Parse subscripts from target if present
+            base_name, subscripts = _parse_subscripted_name(target)
+            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            key = base_name[1:]  # Remove ^ prefix
+            self._globals.kill(key, subs)
+            return
+
+        # Handle naked global reference
+        if target == "^":
+            raise IndirectionError(target, "naked reference requires subscripts")
+
+        # Kill local variable via CurrentScope
+        cs.kill(target)
+
+    def resolve_for_target(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> str:
+        """Resolve FOR loop indirection target using unified components.
+
+        Feature: 018-unified-variable-system (T089)
+        Replaces resolve_indirection_name for FOR loop variable indirection.
+
+        FOR loop indirection like F @A=1:1:3 requires resolving to get the
+        target variable NAME (not value). For example, if A="B", we need
+        to return "B" as the variable name to iterate.
+
+        Uses IndirectionResolver.resolve_to_name() to determine the target.
+
+        Args:
+            source: Source variable name for indirection (e.g., "A" for @A)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @A, 2 for @@A, etc.)
+            per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
+
+        Returns:
+            Target variable name as string
+
+        Examples:
+            # F @A=1:1:3 where A="B"
+            resolve_for_target("A", scope, levels=1)
+            # Returns "B"
+
+            # F @@A=1:1:3 where A="X", X="Y"
+            resolve_for_target("A", scope, levels=2)
+            # Returns "Y"
+
+            # F @A@(1)=1:1:3 where A="B"
+            resolve_for_target("A", scope, levels=1, per_level_subscripts=[[1]])
+            # Returns "B(1)"
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve to get target variable NAME (not value)
+        target = resolver.resolve_to_name(
+            source, levels=levels, per_level_subscripts=per_level_subscripts
+        )
+
+        return target
+
+    def evaluate_argument_indirection(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+        treat_empty_as_truthy: bool = False,
+    ) -> Any:
+        """Evaluate argument indirection using unified components.
+
+        Feature: 018-unified-variable-system (T050, T051)
+        This is the FIX for Challenge 6 bug.
+
+        Argument indirection evaluates the resolved value AS AN EXPRESSION,
+        not as a variable name to look up. For example:
+        - I @A where A="1=0" → evaluates "1=0" → 0 (FALSE)
+        - I @A where A="X>5" and X=10 → evaluates "X>5" → 1 (TRUE)
+
+        The OLD behavior passed the string "1=0" to m_truth(), which
+        converted to 1 (TRUE) because it starts with "1".
+
+        The CORRECT behavior parses "1=0" as a MUMPS expression and
+        evaluates it, resulting in 0 (FALSE) because 1 ≠ 0.
+
+        Uses IndirectionResolver.resolve() with context=ARGUMENT to
+        properly evaluate the expression.
+
+        Args:
+            source: Source variable name for indirection (e.g., "A" for @A)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @A, 2 for @@A, etc.)
+            per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
+            treat_empty_as_truthy: If True, empty string resolves to 1 (T052 for IF)
+                                   If False, empty string raises error (WRITE, SET, etc.)
+
+        Returns:
+            Evaluated result of the expression
+
+        Examples:
+            # I @A where A="1=0"
+            evaluate_argument_indirection("A", scope, levels=1)
+            # Returns 0 (FALSE) because 1=0 is false
+
+            # I @A where A="X>5" and X=10
+            evaluate_argument_indirection("A", scope, levels=1)
+            # Returns 1 (TRUE) because 10>5 is true
+
+            # I @@A where A="B", B="1=1"
+            evaluate_argument_indirection("A", scope, levels=2)
+            # Returns 1 (TRUE) because 1=1 is true
+
+            # I @A where A="" (T052)
+            evaluate_argument_indirection("A", scope, levels=1, treat_empty_as_truthy=True)
+            # Returns 1 (TRUE) - empty indirection in IF is TRUE
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionContext, IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve with ARGUMENT context to evaluate expression
+        return resolver.resolve(
+            source,
+            levels=levels,
+            context=IndirectionContext.ARGUMENT,
+            per_level_subscripts=per_level_subscripts,
+            treat_empty_as_truthy=treat_empty_as_truthy,
+        )
+
     def _set_local_var(
         self,
         name: str,
@@ -2543,7 +2774,7 @@ class MUMPSRuntime:
             _scope: Scope dictionary
         """
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(name)
+        scope_key = NameTranslator.to_python(name)
 
         # Evaluate subscripts - resolve variable references like "I" to their values
         eval_subs = _evaluate_subscripts(subscripts, _scope)
@@ -2653,7 +2884,7 @@ class MUMPSRuntime:
 
         # Handle local variables
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(base_name)
+        scope_key = NameTranslator.to_python(base_name)
         if eval_subs is None:
             # Kill entire variable - remove from scope
             _scope.pop(scope_key, None)
@@ -2734,7 +2965,7 @@ class MUMPSRuntime:
 
         # Handle local variables
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(base_name)
+        scope_key = NameTranslator.to_python(base_name)
         if scope_key not in _scope or not isinstance(_scope[scope_key], MArray):
             _scope[scope_key] = MArray()
 
@@ -2801,7 +3032,7 @@ class MUMPSRuntime:
 
         # Handle local variables
         # Translate MUMPS name to Python scope key (%Z -> _pct_Z)
-        scope_key = _translate_label_to_func(base_name)
+        scope_key = NameTranslator.to_python(base_name)
         raw_value = _scope.get(scope_key)
         if raw_value is None or not isinstance(raw_value, MArray):
             return None
@@ -2813,397 +3044,19 @@ class MUMPSRuntime:
             # Return subtree at subscript
             return raw_value[eval_subs]
 
-    def resolve_argument_indirection(
-        self, initial_value: str, levels: int, _scope: Dict[str, Any]
-    ) -> Any:
-        """Resolve argument-level indirection for IF conditions.
-
-        Argument indirection resolves the value and evaluates it as an expression,
-        NOT as a variable name to look up. This is different from name indirection:
-        - Name indirection (@A): A's value is used as a VARIABLE NAME to look up
-        - Argument indirection (I @A): A's value is EVALUATED as an expression
-
-        For simple values (numbers, booleans), the value IS the result.
-        For complex expressions stored as strings, we evaluate them at runtime.
-
-        Args:
-            initial_value: The value from the source variable (already resolved once)
-            levels: Number of additional indirection levels to resolve
-            _scope: Current scope dictionary
-
-        Returns:
-            Final resolved value to be evaluated as truth value
-
-        Examples:
-            >>> scope = {"A": "1", "B": "A", "C": "X>5"}
-            >>> # I @A where A=1: initial_value="1", levels=0
-            >>> rt.resolve_argument_indirection("1", 0, scope)
-            "1"  # Returned to m_truth(), which evaluates 1 as truthy
-            >>> # I @@B where B="A" and A="1": initial_value="A", levels=1
-            >>> rt.resolve_argument_indirection("A", 1, scope)
-            "1"  # A resolves to "1"
-        """
-        current_value = initial_value
-
-        for level in range(levels):
-            # For argument indirection, the current_value should be treated as
-            # a variable name to look up, getting the next value in the chain
-            if not current_value:
-                raise IndirectionError(
-                    str(initial_value),
-                    f"empty value in argument indirection chain at level {level}",
-                )
-
-            # Try to look up the value as a variable name
-            # If it's not a valid var name, return it as-is
-            if current_value.startswith("@"):
-                # Nested indirection - resolve it
-                resolved_name = self.resolve_nested_indirection(current_value, _scope)
-                current_value = self.get_var(resolved_name, _scope)
-            elif self._is_valid_var_name(current_value):
-                # Valid variable name - look it up
-                current_value = self.get_var(current_value, _scope)
-            else:
-                # Not a variable name - this IS the value (e.g., "1" or "X>5")
-                break
-
-            # Convert to string for next iteration
-            if not isinstance(current_value, str):
-                current_value = str(current_value)
-
-        return current_value
-
     def _is_valid_var_name(self, name: str) -> bool:
-        """Check if name looks like a valid MUMPS variable name."""
-        if not name:
-            return False
-        # Naked reference like "^(3)"
-        if name.startswith("^("):
-            return True
-        # Global or local: must start with ^ or letter or % (system vars)
-        if name.startswith("^"):
-            return len(name) > 1 and (
-                name[1].isalpha() or name[1] == "(" or name[1] == "%"
-            )
-        return name[0].isalpha() or name[0] == "%"
+        """Check if name looks like a valid MUMPS variable name.
 
-    def resolve_indirection(
-        self, expr: str, levels: int, _scope: Dict[str, Any]
-    ) -> Any:
-        """Resolve N levels of name indirection.
-
-        Spec 012 (T009): Resolves multi-level indirection like @X, @@X, @@@X.
-
-        MUMPS indirection semantics:
-        - @X means: get value of X, if that's a valid var name get its value
-        - @@X means: get value of @X, if that's a valid var name get its value
-        - Each @ adds one level of dereferencing
-        - If an intermediate value is not a valid var name (e.g., numeric), return it as-is
-
-        For levels=1 (@X): X → value → (if var name) → final value
-        For levels=2 (@@X): X → name1 → name2 → (if var name) → final value
+        Feature: 018-unified-variable-system
+        Now delegates to core.names.is_valid_varname() for unified validation.
 
         Args:
-            expr: Initial variable name to start resolving
-            levels: Number of indirection levels (1 for @, 2 for @@, etc.)
-            _scope: Current scope dictionary
+            name: Variable name to validate (may include subscripts)
 
         Returns:
-            Final resolved value
-
-        Raises:
-            IndirectionError: If any resolution step fails on a valid var name
-
-        Examples:
-            >>> scope = {"A": "B", "B": "C", "C": 100}
-            >>> rt.resolve_indirection("A", 1, scope)  # @A: A → "B" → C
-            "C"
-            >>> rt.resolve_indirection("A", 2, scope)  # @@A: A → "B" → "C" → 100
-            100
+            True if valid MUMPS variable name
         """
-        if levels < 1:
-            raise IndirectionError(
-                expr, f"indirection levels must be >= 1, got {levels}"
-            )
-
-        current_name = expr
-
-        def _is_valid_var_name(name: str) -> bool:
-            """Check if name looks like a valid MUMPS variable name."""
-            if not name:
-                return False
-            # Naked reference like "^(3)"
-            if name.startswith("^("):
-                return True
-            # Global or local: must start with ^ or letter or % (system vars)
-            if name.startswith("^"):
-                return len(name) > 1 and (
-                    name[1].isalpha() or name[1] == "(" or name[1] == "%"
-                )
-            return name[0].isalpha() or name[0] == "%"
-
-        # Each level of indirection does one lookup in the chain
-        # If an intermediate value is not a valid var name, stop early
-
-        for level in range(levels):
-            # Check if current_name starts with @ - it needs to be resolved as an indirection pattern
-            if current_name.startswith("@"):
-                # Resolve the indirection pattern to get the target variable name
-                resolved_name = self.resolve_nested_indirection(current_name, _scope)
-                # Now get the VALUE at that resolved name
-                value = self.get_var(resolved_name, _scope)
-                if not isinstance(value, str):
-                    value = str(value)
-                current_name = value
-                continue
-
-            # Check if current_name is a valid var name before trying to look it up
-            # If not valid (e.g., numeric string), stop the chain and return as-is
-            if not _is_valid_var_name(current_name):
-                return current_name
-
-            # Validate the variable exists before dereferencing
-            # Skip validation for naked references (base_name == "^") - get_var handles those
-            base_name, subscripts = _parse_subscripted_name(current_name)
-            if base_name == "^":
-                # Naked reference like "^(3)" - get_var will resolve using naked indicator
-                pass
-            elif base_name.startswith("^"):
-                # Global: check via GlobalStorageBackend
-                # Need to check the actual subscripted value, not just the root
-                key = base_name[1:]
-                # Evaluate subscripts - resolve variable references
-                eval_subs = _evaluate_subscripts(subscripts, _scope)
-                subs = tuple(str(s) for s in eval_subs) if eval_subs else ()
-                if self._globals.get(key, subs) is None:
-                    raise IndirectionError(
-                        expr,
-                        f"undefined variable in indirection chain at level {level}",
-                        variable_name=current_name,
-                    )
-            else:
-                # Local: check in _scope (translate MUMPS name to Python scope key)
-                scope_key = _translate_label_to_func(base_name)
-                if scope_key not in _scope:
-                    raise IndirectionError(
-                        expr,
-                        f"undefined variable in indirection chain at level {level}",
-                        variable_name=current_name,
-                    )
-
-            # Get the value of the current variable
-            value = self.get_var(current_name, _scope)
-
-            # Convert to string if not already (for use as variable name in next level)
-            if not isinstance(value, str):
-                value = str(value)
-
-            if not value:
-                raise IndirectionError(
-                    expr,
-                    f"empty value in indirection chain at level {level}",
-                    variable_name=current_name,
-                    variable_value=value,
-                )
-
-            # This value becomes the name for the next level
-            current_name = value
-
-        # After all indirection levels, get the final value
-        # current_name now holds a variable name (or non-var-name value)
-
-        # If current_name starts with @, resolve it as an indirection pattern and get value
-        if current_name.startswith("@"):
-            resolved_name = self.resolve_nested_indirection(current_name, _scope)
-            return self.get_var(resolved_name, _scope)
-
-        # If it's not a valid var name, return it as-is
-        if not _is_valid_var_name(current_name):
-            return current_name
-
-        # It's a valid var name, so look it up
-        # Skip validation for naked references (base_name == "^") - get_var handles those
-        base_name, subscripts = _parse_subscripted_name(current_name)
-        # Evaluate subscripts - resolve variable references like "I" to their values
-        eval_subs = _evaluate_subscripts(subscripts, _scope)
-        if base_name == "^":
-            # Naked reference - get_var will resolve
-            pass
-        elif base_name.startswith("^"):
-            key = base_name[1:]
-            subs = tuple(str(s) for s in eval_subs) if eval_subs else ()
-            if self._globals.get(key, subs) is None:
-                raise IndirectionError(
-                    expr,
-                    "undefined final target variable in indirection",
-                    variable_name=current_name,
-                )
-        else:
-            if base_name not in _scope:
-                raise IndirectionError(
-                    expr,
-                    "undefined final target variable in indirection",
-                    variable_name=current_name,
-                )
-
-        return self.get_var(current_name, _scope)
-
-    def resolve_with_subscripts(
-        self,
-        base_name: str,
-        subscripts: List[Any],
-        additional_levels: int,
-        _scope: Dict[str, Any],
-    ) -> str:
-        """Resolve indirection with subscripts appended before additional resolution.
-
-        Used for cases like @@^VV@(3)=val where:
-        1. base_name is already the resolved value from inner indirection (e.g., "^VV(1)")
-        2. Append subscripts (3) → "^VV(1,3)"
-        3. Resolve additional_levels more times → value of "^VV(1,3)" = "^VV(2,3)"
-
-        Special handling for naked references:
-        - If base_name is a naked reference string like "^(5)", resolve it to a full name
-          using the current naked indicator (e.g., "^V(5)"), then append subscripts
-        - This handles cases like @@^(1)@(n) where the inner indirection yields a naked
-          reference string that needs to be interpreted as a name
-
-        Args:
-            base_name: Initial variable name string (already resolved from inner indirection)
-            subscripts: List of subscript values to append (may be numbers or strings)
-            additional_levels: Number of additional indirection levels to resolve
-            _scope: Current scope dictionary
-
-        Returns:
-            The final resolved name string
-
-        Raises:
-            IndirectionError: If any resolution step fails
-        """
-        # Check if base_name is a naked reference string like "^(5)"
-        # This happens when inner indirection yields a value that IS a naked reference
-        parsed_base, parsed_subs = _parse_subscripted_name(base_name)
-        if parsed_base == "^" and parsed_subs is not None:
-            # base_name is a naked reference string - resolve to full name
-            # DON'T get its value - treat the resolved name as the base for subscripts
-            # Evaluate subscripts first (they may contain variable references like "I")
-            eval_subs = _evaluate_subscripts(parsed_subs, _scope)
-            naked_subs = tuple(str(s) for s in eval_subs) if eval_subs else ()
-            resolved_name, full_subs = self._globals.resolve_naked(naked_subs)
-            # Build the full name string
-            if full_subs:
-                current_name = (
-                    f"^{resolved_name}({','.join(str(s) for s in full_subs)})"
-                )
-            else:
-                current_name = f"^{resolved_name}"
-        else:
-            # Normal variable - get its value first, which becomes the name to append to
-            current_name = self.get_var(base_name, _scope)
-            if not isinstance(current_name, str):
-                current_name = str(current_name)
-
-            if not current_name:
-                raise IndirectionError(
-                    base_name,
-                    "empty value from base variable",
-                    variable_name=base_name,
-                )
-
-        # Append subscripts using append_subscripts
-        # Keep subscripts as their original types (int/float stay numeric, strings stay strings)
-        # so append_subscripts knows how to format them correctly
-        current_name = self.append_subscripts(current_name, *subscripts)
-
-        # Resolve additional_levels times
-        for level in range(additional_levels):
-            value = self.get_var(current_name, _scope)
-            if not isinstance(value, str):
-                value = str(value)
-            if not value:
-                raise IndirectionError(
-                    base_name,
-                    f"empty value at level {level + 1}",
-                    variable_name=current_name,
-                )
-            current_name = value
-
-        return current_name
-
-    def resolve_with_per_level_subscripts(
-        self,
-        base_name: str,
-        subscripts_per_level: List[List[Any]],
-        _scope: Dict[str, Any],
-        skip_initial_resolution: bool = False,
-    ) -> str:
-        """Resolve multi-level indirection with subscripts at each level.
-
-        Used for cases like @@X@(1,2)@(5,6)=val where:
-        1. Get value of X → "A"
-        2. Append inner subscripts (1,2) → "A(1,2)"
-        3. Resolve → get value of A(1,2) → "B(3,4)"
-        4. Append outer subscripts (5,6) → "B(3,4,5,6)"
-        5. This is the final target
-
-        The subscripts_per_level is ordered from innermost to outermost.
-        For @@X@(1,2)@(5,6), it would be [[1, 2], [5, 6]]:
-        - [1, 2] are applied after getting X's value
-        - [5, 6] are applied after the first resolution
-
-        Args:
-            base_name: Initial variable name to start with, OR the already-resolved value
-            subscripts_per_level: List of subscript lists, one per level (inner to outer)
-            _scope: Current scope dictionary
-            skip_initial_resolution: If True, base_name is already the resolved value,
-                                    so skip the first get_var call. Used when the
-                                    indirection source is a global variable whose
-                                    value was already obtained.
-
-        Returns:
-            The final resolved name string
-
-        Raises:
-            IndirectionError: If any resolution step fails
-        """
-        # Step 1: Get value of base_name (unless it's already the resolved value)
-        if skip_initial_resolution:
-            current_name = base_name
-        else:
-            current_name = self.get_var(base_name, _scope)
-
-        if not isinstance(current_name, str):
-            current_name = str(current_name)
-
-        if not current_name:
-            raise IndirectionError(
-                base_name,
-                "empty value from base variable",
-                variable_name=base_name,
-            )
-
-        # Process each level of subscripts
-        # For n subscript levels, we need n-1 resolutions between them
-        # (the last subscript level just appends without further resolution)
-        for i, subscripts in enumerate(subscripts_per_level):
-            if subscripts:
-                # Append subscripts at this level
-                current_name = self.append_subscripts(current_name, *subscripts)
-
-            # If there are more levels after this, resolve
-            if i < len(subscripts_per_level) - 1:
-                value = self.get_var(current_name, _scope)
-                if not isinstance(value, str):
-                    value = str(value)
-                if not value:
-                    raise IndirectionError(
-                        base_name,
-                        f"empty value at level {i + 1}",
-                        variable_name=current_name,
-                    )
-                current_name = value
-
-        return current_name
+        return _core_is_valid_varname(name, allow_subscripts=True)
 
     def compile_pattern_indirect(self, pattern_str: str) -> str:
         """Compile MUMPS pattern string to regex at runtime.
@@ -3463,7 +3316,7 @@ class MUMPSRuntime:
                     evaluated_label_subs = _evaluate_subscripts(label_subs, scope, self)
 
                     # Translate MUMPS name to Python scope key (%X -> _pct_X)
-                    py_label_name = _translate_label_to_func(label_base)
+                    py_label_name = NameTranslator.to_python(label_base)
                     label_var = scope.get(py_label_name)
                     if label_var is not None:
                         if isinstance(label_var, MArray):
@@ -3566,7 +3419,7 @@ class MUMPSRuntime:
                 value = self.globals.get(global_name, ())
         else:
             # Translate MUMPS name to Python scope key (%X -> _pct_X)
-            py_name = _translate_label_to_func(base_name)
+            py_name = NameTranslator.to_python(base_name)
             var = scope.get(py_name)
             if var is None:
                 raise IndirectionError(
@@ -4414,4 +4267,7 @@ __all__ = [
     # Spec 012: Indirection & XECUTE
     "IndirectionError",
     "CallTarget",
+    # Spec 018: SubscriptVarRef for subscript variable references
+    "SubscriptVarRef",
+    "VarRef",  # Backward compatibility alias for SubscriptVarRef
 ]

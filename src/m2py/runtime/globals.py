@@ -24,6 +24,9 @@ from m2py.runtime.helpers import (
     m_format_output,
 )
 
+# Spec 018: Use SubscriptCanonicalizer for proper subscript handling
+from m2py.core.subscripts import SubscriptCanonicalizer
+
 if TYPE_CHECKING:
     from m2py.runtime import MArray
 
@@ -445,8 +448,14 @@ class InMemoryGlobalStorage:
         MUMPS subscripts are always strings internally. Numbers are
         converted to their MUMPS canonical string representation
         (e.g., 0.001 → ".001", 1.0 → "1").
+
+        Non-canonical numeric strings like "01" are PRESERVED because
+        they represent different nodes than their canonical equivalents.
+        e.g., ^A("01") is a different node than ^A(1).
+
+        Spec 018: Uses SubscriptCanonicalizer for proper MUMPS semantics.
         """
-        return m_format_output(subscript)
+        return SubscriptCanonicalizer.canonicalize(subscript)
 
     def _canonicalize_subscripts(
         self, subscripts: tuple[str | int | float, ...]

@@ -12,28 +12,34 @@ class TestIndirectionCodegen:
     """Codegen-level tests for indirection code generation (§7.3)."""
 
     def test_name_indirection_read(self, generate_python):
-        """Name indirection read generates _rt.get_var call (T020).
+        """Name indirection read generates _rt.get_indirected call.
+
+        Feature: 018-unified-variable-system (T108)
 
         In MUMPS, @X where X contains a variable name accesses that variable.
         Example: S X="VAR",Y=@X means Y gets the value of VAR
+
+        Unified implementation uses _rt.get_indirected() instead of _rt.get_var().
         """
         code = generate_python('TEST S X="VAR",VAR=5,Y=@X Q\n')
 
-        # Should generate runtime get_var call for @X
-        assert "_rt.get_var" in code
+        # Should generate runtime get_indirected call for @X
+        assert "_rt.get_indirected" in code
         # Should include scope reference
         assert "_scope" in code
 
     def test_name_indirection_write(self, generate_python):
-        """Name indirection write generates _rt.set_var call (T021).
+        """Name indirection write generates _rt.set_indirected call (T021, T041).
 
         In MUMPS, S @X=1 where X contains a variable name sets that variable.
         Example: S X="VAR",@X=1 means VAR gets the value 1
+
+        Spec 018 (T041): Uses unified set_indirected() with IndirectionResolver.
         """
         code = generate_python('TEST S X="VAR",@X=1 Q\n')
 
-        # Should generate runtime set_var call for @X=1
-        assert "_rt.set_var" in code
+        # Should generate runtime set_indirected call for @X=1
+        assert "_rt.set_indirected" in code
         # Should include scope reference
         assert "_scope" in code
 
@@ -45,10 +51,10 @@ class TestIndirectionCodegen:
         """
         code = generate_python('TEST S A="B",B="C",C=100,X=@@A Q\n')
 
-        # Should generate runtime resolve_indirection call for @@A
-        assert "_rt.resolve_indirection" in code
+        # Should generate runtime resolve_indirection or get_indirected call for @@A
+        assert "_rt.resolve_indirection" in code or "_rt.get_indirected" in code
         # Should include levels=2 for double indirection
-        assert ", 2," in code
+        assert "levels=2" in code or ", 2," in code
         # Should include scope reference
         assert "_scope" in code
 
@@ -309,3 +315,543 @@ class TestPatternIndirectionExecution:
             'TEST S PAT="3N1""-""3N1""-""4N" I "555-123-4567"?@PAT W "VALID" Q\n'
         )
         assert result.output == "VALID"
+
+
+@pytest.mark.codegen
+class TestSetIndirectionEndToEnd:
+    """End-to-end tests for SET indirection patterns.
+
+    Feature: 018-unified-variable-system
+    These tests verify the complete transpile->execute->output path
+    for SET commands with @VAR targets, matching YDB behavior.
+    """
+
+    def test_set_single_indirection(self, execute_mumps):
+        """S X="Y" S @X=5 W Y outputs 5.
+
+        Basic SET indirection: @X resolves X to get "Y", then sets Y=5.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S X="Y" S @X=5 W Y Q')
+        assert result.output == "5"
+
+    def test_set_double_indirection(self, execute_mumps):
+        """S X="Y",Y="Z" S @@X=5 W Z outputs 5.
+
+        Double indirection: @@X resolves X→"Y"→"Z", then sets Z=5.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S X="Y",Y="Z" S @@X=5 W Z Q')
+        assert result.output == "5"
+
+    def test_set_indirection_with_subscripts(self, execute_mumps):
+        """S X="A" S @X@(1,2)=5 W A(1,2) outputs 5.
+
+        Subscripted indirection: @X@(1,2) resolves X to get "A",
+        then sets A(1,2)=5.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S X="A" S @X@(1,2)=5 W A(1,2) Q')
+        assert result.output == "5"
+
+    def test_set_indirection_zero_value(self, execute_mumps):
+        """S X="Y" S @X=0 W Y outputs 0.
+
+        Bug fix: Zero value must be stored as string "0" so that
+        WRITE's (value or '') pattern outputs "0" not "".
+        """
+        result = execute_mumps('TEST S X="Y" S @X=0 W Y Q')
+        assert result.output == "0"
+
+    def test_set_indirection_global_target(self, execute_mumps):
+        """S X="^GLO" S @X=99 W ^GLO outputs 99.
+
+        Global target: @X resolves to "^GLO", sets global variable.
+        """
+        result = execute_mumps('TEST S X="^GLO" S @X=99 W ^GLO Q')
+        assert result.output == "99"
+
+    def test_set_indirection_global_with_subscripts(self, execute_mumps):
+        """S X="^GLO" S @X@(1)=42 W ^GLO(1) outputs 42.
+
+        Global with subscripts: Sets ^GLO(1)=42.
+        """
+        result = execute_mumps('TEST S X="^GLO" S @X@(1)=42 W ^GLO(1) Q')
+        assert result.output == "42"
+
+    def test_set_indirection_equivalent_to_static(self, execute_mumps):
+        """S @"A(1)"=5 produces identical result to S A(1)=5.
+
+        T038: Static vs dynamic equivalence - both paths must produce
+        identical results.
+        """
+        # Dynamic path
+        result_dynamic = execute_mumps('TEST S @"A(1)"=5 W A(1) Q')
+        # Static path
+        result_static = execute_mumps("TEST S A(1)=5 W A(1) Q")
+        assert result_dynamic.output == result_static.output == "5"
+
+
+@pytest.mark.codegen
+class TestIfIndirectionEndToEnd:
+    """End-to-end tests for IF argument indirection patterns.
+
+    Feature: 018-unified-variable-system (Phase 4, User Story 2)
+    Task: T048a - End-to-end validation tests per Learnings §1
+
+    These tests verify the complete transpile->execute->output path
+    for IF commands with @VAR conditions, matching YDB behavior.
+
+    CRITICAL BUG FIX (Challenge 6): Argument indirection must EVALUATE
+    the expression, not just convert the string to a truth value.
+    """
+
+    def test_if_indirection_expression_false(self, execute_mumps):
+        """I @A where A="1=0" evaluates expression to FALSE.
+
+        T046: CRITICAL BUG FIX - This was the Challenge 6 bug.
+        OLD behavior: m_truth("1=0") → TRUE (string starts with "1")
+        NEW behavior: evaluate "1=0" → 0 → FALSE
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S A="1=0" I @A W "TRUE" E  W "FALSE" Q')
+        # YDB outputs nothing (took ELSE branch, wrote "FALSE" but no newline)
+        # The output will be "" because ELSE path writes "FALSE"
+        assert "TRUE" not in result.output
+
+    def test_if_indirection_expression_true(self, execute_mumps):
+        """I @A where A="1=1" evaluates expression to TRUE.
+
+        Expression "1=1" evaluates to 1 (TRUE).
+        """
+        result = execute_mumps('TEST S A="1=1" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_indirection_with_variable(self, execute_mumps):
+        """I @A where A="X>5" and X=10 evaluates to TRUE.
+
+        T047: Expression with variable reference.
+        X>5 with X=10 → 10>5 → TRUE.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S A="X>5",X=10 I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_indirection_with_variable_false(self, execute_mumps):
+        """I @A where A="X>5" and X=3 evaluates to FALSE.
+
+        X>5 with X=3 → 3>5 → FALSE.
+        """
+        result = execute_mumps('TEST S A="X>5",X=3 I @A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output
+
+    def test_if_indirection_empty_string_true(self, execute_mumps):
+        """I @A where A="" is TRUE (YDB-specific).
+
+        T052: Empty string in argument indirection is TRUE.
+        This differs from I "" which is FALSE.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S A="" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_indirection_whitespace_only_true(self, execute_mumps):
+        """I @A where A="  " (whitespace only) is TRUE (YDB-specific).
+
+        T052: Whitespace-only string in argument indirection is also TRUE.
+        Like empty string, whitespace-only is treated as successful indirection.
+        """
+        result = execute_mumps('TEST S A="  " I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_multiple_conditions_with_empty_indirection(self, execute_mumps):
+        """I 1,@A where A="" → TRUE (both conditions TRUE).
+
+        T052: When empty indirection appears in comma-separated IF conditions,
+        each condition is evaluated independently. The empty indirection
+        evaluates to TRUE per T052 behavior.
+        """
+        result = execute_mumps('TEST S A="" I 1,@A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_indirection_zero_string_false(self, execute_mumps):
+        """I @A where A="0" is FALSE.
+
+        The string "0" evaluates to numeric 0, which is FALSE.
+        """
+        result = execute_mumps('TEST S A="0" I @A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output
+
+    def test_if_indirection_simple_number(self, execute_mumps):
+        """I @A where A="42" is TRUE.
+
+        The string "42" evaluates to numeric 42, which is TRUE.
+        """
+        result = execute_mumps('TEST S A="42" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_double_indirection(self, execute_mumps):
+        """I @@A resolves through two levels then evaluates.
+
+        A→"B"→"1=1", then evaluate "1=1" → TRUE.
+        """
+        result = execute_mumps('TEST S A="B",B="1=1" I @@A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_double_indirection_false(self, execute_mumps):
+        """I @@A with expression evaluating to FALSE.
+
+        A→"B"→"1=0", then evaluate "1=0" → FALSE.
+        """
+        result = execute_mumps('TEST S A="B",B="1=0" I @@A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output
+
+    # T053d: Argument List Indirection E2E Tests
+
+    def test_if_argument_list_all_true(self, execute_mumps):
+        """I @B where B="00.1,2" expands to I 00.1,2 → TRUE.
+
+        T053d: Argument list indirection - both conditions truthy.
+        00.1 = 0.1 (TRUE), 2 (TRUE) → TRUE AND TRUE = TRUE.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S B="00.1,2" I @B W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_argument_list_with_false(self, execute_mumps):
+        """I @A where A="1=1,0" → FALSE.
+
+        T053b: V1IDARG1 I-418 pattern.
+        1=1 is TRUE, 0 is FALSE → TRUE AND FALSE = FALSE.
+        Validated against YDB.
+        """
+        result = execute_mumps('TEST S A="1=1,0" I @A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output
+
+    def test_if_argument_list_first_false(self, execute_mumps):
+        """I @A where A="0,1" → FALSE (first fails, short-circuit).
+
+        First condition FALSE means whole thing is FALSE.
+        """
+        result = execute_mumps('TEST S A="0,1" I @A W "TRUE" E  W "FALSE" Q')
+        assert "TRUE" not in result.output
+
+    def test_if_argument_list_three_conditions(self, execute_mumps):
+        """I @A where A="1,2,3" → TRUE (all truthy)."""
+        result = execute_mumps('TEST S A="1,2,3" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    def test_if_argument_list_with_expressions(self, execute_mumps):
+        """I @A where A="1=1,2>1" → TRUE.
+
+        Both expressions are TRUE.
+        """
+        result = execute_mumps('TEST S A="1=1,2>1" I @A W "TRUE" E  W "FALSE" Q')
+        assert result.output == "TRUE"
+
+    # T053e-T053j: V1IDARG Complex Pattern Tests
+
+    def test_recursive_at_expression(self, execute_mumps):
+        """I @A where A="@A(1)" and A(1) contains expression.
+
+        T053e: V1IDARG1 I-420 pattern - recursive @-expression.
+        A → "@A(1)" → A(1)="$E(A(2),2,3)+0" → evaluates $E(9876,2,3)+0 = 87+0 = 87 → TRUE
+        Validated against YDB.
+        """
+        result = execute_mumps(
+            'TEST S A="@A(1)",A(1)="$E(A(2),2,3)+0",A(2)=9876 I @A W "TRUE" E  W "FALSE" Q'
+        )
+        assert result.output == "TRUE"
+
+    def test_recursive_at_expression_false(self, execute_mumps):
+        """I @A recursive case resulting in FALSE.
+
+        T053e: When A(2)=2000, $E(2000,2,3) = "00", +0 = 0 → FALSE.
+        Validated against YDB.
+        """
+        result = execute_mumps(
+            'TEST S A="@A(1)",A(1)="$E(A(2),2,3)+0",A(2)=2000 I @A W "TRUE" E  W "FALSE" Q'
+        )
+        assert "TRUE" not in result.output
+
+    def test_subscripted_indirection_arg(self, execute_mumps):
+        """I @A(1,1,1) with subscripted variable containing expression.
+
+        T053j: V1IDARG1 I-425 - Subscripted variable in argument indirection.
+        """
+        result = execute_mumps(
+            'TEST S A(1,1,1)="1=1" I @A(1,1,1) W "TRUE" E  W "FALSE" Q'
+        )
+        assert result.output == "TRUE"
+
+    def test_subscripted_indirection_arg_false(self, execute_mumps):
+        """I @A(1,1,1) evaluating to FALSE."""
+        result = execute_mumps(
+            'TEST S A(1,1,1)="1=0" I @A(1,1,1) W "TRUE" E  W "FALSE" Q'
+        )
+        assert "TRUE" not in result.output
+
+
+# =============================================================================
+# Multi-Level Indirection E2E Tests (Spec 018 Phase 5, US3)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestMultiLevelIndirectionE2E:
+    """End-to-end tests for multi-level indirection (@@X, @@@X).
+
+    Feature: 018-unified-variable-system
+    User Story: US3 - Multi-Level Indirection Resolution
+
+    T054-T057: VV2VNIA/VV2VNIB torture test patterns.
+    """
+
+    def test_double_indirection_write(self, execute_mumps):
+        """W @@A where A="B", B="C", C=99 → 99."""
+        result = execute_mumps('TEST S A="B",B="C",C=99 W @@A Q')
+        assert result.output == "99"
+
+    def test_triple_indirection_write(self, execute_mumps):
+        """W @@@A where A="B", B="C", C="D", D=42 → 42."""
+        result = execute_mumps('TEST S A="B",B="C",C="D",D=42 W @@@A Q')
+        assert result.output == "42"
+
+    def test_ii131_deep_nesting(self, execute_mumps):
+        """T056: II-131 @B@(@B@(@B@(9)),@B,I) deep nesting pattern.
+
+        Setup: B="A", I=3, A=5, A(9)="X", A("X")="FOO", A("FOO",5,3)=99
+        Resolution: @B@(9)=A(9)="X", @B@("X")=A("X")="FOO", @B=A=5
+        Final: A("FOO",5,3)=99
+        """
+        code = """TEST
+ S B="A",I=3,A=5
+ S A(9)="X"
+ S A("X")="FOO"
+ S A("FOO",5,3)=99
+ W @B@(@B@(@B@(9)),@B,I)
+ Q
+"""
+        result = execute_mumps(code)
+        assert result.output == "99"
+
+    def test_ii132_3_four_level_at_expressions(self, execute_mumps):
+        """T057: II-132.3 @@@@A with recursive @-expressions in values.
+
+        Setup: B="A(1)", A="@B@(1)", A(1,1..4) contain chain ending in "#"
+        """
+        code = """TEST
+ S B="A(1)"
+ S A="@B@(1)"
+ S A(1,1)="@B@(2)"
+ S A(1,2)="@B@(3)"
+ S A(1,3)="@B@(4)"
+ S A(1,4)="#"
+ W @@@@A
+ Q
+"""
+        result = execute_mumps(code)
+        assert result.output == "#"
+
+    def test_ii127_per_level_subscripts(self, execute_mumps):
+        """T055: II-127 @@X@(1,2)@(5,6) with per-level subscripts.
+
+        X="A", A(1,2)="B(3,4)" → set B(3,4,5,6)=1
+        """
+        code = """TEST
+ S X="A",A(1,2)="B(3,4)"
+ S @@X@(1,2)@(5,6)=1
+ W B(3,4,5,6)
+ Q
+"""
+        result = execute_mumps(code)
+        assert result.output == "1"
+
+
+@pytest.mark.codegen
+class TestWriteIndirectionEndToEnd:
+    """End-to-end tests for WRITE command indirection (T057a).
+
+    Feature: 018-unified-variable-system
+    User Story: US3 - Multi-Level Indirection Resolution
+
+    Per Learnings §1: Name indirection in WRITE evaluates the variable value
+    as a MUMPS expression to get the identifier, then outputs the value at
+    that identifier.
+    """
+
+    def test_simple_write_indirection(self, execute_mumps):
+        """W @A where A="B", B=42 → 42."""
+        result = execute_mumps('TEST S A="B",B=42 W @A Q')
+        assert result.output == "42"
+
+    def test_write_indirection_with_subscripts(self, execute_mumps):
+        """W @A@(1,2) where A="B", B(1,2)=99 → 99."""
+        result = execute_mumps('TEST S A="B",B(1,2)=99 W @A@(1,2) Q')
+        assert result.output == "99"
+
+    def test_write_double_indirection(self, execute_mumps):
+        """W @@A where A="B", B="C", C=123 → 123."""
+        result = execute_mumps('TEST S A="B",B="C",C=123 W @@A Q')
+        assert result.output == "123"
+
+    def test_write_indirection_function_eval(self, execute_mumps):
+        """W @A where A='$E("ABC",3)' → C (the function result).
+
+        In WRITE context, @A evaluates the expression "$E(""ABC"",3)".
+        $EXTRACT("ABC",3) returns "C" - the third character.
+        This is expression evaluation, not variable lookup.
+        YDB verified: outputs "C", not the value of variable C.
+        """
+        result = execute_mumps('TEST S C=99 S A="$E(""ABC"",3)" W @A Q')
+        assert result.output == "C"
+
+    def test_write_indirection_value_with_at(self, execute_mumps):
+        """W @@A where A="@B", B="C", C=50 → 50.
+
+        @A = "@B" (value of A)
+        @@A = @"@B" = resolve @B recursively → "C" → C → 50
+        """
+        result = execute_mumps('TEST S A="@B",B="C",C=50 W @@A Q')
+        assert result.output == "50"
+
+    def test_write_triple_indirection_with_subscripts(self, execute_mumps):
+        """W @@A where A="B", B="C(1)", C(1)=777 → 777.
+
+        Triple indirection with subscript IN the resolved value:
+        - @A = "B"
+        - @@A = @"B" = B = "C(1)"
+        - @@@A would need @"C(1)" but we use @@A since B contains subscript
+        YDB verified: subscript must be in resolved string, not appended.
+        """
+        code = """TEST
+ S A="B",B="C(1)"
+ S C(1)=777
+ W @@A
+ Q
+"""
+        result = execute_mumps(code)
+        assert result.output == "777"
+
+    def test_write_multiple_indirections_in_statement(self, execute_mumps):
+        """W @A,@B where A="X", X=1, B="Y", Y=2 → 12."""
+        result = execute_mumps('TEST S A="X",X=1,B="Y",Y=2 W @A,@B Q')
+        assert result.output == "12"
+
+    def test_write_indirection_with_literal(self, execute_mumps):
+        """W @"A" where A=42 → 42."""
+        result = execute_mumps('TEST S A=42 W @"A" Q')
+        assert result.output == "42"
+
+    def test_write_indirection_global_var(self, execute_mumps):
+        """W @A where A="^V", ^V=123 → 123."""
+        result = execute_mumps('TEST K ^V S ^V=123,A="^V" W @A Q')
+        assert result.output == "123"
+
+
+@pytest.mark.codegen
+class TestSubscriptCanonicalizationEndToEnd:
+    """End-to-end tests for subscript canonicalization.
+
+    Feature: 018-unified-variable-system (US4)
+    These tests verify that subscripts canonicalize correctly so that
+    A(1), A(01), A(1.0), A("1") all reference the same node, while
+    A("01") is DISTINCT from A(1).
+    """
+
+    def test_int_and_canonical_string_same_node(self, execute_mumps):
+        """S A(1)="one" W A("1") outputs one.
+
+        A(1) and A("1") access the same node.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(1)="one" W A("1") Q')
+        assert result.output == "one"
+
+    def test_float_equal_to_int_same_node(self, execute_mumps):
+        """S A(1.0)="x" W A(1) outputs x.
+
+        A(1.0) canonicalizes to A(1), so they access the same node.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(1.0)="x" W A(1) Q')
+        assert result.output == "x"
+
+    def test_leading_zero_string_different_from_int(self, execute_mumps):
+        """S A(1)="one" S A("01")="zero-one" W A(1),":",A("01") outputs one:zero-one.
+
+        A("01") is DIFFERENT from A(1) because "01" is non-canonical.
+        YDB verified.
+        """
+        result = execute_mumps(
+            'TEST S A(1)="one" S A("01")="zero-one" W A(1),":",A("01") Q'
+        )
+        assert result.output == "one:zero-one"
+
+    def test_leading_zero_decimal_different(self, execute_mumps):
+        """S A("0.5")="str" S A(.5)="num" W A("0.5"),":",A(.5) outputs str:num.
+
+        A("0.5") has leading zero so it's non-canonical, different from A(.5).
+        YDB verified.
+        """
+        result = execute_mumps(
+            'TEST S A("0.5")="str" S A(.5)="num" W A("0.5"),":",A(.5) Q'
+        )
+        assert result.output == "str:num"
+
+    def test_trailing_zero_decimal_different(self, execute_mumps):
+        """S A(1)="int" S A("1.0")="str" W A(1),":",A("1.0") outputs int:str.
+
+        A("1.0") has trailing zero so it's non-canonical, different from A(1).
+        YDB verified.
+        """
+        result = execute_mumps(
+            'TEST S A(1)="int" S A("1.0")="str" W A(1),":",A("1.0") Q'
+        )
+        assert result.output == "int:str"
+
+    def test_decimal_canonical_form(self, execute_mumps):
+        """S A(0.5)="half" W A(.5) outputs half.
+
+        0.5 canonicalizes to .5, so A(0.5) and A(.5) access the same node.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(0.5)="half" W A(.5) Q')
+        assert result.output == "half"
+
+    def test_negative_decimal_canonical_form(self, execute_mumps):
+        """S A(-0.5)="neg" W A(-.5) outputs neg.
+
+        -0.5 canonicalizes to -.5, so they access the same node.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(-0.5)="neg" W A(-.5) Q')
+        assert result.output == "neg"
+
+    def test_multiple_subscripts_canonicalization(self, execute_mumps):
+        """S A(1,2,3)="v" W A(1.0,2.0,3.0) outputs v.
+
+        All subscripts canonicalize: 1.0→1, 2.0→2, 3.0→3.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S A(1,2,3)="v" W A(1.0,2.0,3.0) Q')
+        assert result.output == "v"
+
+    def test_subscript_canonicalization_with_indirection(self, execute_mumps):
+        """S X="A(1)" S A(1)="val" W @X outputs val.
+
+        Indirection with subscripts: @"A(1)" accesses A(1).
+        The subscript in the resolved string must match canonical form.
+        YDB verified.
+        """
+        result = execute_mumps('TEST S X="A(1)",A(1)="val" W @X Q')
+        assert result.output == "val"
+
+    def test_global_subscript_canonicalization(self, execute_mumps):
+        """S ^G(1)="v" W ^G(1.0) outputs v.
+
+        Global subscript canonicalization: ^G(1.0) → ^G(1).
+        YDB verified.
+        """
+        result = execute_mumps('TEST K ^G S ^G(1)="v" W ^G(1.0) Q')
+        assert result.output == "v"

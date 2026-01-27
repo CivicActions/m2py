@@ -312,22 +312,15 @@ class ForGenContext:
             # Also handles multi-level: F @@A=1:1:5, F @@@A=1:1:5
             loop_var_indirect = True
             # Generate expression to get target variable name at runtime
-            # Use _generate_for_indirection_target which handles nested indirection
-            # (e.g., A="@$E(""ABCDEF"",3)" should resolve to "C")
+            # Feature: 018-unified-variable-system (T089, T134)
+            # Use generate_name_indirection_for which uses IndirectionResolver
             if ctx is not None and stmt.loop_var.expression is not None:
                 from m2py.codegen.indirection import (
-                    _generate_for_indirection_target,
-                    _count_indirection_levels,
+                    generate_name_indirection_for,
                 )
-
-                # Count indirection levels and get innermost expression
-                # F @A uses level 1, F @@A uses level 2, etc.
-                levels, inner_expr = _count_indirection_levels(stmt.loop_var)
 
                 # Generate code to resolve the full indirection chain
-                loop_var_expr = _generate_for_indirection_target(
-                    inner_expr, ctx, indirection_levels=levels
-                )
+                loop_var_expr = generate_name_indirection_for(stmt.loop_var, ctx)
             var_name = "_for_indirect_var"
             loop_var = "_for_val"  # Temporary for range iteration
         elif isinstance(stmt.loop_var, str):
@@ -847,23 +840,14 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
     )
 
     # Spec 017: Use ordered_items for correct left-to-right evaluation
-    # If ordered_items is populated, use it; otherwise fall back to old behavior
-    if stmt.ordered_items:
-        for item in stmt.ordered_items:
-            if isinstance(item, MIndirectionType):
-                # Argument indirection: S @A where A contains "target=value"
-                generate_set_argument_indirection(item, ctx)
-            elif isinstance(item, MAssignment):
-                # Regular assignment
-                _generate_single_assignment(item, ctx)
-    else:
-        # Legacy fallback: process argument_indirections first, then assignments
-        # This is incorrect for interleaved indirections but maintains compatibility
-        for indir in stmt.argument_indirections:
-            generate_set_argument_indirection(indir, ctx)
-
-        for assignment in stmt.assignments:
-            _generate_single_assignment(assignment, ctx)
+    # ordered_items is always populated by the semantic analyzer
+    for item in stmt.ordered_items:
+        if isinstance(item, MIndirectionType):
+            # Argument indirection: S @A where A contains "target=value"
+            generate_set_argument_indirection(item, ctx)
+        elif isinstance(item, MAssignment):
+            # Regular assignment
+            _generate_single_assignment(item, ctx)
 
 
 def _generate_single_assignment(
@@ -879,11 +863,12 @@ def _generate_single_assignment(
     if assignment.target is None or assignment.value is None:
         return
 
-    # Spec 012 (T017): Handle indirection targets (@VAR, @@VAR, @NAME@(1,2))
+    # Spec 012 (T017) + 018 (T041): Handle indirection targets (@VAR, @@VAR, @NAME@(1,2))
+    # Uses unified set_indirected() which internally uses IndirectionResolver
     if isinstance(assignment.target, MIndirectionType):
         # Generate value expression first
         value_expr = generate_expr(assignment.value, ctx)
-        # Generate the set_var call via indirection module
+        # Generate the set_indirected call via unified indirection module
         set_stmt = generate_name_indirection_write(assignment.target, value_expr, ctx)
         ctx.emitter.line(set_stmt)
         return
@@ -1051,14 +1036,13 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
         # resolve_naked() returns (name, subscripts) from the naked indicator
         # We must capture the resolved name/subscripts BEFORE calling m_set_piece
         # because the getter will update the naked indicator when it reads the value
+        # DO NOT wrap in str() - let runtime handle canonicalization
         if first_arg.subscripts:
             subscript_exprs = [generate_expr(sub, ctx) for sub in first_arg.subscripts]
             if len(subscript_exprs) == 1:
-                subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+                subscripts_tuple = f"({subscript_exprs[0]},)"
             else:
-                subscripts_tuple = (
-                    f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
-                )
+                subscripts_tuple = f"({', '.join(subscript_exprs)},)"
         else:
             subscripts_tuple = "()"
 
@@ -1075,49 +1059,45 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
         getter = f'lambda: _rt.globals.get({temp_name}, {temp_subs}) or ""'
         setter = f"lambda v: _rt.globals.set({temp_name}, {temp_subs}, v)"
     elif isinstance(first_arg, MIndirection):
-        # Spec 017 Phase 6 (T027): Indirection: use _rt.get_var/_rt.set_var
-        # Generate the indirected variable name expression at runtime
+        # Feature: 018-unified-variable-system
+        # Indirection: use resolve_for_target to get NAME, then get_var/set_var for VALUE
         from m2py.codegen.indirection import _count_indirection_levels
 
         levels, inner_expr = _count_indirection_levels(first_arg)
 
         # Handle name+subscript syntax: @NAME@(1,2)
         if first_arg.name_indirection_subscripts:
-            # Build the subscript expressions
-            all_subs = []
+            # Build per_level_subscripts for proper subscript merging
+            # This is critical when the resolved name already has subscripts
+            # e.g., @A@(1) where A="ABC(1,2,3)" should become "ABC(1,2,3,1)"
+            # NOT "ABC(1,2,3)(1)" which is what string concatenation produces
+            per_level_subs_code = []
             for sub_list in first_arg.name_indirection_subscripts:
                 sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                all_subs.extend(sub_exprs)
-            # Build f-string for subscripts to avoid escaping issues with quotes
-            # Use single quotes for the f-string so double-quoted strings inside work
-            # subs_fstr generates code like: f'({expr1}, {expr2})' which evaluates at runtime
-            if len(all_subs) == 1:
-                subs_fstr = f"f'({{{all_subs[0]}}})'"
-            else:
-                subs_parts = ", ".join(f"{{{s}}}" for s in all_subs)
-                subs_fstr = f"f'({subs_parts})'"
+                per_level_subs_code.append(f"[{', '.join(sub_exprs)}]")
+            per_level_subscripts_str = f"[{', '.join(per_level_subs_code)}]"
 
             if isinstance(inner_expr, MVariable):
                 base_name = inner_expr.name
-                if levels > 1:
-                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope)) + {subs_fstr}'
-                else:
-                    name_expr = f'_rt.get_indirection_source("{base_name}", _scope) + {subs_fstr}'
+                # Use resolve_for_target with per_level_subscripts for proper subscript merging
+                name_expr = f'_rt.resolve_for_target("{base_name}", _scope, levels={levels}, per_level_subscripts={per_level_subscripts_str})'
             else:
                 name_expr_base = generate_expr(inner_expr, ctx)
-                name_expr = f"str({name_expr_base}) + {subs_fstr}"
+                # For non-variable base, still need per_level_subscripts
+                name_expr = f"_rt.resolve_for_target(str({name_expr_base}), _scope, levels={levels}, per_level_subscripts={per_level_subscripts_str})"
         else:
             # Simple indirection without subscripts
             if isinstance(inner_expr, MVariable):
                 base_name = inner_expr.name
-                if levels > 1:
-                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels - 1}, _scope))'
-                else:
-                    name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
+                # Use resolve_for_target with appropriate levels
+                name_expr = (
+                    f'_rt.resolve_for_target("{base_name}", _scope, levels={levels})'
+                )
             else:
                 name_expr_base = generate_expr(inner_expr, ctx)
                 if levels > 1:
-                    name_expr = f"str(_rt.resolve_indirection(str({name_expr_base}), {levels - 1}, _scope))"
+                    # For non-variable expressions with multi-level, use resolve_for_target
+                    name_expr = f"_rt.resolve_for_target(str({name_expr_base}), _scope, levels={levels - 1})"
                 else:
                     name_expr = f"str({name_expr_base})"
 
@@ -1292,8 +1272,12 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
         ctx: Generator context
 
     The generated code calls _rt.globals.set():
-        _rt.globals.set("NAME", ("sub1", "sub2"), "value")
+        _rt.globals.set("NAME", (sub1, sub2), "value")
         _rt.globals.set("NAME", (), "value")  # No subscripts
+
+    Note: Subscripts are NOT wrapped in str() - the runtime's _canonicalize_subscript
+    handles type-aware canonicalization. Numeric literals canonicalize differently
+    than string literals (e.g., Decimal("1.0") → "1", but "1.0" → "1.0").
     """
     # We know target is GlobalVariable because caller checked isinstance
     assert isinstance(assignment.target, GlobalVariable)
@@ -1303,13 +1287,14 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
     global_name = global_var.name
 
     # Generate subscript expressions
+    # DO NOT wrap in str() - let runtime handle canonicalization
     if global_var.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in global_var.subscripts]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1348,12 +1333,13 @@ def _generate_extended_global_set(
     global_name = ext_global.name
 
     # Generate subscript expressions
+    # DO NOT wrap in str() - let runtime handle canonicalization
     if ext_global.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in ext_global.subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1390,13 +1376,14 @@ def _generate_naked_global_set(
     naked_global = assignment.target
 
     # Generate subscript expressions
+    # DO NOT wrap in str() - let runtime handle canonicalization
     if naked_global.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in naked_global.subscripts]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1602,17 +1589,22 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
     MUMPS IF evaluates condition, sets $TEST, and conditionally executes body.
     Generated code: _test = m_truth(cond); if _test: ...
 
+    T052: For IF indirection (I @A where A=""), empty string is TRUE.
+    We pass if_condition=True to generate_expr() so indirection codegen
+    adds treat_empty_as_truthy=True to the runtime call.
+
     Args:
         stmt: MIfStatement node
         ctx: Generator context
     """
     # Get condition(s) - single condition uses .condition, multiple uses .conditions
+    # T052: Pass if_condition=True for indirection T052 empty string handling
     if stmt.condition is not None:
-        cond_expr = generate_expr(stmt.condition, ctx)
+        cond_expr = generate_expr(stmt.condition, ctx, if_condition=True)
     elif stmt.conditions:
         # Multiple comma-separated conditions act as AND
         # Each condition is evaluated in sequence
-        cond_parts = [generate_expr(c, ctx) for c in stmt.conditions]
+        cond_parts = [generate_expr(c, ctx, if_condition=True) for c in stmt.conditions]
         cond_expr = " and ".join(f"m_truth({c})" for c in cond_parts)
         # For multiple conditions, we evaluate as AND but still set _test at end
         ctx.emitter.line(f"_test = {cond_expr}")
@@ -3376,48 +3368,17 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                     ctx.emitter.line(f"{translated} = MArray()")
 
         elif isinstance(target, MIndirection):
-            # T069: Indirection target: K @A or K @A@(subs) where A contains the variable name
-            from m2py.codegen.indirection import _generate_inner_name_expr
+            # T086, T133: Indirection target: K @A or K @A@(subs) using unified components
+            # Uses _rt.kill_indirected() which handles multi-level indirection and
+            # per-level subscripts via IndirectionResolver
+            from m2py.codegen.indirection import generate_name_indirection_kill
 
             if target.expression is None:
                 raise ValueError("KILL indirection has no expression")
 
-            # Get the target variable name at runtime
-            target_name_expr = _generate_inner_name_expr(target.expression, ctx)
-
-            # For SIMPLE_FUNCTIONS strategy, use _rt.kill_var which parses the name
-            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                # Handle subscripts on the indirection if present
-                if target.name_indirection_subscripts:
-                    # Build subscript expressions as a string to append to the variable name
-                    # e.g., K @B@(2) where B="VV(1)" → kill_var("VV(1,2)", _scope)
-                    subs_lists = target.name_indirection_subscripts
-                    all_subs = []
-                    for sub_list in subs_lists:
-                        for sub in sub_list:
-                            all_subs.append(generate_expr(sub, ctx))
-                    # Build the subscript suffix as a runtime f-string
-                    # The name_expr might be "VV(1)" and we need to add ",2)" to make "VV(1,2)"
-                    # This requires parsing and rebuilding - use kill_var with appended subscripts
-                    subs_str = ", ".join(all_subs)
-                    # Check if the indirection result already has subscripts
-                    # If name ends with ), we need to insert before the closing paren
-                    # Use a helper approach: pass subscripts separately
-                    ctx.emitter.line(f"_name = {target_name_expr}")
-                    ctx.emitter.line("if _name.endswith(')'):")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(f"_name = _name[:-1] + f',{{{subs_str}}})'")
-                    ctx.emitter.line("else:")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(f"_name = _name + f'({{{subs_str}}})'")
-                    ctx.emitter.line("_rt.kill_var(_name, _scope)")
-                else:
-                    # Kill entire variable - remove from scope by resolved name
-                    ctx.emitter.line(f"_rt.kill_var({target_name_expr}, _scope)")
-            else:
-                raise NotImplementedError(
-                    "KILL indirection not supported in TRAMPOLINE strategy"
-                )
+            # Generate unified kill_indirected call
+            kill_stmt = generate_name_indirection_kill(target, ctx)
+            ctx.emitter.line(kill_stmt)
 
         else:
             raise NotImplementedError(
@@ -3549,19 +3510,24 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     for var in stmt.variables:
         # T070: Handle indirection in NEW (N @A where A contains variable name)
         if isinstance(var, MIndirection):
-            from m2py.codegen.indirection import _generate_inner_name_expr
+            from m2py.codegen.expressions import generate_expr
 
             if var.expression is None:
                 raise ValueError("NEW indirection has no expression")
 
-            # Get the target variable name at runtime
-            target_name_expr = _generate_inner_name_expr(var.expression, ctx)
+            # Get the VALUE of the indirection expression directly.
+            # Unlike FOR @A which expects a single variable name, NEW @A
+            # expects a comma-separated list of variable names.
+            # E.g., S A="X,Y" N @A should NEW both X and Y.
+            # We do NOT use resolve_for_target here because that validates
+            # the result as a single variable name, which would fail for "X,Y".
+            value_expr = generate_expr(var.expression, ctx)
 
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 # NEW indirection can contain comma-separated variable lists
                 # For example: S A="X,Y" N @A should NEW both X and Y
                 # We need to split the resolved string at runtime
-                ctx.emitter.line(f"_ind_var_list = str({target_name_expr}).split(',')")
+                ctx.emitter.line(f"_ind_var_list = str({value_expr}).split(',')")
                 ctx.emitter.line("for _ind_var in _ind_var_list:")
                 with ctx.emitter.indented():
                     # Strip whitespace from each variable name
@@ -3728,44 +3694,11 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(src, MIndirection):
             # Source is indirection: @VAR or @VAR@(subs)
-            # Use runtime get_tree_var to resolve variable name and get tree
-            from m2py.codegen.indirection import (
-                _count_indirection_levels,
-                _generate_inner_name_expr,
-            )
+            # Feature: 018-unified-variable-system (T143e)
+            # Use unified resolve_for_target API to resolve variable name
+            from m2py.codegen.indirection import generate_merge_indirection_name
 
-            levels, inner_expr = _count_indirection_levels(src)
-
-            # Handle name+subscript syntax: @NAME@(1,2)
-            if src.name_indirection_subscripts:
-                all_subs = []
-                for sub_list in src.name_indirection_subscripts:
-                    sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                    all_subs.extend(sub_exprs)
-                subs_args = ", ".join(all_subs)
-
-                if isinstance(inner_expr, MVariable):
-                    base_name = inner_expr.name
-                    if levels > 1:
-                        name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
-                    else:
-                        name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
-                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args}, _scope=_scope)"
-                else:
-                    inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = f"_rt.append_subscripts(str({inner_name_expr}), {subs_args}, _scope=_scope)"
-            elif levels > 1:
-                # Multi-level indirection (@@X, @@@X)
-                if isinstance(inner_expr, MVariable):
-                    var_name = inner_expr.name
-                    name_expr = f'str(_rt.resolve_indirection("{var_name}", {levels - 1}, _scope))'
-                else:
-                    inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = f"str(_rt.resolve_indirection(str({inner_name_expr}), {levels - 1}, _scope))"
-            else:
-                # Simple single-level indirection: @X
-                name_expr = _generate_inner_name_expr(inner_expr, ctx)
-
+            name_expr = generate_merge_indirection_name(src, ctx)
             src_tree_expr = f"_rt.get_tree_var({name_expr}, _scope)"
 
         else:
@@ -3867,43 +3800,11 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(dest, MIndirection):
             # Destination is indirection: @VAR or @VAR@(subs)
-            # Use runtime merge_var to resolve variable name and merge
-            from m2py.codegen.indirection import (
-                _count_indirection_levels,
-                _generate_inner_name_expr,
-            )
+            # Feature: 018-unified-variable-system (T143e)
+            # Use unified resolve_for_target API to resolve variable name
+            from m2py.codegen.indirection import generate_merge_indirection_name
 
-            levels, inner_expr = _count_indirection_levels(dest)
-
-            # Handle name+subscript syntax: @NAME@(1,2)
-            if dest.name_indirection_subscripts:
-                all_subs = []
-                for sub_list in dest.name_indirection_subscripts:
-                    sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                    all_subs.extend(sub_exprs)
-                subs_args = ", ".join(all_subs)
-
-                if isinstance(inner_expr, MVariable):
-                    base_name = inner_expr.name
-                    if levels > 1:
-                        name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
-                    else:
-                        name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
-                    name_expr = f"_rt.append_subscripts({name_expr}, {subs_args}, _scope=_scope)"
-                else:
-                    inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = f"_rt.append_subscripts(str({inner_name_expr}), {subs_args}, _scope=_scope)"
-            elif levels > 1:
-                # Multi-level indirection (@@X, @@@X)
-                if isinstance(inner_expr, MVariable):
-                    var_name = inner_expr.name
-                    name_expr = f'str(_rt.resolve_indirection("{var_name}", {levels - 1}, _scope))'
-                else:
-                    inner_name_expr = generate_expr(inner_expr, ctx)
-                    name_expr = f"str(_rt.resolve_indirection(str({inner_name_expr}), {levels - 1}, _scope))"
-            else:
-                # Simple single-level indirection: @X
-                name_expr = _generate_inner_name_expr(inner_expr, ctx)
+            name_expr = generate_merge_indirection_name(dest, ctx)
 
             ctx.emitter.line(f"_merge_src = {src_tree_expr}")
             ctx.emitter.line("if _merge_src is not None:")
@@ -4026,11 +3927,11 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
     if target.variable is None:
         return
 
-    # Check if target is indirection - needs special handling with set_var
+    # Check if target is indirection - needs special handling with set_indirected
     is_indirection = isinstance(target.variable, MIndirectionType)
 
     if is_indirection:
-        # Indirection target: R @A - need to use set_var at runtime
+        # Spec 018 (T041): Indirection target: R @A - uses unified set_indirected
         # Type narrowing: we know target.variable is MIndirection from is_indirection check
         ind_var = cast(MIndirectionType, target.variable)
         if target.timeout is not None:
@@ -4650,28 +4551,19 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
 
         T075q: Handle per-argument postconditions.
         """
-        # T075q: Use arguments if available (has postconditions), else fall back
-        if stmt.arguments:
-            for xecute_arg in stmt.arguments:
-                expr_code = generate_expr(xecute_arg.expression, ctx)
-                if xecute_arg.postcondition is not None:
-                    # T075q: Wrap in postcondition check
-                    cond_code = generate_expr(xecute_arg.postcondition, ctx)
-                    ctx.emitter.line(f"if m_truth({cond_code}):")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(
-                            f"_rt.execute_mumps({expr_code}, _scope, globals())"
-                        )
-                        ctx.emitter.line("_test = _rt._test")
-                else:
+        # T075q: Use arguments structure (always populated by semantic analyzer)
+        for xecute_arg in stmt.arguments:
+            expr_code = generate_expr(xecute_arg.expression, ctx)
+            if xecute_arg.postcondition is not None:
+                # T075q: Wrap in postcondition check
+                cond_code = generate_expr(xecute_arg.postcondition, ctx)
+                ctx.emitter.line(f"if m_truth({cond_code}):")
+                with ctx.emitter.indented():
                     ctx.emitter.line(
                         f"_rt.execute_mumps({expr_code}, _scope, globals())"
                     )
                     ctx.emitter.line("_test = _rt._test")
-        else:
-            # Legacy path: no arguments structure, use code_expressions
-            for code_expr in stmt.code_expressions:
-                expr_code = generate_expr(code_expr, ctx)
+            else:
                 ctx.emitter.line(f"_rt.execute_mumps({expr_code}, _scope, globals())")
                 ctx.emitter.line("_test = _rt._test")
 

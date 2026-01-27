@@ -4,7 +4,7 @@ This document tracks potential optimizations that were considered but deferred i
 
 ## Cross-Routine Variable Passing (Static Analysis)
 
-**Current approach** (Spec 008): Pass a `_scope` dictionary to all external calls. All non-NEWed variables are stored in this shared dictionary.
+**Current approach**: Pass a `_scope` dictionary to all external calls. All non-NEWed variables are stored in this shared dictionary.
 
 **Potential optimization**: Use the existing variable analysis infrastructure (`MLabel.input_variables`, `output_variables`, `compute_transitive_inputs()`) to:
 
@@ -37,7 +37,7 @@ This document tracks potential optimizations that were considered but deferred i
 
 ## Deduplicate External Routine Imports
 
-**Current approach** (Spec 014 T068-T070): Each external extrinsic call (`$$LABEL^ROUTINE`) emits its own `import` statement inline:
+**Current approach**: Each external extrinsic call (`$$LABEL^ROUTINE`) emits its own `import` statement inline:
 
 ```python
 def TEST(_rt, _scope=None, **_kwargs):
@@ -101,7 +101,7 @@ if python_module_name not in ctx.imported_modules:
 
 ## Conditional $TEXT Source Embedding
 
-**Current approach** (Spec 008): Every generated `.py` file includes `_source_lines = [...]` with the original MUMPS source.
+**Current approach**: Every generated `.py` file includes `_source_lines = [...]` with the original MUMPS source.
 
 **Potential optimization**: Whole-program analysis to determine which routines are referenced by `$TEXT(^routine)` calls, and only embed source in those routines.
 
@@ -124,7 +124,7 @@ if python_module_name not in ctx.imported_modules:
 
 ## Inline String Operations for $PIECE and $EXTRACT
 
-**Current approach** (Spec 010): `$PIECE` and `$EXTRACT` generate calls to runtime helper functions (`m_piece()`, `m_extract()`) that handle all edge cases including out-of-range indices, invalid positions, and range extraction.
+**Current approach**: `$PIECE` and `$EXTRACT` generate calls to runtime helper functions (`m_piece()`, `m_extract()`) that handle all edge cases including out-of-range indices, invalid positions, and range extraction.
 
 **Potential optimization**: When function arguments are **literal constants**, generate inline Python string operations:
 

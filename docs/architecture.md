@@ -84,10 +84,17 @@ src/m2py/
 │   ├── for_analysis.py      # FOR loop analysis
 │   ├── variables.py         # Variable scope analysis
 │   └── pattern_compiler.py  # Pattern to regex compilation
+├── core/                    # Shared variable system components
+│   ├── __init__.py          # Public exports
+│   ├── names.py             # NameTranslator: MUMPS↔Python identifier translation
+│   ├── subscripts.py        # SubscriptCanonicalizer: subscript normalization
+│   ├── scope.py             # CurrentScope: unified variable access, VarRef dataclass
+│   ├── indirection.py       # IndirectionResolver: @-expression resolution
+│   └── exceptions.py        # VarExpectedError, LVUNDEFError
 ├── codegen/                 # Python code generation
 │   ├── __init__.py          # Public API: generate_python()
 │   ├── helpers.py           # Runtime helpers: m_num(), m_truth(), m_compare()
-│   ├── names.py             # NameTranslator for identifier translation
+│   ├── names.py             # Re-exports from core/names.py (backward compatibility)
 │   ├── emitter.py           # CodeEmitter for indented output
 │   ├── routine.py           # RoutineGenerator for module structure
 │   ├── statements.py        # Statement code generation
@@ -95,6 +102,39 @@ src/m2py/
 └── runtime/                 # Execution runtime
     └── __init__.py          # MUMPSRuntime, ExecutionResult
 ```
+
+## Core Module
+
+The `core/` module provides shared variable system components used by both codegen and runtime.
+This ensures consistent behavior between compile-time variable references and runtime indirection.
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| `NameTranslator` | Bidirectional MUMPS ↔ Python identifier translation |
+| `SubscriptCanonicalizer` | Subscript value normalization per MUMPS rules |
+| `CurrentScope` | Unified variable access abstraction |
+| `IndirectionResolver` | Runtime @-expression resolution with context awareness |
+| `VarRef` | Variable reference dataclass (name, subscripts, is_global) |
+
+### Design Principle
+
+The single implementation shared by codegen and runtime prevents variable lookup discrepancies.
+For example, both paths use `SubscriptCanonicalizer` to ensure that `A(1)` and `A("1")` 
+reference the same node, while `A("01")` remains distinct.
+
+### Indirection Contexts
+
+The `IndirectionResolver` handles three distinct contexts:
+
+| Context | Example | Resolution |
+|---------|---------|------------|
+| NAME | `S @X=5` | Returns variable name for assignment |
+| VALUE | `W @X` | Returns variable value for output |
+| ARGUMENT | `I @A` | Evaluates expression (e.g., "1=0" → FALSE) |
+
+See: [codegen/variable_system.md](codegen/variable_system.md) for detailed usage.
 
 ## Processing Pipeline
 
@@ -204,7 +244,7 @@ if __name__ == "__main__":
     LABEL(_rt, _scope)
 ```
 
-### Cross-Routine Infrastructure (Spec 008)
+### Cross-Routine Infrastructure
 
 External routine calls require coordinated code generation across multiple modules:
 
@@ -237,21 +277,21 @@ All routine functions accept `_rt` and `_scope` parameters for runtime and cross
 def MAIN(_rt, _scope=None, **_kwargs):
     _scope = _scope if _scope is not None else {}
     
-    _scope["X"] = 42
+    _scope.setdefault('X', MArray()).value = 42
     import helper
     helper.SHOW(_rt, _scope=_scope)
 
 # helper.py
 def SHOW(_rt, _scope=None, **_kwargs):
     _scope = _scope if _scope is not None else {}
-    _rt.write(str(_scope.get("X", "")))
+    _rt.write(str(_scope.get('X', MArray()).value))
 ```
 
 Key design points:
 - `_rt` passed as first parameter to all functions
 - `_scope` shared across all external calls
-- Variables stored in `_scope['varname']` instead of local Python scope
-- Variable reads use `_scope.get('varname', '')` for undefined safety
+- Variables stored via `_scope.setdefault('varname', MArray()).value`
+- Variable reads use `_scope.get('varname', MArray()).value`
 - Entry points have `_scope=None` default for standalone execution
 - Internal and external calls pass `_rt` and `_scope` explicitly
 

@@ -117,7 +117,9 @@ def generate_intrinsic_function(
     raise NotImplementedError(f"Intrinsic function ${expr.name} not yet implemented")
 
 
-def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
+def generate_expr(
+    expr: MExpr, ctx: "GeneratorContext", if_condition: bool = False
+) -> str:
     """Generate Python expression from ASG expression node.
 
     Dispatches based on expression type:
@@ -132,6 +134,8 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     Args:
         expr: ASG expression node
         ctx: Generator context (for name translation, etc.)
+        if_condition: If True, this expression is an IF condition, which
+                     affects how argument indirection handles empty strings (T052)
 
     Returns:
         Python expression string
@@ -171,7 +175,7 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_pattern_match(expr, ctx)
     # Spec 012 Phase 3 (T016): Handle name indirection (@VAR)
     elif isinstance(expr, MIndirection):
-        return _generate_indirection(expr, ctx)
+        return _generate_indirection(expr, ctx, if_condition=if_condition)
     # Spec 013 Phase 16 (FR-029): Handle structured system variables (^$GLOBAL etc)
     elif isinstance(expr, MStructuredSystemVariable):
         return _generate_ssvn(expr, ctx)
@@ -318,13 +322,17 @@ def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     global_name = var.name
 
     # Generate subscript expressions
+    # DO NOT wrap in str() - let the runtime's _canonicalize_subscript handle
+    # the type distinction. Numeric literals (Decimal, int, float) should
+    # canonicalize differently than string literals.
+    # Example: Decimal("1.0") → "1" (numeric), but "1.0" → "1.0" (string)
     if var.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -350,13 +358,14 @@ def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -
     resolve_naked() returns (name, base_subscripts + new_subscripts).
     """
     # Generate subscript expressions
+    # DO NOT wrap in str() - let the runtime's _canonicalize_subscript handle it
     if var.subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -516,21 +525,24 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 
 
-def _generate_indirection(ind: MIndirection, ctx: "GeneratorContext") -> str:
+def _generate_indirection(
+    ind: MIndirection, ctx: "GeneratorContext", if_condition: bool = False
+) -> str:
     """Generate Python expression for name indirection (@VAR).
 
     Spec 012 Phase 3 (T016): Dispatches to codegen/indirection.py for
     runtime indirection handling.
 
-    Handles:
-    - Simple NAME: @X → _rt.get_var(_scope.get("X", ""), _scope)
-    - Multi-level NAME: @@X → _rt.resolve_indirection("X", 2, _scope)
-    - With subscripts: @NAME@(1,2) → _rt.get_var(f'{...}(1,2)', _scope)
+    Feature: 018-unified-variable-system - Now uses unified runtime methods:
+    - Simple NAME: @X → _rt.get_indirected("X", _scope, levels=1)
+    - Multi-level NAME: @@X → _rt.get_indirected("X", _scope, levels=2)
+    - With subscripts: @NAME@(1,2) → handled via per_level_subscripts
     - ARGUMENT type: @A in IF → evaluates value of A as expression
 
     Args:
         ind: MIndirection ASG node
         ctx: Generator context
+        if_condition: If True, this is an IF condition - affects T052 empty handling
 
     Returns:
         Python expression string
@@ -543,7 +555,7 @@ def _generate_indirection(ind: MIndirection, ctx: "GeneratorContext") -> str:
 
     # Dispatch based on indirection type
     if ind.indirection_type == IndirectionType.ARGUMENT:
-        return generate_argument_indirection(ind, ctx)
+        return generate_argument_indirection(ind, ctx, if_condition=if_condition)
     else:
         # NAME type (default) - look up variable by resolved name
         return generate_name_indirection(ind, ctx)
@@ -929,25 +941,6 @@ def _generate_extrinsic_arguments_with_byref(
     return ", ".join(parts), byref_names if has_byref else []
 
 
-def _generate_extrinsic_arguments(
-    arguments: List[MActualParameter], ctx: "GeneratorContext"
-) -> str:
-    """Generate Python arguments for extrinsic function call.
-
-    Note: This is the legacy version that doesn't handle by-ref.
-    Use _generate_extrinsic_arguments_with_byref for full by-ref support.
-
-    Args:
-        arguments: List of MActualParameter
-        ctx: Generator context
-
-    Returns:
-        Comma-separated argument string
-    """
-    args, _ = _generate_extrinsic_arguments_with_byref(arguments, ctx)
-    return args
-
-
 def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $DATA/$D function.
 
@@ -986,78 +979,21 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Handle MIndirection: $D(@A@(1)) needs runtime resolution
     if isinstance(var, MIndirectionType):
-        # For indirection, we need to use _rt.get_data which resolves the variable name at runtime
-        from m2py.codegen.indirection import _count_indirection_levels
+        # Feature: 018-unified-variable-system (T143f)
+        # For indirection, use unified resolve_for_target API via helper
+        from m2py.codegen.indirection import generate_data_indirection_name
 
-        levels, inner_expr = _count_indirection_levels(var)
-
-        # Build subscript expressions from name_indirection_subscripts if present
-        if var.name_indirection_subscripts:
-            all_subs = []
-            for sub_list in var.name_indirection_subscripts:
-                sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                all_subs.extend(sub_exprs)
-            # Use single quotes for the f-string so double-quoted strings inside work
-            if len(all_subs) == 1:
-                subs_fstr = f"f'({{{all_subs[0]}}})'"
-            else:
-                subs_parts = ", ".join(f"{{{s}}}" for s in all_subs)
-                subs_fstr = f"f'({subs_parts})'"
-        else:
-            # No subscripts - use empty string, not "()"
-            subs_fstr = "''"
-
-        # Generate the variable name resolution
-        # Must distinguish between local variables (use get_indirection_source)
-        # and global variables (read value directly)
-        from m2py.asg.expressions import MVariable
-        from m2py.parser.textx_classes import LocalVariable as MLocalVariable
-
-        if isinstance(inner_expr, GlobalVariable):
-            # Global variable as indirection source: @^V reads ^V value
-            global_name = inner_expr.name
-            # Read the global variable value - this returns the string to use as var name
-            name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
-        elif isinstance(inner_expr, (MVariable, MLocalVariable)):
-            base_name = inner_expr.name
-            python_name = translate_name(base_name)
-            if levels > 1:
-                # Multi-level indirection: @@X
-                if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, state._locals))'
-                elif ctx.strategy == GotoStrategy.TRAMPOLINE:
-                    # Python locals - build a temporary scope dict with the variable
-                    name_expr = f'str(_rt.resolve_indirection("{base_name}", {levels}, {{"{base_name}": MArray(value={python_name})}}))'
-                else:
-                    name_expr = (
-                        f'str(_rt.resolve_indirection("{base_name}", {levels}, _scope))'
-                    )
-            else:
-                # Single-level indirection: @X
-                if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                    name_expr = (
-                        f'_rt.get_indirection_source("{base_name}", state._locals)'
-                    )
-                elif ctx.strategy == GotoStrategy.TRAMPOLINE:
-                    # Python locals - use the variable directly as string
-                    name_expr = f"str({python_name})"
-                else:
-                    name_expr = f'_rt.get_indirection_source("{base_name}", _scope)'
-        else:
-            name_expr_base = generate_expr(inner_expr, ctx)
-            name_expr = f"str({name_expr_base})"
-
-        # Use _rt.get_data which handles indirected variable names
-        return f"_rt.get_data({name_expr} + {subs_fstr}, _scope)"
+        return generate_data_indirection_name(var, ctx)
 
     # Generate subscript tuple for non-indirection cases
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1113,7 +1049,9 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $G(X(1)) → m_get(_scope.get('X', None), (str(1),), "")
         $G(^G) → m_get_global(_rt.globals, 'G', (), "")
         $G(^G(1),"DEF") → m_get_global(_rt.globals, 'G', (str(1),), "DEF")
+        $G(@A) → get_indirected("A", _scope, levels=1)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get arguments
@@ -1131,14 +1069,23 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     else:
         default_code = '""'
 
+    # Handle MIndirection: $G(@A) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system
+        # For indirection, use unified get_indirected API via helper
+        from m2py.codegen.indirection import generate_get_indirection_name
+
+        return generate_get_indirection_name(var, ctx, default_code)
+
     # Generate subscript tuple
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1257,15 +1204,12 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             else:
                 full_name_expr = f'"{base_name}"'
 
-            if levels > 1:
-                # Use resolve_indirection_name (not resolve_indirection) because
-                # $ORDER/$NEXT don't need the target variable to exist - they just
-                # need the name. resolve_indirection validates existence which fails
-                # for cases like $N(@@C) where C(1)="^V1A(22,44,-1)" since that exact
-                # subscript may not exist (but $NEXT finds the next one).
-                name_expr = f"str(_rt.resolve_indirection_name({full_name_expr}, {levels}, _scope))"
-            else:
-                name_expr = f"_rt.get_indirection_source({full_name_expr}, _scope)"
+            # Feature: 018-unified-variable-system
+            # Use resolve_for_target (unified method) to get the variable NAME.
+            # $ORDER/$NEXT just need the name to find the next subscript.
+            name_expr = (
+                f"_rt.resolve_for_target({full_name_expr}, _scope, levels={levels})"
+            )
         else:
             name_expr_base = generate_expr(inner_expr, ctx)
             name_expr = f"str({name_expr_base})"
@@ -1275,13 +1219,14 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Generate subscript tuple for non-indirection cases
     # For $ORDER, subscripts include the starting point for iteration
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         # If no subscripts, use ("",) to get first key at root level
         subscripts_tuple = '("",)'
@@ -1330,7 +1275,9 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $Q(A("")) → m_query(_scope.get('A', MArray()), 'A', ("",))
         $Q(A(1,1)) → m_query(_scope.get('A', MArray()), 'A', (str(1), str(1)))
         $Q(^G("")) → m_query_global(_rt.globals, 'G', ("",))
+        $Q(@A@("")) → _rt.get_query(resolved_name, ("",), _scope)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get arguments
@@ -1341,14 +1288,23 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     var = args[0]
 
+    # Handle MIndirection: $Q(@A@("")) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system
+        # For indirection, use unified API via helper
+        from m2py.codegen.indirection import generate_query_indirection_name
+
+        return generate_query_indirection_name(var, ctx)
+
     # Generate subscript tuple
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         # If no subscripts, use ("",) to start from beginning
         subscripts_tuple = '("",)'
@@ -1888,23 +1844,39 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $NA(A(1,2,3)) → m_name("A", ("1", "2", "3"))
         $NA(A(1,2,3),2) → m_name("A", ("1", "2", "3"), depth=2)
         $NA(^GLO(1,2)) → m_name("GLO", ("1", "2"), is_global=True)
+        $NA(@A) → _rt.get_name(resolved_name, (), _scope)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
 
     args = getattr(expr, "arguments", [])
     if not args:
         return '""'
 
     var = args[0]
+
+    # Handle MIndirection: $NA(@A) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system
+        from m2py.codegen.indirection import generate_name_function_indirection
+
+        # Get depth argument if present
+        depth_expr = None
+        if len(args) >= 2:
+            depth_expr = generate_expr(args[1], ctx)
+
+        return generate_name_function_indirection(var, ctx, depth_expr)
+
     var_name = getattr(var, "name", "")
     subscripts = getattr(var, "subscripts", [])
 
     # Build subscripts tuple - evaluate at runtime
+    # DO NOT wrap in str() - let runtime handle canonicalization
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 

@@ -31,6 +31,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - Python 3.10+ + pytest, textX (existing m2py deps) (016-functional-test-suite)
 - N/A (in-memory global storage via m2py runtime) (016-functional-test-suite)
 - N/A (transpiler, no persistence except global variables via runtime) (017-ydb-test-failures)
+- Python 3.10+ + textX (parser), pytest (testing), uv (package management) (018-unified-variable-system)
+- MArray (in-memory sparse tree), globals database (MState.globals) (018-unified-variable-system)
 
 - (001-textx-semantic-graph)
 
@@ -51,9 +53,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 018-unified-variable-system: Added Python 3.10+ + textX (parser), pytest (testing), uv (package management)
 - 017-ydb-test-failures: Added Python 3.10+ + extX (parser), pytest (testing)
 - 016-functional-test-suite: Added Python 3.10+ + pytest, textX (existing m2py deps)
-- 015-transpilation-coverage-completion: Added Python 3.10+ + extX (parser), pytest (testing), coverage.py
 
 
 <!-- MANUAL ADDITIONS START -->

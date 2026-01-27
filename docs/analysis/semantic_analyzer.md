@@ -265,7 +265,7 @@ def parse_line_content(line_content: str) -> Optional[Any]:
     
     Note: textX enforces full consumption by default. We catch
     TextXSyntaxError to allow partial parsing of files with
-    invalid lines. See Phase 81 in tasks.md for rationale.
+    invalid lines.
     """
     try:
         return mm.model_from_str(line_content)

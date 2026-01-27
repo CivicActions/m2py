@@ -107,16 +107,18 @@ class TestMergeIndirection:
         code = generate_python('TEST S X="B" S A(1)=1 M @X=A Q')
         # Verify merge_var is called for indirection destination
         assert "merge_var" in code
-        # Verify get_indirection_source is used to resolve X
-        assert "get_indirection_source" in code
+        # Feature: 018-unified-variable-system (T143e)
+        # Verify resolve_for_target is used to resolve X (unified API)
+        assert "resolve_for_target" in code
 
     def test_merge_indirection_source_codegen(self, generate_python):
         """MERGE Y=@X generates get_tree_var for indirection source."""
         code = generate_python('TEST S X="A" S A(1)=1 M B=@X Q')
         # Verify get_tree_var is called for indirection source
         assert "get_tree_var" in code
-        # Verify get_indirection_source is used to resolve X
-        assert "get_indirection_source" in code
+        # Feature: 018-unified-variable-system (T143e)
+        # Verify resolve_for_target is used to resolve X (unified API)
+        assert "resolve_for_target" in code
 
     def test_merge_naked_global_destination_codegen(self, generate_python):
         """MERGE ^(subs)=X generates naked global handling."""

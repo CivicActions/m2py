@@ -1,13 +1,20 @@
 """Tests for runtime label validation and translation functions.
 
-Tests the _is_valid_label and _translate_label_to_func functions that
-support indirect DO/GOTO to numeric and %-prefixed labels.
+Tests the _is_valid_label function that supports indirect DO/GOTO to
+numeric and %-prefixed labels.
+
+Note: The _translate_label_to_func function was removed as part of
+Phase 4 User Story 5 (T074) - name translation now uses NameTranslator
+from core.names. The translation tests have been updated to use
+NameTranslator.to_python() which is the single source of truth for
+MUMPS→Python name translation.
 
 Reference: MUMPS labels can be numeric (e.g., 461, 123) or start with %,
 which requires translation to valid Python function names.
 """
 
-from m2py.runtime import _is_valid_label, _translate_label_to_func
+from m2py.runtime import _is_valid_label
+from m2py.core.names import NameTranslator
 
 
 # =============================================================================
@@ -82,48 +89,56 @@ class TestIsValidLabel:
 
 
 # =============================================================================
-# _translate_label_to_func Tests
+# NameTranslator.to_python Tests (formerly _translate_label_to_func)
 # =============================================================================
 
 
 class TestTranslateLabelToFunc:
-    """Tests for _translate_label_to_func function."""
+    """Tests for name translation (now via NameTranslator.to_python).
+
+    Note: These tests verify the same translation behavior that was previously
+    provided by _translate_label_to_func. The function was removed in T074 and
+    replaced by NameTranslator.to_python() from core.names.
+    """
 
     def test_translate_standard_label(self):
         """Standard alpha label unchanged."""
-        assert _translate_label_to_func("ENTRY") == "ENTRY"
+        assert NameTranslator.to_python("ENTRY") == "ENTRY"
 
     def test_translate_alphanumeric(self):
         """Alphanumeric label unchanged."""
-        assert _translate_label_to_func("LABEL1") == "LABEL1"
+        assert NameTranslator.to_python("LABEL1") == "LABEL1"
 
     def test_translate_numeric_label(self):
         """Numeric label gets _n_ prefix."""
-        assert _translate_label_to_func("461") == "_n_461"
+        assert NameTranslator.to_python("461") == "_n_461"
 
     def test_translate_single_digit(self):
         """Single digit gets _n_ prefix."""
-        assert _translate_label_to_func("1") == "_n_1"
+        assert NameTranslator.to_python("1") == "_n_1"
 
     def test_translate_numeric_leading_zero(self):
         """Numeric with leading zero gets prefix."""
-        assert _translate_label_to_func("0123") == "_n_0123"
+        assert NameTranslator.to_python("0123") == "_n_0123"
 
     def test_translate_percent_prefix(self):
         """%-prefixed label gets _pct_ translation."""
-        assert _translate_label_to_func("%BREAK") == "_pct_BREAK"
+        assert NameTranslator.to_python("%BREAK") == "_pct_BREAK"
 
     def test_translate_percent_alone(self):
         """% alone becomes _pct_."""
-        assert _translate_label_to_func("%") == "_pct_"
+        assert NameTranslator.to_python("%") == "_pct_"
 
     def test_translate_percent_with_numbers(self):
         """%123 becomes _pct_123."""
-        assert _translate_label_to_func("%123") == "_pct_123"
+        assert NameTranslator.to_python("%123") == "_pct_123"
 
     def test_translate_empty_string(self):
-        """Empty string returns empty."""
-        assert _translate_label_to_func("") == ""
+        """Empty string returns _preamble (labelless preamble)."""
+        # Note: NameTranslator.to_python("") returns "_preamble" for the
+        # labelless preamble case, unlike the old _translate_label_to_func
+        # which returned "". This is the correct behavior for codegen.
+        assert NameTranslator.to_python("") == "_preamble"
 
     def test_translate_none_like_empty(self):
         """Edge case: None should be handled gracefully (if passed as string)."""
@@ -133,15 +148,15 @@ class TestTranslateLabelToFunc:
 
     def test_translate_lowercase_preserved(self):
         """Lowercase letters preserved."""
-        assert _translate_label_to_func("mylabel") == "mylabel"
+        assert NameTranslator.to_python("mylabel") == "mylabel"
 
     def test_translate_mixed_case_preserved(self):
         """Mixed case preserved."""
-        assert _translate_label_to_func("MyLabel") == "MyLabel"
+        assert NameTranslator.to_python("MyLabel") == "MyLabel"
 
     def test_translate_digit_in_middle_unchanged(self):
         """Digit in middle doesn't affect translation."""
-        assert _translate_label_to_func("A1B") == "A1B"
+        assert NameTranslator.to_python("A1B") == "A1B"
 
 
 # =============================================================================
@@ -157,7 +172,7 @@ class TestLabelValidationTranslationIntegration:
         valid_labels = ["ENTRY", "1", "461", "%BREAK", "%", "A1B2"]
         for label in valid_labels:
             assert _is_valid_label(label), f"{label} should be valid"
-            result = _translate_label_to_func(label)
+            result = NameTranslator.to_python(label)
             assert result, f"{label} should translate to non-empty"
             # Translation result should be a valid Python identifier
             assert result.isidentifier() or result.startswith("_"), (
@@ -169,7 +184,7 @@ class TestLabelValidationTranslationIntegration:
         numeric_labels = ["1", "10", "100", "461", "462", "0"]
         for label in numeric_labels:
             assert _is_valid_label(label)
-            py_name = _translate_label_to_func(label)
+            py_name = NameTranslator.to_python(label)
             assert py_name.startswith("_n_")
             assert py_name == f"_n_{label}"
 
@@ -178,5 +193,5 @@ class TestLabelValidationTranslationIntegration:
         pct_labels = ["%", "%X", "%BREAK", "%UTIL", "%ZTS"]
         for label in pct_labels:
             assert _is_valid_label(label)
-            py_name = _translate_label_to_func(label)
+            py_name = NameTranslator.to_python(label)
             assert py_name.startswith("_pct_")

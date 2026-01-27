@@ -46,23 +46,23 @@ class TestScopeExprInGeneratedCode:
 
 @pytest.mark.codegen
 class TestForIndirectionTargetGeneration:
-    """Tests for _generate_for_indirection_target code generation."""
+    """Tests for FOR loop indirection target code generation (T089)."""
 
     def test_single_level_indirection(self):
-        """F @A generates resolve_indirection_name with levels=1."""
+        """F @A generates resolve_for_target with levels=1."""
         code = generate_python('TEST\n S A="I" F @A=1:1:3 W I\n Q\n')
-        # Should use resolve_indirection_name
-        assert "resolve_indirection_name" in code
+        # Should use resolve_for_target (unified approach)
+        assert "resolve_for_target" in code
         # Should have level 1
-        assert ", 1," in code
+        assert "levels=1" in code
 
     def test_double_level_indirection(self):
-        """F @@A generates resolve_indirection_name with levels=2."""
+        """F @@A generates resolve_for_target with levels=2."""
         code = generate_python('TEST\n S A="B",B="I" F @@A=1:1:3 W I\n Q\n')
-        # Should use resolve_indirection_name
-        assert "resolve_indirection_name" in code
+        # Should use resolve_for_target (unified approach)
+        assert "resolve_for_target" in code
         # Should have level 2
-        assert ", 2," in code
+        assert "levels=2" in code
 
     def test_indirect_var_stored_before_loop(self):
         """Indirect variable name resolved before loop starts."""

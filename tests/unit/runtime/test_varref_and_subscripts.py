@@ -1,16 +1,21 @@
-"""Tests for VarRef class and subscript evaluation functions.
+"""Tests for SubscriptVarRef class and subscript evaluation functions.
 
-Tests the new VarRef wrapper class and _evaluate_subscript(s) functions
-that enable runtime variable reference resolution in subscripts.
+Tests the SubscriptVarRef wrapper class (aliased as VarRef for backward compatibility)
+and _evaluate_subscript(s) functions that enable runtime variable reference
+resolution in subscripts.
 
 Reference: MUMPS allows variable references in subscripts like @A(I)
 where I is a variable that needs to be looked up at runtime.
+
+Note: SubscriptVarRef is distinct from core.scope.VarRef which represents
+a complete variable reference for codegen/runtime unified access patterns.
 """
 
 import pytest
 from m2py.runtime import MArray, MUMPSRuntime
 from m2py.runtime import (
-    VarRef,
+    VarRef,  # Backward compatibility alias for SubscriptVarRef
+    SubscriptVarRef,
     _evaluate_subscript,
     _evaluate_subscripts,
     _convert_subscript,
@@ -20,34 +25,38 @@ from m2py.runtime import (
 
 
 # =============================================================================
-# VarRef Class Tests
+# SubscriptVarRef Class Tests
 # =============================================================================
 
 
 class TestVarRef:
-    """Tests for the VarRef wrapper class."""
+    """Tests for the SubscriptVarRef wrapper class (accessed via VarRef alias)."""
 
     def test_varref_creation(self):
-        """VarRef stores variable name."""
+        """SubscriptVarRef stores variable name."""
         ref = VarRef("X")
         assert ref.name == "X"
 
     def test_varref_repr(self):
-        """VarRef has readable repr."""
+        """SubscriptVarRef has readable repr."""
         ref = VarRef("MYVAR")
-        assert repr(ref) == "VarRef('MYVAR')"
+        assert repr(ref) == "SubscriptVarRef('MYVAR')"
 
     def test_varref_different_names(self):
-        """VarRef preserves different variable names."""
+        """SubscriptVarRef preserves different variable names."""
         ref1 = VarRef("A")
         ref2 = VarRef("B")
         assert ref1.name == "A"
         assert ref2.name == "B"
 
     def test_varref_empty_name(self):
-        """VarRef accepts empty name (edge case)."""
+        """SubscriptVarRef accepts empty name (edge case)."""
         ref = VarRef("")
         assert ref.name == ""
+
+    def test_alias_is_same_class(self):
+        """VarRef alias refers to SubscriptVarRef class."""
+        assert VarRef is SubscriptVarRef
 
 
 # =============================================================================

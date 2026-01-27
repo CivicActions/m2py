@@ -1,13 +1,11 @@
-"""Tests for indirection resolution methods (Spec 017).
+"""Tests for indirection resolution methods.
 
-Tests the new runtime methods for resolving name indirection:
-- resolve_indirection_name: Multi-level indirection for FOR loops
-- resolve_for_indirection: FOR loop indirection with nested resolution
+Tests the runtime methods for resolving name indirection:
 - resolve_nested_indirection: Recursive indirection resolution
-- get_indirection_source: Extended to handle subscripted names
 - _evaluate_subscript: VarRef subscript evaluation
+- get_indirected: Unified indirection method (IndirectionResolver)
 
-Also includes V1IDNM1 test case fixes (T075k):
+Also includes V1IDNM1 test case fixes:
 - I-491: FOR loops with indirect variables resolving to subscripted names
 - I-492: Function-based indirection returning variable name instead of value
 - I-494: Subscripted VarRef evaluation in get_var()
@@ -24,115 +22,6 @@ from m2py.runtime import (
     _evaluate_subscript,
     VarRef,
 )
-
-
-# =============================================================================
-# MUMPSRuntime.resolve_indirection_name Tests
-# =============================================================================
-
-
-class TestResolveIndirectionName:
-    """Tests for resolve_indirection_name method.
-
-    This method returns the final variable NAME (not value) after
-    resolving multiple levels of indirection.
-    """
-
-    @pytest.fixture
-    def rt(self):
-        """Create a fresh MUMPSRuntime instance."""
-        return MUMPSRuntime()
-
-    def test_single_level_simple(self, rt):
-        """Single level @A where A="B" returns "B"."""
-        scope = {"A": MArray()}
-        scope["A"].value = "B"
-        result = rt.resolve_indirection_name("A", 1, scope)
-        assert result == "B"
-
-    def test_double_level(self, rt):
-        """Double level @@A where A="X", X="Y" returns "Y"."""
-        scope = {"A": MArray(), "X": MArray()}
-        scope["A"].value = "X"
-        scope["X"].value = "Y"
-        result = rt.resolve_indirection_name("A", 2, scope)
-        assert result == "Y"
-
-    def test_triple_level(self, rt):
-        """Triple level @@@A where A="X", X="Y", Y="Z" returns "Z"."""
-        scope = {"A": MArray(), "X": MArray(), "Y": MArray()}
-        scope["A"].value = "X"
-        scope["X"].value = "Y"
-        scope["Y"].value = "Z"
-        result = rt.resolve_indirection_name("A", 3, scope)
-        assert result == "Z"
-
-    def test_undefined_source_raises(self, rt):
-        """Undefined source variable raises IndirectionError."""
-        scope = {}
-        with pytest.raises(IndirectionError) as exc_info:
-            rt.resolve_indirection_name("UNDEF", 1, scope)
-        assert "Undefined local variable" in str(exc_info.value)
-
-    def test_empty_value_raises(self, rt):
-        """Empty value at any level raises IndirectionError."""
-        scope = {"A": MArray()}
-        scope["A"].value = ""
-        with pytest.raises(IndirectionError) as exc_info:
-            rt.resolve_indirection_name("A", 1, scope)
-        assert "empty variable name" in str(exc_info.value)
-
-    def test_intermediate_undefined_raises(self, rt):
-        """Undefined intermediate variable raises error."""
-        scope = {"A": MArray()}
-        scope["A"].value = "NONEXISTENT"
-        with pytest.raises(IndirectionError):
-            rt.resolve_indirection_name("A", 2, scope)
-
-    def test_level_zero_returns_varname(self, rt):
-        """Zero levels returns the original varname."""
-        scope = {"A": MArray()}
-        scope["A"].value = "X"
-        # levels=0 should just return the input name without resolution
-        result = rt.resolve_indirection_name("A", 0, scope)
-        assert result == "A"
-
-
-# =============================================================================
-# MUMPSRuntime.resolve_for_indirection Tests
-# =============================================================================
-
-
-class TestResolveForIndirection:
-    """Tests for resolve_for_indirection method.
-
-    This method handles FOR loop indirection including nested @ in values.
-    """
-
-    @pytest.fixture
-    def rt(self):
-        """Create a fresh MUMPSRuntime instance."""
-        return MUMPSRuntime()
-
-    def test_simple_resolution(self, rt):
-        """Simple case: A="B" resolves to "B"."""
-        scope = {"A": MArray()}
-        scope["A"].value = "B"
-        result = rt.resolve_for_indirection("A", scope)
-        assert result == "B"
-
-    def test_undefined_raises(self, rt):
-        """Undefined source raises IndirectionError."""
-        with pytest.raises(IndirectionError):
-            rt.resolve_for_indirection("UNDEF", {})
-
-    def test_value_with_leading_at_resolved(self, rt):
-        """Value starting with @ triggers nested resolution."""
-        scope = {"A": MArray(), "B": MArray()}
-        scope["A"].value = "@B"
-        scope["B"].value = "C"
-        result = rt.resolve_for_indirection("A", scope)
-        assert result == "C"
 
 
 # =============================================================================
@@ -229,107 +118,6 @@ class TestResolveNestedIndirection:
         rt.globals.set("GLO", ("1",), "SUB_VALUE")
         result = rt.resolve_nested_indirection("@^GLO(1)", {})
         assert result == "SUB_VALUE"
-
-
-# =============================================================================
-# MUMPSRuntime.get_indirection_source Extended Tests
-# =============================================================================
-
-
-class TestGetIndirectionSourceExtended:
-    """Extended tests for get_indirection_source with subscripted names."""
-
-    @pytest.fixture
-    def rt(self):
-        """Create a fresh MUMPSRuntime instance."""
-        return MUMPSRuntime()
-
-    def test_simple_variable(self, rt):
-        """Simple variable returns its value."""
-        scope = {"X": MArray()}
-        scope["X"].value = "VALUE"
-        result = rt.get_indirection_source("X", scope)
-        assert result == "VALUE"
-
-    def test_subscripted_variable(self, rt):
-        """Subscripted variable like X(1) returns value."""
-        scope = {"X": MArray()}
-        scope["X"][1].value = "SUB_VALUE"
-        result = rt.get_indirection_source("X(1)", scope)
-        assert result == "SUB_VALUE"
-
-    def test_deep_subscript(self, rt):
-        """Deep subscript like X(1,2,3) returns value."""
-        scope = {"X": MArray()}
-        scope["X"][1, 2, 3].value = "DEEP"
-        result = rt.get_indirection_source("X(1,2,3)", scope)
-        assert result == "DEEP"
-
-    def test_undefined_simple_raises(self, rt):
-        """Undefined simple variable raises IndirectionError."""
-        with pytest.raises(IndirectionError) as exc_info:
-            rt.get_indirection_source("UNDEF", {})
-        assert "Undefined local variable" in str(exc_info.value)
-
-    def test_undefined_subscript_raises(self, rt):
-        """Undefined subscript raises IndirectionError."""
-        scope = {"X": MArray()}
-        scope["X"][1].value = "exists"
-        # X(2) doesn't exist
-        with pytest.raises(IndirectionError) as exc_info:
-            rt.get_indirection_source("X(2)", scope)
-        assert "Undefined local variable" in str(exc_info.value)
-
-    def test_marray_value_converted_to_string(self, rt):
-        """MArray value is converted to string."""
-        scope = {"X": MArray()}
-        scope["X"].value = 42  # numeric
-        result = rt.get_indirection_source("X", scope)
-        assert result == "42"
-        assert isinstance(result, str)
-
-
-# =============================================================================
-# Integration: Complex Indirection Chains
-# =============================================================================
-
-
-class TestComplexIndirectionChains:
-    """Integration tests for complex indirection scenarios."""
-
-    @pytest.fixture
-    def rt(self):
-        """Create a fresh MUMPSRuntime instance."""
-        return MUMPSRuntime()
-
-    def test_for_loop_indirect_to_subscripted(self, rt):
-        """F @A where A="B(1)" - indirect to subscripted var name."""
-        scope = {"A": MArray(), "B": MArray()}
-        scope["A"].value = "B"
-        scope["B"][1].value = 0
-        # resolve_indirection_name gets the NAME, not value
-        result = rt.resolve_indirection_name("A", 1, scope)
-        assert result == "B"
-
-    def test_mixed_global_local(self, rt):
-        """Indirection mixing global and local variables."""
-        scope = {"L": MArray()}
-        rt.globals.set("G", (), "^RESULT")
-        scope["L"].value = "^G"
-        # Resolve L → "^G"
-        name = rt.resolve_indirection_name("L", 1, scope)
-        assert name == "^G"
-        # Now get the global's value
-        value = rt.get_var(name, scope)
-        assert value == "^RESULT"
-
-    def test_numeric_subscript_in_chain(self, rt):
-        """Subscripts with numeric values in chain."""
-        scope = {"A": MArray(), "I": MArray()}
-        scope["A"][1, 2].value = "FINAL"
-        scope["I"].value = "A(1,2)"
-        result = rt.resolve_indirection_name("I", 1, scope)
-        assert result == "A(1,2)"
 
 
 # =============================================================================
@@ -628,3 +416,118 @@ class TestIntegrationV1IDNM1Scenarios:
         # get_var("A(A(1))") = A(2) = "answer"
         result = rt.get_var("A(A(1))", scope)
         assert result == "answer"
+
+
+# =============================================================================
+# MUMPSRuntime.get_indirected Tests (Unified Method)
+# =============================================================================
+
+
+class TestGetIndirected:
+    """Tests for get_indirected() unified method.
+
+    Feature: 018-unified-variable-system (T104, T105)
+    This method uses IndirectionResolver to resolve indirection
+    and then retrieves the value via CurrentScope.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_single_level_simple(self, rt):
+        """Single level @X where X="Y", Y=5 → returns 5."""
+        scope = {"X": MArray(), "Y": MArray()}
+        scope["X"].value = "Y"
+        scope["Y"].value = 5
+        result = rt.get_indirected("X", scope, levels=1)
+        assert result == 5
+
+    def test_double_level(self, rt):
+        """Double level @@X where X="Y", Y="Z", Z=99 → returns 99."""
+        scope = {"X": MArray(), "Y": MArray(), "Z": MArray()}
+        scope["X"].value = "Y"
+        scope["Y"].value = "Z"
+        scope["Z"].value = 99
+        result = rt.get_indirected("X", scope, levels=2)
+        assert result == 99
+
+    def test_triple_level(self, rt):
+        """Triple level @@@X where X="Y", Y="Z", Z="W", W=42 → returns 42."""
+        scope = {"X": MArray(), "Y": MArray(), "Z": MArray(), "W": MArray()}
+        scope["X"].value = "Y"
+        scope["Y"].value = "Z"
+        scope["Z"].value = "W"
+        scope["W"].value = 42
+        result = rt.get_indirected("X", scope, levels=3)
+        assert result == 42
+
+    def test_with_per_level_subscripts(self, rt):
+        """@X@(1,2) where X="A", A(1,2)="hello" → returns "hello"."""
+        scope = {"X": MArray(), "A": MArray()}
+        scope["X"].value = "A"
+        scope["A"][1, 2].value = "hello"
+        result = rt.get_indirected("X", scope, levels=1, per_level_subscripts=[[1, 2]])
+        assert result == "hello"
+
+    def test_with_multiple_per_level_subscripts(self, rt):
+        """@@X@(1)@(2) where X="Y", Y="Z", Z(1)(2)... → tests multi-level."""
+        scope = {"X": MArray(), "Y": MArray(), "Z": MArray()}
+        scope["X"].value = "Y"
+        scope["Y"].value = "Z"
+        # First level: Y@(1) → Y(1) not valid. Let's use simpler test
+        # Actually Y@(1) appends to Y, so Y(1) as next name
+        scope["X"].value = "A"
+        scope["A"] = MArray()
+        scope["A"][1].value = "B"  # A(1)="B"
+        scope["B"] = MArray()
+        scope["B"][2].value = "result"  # B(2)="result"
+
+        # @X@(1) where X="A" → A(1) → "B"
+        # @@X@(1)@(2) where X="A" → A(1)="B" → B(2)="result"
+        result = rt.get_indirected(
+            "X", scope, levels=2, per_level_subscripts=[[1], [2]]
+        )
+        assert result == "result"
+
+    def test_undefined_raises_error(self, rt):
+        """Undefined target variable raises IndirectionError (MUMPS UNDEF)."""
+        from m2py.runtime import IndirectionError
+
+        scope = {"X": MArray()}
+        scope["X"].value = "UNDEFINED"
+        with pytest.raises(IndirectionError):
+            rt.get_indirected("X", scope, levels=1)
+
+    def test_global_variable(self, rt):
+        """@X where X="^GLO", ^GLO=42 → returns 42."""
+        scope = {"X": MArray()}
+        scope["X"].value = "^GLO"
+        rt.globals.set("GLO", (), "42")
+        result = rt.get_indirected("X", scope, levels=1)
+        assert result == "42"
+
+    def test_global_subscripted(self, rt):
+        """@X@(1,2) where X="^GLO", ^GLO(1,2)="hello" → returns "hello"."""
+        scope = {"X": MArray()}
+        scope["X"].value = "^GLO"
+        rt.globals.set("GLO", ("1", "2"), "hello")
+        result = rt.get_indirected("X", scope, levels=1, per_level_subscripts=[[1, 2]])
+        assert result == "hello"
+
+    def test_percent_variable(self, rt):
+        """@X where X="%Z", %Z=123 → returns 123."""
+        scope = {"X": MArray(), "_pct_Z": MArray()}
+        scope["X"].value = "%Z"
+        scope["_pct_Z"].value = 123
+        result = rt.get_indirected("X", scope, levels=1)
+        assert result == 123
+
+    def test_innermost_subscripts(self, rt):
+        """@X where X="A(1)", A(1)=99 → returns 99."""
+        scope = {"X": MArray(), "A": MArray()}
+        scope["X"].value = "A(1)"
+        scope["A"][1].value = 99
+        result = rt.get_indirected("X", scope, levels=1)
+        assert result == 99

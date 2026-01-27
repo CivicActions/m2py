@@ -459,12 +459,12 @@ class TestForIndirectionCodegen:
         assert result.success is True
 
     def test_for_indirect_loop_var_codegen(self, generate_python):
-        """FOR with indirect loop variable generates correct code (T068)."""
+        """FOR with indirect loop variable generates correct code (T068, T089)."""
         code = generate_python('TEST\n S V="X" F @V=1:1:3 W X\n Q\n')
         # Should resolve indirection before loop
         assert "_for_indirect_var" in code
-        # Should use resolve_indirection_name for FOR loop indirection
-        assert "resolve_indirection_name" in code
+        # Should use resolve_for_target (unified) for FOR loop indirection
+        assert "resolve_for_target" in code
 
     def test_for_subscripted_loop_variable(self, execute_mumps):
         """FOR with subscripted loop variable (§8.2.5).
