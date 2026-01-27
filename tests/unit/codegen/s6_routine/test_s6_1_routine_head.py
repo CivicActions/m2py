@@ -44,6 +44,53 @@ class TestRoutineHeadCodegen:
         code2 = generate_python("TEST\n Q\n")
         assert '"""MUMPS label: TEST (line 1)"""' in code2
 
+    def test_docstring_escapes_backslashes(self, generate_python):
+        """Docstrings escape backslashes in MUMPS comments.
+
+        MUMPS comments can contain backslashes like '(+-*/#\\)' which
+        would be invalid escape sequences in Python docstrings.
+        """
+        # Backslash before ) - the original issue from V1BOA
+        code = generate_python("TEST ; BINARY OPERATORS (+-*/#\\)\n Q\n")
+        # Backslash should be doubled in the docstring
+        assert "(+-*/#\\\\)" in code
+        # Verify the code compiles without warnings
+        compile(code, "<test>", "exec")
+
+    def test_docstring_escapes_common_sequences(self, generate_python):
+        """Docstrings escape sequences that look like Python escapes.
+
+        Comments containing \\n, \\t, \\r etc. should be escaped.
+        """
+        # Test various escape-like sequences
+        code = generate_python("TEST ; path\\name\\tab\\return\n Q\n")
+        assert "path\\\\name\\\\tab\\\\return" in code
+        compile(code, "<test>", "exec")
+
+    def test_docstring_escapes_double_quotes(self, generate_python):
+        """Docstrings convert double quotes to single quotes.
+
+        Double quotes in comments could break docstring delimiters.
+        """
+        code = generate_python('TEST ; Say "Hello"\n Q\n')
+        # Double quotes become single quotes
+        assert "Say 'Hello'" in code
+        compile(code, "<test>", "exec")
+
+    def test_docstring_with_mixed_special_chars(self, generate_python):
+        """Docstrings handle multiple special characters together."""
+        # Mix of backslashes and quotes
+        code = generate_python('TEST ; path\\to\\"file"\n Q\n')
+        # Backslash escaped, quotes converted
+        assert "path\\\\to\\\\'file'" in code
+        compile(code, "<test>", "exec")
+
+    def test_docstring_preserves_valid_content(self, generate_python):
+        """Docstrings preserve normal comment content unchanged."""
+        code = generate_python("TEST ; Normal comment with spaces\n Q\n")
+        assert "Normal comment with spaces" in code
+        compile(code, "<test>", "exec")
+
 
 @pytest.mark.codegen
 class TestNameTranslationCodegen:

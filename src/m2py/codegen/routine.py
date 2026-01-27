@@ -497,7 +497,8 @@ class RoutineGenerator:
                 # Strip leading/trailing whitespace from comment
                 comment_text = comment.text.strip()
                 if comment_text:
-                    # Escape quotes to prevent breaking the docstring
+                    # Escape backslashes first, then quotes to prevent breaking the docstring
+                    comment_text = comment_text.replace("\\", "\\\\")
                     comment_text = comment_text.replace('"', "'")
                     parts.append(comment_text)
 
