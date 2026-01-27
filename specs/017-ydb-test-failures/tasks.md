@@ -755,6 +755,7 @@ loop body modified the loop variable. Fixed in T089g by updating `_generate_for_
 - [X] T089g Fix TRAMPOLINE + dynamic_locals FOR loop var sync bug - Updated `_generate_for_while()` to use `state._locals.setdefault(var_name, MArray()).value` as loop_ref when TRAMPOLINE + `uses_dynamic_locals`
 - [X] T089h Remove V1FORA from SERIAL_SKIP_ROUTINES in test_mugj.py - V1FORA no longer hangs
 - [X] T089i Add unit tests for FOR body modification in TRAMPOLINE mode - tests/unit/codegen/test_indirection_helpers.py::TestTrampolineDynamicLocals
+- [X] T089j Fix V1FORA2 hang (I-350 open-ended FOR with GOTO) - Extended `_generate_for_body()` to sync loop var to `state._locals` in TRAMPOLINE + dynamic_locals even when body doesn't modify loop var. Added unit tests for open-ended FOR sync in tests/unit/codegen/test_indirection_helpers.py
 
 ---
 

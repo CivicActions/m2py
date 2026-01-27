@@ -1723,7 +1723,11 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     if for_ctx.loop_type == ForLoopType.ARGUMENTLESS:
         _generate_for_argumentless(stmt, for_ctx, ctx)
     elif for_ctx.loop_type == ForLoopType.OPEN_ENDED:
-        _generate_for_open_ended(stmt, for_ctx, ctx)
+        # T096: Open-ended loops with body modification need while loop pattern
+        if for_ctx.use_while:
+            _generate_for_while(stmt, for_ctx, ctx)
+        else:
+            _generate_for_open_ended(stmt, for_ctx, ctx)
     elif for_ctx.loop_type == ForLoopType.MIXED:
         _generate_for_mixed(stmt, for_ctx, ctx)
     elif for_ctx.loop_var_subscripts and for_ctx.loop_type == ForLoopType.BOUNDED:
@@ -1794,6 +1798,7 @@ def _generate_for_body(
     from m2py.codegen.expressions import generate_expr
 
     # T084: Sync for-loop variable to _scope for SIMPLE_FUNCTIONS strategy
+    # T089h: Also sync for TRAMPOLINE with dynamic_locals (state._locals)
     # Only needed when using Python's `for` loop (not while loop)
     # When loop_var_modified_in_body is True, we use while loop with _scope directly
     # Spec 009 (T021): Use MArray.value for consistency with subscripted variables
@@ -1801,12 +1806,21 @@ def _generate_for_body(
     # NOTE: For subscripted loop vars (F A(B)=1:1:3), the sync is handled in
     # _generate_for_bounded which re-evaluates subscripts at each access.
     # Skip the sync here to avoid double-syncing with potentially stale subscripts.
-    if (
+    needs_scope_sync = (
         ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS
         and stmt.loop_var
         and not stmt.loop_var_modified_in_body
         and not (for_ctx and for_ctx.loop_var_subscripts)  # Skip for subscripted vars
-    ):
+    )
+    # T089h: TRAMPOLINE with dynamic_locals also needs sync (state._locals)
+    needs_locals_sync = (
+        ctx.strategy == GotoStrategy.TRAMPOLINE
+        and ctx.uses_dynamic_locals
+        and stmt.loop_var
+        and not stmt.loop_var_modified_in_body
+        and not (for_ctx and for_ctx.loop_var_subscripts)  # Skip for subscripted vars
+    )
+    if needs_scope_sync or needs_locals_sync:
         if isinstance(stmt.loop_var, str):
             var_name = stmt.loop_var
             subscripts = []
@@ -1820,17 +1834,18 @@ def _generate_for_body(
         if var_name:
             # T075n: Use for_ctx.loop_var if provided (handles _xec_ prefix in inline XECUTE)
             python_name = for_ctx.loop_var if for_ctx else translate_name(var_name)
+            # T089h: Choose sync target based on strategy
+            if needs_locals_sync:
+                sync_target = f"state._locals.setdefault({var_name!r}, MArray())"
+            else:
+                sync_target = f"_scope.setdefault({var_name!r}, MArray())"
             if subscripts:
                 # T032: Subscripted loop var - use .set(sub1, sub2, ..., value=val)
                 subs_str = ", ".join(subscripts)
-                ctx.emitter.line(
-                    f"_scope.setdefault({var_name!r}, MArray()).set({subs_str}, value={python_name})"
-                )
+                ctx.emitter.line(f"{sync_target}.set({subs_str}, value={python_name})")
             else:
                 # Simple variable - use .value
-                ctx.emitter.line(
-                    f"_scope.setdefault({var_name!r}, MArray()).value = {python_name}"
-                )
+                ctx.emitter.line(f"{sync_target}.value = {python_name}")
 
     if stmt.body and stmt.body.statements:
         for body_stmt in stmt.body.statements:
@@ -2214,6 +2229,9 @@ def _generate_for_while(
         param = stmt.parameters[0]
         if param.param_type == ForParamType.RANGE:
             _generate_for_while_range_indirect(stmt, for_ctx, ctx, param)
+        elif param.param_type == ForParamType.OPEN_RANGE:
+            # T096: Open-ended FOR with indirect loop var and body modification
+            _generate_for_while_open_range_indirect(stmt, for_ctx, ctx, param)
         elif for_ctx.loop_type == ForLoopType.STRING_LIST:
             _generate_for_while_string_list_indirect(stmt, for_ctx, ctx)
         else:
@@ -2250,6 +2268,9 @@ def _generate_for_while(
     param = stmt.parameters[0]
     if param.param_type == ForParamType.RANGE:
         _generate_for_while_range(stmt, for_ctx, ctx, loop_ref, param)
+    elif param.param_type == ForParamType.OPEN_RANGE:
+        # T096: Open-ended FOR with body modification
+        _generate_for_while_open_range(stmt, for_ctx, ctx, loop_ref, param)
     elif for_ctx.loop_type == ForLoopType.STRING_LIST:
         _generate_for_while_string_list(stmt, for_ctx, ctx, loop_ref)
     else:
@@ -2312,6 +2333,57 @@ def _generate_for_while_range(
         ctx.emitter.line(f"{loop_ref} = {loop_ref} + {step_var}")
 
 
+def _generate_for_while_open_range(
+    stmt: MForStatement,
+    for_ctx: ForGenContext,
+    ctx: "GeneratorContext",
+    loop_ref: str,
+    param: MForParameter,
+) -> None:
+    """Generate while loop for open-ended FOR with modified loop variable.
+
+    T096: When the loop variable is modified inside the body, we can't use
+    Python's for loop with count() because it would overwrite the modification.
+    Instead we use a while True loop with explicit stepping.
+
+    For SIMPLE_FUNCTIONS: Use _scope['VAR'] directly so that modifications
+    inside the body are visible to the stepping.
+
+    Example: F I=-2:0 S VCOMP=VCOMP_I,I=I+1 I I=3 Q
+    - Starts at -2, step is 0
+    - Body modifies I (I=I+1) which affects the loop iteration
+    - Without while loop, count(-2, 0) always yields -2
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        loop_ref: Reference to loop variable (e.g., "_scope['I'].value")
+        param: The OPEN_RANGE parameter
+    """
+    if param.start is None or param.step is None:
+        raise NotImplementedError("Incomplete open-ended FOR parameters for while loop")
+
+    start_expr = generate_expr(param.start, ctx)
+    step_expr = generate_expr(param.step, ctx)
+
+    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    lid = for_ctx.loop_id
+    step_var = f"_for_step_{lid}"
+
+    # Initialize loop variable and step value
+    ctx.emitter.line(f"{loop_ref} = m_num({start_expr})")
+    ctx.emitter.line(f"{step_var} = m_num({step_expr})")
+
+    # Open-ended loops run forever until QUIT breaks out
+    ctx.emitter.line("while True:")
+
+    with ctx.emitter.indented():
+        # Execute body
+        _generate_for_body(stmt, ctx, for_ctx)
+        # Increment loop variable at end of iteration
+        ctx.emitter.line(f"{loop_ref} = {loop_ref} + {step_var}")
+
+
 def _generate_for_while_range_indirect(
     stmt: MForStatement,
     for_ctx: ForGenContext,
@@ -2367,6 +2439,53 @@ def _generate_for_while_range_indirect(
         ctx.emitter.line(f"if not ({next_val_cond}):")
         with ctx.emitter.indented():
             ctx.emitter.line("break")
+        # Increment loop variable using set_var
+        ctx.emitter.line(
+            f"_rt.set_var(_for_indirect_var, m_add({get_var_expr}, {step_var}), _scope)"
+        )
+
+
+def _generate_for_while_open_range_indirect(
+    stmt: MForStatement,
+    for_ctx: ForGenContext,
+    ctx: "GeneratorContext",
+    param: MForParameter,
+) -> None:
+    """Generate while loop for open-ended FOR with indirect loop variable.
+
+    T096: When the loop variable is indirect (F @A=1:1) and the resolved name
+    might be subscripted, we need to use _rt.get_var and _rt.set_var for
+    proper subscript handling at runtime.
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        ctx: Generator context
+        param: The OPEN_RANGE parameter
+    """
+    if param.start is None or param.step is None:
+        raise NotImplementedError("Incomplete open-ended FOR parameters for while loop")
+
+    start_expr = generate_expr(param.start, ctx)
+    step_expr = generate_expr(param.step, ctx)
+
+    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    lid = for_ctx.loop_id
+    step_var = f"_for_step_{lid}"
+
+    # Initialize loop variable using set_var for proper subscript handling
+    ctx.emitter.line(f"_rt.set_var(_for_indirect_var, m_num({start_expr}), _scope)")
+    ctx.emitter.line(f"{step_var} = m_num({step_expr})")
+
+    # Read via get_var for current value
+    get_var_expr = "_rt.get_var(_for_indirect_var, _scope)"
+
+    # Open-ended loops run forever until QUIT breaks out
+    ctx.emitter.line("while True:")
+
+    with ctx.emitter.indented():
+        # Execute body
+        _generate_for_body(stmt, ctx, for_ctx)
         # Increment loop variable using set_var
         ctx.emitter.line(
             f"_rt.set_var(_for_indirect_var, m_add({get_var_expr}, {step_var}), _scope)"

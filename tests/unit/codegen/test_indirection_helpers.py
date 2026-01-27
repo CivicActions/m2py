@@ -156,6 +156,45 @@ class TestTrampolineDynamicLocals:
         # Expected output from YDB: -4-2-20022446
         assert result == "-4-2-20022446"
 
+    def test_for_open_ended_with_goto_codegen(self):
+        """T089h: Open-ended FOR in TRAMPOLINE syncs loop var to state._locals.
+
+        When an open-ended FOR loop (F I=1:1) is in TRAMPOLINE mode with
+        dynamic_locals, the loop variable must be synced to state._locals
+        so that body code reading via state._locals.get('I') sees the value.
+
+        Test case from MUGJ V1FORA2 I-350:
+        F I=1:1 S VCOMP=VCOMP_I I I=5 G G350
+        Expected: terminates when I reaches 5
+
+        Without the fix, state.I is set by the for loop but state._locals['I']
+        is never updated, causing the IF condition to always read empty string.
+        """
+        # Cross-label GOTO triggers TRAMPOLINE, argumentless KILL triggers dynamic_locals
+        code = generate_python(
+            'TEST\n S VCOMP="" F I=1:1 S VCOMP=VCOMP_I I I=5 G OUT\n'
+            " Q\nOUT\n W VCOMP Q\n"
+            "OTHER\n K\n G TEST Q\n"
+        )
+        # In TRAMPOLINE with dynamic_locals, open-ended FOR should sync to state._locals
+        assert "state._locals" in code
+        # Loop should sync I to state._locals
+        assert "state._locals.setdefault('I'" in code
+
+    def test_for_open_ended_with_goto_execution(self, execute_mumps):
+        """T089h: Open-ended FOR in TRAMPOLINE executes correctly.
+
+        I-350 pattern: Open-ended FOR with IF condition checking loop var.
+        The IF must see the loop variable value from state._locals.
+        """
+        result = execute_mumps(
+            'TEST\n S VCOMP="" F I=1:1 S VCOMP=VCOMP_I I I=5 G OUT\n'
+            " Q\nOUT\n W VCOMP Q\n"
+            "OTHER\n K\n G TEST Q\n"
+        )
+        # Should terminate when I=5, output: 12345
+        assert result == "12345"
+
 
 # =============================================================================
 # Integration: Indirection Execution Tests
