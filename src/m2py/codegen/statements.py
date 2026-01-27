@@ -2221,9 +2221,12 @@ def _generate_for_while(
                 f"While loop for indirect var doesn't support {for_ctx.loop_type}"
             )
         return
-    # T084: For SIMPLE_FUNCTIONS, use _scope directly for loop variable
-    elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-        # Get the original MUMPS variable name for _scope key
+    # T084: For SIMPLE_FUNCTIONS or TRAMPOLINE with dynamic_locals,
+    # use _scope/_locals directly so body modifications are visible to loop
+    elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS or (
+        ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals
+    ):
+        # Get the original MUMPS variable name for _scope/_locals key
         if isinstance(stmt.loop_var, str):
             var_name = stmt.loop_var
         elif isinstance(stmt.loop_var, MVariable):
@@ -2232,7 +2235,12 @@ def _generate_for_while(
             var_name = None
 
         if var_name:
-            loop_ref = f"_scope.setdefault({var_name!r}, MArray()).value"
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                # TRAMPOLINE with dynamic_locals: use state._locals
+                loop_ref = f"state._locals.setdefault({var_name!r}, MArray()).value"
+            else:
+                # SIMPLE_FUNCTIONS: use _scope
+                loop_ref = f"_scope.setdefault({var_name!r}, MArray()).value"
         else:
             loop_ref = for_ctx.loop_var
     else:

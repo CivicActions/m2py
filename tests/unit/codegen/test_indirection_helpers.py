@@ -120,6 +120,42 @@ class TestTrampolineDynamicLocals:
             # Should have _locals for dynamic access
             pass
 
+    def test_for_loop_body_modifies_loop_var_codegen(self):
+        """T084: FOR loop body modification uses state._locals in TRAMPOLINE.
+
+        When body modifies loop variable with zero step (I=I+2), the generated
+        code must sync with state._locals so loop condition sees body changes.
+
+        Test case from MVTS I-340.4:
+        FOR I=-4:0:5.3 S VCOMP=VCOMP_I,I=I+2,VCOMP=VCOMP_I
+        Expected: -4-2-200224466 (loop terminates when body increments I>5.3)
+        """
+        # Cross-label GOTO + argumentless KILL triggers TRAMPOLINE + dynamic_locals
+        code = generate_python(
+            'TEST\n S VCOMP="" F I=-4:0:5.3 S VCOMP=VCOMP_I,I=I+2,VCOMP=VCOMP_I Q\n'
+            "OTHER\n K\n G TEST Q\n"  # K triggers dynamic_locals, G triggers TRAMPOLINE
+        )
+        # In TRAMPOLINE with dynamic_locals, FOR loop should use state._locals
+        # for loop_ref so body modifications are visible to loop condition
+        assert "state._locals" in code
+        # Loop should read from state._locals, not a Python local
+        assert "state._locals.setdefault('I'" in code
+
+    def test_for_loop_body_modifies_loop_var_execution(self, execute_mumps):
+        """T084: FOR loop body modification executes correctly in TRAMPOLINE.
+
+        I-340.4: FOR with zero step where body modifies loop var must terminate.
+        """
+        # Need to trigger TRAMPOLINE + dynamic_locals
+        # Cross-label GOTO triggers TRAMPOLINE, argumentless KILL triggers dynamic_locals
+        result = execute_mumps(
+            'TEST\n S VCOMP="" F I=-4:0:5.3 S VCOMP=VCOMP_I,I=I+2,VCOMP=VCOMP_I\n'
+            " W VCOMP Q\n"
+            "OTHER\n K\n G TEST Q\n"
+        )
+        # Expected output from YDB: -4-2-20022446
+        assert result == "-4-2-20022446"
+
 
 # =============================================================================
 # Integration: Indirection Execution Tests
