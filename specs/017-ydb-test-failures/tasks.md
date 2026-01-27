@@ -533,19 +533,24 @@ thanks to multi-routine support and Decimal arithmetic helpers.
 
 ---
 
-### T084: Fix MUGJ Blank Line Differences - Priority P2
+### T084: Implement Serial Suite Execution for MUGJ - Priority P2
 
-**Root Cause**: YDB driver outputs extra blank lines between test routines. Difference is 650 lines (4848 expected vs 4198 actual).
+**Root Cause**: Current test_mugj.py runs routines individually with per-routine output comparison. YDB driver runs all 72 routines serially in one process, outputting `W !!,"LABEL" D ^ROUTINE` for each. We must match this behavior byte-for-byte.
 
-**Pattern**: Extra blank lines after "END OF {routine}" and 3+ blank lines between test cases where m2py outputs 2.
+**Constraint**: NO whitespace normalization - we MUST preserve byte-for-byte identical whitespace and non-visible characters as YDB output.
 
-**Decision**: Option 1 selected - Normalize consecutive blank lines to max 2 before comparison.
+**Decision**: Implement serial execution matching YDB driver pattern exactly.
 
-**Rationale**: This preserves meaningful whitespace (single vs double blank line) while tolerating trivial differences in blank line counts. Option 2 modifies runtime behavior unnecessarily. Option 3 loses all whitespace validation.
+**Approach**:
+1. Generate a driver module that executes routines in YDB order with exact `write('\n\n' + label)` between each
+2. Run all 72 routines in sequence in single Python process (shared globals state)
+3. Capture combined output and compare against outref/mugj.txt (with YDB> prompts stripped)
+4. Individual routine tests remain for isolation/debugging but full_suite is the authoritative test
 
-- [ ] T084a Implement blank line normalization in test_mugj.py: collapse 3+ consecutive blank lines to 2 in both expected and actual before comparison
-- [ ] T084b Test that normalization preserves meaningful whitespace differences (single blank line stays single)
-- [ ] T084c Validate: `uv run pytest tests/functional/test_mugj.py -v`
+- [X] T084a Analyze YDB driver pattern: Examined `mugj.csh` - uses `W !!,"LABEL" D ^ROUTINE` pattern outputting two newlines + label before each routine call
+- [X] T084b Implement serial execution in test_mugj.py: `test_full_suite_serial()` transpiles all 376 routines from inref, executes driver routines in MUGJ_ROUTINES order with shared runtime state
+- [X] T084c Add SERIAL_SKIP_ROUTINES for routines that hang (V1FORA, V1FORC - FOR/GOTO issues) or require interaction (V1BR - BREAK, VV2READ - READ input)
+- [X] T084d Validate: Test runs in ~14s, xfails due to remaining issues (T085-T090). `uv run pytest tests/functional/test_mugj.py::TestMugjSerialExecution::test_full_suite_serial -v`
 
 ---
 
@@ -987,20 +992,20 @@ graph TD
 | TIMEOUT | larray | FOR fractional step precision | T093 | 🔄 Pending |
 | Infrastructure | miscdb | YDB-specific output | T094 | 🔄 Pending |
 
-### Current Test Results (Pre-Phase 16)
+### Current Test Results (Post-T084)
 
 | Suite | Passed | Failed | XFail | Skipped | Notes |
 |-------|--------|--------|-------|---------|-------|
 | MVTS  | 276    | 0      | 0     | 0       | ✅ Complete |
 | Merge | 29     | 0      | 23    | 0       | ✅ Complete (Z-ext xfail) |
 | Basic | 26     | 4      | 27    | 4       | Phase 17 pending |
-| MUGJ  | ~60    | ~9     | 0     | 0       | Phase 16 in progress |
-| **Total** | **~391** | **~13** | **50** | **4** | *Estimates pending Phase 16* |
+| MUGJ  | 5      | 0      | 1     | 0       | Serial execution (T084 done, T085-T090 for xfail→pass) |
+| **Total** | **336** | **4** | **51** | **4** | |
 
 ### Major Accomplishments
 
 1. **Unified Variable System (Spec 018)**: New `core/` module shared by codegen and runtime
-2. **MUGJ Serial Execution**: All 72 routines run in YDB driver order
+2. **MUGJ Serial Execution (T084)**: `test_full_suite_serial` runs all 72 routines in YDB order, xfails pending T085-T090
 3. **MVTS 100% Pass**: All 276 MVTS tests passing
 4. **Merge Suite Complete**: 29 pass + 23 Z-extension xfails
 5. **~142 tests fixed** from original 147+ failures
