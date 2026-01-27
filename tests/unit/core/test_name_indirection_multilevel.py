@@ -315,13 +315,13 @@ class TestRecursiveAtExpressions:
     def test_value_with_at_resolved_by_runtime(self):
         """Test that @-expressions in values are resolved at runtime.
 
-        @@A where A="@B", B="C", C=99 → "99".
+        @@A where A="@B", B="C", C=99 → 99.
 
-        NOTE: This test uses MUMPSRuntime.resolve_indirection() which is
-        what the codegen actually calls. The IndirectionResolver.resolve()
-        method has different semantics for recursive @ resolution.
+        This behavior is fully tested at the integration level in
+        test_s7_3_indirection.py::test_write_indirection_value_with_at.
 
-        Runtime returns string representation for write output.
+        Here we test the underlying resolve_nested_indirection which handles
+        the recursive @ resolution.
         """
         from m2py.runtime import MUMPSRuntime, MArray
 
@@ -335,8 +335,10 @@ class TestRecursiveAtExpressions:
         scope["C"] = MArray()
         scope["C"].value = 99
 
-        result = rt.resolve_indirection("A", 2, scope)
-        # Result is string-ified for WRITE output
+        # resolve_nested_indirection handles @-expressions recursively
+        # @A where A="@B" → resolves @B → "C" → value of C = 99
+        result = rt.resolve_nested_indirection("@A", scope, return_value=True)
+        # MUMPS returns strings by default
         assert str(result) == "99"
 
 
