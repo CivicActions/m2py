@@ -36,8 +36,6 @@ MUGJ_DIR = FUNCTIONAL_BASE / SUITE_NAME
 
 # Routines that must be skipped in serial execution due to infrastructure issues
 SERIAL_SKIP_ROUTINES: dict[str, str] = {
-    # Routines that hang due to infinite loops or external goto issues
-    "V1PC": "Depends on untranspiled V1PC1 helper routine",
     # Routines that require interactive input
     "V1BR": "BREAK command enters debugger",
     "VV2READ": "READ commands wait for user input",
