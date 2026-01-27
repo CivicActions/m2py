@@ -847,6 +847,222 @@ def generate_data_indirection_name(
         return f"_rt.get_data({name_expr} + {subs_fstr}, {scope_expr})"
 
 
+def generate_get_indirection_name(
+    var: "MIndirection",
+    ctx: "GeneratorContext",
+    default_expr: str = '""',
+) -> str:
+    """Generate Python expression for $GET indirection using unified API.
+
+    Feature: 018-unified-variable-system
+    Uses _rt.get_indirected() which uses IndirectionResolver internally.
+
+    $GET indirection like $G(@A) requires resolving the target variable
+    and returning its value (or default if undefined).
+
+    For $G(@A@(1,2)), we resolve @A to get "ARR", then get ARR(1,2).
+
+    Args:
+        var: MIndirection ASG node representing $GET argument
+        ctx: Generator context
+        default_expr: Python expression for the default value
+
+    Returns:
+        Python expression string for the $GET result
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import LocalVariable as MLocalVariable
+    from m2py.parser.textx_classes import GlobalVariable
+    from m2py.codegen.expressions import generate_expr
+
+    # Count indirection levels
+    levels, inner_expr = _count_indirection_levels(var)
+
+    # Build per_level_subscripts from name_indirection_subscripts
+    per_level_subs_code = None
+    if var.name_indirection_subscripts:
+        all_subs = []
+        for sub_list in var.name_indirection_subscripts:
+            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+            all_subs.extend(sub_exprs)
+        if len(all_subs) == 1:
+            per_level_subs_code = f"[[{all_subs[0]}]]"
+        else:
+            subs_str = ", ".join(all_subs)
+            per_level_subs_code = f"[[{subs_str}]]"
+
+    # Get the appropriate scope expression based on strategy
+    scope_expr = _get_scope_expr(ctx)
+
+    # Get the source expression
+    if isinstance(inner_expr, GlobalVariable):
+        # Global variable as indirection source
+        global_name = inner_expr.name
+        source_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+    elif isinstance(inner_expr, (MVariable, MLocalVariable)):
+        source_name = inner_expr.name
+        source_expr = f'"{source_name}"'
+    else:
+        inner_expr_code = generate_expr(inner_expr, ctx)
+        source_expr = f"str({inner_expr_code})"
+
+    # Build the get_indirected call
+    subs_arg = (
+        f", per_level_subscripts={per_level_subs_code}" if per_level_subs_code else ""
+    )
+
+    # For $GET, we need to handle the default case
+    # get_indirected returns "" for undefined, but $GET should return the specified default
+    # We use a conditional: value if value != "" or not using default, else default
+    if default_expr == '""':
+        # Simple case - default is empty string, same as get_indirected default
+        return f"_rt.get_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
+    else:
+        # Need to check for empty string and substitute default
+        # Note: This is not 100% correct because it can't distinguish between
+        # "undefined" and "defined as empty string" - but this matches standard $GET behavior
+        return (
+            f"((lambda _v: _v if _v else {default_expr})"
+            f"(_rt.get_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})))"
+        )
+
+
+def generate_name_function_indirection(
+    var: "MIndirection",
+    ctx: "GeneratorContext",
+    depth_expr: str | None = None,
+) -> str:
+    """Generate Python expression for $NAME function with indirection argument.
+
+    Feature: 018-unified-variable-system
+    Uses _rt.get_name() to resolve the variable name and build canonical form.
+
+    $NAME indirection like $NA(@A) requires resolving the target variable
+    name and returning it in canonical form.
+
+    For $NA(@A@(1,2)) where A="X", we want to return "X(1,2)".
+    For $NA(@A,2) where A="X(1,2,3)", we want to return "X(1,2)".
+
+    Args:
+        var: MIndirection ASG node representing $NAME argument
+        ctx: Generator context
+        depth_expr: Optional Python expression for the depth parameter
+
+    Returns:
+        Python expression string for the $NAME result
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import LocalVariable as MLocalVariable
+    from m2py.parser.textx_classes import GlobalVariable
+    from m2py.codegen.expressions import generate_expr
+
+    # Count indirection levels
+    levels, inner_expr = _count_indirection_levels(var)
+
+    # Build extra subscripts tuple from name_indirection_subscripts
+    if var.name_indirection_subscripts:
+        all_subs = []
+        for sub_list in var.name_indirection_subscripts:
+            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+            all_subs.extend(sub_exprs)
+        if len(all_subs) == 1:
+            extra_subscripts = f"({all_subs[0]},)"
+        else:
+            extra_subscripts = f"({', '.join(all_subs)},)"
+    else:
+        extra_subscripts = "()"
+
+    # Get the appropriate scope expression based on strategy
+    scope_expr = _get_scope_expr(ctx)
+
+    # Get the source expression
+    if isinstance(inner_expr, GlobalVariable):
+        global_name = inner_expr.name
+        name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+    elif isinstance(inner_expr, (MVariable, MLocalVariable)):
+        source_name = inner_expr.name
+        # Use resolve_for_target to resolve multiple levels of indirection
+        name_expr = (
+            f'_rt.resolve_for_target("{source_name}", {scope_expr}, levels={levels})'
+        )
+    else:
+        inner_expr_code = generate_expr(inner_expr, ctx)
+        name_expr = f"str({inner_expr_code})"
+
+    # Build the get_name call
+    if depth_expr is not None:
+        depth_arg = f", depth=int(m_num({depth_expr}))"
+    else:
+        depth_arg = ""
+
+    return f"_rt.get_name({name_expr}, {extra_subscripts}, {scope_expr}{depth_arg})"
+
+
+def generate_query_indirection_name(
+    var: "MIndirection",
+    ctx: "GeneratorContext",
+) -> str:
+    """Generate Python expression for $QUERY indirection using unified API.
+
+    Feature: 018-unified-variable-system
+    Uses _rt.resolve_for_target() to resolve the variable name, then
+    calls m_query_by_name for the traversal.
+
+    $QUERY indirection like $Q(@A) requires resolving the target variable
+    name, then finding the next node in depth-first traversal.
+
+    For $Q(@A@("")), we resolve @A to get "ARR", then query from ARR("").
+
+    Args:
+        var: MIndirection ASG node representing $QUERY argument
+        ctx: Generator context
+
+    Returns:
+        Python expression string for the $QUERY result
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import LocalVariable as MLocalVariable
+    from m2py.parser.textx_classes import GlobalVariable
+    from m2py.codegen.expressions import generate_expr
+
+    # Count indirection levels
+    levels, inner_expr = _count_indirection_levels(var)
+
+    # Build subscript tuple for the starting point
+    if var.name_indirection_subscripts:
+        all_subs = []
+        for sub_list in var.name_indirection_subscripts:
+            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+            all_subs.extend(sub_exprs)
+        if len(all_subs) == 1:
+            subscripts_tuple = f"({all_subs[0]},)"
+        else:
+            subscripts_tuple = f"({', '.join(all_subs)},)"
+    else:
+        subscripts_tuple = '("",)'
+
+    # Get the appropriate scope expression based on strategy
+    scope_expr = _get_scope_expr(ctx)
+
+    # Get the source expression
+    if isinstance(inner_expr, GlobalVariable):
+        # Global variable as indirection source
+        global_name = inner_expr.name
+        name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+        return f"_rt.get_query({name_expr}, {subscripts_tuple}, {scope_expr})"
+    elif isinstance(inner_expr, (MVariable, MLocalVariable)):
+        source_name = inner_expr.name
+        # Use resolve_for_target to get the name
+        name_expr = (
+            f'_rt.resolve_for_target("{source_name}", {scope_expr}, levels={levels})'
+        )
+        return f"_rt.get_query({name_expr}, {subscripts_tuple}, {scope_expr})"
+    else:
+        inner_expr_code = generate_expr(inner_expr, ctx)
+        name_expr = f"str({inner_expr_code})"
+        return f"_rt.get_query({name_expr}, {subscripts_tuple}, {scope_expr})"
+
+
 def generate_xecute_constant(
     stmt: "MXecuteStatement",
     ctx: "GeneratorContext",
@@ -1367,6 +1583,8 @@ __all__ = [
     "generate_name_indirection_for",
     "generate_merge_indirection_name",
     "generate_data_indirection_name",
+    "generate_get_indirection_name",
+    "generate_query_indirection_name",
     "generate_xecute_constant",
     "generate_xecute_dynamic",
     "generate_indirect_do",

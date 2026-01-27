@@ -1068,7 +1068,9 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $G(X(1)) → m_get(_scope.get('X', None), (str(1),), "")
         $G(^G) → m_get_global(_rt.globals, 'G', (), "")
         $G(^G(1),"DEF") → m_get_global(_rt.globals, 'G', (str(1),), "DEF")
+        $G(@A) → get_indirected("A", _scope, levels=1)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get arguments
@@ -1085,6 +1087,14 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         default_code = f"str({default_expr})"
     else:
         default_code = '""'
+
+    # Handle MIndirection: $G(@A) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system
+        # For indirection, use unified get_indirected API via helper
+        from m2py.codegen.indirection import generate_get_indirection_name
+
+        return generate_get_indirection_name(var, ctx, default_code)
 
     # Generate subscript tuple
     # DO NOT wrap in str() - let runtime handle canonicalization
@@ -1284,7 +1294,9 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $Q(A("")) → m_query(_scope.get('A', MArray()), 'A', ("",))
         $Q(A(1,1)) → m_query(_scope.get('A', MArray()), 'A', (str(1), str(1)))
         $Q(^G("")) → m_query_global(_rt.globals, 'G', ("",))
+        $Q(@A@("")) → _rt.get_query(resolved_name, ("",), _scope)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get arguments
@@ -1294,6 +1306,14 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         return '""'
 
     var = args[0]
+
+    # Handle MIndirection: $Q(@A@("")) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system
+        # For indirection, use unified API via helper
+        from m2py.codegen.indirection import generate_query_indirection_name
+
+        return generate_query_indirection_name(var, ctx)
 
     # Generate subscript tuple
     # DO NOT wrap in str() - let runtime handle canonicalization
@@ -1843,13 +1863,28 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $NA(A(1,2,3)) → m_name("A", ("1", "2", "3"))
         $NA(A(1,2,3),2) → m_name("A", ("1", "2", "3"), depth=2)
         $NA(^GLO(1,2)) → m_name("GLO", ("1", "2"), is_global=True)
+        $NA(@A) → _rt.get_name(resolved_name, (), _scope)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
 
     args = getattr(expr, "arguments", [])
     if not args:
         return '""'
 
     var = args[0]
+
+    # Handle MIndirection: $NA(@A) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system
+        from m2py.codegen.indirection import generate_name_function_indirection
+
+        # Get depth argument if present
+        depth_expr = None
+        if len(args) >= 2:
+            depth_expr = generate_expr(args[1], ctx)
+
+        return generate_name_function_indirection(var, ctx, depth_expr)
+
     var_name = getattr(var, "name", "")
     subscripts = getattr(var, "subscripts", [])
 

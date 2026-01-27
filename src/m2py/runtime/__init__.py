@@ -2295,6 +2295,111 @@ class MUMPSRuntime:
             return ""
         return m_order(arr, subs, direction)
 
+    def get_name(
+        self,
+        name: str,
+        extra_subscripts: tuple,
+        _scope: Dict[str, Any],
+        depth: int | None = None,
+    ) -> str:
+        """Get $NAME value for variable by name (indirection support).
+
+        Feature: 018-unified-variable-system
+
+        For $NAME(@A) where A="X(1,2)", returns "X(1,2)".
+        For $NAME(@A@(3)) where A="X(1,2)", returns "X(1,2,3)".
+        For $NAME(@A,2) where A="X(1,2,3)", returns "X(1,2)".
+
+        Args:
+            name: Variable name (e.g., "X(1,2)", "^G")
+            extra_subscripts: Additional subscripts to append
+            _scope: Current scope dictionary
+            depth: Optional depth parameter (None = all subscripts)
+
+        Returns:
+            Canonical name string
+        """
+        from m2py.runtime.helpers import m_name
+
+        if not name:
+            return ""
+
+        # Handle nested indirection
+        if name.startswith("@"):
+            name = self.resolve_nested_indirection(name, _scope)
+            if not name:
+                return ""
+
+        # Parse the name into base + subscripts
+        base_name, name_subs = _parse_subscripted_name(name)
+        evaluated_name_subs = _evaluate_subscripts(name_subs, _scope, runtime=self)
+
+        # Combine with extra subscripts
+        all_subs = (
+            tuple(evaluated_name_subs) if evaluated_name_subs else ()
+        ) + extra_subscripts
+
+        # Check if global
+        is_global = base_name.startswith("^")
+        if is_global:
+            base_name = base_name[1:]
+
+        # Use m_name to build canonical form
+        return m_name(base_name, all_subs, depth=depth, is_global=is_global)
+
+    def get_query(self, name: str, subscripts: tuple, _scope: Dict[str, Any]) -> str:
+        """Get $QUERY value for variable by name (indirection support).
+
+        Feature: 018-unified-variable-system
+
+        Args:
+            name: Variable name (e.g., "A", "^G")
+            subscripts: Starting subscripts for query
+            _scope: Current scope dictionary
+
+        Returns:
+            Full variable reference of next valued node, or "" if none
+        """
+        from m2py.runtime.helpers import m_query, m_query_global
+
+        if not name:
+            return ""
+
+        # Handle nested indirection: if name starts with @, resolve it first
+        if name.startswith("@"):
+            name = self.resolve_nested_indirection(name, _scope)
+            if not name:
+                return ""
+
+        # Parse any subscripts that are part of the resolved name
+        if "(" in name:
+            base_name, name_subs = _parse_subscripted_name(name)
+            # Combine name subscripts with additional subscripts
+            evaluated_name_subs = _evaluate_subscripts(name_subs, _scope, runtime=self)
+            all_subs = (
+                tuple(str(s) for s in evaluated_name_subs) + subscripts
+                if evaluated_name_subs is not None
+                else subscripts
+            )
+        else:
+            base_name = name
+            all_subs = subscripts
+
+        # Handle global variables
+        if base_name.startswith("^"):
+            key = base_name[1:]
+            if not key:
+                # Naked reference
+                resolved_name, full_subs = self._globals.resolve_naked(all_subs)
+                return m_query_global(self._globals, resolved_name, full_subs)
+            return m_query_global(self._globals, key, all_subs)
+
+        # Handle local variables
+        arr = _scope.get(base_name, MArray())
+        if not isinstance(arr, MArray):
+            return ""
+        return m_query(arr, base_name, all_subs)
+
     # Internal method: Dynamic variable read by name string.
     # Used by resolve_indirection() and legacy codegen paths (FOR loops, naked writes).
     # New code should use get_indirected() or CurrentScope.get() when possible.

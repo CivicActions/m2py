@@ -675,9 +675,6 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 - [X] T143c Remove XECUTE legacy path (statements.py:4646-4650) - `code_expressions` never used, `arguments` always populated
   - Removed 5-line else branch that was never executed (semantic analyzer always populates `arguments`)
 - [X] T143d Migrate FOR loop indirection - **N/A**: Already uses unified API via `generate_name_indirection_for()` → `resolve_for_target()`
-  - SET $PIECE (1070-1120) uses lambdas for getter/setter, complex case deferred
-- [ ] T143e Migrate MERGE command indirection (statements.py:3700-3750, 3847-3880) to use unified API
-  - Deferred: Complex migration requiring careful subscript handling
 - [X] T143e MERGE command indirection (statements.py:3700-3750, 3847-3880) migrated to unified API
   - Added `generate_merge_indirection_name()` helper function to indirection.py
   - MERGE source and destination indirection now use `resolve_for_target()` unified API
