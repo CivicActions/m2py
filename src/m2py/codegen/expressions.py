@@ -118,7 +118,10 @@ def generate_intrinsic_function(
 
 
 def generate_expr(
-    expr: MExpr, ctx: "GeneratorContext", if_condition: bool = False
+    expr: MExpr,
+    ctx: "GeneratorContext",
+    if_condition: bool = False,
+    subscript_context: bool = False,
 ) -> str:
     """Generate Python expression from ASG expression node.
 
@@ -136,6 +139,9 @@ def generate_expr(
         ctx: Generator context (for name translation, etc.)
         if_condition: If True, this expression is an IF condition, which
                      affects how argument indirection handles empty strings (T052)
+        subscript_context: If True, this expression is in a subscript position.
+                     Affects indirection: @VAR returns VALUE (for use as subscript)
+                     instead of resolving to NAME (T087)
 
     Returns:
         Python expression string
@@ -174,8 +180,11 @@ def generate_expr(
     elif isinstance(expr, MPatternMatch):
         return _generate_pattern_match(expr, ctx)
     # Spec 012 Phase 3 (T016): Handle name indirection (@VAR)
+    # T087: Pass subscript_context to generate VALUE instead of NAME resolution
     elif isinstance(expr, MIndirection):
-        return _generate_indirection(expr, ctx, if_condition=if_condition)
+        return _generate_indirection(
+            expr, ctx, if_condition=if_condition, subscript_context=subscript_context
+        )
     # Spec 013 Phase 16 (FR-029): Handle structured system variables (^$GLOBAL etc)
     elif isinstance(expr, MStructuredSystemVariable):
         return _generate_ssvn(expr, ctx)
@@ -248,7 +257,12 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
         if var.subscripts:
             # Generate subscript expressions
-            subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+            # T087: Pass subscript_context=True so indirection in subscripts
+            # returns VALUE instead of validating as NAME
+            subscript_exprs = [
+                generate_expr(sub, ctx, subscript_context=True)
+                for sub in var.subscripts
+            ]
             # Access MArray from _locals dict, default to empty MArray
             base = f"state._locals.get({python_name!r}, MArray())"
             return f"{base}.get({', '.join(subscript_exprs)})"
@@ -262,7 +276,11 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     # Spec 006 (T075): Handle subscripted array access
     if var.subscripts:
         # Generate subscript expressions
-        subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+        # T087: Pass subscript_context=True so indirection in subscripts
+        # returns VALUE instead of validating as NAME
+        subscript_exprs = [
+            generate_expr(sub, ctx, subscript_context=True) for sub in var.subscripts
+        ]
 
         # Determine base variable access
         if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.array_vars:
@@ -326,8 +344,12 @@ def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     # the type distinction. Numeric literals (Decimal, int, float) should
     # canonicalize differently than string literals.
     # Example: Decimal("1.0") → "1" (numeric), but "1.0" → "1.0" (string)
+    # T087: Pass subscript_context=True so indirection in subscripts
+    # returns VALUE instead of validating as NAME
     if var.subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+        subscript_exprs = [
+            generate_expr(sub, ctx, subscript_context=True) for sub in var.subscripts
+        ]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
             subscripts_tuple = f"({subscript_exprs[0]},)"
@@ -359,8 +381,12 @@ def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -
     """
     # Generate subscript expressions
     # DO NOT wrap in str() - let the runtime's _canonicalize_subscript handle it
+    # T087: Pass subscript_context=True so indirection in subscripts
+    # returns VALUE instead of validating as NAME
     if var.subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+        subscript_exprs = [
+            generate_expr(sub, ctx, subscript_context=True) for sub in var.subscripts
+        ]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
             subscripts_tuple = f"({subscript_exprs[0]},)"
@@ -526,7 +552,10 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
 
 
 def _generate_indirection(
-    ind: MIndirection, ctx: "GeneratorContext", if_condition: bool = False
+    ind: MIndirection,
+    ctx: "GeneratorContext",
+    if_condition: bool = False,
+    subscript_context: bool = False,
 ) -> str:
     """Generate Python expression for name indirection (@VAR).
 
@@ -539,10 +568,17 @@ def _generate_indirection(
     - With subscripts: @NAME@(1,2) → handled via per_level_subscripts
     - ARGUMENT type: @A in IF → evaluates value of A as expression
 
+    T087: subscript_context changes indirection behavior:
+    - subscript_context=False (default): Resolves to NAME, validates result
+    - subscript_context=True: Evaluates indirection and returns VALUE for subscript use
+      Example: ^V1A(@^(4)) where ^(4)="^V1A(5)" and ^V1A(5)=55
+      Returns 55 (the value), not validates "55" as a name
+
     Args:
         ind: MIndirection ASG node
         ctx: Generator context
         if_condition: If True, this is an IF condition - affects T052 empty handling
+        subscript_context: If True, return VALUE instead of resolving NAME (T087)
 
     Returns:
         Python expression string
@@ -551,11 +587,15 @@ def _generate_indirection(
     from m2py.codegen.indirection import (
         generate_name_indirection,
         generate_argument_indirection,
+        generate_subscript_indirection,
     )
 
     # Dispatch based on indirection type
     if ind.indirection_type == IndirectionType.ARGUMENT:
         return generate_argument_indirection(ind, ctx, if_condition=if_condition)
+    elif subscript_context:
+        # T087: Subscript context - get VALUE for use as subscript
+        return generate_subscript_indirection(ind, ctx)
     else:
         # NAME type (default) - look up variable by resolved name
         return generate_name_indirection(ind, ctx)

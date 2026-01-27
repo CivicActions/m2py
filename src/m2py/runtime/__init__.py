@@ -2571,6 +2571,59 @@ class MUMPSRuntime:
         # Now get the value from the target
         return self.get_var(target_name, _scope)
 
+    def get_subscript_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> Any:
+        """Get VALUE via indirection for use in subscript context (T087).
+
+        Unlike get_indirected() which resolves to NAME and validates the result,
+        this method uses IndirectionResolver with SUBSCRIPT context to get
+        the value for use as a subscript without name validation.
+
+        Example 1: A(@X) where X="Y" and Y=5
+        - Source is "X", levels=1
+        - Loop: get X's value = "Y"
+        - After loop: "Y" is valid var name, get Y's value = 5
+        - Returns 5 for use as subscript
+
+        Example 2: ^V1A(@^(4)) where ^(4)="^V1A(5)" and ^V1A(5)=55
+        - Source is "^V1A(5)" (value of naked global ^(4))
+        - Loop: get ^V1A(5)'s value = 55
+        - After loop: "55" is not valid var name, return "55" as-is
+        - Returns 55 for use as the subscript
+
+        The key difference from get_indirected():
+        - get_indirected() validates final result is a valid variable NAME
+        - get_subscript_indirected() returns the VALUE for use as subscript
+
+        Args:
+            source: Source expression value (e.g., "X" for @X)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Returns:
+            Value for use as subscript
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionContext, IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Use SUBSCRIPT context for value resolution without name validation
+        return resolver.resolve(
+            source,
+            levels=levels,
+            context=IndirectionContext.SUBSCRIPT,
+            per_level_subscripts=per_level_subscripts,
+        )
+
     def kill_indirected(
         self,
         source: str,

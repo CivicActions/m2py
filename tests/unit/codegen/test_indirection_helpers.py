@@ -158,3 +158,113 @@ class TestIndirectionExecution:
         # A contains "@B", B contains "X", so loop var is X
         result = execute_mumps('TEST\n S A="@B",B="X" F @A=1:1:3 W X\n Q\n')
         assert result == "123"
+
+
+# =============================================================================
+# T087: Subscript Indirection Context Tests
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestSubscriptIndirectionContext:
+    """Tests for T087: Subscript indirection uses VALUE instead of NAME.
+
+    When @X appears inside a subscript position (e.g., ^A(@X) or A(@X)),
+    the indirection should return the VALUE for use as a subscript,
+    not validate the result as a variable NAME.
+
+    Key difference:
+    - NAME indirection: @X where X="Y" validates "Y" as variable name
+    - SUBSCRIPT indirection: A(@X) where X="5" uses "5" as subscript value
+    """
+
+    def test_subscript_indirection_uses_value_not_name(self, execute_mumps):
+        """T087: ^A(@X) where X=55 should use 55 as subscript (I-502).
+
+        This tests the exact case from V1IDNM2.m test I-502.
+        @^(4) should resolve to VALUE 55, not validate "55" as a name.
+        """
+        # Setup: ^V1A(5)=55, ^V1A(4)="^V1A(5)"
+        # Action: S ^V1A(@^(4))=200
+        # @^(4) -> "^V1A(5)" -> 55 (VALUE)
+        # Result: ^V1A(55)=200
+        result = execute_mumps(
+            "TEST\n"
+            ' S ^V1A(5)=55,^V1A(4)="^V1A(5)"\n'
+            " S ^V1A(@^(4))=200\n"
+            " W ^V1A(55)\n"
+            " Q\n"
+        )
+        assert result == "200"
+
+    def test_subscript_indirection_local_array(self, execute_mumps):
+        """T087: A(@X) where X=3 should use 3 as subscript.
+
+        Local array subscript indirection must also use VALUE.
+        """
+        result = execute_mumps(
+            "TEST\n S X=3\n S A(1)=10,A(2)=20,A(3)=30\n W A(@X)\n Q\n"
+        )
+        assert result == "30"
+
+    def test_subscript_indirection_resolves_chain(self, execute_mumps):
+        """T087: @X in subscript where X points to another var.
+
+        @X where X="Y" and Y=5 should resolve to VALUE 5.
+        """
+        result = execute_mumps('TEST\n S X="Y",Y=5\n S A(5)="found"\n W A(@X)\n Q\n')
+        assert result == "found"
+
+    def test_subscript_indirection_multiple_levels(self, execute_mumps):
+        """T087: @@X in subscript resolves two levels.
+
+        @@X where X="Y", Y="Z", Z=7 -> VALUE 7.
+        """
+        result = execute_mumps(
+            'TEST\n S X="Y",Y="Z",Z=7\n S A(7)="level2"\n W A(@@X)\n Q\n'
+        )
+        assert result == "level2"
+
+    def test_subscript_indirection_nested_in_subscript(self, execute_mumps):
+        """T087: A(B(@C)) - subscripted variable with indirection in subscript.
+
+        This tests a subscripted local variable where one subscript uses
+        indirection. B(@C) where C="key" and key=99 gives B(99).
+        The @C resolves to "key", then "key" is looked up to get 99.
+        """
+        result = execute_mumps(
+            "TEST\n"
+            ' S C="key",key=99,B(99)="found"\n'  # key=99 so @C -> "key" -> 99
+            " W B(@C)\n"
+            " Q\n"
+        )
+        assert result == "found"
+
+    def test_subscript_indirection_codegen_uses_get_subscript_indirected(self):
+        """T087: Generated code uses get_subscript_indirected for subscripts."""
+        code = generate_python('TEST\n S X="Y"\n W A(@X)\n Q\n')
+        # Should use get_subscript_indirected in subscript context
+        assert "get_subscript_indirected" in code
+
+    def test_subscript_indirection_global_set_target(self, execute_mumps):
+        """T087: SET ^A(@X)=value uses VALUE for subscript.
+
+        The SET target subscript should also use VALUE indirection.
+        """
+        result = execute_mumps('TEST\n S X=42\n S ^G(@X)="success"\n W ^G(42)\n Q\n')
+        assert result == "success"
+
+    def test_subscript_indirection_naked_global(self, execute_mumps):
+        """T087: ^(@X) naked global with subscript indirection.
+
+        After accessing ^A(1), naked ^(@X) where X=2 should access ^A(2).
+        """
+        result = execute_mumps(
+            "TEST\n"
+            ' S ^A(1)="one",^A(2)="two"\n'
+            " S X=2\n"
+            " S Y=^A(1)\n"  # Set naked indicator to ^A(1)
+            " W ^(@X)\n"  # Should access ^A(2)
+            " Q\n"
+        )
+        assert result == "two"

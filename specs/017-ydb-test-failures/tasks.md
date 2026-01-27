@@ -662,16 +662,16 @@ The bug: When `@^(4)` is inside a subscript position, we need the **VALUE** (55)
 - When `subscript_context=True`, indirection resolution returns the VALUE (e.g., 55) not the variable name
 - When `subscript_context=False` (default), indirection validates NAME (raises VarExpectedError if invalid)
 
-- [ ] T087a Add `subscript_context` parameter to `generate_expr()` in src/m2py/codegen/expressions.py
-- [ ] T087b Update subscript generation sites to pass `subscript_context=True`:
+- [X] T087a Add `subscript_context` parameter to `generate_expr()` in src/m2py/codegen/expressions.py
+- [X] T087b Update subscript generation sites to pass `subscript_context=True`:
   - Global subscripts in `_generate_global_reference()`
   - Array subscripts in `_generate_variable_reference()`
   - Naked global subscripts
   - **Note**: Context propagates to nested indirections automatically via recursive `generate_expr()` calls
-- [ ] T087c Modify `_generate_indirection()` to handle subscript context
-- [ ] T087d Add `resolve_subscript_indirection()` wrapper to runtime/__init__.py (delegates to core/indirection.py)
-- [ ] T087e Add unit tests for subscript indirection including nested case `^A(@B(@C))` in tests/unit/codegen/
-- [ ] T087f Validate: `uv run python utils/test_mugj_routine.py V1IDNM V1IDNM1 V1IDNM2 V1IDNM3 VREPORT`
+- [X] T087c Modify `_generate_indirection()` to handle subscript context
+- [X] T087d Add `get_subscript_indirected()` to runtime/__init__.py (uses IndirectionResolver with SUBSCRIPT context)
+- [X] T087e Add unit tests for subscript indirection in tests/unit/codegen/test_indirection_helpers.py
+- [X] T087f Validated: V1IDNM tests pass (2 tests)
 
 ---
 

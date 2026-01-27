@@ -896,8 +896,11 @@ def _generate_single_assignment(
         # Spec 006 (T075): Handle subscripted array assignments
         if assignment.target.subscripts:
             # Generate subscript expressions
+            # T087: Pass subscript_context=True so indirection in subscripts
+            # returns VALUE instead of validating as NAME
             subscript_exprs = [
-                generate_expr(sub, ctx) for sub in assignment.target.subscripts
+                generate_expr(sub, ctx, subscript_context=True)
+                for sub in assignment.target.subscripts
             ]
 
             # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
@@ -1288,8 +1291,13 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
 
     # Generate subscript expressions
     # DO NOT wrap in str() - let runtime handle canonicalization
+    # T087: Pass subscript_context=True so indirection in subscripts
+    # returns VALUE instead of validating as NAME
     if global_var.subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in global_var.subscripts]
+        subscript_exprs = [
+            generate_expr(sub, ctx, subscript_context=True)
+            for sub in global_var.subscripts
+        ]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
             subscripts_tuple = f"({subscript_exprs[0]},)"
@@ -1334,8 +1342,13 @@ def _generate_extended_global_set(
 
     # Generate subscript expressions
     # DO NOT wrap in str() - let runtime handle canonicalization
+    # T087: Pass subscript_context=True so indirection in subscripts
+    # returns VALUE instead of validating as NAME
     if ext_global.subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in ext_global.subscripts]
+        subscript_exprs = [
+            generate_expr(sub, ctx, subscript_context=True)
+            for sub in ext_global.subscripts
+        ]
         if len(subscript_exprs) == 1:
             subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
@@ -1377,8 +1390,13 @@ def _generate_naked_global_set(
 
     # Generate subscript expressions
     # DO NOT wrap in str() - let runtime handle canonicalization
+    # T087: Pass subscript_context=True so indirection in subscripts
+    # returns VALUE instead of validating as NAME
     if naked_global.subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in naked_global.subscripts]
+        subscript_exprs = [
+            generate_expr(sub, ctx, subscript_context=True)
+            for sub in naked_global.subscripts
+        ]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
             subscripts_tuple = f"({subscript_exprs[0]},)"
