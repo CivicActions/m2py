@@ -731,12 +731,32 @@ Argument list expansion (`I @A` where `A="cond1,cond2"`) works correctly.
 
 ### Phase 15d: Documentation Update
 
-- [ ] T151 Update `docs/codegen/variable_system.md` to reflect final architecture
-- [ ] T152 Update `docs/architecture.md` if core/ module documentation is needed
-- [ ] T153 Archive or remove research notes that are no longer relevant
-- [ ] T154 Update this tasks.md with final completion status
+- [X] T151 Update `docs/codegen/variable_system.md` to reflect final architecture
+  - Added architecture diagram showing core/ module relationship
+  - Documented all four core components with usage examples
+  - Added per-level subscript merging behavior documentation
+- [X] T152 Update `docs/architecture.md` if core/ module documentation is needed
+  - Added core/ module to directory structure
+  - Added dedicated "Core Module" section explaining components and design
+  - Documented indirection contexts (NAME, VALUE, ARGUMENT)
+- [X] T153 Archive or remove research notes that are no longer relevant
+  - Reviewed research.md - retained as valuable reference documentation
+  - Contains YDB verification results and MUMPS semantics research
+- [X] T154 Update this tasks.md with final completion status
 
 **Checkpoint**: ✅ Unified Variable System migration COMPLETE. All deprecated code removed. Clean API.
+
+---
+
+## Final Status
+
+**Spec 018-unified-variable-system**: ✅ COMPLETE
+
+- **4350** unit/integration tests passing
+- **MUGJ validation**: VV2VNIA, VV2VNIB, VV2VNIC all pass
+- **V1ID* tests**: V1IDNM1-3, V1IDARG1-5 all pass
+- **Core module**: `src/m2py/core/` provides unified variable system
+- **Documentation**: architecture.md and variable_system.md updated
 
 ---
 

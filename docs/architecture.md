@@ -84,10 +84,17 @@ src/m2py/
 │   ├── for_analysis.py      # FOR loop analysis
 │   ├── variables.py         # Variable scope analysis
 │   └── pattern_compiler.py  # Pattern to regex compilation
+├── core/                    # Shared variable system components
+│   ├── __init__.py          # Public exports
+│   ├── names.py             # NameTranslator: MUMPS↔Python identifier translation
+│   ├── subscripts.py        # SubscriptCanonicalizer: subscript normalization
+│   ├── scope.py             # CurrentScope: unified variable access, VarRef dataclass
+│   ├── indirection.py       # IndirectionResolver: @-expression resolution
+│   └── exceptions.py        # VarExpectedError, LVUNDEFError
 ├── codegen/                 # Python code generation
 │   ├── __init__.py          # Public API: generate_python()
 │   ├── helpers.py           # Runtime helpers: m_num(), m_truth(), m_compare()
-│   ├── names.py             # NameTranslator for identifier translation
+│   ├── names.py             # Re-exports from core/names.py (backward compatibility)
 │   ├── emitter.py           # CodeEmitter for indented output
 │   ├── routine.py           # RoutineGenerator for module structure
 │   ├── statements.py        # Statement code generation
@@ -95,6 +102,39 @@ src/m2py/
 └── runtime/                 # Execution runtime
     └── __init__.py          # MUMPSRuntime, ExecutionResult
 ```
+
+## Core Module
+
+The `core/` module provides shared variable system components used by both codegen and runtime.
+This ensures consistent behavior between compile-time variable references and runtime indirection.
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| `NameTranslator` | Bidirectional MUMPS ↔ Python identifier translation |
+| `SubscriptCanonicalizer` | Subscript value normalization per MUMPS rules |
+| `CurrentScope` | Unified variable access abstraction |
+| `IndirectionResolver` | Runtime @-expression resolution with context awareness |
+| `VarRef` | Variable reference dataclass (name, subscripts, is_global) |
+
+### Design Principle
+
+The single implementation shared by codegen and runtime prevents variable lookup discrepancies.
+For example, both paths use `SubscriptCanonicalizer` to ensure that `A(1)` and `A("1")` 
+reference the same node, while `A("01")` remains distinct.
+
+### Indirection Contexts
+
+The `IndirectionResolver` handles three distinct contexts:
+
+| Context | Example | Resolution |
+|---------|---------|------------|
+| NAME | `S @X=5` | Returns variable name for assignment |
+| VALUE | `W @X` | Returns variable value for output |
+| ARGUMENT | `I @A` | Evaluates expression (e.g., "1=0" → FALSE) |
+
+See: [codegen/variable_system.md](codegen/variable_system.md) for detailed usage.
 
 ## Processing Pipeline
 
