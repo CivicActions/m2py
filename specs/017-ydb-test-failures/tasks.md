@@ -858,20 +858,24 @@ This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
 
 ---
 
-### T094: Handle Infrastructure Output Mismatch (basic/miscdb) - Priority P3
+### T094: Handle Infrastructure Output Mismatch (basic/miscdb) - Priority P3 ✅ FIXED
 
-**Root Cause**: Expected output includes YDB infrastructure (`integ` check, `mumps.gld`, `mumps.dat`) that m2py cannot produce.
+**Root Cause**: Expected output includes YDB infrastructure (`integ` check, `mumps.gld`, `mumps.dat`) that m2py cannot produce. These are YDB mupip database integrity checks and file creation messages from the test driver infrastructure, NOT MUMPS program output.
 
 **Symptom**: Expected 7 lines, actual 3 lines - missing database integrity output
 
-**Options**:
-1. Add to ROUTINE_LIMITATIONS with infrastructure note
-2. Create custom outref without infrastructure lines
-3. Mark as infrastructure-dependent test
+**Analysis**:
+- m2py output (CORRECT): `## BEGIN PROGRAM`, `PASS - PER 002209`, `## END PROGRAM`
+- Extra lines in outref: `No errors detected by integ.`, `mumps.gld`, `mumps.dat` are YDB test driver infrastructure
 
-- [ ] T094a Determine if miscdb is testing MUMPS logic or YDB infrastructure
-- [ ] T094b If infrastructure: Add to ROUTINE_LIMITATIONS with "INFRASTRUCTURE: YDB-specific output"
-- [ ] T094c Validate appropriately
+**Resolution**: Added to ROUTINE_LIMITATIONS under LIM-015 (YDB-specific features)
+
+- [x] T094a Determine if miscdb is testing MUMPS logic or YDB infrastructure
+  - **Finding**: MUMPS logic is correct; extra output is YDB test driver infrastructure
+- [x] T094b If infrastructure: Add to ROUTINE_LIMITATIONS with "INFRASTRUCTURE: YDB-specific output"
+  - **Added**: `"miscdb": "LIM-015"` with comment about YDB mupip integ/file creation infrastructure
+- [x] T094c Validate appropriately
+  - **Result**: Test now xfails with LIM-015 limitation
 
 ---
 
@@ -1023,17 +1027,17 @@ graph TD
 | ZWRITE | locals | Collation key not MUMPS order | T091 | ✅ Fixed |
 | ModuleNotFound | extcall | Missing helper routine + GotoExternal from DO | T092/T075e | ✅ Fixed |
 | TIMEOUT | larray | Conditional GOTO self-loop postcondition ignored | T093 | ✅ Fixed |
-| Infrastructure | miscdb | YDB-specific output | T094 | 🔄 Pending |
+| Infrastructure | miscdb | YDB mupip integ/file creation output in outref | T094 | ✅ xfail LIM-015 |
 
-### Current Test Results (Post-T084)
+### Current Test Results (Post-T094)
 
 | Suite | Passed | Failed | XFail | Skipped | Notes |
 |-------|--------|--------|-------|---------|-------|
 | MVTS  | 276    | 0      | 0     | 0       | ✅ Complete |
 | Merge | 29     | 0      | 23    | 0       | ✅ Complete (Z-ext xfail) |
-| Basic | 28     | 2      | 27    | 4       | Phase 17 pending (T075e, T093 fixed) |
+| Basic | 29     | 0      | 28    | 4       | ✅ All passing or appropriately xfail'd |
 | MUGJ  | 5      | 0      | 1     | 0       | Serial execution (T084 done, T085-T090 for xfail→pass) |
-| **Total** | **338** | **2** | **51** | **4** | |
+| **Total** | **339** | **0** | **52** | **4** | |
 
 ### Major Accomplishments
 

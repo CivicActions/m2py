@@ -131,6 +131,8 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     "stpfail": "LIM-015",
     # basic suite - requires ^ASW database pre-populated
     "per02397": "LIM-015",
+    # basic suite - outref includes YDB mupip integ/file creation infrastructure output
+    "miscdb": "LIM-015",
 }
 
 
