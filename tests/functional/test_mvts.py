@@ -38,6 +38,7 @@ import pytest
 
 from tests.functional.conftest import (
     FUNCTIONAL_BASE,
+    filename_to_module_name,
     normalize_outref,
 )
 from tests.functional.suite_definitions import (
@@ -102,6 +103,10 @@ def _load_all_mvts_routines() -> tuple[
     This matches the MUGJ pattern - loading all routines upfront so that
     inter-routine calls (D ^V1WR1, etc.) can resolve properly.
 
+    Note: Files starting with _ (like _.m, _1A.m) are registered with _pct_
+    prefix module names since they represent MUMPS % routines and codegen
+    generates imports like `import _pct_` for `D ^%`.
+
     Returns:
         Tuple of (routine_modules dict, transpile_errors dict)
     """
@@ -112,19 +117,20 @@ def _load_all_mvts_routines() -> tuple[
     transpile_errors: dict[str, str] = {}
 
     for source_path in all_routine_files:
-        routine_name = source_path.stem
+        filename_stem = source_path.stem
+        module_name = filename_to_module_name(filename_stem)
         source = source_path.read_text()
 
         try:
             python_code = generate_python(source)
-            module = types.ModuleType(routine_name)
-            sys.modules[routine_name] = module
+            module = types.ModuleType(module_name)
+            sys.modules[module_name] = module
             exec(python_code, module.__dict__)
-            routine_modules[routine_name] = module
+            routine_modules[module_name] = module
         except Exception as e:
             # Mark routine as failed to transpile
-            routine_modules[routine_name] = None
-            transpile_errors[routine_name] = str(e)
+            routine_modules[module_name] = None
+            transpile_errors[module_name] = str(e)
 
     return routine_modules, transpile_errors
 
@@ -367,30 +373,6 @@ class TestMvtsSuite:
             run_with_goto_support(entry_func, runtime, {})
             output = runtime.get_output()
         except Exception as e:
-            error_str = str(e)
-            error_type = type(e).__name__
-            # Categorize the error - xfail known limitations
-            if "No module named" in error_str:
-                pytest.xfail(f"Missing external dependency: {error_str}")
-            if "NotImplementedError" in error_str:
-                pytest.xfail(f"Codegen limitation: {error_str}")
-            if "BREAK" in error_str or "bdb" in error_str:
-                pytest.xfail("BREAK command enters debugger")
-            if "IndirectionError" in error_type or "Indirection" in error_str:
-                pytest.xfail(f"Indirection limitation: {error_str}")
-            if "VarExpectedError" in error_type or "VAREXPECTED" in error_str:
-                pytest.xfail(f"Indirection variable resolution: {error_str}")
-            if "RecursionError" in error_type:
-                pytest.xfail(f"Recursion depth exceeded: {error_str}")
-            if "ValueError" in error_type and "maketrans" in error_str:
-                pytest.xfail(f"$TRANSLATE limitation: {error_str}")
-            if "TypeError" in error_type:
-                # Missing arguments, wrong types, etc. - typically codegen issues
-                pytest.xfail(f"Type/argument error: {error_str}")
-            if "re.error" in error_type or "multiple repeat" in error_str:
-                pytest.xfail(f"Pattern match limitation: {error_str}")
-            if "KeyError" in error_type:
-                pytest.xfail(f"Missing key/variable: {error_str}")
             pytest.fail(f"Runtime error in {routine_name}: {e}")
 
         # MVTS routines are called by drivers with W !!,"1---V1WR" D ^V1WR

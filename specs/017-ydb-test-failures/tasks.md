@@ -902,14 +902,31 @@ This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
 
 ### Investigation
 
-- [ ] T096 [P] [MVTS] Investigate V1RN % routine naming: locate `%` routines in YDBTest/MVTS, understand how m2py handles `%` prefix
-- [ ] T097 [P] [MVTS] Verify V1OV2, V1PC1, V3TEXT2, V4MERGE1 exist in YDBTest/MVTS/inref/
+- [X] T096 [P] [MVTS] Investigate V1RN % routine naming: locate `%` routines in YDBTest/MVTS, understand how m2py handles `%` prefix
+  - **Finding**: Files named `_.m`, `_1A.m`, etc. represent MUMPS `%` routines
+  - **Finding**: Codegen correctly generates `import _pct_FOO` for `D ^%FOO`
+  - **Finding**: Test loader needed to register modules with `_pct_` prefix
+- [X] T097 [P] [MVTS] Verify V1OV2, V1PC1, V3TEXT2, V4MERGE1 exist in YDBTest/MVTS/inref/
+  - **Finding**: All files exist in tests/functional/mvts/inref/
+  - **Finding**: Files had transpilation issues (GOTO offset resolution, etc.)
 
 ### Implementation
 
-- [ ] T098 [MVTS] Fix % routine naming in codegen: routines starting with `%` should generate module name `_pct_<name>` and imports must match
-- [ ] T099 [MVTS] Ensure sub-routines (V1OV2, V1PC1, V3TEXT2, V4MERGE1) are included in MVTS routine loading
+- [X] T098 [MVTS] Fix % routine naming in codegen: routines starting with `%` should generate module name `_pct_<name>` and imports must match
+  - **Fix 1**: Added `filename_to_module_name()` helper in conftest.py to translate `_FOO` → `_pct_FOO`
+  - **Fix 2**: Updated test_mvts.py and test_mugj.py to use helper for module registration
+- [X] T099 [MVTS] Ensure sub-routines (V1OV2, V1PC1, V3TEXT2, V4MERGE1) are included in MVTS routine loading
+  - **Root cause**: Sub-routines with self-routine GOTOs (e.g., `G 691^V1OV2` inside V1OV2) were not resolved
+  - **Root cause**: Resolver treated all `label^routine` as external, even when routine = current routine
+  - **Fix 1**: Modified resolver.py `_resolve_call()` to resolve label when `call.routine == routine.name`
+  - **Fix 2**: Added auto-detection of routine name from first label in `generate_python()`
+  - **Result**: V1OV2, V1PC1, V3TEXT2, V4MERGE1 all now transpile and load successfully
 - [ ] T100 [MVTS] Validate: V1RN, V1OV, V1PC, V3TEXT, V4MERGE pass
+  - **V1OV**: ✅ PASSES
+  - **V1RN**: Runtime error `'str' object has no attribute 'value'` - different bug, not Phase 18 scope
+  - **V1PC**: Runtime error `OS() got an unexpected keyword argument '_start_offset'` - different bug
+  - **V3TEXT**: V3TEXT2 has runtime limitation - different bug
+  - **V4MERGE**: V4MERGE1 has codegen limitation - different bug
 
 ---
 

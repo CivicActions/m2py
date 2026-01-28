@@ -52,6 +52,38 @@ YDB_PATH_MARKERS = frozenset(
 
 
 # =============================================================================
+# Routine Loading Helpers
+# =============================================================================
+
+
+def filename_to_module_name(filename_stem: str) -> str:
+    """Convert a MUMPS filename stem to the proper Python module name.
+
+    MUMPS routines starting with % are stored as files starting with _ because
+    % is not a valid filename character on many systems. When loading these
+    files, we need to register them with their proper Python module name
+    (_pct_ prefix) so that codegen-generated imports can find them.
+
+    Examples:
+        "_"        -> "_pct_"     (file _.m contains routine %)
+        "_1A"      -> "_pct_1A"   (file _1A.m contains routine %1A)
+        "_BCDEFGH" -> "_pct_BCDEFGH"
+        "V1RN"     -> "V1RN"      (regular routine, no translation)
+
+    Args:
+        filename_stem: The filename without the .m extension
+
+    Returns:
+        The Python module name to register in sys.modules
+    """
+    if filename_stem.startswith("_"):
+        # File _FOO.m represents MUMPS routine %FOO
+        # Codegen translates %FOO to _pct_FOO for imports
+        return "_pct_" + filename_stem[1:]
+    return filename_stem
+
+
+# =============================================================================
 # T022: Routine → Limitation Mapping
 # =============================================================================
 

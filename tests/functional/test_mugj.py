@@ -16,6 +16,7 @@ import pytest
 from tests.functional.conftest import (
     FUNCTIONAL_BASE,
     compare_output,
+    filename_to_module_name,
     load_routine_source,
     normalize_outref,
 )
@@ -92,24 +93,27 @@ class TestMugjSerialExecution:
 
         # First pass: transpile ALL routines from inref and inject into sys.modules
         # This includes helper routines like VREPORT, sub-routines like V1WR1, etc.
+        # Note: Files starting with _ (like _.m, _1A.m) are registered with _pct_
+        # prefix module names since they represent MUMPS % routines.
         all_routine_files = list(inref_dir.glob("*.m"))
         routine_modules: dict[str, types.ModuleType | None] = {}
         transpile_errors: dict[str, str] = {}
 
         for source_path in all_routine_files:
-            routine_name = source_path.stem
+            filename_stem = source_path.stem
+            module_name = filename_to_module_name(filename_stem)
             source = source_path.read_text()
 
             try:
                 python_code = generate_python(source)
-                module = types.ModuleType(routine_name)
-                sys.modules[routine_name] = module
+                module = types.ModuleType(module_name)
+                sys.modules[module_name] = module
                 exec(python_code, module.__dict__)
-                routine_modules[routine_name] = module
+                routine_modules[module_name] = module
             except Exception as e:
                 # Mark routine as failed to transpile
-                routine_modules[routine_name] = None
-                transpile_errors[routine_name] = str(e)
+                routine_modules[module_name] = None
+                transpile_errors[module_name] = str(e)
 
         # Create runtime with shared state
         runtime = MUMPSRuntime()

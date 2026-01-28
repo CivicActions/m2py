@@ -130,6 +130,31 @@ class TestResolveReferences:
         # External calls are not resolved locally
         assert not call.is_resolved
 
+    def test_self_routine_call_is_resolved(self):
+        """Call to label^SAME_ROUTINE should be resolved as local.
+
+        This is a regression test for MVTS V1OV2 which uses patterns like:
+        G 691^V1OV2  ; inside routine V1OV2
+
+        The routine name on the call matches the current routine, so it
+        should be treated as a local call and resolved.
+        """
+        routine = self._create_test_routine()  # name="TEST"
+
+        # Add GOTO TARGET^TEST to MAIN label (same routine name)
+        goto_stmt = MGotoStatement()
+        call = MCall(name="TARGET", routine="TEST")
+        goto_stmt.targets.append(call)
+        routine.labels[0].body.add_statement(goto_stmt)
+
+        # Resolve
+        resolve_references(routine)
+
+        # Self-routine calls should be resolved locally
+        assert call.is_resolved
+        assert call.target is not None
+        assert call.target.name == "TARGET"
+
     def test_multiple_gotos_to_same_label(self):
         """Multiple GOTOs to same label should all be in back-references."""
         routine = self._create_test_routine()
