@@ -887,6 +887,188 @@ This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
 - [ ] T095b Verify test counts match expectations
 - [ ] T095c Document any remaining gaps for future specs
 
+## Phase 18: MVTS Suite - Missing Sub-Routines (ModuleNotFoundError)
+
+**Goal**: Resolve 5 tests failing due to missing sub-routine modules
+
+**Affected Tests**: V1RN, V1OV, V1PC, V3TEXT, V4MERGE
+
+**Root Cause Analysis**:
+- V1RN: `No module named '_pct_'` - % routines need special naming convention
+- V1OV: `No module named 'V1OV2'` - sub-routine not being loaded
+- V1PC: `No module named 'V1PC1'` - sub-routine not being loaded
+- V3TEXT: `No module named 'V3TEXT2'` - sub-routine not being loaded
+- V4MERGE: `No module named 'V4MERGE1'` - sub-routine not being loaded
+
+### Investigation
+
+- [ ] T096 [P] [MVTS] Investigate V1RN % routine naming: locate `%` routines in YDBTest/MVTS, understand how m2py handles `%` prefix
+- [ ] T097 [P] [MVTS] Verify V1OV2, V1PC1, V3TEXT2, V4MERGE1 exist in YDBTest/MVTS/inref/
+
+### Implementation
+
+- [ ] T098 [MVTS] Fix % routine naming in codegen: routines starting with `%` should generate module name `_pct_<name>` and imports must match
+- [ ] T099 [MVTS] Ensure sub-routines (V1OV2, V1PC1, V3TEXT2, V4MERGE1) are included in MVTS routine loading
+- [ ] T100 [MVTS] Validate: V1RN, V1OV, V1PC, V3TEXT, V4MERGE pass
+
+---
+
+## Phase 19: MVTS Suite - VarExpectedError (Indirection Variable Resolution)
+
+**Goal**: Resolve 9 tests failing due to indirection resolving to invalid variable names
+
+**Affected Tests**: V1IDNM, V1IDARG, V1XECA, V3GET, V3QUERY, V4GET2, V4NAME, V4QLEN, V4QSUB
+
+**Root Cause Analysis**:
+- V1IDNM: `VAREXPECTED: '' is not a valid variable name` - empty string from indirection
+- V1IDARG: `VAREXPECTED: '(B)' is not a valid variable name` - subscript without variable name
+- V1XECA: Similar indirection resolution issue
+- V3GET, V3QUERY, V4GET2, V4NAME, V4QLEN, V4QSUB: Same pattern - indirection edge cases
+
+**Common Pattern**: `IndirectionResolver.resolve_to_name()` and `resolve_to_argument_list()` failing on edge cases
+
+### Investigation
+
+- [ ] T101 [MVTS] Analyze V1IDNM failure: trace indirection chain to find why empty string is produced
+- [ ] T102 [P] [MVTS] Analyze V1IDARG failure: understand `(B)` subscript-only indirection pattern
+- [ ] T103 [P] [MVTS] Review MUMPS spec for valid indirection edge cases (empty strings, subscript-only)
+
+### Implementation
+
+- [ ] T104 [MVTS] Fix IndirectionResolver to handle empty string results gracefully (may be valid MUMPS behavior)
+- [ ] T105 [MVTS] Fix IndirectionResolver to handle subscript-only patterns like `(B)` in argument lists
+- [ ] T106 [MVTS] Add unit tests for indirection edge cases in tests/unit/core/
+- [ ] T107 [MVTS] Validate: V1IDNM, V1IDARG, V1XECA, V3GET, V3QUERY, V4GET2, V4NAME, V4QLEN, V4QSUB pass
+
+---
+
+## Phase 20: MVTS Suite - IndirectionError (Parsing Issues)
+
+**Goal**: Resolve 3 tests failing due to indirection parsing errors
+
+**Affected Tests**: V1IDGO, V4ORDER, V4QUIT
+
+**Root Cause Analysis**:
+- V1IDGO: `empty routine name after ^` - dynamic GOTO with empty routine component
+- V4ORDER: `malformed subscript` - $ORDER indirection parsing
+- V4QUIT: `invalid variable name` - QUIT with indirected value
+
+### Investigation
+
+- [ ] T108 [MVTS] Analyze V1IDGO: understand what MUMPS code produces empty routine name in `G ^@X`
+- [ ] T109 [P] [MVTS] Analyze V4ORDER: trace malformed subscript in $ORDER indirection
+- [ ] T110 [P] [MVTS] Analyze V4QUIT: understand invalid variable name context
+
+### Implementation
+
+- [ ] T111 [MVTS] Fix `_goto_indirected()` to handle empty routine name (may mean current routine)
+- [ ] T112 [MVTS] Fix $ORDER indirection subscript parsing
+- [ ] T113 [MVTS] Fix QUIT indirection variable resolution
+- [ ] T114 [MVTS] Validate: V1IDGO, V4ORDER, V4QUIT pass
+
+---
+
+## Phase 21: MVTS Suite - TypeError (Missing Arguments)
+
+**Goal**: Resolve 5 tests failing due to generated functions missing required arguments
+
+**Affected Tests**: V3DWP, V3FP, V4SVQ, V3CBR, V3NEW
+
+**Root Cause Analysis**:
+- V3DWP: `A0() missing 1 required positional argument` - codegen not passing all args
+- V3FP: `REF() missing 1 required positional argument: 'X'` - formal parameter not passed
+- V4SVQ: `EF() missing required positional arguments` - extrinsic function call issue
+- V3CBR: `'str' object is not callable` - variable being called as function
+- V3NEW: `can only concatenate str (not "int") to str` - type coercion issue
+
+### Investigation
+
+- [ ] T115 [MVTS] Analyze V3DWP: trace A0() call to find missing argument source
+- [ ] T116 [P] [MVTS] Analyze V3FP: trace REF() call and formal parameter binding
+- [ ] T117 [P] [MVTS] Analyze V4SVQ: trace EF() extrinsic function argument passing
+- [ ] T118 [P] [MVTS] Analyze V3CBR: find where string is being called as function (likely name collision)
+- [ ] T119 [P] [MVTS] Analyze V3NEW: find str/int concatenation source (likely WRITE or SET)
+
+### Implementation
+
+- [ ] T120 [MVTS] Fix argument passing in DO/extrinsic calls for V3DWP, V3FP, V4SVQ cases
+- [ ] T121 [MVTS] Fix V3CBR name collision (variable vs function disambiguation)
+- [ ] T122 [MVTS] Fix V3NEW type coercion in string concatenation context
+- [ ] T123 [MVTS] Validate: V3DWP, V3FP, V4SVQ, V3CBR, V3NEW pass
+
+---
+
+## Phase 22: MVTS Suite - Runtime Function Bugs
+
+**Goal**: Resolve 2 tests failing due to runtime function implementation bugs
+
+**Affected Tests**: V3TR, V4PAT
+
+**Root Cause Analysis**:
+- V3TR: `maketrans arguments must have same length` - $TRANSLATE implementation bug
+- V4PAT: `multiple repeat at position 14` - pattern match regex generation bug
+
+### Investigation
+
+- [ ] T124 [MVTS] Analyze V3TR: find $TRANSLATE call with unequal argument lengths
+- [ ] T125 [P] [MVTS] Analyze V4PAT: find pattern that generates invalid regex (e.g., `**` or `++`)
+
+### Implementation
+
+- [ ] T126 [MVTS] Fix $TRANSLATE to handle unequal length arguments per MUMPS spec (truncate or pad)
+- [ ] T127 [MVTS] Fix pattern compiler to avoid generating invalid regex quantifiers
+- [ ] T128 [MVTS] Add unit tests for $TRANSLATE edge cases and pattern edge cases
+- [ ] T129 [MVTS] Validate: V3TR, V4PAT pass
+
+---
+
+## Phase 23: MVTS Suite - Investigate Existing XFails
+
+**Goal**: Document or resolve 4 unexplained xfails (V3EF, V4KEY, V4SYSTEM, V4PRIN)
+
+**Affected Tests**: V3EF, V4KEY, V4SYSTEM, V4PRIN (currently xfail, reason unknown)
+
+### Investigation
+
+- [ ] T130 [P] [MVTS] Document V3EF xfail reason - likely $ETRAP/$ECODE error handling
+- [ ] T131 [P] [MVTS] Document V4KEY xfail reason - likely $KEY intrinsic
+- [ ] T132 [P] [MVTS] Document V4SYSTEM xfail reason - likely $SYSTEM intrinsic
+- [ ] T133 [P] [MVTS] Document V4PRIN xfail reason - likely $PRINCIPAL I/O
+
+### Resolution
+
+- [ ] T134 [MVTS] Add proper xfail reasons to test_mvts.py XFAIL_ROUTINES dict with LIM codes
+- [ ] T135 [MVTS] Update limitations.md if new limitation categories needed
+
+---
+
+## Phase 24: MVTS Final Validation
+
+**Goal**: Confirm all 135 MVTS tests pass or are appropriately xfail'd
+
+- [ ] T136 Run full MVTS suite: `uv run pytest tests/functional/test_mvts.py -v`
+- [ ] T137 Verify: 0 failures, all xfails have documented reasons
+- [ ] T138 Update Summary table with final MVTS results
+
+---
+
+### MVTS Failure Root Causes (Phase 18-23 Analysis)
+
+| Category | Tests | Root Cause | Phase | Status |
+|----------|-------|------------|-------|--------|
+| ModuleNotFoundError | V1RN | % routine naming (`_pct_`) | 18 | 🔄 Pending |
+| ModuleNotFoundError | V1OV, V1PC, V3TEXT, V4MERGE | Missing sub-routines | 18 | 🔄 Pending |
+| VarExpectedError | V1IDNM, V3GET, V3QUERY, V4GET2, V4NAME, V4QLEN, V4QSUB | Empty/invalid indirection result | 19 | 🔄 Pending |
+| VarExpectedError | V1IDARG, V1XECA | Subscript-only indirection | 19 | 🔄 Pending |
+| IndirectionError | V1IDGO | Empty routine name in GOTO | 20 | 🔄 Pending |
+| IndirectionError | V4ORDER, V4QUIT | Malformed subscript/variable | 20 | 🔄 Pending |
+| TypeError | V3DWP, V3FP, V4SVQ | Missing function arguments | 21 | 🔄 Pending |
+| TypeError | V3CBR | String called as function | 21 | 🔄 Pending |
+| TypeError | V3NEW | str/int concatenation | 21 | 🔄 Pending |
+| Runtime Bug | V3TR | $TRANSLATE maketrans length | 22 | 🔄 Pending |
+| Runtime Bug | V4PAT | Pattern regex invalid quantifier | 22 | 🔄 Pending |
+| Infrastructure | V1BR, V1HANG, V3HANG, V3JOB, V3LOCK, V4JOB | READ/HANG/JOB/LOCK commands | - | ✅ XFail |
+| Unknown | V3EF, V4KEY, V4SYSTEM, V4PRIN | Needs investigation | 23 | 🔄 Pending |
 ---
 
 ## Dependencies
@@ -956,6 +1138,56 @@ graph TD
     
     T090 --> T076
     T095 --> T076
+    
+    %% Phase 18-24: MVTS Suite
+    T096 --> T098
+    T097 --> T099
+    T098 --> T100
+    T099 --> T100
+    
+    T101 --> T104
+    T102 --> T105
+    T103 --> T104
+    T104 --> T107
+    T105 --> T107
+    T106 --> T107
+    
+    T108 --> T111
+    T109 --> T112
+    T110 --> T113
+    T111 --> T114
+    T112 --> T114
+    T113 --> T114
+    
+    T115 --> T120
+    T116 --> T120
+    T117 --> T120
+    T118 --> T121
+    T119 --> T122
+    T120 --> T123
+    T121 --> T123
+    T122 --> T123
+    
+    T124 --> T126
+    T125 --> T127
+    T126 --> T129
+    T127 --> T129
+    T128 --> T129
+    
+    T130 --> T134
+    T131 --> T134
+    T132 --> T134
+    T133 --> T134
+    T134 --> T135
+    
+    T100 --> T136
+    T107 --> T136
+    T114 --> T136
+    T123 --> T136
+    T129 --> T136
+    T135 --> T136
+    T136 --> T137
+    T137 --> T138
 ```
 
 ## Parallel Execution Opportunities
@@ -973,6 +1205,14 @@ graph TD
 - T092 (extcall helper) - test infrastructure
 - T093 (larray timeout) - FOR loop debugging
 - T094 (miscdb infra) - test configuration
+
+### Phase 18-24 (MVTS Suite) - Parallel opportunities:
+- T096, T097 (investigation) - can run in parallel
+- T101, T102, T103 (VarExpectedError investigation) - parallel
+- T108, T109, T110 (IndirectionError investigation) - parallel
+- T115, T116, T117, T118, T119 (TypeError investigation) - parallel
+- T124, T125 (runtime bug investigation) - parallel
+- T130, T131, T132, T133 (xfail investigation) - parallel
 
 ### Within phases:
 - Debug tasks marked [P] can run simultaneously
@@ -1033,17 +1273,19 @@ graph TD
 
 | Suite | Passed | Failed | XFail | Skipped | Notes |
 |-------|--------|--------|-------|---------|-------|
-| MVTS  | 276    | 0      | 0     | 0       | ✅ Complete |
+| MVTS  | 101    | 24     | 10    | 0       | Serial execution - 24 failures to resolve |
 | Merge | 29     | 0      | 23    | 0       | ✅ Complete (Z-ext xfail) |
 | Basic | 29     | 0      | 28    | 4       | ✅ All passing or appropriately xfail'd |
 | MUGJ  | 5      | 0      | 1     | 0       | Serial execution (T084 done, T085-T090 for xfail→pass) |
-| **Total** | **339** | **0** | **52** | **4** | |
+| **Total** | **164** | **24** | **62** | **4** | |
 
 ### Major Accomplishments
 
 1. **Unified Variable System (Spec 018)**: New `core/` module shared by codegen and runtime
 2. **MUGJ Serial Execution (T084)**: `test_full_suite_serial` runs all 72 routines in YDB order, xfails pending T085-T090
-3. **MVTS 100% Pass**: All 276 MVTS tests passing
+3. **MVTS Serial Execution**: Refactored to load all 714 routines, run 135 sub-drivers serially
 4. **Merge Suite Complete**: 29 pass + 23 Z-extension xfails
 5. **~143 tests fixed** from original 147+ failures (T093 added larray)
 6. **R8 Root Cause Analysis**: Detailed analysis of remaining MUGJ failures
+
+---
