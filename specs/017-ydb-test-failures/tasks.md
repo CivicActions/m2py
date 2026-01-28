@@ -815,25 +815,32 @@ for sub in sorted(node._children.keys(), key=str):  # BUG
 
 **Symptom**: `No module named 'extcall2'`
 
-- [ ] T092a Locate `extcall2.m` in YDBTest/basic/inref/
-- [ ] T092b Add `extcall2` to ROUTINE_HELPERS in conftest.py:
+- [x] T092a Locate `extcall2.m` in YDBTest/basic/inref/ ✅
+- [x] T092b Add `extcall2` to ROUTINE_HELPERS in test_basic.py:
   ```python
-  "extcall": ["extcall2"],
+  ROUTINE_HELPERS: dict[str, list[str]] = {
+      "extcall": ["extcall2"],
+  }
   ```
-- [ ] T092c Validate: `uv run pytest tests/functional/test_basic.py -k extcall -v`
+  Note: Added to test_basic.py (not conftest.py) since helper is basic suite-specific
+- [x] T092c Validate: ModuleNotFound error is resolved ✅
+  - Test now executes extcall2 successfully
+  - Remaining output mismatch (6 vs 14 lines) is due to T075e (GotoExternal from DO calls)
+  - The `G LAB1^extcall` inside extcall2 raises GotoExternal which unwinds the DO stack
 
 ---
 
-### T093: Fix FOR Loop Timeout (basic/larray) - Priority P2
+### T093: Fix FOR Loop Timeout (basic/larray) - Priority P2 ✅ FIXED
 
-**Root Cause**: FOR loop with fractional steps `j=0:0.0005:0.001` may not terminate correctly due to floating-point precision issues.
+**Root Cause (Actual)**: Conditional GOTO self-loop `G loop:q<3` was generating unconditional `continue` instead of `if m_truth(q<3): continue`. The postcondition on the target MCall was ignored for BACKWARD_JUMP GOTOs.
 
-**Symptom**: `Execution timed out after 60s`
+**Original Hypothesis (Wrong)**: FOR loop with fractional steps `j=0:0.0005:0.001` may not terminate correctly due to floating-point precision issues.
 
-**Investigation needed**:
-1. The test uses nested FOR loops with fractional steps
-2. Decimal arithmetic in `m_range()` may have edge case bug
-3. Loop termination condition `j <= 0.001` may fail with floating-point
+**Actual Symptom**: `Execution timed out after 60s` due to infinite loop in self-loop GOTO pattern.
+
+**Fix Applied**:
+- Modified `_generate_goto()` in `src/m2py/codegen/statements.py` to check `target.postcondition` for BACKWARD_JUMP self-loops
+- Added unit tests in `tests/unit/codegen/test_cross_label_goto.py::TestSelfLoopPattern`
 
 **Test Pattern** (from larray.m):
 ```mumps
@@ -842,11 +849,11 @@ For i=0:1:2 For j=0:0.0005:0.001 Set a(i+j)="DATA"_(i+j)
 
 This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
 
-- [ ] T093a Add debug tracing to FOR loop codegen for fractional steps
-- [ ] T093b Create minimal reproduction case for `FOR j=0:0.0005:0.001`
-- [ ] T093c Fix the root cause (likely in `m_range()` or termination logic)
-- [ ] T093d Note: May be related to T089 (FOR step edge cases)
-- [ ] T093e Validate: `uv run pytest tests/functional/test_basic.py -k larray -v --timeout=120`
+- [x] T093a Investigation revealed root cause was conditional GOTO self-loop, not FOR loop
+- [x] T093b Minimal repro: `G loop:q<3` generating unconditional `continue`
+- [x] T093c Fixed `_generate_goto()` to handle postcondition on BACKWARD_JUMP targets
+- [x] T093d Added unit tests: `test_self_loop_with_postcondition_on_target`, `test_self_loop_postcondition_codegen`
+- [x] T093e Validated: `uv run pytest tests/functional/test_basic.py -k larray -v` - PASSED
 
 ---
 
@@ -1013,8 +1020,8 @@ graph TD
 | Category | Test | Root Cause | Task | Status |
 |----------|------|------------|------|--------|
 | ZWRITE | locals | Collation key not MUMPS order | T091 | ✅ Fixed |
-| ModuleNotFound | extcall | Missing helper routine | T092 | 🔄 Pending |
-| TIMEOUT | larray | FOR fractional step precision | T093 | 🔄 Pending |
+| ModuleNotFound | extcall | Missing helper routine | T092 | ✅ Fixed (helper loads; output mismatch blocked by T075e) |
+| TIMEOUT | larray | Conditional GOTO self-loop postcondition ignored | T093 | ✅ Fixed |
 | Infrastructure | miscdb | YDB-specific output | T094 | 🔄 Pending |
 
 ### Current Test Results (Post-T084)
@@ -1023,9 +1030,9 @@ graph TD
 |-------|--------|--------|-------|---------|-------|
 | MVTS  | 276    | 0      | 0     | 0       | ✅ Complete |
 | Merge | 29     | 0      | 23    | 0       | ✅ Complete (Z-ext xfail) |
-| Basic | 26     | 4      | 27    | 4       | Phase 17 pending |
+| Basic | 27     | 3      | 27    | 4       | Phase 17 pending (T093 fixed larray) |
 | MUGJ  | 5      | 0      | 1     | 0       | Serial execution (T084 done, T085-T090 for xfail→pass) |
-| **Total** | **336** | **4** | **51** | **4** | |
+| **Total** | **337** | **3** | **51** | **4** | |
 
 ### Major Accomplishments
 
@@ -1033,5 +1040,5 @@ graph TD
 2. **MUGJ Serial Execution (T084)**: `test_full_suite_serial` runs all 72 routines in YDB order, xfails pending T085-T090
 3. **MVTS 100% Pass**: All 276 MVTS tests passing
 4. **Merge Suite Complete**: 29 pass + 23 Z-extension xfails
-5. **~142 tests fixed** from original 147+ failures
+5. **~143 tests fixed** from original 147+ failures (T093 added larray)
 6. **R8 Root Cause Analysis**: Detailed analysis of remaining MUGJ failures

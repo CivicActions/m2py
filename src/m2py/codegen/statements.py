@@ -2695,8 +2695,16 @@ def _generate_single_target_goto(
     # When label has has_self_loop=True, body is wrapped in while True:
     # and this GOTO becomes continue to restart the loop
     if goto_type == GotoType.BACKWARD_JUMP and not is_cross_label:
-        # Self-loop: generate continue to restart the while True: loop
-        ctx.emitter.line("continue")
+        # T093 fix: Handle postcondition on self-loop target (e.g., G loop:q<3)
+        # The continue should only execute if the postcondition is true
+        if target.postcondition is not None:
+            cond_expr = generate_expr(target.postcondition, ctx)
+            ctx.emitter.line(f"if m_truth({cond_expr}):")
+            with ctx.emitter.indented():
+                ctx.emitter.line("continue")
+        else:
+            # Self-loop: generate continue to restart the while True: loop
+            ctx.emitter.line("continue")
         return
 
     # Phase 7 (US5): Loop exit patterns

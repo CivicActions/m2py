@@ -350,6 +350,40 @@ LOOP S X=X+1,SUM=SUM+X I X<5 G LOOP
         assert result.output == "15"  # Sum of 1+2+3+4+5
         assert result.success is True
 
+    def test_self_loop_with_postcondition_on_target(self, execute_mumps):
+        """T093: Self-loop GOTO with postcondition on target MCall.
+
+        Pattern: G loop:condition - GOTO is unconditional but target has postcondition.
+        The postcondition must be evaluated before continuing the loop.
+        This is different from conditional GOTO (G:cond label) where GOTO itself is conditional.
+
+        Regression test for T093 (larray timeout) where `G loop:q<3` was generating
+        unconditional `continue` instead of `if m_truth(q<3): continue`.
+        """
+        # G loop:q<3 means: jump to loop only if q<3
+        source = """TEST S Q=0
+loop S Q=Q+1 W Q G loop:Q<3
+ Q"""
+        result = execute_mumps(source)
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_self_loop_postcondition_codegen(self, generate_python):
+        """T093: Verify codegen for self-loop with postcondition on target.
+
+        The generated code must wrap `continue` in a conditional check.
+        """
+        source = """TEST S Q=0
+loop S Q=Q+1 W Q G loop:Q<3
+ Q"""
+        code = generate_python(source)
+
+        # Should have conditional continue, not bare continue
+        # The pattern should be: if m_truth(...): continue
+        assert "if m_truth(" in code
+        # Should still have while True for the self-loop structure
+        assert "while True:" in code
+
 
 @pytest.mark.codegen
 class TestVariableVisibility:

@@ -36,6 +36,12 @@ from tests.functional.suite_definitions import BASIC_ROUTINES, RoutineDefinition
 SUITE_NAME = "basic"
 BASIC_DIR = FUNCTIONAL_BASE / "basic" / "inref"
 
+# Routine-specific helper dependencies
+# Maps routine name to list of helper routine names that must be loaded
+ROUTINE_HELPERS: dict[str, list[str]] = {
+    "extcall": ["extcall2"],
+}
+
 
 # =============================================================================
 # Outref Loading
@@ -162,8 +168,19 @@ def execute_basic_routine(
     except FileNotFoundError as e:
         return ExecutionResult(output="", success=False, error=str(e))
 
-    helpers = _get_common_helpers() if use_helpers else None
-    return run_mumps(source, args=args, helper_sources=helpers)
+    helpers = _get_common_helpers().copy() if use_helpers else {}
+
+    # Load routine-specific helpers (e.g., extcall needs extcall2)
+    if routine_name in ROUTINE_HELPERS:
+        for helper_name in ROUTINE_HELPERS[routine_name]:
+            try:
+                helpers[helper_name] = load_routine_source(BASIC_DIR, helper_name)
+            except FileNotFoundError as e:
+                return ExecutionResult(
+                    output="", success=False, error=f"Missing helper {helper_name}: {e}"
+                )
+
+    return run_mumps(source, args=args, helper_sources=helpers if helpers else None)
 
 
 # =============================================================================
