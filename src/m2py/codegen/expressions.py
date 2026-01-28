@@ -267,11 +267,11 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
             base = f"state._locals.get({python_name!r}, MArray())"
             return f"{base}.get({', '.join(subscript_exprs)})"
         else:
-            # T075h: Simple variable - get MArray from _locals dict, access .value
-            # state._locals stores MArray objects for SET consistency, so we need
-            # to get the MArray (or create empty one) and return its .value
-            # This ensures S X=Y correctly copies Y's value, not the MArray object
-            return f"state._locals.get({python_name!r}, MArray()).value"
+            # T075h: Simple variable - get value from _locals dict
+            # state._locals may contain MArray objects (from SET) or plain values
+            # (from external TRAMPOLINE routine returns), so we use m_var_value
+            # to handle both cases uniformly
+            return f"m_var_value(state._locals.get({python_name!r}))"
 
     # Spec 006 (T075): Handle subscripted array access
     if var.subscripts:
@@ -304,8 +304,10 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     # Spec 008 (T085): Read variables from _scope for SIMPLE_FUNCTIONS strategy
     # Spec 009 (T022): Use MArray.value to read simple variables (consistency with subscripted)
     # Return empty string for undefined variables (MUMPS semantics via MArray.value)
+    # Spec 017 Phase 18: Use m_var_value to handle both MArray and plain values
+    # (External TRAMPOLINE routines may return plain strings in _scope)
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-        return f"_scope.get({python_name!r}, MArray()).value"
+        return f"m_var_value(_scope.get({python_name!r}))"
 
     # Fallback: plain Python variable (TRAMPOLINE without state_vars)
     return python_name
@@ -801,6 +803,9 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         raise NotImplementedError("Extrinsic function without target not supported")
 
     label_name = expr.target.name
+    # T100: $$^ROUTINE means call the routine's entry point (routine name as label)
+    if not label_name and expr.target.routine:
+        label_name = expr.target.routine
     if not label_name:
         raise NotImplementedError("Extrinsic function with empty label not supported")
 
@@ -956,9 +961,10 @@ def _generate_extrinsic_arguments_with_byref(
             # By-reference: pass the variable value, record name for unpacking
             has_byref = True
             if arg.variable_name:
-                # Spec 009 (T021): Use MArray.value for SIMPLE_FUNCTIONS
+                # Spec 009 (T021): Use m_var_value for SIMPLE_FUNCTIONS to handle
+                # both MArray and plain values from external routines
                 var_name = arg.variable_name
-                parts.append(f"_scope.get({var_name!r}, MArray()).value")
+                parts.append(f"m_var_value(_scope.get({var_name!r}))")
                 byref_names.append(var_name)
             elif arg.expression:
                 # Expression passed by-ref (unusual but possible)
@@ -972,7 +978,7 @@ def _generate_extrinsic_arguments_with_byref(
                 parts.append(generate_expr(arg.expression, ctx))
             elif arg.variable_name:
                 var_name = arg.variable_name
-                parts.append(f"_scope.get({var_name!r}, MArray()).value")
+                parts.append(f"m_var_value(_scope.get({var_name!r}))")
             else:
                 parts.append("None")
             byref_names.append(None)
@@ -1392,6 +1398,7 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
         Python code calling _rt.get_text()
     """
     from m2py.asg.expressions import MLiteral
+    from m2py.asg.enums import LiteralType
 
     # TextFunction stores line reference info in line_ref dict, not arguments
     line_ref = getattr(expr, "line_ref", {})
@@ -1407,13 +1414,16 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
 
     # Handle offset parameter
     if offset is not None:
-        if isinstance(offset, MLiteral):
-            # Apply sign to literal value, truncating to integer for MUMPS semantics
+        if isinstance(offset, MLiteral) and offset.literal_type in (
+            LiteralType.INTEGER,
+            LiteralType.DECIMAL,
+        ):
+            # Numeric literal - apply sign and truncate to integer for MUMPS semantics
             offset_val = int(offset.value) if offset_sign == "+" else -int(offset.value)
             params.append(f"offset={offset_val}")
         else:
-            # Offset is an expression (variable, etc.)
-            # Must convert to int since expressions return strings
+            # Offset is an expression (variable, string literal, etc.)
+            # Must convert to int via m_num() since MUMPS coerces non-numeric strings to 0
             offset_code = generate_expr(offset, ctx)
             if offset_sign == "-":
                 params.append(f"offset=-int(m_num({offset_code}))")
@@ -1436,9 +1446,11 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
 
     # Handle external routine
     if routine is not None:
-        # Use importlib.import_module() for reliable module loading in exec() contexts
-        # __import__() has issues with dynamically modified sys.path
-        params.append(f"module=__import__('importlib').import_module('{routine}')")
+        # T100: Per MUMPS spec, $TEXT returns empty string for non-existent routines.
+        # Use _get_module_safe() runtime helper that returns None on import failure.
+        # Also pass is_external=True so get_text knows to return "" if module is None.
+        params.append(f"module=_rt._get_module_safe('{routine}')")
+        params.append("is_external=True")
 
     return f"_rt.get_text({', '.join(params)})"
 

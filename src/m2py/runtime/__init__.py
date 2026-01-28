@@ -12,6 +12,7 @@ Spec 009: Extended with global variable storage and helper functions:
 from __future__ import annotations
 
 import re
+import sys
 import types
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -1160,11 +1161,36 @@ class MUMPSRuntime:
         """
         return self._globals
 
+    def _get_module_safe(self, routine_name: str) -> Optional[types.ModuleType]:
+        """Safely get a module by name, returning None if not found.
+
+        Used by $TEXT to handle non-existent routines gracefully.
+        Per MUMPS spec, $TEXT returns empty string for non-existent routines.
+
+        Args:
+            routine_name: Name of the routine/module to import
+
+        Returns:
+            The imported module, or None if import fails
+        """
+        import importlib
+
+        # First check if already in sys.modules
+        if routine_name in sys.modules:
+            return sys.modules[routine_name]
+
+        # Try to import
+        try:
+            return importlib.import_module(routine_name)
+        except (ModuleNotFoundError, ImportError):
+            return None
+
     def get_text(
         self,
         offset: int,
         label: Optional[str] = None,
         module: Optional[types.ModuleType] = None,
+        is_external: bool = False,
     ) -> str:
         """Get source text line ($TEXT function).
 
@@ -1179,14 +1205,22 @@ class MUMPSRuntime:
         Args:
             offset: Line offset (0 = routine name, 1+ = source line index)
             label: Optional label for label+offset lookup
-            module: Module containing _source_lines (None = current routine)
+            module: Module containing _source_lines (None = current routine,
+                    unless is_external=True in which case None means not found)
+            is_external: True if this is an external routine reference.
+                        When True and module is None, returns empty (routine not found).
 
         Returns:
             Source line text, or empty string if:
             - Offset is past end of routine
             - Offset is negative
             - Label not found
+            - External routine not found (is_external=True, module=None)
         """
+        # T100: Handle case where external routine was requested but not found
+        if is_external and module is None:
+            return ""
+
         # $TEXT(+0) returns routine name
         if offset == 0 and label is None:
             if module is not None:

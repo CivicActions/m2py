@@ -1127,9 +1127,11 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
             # Build getter/setter based on strategy
             # Note: Getter must convert to string since MUMPS values can be numeric
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                # _scope-based access using MArray for consistency with subscripted variables
-                # Spec 009 (T021): Use MArray.value for getter/setter
-                getter = f"lambda: str(_scope.get({translated_name!r}, MArray()).value or '')"
+                # _scope-based access using m_var_value for compatibility with
+                # both MArray and plain values from external TRAMPOLINE routines
+                getter = (
+                    f"lambda: str(m_var_value(_scope.get({translated_name!r})) or '')"
+                )
                 setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
             elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
                 # state-based access
@@ -1138,7 +1140,9 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
             else:
                 # Plain local variable (would need nonlocal in real scenario)
                 # For now, fall back to _scope pattern for safety
-                getter = f"lambda: str(_scope.get({translated_name!r}, MArray()).value or '')"
+                getter = (
+                    f"lambda: str(m_var_value(_scope.get({translated_name!r})) or '')"
+                )
                 setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
     else:
         raise NotImplementedError(
@@ -1227,9 +1231,9 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
 
         # Build getter/setter based on strategy
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # _scope-based access using MArray for consistency with subscripted variables
-            # Spec 009 (T021): Use MArray.value for getter/setter
-            getter = f"lambda: _scope.get({translated_name!r}, MArray()).value or ''"
+            # _scope-based access using m_var_value for compatibility with
+            # both MArray and plain values from external TRAMPOLINE routines
+            getter = f"lambda: m_var_value(_scope.get({translated_name!r})) or ''"
             setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
             # state-based access
@@ -1237,7 +1241,7 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
             setter = f"lambda v: setattr(state, {translated_name!r}, v)"
         else:
             # Plain local variable - fall back to _scope pattern for safety
-            getter = f"lambda: _scope.get({translated_name!r}, MArray()).value or ''"
+            getter = f"lambda: m_var_value(_scope.get({translated_name!r})) or ''"
             setter = f"lambda v: setattr(_scope.setdefault({translated_name!r}, MArray()), 'value', v)"
     else:
         raise NotImplementedError(
@@ -3184,11 +3188,28 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             # T075e: Wrap in run_with_goto_support to handle GotoExternal from subroutine
             # When subroutine does external GOTO, we catch it and transfer control,
             # then return to caller when target QUITs
+            #
+            # T100: For label+offset calls, we need to handle both TRAMPOLINE and
+            # SIMPLE_FUNCTIONS strategies. TRAMPOLINE has _-prefixed internal functions
+            # that accept _start_offset. SIMPLE_FUNCTIONS has public functions that
+            # either accept _start_offset (if they have fall-through lines) or don't.
+            # We check at runtime for the internal function first.
             ctx.emitter.line("from m2py.runtime import run_with_goto_support")
-            ctx.emitter.line(
-                f"run_with_goto_support(lambda _rt, _scope=None: "
-                f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset), _rt, _scope)"
-            )
+            ctx.emitter.line("_internal_name = '_' + _label_name")
+            ctx.emitter.line(f"if hasattr({routine_name}, _internal_name):")
+            with ctx.emitter.indented():
+                # TRAMPOLINE strategy - use internal function with RoutineState
+                ctx.emitter.line(
+                    f"run_with_goto_support(lambda _rt, _scope=None: "
+                    f"getattr({routine_name}, _internal_name)(_rt, {routine_name}.RoutineState(), _scope or {{}}, _start_offset=_line_offset), _rt, _scope)"
+                )
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
+                # SIMPLE_FUNCTIONS strategy - try public function with _start_offset
+                ctx.emitter.line(
+                    f"run_with_goto_support(lambda _rt, _scope=None: "
+                    f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset), _rt, _scope)"
+                )
         elif target.name:
             # T022-T023: D LABEL^ROUTINE - call specific label
             label_name = translate_name(target.name)

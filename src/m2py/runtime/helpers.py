@@ -14,6 +14,9 @@ Spec 010: Extended with array traversal functions:
 - m_query: $QUERY function for local arrays
 - m_query_global: $QUERY function for global variables
 
+Spec 017 Phase 18: Added m_var_value for cross-routine variable access:
+- m_var_value: Extract scalar value from either MArray or plain value
+
 These helpers are imported in generated code and called at runtime.
 """
 
@@ -27,6 +30,41 @@ from m2py.core.subscripts import SubscriptCanonicalizer
 if TYPE_CHECKING:
     from m2py.runtime import MArray
     from m2py.runtime.globals import GlobalStorageBackend
+
+
+def m_var_value(val: Any) -> Any:
+    """Extract scalar value from either an MArray or plain value.
+
+    When variables are passed between routines, they may be:
+    1. MArray objects (from the calling routine's _scope with MArray default)
+    2. Plain values (from TRAMPOLINE routines that return state.VAR directly)
+
+    This function handles both cases uniformly.
+
+    Args:
+        val: Either an MArray object or a plain value (str, int, etc.)
+
+    Returns:
+        The scalar value (MArray.value if MArray, else the value itself)
+
+    Examples:
+        >>> m_var_value(MArray("hello"))
+        'hello'
+        >>> m_var_value("world")
+        'world'
+        >>> m_var_value(MArray())  # Undefined MArray
+        ''
+        >>> m_var_value(None)
+        ''
+    """
+    # Handle MArray by extracting .value
+    if hasattr(val, "value"):
+        return val.value
+    # Handle None as empty string (MUMPS undefined = empty string)
+    if val is None:
+        return ""
+    # Plain values pass through
+    return val
 
 
 def _canonicalize_subscript(sub: Any) -> str:

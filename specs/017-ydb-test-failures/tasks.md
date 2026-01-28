@@ -921,12 +921,14 @@ This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
   - **Fix 1**: Modified resolver.py `_resolve_call()` to resolve label when `call.routine == routine.name`
   - **Fix 2**: Added auto-detection of routine name from first label in `generate_python()`
   - **Result**: V1OV2, V1PC1, V3TEXT2, V4MERGE1 all now transpile and load successfully
-- [ ] T100 [MVTS] Validate: V1RN, V1OV, V1PC, V3TEXT, V4MERGE pass
-  - **V1OV**: ✅ PASSES
-  - **V1RN**: Runtime error `'str' object has no attribute 'value'` - different bug, not Phase 18 scope
-  - **V1PC**: Runtime error `OS() got an unexpected keyword argument '_start_offset'` - different bug
-  - **V3TEXT**: V3TEXT2 has runtime limitation - different bug
-  - **V4MERGE**: V4MERGE1 has codegen limitation - different bug
+- [X] T100 [MVTS] Validate: V1RN, V1OV, V1PC, V3TEXT, V4MERGE pass
+  - **V1OV**: ✅ PASSES (no fixes needed)
+  - **V1RN**: ✅ PASSES after fix: External routines return plain strings to `_scope`, but caller expected MArray.value. Added `m_var_value()` helper to handle both MArray and plain values.
+  - **V1PC**: ✅ PASSES after fix: `D label+offset^ROUTINE` was calling public wrapper that doesn't accept `_start_offset`. Added runtime strategy detection to use internal `_`-prefixed function for TRAMPOLINE modules.
+  - **V3TEXT**: ✅ PASSES after fixes:
+    - Fix 1: `$TEXT(A+"A"^V3TEXTA)` failed because codegen assumed numeric offset. Added check for `literal_type` before int() conversion.
+    - Fix 2: `$TEXT(^V3TEXTZ)` failed importing non-existent module. Added `_get_module_safe()` runtime helper that returns None on import failure.
+  - **V4MERGE**: ✅ PASSES after fix: `$$^ROUTINE` (extrinsic with empty label) raised NotImplementedError. Fixed to use routine name as label when label is empty but routine exists.
 
 ---
 

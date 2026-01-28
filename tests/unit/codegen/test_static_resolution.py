@@ -85,11 +85,11 @@ class TestStaticResolution:
     def test_static_read_generates_direct_access(self, generate_python):
         """Static read (W X) generates direct variable access.
 
-        W X should access _scope['X'].value or equivalent directly.
+        W X should access _scope['X'] via m_var_value() helper.
         """
         code = generate_python("TEST\n S X=1\n W X\n Q")
-        # Write should access variable directly via _scope.get().value
-        assert "_scope.get('X', MArray()).value" in code
+        # Write should access variable via m_var_value helper (handles MArray and plain values)
+        assert "m_var_value(_scope.get('X'))" in code
         # Read should NOT use get_var or resolve_indirection
         assert "get_var" not in code
         assert "resolve_indirection" not in code
