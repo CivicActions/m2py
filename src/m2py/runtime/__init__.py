@@ -836,50 +836,6 @@ class MArray:
             # Only remove value, keep children intact
             parent._children[last]._value = None
 
-    def order(self, *subscripts: Any, start: Any = "") -> Any:
-        """Get next subscript ($ORDER equivalent).
-
-        Returns the next subscript after 'start' in collation order.
-        MUMPS collation: numbers before strings, sorted within type.
-
-        Subscripts are canonicalized to strings for consistent lookup.
-
-        Args:
-            *subscripts: Path to the array level to search
-            start: Starting point (empty string = first subscript)
-
-        Returns:
-            Next subscript, or empty string if no more
-        """
-        if not subscripts:
-            children = self._children
-        else:
-            node = self
-            for sub in subscripts:
-                sub_str = self._canonicalize_subscript(sub)
-                if sub_str not in node._children:
-                    return ""
-                node = node._children[sub_str]
-            children = node._children
-
-        # Get sorted keys (MUMPS collation: numbers before strings)
-        keys = sorted(children.keys(), key=lambda x: (isinstance(x, str), x))
-
-        start_str = self._canonicalize_subscript(start) if start != "" else ""
-
-        if start_str == "":
-            return keys[0] if keys else ""
-
-        try:
-            idx = keys.index(start_str)
-            return keys[idx + 1] if idx + 1 < len(keys) else ""
-        except ValueError:
-            # Start not found, return first key greater than start
-            for k in keys:
-                if start_str < k:
-                    return k
-            return ""
-
     def merge_from(self, source: "MArray") -> None:
         """Merge source tree into this node (MERGE command).
 
