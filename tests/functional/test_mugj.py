@@ -70,15 +70,6 @@ class TestMugjSerialExecution:
     - W !!,"LABEL" D ^ROUTINE for each routine
     - Shared globals/state across all routines
     - Byte-for-byte output comparison (no whitespace normalization)
-
-    The test is currently xfail because there are known failures that
-    need to be addressed in tasks T085-T090:
-    - T085: Multi-target GOTO xfails
-    - T086: GotoExternal xfails
-    - T087: Subscript indirection context fix
-    - T088: Argument indirection command lists
-    - T089: FOR step=0 edge case
-    - T090: Final MUGJ validation
     """
 
     @pytest.mark.xfail(
