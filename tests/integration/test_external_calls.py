@@ -34,7 +34,8 @@ class TestExternalDORoutineCall:
         assert "import ext2" in code
         # T029: External DO calls pass _rt and _scope for cross-routine variable visibility
         # Phase 13 (T079): _rt is now passed as first parameter
-        assert "ext2.ext2(_rt, _scope=_scope)" in code
+        # T075e: External DO calls use run_with_goto_support to handle external GOTOs
+        assert "run_with_goto_support(ext2.ext2, _rt, _scope)" in code
 
     def test_d_routine_entry_label(self, external_fixtures_path):
         """D ^ext2 should call ext2's entry label and return."""
@@ -140,7 +141,8 @@ class TestExternalDOLabelCall:
         assert "import ext2" in code
         # T029: External DO calls pass _rt and _scope for cross-routine variable visibility
         # Phase 13 (T079): _rt is now passed as first parameter
-        assert "ext2.HELPER(_rt, _scope=_scope)" in code
+        # T075e: External DO calls use run_with_goto_support to handle external GOTOs
+        assert "run_with_goto_support(ext2.HELPER, _rt, _scope)" in code
 
     def test_d_label_routine_calls_label(self, external_fixtures_path):
         """D HELPER^ext2 should call the HELPER label (not entry label)."""
@@ -364,9 +366,10 @@ class TestCrossRoutineVariableVisibility:
  Q
 """
         code = generate_python(source)
-        # External call should pass _rt and _scope as keyword argument
+        # External call should pass _rt and _scope
         # Phase 13 (T079): _rt is now passed as first parameter
-        assert "ext2.ext2(_rt, _scope=_scope)" in code
+        # T075e: External DO calls use run_with_goto_support to handle external GOTOs
+        assert "run_with_goto_support(ext2.ext2, _rt, _scope)" in code
 
     def test_scope_infrastructure_works(self, external_fixtures_path):
         """T032: _scope passes through external calls (infrastructure test).

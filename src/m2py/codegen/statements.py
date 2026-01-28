@@ -3181,8 +3181,13 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             ctx.emitter.line(
                 f"_label_name, _line_offset = {routine_name}._line_map[_target_line]"
             )
+            # T075e: Wrap in run_with_goto_support to handle GotoExternal from subroutine
+            # When subroutine does external GOTO, we catch it and transfer control,
+            # then return to caller when target QUITs
+            ctx.emitter.line("from m2py.runtime import run_with_goto_support")
             ctx.emitter.line(
-                f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
+                f"run_with_goto_support(lambda _rt, _scope=None: "
+                f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset), _rt, _scope)"
             )
         elif target.name:
             # T022-T023: D LABEL^ROUTINE - call specific label
@@ -3196,24 +3201,34 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                     f"list({routine_name}._label_lines.keys()))"
                 )
             # T079: Pass _rt and _scope for cross-routine variable visibility
+            # T075e: Wrap in run_with_goto_support to handle GotoExternal from subroutine
+            ctx.emitter.line("from m2py.runtime import run_with_goto_support")
             args = _generate_call_arguments(target.arguments, ctx)
             if args:
                 ctx.emitter.line(
-                    f"{routine_name}.{label_name}(_rt, {args}, _scope=_scope)"
+                    f"run_with_goto_support(lambda _rt, _scope=None: "
+                    f"{routine_name}.{label_name}(_rt, {args}, _scope=_scope), _rt, _scope)"
                 )
             else:
-                ctx.emitter.line(f"{routine_name}.{label_name}(_rt, _scope=_scope)")
+                ctx.emitter.line(
+                    f"run_with_goto_support({routine_name}.{label_name}, _rt, _scope)"
+                )
         else:
             # D ^ROUTINE - call entry label (same name as routine)
             entry_label = translate_name(routine_name)
             # T079: Pass _rt and _scope for cross-routine variable visibility
+            # T075e: Wrap in run_with_goto_support to handle GotoExternal from subroutine
+            ctx.emitter.line("from m2py.runtime import run_with_goto_support")
             args = _generate_call_arguments(target.arguments, ctx)
             if args:
                 ctx.emitter.line(
-                    f"{routine_name}.{entry_label}(_rt, {args}, _scope=_scope)"
+                    f"run_with_goto_support(lambda _rt, _scope=None: "
+                    f"{routine_name}.{entry_label}(_rt, {args}, _scope=_scope), _rt, _scope)"
                 )
             else:
-                ctx.emitter.line(f"{routine_name}.{entry_label}(_rt, _scope=_scope)")
+                ctx.emitter.line(
+                    f"run_with_goto_support({routine_name}.{entry_label}, _rt, _scope)"
+                )
 
         # T075b: For TRAMPOLINE with dynamic locals, sync _scope back to state._locals
         # after returning from external routine so caller can see callee's modifications

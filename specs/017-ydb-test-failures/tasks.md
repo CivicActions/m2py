@@ -447,12 +447,13 @@ thanks to multi-routine support and Decimal arithmetic helpers.
   - **Coverage**: Variable visibility across DO calls, nested calls, GOTO after DO
   - **Added**: tests/unit/runtime/test_runtime.py::TestGetOrderMethod (11 tests)
   - **Coverage**: get_order() method for $ORDER indirection support
-- [ ] T075e Handle GotoExternal from within DO calls
-  - **Scope**: When `D label+offset` triggers external GOTO, handle exception in DO wrapper
-  - **Root cause**: DO wrappers don't catch GotoExternal, exception propagates up and execution terminates
-  - **Example**: V1SEQ does `DO DO788+2` → `G G788^V1SEQ1` raises GotoExternal that isn't caught
-  - **Affects**: V1SEQ and tests with `DO label+offset` → external GOTO patterns
-  - **Complexity**: HIGH - requires architectural changes to DO wrapper codegen
+- [X] T075e Handle GotoExternal from within DO calls
+  - **Scope**: When subroutine does external GOTO, target's QUIT returns to original DO caller
+  - **Root cause**: External DO calls weren't catching GotoExternal exceptions; control didn't return after GOTO target quit
+  - **Fix**: Wrap all external DO calls with `run_with_goto_support()` in _generate_do_target()
+  - **Changes**: src/m2py/codegen/statements.py (_generate_do_target for all 3 external DO patterns)
+  - **Tests**: Updated 4 codegen tests to expect run_with_goto_support pattern
+  - **Result**: extcall functional test now passes (was failing with 6 vs 14 lines output)
 - [X] T075f Fix $TEXT function cross-routine context
   - **Scope**: $TEXT should return lines from the current routine, even after DO ^ROUTINE calls
   - **Root cause**: _current_source_lines not updated when calling external routine, not restored on return
@@ -825,8 +826,8 @@ for sub in sorted(node._children.keys(), key=str):  # BUG
   Note: Added to test_basic.py (not conftest.py) since helper is basic suite-specific
 - [x] T092c Validate: ModuleNotFound error is resolved ✅
   - Test now executes extcall2 successfully
-  - Remaining output mismatch (6 vs 14 lines) is due to T075e (GotoExternal from DO calls)
-  - The `G LAB1^extcall` inside extcall2 raises GotoExternal which unwinds the DO stack
+  - **Fixed by T075e**: Output mismatch (6 vs 14 lines) resolved by wrapping external DO calls with `run_with_goto_support()`
+  - The `G LAB1^extcall` inside extcall2 now properly returns control to DO caller after GOTO target QUITs
 
 ---
 
@@ -1020,7 +1021,7 @@ graph TD
 | Category | Test | Root Cause | Task | Status |
 |----------|------|------------|------|--------|
 | ZWRITE | locals | Collation key not MUMPS order | T091 | ✅ Fixed |
-| ModuleNotFound | extcall | Missing helper routine | T092 | ✅ Fixed (helper loads; output mismatch blocked by T075e) |
+| ModuleNotFound | extcall | Missing helper routine + GotoExternal from DO | T092/T075e | ✅ Fixed |
 | TIMEOUT | larray | Conditional GOTO self-loop postcondition ignored | T093 | ✅ Fixed |
 | Infrastructure | miscdb | YDB-specific output | T094 | 🔄 Pending |
 
@@ -1030,9 +1031,9 @@ graph TD
 |-------|--------|--------|-------|---------|-------|
 | MVTS  | 276    | 0      | 0     | 0       | ✅ Complete |
 | Merge | 29     | 0      | 23    | 0       | ✅ Complete (Z-ext xfail) |
-| Basic | 27     | 3      | 27    | 4       | Phase 17 pending (T093 fixed larray) |
+| Basic | 28     | 2      | 27    | 4       | Phase 17 pending (T075e, T093 fixed) |
 | MUGJ  | 5      | 0      | 1     | 0       | Serial execution (T084 done, T085-T090 for xfail→pass) |
-| **Total** | **337** | **3** | **51** | **4** | |
+| **Total** | **338** | **2** | **51** | **4** | |
 
 ### Major Accomplishments
 

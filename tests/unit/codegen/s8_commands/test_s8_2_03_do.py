@@ -106,7 +106,7 @@ class TestDoCommandCodegen:
         D LABEL^ROUTINE generates:
         1. Import statement for the external routine module
         2. Label existence check with helpful error
-        3. Call to ROUTINE.LABEL(_rt, _scope=_scope)
+        3. Call via run_with_goto_support for external GOTO handling (T075e)
         """
         code = generate_python("TEST D LABEL^EXTRTN Q")
 
@@ -117,8 +117,8 @@ class TestDoCommandCodegen:
         assert "hasattr(EXTRTN, 'LABEL')" in code
         assert "LabelNotFoundError" in code
 
-        # Should call the external label with runtime and scope
-        assert "EXTRTN.LABEL(_rt, _scope=_scope)" in code
+        # Should call via run_with_goto_support for external GOTO handling
+        assert "run_with_goto_support(EXTRTN.LABEL, _rt, _scope)" in code
 
 
 @pytest.mark.codegen
