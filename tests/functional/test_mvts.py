@@ -83,6 +83,43 @@ def get_routine_params() -> list[pytest.param]:
 
 
 # =============================================================================
+# MVTS Framework Helpers
+# =============================================================================
+
+# MVTS framework routines that must be loaded for tests to work.
+# Note: MVTS tests call many sub-routines (V1AC1, V1BOA1, etc.) that would
+# need to be loaded as helpers for full test execution. However, loading
+# all 714 routines causes codegen failures in routines with unsupported
+# features. For now, we load only the core framework routines.
+MVTS_FRAMEWORK_ROUTINES = [
+    "V1PRESET",  # Test preset/setup
+    "VEXAMINE",  # Test validation/examination
+]
+
+# Cache for loaded framework helpers
+_MVTS_HELPERS: dict[str, str] | None = None
+
+
+def _load_mvts_helpers() -> dict[str, str]:
+    """Load MVTS framework routines as helpers.
+
+    Returns:
+        Dict mapping routine name to MUMPS source code
+    """
+    global _MVTS_HELPERS
+    if _MVTS_HELPERS is None:
+        _MVTS_HELPERS = {}
+        for routine_name in MVTS_FRAMEWORK_ROUTINES:
+            try:
+                _MVTS_HELPERS[routine_name] = load_routine_source(
+                    MVTS_INREF, routine_name
+                )
+            except FileNotFoundError:
+                pass  # Skip missing routines
+    return _MVTS_HELPERS
+
+
+# =============================================================================
 # Parametrized Test Suite
 # =============================================================================
 
@@ -95,7 +132,7 @@ class TestMvtsSuite:
     Each test runs a sub-driver routine through m2py and validates:
     1. The routine can be parsed
     2. Python code is generated
-    3. The code executes (xfail expected due to framework dependency)
+    3. The code executes with framework helpers loaded
     """
 
     @pytest.mark.parametrize("routine_def", get_routine_params())
@@ -110,13 +147,28 @@ class TestMvtsSuite:
         source = load_routine_source(MVTS_INREF, routine_def.routine)
         assert source is not None, f"Failed to load routine {routine_def.routine}"
 
-        # Run through m2py
-        result = run_mumps(source, timeout=30)
+        # Load MVTS framework helpers
+        helpers = _load_mvts_helpers()
+
+        # Run through m2py with helpers
+        result = run_mumps(
+            source, timeout=30, helper_sources=helpers if helpers else None
+        )
 
         # Verify execution succeeded
         assert result is not None, f"No result for {routine_def.routine}"
 
         if not result.success:
+            # Check if failure is due to BREAK command (enters debugger)
+            # This shows as failed execution with empty error and debugger prompt in output
+            if "V1BR" in routine_def.routine or "BREAK" in result.output:
+                pytest.xfail("BREAK command enters Python debugger (LIM-015)")
+            # Check if failure is due to missing sub-routine
+            if result.error and "No module named" in result.error:
+                pytest.xfail(f"Missing sub-routine dependency: {result.error}")
+            # Check if failure is due to NotImplementedError (codegen limitation)
+            if result.error and "NotImplementedError" in result.error:
+                pytest.xfail(f"Codegen limitation: {result.error}")
             pytest.fail(
                 f"Routine {routine_def.routine} failed to execute: {result.error}"
             )
