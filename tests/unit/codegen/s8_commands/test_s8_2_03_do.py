@@ -988,3 +988,55 @@ SUB S A=10,C=30
 """)
         assert result.success is True
         assert result.output == "10-2-30"
+
+
+@pytest.mark.codegen
+class TestDoLabelOffsetExternal:
+    """T100: Tests for D label+offset^ROUTINE strategy detection.
+
+    When calling D LABEL+N^ROUTINE, codegen must detect at runtime whether the
+    target module uses TRAMPOLINE (internal _-prefixed functions) or SIMPLE_FUNCTIONS
+    (public functions) and call appropriately.
+    """
+
+    def test_d_label_plus_n_external_strategy_detection(self, generate_python):
+        """D LABEL+N^ROUTINE generates runtime strategy detection code.
+
+        T100: The generated code should check if internal _-prefixed function exists
+        and use TRAMPOLINE path if so, SIMPLE_FUNCTIONS path otherwise.
+        """
+        code = generate_python("TEST\n D SUB+2^EXTRTN\n Q")
+
+        # Should import the module
+        assert "import EXTRTN" in code
+
+        # Should have runtime strategy detection
+        assert "_internal_name = '_' + _label_name" in code
+        assert "hasattr(EXTRTN, _internal_name)" in code
+
+        # Should have TRAMPOLINE branch (calls internal function with RoutineState)
+        assert "getattr(EXTRTN, _internal_name)" in code
+        assert "RoutineState()" in code
+
+        # Should have SIMPLE_FUNCTIONS fallback branch
+        assert "getattr(EXTRTN, _label_name)" in code
+
+        # Both branches use run_with_goto_support
+        assert code.count("run_with_goto_support") >= 2
+
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")
+
+    def test_d_offset_only_external_strategy_detection(self, generate_python):
+        """D +N^ROUTINE generates runtime strategy detection code.
+
+        T100: Offset-only calls also need strategy detection.
+        """
+        code = generate_python("TEST\n D +5^EXTRTN\n Q")
+
+        # Should have runtime strategy detection for line-based dispatch
+        assert "import EXTRTN" in code
+        assert "_line_map" in code
+
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")

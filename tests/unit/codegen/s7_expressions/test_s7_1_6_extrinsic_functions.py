@@ -334,3 +334,63 @@ class TestExternalRoutineCallsCodegen:
         assert "_pct_SYSTEM.UTILS" in code
         # verify valid Python syntax (import of non-existent module is syntax OK)
         compile(code, "<test>", "exec")
+
+
+@pytest.mark.codegen
+class TestExtrinsicEntryPoint:
+    """T100: Tests for $$^ROUTINE pattern (extrinsic calling routine entry point).
+
+    When $$^ROUTINE is used with no label, it calls the routine's entry point,
+    which is the routine name itself (the first label in the routine).
+    """
+
+    def test_extrinsic_routine_only(self, generate_python):
+        """$$^ROUTINE (no label) calls routine's entry point.
+
+        T100: When label is empty but routine exists, use routine name as label.
+        """
+        source = """TEST
+ S X=$$^HELPER
+ Q X
+"""
+        code = generate_python(source)
+        # Should import the module
+        assert "import HELPER" in code
+        # Should call the routine name as the entry point
+        assert "_call_extrinsic(_rt, HELPER.HELPER" in code
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")
+
+    def test_extrinsic_routine_only_with_args(self, generate_python):
+        """$$^ROUTINE(args) calls routine's entry point with arguments.
+
+        T100: Entry point call should pass arguments correctly.
+        """
+        source = """TEST
+ S X=$$^MATH(1,2)
+ Q X
+"""
+        code = generate_python(source)
+        # Should import the module
+        assert "import MATH" in code
+        # Should call routine.routine with args
+        assert "_call_extrinsic(_rt, MATH.MATH, 1, 2" in code
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")
+
+    def test_extrinsic_percent_routine_only(self, generate_python):
+        """$$^%ROUTINE calls %ROUTINE's entry point.
+
+        T100: Percent routines also support entry point calls.
+        """
+        source = """TEST
+ S X=$$^%UTIL
+ Q X
+"""
+        code = generate_python(source)
+        # % prefix translated to _pct_
+        assert "import _pct_UTIL" in code
+        # Should call _pct_UTIL._pct_UTIL (entry point is routine name)
+        assert "_call_extrinsic(_rt, _pct_UTIL._pct_UTIL" in code
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")

@@ -14,8 +14,57 @@ from m2py.runtime.helpers import (
     m_order_global,
     m_query,
     m_query_global,
+    m_var_value,
 )
 from m2py.runtime.globals import InMemoryGlobalStorage
+
+
+class TestMVarValue:
+    """Tests for m_var_value() helper (T100).
+
+    m_var_value extracts scalar values from either MArray objects or plain values.
+    This is needed for cross-routine variable passing where TRAMPOLINE routines
+    may return plain strings while callers expect MArray.value.
+    """
+
+    def test_marray_with_value(self):
+        """MArray with value returns the value."""
+        arr = MArray()
+        arr.value = "hello"
+        assert m_var_value(arr) == "hello"
+
+    def test_marray_with_numeric_value(self):
+        """MArray with numeric value returns the number."""
+        arr = MArray()
+        arr.value = 42
+        assert m_var_value(arr) == 42
+
+    def test_marray_undefined(self):
+        """MArray without value returns empty string."""
+        arr = MArray()
+        assert m_var_value(arr) == ""
+
+    def test_plain_string(self):
+        """Plain string passes through unchanged."""
+        assert m_var_value("world") == "world"
+
+    def test_plain_number(self):
+        """Plain number passes through unchanged."""
+        assert m_var_value(123) == 123
+
+    def test_none_returns_empty_string(self):
+        """None returns empty string (MUMPS undefined semantics)."""
+        assert m_var_value(None) == ""
+
+    def test_empty_string(self):
+        """Empty string passes through as empty string."""
+        assert m_var_value("") == ""
+
+    def test_marray_with_empty_string_value(self):
+        """MArray with empty string value returns empty string."""
+        arr = MArray()
+        arr.value = ""
+        assert m_var_value(arr) == ""
 
 
 class TestMumpsCollationKey:
