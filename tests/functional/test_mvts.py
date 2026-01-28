@@ -31,7 +31,6 @@ import pytest
 
 from tests.functional.conftest import (
     FUNCTIONAL_BASE,
-    compare_output,
     load_routine_source,
     run_mumps,
 )
@@ -114,15 +113,22 @@ class TestMvtsSuite:
         # Run through m2py
         result = run_mumps(source, timeout=30)
 
-        # For MVTS, we expect execution to fail due to framework dependencies
-        # but the routine should at least parse and generate code
+        # Verify execution succeeded
         assert result is not None, f"No result for {routine_def.routine}"
 
-        # Check if output matches expected label prefix
-        # MVTS routines print their label like "1---V1WR"
-        if result.success:
-            expected_prefix = routine_def.label
-            compare_output(result.output, expected_prefix)
+        if not result.success:
+            pytest.fail(
+                f"Routine {routine_def.routine} failed to execute: {result.error}"
+            )
+
+        # MVTS routines print their label like "1---V1WR" at minimum
+        # Verify output contains the expected label
+        expected_prefix = routine_def.label
+        if expected_prefix not in result.output:
+            pytest.fail(
+                f"Output for {routine_def.routine} missing expected label '{expected_prefix}'\n"
+                f"Actual output: {result.output[:500]}..."
+            )
 
 
 # =============================================================================

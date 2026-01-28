@@ -120,6 +120,8 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     # basic suite - arith test has 18-digit boundary precision differences
     "arith": "LIM-019",
     # LIM-015: YDB-specific features
+    # basic suite - uses YDB %HD utility (hex-to-decimal conversion)
+    "ebmuldiv": "LIM-015",
     # basic suite - BREAK command requires YDB interactive debugger
     "v1br": "LIM-015",
     # basic suite - tests YDB error handling for numbers >1E47
@@ -131,6 +133,11 @@ ROUTINE_LIMITATIONS: dict[str, str] = {
     "stpfail": "LIM-015",
     # basic suite - requires ^ASW database pre-populated
     "per02397": "LIM-015",
+    # basic suite - uses NEW $ZTRAP (YDB error handling)
+    "putfail": "LIM-015",
+    # basic suite - $TEXT with external routine references requires source lookup
+    "text4": "LIM-015",
+    "per02457": "LIM-015",
     # basic suite - outref includes YDB mupip integ/file creation infrastructure output
     "miscdb": "LIM-015",
 }

@@ -40,6 +40,19 @@ BASIC_DIR = FUNCTIONAL_BASE / "basic" / "inref"
 # Maps routine name to list of helper routine names that must be loaded
 ROUTINE_HELPERS: dict[str, list[str]] = {
     "extcall": ["extcall2"],
+    "text4": ["texttst", "text1", "text2", "text3"],
+    "per02457": ["per02457"],  # Self-reference via $TEXT(+1^per02457)
+    "putfail": [
+        "putfail1",
+        "putfail2",
+        "putfail3",
+        "putfail4",
+        "putfail5",
+        "putfail6",
+        "putfail7",
+        "putfail8",
+        "putfail9",
+    ],
 }
 
 
@@ -241,7 +254,9 @@ class TestBasicSuite:
             # Try lowercase version
             expected = _EXPECTED_OUTPUTS.get(label.lower())
         if expected is None:
-            pytest.skip(f"No expected output found for {label} in outref")
+            pytest.fail(
+                f"No expected output found for {label} in outref - check outref parsing"
+            )
 
         # Handle partial output due to external routine errors
         actual_output = result.output
@@ -253,7 +268,12 @@ class TestBasicSuite:
             # Check if this is a partial match (external routine error at end)
             if result.error and "No module named" in result.error:
                 if expected.startswith(actual_output.strip()):
-                    pytest.skip(
+                    # Mark as xfail if known limitation, otherwise fail
+                    if xfail_reason:
+                        pytest.xfail(
+                            f"{xfail_reason} - Partial match, external call failed: {result.error}"
+                        )
+                    pytest.fail(
                         f"Partial match - routine completed but external call failed: {result.error}"
                     )
 
