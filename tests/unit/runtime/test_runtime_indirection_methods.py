@@ -474,3 +474,332 @@ class TestRuntimeGetTreeVar:
         scope = {"X": "just a string"}
         result = rt.get_tree_var("X", scope)
         assert result is None
+
+
+# =============================================================================
+# New Methods Added in Phase 19 (017-ydb-test-failures)
+# =============================================================================
+
+
+class TestAppendSubscriptsToName:
+    """Tests for MUMPSRuntime.append_subscripts_to_name() method.
+
+    Feature: 017-ydb-test-failures Phase 19
+
+    This method appends subscripts to a variable name string, used for
+    indirection patterns like @func()@(subs) where the function returns
+    a name and subscripts need to be appended.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_append_to_simple_name(self, rt):
+        """Append subscripts to unsubscripted name."""
+        result = rt.append_subscripts_to_name("A", [1, 2])
+        assert result == "A(1,2)"
+
+    def test_append_to_subscripted_name(self, rt):
+        """Append subscripts to already subscripted name."""
+        result = rt.append_subscripts_to_name("A(1)", [2, 3])
+        assert result == "A(1,2,3)"
+
+    def test_append_string_subscripts(self, rt):
+        """Append string subscripts."""
+        result = rt.append_subscripts_to_name("X", ["key", "sub"])
+        assert result == 'X("key","sub")'
+
+    def test_append_empty_subscripts(self, rt):
+        """Appending empty list leaves name unchanged."""
+        result = rt.append_subscripts_to_name("A(1,2)", [])
+        assert result == "A(1,2)"
+
+    def test_append_to_global_name(self, rt):
+        """Append subscripts to global variable name."""
+        result = rt.append_subscripts_to_name("^GLO", [1])
+        assert result == "^GLO(1)"
+
+    def test_internal_append_multiple_levels(self, rt):
+        """_append_subscripts_to_name handles multiple subscript lists."""
+        result = rt._append_subscripts_to_name("A", [[1], [2, 3]])
+        # First appends [1], then [2,3]
+        assert result == "A(1,2,3)"
+
+
+class TestEvaluateMumpsExpression:
+    """Tests for MUMPSRuntime.evaluate_mumps_expression() method.
+
+    Feature: 017-ydb-test-failures Phase 19
+
+    This method evaluates a MUMPS expression string directly, used for
+    @$P(...) style indirection where the function result is evaluated
+    as an expression without intermediate lookups.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_evaluate_numeric_literal(self, rt):
+        """Evaluate numeric literal expression."""
+        scope = {}
+        result = rt.evaluate_mumps_expression("42", scope)
+        assert result == 42
+
+    def test_evaluate_string_literal(self, rt):
+        """Evaluate quoted string literal (which evaluates to the string)."""
+        scope = {}
+        # Note: "hello" as a MUMPS expression tries to look up variable hello
+        # unless it's a numeric literal
+        result = rt.evaluate_mumps_expression("123", scope)
+        assert result == 123
+
+    def test_evaluate_variable_reference(self, rt):
+        """Evaluate expression that's a variable name."""
+        scope = {"X": MArray(value=99)}
+        result = rt.evaluate_mumps_expression("X", scope)
+        assert result == 99
+
+    def test_evaluate_comparison_expression(self, rt):
+        """Evaluate comparison expression."""
+        scope = {}
+        # "1=1" evaluates to true (1)
+        result = rt.evaluate_mumps_expression("1=1", scope)
+        assert result == 1
+
+        # "1=0" evaluates to false (0)
+        result = rt.evaluate_mumps_expression("1=0", scope)
+        assert result == 0
+
+    def test_evaluate_treat_empty_as_truthy(self, rt):
+        """evaluate_mumps_expression with treat_empty_as_truthy for IF context."""
+        scope = {}
+        # With flag=True, empty string returns 1 (TRUE)
+        result = rt.evaluate_mumps_expression("", scope, treat_empty_as_truthy=True)
+        assert result == 1
+
+
+class TestExecuteMumpsIndirected:
+    """Tests for MUMPSRuntime.execute_mumps_indirected() method.
+
+    Feature: 017-ydb-test-failures Phase 19
+
+    This method handles XECUTE argument indirection: X @X where X="Y,Z"
+    resolves each variable in the comma-separated list to get code to execute.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_execute_single_variable(self, rt):
+        """Execute code from single variable."""
+        rt._capture_output = True
+        scope = {
+            "X": MArray(value="CODE"),
+            "CODE": MArray(value="S RESULT=42 W RESULT"),
+        }
+        rt.execute_mumps_indirected("X", scope, levels=1)
+        output = rt.get_output()
+        assert "42" in output
+
+    def test_execute_validates_resolve(self, rt):
+        """execute_mumps_indirected validates the indirection resolves."""
+        scope = {"X": MArray(value="Y")}  # Y doesn't exist
+        # Should not raise - empty code just does nothing
+        rt.execute_mumps_indirected("X", scope, levels=1)
+
+
+# =============================================================================
+# get_indirected allow_undefined Tests (Phase 19)
+# =============================================================================
+
+
+class TestGetIndirectedAllowUndefined:
+    """Tests for get_indirected allow_undefined parameter.
+
+    Feature: 017-ydb-test-failures Phase 19
+
+    This parameter controls whether undefined target variables raise an error
+    (default, for W @X) or return empty string (for $GET(@X)).
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_allow_undefined_false_raises_error(self, rt):
+        """With allow_undefined=False (default), undefined target raises error."""
+        scope = {"X": MArray(value="UNDEFINED")}
+        with pytest.raises(IndirectionError):
+            rt.get_indirected("X", scope, levels=1, allow_undefined=False)
+
+    def test_allow_undefined_true_returns_empty(self, rt):
+        """With allow_undefined=True, undefined target returns empty string."""
+        scope = {"X": MArray(value="UNDEFINED")}
+        result = rt.get_indirected("X", scope, levels=1, allow_undefined=True)
+        assert result == ""
+
+    def test_allow_undefined_defined_target_returns_value(self, rt):
+        """With allow_undefined=True, defined target returns value."""
+        scope = {"X": MArray(value="Y"), "Y": MArray(value="the value")}
+        result = rt.get_indirected("X", scope, levels=1, allow_undefined=True)
+        assert result == "the value"
+
+    def test_allow_undefined_global_always_returns_empty_if_undefined(self, rt):
+        """Globals always return empty for undefined (not affected by flag)."""
+        scope = {"X": MArray(value="^UNDEFINED")}
+        # Global targets don't raise even with allow_undefined=False
+        result = rt.get_indirected("X", scope, levels=1, allow_undefined=False)
+        assert result == ""
+
+    def test_allow_undefined_subscripted_target(self, rt):
+        """allow_undefined works with subscripted targets."""
+        scope = {
+            "X": MArray(value='A("key")'),
+            "A": MArray(),  # A exists but A("key") doesn't
+        }
+        result = rt.get_indirected("X", scope, levels=1, allow_undefined=True)
+        assert result == ""
+
+    def test_allow_undefined_intermediate_undefined_still_raises(self, rt):
+        """Intermediate undefined variables in chain still raise error."""
+        from m2py.core.exceptions import VarExpectedError
+
+        scope = {"X": MArray(value="Y")}  # Y doesn't exist, so @@X fails at first @
+        # This should still raise because the intermediate resolution fails
+        # (either IndirectionError or VarExpectedError depending on context)
+        with pytest.raises((IndirectionError, VarExpectedError)):
+            rt.get_indirected("X", scope, levels=2, allow_undefined=True)
+
+
+# =============================================================================
+# get_indirected levels=0 with subscripts Tests (Phase 19)
+# =============================================================================
+
+
+class TestGetIndirectedLevelsZeroWithSubscripts:
+    """Tests for get_indirected with levels=0 and per_level_subscripts.
+
+    Feature: 017-ydb-test-failures Phase 19
+
+    levels=0 is used for NakedGlobal expressions where the target name
+    is already resolved. With subscripts, we append them to the name.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_levels_zero_no_subscripts(self, rt):
+        """levels=0 without subscripts returns value at source name directly."""
+        scope = {"X": MArray(value=42)}
+        result = rt.get_indirected("X", scope, levels=0)
+        assert result == 42
+
+    def test_levels_zero_with_subscripts(self, rt):
+        """levels=0 with subscripts appends them and returns value."""
+        scope = {"X": MArray()}
+        scope["X"][1, 2].value = "hello"
+        result = rt.get_indirected("X", scope, levels=0, per_level_subscripts=[[1, 2]])
+        assert result == "hello"
+
+    def test_levels_zero_global_with_subscripts(self, rt):
+        """levels=0 with global and subscripts."""
+        scope = {}
+        rt.globals.set("G", ("a", "b"), "global value")
+        result = rt.get_indirected(
+            "^G", scope, levels=0, per_level_subscripts=[["a", "b"]]
+        )
+        assert result == "global value"
+
+    def test_levels_zero_multiple_subscript_levels(self, rt):
+        """levels=0 with multiple subscript levels appends all."""
+        scope = {"X": MArray()}
+        scope["X"][1, 2, 3, 4].value = "deep"
+        result = rt.get_indirected(
+            "X", scope, levels=0, per_level_subscripts=[[1, 2], [3, 4]]
+        )
+        assert result == "deep"
+
+
+# =============================================================================
+# kill_indirected exclusive KILL Tests (Phase 19)
+# =============================================================================
+
+
+class TestKillIndirectedExclusiveKill:
+    """Tests for kill_indirected with exclusive KILL syntax.
+
+    Feature: 017-ydb-test-failures Phase 19
+
+    MUMPS exclusive KILL: K @X where X="(A,B)" kills all except A and B.
+    Can be combined: K @X where X="(A),B,C" kills all except A, then kills B and C.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_exclusive_kill_single_except(self, rt):
+        """K @X where X='(A)' kills all locals except A."""
+        scope = {
+            "X": MArray(value="(A)"),
+            "A": MArray(value="keep"),
+            "B": MArray(value="kill"),
+            "C": MArray(value="kill"),
+        }
+        rt.kill_indirected("X", scope, levels=1)
+        assert "A" in scope  # Kept
+        assert "B" not in scope  # Killed
+        assert "C" not in scope  # Killed
+
+    def test_exclusive_kill_multiple_except(self, rt):
+        """K @X where X='(A,B)' kills all locals except A and B."""
+        scope = {
+            "X": MArray(value="(A,B)"),
+            "A": MArray(value="keep"),
+            "B": MArray(value="keep"),
+            "C": MArray(value="kill"),
+        }
+        rt.kill_indirected("X", scope, levels=1)
+        assert "A" in scope
+        assert "B" in scope
+        assert "C" not in scope
+
+    def test_exclusive_plus_explicit_kill(self, rt):
+        """K @X where X='(A),B,C' does exclusive kill then explicit kills."""
+        scope = {
+            "X": MArray(value="(A),B,C"),
+            "A": MArray(value="keep after exclusive"),
+            "B": MArray(value="kill explicitly"),
+            "C": MArray(value="kill explicitly"),
+            "D": MArray(value="kill by exclusive"),
+        }
+        rt.kill_indirected("X", scope, levels=1)
+        # A is protected by exclusive
+        assert "A" in scope
+        # B and C are killed by explicit kill AFTER exclusive
+        assert "B" not in scope
+        assert "C" not in scope
+        # D is killed by exclusive (not in except list)
+        assert "D" not in scope
+
+    def test_exclusive_kill_empty_except_list(self, rt):
+        """K @X where X='()' kills all locals (empty except list)."""
+        scope = {
+            "X": MArray(value="()"),
+            "A": MArray(value="kill"),
+            "B": MArray(value="kill"),
+        }
+        rt.kill_indirected("X", scope, levels=1)
+        # All killed (X was the source, also killed since not in except)
+        assert "A" not in scope
+        assert "B" not in scope

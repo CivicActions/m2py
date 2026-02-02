@@ -70,6 +70,100 @@ class TestNameTranslation:
         assert "VCOMP" in scope._scope_dict
 
 
+class TestMumpsNameVsPythonNameLookup:
+    """Tests for MUMPS name lookup when storage uses MUMPS names directly.
+
+    Feature: 017-ydb-test-failures Phase 19 (V4QSUB fix)
+
+    Some generated code stores variables using MUMPS names (e.g., "%2")
+    while other code uses Python-translated names (e.g., "_pct_2").
+    The _lookup() method must try both to handle mixed conventions.
+    """
+
+    def test_lookup_mumps_name_directly_stored(self):
+        """Get works when variable stored with MUMPS name directly.
+
+        This is the V4QSUB pattern: extrinsic function parameters like %2
+        are stored as _scope["%2"] = MArray(value=x), but generated code
+        tries to look them up via get("%2").
+        """
+        from m2py.runtime import MArray
+
+        # Simulate generated code that stores with MUMPS name directly
+        scope_dict = {"%2": MArray(value="hello")}
+        scope = CurrentScope(scope_dict=scope_dict)
+
+        # Should find it even though no Python-translated entry exists
+        assert scope.get("%2") == "hello"
+
+    def test_lookup_python_name_stored(self):
+        """Get works when variable stored with Python name."""
+
+        # Store with Python name (via set which translates)
+        scope = CurrentScope(scope_dict={})
+        scope.set("%FOO", "bar")
+
+        # Should find via either name
+        assert scope.get("%FOO") == "bar"
+
+    def test_lookup_mixed_storage_conventions(self):
+        """Get works with mixed MUMPS and Python name storage.
+
+        Real-world generated code may have some variables stored with
+        MUMPS names and others with Python names.
+        """
+        from m2py.runtime import MArray
+
+        scope_dict = {
+            "%1": MArray(value="first"),  # MUMPS name
+            "_pct_2": MArray(value="second"),  # Python name
+            "REGULAR": MArray(value="normal"),  # Same either way
+        }
+        scope = CurrentScope(scope_dict=scope_dict)
+
+        # All should be accessible
+        assert scope.get("%1") == "first"
+        assert scope.get("%2") == "second"
+        assert scope.get("REGULAR") == "normal"
+
+    def test_mumps_name_takes_precedence(self):
+        """When both MUMPS and Python names exist, MUMPS name is used.
+
+        This ensures consistency - if code stores with MUMPS name, that
+        value is returned even if a Python-named entry also exists.
+        """
+        from m2py.runtime import MArray
+
+        scope_dict = {
+            "%X": MArray(value="mumps_value"),
+            "_pct_X": MArray(value="python_value"),
+        }
+        scope = CurrentScope(scope_dict=scope_dict)
+
+        # MUMPS name should take precedence
+        assert scope.get("%X") == "mumps_value"
+
+    def test_exists_with_mumps_name(self):
+        """exists() works with MUMPS names stored directly."""
+        from m2py.runtime import MArray
+
+        scope_dict = {"%VAR": MArray(value=42)}
+        scope = CurrentScope(scope_dict=scope_dict)
+
+        assert scope.exists("%VAR") is True
+        assert scope.exists("%UNDEF") is False
+
+    def test_data_with_mumps_name(self):
+        """data() works with MUMPS names stored directly."""
+        from m2py.runtime import MArray
+
+        scope_dict = {"%VAR": MArray(value=42)}
+        scope = CurrentScope(scope_dict=scope_dict)
+
+        assert scope.data("%VAR") == 1  # Has value, no descendants
+        assert scope.data("%UNDEF") == 0  # Undefined
+
+
 class TestSubscriptedAccess:
     """Tests for subscripted variable access."""
 

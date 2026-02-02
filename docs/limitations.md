@@ -36,8 +36,6 @@ for traceability to test files.
 | LIM-014 | ANSI Standard Library Functions (Annex I) | Parses OK | ~60 library functions with zero VistA usage |
 | LIM-015 | YDB-Specific Features | Parses OK | YDB-specific commands, functions, and behaviors |
 | LIM-016 | Zero-VistA-Usage Deferred Features | Parses OK | Features with confirmed zero VistA usage |
-| LIM-017 | Generic Indirection Codegen | Redirect | Tests in s7_3_indirection |
-| LIM-018 | Z-Command Codegen | Redirect | Tests in extensions/ydb/ |
 | LIM-019 | Arithmetic Precision Edge Cases | Parses OK | Minor precision differences in 18-digit boundary cases |
 
 ---

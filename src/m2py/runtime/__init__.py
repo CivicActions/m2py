@@ -2190,6 +2190,55 @@ class MUMPSRuntime:
         # Use m_name to build canonical form
         return m_name(base_name, all_subs, depth=depth, is_global=is_global)
 
+    def _append_subscripts_to_name(
+        self,
+        name: str,
+        per_level_subscripts: list[list],
+    ) -> str:
+        """Append subscripts to a variable name string.
+
+        Feature: 017 Phase 19 - Indirection subscript handling
+
+        Used for $NAME(@func()@(subs)) where func() returns a name string
+        and we need to append additional subscripts.
+
+        Args:
+            name: Variable name string (e.g., "A(1,2)")
+            per_level_subscripts: List of subscript lists to append
+
+        Returns:
+            Name with all subscripts appended (e.g., "A(1,2,3,4)")
+        """
+        from m2py.core.indirection import IndirectionResolver
+
+        # Use static method directly - no instance needed
+        result = name
+        for sub_list in per_level_subscripts:
+            if sub_list:
+                result = IndirectionResolver._append_subscripts(result, sub_list)
+        return result
+
+    def append_subscripts_to_name(
+        self,
+        name: str,
+        subscripts: list,
+    ) -> str:
+        """Append subscripts to a variable name string.
+
+        Feature: 017 Phase 19 - Indirection subscript handling
+
+        Public wrapper for _append_subscripts_to_name that takes a single
+        subscript list (not a list of lists).
+
+        Args:
+            name: Variable name string (e.g., "A(1,2)")
+            subscripts: List of subscripts to append
+
+        Returns:
+            Name with subscripts appended (e.g., "A(1,2,3,4)")
+        """
+        return self._append_subscripts_to_name(name, [subscripts])
+
     def get_query(self, name: str, subscripts: tuple, _scope: Dict[str, Any]) -> str:
         """Get $QUERY value for variable by name (indirection support).
 
@@ -2331,7 +2380,8 @@ class MUMPSRuntime:
         raw_value = _scope.get(scope_key, "")
 
         # Evaluate subscripts - resolve variable references like "I" to their values
-        eval_subs = _evaluate_subscripts(subscripts, _scope)
+        # Pass self as runtime to handle complex indirection like @@@@@@@@X
+        eval_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
 
         # Extract value from MArray if needed
         if isinstance(raw_value, MArray):
@@ -2369,7 +2419,8 @@ class MUMPSRuntime:
         key = name[1:]
 
         # Evaluate subscripts - resolve variable references like "I" to their values
-        eval_subs = _evaluate_subscripts(subscripts, _scope)
+        # Pass self as runtime to handle complex indirection like @@@@@@@@X
+        eval_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
 
         # Use the GlobalStorageBackend interface
         subs = () if eval_subs is None else tuple(str(s) for s in eval_subs)
@@ -2541,6 +2592,7 @@ class MUMPSRuntime:
         _scope: Dict[str, Any],
         levels: int = 1,
         per_level_subscripts: Optional[List[List[Any]]] = None,
+        allow_undefined: bool = False,
     ) -> Any:
         """Get variable value via indirection using unified components.
 
@@ -2560,9 +2612,14 @@ class MUMPSRuntime:
                 Use levels=0 when source is already the resolved target name
                 (e.g., from NakedGlobal expressions where the value was computed)
             per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+            allow_undefined: If True, return "" for undefined target (for $GET)
+                If False, raise IndirectionError for undefined (default, MUMPS UNDEF)
 
         Returns:
-            Value at the resolved variable, or "" if undefined
+            Value at the resolved variable, or "" if undefined (when allow_undefined=True)
+
+        Raises:
+            IndirectionError: If target is undefined and allow_undefined=False
 
         Examples:
             # @X where X="Y", Y=5
@@ -2580,12 +2637,38 @@ class MUMPSRuntime:
             # NakedGlobal: @^(1) where ^(1) resolves to "X"
             get_indirected("X", scope, levels=0)
             # Returns value of X directly (source is already the target name)
+
+            # levels=0 with subscripts (NakedGlobal case):
+            # @^(naked)@(subs) where naked resolves to "NAME" → get_var("NAME(subs)")
+            get_indirected("NAME", scope, levels=0, per_level_subscripts=[[subs]])
+            # Returns value at NAME(subs)
+
+            # $GET(@X, default) - allow undefined target
+            get_indirected("X", scope, levels=1, allow_undefined=True)
+            # Returns "" if target undefined (caller applies default)
         """
         # Handle levels=0: source is already the resolved target name
         # This is used for NakedGlobal expressions where the target name
         # was computed during code generation
         if levels == 0:
-            return self.get_var(source, _scope)
+            # If we have per_level_subscripts, append them to the source name
+            # This handles @^(naked)@(subs) where naked evaluates to "NAME"
+            if per_level_subscripts and any(per_level_subscripts):
+                from m2py.core.indirection import IndirectionResolver
+                from m2py.core.scope import CurrentScope
+
+                cs = CurrentScope.from_generated_context(_scope)
+                resolver = IndirectionResolver(self, cs)
+
+                # Append all subscripts to the source name
+                target_name = source
+                for sub_list in per_level_subscripts:
+                    if sub_list:
+                        target_name = resolver._append_subscripts(target_name, sub_list)
+
+                return self.get_var(target_name, _scope)
+            else:
+                return self.get_var(source, _scope)
 
         # Use unified IndirectionResolver for all cases
         # Feature: 018-unified-variable-system (T115)
@@ -2614,8 +2697,11 @@ class MUMPSRuntime:
 
         # Validate the target exists (MUMPS UNDEF semantics)
         # Skip validation for globals (they return empty if undefined)
-        if not target_name.startswith("^"):
+        # Skip validation if allow_undefined=True (for $GET)
+        if not allow_undefined and not target_name.startswith("^"):
             # Parse subscripted names properly
+            from m2py.codegen.names import NameTranslator
+
             base_name = target_name.split("(")[0] if "(" in target_name else target_name
             scope_key = NameTranslator.to_python(base_name)
             if scope_key not in _scope:
@@ -2696,6 +2782,10 @@ class MUMPSRuntime:
         Uses IndirectionResolver.resolve_to_name() to determine the target,
         then kills the variable/global appropriately.
 
+        Handles exclusive KILL syntax: K @A where A="(B),D,E" means:
+        - Kill all except B (exclusive KILL)
+        - Then also kill D and E explicitly
+
         Args:
             source: Source variable name for indirection (e.g., "X" for @X)
             _scope: Current scope dictionary
@@ -2722,6 +2812,10 @@ class MUMPSRuntime:
             # K @X where X="A(1,2),B" (subscripted vars in list)
             kill_indirected("X", scope, levels=1)
             # Kills A(1,2) and B
+
+            # K @X where X="(B),D,E" (exclusive + explicit kills)
+            kill_indirected("X", scope, levels=1)
+            # Kills all except B, then also kills D and E
         """
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
@@ -2730,13 +2824,40 @@ class MUMPSRuntime:
         cs = CurrentScope.from_generated_context(_scope)
         resolver = IndirectionResolver(self, cs)
 
-        # T088: Resolve to get target variable NAME(s) - may be comma-separated list
-        targets = resolver.resolve_to_argument_list(
-            source, levels=levels, per_level_subscripts=per_level_subscripts
+        # First resolve to get the raw string value (not validated as var names)
+        # validate=False because KILL may have exclusive patterns like "(B),D,E"
+        raw_value = resolver.resolve_to_name(
+            source,
+            levels=levels,
+            per_level_subscripts=per_level_subscripts,
+            validate=False,
         )
 
-        # Kill each target variable
-        for target in targets:
+        # Split by commas respecting parentheses
+        args = _split_argument_list(raw_value)
+
+        # Process each argument
+        for arg in args:
+            arg = arg.strip()
+            if not arg:
+                continue
+
+            # Check for exclusive KILL pattern: (var1,var2,...)
+            if arg.startswith("(") and arg.endswith(")"):
+                # Exclusive KILL - kill all locals except those in the parens
+                except_list_str = arg[1:-1]  # Remove outer parens
+                except_vars = set(
+                    v.strip() for v in except_list_str.split(",") if v.strip()
+                )
+                # Kill all local variables except those in except_vars
+                for var_name in list(_scope.keys()):
+                    if var_name not in except_vars:
+                        _scope.pop(var_name, None)
+                continue
+
+            # Regular variable kill
+            target = arg
+
             # Handle global variables
             if target.startswith("^"):
                 # Parse subscripts from target if present
@@ -2887,6 +3008,41 @@ class MUMPSRuntime:
             context=IndirectionContext.ARGUMENT,
             per_level_subscripts=per_level_subscripts,
             treat_empty_as_truthy=treat_empty_as_truthy,
+        )
+
+    def evaluate_mumps_expression(
+        self,
+        expr: str,
+        _scope: Dict[str, Any],
+        treat_empty_as_truthy: bool = False,
+    ) -> Any:
+        """Evaluate a MUMPS expression string directly.
+
+        This is used for @$P(...) style indirection where the function
+        result IS the expression to evaluate (no intermediate lookups).
+
+        For example: W @$P("ABC","B",2) where $P returns "C"
+        - We want to evaluate "C" as a MUMPS expression
+        - This gets the value of variable C
+
+        Args:
+            expr: MUMPS expression string to evaluate
+            _scope: Current scope dictionary
+            treat_empty_as_truthy: If True, empty string → 1 (for IF contexts)
+
+        Returns:
+            Evaluated result of the expression
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Evaluate the expression directly
+        return resolver.evaluate_expression(
+            expr, treat_empty_as_truthy=treat_empty_as_truthy
         )
 
     def _set_local_var(
@@ -4207,6 +4363,69 @@ class MUMPSRuntime:
         except Exception:
             # Re-raise with context
             raise
+
+    def execute_mumps_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+        caller_globals: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Execute MUMPS code via indirection (X @X argument indirection).
+
+        Handles XECUTE argument indirection where the resolved value may be
+        a comma-separated list of variable names, each containing code to execute.
+
+        For X @X where X="Y,Z", Y="S A=1", Z="S B=2":
+        1. Resolve @X → "Y,Z"
+        2. Split into ["Y", "Z"]
+        3. For each: resolve @Y → "S A=1", @Z → "S B=2"
+        4. Execute each code string in order
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X)
+            _scope: Scope dictionary shared with caller
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+            caller_globals: Optional caller's globals() for label access
+
+        Returns:
+            Last return value (if any code contains QUIT with value), else None
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve to get the argument list (may be comma-separated var names)
+        # Use validate=False because the resolved string may contain var names
+        raw_value = resolver.resolve_to_name(
+            source,
+            levels=levels,
+            per_level_subscripts=per_level_subscripts,
+            validate=False,
+        )
+
+        # Split by commas to get individual argument names
+        args = _split_argument_list(raw_value)
+
+        result = None
+        for arg in args:
+            arg = arg.strip()
+            if not arg:
+                continue
+
+            # Each argument is a variable name containing code to execute
+            # Resolve it to get the actual code string
+            code = resolver._get_value(arg)
+            if isinstance(code, str) and code:
+                # Execute the code
+                result = self.execute_mumps(code, _scope, caller_globals)
+
+        return result
 
     def execute(
         self,

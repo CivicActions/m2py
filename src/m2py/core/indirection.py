@@ -121,6 +121,8 @@ class IndirectionResolver:
         current = source
 
         # 1. Resolve intermediate levels (NAME semantics)
+        # MUMPS semantics: get value first, then apply subscripts
+        # For @VV@(12,456) where VV="V": get VV → "V", apply (12,456) → "V(12,456)"
         for i in range(levels):
             # Check if current is a naked reference string that needs expansion
             # rather than value lookup (e.g., "^(5)" should expand to "^V(5)")
@@ -150,7 +152,7 @@ class IndirectionResolver:
             while value.startswith("@"):
                 value = self._resolve_recursive_at(value)
 
-            # Apply per-level subscripts if any
+            # Apply per-level subscripts AFTER value lookup
             if per_level_subscripts and i < len(per_level_subscripts):
                 value = self._append_subscripts(value, per_level_subscripts[i])
 
@@ -303,6 +305,7 @@ class IndirectionResolver:
         source: str,
         levels: int = 1,
         per_level_subscripts: Optional[List[List[Any]]] = None,
+        validate: bool = True,
     ) -> str:
         """Resolve indirection to get TARGET VARIABLE NAME (not value).
 
@@ -317,12 +320,15 @@ class IndirectionResolver:
                 a naked reference string like "^(5)" that needs expansion
             levels: Number of @ levels (1 for @X, 2 for @@X, etc.)
             per_level_subscripts: Subscripts per resolution level for @X@(s1)@(s2)
+            validate: If True (default), validate result is a valid variable name.
+                Set to False for KILL indirection which may contain exclusive
+                KILL syntax like "(B),D,E".
 
         Returns:
             Target variable name as string
 
         Raises:
-            VarExpectedError: If resolved name is not a valid variable name
+            VarExpectedError: If resolved name is not a valid variable name (when validate=True)
             ValueError: If levels < 1
 
         Examples:
@@ -346,6 +352,9 @@ class IndirectionResolver:
         current = source
 
         # Resolve each level to get the target variable name
+        # MUMPS semantics: get value first, then apply subscripts
+        # For @VV@(12,456) where VV="V": get VV → "V", apply (12,456) → "V(12,456)"
+        # For @@C@(1,2) where C="X", X(1,2)="Y": get C → "X", apply (1,2) → "X(1,2)", get X(1,2) → "Y"
         for i in range(levels):
             # Check if current is a naked reference string that needs expansion
             # rather than value lookup (e.g., "^(5)" should expand to "^V(5)")
@@ -364,7 +373,8 @@ class IndirectionResolver:
             while value.startswith("@"):
                 value = self._resolve_recursive_at(value)
 
-            # Apply per-level subscripts if any
+            # Apply per-level subscripts AFTER value lookup
+            # This handles @VV@(subs) where VV's value becomes the base name
             if per_level_subscripts and i < len(per_level_subscripts):
                 value = self._append_subscripts(value, per_level_subscripts[i])
 
@@ -376,8 +386,8 @@ class IndirectionResolver:
         if self._is_naked_reference_string(current):
             current = self._expand_naked_reference_string(current)
 
-        # Validate that result is a valid variable name
-        if not self._is_valid_var_name(current):
+        # Validate that result is a valid variable name (unless disabled for KILL)
+        if validate and not self._is_valid_var_name(current):
             raise VarExpectedError(current)
 
         return current
@@ -428,6 +438,7 @@ class IndirectionResolver:
         current = source
 
         # Resolve each level to get the target variable name(s)
+        # MUMPS semantics: get value first, then apply subscripts
         for i in range(levels):
             # Check if current is a naked reference string that needs expansion
             if self._is_naked_reference_string(current):
@@ -443,7 +454,7 @@ class IndirectionResolver:
             while value.startswith("@"):
                 value = self._resolve_recursive_at(value)
 
-            # Apply per-level subscripts if any
+            # Apply per-level subscripts AFTER value lookup
             if per_level_subscripts and i < len(per_level_subscripts):
                 value = self._append_subscripts(value, per_level_subscripts[i])
 
@@ -892,7 +903,8 @@ class IndirectionResolver:
 
         # If inner itself starts with @, recursively resolve it first
         # This handles @@VAR, @@@VAR, etc. in VALUE strings
-        if inner.startswith("@"):
+        # Use while loop to handle cases where the resolved value also starts with @
+        while inner.startswith("@"):
             inner = self._resolve_recursive_at(inner)
             # If the result is empty or not a valid continuation, return it
             if not inner:
@@ -903,17 +915,57 @@ class IndirectionResolver:
             # Use evaluate_expression to handle function calls
             return str(self.evaluate_expression(inner))
 
+        # Handle parenthesized expressions: @(expr)@(subs) or just @(expr)
+        # A leading ( indicates a parenthesized expression, not a subscripted variable
+        if inner.startswith("("):
+            # Find the matching close paren for the expression
+            close_pos = self._find_matching_paren(inner, 0)
+            if close_pos > 0:
+                expr_content = inner[1:close_pos]  # Contents inside (...)
+                trailing = inner[close_pos + 1 :]  # e.g., "@(5,6)" or ""
+
+                # Evaluate the expression to get a variable name
+                result = str(self.evaluate_expression(expr_content))
+
+                # If there are trailing @(subs), append them
+                while trailing.startswith("@("):
+                    sub_close = self._find_matching_paren(trailing, 1)
+                    if sub_close < 0:
+                        break
+                    subs_str = trailing[2:sub_close]
+                    subs = self._parse_subscript_list(subs_str)
+                    result = self._append_subscripts(result, subs)
+                    trailing = trailing[sub_close + 1 :]
+
+                return result
+
         # Check for name indirection subscripts pattern: VAR@(subs)
         # This is different from VAR(subs) - the @() means "append these subscripts
         # to whatever VAR resolves to"
+        # IMPORTANT: We need to distinguish:
+        #   - VAR@(subs) = name-indirection subscripts (@ after variable name)
+        #   - VAR(@X) = subscript indirection (@ inside subscripts)
+        # Only look for @( that appears BEFORE any opening parenthesis
+        paren_pos = inner.find("(")
         at_paren_pos = inner.find("@(")
-        if at_paren_pos > 0:
+
+        # Only treat as name-indirection subscripts if @( appears before (
+        # Example: X@(1) has @( at 1, no ( before it → name-indirection subscripts
+        # Example: ^V1A(@Y) has @( at 5, but ( at 4 → subscript indirection, not name-indirection
+        if at_paren_pos > 0 and (paren_pos < 0 or at_paren_pos < paren_pos):
             # Pattern: VAR@(subs) or VAR@(subs)@(more_subs)
             var_name = inner[:at_paren_pos]
             subscript_part = inner[at_paren_pos:]
 
             # Get value of VAR (which should be a variable name)
             resolved_name = str(self._get_value(var_name))
+
+            # If the resolved_name itself contains @, recursively resolve it FIRST
+            # before appending our subscripts. This handles cases like:
+            # @VV@(B,"C") where VV="@^VV(\"A\")" and ^VV("A")="^VV(\"a\")"
+            # We need to resolve @^VV("A") → ^VV("a") THEN append (B,"C")
+            while resolved_name.startswith("@"):
+                resolved_name = self._resolve_recursive_at(resolved_name)
 
             # Parse and append all @(subs) groups
             remaining = subscript_part
@@ -937,7 +989,51 @@ class IndirectionResolver:
             # if the value at this name starts with @
             return resolved_name
 
-        # Otherwise it's a simple variable reference - get and return VALUE
+        # Otherwise it's a variable reference (possibly with subscript indirection)
+        # Handle subscript indirection: ^V1A(@Y) means ^V1A with Y's value as subscript
+        # Also handle trailing @(subs) after the variable reference
+        if paren_pos > 0:
+            # Has subscripts - need to resolve any @VAR in subscripts
+            base_name = inner[:paren_pos]
+
+            # Find the matching close paren for the subscript list
+            close_pos = self._find_matching_paren(inner, paren_pos)
+            if close_pos < 0:
+                # Malformed - try to handle gracefully
+                subs_part = inner[paren_pos:]
+                trailing_subs = ""
+            else:
+                subs_part = inner[paren_pos : close_pos + 1]
+                trailing_subs = inner[close_pos + 1 :]  # e.g., "@(@X)" or ""
+
+            # Parse and resolve subscripts (handles @VAR inside subscripts)
+            resolved_subs = self._resolve_subscript_string(subs_part)
+
+            # Get value at the fully resolved variable reference
+            full_ref = base_name + resolved_subs
+            value = str(self._get_value(full_ref))
+
+            # If there are trailing @(subs), this is name-indirection subscripts
+            # that should be appended to the resolved value
+            if trailing_subs:
+                # If value itself starts with @, resolve it first
+                while value.startswith("@"):
+                    value = self._resolve_recursive_at(value)
+
+                # Now append the trailing subscripts
+                remaining = trailing_subs
+                while remaining.startswith("@("):
+                    close_pos = self._find_matching_paren(remaining, 1)
+                    if close_pos < 0:
+                        break
+                    subs_str = remaining[2:close_pos]
+                    subs = self._parse_subscript_list(subs_str)
+                    value = self._append_subscripts(value, subs)
+                    remaining = remaining[close_pos + 1 :]
+
+            return value
+
+        # Simple variable reference - get and return VALUE
         return str(self._get_value(inner))
 
     def _find_matching_paren(self, s: str, start_pos: int) -> int:
@@ -966,6 +1062,41 @@ class IndirectionResolver:
                         return i
             i += 1
         return -1
+
+    def _resolve_subscript_string(self, subs_part: str) -> str:
+        """Resolve subscript indirection within a subscript string.
+
+        Handles patterns like (1,@Y,3) where @Y is subscript indirection.
+        Returns the subscript string with all @VAR resolved to values.
+
+        Args:
+            subs_part: Subscript string like "(1,@Y,3)" or "(@X)"
+
+        Returns:
+            Subscript string with indirections resolved, e.g. "(1,3,3)"
+        """
+        if not subs_part or not subs_part.startswith("("):
+            return subs_part
+
+        # Remove outer parens for processing
+        inner = subs_part[1:-1] if subs_part.endswith(")") else subs_part[1:]
+
+        # Parse each subscript, resolving @VAR references
+        resolved_subs = self._parse_subscript_list(inner)
+
+        # Rebuild the subscript string
+        subs_strs = []
+        for sub in resolved_subs:
+            if isinstance(sub, str):
+                # Quote strings that need quoting
+                if sub and not sub.replace(".", "").replace("-", "").isdigit():
+                    subs_strs.append(f'"{sub}"' if '"' not in sub else str(sub))
+                else:
+                    subs_strs.append(str(sub))
+            else:
+                subs_strs.append(str(sub))
+
+        return "(" + ",".join(subs_strs) + ")"
 
     def _parse_subscript_list(self, subs_str: str) -> List[Any]:
         """Parse a comma-separated subscript list.
@@ -1008,25 +1139,79 @@ class IndirectionResolver:
     def _evaluate_subscript_value(self, value: str) -> Any:
         """Evaluate a single subscript value, handling @VAR references.
 
+        In MUMPS, @VAR in a subscript position means:
+        1. Get the value of VAR
+        2. Evaluate that value as an expression
+
+        So ^V1A(@Y) where Y="Z" and Z=3 means ^V1A(3), not ^V1A("Z").
+
+        Multiple @ levels like @@Y mean:
+        1. @Y → get value of Y → "Z"
+        2. @@Y → @(@Y) → @"Z" → evaluate "Z" as variable → Z=Q → "Q"
+        3. But then we also evaluate that: Q=3 → 3
+
         Args:
-            value: Subscript value string, may be "@VAR" or a literal
+            value: Subscript value string, may be "@VAR", "@@VAR", a quoted string,
+                   a numeric literal, or a variable name
 
         Returns:
             Evaluated subscript value
         """
         if value.startswith("@"):
-            # Subscript indirection - resolve the variable
-            var_name = value[1:]
-            return self._get_value(var_name)
+            # Count how many @ levels
+            at_count = 0
+            while at_count < len(value) and value[at_count] == "@":
+                at_count += 1
+
+            var_name = value[at_count:]
+
+            # Resolve through @ levels: @@Y means @(@Y)
+            # So we need to dereference at_count times
+            current_value = self._get_value(var_name)
+
+            for _ in range(at_count - 1):
+                # Each additional @ means another dereference
+                if isinstance(current_value, str) and current_value:
+                    current_value = self._get_value(current_value)
+                else:
+                    break
+
+            # Now evaluate the final value as an expression
+            # If it's a variable name, look it up
+            if isinstance(current_value, str) and current_value:
+                return self.evaluate_expression(current_value)
+            return current_value
 
         # Check if it's a quoted string - remove quotes
         if value.startswith('"') and value.endswith('"'):
             return value[1:-1].replace('""', '"')
 
-        # Return as-is (might be numeric or other literal)
+        # Check if it's a numeric literal
+        try:
+            if "." in value:
+                return float(value)
+            return int(value)
+        except ValueError:
+            pass
+
+        # Bare identifier - evaluate as MUMPS expression (variable reference)
+        # In MUMPS, A(X) where X=5 means A(5), not A("X")
+        if value and self._is_valid_var_name(value):
+            return self.evaluate_expression(value)
+
+        # Check if it looks like an arithmetic expression (has operators)
+        # This handles cases like "1+2", "8/2", "A*B" etc.
+        if value and any(op in value for op in ["+", "-", "*", "/", "\\", "#", "_"]):
+            try:
+                return self.evaluate_expression(value)
+            except Exception:
+                pass  # Fall through to return as-is
+
+        # Return as-is for anything else
         return value
 
-    def _append_subscripts(self, name: str, subscripts: List[Any]) -> str:
+    @staticmethod
+    def _append_subscripts(name: str, subscripts: List[Any]) -> str:
         """Append subscripts to a variable name.
 
         Args:

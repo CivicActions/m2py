@@ -87,6 +87,10 @@ SERIAL_SKIP_ROUTINES: dict[str, str] = {
     "VV4TP": "Transaction processing not supported",
     # VSR is a summary routine that expects test state
     "VSR": "Summary routine requires full test state",
+    # LIM-ARG-INDIR: WRITE argument indirection with format controls
+    "V1IDARG": "LIM-ARG-INDIR: WRITE argument indirection (W @A where A='!?3,\"AB\"') requires runtime parsing",
+    # LIM-SUB-CANON: Subscript canonicalization merges numeric-looking strings
+    "V3QUERY": "LIM-SUB-CANON: Subscript canonicalization collapses numeric-looking strings",
 }
 
 

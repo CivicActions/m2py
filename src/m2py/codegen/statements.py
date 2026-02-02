@@ -4811,22 +4811,119 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         for DO/GOTO commands in dynamic XECUTE.
 
         T075q: Handle per-argument postconditions.
+
+        XECUTE argument indirection: X @X where X="Y,Z" should:
+        1. Resolve @X → "Y,Z"
+        2. Split into ["Y", "Z"]
+        3. For each: resolve @Y → code1, @Z → code2
+        4. Execute each code string
         """
+        from m2py.asg.expressions import MIndirection
+        from m2py.codegen.indirection import (
+            _count_indirection_levels_with_subscripts,
+            _get_scope_expr,
+        )
+
         # T075q: Use arguments structure (always populated by semantic analyzer)
         for xecute_arg in stmt.arguments:
-            expr_code = generate_expr(xecute_arg.expression, ctx)
-            if xecute_arg.postcondition is not None:
-                # T075q: Wrap in postcondition check
-                cond_code = generate_expr(xecute_arg.postcondition, ctx)
-                ctx.emitter.line(f"if m_truth({cond_code}):")
-                with ctx.emitter.indented():
+            expr = xecute_arg.expression
+
+            # Check if this is an indirection that needs special XECUTE handling
+            if isinstance(expr, MIndirection):
+                # XECUTE argument indirection: X @X where X="Y,Z"
+                # Use execute_mumps_indirected which handles the comma-separated
+                # variable list and resolves each to get the code to execute
+                levels, inner_expr, all_subscripts = (
+                    _count_indirection_levels_with_subscripts(expr)
+                )
+                scope_expr = _get_scope_expr(ctx)
+
+                # Get the source variable name
+                from m2py.asg.expressions import MVariable
+                from m2py.parser.textx_classes import GlobalVariable
+
+                if isinstance(inner_expr, MVariable):
+                    source_name = inner_expr.name
+                    if inner_expr.subscripts:
+                        sub_exprs = [
+                            generate_expr(s, ctx) for s in inner_expr.subscripts
+                        ]
+                        subs_str = ", ".join(sub_exprs)
+                        source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+                    else:
+                        source_expr = f'"{source_name}"'
+                elif isinstance(inner_expr, GlobalVariable):
+                    source_name = f"^{inner_expr.name}"
+                    if inner_expr.subscripts:
+                        sub_exprs = [
+                            generate_expr(s, ctx) for s in inner_expr.subscripts
+                        ]
+                        subs_str = ", ".join(sub_exprs)
+                        source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+                    else:
+                        source_expr = f'"{source_name}"'
+                else:
+                    # Complex expression - fall back to regular execute_mumps
+                    expr_code = generate_expr(expr, ctx)
+                    if xecute_arg.postcondition is not None:
+                        cond_code = generate_expr(xecute_arg.postcondition, ctx)
+                        ctx.emitter.line(f"if m_truth({cond_code}):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                f"_rt.execute_mumps({expr_code}, _scope, globals())"
+                            )
+                            ctx.emitter.line("_test = _rt._test")
+                    else:
+                        ctx.emitter.line(
+                            f"_rt.execute_mumps({expr_code}, _scope, globals())"
+                        )
+                        ctx.emitter.line("_test = _rt._test")
+                    continue
+
+                # Build per_level_subscripts argument if needed
+                if all_subscripts and any(all_subscripts):
+                    per_level_subs = []
+                    for subs in all_subscripts:
+                        if subs:
+                            sub_exprs = [generate_expr(s, ctx) for s in subs]
+                            per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+                        else:
+                            per_level_subs.append("[]")
+                    subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+                else:
+                    subs_arg = ""
+
+                # Generate call to execute_mumps_indirected
+                if xecute_arg.postcondition is not None:
+                    cond_code = generate_expr(xecute_arg.postcondition, ctx)
+                    ctx.emitter.line(f"if m_truth({cond_code}):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            f"_rt.execute_mumps_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg}, caller_globals=globals())"
+                        )
+                        ctx.emitter.line("_test = _rt._test")
+                else:
+                    ctx.emitter.line(
+                        f"_rt.execute_mumps_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg}, caller_globals=globals())"
+                    )
+                    ctx.emitter.line("_test = _rt._test")
+            else:
+                # Regular expression (variable, string, function call, etc.)
+                expr_code = generate_expr(xecute_arg.expression, ctx)
+                if xecute_arg.postcondition is not None:
+                    # T075q: Wrap in postcondition check
+                    cond_code = generate_expr(xecute_arg.postcondition, ctx)
+                    ctx.emitter.line(f"if m_truth({cond_code}):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            f"_rt.execute_mumps({expr_code}, _scope, globals())"
+                        )
+                        ctx.emitter.line("_test = _rt._test")
+                else:
                     ctx.emitter.line(
                         f"_rt.execute_mumps({expr_code}, _scope, globals())"
                     )
                     ctx.emitter.line("_test = _rt._test")
-            else:
-                ctx.emitter.line(f"_rt.execute_mumps({expr_code}, _scope, globals())")
-                ctx.emitter.line("_test = _rt._test")
 
     # Check if any constant strings contain control flow
     has_control_flow = False

@@ -727,3 +727,316 @@ class TestSubscriptEvaluation:
 
         result = resolver._get_value("A(@Y)")
         assert result == "indirect_sub"
+
+
+class TestRecursiveAtResolution:
+    """Tests for recursive @ resolution in indirection strings.
+
+    Feature: 017-ydb-test-failures Phase 19 fix
+
+    When the resolved value of an indirection itself starts with @,
+    it must be recursively resolved. This handles patterns like:
+    - @VV@(subs) where VV="@^VV(sub)" - the value contains @
+    - @@@@@@@@X - deeply nested indirection levels
+
+    The fix changes `if inner.startswith("@")` to `while inner.startswith("@")`
+    to handle multiple consecutive @ in the resolved value.
+    """
+
+    def test_value_containing_at_is_recursively_resolved(self):
+        """Value starting with @ triggers recursive resolution.
+
+        @VV where VV="@Y" and Y="Z"
+        → resolve VV → "@Y"
+        → starts with @, recurse: resolve Y → "Z"
+        → "Z" doesn't start with @, return "Z"
+        """
+        state = MockMState()
+        # VV contains "@Y" which must be resolved recursively
+        scope = CurrentScope(scope_dict={"VV": "@Y", "Y": "Z", "Z": "final"})
+        resolver = IndirectionResolver(state, scope)
+
+        # _resolve_recursive_at should:
+        # 1. Strip @ from "@Y"
+        # 2. Look up Y → "Z"
+        # 3. Return "Z" (the variable name)
+        result = resolver._resolve_recursive_at("@Y")
+        assert result == "Z"
+
+    def test_multiple_consecutive_at_in_value(self):
+        """Value with multiple @ levels is fully resolved.
+
+        If VV contains "@@Y" and Y="Z", this tests the while loop
+        handles @@Y by:
+        - First iteration: @Y → resolve Y → "Z"
+        - Second iteration: @Z → resolve Z (if Z starts with @ continue, else done)
+        """
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"VV": "@Y", "Y": "Z", "Z": "final_value"})
+        resolver = IndirectionResolver(state, scope)
+
+        # @VV → VV value = "@Y"
+        # "@Y" starts with @, recurse
+        # @Y → Y value = "Z"
+        # "Z" doesn't start with @, return "Z"
+        result = resolver._resolve_recursive_at("@Y")
+        assert result == "Z"
+
+
+class TestSubscriptIndirectionInVariableRefs:
+    """Tests for subscript indirection within variable references.
+
+    Feature: 017-ydb-test-failures Phase 19 fix
+
+    Patterns like A(@Y) where @Y in the subscript position means:
+    1. Evaluate @Y to get Y's value
+    2. Use that value as the subscript
+
+    This is different from name-indirection subscripts (VAR@(subs))
+    which appends subscripts AFTER resolving VAR.
+    """
+
+    def test_subscript_indirection_evaluates_variable(self):
+        """A(@Y) where Y=3 → access A(3)."""
+        from m2py.runtime import MArray
+
+        state = MockMState()
+        arr = MArray()
+        arr[(3,)].value = "value_at_3"
+
+        scope = CurrentScope(scope_dict={"Y": 3, "A": arr})
+        resolver = IndirectionResolver(state, scope)
+
+        # _get_value handles A(@Y) by:
+        # - Recognizing this has subscripts with @ inside
+        # - Evaluating @Y → 3
+        # - Getting value at A(3)
+        result = resolver._get_value("A(@Y)")
+        assert result == "value_at_3"
+
+    def test_name_indirection_subscripts_vs_subscript_indirection(self):
+        """VAR@(subs) is different from VAR(@subs).
+
+        VAR@(subs): Resolve VAR, then append (subs) to result
+        VAR(@subs): Access VAR with @subs evaluated as subscript
+        """
+        from m2py.runtime import MArray
+
+        state = MockMState()
+        arr = MArray()
+        arr[(5,)].value = "subscript_value"
+
+        # Case 1: A(@X) - subscript indirection
+        scope = CurrentScope(scope_dict={"X": 5, "A": arr})
+        resolver = IndirectionResolver(state, scope)
+        result = resolver._get_value("A(@X)")
+        assert result == "subscript_value"
+
+        # Case 2: @Y@(subs) where Y="A" - name-indirection subscripts
+        # Y resolves to "A", then (5) is appended → A(5)
+        scope2 = CurrentScope(scope_dict={"Y": "A", "A": arr})
+        resolver2 = IndirectionResolver(state, scope2)
+        result2 = resolver2.resolve_to_name("Y", levels=1, per_level_subscripts=[[5]])
+        assert result2 == "A(5)"
+
+
+class TestParenthesizedExpressionIndirection:
+    """Tests for parenthesized expression indirection.
+
+    Feature: 017-ydb-test-failures Phase 19 fix
+
+    Patterns like @(expr)@(subs) where:
+    1. (expr) is evaluated to get a variable name
+    2. @(subs) is appended to that name
+
+    Note: _resolve_recursive_at expects input starting with @.
+    For @(expr), the inner expression is (expr) after stripping @.
+    """
+
+    def test_parenthesized_variable_resolved(self):
+        """@(X) where X="A" → returns "A" (the NAME to use).
+
+        For @(X) where X contains "A":
+        - "@(X)" passed to _resolve_recursive_at
+        - Strips @ → inner = "(X)"
+        - Recognizes leading ( as parenthesized expression
+        - Evaluates "X" → "A"
+        - Returns "A" as the resolved name
+        """
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "A", "A": "final_result"})
+        resolver = IndirectionResolver(state, scope)
+
+        # Call with "@(X)" - the @ prefix is expected by _resolve_recursive_at
+        result = resolver._resolve_recursive_at("@(X)")
+        assert result == "A"
+
+    def test_parenthesized_with_trailing_subscripts(self):
+        """@(X)@(1,2) where X="B" → returns "B(1,2)".
+
+        This tests that trailing @(subs) are appended to the evaluated result.
+        """
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "B"})
+        resolver = IndirectionResolver(state, scope)
+
+        # Call with "@(X)@(1,2)" - evaluates X→"B", appends (1,2)
+        result = resolver._resolve_recursive_at("@(X)@(1,2)")
+        assert result == "B(1,2)"
+
+
+# =============================================================================
+# Tests for _resolve_subscript_string (subscript indirection)
+# =============================================================================
+
+
+class TestResolveSubscriptString:
+    """Tests for _resolve_subscript_string method.
+
+    Feature: 017-ydb-test-failures Phase 19
+
+    Handles subscript indirection: ^V1A(@Y) where @Y in subscripts needs resolution.
+    """
+
+    def test_simple_subscript_no_indirection(self):
+        """Subscripts without @ pass through unchanged."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._resolve_subscript_string("(1,2,3)")
+        assert result == "(1,2,3)"
+
+    def test_subscript_indirection_single(self):
+        """^V(@X) where X=5 → (5)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": 5})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._resolve_subscript_string("(@X)")
+        assert result == "(5)"
+
+    def test_subscript_indirection_mixed(self):
+        """^V(1,@X,3) where X=5 → (1,5,3).
+
+        Note: If X="abc", then @X would try to look up variable 'abc',
+        not insert the string "abc". MUMPS subscript indirection
+        evaluates the result as an expression.
+        """
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": 5})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._resolve_subscript_string("(1,@X,3)")
+        assert result == "(1,5,3)"
+
+    def test_subscript_indirection_multiple(self):
+        """^V(@A,@B) where A=1, B=2 → (1,2)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"A": 1, "B": 2})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._resolve_subscript_string("(@A,@B)")
+        assert result == "(1,2)"
+
+    def test_subscript_indirection_multilevel(self):
+        """^V(@@X) where X="Y", Y=99 → (99)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "Y", "Y": 99})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._resolve_subscript_string("(@@X)")
+        assert result == "(99)"
+
+
+# =============================================================================
+# Tests for chained recursive @ resolution
+# =============================================================================
+
+
+class TestChainedRecursiveAtResolution:
+    """Tests for chained @ resolution where resolved values contain more @.
+
+    Feature: 017-ydb-test-failures Phase 19
+
+    Example: @VV@(B,"C") where VV="@^VV(\"A\")" and ^VV("A")="^VV(\"a\")"
+    We need to fully resolve @^VV("A") → ^VV("a") THEN append (B,"C").
+    """
+
+    def test_resolved_value_with_leading_at(self):
+        """@X where X="@Y" and Y="FINAL" → resolve @Y first → "FINAL"."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "@Y", "Y": "FINAL"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_name("X", levels=1)
+        assert result == "FINAL"
+
+    def test_name_indirection_subscripts_with_at_in_value(self):
+        """@VV@(1) where VV="@Y", Y="A" → resolve @Y first → "A", append (1) → "A(1)"."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"VV": "@Y", "Y": "A"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._resolve_recursive_at("@VV@(1)")
+        assert result == "A(1)"
+
+    def test_triple_at_chain(self):
+        """@@@X where X="Y", Y="Z", Z="FINAL" → "FINAL"."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "Y", "Y": "Z", "Z": "FINAL"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_name("X", levels=3)
+        assert result == "FINAL"
+
+
+# =============================================================================
+# Tests for resolve_to_name with validate=False (for KILL)
+# =============================================================================
+
+
+class TestResolveToNameValidateFlag:
+    """Tests for resolve_to_name validate parameter.
+
+    Feature: 017-ydb-test-failures Phase 19
+
+    KILL indirection may resolve to exclusive patterns like "(A,B)" which
+    are not valid variable names. validate=False suppresses VarExpectedError.
+    """
+
+    def test_validate_true_rejects_invalid_name(self):
+        """With validate=True (default), invalid names raise error."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "(A,B)"})  # Exclusive pattern
+        resolver = IndirectionResolver(state, scope)
+
+        with pytest.raises(VarExpectedError):
+            resolver.resolve_to_name("X", levels=1, validate=True)
+
+    def test_validate_false_allows_invalid_name(self):
+        """With validate=False, invalid names are returned as-is."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "(A,B)"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_name("X", levels=1, validate=False)
+        assert result == "(A,B)"
+
+    def test_validate_false_comma_separated_list(self):
+        """validate=False allows comma-separated variable lists."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "A,B,C"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_name("X", levels=1, validate=False)
+        assert result == "A,B,C"
+
+    def test_validate_false_exclusive_plus_explicit(self):
+        """validate=False allows '(A),B,C' pattern for exclusive + explicit KILL."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "(A),B,C"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_name("X", levels=1, validate=False)
+        assert result == "(A),B,C"

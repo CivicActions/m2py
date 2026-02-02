@@ -599,5 +599,6 @@ class TestGenerateNameIndirectionUnified:
         result = generate_name_indirection(expr, mock_ctx)
         # Should build the source name with subscripts
         # The literal 1 becomes "1" when generated
-        assert '"A(" + ",".join(str(s) for s in ["1"]) + ")"' in result
+        # Phase 19: Now uses _format_subscript helper for proper subscript formatting
+        assert '"A(" + ",".join(_format_subscript(s) for s in ["1"]) + ")"' in result
         assert "levels=1" in result

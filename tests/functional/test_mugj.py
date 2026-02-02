@@ -73,10 +73,6 @@ class TestMugjSerialExecution:
     - Byte-for-byte output comparison (no whitespace normalization)
     """
 
-    @pytest.mark.xfail(
-        reason="MUGJ serial execution has known failures (T085-T090)",
-        strict=False,
-    )
     def test_full_suite_serial(self) -> None:
         """Execute all MUGJ routines serially and compare to full outref.
 

@@ -574,7 +574,8 @@ class TestByRefParameterCodegen:
         code = generate_python("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
 
         # Phase 13 (T076): Callee signature includes _rt as first parameter
-        assert "def INCR(_rt, N, _scope=None, _start_offset=0):" in code
+        # Phase 19 (Spec 017): Formal params have =None default
+        assert "def INCR(_rt, N=None, _scope=None, _start_offset=0):" in code
         # T084 + Spec 009: Return from _scope using MArray.value
         assert "return _scope.get('N', MArray()).value" in code
 
@@ -604,7 +605,8 @@ class TestByRefParameterCodegen:
         )
 
         # Phase 13 (T076): Callee signature includes _rt as first parameter
-        assert "def SWAP(_rt, X, Y, _scope=None, _start_offset=0):" in code
+        # Phase 19 (Spec 017): Formal params have =None default
+        assert "def SWAP(_rt, X=None, Y=None, _scope=None, _start_offset=0):" in code
         # Check for tuple return using MArray.value (order may vary based on set ordering)
         assert (
             "return _scope.get('X', MArray()).value, _scope.get('Y', MArray()).value"

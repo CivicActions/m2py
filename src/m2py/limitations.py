@@ -414,36 +414,6 @@ implement. Since m2py targets YDB compatibility, these commands raise NotImpleme
 Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
 `NotImplementedError("LIM-016: {feature} not supported")`.""",
     ),
-    "LIM-017": Limitation(
-        id="LIM-017",
-        category="Generic Indirection Codegen",
-        type=LimitationType.REDIRECT,
-        short_description="Tests in s7_3_indirection",
-        sections=("s6_3_1_indirection",),
-        details="""\
-Section 6.3.1 defines the runtime processing of generic indirection. Since the
-same code handles both indirection expression syntax (§7.3) and runtime processing
-(§6.3.1), the codegen tests exist in the s7_3_indirection test module.
-
-This section is marked as covered by the s7_3_indirection tests.""",
-        behavior="""\
-See s7_3_indirection tests for full codegen coverage of indirection.""",
-    ),
-    "LIM-018": Limitation(
-        id="LIM-018",
-        category="Z-Command Codegen",
-        type=LimitationType.REDIRECT,
-        short_description="Tests in extensions/ydb/",
-        sections=("s8_2_27_zcommand",),
-        details="""\
-Section 8.2.27 reserves the Z-command syntax for vendor-specific extensions.
-YottaDB Z-commands (ZWRITE, ZKILL, ZGOTO, etc.) are tested in the extensions/ydb/
-test directory, organized per command.
-
-This section is marked as covered by the extensions/ydb tests.""",
-        behavior="""\
-See extensions/ydb tests for full codegen coverage of Z-commands.""",
-    ),
     "LIM-019": Limitation(
         id="LIM-019",
         category="Arithmetic Precision Edge Cases",

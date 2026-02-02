@@ -163,8 +163,8 @@ class CurrentScope:
         # Translate MUMPS name to Python identifier
         py_name = NameTranslator.to_python(name)
 
-        # Look up in storage mechanisms
-        value = self._lookup(py_name, _SENTINEL)
+        # Look up in storage mechanisms - try both MUMPS and Python names
+        value = self._lookup(py_name, _SENTINEL, mumps_name=name)
 
         # Check for undefined in strict mode
         if value is _SENTINEL:
@@ -195,7 +195,7 @@ class CurrentScope:
             get_subscripted("A", [1, 2]) → value of A(1,2)
         """
         py_name = NameTranslator.to_python(name)
-        base = self._lookup(py_name, None)
+        base = self._lookup(py_name, None, mumps_name=name)
 
         if base is None:
             if self._strict_mode:
@@ -281,7 +281,7 @@ class CurrentScope:
 
         # Wrap in MArray for consistency with generated code
         # (generated code expects _scope[key].value)
-        existing = self._lookup(py_name, None)
+        existing = self._lookup(py_name, None, mumps_name=name)
         if existing is not None and isinstance(existing, MArray):
             # Update existing MArray
             existing.value = value
@@ -304,7 +304,7 @@ class CurrentScope:
         py_name = NameTranslator.to_python(name)
 
         # Get or create base array
-        base = self._lookup(py_name, None)
+        base = self._lookup(py_name, None, mumps_name=name)
 
         # If base doesn't exist or isn't subscriptable, create MArray
         if base is None or not self._is_array_like(base):
@@ -360,12 +360,12 @@ class CurrentScope:
             return self._exists_subscripted(base_name, subscripts)
 
         py_name = NameTranslator.to_python(name)
-        return self._lookup(py_name, _SENTINEL) is not _SENTINEL
+        return self._lookup(py_name, _SENTINEL, mumps_name=name) is not _SENTINEL
 
     def _exists_subscripted(self, name: str, subscripts: List[Any]) -> bool:
         """Check if subscripted variable exists (has value)."""
         py_name = NameTranslator.to_python(name)
-        base = self._lookup(py_name, None)
+        base = self._lookup(py_name, None, mumps_name=name)
 
         if base is None:
             return False
@@ -421,7 +421,7 @@ class CurrentScope:
             return self._data_subscripted(base_name, subscripts)
 
         py_name = NameTranslator.to_python(name)
-        value = self._lookup(py_name, _SENTINEL)
+        value = self._lookup(py_name, _SENTINEL, mumps_name=name)
 
         if value is _SENTINEL:
             return 0
@@ -441,7 +441,7 @@ class CurrentScope:
     def _data_subscripted(self, name: str, subscripts: List[Any]) -> int:
         """Get $DATA value for a subscripted variable."""
         py_name = NameTranslator.to_python(name)
-        base = self._lookup(py_name, None)
+        base = self._lookup(py_name, None, mumps_name=name)
 
         if base is None:
             return 0
@@ -519,7 +519,7 @@ class CurrentScope:
     def _kill_subscripted(self, name: str, subscripts: List[Any]) -> None:
         """Kill a subscripted variable node."""
         py_name = NameTranslator.to_python(name)
-        base = self._lookup(py_name, None)
+        base = self._lookup(py_name, None, mumps_name=name)
 
         if base is None:
             return
@@ -572,8 +572,32 @@ class CurrentScope:
 
     # Private helper methods
 
-    def _lookup(self, py_name: str, default: Any) -> Any:
-        """Look up a Python name in available storage mechanisms."""
+    def _lookup(self, py_name: str, default: Any, mumps_name: str | None = None) -> Any:
+        """Look up a Python name in available storage mechanisms.
+
+        Args:
+            py_name: Python-translated variable name (e.g., '_pct_FOO')
+            default: Value to return if not found
+            mumps_name: Original MUMPS name (e.g., '%FOO') - try this first
+
+        Returns:
+            Variable value or default if not found
+
+        Note: Some code paths store using MUMPS names, others use Python names.
+        We try both to handle mixed conventions.
+        """
+        # Try MUMPS name first (for code that stores using MUMPS names)
+        if mumps_name is not None:
+            if self._scope_dict is not None and mumps_name in self._scope_dict:
+                return self._scope_dict[mumps_name]
+            if self._locals_dict is not None and mumps_name in self._locals_dict:
+                return self._locals_dict[mumps_name]
+            if self._state_locals is not None:
+                if hasattr(self._state_locals, "__contains__"):
+                    if mumps_name in self._state_locals:
+                        return self._state_locals[mumps_name]
+
+        # Then try Python name (for code that stores using Python names)
         # Check scope_dict first
         if self._scope_dict is not None:
             if py_name in self._scope_dict:

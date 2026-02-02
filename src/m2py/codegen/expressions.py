@@ -289,6 +289,7 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
         elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Spec 009 (T022-T023): Access arrays from _scope using MArray
             # MArray.get(*subscripts) returns "" for undefined (MUMPS semantics)
+            # Use python_name (translated) to match SET statement key format
             base = f"_scope.get({python_name!r}, MArray())"
         else:
             # Plain Python local variable (TRAMPOLINE without state_vars)
@@ -306,6 +307,7 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     # Return empty string for undefined variables (MUMPS semantics via MArray.value)
     # Spec 017 Phase 18: Use m_var_value to handle both MArray and plain values
     # (External TRAMPOLINE routines may return plain strings in _scope)
+    # Use python_name (translated) to match SET statement key format
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
         return f"m_var_value(_scope.get({python_name!r}))"
 

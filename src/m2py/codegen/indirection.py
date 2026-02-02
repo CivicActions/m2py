@@ -167,9 +167,7 @@ def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> s
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
             # Build name string like "A(1,2)" at runtime and resolve
-            full_name_expr = (
-                f'f"{var_name}(" + ",".join([str(s) for s in [{subs_str}]]) + ")"'
-            )
+            full_name_expr = f'f"{var_name}(" + ",".join([_format_subscript(s) for s in [{subs_str}]]) + ")"'
             return f"_rt.resolve_for_target({full_name_expr}, {scope_expr}, levels=1)"
         else:
             # Simple variable - use resolve_for_target for validation + value
@@ -232,9 +230,7 @@ def generate_argument_indirection(
         if inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     elif isinstance(inner_expr, GlobalVariable):
@@ -242,18 +238,44 @@ def generate_argument_indirection(
         if inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     else:
-        # Complex expression - generate and evaluate directly
-        # This handles cases like @(expr) where expr is computed
+        # Complex expression - generate and evaluate
+        # For @$P(...), @$E(...), etc., the expression evaluates to a STRING
+        # which is then used as the expression to evaluate.
+        # Unlike variable sources, the expression result IS the first "level",
+        # so we use levels-1 (but minimum 1).
         value_expr = generate_expr(inner_expr, ctx)
-        # For computed expressions, we still need to evaluate them
+        effective_levels = max(1, levels - 1)
+
+        # Build per-level subscripts argument if any exist
+        if all_subscripts and any(all_subscripts):
+            per_level_subs = []
+            for subs in all_subscripts:
+                if subs:
+                    sub_exprs = [generate_expr(s, ctx) for s in subs]
+                    per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+            if per_level_subs:
+                subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+            else:
+                subs_arg = ""
+        else:
+            subs_arg = ""
+
         empty_flag = ", treat_empty_as_truthy=True" if if_condition else ""
-        return f"_rt.evaluate_argument_indirection({value_expr}, {scope_expr}, levels=1{empty_flag})"
+
+        # For effective_levels=0 or 1, evaluate the expression result directly
+        # as a MUMPS expression (no intermediate lookups needed)
+        if effective_levels <= 1 and not subs_arg:
+            # Direct evaluation: @$P(...) just evaluates the $P result as expression
+            return (
+                f"_rt.evaluate_mumps_expression({value_expr}, {scope_expr}{empty_flag})"
+            )
+        else:
+            # Multi-level: @@$P(...) needs lookup chain
+            return f"_rt.evaluate_argument_indirection({value_expr}, {scope_expr}, levels={effective_levels}{subs_arg}{empty_flag})"
 
     # Build per-level subscripts argument if needed
     if all_subscripts and any(all_subscripts):
@@ -314,10 +336,10 @@ def generate_name_indirection(
     scope_expr = _get_scope_expr(ctx)
 
     # Handle NakedGlobal: @^(1) or @@^(1) or @@^(1)@(subs)
-    # The inner expression is a NakedGlobal, which when evaluated gives a value
-    # that serves as the source for the indirection resolution.
-    # The resolved value (a naked reference string like "^(5)") goes through
-    # all indirection levels - the naked expansion happens inside the resolver.
+    # The inner expression is a NakedGlobal, which when evaluated gives a VALUE
+    # that is already the name string (e.g., "C(1,2)"). This is equivalent to
+    # one level of indirection already being resolved.
+    # Feature: 017-ydb-test-failures Phase 19 fix
     if isinstance(inner_expr, NakedGlobal):
         # Generate the expression that evaluates the naked global
         # This produces: (_rt.globals.get(*_rt.globals.resolve_naked((subs,))) or '')
@@ -336,10 +358,10 @@ def generate_name_indirection(
         else:
             subs_arg = ""
 
-        # Use full levels - the resolver handles naked reference expansion internally
-        return (
-            f"_rt.get_indirected({naked_expr}, {scope_expr}, levels={levels}{subs_arg})"
-        )
+        # Use levels-1 because the naked evaluation already gives us a name directly
+        # (like complex expressions). For @^(naked), levels=1 becomes 0.
+        effective_levels = levels - 1
+        return f"_rt.get_indirected({naked_expr}, {scope_expr}, levels={effective_levels}{subs_arg})"
 
     # For complex inner expressions (intrinsic functions, binary ops, etc.),
     # the expression evaluates to the target name directly. This is equivalent
@@ -370,9 +392,7 @@ def generate_name_indirection(
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
             # Build name with subscripts at runtime
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     else:  # GlobalVariable - only remaining case after earlier checks
@@ -380,9 +400,7 @@ def generate_name_indirection(
         if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
 
@@ -483,9 +501,7 @@ def generate_subscript_indirection(
         if inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     else:  # GlobalVariable
@@ -493,9 +509,7 @@ def generate_subscript_indirection(
         if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
 
@@ -613,9 +627,7 @@ def generate_name_indirection_write(
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
             # Build name with subscripts at runtime
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     elif isinstance(inner_expr, GlobalVariable):
@@ -623,9 +635,7 @@ def generate_name_indirection_write(
         if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     else:
@@ -689,9 +699,7 @@ def generate_name_indirection_kill(
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
             # Build name with subscripts at runtime
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     elif isinstance(inner_expr, GlobalVariable):
@@ -699,9 +707,7 @@ def generate_name_indirection_kill(
         if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     else:
@@ -769,9 +775,7 @@ def generate_name_indirection_for(
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
             # Build name with subscripts at runtime
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     elif isinstance(inner_expr, GlobalVariable):
@@ -779,9 +783,7 @@ def generate_name_indirection_for(
         if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     else:
@@ -846,9 +848,7 @@ def generate_merge_indirection_name(
         if inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     elif isinstance(inner_expr, GlobalVariable):
@@ -856,9 +856,7 @@ def generate_merge_indirection_name(
         if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
             sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
             subs_str = ", ".join(sub_exprs)
-            source_expr = (
-                f'"{source_name}(" + ",".join(str(s) for s in [{subs_str}]) + ")"'
-            )
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
         else:
             source_expr = f'"{source_name}"'
     else:
@@ -974,6 +972,9 @@ def generate_get_indirection_name(
     and returning its value (or default if undefined).
 
     For $G(@A@(1,2)), we resolve @A to get "ARR", then get ARR(1,2).
+    For $G(@@B(3)@(4,67)), we resolve @B(3) twice then append (4,67).
+    For $G(@@$E("NAME",2,3)), the function evaluates to "AM" directly,
+    so we use levels-1 since the expression itself is one level.
 
     Args:
         var: MIndirection ASG node representing $GET argument
@@ -988,36 +989,73 @@ def generate_get_indirection_name(
     from m2py.parser.textx_classes import GlobalVariable
     from m2py.codegen.expressions import generate_expr
 
-    # Count indirection levels
-    levels, inner_expr = _count_indirection_levels(var)
-
-    # Build per_level_subscripts from name_indirection_subscripts
-    per_level_subs_code = None
-    if var.name_indirection_subscripts:
-        all_subs = []
-        for sub_list in var.name_indirection_subscripts:
-            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-            all_subs.extend(sub_exprs)
-        if len(all_subs) == 1:
-            per_level_subs_code = f"[[{all_subs[0]}]]"
-        else:
-            subs_str = ", ".join(all_subs)
-            per_level_subs_code = f"[[{subs_str}]]"
+    # Count indirection levels and collect all subscripts from all levels
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(var)
 
     # Get the appropriate scope expression based on strategy
     scope_expr = _get_scope_expr(ctx)
 
-    # Get the source expression
+    # Get the source expression - include subscripts from inner variable
     if isinstance(inner_expr, GlobalVariable):
-        # Global variable as indirection source
+        # Global variable as indirection source - pass the NAME, not the value
+        # The resolver will do the value lookup
         global_name = inner_expr.name
-        source_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+        if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"^{global_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            # Pass the global name as a string, not its value
+            source_expr = f'"^{global_name}"'
     elif isinstance(inner_expr, (MVariable, MLocalVariable)):
         source_name = inner_expr.name
-        source_expr = f'"{source_name}"'
+        # Include innermost subscripts in the source name if present
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            # Build name with subscripts at runtime
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            source_expr = f'"{source_name}"'
     else:
+        # Complex expression (intrinsic function, binary op, etc.)
+        # The expression evaluates to a STRING that is the SOURCE for indirection.
+        # Unlike variable sources, the expression result IS the first "level",
+        # so we use levels-1 for the actual resolution count.
         inner_expr_code = generate_expr(inner_expr, ctx)
-        source_expr = f"str({inner_expr_code})"
+
+        # For complex expressions with subscripts at level 0, we need to apply
+        # those subscripts to the source BEFORE any resolution.
+        # This is because @$P(...)@(subs) means: $P result + subs = target name
+        if all_subscripts and all_subscripts[0]:
+            # Apply first subscript set to the source expression
+            first_subs = all_subscripts[0]
+            sub_exprs = [generate_expr(s, ctx) for s in first_subs]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f"_rt.append_subscripts_to_name(str({inner_expr_code}), [{subs_str}])"
+            )
+            # Remove the first subscript set since it's now in the source
+            all_subscripts = all_subscripts[1:]
+        else:
+            source_expr = f"str({inner_expr_code})"
+
+        # Adjust levels: function result IS the first "level" (like one lookup already done)
+        # For @$func(), levels=1 → levels-1=0 (just use result as name)
+        # For @@$func(), levels=2 → levels-1=1 (one lookup needed)
+        levels = levels - 1
+
+    # Build per_level_subscripts from all collected subscripts
+    per_level_subs_code = None
+    if any(all_subscripts):
+        per_level_subs = []
+        for sub_list in all_subscripts:
+            if sub_list:
+                sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+            else:
+                per_level_subs.append("[]")
+        per_level_subs_code = f"[{', '.join(per_level_subs)}]"
 
     # Build the get_indirected call
     subs_arg = (
@@ -1026,17 +1064,18 @@ def generate_get_indirection_name(
 
     # For $GET, we need to handle the default case
     # get_indirected returns "" for undefined, but $GET should return the specified default
-    # We use a conditional: value if value != "" or not using default, else default
+    # We use allow_undefined=True to suppress LVUNDEF error for $GET
+    # Then use a conditional: value if value != "" or not using default, else default
     if default_expr == '""':
         # Simple case - default is empty string, same as get_indirected default
-        return f"_rt.get_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
+        return f"_rt.get_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg}, allow_undefined=True)"
     else:
         # Need to check for empty string and substitute default
         # Note: This is not 100% correct because it can't distinguish between
         # "undefined" and "defined as empty string" - but this matches standard $GET behavior
         return (
             f"((lambda _v: _v if _v else {default_expr})"
-            f"(_rt.get_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})))"
+            f"(_rt.get_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg}, allow_undefined=True)))"
         )
 
 
@@ -1055,6 +1094,10 @@ def generate_name_function_indirection(
 
     For $NA(@A@(1,2)) where A="X", we want to return "X(1,2)".
     For $NA(@A,2) where A="X(1,2,3)", we want to return "X(1,2)".
+    For $NA(@@@VV(0)@(12,456)), we need to:
+      - Use source "VV(0)" (with inner subscripts)
+      - Pass per_level_subscripts=[[12, 456]] for the @(12,456)
+      - levels=3 for the @@@
 
     Args:
         var: MIndirection ASG node representing $NAME argument
@@ -1069,46 +1112,78 @@ def generate_name_function_indirection(
     from m2py.parser.textx_classes import GlobalVariable
     from m2py.codegen.expressions import generate_expr
 
-    # Count indirection levels
-    levels, inner_expr = _count_indirection_levels(var)
-
-    # Build extra subscripts tuple from name_indirection_subscripts
-    if var.name_indirection_subscripts:
-        all_subs = []
-        for sub_list in var.name_indirection_subscripts:
-            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-            all_subs.extend(sub_exprs)
-        if len(all_subs) == 1:
-            extra_subscripts = f"({all_subs[0]},)"
-        else:
-            extra_subscripts = f"({', '.join(all_subs)},)"
-    else:
-        extra_subscripts = "()"
+    # Count indirection levels and collect all subscripts from all levels
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(var)
 
     # Get the appropriate scope expression based on strategy
     scope_expr = _get_scope_expr(ctx)
 
-    # Get the source expression
+    # Build per_level_subscripts from all collected subscripts
+    per_level_subs_code = None
+    if any(all_subscripts):
+        per_level_subs = []
+        for sub_list in all_subscripts:
+            if sub_list:
+                sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+            else:
+                per_level_subs.append("[]")
+        per_level_subs_code = f"[{', '.join(per_level_subs)}]"
+
+    # Build the source expression with inner subscripts
     if isinstance(inner_expr, GlobalVariable):
         global_name = inner_expr.name
-        name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+        if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"^{global_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            source_expr = f'"^{global_name}"'
     elif isinstance(inner_expr, (MVariable, MLocalVariable)):
         source_name = inner_expr.name
-        # Use resolve_for_target to resolve multiple levels of indirection
-        name_expr = (
-            f'_rt.resolve_for_target("{source_name}", {scope_expr}, levels={levels})'
-        )
+        # Include inner subscripts in the source expression
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            source_expr = f'"{source_name}"'
     else:
+        # Complex expression (function call, etc.) - evaluate directly
+        # The expression result IS a name string, so for $NAME(@func()):
+        # - If levels=1, the function result IS the name (no lookup needed)
+        # - If levels>1, we need levels-1 lookups (one level consumed by the expression)
         inner_expr_code = generate_expr(inner_expr, ctx)
-        name_expr = f"str({inner_expr_code})"
+        source_expr = f"str({inner_expr_code})"
+        # Reduce levels by 1 since the expression itself provides the first "level"
+        levels = levels - 1
+
+    # Build resolve_for_target call with all parameters
+    subs_arg = (
+        f", per_level_subscripts={per_level_subs_code}" if per_level_subs_code else ""
+    )
+
+    # If levels is 0 after adjustment (for simple @func() case), skip resolve
+    if levels == 0:
+        # No resolution needed - the source expression IS the name
+        if per_level_subs_code:
+            # Need to append subscripts to the name
+            name_expr = (
+                f"_rt._append_subscripts_to_name({source_expr}, {per_level_subs_code})"
+            )
+        else:
+            name_expr = source_expr
+    else:
+        name_expr = f"_rt.resolve_for_target({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
     # Build the get_name call
+    # Note: extra_subscripts is () now since all subscripts go through per_level_subscripts
     if depth_expr is not None:
         depth_arg = f", depth=int(m_num({depth_expr}))"
     else:
         depth_arg = ""
 
-    return f"_rt.get_name({name_expr}, {extra_subscripts}, {scope_expr}{depth_arg})"
+    return f"_rt.get_name({name_expr}, (), {scope_expr}{depth_arg})"
 
 
 def generate_query_indirection_name(
@@ -1142,6 +1217,7 @@ def generate_query_indirection_name(
     levels, inner_expr = _count_indirection_levels(var)
 
     # Build subscript tuple for the starting point
+    # Only include subscripts if explicitly provided via @var@(subs) syntax
     if var.name_indirection_subscripts:
         all_subs = []
         for sub_list in var.name_indirection_subscripts:
@@ -1152,7 +1228,8 @@ def generate_query_indirection_name(
         else:
             subscripts_tuple = f"({', '.join(all_subs)},)"
     else:
-        subscripts_tuple = '("",)'
+        # No additional subscripts - just use subscripts from resolved name
+        subscripts_tuple = "()"
 
     # Get the appropriate scope expression based on strategy
     scope_expr = _get_scope_expr(ctx)

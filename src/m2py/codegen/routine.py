@@ -319,9 +319,10 @@ class RoutineGenerator:
         # Spec 011: Import NewScopeManager for NEW command scope semantics
         # Spec 011 Phase 20: Import READ command helpers
         # Spec 017 Phase 18: Import m_var_value for cross-routine variable access
+        # Spec 017 Phase 19: Import _format_subscript for building var name strings with proper quoting
         # Note: Contains ([) and follows (]) are inlined as Python expressions
         ctx.emitter.line(
-            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, NewScopeManager, m_read_timeout, m_read_char, m_var_value"
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, NewScopeManager, m_read_timeout, m_read_char, m_var_value, _format_subscript"
         )
         # Spec 010: Import $RANDOM helper (Phase 8)
         ctx.emitter.line("from m2py.codegen.expressions import _m_random_checked")
@@ -553,7 +554,12 @@ class RoutineGenerator:
         # All labels accept _rt and _scope so they can be called externally (D LABEL^ROUTINE)
         # _scope must come AFTER formal params since it has a default value
         # _start_offset allows external callers to pass offset for D LABEL+N^ROUTINE calls
-        all_params = ["_rt"] + formal_params + ["_scope=None", "_start_offset=0"]
+        # Spec 017 Phase 19: Formal params have None default so they can be omitted
+        # (MUMPS allows calling with fewer args than defined - undefined params have $D()=0)
+        formal_params_with_defaults = [f"{p}=None" for p in formal_params]
+        all_params = (
+            ["_rt"] + formal_params_with_defaults + ["_scope=None", "_start_offset=0"]
+        )
         params_str = ", ".join(all_params)
         ctx.emitter.line(f"def {func_name}({params_str}):")
 
@@ -598,12 +604,16 @@ class RoutineGenerator:
                     with ctx.emitter.indented():
                         # Spec 017: NEW formal parameters first (saves caller's values)
                         # Then assign parameter values to _scope
+                        # Phase 19: Only assign if parameter was actually passed (not None)
+                        # This ensures $D(param)=0 for undefined parameters
                         for orig_name in original_formal_params:
                             ctx.emitter.line(f"_new_mgr.new_var({orig_name!r})")
                             python_name = translate_name(orig_name)
-                            ctx.emitter.line(
-                                f"_scope[{orig_name!r}] = MArray(value={python_name})"
-                            )
+                            ctx.emitter.line(f"if {python_name} is not None:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    f"_scope[{orig_name!r}] = MArray(value={python_name})"
+                                )
                         self._generate_label_body(label, ctx)
                     ctx.new_scope_manager_var = None
                 else:
@@ -1022,16 +1032,20 @@ class RoutineGenerator:
         # Spec 007 (T020): Add _start_offset parameter for offset entry support
         # Spec 008: Add _scope parameter for external call support
         # Uses pre-computed ASG field from classify_gotos() analysis
+        # Spec 017 Phase 19: Formal params have None default so they can be omitted
         has_offsets = self._routine.has_offset_calls
+        formal_params_with_defaults = [f"{p}=None" for p in formal_params]
         if formal_params:
             if has_offsets:
                 params_str = (
                     "_rt, state, _scope, "
-                    + ", ".join(formal_params)
+                    + ", ".join(formal_params_with_defaults)
                     + ", _start_offset=0"
                 )
             else:
-                params_str = "_rt, state, _scope, " + ", ".join(formal_params)
+                params_str = "_rt, state, _scope, " + ", ".join(
+                    formal_params_with_defaults
+                )
         else:
             if has_offsets:
                 params_str = "_rt, state, _scope, _start_offset=0"
