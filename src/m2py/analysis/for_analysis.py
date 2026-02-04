@@ -28,6 +28,49 @@ if TYPE_CHECKING:
     from .variables import FunctionSignature
 
 
+def _check_value_params_reference_loop_var(stmt: MForStatement) -> bool:
+    """Check if any VALUE parameter expression references the loop variable.
+
+    MUMPS FOR evaluates each parameter when it becomes the current iteration,
+    NOT upfront like Python's `for x in [...]`. So `F I=1,I+1,3*I` must:
+    1. I=1, execute body
+    2. I=(current I)+1=2, execute body
+    3. I=3*(current I)=6, execute body
+
+    If any VALUE parameter references the loop variable, we cannot use
+    Python's `for...in[...]` pattern - we must generate sequential assignments.
+
+    Args:
+        stmt: The MForStatement to check
+
+    Returns:
+        True if any VALUE parameter expression references the loop variable
+    """
+    from .variables import _extract_expression_variables
+
+    # Get loop variable name
+    if isinstance(stmt.loop_var, str):
+        loop_var_name = stmt.loop_var
+    elif isinstance(stmt.loop_var, MVariable):
+        loop_var_name = stmt.loop_var.name
+    else:
+        # Indirection case - be conservative
+        return True
+
+    if not loop_var_name:
+        return False
+
+    # Check each VALUE parameter
+    for param in stmt.parameters:
+        if param.param_type == ForParamType.VALUE and param.value is not None:
+            # Extract variables referenced in this expression
+            vars_in_expr = _extract_expression_variables(param.value)
+            if loop_var_name in vars_in_expr:
+                return True
+
+    return False
+
+
 def _classify_for_loop_type(stmt: MForStatement) -> ForLoopType:
     """Classify the loop type based on FOR parameters.
 
@@ -110,6 +153,13 @@ def _analyze_fors_in_scope(
         if isinstance(stmt, MForStatement):
             # T087: Always set loop_type during analysis
             stmt.loop_type = _classify_for_loop_type(stmt)
+
+            # Check if VALUE parameters reference the loop variable
+            # This is needed because F I=1,I+1,"ABC" must evaluate I+1 AFTER
+            # I is assigned 1, not upfront like Python's for...in[...] does
+            stmt.value_params_reference_loop_var = (
+                _check_value_params_reference_loop_var(stmt)
+            )
 
             # Analyze this FOR's body for loop var modification and internal QUIT
             if stmt.body:

@@ -246,6 +246,9 @@ class MForStatement(MStatement):
     exit_points: List["MStatement"] = field(default_factory=list, repr=False)
     is_infinite: bool = False  # True for step=0 or ARGUMENTLESS loops
     loop_var_modified_in_body: bool = False  # True if loop variable is SET inside body
+    value_params_reference_loop_var: bool = (
+        False  # True if VALUE params reference loop var
+    )
 
     # T088-T090: Pre-computed fields for codegen (populated by classify_gotos)
     has_cross_label_exit: bool = False  # True if any exit GOTO targets different label

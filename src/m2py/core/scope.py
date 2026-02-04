@@ -251,6 +251,59 @@ class CurrentScope:
 
         return self._extract_value(current)
 
+    def is_defined(self, name: str, subscripts: Optional[List[Any]] = None) -> bool:
+        """Check if a variable is defined (has a value).
+
+        Args:
+            name: MUMPS variable name (base name only)
+            subscripts: Optional list of subscript values
+
+        Returns:
+            True if variable is defined, False otherwise
+
+        Note: This checks for $DATA style existence - a variable is defined
+        if it has a value at the specified location.
+        """
+        # Translate MUMPS name to Python identifier
+        py_name = NameTranslator.to_python(name)
+
+        # Look up base variable
+        base = self._lookup(py_name, _SENTINEL, mumps_name=name)
+
+        if base is _SENTINEL:
+            return False
+
+        # If no subscripts, check if base has a value
+        if subscripts is None or len(subscripts) == 0:
+            # Check if it's a defined scalar or MArray with value
+            from m2py.runtime import MArray
+
+            if isinstance(base, MArray):
+                # MArray is "defined" if it has a _value (not None)
+                # Note: we check _value, not .value, because .value returns ""
+                # for undefined (None) which would always be truthy
+                return base._value is not None
+            return True  # Simple value exists
+
+        # Traverse subscripts to check if target location exists
+        current = base
+        from m2py.runtime import MArray
+
+        if isinstance(current, MArray):
+            for i, sub in enumerate(subscripts):
+                canonical_sub = SubscriptCanonicalizer.canonicalize(sub)
+                if canonical_sub in current:
+                    current = current[canonical_sub]
+                else:
+                    return False
+            # Check if final node has a value
+            if isinstance(current, MArray):
+                return current._value is not None
+            return True  # Simple value exists
+        else:
+            # Not an MArray, can't have subscripts
+            return False
+
     def set(self, name: str, value: Any) -> None:
         """Set variable value by MUMPS name.
 

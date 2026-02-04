@@ -1040,3 +1040,79 @@ class TestResolveToNameValidateFlag:
 
         result = resolver.resolve_to_name("X", levels=1, validate=False)
         assert result == "(A),B,C"
+
+
+# =============================================================================
+# Tests for resolve_to_name with strict_undef=True (for WRITE indirection T052)
+# =============================================================================
+
+
+class TestResolveToNameStrictUndef:
+    """Tests for resolve_to_name strict_undef parameter.
+
+    Feature: 017-ydb-test-failures (T052 - WRITE indirection error handling)
+
+    When strict_undef=True, undefined source variables raise LVUNDEFError
+    instead of returning empty string. Used by WRITE indirection where
+    accessing an undefined variable should error, not output nothing.
+    """
+
+    def test_strict_undef_false_returns_empty(self):
+        """With strict_undef=False (default), undefined returns empty string."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})  # Empty scope
+        resolver = IndirectionResolver(state, scope)
+
+        # UNDEF doesn't exist - should return empty string
+        result = resolver.resolve_to_name(
+            "UNDEF", levels=1, validate=False, strict_undef=False
+        )
+        assert result == ""
+
+    def test_strict_undef_true_raises_lvundef(self):
+        """With strict_undef=True, undefined source raises LVUNDEFError."""
+        from m2py.core.exceptions import LVUNDEFError
+
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})  # Empty scope
+        resolver = IndirectionResolver(state, scope)
+
+        with pytest.raises(LVUNDEFError):
+            resolver.resolve_to_name("UNDEF", levels=1, strict_undef=True)
+
+    def test_strict_undef_with_defined_variable(self):
+        """With strict_undef=True, defined variables work normally."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "TARGET"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_name("X", levels=1, strict_undef=True)
+        assert result == "TARGET"
+
+    def test_strict_undef_subscripted_missing(self):
+        """With strict_undef=True, undefined subscripted location raises error."""
+        from m2py.core.exceptions import LVUNDEFError
+        from m2py.runtime import MArray
+
+        state = MockMState()
+        # A exists but A(1) does not
+        arr = MArray()
+        arr.value = "base_value"
+        scope = CurrentScope(scope_dict={"A": arr})
+        resolver = IndirectionResolver(state, scope)
+
+        with pytest.raises(LVUNDEFError):
+            resolver.resolve_to_name("A(1)", levels=1, strict_undef=True)
+
+    def test_strict_undef_multi_level(self):
+        """With strict_undef=True, multi-level indirection checks each level."""
+        from m2py.core.exceptions import LVUNDEFError
+
+        state = MockMState()
+        # X exists but points to MISSING which doesn't exist
+        scope = CurrentScope(scope_dict={"X": "MISSING"})
+        resolver = IndirectionResolver(state, scope)
+
+        # @@X: resolve X→"MISSING", then resolve MISSING→error
+        with pytest.raises(LVUNDEFError):
+            resolver.resolve_to_name("X", levels=2, strict_undef=True)

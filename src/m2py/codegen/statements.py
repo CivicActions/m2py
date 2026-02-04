@@ -2182,6 +2182,15 @@ def _generate_for_string_list(
 ) -> None:
     """Generate Python for loop from string list FOR (F I="A","B","C").
 
+    MUMPS evaluates each VALUE parameter when it becomes the current iteration,
+    NOT upfront. So F I=1,I+1,3*I requires:
+    1. I=1, execute body
+    2. I=(current I)+1, execute body
+    3. I=3*(current I), execute body
+
+    When value_params_reference_loop_var is True, we generate sequential
+    assignments instead of Python's for...in[...] which evaluates upfront.
+
     T068: For indirect loop variables (F @A="X","Y","Z"), resolve the target
     variable name at runtime and update via _rt.set_var().
 
@@ -2190,6 +2199,11 @@ def _generate_for_string_list(
         for_ctx: FOR loop context with analysis
         ctx: Generator context
     """
+    # Check if VALUE params reference the loop variable
+    if stmt.value_params_reference_loop_var:
+        _generate_for_sequential_values(stmt, for_ctx, ctx)
+        return
+
     values = []
     for param in stmt.parameters:
         if param.param_type == ForParamType.VALUE and param.value is not None:
@@ -2215,6 +2229,70 @@ def _generate_for_string_list(
         ctx.emitter.line(f"for {for_ctx.loop_var} in [{values_str}]:")
         with ctx.emitter.indented():
             _generate_for_body(stmt, ctx, for_ctx)
+
+
+def _generate_for_sequential_values(
+    stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
+) -> None:
+    """Generate sequential value assignments for FOR with loop-var-referencing params.
+
+    MUMPS FOR I=1,I+1,3*I evaluates each param when it's current:
+    1. I=1, body
+    2. I=(current I)+1=2, body
+    3. I=3*(current I)=6, body
+
+    We wrap in a while True / break pattern so that QUIT (which generates break)
+    will exit the entire FOR construct:
+
+        while True:
+            # Param 1
+            <loop_var> = <value1>
+            <body>  # may contain break
+            # Param 2
+            <loop_var> = <value2>
+            <body>  # may contain break
+            ...
+            break  # Exit after all params processed
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        ctx: Generator context
+    """
+    # Collect VALUE parameters
+    value_params = [
+        p for p in stmt.parameters if p.param_type == ForParamType.VALUE and p.value
+    ]
+    if not value_params:
+        raise NotImplementedError("Empty sequential value FOR")
+
+    # Wrap in while True so that break from QUIT works
+    ctx.emitter.line("while True:")
+    with ctx.emitter.indented():
+        # Handle indirect loop variable setup
+        if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
+            ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+
+        # Generate a single pass through all values
+        for param in value_params:
+            # value_params is filtered to only include params with value, assert for type checker
+            assert param.value is not None
+            value_expr = generate_expr(param.value, ctx)
+
+            # Handle indirect loop variable
+            if for_ctx.loop_var_indirect:
+                ctx.emitter.line(f"{for_ctx.loop_var} = {value_expr}")
+                ctx.emitter.line(
+                    f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+                )
+            else:
+                ctx.emitter.line(f"{for_ctx.loop_var} = {value_expr}")
+
+            # Generate body
+            _generate_for_body(stmt, ctx, for_ctx)
+
+        # Exit after all params processed (normal completion)
+        ctx.emitter.line("break")
 
 
 def _generate_for_open_ended(
@@ -2289,6 +2367,10 @@ def _generate_for_mixed(
 
     Uses itertools.chain() to combine multiple iterables.
 
+    MUMPS evaluates each VALUE parameter when it becomes the current iteration,
+    NOT upfront. When value_params_reference_loop_var is True, we generate
+    sequential code blocks instead of chain().
+
     T068: For indirect loop variables (F @A=1:1:3,"X"), resolve the target
     variable name at runtime and update via _rt.set_var().
 
@@ -2297,6 +2379,11 @@ def _generate_for_mixed(
         for_ctx: FOR loop context with analysis
         ctx: Generator context
     """
+    # Check if VALUE params reference the loop variable
+    if stmt.value_params_reference_loop_var:
+        _generate_for_mixed_sequential(stmt, for_ctx, ctx)
+        return
+
     # Build list of iterables to chain together
     iterables = []
 
@@ -2341,6 +2428,93 @@ def _generate_for_mixed(
         ctx.emitter.line(f"for {for_ctx.loop_var} in chain({chain_args}):")
         with ctx.emitter.indented():
             _generate_for_body(stmt, ctx, for_ctx)
+
+
+def _generate_for_mixed_sequential(
+    stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
+) -> None:
+    """Generate sequential code for mixed FOR with loop-var-referencing params.
+
+    When VALUE parameters reference the loop variable (F I=1,I+1,3*I),
+    we cannot use chain() because it evaluates all values upfront.
+    Instead we generate sequential code blocks for each parameter.
+
+    For RANGE and OPEN_RANGE parameters, we generate standard for loops.
+    For VALUE parameters, we wrap in a single-iteration for loop so that
+    break from QUIT works properly.
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context with analysis
+        ctx: Generator context
+    """
+    # Handle indirect loop variable setup once
+    if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
+        ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+
+    for param in stmt.parameters:
+        if param.param_type == ForParamType.VALUE:
+            if param.value is not None:
+                # VALUE: Evaluate expression NOW (with current loop var value)
+                # Wrap in single-iteration for loop so break from QUIT works
+                value_expr = generate_expr(param.value, ctx)
+
+                if for_ctx.loop_var_indirect:
+                    ctx.emitter.line(f"for {for_ctx.loop_var} in [{value_expr}]:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+                        )
+                        _generate_for_body(stmt, ctx, for_ctx)
+                else:
+                    ctx.emitter.line(f"for {for_ctx.loop_var} in [{value_expr}]:")
+                    with ctx.emitter.indented():
+                        _generate_for_body(stmt, ctx, for_ctx)
+
+        elif param.param_type == ForParamType.RANGE:
+            if param.start is None or param.step is None or param.end is None:
+                raise NotImplementedError("Incomplete FOR range in mixed loop")
+            start_expr = generate_expr(param.start, ctx)
+            step_expr = generate_expr(param.step, ctx)
+            end_expr = generate_expr(param.end, ctx)
+
+            if for_ctx.loop_var_indirect:
+                ctx.emitter.line(
+                    f"for {for_ctx.loop_var} in m_range({start_expr}, {end_expr}, {step_expr}):"
+                )
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+                    )
+                    _generate_for_body(stmt, ctx, for_ctx)
+            else:
+                ctx.emitter.line(
+                    f"for {for_ctx.loop_var} in m_range({start_expr}, {end_expr}, {step_expr}):"
+                )
+                with ctx.emitter.indented():
+                    _generate_for_body(stmt, ctx, for_ctx)
+
+        elif param.param_type == ForParamType.OPEN_RANGE:
+            if param.start is None or param.step is None:
+                raise NotImplementedError("Incomplete open range in mixed loop")
+            start_expr = generate_expr(param.start, ctx)
+            step_expr = generate_expr(param.step, ctx)
+
+            if for_ctx.loop_var_indirect:
+                ctx.emitter.line(
+                    f"for {for_ctx.loop_var} in count(m_num({start_expr}), m_num({step_expr})):"
+                )
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+                    )
+                    _generate_for_body(stmt, ctx, for_ctx)
+            else:
+                ctx.emitter.line(
+                    f"for {for_ctx.loop_var} in count(m_num({start_expr}), m_num({step_expr})):"
+                )
+                with ctx.emitter.indented():
+                    _generate_for_body(stmt, ctx, for_ctx)
 
 
 def _generate_for_while(

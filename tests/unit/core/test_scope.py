@@ -263,6 +263,71 @@ class TestExists:
         assert not scope.exists("A(2)")
 
 
+class TestIsDefined:
+    """Tests for is_defined() method.
+
+    Feature: 017-ydb-test-failures (indirection undefined check)
+
+    is_defined() checks if a variable has a value at a specific location,
+    similar to $DATA returning 1 or 11 (has value) vs 0 or 10 (no value).
+    """
+
+    def test_is_defined_simple_variable(self):
+        """is_defined returns True for defined simple variable."""
+        scope = CurrentScope(scope_dict={})
+        scope.set("X", "value")
+        assert scope.is_defined("X") is True
+
+    def test_is_defined_undefined_variable(self):
+        """is_defined returns False for undefined variable."""
+        scope = CurrentScope(scope_dict={})
+        assert scope.is_defined("UNDEF") is False
+
+    def test_is_defined_subscripted_exists(self):
+        """is_defined returns True for defined subscripted variable."""
+
+        scope = CurrentScope(scope_dict={})
+        scope.set_subscripted("A", [1, 2], "hello")
+        assert scope.is_defined("A", subscripts=[1, 2]) is True
+
+    def test_is_defined_subscripted_missing(self):
+        """is_defined returns False for undefined subscripted location."""
+        scope = CurrentScope(scope_dict={})
+        scope.set_subscripted("A", [1, 2], "hello")
+        assert scope.is_defined("A", subscripts=[1, 3]) is False
+        assert scope.is_defined("A", subscripts=[2]) is False
+
+    def test_is_defined_marray_with_value(self):
+        """is_defined returns True for MArray with .value set."""
+        from m2py.runtime import MArray
+
+        arr = MArray()
+        arr.value = "test"
+        scope = CurrentScope(scope_dict={"X": arr})
+        assert scope.is_defined("X") is True
+
+    def test_is_defined_marray_without_value(self):
+        """is_defined returns False for MArray with no .value (children only)."""
+        from m2py.runtime import MArray
+
+        arr = MArray()
+        arr["child"] = "value"  # Only children, no top-level value
+        scope = CurrentScope(scope_dict={"X": arr})
+        # X has children but no value at X itself
+        assert scope.is_defined("X") is False
+
+    def test_is_defined_nested_marray_path(self):
+        """is_defined navigates MArray subscripts correctly."""
+
+        scope = CurrentScope(scope_dict={})
+        scope.set_subscripted("A", [1], "first")
+        scope.set_subscripted("A", [1, 2], "nested")
+
+        assert scope.is_defined("A", subscripts=[1]) is True
+        assert scope.is_defined("A", subscripts=[1, 2]) is True
+        assert scope.is_defined("A", subscripts=[1, 3]) is False
+
+
 class TestKill:
     """Tests for kill() method."""
 

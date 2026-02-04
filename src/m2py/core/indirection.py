@@ -306,6 +306,7 @@ class IndirectionResolver:
         levels: int = 1,
         per_level_subscripts: Optional[List[List[Any]]] = None,
         validate: bool = True,
+        strict_undef: bool = False,
     ) -> str:
         """Resolve indirection to get TARGET VARIABLE NAME (not value).
 
@@ -323,12 +324,15 @@ class IndirectionResolver:
             validate: If True (default), validate result is a valid variable name.
                 Set to False for KILL indirection which may contain exclusive
                 KILL syntax like "(B),D,E".
+            strict_undef: If True, raise LVUNDEFError for undefined source variables.
+                Used by WRITE indirection where undefined source should error.
 
         Returns:
             Target variable name as string
 
         Raises:
             VarExpectedError: If resolved name is not a valid variable name (when validate=True)
+            LVUNDEFError: If strict_undef=True and source variable is undefined
             ValueError: If levels < 1
 
         Examples:
@@ -363,7 +367,11 @@ class IndirectionResolver:
                 value = self._expand_naked_reference_string(current)
             else:
                 # Get value at current name (this gives us the next name)
-                value = self._get_value(current)
+                # In strict_undef mode, raise LVUNDEFError for undefined variables
+                if strict_undef:
+                    value = self._get_value_strict(current)
+                else:
+                    value = self._get_value(current)
 
             # Convert to string for processing
             if not isinstance(value, str):
@@ -767,6 +775,47 @@ class IndirectionResolver:
         # Handle global references
         if name.startswith("^"):
             return self._get_global_value(name, [])
+
+        return self._scope.get(name)
+
+    def _get_value_strict(self, name: str) -> Any:
+        """Get variable value, raising LVUNDEFError if undefined.
+
+        Used for indirection contexts where undefined source should error.
+
+        Args:
+            name: Variable name (may include subscripts)
+
+        Returns:
+            Variable value
+
+        Raises:
+            LVUNDEFError: If variable is undefined
+        """
+        # Handle subscripted names
+        if "(" in name:
+            base_name, subscripts = self._parse_subscripted_name(name)
+
+            # Evaluate subscripts as MUMPS expressions (handles variable refs)
+            evaluated_subs = self._evaluate_subscripts(subscripts)
+
+            # Handle global references (globals don't raise LVUNDEF)
+            if base_name.startswith("^"):
+                return self._get_global_value(base_name, evaluated_subs)
+
+            # Check if variable is defined before getting value
+            if not self._scope.is_defined(base_name, subscripts=evaluated_subs):
+                raise LVUNDEFError(name)
+
+            return self._scope.get_subscripted(base_name, evaluated_subs)
+
+        # Handle global references (globals don't raise LVUNDEF)
+        if name.startswith("^"):
+            return self._get_global_value(name, [])
+
+        # Check if simple variable is defined
+        if not self._scope.is_defined(name):
+            raise LVUNDEFError(name)
 
         return self._scope.get(name)
 

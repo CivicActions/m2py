@@ -671,6 +671,20 @@ class MArray:
                 self._children[key_str] = MArray()
             self._children[key_str]._value = value
 
+    def __contains__(self, key: Any) -> bool:
+        """Check if subscript key exists in this node's children.
+
+        Used by 'key in array' syntax. Canonicalizes the key first.
+
+        Args:
+            key: Subscript to check
+
+        Returns:
+            True if key exists in children, False otherwise
+        """
+        key_str = self._canonicalize_subscript(key)
+        return key_str in self._children
+
     def get(self, *subscripts: Any) -> Any:
         """Get value at subscripts (empty string if undefined).
 
@@ -3163,24 +3177,34 @@ class MUMPSRuntime:
             _scope: Current scope dictionary
             levels: Number of indirection levels (1 for @A, 2 for @@A)
             per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
+
+        Raises:
+            LVUNDEFError: If source variable is undefined (T052)
+            VarExpectedError: If resolved value is empty (T052)
         """
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
+        from m2py.core.exceptions import VarExpectedError
 
         # Create unified scope and resolver
         cs = CurrentScope.from_generated_context(_scope)
         resolver = IndirectionResolver(self, cs)
 
         # Resolve to get the raw WRITE arguments string (don't evaluate as expression)
+        # Use strict_undef=True to raise LVUNDEFError for undefined source (T052)
         raw_value = resolver.resolve_to_name(
             source,
             levels=levels,
             per_level_subscripts=per_level_subscripts,
             validate=False,  # Don't validate - it's WRITE args, not a var name
+            strict_undef=True,  # T052: undefined source should error
         )
 
+        # T052: Empty string value should raise error in WRITE context
         if not raw_value:
-            return
+            raise VarExpectedError(
+                source, f"Empty indirection value in WRITE context: {source}"
+            )
 
         # Execute as WRITE command arguments
         self._execute_write_args(raw_value, _scope)
@@ -3194,7 +3218,22 @@ class MUMPSRuntime:
         Args:
             write_args: WRITE argument string (e.g., '!?3,"AB"')
             _scope: Current scope dictionary
+
+        Raises:
+            VarExpectedError: If indirection string contains extra trailing chars
         """
+        from m2py.core.exceptions import VarExpectedError
+
+        # Check for INDEXTRACHARS-like pattern: number immediately followed by letter
+        # This catches cases like "123INVALID" which YDB rejects
+        import re
+
+        if re.match(r"^\d+\.?\d*[A-Za-z%]", write_args):
+            raise VarExpectedError(
+                write_args,
+                f"Indirection string contains extra trailing characters: '{write_args}'",
+            )
+
         # Wrap in WRITE command and execute as MUMPS
         mumps_code = f"W {write_args}"
         self.execute_mumps(mumps_code, _scope)

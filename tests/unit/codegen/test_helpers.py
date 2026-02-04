@@ -1001,3 +1001,79 @@ class TestMFormatOutputMArray:
         # The actual behavior depends on MArray.value default
         result = m_format_output(arr)
         assert isinstance(result, str)
+
+
+@pytest.mark.codegen
+class TestMArrayContains:
+    """Tests for MArray __contains__ method.
+
+    Feature: 017-ydb-test-failures (infinite loop fix)
+
+    MArray needs __contains__ to support 'key in array' syntax.
+    Without it, Python falls back to iteration via __getitem__,
+    which auto-creates children and causes infinite loops.
+    """
+
+    def test_contains_existing_child(self):
+        """MArray.__contains__ returns True for existing child."""
+        arr = MArray()
+        arr["key"] = "value"
+        assert "key" in arr
+
+    def test_contains_missing_child(self):
+        """MArray.__contains__ returns False for missing child."""
+        arr = MArray()
+        arr["existing"] = "value"
+        assert "missing" not in arr
+
+    def test_contains_canonicalizes_numeric_key(self):
+        """MArray.__contains__ canonicalizes numeric keys."""
+        arr = MArray()
+        arr[1] = "value"
+        # Both integer and string forms should work
+        assert 1 in arr
+        assert "1" in arr
+
+    def test_contains_canonicalizes_leading_zeros(self):
+        """MArray.__contains__ handles leading zeros in numeric keys."""
+        arr = MArray()
+        # Note: MArray __setitem__ stores keys as-is, but __contains__ canonicalizes
+        # So we need to set using a numeric key to get consistent behavior
+        arr[7] = "james"
+        # Both integer and string forms should work
+        assert 7 in arr
+        assert "7" in arr
+        # But the non-canonicalized form "007" won't match since storage uses "7"
+        assert "007" not in arr
+
+    def test_contains_empty_array(self):
+        """MArray.__contains__ returns False for empty array."""
+        arr = MArray()
+        assert "anything" not in arr
+
+    def test_contains_does_not_create_child(self):
+        """MArray.__contains__ does NOT auto-create children like __getitem__ does."""
+        arr = MArray()
+        # Check for non-existent key
+        _ = "nonexistent" in arr
+        # Verify child was NOT created (using _children directly as there's no public method)
+        assert len(arr._children) == 0
+
+    def test_contains_nested_children(self):
+        """MArray.__contains__ works at any level in hierarchy."""
+        arr = MArray()
+        arr["a"] = "top"
+        arr["a"]["b"] = "nested"
+        arr["a"]["b"]["c"] = "deep"
+
+        # At top level
+        assert "a" in arr
+        assert "x" not in arr
+
+        # At nested level
+        assert "b" in arr["a"]
+        assert "y" not in arr["a"]
+
+        # At deep level
+        assert "c" in arr["a"]["b"]
+        assert "z" not in arr["a"]["b"]
