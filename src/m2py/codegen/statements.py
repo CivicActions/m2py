@@ -1316,8 +1316,9 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
     value_expr = generate_expr(assignment.value, ctx)
 
     # Emit _rt.globals.set() call
+    # Use m_str() to format numbers in MUMPS canonical form (no E-notation)
     ctx.emitter.line(
-        f"_rt.globals.set({global_name!r}, {subscripts_tuple}, str({value_expr}))"
+        f"_rt.globals.set({global_name!r}, {subscripts_tuple}, m_str({value_expr}))"
     )
 
 
@@ -1366,8 +1367,9 @@ def _generate_extended_global_set(
     value_expr = generate_expr(assignment.value, ctx)
 
     # Emit _rt.globals.set() call
+    # Use m_str() to format numbers in MUMPS canonical form (no E-notation)
     ctx.emitter.line(
-        f"_rt.globals.set({global_name!r}, {subscripts_tuple}, str({value_expr}))"
+        f"_rt.globals.set({global_name!r}, {subscripts_tuple}, m_str({value_expr}))"
     )
 
 
@@ -1415,8 +1417,9 @@ def _generate_naked_global_set(
     value_expr = generate_expr(assignment.value, ctx)
 
     # Emit resolve_naked + set calls
+    # Use m_str() to format numbers in MUMPS canonical form (no E-notation)
     ctx.emitter.line(f"_name, _subs = _rt.globals.resolve_naked({subscripts_tuple})")
-    ctx.emitter.line(f"_rt.globals.set(_name, _subs, str({value_expr}))")
+    ctx.emitter.line(f"_rt.globals.set(_name, _subs, m_str({value_expr}))")
 
 
 def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:

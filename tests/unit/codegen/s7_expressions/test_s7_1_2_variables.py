@@ -77,7 +77,8 @@ class TestExtendedGlobalsCodegen:
         code = 'TEST\n S ^["env"]X=1\n Q\n'
         # Should not raise - environment is ignored, treated as regular global
         result = generate_python(code)
-        assert "_rt.globals.set('X', (), str(1))" in result
+        # Uses m_str() to format values in MUMPS canonical form
+        assert "_rt.globals.set('X', (), m_str(1))" in result
 
     def test_extended_global_pipe_with_subscripts_raises_not_implemented(
         self, generate_python
@@ -305,3 +306,73 @@ L1 W "LINE1" Q
         code = 'TEST\n W ^|"ENV"|X\n Q\n'
         with pytest.raises(NotImplementedError, match="Extended global"):
             generate_python(code)
+
+
+# =============================================================================
+# Global SET with MUMPS Canonical Number Formatting (Bug Fix)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestGlobalSetMumpsCanonicalFormat:
+    """Tests for global SET using MUMPS canonical number format.
+
+    Bug fix: Global SET was using str() which produces Python E-notation
+    for very small/large numbers. MUMPS always uses decimal notation.
+
+    Now uses m_str() to format numbers in MUMPS canonical form.
+    """
+
+    def test_small_enotation_stored_as_decimal(self, execute_mumps):
+        """Small E-notation numbers are stored in decimal form.
+
+        I-623.2 from MUGJ V1MAX: -999999999E-25 should be stored as
+        -.0000000000000000999999999 (not -9.99999999E-17).
+        """
+        result = execute_mumps("TEST S ^V=-999999999E-25 W ^V Q")
+        # MUMPS canonical form - no E-notation
+        assert result.output == "-.0000000000000000999999999"
+
+    def test_positive_small_enotation(self, execute_mumps):
+        """Positive small E-notation numbers stored in decimal form."""
+        result = execute_mumps("TEST S ^V=999999999E-25 W ^V Q")
+        assert result.output == ".0000000000000000999999999"
+
+    def test_large_enotation_stored_as_integer(self, execute_mumps):
+        """Large E-notation numbers are stored as expanded integers.
+
+        -.999999999E25 should be stored as -9999999990000000000000000
+        """
+        result = execute_mumps("TEST S ^V=-.999999999E25 W ^V Q")
+        assert result.output == "-9999999990000000000000000"
+
+    def test_global_with_multiple_enotation_values(self, execute_mumps):
+        """Multiple E-notation values in subscripted globals.
+
+        I-623.2: Full test from MUGJ V1MAX with multiple subscripts.
+        """
+        code = (
+            "TEST S ^V1=-.999999999E25,^V1(1)=-999999999E-25,"
+            '^V1(2)=999999999E-25,^V1(3)=+".999999999E25",'
+            '^V1(4)="-.999999999E25" '
+            'W ^V1," ",^V1(1)," ",^V1(2)," ",^V1(3)," ",+^V1(4) Q'
+        )
+        result = execute_mumps(code)
+        expected = (
+            "-9999999990000000000000000 "
+            "-.0000000000000000999999999 "
+            ".0000000000000000999999999 "
+            "9999999990000000000000000 "
+            "-9999999990000000000000000"
+        )
+        assert result.output == expected
+
+    def test_enotation_in_naked_global_set(self, execute_mumps):
+        """E-notation with naked global reference uses canonical format."""
+        result = execute_mumps('TEST S ^G(1)=1E-10 S ^(2)=2E-10 W ^G(1)," ",^G(2) Q')
+        assert result.output == ".0000000001 .0000000002"
+
+    def test_regular_numbers_unchanged(self, execute_mumps):
+        """Regular numbers are stored normally (regression test)."""
+        result = execute_mumps('TEST S ^A=123,^B=3.14,^C="hello" W ^A," ",^B," ",^C Q')
+        assert result.output == "123 3.14 hello"

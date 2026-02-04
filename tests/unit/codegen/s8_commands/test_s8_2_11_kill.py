@@ -265,3 +265,80 @@ class TestKillNakedReference:
             "TEST S ^H(1,2)=1 S ^(3,4)=2 K ^(3) W $D(^H(1,3)),$D(^H(1,3,4)) Q"
         )
         assert result.output == "101"
+
+
+# =============================================================================
+# KILL with Empty Intermediate Node Cleanup (Bug Fix)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestKillEmptyIntermediateCleanup:
+    """Tests for KILL cleaning up empty intermediate nodes.
+
+    Bug fix: When killing a leaf node like X(2,1), if parent nodes
+    become empty (no value and no children), they should be removed too.
+
+    MUMPS doesn't leave "ghost" empty intermediate nodes after KILL.
+    """
+
+    def test_kill_leaf_cleans_empty_parent(self, execute_mumps):
+        """K X(2,1) should clean up empty X(2) and empty X.
+
+        I-222 from MUGJ V1DLB1: After S XX(2,1)="DEF" K XX(2,1),
+        $D(XX) should be 0 (not 10) because no nodes remain.
+        """
+        result = execute_mumps('TEST K XX S XX(2,1)="DEF" K XX(2,1) W $D(XX) Q')
+        # After kill, XX has no value and no children, so $D=0
+        assert result.output == "0"
+
+    def test_kill_leaf_cleans_entire_path(self, execute_mumps):
+        """K X(2,1,1) should clean up empty X(2,1), X(2), and X.
+
+        I-223: Deep nested single node - all empty ancestors should be cleaned.
+        """
+        result = execute_mumps("TEST K XX S XX(2,1,1)=2110 K XX(2,1,1) W $D(XX) Q")
+        assert result.output == "0"
+
+    def test_kill_preserves_valued_parent(self, execute_mumps):
+        """K X(2,1) should NOT clean X(2) if X(2) has a value.
+
+        If parent has its own value, it stays even if children are gone.
+        """
+        result = execute_mumps(
+            'TEST K XX S XX(2)="parent",XX(2,1)="child" K XX(2,1) W $D(XX(2)) Q'
+        )
+        # XX(2) has value, no children after kill, so $D=1
+        assert result.output == "1"
+
+    def test_kill_preserves_parent_with_other_children(self, execute_mumps):
+        """K X(2,1) should NOT clean X(2) if X(2) has other children.
+
+        I-229: Parent with siblings of killed node should survive.
+        """
+        result = execute_mumps(
+            'TEST K XX S XX(2,1)="a",XX(2,2)="b" K XX(2,1) W $D(XX(2)) Q'
+        )
+        # XX(2) has no value but still has child XX(2,2), so $D=10
+        assert result.output == "10"
+
+    def test_kill_chain_cleanup_stops_at_valued_node(self, execute_mumps):
+        """Cleanup stops at first non-empty ancestor.
+
+        S X="root" S X(1,2,3)=1 K X(1,2,3) → X should remain with $D=1
+        """
+        result = execute_mumps('TEST K X S X="root" S X(1,2,3)=1 K X(1,2,3) W $D(X) Q')
+        # X has value, all children are gone, so $D=1
+        assert result.output == "1"
+
+    def test_kill_chain_cleanup_stops_at_sibling(self, execute_mumps):
+        """Cleanup stops when node has sibling children.
+
+        S X(1,1)=1 S X(1,2)=2 K X(1,1) → X(1) should remain with $D=10
+        """
+        result = execute_mumps(
+            'TEST K X S X(1,1)=1,X(1,2)=2 K X(1,1) W $D(X(1))," ",$D(X) Q'
+        )
+        # X(1) has no value but has child X(1,2), so $D=10
+        # X has no value but has child X(1), so $D=10
+        assert result.output == "10 10"

@@ -789,16 +789,28 @@ class MArray:
             self._value = None
             self._children.clear()
         else:
+            # Track the path so we can clean up empty intermediate nodes
+            path: list[tuple["MArray", str]] = []
             parent = self
             for sub in subscripts[:-1]:
                 sub_str = self._canonicalize_subscript(sub)
                 if sub_str not in parent._children:
                     return  # Path doesn't exist
+                path.append((parent, sub_str))
                 parent = parent._children[sub_str]
 
             last = self._canonicalize_subscript(subscripts[-1])
             if last in parent._children:
                 del parent._children[last]
+
+            # Clean up empty intermediate nodes (no value and no children)
+            # Work backwards from deepest to root
+            for ancestor, key in reversed(path):
+                node = ancestor._children[key]
+                if node._value is None and not node._children:
+                    del ancestor._children[key]
+                else:
+                    break  # Stop if we find a non-empty node
 
     def kill_node(self, subscripts: tuple[Any, ...]) -> None:
         """Delete node value but preserve descendants (ZKILL command).
@@ -1252,6 +1264,35 @@ class MUMPSRuntime:
         # Bounds check and return
         if 0 <= line_idx < len(lines):
             # T075f: YDB converts tabs to single space in $TEXT output
+            return lines[line_idx].replace("\t", " ")
+        return ""
+
+    def get_text_indirect(self, label: str, offset: int = 0) -> str:
+        """Get source text line with indirected label ($TEXT with @).
+
+        Handles $TEXT(@X) and $TEXT(@X+N) where X contains a label name.
+        The resolved label is used to look up the source line.
+
+        Args:
+            label: Label name (resolved from indirection)
+            offset: Line offset from label (default 0)
+
+        Returns:
+            Source line text, or empty string if label not found or offset
+            is out of bounds.
+        """
+        lines = self._current_source_lines or []
+        label_lines = self._current_label_lines or {}
+
+        # Look up the label
+        base_idx = label_lines.get(label, -1)
+        if base_idx < 0:
+            return ""  # Label not found
+
+        line_idx = base_idx + offset
+
+        # Bounds check and return
+        if 0 <= line_idx < len(lines):
             return lines[line_idx].replace("\t", " ")
         return ""
 

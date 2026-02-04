@@ -1391,19 +1391,59 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
     - $T(+N^ROUTINE) → Nth line of external routine
     - $T(LABEL^ROUTINE) → label line in external routine
     - $T(LABEL+N^ROUTINE) → label+offset in external routine
+    - $T(@X) → indirected label
+    - $T(@X+N) → indirected label with offset
 
     Args:
         expr: TextFunction ASG node with line_ref dictionary
         ctx: Generator context
 
     Returns:
-        Python code calling _rt.get_text()
+        Python code calling _rt.get_text() or _rt.get_text_indirect()
     """
     from m2py.asg.expressions import MLiteral
     from m2py.asg.enums import LiteralType
 
     # TextFunction stores line reference info in line_ref dict, not arguments
     line_ref = getattr(expr, "line_ref", {})
+
+    # Check for label indirection ($T(@X) or $T(@X+N))
+    label_indirect = line_ref.get("label_indirect")
+    if label_indirect is not None:
+        # For $TEXT(@X), we need the VALUE of X (as a string), not variable indirection.
+        # The indirection just means "use the value of this expression as the label name."
+        # Extract the inner expression from the indirection and evaluate it directly.
+        from m2py.asg.expressions import MIndirection
+
+        if isinstance(label_indirect, MIndirection) and label_indirect.expression:
+            # Get the value of the inner expression (e.g., X in @X)
+            inner_expr = generate_expr(label_indirect.expression, ctx)
+            label_expr = f"m_str({inner_expr})"
+        else:
+            # Fallback - shouldn't normally happen
+            label_expr = f"m_str({generate_expr(label_indirect, ctx)})"
+
+        # Handle offset if present
+        offset = line_ref.get("offset")
+        offset_sign = line_ref.get("offset_sign", "+")
+
+        if offset is not None:
+            if isinstance(offset, MLiteral) and offset.literal_type in (
+                LiteralType.INTEGER,
+                LiteralType.DECIMAL,
+            ):
+                offset_val = (
+                    int(offset.value) if offset_sign == "+" else -int(offset.value)
+                )
+                return f"_rt.get_text_indirect({label_expr}, offset={offset_val})"
+            else:
+                offset_code = generate_expr(offset, ctx)
+                if offset_sign == "-":
+                    return f"_rt.get_text_indirect({label_expr}, offset=-int(m_num({offset_code})))"
+                else:
+                    return f"_rt.get_text_indirect({label_expr}, offset=int(m_num({offset_code})))"
+        else:
+            return f"_rt.get_text_indirect({label_expr})"
 
     # Check if this is an external routine reference
     routine = line_ref.get("routine")
