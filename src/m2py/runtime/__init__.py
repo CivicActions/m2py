@@ -1266,24 +1266,78 @@ class MUMPSRuntime:
             None values are treated as empty string (MUMPS undefined semantics).
             Spec 011: Updates _x (column) and _y (line) for $X/$Y tracking.
             Spec 011 Phase 9: Uses m_format_output for canonical number formatting.
+
+        YDB verified: When writing strings, $X is incremented only for printable
+        characters (ord >= 32). Control characters (ord 0-31) do NOT affect $X.
+        $Y is NEVER changed by write(). Only format controls (W !, W #) affect $Y.
         """
         if value is None:
             s = ""
         else:
             s = m_format_output(value)
 
-        # Spec 011: Update $X/$Y position tracking
+        # Spec 011: Update $X position tracking only for printable chars
+        # YDB behavior: Only printable characters (ord >= 32) increment $X
+        # Control characters (0-31) are output but don't affect $X
+        # $Y is ONLY changed by format controls (write_newline, write_formfeed)
         for char in s:
-            if char == "\n":
-                self._x = 0
-                self._y += 1
-            elif char == "\f":
-                self._x = 0
-                self._y = 0  # Form feed resets line too
-            else:
+            if ord(char) >= 32:
                 self._x += 1
 
         self._output.append(s)
+
+    def write_newline(self) -> None:
+        """Write newline with proper $X/$Y handling (W ! format control).
+
+        MUMPS W ! (newline) behavior (YDB verified):
+        - Outputs newline character
+        - $X is reset to 0
+        - $Y is incremented by 1
+
+        This is different from writing a newline in a string, which does NOT
+        affect $X or $Y position tracking.
+        """
+        self._output.append("\n")
+        self._x = 0
+        self._y += 1
+
+    def write_raw(self, s: str) -> None:
+        """Write raw string to output without updating $X/$Y.
+
+        Used for output that should appear in the byte stream but should not
+        affect the MUMPS position tracking. For example, when simulating the
+        YDB> prompt placeholder in test output normalization.
+
+        Args:
+            s: String to write directly to output
+        """
+        self._output.append(s)
+
+    def write_formfeed(self, debug: bool = False) -> None:
+        """Write form feed with proper $X/$Y handling.
+
+        MUMPS W # (form feed) behavior (YDB verified):
+        1. If $X > 0, outputs a newline first (moves to new line)
+        2. Outputs form feed character (0x0C)
+        3. $X is reset to 0, $Y is reset to 0
+
+        Note: YDB does NOT output a trailing newline after form feed.
+        The form feed character is output alone.
+        """
+        if debug:
+            print(f"FORMFEED: $X={self._x}, $Y={self._y}")
+
+        # Conditional newline before form feed if $X > 0
+        if self._x > 0:
+            self._output.append("\n")
+            self._y += 1
+            if debug:
+                print(f"  Added conditional newline, $Y now {self._y}")
+
+        # Form feed character only (no trailing newline per YDB behavior)
+        self._output.append("\x0c")
+        self._x = 0
+        self._y = 0  # YDB resets $Y to 0 after form feed
 
     def write_tab(self, column: int) -> None:
         """Tab to specified column position (MUMPS ?n format control).

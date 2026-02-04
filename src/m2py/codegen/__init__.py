@@ -122,12 +122,15 @@ def generate_python(
     parser = MUMPSParser()
     routine = parser.parse(source, filename=routine_name)
 
-    # Set routine name if provided, or auto-detect from first label
+    # Set routine name if provided, or auto-detect from first non-empty label
     if routine_name:
         routine.name = routine_name
-    elif routine.labels and routine.labels[0].name:
-        # First label in MUMPS routine is conventionally the routine name
-        routine.name = routine.labels[0].name
+    elif routine.labels:
+        # Find first non-empty label name (skipping labelless preamble)
+        for label in routine.labels:
+            if label.name:
+                routine.name = label.name
+                break
 
     # Run analysis passes required for code generation
     # Order matters: references first, then GOTO, FOR, quit context, variables

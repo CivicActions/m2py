@@ -276,6 +276,10 @@ class RoutineGenerator:
             # so we always need _line_map for line dispatch
             self._generate_simple_line_map(ctx)
 
+        # Generate _entry_function for D ^ROUTINE semantics
+        # This points to the first label (line 1), which may be preamble or named label
+        self._generate_entry_function(ctx)
+
         # T077: Generate if __name__ == "__main__" entry point block
         self._generate_main_block(ctx)
 
@@ -349,11 +353,17 @@ class RoutineGenerator:
         ctx.emitter.blank()
 
         # _routine_name: Name of this routine for $TEXT(+0) and error messages
-        # Falls back to first label name if routine.name is not set
+        # Falls back to first non-empty label name if routine.name is not set
         # Preserves original case for $TEXT(+0) which returns source-accurate routine name
-        routine_name = self._routine.name or (
-            self._routine.labels[0].name if self._routine.labels else ""
-        )
+        routine_name = self._routine.name
+        if not routine_name:
+            # Find first non-empty label name (skipping labelless preamble)
+            for label in self._routine.labels:
+                if label.name:
+                    routine_name = label.name
+                    break
+            else:
+                routine_name = ""
         ctx.emitter.line(f'_routine_name = "{routine_name}"')
         ctx.emitter.blank()
 
@@ -715,6 +725,31 @@ class RoutineGenerator:
 
         # Generate _line_map dict (same format as TRAMPOLINE)
         generate_line_map_code(line_map, ctx.emitter)
+        ctx.emitter.blank()
+
+    def _generate_entry_function(self, ctx: GeneratorContext) -> None:
+        """Generate _entry_function pointer to first label function.
+
+        In MUMPS, D ^ROUTINE starts execution at line 1 of the routine,
+        which may be a labelless preamble or a named label. This function
+        generates an _entry_function variable pointing to the correct
+        entry point for external routine calls.
+
+        This is needed when the first line is labelless (preamble), because
+        calling the routine by name (D ^V1LL1) should start at line 1,
+        not at the named label (V1LL1) which may be on line 2.
+
+        Args:
+            ctx: Generator context
+        """
+        if not self._routine.labels:
+            return
+
+        first_label = self._routine.labels[0]
+        entry_func_name = translate_name(first_label.name)
+
+        ctx.emitter.blank()
+        ctx.emitter.line(f"_entry_function = {entry_func_name}")
         ctx.emitter.blank()
 
     def _generate_main_block(self, ctx: GeneratorContext) -> None:

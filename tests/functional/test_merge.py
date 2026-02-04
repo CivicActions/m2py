@@ -35,7 +35,6 @@ import pytest
 from tests.functional.conftest import (
     FUNCTIONAL_BASE,
     compare_output,
-    get_routine_xfail_reason,
     load_routine_source,
     normalize_outref,
     run_mumps,
@@ -175,9 +174,6 @@ class TestMergeSuite:
         Args:
             subtest_def: The subtest definition containing name and primary routine
         """
-        # Check for known limitation (for xfail on failure)
-        xfail_reason = get_routine_xfail_reason(subtest_def.routine)
-
         # Load the primary routine source
         source = load_routine_source(MERGE_INREF, subtest_def.routine)
         assert source is not None, (
@@ -191,18 +187,14 @@ class TestMergeSuite:
         result = run_mumps(source, timeout=30, helper_sources=helpers)
 
         if result is None or (not result.output and not result.success):
-            if xfail_reason:
-                pytest.xfail(
-                    f"{xfail_reason} - Execution failed: {result.error if result else 'No result'}"
-                )
             pytest.fail(f"No result for {subtest_def.label}")
 
         # Load expected output
         expected = load_subtest_outref(subtest_def.label)
         if expected and result.success:
             comparison = compare_output(result.output, expected)
-            if not comparison.match and xfail_reason:
-                pytest.xfail(f"{xfail_reason} - Output mismatch")
+            if not comparison.match:
+                pytest.fail(f"Output mismatch for {subtest_def.label}")
 
 
 # =============================================================================
@@ -226,9 +218,6 @@ class TestMergeRoutines:
         Args:
             routine_def: The routine definition
         """
-        # Check for known limitation (for xfail on failure)
-        xfail_reason = get_routine_xfail_reason(routine_def.routine)
-
         source = load_routine_source(MERGE_INREF, routine_def.routine)
         assert source is not None, f"Failed to load routine {routine_def.routine}"
 
@@ -239,10 +228,6 @@ class TestMergeRoutines:
         result = run_mumps(source, timeout=30, helper_sources=helpers)
 
         if result is None or (not result.output and not result.success):
-            if xfail_reason:
-                pytest.xfail(
-                    f"{xfail_reason} - Execution failed: {result.error if result else 'No result'}"
-                )
             pytest.fail(f"No result for {routine_def.routine}")
 
 

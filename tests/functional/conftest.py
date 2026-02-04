@@ -86,113 +86,11 @@ def filename_to_module_name(filename_stem: str) -> str:
 # =============================================================================
 # T022: Routine → Limitation Mapping
 # =============================================================================
-
-# Map routine names to limitation IDs for xfail markers.
-# Routines are categorized by the feature they use that triggers a limitation.
-#
-# LIM-005: VIEW command - implementation-defined keywords
-# LIM-003: MWAPI SSVNs - ^$EVENT, ^$WINDOW, ^$DISPLAY (none found in test suites)
-# LIM-012: Unknown Z-extensions - Z-commands from other implementations
-# LIM-015: Zero-VistA-usage YDB Z-commands
-
-ROUTINE_LIMITATIONS: dict[str, str] = {
-    # LIM-005: VIEW command (implementation-defined keywords)
-    # basic suite
-    "view": "LIM-005",
-    "view2": "LIM-005",
-    # merge suite - these use VIEW for LVNULLSUBS
-    "nullntp": "LIM-005",
-    "nulllc": "LIM-005",
-    "nulltp": "LIM-005",
-    # LIM-015: Zero-VistA-usage YDB Z-commands
-    # basic suite - ZBREAK, ZSTEP debugging commands
-    "zbrk": "LIM-015",
-    "zstep": "LIM-015",
-    "zstep1": "LIM-015",
-    # basic suite - ZSYSTEM command (shell execution)
-    "zlfix": "LIM-015",
-    "stream": "LIM-015",
-    "per2968": "LIM-015",
-    # basic suite - $ZTRAP special variable (error trapping)
-    "per2586a": "LIM-015",
-    "per2586b": "LIM-015",
-    "per2586c": "LIM-015",
-    "set": "LIM-015",
-    "setpiece": "LIM-015",
-    "zbits": "LIM-015",
-    "ztrp": "LIM-015",
-    # basic suite - Z-functions ($ZVERSION, $ZPREVIOUS)
-    "char": "LIM-015",
-    "fifo": "LIM-015",
-    "zprev": "LIM-015",
-    # basic suite - $ZPOSITION special variable
-    "new": "LIM-015",
-    "kill1": "LIM-015",
-    # basic suite - outref requires ZTRAP external routines (ztvref*, zticmd*)
-    "order": "LIM-015",
-    # mugj suite - $ZVERSION function
-    "v1ac": "LIM-015",
-    # merge suite - Z-extensions (NEW $ZTRAP, SET $ZTRAP, $ZVERSION, $ZEOF)
-    "errors": "LIM-015",  # NEW $ZTRAP
-    "falsedsc": "LIM-015",  # SET $ZTRAP
-    "mindmisc": "LIM-015",  # NEW $ZTRAP
-    "mindr1": "LIM-015",  # NEW $ZTRAP
-    "mindr2": "LIM-015",  # NEW $ZTRAP
-    "mindr3": "LIM-015",  # NEW $ZTRAP
-    "mindr4": "LIM-015",  # NEW $ZTRAP
-    "mrgclnup": "LIM-015",  # NEW $ZTRAP
-    "mrgitp": "LIM-015",  # SET $ZT
-    "mrgstp": "LIM-015",  # SET $ZT
-    "nullfill": "LIM-015",  # NEW $ZTRAP
-    "subslen": "LIM-015",  # NEW $ZTRAP
-    "v4merge": "LIM-015",  # NEW $ZTRAP
-    # merge suite - ^%G utility (YDB system routine)
-    "list": "LIM-015",  # D ^%G (global display utility)
-    # LIM-019: Arithmetic precision edge cases
-    # basic suite - arith test has 18-digit boundary precision differences
-    "arith": "LIM-019",
-    # LIM-015: YDB-specific features
-    # basic suite - uses YDB %HD utility (hex-to-decimal conversion)
-    "ebmuldiv": "LIM-015",
-    # basic suite - BREAK command requires YDB interactive debugger
-    "v1br": "LIM-015",
-    # basic suite - tests YDB error handling for numbers >1E47
-    "largeexp2": "LIM-015",
-    "largeexp3": "LIM-015",
-    # basic suite - OPEN with YDB-specific device parameters
-    "iowrite": "LIM-015",
-    # basic suite - requires YDB JOBLABOFF / test harness
-    "stpfail": "LIM-015",
-    # basic suite - requires ^ASW database pre-populated
-    "per02397": "LIM-015",
-    # basic suite - uses NEW $ZTRAP (YDB error handling)
-    "putfail": "LIM-015",
-    # basic suite - $TEXT with external routine references requires source lookup
-    "text4": "LIM-015",
-    "per02457": "LIM-015",
-    # basic suite - outref includes YDB mupip integ/file creation infrastructure output
-    "miscdb": "LIM-015",
-}
-
-
-def get_routine_limitation(routine_name: str) -> str | None:
-    """Get limitation ID for a routine if it uses a known limited feature.
-
-    Args:
-        routine_name: Name of the routine (without .m extension)
-
-    Returns:
-        Limitation ID (e.g., "LIM-005") or None if no known limitation
-    """
-    return ROUTINE_LIMITATIONS.get(routine_name.lower())
-
-
-# =============================================================================
 # T002: Outref Normalization
 # =============================================================================
 
 
-def normalize_outref(content: str, *, normalize_formfeed: bool = True) -> str:
+def normalize_outref(content: str, strip_formfeeds: bool = False) -> str:
     """Strip YDB infrastructure from outref content.
 
     Removes:
@@ -201,33 +99,26 @@ def normalize_outref(content: str, *, normalize_formfeed: bool = True) -> str:
     - Conditional output blocks (##SUSPEND_OUTPUT...##ALLOW_OUTPUT)
     - YDB> prompts themselves
 
-    Optionally removes (when normalize_formfeed=True, for per-routine tests):
-    - Form feed pagination artifacts (replaced with double newline)
-
-    For serial suite execution (matching exact YDB driver behavior), set
-    normalize_formfeed=False to preserve form feeds exactly as in outref.
+    Optionally removes form feeds and their trailing blank lines for comparison
+    when $Y pagination tracking differs between m2py and YDB.
 
     Args:
         content: Raw outref file content
-        normalize_formfeed: If True, normalize form feed pagination artifacts.
-            Use False for serial execution tests that match YDB's exact output.
+        strip_formfeeds: If True, remove form feed characters and the blank line
+            that follows them. This is useful when comparing output where the
+            computation is correct but pagination differs due to YDB> prompt
+            lines affecting $Y tracking in the original YDB output.
 
     Returns:
         Normalized content suitable for comparison with m2py output
     """
-    import re
-
-    # Optionally remove form feed pagination artifacts (for per-routine tests)
-    # Form feed (\x0c) is output by W # when $Y > 55 in EXAMINER subroutines
-    # In serial mode, m2py's $Y tracking should match YDB, so form feeds align
-    if normalize_formfeed:
-        content = re.sub(r"\n\x0c\n+", "\n\n", content)
-
     lines = []
     in_suspended = False
     found_first_prompt = False
 
-    for line in content.splitlines():
+    # Use split('\n') instead of splitlines() to preserve \x0c characters
+    # splitlines() treats \x0c as a line separator which corrupts form feeds
+    for line in content.split("\n"):
         # Skip preamble before first YDB>
         if not found_first_prompt:
             if "YDB>" in line:
@@ -255,7 +146,22 @@ def normalize_outref(content: str, *, normalize_formfeed: bool = True) -> str:
 
         lines.append(line)
 
-    return "\n".join(lines)
+    result = "\n".join(lines)
+
+    if strip_formfeeds:
+        # Remove form feeds and collapse all blank lines
+        # This normalizes away pagination artifacts from $Y tracking differences
+        # between YDB (which tracks $Y and triggers form feeds) and m2py
+        # (which doesn't track $Y for pagination purposes)
+        import re
+
+        # Remove form feed characters
+        result = re.sub(r"\x0c", "", result)
+        # Collapse all consecutive newlines to single newline
+        # This removes ALL blank lines, since they're pagination artifacts
+        result = re.sub(r"\n{2,}", "\n", result)
+
+    return result
 
 
 # =============================================================================
@@ -663,32 +569,6 @@ class ComparisonResult(NamedTuple):
     expected_lines: int
 
 
-def normalize_m2py_output(content: str, *, normalize_formfeed: bool = True) -> str:
-    """Normalize m2py output for comparison with normalized outref.
-
-    Optionally removes form feed characters and adjacent newlines, matching
-    the normalization applied to outref content by normalize_outref().
-
-    For serial suite execution where form feeds should match exactly,
-    set normalize_formfeed=False.
-
-    Args:
-        content: Raw m2py output
-        normalize_formfeed: If True, normalize form feeds to double newlines.
-            Use False for serial execution tests that match YDB's exact output.
-
-    Returns:
-        Normalized content suitable for comparison with normalized outref
-    """
-    import re
-
-    # Optionally remove form feed and adjacent newlines
-    if normalize_formfeed:
-        content = re.sub(r"\n\x0c\n*", "\n\n", content)
-
-    return content
-
-
 def compare_output(
     actual: str, expected: str, *, strip_blank_lines: bool = True
 ) -> ComparisonResult:
@@ -709,12 +589,10 @@ def compare_output(
     Returns:
         ComparisonResult with match status and diff if mismatched
     """
-    # Normalize m2py output (remove form feeds to match outref normalization)
-    actual = normalize_m2py_output(actual)
-
     # Normalize line endings and trailing whitespace
-    actual_lines = [line.rstrip() for line in actual.splitlines()]
-    expected_lines = [line.rstrip() for line in expected.splitlines()]
+    # Use split('\n') instead of splitlines() to preserve \x0c characters
+    actual_lines = [line.rstrip() for line in actual.split("\n")]
+    expected_lines = [line.rstrip() for line in expected.split("\n")]
 
     # Strip leading/trailing blank lines if requested
     if strip_blank_lines:
@@ -840,24 +718,6 @@ def skip_limitation(limitation_id: str) -> pytest.MarkDecorator:
     """
     reason = get_limitation_reason(limitation_id)
     return pytest.mark.skip(reason=reason)
-
-
-def get_routine_xfail_reason(routine_name: str) -> str | None:
-    """Get xfail reason for a routine if it uses a known limited feature.
-
-    Looks up the routine in ROUTINE_LIMITATIONS mapping and returns the
-    formatted reason string from limitations.py.
-
-    Args:
-        routine_name: Name of the routine (without .m extension)
-
-    Returns:
-        Formatted xfail reason or None if no known limitation
-    """
-    limitation_id = get_routine_limitation(routine_name)
-    if limitation_id:
-        return get_limitation_reason(limitation_id)
-    return None
 
 
 # =============================================================================

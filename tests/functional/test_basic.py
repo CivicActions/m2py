@@ -21,7 +21,6 @@ from tests.functional.conftest import (
     FUNCTIONAL_BASE,
     ExecutionResult,
     compare_output,
-    get_routine_xfail_reason,
     load_routine_source,
     normalize_outref,
     run_mumps,
@@ -229,23 +228,18 @@ class TestBasicSuite:
         Args:
             routine_def: RoutineDefinition with label, routine name, and args
         """
-        # Check for skip
+        # Check for skip (known limitations are now in RoutineDefinition)
         if routine_def.skip_reason:
             pytest.skip(routine_def.skip_reason)
 
         routine_name = routine_def.routine
         label = routine_def.label
 
-        # Check for known limitation (for xfail on failure)
-        xfail_reason = get_routine_xfail_reason(routine_name)
-
         # Execute via m2py (pass args if defined)
         result = execute_basic_routine(routine_name, routine_def.args)
 
         # Check for complete failure (no output at all)
         if not result.output and not result.success:
-            if xfail_reason:
-                pytest.xfail(f"{xfail_reason} - {result.error}")
             pytest.fail(f"Routine {routine_name} failed to execute: {result.error}")
 
         # Get expected output using the label format from outref
@@ -268,11 +262,6 @@ class TestBasicSuite:
             # Check if this is a partial match (external routine error at end)
             if result.error and "No module named" in result.error:
                 if expected.startswith(actual_output.strip()):
-                    # Mark as xfail if known limitation, otherwise fail
-                    if xfail_reason:
-                        pytest.xfail(
-                            f"{xfail_reason} - Partial match, external call failed: {result.error}"
-                        )
                     pytest.fail(
                         f"Partial match - routine completed but external call failed: {result.error}"
                     )
@@ -288,9 +277,6 @@ class TestBasicSuite:
                 msg += f"Execution error: {result.error}\n"
             msg += f"\nDiff:\n{comparison.diff}"
 
-            # Mark as xfail if known limitation
-            if xfail_reason:
-                pytest.xfail(f"{xfail_reason} - Output mismatch")
             pytest.fail(msg)
 
 

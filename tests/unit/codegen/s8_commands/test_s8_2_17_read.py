@@ -56,8 +56,8 @@ TEST
  Q
 """
         python_code = generate_python(source)
-        # Should generate newline format control
-        assert 'print("")' in python_code or "\\n" in python_code
+        # Should generate newline format control via write_newline()
+        assert "_rt.write_newline()" in python_code
 
     def test_multiple_read_targets(self) -> None:
         """R X,Y generates two input calls."""

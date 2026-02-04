@@ -1462,13 +1462,17 @@ def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> Non
     """
     if fc.control_type == FormatControlType.NEWLINE:
         # Spec 011 (T026): NEWLINE format control
-        ctx.emitter.line('_rt.write("\\n")')
+        # Use write_newline() to properly reset $X and increment $Y
+        ctx.emitter.line("_rt.write_newline()")
 
     elif fc.control_type == FormatControlType.FORMFEED:
         # Spec 011 (T027): FORMFEED format control
         # YDB: conditional newline before form feed only if $X > 0
         # (iorm_cond_wteol in YDB source code)
-        ctx.emitter.line('_rt.write(("\\n" if _rt.x() > 0 else "") + "\\x0c")')
+        # Form feed outputs \x0c and resets $Y to 0, NO trailing newline
+        # The outref has an extra newline after form feed that we must add
+        # separately to match the output, but NOT count for $Y
+        ctx.emitter.line("_rt.write_formfeed()")
 
     elif fc.control_type == FormatControlType.CHARCODE:
         # Spec 011 (T028): CHARCODE format control (*n)

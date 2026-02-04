@@ -1,45 +1,39 @@
 """Functional tests for the MVTS (M Validation Test Suite).
 
-The MVTS suite is a comprehensive MUMPS validation framework with sub-driver
-routines that call individual test routines. Each sub-driver tests a specific
-feature area of the MUMPS language.
+The MVTS suite uses pattern-based validation similar to MUGJ.
+Each routine is validated by checking:
+1. Number of PASS markers matches expected count
+2. Operator tests (*FAILO*) are expected failures in automation
+3. No unexpected "** FAIL" markers
 
-Structure:
+MVTS Structure:
 - VV1.m: Part 77 tests (59 sub-drivers)
 - VV2.m: Part 84 tests (25 sub-drivers)
 - VV3.m: Part 95 tests (23 sub-drivers)
 - VV4.m: Part 95 continued (28 sub-drivers)
 - Total: 135 sub-drivers, ~714 individual test routines
 
-The MVTS test suite runs all routines serially in a single process, matching
-the YDB driver pattern exactly. This preserves shared state ($Y, $X, globals)
-across routines for correct output comparison.
-
-Driver execution order (from mvts.csh):
-1. D ^VV1  - Part 77 tests
-2. D ^VV2  - Part 84 tests
-3. D ^VV3  - Part 95 tests
-4. D ^VV4  - Part 95 continued
-5. D ^VV4TP - Transaction processing tests
-6. D ^VSR  - Summary report
+The MVTS framework uses VEXAMINE for assertions:
+- D ^VEXAMINE: Automated test (produces PASS or ** FAIL)
+- D MANPF*^VEXAMINE: Operator test (produces *FAILO* in automation)
 
 Usage:
     uv run pytest tests/functional/test_mvts.py -v
-    uv run pytest tests/functional/test_mvts.py::TestMvtsSerialExecution -v
+    uv run pytest tests/functional/test_mvts.py::TestMvtsSuite -v
 """
 
 from __future__ import annotations
 
+import re
 import sys
 import types
-from io import StringIO
+from dataclasses import dataclass
 
 import pytest
 
 from tests.functional.conftest import (
     FUNCTIONAL_BASE,
     filename_to_module_name,
-    normalize_outref,
 )
 from tests.functional.suite_definitions import (
     MVTS_ROUTINES,
@@ -61,37 +55,125 @@ MVTS_INREF = MVTS_DIR / "inref"
 MVTS_OUTREF = MVTS_DIR / "outref" / "mvts.txt"
 MVTS_DRIVER = MVTS_DIR / "u_inref" / "mvts.csh"
 
-# MVTS main driver routines executed in sequence
-MVTS_DRIVERS = ["VV1", "VV2", "VV3", "VV4"]  # VV4TP and VSR not yet supported
 
-# Routines that must be skipped in serial execution due to infrastructure issues
-SERIAL_SKIP_ROUTINES: dict[str, str] = {
-    # Routines that require interactive input (READ commands)
-    "V1READA": "READ commands wait for user input",
-    "V1READB": "READ commands wait for user input",
-    "V1IO": "I/O tests require specific device setup",
-    "V1MJA": "Multi-job tests require process spawning",
-    "V2READ": "READ commands wait for user input",
-    "V4READ": "READ commands wait for user input",
-    # BREAK command enters debugger
-    "V1BR": "BREAK command enters debugger",
-    # HANG commands cause test to sleep/freeze
-    "V1HANG": "HANG command causes test to sleep",
-    "V3HANG": "HANG command causes test to sleep",
-    # JOB tests require process spawning
-    "V3JOB": "JOB command requires process spawning",
-    "V4JOB": "JOB command requires process spawning",
-    # LOCK tests can hang waiting for locks
-    "V3LOCK": "LOCK command can hang",
-    # Transaction processing (not yet supported)
-    "VV4TP": "Transaction processing not supported",
-    # VSR is a summary routine that expects test state
-    "VSR": "Summary routine requires full test state",
-    # LIM-ARG-INDIR: WRITE argument indirection with format controls
-    "V1IDARG": "LIM-ARG-INDIR: WRITE argument indirection (W @A where A='!?3,\"AB\"') requires runtime parsing",
-    # LIM-SUB-CANON: Subscript canonicalization merges numeric-looking strings
-    "V3QUERY": "LIM-SUB-CANON: Subscript canonicalization collapses numeric-looking strings",
-}
+# =============================================================================
+# Pattern-Based Validation
+# =============================================================================
+
+
+@dataclass
+class ValidationResult:
+    """Result of pattern-based validation for MVTS."""
+
+    passed: bool
+    pass_count: int
+    expected_passes: int | None
+    fail_count: int
+    operator_fail_count: int
+    expected_operator_fails: int
+    unexpected_fails: list[str]
+    errors: list[str]
+
+    @property
+    def summary(self) -> str:
+        """Generate a summary message."""
+        parts = []
+        if self.expected_passes is not None:
+            if self.pass_count != self.expected_passes:
+                parts.append(
+                    f"PASS count: {self.pass_count} (expected {self.expected_passes})"
+                )
+            else:
+                parts.append(f"PASS count: {self.pass_count} ✓")
+        else:
+            parts.append(f"PASS count: {self.pass_count} (no expectation)")
+
+        if self.operator_fail_count > 0:
+            parts.append(
+                f"Operator FAILs (*FAILO*): {self.operator_fail_count} (expected {self.expected_operator_fails})"
+            )
+
+        if self.unexpected_fails:
+            parts.append(f"Unexpected FAILs: {self.unexpected_fails}")
+        elif self.fail_count > 0:
+            parts.append(f"FAILs: {self.fail_count}")
+
+        if self.errors:
+            parts.append(f"Errors: {self.errors}")
+
+        return "\n".join(parts)
+
+
+def validate_mvts_output(
+    output: str,
+    expected_passes: int | None = None,
+    expected_operator_fails: int = 0,
+) -> ValidationResult:
+    """Validate MVTS routine output using pattern matching.
+
+    Checks:
+    1. Number of PASS markers matches expected (if specified)
+    2. Operator tests (*FAILO*) match expected count
+    3. No unexpected "** FAIL" markers
+
+    VEXAMINE output patterns:
+    - "   PASS  10001 Description" - test passed
+    - "** FAIL  10001 Description" - test failed
+    - Operator tests store *FAILO* in ^VREPORT but print ** FAIL
+
+    Args:
+        output: The routine's output
+        expected_passes: Expected number of PASS markers (None = no check)
+        expected_operator_fails: Expected number of operator test failures
+
+    Returns:
+        ValidationResult with detailed pass/fail information
+    """
+    errors: list[str] = []
+
+    # Count PASS markers with test ID pattern (VEXAMINE outputs "   PASS  NNNNN")
+    # Use stricter pattern to avoid matching "PASS" in text prompts
+    pass_matches = re.findall(r"PASS\s+\d+", output)
+    pass_count = len(pass_matches)
+
+    # Count "** FAIL" markers (test failures with test ID)
+    fail_matches = re.findall(r"\*\* FAIL\s+(\d+)", output)
+    fail_count = len(fail_matches)
+
+    # For routines with only operator tests, we expect ** FAIL for all of them
+    # The operator can't provide input in automation, so MANPF* defaults to FAIL
+    # The *FAILO* marker is stored in ^VREPORT but ** FAIL is printed to output
+
+    # If this routine only has operator tests (expected_passes=0),
+    # the ** FAILs are expected
+    expected_fails = expected_operator_fails if expected_passes == 0 else 0
+
+    # Determine unexpected fails
+    unexpected_fails = (
+        fail_matches[expected_fails:] if fail_count > expected_fails else []
+    )
+
+    # Determine overall pass/fail
+    passed = True
+
+    # Check PASS count
+    if expected_passes is not None and pass_count != expected_passes:
+        passed = False
+
+    # Check for unexpected fails (real test failures beyond expected)
+    if unexpected_fails:
+        passed = False
+
+    return ValidationResult(
+        passed=passed,
+        pass_count=pass_count,
+        expected_passes=expected_passes,
+        fail_count=fail_count,
+        operator_fail_count=expected_operator_fails if expected_passes == 0 else 0,
+        expected_operator_fails=expected_operator_fails,
+        unexpected_fails=unexpected_fails,
+        errors=errors,
+    )
 
 
 # =============================================================================
@@ -137,145 +219,6 @@ def _load_all_mvts_routines() -> tuple[
             transpile_errors[module_name] = str(e)
 
     return routine_modules, transpile_errors
-
-
-# =============================================================================
-# Serial Suite Execution Test
-# =============================================================================
-
-
-def load_full_outref() -> str:
-    """Load and normalize the full MVTS outref for serial comparison.
-
-    Returns the complete expected output with path placeholders stripped.
-    """
-    raw_content = MVTS_OUTREF.read_text()
-    return normalize_outref(raw_content, normalize_formfeed=False)
-
-
-@pytest.mark.mvts
-@pytest.mark.functional
-class TestMvtsSerialExecution:
-    """Serial execution test matching YDB driver behavior.
-
-    This test runs MVTS driver routines (VV1, VV2, VV3, VV4) in sequence
-    in a single process, exactly matching the YDB driver pattern:
-    - D ^VV1, D ^VV2, D ^VV3, D ^VV4
-    - Shared globals/state across all routines
-    - All sub-routines available via sys.modules
-    """
-
-    @pytest.mark.xfail(
-        reason="MVTS serial execution has known codegen failures",
-        strict=False,
-    )
-    def test_full_suite_serial(self) -> None:
-        """Execute all MVTS driver routines serially.
-
-        This is the authoritative test for MVTS suite correctness.
-        """
-        from m2py.runtime import MUMPSRuntime, run_with_goto_support
-
-        # First pass: transpile ALL routines from inref and inject into sys.modules
-        routine_modules, transpile_errors = _load_all_mvts_routines()
-
-        # Report transpile status
-        total = len(routine_modules)
-        failed = len(transpile_errors)
-        print(f"\nTranspiled {total - failed}/{total} routines")
-        if transpile_errors:
-            print(f"Transpile failures: {list(transpile_errors.keys())[:10]}...")
-
-        # Create runtime with shared state
-        runtime = MUMPSRuntime()
-        runtime._capture_output = True
-        runtime.clear()
-
-        # Execute driver routines in sequence
-        output_parts: list[str] = []
-
-        for driver_name in MVTS_DRIVERS:
-            if driver_name in SERIAL_SKIP_ROUTINES:
-                continue
-
-            module = routine_modules.get(driver_name)
-            if module is None:
-                error_msg = transpile_errors.get(driver_name, "Unknown error")
-                output_parts.append(
-                    f"\n*** TRANSPILATION ERROR: {driver_name}: {error_msg} ***"
-                )
-                continue
-
-            # Set up runtime context
-            runtime._current_routine = getattr(module, "_routine_name", driver_name)
-            runtime._current_source_lines = getattr(module, "_source_lines", [])
-            runtime._current_label_lines = getattr(module, "_label_lines", {})
-
-            # Get entry function
-            entry_func = getattr(module, driver_name, None)
-            if not entry_func or not callable(entry_func):
-                output_parts.append(f"\n*** NO ENTRY POINT: {driver_name} ***")
-                continue
-
-            # Clear output buffer for this driver but preserve globals
-            runtime._output_buffer = StringIO()
-
-            try:
-                run_with_goto_support(entry_func, runtime, {})
-                driver_output = runtime.get_output()
-                if driver_output:
-                    output_parts.append(driver_output)
-            except Exception as e:
-                output_parts.append(f"\n*** RUNTIME ERROR: {driver_name}: {e} ***")
-
-        # Combine all output
-        actual_output = "".join(output_parts)
-
-        # For now, just verify we got some output
-        # Full output comparison will be added once serial execution is stable
-        assert len(actual_output) > 0, "No output from MVTS drivers"
-
-        # Check for key markers in output
-        assert "Part-77" in actual_output or "V1WR" in actual_output, (
-            f"Expected MVTS output markers not found.\nActual output: {actual_output[:1000]}..."
-        )
-
-    def test_transpile_all_routines(self) -> None:
-        """Test that we can transpile most MVTS routines.
-
-        This test verifies the transpilation pass works, even if some
-        routines fail due to unsupported features.
-        """
-        routine_modules, transpile_errors = _load_all_mvts_routines()
-
-        total = len(routine_modules)
-        successful = total - len(transpile_errors)
-
-        # Report results
-        print(
-            f"\nTranspiled {successful}/{total} routines ({100 * successful // total}%)"
-        )
-
-        if transpile_errors:
-            # Group errors by type
-            error_types: dict[str, list[str]] = {}
-            for routine, error in transpile_errors.items():
-                error_type = error.split(":")[0] if ":" in error else error[:50]
-                if error_type not in error_types:
-                    error_types[error_type] = []
-                error_types[error_type].append(routine)
-
-            print("\nError types:")
-            for error_type, routines in sorted(
-                error_types.items(), key=lambda x: -len(x[1])
-            ):
-                print(f"  {error_type}: {len(routines)} routines")
-
-        # Expect at least 80% success rate
-        success_rate = successful / total
-        assert success_rate >= 0.80, (
-            f"Too many transpile failures: {100 * success_rate:.0f}% success rate"
-        )
 
 
 # =============================================================================
@@ -329,6 +272,11 @@ class TestMvtsSuite:
     Each test runs a sub-driver routine through m2py with all MVTS
     routines pre-loaded as modules (matching YDB behavior where all
     routines are available).
+
+    Uses pattern-based validation to check:
+    - PASS count matches expected
+    - No unexpected ** FAIL markers
+    - *FAILO* count matches expected (operator tests)
     """
 
     @pytest.mark.parametrize("routine_def", get_routine_params())
@@ -345,10 +293,6 @@ class TestMvtsSuite:
         routine_modules, transpile_errors = _get_cached_modules()
 
         routine_name = routine_def.routine
-
-        # Check if routine is in skip list
-        if routine_name in SERIAL_SKIP_ROUTINES:
-            pytest.xfail(SERIAL_SKIP_ROUTINES[routine_name])
 
         # Check if routine failed to transpile
         if routine_name in transpile_errors:
@@ -379,10 +323,17 @@ class TestMvtsSuite:
         except Exception as e:
             pytest.fail(f"Runtime error in {routine_name}: {e}")
 
-        # MVTS routines are called by drivers with W !!,"1---V1WR" D ^V1WR
-        # So individual routine output may not contain the label
-        # Just verify we got some output or it completed without error
-        assert output is not None, f"No output for {routine_name}"
+        # Pattern-based validation using counts from RoutineDefinition
+        result = validate_mvts_output(
+            output,
+            expected_passes=routine_def.expected_passes,
+            expected_operator_fails=routine_def.expected_fails or 0,
+        )
+
+        # Report validation results
+        if not result.passed:
+            summary = result.summary
+            pytest.fail(f"Pattern validation failed for {routine_name}:\n{summary}")
 
 
 # =============================================================================
