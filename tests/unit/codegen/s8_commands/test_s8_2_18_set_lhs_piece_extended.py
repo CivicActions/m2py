@@ -491,9 +491,6 @@ class TestLHSPieceDelimiterCanonicalization:
         assert result.output == "2301502"
         assert result.success is True
 
-    @pytest.mark.xfail(
-        reason="$PIECE multi-piece replacement bug - not delimiter canonicalization"
-    )
     def test_numeric_delimiter_with_trailing_zeros(self, execute_mumps):
         """Multi-piece replacement with $PIECE.
 

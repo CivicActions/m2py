@@ -143,8 +143,7 @@ def m_format_output(value: Any) -> str:
         m_format_output(Decimal("1E2")) → "100"
         m_format_output("0.5") → ".5"  # Numeric strings also formatted
     """
-    import re
-    from decimal import Decimal, InvalidOperation
+    from decimal import Decimal
 
     # T075h: Handle MArray objects by extracting their value
     # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
@@ -152,23 +151,12 @@ def m_format_output(value: Any) -> str:
     if hasattr(value, "value"):
         return m_format_output(value.value)
 
-    # If string, try to parse as number ONLY if it looks like a MUMPS canonical number
-    # Pattern: optional leading minus, optional digits, optional decimal point with digits
-    # Examples: "123", "-45", "0.5", ".5", "-.5", "-0.5"
-    # NOT: "+42", "1E5", "   12", "12   ", etc.
+    # If the value is a Python string, return it as-is.
+    # In MUMPS, strings preserve their exact content - they are NOT canonicalized.
+    # Only numeric types (Decimal, int, float) are canonicalized on output.
+    # Example: S X="1212.000" W X → outputs "1212.000" (string preserved)
+    #          S X=1212.000 W X → outputs "1212" (numeric canonicalized)
     if isinstance(value, str):
-        # Only canonicalize strings that look like MUMPS numbers:
-        # - No leading/trailing whitespace
-        # - Optional leading minus (not plus)
-        # - At least one digit somewhere
-        # - No scientific notation (e, E)
-        if value and re.match(r"^-?(\d+\.?\d*|\.\d+)$", value):
-            try:
-                d = Decimal(value)
-                # Recursively format the parsed number
-                return m_format_output(d)
-            except InvalidOperation:
-                pass
         return value
 
     if isinstance(value, bool):

@@ -622,22 +622,31 @@ class TestMOrderSubscriptCoercion:
         assert m_order(arr, ("99", ""), 1) == ""
 
 
-class TestMFormatOutputNumericStrings:
-    """Tests for m_format_output with numeric strings.
+class TestMFormatOutputStringsPreserved:
+    """Tests for m_format_output with strings.
 
-    Fix: Added canonicalization of strings that look like MUMPS numbers.
-    A string "0.5" should output as ".5" to match MUMPS canonical form.
+    MUMPS strings are NOT canonicalized - they preserve their exact content.
+    Only numeric types (Decimal, int, float) are canonicalized on output.
+
+    YDB verified:
+    - S X="0.5" W X → outputs "0.5" (string preserved as-is)
+    - S X=0.5 W X → outputs ".5" (numeric canonicalized)
+    - S X="1212.000" W X → outputs "1212.000" (trailing zeros preserved in strings)
     """
 
-    def test_numeric_string_leading_zero_removed(self):
-        """Numeric string "0.5" is canonicalized to ".5"."""
-        assert m_format_output("0.5") == ".5"
-        assert m_format_output("0.123") == ".123"
+    def test_numeric_string_preserved_as_is(self):
+        """Numeric-looking strings are NOT canonicalized."""
+        # Leading zeros preserved
+        assert m_format_output("0.5") == "0.5"
+        assert m_format_output("0.123") == "0.123"
+        # Trailing zeros preserved
+        assert m_format_output("1212.000") == "1212.000"
+        assert m_format_output("1.00") == "1.00"
 
-    def test_numeric_string_negative_leading_zero_removed(self):
-        """Numeric string "-0.5" is canonicalized to "-.5"."""
-        assert m_format_output("-0.5") == "-.5"
-        assert m_format_output("-0.001") == "-.001"
+    def test_negative_numeric_string_preserved(self):
+        """Negative numeric-looking strings are NOT canonicalized."""
+        assert m_format_output("-0.5") == "-0.5"
+        assert m_format_output("-0.001") == "-0.001"
 
     def test_integer_string_preserved(self):
         """Integer strings remain unchanged."""
@@ -652,17 +661,17 @@ class TestMFormatOutputNumericStrings:
         assert m_format_output("") == ""
 
     def test_whitespace_string_unchanged(self):
-        """Strings with whitespace are not canonicalized (not MUMPS numbers)."""
+        """Strings with whitespace are preserved."""
         assert m_format_output(" 123") == " 123"  # Leading space
         assert m_format_output("123 ") == "123 "  # Trailing space
         assert m_format_output("  0.5  ") == "  0.5  "
 
     def test_scientific_notation_string_unchanged(self):
-        """Scientific notation strings are not canonicalized."""
+        """Scientific notation strings are preserved."""
         assert m_format_output("1E5") == "1E5"
         assert m_format_output("1e-2") == "1e-2"
 
     def test_plus_sign_string_unchanged(self):
-        """Strings with plus sign are not canonicalized."""
+        """Strings with plus sign are preserved."""
         assert m_format_output("+5") == "+5"
         assert m_format_output("+0.5") == "+0.5"
