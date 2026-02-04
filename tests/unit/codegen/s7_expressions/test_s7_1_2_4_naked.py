@@ -328,3 +328,161 @@ class TestNakedGlobalEdgeCases:
             NotImplementedError, match="Naked reference not supported in LOCK"
         ):
             generate_python("TEST S ^A(1)=5 L ^(1) Q")
+
+
+# =============================================================================
+# Naked Reference Evaluation Order Tests
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestNakedGlobalEvaluationOrder:
+    """Tests for naked global reference evaluation order in SET statements.
+
+    MUMPS requires specific evaluation order that differs from Python's default:
+    - For S X(^(subs))=RHS: LHS subscripts evaluated before RHS
+    - For S ^(subs)=RHS: naked indicator used is from AFTER RHS evaluation
+
+    Reference: V1NR tests I-649.1, I-649.4, I-652
+    """
+
+    def test_local_subscript_with_naked_evaluated_before_rhs(self, execute_mumps):
+        """Local variable subscripts with naked refs evaluated before RHS.
+
+        V1NR I-649.1: S X(^(1))=^V1B(1,^(2))
+
+        Setup: ^V1A(1)=100, ^V1A(2)=200, ^V1B(1,200)=12000
+        After S ^V1A(3)=300, naked indicator = ("V1A", ("3",))
+
+        Evaluation order must be:
+        1. ^(1) evaluated → 100, naked → ("V1A", ("1",))
+        2. ^(2) evaluated → 200, naked → ("V1A", ("2",))
+        3. ^V1B(1,200) → 12000
+        4. X(100) = 12000
+
+        Bug: Python evaluates a[x]=y as: y first, then a, then x.
+        Without fix, RHS ^(2) would be evaluated before LHS ^(1),
+        causing wrong naked indicator for ^(1).
+        """
+        code = """TEST
+ K ^V1A,^V1B,X
+ S ^V1A(1)=100,^V1A(2)=200,^V1B(1,200)=12000
+ S ^V1A(3)=^V1A(2)+100
+ S X(^(1))=^V1B(1,^(2))
+ W ^V1A(3)," ",X(100) Q"""
+        result = execute_mumps(code)
+        assert result.output == "300 12000"
+        assert result.success is True
+
+    def test_naked_global_set_uses_naked_after_rhs_evaluation(self, execute_mumps):
+        """Naked global SET target uses naked indicator after RHS evaluation.
+
+        V1NR I-652: S ^(^(1),^(2,3))=^(^(2),^(3,2))
+
+        The target naked reference ^(subscripts) should use the naked indicator
+        from AFTER evaluating the RHS, not from after evaluating LHS subscripts.
+
+        Setup: ^V1A(1,1)=11, ^V1A(1,2,3)=123, ^V1A(1,2,2)=122, ^V1A(1,2,3,2)=1232
+               ^V1A(1,2,3,122,1232)="GLOBAL"
+        After $DATA(^V1A(1,1)), naked = ("V1A", (1,1))
+
+        LHS subscript evaluation:
+        - ^(1) = ^V1A(1,1) = 11, naked → ("V1A", (1,1))
+        - ^(2,3) = ^V1A(1,2,3) = 123, naked → ("V1A", (1,2,3))
+
+        RHS evaluation:
+        - ^(2) = ^V1A(1,2,2) = 122, naked → ("V1A", (1,2,2))
+        - ^(3,2) = ^V1A(1,2,3,2) = 1232, naked → ("V1A", (1,2,3,2))
+        - ^(122,1232) = ^V1A(1,2,3,122,1232) = "GLOBAL"
+
+        SET target: ^(11, 123) with naked ("V1A", (1,2,3,122,1232))
+        → ^V1A(1,2,3,122,11,123) = "GLOBAL"
+        """
+        code = """TEST
+ K ^V1A
+ S ^V1A(1,1)=11,^V1A(1,2,3)=123,^V1A(1,2,2)=122,^V1A(1,2,3,2)=1232
+ S ^V1A(1,2,3,122,1232)="GLOBAL"
+ S VCOMP=$DATA(^V1A(1,1)) S ^(^(1),^(2,3))=^(^(2),^(3,2))
+ W ^V1A(1,2,3,122,11,123) Q"""
+        result = execute_mumps(code)
+        assert result.output == "GLOBAL"
+        assert result.success is True
+
+    def test_nested_naked_in_arithmetic_expression(self, execute_mumps):
+        """Nested naked refs in arithmetic expression with SET target.
+
+        V1NR I-649.4: S ^(3,4)=^(2,^(1,^V1C(1)))+^(4,1)
+
+        This tests deeply nested naked references where the value depends
+        on multiple nested global accesses.
+        """
+        code = """TEST
+ K ^V1C
+ S ^V1C(1)=2,^(1,2)=3,^(2,3)=4,^(4,1)=10
+ S ^(3,4)=^(2,^(1,^V1C(1)))+^(4,1)
+ W ^V1C(1,2,4,3,4) Q"""
+        result = execute_mumps(code)
+        assert result.output == "14"
+        assert result.success is True
+
+    def test_naked_set_followed_by_read(self, execute_mumps):
+        """Naked SET followed by naked read with indirection chain.
+
+        V1NR I-649.4 part 2: Tests that naked indicator correctly tracks
+        through SET assignments and then a final SET using different global.
+
+        S ^V1CC(1)=4,^V1C(1)=2 S ^V1CC(2)="TWO",^V1C(2)="ONE" S ^(^(1))=^V1CC(1)
+
+        After ^V1C(2)="ONE", naked = ("V1C", ("2",))
+        - ^(1) = ^V1C(1) = 2, naked → ("V1C", ("1",))
+        - So ^(2) target is ^V1C(2) = 4 (from ^V1CC(1))
+
+        Then W ^V1CC(2) → "4" (was "TWO", now overwritten by indirection)
+        """
+        code = """TEST
+ K ^V1C,^V1CC
+ S ^V1C(1)=2,^(1,2)=3,^(2,3)=4,^(4,1)=10
+ S ^(3,4)=^(2,^(1,^V1C(1)))+^(4,1)
+ S ^V1CC(1)=4,^V1C(1)=2 S ^V1CC(2)="TWO",^V1C(2)="ONE" S ^(^(1))=^V1CC(1)
+ W ^V1CC(2) Q"""
+        result = execute_mumps(code)
+        assert result.output == "4"
+        assert result.success is True
+
+    def test_simple_local_naked_subscript(self, execute_mumps):
+        """Simple case: local variable subscript is a naked reference.
+
+        S ^A(1)=5 S X(^(1))=10 W X(5)
+
+        The subscript ^(1) should evaluate to ^A(1)=5, so X(5)=10.
+        """
+        code = "TEST K ^A,X S ^A(1)=5 S X(^(1))=10 W X(5) Q"
+        result = execute_mumps(code)
+        assert result.output == "10"
+        assert result.success is True
+
+    def test_multiple_naked_subscripts_in_local(self, execute_mumps):
+        """Multiple naked references as subscripts in local variable.
+
+        S ^A(1)="a",^A(2)="b" S X(^(1),^(2))=99 W X("a","b")
+
+        Each naked reference updates the indicator in turn.
+        """
+        code = 'TEST K ^A,X S ^A(1)="a",^A(2)="b" S X(^(1),^(2))=99 W X("a","b") Q'
+        result = execute_mumps(code)
+        assert result.output == "99"
+        assert result.success is True
+
+    def test_naked_global_set_simple(self, execute_mumps):
+        """Simple naked global SET with expression value.
+
+        S ^A(1)=5 S ^(2)=^(1)+10 W ^A(2)
+
+        After ^A(1)=5, naked = ("A", ())
+        ^(2) = ^A(2), ^(1) = ^A(1) = 5
+        So ^A(2) = 5 + 10 = 15
+        """
+        code = "TEST K ^A S ^A(1)=5 S ^(2)=^(1)+10 W ^A(2) Q"
+        result = execute_mumps(code)
+        assert result.output == "15"
+        assert result.success is True

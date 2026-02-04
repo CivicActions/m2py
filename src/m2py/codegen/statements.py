@@ -88,7 +88,7 @@ from m2py.asg.statements import (
     MZTriggerStatement,
 )
 from m2py.codegen.enums import GotoStrategy
-from m2py.codegen.expressions import generate_expr
+from m2py.codegen.expressions import contains_naked_global, generate_expr
 from m2py.codegen.names import translate_name
 
 if TYPE_CHECKING:
@@ -903,6 +903,14 @@ def _generate_single_assignment(
                 for sub in assignment.target.subscripts
             ]
 
+            # Check if any LHS subscript contains naked global references
+            # If so, we must pre-evaluate them BEFORE evaluating the RHS
+            # because Python evaluates `a[x] = y` as y first, then a, then x,
+            # but MUMPS requires left-to-right evaluation order.
+            has_naked_in_subscripts = any(
+                contains_naked_global(sub) for sub in assignment.target.subscripts
+            )
+
             # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
             if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
                 # Access MArray from _locals dict, auto-vivify if needed
@@ -918,15 +926,33 @@ def _generate_single_assignment(
                 # Plain Python local variable (TRAMPOLINE without array_vars)
                 base = target_name
 
-            # Format subscripts: single key or tuple
-            if len(subscript_exprs) == 1:
-                target_expr = f"{base}[{subscript_exprs[0]}]"
+            if has_naked_in_subscripts:
+                # Pre-evaluate subscripts to preserve correct naked reference order
+                # Generate: _sub_0 = sub_expr_0; _sub_1 = sub_expr_1; ...
+                # Then: base[(_sub_0, _sub_1)] = value
+                for i, sub_expr in enumerate(subscript_exprs):
+                    ctx.emitter.line(f"_sub_{i} = {sub_expr}")
+                # Now evaluate the value expression
+                value_expr = generate_expr(assignment.value, ctx)
+                # Use pre-evaluated subscripts
+                if len(subscript_exprs) == 1:
+                    ctx.emitter.line(f"{base}[_sub_0] = {value_expr}")
+                else:
+                    sub_refs = ", ".join(
+                        f"_sub_{i}" for i in range(len(subscript_exprs))
+                    )
+                    ctx.emitter.line(f"{base}[{sub_refs}] = {value_expr}")
             else:
-                target_expr = f"{base}[{', '.join(subscript_exprs)}]"
+                # No naked globals in subscripts - use standard generation
+                # Format subscripts: single key or tuple
+                if len(subscript_exprs) == 1:
+                    target_expr = f"{base}[{subscript_exprs[0]}]"
+                else:
+                    target_expr = f"{base}[{', '.join(subscript_exprs)}]"
 
-            # Generate value expression and emit assignment
-            value_expr = generate_expr(assignment.value, ctx)
-            ctx.emitter.line(f"{target_expr} = {value_expr}")
+                # Generate value expression and emit assignment
+                value_expr = generate_expr(assignment.value, ctx)
+                ctx.emitter.line(f"{target_expr} = {value_expr}")
             return
 
         # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
@@ -1384,12 +1410,14 @@ def _generate_naked_global_set(
         assignment: MAssignment with NakedGlobal target
         ctx: Generator context
 
-    The generated code resolves the naked reference then sets:
-        _name, _subs = _rt.globals.resolve_naked(("sub1", "sub2",))
-        _rt.globals.set(_name, _subs, "value")
+    MUMPS evaluation order for S ^(subscripts)=value:
+    1. Evaluate subscript expressions left-to-right (each updates naked indicator)
+    2. Evaluate value expression (updates naked indicator)
+    3. resolve_naked() is called with subscript VALUES using CURRENT naked indicator
+    4. SET is performed
 
-    The naked indicator holds (name, base_subscripts) from the last global access.
-    resolve_naked() returns (name, base_subscripts + new_subscripts).
+    This means the naked indicator used for the SET target is determined by
+    the LAST global access during evaluation, which may be in the value expression.
     """
     # We know target is NakedGlobal because caller checked isinstance
     assert isinstance(assignment.target, NakedGlobal)
@@ -1416,10 +1444,18 @@ def _generate_naked_global_set(
     assert assignment.value is not None, "Naked global SET requires a value"
     value_expr = generate_expr(assignment.value, ctx)
 
-    # Emit resolve_naked + set calls
-    # Use m_str() to format numbers in MUMPS canonical form (no E-notation)
-    ctx.emitter.line(f"_name, _subs = _rt.globals.resolve_naked({subscripts_tuple})")
-    ctx.emitter.line(f"_rt.globals.set(_name, _subs, m_str({value_expr}))")
+    # CRITICAL: Evaluation order for MUMPS S ^(subs)=value:
+    # 1. Pre-compute subscript values (updates naked indicator)
+    # 2. Pre-compute value (updates naked indicator)
+    # 3. resolve_naked uses CURRENT naked indicator (after value evaluation!)
+    # 4. Perform SET
+    #
+    # This ensures naked refs in value expression update the naked indicator
+    # BEFORE resolve_naked determines the target location.
+    ctx.emitter.line(f"_naked_sub_vals = {subscripts_tuple}")
+    ctx.emitter.line(f"_naked_value = m_str({value_expr})")
+    ctx.emitter.line("_name, _subs = _rt.globals.resolve_naked(_naked_sub_vals)")
+    ctx.emitter.line("_rt.globals.set(_name, _subs, _naked_value)")
 
 
 def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:

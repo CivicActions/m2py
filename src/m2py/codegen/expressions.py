@@ -192,6 +192,90 @@ def generate_expr(
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
 
+def contains_naked_global(expr: MExpr) -> bool:
+    """Check if expression contains any naked global references.
+
+    Recursively traverses the expression tree looking for NakedGlobal nodes.
+    Used to determine if subscript expressions need to be pre-evaluated
+    to ensure correct left-to-right evaluation order in assignments.
+
+    Args:
+        expr: Expression node to check
+
+    Returns:
+        True if expression contains a NakedGlobal, False otherwise
+    """
+    from m2py.asg.expressions import MNakedGlobal
+
+    # Check for naked global types
+    if isinstance(expr, (NakedGlobal, MNakedGlobal)):
+        return True
+
+    # Check MLiteral - no children
+    if isinstance(expr, MLiteral):
+        return False
+
+    # Check MVariable - check subscripts
+    if isinstance(expr, MVariable):
+        return any(contains_naked_global(sub) for sub in (expr.subscripts or []))
+
+    # Check MGlobal (including GlobalVariable) - check subscripts
+    if isinstance(expr, MGlobal):
+        return any(contains_naked_global(sub) for sub in (expr.subscripts or []))
+
+    # Check binary operations - check both operands
+    if isinstance(expr, MBinaryOp):
+        left_has = expr.left is not None and contains_naked_global(expr.left)
+        right_has = expr.right is not None and contains_naked_global(expr.right)
+        return left_has or right_has
+
+    # Check unary operations - check operand
+    if isinstance(expr, MUnaryOp):
+        return expr.operand is not None and contains_naked_global(expr.operand)
+
+    # Check function calls - check arguments
+    if isinstance(expr, MIntrinsicFunction):
+        return any(contains_naked_global(arg) for arg in (expr.arguments or []))
+
+    # Check extrinsic functions - check arguments
+    if isinstance(expr, MExtrinsicFunction):
+        return any(
+            param.expression is not None and contains_naked_global(param.expression)
+            for param in (expr.arguments or [])
+        )
+
+    # Check indirection - check expression and subscripts
+    if isinstance(expr, MIndirection):
+        # MIndirection uses 'expression' attribute
+        inner_expr = getattr(expr, "expression", None)
+        if inner_expr is not None and contains_naked_global(inner_expr):
+            return True
+        # Check direct subscripts
+        if any(contains_naked_global(sub) for sub in (expr.subscripts or [])):
+            return True
+        # Check name indirection subscripts
+        if expr.name_indirection_subscripts:
+            for sub_list in expr.name_indirection_subscripts:
+                if any(contains_naked_global(sub) for sub in (sub_list or [])):
+                    return True
+        return False
+
+    # Check pattern match - check subject expression
+    if isinstance(expr, MPatternMatch):
+        return expr.subject is not None and contains_naked_global(expr.subject)
+
+    # Check special variables - no naked globals
+    if isinstance(expr, MSpecialVariable):
+        return False
+
+    # Check structured system variables - check subscripts
+    if isinstance(expr, MStructuredSystemVariable):
+        return any(contains_naked_global(sub) for sub in (expr.subscripts or []))
+
+    # Default: no naked globals found
+    return False
+
+
 def _generate_literal(lit: MLiteral) -> str:
     """Generate Python literal from MLiteral.
 

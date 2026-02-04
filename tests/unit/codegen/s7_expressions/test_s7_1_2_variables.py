@@ -376,3 +376,112 @@ class TestGlobalSetMumpsCanonicalFormat:
         """Regular numbers are stored normally (regression test)."""
         result = execute_mumps('TEST S ^A=123,^B=3.14,^C="hello" W ^A," ",^B," ",^C Q')
         assert result.output == "123 3.14 hello"
+
+
+# =============================================================================
+# Tests for contains_naked_global helper function
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestContainsNakedGlobal:
+    """Tests for the contains_naked_global() helper function.
+
+    This helper is used to detect if an expression tree contains naked
+    global references, which affects evaluation order in SET statements.
+    """
+
+    def test_naked_global_detected(self):
+        """NakedGlobal is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+        assert contains_naked_global(naked) is True
+
+    def test_local_variable_not_detected(self):
+        """LocalVariable does not contain naked global."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.asg.expressions import MVariable
+
+        local = MVariable(name="X", subscripts=[])
+        assert contains_naked_global(local) is False
+
+    def test_global_variable_not_detected(self):
+        """GlobalVariable does not contain naked global."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.asg.expressions import MGlobal
+
+        glob = MGlobal(name="G", subscripts=[])
+        assert contains_naked_global(glob) is False
+
+    def test_nested_naked_in_subscript(self):
+        """Naked global nested in subscript is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+        from m2py.asg.expressions import MVariable
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+
+        local = MVariable(name="X", subscripts=[naked])
+        assert contains_naked_global(local) is True
+
+    def test_binary_expr_with_naked(self):
+        """Binary expression containing naked global is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+        from m2py.asg.expressions import MBinaryOp, MLiteral
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+
+        binary = MBinaryOp(
+            left=MLiteral(value=1),
+            operator="+",
+            right=naked,
+        )
+        assert contains_naked_global(binary) is True
+
+    def test_function_call_with_naked_arg(self):
+        """Function call with naked global argument is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+        from m2py.asg.expressions import MIntrinsicFunction
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+
+        func = MIntrinsicFunction(name="LENGTH", arguments=[naked])
+        assert contains_naked_global(func) is True
+
+    def test_deeply_nested_naked(self):
+        """Deeply nested naked global is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+        from m2py.asg.expressions import MBinaryOp, MVariable, MLiteral
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+
+        # Build: 1 + X(^(1)) where ^(1) is naked
+        local_with_naked = MVariable(name="X", subscripts=[naked])
+        binary = MBinaryOp(
+            left=MLiteral(value=1),
+            operator="+",
+            right=local_with_naked,
+        )
+        assert contains_naked_global(binary) is True
+
+    def test_none_input(self):
+        """None input returns False."""
+        from m2py.codegen.expressions import contains_naked_global
+
+        assert contains_naked_global(None) is False
+
+    def test_string_input(self):
+        """String input returns False."""
+        from m2py.codegen.expressions import contains_naked_global
+
+        assert contains_naked_global("some string") is False
