@@ -1150,7 +1150,8 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
         )
 
     # Generate delimiter expression (must be string)
-    delimiter_expr = f"str({generate_expr(args[1], ctx)})"
+    # Use m_str for MUMPS canonical form (e.g., 0.0 → "0")
+    delimiter_expr = f"m_str({generate_expr(args[1], ctx)})"
 
     # Generate piece_from expression (defaults to 1 per MUMPS standard)
     # Must be converted to int since MUMPS expressions return strings
@@ -1424,6 +1425,7 @@ def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
     Handles both expressions and format controls:
     - MExpr: Generate expression and write it
     - MFormatControl: Handle !, #, ?n, *n format controls
+    - MIndirection (ARGUMENT): Use write_indirection for W @A
 
     Spec 011 (T025-T029): Format control support.
 
@@ -1431,10 +1433,21 @@ def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
         stmt: MWriteStatement node
         ctx: Generator context
     """
+    from m2py.asg.expressions import MIndirection
+    from m2py.asg.enums import IndirectionType
+
     for arg in stmt.arguments:
         if isinstance(arg, MFormatControl):
             # Spec 011 (T025): Handle format control nodes
             _generate_format_control(arg, ctx)
+        elif (
+            isinstance(arg, MIndirection)
+            and arg.indirection_type == IndirectionType.ARGUMENT
+        ):
+            # WRITE argument indirection: W @A where A contains WRITE args
+            # Must use write_indirection, NOT evaluate_argument_indirection,
+            # because A may contain format controls like !?3 that aren't expressions
+            _generate_write_indirection(arg, ctx)
         elif isinstance(arg, MExpr):
             # Generate expression and write it
             # Runtime handles None -> empty string conversion (MUMPS undefined semantics)
@@ -1493,6 +1506,69 @@ def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> Non
         else:
             # No expression - shouldn't happen but handle gracefully
             pass
+
+
+def _generate_write_indirection(ind: "MIndirection", ctx: "GeneratorContext") -> None:
+    """Generate write_indirection call for WRITE argument indirection.
+
+    WRITE argument indirection (W @A) must be handled specially because
+    the resolved value may contain format controls like !?3 that cannot
+    be evaluated as expressions.
+
+    Example: W @A where A='!?3,"AB"'
+    - The resolved value is: !?3,"AB"
+    - This must be parsed as WRITE arguments, not evaluated as an expression
+
+    Args:
+        ind: MIndirection ASG node with ARGUMENT type
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import GlobalVariable
+    from m2py.codegen.indirection import _count_indirection_levels_with_subscripts
+
+    # Get scope expression
+    scope_expr = "_scope"
+
+    # Count indirection levels and get inner expression
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(ind)
+
+    # Get the source variable name
+    if isinstance(inner_expr, MVariable):
+        source_name = inner_expr.name
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            source_expr = f'"{source_name}"'
+    elif isinstance(inner_expr, GlobalVariable):
+        source_name = f"^{inner_expr.name}"
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            source_expr = f'"{source_name}"'
+    else:
+        # Complex expression - evaluate to get source string
+        source_expr = generate_expr(inner_expr, ctx)
+
+    # Build per-level subscripts argument if needed
+    subs_arg = ""
+    if all_subscripts and any(all_subscripts):
+        per_level_subs = []
+        for subs in all_subscripts:
+            if subs:
+                sub_exprs = [generate_expr(s, ctx) for s in subs]
+                per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+        if per_level_subs:
+            subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+
+    # Generate the write_indirection call
+    ctx.emitter.line(
+        f"_rt.write_indirection({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
+    )
 
 
 def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
@@ -1629,12 +1705,14 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
         cond_expr = generate_expr(stmt.condition, ctx, if_condition=True)
     elif stmt.conditions:
         # Multiple comma-separated conditions act as AND
-        # Each condition is evaluated in sequence
+        # Each condition is evaluated in sequence, with $TEST updated after EACH
+        # This is critical for tests like "I 1,$T" where $T reads value from 1st arg
+        # Use walrus operator to update _test after each condition evaluation
         cond_parts = [generate_expr(c, ctx, if_condition=True) for c in stmt.conditions]
-        cond_expr = " and ".join(f"m_truth({c})" for c in cond_parts)
-        # For multiple conditions, we evaluate as AND but still set _test at end
-        ctx.emitter.line(f"_test = {cond_expr}")
-        ctx.emitter.line("if _test:")
+        # Generate: (_test := m_truth(c1)) and (_test := m_truth(c2)) and ...
+        cond_expr = " and ".join(f"(_test := m_truth({c}))" for c in cond_parts)
+        # For multiple conditions, final _test is set by the walrus operator chain
+        ctx.emitter.line(f"if {cond_expr}:")
         with ctx.emitter.indented():
             if stmt.then_scope and stmt.then_scope.statements:
                 for body_stmt in stmt.then_scope.statements:
@@ -1847,11 +1925,15 @@ def _generate_for_body(
         if var_name:
             # T075n: Use for_ctx.loop_var if provided (handles _xec_ prefix in inline XECUTE)
             python_name = for_ctx.loop_var if for_ctx else translate_name(var_name)
+            # Use translated name for scope key to match SET statement behavior
+            translated_var_name = translate_name(var_name)
             # T089h: Choose sync target based on strategy
             if needs_locals_sync:
-                sync_target = f"state._locals.setdefault({var_name!r}, MArray())"
+                sync_target = (
+                    f"state._locals.setdefault({translated_var_name!r}, MArray())"
+                )
             else:
-                sync_target = f"_scope.setdefault({var_name!r}, MArray())"
+                sync_target = f"_scope.setdefault({translated_var_name!r}, MArray())"
             if subscripts:
                 # T032: Subscripted loop var - use .set(sub1, sub2, ..., value=val)
                 subs_str = ", ".join(subscripts)
@@ -1970,8 +2052,20 @@ def _generate_for_bounded(
         # Track the loop counter separately from the variable storage
         counter_var = f"_for_val_{lid}"
 
+        # Choose correct variable storage based on code generation strategy
+        # Must match the pattern used for variable access (expressions.py line 267)
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            # T014: Dynamic locals - use state._locals for consistency with read access
+            base = f"state._locals.setdefault({var_name!r}, MArray())"
+        elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            # Use _scope for SIMPLE_FUNCTIONS
+            base = f"_scope.setdefault({var_name!r}, MArray())"
+        else:
+            # Fallback to _scope (shouldn't normally be reached)
+            base = f"_scope.setdefault({var_name!r}, MArray())"
+
         def make_set_expr(val: str) -> str:
-            return f"_scope.setdefault({var_name!r}, MArray()).set({cached_subs_str}, value={val})"
+            return f"{base}.set({cached_subs_str}, value={val})"
 
         # Initial assignment - set counter and store to subscripted variable
         ctx.emitter.line(f"{counter_var} = {start_var}")
@@ -2016,10 +2110,20 @@ def _generate_for_bounded(
         # Simple loop variable (F I=1:1:3)
         # Set loop var to start value (MUMPS semantics)
         ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
-        # Also sync to _scope for SIMPLE_FUNCTIONS strategy
+        # Sync to storage BEFORE the while loop so the value is set even if loop doesn't execute
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS and for_ctx.loop_var_name:
             ctx.emitter.line(
                 f"_scope.setdefault({for_ctx.loop_var_name!r}, MArray()).value = {start_var}"
+            )
+        elif (
+            ctx.strategy == GotoStrategy.TRAMPOLINE
+            and ctx.uses_dynamic_locals
+            and for_ctx.loop_var_name
+        ):
+            # T089: Sync to state._locals for TRAMPOLINE with dynamic locals
+            translated_name = translate_name(for_ctx.loop_var_name)
+            ctx.emitter.line(
+                f"state._locals.setdefault({translated_name!r}, MArray()).value = {start_var}"
             )
         ctx.emitter.line(
             f"while ({step_var} > 0 and {for_ctx.loop_var} <= {end_var}) or "

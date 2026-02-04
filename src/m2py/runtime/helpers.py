@@ -1212,6 +1212,9 @@ def m_justify(value: float, width: int, decimals: int) -> str:
 
     Spec 010 Phase 10 (T067): Implements 3-argument $JUSTIFY.
 
+    Uses ROUND_HALF_UP (traditional rounding) per MUMPS spec, not
+    ROUND_HALF_EVEN (banker's rounding) which Python's Decimal default uses.
+
     Args:
         value: Numeric value to format
         width: Field width to right-justify within
@@ -1223,9 +1226,31 @@ def m_justify(value: float, width: int, decimals: int) -> str:
     Examples:
         m_justify(3.14159, 10, 2) → "      3.14"
         m_justify(42, 5, 0) → "   42"
+        m_justify(123.45, 7, 1) → "  123.5" (ROUND_HALF_UP, not 123.4)
     """
+    from decimal import ROUND_HALF_UP
+
+    # Convert to Decimal for precise rounding
+    if isinstance(value, Decimal):
+        dec_value = value
+    else:
+        dec_value = Decimal(str(value))
+
+    # Create quantizer for specified decimal places (e.g., "0.1" for 1 decimal)
+    if decimals > 0:
+        quantizer = Decimal("1." + "0" * decimals)
+    else:
+        quantizer = Decimal("1")
+
+    # Round using ROUND_HALF_UP (traditional rounding)
+    rounded = dec_value.quantize(quantizer, rounding=ROUND_HALF_UP)
+
     # Format with specified decimal places
-    formatted = f"{value:.{decimals}f}"
+    if decimals > 0:
+        formatted = f"{rounded:.{decimals}f}"
+    else:
+        formatted = str(int(rounded))
+
     # Right-justify within width
     return formatted.rjust(width)
 

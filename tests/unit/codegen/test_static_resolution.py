@@ -178,6 +178,7 @@ class TestDynamicResolution:
             or "get_var" in code
             or "get_indirected" in code
             or "evaluate_argument_indirection" in code
+            or "write_indirection" in code  # Used for W @X
         )
 
     def test_argument_indirection_generates_runtime_call(self, generate_python):

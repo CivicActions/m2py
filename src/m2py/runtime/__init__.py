@@ -3099,6 +3099,65 @@ class MUMPSRuntime:
             expr, treat_empty_as_truthy=treat_empty_as_truthy
         )
 
+    def write_indirection(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> None:
+        """Execute WRITE argument indirection.
+
+        Handles W @A where A contains WRITE arguments including format controls.
+        Unlike evaluate_argument_indirection, this parses and executes the
+        resolved value AS WRITE ARGUMENTS, not as an expression.
+
+        Example: W @A where A='!?3,"AB"'
+        - Resolves @A to: !?3,"AB"
+        - Parses as WRITE arguments: newline, tab to col 3, write "AB"
+        - Executes each WRITE argument
+
+        Args:
+            source: Source variable name for indirection (e.g., "A" for @A)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @A, 2 for @@A)
+            per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve to get the raw WRITE arguments string (don't evaluate as expression)
+        raw_value = resolver.resolve_to_name(
+            source,
+            levels=levels,
+            per_level_subscripts=per_level_subscripts,
+            validate=False,  # Don't validate - it's WRITE args, not a var name
+        )
+
+        if not raw_value:
+            return
+
+        # Execute as WRITE command arguments
+        self._execute_write_args(raw_value, _scope)
+
+    def _execute_write_args(self, write_args: str, _scope: Dict[str, Any]) -> None:
+        """Execute a string as WRITE arguments.
+
+        Parses and executes the string as MUMPS WRITE arguments, including
+        format controls (!, #, ?n, *n) and expressions.
+
+        Args:
+            write_args: WRITE argument string (e.g., '!?3,"AB"')
+            _scope: Current scope dictionary
+        """
+        # Wrap in WRITE command and execute as MUMPS
+        mumps_code = f"W {write_args}"
+        self.execute_mumps(mumps_code, _scope)
+
     def _set_local_var(
         self,
         name: str,

@@ -54,7 +54,9 @@ class RoutineDefinition(NamedTuple):
 # Pattern-based validation:
 # - expected_passes: Count of "PASS" markers expected
 # - expected_visual: Count of "should be identical" visual checks expected
-# - expected_fails: Count of "** FAIL" markers expected (known collation failures)
+# - expected_fails: Count of "** FAIL" markers expected for HARD LIMITATIONS ONLY
+#   (e.g., user interaction required, hardware-specific behavior, Z-functions).
+#   Do NOT use expected_fails for unimplemented features - fix the implementation instead.
 
 MUGJ_ROUTINES: list[RoutineDefinition] = [
     # V1* routines - Part 77 MUMPS Standard tests

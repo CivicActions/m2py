@@ -1550,6 +1550,7 @@ def _gen_length(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $L("HELLO") → len("HELLO")
         $L("A^B^C","^") → (str("A^B^C").count("^") + 1)
         $L("","^") → 1 (empty string has 1 piece)
+        $L("ABC","") → 0 (empty delimiter returns 0)
     """
     args = getattr(expr, "arguments", [])
 
@@ -1566,9 +1567,10 @@ def _gen_length(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         return f"len(m_str({string_expr}))"
     else:
         # Two arguments - piece count
-        # Piece count = delimiter occurrences + 1
+        # Per MUMPS spec: empty delimiter returns 0
+        # Otherwise: piece count = delimiter occurrences + 1
         delimiter_expr = generate_expr(args[1], ctx)
-        return f"(m_str({string_expr}).count(m_str({delimiter_expr})) + 1)"
+        return f"(0 if m_str({delimiter_expr}) == '' else m_str({string_expr}).count(m_str({delimiter_expr})) + 1)"
 
 
 def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -2039,8 +2041,9 @@ def _gen_justify(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         decimals_expr = generate_expr(args[2], ctx)
         return f"m_justify(m_num({value_expr}), int(m_num({width_expr})), int(m_num({decimals_expr})))"
     else:
-        # Simple right-justify
-        return f"str({value_expr}).rjust(int(m_num({width_expr})))"
+        # Simple right-justify - use m_str for MUMPS canonical formatting
+        # This ensures E-notation is expanded, trailing .0 removed, etc.
+        return f"m_str({value_expr}).rjust(int(m_num({width_expr})))"
 
 
 def _gen_reverse(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:

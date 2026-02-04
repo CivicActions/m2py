@@ -236,6 +236,31 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST W $LENGTH("ABC") Q')
         assert result.output == "3"
 
+    def test_function_length_empty_delimiter(self, execute_mumps):
+        """$LENGTH with empty delimiter returns 0 (§7.1.5).
+
+        MUMPS spec: $L(str,"") returns 0 for any string, including empty string.
+        This is different from non-empty delimiter where empty string has 1 piece.
+
+        Bug fix: Previously returned count of "" occurrences + 1 which is wrong.
+        """
+        # Test 1: Empty delimiter with non-empty string returns 0
+        result = execute_mumps('TEST W $L("ABC","") Q')
+        assert result.output == "0"
+
+        # Test 2: Empty delimiter with empty string returns 0
+        result = execute_mumps('TEST W $L("","") Q')
+        assert result.output == "0"
+
+        # Test 3: Empty delimiter with longer string returns 0
+        result = execute_mumps('TEST W $L("HELLO WORLD","") Q')
+        assert result.output == "0"
+
+        # Test 4: Canonical conversion - numeric delimiter that becomes empty
+        # 0.0 canonicalizes to "0", not empty, so this has pieces
+        result = execute_mumps('TEST S X="A0B0C" W $L(X,0.0) Q')
+        assert result.output == "3"
+
     def test_function_order(self, execute_mumps):
         """$ORDER generates next key retrieval (§7.1.5).
 
@@ -633,6 +658,61 @@ class TestIntrinsicFunctionsCodegen:
         # Test 5: Full form abbreviation
         result = execute_mumps("TEST W $JUSTIFY(42,6) Q")
         assert result.output == "    42"
+
+    def test_function_justify_rounding(self, execute_mumps):
+        """$JUSTIFY uses ROUND_HALF_UP not banker's rounding (§7.1.5).
+
+        Bug fix: Python Decimal default is ROUND_HALF_EVEN (banker's rounding),
+        but MUMPS expects traditional ROUND_HALF_UP (0.5 rounds up).
+
+        $J(123.45,7,1) should round to 123.5, not 123.4.
+        """
+        # Test 1: Round half up - 123.45 → 123.5 (not 123.4)
+        result = execute_mumps("TEST W $J(123.45,7,1) Q")
+        assert result.output == "  123.5"
+
+        # Test 2: Another round half up case - 2.35 → 2.4
+        result = execute_mumps("TEST W $J(2.35,5,1) Q")
+        assert result.output == "  2.4"
+
+        # Test 3: Round down cases still work - 123.44 → 123.4
+        result = execute_mumps("TEST W $J(123.44,7,1) Q")
+        assert result.output == "  123.4"
+
+        # Test 4: Round up to next integer - 1.5 → 2
+        result = execute_mumps("TEST W $J(1.5,3,0) Q")
+        assert result.output == "  2"
+
+    def test_function_justify_canonical_form(self, execute_mumps):
+        """$JUSTIFY 2-arg form uses MUMPS canonical form (§7.1.5).
+
+        Bug fix: 2-argument $J used Python str() instead of m_str(),
+        causing E-notation to appear and trailing .0 to remain.
+
+        MUMPS canonical form:
+        - No E-notation (expanded to full number)
+        - No trailing .0 for integers
+        - No leading zeros
+        """
+        # Test 1: Large integer - no trailing .0
+        result = execute_mumps("TEST W $J(1234.0000,7) Q")
+        assert result.output == "   1234"
+
+        # Test 2: E-notation expanded - 123400E1 = 1234000
+        result = execute_mumps("TEST W $J(123400.00E1,10) Q")
+        assert result.output == "   1234000"
+
+        # Test 3: Small decimal with E-notation
+        result = execute_mumps("TEST W $J(98.7654E-3,12) Q")
+        assert result.output == "    .0987654"
+
+        # Test 4: Width with decimal truncated - $J(x,8.9) uses width 8
+        result = execute_mumps("TEST W $J(5.49,8.9) Q")
+        assert result.output == "    5.49"
+
+        # Test 5: Leading zeros removed
+        result = execute_mumps("TEST W $J(007,5) Q")
+        assert result.output == "    7"
 
     def test_function_reverse(self, execute_mumps):
         """$REVERSE/$RE reverses a string (§7.1.5).

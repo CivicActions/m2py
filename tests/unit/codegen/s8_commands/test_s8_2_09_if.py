@@ -113,6 +113,39 @@ class TestIfCommandCodegen:
         assert result.output == "OK"
         assert result.success is True
 
+    def test_if_multiple_conditions_test_update(self, execute_mumps):
+        """IF with multiple conditions updates $TEST after EACH condition (§8.2.9).
+
+        Bug fix: $TEST must be updated after evaluating each comma-separated
+        condition, not just at the end. This allows `I 1,$T` to work correctly:
+        - Evaluate 1 → set $T=1
+        - Evaluate $T (which is now 1) → set $T=1
+        - Body executes
+
+        Previously, all conditions were evaluated first with the original $T,
+        so `I 1,$T` after `I 0` would fail because $T was still 0.
+        """
+        # Test 1: I 1,$T after I 0 - $T from first arg enables second
+        result = execute_mumps('TEST\n I 0\n I 1,$T W "PASS"\n E W "FAIL"\n Q\n')
+        assert result.output == "PASS"
+
+        # Test 2: I $T,$T after I 1 - both read updated $T
+        result = execute_mumps('TEST\n I 1\n I $T,$T W "PASS"\n E W "FAIL"\n Q\n')
+        assert result.output == "PASS"
+
+        # Test 3: I '$T,$T,$T after I 0 - NOT of 0 is 1, then 1, then 1
+        result = execute_mumps('TEST\n I 0\n I \'$T,$T,$T W "PASS"\n E W "FAIL"\n Q\n')
+        assert result.output == "PASS"
+
+        # Test 4: Short-circuit still works - I 0,$T doesn't evaluate $T
+        result = execute_mumps('TEST\n I 1\n I 0,$T W "BAD"\n E W "GOOD"\n Q\n')
+        assert result.output == "GOOD"
+
+        # Test 5: $T reflects final evaluated condition after short-circuit
+        # I 0,1 short-circuits at 0, so $T=0
+        result = execute_mumps('TEST\n I 0,1 W "BAD"\n I  W "BAD2"\n E W "OK"\n Q\n')
+        assert result.output == "OK"
+
     def test_if_argumentless(self, execute_mumps):
         """IF argumentless uses $TEST (§8.2.9).
 
