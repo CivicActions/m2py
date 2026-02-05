@@ -60,6 +60,10 @@ class GeneratorContext:
     # Spec 006: Array variables (MArray-backed) for subscript access
     array_vars: set[str] = field(default_factory=set)
 
+    # Variables that are read but never written in the routine (input-only from caller).
+    # In TRAMPOLINE mode, these need to be read from _scope instead of bare Python vars.
+    input_only_vars: set[str] = field(default_factory=set)
+
     # Spec 011: Name of the NewScopeManager variable when inside a NEW-managed block
     # If set, _generate_new() should use _new_mgr.new_var() instead of _scope.pop()
     new_scope_manager_var: Optional[str] = None
@@ -241,10 +245,12 @@ class RoutineGenerator:
         # Compute state vars and array vars for trampoline pattern
         state_vars: set[str] = set()
         array_vars: set[str] = set()
+        input_only_vars: set[str] = set()
         uses_dynamic_locals = False
         if self._strategy == GotoStrategy.TRAMPOLINE:
             state_vars = self._routine.routine_state_vars or set()
             array_vars = self._routine.array_vars or set()
+            input_only_vars = self._routine.routine_input_only_vars or set()
             # Spec 017: Check if routine needs dynamic _locals dict
             from m2py.codegen.shared_state import routine_uses_dynamic_locals
 
@@ -257,6 +263,7 @@ class RoutineGenerator:
             strategy=self._strategy,
             state_vars=state_vars,
             array_vars=array_vars,
+            input_only_vars=input_only_vars,
             uses_dynamic_locals=uses_dynamic_locals,
         )
 
@@ -335,6 +342,10 @@ class RoutineGenerator:
         if self._strategy == GotoStrategy.TRAMPOLINE:
             ctx.emitter.line("from dataclasses import dataclass, field")
             ctx.emitter.line("from typing import Any, Optional, Tuple")
+            # T075: Import GotoExternal and run_with_goto_support for cross-routine GOTO handling
+            ctx.emitter.line(
+                "from m2py.runtime import GotoExternal, run_with_goto_support, resolve_goto_target, LabelNotFoundError"
+            )
 
         ctx.emitter.blank()
 
@@ -905,6 +916,19 @@ class RoutineGenerator:
                             ctx.emitter.line("func = _labels[target]")
                             # T076: Pass _rt and _scope to inner functions
                             ctx.emitter.line("target, state = func(_rt, state, _scope)")
+                    # Handle GotoExternal specially - it's control flow, not an error
+                    # When a subroutine (DO) does an external GOTO, we run that chain
+                    # to completion and then continue the trampoline
+                    ctx.emitter.line("except GotoExternal as _goto:")
+                    with ctx.emitter.indented():
+                        # Run the external GOTO chain to completion
+                        ctx.emitter.line("run_with_goto_support(")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("resolve_goto_target(_goto), _rt, _scope")
+                        ctx.emitter.line(")")
+                        # Continue the trampoline - set target to None to exit
+                        # (the GOTO chain has completed, so we're done with this call)
+                        ctx.emitter.line("target = None")
                     # Spec 014 (T055): Error handling - invoke $ETRAP if set
                     ctx.emitter.line("except Exception as _e:")
                     with ctx.emitter.indented():
@@ -980,37 +1004,56 @@ class RoutineGenerator:
                             f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
                         )
 
-                # Call internal function and get next target
-                if args_str:
-                    ctx.emitter.line(
-                        f"target, state = {internal_func}(_rt, state, _scope, {args_str})"
-                    )
-                else:
-                    ctx.emitter.line(
-                        f"target, state = {internal_func}(_rt, state, _scope)"
-                    )
-
-                # Run trampoline until subroutine returns (target is None)
-                # T075: Handle both int targets (line numbers from GOTO+offset)
-                # and string targets (label names from GOTO label)
-                ctx.emitter.line("while target is not None:")
+                # Wrap entire execution in try/except GotoExternal
+                # This handles GotoExternal from both:
+                # 1. The initial call to the internal function
+                # 2. The trampoline dispatch loop
+                ctx.emitter.line("try:")
                 with ctx.emitter.indented():
-                    # Only handle int targets if routine has offset calls
-                    if self._routine.has_offset_calls:
-                        ctx.emitter.line("if isinstance(target, int):")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line("label_name, offset = _line_map[target]")
-                            ctx.emitter.line("func = globals()['_' + label_name]")
-                            ctx.emitter.line(
-                                "target, state = func(_rt, state, _scope, _start_offset=offset)"
-                            )
-                        ctx.emitter.line("else:")
-                        with ctx.emitter.indented():
+                    # Call internal function and get next target
+                    if args_str:
+                        ctx.emitter.line(
+                            f"target, state = {internal_func}(_rt, state, _scope, {args_str})"
+                        )
+                    else:
+                        ctx.emitter.line(
+                            f"target, state = {internal_func}(_rt, state, _scope)"
+                        )
+
+                    # Run trampoline until subroutine returns (target is None)
+                    # T075: Handle both int targets (line numbers from GOTO+offset)
+                    # and string targets (label names from GOTO label)
+                    ctx.emitter.line("while target is not None:")
+                    with ctx.emitter.indented():
+                        # Only handle int targets if routine has offset calls
+                        if self._routine.has_offset_calls:
+                            ctx.emitter.line("if isinstance(target, int):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    "label_name, offset = _line_map[target]"
+                                )
+                                ctx.emitter.line("func = globals()['_' + label_name]")
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope, _start_offset=offset)"
+                                )
+                            ctx.emitter.line("else:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("func = _labels[target]")
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope)"
+                                )
+                        else:
                             ctx.emitter.line("func = _labels[target]")
                             ctx.emitter.line("target, state = func(_rt, state, _scope)")
-                    else:
-                        ctx.emitter.line("func = _labels[target]")
-                        ctx.emitter.line("target, state = func(_rt, state, _scope)")
+                # Handle GotoExternal - run the external GOTO chain to completion
+                # The subroutine's external GOTO runs to completion, then control
+                # returns to the caller of this DO
+                ctx.emitter.line("except GotoExternal as _goto:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("run_with_goto_support(")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("resolve_goto_target(_goto), _rt, _scope")
+                    ctx.emitter.line(")")
 
                 # T075b: Sync state back to _scope before returning
                 if ctx.uses_dynamic_locals:

@@ -316,6 +316,11 @@ class MRoutine(ASGElement):
     # Populated by compute_all_signatures when subscripted local variable access detected
     array_vars: set = field(default_factory=set, repr=False)
 
+    # Variables that are read but never written in the routine (input-only from caller).
+    # These must be read from _scope in TRAMPOLINE mode since they come from external
+    # callers via GOTO. Populated by compute_all_signatures.
+    routine_input_only_vars: set = field(default_factory=set, repr=False)
+
     # Spec 007: True if any GOTO/DO has offset expression (populated by classify_gotos)
     # Triggers TRAMPOLINE strategy and _line_map generation for line-based dispatch
     has_offset_calls: bool = False

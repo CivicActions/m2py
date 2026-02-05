@@ -1330,6 +1330,13 @@ def compute_all_signatures(
     # Spec 006 (T039b): Compute array_vars - variables with subscripted access
     routine.array_vars = _compute_array_vars(routine)
 
+    # Compute routine_input_only_vars - variables read but never written in the routine.
+    # These are "external inputs" that must come from the caller's scope via GOTO.
+    # In TRAMPOLINE mode, these need to be read from _scope instead of bare Python vars.
+    routine.routine_input_only_vars = _compute_routine_input_only_vars(
+        routine, label_vars
+    )
+
     return signatures
 
 
@@ -1403,6 +1410,40 @@ def _compute_array_vars(routine: MRoutine) -> Set[str]:
             _collect_array_vars_from_stmt(stmt, array_vars)
 
     return array_vars
+
+
+def _compute_routine_input_only_vars(
+    routine: MRoutine, label_vars: Dict[str, ScopeVariables]
+) -> Set[str]:
+    """Compute variables that are read but never written anywhere in the routine.
+
+    These are "external input" variables that must come from the caller's scope,
+    typically via external GOTO. In TRAMPOLINE mode, these need to be read from
+    _scope instead of bare Python variables.
+
+    Formal parameters are excluded since they come through the call mechanism,
+    not through scope inheritance.
+
+    Args:
+        routine: The MRoutine being analyzed
+        label_vars: Variable information per label from analyze_variables
+
+    Returns:
+        Set of variable names that are read but never written (excluding formals)
+    """
+    # Collect all reads and writes across all labels
+    all_reads: Set[str] = set()
+    all_writes: Set[str] = set()
+    all_formal_params: Set[str] = set()
+
+    for label_name, scope_vars in label_vars.items():
+        all_reads.update(scope_vars.reads)
+        all_writes.update(scope_vars.writes)
+        all_formal_params.update(scope_vars.formal_params)
+
+    # Variables read but NEVER written in the entire routine
+    # Exclude formal params - they come through call mechanism, not scope
+    return all_reads - all_writes - all_formal_params
 
 
 def _collect_array_vars_from_stmt(stmt, array_vars: Set[str]) -> None:

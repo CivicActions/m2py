@@ -2586,3 +2586,138 @@ class TestArgumentlessKillNewDetection:
         analyze_variables(routine)
 
         assert routine.has_argumentless_kill is True
+
+
+@pytest.mark.analysis
+class TestRoutineInputOnlyVars:
+    """Tests for routine_input_only_vars computation.
+
+    routine_input_only_vars identifies variables that are read but never
+    written anywhere in the routine. These are "external inputs" that must
+    come from the caller's scope via external GOTO. In TRAMPOLINE mode,
+    these need to be read from _scope instead of bare Python variables.
+    """
+
+    def test_input_only_var_read_but_never_written(self):
+        """Variable read but never written anywhere is input-only.
+
+        If X is read in label TEST but never SET anywhere in the routine,
+        it must come from the caller's scope.
+        """
+        # W X - reads X
+        read_stmt = MWriteStatement(arguments=[MVariable(name="X")])
+        scope = MScope(statements=[read_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        from m2py.analysis.variables import compute_all_signatures
+
+        compute_all_signatures(routine)
+
+        assert "X" in routine.routine_input_only_vars
+
+    def test_written_var_not_input_only(self):
+        """Variable that is written is not input-only, even if also read.
+
+        If Y is SET and then READ, it's not input-only because it's written.
+        """
+        # S Y=1 W Y
+        set_stmt = MSetStatement(
+            assignments=[
+                MAssignment(target=MVariable(name="Y"), value=MLiteral(value="1"))
+            ]
+        )
+        read_stmt = MWriteStatement(arguments=[MVariable(name="Y")])
+        scope = MScope(statements=[set_stmt, read_stmt])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        from m2py.analysis.variables import compute_all_signatures
+
+        compute_all_signatures(routine)
+
+        assert "Y" not in routine.routine_input_only_vars
+
+    def test_input_only_across_multiple_labels(self):
+        """Input-only is computed across all labels in the routine.
+
+        If X is read in label A and written in label B, it's not input-only.
+        If Z is read in label A but never written in any label, it is input-only.
+        """
+        # Label A: W X,Z - reads X and Z
+        read_stmt = MWriteStatement(
+            arguments=[MVariable(name="X"), MVariable(name="Z")]
+        )
+        scope1 = MScope(statements=[read_stmt])
+        label1 = MLabel(name="A", body=scope1)
+        scope1.parent = label1
+
+        # Label B: S X=1 - writes X only
+        set_stmt = MSetStatement(
+            assignments=[
+                MAssignment(target=MVariable(name="X"), value=MLiteral(value="1"))
+            ]
+        )
+        scope2 = MScope(statements=[set_stmt])
+        label2 = MLabel(name="B", body=scope2)
+        scope2.parent = label2
+
+        routine = MRoutine(name="TEST", labels=[label1, label2])
+        analyze_variables(routine)
+
+        from m2py.analysis.variables import compute_all_signatures
+
+        compute_all_signatures(routine)
+
+        # X is written in label B, so not input-only
+        assert "X" not in routine.routine_input_only_vars
+        # Z is never written anywhere, so it is input-only
+        assert "Z" in routine.routine_input_only_vars
+
+    def test_empty_routine_has_no_input_only_vars(self):
+        """Empty routine has no input-only variables."""
+        scope = MScope(statements=[])
+        label = MLabel(name="TEST", body=scope)
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        from m2py.analysis.variables import compute_all_signatures
+
+        compute_all_signatures(routine)
+
+        assert routine.routine_input_only_vars == set()
+
+    def test_input_only_excludes_formal_params(self):
+        """Formal parameters are not considered input-only vars.
+
+        Formal params are implicitly NEWed, so they're local scope.
+        Only unbound reads (not from formals) are input-only.
+        """
+        # Label TEST(A) - A is formal param
+        # W A,B - reads both A (formal) and B (unbound)
+        read_stmt = MWriteStatement(
+            arguments=[MVariable(name="A"), MVariable(name="B")]
+        )
+        scope = MScope(statements=[read_stmt])
+        label = MLabel(name="TEST", body=scope, formal_list=["A"])
+        scope.parent = label
+
+        routine = MRoutine(name="TEST", labels=[label])
+        analyze_variables(routine)
+
+        from m2py.analysis.variables import compute_all_signatures
+
+        compute_all_signatures(routine)
+
+        # A is a formal param, so it's local scope (not input-only)
+        # B is read but never written or passed in, so it's input-only
+        assert "A" not in routine.routine_input_only_vars
+        assert "B" in routine.routine_input_only_vars

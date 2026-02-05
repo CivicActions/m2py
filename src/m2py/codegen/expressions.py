@@ -395,6 +395,12 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
         return f"m_var_value(_scope.get({python_name!r}))"
 
+    # Cross-routine input-only variables: Variables that are read but never written
+    # in this routine must come from the caller's scope via external GOTO.
+    # Read from _scope in TRAMPOLINE mode for these variables.
+    if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.input_only_vars:
+        return f"m_var_value(_scope.get({python_name!r}))"
+
     # Fallback: plain Python variable (TRAMPOLINE without state_vars)
     return python_name
 

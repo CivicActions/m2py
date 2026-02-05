@@ -809,3 +809,135 @@ EMPTY Q"""
         result = execute_mumps(source)
         assert result.output == ""
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestExternalGotoPostcondition:
+    """Tests for external GOTO with postconditions (G LABEL^ROUTINE:cond).
+
+    External GOTOs with postconditions must evaluate the condition BEFORE
+    the GOTO takes effect, and only perform the GOTO if the condition is true.
+    """
+
+    def test_external_goto_postcond_generates_if_guard(self):
+        """G LABEL^ROUTINE:cond generates IF guard around external GOTO.
+
+        The generated code should wrap the external GOTO in an IF statement
+        that evaluates the postcondition first.
+        """
+        source = """TEST S A=0 G SUB^OTHER:A=1 W "stayed" Q"""
+        code = generate_python(source)
+
+        # Should have an IF guard for the postcondition
+        assert "if m_truth(" in code
+        # Should have GotoExternal or import for external GOTO handling
+        assert "GotoExternal" in code or "raise" in code
+
+    def test_external_goto_multiple_postconds(self):
+        """Multiple external GOTOs with postconditions generate separate guards.
+
+        MUMPS: G A^X:cond1 G B^X:cond2 G C^X
+        Each should have its own IF guard (or none for unconditional).
+        """
+        source = """TEST S A=1 G SUB^X:A=0 G SUB^X:A=1 G SUB^X Q"""
+        code = generate_python(source)
+
+        # Count occurrences of postcondition guards
+        # Should have at least 2 conditional guards for the :A=0 and :A=1
+        import re
+
+        matches = re.findall(r"if m_truth\(", code)
+        assert len(matches) >= 2
+
+
+@pytest.mark.codegen
+class TestExternalGotoScopeSync:
+    """Tests for scope synchronization before external GOTO.
+
+    Before raising GotoExternal, local variables must be synced from
+    RoutineState to _scope so the target routine can see them.
+    """
+
+    def test_external_goto_generates_scope_sync_dynamic(self):
+        """External GOTO with dynamic locals syncs state._locals to _scope.
+
+        For routines using dynamic _locals (argumentless KILL/NEW), the
+        generated code should copy state._locals to _scope.
+        """
+        # Routine with argumentless KILL triggers dynamic locals
+        source = """TEST
+ K
+ S X=1
+ G SUB^OTHER
+ Q"""
+        code = generate_python(source)
+
+        # Should sync state to scope before GotoExternal
+        # Either via state._locals.items() or individual field copies
+        assert "_scope" in code
+        assert "GotoExternal" in code or "raise" in code
+
+    def test_external_goto_generates_scope_sync_static(self):
+        """External GOTO with static state syncs state vars to _scope.
+
+        For routines without dynamic locals, individual state variables
+        are copied to _scope before the external GOTO.
+        """
+        # Simple routine without argumentless KILL/NEW
+        source = """TEST
+ S X=1
+ G NEXT
+ Q
+NEXT
+ G SUB^OTHER
+ Q"""
+        code = generate_python(source)
+
+        # Should have scope sync for external GOTO
+        assert "_scope" in code
+
+
+@pytest.mark.codegen
+class TestInputOnlyVarsCodegen:
+    """Tests for input_only_vars handling in TRAMPOLINE code generation.
+
+    Variables that are read but never written in the routine must be read
+    from _scope (not bare Python vars) since they come from external callers.
+    """
+
+    def test_input_only_var_reads_from_scope(self):
+        """Input-only variable generates _scope.get() call in TRAMPOLINE.
+
+        When X is read but never SET in the routine, the generated code
+        should read it from _scope instead of a bare Python variable.
+        """
+        # X is read but never SET - must come from caller
+        source = """TEST
+ G NEXT
+ Q
+NEXT
+ W X
+ Q"""
+        code = generate_python(source)
+
+        # Should use _scope.get for input-only variable X
+        # The pattern is m_var_value(_scope.get("X"))
+        assert '_scope.get("X")' in code or "_scope.get('X')" in code
+
+    def test_written_var_uses_state_not_scope(self):
+        """Variable that is written uses state.VAR, not _scope.get().
+
+        When Y is SET in the routine, it's stored in state and should
+        be accessed as state.Y, not _scope.get("Y").
+        """
+        source = """TEST
+ S Y=1
+ G NEXT
+ Q
+NEXT
+ W Y
+ Q"""
+        code = generate_python(source)
+
+        # Y should be accessed via state, not _scope.get
+        assert "state.Y" in code or "state._locals" in code

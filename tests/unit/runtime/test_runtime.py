@@ -1126,3 +1126,174 @@ class TestGetOrderMethod:
         # The VarRef resolution happens before get_order is called
         result = rt.get_order("A(10,1)", _scope, 1)
         assert result == "2"
+
+
+@pytest.mark.runtime
+class TestResolveGotoTarget:
+    """Tests for resolve_goto_target() function.
+
+    resolve_goto_target extracts the target function from a GotoExternal
+    exception, handling:
+    - G ^ROUTINE: Entry label (routine name)
+    - G LABEL^ROUTINE: Specific label
+    - G LABEL+N^ROUTINE: Label with offset (uses _line_map)
+    """
+
+    def test_resolve_goto_routine_only(self):
+        """G ^ROUTINE resolves to routine entry function."""
+        from m2py.runtime import GotoExternal, resolve_goto_target
+        import types
+
+        # Create mock module with entry function
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0)}
+
+        def entry_func(_rt, _scope=None):
+            pass
+
+        module.TESTRTN = entry_func
+
+        goto = GotoExternal(module=module, label=None, offset=None)
+        result = resolve_goto_target(goto)
+
+        assert result is entry_func
+
+    def test_resolve_goto_label(self):
+        """G LABEL^ROUTINE resolves to specific label function."""
+        from m2py.runtime import GotoExternal, resolve_goto_target
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0, "SUB": 5}
+        module._line_map = {1: ("TESTRTN", 0), 6: ("SUB", 0)}
+
+        def sub_func(_rt, _scope=None):
+            pass
+
+        module.SUB = sub_func
+
+        goto = GotoExternal(module=module, label="SUB", offset=None)
+        result = resolve_goto_target(goto)
+
+        assert result is sub_func
+
+    def test_resolve_goto_numeric_label(self):
+        """G 0012^ROUTINE resolves numeric label using translate_name."""
+        from m2py.runtime import GotoExternal, resolve_goto_target
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0, "0012": 10}
+        module._line_map = {1: ("TESTRTN", 0), 11: ("_n_0012", 0)}
+
+        def numeric_func(_rt, _scope=None):
+            pass
+
+        # Python function name is translated from "0012" to "_n_0012"
+        module._n_0012 = numeric_func
+
+        goto = GotoExternal(module=module, label="0012", offset=None)
+        result = resolve_goto_target(goto)
+
+        assert result is numeric_func
+
+    def test_resolve_goto_percent_label(self):
+        """G %FOO^ROUTINE resolves percent-prefixed label."""
+        from m2py.runtime import GotoExternal, resolve_goto_target
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0, "%FOO": 5}
+        module._line_map = {1: ("TESTRTN", 0), 6: ("_pct_FOO", 0)}
+
+        def pct_func(_rt, _scope=None):
+            pass
+
+        # Python function name is translated from "%FOO" to "_pct_FOO"
+        module._pct_FOO = pct_func
+
+        goto = GotoExternal(module=module, label="%FOO", offset=None)
+        result = resolve_goto_target(goto)
+
+        assert result is pct_func
+
+    def test_resolve_goto_label_not_found_raises(self):
+        """G NOTEXIST^ROUTINE raises LabelNotFoundError."""
+        from m2py.runtime import GotoExternal, resolve_goto_target, LabelNotFoundError
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0)}
+
+        def entry_func(_rt, _scope=None):
+            pass
+
+        module.TESTRTN = entry_func
+
+        goto = GotoExternal(module=module, label="NOTEXIST", offset=None)
+
+        with pytest.raises(LabelNotFoundError):
+            resolve_goto_target(goto)
+
+    def test_resolve_goto_with_offset_zero(self):
+        """G LABEL+0^ROUTINE resolves to label start (offset 0)."""
+        from m2py.runtime import GotoExternal, resolve_goto_target
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0, "SUB": 5}
+        module._line_map = {1: ("TESTRTN", 0), 6: ("SUB", 0), 7: ("SUB", 1)}
+
+        def sub_func(_rt, _scope=None):
+            pass
+
+        module.SUB = sub_func
+
+        goto = GotoExternal(module=module, label="SUB", offset=0)
+        result = resolve_goto_target(goto)
+
+        assert result is sub_func
+
+    def test_resolve_goto_with_positive_offset(self):
+        """G LABEL+N^ROUTINE creates offset_wrapper for N>0."""
+        from m2py.runtime import GotoExternal, resolve_goto_target
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._source_lines = ["TESTRTN", " W 1", " W 2", " Q"]
+        module._label_lines = {"TESTRTN": 0}
+        # _line_map maps 1-based line numbers to (label, offset)
+        module._line_map = {
+            1: ("TESTRTN", 0),
+            2: ("TESTRTN", 1),
+            3: ("TESTRTN", 2),
+            4: ("TESTRTN", 3),
+        }
+
+        def internal_func(_rt, state, _scope, _start_offset=0):
+            return (None, state)
+
+        module._TESTRTN = internal_func
+        module.TESTRTN = lambda _rt, _scope=None: None
+
+        # G TESTRTN+2^TESTRTN should create an offset_wrapper
+        # label_lines["TESTRTN"] = 0 (0-indexed)
+        # target_line = 0 + 2 + 1 = 3 (1-indexed)
+        # _line_map[3] = ("TESTRTN", 2)
+        goto = GotoExternal(module=module, label="TESTRTN", offset=2)
+        result = resolve_goto_target(goto)
+
+        # Result should be a wrapper function (not the original)
+        assert result is not module.TESTRTN
+        assert callable(result)
+        # The wrapper has a docstring indicating it's an offset wrapper
+        assert "offset" in result.__doc__.lower()

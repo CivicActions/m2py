@@ -947,6 +947,165 @@ class LabelNotFoundError(Exception):
         super().__init__(f"Label '{label}' not found in routine '{routine}'")
 
 
+def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
+    """Resolve a GotoExternal exception to the target entry function.
+
+    This extracts the target function from a GotoExternal exception, handling:
+    - G ^ROUTINE: Entry label (routine name)
+    - G LABEL^ROUTINE: Specific label
+    - G LABEL+N^ROUTINE: Label with offset
+
+    Args:
+        goto: The GotoExternal exception to resolve
+
+    Returns:
+        The target function to call
+
+    Raises:
+        LabelNotFoundError: If the target label doesn't exist
+        ValueError: If the target offset is invalid
+    """
+    from m2py.codegen.names import translate_name
+
+    module = goto.module
+    label = goto.label
+    offset = goto.offset
+
+    if offset is not None:
+        # G +N^ROUTINE or G LABEL+N^ROUTINE - use line dispatch
+        if label is not None:
+            # G LABEL+N^ROUTINE - compute line from label
+            if label not in module._label_lines:
+                raise LabelNotFoundError(
+                    label,
+                    module._routine_name,
+                    list(module._label_lines.keys()),
+                )
+            # _label_lines uses 0-indexed line numbers, add offset
+            # Then convert to 1-based for _line_map lookup
+            target_line = module._label_lines[label] + offset + 1
+        else:
+            # G +N^ROUTINE - absolute line offset (already 1-based)
+            target_line = offset
+
+        # Look up function via _line_map
+        if target_line not in module._line_map:
+            # Find next valid line
+            valid_lines = [ln for ln in module._line_map if ln >= target_line]
+            if not valid_lines:
+                raise ValueError(
+                    f"Entry point +{offset} not valid in {module._routine_name}"
+                )
+            target_line = min(valid_lines)
+
+        # Get the function from line map
+        label_name, line_offset = module._line_map[target_line]
+        # Translate label name to Python function name
+        func_name = translate_name(label_name)
+        target_func = getattr(module, func_name)
+
+        # If there's a line_offset, create a wrapper that passes _start_offset
+        if line_offset > 0:
+            # Get the internal function (prefixed with _)
+            internal_func_name = "_" + func_name
+            if hasattr(module, internal_func_name):
+                internal_func = getattr(module, internal_func_name)
+
+                # Return a wrapper that simulates the entry point behavior with offset
+                def offset_wrapper(
+                    _rt,
+                    _scope=None,
+                    _internal=internal_func,
+                    _offset=line_offset,
+                    _module=module,
+                ):
+                    """Wrapper for external GOTO with offset."""
+                    from m2py.runtime import MArray
+
+                    _scope = _scope if _scope is not None else {}
+                    _rt._current_routine = _module._routine_name
+                    _rt._current_source_lines = _module._source_lines
+                    _rt._current_label_lines = _module._label_lines
+                    # Create state from scope
+                    state_class = getattr(_module, "RoutineState", None)
+                    if state_class:
+                        state = state_class()
+                        # Check if this routine uses dynamic locals (_locals dict)
+                        uses_dynamic = hasattr(state, "_locals")
+                        if uses_dynamic:
+                            for k, v in _scope.items():
+                                if isinstance(v, MArray):
+                                    state._locals[k] = v
+                                else:
+                                    _m = MArray()
+                                    _m.value = v
+                                    state._locals[k] = _m
+                        else:
+                            # Static fields - copy from scope
+                            for k, v in _scope.items():
+                                if hasattr(state, k):
+                                    val = v.value if isinstance(v, MArray) else v
+                                    setattr(state, k, val)
+                        # Call internal function with offset
+                        target, state = _internal(
+                            _rt, state, _scope, _start_offset=_offset
+                        )
+                        # Run trampoline
+                        while target is not None:
+                            try:
+                                if hasattr(_module, "_line_map") and isinstance(
+                                    target, int
+                                ):
+                                    lbl, off = _module._line_map[target]
+                                    func = getattr(_module, "_" + lbl)
+                                    target, state = func(
+                                        _rt, state, _scope, _start_offset=off
+                                    )
+                                else:
+                                    func = _module._labels[target]
+                                    target, state = func(_rt, state, _scope)
+                            except GotoExternal as _goto:
+                                # Handle nested external GOTO
+                                run_with_goto_support(
+                                    resolve_goto_target(_goto), _rt, _scope
+                                )
+                                target = None
+                        # Sync state back to scope
+                        if uses_dynamic:
+                            _scope.update({k: v for k, v in state._locals.items()})
+                        else:
+                            # Static fields - sync back from state
+                            for field in state.__dataclass_fields__:
+                                val = getattr(state, field)
+                                if val is not None:
+                                    _scope[field] = val
+                        return state
+                    else:
+                        return target_func(_rt, _scope=_scope)
+
+                return offset_wrapper
+
+        return target_func
+    elif label is not None:
+        # G LABEL^ROUTINE - call specific label
+        # Translate label name to Python function name (handles digits, %, etc.)
+        func_name = translate_name(label)
+        if not hasattr(module, func_name):
+            raise LabelNotFoundError(
+                label,
+                module._routine_name,
+                list(getattr(module, "_label_lines", {}).keys()),
+            )
+        return getattr(module, func_name)
+    else:
+        # G ^ROUTINE - call entry label (same name as routine)
+        entry_name = translate_name(module._routine_name)
+        if not hasattr(module, entry_name):
+            # Fall back to lowercase
+            entry_name = translate_name(module._routine_name.lower())
+        return getattr(module, entry_name)
+
+
 def run_with_goto_support(
     entry_func: Callable[..., Any],
     _rt: "MUMPSRuntime",
@@ -1004,10 +1163,12 @@ def run_with_goto_support(
                             module._routine_name,
                             list(module._label_lines.keys()),
                         ) from goto
-                    target_line = module._label_lines[label] + offset
+                    # _label_lines uses 0-indexed line numbers, add offset
+                    # Then convert to 1-based for _line_map lookup
+                    target_line = module._label_lines[label] + offset + 1
                 else:
-                    # G +N^ROUTINE - absolute line offset (1-based to 0-indexed)
-                    target_line = offset - 1
+                    # G +N^ROUTINE - absolute line offset (already 1-based)
+                    target_line = offset
 
                 # Look up function via _line_map
                 if target_line not in module._line_map:
@@ -1021,15 +1182,104 @@ def run_with_goto_support(
 
                 # Get the function from line map
                 label_name, line_offset = module._line_map[target_line]
-                # For offset dispatch, we need to call internal trampoline function
-                # with the proper offset - but the entry function doesn't support this
-                # For simplicity, call the label's entry function (offset=0 behavior)
-                # Full offset support requires passing offset through, which is complex
-                # For now, just call the label function directly
-                current_func = getattr(module, label_name)
+                # Translate label name to Python function name
+                from m2py.codegen.names import translate_name
+
+                func_name = translate_name(label_name)
+                target_func = getattr(module, func_name)
+
+                # If there's a line_offset, create a wrapper that passes _start_offset
+                if line_offset > 0:
+                    # Get the internal function (prefixed with _)
+                    internal_func_name = "_" + func_name
+                    if hasattr(module, internal_func_name):
+                        internal_func = getattr(module, internal_func_name)
+
+                        # Create a wrapper that simulates entry point with offset
+                        def offset_wrapper(
+                            _rt,
+                            _scope=None,
+                            _internal=internal_func,
+                            _offset=line_offset,
+                            _module=module,
+                        ):
+                            """Wrapper for external GOTO with offset."""
+                            from m2py.runtime import MArray
+
+                            _scope = _scope if _scope is not None else {}
+                            _rt._current_routine = _module._routine_name
+                            _rt._current_source_lines = _module._source_lines
+                            _rt._current_label_lines = _module._label_lines
+                            # Create state from scope
+                            state_class = getattr(_module, "RoutineState", None)
+                            if state_class:
+                                state = state_class()
+                                # Check if state uses dynamic locals or static fields
+                                uses_dynamic = hasattr(state, "_locals")
+                                for k, v in _scope.items():
+                                    if isinstance(v, MArray):
+                                        if uses_dynamic:
+                                            state._locals[k] = v
+                                        else:
+                                            setattr(state, k, v)
+                                    else:
+                                        _m = MArray()
+                                        _m.value = v
+                                        if uses_dynamic:
+                                            state._locals[k] = _m
+                                        else:
+                                            setattr(state, k, _m)
+                                # Call internal function with offset
+                                target, state = _internal(
+                                    _rt, state, _scope, _start_offset=_offset
+                                )
+                                # Run trampoline
+                                while target is not None:
+                                    try:
+                                        if hasattr(_module, "_line_map") and isinstance(
+                                            target, int
+                                        ):
+                                            lbl, off = _module._line_map[target]
+                                            func = getattr(_module, "_" + lbl)
+                                            target, state = func(
+                                                _rt, state, _scope, _start_offset=off
+                                            )
+                                        else:
+                                            func = _module._labels[target]
+                                            target, state = func(_rt, state, _scope)
+                                    except GotoExternal as _goto:
+                                        # Handle nested external GOTO
+                                        run_with_goto_support(
+                                            resolve_goto_target(_goto), _rt, _scope
+                                        )
+                                        target = None
+                                # Sync state back to scope based on state type
+                                if uses_dynamic:
+                                    _scope.update(
+                                        {k: v for k, v in state._locals.items()}
+                                    )
+                                else:
+                                    # For static state, copy fields that are MArrays
+                                    for attr in dir(state):
+                                        if not attr.startswith("_"):
+                                            val = getattr(state, attr)
+                                            if isinstance(val, MArray):
+                                                _scope[attr] = val
+                                return state
+                            else:
+                                return target_func(_rt, _scope=_scope)
+
+                        current_func = offset_wrapper
+                    else:
+                        current_func = target_func
+                else:
+                    current_func = target_func
             elif label is not None:
                 # G LABEL^ROUTINE - call specific label
-                label_func_name = label  # Already canonical
+                # Translate label name to Python function name (handles digits, %, etc.)
+                from m2py.codegen.names import translate_name
+
+                label_func_name = translate_name(label)
                 if not hasattr(module, label_func_name):
                     raise LabelNotFoundError(
                         label,
@@ -1039,10 +1289,12 @@ def run_with_goto_support(
                 current_func = getattr(module, label_func_name)
             else:
                 # G ^ROUTINE - call entry label (same name as routine)
-                entry_name = module._routine_name
+                from m2py.codegen.names import translate_name
+
+                entry_name = translate_name(module._routine_name)
                 if not hasattr(module, entry_name):
                     # Fall back to lowercase
-                    entry_name = module._routine_name.lower()
+                    entry_name = translate_name(module._routine_name.lower())
                 current_func = getattr(module, entry_name)
 
 
@@ -4775,6 +5027,7 @@ __all__ = [
     "GotoExternal",
     "LabelNotFoundError",
     "run_with_goto_support",
+    "resolve_goto_target",
     # Spec 009: Global storage and helpers
     "GlobalStorageBackend",
     "InMemoryGlobalStorage",

@@ -3487,7 +3487,14 @@ def _generate_single_target_goto(
 
     # Spec 008 Phase 6 (T034-T038): Handle external routine GOTO
     if is_external:
-        _generate_external_goto(target, ctx)
+        # T085-ext: Handle postcondition on external GOTO (e.g., G E1^V1OVE:A=1)
+        if target.postcondition is not None:
+            cond_expr = generate_expr(target.postcondition, ctx)
+            ctx.emitter.line(f"if m_truth({cond_expr}):")
+            with ctx.emitter.indented():
+                _generate_external_goto(target, ctx)
+        else:
+            _generate_external_goto(target, ctx)
         return
 
     # Check for backward intra-label GOTO (creates implicit loops)
@@ -3798,6 +3805,24 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
         target: The MCall target with routine field set
         ctx: Generator context
     """
+    from m2py.codegen.enums import GotoStrategy
+
+    # Sync local variables to _scope before external GOTO so target routine sees them
+    # For TRAMPOLINE with dynamic_locals: copy state._locals to _scope
+    # For TRAMPOLINE without dynamic_locals: copy state_vars to _scope
+    if ctx.strategy == GotoStrategy.TRAMPOLINE:
+        if ctx.uses_dynamic_locals:
+            # Dynamic locals: copy entire state._locals dict to _scope
+            ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
+        elif ctx.state_vars:
+            # Static state vars: copy each state variable to _scope
+            for var_name in sorted(ctx.state_vars):
+                python_name = translate_name(var_name)
+                ctx.emitter.line(
+                    f"_scope[{var_name!r}] = MArray(value=state.{python_name}) "
+                    f"if not isinstance(state.{python_name}, MArray) else state.{python_name}"
+                )
+
     # Translate routine name to valid Python module name (%FOO → _pct_FOO)
     # Note: target.routine is guaranteed non-None by caller (checked before calling this function)
     assert target.routine is not None, (
