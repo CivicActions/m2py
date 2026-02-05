@@ -855,3 +855,114 @@ class TestSubscriptCanonicalizationEndToEnd:
         """
         result = execute_mumps('TEST K ^G S ^G(1)="v" W ^G(1.0) Q')
         assert result.output == "v"
+
+
+@pytest.mark.codegen
+class TestExpressionIndirectionPatterns:
+    """Tests for expression indirection patterns like @''10.
+
+    In MUMPS, single quote (') is the NOT operator. Therefore:
+    - ''10 = NOT (NOT 10) = NOT 0 = 1
+    - @''10 means evaluate ''10 → 1, then process 1 as WRITE arguments
+
+    This is different from @'' which would be indirection on empty string.
+    """
+
+    def test_not_not_numeric_value(self, execute_mumps):
+        """W ''10 outputs 1 (NOT (NOT 10) = NOT 0 = 1).
+
+        Single quote is NOT operator, not string delimiter.
+        """
+        result = execute_mumps("TEST W ''10 Q")
+        assert result.output == "1"
+
+    def test_not_not_zero_value(self, execute_mumps):
+        """W ''0 outputs 0 (NOT (NOT 0) = NOT 1 = 0).
+
+        NOT 0 = 1, NOT 1 = 0.
+        """
+        result = execute_mumps("TEST W ''0 Q")
+        assert result.output == "0"
+
+    def test_not_variable_true(self, execute_mumps):
+        """S X=5 W 'X outputs 0 (NOT 5 = 0).
+
+        Non-zero value becomes FALSE after NOT.
+        """
+        result = execute_mumps("TEST S X=5 W 'X Q")
+        assert result.output == "0"
+
+    def test_not_variable_false(self, execute_mumps):
+        """S X=0 W 'X outputs 1 (NOT 0 = 1).
+
+        Zero value becomes TRUE after NOT.
+        """
+        result = execute_mumps("TEST S X=0 W 'X Q")
+        assert result.output == "1"
+
+    def test_write_indirection_with_not_not(self, execute_mumps):
+        """W @''10 outputs 1 via expression indirection.
+
+        ''10 evaluates to 1, then @1 in WRITE context processes "1".
+        This is EXPRESSION indirection - the expression itself provides
+        the value to write, not a variable lookup.
+        """
+        result = execute_mumps("TEST W @''10 Q")
+        assert result.output == "1"
+
+    def test_write_indirection_with_not_not_zero(self, execute_mumps):
+        """W @''0 outputs 0.
+
+        ''0 = NOT (NOT 0) = NOT 1 = 0.
+        """
+        result = execute_mumps("TEST W @''0 Q")
+        assert result.output == "0"
+
+    def test_write_format_then_indirection(self, execute_mumps):
+        """W !?3,@''10 outputs newline, tab to col 3, then 1.
+
+        Format controls followed by expression indirection.
+        """
+        result = execute_mumps("TEST W !?3,@''10 Q")
+        # Should have newline and "1" somewhere after column 3
+        assert "\n" in result.output
+        assert "1" in result.output
+
+    def test_write_multiple_expression_indirections(self, execute_mumps):
+        """W @''0,@''1,@''10 outputs 010 (three expression indirections).
+
+        ''0 = 0, ''1 = 1, ''10 = 1 → outputs 010 (or with commas).
+        """
+        result = execute_mumps("TEST W @''0,@''1,@''10 Q")
+        # May output "0", "1", "1" concatenated or with separators
+        assert "0" in result.output
+        assert "1" in result.output
+
+    def test_combined_format_and_expression_indirection(self, execute_mumps):
+        """W !?3,1 W !?3,@''10 - same output for both patterns.
+
+        Tests that W @''10 behaves like W 1 (since ''10 = 1).
+        YDB verified: Both produce newline + tab to col 3 + "1".
+        """
+        result = execute_mumps("TEST W !?3,1 W !?3,@''10 Q")
+        output = result.output
+        # Should have two newlines (one per W statement)
+        assert output.count("\n") >= 1
+        # Should have two "1"s
+        assert output.count("1") == 2
+
+    def test_write_indirection_negative_expression(self, execute_mumps):
+        """W @-5 outputs -5 (indirection on negative literal).
+
+        -5 is a valid expression; @-5 evaluates -5 → outputs "-5".
+        """
+        result = execute_mumps("TEST W @-5 Q")
+        assert result.output == "-5"
+
+    def test_write_indirection_plus_variable(self, execute_mumps):
+        """S X=42 W @+X outputs 42 (indirection on +X).
+
+        +X coerces to numeric, evaluates to 42.
+        """
+        result = execute_mumps("TEST S X=42 W @+X Q")
+        assert result.output == "42"

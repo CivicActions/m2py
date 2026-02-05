@@ -63,6 +63,7 @@ from ..asg.expressions import (
 from ..asg.statements import (
     MDoStatement,
     MForStatement,
+    MGotoStatement,
     MIfStatement,
     MKillStatement,
     MNewStatement,
@@ -505,15 +506,15 @@ def _routine_has_name_indirection_on_locals(routine: MRoutine) -> bool:
                     if not isinstance(target, MCall):
                         continue
                     # Check if offset uses indirection on a local
+                    # D LABEL+@N where N is a local requires dynamic lookup
                     if (
                         target.offset is not None
                         and _expr_has_name_indirection_on_local(target.offset)
                     ):
                         return True
-                    # Check if label uses indirection with potential local reference
-                    if target.label_is_indirect and target.indirection:
-                        if _expr_has_name_indirection_on_local(target.indirection):
-                            return True
+                    # Note: D @L where L is a local does NOT require dynamic locals
+                    # because L's value is a LABEL name, not a VARIABLE name.
+                    # The indirection resolves to a call target, not a variable lookup.
     return False
 
 
@@ -721,9 +722,27 @@ def _extract_statement_variables(
 
     elif isinstance(stmt, MDoStatement):
         # DO label(args) - args are reads
+        # Also extract variables from indirection targets (D @VAR)
         for target in stmt.targets:
             for arg in target.arguments:
                 reads.update(_extract_expression_variables(arg))
+            # Extract variables from indirection expressions
+            if target.indirection:
+                reads.update(_extract_expression_variables(target.indirection))
+            if target.routine_indirection:
+                reads.update(_extract_expression_variables(target.routine_indirection))
+
+    elif isinstance(stmt, MGotoStatement):
+        # GOTO targets may contain indirection (G @VAR) or arguments with expressions
+        for target in stmt.targets:
+            # Extract variables from offset expressions (G LABEL+@N)
+            if target.offset:
+                reads.update(_extract_expression_variables(target.offset))
+            # Extract variables from indirection expressions
+            if target.indirection:
+                reads.update(_extract_expression_variables(target.indirection))
+            if target.routine_indirection:
+                reads.update(_extract_expression_variables(target.routine_indirection))
 
     elif isinstance(stmt, MWriteStatement):
         # WRITE reads variables in arguments

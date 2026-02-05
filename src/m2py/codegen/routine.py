@@ -930,6 +930,19 @@ class RoutineGenerator:
                     # to completion and then continue the trampoline
                     ctx.emitter.line("except GotoExternal as _goto:")
                     with ctx.emitter.indented():
+                        # Sync state back to _scope BEFORE transferring control
+                        # This ensures variables set in this routine are visible
+                        # in the target routine (MUMPS has a single symbol table)
+                        if ctx.uses_dynamic_locals:
+                            ctx.emitter.line(
+                                "_scope.update({k: v for k, v in state._locals.items()})"
+                            )
+                        else:
+                            for var_name in sorted(ctx.state_vars):
+                                py_name = translate_name(var_name)
+                                ctx.emitter.line(
+                                    f"_scope[{var_name!r}] = state.{py_name}"
+                                )
                         # Run the external GOTO chain to completion
                         ctx.emitter.line("run_with_goto_support(")
                         with ctx.emitter.indented():
@@ -1068,6 +1081,17 @@ class RoutineGenerator:
                 # returns to the caller of this DO
                 ctx.emitter.line("except GotoExternal as _goto:")
                 with ctx.emitter.indented():
+                    # Sync state back to _scope BEFORE transferring control
+                    # This ensures variables set in this routine are visible
+                    # in the target routine (MUMPS has a single symbol table)
+                    if ctx.uses_dynamic_locals:
+                        ctx.emitter.line(
+                            "_scope.update({k: v for k, v in state._locals.items()})"
+                        )
+                    else:
+                        for var_name in sorted(ctx.state_vars):
+                            py_name = translate_name(var_name)
+                            ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
                     ctx.emitter.line("run_with_goto_support(")
                     with ctx.emitter.indented():
                         ctx.emitter.line("resolve_goto_target(_goto), _rt, _scope")

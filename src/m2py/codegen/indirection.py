@@ -47,6 +47,51 @@ def _get_scope_expr(ctx: "GeneratorContext") -> str:
     return "_scope"
 
 
+def _generate_do_goto_indirection_string(ind: "MExpr", ctx: "GeneratorContext") -> str:
+    """Generate Python expression for DO/GOTO indirection target string.
+
+    For DO/GOTO indirection, we evaluate the variable at runtime to get the
+    target label/routine name. For single-level indirection, we evaluate the
+    variable directly. For nested indirection (@@), we build a string with
+    @ prefixes for the runtime to resolve.
+
+    Examples:
+        @CMD where CMD="SUB" → evaluates to str(CMD) = "SUB"
+        @@CMD where CMD="L", L="SUB" → builds "@" + str(CMD) = "@L"
+        @CMD(1) where CMD(1)="SUB" → evaluates CMD(1) = "SUB"
+
+    Args:
+        ind: MIndirection ASG node (or MExpr that is an MIndirection)
+        ctx: Generator context
+
+    Returns:
+        Python expression string that evaluates to the target name or "@NAME"
+    """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.codegen.expressions import generate_expr
+
+    # Handle case where ind is not MIndirection (shouldn't happen in practice,
+    # but type system allows MExpr)
+    if not isinstance(ind, MIndirectionType):
+        # Fall back to direct expression evaluation
+        return f"str({generate_expr(ind, ctx)})"
+
+    # Count indirection levels and get inner expression
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(ind)
+
+    if levels == 1:
+        # Single-level indirection: evaluate the variable directly
+        # @CMD → str(CMD)
+        inner_code = generate_expr(inner_expr, ctx)
+        return f"str({inner_code})"
+    else:
+        # Multi-level indirection: need runtime to resolve remaining levels
+        # @@CMD → "@" + str(CMD) (runtime then resolves @L where L=CMD's value)
+        at_prefix = "@" * (levels - 1)  # One @ is resolved by this eval
+        inner_code = generate_expr(inner_expr, ctx)
+        return f'"{at_prefix}" + str({inner_code})'
+
+
 def _count_indirection_levels(expr: "MIndirection") -> Tuple[int, "MExpr"]:
     """Count nested indirection levels and find the innermost expression.
 
@@ -937,10 +982,22 @@ def generate_data_indirection_name(
 
     # Get the source expression
     if isinstance(inner_expr, GlobalVariable):
-        # Global variable as indirection source: @^V reads ^V value
+        # Global variable as indirection source: @^V1A(@A) reads value from ^V1A(subscript)
+        # then resolves that as a variable name
         global_name = inner_expr.name
-        name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
-        # For globals, still use the old pattern
+        # Check if the global has subscripts that need to be evaluated
+        if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
+            # Build the full global reference string: "^NAME(sub1,sub2,...)"
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"^{global_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            # No subscripts: just "^NAME"
+            source_expr = f'"^{global_name}"'
+        # Use resolve_for_target to get the resolved name, then call get_data
+        name_expr = (
+            f"_rt.resolve_for_target({source_expr}, {scope_expr}, levels={levels})"
+        )
         return f"_rt.get_data({name_expr} + {subs_fstr}, {scope_expr})"
     elif isinstance(inner_expr, (MVariable, MLocalVariable)):
         source_name = inner_expr.name
@@ -1329,9 +1386,12 @@ def generate_indirect_do(
     routine_is_indirect = target.routine_is_indirect
 
     # Generate the target expression
+    # For DO/GOTO indirection, we generate a string like "@CMD" that
+    # resolve_do_targets can parse, NOT the evaluated value.
     if label_is_indirect and target.indirection:
         # Label comes from indirection: D @CMD or D @CMD^ROUTINE
-        label_expr = generate_expr(target.indirection, ctx)
+        # Generate "@CMD" string that resolve_do_targets will handle
+        label_expr = _generate_do_goto_indirection_string(target.indirection, ctx)
     elif target.name:
         # Static label name
         label_expr = repr(target.name)
@@ -1340,7 +1400,10 @@ def generate_indirect_do(
 
     if routine_is_indirect and target.routine_indirection:
         # Routine comes from indirection: D LABEL^@RTN or D @LBL^@RTN
-        routine_expr = generate_expr(target.routine_indirection, ctx)
+        # Generate "@RTN" string that resolve_do_targets will handle
+        routine_expr = _generate_do_goto_indirection_string(
+            target.routine_indirection, ctx
+        )
     elif target.routine:
         # Static routine name
         routine_expr = repr(target.routine)
@@ -1391,9 +1454,32 @@ def generate_indirect_do(
     # Loop over all targets (usually just one, but argument indirection can produce multiple)
     ctx.emitter.line("for _call_target in _call_targets:")
     with ctx.emitter.indented():
+        # Lazy postcondition evaluation - check just before executing each target
+        # This is required because the postcondition may depend on state set by previous targets
+        scope_ref = "state._locals" if ctx.uses_dynamic_locals else "_scope"
+        ctx.emitter.line("if _call_target.postcondition:")
+        with ctx.emitter.indented():
+            ctx.emitter.line("_pc_temp_var = 'ZPOSTCOND'")
+            ctx.emitter.line(f"_pc_scope = dict({scope_ref})")
+            ctx.emitter.line(
+                "_rt.execute_mumps(f'S {_pc_temp_var}={_call_target.postcondition}', _pc_scope)"
+            )
+            ctx.emitter.line("_pc_result = _pc_scope.get(_pc_temp_var)")
+            ctx.emitter.line("if isinstance(_pc_result, MArray):")
+            with ctx.emitter.indented():
+                ctx.emitter.line("_pc_result = _pc_result.value")
+            ctx.emitter.line("if _pc_result in (0, '', '0', None):")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    "continue  # Skip this target - postcondition is false"
+                )
+
         # Generate dispatch code
         # Check if it's an external or local call
-        ctx.emitter.line("if _call_target.routine:")
+        # Note: if _call_target.routine == _routine_name, it's still a local call
+        ctx.emitter.line(
+            "if _call_target.routine and _call_target.routine != _routine_name:"
+        )
         with ctx.emitter.indented():
             # External call: import routine and call label
             ctx.emitter.line("import importlib")
@@ -1432,7 +1518,10 @@ def generate_indirect_do(
                 ctx.emitter.line(
                     "_label_line = _module._label_lines.get(_call_target.label or _call_target.routine, 0)"
                 )
-                ctx.emitter.line("_target_line = _label_line + _call_target.offset")
+                # Note: _label_lines is 0-indexed, _line_map is 1-indexed, so add 1
+                ctx.emitter.line(
+                    "_target_line = (_label_line + 1) + _call_target.offset"
+                )
                 ctx.emitter.line(
                     "_label_name, _line_offset = _module._line_map[_target_line]"
                 )
@@ -1442,6 +1531,20 @@ def generate_indirect_do(
             ctx.emitter.line("else:")
             with ctx.emitter.indented():
                 ctx.emitter.line("_func(_rt, _scope=_scope)")
+
+            # Sync _scope back to state._locals after external call in TRAMPOLINE mode
+            # so the caller can see variables modified by the callee
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                ctx.emitter.line("for _k, _v in _scope.items():")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("if isinstance(_v, MArray):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("state._locals[_k] = _v")
+                    ctx.emitter.line("else:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_m = MArray()")
+                        ctx.emitter.line("_m.value = _v")
+                        ctx.emitter.line("state._locals[_k] = _m")
 
         ctx.emitter.line("else:")
         with ctx.emitter.indented():
@@ -1539,7 +1642,8 @@ def generate_indirect_goto(
     # Generate the target expression
     if label_is_indirect and target.indirection:
         # Label comes from indirection: G @TARGET or G @TARGET^ROUTINE
-        label_expr = generate_expr(target.indirection, ctx)
+        # Use the DO/GOTO helper to generate "@VAR" string for resolve_do_targets
+        label_expr = _generate_do_goto_indirection_string(target.indirection, ctx)
     elif target.name:
         # Static label name
         label_expr = repr(target.name)
@@ -1548,7 +1652,10 @@ def generate_indirect_goto(
 
     if routine_is_indirect and target.routine_indirection:
         # Routine comes from indirection: G LABEL^@RTN or G @LBL^@RTN
-        routine_expr = generate_expr(target.routine_indirection, ctx)
+        # Use the DO/GOTO helper to generate "@VAR" string for resolve_do_targets
+        routine_expr = _generate_do_goto_indirection_string(
+            target.routine_indirection, ctx
+        )
     elif target.routine:
         # Static routine name
         routine_expr = repr(target.routine)
@@ -1584,95 +1691,113 @@ def generate_indirect_goto(
 
         target_str_expr = "_indirect_target"
 
-    # Resolve nested indirection (e.g., @L where L="@L(1)")
-    # This handles MUMPS's recursive indirection resolution
-    # In TRAMPOLINE mode, variables are in state._locals; in SIMPLE mode, they're in _scope
+    # Resolve and parse all targets (handles comma-separated multiple targets)
+    # This also handles nested indirection like @L where L="@L(1),^@R"
+    # GOTO takes only the first matching target (unlike DO which loops over all)
     is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
     if is_trampoline and ctx.uses_dynamic_locals:
         ctx.emitter.line(
-            f"_resolved_target = _rt.resolve_nested_indirection({target_str_expr}, state._locals)"
+            f"_call_targets = _rt.resolve_do_targets({target_str_expr}, state._locals)"
         )
     else:
         ctx.emitter.line(
-            f"_resolved_target = _rt.resolve_nested_indirection({target_str_expr}, _scope)"
+            f"_call_targets = _rt.resolve_do_targets({target_str_expr}, _scope)"
         )
 
-    # Parse the resolved target string
-    ctx.emitter.line("_call_target = _rt.parse_call_target(_resolved_target)")
-
-    # Generate dispatch code
-    # Check if it's an external or local GOTO
-    ctx.emitter.line("if _call_target.routine:")
+    # GOTO takes only the first matching target (postconditions already evaluated)
+    ctx.emitter.line("if not _call_targets:")
     with ctx.emitter.indented():
-        # External GOTO: import routine and raise GotoExternal
-        ctx.emitter.line("import importlib")
-        ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
-        ctx.emitter.line("from m2py.runtime import GotoExternal")
-        ctx.emitter.line("if _call_target.offset is not None:")
-        with ctx.emitter.indented():
-            ctx.emitter.line(
-                "raise GotoExternal(_module, _call_target.label, "
-                "offset=_call_target.offset, _rt=_rt)"
-            )
-        ctx.emitter.line("else:")
-        with ctx.emitter.indented():
-            ctx.emitter.line("raise GotoExternal(_module, _call_target.label, _rt=_rt)")
-
+        ctx.emitter.line("pass  # No matching target - fall through")
     ctx.emitter.line("else:")
     with ctx.emitter.indented():
-        # Local GOTO: return to trampoline with label name
-        # In TRAMPOLINE mode, return (label_name, state) or (line_number, state)
-        is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
+        ctx.emitter.line("_call_target = _call_targets[0]")
 
-        # Validate the label exists
-        if is_trampoline:
-            ctx.emitter.line("if _call_target.label not in _label_lines:")
-        else:
-            ctx.emitter.line("if _call_target.label not in globals():")
+        # Generate dispatch code
+        # Check if it's an external or local GOTO
+        # Note: If the target routine is the same as the current routine, treat as local
+        ctx.emitter.line(
+            "if _call_target.routine and _call_target.routine != _routine_name:"
+        )
         with ctx.emitter.indented():
-            ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
-            ctx.emitter.line(
-                "raise LabelNotFoundError(_call_target.label, _routine_name, "
-                "list(_label_lines.keys()))"
-            )
-
-        # Handle offset for local GOTO
-        ctx.emitter.line("if _call_target.offset is not None:")
-        with ctx.emitter.indented():
-            # _label_lines uses 0-indexed line numbers, _line_map uses 1-indexed
-            # So we need to add 1 to convert before adding offset
-            ctx.emitter.line("_label_line = _label_lines.get(_call_target.label, 0)")
-            ctx.emitter.line("_target_line = (_label_line + 1) + _call_target.offset")
-            ctx.emitter.line("if _target_line not in _line_map:")
+            # External GOTO: import routine and raise GotoExternal
+            ctx.emitter.line("import importlib")
+            ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
+            ctx.emitter.line("from m2py.runtime import GotoExternal")
+            ctx.emitter.line("if _call_target.offset is not None:")
             with ctx.emitter.indented():
                 ctx.emitter.line(
-                    "_next = min((ln for ln in _line_map if ln > _target_line), default=None)"
+                    "raise GotoExternal(_module, _call_target.label, "
+                    "offset=_call_target.offset, _rt=_rt)"
                 )
-                ctx.emitter.line("if _next is None:")
-                with ctx.emitter.indented():
-                    ctx.emitter.line(
-                        'raise ValueError(f"Entry point {_call_target.label}+{_call_target.offset} not valid")'
-                    )
-                ctx.emitter.line("_target_line = _next")
-            if is_trampoline:
-                # Return line number to trampoline for offset-based dispatch
-                ctx.emitter.line("return (_target_line, state)")
-            else:
-                # SIMPLE mode with offset - not typically supported
-                ctx.emitter.line("_label_name, _line_offset = _line_map[_target_line]")
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
                 ctx.emitter.line(
-                    "globals()[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
+                    "raise GotoExternal(_module, _call_target.label, _rt=_rt)"
                 )
-                ctx.emitter.line("return")
+
         ctx.emitter.line("else:")
         with ctx.emitter.indented():
+            # Local GOTO: return to trampoline with label name
+            # In TRAMPOLINE mode, return (label_name, state) or (line_number, state)
+            is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
+
+            # Validate the label exists
             if is_trampoline:
-                # Return label name to trampoline
-                ctx.emitter.line("return (_call_target.label, state)")
+                ctx.emitter.line("if _call_target.label not in _label_lines:")
             else:
-                # SIMPLE mode: call function and return
-                ctx.emitter.line("globals()[_call_target.label](_rt, _scope=_scope)")
-                ctx.emitter.line("return")
+                ctx.emitter.line("if _call_target.label not in globals():")
+            with ctx.emitter.indented():
+                ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
+                ctx.emitter.line(
+                    "raise LabelNotFoundError(_call_target.label, _routine_name, "
+                    "list(_label_lines.keys()))"
+                )
+
+            # Handle offset for local GOTO
+            ctx.emitter.line("if _call_target.offset is not None:")
+            with ctx.emitter.indented():
+                # _label_lines uses 0-indexed line numbers, _line_map uses 1-indexed
+                # So we need to add 1 to convert before adding offset
+                ctx.emitter.line(
+                    "_label_line = _label_lines.get(_call_target.label, 0)"
+                )
+                ctx.emitter.line(
+                    "_target_line = (_label_line + 1) + _call_target.offset"
+                )
+                ctx.emitter.line("if _target_line not in _line_map:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        "_next = min((ln for ln in _line_map if ln > _target_line), default=None)"
+                    )
+                    ctx.emitter.line("if _next is None:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            'raise ValueError(f"Entry point {_call_target.label}+{_call_target.offset} not valid")'
+                        )
+                    ctx.emitter.line("_target_line = _next")
+                if is_trampoline:
+                    # Return line number to trampoline for offset-based dispatch
+                    ctx.emitter.line("return (_target_line, state)")
+                else:
+                    # SIMPLE mode with offset - not typically supported
+                    ctx.emitter.line(
+                        "_label_name, _line_offset = _line_map[_target_line]"
+                    )
+                    ctx.emitter.line(
+                        "globals()[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
+                    )
+                    ctx.emitter.line("return")
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
+                if is_trampoline:
+                    # Return label name to trampoline
+                    ctx.emitter.line("return (_call_target.label, state)")
+                else:
+                    # SIMPLE mode: call function and return
+                    ctx.emitter.line(
+                        "globals()[_call_target.label](_rt, _scope=_scope)"
+                    )
+                    ctx.emitter.line("return")
 
 
 def generate_set_argument_indirection(

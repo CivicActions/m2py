@@ -587,3 +587,202 @@ class TestIndirectionDirectGrammar:
         """@(expr) - indirection of parenthesized expression."""
         model = expression_metamodel.model_from_str("@(A_B)", "Expr")
         assert model is not None
+
+
+@pytest.mark.parser
+class TestUnaryPrefixedIndirection:
+    """Tests for indirection with unary-prefixed expressions like @''10.
+
+    In MUMPS, the single quote (') is the NOT operator, NOT a string delimiter.
+    Therefore @''10 should parse as @(NOT NOT 10), not @(empty string) + 10.
+    """
+
+    @pytest.fixture(scope="class")
+    def expression_metamodel(self):
+        """Load the expression grammar metamodel."""
+        from pathlib import Path
+        from textx import metamodel_from_file
+
+        grammar_dir = (
+            Path(__file__).parent.parent.parent.parent.parent
+            / "src"
+            / "m2py"
+            / "grammar"
+        )
+        return metamodel_from_file(str(grammar_dir / "expressions.tx"), skipws=False)
+
+    def test_indirection_with_not_not_literal(self, expression_metamodel):
+        """@''10 - indirection with double NOT on numeric literal.
+
+        ''10 is NOT (NOT 10) = NOT 0 = 1
+        This should parse as indirection of an expression, not empty string.
+        """
+        model = expression_metamodel.model_from_str("@''10", "Expr")
+        assert model is not None
+        # Should parse: Indirection with UnaryPrefixedExpr inside
+        ind = model.left.operand
+        assert ind.__class__.__name__ == "Indirection"
+        # The expr should be UnaryPrefixedExpr with two NOT operators
+        inner = ind.expr
+        assert inner.__class__.__name__ == "UnaryPrefixedExpr"
+        assert len(inner.operators) == 2
+        assert inner.operators[0].op == "'"
+        assert inner.operators[1].op == "'"
+        # operand should be NumericLiteral 10 (value may be string or int at parse level)
+        assert inner.operand.__class__.__name__ == "NumericLiteral"
+        assert int(inner.operand.value) == 10
+
+    def test_indirection_with_not_variable(self, expression_metamodel):
+        """@'X - indirection with NOT on variable.
+
+        'X is NOT X
+        """
+        model = expression_metamodel.model_from_str("@'X", "Expr")
+        assert model is not None
+        ind = model.left.operand
+        assert ind.__class__.__name__ == "Indirection"
+        inner = ind.expr
+        assert inner.__class__.__name__ == "UnaryPrefixedExpr"
+        assert len(inner.operators) == 1
+        assert inner.operators[0].op == "'"
+        assert inner.operand.__class__.__name__ == "LocalVariable"
+        assert inner.operand.name == "X"
+
+    def test_indirection_with_negative_literal(self, expression_metamodel):
+        """@-5 - indirection with negative literal."""
+        model = expression_metamodel.model_from_str("@-5", "Expr")
+        assert model is not None
+        ind = model.left.operand
+        assert ind.__class__.__name__ == "Indirection"
+        inner = ind.expr
+        assert inner.__class__.__name__ == "UnaryPrefixedExpr"
+        assert len(inner.operators) == 1
+        assert inner.operators[0].op == "-"
+
+    def test_indirection_with_positive_variable(self, expression_metamodel):
+        """@+X - indirection with unary plus on variable."""
+        model = expression_metamodel.model_from_str("@+X", "Expr")
+        assert model is not None
+        ind = model.left.operand
+        assert ind.__class__.__name__ == "Indirection"
+        inner = ind.expr
+        assert inner.__class__.__name__ == "UnaryPrefixedExpr"
+        assert len(inner.operators) == 1
+        assert inner.operators[0].op == "+"
+
+    def test_simple_indirection_no_unary(self, expression_metamodel):
+        """@X - simple indirection (no unary) uses PrimaryExpr, not UnaryPrefixedExpr.
+
+        Important: simple @X should NOT wrap the variable in UnaryPrefixedExpr
+        to maintain backward compatibility with existing code.
+        """
+        model = expression_metamodel.model_from_str("@X", "Expr")
+        assert model is not None
+        ind = model.left.operand
+        assert ind.__class__.__name__ == "Indirection"
+        inner = ind.expr
+        # Should be LocalVariable directly, NOT UnaryPrefixedExpr
+        assert inner.__class__.__name__ == "LocalVariable"
+        assert inner.name == "X"
+
+    def test_nested_indirection_no_unary(self, expression_metamodel):
+        """@@A - nested indirection (no unary) uses PrimaryExpr.
+
+        The inner @A should be Indirection, not UnaryPrefixedExpr.
+        """
+        model = expression_metamodel.model_from_str("@@A", "Expr")
+        assert model is not None
+        outer = model.left.operand
+        assert outer.__class__.__name__ == "Indirection"
+        inner = outer.expr
+        # Should be Indirection, not UnaryPrefixedExpr
+        assert inner.__class__.__name__ == "Indirection"
+        assert inner.expr.__class__.__name__ == "LocalVariable"
+
+
+@pytest.mark.parser
+class TestSingleQuoteIsNotOperator:
+    """Tests verifying single quote is NOT operator, not string delimiter.
+
+    MUMPS 1995 spec §7.1.2 defines strings as double-quoted only.
+    The single quote (') is the logical NOT operator per §7.2.6.
+    """
+
+    @pytest.fixture(scope="class")
+    def expression_metamodel(self):
+        """Load the expression grammar metamodel."""
+        from pathlib import Path
+        from textx import metamodel_from_file
+
+        grammar_dir = (
+            Path(__file__).parent.parent.parent.parent.parent
+            / "src"
+            / "m2py"
+            / "grammar"
+        )
+        return metamodel_from_file(str(grammar_dir / "expressions.tx"), skipws=False)
+
+    def test_double_quoted_string_parses(self, expression_metamodel):
+        """Double-quoted string parses as StringLiteral."""
+        model = expression_metamodel.model_from_str('"hello"', "Expr")
+        assert model is not None
+        operand = model.left.operand
+        assert operand.__class__.__name__ == "StringLiteral"
+        # At textX parse level, value includes quotes
+        assert "hello" in operand.value
+
+    def test_single_quote_is_not_operator(self, expression_metamodel):
+        """'X parses as NOT X, not as a string."""
+        model = expression_metamodel.model_from_str("'X", "Expr")
+        assert model is not None
+        # Should be UnaryExpr with NOT operator
+        left = model.left
+        assert len(left.operators) == 1
+        assert left.operators[0].op == "'"
+        assert left.operand.__class__.__name__ == "LocalVariable"
+        assert left.operand.name == "X"
+
+    def test_single_quote_not_one_is_zero(self, expression_metamodel):
+        """'1 parses as NOT 1, not as single-quoted string.
+
+        NOT 1 evaluates to 0 at runtime.
+        """
+        model = expression_metamodel.model_from_str("'1", "Expr")
+        assert model is not None
+        left = model.left
+        assert len(left.operators) == 1
+        assert left.operators[0].op == "'"
+        assert left.operand.__class__.__name__ == "NumericLiteral"
+        # Value may be string or int at parse level
+        assert int(left.operand.value) == 1
+
+    def test_double_not_parses_correctly(self, expression_metamodel):
+        """''X parses as NOT (NOT X)."""
+        model = expression_metamodel.model_from_str("''X", "Expr")
+        assert model is not None
+        left = model.left
+        assert len(left.operators) == 2
+        assert left.operators[0].op == "'"
+        assert left.operators[1].op == "'"
+        assert left.operand.__class__.__name__ == "LocalVariable"
+        assert left.operand.name == "X"
+
+    def test_double_not_on_zero(self, expression_metamodel):
+        """''0 parses as NOT (NOT 0) = NOT 1 = 0."""
+        model = expression_metamodel.model_from_str("''0", "Expr")
+        assert model is not None
+        left = model.left
+        assert len(left.operators) == 2
+        assert left.operand.__class__.__name__ == "NumericLiteral"
+        # Value may be string or int at parse level
+        assert int(left.operand.value) == 0
+
+    def test_double_not_on_ten(self, expression_metamodel):
+        """''10 parses as NOT (NOT 10) = NOT 0 = 1."""
+        model = expression_metamodel.model_from_str("''10", "Expr")
+        assert model is not None
+        left = model.left
+        assert len(left.operators) == 2
+        assert left.operand.__class__.__name__ == "NumericLiteral"
+        # Value may be string or int at parse level
+        assert int(left.operand.value) == 10

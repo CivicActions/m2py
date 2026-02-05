@@ -588,6 +588,10 @@ class SemanticAnalyzer:
     # OffsetUnaryExpr has the same structure as UnaryExpr
     _analyze_OffsetUnaryExpr = _analyze_UnaryExpr
 
+    # UnaryPrefixedExpr has the same structure as UnaryExpr (but requires at least one operator)
+    # Used in Indirection for patterns like @''10 (NOT NOT 10)
+    _analyze_UnaryPrefixedExpr = _analyze_UnaryExpr
+
     def _analyze_SubscriptedGlobal(self, model: Any, parent: Any) -> MGlobal:
         """Convert SubscriptedGlobal textX object to MGlobal ASG node.
 
@@ -1278,11 +1282,12 @@ class SemanticAnalyzer:
         """
         expr, levels = self._analyze_indirect_chain(chain, parent)
 
-        # Wrap the innermost expression in MIndirection
-        result = MIndirection(expression=expr, indirection_type=IndirectionType.NAME)
-        object.__setattr__(result, "parent", parent)
+        # expr is already fully wrapped by _analyze_indirect_chain
+        # Just set the parent and return
+        if expr is not None:
+            object.__setattr__(expr, "parent", parent)
 
-        return result
+        return expr
 
     def _analyze_indirect_chain(self, chain: Any, parent: Any) -> tuple:
         """Analyze an IndirectChain and return (expression, indirection_levels).
@@ -1315,9 +1320,10 @@ class SemanticAnalyzer:
         else:
             expr = None
 
-        # If there were nested levels, wrap in MIndirection objects
-        # to represent the structure: @@A becomes Indirection(Indirection(var=A))
-        for _ in range(levels - 1):
+        # Wrap in MIndirection objects for each @ level
+        # @A (levels=1) becomes Indirection(var=A)
+        # @@A (levels=2) becomes Indirection(Indirection(var=A))
+        for _ in range(levels):
             inner = MIndirection(expression=expr, indirection_type=IndirectionType.NAME)
             expr = inner
 

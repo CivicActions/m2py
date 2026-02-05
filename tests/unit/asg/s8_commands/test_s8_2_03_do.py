@@ -333,7 +333,8 @@ class TestDoRoutineIndirection:
         assert target.name == "LABEL"
         assert target.routine_is_indirect is True
         assert target.routine_indirection is not None
-        assert target.routine_indirection.name == "R"
+        # routine_indirection is MIndirection containing the variable
+        assert target.routine_indirection.expression.name == "R"
 
     def test_do_indirect_label_and_routine(self):
         """DO @LABELVAR^@ROUTINEVAR - both label and routine indirect.
@@ -344,15 +345,15 @@ class TestDoRoutineIndirection:
         assert isinstance(stmt, MDoStatement)
         target = stmt.targets[0]
 
-        # Label is indirect
+        # Label is indirect - indirection wraps the variable
         assert target.label_is_indirect is True
         assert target.indirection is not None
-        assert target.indirection.name == "L"
+        assert target.indirection.expression.name == "L"
 
-        # Routine is indirect
+        # Routine is indirect - indirection wraps the variable
         assert target.routine_is_indirect is True
         assert target.routine_indirection is not None
-        assert target.routine_indirection.name == "R"
+        assert target.routine_indirection.expression.name == "R"
 
     def test_do_indirect_with_offset_and_routine(self):
         """DO @VAR+offset^@ROUTINE - indirection with offset and routine.
@@ -363,17 +364,17 @@ class TestDoRoutineIndirection:
         assert isinstance(stmt, MDoStatement)
         target = stmt.targets[0]
 
-        # Label indirection
+        # Label indirection - wraps the variable
         assert target.label_is_indirect is True
-        assert target.indirection.name == "A"
+        assert target.indirection.expression.name == "A"
 
         # Offset expression
         assert target.offset is not None
         assert target.offset.value == 5
 
-        # Routine indirection
+        # Routine indirection - wraps the variable
         assert target.routine_is_indirect is True
-        assert target.routine_indirection.name == "R"
+        assert target.routine_indirection.expression.name == "R"
 
 
 @pytest.mark.asg

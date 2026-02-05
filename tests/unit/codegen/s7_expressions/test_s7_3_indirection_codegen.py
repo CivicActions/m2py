@@ -389,7 +389,8 @@ class TestXecutePlaceholders:
         # Should NOT raise NotImplementedError anymore
         assert "raise NotImplementedError" not in source
         # Should have actual implementation logic
-        assert "parse_call_target" in source
+        # Uses resolve_do_targets for comma-separated targets
+        assert "resolve_do_targets" in source
         assert "_call_target" in source
 
     def test_generate_pattern_indirection_implemented(self, mock_ctx):

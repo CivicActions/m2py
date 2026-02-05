@@ -326,6 +326,53 @@ def _convert_subscript(value: str, original_name: str) -> Any:
     return SubscriptVarRef(value)
 
 
+def _is_mumps_expression(name: str) -> bool:
+    """Check if a name contains MUMPS expression operators that need evaluation.
+
+    Args:
+        name: Variable name or expression string
+
+    Returns:
+        True if the string contains operators and needs expression evaluation,
+        False if it's a simple variable name that can be looked up directly.
+    """
+    # Skip if empty or starts with @ (handled separately)
+    if not name or name.startswith("@"):
+        return False
+
+    # Check if it's a string literal
+    if name.startswith('"'):
+        return False
+
+    # Check for operators outside of parentheses and quotes
+    # MUMPS operators: + - * / \ # _ ' < > = [ ] ? &  !
+    paren_depth = 0
+    in_string = False
+    i = 0
+    while i < len(name):
+        c = name[i]
+        if c == '"':
+            if in_string:
+                # Check for escaped quote
+                if i + 1 < len(name) and name[i + 1] == '"':
+                    i += 2
+                    continue
+                in_string = False
+            else:
+                in_string = True
+        elif not in_string:
+            if c == "(":
+                paren_depth += 1
+            elif c == ")":
+                paren_depth -= 1
+            elif paren_depth == 0:
+                # Check for operators at top level
+                if c in "+-*/%\\_'<>=[]?&!#":
+                    return True
+        i += 1
+    return False
+
+
 def _evaluate_subscript(
     sub: Any, _scope: Dict[str, Any], runtime: Optional["MUMPSRuntime"] = None
 ) -> Any:
@@ -392,6 +439,23 @@ def _evaluate_subscript(
                 return final_raw.value
             return final_raw
         return ""
+
+    # Handle expressions like "K+0" - evaluate as MUMPS expression
+    if _is_mumps_expression(var_name):
+        if runtime is not None:
+            # Use execute_mumps to evaluate the expression
+            temp_var = "ZSUBEXPR"
+            temp_scope: Dict[str, Any] = dict(_scope)
+            mumps_code = f"S {temp_var}={var_name}"
+            try:
+                runtime.execute_mumps(mumps_code, temp_scope)
+                result_var = temp_scope.get(temp_var)
+                if isinstance(result_var, MArray):
+                    return result_var.value if result_var.value is not None else ""
+                return result_var if result_var is not None else ""
+            except Exception:
+                # If evaluation fails, fall through to lookup
+                pass
 
     # Handle subscripted variable references like "A(1)"
     # Parse the variable name to extract base name and subscripts
@@ -486,11 +550,13 @@ class CallTarget(NamedTuple):
         - "LABEL^ROUTINE" → CallTarget(label="LABEL", routine="ROUTINE", offset=None)
         - "LABEL+5" → CallTarget(label="LABEL", routine=None, offset=5)
         - "LABEL+5^ROUTINE" → CallTarget(label="LABEL", routine="ROUTINE", offset=5)
+        - "LABEL:cond" → CallTarget(label="LABEL", postcondition="cond")
     """
 
     label: Optional[str] = None
     routine: Optional[str] = None
     offset: Optional[int] = None
+    postcondition: Optional[str] = None  # Unevaluated postcondition string
 
 
 # Spec 009: Import global storage backend protocol
@@ -1042,14 +1108,57 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
                                     state._locals[k] = _m
                         else:
                             # Static fields - copy from scope
+                            # Need to check if the field expects MArray or value
                             for k, v in _scope.items():
                                 if hasattr(state, k):
-                                    val = v.value if isinstance(v, MArray) else v
-                                    setattr(state, k, val)
-                        # Call internal function with offset
-                        target, state = _internal(
-                            _rt, state, _scope, _start_offset=_offset
-                        )
+                                    # Get the current field value to check its type
+                                    current_val = getattr(state, k)
+                                    if isinstance(current_val, MArray):
+                                        # Field expects MArray - copy the MArray
+                                        if isinstance(v, MArray):
+                                            setattr(state, k, v)
+                                        else:
+                                            _m = MArray()
+                                            _m.value = v
+                                            setattr(state, k, _m)
+                                    else:
+                                        # Field expects raw value - extract from MArray
+                                        val = v.value if isinstance(v, MArray) else v
+                                        setattr(state, k, val)
+
+                        # Helper function to handle GotoExternal
+                        def handle_goto_external(_goto, state, uses_dynamic):
+                            # Sync state back to scope BEFORE transferring control
+                            # This ensures variables set in this routine are visible
+                            # in the target routine (MUMPS has a single symbol table)
+                            if uses_dynamic:
+                                _scope.update({k: v for k, v in state._locals.items()})
+                            else:
+                                for field in state.__dataclass_fields__:
+                                    val = getattr(state, field)
+                                    if val is not None:
+                                        _scope[field] = val
+                            # Handle nested external GOTO
+                            run_with_goto_support(
+                                resolve_goto_target(_goto), _rt, _scope
+                            )
+
+                        # Call internal function with offset - wrap in try to catch GotoExternal
+                        try:
+                            target, state = _internal(
+                                _rt, state, _scope, _start_offset=_offset
+                            )
+                        except GotoExternal as _goto:
+                            handle_goto_external(_goto, state, uses_dynamic)
+                            # Sync final state back to scope
+                            if uses_dynamic:
+                                _scope.update({k: v for k, v in state._locals.items()})
+                            else:
+                                for field in state.__dataclass_fields__:
+                                    val = getattr(state, field)
+                                    if val is not None:
+                                        _scope[field] = val
+                            return state
                         # Run trampoline
                         while target is not None:
                             try:
@@ -1065,10 +1174,7 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
                                     func = _module._labels[target]
                                     target, state = func(_rt, state, _scope)
                             except GotoExternal as _goto:
-                                # Handle nested external GOTO
-                                run_with_goto_support(
-                                    resolve_goto_target(_goto), _rt, _scope
-                                )
+                                handle_goto_external(_goto, state, uses_dynamic)
                                 target = None
                         # Sync state back to scope
                         if uses_dynamic:
@@ -1192,6 +1298,17 @@ def call_external_with_offset(
                     func = module._labels[target]
                     target, state = func(_rt, state, _scope)
             except GotoExternal as _goto:
+                # Sync state back to scope BEFORE transferring control
+                # This ensures variables set in this routine are visible
+                # in the target routine (MUMPS has a single symbol table)
+                if uses_dynamic:
+                    _scope.update({k: v for k, v in state._locals.items()})
+                else:
+                    for attr in dir(state):
+                        if not attr.startswith("_"):
+                            val = getattr(state, attr)
+                            if isinstance(val, MArray):
+                                _scope[attr] = val
                 # Handle nested external GOTO
                 run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)
                 target = None
@@ -1360,6 +1477,19 @@ def run_with_goto_support(
                                             func = _module._labels[target]
                                             target, state = func(_rt, state, _scope)
                                     except GotoExternal as _goto:
+                                        # Sync state back to scope BEFORE transferring control
+                                        # This ensures variables set in this routine are visible
+                                        # in the target routine (MUMPS has a single symbol table)
+                                        if uses_dynamic:
+                                            _scope.update(
+                                                {k: v for k, v in state._locals.items()}
+                                            )
+                                        else:
+                                            for attr in dir(state):
+                                                if not attr.startswith("_"):
+                                                    val = getattr(state, attr)
+                                                    if isinstance(val, MArray):
+                                                        _scope[attr] = val
                                         # Handle nested external GOTO
                                         run_with_goto_support(
                                             resolve_goto_target(_goto), _rt, _scope
@@ -3397,6 +3527,17 @@ class MUMPSRuntime:
             # Regular variable kill
             target = arg
 
+            # Evaluate subscripts in the target if it contains indirections or variable refs
+            # This handles cases like "^V1A(A1)" where A1 is a variable reference
+            # or "^V1A(@B(1))" where @B(1) needs resolution
+            if "(" in target and (target[0].isalpha() or target[0] in "%^"):
+                target = resolver._evaluate_subscripts_in_name(target)
+
+            # Handle naked global reference patterns like ^(@A,B)
+            if target.startswith("^("):
+                # This is a naked reference - expand using naked indicator
+                target = resolver._expand_naked_reference_string(target)
+
             # Handle global variables
             if target.startswith("^"):
                 # Parse subscripts from target if present
@@ -3597,15 +3738,27 @@ class MUMPSRuntime:
         Unlike evaluate_argument_indirection, this parses and executes the
         resolved value AS WRITE ARGUMENTS, not as an expression.
 
+        The resolved value is passed directly to execute_mumps which handles
+        any @-expressions, format controls, nested indirections, etc.
+
         Example: W @A where A='!?3,"AB"'
         - Resolves @A to: !?3,"AB"
-        - Parses as WRITE arguments: newline, tab to col 3, write "AB"
-        - Executes each WRITE argument
+        - Executes: W !?3,"AB" via execute_mumps
+
+        Example: W @A where A='@B+1' and B='C', C=100
+        - Resolves @A to: @B+1 (raw value, NOT recursively resolved)
+        - Executes: W @B+1 via execute_mumps → outputs 101
+
+        Example: W @''10 (expression indirection)
+        - levels=0: Expression already evaluated at compile time to "1"
+        - Just execute "1" as WRITE argument → outputs 1
 
         Args:
             source: Source variable name for indirection (e.g., "A" for @A)
+                   OR for levels=0, the already-evaluated expression result string
             _scope: Current scope dictionary
             levels: Number of indirection levels (1 for @A, 2 for @@A)
+                   0 means source is already the final value (expression indirection)
             per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
 
         Raises:
@@ -3616,19 +3769,24 @@ class MUMPSRuntime:
         from m2py.core.indirection import IndirectionResolver
         from m2py.core.exceptions import VarExpectedError
 
-        # Create unified scope and resolver
-        cs = CurrentScope.from_generated_context(_scope)
-        resolver = IndirectionResolver(self, cs)
+        # For levels=0, source is already the final value (expression indirection)
+        # Example: @''10 → ''10 evaluates to "1" at compile time, levels=0
+        if levels == 0:
+            raw_value = source
+        else:
+            # Create unified scope and resolver
+            cs = CurrentScope.from_generated_context(_scope)
+            resolver = IndirectionResolver(self, cs)
 
-        # Resolve to get the raw WRITE arguments string (don't evaluate as expression)
-        # Use strict_undef=True to raise LVUNDEFError for undefined source (T052)
-        raw_value = resolver.resolve_to_name(
-            source,
-            levels=levels,
-            per_level_subscripts=per_level_subscripts,
-            validate=False,  # Don't validate - it's WRITE args, not a var name
-            strict_undef=True,  # T052: undefined source should error
-        )
+            # Resolve to get the raw WRITE arguments string
+            # Use resolve_to_raw_value which does NOT recursively resolve @-expressions
+            # The raw value is passed to execute_mumps which handles @-expressions
+            raw_value = resolver.resolve_to_raw_value(
+                source,
+                levels=levels,
+                per_level_subscripts=per_level_subscripts,
+                strict_undef=True,  # T052: undefined source should error
+            )
 
         # T052: Empty string value should raise error in WRITE context
         if not raw_value:
@@ -4173,11 +4331,16 @@ class MUMPSRuntime:
         if "^" in base_expr:
             # Find the ^ that separates label from routine
             # Note: ^ could be inside subscripts like @A(^X)^ROUTINE - we need the OUTER ^
+            # Also: if base_expr starts with ^ (global ref), the first ^ is NOT the separator
+            # E.g., ^V1A^@(%_1) has label=^V1A (global lookup), routine=@(%_1)
             # Walk through finding unbracketed ^
             paren_depth = 0
             caret_pos = -1
             in_string = False
             i = 0
+            # If starts with ^, skip past the global name to find the separator ^
+            starts_with_global = base_expr.startswith("^")
+            found_first_caret = False
             while i < len(base_expr):
                 c = base_expr[i]
                 if c == '"':
@@ -4195,12 +4358,15 @@ class MUMPSRuntime:
                     elif c == ")":
                         paren_depth -= 1
                     elif c == "^" and paren_depth == 0:
-                        caret_pos = i
-                        break
+                        if starts_with_global and not found_first_caret:
+                            # Skip the first ^ which is part of the global reference
+                            found_first_caret = True
+                        else:
+                            caret_pos = i
+                            break
                 i += 1
 
             # Only treat as label^routine if caret_pos > 0 (there's a label before ^)
-            # caret_pos == 0 means ^GLO which is a global variable reference, not label^routine
             if caret_pos > 0:
                 # Split into label and routine parts
                 label_part = base_expr[
@@ -4220,8 +4386,21 @@ class MUMPSRuntime:
 
                 # Resolve label part if it's a variable reference (not a literal)
                 resolved_label = label_part
-                if label_part and not label_part[0].isdigit():
-                    # It's a variable name, look it up
+                if label_part.startswith("^"):
+                    # Global variable reference - look up in globals
+                    global_name = label_part[1:]
+                    global_base, global_subs = _parse_subscripted_name(global_name)
+                    evaluated_global_subs = _evaluate_subscripts(
+                        global_subs, scope, self
+                    )
+                    if evaluated_global_subs:
+                        resolved_label = str(
+                            self.globals.get(global_base, evaluated_global_subs) or ""
+                        )
+                    else:
+                        resolved_label = str(self.globals.get(global_base, ()) or "")
+                elif label_part and not label_part[0].isdigit():
+                    # It's a local variable name, look it up
                     label_base, label_subs = _parse_subscripted_name(label_part)
                     evaluated_label_subs = _evaluate_subscripts(label_subs, scope, self)
 
@@ -4626,16 +4805,81 @@ class MUMPSRuntime:
             target, postcondition = strip_postcondition(target)
 
             # If target starts with @, resolve the indirection
+            # BUT handle @VAR+OFFSET case: offset is NOT part of the variable
             if target.startswith("@"):
-                resolved = self.resolve_nested_indirection(target, scope)
+                # Check if there's an offset (+) or routine-separator (^) after the @ portion
+                # Find where the @-indirection part ends
+                # The @ part continues until we hit + or ^ROUTINE separator (outside parens)
+                # BUT: @^GLOBAL is a global reference, not label^routine - ^ is part of the name
+                at_end = len(target)
+                depth = 0
+                in_str = False
+                i = 1  # Start after the first @
+                # Track consecutive @ characters (for @@VAR, @@@VAR, etc.)
+                while i < len(target) and target[i] == "@":
+                    i += 1
+                # Now i points to first non-@ character after the @ prefix
+                # If next char is ^, it's a global reference like @^GLO - include it
+                if i < len(target) and target[i] == "^":
+                    i += 1  # Skip the ^ (part of global name)
+
+                while i < len(target):
+                    c = target[i]
+                    if c == '"':
+                        in_str = not in_str
+                    elif not in_str:
+                        if c == "(":
+                            depth += 1
+                        elif c == ")":
+                            depth -= 1
+                        elif depth == 0 and c == "+":
+                            # Found offset separator
+                            at_end = i
+                            break
+                        elif depth == 0 and c == "^":
+                            # Found routine separator (^ROUTINE)
+                            # This is NOT part of the @ expression
+                            at_end = i
+                            break
+                    i += 1
+
+                at_part = target[
+                    :at_end
+                ]  # e.g., "@CMD" from "@CMD+1" or "@^GLO" from "@^GLO^RTN"
+                rest_part = target[at_end:]  # e.g., "+1" from "@CMD+1"
+
+                resolved = self.resolve_nested_indirection(at_part, scope)
                 # The resolved result may itself contain multiple comma-separated targets
                 if contains_unparenthesized_comma(resolved):
-                    # Re-split and queue for processing
-                    # Recursively call ourselves to properly split and process
-                    sub_targets = self.resolve_do_targets(resolved, scope)
-                    result.extend(sub_targets)
+                    # Re-split and queue for processing (with the rest_part appended)
+                    if rest_part:
+                        # Append rest_part to each comma-separated target
+                        # This is tricky - we need to re-process the whole thing
+                        sub_targets = self.resolve_do_targets(resolved, scope)
+                        for st in sub_targets:
+                            # Add offset/routine back if present
+                            new_target = f"{st.label or ''}"
+                            if st.offset is not None:
+                                new_target += f"+{st.offset}"
+                            if st.routine:
+                                new_target += f"^{st.routine}"
+                            # Now append our rest_part
+                            new_target += rest_part
+                            targets_to_process.append(new_target)
+                    else:
+                        sub_targets = self.resolve_do_targets(resolved, scope)
+                        result.extend(sub_targets)
                     continue
-                target = resolved
+
+                # The resolved result might contain a postcondition (e.g., @A where A="1+3:0")
+                # Strip it here and merge with any outer postcondition
+                resolved_target, resolved_postcond = strip_postcondition(resolved)
+                if resolved_postcond:
+                    # Combine postconditions: resolved takes precedence (inner overrides outer)
+                    # Actually, the outer postcondition should already be evaluated before
+                    # we got here, so we just use the resolved one
+                    postcondition = resolved_postcond
+                target = resolved_target + rest_part  # e.g., "SUB+1"
 
             # Also handle ^@routine (routine is indirect)
             # This includes targets like "^@B" (just routine) and "LABEL^@B" (label + indirect routine)
@@ -4746,31 +4990,16 @@ class MUMPSRuntime:
                                 f"failed to evaluate offset expression '{offset_expr}': {e}",
                             )
 
-            # Evaluate postcondition if present - skip this target if false
-            if postcondition:
-                try:
-                    temp_var = "ZPOSTCOND"
-                    temp_scope: Dict[str, Any] = dict(scope)
-                    self.execute_mumps(f"S {temp_var}={postcondition}", temp_scope)
-                    pc_result = temp_scope.get(temp_var)
-                    if isinstance(pc_result, MArray):
-                        pc_value = pc_result.value
-                    else:
-                        pc_value = pc_result
-                    # MUMPS truthiness: 0 or empty string is false, anything else is true
-                    if pc_value in (0, "", "0", None):
-                        continue  # Skip this target - postcondition is false
-                except Exception:
-                    # If postcondition evaluation fails, skip the target
-                    continue
-
-            # Parse the target
-            call_target = self.parse_call_target(target)
+            # Parse the target and include postcondition for lazy evaluation
+            # The caller will evaluate the postcondition just before executing each target
+            call_target = self.parse_call_target(target, postcondition=postcondition)
             result.append(call_target)
 
         return result
 
-    def parse_call_target(self, target_str: str) -> CallTarget:
+    def parse_call_target(
+        self, target_str: str, postcondition: Optional[str] = None
+    ) -> CallTarget:
         """Parse indirect DO/GOTO target into components.
 
         Spec 012 (T010): Parses target strings for indirect DO/GOTO.
@@ -4785,22 +5014,24 @@ class MUMPSRuntime:
         Args:
             target_str: Target string from indirection resolution (will be
                 converted to string if numeric, per MUMPS semantics)
+            postcondition: Optional postcondition expression to evaluate
+                before executing this target (for lazy evaluation)
 
         Returns:
-            CallTarget(label, routine, offset)
+            CallTarget(label, routine, offset, postcondition)
 
         Raises:
             IndirectionError: If format is invalid
 
         Examples:
             >>> rt.parse_call_target("LABEL")
-            CallTarget(label="LABEL", routine=None, offset=None)
+            CallTarget(label="LABEL", routine=None, offset=None, postcondition=None)
             >>> rt.parse_call_target("LABEL^ROUTINE")
-            CallTarget(label="LABEL", routine="ROUTINE", offset=None)
+            CallTarget(label="LABEL", routine="ROUTINE", offset=None, postcondition=None)
             >>> rt.parse_call_target("LABEL+5^ROUTINE")
-            CallTarget(label="LABEL", routine="ROUTINE", offset=5)
+            CallTarget(label="LABEL", routine="ROUTINE", offset=5, postcondition=None)
             >>> rt.parse_call_target(1)  # numeric label
-            CallTarget(label="1", routine=None, offset=None)
+            CallTarget(label="1", routine=None, offset=None, postcondition=None)
         """
         # MUMPS values are polymorphic - numeric values used in string context
         # must be converted to strings (e.g., S A=1 DO @A → call label "1")
@@ -4827,7 +5058,9 @@ class MUMPSRuntime:
 
         # Handle case where only ^ROUTINE is given (no label)
         if not target_str and routine:
-            return CallTarget(label=None, routine=routine, offset=None)
+            return CallTarget(
+                label=None, routine=routine, offset=None, postcondition=postcondition
+            )
 
         # Parse offset (LABEL+N part)
         offset: Optional[int] = None
@@ -4854,7 +5087,9 @@ class MUMPSRuntime:
                 f"invalid label name '{label}'",
             )
 
-        return CallTarget(label=label, routine=routine, offset=offset)
+        return CallTarget(
+            label=label, routine=routine, offset=offset, postcondition=postcondition
+        )
 
     def execute_mumps(
         self,

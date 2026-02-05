@@ -1392,17 +1392,17 @@ class TestIndirectGotoCodegen:
     """
 
     def test_indirect_goto_generates_runtime_dispatch(self, generate_python):
-        """G @TARGET generates runtime parse_call_target dispatch (T049).
+        """G @TARGET generates runtime resolve_do_targets dispatch (T049).
 
         The generated code should:
         1. Evaluate the indirection expression
-        2. Call _rt.parse_call_target() to parse label/routine
+        2. Call _rt.resolve_do_targets() to parse label/routine
         3. Return to trampoline with resolved label
         """
         code = generate_python('TEST S TARGET="DONE" G @TARGET Q\nDONE W "Done" Q\n')
 
-        # Should call parse_call_target
-        assert "parse_call_target" in code
+        # Should call resolve_do_targets (updated from parse_call_target)
+        assert "resolve_do_targets" in code
         # Should have dispatch logic
         assert "_call_target" in code
 
@@ -1459,8 +1459,8 @@ class TestIndirectGotoWithOffset:
 
         # Should have offset handling
         assert "_label_line" in code or "offset" in code.lower()
-        # Should have parse_call_target
-        assert "parse_call_target" in code
+        # Should have resolve_do_targets (updated from parse_call_target)
+        assert "resolve_do_targets" in code
 
     def test_indirect_goto_with_offset_execution(self, execute_mumps):
         """G @TARGET+1 enters at offset +1 (T052).
@@ -1506,8 +1506,8 @@ class TestIndirectGotoPartialIndirection:
         """
         code = generate_python('TEST S LBL="DONE" G @LBL Q\nDONE W "OK" Q\n')
 
-        # Should evaluate LBL variable
-        assert "parse_call_target" in code
+        # Should evaluate LBL variable (now via resolve_do_targets)
+        assert "resolve_do_targets" in code
         # Should have label name lookup
         assert "_call_target.label" in code
 
@@ -1548,8 +1548,8 @@ class TestIndirectGotoPartialIndirection:
         assert "import importlib" in code
         # Should call import_module for dynamic routine loading
         assert "importlib.import_module" in code
-        # Should use parse_call_target to parse the computed target
-        assert "parse_call_target" in code
+        # Should use resolve_do_targets to parse the computed target
+        assert "resolve_do_targets" in code
         # Should raise GotoExternal with the dynamically imported module
         assert "GotoExternal(_module" in code or "GotoExternal(" in code
 

@@ -8,7 +8,7 @@ import pytest
 from m2py.parser.line_parser import parse_commands_from_line
 from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.asg.statements import MGotoStatement
-from m2py.asg.expressions import MGlobal
+from m2py.asg.expressions import MGlobal, MIndirection
 
 
 @pytest.mark.asg
@@ -59,7 +59,7 @@ class TestGotoCommandAnalysis:
     def test_goto_computed_target(self):
         """GOTO computed target is tracked (§8.2.6)."""
         from m2py.asg.elements import MCall
-        from m2py.asg.expressions import MVariable
+        from m2py.asg.expressions import MVariable, MIndirection
 
         # GOTO with indirection
         stmt = analyze_first_command("G @A")
@@ -70,10 +70,12 @@ class TestGotoCommandAnalysis:
         assert isinstance(target, MCall)
 
         # Target should indicate indirect reference
+        # indirection is MIndirection wrapping the variable
         assert target.label_is_indirect is True
         assert target.indirection is not None
-        assert isinstance(target.indirection, MVariable)
-        assert target.indirection.name == "A"
+        assert isinstance(target.indirection, MIndirection)
+        assert isinstance(target.indirection.expression, MVariable)
+        assert target.indirection.expression.name == "A"
 
         # GOTO with routine indirection
         stmt2 = analyze_first_command("G LABEL^@R")
@@ -141,7 +143,9 @@ class TestGotoRoutineIndirection:
         assert target.name == "LABEL"
         assert target.routine_is_indirect is True
         assert target.routine_indirection is not None
-        assert target.routine_indirection.name == "R"
+        # Single indirection wraps the variable in MIndirection
+        assert isinstance(target.routine_indirection, MIndirection)
+        assert target.routine_indirection.expression.name == "R"
 
     def test_goto_double_indirection_routine(self):
         """GOTO LABEL^@@R - double indirection on routine.

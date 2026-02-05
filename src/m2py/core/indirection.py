@@ -149,8 +149,13 @@ class IndirectionResolver:
                 value = str(value)
 
             # Handle recursive @-expression (value contains @)
+            # Keep resolving while value starts with @ and changes
             while value.startswith("@"):
-                value = self._resolve_recursive_at(value)
+                resolved = self._resolve_recursive_at(value)
+                if resolved == value:
+                    # No progress made - expression can't be resolved further
+                    break
+                value = resolved
 
             # Apply per-level subscripts AFTER value lookup
             if per_level_subscripts and i < len(per_level_subscripts):
@@ -257,6 +262,38 @@ class IndirectionResolver:
         # Pattern: starts with ^(, contains subscripts, ends with )
         # Must be "^(" not "^V(" etc.
         return s.startswith("^(") and s.endswith(")")
+
+    def _contains_comma_at_depth_zero(self, s: str) -> bool:
+        """Check if string contains a comma outside of parentheses.
+
+        Used to detect argument lists like "A,B" or "^V1A(1),^V1B(2)"
+        which should NOT be treated as a single subscripted variable name.
+
+        Args:
+            s: String to check
+
+        Returns:
+            True if there's a comma at parenthesis depth zero
+
+        Examples:
+            "A,B" → True (comma at depth 0)
+            "^V1A(1),^V1B(2)" → True (comma between two globals)
+            "^V1A(1,2)" → False (comma inside parentheses)
+            "A(B,C)" → False (comma inside parentheses)
+        """
+        depth = 0
+        in_string = False
+        for c in s:
+            if c == '"':
+                in_string = not in_string
+            elif not in_string:
+                if c == "(":
+                    depth += 1
+                elif c == ")":
+                    depth -= 1
+                elif c == "," and depth == 0:
+                    return True
+        return False
 
     def _expand_naked_reference_string(self, naked_ref: str) -> str:
         """Expand a naked reference string to full global name.
@@ -378,16 +415,27 @@ class IndirectionResolver:
                 value = str(value)
 
             # Handle recursive @-expression (value contains @)
+            # Keep resolving while value starts with @ and changes
             while value.startswith("@"):
-                value = self._resolve_recursive_at(value)
+                resolved = self._resolve_recursive_at(value)
+                if resolved == value:
+                    # No progress made - this is an expression like @B+1
+                    # that can't be resolved further. Break and let
+                    # execute_mumps handle it.
+                    break
+                value = resolved
 
             # Evaluate subscripts in the resolved value string
             # For @A where A="^V1A(B)" and B=2, we need to resolve to "^V1A(2)"
             # The subscript "B" is a variable reference that needs evaluation
             # Only do this for valid variable name patterns (starts with letter, %, or ^)
             # Skip for things like exclusive KILL patterns "(A,B)"
+            # Also skip for argument LISTS (comma at depth 0) - those will be split
+            # and each element processed separately by the caller
             if "(" in value and value and (value[0].isalpha() or value[0] in "%^"):
-                value = self._evaluate_subscripts_in_name(value)
+                # Check if this is an argument list (contains comma outside parens)
+                if not self._contains_comma_at_depth_zero(value):
+                    value = self._evaluate_subscripts_in_name(value)
 
             # Apply per-level subscripts AFTER value lookup
             # This handles @VV@(subs) where VV's value becomes the base name
@@ -405,6 +453,91 @@ class IndirectionResolver:
         # Validate that result is a valid variable name (unless disabled for KILL)
         if validate and not self._is_valid_var_name(current):
             raise VarExpectedError(current)
+
+        return current
+
+    def resolve_to_raw_value(
+        self,
+        source: str,
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+        strict_undef: bool = False,
+    ) -> str:
+        """Resolve indirection to get RAW VALUE string (no recursive @-resolution).
+
+        Used for WRITE argument indirection where the resolved value should be
+        passed directly to execute_mumps, which will handle any @-expressions
+        in the value string.
+
+        Unlike resolve_to_name, this method does NOT recursively resolve values
+        that start with @. If the value is "@B+1", it returns "@B+1" rather than
+        trying to resolve B+1.
+
+        For W @A where A="@B+1": returns "@B+1" (let execute_mumps handle it)
+        For W @@A where A="B", B="!?3,1": returns "!?3,1"
+
+        Args:
+            source: Initial variable name (source of @source)
+            levels: Number of @ levels (1 for @A, 2 for @@A, etc.)
+            per_level_subscripts: Subscripts per resolution level for @X@(s1)@(s2)
+            strict_undef: If True, raise LVUNDEFError for undefined source variables
+
+        Returns:
+            Raw value string (may contain @-expressions, format controls, etc.)
+
+        Raises:
+            LVUNDEFError: If strict_undef=True and source variable is undefined
+            ValueError: If levels < 1
+        """
+        if levels < 1:
+            raise ValueError(f"Indirection levels must be >= 1, got {levels}")
+
+        current = source
+        is_final_level = levels == 1  # Track if this is the only/final level
+
+        for i in range(levels):
+            is_final_level = i == levels - 1
+
+            # Check if current is a naked reference string that needs expansion
+            if self._is_naked_reference_string(current):
+                value = self._expand_naked_reference_string(current)
+            else:
+                # Get value at current name (this gives us the next level's value)
+                if strict_undef:
+                    value = self._get_value_strict(current)
+                else:
+                    value = self._get_value(current)
+
+            # Convert to string
+            if not isinstance(value, str):
+                value = str(value)
+
+            # For intermediate levels, resolve @-expressions in the value
+            # (e.g., "@B@(1)" → "A(1,1)") so we can look up the next level
+            # For the final level, do NOT resolve - let execute_mumps handle it
+            if not is_final_level:
+                while value.startswith("@"):
+                    resolved = self._resolve_recursive_at(value)
+                    if resolved == value:
+                        # No progress - can't resolve further
+                        break
+                    value = resolved
+
+            # Evaluate subscripts in the resolved value string (for variable refs)
+            # Only for valid variable name patterns
+            if "(" in value and value and (value[0].isalpha() or value[0] in "%^"):
+                if not self._contains_comma_at_depth_zero(value):
+                    value = self._evaluate_subscripts_in_name(value)
+
+            # Apply per-level subscripts AFTER value lookup
+            if per_level_subscripts and i < len(per_level_subscripts):
+                value = self._append_subscripts(value, per_level_subscripts[i])
+
+            current = value
+
+        # If final result is a naked reference string, expand it
+        if self._is_naked_reference_string(current):
+            current = self._expand_naked_reference_string(current)
 
         return current
 
@@ -467,8 +600,13 @@ class IndirectionResolver:
                 value = str(value)
 
             # Handle recursive @-expression (value contains @)
+            # Keep resolving while value starts with @ and changes
             while value.startswith("@"):
-                value = self._resolve_recursive_at(value)
+                resolved = self._resolve_recursive_at(value)
+                if resolved == value:
+                    # No progress made - expression can't be resolved further
+                    break
+                value = resolved
 
             # Apply per-level subscripts AFTER value lookup
             if per_level_subscripts and i < len(per_level_subscripts):
@@ -1105,7 +1243,10 @@ class IndirectionResolver:
             if trailing_subs:
                 # If value itself starts with @, resolve it first
                 while value.startswith("@"):
-                    value = self._resolve_recursive_at(value)
+                    resolved = self._resolve_recursive_at(value)
+                    if resolved == value:
+                        break
+                    value = resolved
 
                 # Now append the trailing subscripts
                 remaining = trailing_subs
@@ -1119,6 +1260,18 @@ class IndirectionResolver:
                     remaining = remaining[close_pos + 1 :]
 
             return value
+
+        # Check if inner looks like a valid variable reference (possibly subscripted)
+        # A valid variable starts with a letter, %, or ^ and may have subscripts
+        # If it contains MUMPS operators (+, -, *, /, etc.) outside subscripts,
+        # it's an expression, not a variable name - return the original @-expression
+        # to let the caller (e.g., execute_mumps) handle it
+        if not self._is_potential_var_reference(inner):
+            # Not a valid variable pattern - return original @-expression unchanged
+            # This handles cases like @B+1 where B+1 is an expression
+            # The caller (resolve_to_name's while loop) will exit and the @-expression
+            # will be passed to execute_mumps for evaluation
+            return "@" + inner  # Reconstruct the original @-expression
 
         # Simple variable reference - get and return VALUE
         return str(self._get_value(inner))
@@ -1415,6 +1568,57 @@ class IndirectionResolver:
             True if valid variable name
         """
         return _core_is_valid_varname(name, allow_subscripts=True)
+
+    def _is_potential_var_reference(self, s: str) -> bool:
+        """Check if string could be a variable reference (for @-resolution).
+
+        This is used in _resolve_recursive_at to determine whether a string
+        like "B+1" should be treated as a variable name lookup or left as-is
+        for expression evaluation.
+
+        A potential variable reference:
+        - Starts with letter, %, or ^ (for globals)
+        - May include subscripts in parentheses
+        - Does NOT have MUMPS operators (+, -, *, /, _, etc.) OUTSIDE of subscripts
+        - Does NOT have unbalanced parentheses
+
+        Args:
+            s: String to check
+
+        Returns:
+            True if this looks like a variable reference (name or name(subs))
+            False if it contains operators outside subscripts
+        """
+        if not s:
+            return False
+
+        # Must start with valid variable start character
+        if not (s[0].isalpha() or s[0] == "%" or s[0] == "^"):
+            return False
+
+        # Check for MUMPS operators OUTSIDE of parentheses
+        # Operators: + - * / _ ' # [ ] \ ! ? < > = &
+        # These operators appearing outside subscripts indicate an expression
+        mumps_operators = set("+-*/\\_'#[]!?<>=&")
+        paren_depth = 0
+
+        for char in s:
+            if char == "(":
+                paren_depth += 1
+            elif char == ")":
+                paren_depth -= 1
+                if paren_depth < 0:
+                    # Unbalanced parentheses
+                    return False
+            elif paren_depth == 0 and char in mumps_operators:
+                # Operator found outside parentheses - this is an expression
+                return False
+
+        # Check for unbalanced parentheses
+        if paren_depth != 0:
+            return False
+
+        return True
 
     def _is_numeric_literal(self, s: str) -> bool:
         """Check if string is a numeric literal.

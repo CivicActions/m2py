@@ -76,7 +76,7 @@ class TestJobIndirection:
         Per MUMPS spec, J @VAR should start a job whose label is determined
         at runtime from the value of VAR.
         """
-        from m2py.asg.expressions import MVariable
+        from m2py.asg.expressions import MIndirection
 
         parser = MUMPSParser()
         routine = parser.parse("TEST\n J @VAR\n")
@@ -89,12 +89,13 @@ class TestJobIndirection:
         call = stmt.targets[0].call
         assert call.label_is_indirect is True
         assert call.indirection is not None
-        assert isinstance(call.indirection, MVariable)
-        assert call.indirection.name == "VAR"
+        # Single indirection wraps the variable in MIndirection
+        assert isinstance(call.indirection, MIndirection)
+        assert call.indirection.expression.name == "VAR"
 
     def test_job_with_routine_indirection(self):
         """JOB @VAR^ROUTINE handles label indirection with explicit routine."""
-        from m2py.asg.expressions import MVariable
+        from m2py.asg.expressions import MIndirection
 
         parser = MUMPSParser()
         routine = parser.parse("TEST\n J @VAR^MYROUTINE\n")
@@ -107,8 +108,9 @@ class TestJobIndirection:
         call = stmt.targets[0].call
         assert call.label_is_indirect is True
         assert call.indirection is not None
-        assert isinstance(call.indirection, MVariable)
-        assert call.indirection.name == "VAR"
+        # Single indirection wraps the variable in MIndirection
+        assert isinstance(call.indirection, MIndirection)
+        assert call.indirection.expression.name == "VAR"
         assert call.routine == "MYROUTINE"
 
     def test_job_targets_consistency_with_do(self):

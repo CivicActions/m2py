@@ -1210,3 +1210,283 @@ class TestEvaluateSubscriptsInName:
         # MUMPS undefined = empty string
         result = resolver._evaluate_subscripts_in_name("A(UNDEF)")
         assert result == 'A("")'
+
+
+# =============================================================================
+# _contains_comma_at_depth_zero Tests (Phase 130)
+# =============================================================================
+
+
+class TestContainsCommaAtDepthZero:
+    """Tests for _contains_comma_at_depth_zero helper method.
+
+    This method checks if a string contains a comma outside of parentheses.
+    Used to detect argument lists vs. single subscripted variables.
+    """
+
+    def test_simple_comma_separated(self):
+        """'A,B' has comma at depth 0."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._contains_comma_at_depth_zero("A,B") is True
+
+    def test_global_comma_separated(self):
+        """'^V1A(1),^V1B(2)' has comma at depth 0."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._contains_comma_at_depth_zero("^V1A(1),^V1B(2)") is True
+
+    def test_comma_inside_parens(self):
+        """'^V1A(1,2)' has comma INSIDE parens, so depth > 0."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._contains_comma_at_depth_zero("^V1A(1,2)") is False
+
+    def test_subscripted_variable(self):
+        """'A(B,C)' has comma inside parens."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._contains_comma_at_depth_zero("A(B,C)") is False
+
+    def test_nested_parens_comma_inside(self):
+        """'A(B(1,2))' has commas only inside nested parens."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._contains_comma_at_depth_zero("A(B(1,2))") is False
+
+    def test_simple_label(self):
+        """'LABEL' has no comma."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._contains_comma_at_depth_zero("LABEL") is False
+
+    def test_empty_string(self):
+        """Empty string has no comma."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._contains_comma_at_depth_zero("") is False
+
+    def test_comma_outside_then_inside(self):
+        """'A,B(1,2)' has comma at depth 0 before B."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._contains_comma_at_depth_zero("A,B(1,2)") is True
+
+    def test_comma_in_string(self):
+        """'"a,b"' comma is inside string, not at depth 0."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._contains_comma_at_depth_zero('"a,b"') is False
+
+
+# =============================================================================
+# _is_potential_var_reference Tests (Phase 130)
+# =============================================================================
+
+
+class TestIsPotentialVarReference:
+    """Tests for _is_potential_var_reference helper method.
+
+    This method checks if a string could be a variable reference for @-resolution.
+    Used to distinguish between variable lookups and expressions.
+    """
+
+    def test_simple_variable(self):
+        """'X' is a potential var reference."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("X") is True
+
+    def test_subscripted_variable(self):
+        """'X(1,2)' is a potential var reference."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("X(1,2)") is True
+
+    def test_global_variable(self):
+        """'^GLO' is a potential var reference."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("^GLO") is True
+
+    def test_percent_variable(self):
+        """'%VAR' is a potential var reference."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("%VAR") is True
+
+    def test_expression_with_plus(self):
+        """'B+1' is NOT a var reference (contains operator)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("B+1") is False
+
+    def test_expression_with_minus(self):
+        """'X-Y' is NOT a var reference (contains operator)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("X-Y") is False
+
+    def test_expression_with_multiply(self):
+        """'A*B' is NOT a var reference."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("A*B") is False
+
+    def test_expression_with_concatenate(self):
+        """'A_B' is NOT a var reference (underscore is concat operator)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("A_B") is False
+
+    def test_expression_with_not(self):
+        """\"'X\" is NOT a var reference (NOT operator)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("'X") is False
+
+    def test_expression_with_comparison(self):
+        """'X=Y' is NOT a var reference."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("X=Y") is False
+
+    def test_operator_inside_subscript_is_ok(self):
+        """'A(B+1)' IS a var reference - operator is inside parens."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        # Operators inside subscripts are OK - they're evaluated
+        assert resolver._is_potential_var_reference("A(B+1)") is True
+
+    def test_empty_string(self):
+        """Empty string is NOT a var reference."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("") is False
+
+    def test_numeric_start(self):
+        """'123' is NOT a var reference (starts with digit)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("123") is False
+
+    def test_unbalanced_parens(self):
+        """'A(1' is NOT a var reference (unbalanced parens)."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver._is_potential_var_reference("A(1") is False
+
+
+# =============================================================================
+# resolve_to_raw_value Tests (Phase 130)
+# =============================================================================
+
+
+class TestResolveToRawValue:
+    """Tests for resolve_to_raw_value method.
+
+    Unlike resolve_to_name, this does NOT recursively resolve @-expressions
+    in the final value. Used for WRITE argument indirection.
+    """
+
+    def test_simple_resolution(self):
+        """Simple variable resolution returns value."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"A": "hello"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_raw_value("A", levels=1)
+        assert result == "hello"
+
+    def test_at_expression_not_resolved(self):
+        """Value containing @-expression is NOT recursively resolved.
+
+        For A="@B+1", resolve_to_raw_value returns "@B+1" literally.
+        """
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"A": "@B+1", "B": "C", "C": 100})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_raw_value("A", levels=1)
+        # Should return raw value, not try to resolve @B+1
+        assert result == "@B+1"
+
+    def test_two_level_first_at_resolved(self):
+        """With levels=2, first @ resolved, second level returned raw.
+
+        For A="B", B="@C": @@A → @"B" → B="@C" (raw, don't resolve @C).
+        """
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"A": "B", "B": "@C", "C": "value"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_raw_value("A", levels=2)
+        assert result == "@C"
+
+    def test_levels_too_low_raises(self):
+        """levels < 1 raises ValueError."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"A": "test"})
+        resolver = IndirectionResolver(state, scope)
+
+        with pytest.raises(ValueError):
+            resolver.resolve_to_raw_value("A", levels=0)
+
+    def test_subscripted_variable(self):
+        """Subscripted variable resolution works."""
+        state = MockMState()
+        from m2py.runtime import MArray
+
+        arr = MArray()
+        arr[1].value = "subscript_value"
+        scope = CurrentScope(scope_dict={"A": arr})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver.resolve_to_raw_value("A(1)", levels=1)
+        assert result == "subscript_value"

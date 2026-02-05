@@ -803,3 +803,110 @@ class TestKillIndirectedExclusiveKill:
         # All killed (X was the source, also killed since not in except)
         assert "A" not in scope
         assert "B" not in scope
+
+
+# =============================================================================
+# write_indirection() Tests for Expression Indirection (Phase 130)
+# =============================================================================
+
+
+class TestWriteIndirectionExpressionPatterns:
+    """Tests for write_indirection with expression indirection patterns.
+
+    When using expression indirection like @''10 (NOT NOT 10 = 1),
+    the expression is evaluated at compile time, and the result is
+    passed to write_indirection with levels=0 since the indirection
+    is already resolved.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create a fresh MUMPSRuntime instance with output capture."""
+        runtime = MUMPSRuntime()
+        runtime._capture_output = True
+        runtime.clear()
+        return runtime
+
+    def test_write_indirection_levels_zero(self, rt):
+        """write_indirection with levels=0 executes source directly.
+
+        When levels=0, the source is already the final value to execute
+        as WRITE arguments. No variable resolution is performed.
+        """
+        scope = {}
+        rt.write_indirection("1", scope, levels=0)
+        assert rt.get_output() == "1"
+
+    def test_write_indirection_levels_zero_expression_result(self, rt):
+        """write_indirection with levels=0 handles numeric strings.
+
+        For @''10, the expression ''10 evaluates to 1 at compile time.
+        This is passed as source="1" with levels=0.
+        """
+        scope = {}
+        # ''10 = NOT (NOT 10) = NOT 0 = 1
+        rt.write_indirection("1", scope, levels=0)
+        assert rt.get_output() == "1"
+
+    def test_write_indirection_levels_zero_with_format_control(self, rt):
+        """write_indirection with levels=0 handles format controls.
+
+        For W @A where A="!?3,1", the resolved value contains format controls.
+        """
+        scope = {}
+        # Format control: newline, tab to col 3, write "1"
+        rt.write_indirection("!?3,1", scope, levels=0)
+        output = rt.get_output()
+        # Should have newline and proper spacing
+        assert "\n" in output
+        assert "1" in output
+
+    def test_write_indirection_levels_one_normal(self, rt):
+        """write_indirection with levels=1 resolves variable.
+
+        For W @A where A="B", B=42, resolve A→"B"→42, output 42.
+        """
+        scope = {"A": MArray(value="B"), "B": MArray(value=42)}
+        rt.write_indirection("A", scope, levels=1)
+        assert rt.get_output() == "42"
+
+    def test_write_indirection_levels_one_with_format(self, rt):
+        """write_indirection resolves to format controls correctly.
+
+        For W @A where A="!?3,1", execute newline, tab to 3, write 1.
+        """
+        scope = {"A": MArray(value="!?3,1")}
+        rt.write_indirection("A", scope, levels=1)
+        output = rt.get_output()
+        assert "\n" in output
+        assert "1" in output
+
+    def test_write_indirection_levels_two(self, rt):
+        """write_indirection with levels=2 resolves twice.
+
+        For W @@A where A="B", B="!?3,X", X=99: A→"B", B→"!?3,X"→newline+tab+99.
+        """
+        scope = {
+            "A": MArray(value="B"),
+            "B": MArray(value="!?3,X"),
+            "X": MArray(value=99),
+        }
+        rt.write_indirection("A", scope, levels=2)
+        output = rt.get_output()
+        assert "\n" in output
+        assert "99" in output
+
+    def test_write_indirection_with_nested_at_expression(self, rt):
+        """write_indirection handles values containing @-expressions.
+
+        For W @A where A="@B+1", B="C", C=100:
+        Resolve A→"@B+1", then execute_mumps evaluates @B+1→C+1→101.
+        """
+        scope = {
+            "A": MArray(value="@B+1"),
+            "B": MArray(value="C"),
+            "C": MArray(value=100),
+        }
+        rt.write_indirection("A", scope, levels=1)
+        output = rt.get_output()
+        assert "101" in output
