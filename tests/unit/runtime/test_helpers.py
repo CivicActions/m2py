@@ -3,6 +3,8 @@
 Tests the helper functions used by generated code for intrinsic functions.
 """
 
+import pytest
+
 from m2py.runtime import MArray
 from m2py.runtime.helpers import (
     _mumps_collation_key,
@@ -83,16 +85,80 @@ class TestMumpsCollationKey:
         assert sorted_keys == [-1, 0, 1, "A", "B"]
 
     def test_numeric_strings_as_numbers(self):
-        """Numeric strings are treated as numbers for collation."""
+        """Canonical numeric strings are treated as numbers for collation."""
         keys = ["1", "-1", "A", "0"]
         sorted_keys = sorted(keys, key=_mumps_collation_key)
         assert sorted_keys == ["-1", "0", "1", "A"]
 
     def test_decimal_numbers(self):
-        """Decimal numbers sort correctly."""
+        """Decimal numbers sort correctly.
+
+        Note: Only CANONICAL numeric strings sort as numbers.
+        Non-canonical forms like '-0.5' (canonical: '-.5') sort as strings.
+        """
+        # Use canonical forms for numeric sorting
+        keys = ["-1.5", "-1", "-.5", "0", ".5", "1"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        assert sorted_keys == ["-1.5", "-1", "-.5", "0", ".5", "1"]
+
+    def test_non_canonical_decimal_strings(self):
+        """Non-canonical numeric strings sort as strings, not numbers.
+
+        Per YDB behavior: '-0.5' is not canonical (should be '-.5'),
+        so it sorts as a string after all numbers.
+        """
         keys = ["-1.5", "-1", "-0.5", "0", "0.5", "1"]
         sorted_keys = sorted(keys, key=_mumps_collation_key)
-        assert sorted_keys == ["-1.5", "-1", "-0.5", "0", "0.5", "1"]
+        # Numbers first: -1.5, -1, 0, 1
+        # Strings after: -0.5, 0.5 (sorted by ASCII)
+        assert sorted_keys == ["-1.5", "-1", "0", "1", "-0.5", "0.5"]
+
+    def test_trailing_dot_strings_as_strings(self):
+        """Strings with trailing decimal point sort as strings.
+
+        YDB verified: '-4.' is NOT canonical (canonical is '-4'),
+        so it sorts as a string.
+        """
+        keys = ["-4", "-4.", "0", "1"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        # Numbers first: -4, 0, 1
+        # Strings after: -4.
+        assert sorted_keys == ["-4", "0", "1", "-4."]
+
+    def test_trailing_zeros_strings_as_strings(self):
+        """Strings with trailing zeros sort as strings.
+
+        YDB verified: '-4.0' is NOT canonical (canonical is '-4'),
+        so it sorts as a string.
+        """
+        keys = ["-4", "-4.0", "0", "1"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        # Numbers first: -4, 0, 1
+        # Strings after: -4.0
+        assert sorted_keys == ["-4", "0", "1", "-4.0"]
+
+    def test_leading_zeros_strings_as_strings(self):
+        """Strings with leading zeros sort as strings.
+
+        YDB verified: '01' is NOT canonical (canonical is '1'),
+        so it sorts as a string.
+        """
+        keys = ["1", "01", "2", "02"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        # Numbers first: 1, 2
+        # Strings after: 01, 02 (sorted by ASCII)
+        assert sorted_keys == ["1", "2", "01", "02"]
+
+    def test_mixed_canonical_and_non_canonical(self):
+        """Mixed canonical and non-canonical numeric strings.
+
+        Complex case from VV2NO test suite.
+        """
+        keys = ["-5", "-4", "-4.", "-4.0", "0", "1", "ABC"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        # Canonical numbers: -5, -4, 0, 1 (numeric order)
+        # Non-canonical strings: -4., -4.0, ABC (ASCII order)
+        assert sorted_keys == ["-5", "-4", "0", "1", "-4.", "-4.0", "ABC"]
 
 
 class TestMOrder:
@@ -675,3 +741,133 @@ class TestMFormatOutputStringsPreserved:
         """Strings with plus sign are preserved."""
         assert m_format_output("+5") == "+5"
         assert m_format_output("+0.5") == "+0.5"
+
+
+class TestMNextLocal:
+    """Tests for MUMPSRuntime.m_next_local() method.
+
+    $NEXT is like $ORDER but:
+    - Returns -1 instead of "" when no more subscripts
+    - Treats -1 as "start from beginning" (like $ORDER treats "")
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create runtime instance."""
+        from m2py.runtime import MUMPSRuntime
+
+        return MUMPSRuntime()
+
+    def test_next_from_minus_one_returns_first(self, rt):
+        """$NEXT(A(-1)) returns first subscript."""
+        arr = MArray()
+        arr[1].value = "a"
+        arr[3].value = "c"
+        arr[5].value = "e"
+        result = rt.m_next_local(arr, (-1,))
+        assert result == "1"
+
+    def test_next_returns_next_subscript(self, rt):
+        """$NEXT(A(1)) returns next subscript."""
+        arr = MArray()
+        arr[1].value = "a"
+        arr[3].value = "c"
+        arr[5].value = "e"
+        result = rt.m_next_local(arr, (1,))
+        assert result == "3"
+
+    def test_next_at_end_returns_minus_one(self, rt):
+        """$NEXT(A(lastkey)) returns -1."""
+        arr = MArray()
+        arr[1].value = "a"
+        arr[3].value = "c"
+        result = rt.m_next_local(arr, (3,))
+        assert result == -1
+
+    def test_next_none_array_returns_minus_one(self, rt):
+        """$NEXT on None array returns -1."""
+        result = rt.m_next_local(None, ("",))
+        assert result == -1
+
+    def test_next_empty_subscripts_returns_minus_one(self, rt):
+        """$NEXT with empty subscripts returns -1."""
+        arr = MArray()
+        arr[1].value = "a"
+        result = rt.m_next_local(arr, ())
+        assert result == -1
+
+    def test_next_nested_subscripts(self, rt):
+        """$NEXT works with nested subscripts."""
+        arr = MArray()
+        arr[1, 1].value = "a"
+        arr[1, 2].value = "b"
+        arr[1, 5].value = "c"
+        result = rt.m_next_local(arr, (1, -1))
+        assert result == "1"  # First subscript at level 2
+        result = rt.m_next_local(arr, (1, 2))
+        assert result == "5"  # Next after 2
+
+    def test_next_string_subscripts(self, rt):
+        """$NEXT works with string subscripts."""
+        arr = MArray()
+        arr["A"].value = "first"
+        arr["B"].value = "second"
+        arr["C"].value = "third"
+        result = rt.m_next_local(arr, ("-1",))
+        # -1 as string becomes "" for $ORDER semantics
+        assert result == "A"
+
+
+class TestMNextGlobal:
+    """Tests for MUMPSRuntime.m_next_global() method.
+
+    $NEXT for global variables behaves the same as for locals:
+    - Returns -1 instead of "" when no more subscripts
+    - Treats -1 as "start from beginning"
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create runtime instance."""
+        from m2py.runtime import MUMPSRuntime
+
+        return MUMPSRuntime()
+
+    def test_next_from_minus_one_returns_first(self, rt):
+        """$NEXT(^G(-1)) returns first subscript."""
+        rt.globals.set("G", ("1",), "a")
+        rt.globals.set("G", ("3",), "c")
+        rt.globals.set("G", ("5",), "e")
+        result = rt.m_next_global("G", (-1,))
+        assert result == "1"
+
+    def test_next_returns_next_subscript(self, rt):
+        """$NEXT(^G(1)) returns next subscript."""
+        rt.globals.set("G", ("1",), "a")
+        rt.globals.set("G", ("3",), "c")
+        rt.globals.set("G", ("5",), "e")
+        result = rt.m_next_global("G", (1,))
+        assert result == "3"
+
+    def test_next_at_end_returns_minus_one(self, rt):
+        """$NEXT(^G(lastkey)) returns -1."""
+        rt.globals.set("G", ("1",), "a")
+        rt.globals.set("G", ("3",), "c")
+        result = rt.m_next_global("G", (3,))
+        assert result == -1
+
+    def test_next_empty_subscripts_returns_minus_one(self, rt):
+        """$NEXT with empty subscripts returns -1."""
+        rt.globals.set("G", ("1",), "a")
+        result = rt.m_next_global("G", ())
+        assert result == -1
+
+    def test_next_nested_subscripts(self, rt):
+        """$NEXT works with nested global subscripts."""
+        rt.globals.set("G", ("1", "1"), "a")
+        rt.globals.set("G", ("1", "2"), "b")
+        rt.globals.set("G", ("1", "5"), "c")
+        result = rt.m_next_global("G", (1, -1))
+        assert result == "1"  # First subscript at level 2
+        result = rt.m_next_global("G", (1, 2))
+        assert result == "5"  # Next after 2

@@ -93,25 +93,33 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
     - type_order: 0 for numeric, 1 for string
     - sort_value: the value to compare within the type
 
+    CRITICAL: Only CANONICAL numeric strings collate as numbers.
+    Non-canonical numeric strings like "-4.", "-4.0", ".0", "01" collate as strings.
+
     Args:
         value: A subscript value (string, int, float, or Decimal)
 
     Returns:
         Tuple for comparison in sorted()
     """
+    from m2py.core.subscripts import SubscriptCanonicalizer
+
     # Check if value is numeric (can be int, float, Decimal, or numeric string)
     if isinstance(value, (int, float, Decimal)):
         return (0, float(value))
 
-    # Try to parse string as a number
+    # For strings, only canonical numeric strings collate as numbers
     if isinstance(value, str):
-        try:
-            # MUMPS considers numeric strings as numbers for collation
-            num = float(value)
-            return (0, num)
-        except (ValueError, TypeError):
-            # Not a numeric string, sort as string
-            return (1, value)
+        # Check if string is a CANONICAL numeric form
+        if SubscriptCanonicalizer.is_canonical_numeric_string(value):
+            # It's canonical, collate as number
+            try:
+                num = float(value)
+                return (0, num)
+            except (ValueError, TypeError):
+                pass
+        # Non-canonical or non-numeric strings collate as strings
+        return (1, value)
 
     # Fallback for any other type
     return (1, str(value))

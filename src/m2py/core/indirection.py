@@ -381,6 +381,14 @@ class IndirectionResolver:
             while value.startswith("@"):
                 value = self._resolve_recursive_at(value)
 
+            # Evaluate subscripts in the resolved value string
+            # For @A where A="^V1A(B)" and B=2, we need to resolve to "^V1A(2)"
+            # The subscript "B" is a variable reference that needs evaluation
+            # Only do this for valid variable name patterns (starts with letter, %, or ^)
+            # Skip for things like exclusive KILL patterns "(A,B)"
+            if "(" in value and value and (value[0].isalpha() or value[0] in "%^"):
+                value = self._evaluate_subscripts_in_name(value)
+
             # Apply per-level subscripts AFTER value lookup
             # This handles @VV@(subs) where VV's value becomes the base name
             if per_level_subscripts and i < len(per_level_subscripts):
@@ -854,9 +862,9 @@ class IndirectionResolver:
             if self._is_numeric_literal(sub):
                 result.append(self._parse_numeric(sub))
             elif sub.startswith("@"):
-                # Subscript indirection - resolve
-                var_name = sub[1:]
-                result.append(self._get_value(var_name))
+                # Subscript indirection - use _evaluate_subscript_value for full resolution
+                # This handles @VAR where VAR="X" and X=5 → result is 5
+                result.append(self._evaluate_subscript_value(sub))
             elif sub.startswith("$"):
                 # Function call - evaluate as expression
                 result.append(self.evaluate_expression(sub))
@@ -874,6 +882,36 @@ class IndirectionResolver:
                 result.append(sub)
 
         return result
+
+    def _evaluate_subscripts_in_name(self, name: str) -> str:
+        """Evaluate variable references in subscripts of a variable name string.
+
+        When indirection resolves to a name like "^V1A(B)" where B is a variable,
+        we need to evaluate B to get the actual target like "^V1A(2)".
+
+        Args:
+            name: Variable name string that may have variable refs in subscripts
+
+        Returns:
+            Variable name with subscripts evaluated
+
+        Examples:
+            "^V1A(B)" where B=2 → "^V1A(2)"
+            "X(Y,Z)" where Y=1, Z=2 → "X(1,2)"
+            'X("literal")' → 'X("literal")' (unchanged)
+        """
+        if "(" not in name:
+            return name
+
+        base, subscripts = self._parse_subscripted_name(name)
+        if not subscripts:
+            return name
+
+        # Evaluate each subscript
+        evaluated_subs = self._evaluate_subscripts(subscripts)
+
+        # Rebuild the name with evaluated subscripts
+        return self._append_subscripts(base, evaluated_subs)
 
     def _is_valid_subscript_literal(self, s: str) -> bool:
         """Check if string could be a subscript expression to evaluate.

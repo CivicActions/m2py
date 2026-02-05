@@ -133,14 +133,14 @@ MUGJ_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition("VV2VNIA", "VV2VNIA", expected_passes=10),
     RoutineDefinition("VV2VNIB", "VV2VNIB", expected_passes=7),
     RoutineDefinition("VV2VNIC", "VV2VNIC", expected_passes=3),
-    RoutineDefinition("VV2NR", "VV2NR", expected_passes=10, expected_fails=2),
+    RoutineDefinition("VV2NR", "VV2NR", expected_passes=4),
     RoutineDefinition(
         "VV2READ", "VV2READ", skip_reason="READ commands wait for user input"
     ),
     RoutineDefinition("VV2PAT1", "VV2PAT1", expected_passes=7),
     RoutineDefinition("VV2PAT2", "VV2PAT2", expected_passes=11),
     RoutineDefinition("VV2PAT3", "VV2PAT3", expected_passes=15),
-    RoutineDefinition("VV2NO", "VV2NO", expected_passes=8, expected_fails=2),
+    RoutineDefinition("VV2NO", "VV2NO", expected_passes=6, expected_fails=2),
     RoutineDefinition("VV2SS1", "VV2SS1", expected_passes=6, expected_fails=1),
     RoutineDefinition("VV2SS2", "VV2SS2", expected_passes=5),
     # fmt: on

@@ -1116,3 +1116,97 @@ class TestResolveToNameStrictUndef:
         # @@X: resolve X→"MISSING", then resolve MISSING→error
         with pytest.raises(LVUNDEFError):
             resolver.resolve_to_name("X", levels=2, strict_undef=True)
+
+
+class TestEvaluateSubscriptsInName:
+    """Tests for _evaluate_subscripts_in_name internal method.
+
+    Feature: 017-ydb-test-failures
+
+    When indirection resolves to a name containing variable references in
+    subscripts (like "^V1A(B)" where B is a variable), the subscripts need
+    to be evaluated to get the actual target (like "^V1A(2)" if B=2).
+    """
+
+    def test_simple_variable_subscript(self):
+        """Evaluate single variable subscript: "X(B)" where B=2 → "X(2)"."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"B": 2})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._evaluate_subscripts_in_name("X(B)")
+        assert result == "X(2)"
+
+    def test_global_variable_subscript(self):
+        """Evaluate subscript in global: "^V(B)" where B=5 → "^V(5)"."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"B": 5})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._evaluate_subscripts_in_name("^V(B)")
+        assert result == "^V(5)"
+
+    def test_multiple_variable_subscripts(self):
+        """Evaluate multiple subscripts: "A(B,C)" where B=1, C=2 → "A(1,2)"."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"B": 1, "C": 2})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._evaluate_subscripts_in_name("A(B,C)")
+        assert result == "A(1,2)"
+
+    def test_mixed_literal_and_variable(self):
+        """Evaluate mixed subscripts: 'A(1,B,"C")' where B=2 → 'A(1,2,"C")'."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"B": 2})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._evaluate_subscripts_in_name('A(1,B,"C")')
+        assert result == 'A(1,2,"C")'
+
+    def test_no_subscripts_unchanged(self):
+        """Name without subscripts is unchanged: "X" → "X"."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"X": "ignored"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._evaluate_subscripts_in_name("X")
+        assert result == "X"
+
+    def test_literal_subscripts_unchanged(self):
+        """Literal subscripts pass through: "A(1,2)" → "A(1,2)"."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._evaluate_subscripts_in_name("A(1,2)")
+        assert result == "A(1,2)"
+
+    def test_string_variable_value(self):
+        """String variable values are handled: "A(B)" where B="KEY" → 'A("KEY")'."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={"B": "KEY"})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._evaluate_subscripts_in_name("A(B)")
+        assert result == 'A("KEY")'
+
+    def test_percent_variable(self):
+        """Percent variable in subscript: "A(%Z)" where %Z=3 → "A(3)"."""
+        state = MockMState()
+        # Percent vars are stored with _pct_ prefix
+        scope = CurrentScope(scope_dict={"_pct_Z": 3})
+        resolver = IndirectionResolver(state, scope)
+
+        result = resolver._evaluate_subscripts_in_name("A(%Z)")
+        assert result == "A(3)"
+
+    def test_undefined_variable_as_subscript(self):
+        """Undefined variable in subscript is empty string."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})  # UNDEF not in scope
+        resolver = IndirectionResolver(state, scope)
+
+        # MUMPS undefined = empty string
+        result = resolver._evaluate_subscripts_in_name("A(UNDEF)")
+        assert result == 'A("")'

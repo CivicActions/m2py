@@ -2611,6 +2611,72 @@ class MUMPSRuntime:
             return ""
         return m_order(arr, subs, direction)
 
+    def m_next_local(
+        self,
+        array: MArray | None,
+        subscripts: tuple,
+    ) -> str | int:
+        """$NEXT for local variables.
+
+        $NEXT is like $ORDER but:
+        - Returns -1 instead of "" when no more subscripts
+        - Treats -1 as "start from beginning" (like $ORDER treats "")
+
+        Args:
+            array: MArray instance
+            subscripts: Tuple of subscript values
+
+        Returns:
+            Next subscript, or -1 if no more
+        """
+        from m2py.runtime.helpers import m_order
+
+        if array is None or not subscripts:
+            return -1
+
+        # Convert -1 start marker to "" for $ORDER semantics
+        subs = list(subscripts)
+        last_sub = str(subs[-1])
+        if last_sub == "-1":
+            subs[-1] = ""
+        subs_tuple = tuple(str(s) for s in subs)
+
+        result = m_order(array, subs_tuple, 1)
+        return -1 if result == "" else result
+
+    def m_next_global(
+        self,
+        global_name: str,
+        subscripts: tuple,
+    ) -> str | int:
+        """$NEXT for global variables.
+
+        $NEXT is like $ORDER but:
+        - Returns -1 instead of "" when no more subscripts
+        - Treats -1 as "start from beginning" (like $ORDER treats "")
+
+        Args:
+            global_name: Global variable name (without ^)
+            subscripts: Tuple of subscript values
+
+        Returns:
+            Next subscript, or -1 if no more
+        """
+        from m2py.runtime.helpers import m_order_global
+
+        if not subscripts:
+            return -1
+
+        # Convert -1 start marker to "" for $ORDER semantics
+        subs = list(subscripts)
+        last_sub = str(subs[-1])
+        if last_sub == "-1":
+            subs[-1] = ""
+        subs_tuple = tuple(str(s) for s in subs)
+
+        result = m_order_global(self._globals, global_name, subs_tuple, 1)
+        return -1 if result == "" else result
+
     def get_name(
         self,
         name: str,

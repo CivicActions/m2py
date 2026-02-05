@@ -2365,14 +2365,95 @@ INTRINSIC_GENERATORS["TEXT"] = _generate_text
 def _gen_next(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $NEXT function.
 
-    $NEXT is a pre-1995 deprecated function similar to $ORDER, but returns
-    -1 instead of empty string when there is no next subscript.
+    $NEXT is a pre-1995 deprecated function similar to $ORDER, but:
+    - Returns -1 instead of "" when there is no next subscript
+    - Uses -1 as special "start from beginning" marker (like $ORDER uses "")
 
-    Implementation: Generate $ORDER and wrap with a conditional to convert
-    empty string results to -1.
+    So $NEXT(A(-1)) is equivalent to $ORDER(A("")) - returns FIRST subscript.
+
+    Implementation: Generate runtime call that handles -1 ↔ "" conversion.
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.parser.textx_classes import GlobalVariable, LocalVariable
+
+    args = getattr(expr, "arguments", [])
+    if not args:
+        return "-1"
+
+    var = args[0]
+
+    # For locals and globals, generate the appropriate runtime call
+    # The runtime helper will handle -1 ↔ "" conversion
+    if isinstance(var, GlobalVariable):
+        global_name = var.name
+        subscripts = getattr(var, "subscripts", [])
+        if subscripts:
+            # Build subscript tuple, marking last subscript for -1 detection
+            sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+            subs_code = ", ".join(sub_exprs)
+            return f"_rt.m_next_global({global_name!r}, ({subs_code},))"
+        else:
+            return f"_rt.m_next_global({global_name!r}, ())"
+    elif isinstance(var, MIndirectionType):
+        # For indirection, fall back to $ORDER with -1 conversion
+        order_code = _gen_order(expr, ctx)
+        return f"(lambda _r: -1 if _r == '' else _r)({order_code})"
+    elif isinstance(var, LocalVariable):
+        # Local variable - need to access from correct location based on strategy
+        var_name = var.name
+        python_name = translate_name(var_name)
+        subscripts = getattr(var, "subscripts", [])
+
+        # Build subscript tuple
+        if subscripts:
+            sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+            subs_code = f"({', '.join(sub_exprs)},)"
+        else:
+            subs_code = "()"
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            base = f"state._locals.get({python_name!r}, MArray())"
+            return f"_rt.m_next_local({base}, {subs_code})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"_rt.m_next_local(state.{python_name}, {subs_code})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
+        return f"_rt.m_next_local(_scope.get({python_name!r}, MArray()), {subs_code})"
+    else:
+        # Fallback for MVariable or any other variable type - treat as local
+        from m2py.asg.expressions import MVariable
+
+        if isinstance(var, MVariable):
+            var_name = var.name
+            python_name = translate_name(var_name)
+            subscripts = getattr(var, "subscripts", [])
+
+            # Build subscript tuple
+            if subscripts:
+                sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+                subs_code = f"({', '.join(sub_exprs)},)"
+            else:
+                subs_code = "()"
+
+            # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                base = f"state._locals.get({python_name!r}, MArray())"
+                return f"_rt.m_next_local({base}, {subs_code})"
+
+            # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+                return f"_rt.m_next_local(state.{python_name}, {subs_code})"
+
+            # SIMPLE_FUNCTIONS or fallback - use _scope
+            return (
+                f"_rt.m_next_local(_scope.get({python_name!r}, MArray()), {subs_code})"
+            )
+
+    # Fallback to $ORDER-based implementation
     order_code = _gen_order(expr, ctx)
-    # Wrap the $ORDER call: if result is "", return -1, else return result
     return f"(lambda _r: -1 if _r == '' else _r)({order_code})"
 
 

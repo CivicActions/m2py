@@ -173,6 +173,31 @@ class TestIsCanonicalNumericString:
         assert not SubscriptCanonicalizer.is_canonical_numeric_string("1.50")
         assert not SubscriptCanonicalizer.is_canonical_numeric_string("2.500")
 
+    def test_non_canonical_trailing_dot(self):
+        """Trailing decimal point makes non-canonical.
+
+        YDB verified: '-4.' is NOT canonical (canonical is '-4').
+        This was a bug fix - trailing dots are NOT valid canonical numbers.
+        """
+        assert not SubscriptCanonicalizer.is_canonical_numeric_string("-4.")
+        assert not SubscriptCanonicalizer.is_canonical_numeric_string("4.")
+        assert not SubscriptCanonicalizer.is_canonical_numeric_string("0.")
+        assert not SubscriptCanonicalizer.is_canonical_numeric_string(".")
+
+    def test_canonical_negative_decimals(self):
+        """Negative decimals in canonical form."""
+        # -.5 is canonical, -0.5 is not
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-.5")
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-1.5")
+        assert not SubscriptCanonicalizer.is_canonical_numeric_string("-0.5")
+
+    def test_canonical_positive_decimals(self):
+        """Positive decimals in canonical form."""
+        # .5 is canonical, 0.5 is not
+        assert SubscriptCanonicalizer.is_canonical_numeric_string(".5")
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("1.5")
+        assert not SubscriptCanonicalizer.is_canonical_numeric_string("0.5")
+
     def test_non_numeric(self):
         """Non-numeric strings return False."""
         assert not SubscriptCanonicalizer.is_canonical_numeric_string("1X")
