@@ -3603,6 +3603,29 @@ def _generate_single_target_goto(
     # Cross-label GOTO: pattern depends on strategy
     # Spec 006 (T055): Check strategy and generate appropriate pattern
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
+        # T091a: Inside inline XECUTE, call the label directly instead of returning
+        # The label's QUIT will return normally, then we raise _XecuteExit to exit
+        # the XECUTE block and continue the enclosing FOR loop
+        if ctx.in_inline_xecute:
+            # Call internal label function directly (prefixed with _)
+            label_func_name = "_" + translate_name(target.name)
+            if target.offset is not None:
+                offset_code = generate_expr(target.offset, ctx)
+                # Call with offset
+                ctx.emitter.line(
+                    "_scope.update({k: v for k, v in state._locals.items()})"
+                )
+                ctx.emitter.line(
+                    f"{label_func_name}(_rt, state, _scope, _start_offset=int(m_num({offset_code})))"
+                )
+            else:
+                ctx.emitter.line(
+                    "_scope.update({k: v for k, v in state._locals.items()})"
+                )
+                ctx.emitter.line(f"{label_func_name}(_rt, state, _scope)")
+            ctx.emitter.line("raise _XecuteExit()")
+            return
+
         # Spec 007 (T015-T017): Check for offset and emit line-based dispatch
         if target.offset is not None:
             # Offset GOTO: compute target line = label_line + offset
@@ -3884,7 +3907,7 @@ def _generate_multi_target_indirect_goto(
             # External GOTO: import routine and raise GotoExternal
             ctx.emitter.line("import importlib")
             ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
-            ctx.emitter.line("from m2py.runtime import GotoExternal")
+            # GotoExternal is imported at module level, not locally (avoids scoping issues)
             ctx.emitter.line("if _call_target.offset is not None:")
             with ctx.emitter.indented():
                 ctx.emitter.line(
@@ -4023,6 +4046,29 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
 
     # Local target - original behavior
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
+        # T091: Inside inline XECUTE, call the label directly instead of returning
+        # The label's QUIT will return normally, then we raise _XecuteExit to exit
+        # the XECUTE block and continue the enclosing FOR loop
+        if ctx.in_inline_xecute:
+            # Call internal label function directly (prefixed with _)
+            label_func_name = "_" + translate_name(target.name)
+            if target.offset is not None:
+                offset_code = generate_expr(target.offset, ctx)
+                # Call with offset
+                ctx.emitter.line(
+                    "_scope.update({k: v for k, v in state._locals.items()})"
+                )
+                ctx.emitter.line(
+                    f"{label_func_name}(_rt, state, _scope, _start_offset=int(m_num({offset_code})))"
+                )
+            else:
+                ctx.emitter.line(
+                    "_scope.update({k: v for k, v in state._locals.items()})"
+                )
+                ctx.emitter.line(f"{label_func_name}(_rt, state, _scope)")
+            ctx.emitter.line("raise _XecuteExit()")
+            return
+
         # T087: Handle local GOTO with offset (G LABEL+N)
         # Convert to absolute line number for _line_map dispatch
         # _label_lines stores 0-indexed line numbers, so we add 1 for 1-indexed source lines
@@ -4033,6 +4079,7 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
             )
         else:
             ctx.emitter.line(f'return ("{target.name}", state)')
+
     else:
         label_name = translate_name(target.name)
         # T075l: Pass _rt and _scope so XECUTE inline GOTO works correctly
@@ -4089,7 +4136,7 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
 
     # Generate import statement for external routine
     ctx.emitter.line(f"import {routine_name}")
-    ctx.emitter.line("from m2py.runtime import GotoExternal")
+    # GotoExternal is imported at module level, not locally (avoids scoping issues)
 
     # Handle offset patterns (G LABEL+N^ROUTINE, G +N^ROUTINE)
     if target.offset is not None:
@@ -5962,16 +6009,50 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         T075s: Each XECUTE argument has its own control flow scope.
         QUIT in one argument should not skip subsequent arguments.
         Generate a separate try/except for each code string.
+
+        T091b: Also handle GotoExternal from called labels. When an XECUTE'd
+        GOTO calls an internal label that raises GotoExternal (external GOTO),
+        we need to run the external routine to completion and continue.
+        Only applies in TRAMPOLINE mode where state._locals exists.
         """
+        from m2py.codegen.enums import GotoStrategy
+
         # Set flag so GOTO/DO generate raise _XecuteExit instead of return
         old_in_inline_xecute = ctx.in_inline_xecute
         ctx.in_inline_xecute = True
+
+        # Check if we're in TRAMPOLINE mode (where state._locals exists)
+        is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
 
         # T075s: Each code string gets its own try/except
         for code_str in code_strings:
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
                 generate_inline_code(code_str)
+            # T091b: Only generate GotoExternal handler in TRAMPOLINE mode
+            # where state._locals exists and cross-routine GOTOs are possible
+            if is_trampoline:
+                ctx.emitter.line("except GotoExternal as _goto:")
+                with ctx.emitter.indented():
+                    # Sync state to scope before external call
+                    ctx.emitter.line(
+                        "_scope.update({k: v for k, v in state._locals.items()})"
+                    )
+                    # Run the external routine to completion
+                    ctx.emitter.line(
+                        "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
+                    )
+                    # Sync scope back to state after external call returns
+                    ctx.emitter.line("for _k, _v in _scope.items():")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("if isinstance(_v, MArray):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("state._locals[_k] = _v")
+                        ctx.emitter.line("else:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("_m = MArray()")
+                            ctx.emitter.line("_m.value = _v")
+                            ctx.emitter.line("state._locals[_k] = _m")
             ctx.emitter.line("except _XecuteExit:")
             with ctx.emitter.indented():
                 ctx.emitter.line("pass  # GOTO/DO exited XECUTE block")

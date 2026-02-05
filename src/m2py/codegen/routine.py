@@ -346,6 +346,11 @@ class RoutineGenerator:
             ctx.emitter.line(
                 "from m2py.runtime import GotoExternal, run_with_goto_support, resolve_goto_target, LabelNotFoundError"
             )
+        elif self._routine.has_external_gotos:
+            # T091c: Non-TRAMPOLINE routines with external GOTOs also need GotoExternal
+            ctx.emitter.line(
+                "from m2py.runtime import GotoExternal, run_with_goto_support, resolve_goto_target, LabelNotFoundError"
+            )
 
         ctx.emitter.blank()
 

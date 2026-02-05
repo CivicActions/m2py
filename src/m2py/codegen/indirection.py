@@ -1588,9 +1588,64 @@ def generate_indirect_do(
                         # In TRAMPOLINE mode, call internal function with state
                         # _line_map stores Python function names (e.g., "_n_1"), and we need
                         # to call the internal function (e.g., "__n_1") with an extra underscore
-                        ctx.emitter.line(
-                            "globals()['_' + _label_name](_rt, state, _scope, _start_offset=_line_offset)"
-                        )
+                        # T091d/T091e: Follow fall-through chain and catch GotoExternal
+                        ctx.emitter.line("try:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                "_do_target, state = globals()['_' + _label_name](_rt, state, _scope, _start_offset=_line_offset)"
+                            )
+                        ctx.emitter.line("except GotoExternal as _goto:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                "_scope.update({k: v for k, v in state._locals.items()})"
+                            )
+                            ctx.emitter.line(
+                                "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
+                            )
+                            ctx.emitter.line("for _k, _v in _scope.items():")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("if isinstance(_v, MArray):")
+                                with ctx.emitter.indented():
+                                    ctx.emitter.line("state._locals[_k] = _v")
+                                ctx.emitter.line("else:")
+                                with ctx.emitter.indented():
+                                    ctx.emitter.line("_m = MArray()")
+                                    ctx.emitter.line("_m.value = _v")
+                                    ctx.emitter.line("state._locals[_k] = _m")
+                            ctx.emitter.line("_do_target = None")
+                        ctx.emitter.line("else:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("while _do_target is not None:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("try:")
+                                with ctx.emitter.indented():
+                                    ctx.emitter.line("_do_func = _labels[_do_target]")
+                                    ctx.emitter.line(
+                                        "_do_target, state = _do_func(_rt, state, _scope)"
+                                    )
+                                ctx.emitter.line("except GotoExternal as _goto:")
+                                with ctx.emitter.indented():
+                                    # Sync state to scope before external call
+                                    ctx.emitter.line(
+                                        "_scope.update({k: v for k, v in state._locals.items()})"
+                                    )
+                                    # Run external routine to completion
+                                    ctx.emitter.line(
+                                        "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
+                                    )
+                                    # Sync scope back to state
+                                    ctx.emitter.line("for _k, _v in _scope.items():")
+                                    with ctx.emitter.indented():
+                                        ctx.emitter.line("if isinstance(_v, MArray):")
+                                        with ctx.emitter.indented():
+                                            ctx.emitter.line("state._locals[_k] = _v")
+                                        ctx.emitter.line("else:")
+                                        with ctx.emitter.indented():
+                                            ctx.emitter.line("_m = MArray()")
+                                            ctx.emitter.line("_m.value = _v")
+                                            ctx.emitter.line("state._locals[_k] = _m")
+                                    # GotoExternal handled, exit fall-through loop
+                                    ctx.emitter.line("_do_target = None")
                     else:
                         # In SIMPLE mode, call function directly (must support _start_offset)
                         # Note: SIMPLE mode doesn't support offset calls by design
@@ -1603,11 +1658,75 @@ def generate_indirect_do(
                     ctx.emitter.line(
                         'raise ValueError(f"Entry point {_call_target.label}+{_call_target.offset} not valid")'
                     )
+
             ctx.emitter.line("else:")
             with ctx.emitter.indented():
                 if is_trampoline:
                     # In TRAMPOLINE mode, pass state to the function
-                    ctx.emitter.line("_func(_rt, state, _scope)")
+                    # T091d: Wrap in try/except to catch GotoExternal from internal labels
+                    # that do external GOTOs. This allows DO to continue after the
+                    # external routine completes.
+                    # T091e: Follow fall-through chain - internal functions return
+                    # (next_label, state) where next_label is the label to fall through to,
+                    # or None if the function explicitly returned.
+                    ctx.emitter.line("try:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            "_do_target, state = _func(_rt, state, _scope)"
+                        )
+                    ctx.emitter.line("except GotoExternal as _goto:")
+                    with ctx.emitter.indented():
+                        # GotoExternal from initial call - handle it
+                        ctx.emitter.line(
+                            "_scope.update({k: v for k, v in state._locals.items()})"
+                        )
+                        ctx.emitter.line(
+                            "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
+                        )
+                        ctx.emitter.line("for _k, _v in _scope.items():")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("if isinstance(_v, MArray):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("state._locals[_k] = _v")
+                            ctx.emitter.line("else:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("_m = MArray()")
+                                ctx.emitter.line("_m.value = _v")
+                                ctx.emitter.line("state._locals[_k] = _m")
+                        ctx.emitter.line("_do_target = None")
+                    ctx.emitter.line("else:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("while _do_target is not None:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("try:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("_do_func = _labels[_do_target]")
+                                ctx.emitter.line(
+                                    "_do_target, state = _do_func(_rt, state, _scope)"
+                                )
+                            ctx.emitter.line("except GotoExternal as _goto:")
+                            with ctx.emitter.indented():
+                                # Sync state to scope before external call
+                                ctx.emitter.line(
+                                    "_scope.update({k: v for k, v in state._locals.items()})"
+                                )
+                                # Run external routine to completion
+                                ctx.emitter.line(
+                                    "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
+                                )
+                                # Sync scope back to state
+                                ctx.emitter.line("for _k, _v in _scope.items():")
+                                with ctx.emitter.indented():
+                                    ctx.emitter.line("if isinstance(_v, MArray):")
+                                    with ctx.emitter.indented():
+                                        ctx.emitter.line("state._locals[_k] = _v")
+                                    ctx.emitter.line("else:")
+                                    with ctx.emitter.indented():
+                                        ctx.emitter.line("_m = MArray()")
+                                        ctx.emitter.line("_m.value = _v")
+                                        ctx.emitter.line("state._locals[_k] = _m")
+                                # GotoExternal handled, exit fall-through loop
+                                ctx.emitter.line("_do_target = None")
                 else:
                     ctx.emitter.line("_func(_rt, _scope=_scope)")
 
@@ -1722,7 +1841,7 @@ def generate_indirect_goto(
             # External GOTO: import routine and raise GotoExternal
             ctx.emitter.line("import importlib")
             ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
-            ctx.emitter.line("from m2py.runtime import GotoExternal")
+            # GotoExternal is imported at module level, not locally (avoids scoping issues)
             ctx.emitter.line("if _call_target.offset is not None:")
             with ctx.emitter.indented():
                 ctx.emitter.line(

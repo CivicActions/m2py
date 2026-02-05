@@ -573,3 +573,98 @@ class TestXecuteInlineControlFlow:
         # Writes odd numbers: 1, 3, 5
         assert result.output == "135\n"
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestXecuteWithGoto:
+    """Tests for GOTO inside inline XECUTE (T091a, T091b).
+
+    When XECUTE contains GOTO to an internal label, the GOTO should call
+    the label directly (not return a tuple), then raise _XecuteExit to
+    continue execution after the XECUTE block.
+
+    Reference: V1SEQ test cases from MUGJ test suite.
+    """
+
+    def test_xecute_goto_internal_label_trampoline(self, generate_python):
+        """T091a: XECUTE'd GOTO to internal label in TRAMPOLINE mode.
+
+        In TRAMPOLINE mode (used for complex routines with cross-label jumps),
+        X "G LABEL" should call _LABEL(_rt, state, _scope) directly.
+
+        This test creates a routine complex enough to trigger TRAMPOLINE mode.
+        """
+        # Multi-label routine with cross-label jumps triggers TRAMPOLINE
+        code = generate_python("""TEST
+ G MID
+ Q
+MID
+ X "G END"
+ W "SKIP"
+ Q
+END
+ W "END"
+ Q
+""")
+
+        # Should have inline code block for XECUTE
+        assert "try:" in code
+        assert "_XecuteExit" in code
+
+        # In TRAMPOLINE mode, internal labels have underscore prefix
+        # The GOTO inside XECUTE should call the label function directly
+        assert "_END(_rt, state, _scope)" in code
+
+    def test_xecute_goto_exits_xecute_continues_routine(self, execute_mumps):
+        """XECUTE'd GOTO exits XECUTE block but routine continues.
+
+        Pattern from V1SEQ: FOR loop contains XECUTE with GOTO
+        XECUTE → GOTO LABEL → LABEL does something → QUIT
+        After XECUTE exits, FOR continues to next iteration.
+
+        X "G END" should go to END, run its code, then return to after XECUTE.
+        """
+        # Simple case: XECUTE with GOTO, then WRITE after XECUTE
+        result = execute_mumps('TEST X "G END" W "AFTER",! Q\nEND W "END" Q')
+        # END runs (writes "END"), then returns to WRITE "AFTER"
+        assert "END" in result.output
+        assert "AFTER" in result.output
+        assert result.success is True
+
+    def test_xecute_goto_in_for_loop(self, execute_mumps):
+        """FOR loop with XECUTE'd GOTO continues after each iteration.
+
+        Pattern: F I=1:1:3 X "G HELPER"
+        Each iteration XECUTEs a GOTO, which should call HELPER,
+        HELPER QUITs, and the FOR continues.
+        """
+        code = """TEST
+ S R=""
+ F I=1:1:3 X "G HELPER"
+ W R,!
+ Q
+HELPER
+ S R=R_I
+ Q
+"""
+        result = execute_mumps(code)
+        # HELPER is called 3 times with I=1,2,3
+        assert result.output == "123\n"
+        assert result.success is True
+
+    def test_xecute_multiple_args_independent_scope(self, execute_mumps):
+        """Multiple XECUTE args have independent control flow (T075s).
+
+        X "S A=1","S B=2" → Both args execute independently
+        Each argument has its own try/except for _XecuteExit.
+        """
+        code = """TEST
+ S A=0,B=0
+ X "S A=1","S B=2"
+ W A,B,!
+ Q
+"""
+        result = execute_mumps(code)
+        # Both args execute: A=1, B=2
+        assert result.output == "12\n"
+        assert result.success is True

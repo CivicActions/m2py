@@ -458,3 +458,129 @@ SUB2 S R=R_"2" Q
 """
         result = execute_mumps(code)
         assert result == "12"
+
+
+# =============================================================================
+# T091d/T091e: DO Argument Indirection with Fall-Through and GotoExternal
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestDoIndirectionFallThrough:
+    """Tests for DO argument indirection with fall-through chain (T091e).
+
+    When D @P calls an internal label that doesn't explicitly QUIT but
+    falls through to the next label, the fall-through chain must be followed.
+
+    Pattern from V1SEQ test I-792:
+    D @P where P="F" and F falls through to G which does external GOTO.
+    """
+
+    def test_do_indirect_label_with_fallthrough(self, execute_mumps):
+        """D @P where P="F" and F falls through to G (T091e).
+
+        When the called label doesn't QUIT, execution falls through to
+        the next label. DO should follow this chain.
+        """
+        code = """TEST
+ S P="F",R=""
+ D @P
+ W R
+ Q
+F
+ S R=R_"F"
+G
+ S R=R_"G"
+ Q
+"""
+        result = execute_mumps(code)
+        # F falls through to G, so we get "FG"
+        assert result == "FG"
+
+    def test_do_indirect_multiple_fallthrough(self, execute_mumps):
+        """D @P where P="A" and A→B→C fall-through chain (T091e).
+
+        Multiple fall-throughs in sequence should all be followed.
+        """
+        code = """TEST
+ S P="A",R=""
+ D @P
+ W R
+ Q
+A
+ S R=R_"A"
+B
+ S R=R_"B"
+C
+ S R=R_"C"
+ Q
+"""
+        result = execute_mumps(code)
+        # A→B→C fall-through chain
+        assert result == "ABC"
+
+    def test_do_indirect_fallthrough_stops_at_quit(self, execute_mumps):
+        """Fall-through stops when a label has explicit QUIT (T091e).
+
+        If label B has QUIT, fall-through stops there even if C follows.
+        """
+        code = """TEST
+ S P="A",R=""
+ D @P
+ W R
+ Q
+A
+ S R=R_"A"
+B
+ S R=R_"B"
+ Q
+C
+ S R=R_"C"
+ Q
+"""
+        result = execute_mumps(code)
+        # A→B, but B has QUIT so C is not reached
+        assert result == "AB"
+
+    def test_do_indirect_repeated_calls_with_fallthrough(self, execute_mumps):
+        """D @P,@P calls P twice, each following fall-through (T091e).
+
+        Pattern from V1SEQ: D @P,@P,@Q where each call follows fall-through.
+        """
+        code = """TEST
+ S P="F",Q="H",R=""
+ D @P,@P,@Q
+ W R
+ Q
+F
+ S R=R_"F"
+G
+ S R=R_"G"
+ Q
+H
+ S R=R_"H"
+ Q
+"""
+        result = execute_mumps(code)
+        # D @P (F→G), @P (F→G again), @Q (H) = "FGFGH"
+        assert result == "FGFGH"
+
+    def test_do_indirect_with_offset_and_fallthrough(self, execute_mumps):
+        """D @P+1 with offset applies offset when calling the label.
+
+        In MUMPS, D @P+N where P="F" resolves to F and then adds offset.
+        YDB verified: D @P+1 with P="F" outputs "01" (both lines run).
+        """
+        code = """TEST
+ S P="F",R=""
+ D @P+1
+ W R
+ Q
+F
+ S R=R_"0"
+ S R=R_"1"
+ Q
+"""
+        result = execute_mumps(code)
+        # YDB verified output: 01
+        assert result == "01"
