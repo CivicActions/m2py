@@ -237,20 +237,21 @@ class TestIntraLabelGotoCodegen:
         assert "break" in python_code
 
     def test_goto_cannot_create_continue_pattern(self, generate_python):
-        """GOTO cannot create Python continue pattern (T039 - updated).
+        """GOTO cannot create Python continue pattern FOR loop skip (T039 - updated).
 
         Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
         termination of all FORs in the line containing the GOTO."
 
         A GOTO to the same label from inside a FOR loop:
         1. Terminates the FOR loop
-        2. Jumps to the label (function call/recursion)
+        2. Jumps to the label (restarts from label beginning)
 
-        There is NO "continue" pattern via GOTO - use conditional execution
-        (I cond <commands>) or QUIT from a DO block for skip-iteration behavior.
+        Note: The generated code MAY use `continue` for restarting the outer
+        while True self-loop, but this is NOT the same as continuing a FOR loop
+        (which would skip iterations). The GOTO exits the FOR entirely.
         """
-        # This GOTO exits the FOR loop and calls TEST - it does NOT continue
-        # In YDB, this creates infinite recursion until stack overflow
+        # This GOTO exits the FOR loop and restarts TEST
+        # In YDB, this creates infinite loop (TEST resets X="" each time)
         code = """TEST S X=""
  F I=1:1:5 D
  . I I#2=0 G TEST
@@ -260,11 +261,11 @@ class TestIntraLabelGotoCodegen:
 """
         python_code = generate_python(code)
 
-        # The GOTO should generate break (exits loop) not continue
-        # The generated code should have 'break' or function call pattern
-        assert "continue" not in python_code
-        # The FOR loop should still have break support for the GOTO exit
+        # The GOTO should generate break to exit the FOR loop
+        # It may also use continue to restart the self-loop, which is valid
         assert "break" in python_code
+        # The FOR loop variable should be managed correctly
+        assert "_for_" in python_code or "for I" in python_code.lower()
 
     def test_loop_exit_generates_break(self, generate_python):
         """GOTO that exits loop generates break statement (T040).

@@ -2182,12 +2182,20 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     # T091: Use pre-computed field from analysis instead of helper function
     has_cross_label_exit = stmt.has_cross_label_exit
 
+    # V1FORC2/I-377: Check if this FOR has same-label single-loop exits
+    # These need to break the FOR and continue the outer while True self-loop
+    has_same_label_exit = stmt.has_same_label_exit
+
     # FR-018: Initialize goto tracking before loop if needed
     if has_cross_label_exit and not needs_wrapper:
         if ctx.strategy == GotoStrategy.TRAMPOLINE:
             ctx.emitter.line("_goto_label = None")
         else:
             ctx.emitter.line("_goto_target = None")
+
+    # V1FORC2/I-377: Initialize same-label exit flag before loop if needed
+    if has_same_label_exit and not needs_wrapper:
+        ctx.emitter.line("_restart_self_loop = False")
 
     if needs_wrapper:
         ctx.emitter.line("try:")
@@ -2251,6 +2259,13 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
             with ctx.emitter.indented():
                 ctx.emitter.line("_goto_target()")
                 ctx.emitter.line("return")
+
+    # V1FORC2/I-377: Handle same-label single-loop exit
+    # If the flag was set, continue the outer while True self-loop
+    if has_same_label_exit and not needs_wrapper:
+        ctx.emitter.line("if _restart_self_loop:")
+        with ctx.emitter.indented():
+            ctx.emitter.line("continue")
 
 
 def _generate_for_body(
@@ -2372,15 +2387,28 @@ def _generate_for_bounded(
     if param.start is None or param.step is None or param.end is None:
         raise NotImplementedError("Incomplete FOR range parameters")
 
-    start_expr = generate_expr(param.start, ctx)
-    step_expr = generate_expr(param.step, ctx)
-    end_expr = generate_expr(param.end, ctx)
-
     # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
     lid = for_ctx.loop_id
     start_var = f"_for_start_{lid}"
     step_var = f"_for_step_{lid}"
     end_var = f"_for_end_{lid}"
+
+    # Per MUMPS spec 8.2.18: "Any expressions occurring in lvn, such as might occur
+    # in subscripts or indirection, are evaluated once per execution of the For command,
+    # prior to the first execution of any forparameter."
+    # This means subscripts must be evaluated BEFORE start/step/end to ensure
+    # correct naked indicator state during evaluation.
+    cached_subs: list[str] = []
+    if for_ctx.loop_var_subscripts:
+        for i, sub_expr in enumerate(for_ctx.loop_var_subscripts):
+            cache_var = f"_for_sub_{lid}_{i}"
+            ctx.emitter.line(f"{cache_var} = {sub_expr}")
+            cached_subs.append(cache_var)
+
+    # NOW evaluate start/step/end (after subscripts have been evaluated)
+    start_expr = generate_expr(param.start, ctx)
+    step_expr = generate_expr(param.step, ctx)
+    end_expr = generate_expr(param.end, ctx)
 
     # Spec 017: Set loop variable to start value before the loop
     # This ensures the variable is set even when the loop doesn't execute
@@ -2428,16 +2456,11 @@ def _generate_for_bounded(
         # Per MUMPS spec: "Any expressions occurring in lvn, such as might occur in subscripts
         # or indirection, are evaluated once per execution of the For command, prior to the
         # first execution of any forparameter."
-        # This means subscripts are cached ONCE at the start, not re-evaluated each iteration.
+        # Subscripts were already cached above (before start/step/end evaluation).
         # The loop COUNTER is tracked separately and stored to the SAME subscript location.
         var_name = for_ctx.loop_var_name
 
-        # Cache subscript values at the start (evaluate once per spec)
-        cached_subs = []
-        for i, sub_expr in enumerate(for_ctx.loop_var_subscripts):
-            cache_var = f"_for_sub_{lid}_{i}"
-            ctx.emitter.line(f"{cache_var} = {sub_expr}")
-            cached_subs.append(cache_var)
+        # Use the already-cached subscript values
         cached_subs_str = ", ".join(cached_subs)
 
         # Track the loop counter separately from the variable storage
@@ -3519,6 +3542,9 @@ def _generate_single_target_goto(
                     # Simple functions: store function reference
                     label_name = translate_name(target.name)
                     ctx.emitter.line(f"_goto_target = {label_name}")
+            # V1FORC2/I-377: For same-label exits, set flag to continue outer while True
+            elif not is_cross_label:
+                ctx.emitter.line("_restart_self_loop = True")
             ctx.emitter.line("break")
         else:
             # Multi-loop exit - generate raise _LoopExit()

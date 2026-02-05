@@ -330,6 +330,11 @@ def _classify_single_goto(
             if len(enclosing_fors) == 1:
                 stmt.goto_type = GotoType.LOOP_EXIT
                 stmt.exits_loops = list(enclosing_fors)
+                # V1FORC2/I-377 fix: Same-label LOOP_EXIT needs special handling
+                # When GOTO targets the same label from inside a FOR loop, we need to
+                # break the FOR loop AND continue the outer while True self-loop
+                if not stmt.is_cross_label and target_label.name == current_label.name:
+                    enclosing_fors[0].has_same_label_exit = True
             else:
                 stmt.goto_type = GotoType.MULTI_LOOP_EXIT
                 stmt.exits_loops = list(enclosing_fors)
