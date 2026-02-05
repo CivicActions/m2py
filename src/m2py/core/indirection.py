@@ -811,9 +811,21 @@ class IndirectionResolver:
         if self._is_numeric_literal(stripped):
             return self._parse_numeric(stripped)
 
-        # String literal (quoted)
+        # String literal (quoted) - only a SIMPLE string with no concatenation
+        # A simple string is "..." where the inner content has only doubled quotes
+        # NOT "A"_expr_"B" which is a concatenation expression
         if stripped.startswith('"') and stripped.endswith('"'):
-            return stripped[1:-1]
+            # Check if this is truly a simple string (no _ concat operators outside quotes)
+            # by verifying the quote structure
+            inner = stripped[1:-1]
+            # In MUMPS, quotes are escaped by doubling: "" inside a string
+            # A simple string's inner content, when replacing "", should have no unescaped quotes
+            # However, if we have "A"_expr_"B", removing outer quotes gives A"_expr_"B
+            # which has unescaped quotes (not doubled)
+            test_inner = inner.replace('""', "")  # Remove escaped quotes
+            if '"' not in test_inner:
+                # It's a simple string literal - return the unescaped content
+                return inner.replace('""', '"')
 
         # Simple variable reference - just get its value
         # Return the actual value, not Boolean conversion - let caller handle Boolean

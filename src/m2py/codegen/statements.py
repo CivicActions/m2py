@@ -6024,13 +6024,19 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         # Check if we're in TRAMPOLINE mode (where state._locals exists)
         is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
 
+        # T091c-xec: Also handle external GOTOs in non-TRAMPOLINE mode
+        # Check if the routine has external GOTOs detected in analysis
+        has_external_gotos = ctx.routine.has_external_gotos
+
         # T075s: Each code string gets its own try/except
         for code_str in code_strings:
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
                 generate_inline_code(code_str)
-            # T091b: Only generate GotoExternal handler in TRAMPOLINE mode
+            # T091b: Generate GotoExternal handler in TRAMPOLINE mode
             # where state._locals exists and cross-routine GOTOs are possible
+            # T091c-xec: Also generate handler in SIMPLE_FUNCTIONS mode
+            # when routine has external GOTOs (uses _scope directly)
             if is_trampoline:
                 ctx.emitter.line("except GotoExternal as _goto:")
                 with ctx.emitter.indented():
@@ -6053,6 +6059,15 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                             ctx.emitter.line("_m = MArray()")
                             ctx.emitter.line("_m.value = _v")
                             ctx.emitter.line("state._locals[_k] = _m")
+            elif has_external_gotos:
+                # T091c-xec: Non-TRAMPOLINE mode with external GOTOs
+                # Variables are in _scope directly, no state._locals
+                ctx.emitter.line("except GotoExternal as _goto:")
+                with ctx.emitter.indented():
+                    # Run the external routine to completion with shared _scope
+                    ctx.emitter.line(
+                        "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
+                    )
             ctx.emitter.line("except _XecuteExit:")
             with ctx.emitter.indented():
                 ctx.emitter.line("pass  # GOTO/DO exited XECUTE block")

@@ -616,6 +616,7 @@ def _detect_external_gotos(routine: MRoutine) -> bool:
     variables set before a GOTO must be visible in the target routine.
 
     This checks for MCall targets with non-None routine field (indicates external).
+    T091c-ext: Also checks XECUTE constant values for external GOTO patterns.
 
     Args:
         routine: The routine to check
@@ -623,6 +624,8 @@ def _detect_external_gotos(routine: MRoutine) -> bool:
     Returns:
         True if any GOTO targets an external routine
     """
+    from m2py.asg.statements import MXecuteStatement
+
     for label in routine.labels:
         if label.body is None:
             continue
@@ -630,6 +633,18 @@ def _detect_external_gotos(routine: MRoutine) -> bool:
             if isinstance(stmt, MGotoStatement):
                 for target in stmt.targets:
                     if target.routine is not None:
+                        return True
+            # T091c-ext: Check XECUTE constant values for external GOTO patterns
+            # Look for "G ^" or "G LABEL^" patterns in the constant strings
+            elif isinstance(stmt, MXecuteStatement) and stmt.constant_values:
+                for const_val in stmt.constant_values:
+                    # Check for G(OTO) ^ROUTINE or G(OTO) LABEL^ROUTINE patterns
+                    # Using simple string check - look for " G ^" or " G LABEL^"
+                    import re
+
+                    if re.search(
+                        r"\bG(?:OTO)?\s+[A-Za-z0-9_%]*\^", const_val, re.IGNORECASE
+                    ):
                         return True
     return False
 

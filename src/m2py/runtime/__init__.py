@@ -268,6 +268,37 @@ def _split_argument_list(arg_str: str) -> List[str]:
     return args
 
 
+def _find_toplevel_colon(s: str) -> int:
+    """Find the first colon in string that's not inside quotes or parentheses.
+
+    Used for XECUTE argument postcondition parsing: VAR:postcondition
+    Must not split on colons inside function calls like $S(1>2:"code")
+
+    Args:
+        s: String to search
+
+    Returns:
+        Index of first top-level colon, or -1 if none found
+    """
+    depth = 0
+    in_string = False
+
+    for i, char in enumerate(s):
+        if in_string:
+            if char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == ":" and depth == 0:
+            return i
+
+    return -1
+
+
 class SubscriptVarRef:
     """Wrapper to mark a subscript as a variable reference to be evaluated.
 
@@ -2722,8 +2753,9 @@ class MUMPSRuntime:
 
         base_name, subscripts = _parse_subscripted_name(name)
         # Evaluate subscripts first - resolve variable references like A(3) to their values
+        # Keep values in original form for proper canonicalization by m_order
         evaluated_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
-        subs = tuple(str(s) for s in evaluated_subs) if evaluated_subs else ("",)
+        subs = tuple(evaluated_subs) if evaluated_subs else ("",)
 
         if base_name.startswith("^"):
             key = base_name[1:]
@@ -2765,13 +2797,13 @@ class MUMPSRuntime:
             return -1
 
         # Convert -1 start marker to "" for $ORDER semantics
+        # Keep subscripts in original form (Decimal, int, etc.) for proper canonicalization
         subs = list(subscripts)
         last_sub = str(subs[-1])
         if last_sub == "-1":
             subs[-1] = ""
-        subs_tuple = tuple(str(s) for s in subs)
 
-        result = m_order(array, subs_tuple, 1)
+        result = m_order(array, tuple(subs), 1)
         return -1 if result == "" else result
 
     def m_next_global(
@@ -2798,13 +2830,13 @@ class MUMPSRuntime:
             return -1
 
         # Convert -1 start marker to "" for $ORDER semantics
+        # Keep subscripts in original form (Decimal, int, etc.) for proper canonicalization
         subs = list(subscripts)
         last_sub = str(subs[-1])
         if last_sub == "-1":
             subs[-1] = ""
-        subs_tuple = tuple(str(s) for s in subs)
 
-        result = m_order_global(self._globals, global_name, subs_tuple, 1)
+        result = m_order_global(self._globals, global_name, tuple(subs), 1)
         return -1 if result == "" else result
 
     def get_name(
@@ -3234,6 +3266,23 @@ class MUMPSRuntime:
 
                 raise VarExpectedError(source)
             target = source
+            # T091c-lit: Append any per_level_subscripts to the target
+            # For @"A(1)"@(2), source="A(1)", per_level_subscripts=[[2]]
+            # Target should be "A(1,2)"
+            if per_level_subscripts:
+                # Get all subscripts from all levels
+                all_subs = []
+                for level_subs in per_level_subscripts:
+                    if level_subs:
+                        all_subs.extend(level_subs)
+                if all_subs:
+                    # Parse existing subscripts from source
+                    base_name, existing_subs = _parse_subscripted_name(source)
+                    # Combine and build new target (existing_subs may be None)
+                    combined_subs = list(existing_subs or []) + [
+                        str(s) for s in all_subs
+                    ]
+                    target = f"{base_name}({','.join(str(s) for s in combined_subs)})"
         else:
             # Resolve to get target variable NAME (not value)
             target = resolver.resolve_to_name(
@@ -5184,17 +5233,20 @@ class MUMPSRuntime:
             "MArray": MArray,
         }
 
+        # Copy scope variables into namespace for direct access
+        # Generated code uses _scope.get("VAR", "") pattern, so this works
+        # T091c: Update scope BEFORE adding callables so labels take precedence
+        # In MUMPS, D A always refers to label A, not variable A
+        namespace.update(_scope)
+
         # T075p: Include caller's globals so XECUTE can access module labels
         # This allows DO/GOTO to labels in the calling routine
+        # T091c: Add callables AFTER scope so labels override variables
         if caller_globals:
             # Only include callable items (functions) to avoid polluting namespace
             for name, value in caller_globals.items():
                 if callable(value) and not name.startswith("_"):
                     namespace[name] = value
-
-        # Copy scope variables into namespace for direct access
-        # Generated code uses _scope.get("VAR", "") pattern, so this works
-        namespace.update(_scope)
 
         try:
             # Execute the generated code
@@ -5267,7 +5319,10 @@ class MUMPSRuntime:
             validate=False,
         )
 
-        # Split by commas to get individual argument names
+        # Split by commas to get individual argument names (or expressions)
+        # _split_argument_list respects quotes and parens, so:
+        # - "S VCOMP=1",H → ['"S VCOMP=1"', 'H']  (two args)
+        # - "A"_$E("B",1)_"C" → ['"A"_$E("B",1)_"C"'] (one arg, expression)
         args = _split_argument_list(raw_value)
 
         result = None
@@ -5276,11 +5331,53 @@ class MUMPSRuntime:
             if not arg:
                 continue
 
-            # Each argument is a variable name containing code to execute
-            # Resolve it to get the actual code string
-            code = resolver._get_value(arg)
+            # T091c-postcond: Each argument may have a postcondition (VAR:cond)
+            # Parse out the variable name and postcondition
+            # Must find colon at top level (not inside quotes or parens)
+            var_name = arg
+            postcond = None
+            colon_pos = _find_toplevel_colon(arg)
+            if colon_pos >= 0:
+                var_name = arg[:colon_pos].strip()
+                postcond = arg[colon_pos + 1 :].strip()
+
+            # Evaluate postcondition if present
+            if postcond:
+                # Evaluate the postcondition as a MUMPS expression
+                postcond_result = resolver.evaluate_expression(postcond)
+                # MUMPS truth: non-zero or non-empty string starting with digit is true
+                from m2py.codegen.helpers import m_truth
+
+                if not m_truth(postcond_result):
+                    # Postcondition false, skip this argument
+                    continue
+
+            # T091c-expr: Determine if arg is a variable name or an expression
+            # Expressions to evaluate directly:
+            # - Starts with " → quoted string or concatenation
+            # - Starts with $ → intrinsic function ($SELECT, $EXTRACT, etc.)
+            # - Contains operators at top level (_, +, -, etc.) → expression
+            # Otherwise → variable name, look up its value
+            arg_stripped = var_name.strip()
+            is_expression = (
+                arg_stripped.startswith('"')  # Quoted string
+                or arg_stripped.startswith("$")  # Intrinsic function
+            )
+
+            if is_expression:
+                # It's an expression - evaluate it to get the code
+                code = resolver.evaluate_expression(arg_stripped)
+            else:
+                # It's a variable name - get the code from its value
+                code = resolver._get_value(var_name)
+                if isinstance(code, str) and code:
+                    # T091c-expr: If the VALUE is an expression, evaluate it
+                    code_stripped = code.strip()
+                    if code_stripped.startswith('"') or code_stripped.startswith("$"):
+                        code = resolver.evaluate_expression(code)
+
+            # Execute the code if we have a valid string
             if isinstance(code, str) and code:
-                # Execute the code
                 result = self.execute_mumps(code, _scope, caller_globals)
 
         return result

@@ -1589,3 +1589,74 @@ class TestCallExternalWithOffset:
 
         # Should not raise with None scope
         call_external_with_offset(module, "TESTRTN", 0, _rt, None)
+
+
+@pytest.mark.runtime
+class TestFindToplevelColon:
+    """Tests for _find_toplevel_colon helper function.
+
+    This helper is used for XECUTE argument postcondition parsing.
+    It finds the first colon that's not inside quotes or parentheses.
+    """
+
+    def test_simple_postcondition(self):
+        """Simple VAR:condition pattern."""
+        from m2py.runtime import _find_toplevel_colon
+
+        assert _find_toplevel_colon("X:1") == 1
+        assert _find_toplevel_colon("VAR:COND") == 3
+
+    def test_no_colon(self):
+        """No colon returns -1."""
+        from m2py.runtime import _find_toplevel_colon
+
+        assert _find_toplevel_colon("VARIABLE") == -1
+        assert _find_toplevel_colon("") == -1
+
+    def test_colon_in_quoted_string(self):
+        """Colon inside quoted string is NOT a top-level colon."""
+        from m2py.runtime import _find_toplevel_colon
+
+        # String contains colon, but it's inside quotes
+        assert _find_toplevel_colon('"A:B"') == -1
+        assert _find_toplevel_colon('"code:with:colons"') == -1
+
+    def test_colon_after_quoted_string(self):
+        """Colon after quoted string IS a top-level colon."""
+        from m2py.runtime import _find_toplevel_colon
+
+        # Colon is after the quoted string
+        result = _find_toplevel_colon('"STRING":COND')
+        assert result == 8  # Position of : after closing quote
+
+    def test_colon_in_parentheses(self):
+        """Colon inside function call parentheses is NOT top-level."""
+        from m2py.runtime import _find_toplevel_colon
+
+        # $SELECT contains colons inside parens
+        assert _find_toplevel_colon('$S(1>2:"a",1:"b")') == -1
+
+    def test_colon_after_function_call(self):
+        """Colon after function call IS top-level."""
+        from m2py.runtime import _find_toplevel_colon
+
+        # Function followed by postcondition
+        # '$P(X,","):COND' - colon at position 9 (0-indexed)
+        result = _find_toplevel_colon('$P(X,","):COND')
+        assert result == 9  # Position of : after closing paren
+
+    def test_nested_parentheses(self):
+        """Handles nested parentheses correctly."""
+        from m2py.runtime import _find_toplevel_colon
+
+        # Nested parens with colon inside
+        assert _find_toplevel_colon("F(G(H:I))") == -1
+
+    def test_mixed_quotes_and_parens(self):
+        """Handles mix of quotes and parentheses."""
+        from m2py.runtime import _find_toplevel_colon
+
+        # Quote inside parens with colon
+        assert _find_toplevel_colon('F("a:b")') == -1
+        # Paren inside quotes (not special)
+        assert _find_toplevel_colon('"(":COND') == 3

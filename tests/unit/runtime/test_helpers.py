@@ -223,6 +223,53 @@ class TestMOrder:
         assert m_order(arr, ("1", ""), 1) == "1"
         assert m_order(arr, ("1", "1"), 1) == "2"
 
+    def test_decimal_subscript_canonicalization(self):
+        """Decimal subscripts are properly canonicalized for collation.
+
+        Regression test: When subscripts are kept as Decimal rather than
+        converted to string via str(), m_order can canonicalize them correctly.
+
+        Decimal("0.9999") should become ".9999" which sorts BEFORE "1".
+        """
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[1].value = "one"
+        arr[2].value = "two"
+
+        # Start from Decimal("0.9999"), which should canonicalize to ".9999"
+        # and find "1" as the next key
+        result = m_order(arr, (Decimal("0.9999"),), 1)
+        assert result == "1"
+
+    def test_decimal_subscript_with_leading_zero(self):
+        """Decimal with leading zero canonicalizes correctly.
+
+        Decimal("0.5") should become ".5" in canonical form.
+        """
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[Decimal(".5")].value = "half"  # Stored with canonical key
+        arr[1].value = "one"
+
+        # Find next after Decimal("0.5") which is the same as ".5"
+        result = m_order(arr, (Decimal("0.5"),), 1)
+        assert result == "1"
+
+    def test_decimal_subscript_between_integers(self):
+        """Decimal value between integers finds correct next."""
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[1].value = "one"
+        arr[2].value = "two"
+        arr[3].value = "three"
+
+        # 1.5 is between 1 and 2, so next should be 2
+        result = m_order(arr, (Decimal("1.5"),), 1)
+        assert result == "2"
+
 
 class TestMOrderGlobal:
     """Tests for m_order_global() helper function."""
@@ -871,3 +918,112 @@ class TestMNextGlobal:
         assert result == "1"  # First subscript at level 2
         result = rt.m_next_global("G", (1, 2))
         assert result == "5"  # Next after 2
+
+
+class TestMNextLocalDecimalSubscripts:
+    """Tests for m_next_local with Decimal subscripts.
+
+    Regression tests for subscript canonicalization bug where Decimal
+    subscripts were converted to strings via str() BEFORE being passed
+    to m_order, which lost numeric canonicalization.
+
+    Example bug: Decimal("0.9999") -> str() -> "0.9999" (non-canonical)
+    Correct:     Decimal("0.9999") -> m_order -> canonicalizes to ".9999"
+
+    The fix ensures subscripts are kept in original form (Decimal, int, etc.)
+    so m_order can properly canonicalize them.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create runtime instance."""
+        from m2py.runtime import MUMPSRuntime
+
+        return MUMPSRuntime()
+
+    def test_decimal_subscript_finds_next(self, rt):
+        """Decimal subscript 0.9999 finds integer 1 as next.
+
+        This was the exact failure case: $NEXT(A(.9999)) should find 1
+        when A(1), A(2) exist. The bug was that 0.9999 was converted to
+        "0.9999" string which is NON-canonical and sorted as string.
+        """
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[1].value = "one"
+        arr[2].value = "two"
+        arr[Decimal("2.0005")].value = "decimal"
+
+        # Start from 0.9999 (before 1), should find 1
+        result = rt.m_next_local(arr, (Decimal("0.9999"),))
+        assert result == "1"
+
+    def test_decimal_subscript_between_integers(self, rt):
+        """Decimal subscript between integers finds correct next."""
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[1].value = "one"
+        arr[2].value = "two"
+        arr[3].value = "three"
+
+        # Start from 1.5, should find 2
+        result = rt.m_next_local(arr, (Decimal("1.5"),))
+        assert result == "2"
+
+    def test_decimal_with_leading_zero(self, rt):
+        """Decimal with leading zero still works correctly.
+
+        Decimal("0.5") should be canonicalized to ".5" and find values after it.
+        """
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[Decimal(".5")].value = "half"  # Canonical form
+        arr[1].value = "one"
+
+        # Start from "" to find first
+        result = rt.m_next_local(arr, ("",))
+        assert result == ".5"
+
+        # Start from .5 to find 1
+        result = rt.m_next_local(arr, (Decimal("0.5"),))
+        assert result == "1"
+
+
+class TestMNextGlobalDecimalSubscripts:
+    """Tests for m_next_global with Decimal subscripts.
+
+    Parallel tests to TestMNextLocalDecimalSubscripts for globals.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create runtime instance."""
+        from m2py.runtime import MUMPSRuntime
+
+        return MUMPSRuntime()
+
+    def test_decimal_subscript_finds_next(self, rt):
+        """Decimal subscript 0.9999 finds integer 1 as next in globals."""
+        from decimal import Decimal
+
+        rt.globals.set("G", ("1",), "one")
+        rt.globals.set("G", ("2",), "two")
+
+        # Start from 0.9999, should find 1
+        result = rt.m_next_global("G", (Decimal("0.9999"),))
+        assert result == "1"
+
+    def test_decimal_subscript_between_integers(self, rt):
+        """Decimal subscript between integers finds correct next in globals."""
+        from decimal import Decimal
+
+        rt.globals.set("G", ("1",), "one")
+        rt.globals.set("G", ("2",), "two")
+        rt.globals.set("G", ("3",), "three")
+
+        # Start from 1.5, should find 2
+        result = rt.m_next_global("G", (Decimal("1.5"),))
+        assert result == "2"

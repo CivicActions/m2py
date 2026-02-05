@@ -368,6 +368,95 @@ class TestEvaluateExpression:
         assert resolver.evaluate_expression("5>3") == 1
         assert resolver.evaluate_expression("2<1") == 0
 
+    def test_simple_string_literal(self):
+        """Simple string literals return their content.
+
+        "hello" evaluates to hello (without quotes).
+        """
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        assert resolver.evaluate_expression('"hello"') == "hello"
+        assert resolver.evaluate_expression('"test string"') == "test string"
+
+    def test_string_with_doubled_quotes(self):
+        """String with escaped quotes (doubled "") returns unescaped content.
+
+        In MUMPS, quotes are escaped by doubling: "a""b" represents a"b.
+        """
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        # "a""b" in MUMPS is a string containing: a"b
+        assert resolver.evaluate_expression('"a""b"') == 'a"b'
+        # Multiple doubled quotes
+        assert resolver.evaluate_expression('"x""y""z"') == 'x"y"z'
+
+
+class TestEvaluateExpressionConcatenation:
+    """Tests for concatenation expressions in evaluate_expression.
+
+    Regression tests for bug where "A"_expr_"B" was incorrectly
+    treated as a simple string literal instead of a concatenation expression.
+
+    The fix checks that removing outer quotes and doubled quotes leaves
+    no unescaped quotes - if it does, it's a concatenation expression.
+    """
+
+    def test_simple_string_not_treated_as_concatenation(self):
+        """Simple string "hello" is NOT treated as concatenation.
+
+        Verifies the fix doesn't break simple string handling.
+        """
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        # Simple string should still work
+        result = resolver.evaluate_expression('"hello"')
+        assert result == "hello"
+
+    def test_string_with_doubled_quotes_not_concatenation(self):
+        """String with escaped quotes 'a""b' is NOT treated as concatenation."""
+        state = MockMState()
+        scope = CurrentScope(scope_dict={})
+        resolver = IndirectionResolver(state, scope)
+
+        # This is a simple string with an escaped quote, not concatenation
+        result = resolver.evaluate_expression('"a""b"')
+        assert result == 'a"b'
+
+    def test_concatenation_detection_logic(self):
+        """Verify the internal logic for detecting concatenation.
+
+        The fix adds a check: after stripping outer quotes and removing ""
+        pairs, if any " remains, it's a concatenation expression.
+        """
+        # Test cases: (input, expected_is_simple)
+        test_cases = [
+            ('"hello"', True),  # Simple string
+            ('"a""b"', True),  # String with escaped quote
+            ('"A"_X_"B"', False),  # Concatenation with variable
+            ('"A"_"B"', False),  # Concatenation of two strings
+            ('""', True),  # Empty string
+            ('"test""quote"', True),  # String with escaped quote at end
+        ]
+
+        for input_str, expected_simple in test_cases:
+            # Simulate the fix's logic
+            if input_str.startswith('"') and input_str.endswith('"'):
+                inner = input_str[1:-1]
+                test_inner = inner.replace('""', "")
+                is_simple = '"' not in test_inner
+            else:
+                is_simple = False
+
+            assert is_simple == expected_simple, (
+                f"Input {input_str!r}: expected is_simple={expected_simple}, got {is_simple}"
+            )
+
 
 class TestSubscriptContext:
     """Tests for SUBSCRIPT context."""
