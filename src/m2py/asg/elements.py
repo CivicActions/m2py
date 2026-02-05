@@ -337,6 +337,10 @@ class MRoutine(ASGElement):
     # This requires dynamic_locals mode for runtime variable name resolution
     has_name_indirection_on_locals: bool = False
 
+    # True if routine has external GOTOs (G ^ROUTINE, G LABEL^ROUTINE, etc.)
+    # External GOTOs need all local variables synced to _scope for MUMPS semantics
+    has_external_gotos: bool = False
+
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.
 

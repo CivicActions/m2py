@@ -94,6 +94,10 @@ def classify_gotos(routine: MRoutine) -> None:
     # This triggers TRAMPOLINE strategy even without cross-label GOTOs
     routine.has_offset_calls = _detect_offset_calls(routine)
 
+    # Set has_external_gotos if any GOTO targets another routine
+    # This requires dynamic locals for proper cross-routine variable visibility
+    routine.has_external_gotos = _detect_external_gotos(routine)
+
     # Spec 013: Set fall-through flags on labels
     # Labels without explicit exit (QUIT/GOTO/HALT) fall through to the next label
     _detect_fallthrough(routine)
@@ -600,6 +604,32 @@ def _detect_offset_calls(routine: MRoutine) -> bool:
             elif isinstance(stmt, MDoStatement):
                 for target in stmt.targets:
                     if target.offset is not None:
+                        return True
+    return False
+
+
+def _detect_external_gotos(routine: MRoutine) -> bool:
+    """Check if the routine contains any external GOTOs (to other routines).
+
+    External GOTOs require all local variables to be synced to _scope so that
+    the target routine can access them. MUMPS has a single symbol table, so
+    variables set before a GOTO must be visible in the target routine.
+
+    This checks for MCall targets with non-None routine field (indicates external).
+
+    Args:
+        routine: The routine to check
+
+    Returns:
+        True if any GOTO targets an external routine
+    """
+    for label in routine.labels:
+        if label.body is None:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                for target in stmt.targets:
+                    if target.routine is not None:
                         return True
     return False
 

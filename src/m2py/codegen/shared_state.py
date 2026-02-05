@@ -35,6 +35,11 @@ def routine_uses_dynamic_locals(routine: "MRoutine") -> bool:
     Also required when routine has name indirection that references local
     variables, since we need runtime variable name resolution.
 
+    Also required when routine has external GOTOs (G ^ROUTINE, G LABEL^ROUTINE).
+    MUMPS has a single symbol table, so all local variables must be visible
+    in the target routine. Dynamic locals ensure all variables are tracked
+    and synced to _scope before the external GOTO.
+
     Args:
         routine: MRoutine to check
 
@@ -45,6 +50,7 @@ def routine_uses_dynamic_locals(routine: "MRoutine") -> bool:
         routine.has_argumentless_kill
         or routine.has_argumentless_new
         or routine.has_name_indirection_on_locals
+        or routine.has_external_gotos
     )
 
 
