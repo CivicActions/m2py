@@ -1005,7 +1005,8 @@ class TestDoLabelOffsetExternal:
         """D LABEL+N^ROUTINE generates runtime strategy detection code.
 
         T100: The generated code should check if internal _-prefixed function exists
-        and use TRAMPOLINE path if so, SIMPLE_FUNCTIONS path otherwise.
+        and use TRAMPOLINE path with call_external_with_offset helper if so,
+        SIMPLE_FUNCTIONS path otherwise.
         """
         code = generate_python("TEST\n D SUB+2^EXTRTN\n Q")
 
@@ -1016,15 +1017,14 @@ class TestDoLabelOffsetExternal:
         assert "_internal_name = '_' + _label_name" in code
         assert "hasattr(EXTRTN, _internal_name)" in code
 
-        # Should have TRAMPOLINE branch (calls internal function with RoutineState)
-        assert "getattr(EXTRTN, _internal_name)" in code
-        assert "RoutineState()" in code
+        # Should have TRAMPOLINE branch using call_external_with_offset helper
+        assert "call_external_with_offset" in code
 
         # Should have SIMPLE_FUNCTIONS fallback branch
         assert "getattr(EXTRTN, _label_name)" in code
 
-        # Both branches use run_with_goto_support
-        assert code.count("run_with_goto_support") >= 2
+        # SIMPLE_FUNCTIONS branch uses run_with_goto_support
+        assert "run_with_goto_support" in code
 
         # verify valid Python syntax
         compile(code, "<test>", "exec")
@@ -1042,3 +1042,116 @@ class TestDoLabelOffsetExternal:
 
         # verify valid Python syntax
         compile(code, "<test>", "exec")
+
+
+@pytest.mark.codegen
+class TestDoMiniTrampolineGotoExternal:
+    """Tests for GotoExternal handling in DO mini-trampoline.
+
+    When DO with offset (D LABEL+N) is executed, the code runs a mini-trampoline
+    that follows label transitions. If an external GOTO is raised from within
+    a subroutine called via DO, the mini-trampoline must catch it, execute
+    the external routine, sync state back, and continue after the DO.
+    """
+
+    def test_do_offset_catches_goto_external(self, generate_python):
+        """DO with offset generates try/except for GotoExternal.
+
+        The mini-trampoline loop should be wrapped in try/except to catch
+        GotoExternal raised from subroutines.
+        """
+        code = generate_python('TEST\n D SUB+1\n W "after"\n Q\nSUB\n W 1\n W 2 Q\n')
+
+        # Should have try/except for GotoExternal
+        assert "except GotoExternal as _goto:" in code
+        # Should import resolve_goto_target and run_with_goto_support
+        assert "resolve_goto_target" in code
+        assert "run_with_goto_support" in code
+
+    def test_do_offset_syncs_scope_after_external_call(self, generate_python):
+        """After external GOTO, scope changes are synced back to state.
+
+        When GotoExternal is caught and the external routine runs, any
+        changes it made to _scope must be synced back to the caller's state.
+        """
+        code = generate_python("TEST\n D SUB+1\n W X\n Q\nSUB\n W 1\n W 2 Q\n")
+
+        # After catching GotoExternal and running external routine,
+        # should sync _scope back to state
+        # For dynamic state: uses state._locals
+        # For static state: uses setattr
+        assert (
+            "state._locals" in code
+            or "setattr(state" in code
+            or "_scope.items()" in code
+        )
+
+    def test_do_mini_trampoline_handles_int_target(self, generate_python):
+        """DO mini-trampoline handles integer targets from G LABEL+N.
+
+        T087: When an internal function returns an integer (line number)
+        instead of a string (label name), the mini-trampoline should use
+        _line_map to resolve it.
+        """
+        code = generate_python(
+            "TEST\n D SUB+1\n Q\nSUB\n W 1\n G TEST+2 Q\nOTHER\n W 2 Q\n"
+        )
+
+        # Should check if target is int
+        assert "isinstance(_do_target, int)" in code
+        # Should use _line_map for dispatch
+        assert "_line_map[_do_target]" in code
+
+    def test_goto_external_sets_target_to_none(self, generate_python):
+        """After handling GotoExternal, _do_target is set to None.
+
+        When GotoExternal is caught and processed, the mini-trampoline
+        should exit by setting _do_target = None.
+        """
+        code = generate_python("TEST\n D SUB+1\n Q\nSUB\n W 1\n W 2 Q\n")
+
+        # After handling GotoExternal, target should be None to exit loop
+        assert "_do_target = None" in code
+
+
+@pytest.mark.codegen
+class TestStateSyncEdgeCases:
+    """Tests for state synchronization edge cases.
+
+    When syncing _scope back to state after external calls, the code must
+    handle both dynamic state (with _locals dict) and static state (with
+    dataclass fields).
+    """
+
+    def test_state_sync_checks_for_locals_attribute(self, generate_python):
+        """State sync checks for _locals attribute to determine state type.
+
+        Dynamic state has _locals dict, static state uses dataclass fields.
+        The code should use hasattr to detect which type of state is used.
+        """
+        code = generate_python("TEST\n D SUB+1\n Q\nSUB\n S X=1 Q\n")
+
+        # Should check if state has _locals attribute
+        assert "hasattr(state, '_locals')" in code
+
+    def test_static_state_uses_setattr(self, generate_python):
+        """For static state without _locals, setattr is used to set fields.
+
+        When state doesn't have _locals dict, individual fields must be
+        set using setattr.
+        """
+        code = generate_python("TEST\n D SUB+1\n Q\nSUB\n S X=1 Q\n")
+
+        # Should use setattr for static state
+        assert "setattr(state" in code
+
+    def test_marray_values_handled_in_sync(self, generate_python):
+        """MArray values are handled correctly during scope sync.
+
+        MArray values should be stored directly, while raw values need
+        to be wrapped in MArray for dynamic state.
+        """
+        code = generate_python("TEST\n D SUB+1\n Q\nSUB\n S X=1 Q\n")
+
+        # Should check if value is MArray
+        assert "isinstance(_v, MArray)" in code

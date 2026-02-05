@@ -904,6 +904,15 @@ class RoutineGenerator:
                                 ctx.emitter.line(
                                     "target, state = func(_rt, state, _scope, _start_offset=offset)"
                                 )
+                            # T087: Handle (label, offset) tuple targets from G LABEL+N
+                            ctx.emitter.line("elif isinstance(target, tuple):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("label_name, offset = target")
+                                # Use _labels dict which maps MUMPS label names to internal functions
+                                ctx.emitter.line("func = _labels[label_name]")
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope, _start_offset=offset)"
+                                )
                             ctx.emitter.line("else:")
                             with ctx.emitter.indented():
                                 ctx.emitter.line("func = _labels[target]")
@@ -1036,6 +1045,15 @@ class RoutineGenerator:
                                 ctx.emitter.line(
                                     "target, state = func(_rt, state, _scope, _start_offset=offset)"
                                 )
+                            # T087: Handle (label, offset) tuple targets from G LABEL+N
+                            ctx.emitter.line("elif isinstance(target, tuple):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("label_name, offset = target")
+                                # Use _labels dict which maps MUMPS label names to internal functions
+                                ctx.emitter.line("func = _labels[label_name]")
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope, _start_offset=offset)"
+                                )
                             ctx.emitter.line("else:")
                             with ctx.emitter.indented():
                                 ctx.emitter.line("func = _labels[target]")
@@ -1054,6 +1072,25 @@ class RoutineGenerator:
                     with ctx.emitter.indented():
                         ctx.emitter.line("resolve_goto_target(_goto), _rt, _scope")
                     ctx.emitter.line(")")
+                    # After external GOTO runs, sync _scope back into state
+                    # so state reflects any changes made by the external routine
+                    if ctx.uses_dynamic_locals:
+                        ctx.emitter.line("for _k, _v in _scope.items():")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("if isinstance(_v, MArray):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("state._locals[_k] = _v")
+                            ctx.emitter.line("else:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("_m = MArray()")
+                                ctx.emitter.line("_m.value = _v")
+                                ctx.emitter.line("state._locals[_k] = _m")
+                    else:
+                        for var_name in sorted(ctx.state_vars):
+                            py_name = translate_name(var_name)
+                            ctx.emitter.line(
+                                f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
+                            )
 
                 # T075b: Sync state back to _scope before returning
                 if ctx.uses_dynamic_locals:

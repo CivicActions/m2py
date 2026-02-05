@@ -342,3 +342,83 @@ class TestKillEmptyIntermediateCleanup:
         # X(1) has no value but has child X(1,2), so $D=10
         # X has no value but has child X(1), so $D=10
         assert result.output == "10 10"
+
+
+@pytest.mark.codegen
+class TestKillTrampolineDynamicLocals:
+    """Tests for KILL with TRAMPOLINE strategy and dynamic_locals.
+
+    When a routine uses argumentless KILL or NEW AND has cross-label GOTOs
+    (triggering TRAMPOLINE), it uses dynamic_locals mode where variables are
+    stored in state._locals dict. KILL in this mode must use state._locals
+    instead of direct variable access.
+
+    To trigger TRAMPOLINE + dynamic_locals, we need:
+    1. Cross-label GOTO (triggers TRAMPOLINE)
+    2. Argumentless KILL (triggers uses_dynamic_locals)
+    """
+
+    def test_kill_dynamic_locals_entire_variable(self, generate_python):
+        """K X with TRAMPOLINE+dynamic_locals uses state._locals.pop().
+
+        When uses_dynamic_locals is True AND strategy is TRAMPOLINE,
+        K X should generate state._locals.pop('X', None).
+        """
+        # Cross-label GOTO + argumentless KILL triggers TRAMPOLINE + dynamic_locals
+        code = generate_python("TEST K\n K X\n G END\n Q\nEND Q\n")
+
+        # Should use state._locals for variable removal (TRAMPOLINE + dynamic_locals)
+        assert "state._locals.pop('X', None)" in code
+
+    def test_kill_dynamic_locals_subscripted(self, generate_python):
+        """K X(1) with TRAMPOLINE+dynamic_locals uses state._locals.get().kill().
+
+        For subscripted kills in TRAMPOLINE+dynamic_locals mode, should use
+        state._locals.get('X', MArray()).kill(subscripts).
+        """
+        # Cross-label GOTO + argumentless KILL triggers TRAMPOLINE + dynamic_locals
+        code = generate_python("TEST K\n K X(1)\n G END\n Q\nEND Q\n")
+
+        # Should use state._locals.get().kill() pattern
+        assert "state._locals.get('X', MArray()).kill(" in code
+
+    def test_kill_dynamic_locals_multiple_subscripts(self, generate_python):
+        """K X(1,2) with TRAMPOLINE+dynamic_locals handles multiple subscripts."""
+        code = generate_python("TEST K\n K X(1,2)\n G END\n Q\nEND Q\n")
+
+        # Should pass multiple subscripts to kill
+        assert "state._locals.get('X', MArray()).kill(" in code
+
+    def test_kill_without_dynamic_locals_uses_direct_access(self, generate_python):
+        """K X without dynamic_locals uses direct variable access.
+
+        When routine doesn't use argumentless KILL/NEW, variables are
+        accessed directly via _scope, not state._locals.
+        """
+        # No argumentless KILL, so uses direct access via _scope
+        code = generate_python("TEST S X=1\n K X\n Q\n")
+
+        # Should use _scope.pop for SIMPLE_FUNCTIONS
+        assert "_scope.pop('X', None)" in code
+
+    def test_kill_dynamic_locals_preserves_siblings(self, execute_mumps):
+        """K X(1) with dynamic_locals preserves sibling subscripts."""
+        # Create scenario with argumentless KILL + GOTO to trigger dynamic_locals
+        result = execute_mumps(
+            "TEST K\n S X(1)=1,X(2)=2\n K X(1)\n G END\n Q\nEND W $D(X(1)),$D(X(2)) Q\n"
+        )
+        # X(1) is killed (0), X(2) remains (1)
+        assert result.output == "01"
+        assert result.success is True
+
+    def test_kill_dynamic_locals_execution(self, execute_mumps):
+        """Full execution test for KILL with TRAMPOLINE+dynamic_locals.
+
+        Verifies that KILL works correctly in a routine with both
+        argumentless KILL (uses_dynamic_locals) and cross-label GOTO (TRAMPOLINE).
+        """
+        result = execute_mumps(
+            'TEST K\n S X=5\n K X\n G END\n Q\nEND W $G(X,"gone") Q\n'
+        )
+        assert result.output == "gone"
+        assert result.success is True

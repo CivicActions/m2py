@@ -3775,7 +3775,16 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
 
     # Local target - original behavior
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
-        ctx.emitter.line(f'return ("{target.name}", state)')
+        # T087: Handle local GOTO with offset (G LABEL+N)
+        # Convert to absolute line number for _line_map dispatch
+        # _label_lines stores 0-indexed line numbers, so we add 1 for 1-indexed source lines
+        if target.offset is not None:
+            offset_code = generate_expr(target.offset, ctx)
+            ctx.emitter.line(
+                f'return (_label_lines["{target.name}"] + 1 + int(m_num({offset_code})), state)'
+            )
+        else:
+            ctx.emitter.line(f'return ("{target.name}", state)')
     else:
         label_name = translate_name(target.name)
         # T075l: Pass _rt and _scope so XECUTE inline GOTO works correctly
@@ -4024,18 +4033,19 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             # that accept _start_offset. SIMPLE_FUNCTIONS has public functions that
             # either accept _start_offset (if they have fall-through lines) or don't.
             # We check at runtime for the internal function first.
-            ctx.emitter.line("from m2py.runtime import run_with_goto_support")
             ctx.emitter.line("_internal_name = '_' + _label_name")
             ctx.emitter.line(f"if hasattr({routine_name}, _internal_name):")
             with ctx.emitter.indented():
-                # TRAMPOLINE strategy - use internal function with RoutineState
+                # TRAMPOLINE strategy - use call_external_with_offset helper
+                # This properly initializes state from _scope and syncs back
+                ctx.emitter.line("from m2py.runtime import call_external_with_offset")
                 ctx.emitter.line(
-                    f"run_with_goto_support(lambda _rt, _scope=None: "
-                    f"getattr({routine_name}, _internal_name)(_rt, {routine_name}.RoutineState(), _scope or {{}}, _start_offset=_line_offset), _rt, _scope)"
+                    f"call_external_with_offset({routine_name}, _label_name, _line_offset, _rt, _scope)"
                 )
             ctx.emitter.line("else:")
             with ctx.emitter.indented():
                 # SIMPLE_FUNCTIONS strategy - try public function with _start_offset
+                ctx.emitter.line("from m2py.runtime import run_with_goto_support")
                 ctx.emitter.line(
                     f"run_with_goto_support(lambda _rt, _scope=None: "
                     f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset), _rt, _scope)"
@@ -4157,19 +4167,103 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # T075i: Capture return value and follow trampoline loop
         # The internal function may return a label transition (e.g., when offset
         # lands at end of label block and execution should continue to next label)
-        if args:
+        # Wrap in try/except to handle GotoExternal from subroutine
+        ctx.emitter.line("try:")
+        with ctx.emitter.indented():
+            if args:
+                ctx.emitter.line(
+                    f"_do_target, state = {internal_func}(_rt, state, _scope, {args}, _start_offset=_offset_val)"
+                )
+            else:
+                ctx.emitter.line(
+                    f"_do_target, state = {internal_func}(_rt, state, _scope, _start_offset=_offset_val)"
+                )
+        ctx.emitter.line("except GotoExternal as _goto:")
+        with ctx.emitter.indented():
+            # Handle external GOTO from within DO - run it, then continue after DO
             ctx.emitter.line(
-                f"_do_target, state = {internal_func}(_rt, state, _scope, {args}, _start_offset=_offset_val)"
+                "from m2py.runtime import run_with_goto_support, resolve_goto_target"
             )
-        else:
             ctx.emitter.line(
-                f"_do_target, state = {internal_func}(_rt, state, _scope, _start_offset=_offset_val)"
+                "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
             )
+            # Sync scope back to state after external call
+            # Handle both dynamic (_locals dict) and static (field) state
+            ctx.emitter.line("if hasattr(state, '_locals'):")
+            with ctx.emitter.indented():
+                ctx.emitter.line("for _k, _v in _scope.items():")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("if isinstance(_v, MArray):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("state._locals[_k] = _v")
+                    ctx.emitter.line("else:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_m = MArray()")
+                        ctx.emitter.line("_m.value = _v")
+                        ctx.emitter.line("state._locals[_k] = _m")
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("for _k, _v in _scope.items():")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("if isinstance(_v, MArray):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("setattr(state, _k, _v)")
+                    ctx.emitter.line("elif hasattr(state, _k):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("setattr(state, _k, _v)")
+            ctx.emitter.line("_do_target = None")
+
         # T075i: Follow trampoline loop if internal function returned a label
+        # T087: Handle both string targets (label names) and int targets (line numbers)
         ctx.emitter.line("while _do_target is not None:")
         with ctx.emitter.indented():
-            ctx.emitter.line("_do_func = _labels[_do_target]")
-            ctx.emitter.line("_do_target, state = _do_func(_rt, state, _scope)")
+            ctx.emitter.line("try:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("if isinstance(_do_target, int):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        "_label_name, _line_offset = _line_map[_do_target]"
+                    )
+                    ctx.emitter.line("_do_func = _labels[_label_name]")
+                    ctx.emitter.line(
+                        "_do_target, state = _do_func(_rt, state, _scope, _start_offset=_line_offset)"
+                    )
+                ctx.emitter.line("else:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("_do_func = _labels[_do_target]")
+                    ctx.emitter.line("_do_target, state = _do_func(_rt, state, _scope)")
+            ctx.emitter.line("except GotoExternal as _goto:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    "from m2py.runtime import run_with_goto_support, resolve_goto_target"
+                )
+                ctx.emitter.line(
+                    "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
+                )
+                # Sync scope back to state after external call
+                ctx.emitter.line("if hasattr(state, '_locals'):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("for _k, _v in _scope.items():")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("if isinstance(_v, MArray):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("state._locals[_k] = _v")
+                        ctx.emitter.line("else:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("_m = MArray()")
+                            ctx.emitter.line("_m.value = _v")
+                            ctx.emitter.line("state._locals[_k] = _m")
+                ctx.emitter.line("else:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("for _k, _v in _scope.items():")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("if isinstance(_v, MArray):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("setattr(state, _k, _v)")
+                        ctx.emitter.line("elif hasattr(state, _k):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("setattr(state, _k, _v)")
+                ctx.emitter.line("_do_target = None")
         return
 
     # T060-T062: Check callee signature for byref_outputs and generate destructuring
@@ -4449,8 +4543,17 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                 else:
                     # Kill entire variable - remove from scope
                     ctx.emitter.line(f"_scope.pop({var_name!r}, None)")
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                # TRAMPOLINE with dynamic_locals - use state._locals
+                if subscripts_args:
+                    ctx.emitter.line(
+                        f"state._locals.get({var_name!r}, MArray()).kill({subscripts_args})"
+                    )
+                else:
+                    # Kill entire variable - remove from state._locals
+                    ctx.emitter.line(f"state._locals.pop({var_name!r}, None)")
             else:
-                # TRAMPOLINE strategy - direct variable access
+                # TRAMPOLINE strategy with static state vars - direct variable access
                 if subscripts_args:
                     ctx.emitter.line(f"{translated}.kill({subscripts_args})")
                 else:

@@ -1106,6 +1106,118 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
         return getattr(module, entry_name)
 
 
+def call_external_with_offset(
+    module: Any,
+    label_name: str,
+    line_offset: int,
+    _rt: "MUMPSRuntime",
+    _scope: Dict[str, Any],
+) -> None:
+    """Call an external routine's internal function with offset, properly initializing state.
+
+    This function handles the complexity of calling an external routine at a specific
+    offset (e.g., D LABEL+N^ROUTINE). It:
+    1. Creates a RoutineState for the target routine
+    2. Initializes that state from the caller's _scope (so VCOMP, etc. are visible)
+    3. Calls the internal function with the offset
+    4. Runs the trampoline if control returns to the routine
+    5. Syncs state changes back to _scope
+
+    Args:
+        module: The imported module for the target routine
+        label_name: The label name (Python-translated) to call
+        line_offset: The offset within the label
+        _rt: MUMPSRuntime instance
+        _scope: Shared scope dictionary for variable visibility
+    """
+    _scope = _scope if _scope is not None else {}
+
+    # Save and set runtime context
+    _saved_routine = _rt._current_routine
+    _saved_source_lines = _rt._current_source_lines
+    _saved_label_lines = _rt._current_label_lines
+    _rt._current_routine = module._routine_name
+    _rt._current_source_lines = module._source_lines
+    _rt._current_label_lines = module._label_lines
+
+    try:
+        # Get state class and create instance
+        state_class = getattr(module, "RoutineState", None)
+        if not state_class:
+            raise ValueError(f"Module {module._routine_name} has no RoutineState class")
+
+        state = state_class()
+
+        # Check if state uses dynamic locals or static fields
+        uses_dynamic = hasattr(state, "_locals")
+
+        # Initialize state from _scope
+        for k, v in _scope.items():
+            if isinstance(v, MArray):
+                if uses_dynamic:
+                    state._locals[k] = v
+                else:
+                    setattr(state, k, v)
+            else:
+                _m = MArray()
+                _m.value = v
+                if uses_dynamic:
+                    state._locals[k] = _m
+                else:
+                    setattr(state, k, _m)
+
+        # Get the internal function
+        internal_name = "_" + label_name
+        if not hasattr(module, internal_name):
+            raise ValueError(
+                f"Module {module._routine_name} has no function {internal_name}"
+            )
+        internal_func = getattr(module, internal_name)
+
+        # Call internal function with offset
+        target, state = internal_func(_rt, state, _scope, _start_offset=line_offset)
+
+        # Run trampoline if control returns within the routine
+        while target is not None:
+            try:
+                if hasattr(module, "_line_map") and isinstance(target, int):
+                    lbl, off = module._line_map[target]
+                    func = getattr(module, "_" + lbl)
+                    target, state = func(_rt, state, _scope, _start_offset=off)
+                elif isinstance(target, tuple):
+                    lbl, off = target
+                    func = module._labels[lbl]
+                    target, state = func(_rt, state, _scope, _start_offset=off)
+                else:
+                    func = module._labels[target]
+                    target, state = func(_rt, state, _scope)
+            except GotoExternal as _goto:
+                # Handle nested external GOTO
+                run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)
+                target = None
+
+        # Sync state back to _scope based on state type
+        if uses_dynamic:
+            _scope.update({k: v for k, v in state._locals.items()})
+        else:
+            # For static state, copy fields that are MArrays or have values
+            for attr in dir(state):
+                if not attr.startswith("_"):
+                    val = getattr(state, attr)
+                    if isinstance(val, MArray):
+                        _scope[attr] = val
+                    elif val is not None:
+                        # Wrap non-MArray values
+                        _m = MArray()
+                        _m.value = val
+                        _scope[attr] = _m
+    finally:
+        # Restore runtime context
+        _rt._current_routine = _saved_routine
+        _rt._current_source_lines = _saved_source_lines
+        _rt._current_label_lines = _saved_label_lines
+
+
 def run_with_goto_support(
     entry_func: Callable[..., Any],
     _rt: "MUMPSRuntime",
@@ -5028,6 +5140,7 @@ __all__ = [
     "LabelNotFoundError",
     "run_with_goto_support",
     "resolve_goto_target",
+    "call_external_with_offset",
     # Spec 009: Global storage and helpers
     "GlobalStorageBackend",
     "InMemoryGlobalStorage",

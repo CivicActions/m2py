@@ -1297,3 +1297,295 @@ class TestResolveGotoTarget:
         assert callable(result)
         # The wrapper has a docstring indicating it's an offset wrapper
         assert "offset" in result.__doc__.lower()
+
+
+@pytest.mark.runtime
+class TestCallExternalWithOffset:
+    """Tests for call_external_with_offset() runtime helper.
+
+    This helper handles calling external routines at a specific offset
+    (D LABEL+N^ROUTINE). It properly initializes state from _scope,
+    calls the internal function, runs the trampoline if needed, and
+    syncs state changes back to _scope.
+    """
+
+    def test_basic_call_with_offset(self):
+        """call_external_with_offset calls internal function with offset."""
+        import types
+        from dataclasses import dataclass, field
+
+        from m2py.runtime import MArray, MUMPSRuntime, call_external_with_offset
+
+        # Create a mock module with TRAMPOLINE-style internal function
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._source_lines = ["TESTRTN", " W 1", " W 2", " Q"]
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0), 2: ("TESTRTN", 1)}
+        module._labels = {}
+
+        @dataclass
+        class RoutineState:
+            X: MArray = field(default_factory=MArray)
+
+        module.RoutineState = RoutineState
+
+        received_offset = None
+
+        def internal_func(_rt, state, _scope, _start_offset=0):
+            nonlocal received_offset
+            received_offset = _start_offset
+            return (None, state)
+
+        module._TESTRTN = internal_func
+        module._labels["TESTRTN"] = internal_func
+
+        _rt = MUMPSRuntime()
+        _scope = {}
+
+        call_external_with_offset(module, "TESTRTN", 1, _rt, _scope)
+
+        assert received_offset == 1
+
+    def test_initializes_state_from_scope(self):
+        """call_external_with_offset initializes state from _scope."""
+        import types
+        from dataclasses import dataclass, field
+
+        from m2py.runtime import MArray, MUMPSRuntime, call_external_with_offset
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._source_lines = ["TESTRTN"]
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0)}
+        module._labels = {}
+
+        @dataclass
+        class RoutineState:
+            X: MArray = field(default_factory=MArray)
+
+        module.RoutineState = RoutineState
+
+        received_state = None
+
+        def internal_func(_rt, state, _scope, _start_offset=0):
+            nonlocal received_state
+            received_state = state
+            return (None, state)
+
+        module._TESTRTN = internal_func
+        module._labels["TESTRTN"] = internal_func
+
+        _rt = MUMPSRuntime()
+        x_arr = MArray()
+        x_arr.value = 42
+        _scope = {"X": x_arr}
+
+        call_external_with_offset(module, "TESTRTN", 0, _rt, _scope)
+
+        # State should have been initialized from scope
+        assert received_state is not None
+        assert received_state.X.value == 42
+
+    def test_syncs_state_changes_back_to_scope(self):
+        """call_external_with_offset syncs state changes back to _scope."""
+        import types
+        from dataclasses import dataclass, field
+
+        from m2py.runtime import MArray, MUMPSRuntime, call_external_with_offset
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._source_lines = ["TESTRTN"]
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0)}
+        module._labels = {}
+
+        @dataclass
+        class RoutineState:
+            X: MArray = field(default_factory=MArray)
+            Y: MArray = field(default_factory=MArray)
+
+        module.RoutineState = RoutineState
+
+        def internal_func(_rt, state, _scope, _start_offset=0):
+            # Modify state during execution
+            state.X.value = 100
+            state.Y.value = "modified"
+            return (None, state)
+
+        module._TESTRTN = internal_func
+        module._labels["TESTRTN"] = internal_func
+
+        _rt = MUMPSRuntime()
+        _scope = {}
+
+        call_external_with_offset(module, "TESTRTN", 0, _rt, _scope)
+
+        # Changes should be synced back to _scope
+        assert "X" in _scope
+        assert "Y" in _scope
+        # Check the values - may be raw or wrapped in MArray
+        x_val = _scope["X"].value if isinstance(_scope["X"], MArray) else _scope["X"]
+        y_val = _scope["Y"].value if isinstance(_scope["Y"], MArray) else _scope["Y"]
+        assert x_val == 100
+        assert y_val == "modified"
+
+    def test_follows_trampoline_transitions(self):
+        """call_external_with_offset follows trampoline when function returns target."""
+        import types
+        from dataclasses import dataclass, field
+
+        from m2py.runtime import MUMPSRuntime, call_external_with_offset
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._source_lines = ["TESTRTN", "NEXT"]
+        module._label_lines = {"TESTRTN": 0, "NEXT": 1}
+        module._line_map = {1: ("TESTRTN", 0), 2: ("NEXT", 0)}
+
+        @dataclass
+        class RoutineState:
+            _visited: list = field(default_factory=list)
+
+        module.RoutineState = RoutineState
+
+        call_sequence = []
+
+        def testrtn_func(_rt, state, _scope, _start_offset=0):
+            call_sequence.append("TESTRTN")
+            return ("NEXT", state)  # Transition to NEXT
+
+        def next_func(_rt, state, _scope, _start_offset=0):
+            call_sequence.append("NEXT")
+            return (None, state)  # End
+
+        module._TESTRTN = testrtn_func
+        module._NEXT = next_func
+        module._labels = {"TESTRTN": testrtn_func, "NEXT": next_func}
+
+        _rt = MUMPSRuntime()
+        _scope = {}
+
+        call_external_with_offset(module, "TESTRTN", 0, _rt, _scope)
+
+        # Should have followed the trampoline transition
+        assert call_sequence == ["TESTRTN", "NEXT"]
+
+    def test_handles_dynamic_locals_state(self):
+        """call_external_with_offset handles dynamic _locals dict in state."""
+        import types
+
+        from m2py.runtime import MArray, MUMPSRuntime, call_external_with_offset
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._source_lines = ["TESTRTN"]
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0)}
+        module._labels = {}
+
+        # Dynamic state with _locals dict
+        class DynamicRoutineState:
+            def __init__(self):
+                self._locals = {}
+
+        module.RoutineState = DynamicRoutineState
+
+        received_state = None
+
+        def internal_func(_rt, state, _scope, _start_offset=0):
+            nonlocal received_state
+            received_state = state
+            # Modify via _locals dict
+            state._locals["NEWVAR"] = MArray()
+            state._locals["NEWVAR"].value = "dynamic"
+            return (None, state)
+
+        module._TESTRTN = internal_func
+        module._labels["TESTRTN"] = internal_func
+
+        _rt = MUMPSRuntime()
+        x_arr = MArray()
+        x_arr.value = 42
+        _scope = {"X": x_arr}
+
+        call_external_with_offset(module, "TESTRTN", 0, _rt, _scope)
+
+        # X should have been initialized from scope
+        assert "X" in received_state._locals
+        # NEWVAR should be synced back to scope
+        assert "NEWVAR" in _scope
+
+    def test_restores_runtime_context(self):
+        """call_external_with_offset saves and restores runtime context."""
+        import types
+        from dataclasses import dataclass
+
+        from m2py.runtime import MUMPSRuntime, call_external_with_offset
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._source_lines = ["TESTRTN W 1 Q"]
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0)}
+        module._labels = {}
+
+        @dataclass
+        class RoutineState:
+            pass
+
+        module.RoutineState = RoutineState
+
+        def internal_func(_rt, state, _scope, _start_offset=0):
+            return (None, state)
+
+        module._TESTRTN = internal_func
+        module._labels["TESTRTN"] = internal_func
+
+        _rt = MUMPSRuntime()
+        # Set initial runtime context
+        _rt._current_routine = "ORIGINAL"
+        _rt._current_source_lines = ["ORIGINAL source"]
+        _rt._current_label_lines = {"ORIGINAL": 0}
+
+        _scope = {}
+
+        call_external_with_offset(module, "TESTRTN", 0, _rt, _scope)
+
+        # Runtime context should be restored after call
+        assert _rt._current_routine == "ORIGINAL"
+        assert _rt._current_source_lines == ["ORIGINAL source"]
+        assert _rt._current_label_lines == {"ORIGINAL": 0}
+
+    def test_handles_none_scope(self):
+        """call_external_with_offset handles None _scope by creating empty dict."""
+        import types
+        from dataclasses import dataclass
+
+        from m2py.runtime import MUMPSRuntime, call_external_with_offset
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._source_lines = ["TESTRTN"]
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0)}
+        module._labels = {}
+
+        @dataclass
+        class RoutineState:
+            pass
+
+        module.RoutineState = RoutineState
+
+        def internal_func(_rt, state, _scope, _start_offset=0):
+            return (None, state)
+
+        module._TESTRTN = internal_func
+        module._labels["TESTRTN"] = internal_func
+
+        _rt = MUMPSRuntime()
+
+        # Should not raise with None scope
+        call_external_with_offset(module, "TESTRTN", 0, _rt, None)
