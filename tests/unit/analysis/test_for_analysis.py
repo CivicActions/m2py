@@ -852,15 +852,13 @@ class TestValueParamsReferenceLoopVar:
     Feature: 017-ydb-test-failures (V1FORB/V1FORC fixes)
 
     MUMPS FOR evaluates each VALUE parameter when it becomes current,
-    NOT upfront like Python's for...in[...]. So F I=1,I+1,3*I must:
-    1. I=1, execute body
-    2. I=(current I)+1=2, execute body
-    3. I=3*(current I)=6, execute body
+    NOT upfront like Python's for...in[...]. This means:
 
-    When any VALUE parameter references the loop variable, we cannot use
-    Python's list comprehension pattern - we must generate sequential
-    assignments. This test validates that the analysis correctly detects
-    such cases.
+    1. Loop var reference: F I=1,I+1,3*I - I is evaluated with current value
+    2. Other var reference: F I=A,B,B,C - variables evaluated when current
+
+    If any VALUE parameter contains any variable reference, we must use
+    sequential evaluation because the variable may change during the loop.
     """
 
     def test_detects_simple_loop_var_reference(self):
@@ -889,12 +887,12 @@ class TestValueParamsReferenceLoopVar:
         assert isinstance(for_stmt, MForStatement)
         assert for_stmt.value_params_reference_loop_var is True
 
-    def test_no_loop_var_reference(self):
-        """VALUE params without loop var reference are detected as False."""
+    def test_string_literals_no_var_reference(self):
+        """VALUE params with string literals don't contain variables."""
         from m2py.parser import MUMPSParser
 
         parser = MUMPSParser()
-        # F I="A","B","C" - no reference to I
+        # F I="A","B","C" - string literals, no variable references
         routine = parser.parse('TEST F I="A","B","C" W I Q\n')
         analyze_for_loops(routine)  # Run analysis to set the flag
 
@@ -902,12 +900,12 @@ class TestValueParamsReferenceLoopVar:
         assert isinstance(for_stmt, MForStatement)
         assert for_stmt.value_params_reference_loop_var is False
 
-    def test_numeric_values_no_reference(self):
-        """Numeric VALUE params don't reference loop variable."""
+    def test_numeric_values_no_var_reference(self):
+        """Numeric VALUE params don't contain variable references."""
         from m2py.parser import MUMPSParser
 
         parser = MUMPSParser()
-        # F I=1,2,3 - numeric literals, no reference to I
+        # F I=1,2,3 - numeric literals, no variable references
         routine = parser.parse("TEST F I=1,2,3 W I Q\n")
         analyze_for_loops(routine)  # Run analysis to set the flag
 
@@ -928,21 +926,22 @@ class TestValueParamsReferenceLoopVar:
         assert isinstance(for_stmt, MForStatement)
         assert for_stmt.value_params_reference_loop_var is True
 
-    def test_other_variable_no_loop_var_reference(self):
-        """Different variable reference is not loop var reference."""
+    def test_other_variable_requires_sequential(self):
+        """Any variable reference requires sequential evaluation."""
         from m2py.parser import MUMPSParser
 
         parser = MUMPSParser()
-        # F I=1,X,Y - X and Y are different vars, not loop var I
+        # F I=1,X,Y - X and Y are variable refs (may change during loop)
         routine = parser.parse("TEST F I=1,X,Y W I Q\n")
         analyze_for_loops(routine)  # Run analysis to set the flag
 
         for_stmt = routine.labels[0].body.statements[0]
         assert isinstance(for_stmt, MForStatement)
-        assert for_stmt.value_params_reference_loop_var is False
+        # Any variable reference requires sequential evaluation
+        assert for_stmt.value_params_reference_loop_var is True
 
     def test_range_params_not_checked(self):
-        """RANGE parameters are not checked for loop var reference."""
+        """RANGE parameters are not checked for variable references."""
         from m2py.parser import MUMPSParser
 
         parser = MUMPSParser()

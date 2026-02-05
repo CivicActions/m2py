@@ -841,13 +841,365 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
 
     # Spec 017: Use ordered_items for correct left-to-right evaluation
     # ordered_items is always populated by the semantic analyzer
-    for item in stmt.ordered_items:
+
+    # Detect tuple SETs: consecutive assignments sharing the same value object
+    # For tuple SETs like (A,B,B(A,B))="I", subscripts must be evaluated BEFORE
+    # any assignments, per MUMPS 1995 spec
+    i = 0
+    while i < len(stmt.ordered_items):
+        item = stmt.ordered_items[i]
+
         if isinstance(item, MIndirectionType):
             # Argument indirection: S @A where A contains "target=value"
             generate_set_argument_indirection(item, ctx)
+            i += 1
         elif isinstance(item, MAssignment):
-            # Regular assignment
-            _generate_single_assignment(item, ctx)
+            # Check if this is the start of a tuple SET (multiple assignments with same value)
+            tuple_assignments = [item]
+            j = i + 1
+            while j < len(stmt.ordered_items):
+                next_item = stmt.ordered_items[j]
+                if isinstance(next_item, MAssignment) and next_item.value is item.value:
+                    tuple_assignments.append(next_item)
+                    j += 1
+                else:
+                    break
+
+            if len(tuple_assignments) > 1:
+                # Tuple SET: pre-evaluate subscripts, then assign
+                _generate_tuple_set(tuple_assignments, ctx)
+                i = j
+            else:
+                # Regular single assignment
+                _generate_single_assignment(item, ctx)
+                i += 1
+        else:
+            i += 1
+
+
+def _generate_tuple_set(assignments: list, ctx: "GeneratorContext") -> None:
+    """Generate code for a tuple SET like (A,B,B(A,B))="I".
+
+    MUMPS 1995 spec (Section 8.2.30) defines the evaluation order:
+    1. ALL subscripts in ALL targets are evaluated (left-to-right)
+    2. The RHS expression is evaluated
+    3. Assignments are performed (left-to-right)
+
+    This order is critical for naked global references because:
+    - Subscript evaluation affects the naked indicator
+    - RHS evaluation affects the naked indicator
+    - Assignment to explicit globals affects the naked indicator
+    - Naked global targets use the naked indicator at assignment time
+
+    Example: S (^(^(1),^B(2)),^C(3))=^D(4)
+    1. Eval subscripts: ^(1) uses current naked, ^B(2) updates naked to ^B
+    2. Eval RHS: ^D(4) updates naked to ^D
+    3. Assign: first target uses naked ^D, ^C(3) updates naked to ^C
+
+    Args:
+        assignments: List of MAssignment objects sharing the same value
+        ctx: Generator context
+    """
+
+    # STEP 1: Pre-evaluate ALL subscripts in ALL targets FIRST
+    # This must happen before RHS evaluation to maintain correct naked indicator flow
+    pre_eval_map = {}  # Maps (assignment_index, subscript_index) -> temp_var_name
+    temp_counter = 0
+
+    for idx, assignment in enumerate(assignments):
+        target = assignment.target
+        subscripts = getattr(target, "subscripts", None) or []
+        if subscripts:
+            for sub_idx, sub in enumerate(subscripts):
+                # Pre-evaluate ALL subscripts to capture correct naked indicator state
+                # Also needed if subscript references a variable modified by prior assignments
+                temp_name = f"_tuple_sub_{temp_counter}"
+                temp_counter += 1
+                sub_expr = generate_expr(sub, ctx)
+                ctx.emitter.line(f"{temp_name} = {sub_expr}")
+                pre_eval_map[(idx, sub_idx)] = temp_name
+
+    # STEP 2: Pre-evaluate the shared VALUE expression ONCE
+    # All assignments share the same value object
+    shared_value = assignments[0].value
+    value_expr = generate_expr(shared_value, ctx)
+    ctx.emitter.line(f"_tuple_value = m_str({value_expr})")
+
+    # STEP 3: Generate all assignments, using pre-evaluated subscripts and value
+    for idx, assignment in enumerate(assignments):
+        _generate_single_assignment_with_preeval_subs(
+            assignment, idx, pre_eval_map, "_tuple_value", ctx
+        )
+
+
+def _subscript_needs_pre_eval(sub, prior_assignments: list) -> bool:
+    """Check if a subscript expression needs pre-evaluation.
+
+    A subscript needs pre-evaluation if it references a variable that
+    is being set by a prior assignment in the tuple.
+
+    Args:
+        sub: Subscript expression
+        prior_assignments: Assignments that will execute before this subscript is used
+
+    Returns:
+        True if subscript contains a variable that will be modified
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import LocalVariable
+
+    # Get set of variable names being modified by prior assignments
+    modified_vars = set()
+    for assign in prior_assignments:
+        target = assign.target
+        if isinstance(target, (MVariable, LocalVariable)):
+            var_name = getattr(target, "name", None)
+            if var_name:
+                modified_vars.add(var_name)
+
+    if not modified_vars:
+        return False
+
+    # Check if subscript references any modified variable
+    return _expr_references_vars(sub, modified_vars)
+
+
+def _expr_references_vars(expr, var_names: set) -> bool:
+    """Check if expression references any of the given variable names.
+
+    Args:
+        expr: Expression to check
+        var_names: Set of variable names to look for
+
+    Returns:
+        True if expression contains a reference to any of the variables
+    """
+    from m2py.asg.expressions import MVariable, MBinaryOp, MUnaryOp, MIntrinsicFunction
+    from m2py.parser.textx_classes import LocalVariable
+
+    if isinstance(expr, (MVariable, LocalVariable)):
+        name = getattr(expr, "name", None)
+        if name in var_names:
+            return True
+        # Also check subscripts
+        subscripts = getattr(expr, "subscripts", None) or []
+        for sub in subscripts:
+            if _expr_references_vars(sub, var_names):
+                return True
+        return False
+
+    if isinstance(expr, MBinaryOp):
+        return _expr_references_vars(expr.left, var_names) or _expr_references_vars(
+            expr.right, var_names
+        )
+
+    if isinstance(expr, MUnaryOp):
+        return _expr_references_vars(expr.operand, var_names)
+
+    if isinstance(expr, MIntrinsicFunction):
+        for arg in expr.arguments or []:
+            if _expr_references_vars(arg, var_names):
+                return True
+        return False
+
+    return False
+
+
+def _generate_single_assignment_with_preeval(
+    assignment, idx: int, pre_eval_map: dict, ctx: "GeneratorContext"
+) -> None:
+    """Generate a single assignment, using pre-evaluated subscripts from the map."""
+    from m2py.asg.expressions import MIndirection as MIndirectionType, MVariable
+    from m2py.codegen.indirection import generate_name_indirection_write
+    from m2py.parser.textx_classes import LocalVariable, GlobalVariable
+
+    if assignment.target is None or assignment.value is None:
+        return
+
+    # Handle indirection targets
+    if isinstance(assignment.target, MIndirectionType):
+        value_expr = generate_expr(assignment.value, ctx)
+        set_stmt = generate_name_indirection_write(assignment.target, value_expr, ctx)
+        ctx.emitter.line(set_stmt)
+        return
+
+    target = assignment.target
+    subscripts = getattr(target, "subscripts", None) or []
+
+    # Build subscript expressions, using pre-evaluated values where available
+    subscript_exprs = []
+    for sub_idx, sub in enumerate(subscripts):
+        if (idx, sub_idx) in pre_eval_map:
+            subscript_exprs.append(pre_eval_map[(idx, sub_idx)])
+        else:
+            subscript_exprs.append(generate_expr(sub, ctx))
+
+    # Generate value expression
+    value_expr = generate_expr(assignment.value, ctx)
+
+    # Generate the assignment based on target type
+    if isinstance(target, (MVariable, LocalVariable)):
+        var_name = target.name
+        python_name = translate_name(var_name)
+
+        if subscript_exprs:
+            # Subscripted assignment
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                ctx.emitter.line(
+                    f"state._locals.setdefault({python_name!r}, MArray())[{', '.join(subscript_exprs)}] = {value_expr}"
+                )
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+                ctx.emitter.line(
+                    f"state.{python_name}[{', '.join(subscript_exprs)}] = {value_expr}"
+                )
+            else:
+                ctx.emitter.line(
+                    f"_scope.setdefault({python_name!r}, MArray())[{', '.join(subscript_exprs)}] = {value_expr}"
+                )
+        else:
+            # Simple assignment
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                ctx.emitter.line(
+                    f"state._locals.setdefault({python_name!r}, MArray()).value = {value_expr}"
+                )
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+                ctx.emitter.line(f"state.{python_name} = {value_expr}")
+            else:
+                ctx.emitter.line(
+                    f"_scope.setdefault({python_name!r}, MArray()).value = {value_expr}"
+                )
+    elif isinstance(target, GlobalVariable):
+        global_name = target.name
+        if subscript_exprs:
+            subscripts_tuple = (
+                f"({', '.join(subscript_exprs)},)"
+                if len(subscript_exprs) == 1
+                else f"({', '.join(subscript_exprs)})"
+            )
+            ctx.emitter.line(
+                f'_rt.globals.set("{global_name}", {subscripts_tuple}, {value_expr})'
+            )
+        else:
+            ctx.emitter.line(f'_rt.globals.set("{global_name}", (), {value_expr})')
+    else:
+        # Fallback to regular single assignment
+        _generate_single_assignment(assignment, ctx)
+
+
+def _generate_single_assignment_with_preeval_subs(
+    assignment, idx: int, pre_eval_map: dict, value_var: str, ctx: "GeneratorContext"
+) -> None:
+    """Generate a single assignment using pre-evaluated subscripts and value.
+
+    This is used by tuple SET to ensure:
+    1. All subscripts are evaluated BEFORE the RHS (per MUMPS spec 8.2.30)
+    2. The shared value is evaluated once and reused for all targets
+
+    The pre_eval_map contains ALL subscripts pre-evaluated, which is critical
+    for correct naked indicator behavior in complex expressions like:
+    S (^(^(1),^B(2)),^C(3))=^D(4)
+
+    Args:
+        assignment: MAssignment to generate
+        idx: Index of this assignment in the tuple
+        pre_eval_map: Map of (idx, sub_idx) -> temp_var_name for pre-evaluated subscripts
+        value_var: Name of the variable holding the pre-evaluated value
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MIndirection as MIndirectionType, MVariable
+    from m2py.codegen.indirection import generate_name_indirection_write
+    from m2py.parser.textx_classes import LocalVariable, GlobalVariable, NakedGlobal
+
+    if assignment.target is None:
+        return
+
+    # Handle indirection targets
+    if isinstance(assignment.target, MIndirectionType):
+        set_stmt = generate_name_indirection_write(assignment.target, value_var, ctx)
+        ctx.emitter.line(set_stmt)
+        return
+
+    target = assignment.target
+    subscripts = getattr(target, "subscripts", None) or []
+
+    # Build subscript expressions, using pre-evaluated values where available
+    subscript_exprs = []
+    for sub_idx, sub in enumerate(subscripts):
+        if (idx, sub_idx) in pre_eval_map:
+            subscript_exprs.append(pre_eval_map[(idx, sub_idx)])
+        else:
+            subscript_exprs.append(generate_expr(sub, ctx))
+
+    # Generate the assignment based on target type
+    if isinstance(target, (MVariable, LocalVariable)):
+        var_name = target.name
+        python_name = translate_name(var_name)
+
+        if subscript_exprs:
+            # Subscripted assignment
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                ctx.emitter.line(
+                    f"state._locals.setdefault({python_name!r}, MArray())[{', '.join(subscript_exprs)}] = {value_var}"
+                )
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+                ctx.emitter.line(
+                    f"state.{python_name}[{', '.join(subscript_exprs)}] = {value_var}"
+                )
+            else:
+                ctx.emitter.line(
+                    f"_scope.setdefault({python_name!r}, MArray())[{', '.join(subscript_exprs)}] = {value_var}"
+                )
+        else:
+            # Simple assignment
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                ctx.emitter.line(
+                    f"state._locals.setdefault({python_name!r}, MArray()).value = {value_var}"
+                )
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+                ctx.emitter.line(f"state.{python_name} = {value_var}")
+            else:
+                ctx.emitter.line(
+                    f"_scope.setdefault({python_name!r}, MArray()).value = {value_var}"
+                )
+    elif isinstance(target, GlobalVariable):
+        global_name = target.name
+        if subscript_exprs:
+            subscripts_tuple = (
+                f"({', '.join(subscript_exprs)},)"
+                if len(subscript_exprs) == 1
+                else f"({', '.join(subscript_exprs)})"
+            )
+            ctx.emitter.line(
+                f'_rt.globals.set("{global_name}", {subscripts_tuple}, {value_var})'
+            )
+        else:
+            ctx.emitter.line(f'_rt.globals.set("{global_name}", (), {value_var})')
+    elif isinstance(target, NakedGlobal):
+        # Naked global target with pre-evaluated value
+        # Generate subscript expressions for the naked global
+        naked_subscript_exprs = []
+        for sub_idx, sub in enumerate(subscripts):
+            if (idx, sub_idx) in pre_eval_map:
+                naked_subscript_exprs.append(pre_eval_map[(idx, sub_idx)])
+            else:
+                naked_subscript_exprs.append(generate_expr(sub, ctx))
+
+        if naked_subscript_exprs:
+            if len(naked_subscript_exprs) == 1:
+                subscripts_tuple = f"({naked_subscript_exprs[0]},)"
+            else:
+                subscripts_tuple = f"({', '.join(naked_subscript_exprs)})"
+        else:
+            subscripts_tuple = "()"
+
+        ctx.emitter.line(
+            f"_name, _subs = _rt.globals.resolve_naked({subscripts_tuple})"
+        )
+        ctx.emitter.line(f"_rt.globals.set(_name, _subs, {value_var})")
+    else:
+        raise NotImplementedError(
+            f"Unsupported target type in tuple SET: {type(target).__name__}"
+        )
 
 
 def _generate_single_assignment(
@@ -2300,7 +2652,18 @@ def _generate_for_open_ended(
 ) -> None:
     """Generate Python for loop from open-ended FOR (F I=1:1).
 
-    Uses itertools.count() for unbounded iteration.
+    Uses itertools.count() for unbounded iteration, UNLESS the loop variable
+    is modified in the body. When modified, we use a while loop pattern that
+    reads the current value and adds the step each iteration.
+
+    MUMPS semantics: F I=start:step means:
+    1. I = start (evaluated once)
+    2. Execute body
+    3. I = I + step (reads current I, which body may have modified)
+    4. Goto 2
+
+    Python's count() doesn't support step 3 reading from a modified I,
+    so when loop_var_modified_in_body is True, we use while True + manual stepping.
 
     T068: For indirect loop variables (F @A=1:1), resolve the target
     variable name at runtime and update via _rt.set_var().
@@ -2323,6 +2686,12 @@ def _generate_for_open_ended(
     start_expr = generate_expr(open_param.start, ctx)
     step_expr = generate_expr(open_param.step, ctx)
 
+    # When loop var is modified in body, we need while loop pattern
+    # because count() doesn't pick up modifications to the loop var
+    if stmt.loop_var_modified_in_body:
+        _generate_for_open_ended_while(stmt, for_ctx, ctx, start_expr, step_expr)
+        return
+
     # T068: Handle indirect loop variable (F @A=1:1)
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         # Resolve the target variable name once before the loop
@@ -2342,6 +2711,79 @@ def _generate_for_open_ended(
         )
         with ctx.emitter.indented():
             _generate_for_body(stmt, ctx, for_ctx)
+
+
+def _generate_for_open_ended_while(
+    stmt: MForStatement,
+    for_ctx: ForGenContext,
+    ctx: "GeneratorContext",
+    start_expr: str,
+    step_expr: str,
+) -> None:
+    """Generate while loop for open-ended FOR when loop var is modified.
+
+    When the body modifies the loop variable, we can't use count() because
+    MUMPS re-reads the loop var before adding step. Example:
+
+    F I=10:10 S:I=40 I="ABCD" ...
+    - I=10, body runs
+    - I=20, body runs
+    - I=30, body runs
+    - I=40, body sets I="ABCD"
+    - Next: I = "ABCD" + 10 = 0 + 10 = 10 (MUMPS string coercion)
+
+    Pattern:
+        _for_step = m_num(step_expr)
+        I = m_num(start_expr)
+        _scope['I'].value = I
+        while True:
+            <body>
+            I = m_num(I) + _for_step
+            _scope['I'].value = I
+
+    Args:
+        stmt: MForStatement node
+        for_ctx: FOR loop context
+        ctx: Generator context
+        start_expr: Expression for start value
+        step_expr: Expression for step value
+    """
+    # Compute step once at start
+    ctx.emitter.line(f"_for_step = m_num({step_expr})")
+
+    # Set initial value
+    ctx.emitter.line(f"{for_ctx.loop_var} = m_num({start_expr})")
+
+    # T068: Handle indirect loop variable
+    if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
+        ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
+        ctx.emitter.line(f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)")
+    else:
+        ctx.emitter.line(
+            f"_scope.setdefault('{for_ctx.loop_var}', MArray()).value = {for_ctx.loop_var}"
+        )
+
+    ctx.emitter.line("while True:")
+    with ctx.emitter.indented():
+        # Generate body
+        _generate_for_body(stmt, ctx, for_ctx)
+
+        # After body, update loop var: I = I + step
+        # Read from scope since body may have modified it
+        if for_ctx.loop_var_indirect:
+            ctx.emitter.line(
+                f"{for_ctx.loop_var} = m_add(m_num(_rt.get_var(_for_indirect_var, _scope)), _for_step)"
+            )
+            ctx.emitter.line(
+                f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)"
+            )
+        else:
+            ctx.emitter.line(
+                f"{for_ctx.loop_var} = m_add(m_num(m_var_value(_scope.get('{for_ctx.loop_var}'))), _for_step)"
+            )
+            ctx.emitter.line(
+                f"_scope.setdefault('{for_ctx.loop_var}', MArray()).value = {for_ctx.loop_var}"
+            )
 
 
 def _generate_for_argumentless(
@@ -2652,15 +3094,16 @@ def _generate_for_while_range(
         # Check if the NEXT value would be in range BEFORE incrementing
         # For step == 0, we never break (infinite loop until QUIT)
         next_val_cond = (
-            f"({step_var} > 0 and {loop_ref} + {step_var} <= {end_var}) or "
-            f"({step_var} < 0 and {loop_ref} + {step_var} >= {end_var}) or "
+            f"({step_var} > 0 and m_add({loop_ref}, {step_var}) <= {end_var}) or "
+            f"({step_var} < 0 and m_add({loop_ref}, {step_var}) >= {end_var}) or "
             f"({step_var} == 0)"
         )
         ctx.emitter.line(f"if not ({next_val_cond}):")
         with ctx.emitter.indented():
             ctx.emitter.line("break")
         # Increment loop variable at end of iteration
-        ctx.emitter.line(f"{loop_ref} = {loop_ref} + {step_var}")
+        # Use m_add for proper MUMPS string-to-number coercion
+        ctx.emitter.line(f"{loop_ref} = m_add({loop_ref}, {step_var})")
 
 
 def _generate_for_while_open_range(
@@ -2675,6 +3118,10 @@ def _generate_for_while_open_range(
     T096: When the loop variable is modified inside the body, we can't use
     Python's for loop with count() because it would overwrite the modification.
     Instead we use a while True loop with explicit stepping.
+
+    CRITICAL: MUMPS evaluates both start and step BEFORE assigning to the loop
+    variable. So for F I=$D(I):$D(I), both $D(I) expressions are evaluated
+    when $D(I)=10 (before I gets a value), not after I is assigned.
 
     For SIMPLE_FUNCTIONS: Use _scope['VAR'] directly so that modifications
     inside the body are visible to the stepping.
@@ -2698,11 +3145,14 @@ def _generate_for_while_open_range(
 
     # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
     lid = for_ctx.loop_id
+    start_var = f"_for_start_{lid}"
     step_var = f"_for_step_{lid}"
 
-    # Initialize loop variable and step value
-    ctx.emitter.line(f"{loop_ref} = m_num({start_expr})")
+    # MUMPS evaluates start and step BEFORE assigning to loop variable
+    # Both must be evaluated before the assignment changes any state
+    ctx.emitter.line(f"{start_var} = m_num({start_expr})")
     ctx.emitter.line(f"{step_var} = m_num({step_expr})")
+    ctx.emitter.line(f"{loop_ref} = {start_var}")
 
     # Open-ended loops run forever until QUIT breaks out
     ctx.emitter.line("while True:")
@@ -2711,7 +3161,8 @@ def _generate_for_while_open_range(
         # Execute body
         _generate_for_body(stmt, ctx, for_ctx)
         # Increment loop variable at end of iteration
-        ctx.emitter.line(f"{loop_ref} = {loop_ref} + {step_var}")
+        # Use m_add for proper MUMPS string-to-number coercion
+        ctx.emitter.line(f"{loop_ref} = m_add({loop_ref}, {step_var})")
 
 
 def _generate_for_while_range_indirect(
@@ -2787,6 +3238,10 @@ def _generate_for_while_open_range_indirect(
     might be subscripted, we need to use _rt.get_var and _rt.set_var for
     proper subscript handling at runtime.
 
+    CRITICAL: MUMPS evaluates both start and step BEFORE assigning to the loop
+    variable. So for F I=$D(I):$D(I), both $D(I) expressions are evaluated
+    when $D(I)=10 (before I gets a value), not after I is assigned.
+
     Args:
         stmt: MForStatement node
         for_ctx: FOR loop context with analysis
@@ -2801,11 +3256,14 @@ def _generate_for_while_open_range_indirect(
 
     # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
     lid = for_ctx.loop_id
+    start_var = f"_for_start_{lid}"
     step_var = f"_for_step_{lid}"
 
-    # Initialize loop variable using set_var for proper subscript handling
-    ctx.emitter.line(f"_rt.set_var(_for_indirect_var, m_num({start_expr}), _scope)")
+    # MUMPS evaluates start and step BEFORE assigning to loop variable
+    ctx.emitter.line(f"{start_var} = m_num({start_expr})")
     ctx.emitter.line(f"{step_var} = m_num({step_expr})")
+    # Now assign to loop variable using set_var for proper subscript handling
+    ctx.emitter.line(f"_rt.set_var(_for_indirect_var, {start_var}, _scope)")
 
     # Read via get_var for current value
     get_var_expr = "_rt.get_var(_for_indirect_var, _scope)"

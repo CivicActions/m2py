@@ -1133,10 +1133,18 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Spec 017 (T014): Use state._locals for dynamic locals in TRAMPOLINE
+        # Local variable - need to access from correct location based on strategy
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
         if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             return f"m_data(state._locals.get({python_name!r}, MArray()), {subscripts_tuple})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_data(state.{python_name}, {subscripts_tuple})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
     elif isinstance(var, GlobalVariable):
         # Global variable: m_data_global(_rt.globals, 'NAME', subscripts)
@@ -1149,11 +1157,18 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
-        # Fallback for any other variable type - treat as local
-        # Spec 017 (T014): Use state._locals for dynamic locals in TRAMPOLINE
+        # Fallback for MVariable or any other variable type - treat as local
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
         if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             return f"m_data(state._locals.get({python_name!r}, MArray()), {subscripts_tuple})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_data(state.{python_name}, {subscripts_tuple})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
 
 
@@ -1367,8 +1382,19 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable: m_order(_scope.get('VAR', MArray()), subscripts, direction)
+        # Local variable - need to access from correct location based on strategy
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            base = f"state._locals.get({python_name!r}, MArray())"
+            return f"m_order({base}, {subscripts_tuple}, {direction_code})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_order(state.{python_name}, {subscripts_tuple}, {direction_code})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_order(_scope.get({python_name!r}, MArray()), {subscripts_tuple}, {direction_code})"
     elif isinstance(var, GlobalVariable):
         # Global variable: m_order_global(_rt.globals, 'NAME', subscripts, direction)
@@ -1381,8 +1407,19 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
-        # Fallback for any other variable type - treat as local
+        # Fallback for MVariable or any other variable type - treat as local
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            base = f"state._locals.get({python_name!r}, MArray())"
+            return f"m_order({base}, {subscripts_tuple}, {direction_code})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_order(state.{python_name}, {subscripts_tuple}, {direction_code})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_order(_scope.get({python_name!r}, MArray()), {subscripts_tuple}, {direction_code})"
 
 
@@ -1445,8 +1482,18 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable: m_query(_scope.get('VAR', MArray()), 'VAR', subscripts)
+        # Local variable - need to access from correct location based on strategy
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            return f"m_query(state._locals.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_query(state.{python_name}, {var_name!r}, {subscripts_tuple})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_query(_scope.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
     elif isinstance(var, GlobalVariable):
         # Global variable: m_query_global(_rt.globals, 'NAME', subscripts)
@@ -1459,8 +1506,18 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
-        # Fallback for any other variable type - treat as local
+        # Fallback for MVariable or any other variable type - treat as local
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            return f"m_query(state._locals.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_query(state.{python_name}, {var_name!r}, {subscripts_tuple})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_query(_scope.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
 
 

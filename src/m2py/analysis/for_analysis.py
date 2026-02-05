@@ -28,44 +28,36 @@ if TYPE_CHECKING:
     from .variables import FunctionSignature
 
 
-def _check_value_params_reference_loop_var(stmt: MForStatement) -> bool:
-    """Check if any VALUE parameter expression references the loop variable.
+def _check_value_params_contain_variables(stmt: MForStatement) -> bool:
+    """Check if any VALUE parameter expression contains variable references.
 
     MUMPS FOR evaluates each parameter when it becomes the current iteration,
-    NOT upfront like Python's `for x in [...]`. So `F I=1,I+1,3*I` must:
-    1. I=1, execute body
-    2. I=(current I)+1=2, execute body
-    3. I=3*(current I)=6, execute body
+    NOT upfront like Python's `for x in [...]`. This means:
 
-    If any VALUE parameter references the loop variable, we cannot use
-    Python's `for...in[...]` pattern - we must generate sequential assignments.
+    1. Loop var reference: F I=1,I+1,3*I - I is evaluated with current value
+    2. Other var reference: F I=A,B,B,C - variables evaluated when current
+
+    If any VALUE parameter contains a variable reference, we cannot use
+    Python's `for...in[...]` pattern because:
+    - The list would evaluate all values upfront
+    - But MUMPS evaluates each value when it becomes current
+    - Variables may be modified during the loop body
 
     Args:
         stmt: The MForStatement to check
 
     Returns:
-        True if any VALUE parameter expression references the loop variable
+        True if any VALUE parameter contains any variable reference
     """
     from .variables import _extract_expression_variables
 
-    # Get loop variable name
-    if isinstance(stmt.loop_var, str):
-        loop_var_name = stmt.loop_var
-    elif isinstance(stmt.loop_var, MVariable):
-        loop_var_name = stmt.loop_var.name
-    else:
-        # Indirection case - be conservative
-        return True
-
-    if not loop_var_name:
-        return False
-
-    # Check each VALUE parameter
+    # Check each VALUE parameter for any variable reference
     for param in stmt.parameters:
         if param.param_type == ForParamType.VALUE and param.value is not None:
             # Extract variables referenced in this expression
             vars_in_expr = _extract_expression_variables(param.value)
-            if loop_var_name in vars_in_expr:
+            if vars_in_expr:
+                # Any variable reference requires sequential evaluation
                 return True
 
     return False
@@ -154,11 +146,11 @@ def _analyze_fors_in_scope(
             # T087: Always set loop_type during analysis
             stmt.loop_type = _classify_for_loop_type(stmt)
 
-            # Check if VALUE parameters reference the loop variable
-            # This is needed because F I=1,I+1,"ABC" must evaluate I+1 AFTER
-            # I is assigned 1, not upfront like Python's for...in[...] does
+            # Check if VALUE parameters contain variable references
+            # This is needed because F I=A,B,B,C must evaluate each param
+            # when it becomes current, not upfront like Python's for...in[...]
             stmt.value_params_reference_loop_var = (
-                _check_value_params_reference_loop_var(stmt)
+                _check_value_params_contain_variables(stmt)
             )
 
             # Analyze this FOR's body for loop var modification and internal QUIT

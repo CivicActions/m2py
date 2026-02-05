@@ -532,7 +532,13 @@ class InMemoryGlobalStorage:
         node._children[last_sub]._value = value
 
     def kill(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Kill node and all descendants at ^NAME(subscripts)."""
+        """Kill node and all descendants at ^NAME(subscripts).
+
+        After killing, cleans up empty ancestor nodes (nodes with no value
+        and no children). This is required by MUMPS semantics - after
+        KILL ^V1(2,1), if ^V1(2) has no value and no other children,
+        $DATA(^V1(2)) should return 0.
+        """
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -544,17 +550,36 @@ class InMemoryGlobalStorage:
             del self._globals[name]
             return
 
-        # Navigate to parent of target
+        # Collect path of nodes for cleanup
+        path: list[tuple["MArray", str]] = []  # (parent, child_key)
         node = self._globals[name]
+
+        # Navigate to parent of target, collecting path
         for sub in subscripts[:-1]:
             if sub not in node._children:
                 return  # Path doesn't exist
+            path.append((node, sub))
             node = node._children[sub]
 
         # Remove target and all its descendants
         last_sub = subscripts[-1]
         if last_sub in node._children:
             del node._children[last_sub]
+
+        # Clean up empty ancestor nodes (reverse order - leaf to root)
+        # Node is empty if it has no value AND no children
+        while path:
+            parent, child_key = path.pop()
+            child = parent._children[child_key]
+            if child._value is None and not child._children:
+                del parent._children[child_key]
+            else:
+                break  # Stop if we hit a non-empty node
+
+        # Finally, check if the global root itself is now empty
+        root = self._globals[name]
+        if root._value is None and not root._children:
+            del self._globals[name]
 
     def kill_all(self) -> None:
         """Kill all globals and reset naked indicator."""
