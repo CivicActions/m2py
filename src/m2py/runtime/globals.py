@@ -49,12 +49,16 @@ class GlobalStorageBackend(Protocol):
         ^(1) resolves to ^G(1)
     """
 
-    def get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+    def get(
+        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
+    ) -> str | None:
         """Get value at ^NAME(subscripts).
 
         Args:
             name: Global name without caret (e.g., "PATIENT")
             subscripts: Tuple of string subscript values, may be empty
+            update_naked: If True, update the naked indicator (default).
+                If False, skip naked update (caller handled it).
 
         Returns:
             String value if defined, None if undefined
@@ -139,6 +143,19 @@ class GlobalStorageBackend(Protocol):
         """
         ...
 
+    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Pre-set naked indicator for $ORDER evaluation ordering.
+
+        Sets the naked indicator as if ^NAME(subscripts) had been accessed.
+        Used by $ORDER codegen to ensure correct naked state when the
+        direction argument contains global references that override naked.
+
+        Args:
+            name: Global name without caret
+            subscripts: Full subscript path (last element stripped per naked rules)
+        """
+        ...
+
     def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
         """Resolve naked reference ^(subscripts) to full global reference.
 
@@ -153,7 +170,13 @@ class GlobalStorageBackend(Protocol):
         """
         ...
 
-    def order(self, name: str, subscripts: tuple[str, ...], direction: int = 1) -> str:
+    def order(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        update_naked: bool = True,
+    ) -> str:
         """Return next/previous subscript at level.
 
         Spec 009 T062: Protocol stub for $ORDER function support.
@@ -162,6 +185,8 @@ class GlobalStorageBackend(Protocol):
             name: Global name without caret
             subscripts: Current subscript path (last element is starting point)
             direction: 1 for forward, -1 for backward
+            update_naked: If True, update the naked indicator (default).
+                If False, skip naked update (caller handled it).
 
         Returns:
             Next/previous subscript value at same level, or empty string if none.
@@ -482,11 +507,14 @@ class InMemoryGlobalStorage:
             # After ^G (no subscripts): naked refs are illegal
             self._naked_indicator = None
 
-    def get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+    def get(
+        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
+    ) -> str | None:
         """Get value at ^NAME(subscripts)."""
 
         subscripts = self._canonicalize_subscripts(subscripts)
-        self._update_naked_indicator(name, subscripts)
+        if update_naked:
+            self._update_naked_indicator(name, subscripts)
 
         if name not in self._globals:
             return None
@@ -621,6 +649,11 @@ class InMemoryGlobalStorage:
         """Set naked indicator explicitly."""
         self._naked_indicator = (name, self._canonicalize_subscripts(subscripts))
 
+    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Pre-set naked indicator for $ORDER evaluation ordering."""
+        subs = self._canonicalize_subscripts(subscripts)
+        self._update_naked_indicator(name, subs)
+
     def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
         """Resolve naked reference ^(subscripts) to full global reference.
 
@@ -641,7 +674,13 @@ class InMemoryGlobalStorage:
         full_subscripts = base_subscripts + subscripts
         return (name, full_subscripts)
 
-    def order(self, name: str, subscripts: tuple[str, ...], direction: int = 1) -> str:
+    def order(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        update_naked: bool = True,
+    ) -> str:
         """Return next/previous subscript in MUMPS collation order.
 
         Spec 010: Full implementation of $ORDER function.
@@ -650,6 +689,8 @@ class InMemoryGlobalStorage:
             name: Global name without caret
             subscripts: Tuple where last element is starting point. Use "" to get first/last.
             direction: 1 for forward (next), -1 for reverse (previous)
+            update_naked: If True, update the naked indicator (default).
+                If False, skip naked update (caller handled it).
 
         Returns:
             Next/previous subscript as string, or "" if no more.
@@ -661,7 +702,8 @@ class InMemoryGlobalStorage:
             4. Strings (ASCII order)
         """
         subscripts = self._canonicalize_subscripts(subscripts)
-        self._update_naked_indicator(name, subscripts)
+        if update_naked:
+            self._update_naked_indicator(name, subscripts)
 
         if name not in self._globals:
             return ""
@@ -1090,7 +1132,9 @@ class YottaDBGlobalStorage:
 
         self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
 
-    def get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+    def get(
+        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
+    ) -> str | None:
         """Get value at ^NAME(subscripts). Stub raises NotImplementedError."""
         raise NotImplementedError("YottaDB backend not yet implemented")
 
@@ -1118,6 +1162,10 @@ class YottaDBGlobalStorage:
         """Set naked indicator explicitly."""
         self._naked_indicator = (name, subscripts)
 
+    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Pre-set naked indicator for $ORDER/$GET evaluation ordering."""
+        self._naked_indicator = (name, subscripts[:-1]) if subscripts else (name, ())
+
     def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
         """Resolve naked reference."""
         if self._naked_indicator is None:
@@ -1125,7 +1173,13 @@ class YottaDBGlobalStorage:
         name, base_subscripts = self._naked_indicator
         return (name, base_subscripts + subscripts)
 
-    def order(self, name: str, subscripts: tuple[str, ...], direction: int = 1) -> str:
+    def order(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        update_naked: bool = True,
+    ) -> str:
         """Return next/previous subscript. Stub raises NotImplementedError."""
         raise NotImplementedError("YottaDB backend not yet implemented")
 
@@ -1250,7 +1304,9 @@ class IRISGlobalStorage:
         self._password = password
         self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
 
-    def get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+    def get(
+        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
+    ) -> str | None:
         """Get value at ^NAME(subscripts). Stub raises NotImplementedError."""
         raise NotImplementedError("IRIS backend not yet implemented")
 
@@ -1278,6 +1334,10 @@ class IRISGlobalStorage:
         """Set naked indicator explicitly."""
         self._naked_indicator = (name, subscripts)
 
+    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Pre-set naked indicator for $ORDER/$GET evaluation ordering."""
+        self._naked_indicator = (name, subscripts[:-1]) if subscripts else (name, ())
+
     def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
         """Resolve naked reference."""
         if self._naked_indicator is None:
@@ -1285,7 +1345,13 @@ class IRISGlobalStorage:
         name, base_subscripts = self._naked_indicator
         return (name, base_subscripts + subscripts)
 
-    def order(self, name: str, subscripts: tuple[str, ...], direction: int = 1) -> str:
+    def order(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        update_naked: bool = True,
+    ) -> str:
         """Return next/previous subscript. Stub raises NotImplementedError."""
         raise NotImplementedError("IRIS backend not yet implemented")
 

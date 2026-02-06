@@ -496,6 +496,14 @@ def m_order(
     if array is None:
         return ""
 
+    # Coerce direction to int (may come from MUMPS expression as string/Decimal)
+    if not isinstance(direction, int):
+        direction = (
+            int(Decimal(str(direction)))
+            if str(direction).lstrip("-").replace(".", "", 1).isdigit()
+            else 1
+        )
+
     # Navigate to parent level (all but last subscript)
     # The last subscript is the starting point for the search
     if not subscripts:
@@ -549,6 +557,7 @@ def m_order_global(
     name: str,
     subscripts: tuple[str, ...],
     direction: int = 1,
+    update_naked: bool = True,
 ) -> str:
     """Return next subscript in MUMPS collation order for global variable.
 
@@ -556,15 +565,25 @@ def m_order_global(
         backend: GlobalStorageBackend instance
         name: Global name without caret (e.g., "PATIENT")
         subscripts: Tuple of subscript values. Last element is starting point.
-        direction: 1 for forward, -1 for reverse
+        direction: 1 for forward, -1 for reverse (coerced from string/Decimal)
+        update_naked: If True, update the naked indicator (default).
+            If False, skip naked update (caller pre-set it).
 
     Returns:
         Next/previous subscript as string, or "" if no more subscripts.
 
     Note:
-        Delegates to backend.order() which updates naked indicator.
+        Delegates to backend.order() which optionally updates naked indicator.
+        Direction is coerced to int via m_num() to handle string/Decimal values
+        from evaluated MUMPS expressions.
     """
-    return backend.order(name, subscripts, direction)
+    if not isinstance(direction, int):
+        direction = (
+            int(Decimal(str(direction)))
+            if str(direction).lstrip("-").replace(".", "", 1).isdigit()
+            else 1
+        )
+    return backend.order(name, subscripts, direction, update_naked=update_naked)
 
 
 def _find_next_valued_node(
@@ -933,6 +952,7 @@ def m_get_global(
     name: str,
     subscripts: tuple[str, ...],
     default: str = "",
+    update_naked: bool = True,
 ) -> str:
     """Safe global variable retrieval with default value (RHS $GET).
 
@@ -943,6 +963,8 @@ def m_get_global(
         name: Global name without caret (e.g., "PATIENT")
         subscripts: Tuple of subscripts
         default: Value to return if undefined (default: "")
+        update_naked: If True, update the naked indicator (default).
+            If False, skip naked update (caller pre-set it).
 
     Returns:
         The variable's value if defined, otherwise the default value.
@@ -950,7 +972,7 @@ def m_get_global(
     Note:
         Delegates to backend.get() which returns None for undefined.
     """
-    value = backend.get(name, subscripts)
+    value = backend.get(name, subscripts, update_naked=update_naked)
     if value is None:
         return default
     return value

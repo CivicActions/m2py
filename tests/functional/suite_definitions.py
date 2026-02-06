@@ -548,7 +548,7 @@ MVTS_VV4_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition("98---V4SYSTEM", "V4SYSTEM", expected_passes=3),
     RoutineDefinition("98.1---V4POWER", "V4POWER"),
     RoutineDefinition("107---V4RAND", "V4RAND", expected_passes=1),
-    RoutineDefinition("107.1---V4ORDER", "V4ORDER"),
+    RoutineDefinition("107.1---V4ORDER", "V4ORDER", expected_passes=60),
     RoutineDefinition("118---V4QUERY", "V4QUERY", expected_passes=2),
     RoutineDefinition("119---V4PRIN", "V4PRIN", expected_passes=4),
     RoutineDefinition("120---V4QUIT", "V4QUIT", expected_passes=6),

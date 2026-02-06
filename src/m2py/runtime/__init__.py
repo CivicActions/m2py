@@ -2735,6 +2735,82 @@ class MUMPSRuntime:
                 return 0
         return m_data(arr, subs)
 
+    def resolve_order_name(
+        self,
+        inner_value: str,
+        _scope: Dict[str, Any],
+        levels_remaining: int = 0,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> str:
+        """Resolve multi-level indirection to get the final NAME for $ORDER.
+
+        Used when $ORDER has nested indirection like @@^V(0)@(12,456):
+        1. Inner value from ^V(0) = "V(1)"
+        2. Merge subscripts at level 0: "V(1)" + (12,456) → "V(1,12,456)"
+        3. Dereference for remaining level: V(1,12,456) → "^V(2,3)"
+        4. Return "^V(2,3)" as the name for $ORDER
+
+        Args:
+            inner_value: Value from innermost expression (e.g., ^V(0) → "V(1)")
+            _scope: Current scope dictionary
+            levels_remaining: Additional levels to dereference after the first
+            per_level_subscripts: Subscripts to merge at each level.
+                Level 0 = subscripts for the innermost @ (merged with inner_value).
+                Level 1+ = subscripts for subsequent @ levels.
+
+        Returns:
+            Final resolved name string for $ORDER to operate on.
+        """
+        name = inner_value
+        pls = per_level_subscripts or []
+
+        # Apply subscripts for the innermost level (level 0)
+        if pls and len(pls) > 0 and pls[0]:
+            name = self._merge_name_subscripts(name, pls[0], _scope)
+
+        # For each remaining level, look up the value then merge any subscripts
+        for lvl in range(levels_remaining):
+            # Dereference: look up the value at the current name
+            value = self.get_var(name, _scope)
+            name = str(value) if value is not None else ""
+
+            # Apply subscripts for this level (if any)
+            sub_idx = lvl + 1
+            if sub_idx < len(pls) and pls[sub_idx]:
+                name = self._merge_name_subscripts(name, pls[sub_idx], _scope)
+
+        return name
+
+    def _merge_name_subscripts(
+        self,
+        name: str,
+        additional_subs: List[Any],
+        _scope: Dict[str, Any],
+    ) -> str:
+        """Merge additional subscripts into a name string.
+
+        E.g., "V(1)" + [12, 456] → "V(1,12,456)"
+             "^G" + [1, 2] → "^G(1,2)"
+
+        Args:
+            name: Variable name possibly with subscripts
+            additional_subs: Subscripts to append
+            _scope: Current scope (for evaluating subscripts)
+
+        Returns:
+            Name with merged subscripts
+        """
+        if not name or not additional_subs:
+            return name
+
+        base, existing_subs = _parse_subscripted_name(name)
+        evaluated_existing = _evaluate_subscripts(existing_subs, _scope, runtime=self)
+        all_subs = list(evaluated_existing or ()) + [str(s) for s in additional_subs]
+        if all_subs:
+            subs_str = ",".join(str(s) for s in all_subs)
+            return f"{base}({subs_str})"
+        return base
+
     def get_order(
         self,
         name: str,
@@ -2756,7 +2832,16 @@ class MUMPSRuntime:
         Returns:
             Next subscript in collation order, or "" if no more
         """
+        from m2py.codegen.helpers import m_num as _m_num
         from m2py.runtime.helpers import m_order, m_order_global
+
+        # Coerce direction to int - MUMPS $ORDER direction is always numeric
+        # This handles cases where direction comes from a function returning a string
+        # e.g., $O(ref, $O(V(""))) where $O(V("")) returns "1" as a string
+        try:
+            direction = int(_m_num(direction))
+        except (ValueError, TypeError):
+            direction = 1
 
         if not name:
             return ""

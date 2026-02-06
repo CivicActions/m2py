@@ -114,8 +114,27 @@ class SubscriptCanonicalizer:
             # Check if it's effectively an integer
             if n == int(n):
                 return str(int(n))
-            # Convert to float for canonical formatting
-            n = float(n)
+            # Format Decimal without scientific notation, preserving precision
+            sign, digits, exponent = n.as_tuple()
+            if not isinstance(exponent, int):
+                return str(n)  # NaN/Infinity
+            if exponent >= 0:
+                return str(int(n))
+            # Decimal number: reconstruct without scientific notation
+            int_part = digits[:exponent] if exponent else ()
+            frac_part = digits[exponent:]
+            int_str = "".join(str(d) for d in int_part) if int_part else ""
+            frac_str = "".join(str(d) for d in frac_part)
+            if not int_str:
+                int_str = ""
+                frac_str = "0" * (-exponent - len(digits)) + frac_str
+            result = int_str + "." + frac_str
+            result = result.rstrip("0").rstrip(".")
+            if result.startswith("0."):
+                result = result[1:]
+            if sign:
+                result = "-" + result
+            return result
 
         # Handle integer or float that equals integer
         if isinstance(n, int) or (

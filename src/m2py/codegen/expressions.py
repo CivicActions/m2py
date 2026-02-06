@@ -1250,14 +1250,22 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         python_name = translate_name(var_name)
         return f"m_get(_scope.get({python_name!r}), {subscripts_tuple}, {default_code})"
     elif isinstance(var, GlobalVariable):
-        # Global variable: m_get_global(_rt.globals, 'NAME', subscripts, default)
-        return f"m_get_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {default_code})"
+        # Global variable: use lambda to evaluate subscripts once and pre-set
+        # naked indicator before evaluating default, so global refs in default
+        # correctly override naked. Subscripts may contain naked refs or other
+        # globals with side effects, so they must be evaluated exactly once.
+        return (
+            f"(lambda _subs: (_rt.globals.set_order_naked({var_name!r}, _subs), "
+            f"m_get_global(_rt.globals, {var_name!r}, _subs, "
+            f"{default_code}, update_naked=False))[1])({subscripts_tuple})"
+        )
     elif isinstance(var, NakedGlobal):
-        # Naked global: resolve then call m_get_global
+        # Naked global: resolve, pre-set naked, then call m_get_global
         # Spec 014 (T061): Naked references in $GET
         return (
-            f"(lambda _n, _s: m_get_global(_rt.globals, _n, _s, {default_code}))"
-            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+            f"(lambda _n, _s: (_rt.globals.set_order_naked(_n, _s), "
+            f"m_get_global(_rt.globals, _n, _s, {default_code}, "
+            f"update_naked=False))[1])(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
         # Fallback for any other variable type - treat as local
@@ -1311,35 +1319,83 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Handle MIndirection: $O(@X) needs runtime resolution
     if isinstance(var, MIndirectionType):
-        from m2py.codegen.indirection import _count_indirection_levels
+        from m2py.codegen.indirection import (
+            _count_indirection_levels_with_subscripts,
+        )
 
-        levels, inner_expr = _count_indirection_levels(var)
+        levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(
+            var
+        )
 
-        # Build subscript expressions from name_indirection_subscripts if present
-        # For $O(@X@(1,2)), we need to pass these as additional_subscripts to get_order
-        # so they are properly merged with subscripts from the resolved name
-        if var.name_indirection_subscripts:
-            all_subs = []
-            for sub_list in var.name_indirection_subscripts:
-                sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-                all_subs.extend(sub_exprs)
-            # Pass as additional_subscripts parameter, NOT string concatenation
-            if len(all_subs) == 1:
-                additional_subs_arg = f", additional_subscripts=({all_subs[0]},)"
-            else:
-                subs_joined = ", ".join(all_subs)
-                additional_subs_arg = f", additional_subscripts=({subs_joined},)"
-        else:
-            additional_subs_arg = ""
+        # Build subscript expressions for ALL levels (inner to outer)
+        # _count_indirection_levels_with_subscripts collects subscripts from
+        # every @ level, including inner ones that var.name_indirection_subscripts misses
+        per_level_sub_exprs: list[list[str]] = []
+        for sub_list in all_subscripts:
+            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+            per_level_sub_exprs.append(sub_exprs)
 
         # Generate the variable name resolution
         from m2py.asg.expressions import MVariable
         from m2py.parser.textx_classes import LocalVariable as MLocalVariable
 
         if isinstance(inner_expr, GlobalVariable):
-            # Global variable as indirection source: @^V reads ^V value
+            # Global variable as indirection source: @^V or @^V(0)
             global_name = inner_expr.name
-            name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+            # Include subscripts from the GlobalVariable itself (e.g., ^V(0))
+            inner_global_subs = getattr(inner_expr, "subscripts", [])
+            if inner_global_subs:
+                sub_exprs = [generate_expr(sub, ctx) for sub in inner_global_subs]
+                if len(sub_exprs) == 1:
+                    subs_tuple = f"({sub_exprs[0]},)"
+                else:
+                    subs_tuple = f"({', '.join(sub_exprs)},)"
+                name_expr = (
+                    f'str((_rt.globals.get({global_name!r}, {subs_tuple}) or ""))'
+                )
+            else:
+                name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+
+            # For levels > 1, use resolve_order_name to do multi-level resolution
+            if levels > 1:
+                # Build per_level_subscripts arg for runtime
+                if per_level_sub_exprs:
+                    pls_parts = []
+                    for sub_exprs_level in per_level_sub_exprs:
+                        pls_parts.append(f"[{', '.join(sub_exprs_level)}]")
+                    pls_arg = f", per_level_subscripts=[{', '.join(pls_parts)}]"
+                else:
+                    pls_arg = ""
+
+                return (
+                    f"_rt.get_order("
+                    f"_rt.resolve_order_name({name_expr}, _scope, "
+                    f"levels_remaining={levels - 1}{pls_arg}), "
+                    f"_scope, {direction_code})"
+                )
+            else:
+                # Single level: use get_order with additional_subscripts
+                if per_level_sub_exprs:
+                    # Flatten all subscripts for single-level
+                    all_subs_flat = []
+                    for sub_exprs_level in per_level_sub_exprs:
+                        all_subs_flat.extend(sub_exprs_level)
+                    if len(all_subs_flat) == 1:
+                        additional_subs_arg = (
+                            f", additional_subscripts=({all_subs_flat[0]},)"
+                        )
+                    else:
+                        subs_joined = ", ".join(all_subs_flat)
+                        additional_subs_arg = (
+                            f", additional_subscripts=({subs_joined},)"
+                        )
+                else:
+                    additional_subs_arg = ""
+
+                return (
+                    f"_rt.get_order({name_expr}, _scope, "
+                    f"{direction_code}{additional_subs_arg})"
+                )
         elif isinstance(inner_expr, (MVariable, MLocalVariable)):
             base_name = inner_expr.name
             # Check if inner_expr has subscripts (e.g., @@@A(0) -> A(0), not A)
@@ -1365,6 +1421,24 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         else:
             name_expr_base = generate_expr(inner_expr, ctx)
             name_expr = f"str({name_expr_base})"
+
+        # For non-GlobalVariable cases, use get_order with additional_subscripts
+        # (GlobalVariable cases were already handled above with early return)
+        additional_subs_arg = ""
+        if not isinstance(inner_expr, GlobalVariable):
+            if per_level_sub_exprs:
+                all_subs_flat = []
+                for sub_exprs_level in per_level_sub_exprs:
+                    all_subs_flat.extend(sub_exprs_level)
+                if len(all_subs_flat) == 1:
+                    additional_subs_arg = (
+                        f", additional_subscripts=({all_subs_flat[0]},)"
+                    )
+                else:
+                    subs_joined = ", ".join(all_subs_flat)
+                    additional_subs_arg = f", additional_subscripts=({subs_joined},)"
+            else:
+                additional_subs_arg = ""
 
         # Use _rt.get_order which handles indirected variable names
         # Pass additional_subscripts separately for proper merging
@@ -1405,14 +1479,23 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_order(_scope.get({python_name!r}, MArray()), {subscripts_tuple}, {direction_code})"
     elif isinstance(var, GlobalVariable):
-        # Global variable: m_order_global(_rt.globals, 'NAME', subscripts, direction)
-        return f"m_order_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {direction_code})"
-    elif isinstance(var, NakedGlobal):
-        # Naked global: resolve then call m_order_global
-        # Spec 014 (T061): Naked references in $ORDER
+        # Global variable: use lambda to evaluate subscripts once and pre-set
+        # naked indicator before evaluating direction, so global refs in
+        # direction correctly override naked. Subscripts may contain naked refs
+        # or other globals with side effects, so they must be evaluated once.
         return (
-            f"(lambda _n, _s: m_order_global(_rt.globals, _n, _s, {direction_code}))"
-            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+            f"(lambda _subs: (_rt.globals.set_order_naked({var_name!r}, _subs), "
+            f"m_order_global(_rt.globals, {var_name!r}, _subs, "
+            f"{direction_code}, update_naked=False))[1])({subscripts_tuple})"
+        )
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve, pre-set naked, then call m_order_global
+        # Spec 014 (T061): Naked references in $ORDER
+        # Use tuple expression for naked indicator ordering like GlobalVariable
+        return (
+            f"(lambda _n, _s: (_rt.globals.set_order_naked(_n, _s), "
+            f"m_order_global(_rt.globals, _n, _s, {direction_code}, "
+            f"update_naked=False))[1])(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
         # Fallback for MVariable or any other variable type - treat as local
