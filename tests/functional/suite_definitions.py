@@ -140,7 +140,7 @@ MUGJ_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition("VV2PAT1", "VV2PAT1", expected_passes=7),
     RoutineDefinition("VV2PAT2", "VV2PAT2", expected_passes=11),
     RoutineDefinition("VV2PAT3", "VV2PAT3", expected_passes=15),
-    RoutineDefinition("VV2NO", "VV2NO", expected_passes=6, expected_fails=2),
+    RoutineDefinition("VV2NO", "VV2NO", expected_passes=8),
     RoutineDefinition("VV2SS1", "VV2SS1", expected_passes=6, expected_fails=1),
     RoutineDefinition("VV2SS2", "VV2SS2", expected_passes=5),
     # fmt: on

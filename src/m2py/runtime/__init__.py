@@ -3266,6 +3266,12 @@ class MUMPSRuntime:
 
                 raise VarExpectedError(source)
             target = source
+
+            # Evaluate any variable references in subscripts
+            # For example, "^V1A(I)" where I=1 should become "^V1A(1)"
+            if "(" in target and (target[0].isalpha() or target[0] in "%^"):
+                target = resolver._evaluate_subscripts_in_name(target)
+
             # T091c-lit: Append any per_level_subscripts to the target
             # For @"A(1)"@(2), source="A(1)", per_level_subscripts=[[2]]
             # Target should be "A(1,2)"
@@ -3277,7 +3283,7 @@ class MUMPSRuntime:
                         all_subs.extend(level_subs)
                 if all_subs:
                     # Parse existing subscripts from source
-                    base_name, existing_subs = _parse_subscripted_name(source)
+                    base_name, existing_subs = _parse_subscripted_name(target)
                     # Combine and build new target (existing_subs may be None)
                     combined_subs = list(existing_subs or []) + [
                         str(s) for s in all_subs
@@ -3560,6 +3566,59 @@ class MUMPSRuntime:
             if not arg:
                 continue
 
+            # If argument starts with @, it's nested indirection that needs resolution
+            # For example, @A(1) where A(1)="B(2),B(3)" should resolve to kill B(2) and B(3)
+            if arg.startswith("@"):
+                # Recursively resolve the indirection
+                inner = arg[1:]  # Strip the @
+
+                # Handle multi-level @ (@@X etc)
+                levels = 1
+                while inner.startswith("@"):
+                    levels += 1
+                    inner = inner[1:]
+
+                # Parse the variable name and any subscripts
+                # e.g., "B(1)" → variable "B" with subscript 1
+                paren_pos = inner.find("(")
+                if paren_pos > 0:
+                    var_name = inner[:paren_pos]
+                    # Get subscripts
+                    close_pos = inner.rfind(")")
+                    if close_pos > paren_pos:
+                        subs_str = inner[paren_pos + 1 : close_pos]
+                        subs = resolver._parse_subscript_list(subs_str)
+                        # Build the full name with subscripts
+                        full_name = f"{var_name}({','.join(str(s) for s in subs)})"
+                    else:
+                        full_name = inner
+                else:
+                    full_name = inner
+
+                # Resolve to get the target name(s)
+                try:
+                    resolved = resolver.resolve_to_name(
+                        full_name, levels=levels, validate=False
+                    )
+                    # The resolved value might itself be a comma-separated list
+                    # Recursively process by adding to our args
+                    sub_args = _split_argument_list(resolved)
+                    for sub_arg in sub_args:
+                        sub_arg = sub_arg.strip()
+                        if sub_arg:
+                            # Recursively handle this argument (may contain more @)
+                            if sub_arg.startswith("@"):
+                                args.append(
+                                    sub_arg
+                                )  # Will be processed in a later iteration
+                            else:
+                                # Kill the resolved target
+                                self._kill_single_target(sub_arg, _scope, cs, resolver)
+                except Exception:
+                    # If resolution fails, try to kill it as a literal name
+                    pass
+                continue
+
             # Check for exclusive KILL pattern: (var1,var2,...)
             if arg.startswith("(") and arg.endswith(")"):
                 # Exclusive KILL - kill all locals except those in the parens
@@ -3574,34 +3633,51 @@ class MUMPSRuntime:
                 continue
 
             # Regular variable kill
-            target = arg
+            self._kill_single_target(arg, _scope, cs, resolver)
 
-            # Evaluate subscripts in the target if it contains indirections or variable refs
-            # This handles cases like "^V1A(A1)" where A1 is a variable reference
-            # or "^V1A(@B(1))" where @B(1) needs resolution
-            if "(" in target and (target[0].isalpha() or target[0] in "%^"):
-                target = resolver._evaluate_subscripts_in_name(target)
+    def _kill_single_target(
+        self,
+        target: str,
+        _scope: Dict[str, Any],
+        cs: Any,
+        resolver: Any,
+    ) -> None:
+        """Kill a single variable target.
 
-            # Handle naked global reference patterns like ^(@A,B)
-            if target.startswith("^("):
-                # This is a naked reference - expand using naked indicator
-                target = resolver._expand_naked_reference_string(target)
+        Helper method for kill_indirected to handle individual targets.
 
-            # Handle global variables
-            if target.startswith("^"):
-                # Parse subscripts from target if present
-                base_name, subscripts = _parse_subscripted_name(target)
-                subs = tuple(str(s) for s in subscripts) if subscripts else ()
-                key = base_name[1:]  # Remove ^ prefix
-                self._globals.kill(key, subs)
-                continue
+        Args:
+            target: Variable name to kill (may include subscripts)
+            _scope: Current scope dictionary
+            cs: CurrentScope wrapper
+            resolver: IndirectionResolver for subscript evaluation
+        """
+        # Evaluate subscripts in the target if it contains indirections or variable refs
+        # This handles cases like "^V1A(A1)" where A1 is a variable reference
+        # or "^V1A(@B(1))" where @B(1) needs resolution
+        if "(" in target and (target[0].isalpha() or target[0] in "%^"):
+            target = resolver._evaluate_subscripts_in_name(target)
 
-            # Handle naked global reference
-            if target == "^":
-                raise IndirectionError(target, "naked reference requires subscripts")
+        # Handle naked global reference patterns like ^(@A,B)
+        if target.startswith("^("):
+            # This is a naked reference - expand using naked indicator
+            target = resolver._expand_naked_reference_string(target)
 
-            # Kill local variable via CurrentScope
-            cs.kill(target)
+        # Handle global variables
+        if target.startswith("^"):
+            # Parse subscripts from target if present
+            base_name, subscripts = _parse_subscripted_name(target)
+            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            key = base_name[1:]  # Remove ^ prefix
+            self._globals.kill(key, subs)
+            return
+
+        # Handle naked global reference
+        if target == "^":
+            raise IndirectionError(target, "naked reference requires subscripts")
+
+        # Kill local variable via CurrentScope
+        cs.kill(target)
 
     @staticmethod
     def _split_argument_list(arg_str: str) -> List[str]:

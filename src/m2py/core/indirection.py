@@ -416,14 +416,19 @@ class IndirectionResolver:
 
             # Handle recursive @-expression (value contains @)
             # Keep resolving while value starts with @ and changes
-            while value.startswith("@"):
-                resolved = self._resolve_recursive_at(value)
-                if resolved == value:
-                    # No progress made - this is an expression like @B+1
-                    # that can't be resolved further. Break and let
-                    # execute_mumps handle it.
-                    break
-                value = resolved
+            # BUT: If value is a comma-separated argument list (like "@A(1),@B(1)"),
+            # do NOT resolve here - let the caller split and process each part.
+            # This is important for KILL indirection where each item in the list
+            # may itself contain nested @ expressions.
+            if not self._contains_comma_at_depth_zero(value):
+                while value.startswith("@"):
+                    resolved = self._resolve_recursive_at(value)
+                    if resolved == value:
+                        # No progress made - this is an expression like @B+1
+                        # that can't be resolved further. Break and let
+                        # execute_mumps handle it.
+                        break
+                    value = resolved
 
             # Evaluate subscripts in the resolved value string
             # For @A where A="^V1A(B)" and B=2, we need to resolve to "^V1A(2)"
@@ -1669,25 +1674,16 @@ class IndirectionResolver:
     def _to_mumps_bool(self, value: Any) -> int:
         """Convert value to MUMPS boolean (0 or 1).
 
+        Uses the standard m_truth implementation to ensure consistency
+        with MUMPS truth semantics (ANSI MUMPS 1.2.4):
+        A value is true if and only if its numeric interpretation is nonzero.
+
         Args:
             value: Any value
 
         Returns:
             0 or 1
         """
-        if value is None or value == "":
-            return 0
+        from m2py.codegen.helpers import m_truth
 
-        if isinstance(value, (int, float)):
-            return 1 if value != 0 else 0
-
-        if isinstance(value, str):
-            # MUMPS: numeric-looking strings are truthy if non-zero
-            try:
-                return 1 if float(value) != 0 else 0
-            except ValueError:
-                # Non-numeric strings are truthy if non-empty
-                return 1 if value else 0
-
-        # Other values - check truthiness
-        return 1 if value else 0
+        return 1 if m_truth(value) else 0
