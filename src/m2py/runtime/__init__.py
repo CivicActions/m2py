@@ -1384,6 +1384,9 @@ def run_with_goto_support(
     Phase 13 (T082): The runtime instance is passed explicitly to all routines
     to ensure shared state across external calls.
 
+    Phase 21: Save/restore _in_extrinsic for $QUIT tracking. External DO calls
+    are subroutine invocations, so $QUIT should be 0 inside them.
+
     Args:
         entry_func: The entry function to execute (routine's first label)
         _rt: MUMPSRuntime instance to pass to all routines
@@ -1399,11 +1402,18 @@ def run_with_goto_support(
     if _scope is None:
         _scope = {}
 
+    # Phase 21: Save/restore _in_extrinsic for $QUIT tracking
+    # DO calls are subroutine invocations, so $QUIT=0 inside them
+    _saved_extrinsic = _rt._in_extrinsic
+    _rt._in_extrinsic = False
+
     current_func = entry_func
     current_rt = _rt
     while True:
         try:
-            return current_func(current_rt, _scope=_scope)
+            _result = current_func(current_rt, _scope=_scope)
+            _rt._in_extrinsic = _saved_extrinsic
+            return _result
         except GotoExternal as goto:
             # Transfer to external routine
             module = goto.module

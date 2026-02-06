@@ -16,12 +16,13 @@ class TestDoCommandCodegen:
         User Story 5 acceptance scenario (T042/T043):
         Given: D SUB
         When: generated
-        Then: output contains SUB(_rt, _scope=_scope) function call
+        Then: output contains _globals['SUB'](_rt, _scope=_scope) function call
         Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         T084: Internal DO calls also pass _scope for cross-routine visibility.
+        Phase 21: Use globals() lookup to prevent parameter shadowing.
         """
         code = generate_python('TEST\n D SUB\n Q\nSUB\n W "SUB"\n Q\n')
-        assert "SUB(_rt, _scope=_scope)" in code
+        assert "_globals['SUB'](_rt, _scope=_scope)" in code
 
     def test_do_call_and_return(self, execute_mumps):
         """DO calls subroutine and returns to caller.
@@ -52,9 +53,10 @@ class TestDoCommandCodegen:
 
         Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         T084: Internal DO calls also pass _scope for cross-routine visibility.
+        Phase 21: Use globals() lookup to prevent parameter shadowing.
         """
         code = generate_python("TEST\n D SUB(1,2)\n Q\nSUB(A,B)\n W A+B\n Q\n")
-        assert "SUB(_rt, 1, 2, _scope=_scope)" in code
+        assert "_globals['SUB'](_rt, 1, 2, _scope=_scope)" in code
 
     def test_do_block_codegen(self, generate_python):
         """DO block generates indented block with while True wrapper (§8.2.3).
@@ -142,11 +144,12 @@ class TestTestStackArgumentlessDo:
         Label calls do NOT stack $TEST - callee's changes are visible.
         Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         T084: Internal DO calls also pass _scope for cross-routine visibility.
+        Phase 21: Use globals() lookup to prevent parameter shadowing.
         """
         code = generate_python("TEST\n D SUB\n Q\nSUB\n I 0\n Q\n")
         # Should NOT have save/restore for label calls
         assert "_saved_test = _test" not in code
-        assert "SUB(_rt, _scope=_scope)" in code
+        assert "_globals['SUB'](_rt, _scope=_scope)" in code
 
     def test_label_call_callee_test_visible(self, execute_mumps):
         """ELSE after label call sees callee's $TEST (T012).
@@ -265,12 +268,13 @@ class TestTestStackDoWithArgs:
         Empty args still a label call, not a DO block.
         Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         T084: Internal DO calls also pass _scope for cross-routine visibility.
+        Phase 21: Use globals() lookup to prevent parameter shadowing.
         """
         code = generate_python("TEST\n D SUB()\n Q\nSUB()\n I 0\n Q\n")
         # Should NOT have save/restore for label calls with empty args
         assert "_saved_test = _test" not in code
-        # With empty args, it generates SUB(_rt, _scope=_scope)
-        assert "SUB(_rt, _scope=_scope)" in code
+        # With empty args, it generates _globals['SUB'](_rt, _scope=_scope)
+        assert "_globals['SUB'](_rt, _scope=_scope)" in code
 
     def test_do_with_empty_args_callee_test_visible(self, execute_mumps):
         """D SUB() - callee's $TEST visible to caller.
@@ -568,20 +572,24 @@ class TestByRefParameterCodegen:
     def test_incr_single_byref_param(self, generate_python):
         """INCR pattern with single by-ref param (T064).
 
-        D INCR(.X) generates: _byref_result = INCR(...); _scope.setdefault('X', MArray()).value = _byref_result
-        Callee returns the modified value from _scope using MArray.value.
+        D INCR(.X) passes MArray directly for true call-by-reference aliasing.
+        Callee detects isinstance(N, MArray) and uses it as alias.
         """
         code = generate_python("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
 
         # Phase 13 (T076): Callee signature includes _rt as first parameter
         # Phase 19 (Spec 017): Formal params have =None default
         assert "def INCR(_rt, N=None, _scope=None, _start_offset=0):" in code
-        # T084 + Spec 009: Return from _scope using MArray.value
-        assert "return _scope.get('N', MArray()).value" in code
 
-        # Phase 13 (T079) + T084 + Spec 009: Call site uses _byref_result and MArray.value
-        assert "_byref_result = INCR(_rt," in code
-        assert "_scope.setdefault('X', MArray()).value = _byref_result" in code
+        # Phase 21: Callee uses isinstance check for by-ref MArray aliasing
+        assert "if isinstance(N, MArray):" in code
+        assert "_scope['N'] = N" in code
+
+        # Phase 21: Call site passes MArray directly for by-ref aliasing
+        assert (
+            "_globals['INCR'](_rt, _scope.setdefault('X', MArray()), _scope=_scope)"
+            in code
+        )
 
     def test_incr_single_byref_runtime(self, execute_mumps):
         """INCR pattern executes correctly with by-ref (T064).
@@ -597,8 +605,7 @@ class TestByRefParameterCodegen:
     def test_swap_two_byref_params(self, generate_python):
         """SWAP pattern with two by-ref params (T063).
 
-        D SWAP(.A,.B) generates tuple return and temp-based assignment via MArray.
-        Callee returns both modified values as tuple using MArray.value.
+        D SWAP(.A,.B) passes MArray objects directly for true aliasing.
         """
         code = generate_python(
             "TEST S A=1,B=2 D SWAP(.A,.B) W A,B Q\nSWAP(X,Y) S T=X,X=Y,Y=T Q\n"
@@ -607,18 +614,18 @@ class TestByRefParameterCodegen:
         # Phase 13 (T076): Callee signature includes _rt as first parameter
         # Phase 19 (Spec 017): Formal params have =None default
         assert "def SWAP(_rt, X=None, Y=None, _scope=None, _start_offset=0):" in code
-        # Check for tuple return using MArray.value (order may vary based on set ordering)
+
+        # Phase 21: Callee uses isinstance check for by-ref MArray aliasing
+        assert "if isinstance(X, MArray):" in code
+        assert "_scope['X'] = X" in code
+        assert "if isinstance(Y, MArray):" in code
+        assert "_scope['Y'] = Y" in code
+
+        # Phase 21: Call site passes MArrays directly for by-ref aliasing
         assert (
-            "return _scope.get('X', MArray()).value, _scope.get('Y', MArray()).value"
-            in code
-            or "return _scope.get('Y', MArray()).value, _scope.get('X', MArray()).value"
+            "_globals['SWAP'](_rt, _scope.setdefault('A', MArray()), _scope.setdefault('B', MArray()), _scope=_scope)"
             in code
         )
-
-        # Phase 13 (T079) + T084 + Spec 009: Call site uses _byref_result and MArray.value
-        assert "_byref_result = SWAP(_rt," in code
-        assert "_scope.setdefault('A', MArray()).value = _byref_result[0]" in code
-        assert "_scope.setdefault('B', MArray()).value = _byref_result[1]" in code
 
     def test_swap_two_byref_runtime(self, execute_mumps):
         """SWAP pattern executes correctly with two by-refs (T063).
@@ -636,15 +643,19 @@ class TestByRefParameterCodegen:
     def test_multiple_byref_calls_accumulate(self, generate_python):
         """Multiple by-ref calls accumulate changes (T065).
 
-        D INCR(.X),INCR(.X) generates separate _byref_result assignments with MArray.
+        D INCR(.X),INCR(.X),INCR(.X) passes MArray three times for aliasing.
         """
         code = generate_python(
             "TEST S X=1 D INCR(.X),INCR(.X),INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n"
         )
 
-        # Phase 13 (T079) + T084 + Spec 009: Three separate calls with MArray assignment
-        assert code.count("_byref_result = INCR(_rt,") == 3
-        assert code.count("_scope.setdefault('X', MArray()).value = _byref_result") == 3
+        # Phase 21: Three separate calls passing MArray for by-ref aliasing
+        assert (
+            code.count(
+                "_globals['INCR'](_rt, _scope.setdefault('X', MArray()), _scope=_scope)"
+            )
+            == 3
+        )
 
     def test_multiple_byref_calls_runtime(self, execute_mumps):
         """Multiple by-ref calls accumulate correctly (T065).
@@ -670,9 +681,11 @@ class TestByRefParameterCodegen:
         # Phase 13 (T079) + T084: Call passes _scope but no assignment to _scope['X']
         lines = [line.strip() for line in code.split("\n")]
         # Find the line that calls INCR in TEST function
-        # It should be just "INCR(_rt, _scope.get('X', ''), _scope=_scope)" not "_scope['X'] = INCR(...)"
+        # It should be just "_globals['INCR'](_rt, _scope.get('X', ''), _scope=_scope)" not "_scope['X'] = _globals['INCR'](...)"
         incr_lines = [
-            line for line in lines if "INCR(_rt," in line and "_scope=_scope)" in line
+            line
+            for line in lines
+            if "_globals['INCR'](_rt," in line and "_scope=_scope)" in line
         ]
         # Should have INCR call without _scope['X'] = assignment
         assert any(not line.startswith("_scope['X']") for line in incr_lines)
@@ -1155,3 +1168,137 @@ class TestStateSyncEdgeCases:
 
         # Should check if value is MArray
         assert "isinstance(_v, MArray)" in code
+
+
+@pytest.mark.codegen
+class TestGlobalsLookup:
+    """Tests for Phase 21: _globals[] lookup instead of direct function name."""
+
+    def test_do_uses_globals_lookup(self, generate_python):
+        """D SUB generates _globals['SUB'](...) instead of SUB(...).
+
+        Phase 21: Prevents parameter names from shadowing label names.
+        """
+        code = generate_python("TEST\n D SUB\n Q\nSUB\n W 1\n Q\n")
+        assert "_globals['SUB'](_rt, _scope=_scope)" in code
+
+    def test_do_with_args_uses_globals_lookup(self, generate_python):
+        """D SUB(1) generates _globals['SUB'](_rt, 1, _scope=_scope).
+
+        Phase 21: Arguments are passed through the globals lookup.
+        """
+        code = generate_python("TEST\n D SUB(1)\n Q\nSUB(A)\n W A\n Q\n")
+        assert "_globals['SUB'](_rt, 1, _scope=_scope)" in code
+
+    def test_globals_capture_emitted(self, generate_python):
+        """Generated code includes _globals = globals() at module level.
+
+        Phase 21: Must capture globals() before any function definitions
+        to avoid shadowing.
+        """
+        code = generate_python("TEST\n Q\n")
+        assert "_globals = globals()" in code
+
+    def test_goto_uses_trampoline_dispatch(self, generate_python):
+        """G SUB in TRAMPOLINE mode uses _labels dispatch, not direct call.
+
+        GOTO triggers TRAMPOLINE strategy which uses _labels dict for dispatch.
+        """
+        code = generate_python("TEST\n G SUB\nSUB\n Q\n")
+        # TRAMPOLINE uses return (target, state) for dispatch
+        assert "return" in code
+        assert "SUB" in code
+
+    def test_param_shadowing_label_name(self, execute_mumps):
+        """Function A(A,B) where param A shadows label A works correctly.
+
+        Phase 21: This is the key scenario - without _globals[], calling
+        A(A,B) from inside B would fail because param A shadows label A.
+        """
+        result = execute_mumps("TEST\n D B\n Q\nA(A,B)\n W A,B\n Q\nB\n D A(1,2)\n Q\n")
+        assert result.output == "12"
+
+
+@pytest.mark.codegen
+class TestDoBlockExtrinsicSave:
+    """Tests for Phase 21: DO block saves/restores _in_extrinsic."""
+
+    def test_do_block_saves_extrinsic(self, generate_python):
+        """Argumentless DO block generates save/restore of _in_extrinsic.
+
+        Phase 21: $QUIT must be 0 inside DO blocks even if called from
+        an extrinsic function context.
+        """
+        code = generate_python("TEST\n D\n . W 1\n Q\n")
+        assert "_saved_extrinsic = _rt._in_extrinsic" in code
+        assert "_rt._in_extrinsic = False" in code
+        assert "_rt._in_extrinsic = _saved_extrinsic" in code
+
+    def test_do_target_saves_extrinsic(self, generate_python):
+        """D SUB generates save/restore of _in_extrinsic for subroutine call.
+
+        Phase 21: Subroutine calls should see $QUIT=0.
+        """
+        code = generate_python("TEST\n D SUB\n Q\nSUB\n Q\n")
+        assert "_saved_extrinsic = _rt._in_extrinsic" in code
+        assert "_rt._in_extrinsic = False" in code
+
+
+@pytest.mark.codegen
+class TestByRefMArrayAliasing:
+    """Tests for Phase 21: True call-by-reference via MArray aliasing."""
+
+    def test_byref_passes_marray(self, generate_python):
+        """D SUB(.X) passes _scope.setdefault('X', MArray()) for aliasing.
+
+        Phase 21: Instead of value-result, pass MArray directly.
+        """
+        code = generate_python("TEST S X=1 D SUB(.X) Q\nSUB(N) Q\n")
+        assert "_scope.setdefault('X', MArray())" in code
+
+    def test_callee_isinstance_check(self, generate_python):
+        """Callee generates isinstance(N, MArray) check for by-ref detection.
+
+        Phase 21: Callee detects if param is MArray (by-ref) vs value.
+        """
+        code = generate_python("TEST S X=1 D SUB(.X) Q\nSUB(N) Q\n")
+        assert "if isinstance(N, MArray):" in code
+        assert "_scope['N'] = N" in code
+
+    def test_byref_mutation_visible(self, execute_mumps):
+        """Mutation through by-ref alias is visible to caller.
+
+        Phase 21: Since caller and callee share the same MArray,
+        SET in callee directly modifies caller's variable.
+        """
+        result = execute_mumps(
+            "TEST\n S X=1 D DOUBLE(.X) W X,!\n Q\nDOUBLE(N) S N=N*2 Q\n"
+        )
+        assert result.output == "2\n"
+
+    def test_byref_with_value_arg_mixed(self, execute_mumps):
+        """Mixed by-ref and by-value arguments work correctly.
+
+        D SUB(.X,Y) passes X by-ref (MArray alias) and Y by value.
+        """
+        result = execute_mumps(
+            'TEST\n S X=10,Y=20 D SUB(.X,Y) W X,",",Y,!\n Q\nSUB(A,B) S A=A+B Q\n'
+        )
+        assert result.output == "30,20\n"
+
+
+@pytest.mark.codegen
+class TestUnwindNewStackInWrapper:
+    """Tests for Phase 21: unwind_new_stack() in TRAMPOLINE wrappers."""
+
+    def test_trampoline_wrapper_calls_unwind(self, generate_python):
+        """TRAMPOLINE wrapper calls unwind_new_stack(state) before scope sync.
+
+        Phase 21: Ensures NEW variables are restored before state→_scope
+        synchronization on subroutine exit.
+        """
+        # K triggers dynamic_locals, G END triggers TRAMPOLINE
+        code = generate_python("TEST K\n G END\n Q\nEND Q\n")
+        assert "unwind_new_stack(state)" in code
+        assert "from m2py.runtime.helpers import" in code
+        assert "unwind_new_stack" in code

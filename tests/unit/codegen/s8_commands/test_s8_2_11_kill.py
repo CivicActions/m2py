@@ -13,21 +13,22 @@ class TestKillCommandCodegen:
     """Codegen-level tests for KILL command code generation (§8.2.11)."""
 
     def test_kill_local_variable(self, generate_python):
-        """KILL local variable generates _scope.pop() (§8.2.11).
+        """KILL local variable generates MArray.kill() (§8.2.11).
 
-        Spec 011 (T064): K X generates _scope.pop('X', None).
+        Phase 21: K X clears the MArray content but keeps the entry in _scope
+        to preserve call-by-reference aliasing.
         """
         result = generate_python("TEST K X Q")
-        assert "_scope.pop('X', None)" in result
+        assert "_scope.get('X', MArray()).kill()" in result
 
     def test_kill_multiple_variables(self, generate_python):
-        """KILL multiple variables generates multiple pops (§8.2.11).
+        """KILL multiple variables generates multiple kill() calls (§8.2.11).
 
-        Spec 011 (T064): K X,Y generates pops for both variables.
+        Phase 21: K X,Y clears MArray content for both variables.
         """
         result = generate_python("TEST K X,Y Q")
-        assert "_scope.pop('X', None)" in result
-        assert "_scope.pop('Y', None)" in result
+        assert "_scope.get('X', MArray()).kill()" in result
+        assert "_scope.get('Y', MArray()).kill()" in result
 
     def test_kill_subscripted_variable(self, generate_python):
         """KILL subscripted variable generates .kill() call (§8.2.11).
@@ -390,16 +391,16 @@ class TestKillTrampolineDynamicLocals:
         assert "state._locals.get('X', MArray()).kill(" in code
 
     def test_kill_without_dynamic_locals_uses_direct_access(self, generate_python):
-        """K X without dynamic_locals uses direct variable access.
+        """K X without dynamic_locals uses MArray.kill() via _scope.
 
-        When routine doesn't use argumentless KILL/NEW, variables are
-        accessed directly via _scope, not state._locals.
+        Phase 21: KILL clears MArray content but keeps entry in _scope
+        to preserve call-by-reference aliasing.
         """
         # No argumentless KILL, so uses direct access via _scope
         code = generate_python("TEST S X=1\n K X\n Q\n")
 
-        # Should use _scope.pop for SIMPLE_FUNCTIONS
-        assert "_scope.pop('X', None)" in code
+        # Should use _scope.get().kill() for SIMPLE_FUNCTIONS
+        assert "_scope.get('X', MArray()).kill()" in code
 
     def test_kill_dynamic_locals_preserves_siblings(self, execute_mumps):
         """K X(1) with dynamic_locals preserves sibling subscripts."""
@@ -422,3 +423,64 @@ class TestKillTrampolineDynamicLocals:
         )
         assert result.output == "gone"
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestKillAllMArrayKill:
+    """Tests for Phase 21 KILL changes: MArray.kill() instead of scope removal."""
+
+    def test_kill_all_uses_marray_kill(self, generate_python):
+        """Argumentless K generates MArray.kill() loop instead of _scope.clear().
+
+        Phase 21: KILL preserves entries in _scope for call-by-reference aliasing.
+        Note: K<space><space>Q is argumentless KILL then QUIT (two spaces).
+        """
+        code = generate_python("TEST\n K  Q")
+        assert "for _v in _scope.values():" in code
+        assert "if isinstance(_v, MArray): _v.kill()" in code
+        # Should NOT use _scope.clear()
+        assert "_scope.clear()" not in code
+
+    def test_kill_exclusive_uses_translated_names(self, generate_python):
+        """K (X) uses translated names in keep_vars set.
+
+        Phase 21: Names in keep_vars must be translated to Python form
+        (e.g., %X → _pct_X) since _scope keys use translated names.
+        """
+        code = generate_python("TEST K (X) Q")
+        assert "'X'" in code
+        assert "MArray" in code
+
+    def test_kill_exclusive_percent_var_translated(self, execute_mumps):
+        """K (%X) keeps %X (translated to _pct_X in _scope).
+
+        Phase 21: Ensures translate_name is applied in exclusive KILL.
+        """
+        result = execute_mumps(
+            'TEST\n S %X=1,Y=2 K (%X) W $G(%X,"none"),$G(Y,"none"),!\n Q\n'
+        )
+        assert result.output == "1none\n"
+
+    def test_kill_selective_percent_var(self, execute_mumps):
+        """K %X kills the %X variable correctly.
+
+        Phase 21: translate_name applied for selective KILL too.
+        Y retains its value of 2 since only %X is killed.
+        """
+        result = execute_mumps(
+            'TEST\n S %X=1,Y=2 K %X W $G(%X,"gone"),$G(Y,"kept"),!\n Q\n'
+        )
+        assert result.output == "gone2\n"
+
+    def test_kill_preserves_byref_alias(self, execute_mumps):
+        """K inside subroutine preserves MArray alias for call-by-reference.
+
+        Phase 21: KILL clears MArray content rather than removing from _scope,
+        so shared MArray aliases remain linked.
+        """
+        result = execute_mumps(
+            'TEST S X=5 D SUB(.X) W $G(X,"gone"),! Q\nSUB(N) K N S N=10 Q\n'
+        )
+        # After K N, $DATA(N)=0, then S N=10 sets it. Since N is aliased
+        # to X via MArray, X should see the new value.
+        assert result.output == "10\n"

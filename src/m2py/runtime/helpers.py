@@ -1510,6 +1510,11 @@ class NewScopeManager:
         """
         self._scope = scope
         self._saved: dict = {}
+        # Phase 21: Stack-based restore actions for proper NEW unwinding
+        # Each entry is ('var', name, value) or ('scope', snapshot_dict)
+        self._restore_actions: list = []
+        # Track individually NEWed variables for dedup (reset on new_all/new_exclusive)
+        self._individually_newed: set = set()
 
     def __enter__(self) -> "NewScopeManager":
         """Enter the context - nothing to do on entry."""
@@ -1520,39 +1525,88 @@ class NewScopeManager:
 
         This runs on both normal return and exceptions, ensuring
         MUMPS NEW semantics are preserved.
+
+        Phase 21: Process restore actions in reverse order to properly
+        unwind nested NEW scopes (argumentless/exclusive NEW within
+        functions that have formal param NEWs).
         """
+        # Phase 21: Process restore actions in reverse (LIFO) for correct unwinding
+        for action in reversed(self._restore_actions):
+            if action[0] == "scope":
+                # Argumentless or exclusive NEW: restore full scope snapshot
+                snapshot = action[1]
+                self._scope.clear()
+                self._scope.update(snapshot)
+            else:
+                # Individual variable restore
+                _, var_name, saved_value = action
+                if saved_value is _UNDEFINED:
+                    self._scope.pop(var_name, None)
+                else:
+                    self._scope[var_name] = saved_value
+
+        # Also restore special variables from legacy _saved dict
         for var_name, saved_value in self._saved.items():
-            # Check if this is a special variable (stored as tuple with setter)
             if var_name.startswith("__special__"):
-                # Special variable: saved_value is (value, setter)
                 value, setter = saved_value
                 setter(value)
-            elif saved_value is _UNDEFINED:
-                # Variable was undefined before NEW - remove it
-                self._scope.pop(var_name, None)
-            else:
-                # Variable had a value - restore it
-                self._scope[var_name] = saved_value
 
     def new_var(self, var_name: str) -> None:
         """NEW a single variable - save and remove from scope.
 
-        If the variable has already been NEWed in this scope level,
-        this is a no-op (first NEW wins).
+        If the variable has already been individually NEWed at the current
+        scope level, this is a no-op (first NEW wins per MUMPS spec).
+
+        Phase 21: Uses _individually_newed set for dedup tracking, and
+        appends to _restore_actions list for proper stack-based unwinding.
 
         Args:
-            var_name: The MUMPS variable name (not translated)
+            var_name: The translated Python variable name (as stored in _scope)
         """
-        if var_name in self._saved:
-            # Already NEWed - skip
+        if var_name in self._individually_newed:
+            # Already NEWed at this scope level - skip
             return
+        self._individually_newed.add(var_name)
 
         # Save current value (or mark as undefined)
         if var_name in self._scope:
-            self._saved[var_name] = self._scope[var_name]
+            saved_value = self._scope[var_name]
             del self._scope[var_name]
         else:
-            self._saved[var_name] = _UNDEFINED
+            saved_value = _UNDEFINED
+
+        self._restore_actions.append(("var", var_name, saved_value))
+
+    def new_all(self) -> None:
+        """NEW all local variables - save scope snapshot and clear.
+
+        Phase 21: Argumentless NEW saves the entire scope and clears it.
+        Resets the individually-NEWed tracking set so subsequent selective
+        NEWs can save variables relative to the new (empty) scope.
+
+        MUMPS semantics: N (without args) makes all local variables
+        undefined until restoration at function exit.
+        """
+        snapshot = dict(self._scope)
+        self._scope.clear()
+        self._individually_newed.clear()  # Reset for new scope level
+        self._restore_actions.append(("scope", snapshot))
+
+    def new_exclusive(self, keep_vars: set) -> None:
+        """Exclusive NEW - save all except specified variables.
+
+        Phase 21: N (X,Y) saves the entire scope snapshot and removes
+        all variables NOT in keep_vars. Resets individually-NEWed tracking.
+
+        Args:
+            keep_vars: Set of variable names to keep (not NEW'd)
+        """
+        snapshot = dict(self._scope)
+        for k in list(self._scope.keys()):
+            if k not in keep_vars:
+                del self._scope[k]
+        self._individually_newed.clear()  # Reset for new scope level
+        self._restore_actions.append(("scope", snapshot))
 
     def new_special_var(
         self, name: str, current_value: str, setter: "Callable[[str], None]"
@@ -1641,3 +1695,41 @@ def m_read_char() -> str:
 
     char = sys.stdin.read(1)
     return char
+
+
+def unwind_new_stack(state) -> None:
+    """Unwind all NEW frames in state._new_stack on subroutine exit.
+
+    Phase 21: When a subroutine (TRAMPOLINE wrapper) exits via QUIT,
+    all NEW frames pushed during that subroutine must be unwound.
+    Processes entries in LIFO order (most recent NEW first).
+
+    Entry formats:
+        ('all', saved_dict) - Argumentless NEW: restore full snapshot
+        ('excl', keep_vars_set, saved_dict) - Exclusive NEW: restore non-kept vars
+        ('var', name, saved_value) - Selective NEW: restore single variable
+        plain dict - Legacy: treat as argumentless NEW (full snapshot)
+    """
+    while state._new_stack:
+        entry = state._new_stack.pop()
+        if isinstance(entry, dict):
+            # Legacy format: argumentless NEW (full snapshot)
+            state._locals.clear()
+            state._locals.update(entry)
+        elif entry[0] == "all":
+            state._locals.clear()
+            state._locals.update(entry[1])
+        elif entry[0] == "excl":
+            keep_vars = entry[1]
+            saved = entry[2]
+            # Keep current values of kept variables
+            current_kept = {k: v for k, v in state._locals.items() if k in keep_vars}
+            state._locals.clear()
+            state._locals.update(saved)
+            state._locals.update(current_kept)
+        elif entry[0] == "var":
+            name, saved_value = entry[1], entry[2]
+            if saved_value is not None:
+                state._locals[name] = saved_value
+            else:
+                state._locals.pop(name, None)

@@ -1309,8 +1309,16 @@ class SemanticAnalyzer:
             expr = self.analyze(current.var, parent)
         elif hasattr(current, "global") and getattr(current, "global", None):
             expr = self.analyze(getattr(current, "global"), parent)
+        elif hasattr(current, "nakedGlobal") and current.nakedGlobal:
+            # Naked global indirection: @^(subscripts)
+            # The naked global reference is evaluated then used as the variable name
+            expr = self.analyze(current.nakedGlobal, parent)
         elif hasattr(current, "expr") and current.expr:
             expr = self.analyze(current.expr, parent)
+        elif hasattr(current, "intrinsicFunc") and current.intrinsicFunc:
+            # Intrinsic function indirection: @$P(...), @$E(...), etc.
+            # The function result is evaluated then used as the variable name
+            expr = self.analyze(current.intrinsicFunc, parent)
         elif hasattr(current, "string") and current.string:
             # String literal: @"LABEL^ROUTINE"
             expr = MLiteral(

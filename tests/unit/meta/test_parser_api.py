@@ -344,3 +344,26 @@ class TestMUMPSParserGrammarIntegration:
         label = routine.labels[0]
         assert len(label._parsed_commands) == 2
         assert label._parsed_commands[0].__class__.__name__ == "ForCommand"
+
+
+class TestDoBlockSameLineStatements:
+    """Tests for Phase 21: DO block structuring with same-line statements.
+
+    When a MUMPS line has an argumentless DO followed by more commands on the
+    same line (e.g., DO  S V=V_$Q Q V) and then dot-body lines, the parser
+    must correctly separate same-line statements from dot-body statements.
+    """
+
+    def test_do_block_basic_dot_body(self):
+        """Basic DO block with dot body parses correctly."""
+        from m2py.asg.statements import MDoStatement
+
+        parser = MUMPSParser()
+        routine = parser.parse("TEST\n\tD\n\t. W 1\n\tQ\n")
+        label = routine.labels[0]
+        stmts = label.body.statements
+        # Should have DO and QUIT
+        do_stmts = [s for s in stmts if isinstance(s, MDoStatement)]
+        assert len(do_stmts) == 1
+        assert do_stmts[0].body is not None
+        assert len(do_stmts[0].body.statements) >= 1

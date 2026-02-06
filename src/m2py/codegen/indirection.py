@@ -1592,7 +1592,7 @@ def generate_indirect_do(
                         ctx.emitter.line("try:")
                         with ctx.emitter.indented():
                             ctx.emitter.line(
-                                "_do_target, state = globals()['_' + _label_name](_rt, state, _scope, _start_offset=_line_offset)"
+                                "_do_target, state = _globals['_' + _label_name](_rt, state, _scope, _start_offset=_line_offset)"
                             )
                         ctx.emitter.line("except GotoExternal as _goto:")
                         with ctx.emitter.indented():
@@ -1651,7 +1651,7 @@ def generate_indirect_do(
                         # Note: SIMPLE mode doesn't support offset calls by design
                         # This should not be reached as offset calls force TRAMPOLINE
                         ctx.emitter.line(
-                            "globals()[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
+                            "_globals[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
                         )
                 ctx.emitter.line("else:")
                 with ctx.emitter.indented():
@@ -1903,7 +1903,7 @@ def generate_indirect_goto(
                         "_label_name, _line_offset = _line_map[_target_line]"
                     )
                     ctx.emitter.line(
-                        "globals()[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
+                        "_globals[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
                     )
                     ctx.emitter.line("return")
             ctx.emitter.line("else:")
@@ -1913,9 +1913,7 @@ def generate_indirect_goto(
                     ctx.emitter.line("return (_call_target.label, state)")
                 else:
                     # SIMPLE mode: call function and return
-                    ctx.emitter.line(
-                        "globals()[_call_target.label](_rt, _scope=_scope)"
-                    )
+                    ctx.emitter.line("_globals[_call_target.label](_rt, _scope=_scope)")
                     ctx.emitter.line("return")
 
 

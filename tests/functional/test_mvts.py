@@ -140,13 +140,12 @@ def validate_mvts_output(
     fail_matches = re.findall(r"\*\* FAIL\s+(\d+)", output)
     fail_count = len(fail_matches)
 
-    # For routines with only operator tests, we expect ** FAIL for all of them
-    # The operator can't provide input in automation, so MANPF* defaults to FAIL
-    # The *FAILO* marker is stored in ^VREPORT but ** FAIL is printed to output
-
-    # If this routine only has operator tests (expected_passes=0),
-    # the ** FAILs are expected
-    expected_fails = expected_operator_fails if expected_passes == 0 else 0
+    # Expected failures come from two sources:
+    # 1. Operator tests (expected_passes=0) - can't provide input in automation
+    # 2. Tests that also fail in YDB (known YDB failures, not m2py bugs)
+    # In both cases, expected_operator_fails counts how many ** FAIL markers
+    # are expected and should not be treated as unexpected failures.
+    expected_fails = expected_operator_fails
 
     # Determine unexpected fails
     unexpected_fails = (

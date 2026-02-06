@@ -2007,6 +2007,13 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
     if stmt.return_value is not None:
         value_expr = generate_expr(stmt.return_value, ctx)
 
+        # TRAMPOLINE mode: Store return value in state and return (None, state)
+        # The wrapper function will extract state._return_value for extrinsic calls
+        if ctx.strategy == GotoStrategy.TRAMPOLINE:
+            ctx.emitter.line(f"state._return_value = {value_expr}")
+            ctx.emitter.line("return (None, state)")
+            return
+
         # Check if label has by-ref outputs that need to be included
         if (
             ctx.current_label
@@ -3684,7 +3691,8 @@ def _generate_single_target_goto(
         # No offset - simple function call
         # Generate: label(_rt, _scope=_scope); exit_statement
         # T075l: Pass _rt and _scope so XECUTE inline GOTO works correctly
-        ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+        # T118: Use _globals[] lookup to avoid parameter shadowing label names
+        ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
         # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
         # Outside inline XECUTE, return exits the entire function
         if ctx.in_inline_xecute:
@@ -3984,7 +3992,7 @@ def _generate_multi_target_indirect_goto(
                         "_label_name, _line_offset = _line_map[_target_line]"
                     )
                     ctx.emitter.line(
-                        "globals()[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
+                        "_globals[_label_name](_rt, _scope=_scope, _start_offset=_line_offset)"
                     )
                     ctx.emitter.line("return")
 
@@ -3993,9 +4001,7 @@ def _generate_multi_target_indirect_goto(
                 if is_trampoline:
                     ctx.emitter.line("return (_call_target.label, state)")
                 else:
-                    ctx.emitter.line(
-                        "globals()[_call_target.label](_rt, _scope=_scope)"
-                    )
+                    ctx.emitter.line("_globals[_call_target.label](_rt, _scope=_scope)")
                     ctx.emitter.line("return")
 
 
@@ -4083,7 +4089,8 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
     else:
         label_name = translate_name(target.name)
         # T075l: Pass _rt and _scope so XECUTE inline GOTO works correctly
-        ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+        # T118: Use _globals[] lookup to avoid parameter shadowing label names
+        ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
         # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
         # Outside inline XECUTE, return exits the entire function
         if ctx.in_inline_xecute:
@@ -4194,6 +4201,12 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         # Save $TEST before block (spec §6.2.6)
         ctx.emitter.line("_saved_test = _test")
 
+        # Save and clear _in_extrinsic for $QUIT tracking (spec §6.3)
+        # Inside an argumentless DO block, QUIT exits the block (not the function),
+        # so $QUIT must be 0 even if we're inside an extrinsic function.
+        ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
+        ctx.emitter.line("_rt._in_extrinsic = False")
+
         # Increment execution level (spec §6.3) - $STACK increases inside DO blocks
         ctx.emitter.line("_rt.push_frame()")
 
@@ -4216,8 +4229,9 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
             # Decrement execution level (spec §6.3)
             ctx.emitter.line("_rt.pop_frame()")
 
-        # Restore $TEST after block
+        # Restore $TEST and _in_extrinsic after block
         ctx.emitter.line("_test = _saved_test")
+        ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
         return
 
     # Argumentless DO without body - this should not happen as parser sets
@@ -4413,6 +4427,11 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
     # Generate arguments if any
     args = _generate_call_arguments(target.arguments, ctx)
 
+    # Phase 21: Save/restore _in_extrinsic for $QUIT tracking
+    # Internal DO calls are subroutine invocations, so $QUIT=0 inside them
+    ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
+    ctx.emitter.line("_rt._in_extrinsic = False")
+
     # Spec 007 (T025-T028c): Handle DO with offset
     # In TRAMPOLINE strategy, call the internal function with _start_offset
     if target.offset is not None and ctx.strategy == GotoStrategy.TRAMPOLINE:
@@ -4559,139 +4578,116 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                         with ctx.emitter.indented():
                             ctx.emitter.line("setattr(state, _k, _v)")
                 ctx.emitter.line("_do_target = None")
+        # Phase 21: Restore _in_extrinsic for $QUIT tracking
+        ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
         return
 
-    # T060-T062: Check callee signature for byref_outputs and generate destructuring
-    callee_signature = None
-    if hasattr(target, "target") and target.target:
-        callee_label = target.target
-        if hasattr(callee_label, "signature") and callee_label.signature:
-            callee_signature = callee_label.signature
+    # Phase 21: Check if any argument is passed by-reference (.VAR syntax).
+    # If so, pass MArray objects directly for true call-by-reference aliasing.
+    # This doesn't require callee signature analysis — the caller just needs
+    # to pass MArray objects, and the callee detects isinstance(param, MArray).
+    actual_args = target.arguments or []
+    has_byref_args = any(
+        arg.passing_mode == PassingMode.BY_REFERENCE and arg.variable_name
+        for arg in actual_args
+    )
 
-    if callee_signature and callee_signature.byref_outputs:
-        # Map byref formal params to actual variables passed by reference
-        # The callee returns byref params in formal_params order
-        formal_params = callee_signature.formal_params
-        byref_outputs = callee_signature.byref_outputs
-        actual_args = target.arguments or []
+    if has_byref_args and ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+        # True call-by-reference via MArray aliasing:
+        # Pass the actual MArray object for by-ref params. The callee
+        # detects isinstance(param, MArray) and uses it directly as an
+        # alias, so SET/KILL on the formal param directly affects the
+        # actual variable.
+        new_arg_parts = []
+        for arg_node in actual_args:
+            if (
+                arg_node.passing_mode == PassingMode.BY_REFERENCE
+                and arg_node.variable_name
+            ):
+                actual_var = arg_node.variable_name
+                new_arg_parts.append(f"_scope.setdefault({actual_var!r}, MArray())")
+            elif arg_node.expression is not None:
+                new_arg_parts.append(generate_expr(arg_node.expression, ctx))
+        byref_args = ", ".join(new_arg_parts)
 
-        # Build list of caller variables that receive returned values
-        # Only include params that are both:
-        # 1. In byref_outputs (callee modifies them)
-        # 2. Passed by reference at call site (.VAR syntax)
-        return_vars = []
-        for i, formal_name in enumerate(formal_params):
-            if formal_name in byref_outputs:
-                # Check if corresponding actual was passed by reference
-                if i < len(actual_args):
+        if byref_args:
+            call_expr = f"_globals[{label_name!r}](_rt, {byref_args}, _scope=_scope)"
+        else:
+            call_expr = f"_globals[{label_name!r}](_rt, _scope=_scope)"
+        ctx.emitter.line(call_expr)
+
+    elif has_byref_args:
+        # TRAMPOLINE by-ref: fall back to value-result approach
+        # Check callee signature for return tuple handling
+        callee_signature = None
+        if hasattr(target, "target") and target.target:
+            callee_label = target.target
+            if hasattr(callee_label, "signature") and callee_label.signature:
+                callee_signature = callee_label.signature
+        if callee_signature and callee_signature.byref_outputs:
+            formal_params = callee_signature.formal_params
+            byref_outputs = callee_signature.byref_outputs
+            return_vars = []
+            for i, formal_name in enumerate(formal_params):
+                if formal_name in byref_outputs and i < len(actual_args):
                     actual = actual_args[i]
-                    if actual.passing_mode == PassingMode.BY_REFERENCE:
-                        # Get the caller's variable name
-                        if actual.variable_name:
-                            var_name = actual.variable_name
-                            # T084: Use _scope['X'] for SIMPLE_FUNCTIONS
-                            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                                return_vars.append(f"_scope[{var_name!r}]")
-                            else:
-                                return_vars.append(translate_name(var_name))
-
-        if return_vars:
-            # T079: Generate call and assign returned values to caller variables
-            # T084: Pass _scope for cross-routine variable visibility
-            # Spec 009 (T021): For SIMPLE_FUNCTIONS, use MArray.value via temp var
-            if args:
-                call_expr = f"{label_name}(_rt, {args}, _scope=_scope)"
-            else:
-                call_expr = f"{label_name}(_rt, _scope=_scope)"
-
-            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                # Use temp variable and assign to MArray.value for each return var
-                ctx.emitter.line(f"_byref_result = {call_expr}")
-                if len(return_vars) == 1:
-                    # Single return value
-                    var_name = (
-                        return_vars[0].replace("_scope[", "").replace("]", "")[1:-1]
-                    )  # Extract name from "_scope['X']"
-                    ctx.emitter.line(
-                        f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result"
-                    )
+                    if (
+                        actual.passing_mode == PassingMode.BY_REFERENCE
+                        and actual.variable_name
+                    ):
+                        return_vars.append(translate_name(actual.variable_name))
+            if return_vars:
+                if args:
+                    call_expr = f"{label_name}(_rt, {args}, _scope=_scope)"
                 else:
-                    # Tuple unpacking - assign each element
-                    for i, rv in enumerate(return_vars):
-                        var_name = rv.replace("_scope[", "").replace("]", "")[
-                            1:-1
-                        ]  # Extract name
-                        ctx.emitter.line(
-                            f"_scope.setdefault({var_name!r}, MArray()).value = _byref_result[{i}]"
-                        )
-            else:
-                # TRAMPOLINE: use direct tuple destructuring
+                    call_expr = f"{label_name}(_rt, _scope=_scope)"
                 lhs = ", ".join(return_vars)
                 ctx.emitter.line(f"{lhs} = {call_expr}")
+            else:
+                # No matchable byref outputs, just call normally
+                if args:
+                    ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
+                else:
+                    ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
         else:
-            # T079: No by-ref params at call site - just call with _rt
-            # T084: Pass _scope for cross-routine variable visibility
-            # T075b: For TRAMPOLINE with state_vars, sync state to _scope before call
-            # and sync _scope back to state after call for intra-routine DO
-            if (
-                ctx.strategy == GotoStrategy.TRAMPOLINE
-                and ctx.state_vars
-                and not ctx.uses_dynamic_locals
-            ):
-                # Sync state to _scope before call
-                for var_name in sorted(ctx.state_vars):
-                    py_name = translate_name(var_name)
-                    ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
-            # T075h: For TRAMPOLINE with dynamic_locals, sync state._locals to _scope
-            # before internal DO calls so subroutine sees current variable values
-            elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                ctx.emitter.line(
-                    "_scope.update({k: v for k, v in state._locals.items()})"
-                )
+            # No callee signature, just call normally
             if args:
                 ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
             else:
                 ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
-            # T075b: Sync _scope back to state after call
-            if (
-                ctx.strategy == GotoStrategy.TRAMPOLINE
-                and ctx.state_vars
-                and not ctx.uses_dynamic_locals
-            ):
-                for var_name in sorted(ctx.state_vars):
-                    py_name = translate_name(var_name)
-                    ctx.emitter.line(
-                        f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
-                    )
-            # T075h: For TRAMPOLINE with dynamic_locals, sync _scope back to state._locals
-            # T075k: Wrap plain values in MArray when syncing back (callee may use static state)
-            elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                ctx.emitter.line("for _k, _v in _scope.items():")
-                with ctx.emitter.indented():
-                    ctx.emitter.line("if isinstance(_v, MArray):")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line("state._locals[_k] = _v")
-                    ctx.emitter.line("else:")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line("_m = MArray()")
-                        ctx.emitter.line("_m.value = _v")
-                        ctx.emitter.line("state._locals[_k] = _m")
     else:
-        # T079: No byref_outputs - simple call with _rt
+        # T079: No by-ref params at call site - just call with _rt
         # T084: Pass _scope for cross-routine variable visibility
         # T075b: For TRAMPOLINE with state_vars, sync state to _scope before call
+        # and sync _scope back to state after call for intra-routine DO
         if (
             ctx.strategy == GotoStrategy.TRAMPOLINE
             and ctx.state_vars
             and not ctx.uses_dynamic_locals
         ):
+            # Sync state to _scope before call
             for var_name in sorted(ctx.state_vars):
                 py_name = translate_name(var_name)
                 ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
         # T075h: For TRAMPOLINE with dynamic_locals, sync state._locals to _scope
+        # before internal DO calls so subroutine sees current variable values
+        # Phase 21: Must remove stale keys too (e.g., after KILL clears _locals
+        # but _scope retains old entries)
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            ctx.emitter.line("for _k in list(_scope.keys()):")
+            with ctx.emitter.indented():
+                ctx.emitter.line("if _k not in state._locals: del _scope[_k]")
             ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
-        if args:
+        # T118: Use globals() lookup for SIMPLE_FUNCTIONS to avoid parameter
+        # shadowing label names (e.g., A(A,B) where param A shadows label A)
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            if args:
+                ctx.emitter.line(
+                    f"_globals[{label_name!r}](_rt, {args}, _scope=_scope)"
+                )
+            else:
+                ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
+        elif args:
             ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
         else:
             ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
@@ -4719,6 +4715,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                     ctx.emitter.line("_m = MArray()")
                     ctx.emitter.line("_m.value = _v")
                     ctx.emitter.line("state._locals[_k] = _m")
+    # Phase 21: Restore _in_extrinsic for $QUIT tracking
+    ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
 
 
 def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
@@ -4743,16 +4741,18 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
     """
     # Handle exclusive KILL: K (X,Y) - kill all except X,Y
     if stmt.exclusive:
-        # Build set of variables to keep
-        keep_vars_repr = repr(set(stmt.except_list))
+        # Build set of variables to keep (translated to Python names for _scope matching)
+        keep_vars_repr = repr({translate_name(v) for v in stmt.except_list})
 
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Iterate over _scope and remove non-kept variables
+            # Phase 21: Kill MArray content for non-kept variables,
+            # but keep entries in _scope to preserve call-by-reference aliasing.
             ctx.emitter.line("for _var_name in list(_scope.keys()):")
             with ctx.emitter.indented():
                 ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
                 with ctx.emitter.indented():
-                    ctx.emitter.line("_scope.pop(_var_name, None)")
+                    ctx.emitter.line("_arr = _scope.get(_var_name)")
+                    ctx.emitter.line("if isinstance(_arr, MArray): _arr.kill()")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             # Spec 017 (T011): Iterate over _locals and remove non-kept variables
             ctx.emitter.line("for _var_name in list(state._locals.keys()):")
@@ -4770,8 +4770,12 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
     # Handle argumentless KILL (kill all locals)
     if stmt.is_kill_all:
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Clear all local variables from _scope
-            ctx.emitter.line("_scope.clear()")
+            # Phase 21: Kill MArray content but keep entries in _scope.
+            # Preserves call-by-reference aliasing: shared MArrays remain
+            # linked, so subsequent SET on one name affects the other.
+            ctx.emitter.line("for _v in _scope.values():")
+            with ctx.emitter.indented():
+                ctx.emitter.line("if isinstance(_v, MArray): _v.kill()")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             # Spec 017 (T011): Clear _locals dict for dynamic locals mode
             ctx.emitter.line("state._locals.clear()")
@@ -4829,24 +4833,28 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
             else:
                 subscripts_args = ""
 
-            # For SIMPLE_FUNCTIONS strategy, use _scope
+            # For SIMPLE_FUNCTIONS strategy, use _scope with translated name
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 if subscripts_args:
                     ctx.emitter.line(
-                        f"_scope.get({var_name!r}, MArray()).kill({subscripts_args})"
+                        f"_scope.get({translated!r}, MArray()).kill({subscripts_args})"
                     )
                 else:
-                    # Kill entire variable - remove from scope
-                    ctx.emitter.line(f"_scope.pop({var_name!r}, None)")
+                    # Kill entire variable - clear MArray content but keep in scope.
+                    # Phase 21: NOT removing from scope preserves call-by-reference
+                    # aliasing. If this variable shares an MArray with another name,
+                    # clearing makes $DATA return 0 for both names. The killed MArray
+                    # stays in _scope so subsequent SET re-uses it (maintaining alias).
+                    ctx.emitter.line(f"_scope.get({translated!r}, MArray()).kill()")
             elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                # TRAMPOLINE with dynamic_locals - use state._locals
+                # TRAMPOLINE with dynamic_locals - use state._locals with translated name
                 if subscripts_args:
                     ctx.emitter.line(
-                        f"state._locals.get({var_name!r}, MArray()).kill({subscripts_args})"
+                        f"state._locals.get({translated!r}, MArray()).kill({subscripts_args})"
                     )
                 else:
                     # Kill entire variable - remove from state._locals
-                    ctx.emitter.line(f"state._locals.pop({var_name!r}, None)")
+                    ctx.emitter.line(f"state._locals.pop({translated!r}, None)")
             else:
                 # TRAMPOLINE strategy with static state vars - direct variable access
                 if subscripts_args:
@@ -4916,7 +4924,9 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
             ]
 
             if string_vars:
-                ctx.emitter.line(f"_keep_vars = {repr(set(string_vars))}")
+                ctx.emitter.line(
+                    f"_keep_vars = {repr({translate_name(v) for v in string_vars})}"
+                )
             else:
                 ctx.emitter.line("_keep_vars = set()")
 
@@ -4929,19 +4939,16 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
 
             keep_vars_repr = "_keep_vars"
         else:
-            # All elements are strings - use static set
-            keep_vars_repr = repr(set(stmt.except_list))
+            # All elements are strings - use static set (translated to Python names)
+            keep_vars_repr = repr({translate_name(v) for v in stmt.except_list})
 
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             if ctx.new_scope_manager_var:
-                # Use NewScopeManager - iterate over _scope and new_var for non-kept
-                ctx.emitter.line("for _var_name in list(_scope.keys()):")
-                with ctx.emitter.indented():
-                    ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(
-                            f"{ctx.new_scope_manager_var}.new_var(_var_name)"
-                        )
+                # Phase 21: Use NewScopeManager.new_exclusive() for proper
+                # scope snapshot/restore (handles nested NEW with formal params)
+                ctx.emitter.line(
+                    f"{ctx.new_scope_manager_var}.new_exclusive({keep_vars_repr})"
+                )
             else:
                 # Simple pop for non-kept variables
                 ctx.emitter.line("for _var_name in list(_scope.keys()):")
@@ -4950,9 +4957,10 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
                     with ctx.emitter.indented():
                         ctx.emitter.line("_scope.pop(_var_name, None)")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            # Spec 017 (T012): Push _locals state to _new_stack (only non-kept vars)
+            # Phase 21: Push tagged exclusive NEW entry to _new_stack
+            # Format: ('excl', keep_vars_set, saved_non_kept_dict)
             ctx.emitter.line(
-                f"state._new_stack.append({{k: v.copy() if hasattr(v, 'copy') else v for k, v in state._locals.items() if k not in {keep_vars_repr}}})"
+                f"state._new_stack.append(('excl', {keep_vars_repr}, {{k: v.copy() if hasattr(v, 'copy') else v for k, v in state._locals.items() if k not in {keep_vars_repr}}}))"
             )
             ctx.emitter.line("for _var_name in list(state._locals.keys()):")
             with ctx.emitter.indented():
@@ -4973,18 +4981,17 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     if not stmt.variables:
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             if ctx.new_scope_manager_var:
-                # Use NewScopeManager - iterate over _scope and new_var for all
-                ctx.emitter.line("for _var_name in list(_scope.keys()):")
-                with ctx.emitter.indented():
-                    ctx.emitter.line(f"{ctx.new_scope_manager_var}.new_var(_var_name)")
+                # Phase 21: Use NewScopeManager.new_all() for proper scope
+                # snapshot/restore (handles nested NEW with formal params)
+                ctx.emitter.line(f"{ctx.new_scope_manager_var}.new_all()")
             else:
                 # Simple clear of all local variables
                 ctx.emitter.line("_scope.clear()")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            # Spec 017 (T012): Push _locals state to _new_stack, then clear
-            # Deep copy to preserve MArray state
+            # Phase 21: Push tagged argumentless NEW entry to _new_stack
+            # Format: ('all', saved_full_dict)
             ctx.emitter.line(
-                "state._new_stack.append({k: v.copy() if hasattr(v, 'copy') else v for k, v in state._locals.items()})"
+                "state._new_stack.append(('all', {k: v.copy() if hasattr(v, 'copy') else v for k, v in state._locals.items()}))"
             )
             ctx.emitter.line("state._locals.clear()")
         else:
@@ -5071,20 +5078,28 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
             var_name = var
             # For SIMPLE_FUNCTIONS strategy with NewScopeManager, use .new_var()
             # This ensures proper save/restore on function exit
+            translated = translate_name(var_name)
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 if ctx.new_scope_manager_var:
                     # Use NewScopeManager for proper save/restore semantics
+                    # Must use translated name since _scope keys are translated
                     ctx.emitter.line(
-                        f"{ctx.new_scope_manager_var}.new_var({var_name!r})"
+                        f"{ctx.new_scope_manager_var}.new_var({translated!r})"
                     )
                 else:
                     # Fallback: simple pop (used when no NewScopeManager in context)
-                    translated = translate_name(var_name)
                     ctx.emitter.line(f"_scope.pop({translated!r}, None)")
             else:
-                # TRAMPOLINE strategy - reset to empty MArray
+                # TRAMPOLINE strategy - save and remove from _locals
                 translated = translate_name(var_name)
-                ctx.emitter.line(f"{translated} = MArray()")
+                if ctx.uses_dynamic_locals:
+                    # Phase 21: Push tagged selective NEW entry to _new_stack
+                    # Format: ('var', name, saved_value_or_None)
+                    ctx.emitter.line(
+                        f"state._new_stack.append(('var', {translated!r}, state._locals.pop({translated!r}, None)))"
+                    )
+                else:
+                    ctx.emitter.line(f"{translated} = MArray()")
 
 
 def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:

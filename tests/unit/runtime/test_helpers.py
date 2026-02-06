@@ -17,6 +17,7 @@ from m2py.runtime.helpers import (
     m_query,
     m_query_global,
     m_var_value,
+    unwind_new_stack,
 )
 from m2py.runtime.globals import InMemoryGlobalStorage
 
@@ -1027,3 +1028,118 @@ class TestMNextGlobalDecimalSubscripts:
         # Start from 1.5, should find 2
         result = rt.m_next_global("G", (Decimal("1.5"),))
         assert result == "2"
+
+
+# =============================================================================
+# Phase 21: unwind_new_stack() Tests
+# =============================================================================
+
+
+class _MockState:
+    """Minimal mock for TRAMPOLINE RoutineState used by unwind_new_stack."""
+
+    def __init__(self):
+        self._locals = {}
+        self._new_stack = []
+
+
+class TestUnwindNewStack:
+    """Tests for unwind_new_stack() helper function (Phase 21)."""
+
+    def test_empty_stack_is_noop(self):
+        """unwind_new_stack on empty _new_stack does nothing."""
+        state = _MockState()
+        state._locals = {"X": MArray(value=1)}
+        unwind_new_stack(state)
+        assert state._locals["X"].value == 1
+        assert len(state._new_stack) == 0
+
+    def test_selective_var_restore(self):
+        """('var', name, saved_value) restores a single variable."""
+        state = _MockState()
+        saved = MArray(value=42)
+        state._new_stack.append(("var", "X", saved))
+        state._locals = {"X": MArray(value=99)}
+        unwind_new_stack(state)
+        assert state._locals["X"] is saved
+        assert state._locals["X"].value == 42
+        assert len(state._new_stack) == 0
+
+    def test_selective_var_none_removes(self):
+        """('var', name, None) removes variable from _locals."""
+        state = _MockState()
+        state._new_stack.append(("var", "X", None))
+        state._locals = {"X": MArray(value=5)}
+        unwind_new_stack(state)
+        assert "X" not in state._locals
+
+    def test_all_entry_restores_snapshot(self):
+        """('all', snapshot) clears _locals and restores from snapshot."""
+        state = _MockState()
+        snapshot = {"A": MArray(value=1), "B": MArray(value=2)}
+        state._new_stack.append(("all", snapshot))
+        state._locals = {"C": MArray(value=99)}
+        unwind_new_stack(state)
+        assert "C" not in state._locals
+        assert state._locals["A"].value == 1
+        assert state._locals["B"].value == 2
+
+    def test_excl_entry_restores_nonkept(self):
+        """('excl', keep_vars, saved) restores non-kept vars, preserves kept."""
+        state = _MockState()
+        saved = {"Y": MArray(value=20), "Z": MArray(value=30)}
+        state._new_stack.append(("excl", {"X"}, saved))
+        state._locals = {"X": MArray(value=99)}
+        unwind_new_stack(state)
+        # X was kept, so current value preserved
+        assert state._locals["X"].value == 99
+        # Y and Z restored from saved
+        assert state._locals["Y"].value == 20
+        assert state._locals["Z"].value == 30
+
+    def test_legacy_dict_entry(self):
+        """Plain dict entry (legacy format) treated as argumentless NEW."""
+        state = _MockState()
+        snapshot = {"X": MArray(value=1)}
+        state._new_stack.append(snapshot)
+        state._locals = {"Y": MArray(value=2)}
+        unwind_new_stack(state)
+        assert state._locals == snapshot
+        assert "Y" not in state._locals
+
+    def test_multiple_entries_lifo_order(self):
+        """Multiple entries are processed in LIFO order."""
+        state = _MockState()
+        # Push: first a selective NEW of X, then an argumentless NEW
+        saved_x = MArray(value=10)
+        state._new_stack.append(("var", "X", saved_x))
+        state._new_stack.append(("all", {"X": MArray(value=50), "Y": MArray(value=60)}))
+        state._locals = {"Z": MArray(value=99)}
+
+        unwind_new_stack(state)
+
+        # LIFO: first 'all' restores {X=50, Y=60}, then 'var' restores X=10
+        assert state._locals["X"].value == 10
+        assert state._locals["Y"].value == 60
+
+    def test_excl_preserves_kept_values(self):
+        """Exclusive NEW preserves current kept values over saved values."""
+        state = _MockState()
+        saved = {"X": MArray(value=1), "Y": MArray(value=2)}
+        state._new_stack.append(("excl", {"X"}, saved))
+        # X was modified during subroutine
+        state._locals = {"X": MArray(value=999)}
+        unwind_new_stack(state)
+        # X was in keep_vars, so current value (999) is preserved
+        assert state._locals["X"].value == 999
+        # Y was not in keep_vars, so restored from saved
+        assert state._locals["Y"].value == 2
+
+    def test_stack_fully_drained(self):
+        """After unwind, _new_stack is empty."""
+        state = _MockState()
+        state._new_stack.append(("var", "A", None))
+        state._new_stack.append(("var", "B", MArray(value=1)))
+        state._new_stack.append(("all", {}))
+        unwind_new_stack(state)
+        assert len(state._new_stack) == 0
