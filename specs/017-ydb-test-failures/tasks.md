@@ -1069,23 +1069,36 @@ This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
 
 ## Phase 23: MVTS Suite - Investigate Existing XFails
 
-**Goal**: Document or resolve 4 unexplained xfails (V3EF, V4KEY, V4SYSTEM, V4PRIN)
+**Goal**: Fix V3EF, V4SYSTEM, V4PRIN; leave V4KEY as xfail
 
-**Affected Tests**: V3EF, V4KEY, V4SYSTEM, V4PRIN (currently xfail, reason unknown)
+**Affected Tests**: V3EF, V4KEY, V4SYSTEM, V4PRIN
 
-**Update**: V3EF is actually FAILING (not xfailed). V4KEY, V4SYSTEM, V4PRIN are correctly xfailed.
+**Update**: V3EF is actually FAILING (not xfailed). V4KEY, V4SYSTEM, V4PRIN are correctly xfailed due to transpile errors (missing special variables).
+
+**Root Cause Analysis**:
+- V3EF (31092, 31093): Call-by-reference in extrinsic functions passes scalar values via `m_var_value()` instead of MArray objects, so callees can't see subscripted descendants
+- V4KEY: All 3 tests require interactive READ input — leave as xfail with skip_reason
+- V4SYSTEM: Transpile error `$SYSTEM not yet supported` — implement $SYSTEM SVN + enhance start_job to execute routines
+- V4PRIN: Transpile error `$PRINCIPAL not yet supported` — implement $PRINCIPAL SVN; tests 3-4 need device/JOB semantics (expected_fails=2)
 
 ### Investigation
 
-- [ ] T130 [P] [MVTS] Investigate V3EF failure - $ETRAP/$ECODE error handling (currently failing, not xfail)
-- [x] T131 [P] [MVTS] Document V4KEY xfail reason - $KEY intrinsic (already xfailed)
-- [x] T132 [P] [MVTS] Document V4SYSTEM xfail reason - $SYSTEM intrinsic (already xfailed)
-- [x] T133 [P] [MVTS] Document V4PRIN xfail reason - $PRINCIPAL I/O (already xfailed)
+- [x] T130 [P] [MVTS] Investigate V3EF failure - call-by-reference passes scalars not MArrays (tests 31092, 31093)
+- [x] T131 [P] [MVTS] Document V4KEY xfail reason - $KEY requires interactive READ (all 3 tests)
+- [x] T132 [P] [MVTS] Document V4SYSTEM xfail reason - $SYSTEM SVN not implemented
+- [x] T133 [P] [MVTS] Document V4PRIN xfail reason - $PRINCIPAL SVN not implemented
 
-### Resolution
+### Implementation
 
-- [ ] T134 [MVTS] Fix V3EF or add to xfail with documented reason
-- [ ] T135 [MVTS] Update limitations.md if new limitation categories needed
+- [x] T134a [MVTS] Add $SYSTEM/$SY SVN to codegen (returns "47,M2PY") and runtime
+- [x] T134b [MVTS] Add $PRINCIPAL/$P SVN to codegen (returns "0") and runtime
+- [x] T134c [MVTS] Add $KEY/$K SVN to codegen (returns "") and runtime
+- [x] T134d [MVTS] Fix call-by-reference: pass MArray objects instead of m_var_value() for BY_REFERENCE params
+- [x] T134e [MVTS] Add get_indirected_marray() runtime method for indirected by-ref params (.@X)
+- [x] T134f [MVTS] Enhance start_job to execute routine when module available in sys.modules
+- [x] T134g [MVTS] Update suite_definitions: V4KEY skip_reason, V4PRIN expected_passes=2/expected_fails=2
+- [x] T134h [MVTS] Add unit tests for new SVNs and by-ref fix
+- [x] T134i [MVTS] Validate: V3EF, V4SYSTEM, V4PRIN pass; V4KEY skipped
 
 ---
 

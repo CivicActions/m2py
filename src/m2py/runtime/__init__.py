@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import sys
+import threading
 import types
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -1699,6 +1700,12 @@ class MUMPSRuntime:
         self._in_extrinsic: bool = False
         # Spec 013 Phase 11: $ZJOB - last JOB'd process ID
         self._zjob: str = "0"
+        # Spec 017 Phase 23: $PRINCIPAL - principal I/O device
+        self._principal: str = "0"  # Initial value of $IO
+        # Spec 017 Phase 23: $KEY - last READ terminator
+        self._key: str = ""
+        # Spec 017 Phase 23: $SYSTEM - system identification (V,S format)
+        self._system: str = "47,M2PY"
         # Spec 013 Phase 12: Error processing special variables
         # $ECODE - comma-delimited list of active error codes (empty = no errors)
         self._ecode: str = ""
@@ -1711,6 +1718,16 @@ class MUMPSRuntime:
         # Spec 012: $TEST value for tracking IF/ELSE condition results
         # This is synced from/to generated code via execute_mumps
         self._test: bool = False
+        # JOB command support: virtual process ID for child threads
+        # None = use os.getpid() (main process). Set to a unique ID for child threads.
+        self._job_id: int | None = None
+        # Track active job threads for cleanup
+        self._active_jobs: list[threading.Thread] = []
+        self._active_jobs_lock = threading.Lock()
+
+    # Class-level counter for assigning unique virtual PIDs to JOB'd threads
+    _job_counter = 0
+    _job_counter_lock = threading.Lock()
 
     @property
     def globals(self) -> GlobalStorageBackend:
@@ -2293,11 +2310,16 @@ class MUMPSRuntime:
     def job(self) -> int:
         """Return process ID ($JOB).
 
+        Returns the virtual job ID for child threads spawned by JOB,
+        or the actual OS process ID for the main process.
+
         Returns:
-            Current process ID
+            Process ID (real or virtual)
         """
         import os
 
+        if self._job_id is not None:
+            return self._job_id
         return os.getpid()
 
     def zjob(self) -> str:
@@ -2318,6 +2340,42 @@ class MUMPSRuntime:
             Current I/O device identifier (default "0")
         """
         return self._io
+
+    def principal(self) -> str:
+        """Return principal I/O device name ($PRINCIPAL).
+
+        Spec 017 Phase 23: $PRINCIPAL identifies the principal I/O device.
+        It is constant throughout the active life of a process.
+        The initial value equals the initial value of $IO.
+
+        Returns:
+            Principal device identifier (default "0")
+        """
+        return self._principal
+
+    def key(self) -> str:
+        """Return last READ terminator ($KEY).
+
+        Spec 017 Phase 23: $KEY contains the control sequence that
+        terminated the last READ command. Empty string if no READ
+        has been executed or if READ timed out.
+
+        Returns:
+            Last READ terminator character(s), or empty string
+        """
+        return self._key
+
+    def system(self) -> str:
+        """Return system identification ($SYSTEM).
+
+        Spec 017 Phase 23: $SYSTEM returns "V,S" where V is the
+        MDC-assigned implementor number and S is implementor-defined.
+        Value format must match pattern 1.N1\",\"1.E.
+
+        Returns:
+            System identification string (e.g., "47,M2PY")
+        """
+        return self._system
 
     def x(self) -> int:
         """Return current column position ($X).
@@ -2631,20 +2689,13 @@ class MUMPSRuntime:
     ) -> bool:
         """Start a new process executing a routine (MUMPS JOB command).
 
-        Spec 013 Phase 11 (T095-T096): JOB spawns a new process.
-
-        In Python transpilation context:
-        - If routine is None, uses the current module
-        - Spawns subprocess running the transpiled Python with entry point
-        - Sets $ZJOB to the spawned process ID
+        Spawns a background thread with its own MUMPSRuntime instance
+        that shares the same global storage backend. The child thread
+        gets a unique virtual $J and independent local state.
 
         Timeout behavior per MUMPS spec 8.2.10:
         - No timeout: Returns True, does not affect $TEST
         - Timeout present: Returns True on success ($TEST=1), False on timeout ($TEST=0)
-
-        Note: This is a simplified implementation. Full MUMPS JOB semantics
-        include process parameters (DEFAULT, INPUT, OUTPUT, etc.) which are
-        not yet supported.
 
         Args:
             label: Entry point label name
@@ -2654,29 +2705,100 @@ class MUMPSRuntime:
             timeout: Optional timeout in seconds
 
         Returns:
-            bool: True if job started successfully within timeout, False on timeout
+            bool: True if job started successfully, False on timeout/failure
         """
         import os
+        import sys
 
-        # For now, emit a comment about the JOB - full subprocess support
-        # would require the transpiled module to be runnable as a standalone
-        # Python program with the entry point callable
-        #
-        # Future enhancement: Use subprocess to run:
-        #   python -c "from <module> import <label>; <label>(MUMPSRuntime())"
-        #
-        # For testing purposes, we simulate the JOB:
-        # - $ZJOB gets set to a pseudo-PID (current process ID)
-        # - Job always "succeeds" immediately
+        # Find the module
+        module = None
+        routine_name = routine or self._current_routine
 
-        self._zjob = str(os.getpid())  # Set $ZJOB to current PID as placeholder
+        if routine_name:
+            module = sys.modules.get(routine_name)
+        if module is None and routine:
+            # Try with _pct_ prefix for % routines
+            module = sys.modules.get(f"_pct_{routine}")
+
+        if module is None:
+            # Module not found - JOB fails silently in MUMPS
+            self._zjob = "0"
+            if timeout is not None:
+                return False
+            return True
+
+        # Find the entry function
+        entry_label = label or routine_name or ""
+        entry_func = getattr(module, entry_label, None)
+
+        if entry_func is None or not callable(entry_func):
+            self._zjob = "0"
+            if timeout is not None:
+                return False
+            return True
+
+        # Assign virtual PID for child
+        with MUMPSRuntime._job_counter_lock:
+            MUMPSRuntime._job_counter += 1
+            child_pid = os.getpid() + MUMPSRuntime._job_counter
+
+        # Create child runtime sharing globals but with own state
+        child_rt = MUMPSRuntime(global_storage=self._globals)
+        child_rt._job_id = child_pid
+
+        # Set $ZJOB in parent to child's virtual PID
+        self._zjob = str(child_pid)
+
+        # Start child thread
+        thread = threading.Thread(
+            target=MUMPSRuntime._job_thread_wrapper,
+            args=(child_rt, entry_func),
+            daemon=True,
+        )
+
+        with self._active_jobs_lock:
+            self._active_jobs.append(thread)
+
+        thread.start()
 
         if timeout is not None:
-            # With timeout, return True (success) - caller sets $TEST
-            return True
-        else:
-            # Without timeout, just return True
-            return True
+            return True  # $TEST=1 (success)
+        return True
+
+    @staticmethod
+    def _job_thread_wrapper(
+        child_rt: "MUMPSRuntime",
+        entry_func: Callable[..., Any],
+    ) -> None:
+        """Thread wrapper for JOB'd routines.
+
+        Catches SystemExit (HALT) so it only terminates the child thread,
+        not the entire process. Releases all locks on exit.
+        """
+        from m2py.runtime import run_with_goto_support
+
+        try:
+            run_with_goto_support(entry_func, child_rt, {})
+        except SystemExit:
+            pass  # HALT in child just terminates this thread
+        except Exception:
+            pass  # JOB'd routine errors shouldn't crash anything
+        finally:
+            # Release all locks held by this thread (MUMPS process cleanup)
+            child_rt._globals.unlock_all()
+
+    def wait_for_jobs(self, timeout: float | None = None) -> None:
+        """Wait for all active JOB'd threads to complete.
+
+        Args:
+            timeout: Maximum seconds to wait per thread (None = wait forever)
+        """
+        with self._active_jobs_lock:
+            threads = list(self._active_jobs)
+        for thread in threads:
+            thread.join(timeout=timeout)
+        with self._active_jobs_lock:
+            self._active_jobs = [t for t in self._active_jobs if t.is_alive()]
 
     def get_data(self, name: str, _scope: Dict[str, Any]) -> int:
         """Get $DATA value for variable by name (indirection support).
@@ -3548,6 +3670,61 @@ class MUMPSRuntime:
 
         # Now get the value from the target
         return self.get_var(target_name, _scope)
+
+    def get_indirected_marray(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> Any:
+        """Resolve indirection and return MArray for call-by-reference aliasing.
+
+        Spec 017 Phase 23 (T134e): Used for indirected by-reference parameters
+        like .@IX where IX contains a variable name. Instead of returning the
+        VALUE (like get_indirected), this returns the MArray OBJECT so the
+        callee can share the same variable tree.
+
+        Example:
+            S IX="X", X="hello", X(1)="world"
+            D SUB(.@IX)   ; .@IX means by-ref the variable named by IX = "X"
+            ; Formal param A gets the MArray for X, so A(1) = X(1) = "world"
+
+        Args:
+            source: Source variable name for indirection
+            _scope: Current scope dictionary
+            levels: Number of indirection levels
+            per_level_subscripts: Subscripts per level
+
+        Returns:
+            MArray object for the resolved variable (for by-ref aliasing)
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+        from m2py.core.exceptions import LVUNDEFError
+
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        try:
+            target_name = resolver.resolve_to_name(
+                source,
+                levels=levels,
+                per_level_subscripts=per_level_subscripts,
+            )
+        except LVUNDEFError as e:
+            raise IndirectionError(
+                source,
+                f"undefined variable in indirection chain: {e.name}",
+                variable_name=e.name,
+            )
+
+        # Get the MArray object from scope (not the value)
+        from m2py.codegen.names import NameTranslator
+
+        base_name = target_name.split("(")[0] if "(" in target_name else target_name
+        scope_key = NameTranslator.to_python(base_name)
+        return _scope.get(scope_key, MArray())
 
     def get_subscript_indirected(
         self,

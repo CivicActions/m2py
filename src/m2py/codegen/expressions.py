@@ -641,6 +641,22 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("ZERROR", "ZE"):
         return "_rt.zerror()"
 
+    # $SYSTEM / $SY - system identification
+    # Spec 017 Phase 23: Returns "V,S" where V is MDC-assigned implementor number
+    if name in ("SYSTEM", "SY"):
+        return "_rt.system()"
+
+    # $PRINCIPAL / $P - principal I/O device
+    # Spec 017 Phase 23: Returns the principal device identifier
+    # Note: $P without arguments is $PRINCIPAL (not $PIECE which requires args)
+    if name in ("PRINCIPAL", "P", "PIOR", "PIOREFERENCE"):
+        return "_rt.principal()"
+
+    # $KEY / $K - terminal input key
+    # Spec 017 Phase 23: Returns terminator from last READ command
+    if name in ("KEY", "K"):
+        return "_rt.key()"
+
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 
@@ -1050,18 +1066,29 @@ def _generate_extrinsic_arguments_with_byref(
             parts.append("None")
             byref_names.append(None)
         elif arg.passing_mode == PassingMode.BY_REFERENCE:
-            # By-reference: pass the variable value, record name for unpacking
+            # By-reference: pass the MArray object directly for aliasing
+            # Spec 017 Phase 23: The callee shares the same MArray, so
+            # $D(param) sees descendants and param(sub) accesses caller's tree
             has_byref = True
             if arg.variable_name:
-                # Spec 009 (T021): Use m_var_value for SIMPLE_FUNCTIONS to handle
-                # both MArray and plain values from external routines
+                # Direct by-ref (.X): pass the MArray object from scope
                 var_name = arg.variable_name
-                parts.append(f"m_var_value(_scope.get({var_name!r}))")
+                parts.append(f"_scope.get({var_name!r}, MArray())")
                 byref_names.append(var_name)
+            elif arg.expression and isinstance(arg.expression, MIndirection):
+                # Indirected by-ref (.@IX): resolve indirection to MArray
+                # Spec 017 Phase 23: Uses runtime to resolve name then get MArray
+                ind_expr = generate_expr(arg.expression, ctx)
+                # Replace get_indirected with get_indirected_marray for by-ref
+                marray_expr = ind_expr.replace(
+                    "_rt.get_indirected(", "_rt.get_indirected_marray("
+                )
+                parts.append(marray_expr)
+                byref_names.append(None)  # Resolved at runtime
             elif arg.expression:
-                # Expression passed by-ref (unusual but possible)
+                # Other expression passed by-ref (unusual)
                 parts.append(generate_expr(arg.expression, ctx))
-                byref_names.append(None)  # Can't write back to expression
+                byref_names.append(None)
             else:
                 parts.append("None")
                 byref_names.append(None)
