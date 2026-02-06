@@ -1373,6 +1373,50 @@ def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
 
 
 # =============================================================================
+# Spec 010: $TRANSLATE function
+# =============================================================================
+
+
+def m_translate(string: str, from_chars: str, to_chars: str = "") -> str:
+    """Perform MUMPS $TRANSLATE character-by-character replacement.
+
+    Each character in `string` that appears in `from_chars` is replaced by
+    the corresponding character in `to_chars`. If `to_chars` is shorter than
+    `from_chars`, characters in `from_chars` without a corresponding character
+    in `to_chars` are deleted. If `to_chars` is longer than `from_chars`,
+    the extra characters in `to_chars` are ignored.
+
+    Args:
+        string: The source string to translate
+        from_chars: Characters to find in string
+        to_chars: Replacement characters (may be shorter, equal, or longer
+                  than from_chars)
+
+    Returns:
+        Translated string
+
+    Examples:
+        >>> m_translate("HELLO", "LO", "XY")
+        'HEXXY'
+        >>> m_translate("HELLO", "L", "")
+        'HEO'
+        >>> m_translate("ABCDEFGHIJ", "ABC", "abcdef")
+        'abcDEFGHIJ'
+    """
+    result = []
+    for ch in string:
+        idx = from_chars.find(ch)
+        if idx == -1:
+            # Character not in from_chars, keep as is
+            result.append(ch)
+        elif idx < len(to_chars):
+            # Has corresponding replacement character
+            result.append(to_chars[idx])
+        # else: no corresponding to_char, delete the character
+    return "".join(result)
+
+
+# =============================================================================
 # Spec 011: String Comparison Operators
 # =============================================================================
 

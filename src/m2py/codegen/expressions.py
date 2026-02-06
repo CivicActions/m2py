@@ -1976,6 +1976,7 @@ def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     Characters in 'from' are replaced by corresponding characters in 'to'.
     If 'to' is shorter than 'from', extra characters in 'from' are deleted.
+    If 'to' is longer than 'from', extra characters in 'to' are ignored.
     If 'to' is omitted, all characters in 'from' are deleted.
 
     Args:
@@ -1983,12 +1984,13 @@ def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         ctx: Generator context
 
     Returns:
-        Python expression using str.translate() with str.maketrans()
+        Python expression using m_translate() runtime helper
 
     Examples:
         $TR("HELLO","L") → "HEO" (delete all L's)
         $TR("HELLO","LO","XY") → "HEXXY" (L→X, O→Y)
         $TR("HELLO","HEL","ABC") → "ABCCO" (H→A, E→B, L→C)
+        $TR("ABCDEFGHIJ","ABC","abcdef") → "abcDEFGHIJ" (extra to_chars ignored)
     """
     args = getattr(expr, "arguments", [])
 
@@ -2004,13 +2006,12 @@ def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) >= 3:
         to_expr = generate_expr(args[2], ctx)
-        # Build translation table with replacement
-        return f"m_str({string_expr}).translate(str.maketrans(m_str({from_expr}), m_str({to_expr}).ljust(len(m_str({from_expr})), chr(0)), ''.join(chr(0) if i < len(m_str({to_expr})) else c for i, c in enumerate(m_str({from_expr})))))"
+        return (
+            f"m_translate(m_str({string_expr}), m_str({from_expr}), m_str({to_expr}))"
+        )
     else:
         # No 'to' argument - delete all characters in 'from'
-        return (
-            f"m_str({string_expr}).translate(str.maketrans('', '', m_str({from_expr})))"
-        )
+        return f"m_translate(m_str({string_expr}), m_str({from_expr}))"
 
 
 def _gen_ascii(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:

@@ -564,6 +564,39 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST W $TRANSLATE("ABC","A","X") Q')
         assert result.output == "XBC"
 
+    def test_function_translate_to_longer_than_from(self, execute_mumps):
+        """$TRANSLATE handles to_chars longer than from_chars (Phase 22 T126).
+
+        When to_chars is longer than from_chars, excess chars in to_chars are
+        ignored. This was failing with 'maketrans arguments must have equal
+        length' before the fix.
+        """
+        # to_chars longer than from_chars - extra chars ignored
+        result = execute_mumps('TEST W $TR("ABCDEFGHIJ","ABC","abcdef") Q')
+        assert result.output == "abcDEFGHIJ"
+
+    def test_function_translate_255_char_args(self, execute_mumps):
+        """$TRANSLATE with 255-char from_chars longer than to_chars (V3TR08 III-200)."""
+        result = execute_mumps(
+            'TEST S a="" F i=1:1:51 S a=a_"ABCDE"\n W $TR("ABCDEFGHIJ",a,"abc") Q'
+        )
+        assert result.output == "abcFGHIJ"
+
+    def test_function_translate_empty_from(self, execute_mumps):
+        """$TRANSLATE with empty from_chars returns string unchanged."""
+        result = execute_mumps('TEST W $TR("HELLO","","xyz") Q')
+        assert result.output == "HELLO"
+
+    def test_function_translate_delete_with_explicit_empty_to(self, execute_mumps):
+        """$TRANSLATE with explicit empty to_chars deletes all from_chars."""
+        result = execute_mumps('TEST W $TR("HELLO","HEL","") Q')
+        assert result.output == "O"
+
+    def test_function_translate_with_variables(self, execute_mumps):
+        """$TRANSLATE with variable arguments instead of literals."""
+        result = execute_mumps('TEST S S="HELLO",F="LO",T="XY" W $TR(S,F,T) Q')
+        assert result.output == "HEXXY"
+
     def test_function_name(self, execute_mumps):
         """$NAME/$NA function generates canonical name strings (§7.1.5).
 

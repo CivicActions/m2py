@@ -1015,16 +1015,16 @@ This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
 
 ### Investigation
 
-- [ ] T115 [MVTS] Analyze V3CBR: find where string is being called as function (likely name collision)
-- [ ] T116 [P] [MVTS] Analyze V3NEW: locate V3NEWI1.m and ensure it's loaded as helper routine
-- [ ] T117 [P] [MVTS] Analyze V4SVQ: trace KeyError '111' - likely MArray subscript access issue
+- [x] T115 [MVTS] Analyze V3CBR: find where string is being called as function (likely name collision)
+- [x] T116 [P] [MVTS] Analyze V3NEW: locate V3NEWI1.m and ensure it's loaded as helper routine
+- [x] T117 [P] [MVTS] Analyze V4SVQ: trace KeyError '111' - likely MArray subscript access issue
 
 ### Implementation
 
-- [ ] T118 [MVTS] Fix V3CBR name collision (variable vs function disambiguation)
-- [ ] T119 [MVTS] Add V3NEWI1 to MVTS routine loading
-- [ ] T120 [MVTS] Fix V4SVQ KeyError (MArray subscript handling)
-- [ ] T121 [MVTS] Validate: V3CBR, V3NEW, V4SVQ pass
+- [x] T118 [MVTS] Fix V3CBR name collision (variable vs function disambiguation)
+- [x] T119 [MVTS] Add V3NEWI1 to MVTS routine loading
+- [x] T120 [MVTS] Fix V4SVQ KeyError (MArray subscript handling)
+- [x] T121 [MVTS] Validate: V3CBR, V3NEW, V4SVQ pass
 
 ---
 
@@ -1036,19 +1036,34 @@ This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
 
 **Root Cause Analysis**:
 - V3TR: `maketrans arguments must have same length` - $TRANSLATE implementation bug
+  - Inline `str.maketrans()` fails when `to_chars` is longer than `from_chars` (ljust doesn't truncate)
+  - Fix: Created `m_translate()` runtime helper with char-by-char replacement logic
 - V4PAT: `multiple repeat at position 14` - pattern match regex generation bug
+  - Quantified groups like `2(5NA)` generated `[0-9A-Za-z]{5}{2}` (double quantifier, invalid regex)
+  - Fix: Wrap single-alternative group content in `(?:...)` when outer quantifier is applied
 
 ### Investigation
 
-- [ ] T124 [MVTS] Analyze V3TR: find $TRANSLATE call with unequal argument lengths
-- [ ] T125 [P] [MVTS] Analyze V4PAT: find pattern that generates invalid regex (e.g., `**` or `++`)
+- [X] T124 [MVTS] Analyze V3TR: find $TRANSLATE call with unequal argument lengths
+  - V3TR08 test III-203: `$TR("ABCDEFGHIJ","ABC","abcdef")` — to_chars (6) longer than from_chars (3)
+- [X] T125 [P] [MVTS] Analyze V4PAT: find pattern that generates invalid regex (e.g., `**` or `++`)
+  - V4PAT1 test IV-772: `X?2(5NA)` → generated `[0-9A-Za-z]{5}{2}` (adjacent quantifiers)
 
 ### Implementation
 
-- [ ] T126 [MVTS] Fix $TRANSLATE to handle unequal length arguments per MUMPS spec (truncate or pad)
-- [ ] T127 [MVTS] Fix pattern compiler to avoid generating invalid regex quantifiers
-- [ ] T128 [MVTS] Add unit tests for $TRANSLATE edge cases and pattern edge cases
-- [ ] T129 [MVTS] Validate: V3TR, V4PAT pass
+- [X] T126 [MVTS] Fix $TRANSLATE to handle unequal length arguments per MUMPS spec
+  - Added `m_translate()` to src/m2py/runtime/helpers.py — simple char-by-char loop
+  - Updated `_gen_translate()` in src/m2py/codegen/expressions.py to use `m_translate()`
+  - Added `m_translate` to runtime helper imports in src/m2py/codegen/routine.py
+- [X] T127 [MVTS] Fix pattern compiler to avoid generating invalid regex quantifiers
+  - Modified `_parse_pattern_atom()` in src/m2py/analysis/pattern_compiler.py
+  - When char is `(` and min/max != (1,1), wrap alt_regex in `(?:...)` before quantification
+- [X] T128 [MVTS] Add unit tests for $TRANSLATE edge cases and pattern edge cases
+  - Added `TestMTranslate` class (8 tests) in tests/unit/runtime/test_helpers.py
+  - Added `TestGroupQuantification` class (6 tests) in tests/unit/analysis/test_pattern_compiler.py
+  - Added 2 codegen tests for $TRANSLATE edge cases in test_s7_1_5_intrinsic_functions.py
+- [X] T129 [MVTS] Validate: V3TR, V4PAT pass
+  - Both tests pass, no regressions (30 → 28 MVTS failures, only V3TR/V4PAT removed)
 
 ---
 

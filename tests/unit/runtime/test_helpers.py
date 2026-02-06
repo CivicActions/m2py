@@ -1143,3 +1143,102 @@ class TestUnwindNewStack:
         state._new_stack.append(("all", {}))
         unwind_new_stack(state)
         assert len(state._new_stack) == 0
+
+
+# =============================================================================
+# Phase 22: m_translate tests
+# =============================================================================
+
+
+class TestMTranslate:
+    """Test m_translate() runtime helper for $TRANSLATE function."""
+
+    def test_basic_replacement(self):
+        """Replace characters with same-length to_chars."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "LO", "XY") == "HEXXY"
+
+    def test_shorter_to_deletes(self):
+        """When to_chars shorter than from_chars, excess from_chars are deleted."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "HEL", "A") == "AO"
+
+    def test_no_to_deletes_all(self):
+        """When to_chars omitted, all from_chars are deleted."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "L") == "HEO"
+
+    def test_to_longer_than_from(self):
+        """When to_chars longer than from_chars, extra to_chars are ignored."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("ABCDEFGHIJ", "ABC", "abcdef") == "abcDEFGHIJ"
+
+    def test_empty_string(self):
+        """Empty string input returns empty string."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("", "A", "B") == ""
+
+    def test_no_matches(self):
+        """When no characters match from_chars, string unchanged."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "XYZ", "abc") == "HELLO"
+
+    def test_all_chars_replaced(self):
+        """All characters in string are replaced."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("ABCBAABCBA", "ABC", "abc") == "abcbaabcba"
+
+    def test_duplicate_from_chars(self):
+        """First occurrence in from_chars wins for mapping."""
+        from m2py.runtime.helpers import m_translate
+
+        # 'A' found at index 0 → 'x', 'B' found at index 1 → 'y', 'C' not found → 'C'
+        assert m_translate("ABC", "ABA", "xyz") == "xyC"
+
+    def test_empty_from_chars(self):
+        """Empty from_chars means no characters to replace - string unchanged."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "") == "HELLO"
+        assert m_translate("HELLO", "", "xyz") == "HELLO"
+
+    def test_explicit_empty_to_chars(self):
+        """Empty to_chars explicitly passed deletes all from_chars matches."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "HEL", "") == "O"
+
+    def test_same_char_identity_mapping(self):
+        """Mapping a character to itself is a no-op for that character."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "L", "L") == "HELLO"
+
+    def test_special_characters(self):
+        """Translate works with spaces, punctuation, and control chars."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("A B C", " ", "-") == "A-B-C"
+        assert m_translate("hello\tworld", "\t", " ") == "hello world"
+        assert m_translate("a.b*c", ".*", "XY") == "aXbYc"
+
+    def test_single_char_string(self):
+        """Single character string with single char from/to."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("A", "A", "B") == "B"
+        assert m_translate("A", "A") == ""
+        assert m_translate("A", "B", "C") == "A"
+
+    def test_from_and_to_both_empty(self):
+        """Both from_chars and to_chars empty - string unchanged."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "", "") == "HELLO"
