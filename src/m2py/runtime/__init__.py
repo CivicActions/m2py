@@ -2725,7 +2725,13 @@ class MUMPSRuntime:
                 return 0
         return m_data(arr, subs)
 
-    def get_order(self, name: str, _scope: Dict[str, Any], direction: int = 1) -> str:
+    def get_order(
+        self,
+        name: str,
+        _scope: Dict[str, Any],
+        direction: int = 1,
+        additional_subscripts: Optional[Tuple[Any, ...]] = None,
+    ) -> str:
         """Get $ORDER value for variable by name (indirection support).
 
         Args:
@@ -2734,6 +2740,8 @@ class MUMPSRuntime:
                   May also be a naked reference like "^(1)"
             _scope: Current scope dictionary
             direction: 1 for forward, -1 for reverse
+            additional_subscripts: Extra subscripts to append (for @name@(subs) pattern)
+                                  These are merged with any subscripts in name
 
         Returns:
             Next subscript in collation order, or "" if no more
@@ -2755,6 +2763,14 @@ class MUMPSRuntime:
         # Evaluate subscripts first - resolve variable references like A(3) to their values
         # Keep values in original form for proper canonicalization by m_order
         evaluated_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
+
+        # Merge additional subscripts if provided (for @name@(subs) pattern)
+        if additional_subscripts:
+            if evaluated_subs:
+                evaluated_subs = list(evaluated_subs) + list(additional_subscripts)
+            else:
+                evaluated_subs = list(additional_subscripts)
+
         subs = tuple(evaluated_subs) if evaluated_subs else ("",)
 
         if base_name.startswith("^"):

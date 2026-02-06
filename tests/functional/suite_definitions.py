@@ -418,7 +418,7 @@ MVTS_VV1_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition("141.1---V1FORB", "V1FORB", expected_passes=15),
     RoutineDefinition("143.1---V1FORC", "V1FORC", expected_passes=17),
     RoutineDefinition("145.1---V1IDNM", "V1IDNM", expected_passes=24),
-    RoutineDefinition("149.1---V1IDGO", "V1IDGO", expected_passes=1),
+    RoutineDefinition("149.1---V1IDGO", "V1IDGO", expected_passes=14),
     RoutineDefinition("150.1---V1IDDO", "V1IDDO"),
     RoutineDefinition(
         "152.1---V1IDARG",

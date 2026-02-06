@@ -1316,22 +1316,21 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         levels, inner_expr = _count_indirection_levels(var)
 
         # Build subscript expressions from name_indirection_subscripts if present
-        # For $O(@X@(1)), we need to append the extra subscripts to the resolved name
+        # For $O(@X@(1,2)), we need to pass these as additional_subscripts to get_order
+        # so they are properly merged with subscripts from the resolved name
         if var.name_indirection_subscripts:
             all_subs = []
             for sub_list in var.name_indirection_subscripts:
                 sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
                 all_subs.extend(sub_exprs)
-            # Build f-string to append subscripts: f'({sub1}, {sub2})'
+            # Pass as additional_subscripts parameter, NOT string concatenation
             if len(all_subs) == 1:
-                subs_fstr = f"f'({{{all_subs[0]}}})'"
+                additional_subs_arg = f", additional_subscripts=({all_subs[0]},)"
             else:
-                subs_parts = ", ".join(f"{{{s}}}" for s in all_subs)
-                subs_fstr = f"f'({subs_parts})'"
-            # We'll append these subscripts to the resolved name
-            append_subs = f" + {subs_fstr}"
+                subs_joined = ", ".join(all_subs)
+                additional_subs_arg = f", additional_subscripts=({subs_joined},)"
         else:
-            append_subs = ""
+            additional_subs_arg = ""
 
         # Generate the variable name resolution
         from m2py.asg.expressions import MVariable
@@ -1368,7 +1367,10 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             name_expr = f"str({name_expr_base})"
 
         # Use _rt.get_order which handles indirected variable names
-        return f"_rt.get_order({name_expr}{append_subs}, _scope, {direction_code})"
+        # Pass additional_subscripts separately for proper merging
+        return (
+            f"_rt.get_order({name_expr}, _scope, {direction_code}{additional_subs_arg})"
+        )
 
     # Generate subscript tuple for non-indirection cases
     # For $ORDER, subscripts include the starting point for iteration
@@ -2108,6 +2110,28 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             depth_expr = generate_expr(args[1], ctx)
 
         return generate_name_function_indirection(var, ctx, depth_expr)
+
+    # Handle NakedGlobal: $NA(^(1)) needs runtime naked resolution first
+    if isinstance(var, NakedGlobal):
+        subscripts = getattr(var, "subscripts", [])
+        if subscripts:
+            subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+            if len(subscript_exprs) == 1:
+                subscripts_tuple = f"({subscript_exprs[0]},)"
+            else:
+                subscripts_tuple = f"({', '.join(subscript_exprs)},)"
+        else:
+            subscripts_tuple = "()"
+
+        # Get depth argument if present
+        depth_arg = ""
+        if len(args) >= 2:
+            depth_expr = generate_expr(args[1], ctx)
+            depth_arg = f", depth=int(m_num({depth_expr}))"
+
+        # Resolve naked reference first, then apply $NAME
+        # resolve_naked returns (name, full_subscripts)
+        return f"(lambda _n, _s: m_name(_n, _s{depth_arg}, is_global=True))(*_rt.globals.resolve_naked({subscripts_tuple}))"
 
     var_name = getattr(var, "name", "")
     subscripts = getattr(var, "subscripts", [])

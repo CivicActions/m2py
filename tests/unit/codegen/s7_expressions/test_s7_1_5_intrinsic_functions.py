@@ -297,6 +297,33 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST\n S A(1)=1,A("Z")=2\n S X=$O(A(1))\n W X\n Q')
         assert result.output == "Z"
 
+    def test_function_order_indirection_subscripts(self, execute_mumps):
+        """$ORDER with indirection subscripts @name@(subs) pattern.
+
+        Spec 017 Phase 20 (V4ORDER fix): When using @name@(subs) pattern,
+        subscripts from the indirected name are merged with additional subscripts.
+        Previously this was done via string concatenation which broke subscript
+        canonicalization.
+        """
+        # Test 1: $O(@V@(subs)) with local variable indirection
+        # V contains "A(1)", @V@(2,"") resolves to A(1,2,"") -> $O gets first at level 3
+        result = execute_mumps(
+            'TEST\n S A(1,2,3)="A",A(1,2,4)="B"\n S V="A(1)"\n W $O(@V@(2,""))\n Q'
+        )
+        assert result.output == "3"
+
+        # Test 2: $O(@V@(subs)) with global variable indirection
+        result = execute_mumps(
+            'TEST\n S ^G(1,2,3)="A",^G(1,2,4)="B"\n S V="^G(1)"\n W $O(@V@(2,3))\n Q'
+        )
+        assert result.output == "4"
+
+        # Test 3: Multiple additional subscripts
+        result = execute_mumps(
+            'TEST\n S A(10,20,30,40)=1,A(10,20,30,50)=2\n S V="A(10)"\n W $O(@V@(20,30,40))\n Q'
+        )
+        assert result.output == "50"
+
     def test_function_piece(self, execute_mumps):
         """$PIECE generates string split (§7.1.5).
 
@@ -565,6 +592,31 @@ class TestIntrinsicFunctionsCodegen:
         # Test 6: Full form
         result = execute_mumps("TEST S A(1,2)=1 W $NAME(A(1,2)) Q")
         assert result.output == "A(1,2)"
+
+    def test_function_name_naked_global(self, execute_mumps):
+        """$NAME with naked global reference resolves naked indicator first.
+
+        Spec 017 Phase 20 (V4QUIT fix): $NA(^(subs)) must resolve the naked
+        indicator before building the name. Previously passed empty name to
+        m_name when the argument was a NakedGlobal.
+        """
+        # Test 1: Basic naked global - access ^G(1) then use ^(2) in $NA
+        result = execute_mumps('TEST S ^G(1,2)="A" S X=^G(1,2) W $NA(^(3)) Q')
+        # After reading ^G(1,2), naked indicator points to ^G(1),
+        # so ^(3) resolves to ^G(1,3)
+        assert result.output == "^G(1,3)"
+
+        # Test 2: Naked global with depth parameter
+        result = execute_mumps('TEST S ^G(1,2,3)="A" S X=^G(1,2,3) W $NA(^(4,5),1) Q')
+        # After reading ^G(1,2,3), naked indicator points to ^G(1,2)
+        # so ^(4,5) resolves to ^G(1,2,4,5), and depth=1 truncates to ^G(1)
+        assert result.output == "^G(1)"
+
+        # Test 3: Nested naked global subscripts
+        result = execute_mumps('TEST S ^G(1)="A" S X=^G(1) W $NA(^(2)) Q')
+        # After reading ^G(1), naked indicator points to ^G (empty parent),
+        # so ^(2) resolves to ^G(2)
+        assert result.output == "^G(2)"
 
     def test_function_qlength(self, execute_mumps):
         """$QLENGTH/$QL function counts subscripts in name string (§7.1.5).

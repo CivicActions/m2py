@@ -1127,6 +1127,83 @@ class TestGetOrderMethod:
         result = rt.get_order("A(10,1)", _scope, 1)
         assert result == "2"
 
+    # -------------------------------------------------------------------------
+    # Phase 20 Edge Cases: additional_subscripts for @name@(subs) pattern
+    # -------------------------------------------------------------------------
+
+    def test_get_order_additional_subscripts_single(self):
+        """get_order merges additional_subscripts with name subscripts.
+
+        Spec 017 Phase 20 (V4ORDER fix): When using the @name@(subs) pattern,
+        subscripts from the name are merged with additional_subscripts.
+        Example: @^V@(12,456) where ^V="^G(1)" should resolve to $O(^G(1,12,456))
+        """
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        # Create nested array A(1,2,3,4), A(1,2,3,5), A(1,2,3,6)
+        arr = MArray()
+        arr[1, 2, 3, 4] = "four"
+        arr[1, 2, 3, 5] = "five"
+        arr[1, 2, 3, 6] = "six"
+        _scope = {"A": arr}
+
+        # $O(@"A(1,2)"@(3,4)) should resolve to $O(A(1,2,3,4))
+        # Name provides "A(1,2)", additional_subscripts provides (3, 4)
+        result = rt.get_order("A(1,2)", _scope, 1, additional_subscripts=(3, 4))
+        assert result == "5"
+
+    def test_get_order_additional_subscripts_with_global(self):
+        """get_order merges additional_subscripts with global subscripts.
+
+        Tests the pattern @^V@(12,456) where ^V contains a global name.
+        """
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        # Create globals ^G(1,12,456), ^G(1,12,457), ^G(1,12,458)
+        rt.globals.set("G", ("1", "12", "456"), "v1")
+        rt.globals.set("G", ("1", "12", "457"), "v2")
+        rt.globals.set("G", ("1", "12", "458"), "v3")
+        _scope = {}
+
+        # $O(^G(1)@(12,456)) - name is ^G(1), additional is (12, 456)
+        result = rt.get_order("^G(1)", _scope, 1, additional_subscripts=(12, 456))
+        assert result == "457"
+
+    def test_get_order_additional_subscripts_no_base(self):
+        """get_order with additional_subscripts when name has no subscripts.
+
+        Tests that additional_subscripts works even when the name has no subscripts.
+        """
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[10, 20] = "val1"
+        arr[10, 21] = "val2"
+        _scope = {"A": arr}
+
+        # Name is just "A" (empty subs), additional is (10, 20)
+        # $O(@"A"@(10,20)) should resolve to $O(A(10,20))
+        result = rt.get_order("A", _scope, 1, additional_subscripts=(10, 20))
+        assert result == "21"
+
+    def test_get_order_additional_subscripts_reverse(self):
+        """get_order with additional_subscripts and reverse direction."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[1, 2, 3] = "three"
+        arr[1, 2, 4] = "four"
+        arr[1, 2, 5] = "five"
+        _scope = {"A": arr}
+
+        # $O(A(1)@(2,4),-1) with reverse direction
+        result = rt.get_order("A(1)", _scope, -1, additional_subscripts=(2, 4))
+        assert result == "3"
+
 
 @pytest.mark.runtime
 class TestResolveGotoTarget:
