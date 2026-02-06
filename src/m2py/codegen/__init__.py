@@ -64,22 +64,86 @@ def _select_goto_strategy(routine: "MRoutine") -> GotoStrategy:
     return GotoStrategy.SIMPLE_FUNCTIONS
 
 
+def _get_reachable_labels(routine: "MRoutine") -> set[str]:
+    """Get labels reachable from the routine entry point.
+
+    Computes the set of labels that can be reached via DO calls or GOTOs
+    starting from the first label (entry point). Labels that are only
+    callable externally (from other routines) are excluded.
+
+    This is used to filter GOTO checking - unresolved GOTOs in unreachable
+    labels shouldn't prevent compilation of the main routine.
+
+    Args:
+        routine: Analyzed MRoutine
+
+    Returns:
+        Set of label names reachable from entry
+    """
+    from m2py.asg.statements import MDoStatement, MGotoStatement
+
+    if not routine.labels:
+        return set()
+
+    reachable: set[str] = set()
+    worklist: list[str] = [routine.labels[0].name]  # Start from entry label
+    label_map = {lbl.name: lbl for lbl in routine.labels}
+
+    while worklist:
+        label_name = worklist.pop()
+        if label_name in reachable:
+            continue
+        reachable.add(label_name)
+
+        label = label_map.get(label_name)
+        if label is None or label.body is None:
+            continue
+
+        # Find all internal calls and gotos from this label
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MDoStatement):
+                for call in stmt.targets:
+                    # Only follow calls to labels in this routine (no routine specified)
+                    if call.routine is None and call.name and call.name in label_map:
+                        worklist.append(call.name)
+            elif isinstance(stmt, MGotoStatement):
+                for call in stmt.targets:
+                    # Only follow gotos to labels in this routine
+                    if call.routine is None and call.name and call.name in label_map:
+                        worklist.append(call.name)
+
+        # Also follow fall-through to next label
+        if label.needs_fallthrough and label.next_label:
+            worklist.append(label.next_label.name)
+
+    return reachable
+
+
 def _check_unsupported_gotos(routine: "MRoutine") -> None:
     """Check for unsupported GOTO patterns and raise if found.
 
     Spec 006 (T045a, T045b): Emit UnsupportedFeatureError for GOTO patterns
     that are deferred to later specs.
 
+    Only checks labels that are reachable from the routine entry point.
+    Labels that contain unresolved GOTOs but are only callable externally
+    are allowed - they simply won't be generated.
+
     Args:
         routine: Analyzed MRoutine
 
     Raises:
-        UnsupportedFeatureError: If UNRESOLVED GOTOs are found
+        UnsupportedFeatureError: If UNRESOLVED GOTOs are found in reachable labels
     """
     from m2py.asg.enums import GotoType
     from m2py.asg.statements import MGotoStatement
 
+    # Only check labels reachable from entry point
+    reachable = _get_reachable_labels(routine)
+
     for label in routine.labels:
+        if label.name not in reachable:
+            continue  # Skip unreachable labels
         if label.body is None:
             continue
         for stmt in label.body.walk_statements():
