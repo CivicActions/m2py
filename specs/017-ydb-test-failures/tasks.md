@@ -998,33 +998,31 @@ This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
 
 ---
 
-## Phase 21: MVTS Suite - TypeError (Missing Arguments)
+## Phase 21: MVTS Suite - TypeError/KeyError/ModuleNotFound Errors
 
-**Goal**: Resolve 5 tests failing due to generated functions missing required arguments
+**Goal**: Resolve 4 tests failing due to runtime type/key errors
 
-**Affected Tests**: V3DWP, V3FP, V4SVQ, V3CBR, V3NEW
+**Affected Tests**: V3CBR, V3NEW, V4SVQ (V3DWP, V3FP now Pattern Validation failures)
 
-**Root Cause Analysis**:
-- V3DWP: `A0() missing 1 required positional argument` - codegen not passing all args
-- V3FP: `REF() missing 1 required positional argument: 'X'` - formal parameter not passed
-- V4SVQ: `EF() missing required positional arguments` - extrinsic function call issue
+**Root Cause Analysis (Updated)**:
 - V3CBR: `'str' object is not callable` - variable being called as function
-- V3NEW: `can only concatenate str (not "int") to str` - type coercion issue
+- V3NEW: `ModuleNotFoundError: No module named 'V3NEWI1'` - missing helper routine
+- V4SVQ: `KeyError: '111'` - dictionary key lookup failure (not missing args as originally thought)
+- V3DWP: Now Pattern Validation failure (moved to Phase 24)
+- V3FP: Now Pattern Validation failure (moved to Phase 24)
 
 ### Investigation
 
-- [ ] T115 [MVTS] Analyze V3DWP: trace A0() call to find missing argument source
-- [ ] T116 [P] [MVTS] Analyze V3FP: trace REF() call and formal parameter binding
-- [ ] T117 [P] [MVTS] Analyze V4SVQ: trace EF() extrinsic function argument passing
-- [ ] T118 [P] [MVTS] Analyze V3CBR: find where string is being called as function (likely name collision)
-- [ ] T119 [P] [MVTS] Analyze V3NEW: find str/int concatenation source (likely WRITE or SET)
+- [ ] T115 [MVTS] Analyze V3CBR: find where string is being called as function (likely name collision)
+- [ ] T116 [P] [MVTS] Analyze V3NEW: locate V3NEWI1.m and ensure it's loaded as helper routine
+- [ ] T117 [P] [MVTS] Analyze V4SVQ: trace KeyError '111' - likely MArray subscript access issue
 
 ### Implementation
 
-- [ ] T120 [MVTS] Fix argument passing in DO/extrinsic calls for V3DWP, V3FP, V4SVQ cases
-- [ ] T121 [MVTS] Fix V3CBR name collision (variable vs function disambiguation)
-- [ ] T122 [MVTS] Fix V3NEW type coercion in string concatenation context
-- [ ] T123 [MVTS] Validate: V3DWP, V3FP, V4SVQ, V3CBR, V3NEW pass
+- [ ] T118 [MVTS] Fix V3CBR name collision (variable vs function disambiguation)
+- [ ] T119 [MVTS] Add V3NEWI1 to MVTS routine loading
+- [ ] T120 [MVTS] Fix V4SVQ KeyError (MArray subscript handling)
+- [ ] T121 [MVTS] Validate: V3CBR, V3NEW, V4SVQ pass
 
 ---
 
@@ -1058,46 +1056,160 @@ This creates subscripts: 0, 0.0005, 0.001, 1, 1.0005, 1.001, 2, 2.0005, 2.001
 
 **Affected Tests**: V3EF, V4KEY, V4SYSTEM, V4PRIN (currently xfail, reason unknown)
 
+**Update**: V3EF is actually FAILING (not xfailed). V4KEY, V4SYSTEM, V4PRIN are correctly xfailed.
+
 ### Investigation
 
-- [ ] T130 [P] [MVTS] Document V3EF xfail reason - likely $ETRAP/$ECODE error handling
-- [ ] T131 [P] [MVTS] Document V4KEY xfail reason - likely $KEY intrinsic
-- [ ] T132 [P] [MVTS] Document V4SYSTEM xfail reason - likely $SYSTEM intrinsic
-- [ ] T133 [P] [MVTS] Document V4PRIN xfail reason - likely $PRINCIPAL I/O
+- [ ] T130 [P] [MVTS] Investigate V3EF failure - $ETRAP/$ECODE error handling (currently failing, not xfail)
+- [x] T131 [P] [MVTS] Document V4KEY xfail reason - $KEY intrinsic (already xfailed)
+- [x] T132 [P] [MVTS] Document V4SYSTEM xfail reason - $SYSTEM intrinsic (already xfailed)
+- [x] T133 [P] [MVTS] Document V4PRIN xfail reason - $PRINCIPAL I/O (already xfailed)
 
 ### Resolution
 
-- [ ] T134 [MVTS] Add proper xfail reasons to test_mvts.py XFAIL_ROUTINES dict with LIM codes
+- [ ] T134 [MVTS] Fix V3EF or add to xfail with documented reason
 - [ ] T135 [MVTS] Update limitations.md if new limitation categories needed
 
 ---
 
-## Phase 24: MVTS Final Validation
+## Phase 24: MVTS Suite - Pattern Validation Failures (Output Mismatch)
 
-**Goal**: Confirm all 135 MVTS tests pass or are appropriately xfail'd
+**Goal**: Resolve 31 tests producing wrong output (PASS count mismatch)
 
-- [ ] T136 Run full MVTS suite: `uv run pytest tests/functional/test_mvts.py -v`
-- [ ] T137 Verify: 0 failures, all xfails have documented reasons
-- [ ] T138 Update Summary table with final MVTS results
+**Affected Tests**: 
+- **Line/Label (4)**: V1LL0, V1LL1, V1LL2, V1LL3
+- **Special Variables (2)**: V1SVH, V1SVS  
+- **Max Limits (2)**: V1MAX, V4MAX
+- **Functions (3)**: V2FN2, V3FN2, V3FN3
+- **Case Conversion (1)**: V2LCC1
+- **Control Flow (2)**: V3FOR, V3NST1
+- **Indirection (2)**: V3INDNM, V1IDGO
+- **Pass-by-ref (2)**: V3DWP, V3FP
+- **$TEXT (1)**: V3TEXT
+- **Sorting/Order (2)**: V4SORT, V4REV
+- **String Functions (2)**: V4FNUM, V4RAND
+- **Query Functions (4)**: V4GET2, V4NAME, V4QLEN, V4QSUB
+- **Subscripts (1)**: V4SSUB
+- **MERGE (1)**: V4MERGE
+- **Procedure Call (1)**: V1PC
+
+**Root Cause Analysis**: These tests run without exceptions but produce incorrect output.
+Need to investigate each to determine:
+1. Is PASS count expectation wrong in suite_definitions.py?
+2. Is there a codegen bug causing wrong behavior?
+3. Is there a runtime bug causing wrong behavior?
+
+### Investigation
+
+- [ ] T139 [MVTS] Analyze Line/Label tests (V1LL0-V1LL3): compare m2py output vs YDB output
+- [ ] T140 [MVTS] Analyze Special Variable tests (V1SVH, V1SVS): check $HOROLOG/$STORAGE handling
+- [ ] T141 [MVTS] Analyze Function tests (V2FN2, V3FN2, V3FN3): check intrinsic function implementations
+- [ ] T142 [MVTS] Analyze regressed Phase 18/19 tests: V1PC, V3TEXT, V4MERGE, V4GET2, V4NAME, V4QLEN, V4QSUB
+
+### Implementation
+
+- [ ] T143 [MVTS] Triage failures: categorize as expectation bug vs implementation bug
+- [ ] T144 [MVTS] Fix implementation bugs identified in T139-T142
+- [ ] T145 [MVTS] Update expected_passes in suite_definitions.py where appropriate
+- [ ] T146 [MVTS] Validate: Pattern validation failures resolved
 
 ---
 
-### MVTS Failure Root Causes (Phase 18-23 Analysis)
+## Phase 25: MERGE Suite - Output Mismatch Failures
+
+**Goal**: Resolve 10 MERGE tests producing wrong output
+
+**Current Results**: 19 passed, 10 failed, 23 xfailed (Z-extensions)
+
+**Affected Tests** (all "Output mismatch"):
+- **External Globals (2)**: extgbl1, extgbl2
+- **Global-to-Global (2)**: gbl2gbl, ugbl2gbl
+- **Global-to-Local (2)**: gbl2lcl, ugbl2lcl
+- **Local-to-Global (2)**: lcl2gbl, ulcl2gbl
+- **Local-to-Local (2)**: lcl2lcl, ulcl2lcl
+
+**Root Cause Analysis**: These tests run without exceptions but produce incorrect MERGE output.
+Need to investigate each to determine:
+1. Is expected output wrong in outref?
+2. Is there a MERGE codegen bug causing wrong behavior?
+3. Is there a ZWRITE/output bug affecting test comparison?
+
+### Investigation
+
+- [ ] T150 [MERGE] Analyze gbl2gbl failure: compare m2py MERGE output vs YDB output
+- [ ] T151 [P] [MERGE] Analyze lcl2lcl failure: check local variable MERGE behavior
+- [ ] T152 [P] [MERGE] Analyze extgbl failures: check external global MERGE behavior
+- [ ] T153 [P] [MERGE] Check if all failures share common root cause (e.g., subscript ordering, naked global state)
+
+### Implementation
+
+- [ ] T154 [MERGE] Fix MERGE implementation bugs identified in T150-T153
+- [ ] T155 [MERGE] Add unit tests for MERGE edge cases found
+- [ ] T156 [MERGE] Validate: All 10 MERGE failures resolved
+
+---
+
+## Phase 26: MVTS Final Validation
+
+**Goal**: Confirm all 137 MVTS tests pass or are appropriately xfail'd/skipped
+
+- [ ] T157 Run full MVTS suite: `uv run pytest tests/functional/test_mvts.py -v`
+- [ ] T158 Verify: 0 failures, all xfails have documented reasons
+- [ ] T159 Update Summary table with final MVTS results
+
+---
+
+## Phase 27: Final Suite Validation
+
+**Goal**: Confirm all functional test suites pass
+
+- [ ] T160 Run all suites: `uv run pytest tests/functional/ -v`
+- [ ] T161 Verify: 0 failures across MUGJ, BASIC, MERGE, MVTS
+- [ ] T162 Update Summary table with final results
+
+---
+
+### MVTS Failure Root Causes (Updated Analysis - 38 Failures)
+
+**Current Test Results**: 38 failed, 92 passed, 8 skipped, 3 xfailed
 
 | Category | Tests | Root Cause | Phase | Status |
 |----------|-------|------------|-------|--------|
-| ModuleNotFoundError | V1RN | % routine naming (`_pct_`) | 18 | 🔄 Pending |
-| ModuleNotFoundError | V1OV, V1PC, V3TEXT, V4MERGE | Missing sub-routines | 18 | 🔄 Pending |
-| VarExpectedError | V1IDNM, V3GET, V3QUERY, V4GET2, V4NAME, V4QLEN, V4QSUB | Empty/invalid indirection result | 19 | 🔄 Pending |
-| VarExpectedError | V1IDARG, V1XECA | Subscript-only indirection | 19 | 🔄 Pending |
-| IndirectionError | V1IDGO | Empty routine name in GOTO | 20 | 🔄 Pending |
-| IndirectionError | V4ORDER, V4QUIT | Malformed subscript/variable | 20 | 🔄 Pending |
-| TypeError | V3DWP, V3FP, V4SVQ | Missing function arguments | 21 | 🔄 Pending |
-| TypeError | V3CBR | String called as function | 21 | 🔄 Pending |
-| TypeError | V3NEW | str/int concatenation | 21 | 🔄 Pending |
-| Runtime Bug | V3TR | $TRANSLATE maketrans length | 22 | 🔄 Pending |
-| Runtime Bug | V4PAT | Pattern regex invalid quantifier | 22 | 🔄 Pending |
-| Infrastructure | V1BR, V1HANG, V3HANG, V3JOB, V3LOCK, V4JOB | READ/HANG/JOB/LOCK commands | - | ✅ XFail |
+| **Runtime Errors (7)** | | | | |
+| TypeError | V3CBR | 'str' object is not callable | 21 | 🔄 Pending |
+| ModuleNotFoundError | V3NEW | No module named 'V3NEWI1' | 21 | 🔄 Pending |
+| ValueError | V3TR | maketrans arguments must have equal length | 22 | 🔄 Pending |
+| IndirectionError | V4ORDER | malformed subscript | 20 | 🔄 Pending |
+| re.error | V4PAT | multiple repeat at position 14 | 22 | 🔄 Pending |
+| IndirectionError | V4QUIT | invalid variable name | 20 | 🔄 Pending |
+| KeyError | V4SVQ | KeyError: '111' | 21 | 🔄 Pending |
+| **Pattern Validation (31)** | | | | |
+| Line/Label | V1LL0, V1LL1, V1LL2, V1LL3 | Wrong PASS count (line/label tests) | NEW | 🔄 Pending |
+| Special Variables | V1SVH, V1SVS | Wrong PASS count ($HOROLOG, $STORAGE) | NEW | 🔄 Pending |
+| Max limits | V1MAX, V4MAX | Wrong PASS count (max value tests) | NEW | 🔄 Pending |
+| Procedure Call | V1PC | Wrong PASS count | 18 | ❌ Regressed |
+| Indirection GOTO | V1IDGO | Wrong PASS count | 20 | 🔄 Pending |
+| Functions | V2FN2, V3FN2, V3FN3 | Wrong PASS count | NEW | 🔄 Pending |
+| Case Conversion | V2LCC1 | Wrong PASS count ($LOWER/$UPPER) | NEW | 🔄 Pending |
+| FOR loops | V3FOR | Wrong PASS count | NEW | 🔄 Pending |
+| Indirection | V3INDNM | Wrong PASS count | NEW | 🔄 Pending |
+| Nesting | V3NST1 | Wrong PASS count | NEW | 🔄 Pending |
+| $TEXT | V3TEXT | Wrong PASS count | 18 | ❌ Regressed |
+| Pass-by-ref | V3DWP, V3FP | Wrong PASS count | 21 | 🔄 Pending |
+| Error handling | V3EF | Wrong PASS count ($ETRAP/$ECODE) | 23 | ❌ Not xfailed |
+| Sorting | V4SORT | Wrong PASS count | NEW | 🔄 Pending |
+| $FNUMBER | V4FNUM | Wrong PASS count | NEW | 🔄 Pending |
+| $REVERSE | V4REV | Wrong PASS count | NEW | 🔄 Pending |
+| $GET | V4GET2 | Wrong PASS count | 19 | ❌ Regressed |
+| $NAME | V4NAME | Wrong PASS count | 19 | ❌ Regressed |
+| $QLENGTH | V4QLEN | Wrong PASS count | 19 | ❌ Regressed |
+| $QSUBSCRIPT | V4QSUB | Wrong PASS count | 19 | ❌ Regressed |
+| MERGE | V4MERGE | Wrong PASS count | 18 | ❌ Regressed |
+| $RANDOM | V4RAND | Wrong PASS count | NEW | 🔄 Pending |
+| Subscripts | V4SSUB | Wrong PASS count | NEW | 🔄 Pending |
+| **Infrastructure (skip)** | V1BR, V1HANG, V3HANG, V3JOB, V3LOCK, V4JOB | READ/HANG/JOB/LOCK/BREAK | - | ✅ Skip |
+| **Documented (xfail)** | V4KEY, V4SYSTEM, V4PRIN | $KEY/$SYSTEM/$PRINCIPAL | 23 | ✅ XFail |
+| **Documented (skip)** | V1IDARG, V3QUERY | LIM-ARG-INDIR, LIM-SUB-CANON | 19 | ✅ Skip |
 | Unknown | V3EF, V4KEY, V4SYSTEM, V4PRIN | Needs investigation | 23 | 🔄 Pending |
 ---
 
@@ -1250,7 +1362,7 @@ graph TD
 
 ---
 
-## Summary (Updated 2026-01-27)
+## Summary (Updated 2026-02-05)
 
 ### Completed Phases
 
@@ -1267,55 +1379,55 @@ graph TD
 | 10 | US5: Pattern | ✅ Complete | 5 |
 | 11 | US6: FOR Loops | ✅ Complete | 5 |
 | 12 | US7: $ORDER/$QUERY | ✅ Complete | 3 |
-| 13 | US11: Merge Suite | ✅ Complete | 29 pass + 23 xfail |
+| 13 | US11: Merge Suite | ⚠️ Partial | 19 pass + 23 xfail + 10 fail |
 | 14 | Remaining | ✅ Mostly Complete | ~50 |
+| 16 | MUGJ | ✅ Complete | 76 pass + 3 skip |
+| 17 | Basic | ✅ Complete | 29 pass + 32 skip |
 
 ### Outstanding Phases
 
 | Phase | Suite | Tasks | Priority |
 |-------|-------|-------|----------|
-| **16** | **MUGJ** | T084-T090 | **Current** |
-| 17 | Basic | T091-T095 | Next |
-| 15 | Final Validation | T076-T079 | Last |
+| **20** | **MVTS IndirectionError** | T108-T114 | **Current** |
+| **21** | **MVTS TypeError/KeyError** | T115-T121 | **Current** |
+| **22** | **MVTS Runtime Bugs** | T124-T129 | **Current** |
+| **23** | **MVTS XFails** | T130-T135 | **Current** |
+| **24** | **MVTS Pattern Validation** | T139-T146 | **Current** |
+| **25** | **MERGE Output Mismatch** | T150-T156 | **Current** |
+| 26 | MVTS Final Validation | T157-T159 | Last |
+| 27 | Final Suite Validation | T160-T162 | Last |
 
-### MUGJ Failure Root Causes (R8 Analysis)
-
-| Category | Routines | Root Cause | Task | Status |
-|----------|----------|------------|------|--------|
-| Whitespace | full_suite | Blank line differences | T084 | 🔄 Pending |
-| Transpile Fail | 9 routines | Multi-target GOTO, $ZVersion | T085 | 🔄 Pending |
-| ModuleNotFound | V1PC, V1IDGO | Depend on untranspiled | T085 | 🔄 Pending |
-| Same-Routine GOTO | V1FORC, V1SEQ, V1NST3 | G LABEL^ROUTINE treated as external | T086 | ✅ Fixed |
-| VarExpectedError | V1IDNM | Subscript indirection context | **T087** | 🔄 Pending |
-| VarExpectedError | V1IDARG, V1XECA | Argument indirection lists | T088 | ✅ Fixed |
-| TIMEOUT | V1FORA | FOR step=0 edge case | T089 | ✅ Fixed (I-340.3 works; I-340.4 TRAMPOLINE sync bug FIXED) |
-
-### Basic Failure Root Causes
-
-| Category | Test | Root Cause | Task | Status |
-|----------|------|------------|------|--------|
-| ZWRITE | locals | Collation key not MUMPS order | T091 | ✅ Fixed |
-| ModuleNotFound | extcall | Missing helper routine + GotoExternal from DO | T092/T075e | ✅ Fixed |
-| TIMEOUT | larray | Conditional GOTO self-loop postcondition ignored | T093 | ✅ Fixed |
-| Infrastructure | miscdb | YDB mupip integ/file creation output in outref | T094 | ✅ xfail LIM-015 |
-
-### Current Test Results (Post-T094)
+### Current Test Results (2026-02-05)
 
 | Suite | Passed | Failed | XFail | Skipped | Notes |
 |-------|--------|--------|-------|---------|-------|
-| MVTS  | 101    | 24     | 10    | 0       | Serial execution - 24 failures to resolve |
-| Merge | 29     | 0      | 23    | 0       | ✅ Complete (Z-ext xfail) |
-| Basic | 29     | 0      | 28    | 4       | ✅ All passing or appropriately xfail'd |
-| MUGJ  | 5      | 0      | 1     | 0       | Serial execution (T084 done, T085-T090 for xfail→pass) |
-| **Total** | **164** | **24** | **62** | **4** | |
+| MVTS  | 92     | 38     | 3     | 8       | 38 failures across Phases 20-24 |
+| Merge | 19     | 10     | 23    | 0       | 10 failures in Phase 25 |
+| Basic | 29     | 0      | 0     | 32      | ✅ All passing (skips are YDB-specific) |
+| MUGJ  | 76     | 0      | 0     | 3       | ✅ All passing (skips are YDB-specific) |
+| **Total** | **216** | **48** | **26** | **43** | |
+
+### MVTS Failures by Category (38 total)
+
+| Category | Count | Tests | Phase |
+|----------|-------|-------|-------|
+| Runtime Errors | 7 | V3CBR, V3NEW, V3TR, V4ORDER, V4PAT, V4QUIT, V4SVQ | 20-22 |
+| Pattern Validation | 31 | V1LL0-V1LL3, V1SVH/V1SVS, V1MAX, V1PC, V1IDGO, V2FN2, V2LCC1, V3FN2/V3FN3, V3FOR, V3INDNM, V3NST1, V3TEXT, V3DWP, V3FP, V3EF, V4SORT, V4FNUM, V4REV, V4GET2, V4NAME, V4QLEN, V4QSUB, V4MERGE, V4RAND, V4SSUB, V4MAX | 24 |
+
+### MERGE Failures (10 total)
+
+| Category | Count | Tests | Phase |
+|----------|-------|-------|-------|
+| Output Mismatch | 10 | extgbl1, extgbl2, gbl2gbl, gbl2lcl, lcl2gbl, lcl2lcl, ugbl2gbl, ugbl2lcl, ulcl2gbl, ulcl2lcl | 25 |
 
 ### Major Accomplishments
 
 1. **Unified Variable System (Spec 018)**: New `core/` module shared by codegen and runtime
-2. **MUGJ Serial Execution (T084)**: `test_full_suite_serial` runs all 72 routines in YDB order, xfails pending T085-T090
-3. **MVTS Serial Execution**: Refactored to load all 714 routines, run 135 sub-drivers serially
-4. **Merge Suite Complete**: 29 pass + 23 Z-extension xfails
-5. **~143 tests fixed** from original 147+ failures (T093 added larray)
-6. **R8 Root Cause Analysis**: Detailed analysis of remaining MUGJ failures
+2. **MUGJ Complete**: 76 pass + 3 skip (all tests passing)
+3. **Basic Complete**: 29 pass + 32 skip (all tests passing)
+4. **MVTS Serial Execution**: Refactored to load all 714 routines, run 135 sub-drivers serially
+5. **Merge Suite**: 19 pass + 23 Z-extension xfails (10 output mismatch failures remain)
+6. **Reachability Analysis**: Added _get_reachable_labels() to skip GOTO checks in dead code
 
 ---
+
