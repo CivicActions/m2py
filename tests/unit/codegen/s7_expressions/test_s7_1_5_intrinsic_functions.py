@@ -205,6 +205,24 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST K Y W $GET(Y,"FULL") Q')
         assert result.output == "FULL"
 
+    def test_function_get_numeric_default_canonical(self, execute_mumps):
+        """$GET default value uses m_str for MUMPS canonical number formatting.
+
+        Phase 24: Changed from str() to m_str() so large numbers
+        format as canonical MUMPS numbers, not Python scientific notation.
+        """
+        # Large number default should be canonical (no scientific notation)
+        result = execute_mumps("TEST K X W $G(X,1E25) Q")
+        assert result.output == "10000000000000000000000000"
+
+        # Small fraction default should be canonical (no leading zero)
+        result = execute_mumps("TEST K X W $G(X,.5) Q")
+        assert result.output == ".5"
+
+        # Integer default remains unchanged
+        result = execute_mumps("TEST K X W $G(X,42) Q")
+        assert result.output == "42"
+
     def test_function_length(self, execute_mumps):
         """$LENGTH generates len() equivalent (§7.1.5).
 
@@ -824,6 +842,24 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST W $REVERSE("ABC") Q')
         assert result.output == "CBA"
 
+    def test_function_reverse_numeric_canonical(self, execute_mumps):
+        """$REVERSE of numeric uses MUMPS canonical form before reversal.
+
+        Phase 24: Changed from str() to m_str() so Decimal values
+        get canonical formatting before reversal.
+        """
+        # Decimal value: 1.50 canonicalizes to "1.5", reversed is "5.1"
+        result = execute_mumps("TEST W $RE(1.50) Q")
+        assert result.output == "5.1"
+
+        # Integer: 100 stays "100", reversed is "001"
+        result = execute_mumps("TEST W $RE(100) Q")
+        assert result.output == "001"
+
+        # Zero
+        result = execute_mumps("TEST W $RE(0) Q")
+        assert result.output == "0"
+
     def test_function_fnumber(self, execute_mumps):
         """$FNUMBER/$FN formats numbers with specified codes (§7.1.5).
 
@@ -1118,6 +1154,46 @@ class TestFnumberCodeCombinations:
         result = execute_mumps('TEST W $FN(42,"+") Q')
         assert result.success is True
         assert result.output == "+42"
+
+    def test_fnumber_t_minus_trailing_suppressed(self, execute_mumps):
+        """Phase 24: $FN(-20,"T-") suppresses minus, trailing space."""
+        result = execute_mumps('TEST W "|",$FN(-20,"T-"),"|" Q')
+        assert result.success is True
+        assert result.output == "|20 |"
+
+    def test_fnumber_plus_minus_composed(self, execute_mumps):
+        """Phase 24: + and - compose: positive gets +, negative suppressed."""
+        result = execute_mumps('TEST W $FN(42,"+-") Q')
+        assert result.success is True
+        assert result.output == "+42"
+
+        result = execute_mumps('TEST W $FN(-42,"+-") Q')
+        assert result.success is True
+        assert result.output == "42"
+
+    def test_fnumber_three_arg_leading_zero(self, execute_mumps):
+        """Phase 24: 3-arg form preserves leading zero for fractions."""
+        result = execute_mumps('TEST W $FN(.5,",",2) Q')
+        assert result.success is True
+        assert result.output == "0.50"
+
+    def test_fnumber_three_arg_rounding(self, execute_mumps):
+        """Phase 24: 3-arg form rounds with ROUND_HALF_UP."""
+        result = execute_mumps('TEST W $FN(1.235,"+",2) Q')
+        assert result.success is True
+        assert result.output == "+1.24"
+
+    def test_fnumber_comma_p_combined(self, execute_mumps):
+        """Phase 24: P with comma: parentheses + thousands separators."""
+        result = execute_mumps('TEST W $FN(-12345,",P") Q')
+        assert result.success is True
+        assert result.output == "(12,345)"
+
+    def test_fnumber_zero_with_plus(self, execute_mumps):
+        """Phase 24: Zero gets no + sign with plus code."""
+        result = execute_mumps('TEST W $FN(0,"+") Q')
+        assert result.success is True
+        assert result.output == "0"
 
 
 @pytest.mark.codegen

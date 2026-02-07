@@ -1245,7 +1245,7 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # Get default value if provided
     if len(args) >= 2:
         default_expr = generate_expr(args[1], ctx)
-        default_code = f"str({default_expr})"
+        default_code = f"m_str({default_expr})"
     else:
         default_code = '""'
 
@@ -2389,7 +2389,7 @@ def _gen_reverse(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         return '""'
 
     string_expr = generate_expr(args[0], ctx)
-    return f"str({string_expr})[::-1]"
+    return f"m_str({string_expr})[::-1]"
 
 
 def _gen_fnumber(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:

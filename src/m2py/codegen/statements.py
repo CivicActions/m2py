@@ -4384,8 +4384,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                     f"run_with_goto_support({routine_name}.{label_name}, _rt, _scope)"
                 )
         else:
-            # D ^ROUTINE - call entry label (same name as routine)
-            entry_label = translate_name(routine_name)
+            # D ^ROUTINE - call entry function (may be _preamble for labelless first lines)
+            # Use the module's _entry_function attribute which is set correctly at codegen time
+            entry_func = f"{routine_name}._entry_function"
             # T079: Pass _rt and _scope for cross-routine variable visibility
             # T075e: Wrap in run_with_goto_support to handle GotoExternal from subroutine
             ctx.emitter.line("from m2py.runtime import run_with_goto_support")
@@ -4393,12 +4394,10 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             if args:
                 ctx.emitter.line(
                     f"run_with_goto_support(lambda _rt, _scope=None: "
-                    f"{routine_name}.{entry_label}(_rt, {args}, _scope=_scope), _rt, _scope)"
+                    f"{entry_func}(_rt, {args}, _scope=_scope), _rt, _scope)"
                 )
             else:
-                ctx.emitter.line(
-                    f"run_with_goto_support({routine_name}.{entry_label}, _rt, _scope)"
-                )
+                ctx.emitter.line(f"run_with_goto_support({entry_func}, _rt, _scope)")
 
         # T075b: For TRAMPOLINE with dynamic locals, sync _scope back to state._locals
         # after returning from external routine so caller can see callee's modifications

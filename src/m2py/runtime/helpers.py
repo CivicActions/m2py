@@ -22,7 +22,7 @@ These helpers are imported in generated code and called at runtime.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP, localcontext
 from typing import TYPE_CHECKING, Any, Callable, Tuple
 
 from m2py.core.subscripts import SubscriptCanonicalizer
@@ -998,12 +998,18 @@ def _raise_select_false() -> None:
 
 
 def _is_canonical_numeric(value: str) -> bool:
-    """Check if a string is a canonical numeric representation.
+    """Check if a string is a canonical MUMPS numeric representation.
 
     In MUMPS, a canonical number is the shortest representation:
-    - No leading zeros (except "0" itself)
+    - No leading zeros (except "0" itself or "0.xxx")
     - No trailing zeros after decimal point
     - No unnecessary plus sign
+    - No decimal point without fractional part
+    - Fractions < 1 have no leading zero: ".5" not "0.5"
+    - Negative fractions: "-.5" not "-0.5"
+
+    Uses m_str() for canonical comparison to ensure consistency with
+    the transpiler's number formatting.
 
     Args:
         value: String to check
@@ -1011,18 +1017,23 @@ def _is_canonical_numeric(value: str) -> bool:
     Returns:
         True if value is canonical numeric representation
     """
+    from m2py.codegen.helpers import m_str
+
     if not value:
         return False
     try:
-        num = float(value)
-        # Check if string representation matches canonical form
-        if num == int(num):
-            return value == str(int(num))
-        else:
-            # For floats, canonical means no trailing zeros
-            canonical = str(num)
-            return value == canonical
-    except (ValueError, TypeError):
+        # Use Decimal to avoid float precision loss
+        dec = Decimal(value)
+        # Reject non-finite values (Infinity, NaN, sNaN)
+        if not dec.is_finite():
+            return False
+        # Use sufficient precision for very long decimals
+        with localcontext() as ctx:
+            ctx.prec = max(ctx.prec, len(value) + 10)
+            dec = Decimal(value)
+            canonical = m_str(dec)
+        return value == canonical
+    except Exception:
         return False
 
 
@@ -1246,8 +1257,6 @@ def m_justify(value: float, width: int, decimals: int) -> str:
         m_justify(42, 5, 0) → "   42"
         m_justify(123.45, 7, 1) → "  123.5" (ROUND_HALF_UP, not 123.4)
     """
-    from decimal import ROUND_HALF_UP
-
     # Convert to Decimal for precise rounding
     if isinstance(value, Decimal):
         dec_value = value
@@ -1273,17 +1282,30 @@ def m_justify(value: float, width: int, decimals: int) -> str:
     return formatted.rjust(width)
 
 
-def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
+def m_fnumber(
+    value: "int | float | Decimal", codes: str, decimals: int | None = None
+) -> str:
     """Format number with specified formatting codes ($FNUMBER).
 
     Spec 010 Phase 10 (T069): Implements $FNUMBER intrinsic function.
+    Updated Phase 24: Rewritten to compose format codes correctly per ANSI spec.
 
-    Formatting codes (can be combined):
+    Format codes (composable):
     - "," = add comma separators for thousands
-    - "+" = show + sign for positive numbers
-    - "-" = suppress the minus sign on negative values
+    - "+" = force + sign for positive (zero gets no sign)
+    - "-" = suppress minus sign on negative values
     - "P" = parentheses for negative, space padding for positive
-    - "T" = trailing sign (trailing space for positive, - for negative)
+    - "T" = trailing sign position
+
+    Composition rules:
+    - T and - compose: T moves sign to trailing position, - suppresses minus
+    - T and + compose: T moves sign to trailing, + forces sign for positive
+    - + and - compose: positive gets +, negative gets no sign
+    - P is exclusive (cannot combine with +, -, T)
+
+    Number formatting rules:
+    - 2-arg form: uses MUMPS canonical format (no leading zero for .xx)
+    - 3-arg form: always shows leading zero (0.xx)
 
     Args:
         value: Numeric value to format
@@ -1300,32 +1322,77 @@ def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
         m_fnumber(-42, "-") → "42"
         m_fnumber(42, "T") → "42 "
         m_fnumber(-42, "T") → "42-"
+        m_fnumber(-20, "T-") → "20 "
     """
+    from m2py.codegen.helpers import m_str
+
     codes_upper = codes.upper()
 
-    # Handle decimals first
-    if decimals is not None:
-        value = round(value, decimals)
-
-    # Determine if value is negative
-    is_negative = value < 0
-    abs_value = abs(value)
-
-    # Format the number (without sign initially)
-    if decimals is not None:
-        formatted = f"{abs_value:.{decimals}f}"
+    # Step 1: Convert to Decimal for precision
+    if isinstance(value, Decimal):
+        dec_value = value
+    elif isinstance(value, float):
+        # Use string representation to avoid float precision issues
+        dec_value = Decimal(str(value))
     else:
-        # MUMPS preserves decimal precision from input
-        if abs_value == int(abs_value):
+        dec_value = Decimal(value)
+
+    # Step 2: Handle rounding when decimals specified
+    if decimals is not None:
+        if decimals >= 0:
+            quantizer = Decimal(10) ** (-decimals)
+            # Use enough precision to hold all integer digits + requested decimal places
+            exp = dec_value.as_tuple().exponent
+            exp_int = exp if isinstance(exp, int) else 0
+            needed = len(dec_value.as_tuple().digits) + abs(exp_int) + decimals + 2
+            with localcontext() as ctx:
+                ctx.prec = max(ctx.prec, needed)
+                dec_value = dec_value.quantize(quantizer, rounding=ROUND_HALF_UP)
+        else:
+            # Negative decimals: round to left of decimal point
+            dec_value = dec_value  # MUMPS treats negative decimals as 0 places
+
+    # Step 3: Determine sign
+    is_negative = dec_value < 0
+    is_zero = dec_value == 0
+    abs_value = dec_value.copy_abs()  # copy_abs avoids context-dependent truncation
+
+    # Step 4: Format the absolute value string
+    if decimals is not None:
+        # 3-arg form: fixed decimal places with leading zero
+        if decimals <= 0:
             formatted = str(int(abs_value))
         else:
-            formatted = str(abs_value)
+            # Format via Decimal to avoid float precision loss on large numbers
+            # After quantize, abs_value already has correct decimal places
+            sign, digits, exponent = abs_value.as_tuple()
+            # Narrow exponent type (can be str for NaN/Inf, but those won't reach here)
+            exp = exponent if isinstance(exponent, int) else 0
+            # Build the full digit string
+            digit_str = "".join(str(d) for d in digits)
+            # exponent is negative (e.g. -4 means 4 decimal places)
+            if exp < 0:
+                dec_places = -exp
+                if len(digit_str) <= dec_places:
+                    # Need leading zeros: e.g. digits=(5,) exp=-4 → "0.0005"
+                    digit_str = digit_str.zfill(dec_places + 1)
+                int_part = digit_str[: len(digit_str) - dec_places] or "0"
+                frac_part = digit_str[len(digit_str) - dec_places :]
+                formatted = f"{int_part}.{frac_part}"
+            else:
+                # Integer value — append zeros and decimal places
+                int_part = digit_str + "0" * exp
+                formatted = f"{int_part}.{'0' * decimals}"
+            # Ensure leading zero for 3-arg form (0.xx not .xx)
+            if formatted.startswith("."):
+                formatted = "0" + formatted
+    else:
+        # 2-arg form: MUMPS canonical (strip leading/trailing zeros)
+        formatted = m_str(abs_value)
 
-    # Add comma separators if requested
+    # Step 5: Add comma separators if requested
     if "," in codes_upper:
-        # Split by decimal point
         parts = formatted.split(".")
-        # Add commas to integer part
         int_part = parts[0]
         int_with_commas = ""
         for i, digit in enumerate(reversed(int_part)):
@@ -1337,39 +1404,37 @@ def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
         else:
             formatted = int_with_commas
 
-    # Handle sign formatting based on codes
-    # Priority: P > - > (T with +) > T > + > default
-    if "P" in codes_upper:
-        # Parentheses for negative, space padding for positive
+    # Step 6: Determine sign character based on composable code semantics
+    has_p = "P" in codes_upper
+    has_t = "T" in codes_upper
+    has_plus = "+" in codes_upper
+    has_minus = "-" in codes_upper
+
+    if has_p:
+        # P mode: parentheses for negative, leading+trailing space for non-negative
         if is_negative:
             return f"({formatted})"
         else:
             return f" {formatted} "
-    elif "-" in codes_upper:
-        # Suppress the minus sign on negative values (return absolute value)
-        return formatted
-    elif "T" in codes_upper:
-        # Trailing sign
-        if is_negative:
-            return f"{formatted}-"
-        elif "+" in codes_upper:
-            # +T combination: trailing + for positive
-            return f"{formatted}+"
+
+    # Determine what sign character to show
+    # - suppress: "-" code suppresses the minus sign
+    # - force: "+" code forces + for positive (but NOT zero)
+    sign_char = ""
+    if is_negative and not has_minus:
+        sign_char = "-"
+    elif not is_negative and not is_zero and has_plus:
+        sign_char = "+"
+
+    if has_t:
+        # Trailing sign: sign (or space placeholder) goes after number
+        if sign_char:
+            return f"{formatted}{sign_char}"
         else:
-            # T alone: trailing space for positive
             return f"{formatted} "
-    elif "+" in codes_upper:
-        # Force + sign for positive
-        if is_negative:
-            return f"-{formatted}"
-        else:
-            return f"+{formatted}"
     else:
-        # Default: leading minus for negative
-        if is_negative:
-            return f"-{formatted}"
-        else:
-            return formatted
+        # Leading sign (default)
+        return f"{sign_char}{formatted}"
 
 
 # =============================================================================

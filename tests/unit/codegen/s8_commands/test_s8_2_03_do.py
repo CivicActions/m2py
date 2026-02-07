@@ -1288,6 +1288,42 @@ class TestByRefMArrayAliasing:
 
 
 @pytest.mark.codegen
+class TestDoExternalRoutineEntryFunction:
+    """Phase 24: D ^ROUTINE uses _entry_function for preamble support.
+
+    When a routine has a labelless first line (preamble), the entry function
+    is _preamble, not a function named after the routine. Using
+    module._entry_function ensures the correct function is called.
+    """
+
+    def test_d_routine_generates_entry_function(self, generate_python):
+        """D ^MYRTN generates import + call via _entry_function."""
+        code = generate_python("TEST D ^MYRTN Q")
+        assert "import MYRTN" in code
+        assert "MYRTN._entry_function" in code
+        # Should NOT hardcode entry label name
+        assert "MYRTN.MYRTN" not in code
+
+    def test_d_label_routine_does_not_use_entry_function(self, generate_python):
+        """D LABEL^EXTRTN still uses named label, not _entry_function."""
+        code = generate_python("TEST D LABEL^EXTRTN Q")
+        assert "EXTRTN.LABEL" in code
+        # The DO call should reference the label directly, not _entry_function
+        # (Note: _entry_function is always declared at module level, so just
+        # check the call site doesn't use it)
+        for line in code.splitlines():
+            if (
+                "EXTRTN" in line
+                and "import" not in line
+                and "_entry_function" not in line
+            ):
+                if "EXTRTN.LABEL" in line:
+                    break
+        else:
+            pytest.fail("Expected EXTRTN.LABEL call, not _entry_function")
+
+
+@pytest.mark.codegen
 class TestUnwindNewStackInWrapper:
     """Tests for Phase 21: unwind_new_stack() in TRAMPOLINE wrappers."""
 
