@@ -86,6 +86,114 @@ V1CMT
         assert "V1WR" in result
         assert "V1CMT" in result
 
+    def test_config_aware_suspend_non_matching(self):
+        """SUSPEND with non-matching config label should NOT suspend."""
+        content = """YDB>
+
+Real output
+##SUSPEND_OUTPUT GT.CM
+GT.CM specific stuff
+##ALLOW_OUTPUT GT.CM
+Still real output
+"""
+        result = normalize_outref(content)
+        # GT.CM doesn't match our config, so its content passes through
+        assert "Real output" in result
+        assert "GT.CM specific stuff" in result
+        assert "Still real output" in result
+
+    def test_config_aware_suspend_non_collation(self):
+        """SUSPEND NON_COLLATION should suppress for our config."""
+        content = """YDB>
+
+Output before
+##SUSPEND_OUTPUT NON_COLLATION
+This is for collation configs only
+##ALLOW_OUTPUT NON_COLLATION
+Output after
+"""
+        result = normalize_outref(content)
+        assert "Output before" in result
+        assert "This is for collation configs only" not in result
+        assert "Output after" in result
+
+    def test_config_aware_suspend_notrigger(self):
+        """SUSPEND NOTRIGGER should suppress for our config (no triggers)."""
+        content = """YDB>
+
+Before
+##SUSPEND_OUTPUT NOTRIGGER
+Trigger-only output
+##ALLOW_OUTPUT NOTRIGGER
+After
+"""
+        result = normalize_outref(content)
+        assert "Before" in result
+        assert "Trigger-only output" not in result
+        assert "After" in result
+
+    def test_strips_infrastructure_text(self):
+        """Known infrastructure text lines should be stripped."""
+        content = """YDB>
+
+Real output line 1
+DATABASE EXTRACT PASSED
+No errors detected by integ.
+Real output line 2
+"""
+        result = normalize_outref(content)
+        assert "Real output line 1" in result
+        assert "Real output line 2" in result
+        assert "DATABASE EXTRACT PASSED" not in result
+        assert "No errors detected by integ." not in result
+
+    def test_strips_bare_db_filenames(self):
+        """Bare database filenames like 'mumps.dat' should be stripped."""
+        content = """YDB>
+
+Real output
+a.dat
+mumps.gld
+More output
+"""
+        result = normalize_outref(content)
+        assert "Real output" in result
+        assert "More output" in result
+        assert "a.dat" not in result
+        assert "mumps.gld" not in result
+
+    def test_strips_regex_path_markers(self):
+        """Regex-based ##MARKER## patterns should be stripped."""
+        content = """YDB>
+
+Real output
+Some text ##TEST_REMOTE_NODE_PATH_GTCM## more text
+##GT.CM## server path
+More output
+"""
+        result = normalize_outref(content)
+        assert "Real output" in result
+        assert "More output" in result
+        assert "##TEST_REMOTE_NODE_PATH_GTCM##" not in result
+        assert "##GT.CM##" not in result
+
+    def test_strips_gde_segment_lines(self):
+        """GDE segment definition lines should be stripped."""
+        content = """YDB>
+
+Real output
+DEFAULT\tmumps.dat
+ASEG\ta.dat
+More output
+"""
+        result = normalize_outref(content)
+        assert "Real output" in result
+        assert "More output" in result
+        assert "ASEG" not in result
+        # DEFAULT followed by tab is stripped
+        lines = result.strip().split("\n")
+        assert not any(line.startswith("DEFAULT\t") for line in lines)
+
 
 class TestParseDriver:
     """Test driver script parser."""
@@ -236,6 +344,32 @@ class TestCompareOutput:
         assert result.match is False
         assert result.actual_lines == 2
         assert result.expected_lines == 4
+
+    def test_strip_internal_blanks_removes_all_blank_lines(self):
+        """strip_internal_blanks=True removes ALL blank lines."""
+        actual = "Line 1\nLine 2\nLine 3"
+        expected = "Line 1\n\nLine 2\n\n\nLine 3"
+        # Without strip_internal_blanks, these don't match
+        result = compare_output(actual, expected)
+        assert result.match is False
+
+        # With strip_internal_blanks, they match
+        result = compare_output(actual, expected, strip_internal_blanks=True)
+        assert result.match is True
+
+    def test_strip_internal_blanks_both_sides(self):
+        """strip_internal_blanks removes blanks from both actual and expected."""
+        actual = "A\n\nB\nC"
+        expected = "A\nB\n\nC"
+        result = compare_output(actual, expected, strip_internal_blanks=True)
+        assert result.match is True
+
+    def test_strip_internal_blanks_preserves_content(self):
+        """strip_internal_blanks only removes blank lines, not content."""
+        actual = "Line 1\nLine 2"
+        expected = "Line 1\nLine DIFFERENT"
+        result = compare_output(actual, expected, strip_internal_blanks=True)
+        assert result.match is False
 
 
 class TestTimeoutHandling:

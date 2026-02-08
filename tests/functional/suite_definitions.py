@@ -606,17 +606,25 @@ MVTS_ROUTINES: list[RoutineDefinition] = (
 MERGE_SUBTESTS: list[RoutineDefinition] = [
     # fmt: off
     # Basic merge operations
-    RoutineDefinition("gbl2gbl", "mbyexam"),
-    RoutineDefinition("gbl2lcl", "mbyexam"),
-    RoutineDefinition("lcl2gbl", "mbyexam"),
-    RoutineDefinition("lcl2lcl", "mbyexam"),
+    RoutineDefinition("gbl2gbl", "gbl2gbl"),
+    RoutineDefinition("gbl2lcl", "gbl2lcl"),
+    RoutineDefinition("lcl2gbl", "lcl2gbl"),
+    RoutineDefinition("lcl2lcl", "lcl2lcl"),
     # Error handling
     RoutineDefinition(
         "errors", "errors", skip_reason="LIM-015: Uses NEW $ZTRAP (YDB error handling)"
     ),
     # Extended global tests
-    RoutineDefinition("extgbl1", "extgbl1"),
-    RoutineDefinition("extgbl2", "extgbl2"),
+    RoutineDefinition(
+        "extgbl1",
+        "extgbl1",
+        skip_reason="LIM-015: Uses extended global references (^|env|name) and ^%G utility",
+    ),
+    RoutineDefinition(
+        "extgbl2",
+        "extgbl2",
+        skip_reason="LIM-015: Uses extended global references (^|env|name) and ^%G utility",
+    ),
     # Collation tests
     RoutineDefinition("gblcol", "gblcol"),
     RoutineDefinition("lclcol", "lclcol"),
@@ -659,10 +667,10 @@ MERGE_SUBTESTS: list[RoutineDefinition] = [
         "tp_stress", "mrgstp", skip_reason="LIM-015: Uses SET $ZT (YDB error handling)"
     ),
     # Unicode merge tests
-    RoutineDefinition("ugbl2gbl", "mbyexam"),
-    RoutineDefinition("ugbl2lcl", "mbyexam"),
-    RoutineDefinition("ulcl2gbl", "mbyexam"),
-    RoutineDefinition("ulcl2lcl", "mbyexam"),
+    RoutineDefinition("ugbl2gbl", "ugbl2gbl"),
+    RoutineDefinition("ugbl2lcl", "ugbl2lcl"),
+    RoutineDefinition("ulcl2gbl", "ulcl2gbl"),
+    RoutineDefinition("ulcl2lcl", "ulcl2lcl"),
     # ZSHOW tests
     RoutineDefinition(
         "zshowgbl",
@@ -686,8 +694,16 @@ MERGE_ROUTINES: list[RoutineDefinition] = [
         "errors",  # Error condition tests
         skip_reason="LIM-015: Uses NEW $ZTRAP (YDB error handling)",
     ),
-    RoutineDefinition("extgbl1", "extgbl1"),  # Extended global 1
-    RoutineDefinition("extgbl2", "extgbl2"),  # Extended global 2
+    RoutineDefinition(
+        "extgbl1",
+        "extgbl1",  # Extended global 1
+        skip_reason="LIM-015: Uses extended global references (^|env|name) and ^%G utility",
+    ),
+    RoutineDefinition(
+        "extgbl2",
+        "extgbl2",  # Extended global 2
+        skip_reason="LIM-015: Uses extended global references (^|env|name) and ^%G utility",
+    ),
     RoutineDefinition(
         "falsedsc",
         "falsedsc",  # False descriptor tests

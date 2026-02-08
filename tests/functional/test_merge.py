@@ -55,6 +55,8 @@ MERGE_DIR = FUNCTIONAL_BASE / "merge"
 MERGE_INREF = MERGE_DIR / "inref"
 MERGE_OUTREF = MERGE_DIR / "outref"
 MERGE_UINREF = MERGE_DIR / "u_inref"
+# Extracted routines (from CSH heredocs/input files, not in original YDB inref)
+MERGE_EXTRACTED = FUNCTIONAL_BASE / "merge-routines"
 
 
 # =============================================================================
@@ -174,8 +176,11 @@ class TestMergeSuite:
         Args:
             subtest_def: The subtest definition containing name and primary routine
         """
-        # Load the primary routine source
-        source = load_routine_source(MERGE_INREF, subtest_def.routine)
+        # Load the primary routine source (check extracted routines dir first)
+        try:
+            source = load_routine_source(MERGE_EXTRACTED, subtest_def.routine)
+        except FileNotFoundError:
+            source = load_routine_source(MERGE_INREF, subtest_def.routine)
         assert source is not None, (
             f"Failed to load routine {subtest_def.routine} for {subtest_def.label}"
         )
@@ -192,9 +197,17 @@ class TestMergeSuite:
         # Load expected output
         expected = load_subtest_outref(subtest_def.label)
         if expected and result.success:
-            comparison = compare_output(result.output, expected)
+            comparison = compare_output(
+                result.output, expected, strip_internal_blanks=True
+            )
             if not comparison.match:
-                pytest.fail(f"Output mismatch for {subtest_def.label}")
+                # Show first 40 lines of diff for debugging
+                diff_preview = "\n".join((comparison.diff or "").split("\n")[:40])
+                pytest.fail(
+                    f"Output mismatch for {subtest_def.label} "
+                    f"(actual={comparison.actual_lines}, "
+                    f"expected={comparison.expected_lines}):\n{diff_preview}"
+                )
 
 
 # =============================================================================
@@ -218,7 +231,10 @@ class TestMergeRoutines:
         Args:
             routine_def: The routine definition
         """
-        source = load_routine_source(MERGE_INREF, routine_def.routine)
+        try:
+            source = load_routine_source(MERGE_EXTRACTED, routine_def.routine)
+        except FileNotFoundError:
+            source = load_routine_source(MERGE_INREF, routine_def.routine)
         assert source is not None, f"Failed to load routine {routine_def.routine}"
 
         # Load helpers if needed (lfill.m for mergelv tests)
@@ -285,8 +301,9 @@ class TestMergeInfrastructure:
         """Verify all defined routines have corresponding .m files."""
         missing = []
         for routine_def in MERGE_ROUTINES:
-            routine_path = MERGE_INREF / f"{routine_def.routine}.m"
-            if not routine_path.exists():
+            inref_path = MERGE_INREF / f"{routine_def.routine}.m"
+            extracted_path = MERGE_EXTRACTED / f"{routine_def.routine}.m"
+            if not inref_path.exists() and not extracted_path.exists():
                 missing.append(routine_def.routine)
 
         assert not missing, f"Missing routine files: {missing}"

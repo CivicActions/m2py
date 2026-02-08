@@ -1985,6 +1985,57 @@ class MUMPSRuntime:
     # Spec 013 Phase 19: Z-Command Support Methods
     # =========================================================================
 
+    @staticmethod
+    def _zwr_encode_string(s: str) -> str:
+        """Encode a string in YDB ZWR format, handling non-printable characters.
+
+        ZWR format encodes non-printable characters (ASCII 0-31, 127) using
+        $C(n) or $CHAR(n) syntax. Printable segments are quoted, and non-
+        printable characters are concatenated with _.
+
+        Examples:
+            "hello"           -> "hello"
+            "hello\\x00"      -> "hello"_$C(0)
+            "\\x00world"      -> $C(0)_"world"
+            "a\\x00\\x01b"    -> "a"_$C(0,1)_"b"
+            "a\\x00b\\x01c"   -> "a"_$C(0)_"b"_$C(1)_"c"
+
+        Args:
+            s: String to encode
+
+        Returns:
+            ZWR-encoded string (with quotes/escaping as needed)
+        """
+        # Check if string has any non-printable characters
+        has_nonprintable = any(ord(c) < 32 or ord(c) == 127 for c in s)
+        if not has_nonprintable:
+            # Simple case: just quote with double-quote escaping
+            escaped = s.replace('"', '""')
+            return f'"{escaped}"'
+
+        # Build segments: alternating printable and non-printable
+        segments: list[str] = []
+        i = 0
+        while i < len(s):
+            c = s[i]
+            if ord(c) < 32 or ord(c) == 127:
+                # Collect consecutive non-printable characters
+                codes: list[int] = []
+                while i < len(s) and (ord(s[i]) < 32 or ord(s[i]) == 127):
+                    codes.append(ord(s[i]))
+                    i += 1
+                segments.append("$C(" + ",".join(str(c) for c in codes) + ")")
+            else:
+                # Collect consecutive printable characters
+                start = i
+                while i < len(s) and not (ord(s[i]) < 32 or ord(s[i]) == 127):
+                    i += 1
+                chunk = s[start:i]
+                escaped = chunk.replace('"', '""')
+                segments.append(f'"{escaped}"')
+
+        return "_".join(segments)
+
     def _quote_value(self, value: Any) -> str:
         """Quote a value for ZWRITE output format.
 
@@ -2026,9 +2077,8 @@ class MUMPSRuntime:
         if re.match(r"^-?[0-9]+(\.[0-9]+)?E[+-][0-9]+$", s):
             return m_format_output(Decimal(s))
 
-        # Non-numeric strings get quoted
-        escaped = s.replace('"', '""')
-        return f'"{escaped}"'
+        # Non-numeric strings get ZWR-encoded (handles non-printable chars)
+        return self._zwr_encode_string(s)
 
     def zwrite(self, scope: dict[str, Any]) -> None:
         """ZWRITE - display all local variables.
@@ -2096,14 +2146,11 @@ class MUMPSRuntime:
             # Scientific notation with explicit sign (from str(Decimal()))
             if re.match(r"^-?[0-9]+(\.[0-9]+)?E[+-][0-9]+$", sub):
                 return m_format_output(Decimal(sub))
-            # Otherwise it's a string subscript - quote it
-            escaped = sub.replace('"', '""')
-            return f'"{escaped}"'
+            # Otherwise it's a string subscript - ZWR-encode it
+            return self._zwr_encode_string(sub)
 
-        # Fallback: quote non-numeric values
-        s = str(sub)
-        escaped = s.replace('"', '""')
-        return f'"{escaped}"'
+        # Fallback: ZWR-encode non-numeric values
+        return self._zwr_encode_string(str(sub))
 
     def zwrite_local(
         self, name: str, subscripts: tuple[str, ...], scope: dict[str, Any]

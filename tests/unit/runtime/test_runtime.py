@@ -1007,6 +1007,107 @@ class TestZWriteFormatting:
 
 
 @pytest.mark.runtime
+class TestZwrEncodeString:
+    """Tests for _zwr_encode_string — ZWR format encoding of non-printable chars.
+
+    YDB's ZWR format represents non-printable characters (ASCII 0-31, 127)
+    using $C(n) syntax concatenated with _. This ensures m2py's ZWR output
+    matches YDB's format for strings containing null bytes and control chars.
+    """
+
+    def test_printable_string_unchanged(self):
+        """Normal printable strings are simply quoted."""
+        from m2py.runtime import MUMPSRuntime
+
+        assert MUMPSRuntime._zwr_encode_string("hello") == '"hello"'
+        assert MUMPSRuntime._zwr_encode_string("A") == '"A"'
+
+    def test_empty_string(self):
+        """Empty string produces empty quotes."""
+        from m2py.runtime import MUMPSRuntime
+
+        assert MUMPSRuntime._zwr_encode_string("") == '""'
+
+    def test_double_quote_escaping(self):
+        """Double quotes in printable strings are escaped as double-double."""
+        from m2py.runtime import MUMPSRuntime
+
+        assert MUMPSRuntime._zwr_encode_string('say "hi"') == '"say ""hi"""'
+
+    def test_null_byte_at_end(self):
+        """NUL byte at end of string uses _$C(0) suffix."""
+        from m2py.runtime import MUMPSRuntime
+
+        result = MUMPSRuntime._zwr_encode_string("hello\x00")
+        assert result == '"hello"_$C(0)'
+
+    def test_null_byte_at_start(self):
+        """NUL byte at start uses $C(0)_ prefix."""
+        from m2py.runtime import MUMPSRuntime
+
+        result = MUMPSRuntime._zwr_encode_string("\x00world")
+        assert result == '$C(0)_"world"'
+
+    def test_null_byte_in_middle(self):
+        """NUL byte in middle splits string with _$C(0)_."""
+        from m2py.runtime import MUMPSRuntime
+
+        result = MUMPSRuntime._zwr_encode_string("a\x00b")
+        assert result == '"a"_$C(0)_"b"'
+
+    def test_consecutive_nonprintable(self):
+        """Consecutive non-printable chars are grouped: $C(n1,n2)."""
+        from m2py.runtime import MUMPSRuntime
+
+        result = MUMPSRuntime._zwr_encode_string("a\x00\x01b")
+        assert result == '"a"_$C(0,1)_"b"'
+
+    def test_unicode_with_null_byte(self):
+        """Unicode string with NUL byte at end (merge test pattern)."""
+        from m2py.runtime import MUMPSRuntime
+
+        result = MUMPSRuntime._zwr_encode_string("我能吞下玻璃而不伤身体\x00")
+        assert result == '"我能吞下玻璃而不伤身体"_$C(0)'
+
+    def test_del_character(self):
+        """DEL (127) is treated as non-printable."""
+        from m2py.runtime import MUMPSRuntime
+
+        result = MUMPSRuntime._zwr_encode_string("a\x7fb")
+        assert result == '"a"_$C(127)_"b"'
+
+    def test_tab_character(self):
+        """TAB (9) is treated as non-printable."""
+        from m2py.runtime import MUMPSRuntime
+
+        result = MUMPSRuntime._zwr_encode_string("a\tb")
+        assert result == '"a"_$C(9)_"b"'
+
+    def test_only_nonprintable(self):
+        """String of only non-printable chars."""
+        from m2py.runtime import MUMPSRuntime
+
+        result = MUMPSRuntime._zwr_encode_string("\x00")
+        assert result == "$C(0)"
+
+    def test_format_subscript_with_null(self):
+        """_format_subscript delegates to _zwr_encode_string for non-printable."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        result = rt._format_subscript("key\x00")
+        assert result == '"key"_$C(0)'
+
+    def test_quote_value_with_null(self):
+        """_quote_value delegates to _zwr_encode_string for non-printable."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        result = rt._quote_value("value\x00")
+        assert result == '"value"_$C(0)'
+
+
+@pytest.mark.runtime
 class TestGetOrderMethod:
     """Tests for MUMPSRuntime.get_order() - $ORDER with indirection support.
 

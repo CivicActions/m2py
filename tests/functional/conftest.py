@@ -95,9 +95,10 @@ def normalize_outref(content: str, strip_formfeeds: bool = False) -> str:
 
     Removes:
     - Preamble before first YDB> prompt (dbcreate, GDE, mupip output)
-    - Path placeholder lines (##TEST_PATH##, etc.)
+    - Path placeholder lines (##TEST_PATH##, ##MARKER##, etc.)
     - Conditional output blocks (##SUSPEND_OUTPUT...##ALLOW_OUTPUT)
     - YDB> prompts themselves
+    - Known infrastructure text (mupip integ, database extract, etc.)
 
     Optionally removes form feeds and their trailing blank lines for comparison
     when $Y pagination tracking differs between m2py and YDB.
@@ -112,9 +113,47 @@ def normalize_outref(content: str, strip_formfeeds: bool = False) -> str:
     Returns:
         Normalized content suitable for comparison with m2py output
     """
+    import re
+
+    # Regex to match any ##MARKER## path placeholder (covers all current and
+    # future markers like ##TEST_REMOTE_NODE_PATH_GTCM##, ##GT.CM##, etc.)
+    path_marker_re = re.compile(r"##[A-Z_.0-9]+##")
+
+    # Known YDB test infrastructure lines that appear outside suspend blocks
+    # or inside suspend blocks for non-matching configurations (e.g., GT.CM
+    # server management visible in default config). These are definitively
+    # test infrastructure, never valid MUMPS output.
+    ydb_infra_lines = frozenset(
+        [
+            "DATABASE EXTRACT PASSED",
+            "No errors detected by integ.",
+            "mumps.gld",
+            "Stopping the GT.CM Servers...",
+            "Starting the GT.CM Servers...",
+            "Check the databases on the GT.CM Servers...",
+            "Check local (client) database...",
+            "Create local (client) database...",
+            "Create database on GT.CM Servers...",
+            "The database layout is:",
+        ]
+    )
+
+    # Regex for bare database filenames (e.g., "a.dat", "mumps.dat") that
+    # appear as infrastructure output from mupip create file listings
+    bare_db_file_re = re.compile(r"^[a-zA-Z_]+\.(dat|gld)$")
+
+    # Regex for GDE segment definition lines (e.g., "ASEG\ta.dat")
+    gde_segment_re = re.compile(r"^(ASEG|BSEG|CSEG|DEFAULT)\t")
+
     lines = []
     in_suspended = False
     found_first_prompt = False
+
+    # Our test configuration labels. We are NOT replicating, NOT reorganizing,
+    # NOT using GT.CM client/server, NOT GT.M, NOT using alternative collation,
+    # and do NOT have trigger support. We match these NON_* / NOT* labels.
+    # Only SUSPEND blocks listing these labels should suppress our content.
+    our_config = frozenset(["NON_REORG", "NON_REPLIC", "NON_COLLATION", "NOTRIGGER"])
 
     # Use split('\n') instead of splitlines() to preserve \x0c characters
     # splitlines() treats \x0c as a line separator which corrupts form feeds
@@ -126,22 +165,54 @@ def normalize_outref(content: str, strip_formfeeds: bool = False) -> str:
                 # Don't include the YDB> prompt line itself
             continue
 
-        # Handle suspend/allow blocks
+        # Handle suspend/allow blocks with configuration-aware tracking.
+        # Outrefs use labeled suspend/allow pairs (e.g. ##SUSPEND_OUTPUT GT.CM)
+        # where labels represent test configurations (REORG, REPLIC, GT.CM,
+        # NON_REORG, etc.). We only suspend when labels matching our config
+        # (NON_REORG, NON_REPLIC) are listed.
         if "##SUSPEND_OUTPUT" in line:
-            in_suspended = True
+            label_part = line.split("##SUSPEND_OUTPUT", 1)[1].strip()
+            if not label_part:
+                # No labels = suspend everything
+                in_suspended = True
+            elif set(label_part.split()) & our_config:
+                # At least one of our config labels mentioned → suspend us
+                in_suspended = True
             continue
         if "##ALLOW_OUTPUT" in line:
-            in_suspended = False
+            label_part = line.split("##ALLOW_OUTPUT", 1)[1].strip()
+            if not label_part:
+                in_suspended = False
+            elif set(label_part.split()) & our_config:
+                # Our config labels being allowed → resume for us
+                in_suspended = False
             continue
         if in_suspended:
             continue
 
-        # Skip path placeholder lines
+        # Skip lines containing any ##MARKER## path placeholder
+        if path_marker_re.search(line):
+            continue
+
+        # Also check the explicit marker set for any edge cases
         if any(marker in line for marker in YDB_PATH_MARKERS):
             continue
 
+        # Skip known infrastructure text lines
+        stripped = line.strip()
+        if stripped in ydb_infra_lines:
+            continue
+
+        # Skip bare database filenames (e.g., "a.dat", "mumps.dat")
+        if bare_db_file_re.match(stripped):
+            continue
+
+        # Skip GDE segment definition lines (e.g., "ASEG\ta.dat")
+        if gde_segment_re.match(stripped):
+            continue
+
         # Skip YDB> prompt lines
-        if line.strip() == "YDB>":
+        if stripped == "YDB>":
             continue
 
         lines.append(line)
@@ -153,7 +224,6 @@ def normalize_outref(content: str, strip_formfeeds: bool = False) -> str:
         # This normalizes away pagination artifacts from $Y tracking differences
         # between YDB (which tracks $Y and triggers form feeds) and m2py
         # (which doesn't track $Y for pagination purposes)
-        import re
 
         # Remove form feed characters
         result = re.sub(r"\x0c", "", result)
@@ -570,7 +640,11 @@ class ComparisonResult(NamedTuple):
 
 
 def compare_output(
-    actual: str, expected: str, *, strip_blank_lines: bool = True
+    actual: str,
+    expected: str,
+    *,
+    strip_blank_lines: bool = True,
+    strip_internal_blanks: bool = False,
 ) -> ComparisonResult:
     """Compare actual output against expected with clear diff reporting.
 
@@ -585,6 +659,9 @@ def compare_output(
         actual: Actual output from m2py execution
         expected: Expected output (typically from normalized outref)
         strip_blank_lines: If True, strip leading/trailing blank lines
+        strip_internal_blanks: If True, remove ALL blank lines (useful when
+            expected outref has blank-line artifacts from interactive YDB>
+            prompts that don't appear in batch/routine output)
 
     Returns:
         ComparisonResult with match status and diff if mismatched
@@ -594,8 +671,12 @@ def compare_output(
     actual_lines = [line.rstrip() for line in actual.split("\n")]
     expected_lines = [line.rstrip() for line in expected.split("\n")]
 
-    # Strip leading/trailing blank lines if requested
-    if strip_blank_lines:
+    # Strip ALL blank lines if requested (for interactive-vs-batch comparison)
+    if strip_internal_blanks:
+        actual_lines = [line for line in actual_lines if line]
+        expected_lines = [line for line in expected_lines if line]
+    elif strip_blank_lines:
+        # Strip leading/trailing blank lines only
         while actual_lines and not actual_lines[0]:
             actual_lines.pop(0)
         while actual_lines and not actual_lines[-1]:
