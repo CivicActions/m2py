@@ -75,11 +75,18 @@ class MSetStatement(MStatement):
 
     Supports argument indirection (Spec 012 Phase 9):
     SET @A where A contains "X=1,Y=2"
+
+    The ordered_items list maintains original left-to-right order of all
+    assignment items (both MAssignment and MIndirection). This is critical
+    for correct MUMPS semantics where S X=1,@A,Y=2 must execute X=1 first,
+    then @A, then Y=2.
     """
 
     assignments: List[MAssignment] = field(default_factory=list)
     # Argument indirections: @A where A contains complete SET args like "X=1"
     argument_indirections: List["MIndirection"] = field(default_factory=list)
+    # Ordered list of all items (MAssignment | MIndirection) for left-to-right eval
+    ordered_items: List[Any] = field(default_factory=list)
 
 
 # =============================================================================
@@ -239,10 +246,16 @@ class MForStatement(MStatement):
     exit_points: List["MStatement"] = field(default_factory=list, repr=False)
     is_infinite: bool = False  # True for step=0 or ARGUMENTLESS loops
     loop_var_modified_in_body: bool = False  # True if loop variable is SET inside body
+    value_params_reference_loop_var: bool = (
+        False  # True if VALUE params reference loop var
+    )
 
     # T088-T090: Pre-computed fields for codegen (populated by classify_gotos)
     has_cross_label_exit: bool = False  # True if any exit GOTO targets different label
     needs_exception_wrapper: bool = False  # True if outermost FOR for MULTI_LOOP_EXIT
+    has_same_label_exit: bool = (
+        False  # V1FORC2: True if MULTI_LOOP_EXIT to same label (needs continue)
+    )
     exit_target: Optional[str] = (
         None  # Target label name (MUMPS name, codegen translates)
     )
@@ -549,13 +562,32 @@ class MBreakStatement(MStatement):
 
 
 @dataclass
+class MXecuteArg:
+    """Single XECUTE argument with optional postcondition.
+
+    T075q: XECUTE arguments can have individual postconditions:
+    X arg1,arg2:cond,arg3  -- arg2 only executes if cond is true
+    """
+
+    expression: "MExpr"
+    postcondition: Optional["MExpr"] = None
+
+
+@dataclass
 class MXecuteStatement(MStatement):
     """XECUTE command - runtime code execution.
 
     Executes code from string:
     X "SET X=1", XECUTE code
+
+    T075q: Arguments can have individual postconditions:
+    X P,Q:X=10,R:X=10,S  -- Q and R only execute if X=10
     """
 
+    # T075q: Changed from code_expressions to arguments with postconditions
+    arguments: List[MXecuteArg] = field(default_factory=list)
+
+    # Legacy field for backwards compatibility - populated from arguments
     code_expressions: List["MExpr"] = field(default_factory=list)
 
     # Always requires runtime support

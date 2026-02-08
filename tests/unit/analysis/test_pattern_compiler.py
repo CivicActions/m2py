@@ -152,6 +152,65 @@ class TestStringLiterals:
         regex = compile_pattern_to_regex('1"say ""hello"""')
         assert re.fullmatch(regex, 'say "hello"')
 
+    def test_empty_string_literal(self):
+        """Test empty string literal pattern.
+
+        Per MUMPS standard, patterns with empty string literals only match
+        the empty string regardless of repeat count. The empty string literal
+        can only match zero characters, so any count of it still matches zero.
+
+        YDB behavior verified:
+          ""?."" → 1 (empty matches any count of empty strings)
+          "A"?."" → 0 (non-empty cannot match empty string literal)
+          ""?0"" → 1 (zero occurrences matches empty)
+          ""?.11"" → 1 (0-11 occurrences matches empty)
+        """
+        # .""  - any number of empty strings (matches only empty string)
+        regex = compile_pattern_to_regex('.""')
+        assert regex == ""  # Empty regex matches only empty via fullmatch
+        assert re.fullmatch(regex, "")
+        assert not re.fullmatch(regex, "A")
+        assert not re.fullmatch(regex, "hello")
+
+        # 0"" - zero empty strings (matches only empty string)
+        regex = compile_pattern_to_regex('0""')
+        assert regex == ""
+        assert re.fullmatch(regex, "")
+        assert not re.fullmatch(regex, "X")
+
+        # .11"" - 0 to 11 empty strings (matches only empty string)
+        regex = compile_pattern_to_regex('.11""')
+        assert regex == ""
+        assert re.fullmatch(regex, "")
+        assert not re.fullmatch(regex, "X")
+
+        # 1"" - exactly one empty string (matches only empty string)
+        regex = compile_pattern_to_regex('1""')
+        assert regex == ""
+        assert re.fullmatch(regex, "")
+        assert not re.fullmatch(regex, "A")
+
+    def test_empty_string_literal_in_sequence(self):
+        """Test empty string literal combined with other patterns.
+
+        Pattern like 1N."" should match a single digit (the empty string
+        literal adds nothing to the match).
+        """
+        # 1N."" - one digit followed by any number of empty strings
+        regex = compile_pattern_to_regex('1N.""')
+        assert re.fullmatch(regex, "5")
+        assert re.fullmatch(regex, "0")
+        assert not re.fullmatch(regex, "55")
+        assert not re.fullmatch(regex, "A")
+        assert not re.fullmatch(regex, "")
+
+        # .""1A - any empty strings followed by one alpha
+        regex = compile_pattern_to_regex('.""1A')
+        assert re.fullmatch(regex, "A")
+        assert re.fullmatch(regex, "z")
+        assert not re.fullmatch(regex, "5")
+        assert not re.fullmatch(regex, "")
+
 
 # =============================================================================
 # Alternation
@@ -291,6 +350,115 @@ class TestEdgeCases:
         """Test invalid pattern code raises error."""
         with pytest.raises(PatternCompileError):
             compile_pattern_to_regex("1X")
+
+
+# =============================================================================
+# Group Quantification (Phase 22 - T127)
+# =============================================================================
+
+
+class TestGroupQuantification:
+    """Test that quantified groups wrap in (?:...) to avoid double quantifiers.
+
+    Phase 22 fix: Patterns like 2(5NA) were generating [0-9A-Za-z]{5}{2}
+    which is invalid regex (multiple repeat). Must generate (?:[0-9A-Za-z]{5}){2}.
+    """
+
+    def test_quantified_group_basic(self):
+        """Test 2(5NA) - 2 repetitions of 5 alphanumeric chars."""
+        regex = compile_pattern_to_regex("2(5NA)")
+        assert re.fullmatch(regex, "ABC12ABC12")
+        assert not re.fullmatch(regex, "ABC12")
+
+    def test_quantified_group_with_unbounded(self):
+        """Test 2(.A) - group with 0+ alpha repeated 2 times."""
+        regex = compile_pattern_to_regex("2(.A)")
+        assert re.fullmatch(regex, "")
+        assert re.fullmatch(regex, "ABC")
+        # Can't distinguish between 2 groups of 0+ - always matches
+
+    def test_quantified_group_range(self):
+        """Test 2(1.3AN) - group with 1-3 alphanumeric, repeated 2 times."""
+        regex = compile_pattern_to_regex("2(1.3AN)")
+        # "AB12m" = 2 matched as group "AB" + "12m" (each 1-3 AN)
+        assert re.fullmatch(regex, "AB12m")
+        # Must have at least 2 chars (2 groups x 1 min each)
+        assert not re.fullmatch(regex, "")
+
+    def test_quantified_group_string_literal(self):
+        """Test .4(2\"1A\") - group with string literal, repeated 0-4 times."""
+        regex = compile_pattern_to_regex('.4(2"1A")')
+        assert re.fullmatch(regex, "")
+        assert re.fullmatch(regex, "1A1A")
+        assert not re.fullmatch(regex, "1A1A1A1A1A1A1A1A1A")
+
+    def test_unquantified_group_no_wrapping(self):
+        """Test 1(5NA) - exactly 1 repetition doesn't need wrapping."""
+        regex = compile_pattern_to_regex("1(5NA)")
+        assert re.fullmatch(regex, "ABC12")
+        assert not re.fullmatch(regex, "ABC12ABC12")
+
+    def test_regex_validity_v4pat_patterns(self):
+        """Verify all V4PAT1 patterns produce valid regex (no multiple repeat)."""
+        patterns = [
+            "2(5NA)",
+            "2(.A)",
+            "2(2.NU)",
+            "2(1.3AN)",
+            ".4(3.UPN)",
+            ".5(1.4ANP)",
+        ]
+        for pattern in patterns:
+            regex = compile_pattern_to_regex(pattern)
+            # This should not raise re.error
+            re.compile(regex)
+
+    def test_zero_quantified_group(self):
+        """Test 0(5NA) - 0 repetitions should match only empty string."""
+        regex = compile_pattern_to_regex("0(5NA)")
+        assert re.fullmatch(regex, "")
+        assert not re.fullmatch(regex, "ABC12")
+
+    def test_at_least_quantified_group(self):
+        """Test 2.(3N) - 2 or more groups of exactly 3 digits."""
+        regex = compile_pattern_to_regex("2.(3N)")
+        assert not re.fullmatch(regex, "123")  # Only 1 group
+        assert re.fullmatch(regex, "123456")  # 2 groups
+        assert re.fullmatch(regex, "123456789")  # 3 groups
+
+    def test_at_most_quantified_group(self):
+        """Test .3(2N) - 0 to 3 groups of exactly 2 digits."""
+        regex = compile_pattern_to_regex(".3(2N)")
+        assert re.fullmatch(regex, "")  # 0 groups
+        assert re.fullmatch(regex, "12")  # 1 group
+        assert re.fullmatch(regex, "1234")  # 2 groups
+        assert re.fullmatch(regex, "123456")  # 3 groups
+        assert not re.fullmatch(regex, "12345678")  # 4 groups
+
+    def test_quantified_group_with_alternation(self):
+        """Test 2(1N,1A) - 2 repetitions of (digit or letter)."""
+        regex = compile_pattern_to_regex("2(1N,1A)")
+        assert re.fullmatch(regex, "1A")
+        assert re.fullmatch(regex, "A1")
+        assert re.fullmatch(regex, "12")
+        assert re.fullmatch(regex, "AB")
+        assert not re.fullmatch(regex, "1")
+        assert not re.fullmatch(regex, "123")
+
+    def test_nested_quantified_groups(self):
+        """Test 2(3(1N)) - 2 repetitions of (3 repetitions of 1 digit)."""
+        regex = compile_pattern_to_regex("2(3(1N))")
+        assert re.fullmatch(regex, "123456")  # 2 groups of 3 digits
+        assert not re.fullmatch(regex, "12345")  # Not enough
+        assert not re.fullmatch(regex, "1234567")  # Too many
+
+    def test_indefinite_quantified_group(self):
+        """Test .(2N) - any number of groups of exactly 2 digits."""
+        regex = compile_pattern_to_regex(".(2N)")
+        assert re.fullmatch(regex, "")  # 0 groups
+        assert re.fullmatch(regex, "12")  # 1 group
+        assert re.fullmatch(regex, "1234")  # 2 groups
+        assert not re.fullmatch(regex, "123")  # 1.5 groups
 
 
 # =============================================================================

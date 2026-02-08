@@ -88,6 +88,7 @@ for label in routine.labels:
 | [codegen/for_loops.md](codegen/for_loops.md) | FOR loop translation strategies |
 | [codegen/goto_handling.md](codegen/goto_handling.md) | GOTO translation strategies |
 | [codegen/variable_scoping.md](codegen/variable_scoping.md) | Variable and function signature generation |
+| [codegen/variable_system.md](codegen/variable_system.md) | Indirection and subscript handling |
 | [codegen/operators.md](codegen/operators.md) | Operator translation |
 | [codegen/functions.md](codegen/functions.md) | Intrinsic function translation |
 | [codegen/runtime_requirements.md](codegen/runtime_requirements.md) | When runtime support is needed |

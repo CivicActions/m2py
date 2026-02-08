@@ -395,39 +395,47 @@ QuitCommand:
 // The line.tx grammar handles command separation, so we just need to prevent
 // QUIT from consuming what is clearly the start of another command.
 CommandWithArg:
-    // Full command words are unambiguous
+    // Full command words are unambiguous when followed by space or colon
+    // Do NOT match at end of line ($) - those could be variable names
+    // Example: "Q else1" should return variable else1, not be QUIT + ELSE
     /[Ss][Ee][Tt][ \t:]/ |
     /[Ww][Rr][Ii][Tt][Ee][ \t:]/ |
     /[Rr][Ee][Aa][Dd][ \t:]/ |
-    /[Ii][Ff][ \t:]|[Ii][Ff]$/ |
-    /[Ee][Ll][Ss][Ee]/ |
+    /[Ii][Ff][ \t:]/ |
+    /[Ee][Ll][Ss][Ee](?=[ \t:])/ |
     /[Ff][Oo][Rr][ \t:]/ |
     /[Gg][Oo][Tt][Oo][ \t:]/ |
     /[Dd][Oo][ \t:]/ |
-    /[Qq][Uu][Ii][Tt]/ |
+    /[Qq][Uu][Ii][Tt](?=[ \t:])/ |
     /[Nn][Ee][Ww][ \t:]/ |
     /[Kk][Ii][Ll][Ll][ \t:]/ |
-    /[Bb][Rr][Ee][Aa][Kk]/ |
+    /[Bb][Rr][Ee][Aa][Kk](?=[ \t:])/ |
     /[Jj][Oo][Bb][ \t:]/ |
     /[Oo][Pp][Ee][Nn][ \t:]/ |
     /[Cc][Ll][Oo][Ss][Ee][ \t:]/ |
     /[Uu][Ss][Ee][ \t:]/ |
     /[Hh][Aa][Nn][Gg][ \t:]/ |
-    /[Hh][Aa][Ll][Tt]/ |
+    /[Hh][Aa][Ll][Tt](?=[ \t:])/ |
     /[Ll][Oo][Cc][Kk][ \t:]/ |
     /[Mm][Ee][Rr][Gg][Ee][ \t:]/ |
     /[Vv][Ii][Ee][Ww][ \t:]/ |
     /[Xx][Ee][Cc][Uu][Tt][Ee][ \t:]/ |
-    // Transaction commands - full keywords (can be argumentless)
-    /[Tt][Ss][Tt][Aa][Rr][Tt]/ |
-    /[Tt][Cc][Oo][Mm][Mm][Ii][Tt]/ |
-    /[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]/ |
-    /[Tt][Rr][Oo][Ll][Ll][Bb][Aa][Cc][Kk]/ |
-    // Transaction abbreviations - TS, TC can be at end of line or followed by space
-    /[Tt][Ss](?=[ \t:]|$)/ |
-    /[Tt][Cc](?=[ \t:]|$)/ |
-    /[Tt][Rr][Ee](?=[ \t:]|$)/ |
-    /[Tt][Rr][Oo](?=[ \t:]|$)/ |
+    // Transaction commands - full keywords require space or colon AFTER them
+    // Do NOT include $ (end of line) because "Q tstart" should return variable tstart
+    // The pattern only matches when the keyword is followed by space/colon, indicating
+    // it's definitely a command with potential arguments or postcondition
+    /[Tt][Ss][Tt][Aa][Rr][Tt](?=[ \t:])/ |
+    /[Tt][Cc][Oo][Mm][Mm][Ii][Tt](?=[ \t:])/ |
+    /[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt](?=[ \t:])/ |
+    /[Tt][Rr][Oo][Ll][Ll][Bb][Aa][Cc][Kk](?=[ \t:])/ |
+    // Transaction abbreviations - ONLY match when followed by space or colon
+    // Do NOT match at end of line ($) because that could be a variable name
+    // Example: "Q ts" should be QUIT with return value ts, not QUIT + TSTART
+    // Example: "Q  TS" (double space) is argumentless QUIT then TSTART command
+    /[Tt][Ss](?=[ \t:])/ |
+    /[Tt][Cc](?=[ \t:])/ |
+    /[Tt][Rr][Ee](?=[ \t:])/ |
+    /[Tt][Rr][Oo](?=[ \t:])/ |
     // Postconditioned single-letter commands are unambiguous (colon after letter)
     /[SsWwRrIiFfGgDdQqNnKkBbJjOoCcUuLlMmVvXxEeHh]:/ |
     // Single-letter S/W/R/I/K followed by space is always a command (not part of expression)

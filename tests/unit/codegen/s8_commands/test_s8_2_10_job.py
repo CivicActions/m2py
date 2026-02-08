@@ -30,7 +30,8 @@ class TestJobCommandCodegen:
         J LABEL  ; Start job at LABEL in current routine
         """
         result = execute_mumps('TEST\n J LABEL\n W "done"\n Q\nLABEL\n W "job"\n Q')
-        # Note: Job doesn't execute synchronously, so we just see "done"
+        # JOB spawns the child in a background thread with its own output buffer,
+        # so only the parent's output appears in the result
         assert result.output == "done"
 
     def test_job_with_routine(self, generate_python):

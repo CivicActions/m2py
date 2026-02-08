@@ -13,21 +13,22 @@ class TestKillCommandCodegen:
     """Codegen-level tests for KILL command code generation (§8.2.11)."""
 
     def test_kill_local_variable(self, generate_python):
-        """KILL local variable generates _scope.pop() (§8.2.11).
+        """KILL local variable generates MArray.kill() (§8.2.11).
 
-        Spec 011 (T064): K X generates _scope.pop('X', None).
+        Phase 21: K X clears the MArray content but keeps the entry in _scope
+        to preserve call-by-reference aliasing.
         """
         result = generate_python("TEST K X Q")
-        assert "_scope.pop('X', None)" in result
+        assert "_scope.get('X', MArray()).kill()" in result
 
     def test_kill_multiple_variables(self, generate_python):
-        """KILL multiple variables generates multiple pops (§8.2.11).
+        """KILL multiple variables generates multiple kill() calls (§8.2.11).
 
-        Spec 011 (T064): K X,Y generates pops for both variables.
+        Phase 21: K X,Y clears MArray content for both variables.
         """
         result = generate_python("TEST K X,Y Q")
-        assert "_scope.pop('X', None)" in result
-        assert "_scope.pop('Y', None)" in result
+        assert "_scope.get('X', MArray()).kill()" in result
+        assert "_scope.get('Y', MArray()).kill()" in result
 
     def test_kill_subscripted_variable(self, generate_python):
         """KILL subscripted variable generates .kill() call (§8.2.11).
@@ -265,3 +266,221 @@ class TestKillNakedReference:
             "TEST S ^H(1,2)=1 S ^(3,4)=2 K ^(3) W $D(^H(1,3)),$D(^H(1,3,4)) Q"
         )
         assert result.output == "101"
+
+
+# =============================================================================
+# KILL with Empty Intermediate Node Cleanup (Bug Fix)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestKillEmptyIntermediateCleanup:
+    """Tests for KILL cleaning up empty intermediate nodes.
+
+    Bug fix: When killing a leaf node like X(2,1), if parent nodes
+    become empty (no value and no children), they should be removed too.
+
+    MUMPS doesn't leave "ghost" empty intermediate nodes after KILL.
+    """
+
+    def test_kill_leaf_cleans_empty_parent(self, execute_mumps):
+        """K X(2,1) should clean up empty X(2) and empty X.
+
+        I-222 from MUGJ V1DLB1: After S XX(2,1)="DEF" K XX(2,1),
+        $D(XX) should be 0 (not 10) because no nodes remain.
+        """
+        result = execute_mumps('TEST K XX S XX(2,1)="DEF" K XX(2,1) W $D(XX) Q')
+        # After kill, XX has no value and no children, so $D=0
+        assert result.output == "0"
+
+    def test_kill_leaf_cleans_entire_path(self, execute_mumps):
+        """K X(2,1,1) should clean up empty X(2,1), X(2), and X.
+
+        I-223: Deep nested single node - all empty ancestors should be cleaned.
+        """
+        result = execute_mumps("TEST K XX S XX(2,1,1)=2110 K XX(2,1,1) W $D(XX) Q")
+        assert result.output == "0"
+
+    def test_kill_preserves_valued_parent(self, execute_mumps):
+        """K X(2,1) should NOT clean X(2) if X(2) has a value.
+
+        If parent has its own value, it stays even if children are gone.
+        """
+        result = execute_mumps(
+            'TEST K XX S XX(2)="parent",XX(2,1)="child" K XX(2,1) W $D(XX(2)) Q'
+        )
+        # XX(2) has value, no children after kill, so $D=1
+        assert result.output == "1"
+
+    def test_kill_preserves_parent_with_other_children(self, execute_mumps):
+        """K X(2,1) should NOT clean X(2) if X(2) has other children.
+
+        I-229: Parent with siblings of killed node should survive.
+        """
+        result = execute_mumps(
+            'TEST K XX S XX(2,1)="a",XX(2,2)="b" K XX(2,1) W $D(XX(2)) Q'
+        )
+        # XX(2) has no value but still has child XX(2,2), so $D=10
+        assert result.output == "10"
+
+    def test_kill_chain_cleanup_stops_at_valued_node(self, execute_mumps):
+        """Cleanup stops at first non-empty ancestor.
+
+        S X="root" S X(1,2,3)=1 K X(1,2,3) → X should remain with $D=1
+        """
+        result = execute_mumps('TEST K X S X="root" S X(1,2,3)=1 K X(1,2,3) W $D(X) Q')
+        # X has value, all children are gone, so $D=1
+        assert result.output == "1"
+
+    def test_kill_chain_cleanup_stops_at_sibling(self, execute_mumps):
+        """Cleanup stops when node has sibling children.
+
+        S X(1,1)=1 S X(1,2)=2 K X(1,1) → X(1) should remain with $D=10
+        """
+        result = execute_mumps(
+            'TEST K X S X(1,1)=1,X(1,2)=2 K X(1,1) W $D(X(1))," ",$D(X) Q'
+        )
+        # X(1) has no value but has child X(1,2), so $D=10
+        # X has no value but has child X(1), so $D=10
+        assert result.output == "10 10"
+
+
+@pytest.mark.codegen
+class TestKillTrampolineDynamicLocals:
+    """Tests for KILL with TRAMPOLINE strategy and dynamic_locals.
+
+    When a routine uses argumentless KILL or NEW AND has cross-label GOTOs
+    (triggering TRAMPOLINE), it uses dynamic_locals mode where variables are
+    stored in state._locals dict. KILL in this mode must use state._locals
+    instead of direct variable access.
+
+    To trigger TRAMPOLINE + dynamic_locals, we need:
+    1. Cross-label GOTO (triggers TRAMPOLINE)
+    2. Argumentless KILL (triggers uses_dynamic_locals)
+    """
+
+    def test_kill_dynamic_locals_entire_variable(self, generate_python):
+        """K X with TRAMPOLINE+dynamic_locals uses state._locals.pop().
+
+        When uses_dynamic_locals is True AND strategy is TRAMPOLINE,
+        K X should generate state._locals.pop('X', None).
+        """
+        # Cross-label GOTO + argumentless KILL triggers TRAMPOLINE + dynamic_locals
+        code = generate_python("TEST K\n K X\n G END\n Q\nEND Q\n")
+
+        # Should use state._locals for variable removal (TRAMPOLINE + dynamic_locals)
+        assert "state._locals.pop('X', None)" in code
+
+    def test_kill_dynamic_locals_subscripted(self, generate_python):
+        """K X(1) with TRAMPOLINE+dynamic_locals uses state._locals.get().kill().
+
+        For subscripted kills in TRAMPOLINE+dynamic_locals mode, should use
+        state._locals.get('X', MArray()).kill(subscripts).
+        """
+        # Cross-label GOTO + argumentless KILL triggers TRAMPOLINE + dynamic_locals
+        code = generate_python("TEST K\n K X(1)\n G END\n Q\nEND Q\n")
+
+        # Should use state._locals.get().kill() pattern
+        assert "state._locals.get('X', MArray()).kill(" in code
+
+    def test_kill_dynamic_locals_multiple_subscripts(self, generate_python):
+        """K X(1,2) with TRAMPOLINE+dynamic_locals handles multiple subscripts."""
+        code = generate_python("TEST K\n K X(1,2)\n G END\n Q\nEND Q\n")
+
+        # Should pass multiple subscripts to kill
+        assert "state._locals.get('X', MArray()).kill(" in code
+
+    def test_kill_without_dynamic_locals_uses_direct_access(self, generate_python):
+        """K X without dynamic_locals uses MArray.kill() via _scope.
+
+        Phase 21: KILL clears MArray content but keeps entry in _scope
+        to preserve call-by-reference aliasing.
+        """
+        # No argumentless KILL, so uses direct access via _scope
+        code = generate_python("TEST S X=1\n K X\n Q\n")
+
+        # Should use _scope.get().kill() for SIMPLE_FUNCTIONS
+        assert "_scope.get('X', MArray()).kill()" in code
+
+    def test_kill_dynamic_locals_preserves_siblings(self, execute_mumps):
+        """K X(1) with dynamic_locals preserves sibling subscripts."""
+        # Create scenario with argumentless KILL + GOTO to trigger dynamic_locals
+        result = execute_mumps(
+            "TEST K\n S X(1)=1,X(2)=2\n K X(1)\n G END\n Q\nEND W $D(X(1)),$D(X(2)) Q\n"
+        )
+        # X(1) is killed (0), X(2) remains (1)
+        assert result.output == "01"
+        assert result.success is True
+
+    def test_kill_dynamic_locals_execution(self, execute_mumps):
+        """Full execution test for KILL with TRAMPOLINE+dynamic_locals.
+
+        Verifies that KILL works correctly in a routine with both
+        argumentless KILL (uses_dynamic_locals) and cross-label GOTO (TRAMPOLINE).
+        """
+        result = execute_mumps(
+            'TEST K\n S X=5\n K X\n G END\n Q\nEND W $G(X,"gone") Q\n'
+        )
+        assert result.output == "gone"
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestKillAllMArrayKill:
+    """Tests for Phase 21 KILL changes: MArray.kill() instead of scope removal."""
+
+    def test_kill_all_uses_marray_kill(self, generate_python):
+        """Argumentless K generates MArray.kill() loop instead of _scope.clear().
+
+        Phase 21: KILL preserves entries in _scope for call-by-reference aliasing.
+        Note: K<space><space>Q is argumentless KILL then QUIT (two spaces).
+        """
+        code = generate_python("TEST\n K  Q")
+        assert "for _v in _scope.values():" in code
+        assert "if isinstance(_v, MArray): _v.kill()" in code
+        # Should NOT use _scope.clear()
+        assert "_scope.clear()" not in code
+
+    def test_kill_exclusive_uses_translated_names(self, generate_python):
+        """K (X) uses translated names in keep_vars set.
+
+        Phase 21: Names in keep_vars must be translated to Python form
+        (e.g., %X → _pct_X) since _scope keys use translated names.
+        """
+        code = generate_python("TEST K (X) Q")
+        assert "'X'" in code
+        assert "MArray" in code
+
+    def test_kill_exclusive_percent_var_translated(self, execute_mumps):
+        """K (%X) keeps %X (translated to _pct_X in _scope).
+
+        Phase 21: Ensures translate_name is applied in exclusive KILL.
+        """
+        result = execute_mumps(
+            'TEST\n S %X=1,Y=2 K (%X) W $G(%X,"none"),$G(Y,"none"),!\n Q\n'
+        )
+        assert result.output == "1none\n"
+
+    def test_kill_selective_percent_var(self, execute_mumps):
+        """K %X kills the %X variable correctly.
+
+        Phase 21: translate_name applied for selective KILL too.
+        Y retains its value of 2 since only %X is killed.
+        """
+        result = execute_mumps(
+            'TEST\n S %X=1,Y=2 K %X W $G(%X,"gone"),$G(Y,"kept"),!\n Q\n'
+        )
+        assert result.output == "gone2\n"
+
+    def test_kill_preserves_byref_alias(self, execute_mumps):
+        """K inside subroutine preserves MArray alias for call-by-reference.
+
+        Phase 21: KILL clears MArray content rather than removing from _scope,
+        so shared MArray aliases remain linked.
+        """
+        result = execute_mumps(
+            'TEST S X=5 D SUB(.X) W $G(X,"gone"),! Q\nSUB(N) K N S N=10 Q\n'
+        )
+        # After K N, $DATA(N)=0, then S N=10 sets it. Since N is aliased
+        # to X via MArray, X should see the new value.
+        assert result.output == "10\n"

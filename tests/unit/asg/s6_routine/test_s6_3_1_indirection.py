@@ -93,13 +93,14 @@ class TestIndirectionAnalysis:
 
         Since the target is determined at runtime, the call cannot be
         statically resolved. The MCall should have label_is_indirect=True
-        and indirection set to the variable.
+        and indirection set to MIndirection wrapping the variable.
 
         After signature analysis via compute_all_signatures, the label's
         requires_runtime_scope and routine's requires_runtime_eval will be True.
         """
         from m2py.analysis.variables import compute_all_signatures
         from m2py.parser import MUMPSParser
+        from m2py.asg.expressions import MIndirection
 
         parser = MUMPSParser()
         result = parser.parse("TEST\n D @X")
@@ -110,9 +111,10 @@ class TestIndirectionAnalysis:
         assert call.label_is_indirect is True
         assert call.indirection is not None
         assert call.indirection_levels == 1
-        # Indirection expression should be the variable X
-        assert isinstance(call.indirection, LocalVariable)
-        assert call.indirection.name == "X"
+        # Indirection expression is MIndirection wrapping the variable
+        assert isinstance(call.indirection, MIndirection)
+        assert isinstance(call.indirection.expression, LocalVariable)
+        assert call.indirection.expression.name == "X"
 
         # After signature analysis, routine-level flag is set
         signatures = compute_all_signatures(result)

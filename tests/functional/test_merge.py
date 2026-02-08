@@ -29,12 +29,12 @@ Usage:
 
 from __future__ import annotations
 
+
 import pytest
 
 from tests.functional.conftest import (
     FUNCTIONAL_BASE,
     compare_output,
-    get_routine_xfail_reason,
     load_routine_source,
     normalize_outref,
     run_mumps,
@@ -55,6 +55,43 @@ MERGE_DIR = FUNCTIONAL_BASE / "merge"
 MERGE_INREF = MERGE_DIR / "inref"
 MERGE_OUTREF = MERGE_DIR / "outref"
 MERGE_UINREF = MERGE_DIR / "u_inref"
+# Extracted routines (from CSH heredocs/input files, not in original YDB inref)
+MERGE_EXTRACTED = FUNCTIONAL_BASE / "merge-routines"
+
+
+# =============================================================================
+# Merge-Specific Helper Loading
+# =============================================================================
+
+# Routines that need the lfill helper for database filling operations
+_LFILL_DEPENDENT_ROUTINES = frozenset({"mergelv", "misclv"})
+
+# Cache for merge helpers
+_MERGE_HELPERS: dict[str, str] | None = None
+
+
+def _load_merge_helpers() -> dict[str, str]:
+    """Load merge-specific helper routines from inref/.
+
+    The lfill.m helper is used by mergelv and other tests for
+    database filling operations.
+
+    Returns:
+        Dict mapping routine name to MUMPS source code
+    """
+    global _MERGE_HELPERS
+    if _MERGE_HELPERS is None:
+        _MERGE_HELPERS = {}
+        # Load lfill.m helper
+        lfill_path = MERGE_INREF / "lfill.m"
+        if lfill_path.exists():
+            _MERGE_HELPERS["lfill"] = lfill_path.read_text()
+    return _MERGE_HELPERS
+
+
+def _needs_helpers(routine_name: str) -> bool:
+    """Check if a routine needs helper routines to run."""
+    return routine_name.lower() in _LFILL_DEPENDENT_ROUTINES
 
 
 # =============================================================================
@@ -68,37 +105,21 @@ def make_test_id(routine_def: RoutineDefinition) -> str:
 
 
 def get_subtest_params() -> list[pytest.param]:
-    """Generate pytest parameters for merge subtests."""
-    params = []
-    for subtest in MERGE_SUBTESTS:
-        if subtest.skip_reason:
-            params.append(
-                pytest.param(
-                    subtest,
-                    id=make_test_id(subtest),
-                    marks=pytest.mark.skip(reason=subtest.skip_reason),
-                )
-            )
-        else:
-            params.append(pytest.param(subtest, id=make_test_id(subtest)))
-    return params
+    """Generate pytest parameters for merge subtests, excluding skipped ones."""
+    return [
+        pytest.param(subtest, id=make_test_id(subtest))
+        for subtest in MERGE_SUBTESTS
+        if not subtest.skip_reason
+    ]
 
 
 def get_routine_params() -> list[pytest.param]:
-    """Generate pytest parameters for merge routines."""
-    params = []
-    for routine in MERGE_ROUTINES:
-        if routine.skip_reason:
-            params.append(
-                pytest.param(
-                    routine,
-                    id=routine.routine,
-                    marks=pytest.mark.skip(reason=routine.skip_reason),
-                )
-            )
-        else:
-            params.append(pytest.param(routine, id=routine.routine))
-    return params
+    """Generate pytest parameters for merge routines, excluding skipped ones."""
+    return [
+        pytest.param(routine, id=routine.routine)
+        for routine in MERGE_ROUTINES
+        if not routine.skip_reason
+    ]
 
 
 def load_subtest_outref(subtest_name: str) -> str | None:
@@ -139,31 +160,38 @@ class TestMergeSuite:
         Args:
             subtest_def: The subtest definition containing name and primary routine
         """
-        # Check for known limitation (for xfail on failure)
-        xfail_reason = get_routine_xfail_reason(subtest_def.routine)
-
-        # Load the primary routine source
-        source = load_routine_source(MERGE_INREF, subtest_def.routine)
+        # Load the primary routine source (check extracted routines dir first)
+        try:
+            source = load_routine_source(MERGE_EXTRACTED, subtest_def.routine)
+        except FileNotFoundError:
+            source = load_routine_source(MERGE_INREF, subtest_def.routine)
         assert source is not None, (
             f"Failed to load routine {subtest_def.routine} for {subtest_def.label}"
         )
 
+        # Load helpers if needed (lfill.m for mergelv tests)
+        helpers = _load_merge_helpers() if _needs_helpers(subtest_def.routine) else None
+
         # Run through m2py
-        result = run_mumps(source, timeout=30)
+        result = run_mumps(source, timeout=30, helper_sources=helpers)
 
         if result is None or (not result.output and not result.success):
-            if xfail_reason:
-                pytest.xfail(
-                    f"{xfail_reason} - Execution failed: {result.error if result else 'No result'}"
-                )
             pytest.fail(f"No result for {subtest_def.label}")
 
         # Load expected output
         expected = load_subtest_outref(subtest_def.label)
         if expected and result.success:
-            comparison = compare_output(result.output, expected)
-            if not comparison.match and xfail_reason:
-                pytest.xfail(f"{xfail_reason} - Output mismatch")
+            comparison = compare_output(
+                result.output, expected, strip_internal_blanks=True
+            )
+            if not comparison.match:
+                # Show first 40 lines of diff for debugging
+                diff_preview = "\n".join((comparison.diff or "").split("\n")[:40])
+                pytest.fail(
+                    f"Output mismatch for {subtest_def.label} "
+                    f"(actual={comparison.actual_lines}, "
+                    f"expected={comparison.expected_lines}):\n{diff_preview}"
+                )
 
 
 # =============================================================================
@@ -187,20 +215,19 @@ class TestMergeRoutines:
         Args:
             routine_def: The routine definition
         """
-        # Check for known limitation (for xfail on failure)
-        xfail_reason = get_routine_xfail_reason(routine_def.routine)
-
-        source = load_routine_source(MERGE_INREF, routine_def.routine)
+        try:
+            source = load_routine_source(MERGE_EXTRACTED, routine_def.routine)
+        except FileNotFoundError:
+            source = load_routine_source(MERGE_INREF, routine_def.routine)
         assert source is not None, f"Failed to load routine {routine_def.routine}"
 
+        # Load helpers if needed (lfill.m for mergelv tests)
+        helpers = _load_merge_helpers() if _needs_helpers(routine_def.routine) else None
+
         # Run through m2py
-        result = run_mumps(source, timeout=30)
+        result = run_mumps(source, timeout=30, helper_sources=helpers)
 
         if result is None or (not result.output and not result.success):
-            if xfail_reason:
-                pytest.xfail(
-                    f"{xfail_reason} - Execution failed: {result.error if result else 'No result'}"
-                )
             pytest.fail(f"No result for {routine_def.routine}")
 
 
@@ -258,8 +285,9 @@ class TestMergeInfrastructure:
         """Verify all defined routines have corresponding .m files."""
         missing = []
         for routine_def in MERGE_ROUTINES:
-            routine_path = MERGE_INREF / f"{routine_def.routine}.m"
-            if not routine_path.exists():
+            inref_path = MERGE_INREF / f"{routine_def.routine}.m"
+            extracted_path = MERGE_EXTRACTED / f"{routine_def.routine}.m"
+            if not inref_path.exists() and not extracted_path.exists():
                 missing.append(routine_def.routine)
 
         assert not missing, f"Missing routine files: {missing}"

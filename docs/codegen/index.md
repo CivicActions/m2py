@@ -86,6 +86,7 @@ Parse MUMPS → Build ASG → Run Analysis → Generate Python
 - [FOR Loops](for_loops.md) - Iteration translation strategies
 - [GOTO Handling](goto_handling.md) - Control flow restructuring
 - [Variable Scoping](variable_scoping.md) - Function signatures and scope
+- [Variable System](variable_system.md) - Indirection and subscript handling
 - [Operators](operators.md) - MUMPS operators to Python
 - [Functions](functions.md) - Intrinsic function translation
 - [Runtime Requirements](runtime_requirements.md) - When runtime support is needed

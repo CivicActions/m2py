@@ -156,6 +156,87 @@ DOUBLE(P1,P2)
         # A should be 20 (10*2), B should be 40 (20*2), X should be 60 (20+40)
         assert result == "204060"
 
+    def test_byvalue_extrinsic_returns_scalar_not_tuple(self, generate_python):
+        """Extrinsic called by-value returns scalar even if callee modifies param.
+
+        When callee modifies a formal parameter (creating byref_outputs) but
+        caller passes by VALUE (no . prefix), the return value should be
+        just the scalar, not a tuple. The _call_extrinsic helper extracts
+        _result[0] when the callee returns a tuple but no _byref is provided.
+
+        This tests the fix for the arith.m multiplication bug where
+        $$times("1","1") was returning ('1', '10') instead of '1'.
+        """
+        source = """TEST
+ S X=$$INC(5)
+ Q X
+INC(N)
+ S N=N+1
+ Q N
+"""
+        code = generate_python(source)
+        namespace = {}
+        exec(code, namespace)
+
+        # Call the generated code
+        runtime = namespace["MUMPSRuntime"]()
+        result = namespace["TEST"](runtime)
+
+        # Should return "6" (or 6), not a tuple like ("6", "6")
+        # The key assertion is that it's NOT a tuple
+        assert not isinstance(result, tuple), f"Expected scalar, got tuple: {result}"
+        assert str(result) == "6"
+
+    def test_byvalue_extrinsic_does_not_modify_caller_var(self, generate_python):
+        """By-value extrinsic does not modify caller's variable.
+
+        When caller passes by value (no . prefix), the caller's variable
+        should not be modified even if the callee writes to the parameter.
+        """
+        source = """TEST
+ S A=5
+ S X=$$INC(A)
+ Q A_","_X
+INC(N)
+ S N=N+1
+ Q N
+"""
+        code = generate_python(source)
+        namespace = {}
+        exec(code, namespace)
+
+        # Call the generated code
+        runtime = namespace["MUMPSRuntime"]()
+        result = namespace["TEST"](runtime)
+
+        # A should be 5 (unchanged), X should be 6 (return value)
+        assert result == "5,6"
+
+    def test_byref_extrinsic_modifies_caller_var(self, generate_python):
+        """By-ref extrinsic modifies caller's variable AND returns value.
+
+        When caller passes by reference (.A), both the return value
+        AND the by-ref update should occur.
+        """
+        source = """TEST
+ S A=5
+ S X=$$INC(.A)
+ Q A_","_X
+INC(N)
+ S N=N+1
+ Q N
+"""
+        code = generate_python(source)
+        namespace = {}
+        exec(code, namespace)
+
+        # Call the generated code
+        runtime = namespace["MUMPSRuntime"]()
+        result = namespace["TEST"](runtime)
+
+        # A should be 6 (modified via .A), X should be 6 (return value)
+        assert result == "6,6"
+
 
 @pytest.mark.codegen
 class TestExternalRoutineCallsCodegen:
@@ -252,4 +333,64 @@ class TestExternalRoutineCallsCodegen:
         # Module reference in call also translated
         assert "_pct_SYSTEM.UTILS" in code
         # verify valid Python syntax (import of non-existent module is syntax OK)
+        compile(code, "<test>", "exec")
+
+
+@pytest.mark.codegen
+class TestExtrinsicEntryPoint:
+    """T100: Tests for $$^ROUTINE pattern (extrinsic calling routine entry point).
+
+    When $$^ROUTINE is used with no label, it calls the routine's entry point,
+    which is the routine name itself (the first label in the routine).
+    """
+
+    def test_extrinsic_routine_only(self, generate_python):
+        """$$^ROUTINE (no label) calls routine's entry point.
+
+        T100: When label is empty but routine exists, use routine name as label.
+        """
+        source = """TEST
+ S X=$$^HELPER
+ Q X
+"""
+        code = generate_python(source)
+        # Should import the module
+        assert "import HELPER" in code
+        # Should call the routine name as the entry point
+        assert "_call_extrinsic(_rt, HELPER.HELPER" in code
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")
+
+    def test_extrinsic_routine_only_with_args(self, generate_python):
+        """$$^ROUTINE(args) calls routine's entry point with arguments.
+
+        T100: Entry point call should pass arguments correctly.
+        """
+        source = """TEST
+ S X=$$^MATH(1,2)
+ Q X
+"""
+        code = generate_python(source)
+        # Should import the module
+        assert "import MATH" in code
+        # Should call routine.routine with args
+        assert "_call_extrinsic(_rt, MATH.MATH, 1, 2" in code
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")
+
+    def test_extrinsic_percent_routine_only(self, generate_python):
+        """$$^%ROUTINE calls %ROUTINE's entry point.
+
+        T100: Percent routines also support entry point calls.
+        """
+        source = """TEST
+ S X=$$^%UTIL
+ Q X
+"""
+        code = generate_python(source)
+        # % prefix translated to _pct_
+        assert "import _pct_UTIL" in code
+        # Should call _pct_UTIL._pct_UTIL (entry point is routine name)
+        assert "_call_extrinsic(_rt, _pct_UTIL._pct_UTIL" in code
+        # verify valid Python syntax
         compile(code, "<test>", "exec")

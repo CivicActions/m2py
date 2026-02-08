@@ -205,6 +205,24 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST K Y W $GET(Y,"FULL") Q')
         assert result.output == "FULL"
 
+    def test_function_get_numeric_default_canonical(self, execute_mumps):
+        """$GET default value uses m_str for MUMPS canonical number formatting.
+
+        Phase 24: Changed from str() to m_str() so large numbers
+        format as canonical MUMPS numbers, not Python scientific notation.
+        """
+        # Large number default should be canonical (no scientific notation)
+        result = execute_mumps("TEST K X W $G(X,1E25) Q")
+        assert result.output == "10000000000000000000000000"
+
+        # Small fraction default should be canonical (no leading zero)
+        result = execute_mumps("TEST K X W $G(X,.5) Q")
+        assert result.output == ".5"
+
+        # Integer default remains unchanged
+        result = execute_mumps("TEST K X W $G(X,42) Q")
+        assert result.output == "42"
+
     def test_function_length(self, execute_mumps):
         """$LENGTH generates len() equivalent (§7.1.5).
 
@@ -234,6 +252,31 @@ class TestIntrinsicFunctionsCodegen:
 
         # Test 6: Full form abbreviation
         result = execute_mumps('TEST W $LENGTH("ABC") Q')
+        assert result.output == "3"
+
+    def test_function_length_empty_delimiter(self, execute_mumps):
+        """$LENGTH with empty delimiter returns 0 (§7.1.5).
+
+        MUMPS spec: $L(str,"") returns 0 for any string, including empty string.
+        This is different from non-empty delimiter where empty string has 1 piece.
+
+        Bug fix: Previously returned count of "" occurrences + 1 which is wrong.
+        """
+        # Test 1: Empty delimiter with non-empty string returns 0
+        result = execute_mumps('TEST W $L("ABC","") Q')
+        assert result.output == "0"
+
+        # Test 2: Empty delimiter with empty string returns 0
+        result = execute_mumps('TEST W $L("","") Q')
+        assert result.output == "0"
+
+        # Test 3: Empty delimiter with longer string returns 0
+        result = execute_mumps('TEST W $L("HELLO WORLD","") Q')
+        assert result.output == "0"
+
+        # Test 4: Canonical conversion - numeric delimiter that becomes empty
+        # 0.0 canonicalizes to "0", not empty, so this has pieces
+        result = execute_mumps('TEST S X="A0B0C" W $L(X,0.0) Q')
         assert result.output == "3"
 
     def test_function_order(self, execute_mumps):
@@ -272,6 +315,33 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST\n S A(1)=1,A("Z")=2\n S X=$O(A(1))\n W X\n Q')
         assert result.output == "Z"
 
+    def test_function_order_indirection_subscripts(self, execute_mumps):
+        """$ORDER with indirection subscripts @name@(subs) pattern.
+
+        Spec 017 Phase 20 (V4ORDER fix): When using @name@(subs) pattern,
+        subscripts from the indirected name are merged with additional subscripts.
+        Previously this was done via string concatenation which broke subscript
+        canonicalization.
+        """
+        # Test 1: $O(@V@(subs)) with local variable indirection
+        # V contains "A(1)", @V@(2,"") resolves to A(1,2,"") -> $O gets first at level 3
+        result = execute_mumps(
+            'TEST\n S A(1,2,3)="A",A(1,2,4)="B"\n S V="A(1)"\n W $O(@V@(2,""))\n Q'
+        )
+        assert result.output == "3"
+
+        # Test 2: $O(@V@(subs)) with global variable indirection
+        result = execute_mumps(
+            'TEST\n S ^G(1,2,3)="A",^G(1,2,4)="B"\n S V="^G(1)"\n W $O(@V@(2,3))\n Q'
+        )
+        assert result.output == "4"
+
+        # Test 3: Multiple additional subscripts
+        result = execute_mumps(
+            'TEST\n S A(10,20,30,40)=1,A(10,20,30,50)=2\n S V="A(10)"\n W $O(@V@(20,30,40))\n Q'
+        )
+        assert result.output == "50"
+
     def test_function_piece(self, execute_mumps):
         """$PIECE generates string split (§7.1.5).
 
@@ -301,6 +371,35 @@ class TestIntrinsicFunctionsCodegen:
         # Test 6: Full form abbreviation
         result = execute_mumps('TEST W $PIECE("X-Y-Z","-",2) Q')
         assert result.output == "Y"
+
+    def test_function_piece_two_args_defaults_to_first(self, execute_mumps):
+        """$PIECE with 2 arguments defaults to piece 1 (§7.1.5).
+
+        When only string and delimiter are provided (no position argument),
+        $PIECE defaults to extracting the first piece (position 1).
+
+        Spec 011 Phase 10 (T047): Pattern matching fixes revealed this bug
+        where 2-arg $P was returning empty string instead of piece 1.
+        """
+        # Test 1: Simple 2-argument case - should return first piece
+        result = execute_mumps('TEST W $P("ABC/DDD","/") Q')
+        assert result.output == "ABC"
+
+        # Test 2: Another 2-arg case
+        result = execute_mumps('TEST W $P("A^B^C","^") Q')
+        assert result.output == "A"
+
+        # Test 3: No delimiter found - returns entire string
+        result = execute_mumps('TEST W $P("ABC","/") Q')
+        assert result.output == "ABC"
+
+        # Test 4: Empty first piece
+        result = execute_mumps('TEST W $P("/ABC","/") Q')
+        assert result.output == ""
+
+        # Test 5: Abbreviation with 2 args
+        result = execute_mumps('TEST W $PIECE("X-Y-Z","-") Q')
+        assert result.output == "X"
 
     def test_function_query(self, execute_mumps):
         """$QUERY generates tree traversal (§7.1.5).
@@ -483,6 +582,39 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps('TEST W $TRANSLATE("ABC","A","X") Q')
         assert result.output == "XBC"
 
+    def test_function_translate_to_longer_than_from(self, execute_mumps):
+        """$TRANSLATE handles to_chars longer than from_chars (Phase 22 T126).
+
+        When to_chars is longer than from_chars, excess chars in to_chars are
+        ignored. This was failing with 'maketrans arguments must have equal
+        length' before the fix.
+        """
+        # to_chars longer than from_chars - extra chars ignored
+        result = execute_mumps('TEST W $TR("ABCDEFGHIJ","ABC","abcdef") Q')
+        assert result.output == "abcDEFGHIJ"
+
+    def test_function_translate_255_char_args(self, execute_mumps):
+        """$TRANSLATE with 255-char from_chars longer than to_chars (V3TR08 III-200)."""
+        result = execute_mumps(
+            'TEST S a="" F i=1:1:51 S a=a_"ABCDE"\n W $TR("ABCDEFGHIJ",a,"abc") Q'
+        )
+        assert result.output == "abcFGHIJ"
+
+    def test_function_translate_empty_from(self, execute_mumps):
+        """$TRANSLATE with empty from_chars returns string unchanged."""
+        result = execute_mumps('TEST W $TR("HELLO","","xyz") Q')
+        assert result.output == "HELLO"
+
+    def test_function_translate_delete_with_explicit_empty_to(self, execute_mumps):
+        """$TRANSLATE with explicit empty to_chars deletes all from_chars."""
+        result = execute_mumps('TEST W $TR("HELLO","HEL","") Q')
+        assert result.output == "O"
+
+    def test_function_translate_with_variables(self, execute_mumps):
+        """$TRANSLATE with variable arguments instead of literals."""
+        result = execute_mumps('TEST S S="HELLO",F="LO",T="XY" W $TR(S,F,T) Q')
+        assert result.output == "HEXXY"
+
     def test_function_name(self, execute_mumps):
         """$NAME/$NA function generates canonical name strings (§7.1.5).
 
@@ -511,6 +643,31 @@ class TestIntrinsicFunctionsCodegen:
         # Test 6: Full form
         result = execute_mumps("TEST S A(1,2)=1 W $NAME(A(1,2)) Q")
         assert result.output == "A(1,2)"
+
+    def test_function_name_naked_global(self, execute_mumps):
+        """$NAME with naked global reference resolves naked indicator first.
+
+        Spec 017 Phase 20 (V4QUIT fix): $NA(^(subs)) must resolve the naked
+        indicator before building the name. Previously passed empty name to
+        m_name when the argument was a NakedGlobal.
+        """
+        # Test 1: Basic naked global - access ^G(1) then use ^(2) in $NA
+        result = execute_mumps('TEST S ^G(1,2)="A" S X=^G(1,2) W $NA(^(3)) Q')
+        # After reading ^G(1,2), naked indicator points to ^G(1),
+        # so ^(3) resolves to ^G(1,3)
+        assert result.output == "^G(1,3)"
+
+        # Test 2: Naked global with depth parameter
+        result = execute_mumps('TEST S ^G(1,2,3)="A" S X=^G(1,2,3) W $NA(^(4,5),1) Q')
+        # After reading ^G(1,2,3), naked indicator points to ^G(1,2)
+        # so ^(4,5) resolves to ^G(1,2,4,5), and depth=1 truncates to ^G(1)
+        assert result.output == "^G(1)"
+
+        # Test 3: Nested naked global subscripts
+        result = execute_mumps('TEST S ^G(1)="A" S X=^G(1) W $NA(^(2)) Q')
+        # After reading ^G(1), naked indicator points to ^G (empty parent),
+        # so ^(2) resolves to ^G(2)
+        assert result.output == "^G(2)"
 
     def test_function_qlength(self, execute_mumps):
         """$QLENGTH/$QL function counts subscripts in name string (§7.1.5).
@@ -605,6 +762,61 @@ class TestIntrinsicFunctionsCodegen:
         result = execute_mumps("TEST W $JUSTIFY(42,6) Q")
         assert result.output == "    42"
 
+    def test_function_justify_rounding(self, execute_mumps):
+        """$JUSTIFY uses ROUND_HALF_UP not banker's rounding (§7.1.5).
+
+        Bug fix: Python Decimal default is ROUND_HALF_EVEN (banker's rounding),
+        but MUMPS expects traditional ROUND_HALF_UP (0.5 rounds up).
+
+        $J(123.45,7,1) should round to 123.5, not 123.4.
+        """
+        # Test 1: Round half up - 123.45 → 123.5 (not 123.4)
+        result = execute_mumps("TEST W $J(123.45,7,1) Q")
+        assert result.output == "  123.5"
+
+        # Test 2: Another round half up case - 2.35 → 2.4
+        result = execute_mumps("TEST W $J(2.35,5,1) Q")
+        assert result.output == "  2.4"
+
+        # Test 3: Round down cases still work - 123.44 → 123.4
+        result = execute_mumps("TEST W $J(123.44,7,1) Q")
+        assert result.output == "  123.4"
+
+        # Test 4: Round up to next integer - 1.5 → 2
+        result = execute_mumps("TEST W $J(1.5,3,0) Q")
+        assert result.output == "  2"
+
+    def test_function_justify_canonical_form(self, execute_mumps):
+        """$JUSTIFY 2-arg form uses MUMPS canonical form (§7.1.5).
+
+        Bug fix: 2-argument $J used Python str() instead of m_str(),
+        causing E-notation to appear and trailing .0 to remain.
+
+        MUMPS canonical form:
+        - No E-notation (expanded to full number)
+        - No trailing .0 for integers
+        - No leading zeros
+        """
+        # Test 1: Large integer - no trailing .0
+        result = execute_mumps("TEST W $J(1234.0000,7) Q")
+        assert result.output == "   1234"
+
+        # Test 2: E-notation expanded - 123400E1 = 1234000
+        result = execute_mumps("TEST W $J(123400.00E1,10) Q")
+        assert result.output == "   1234000"
+
+        # Test 3: Small decimal with E-notation
+        result = execute_mumps("TEST W $J(98.7654E-3,12) Q")
+        assert result.output == "    .0987654"
+
+        # Test 4: Width with decimal truncated - $J(x,8.9) uses width 8
+        result = execute_mumps("TEST W $J(5.49,8.9) Q")
+        assert result.output == "    5.49"
+
+        # Test 5: Leading zeros removed
+        result = execute_mumps("TEST W $J(007,5) Q")
+        assert result.output == "    7"
+
     def test_function_reverse(self, execute_mumps):
         """$REVERSE/$RE reverses a string (§7.1.5).
 
@@ -629,6 +841,24 @@ class TestIntrinsicFunctionsCodegen:
         # Test 5: Full form abbreviation
         result = execute_mumps('TEST W $REVERSE("ABC") Q')
         assert result.output == "CBA"
+
+    def test_function_reverse_numeric_canonical(self, execute_mumps):
+        """$REVERSE of numeric uses MUMPS canonical form before reversal.
+
+        Phase 24: Changed from str() to m_str() so Decimal values
+        get canonical formatting before reversal.
+        """
+        # Decimal value: 1.50 canonicalizes to "1.5", reversed is "5.1"
+        result = execute_mumps("TEST W $RE(1.50) Q")
+        assert result.output == "5.1"
+
+        # Integer: 100 stays "100", reversed is "001"
+        result = execute_mumps("TEST W $RE(100) Q")
+        assert result.output == "001"
+
+        # Zero
+        result = execute_mumps("TEST W $RE(0) Q")
+        assert result.output == "0"
 
     def test_function_fnumber(self, execute_mumps):
         """$FNUMBER/$FN formats numbers with specified codes (§7.1.5).
@@ -879,3 +1109,141 @@ class TestDataSubscriptedAccess:
         """$DATA of undefined subscript returns 0."""
         result = execute_mumps("TEST S X(1)=1 W $D(X(99)) Q")
         assert result.output == "0"
+
+
+@pytest.mark.codegen
+class TestFnumberCodeCombinations:
+    """Tests for $FNUMBER code combinations including +T.
+
+    Fix: Added handling for +T combination - trailing + for positive numbers.
+    Priority order is: P > - > (T with +) > T > + > default
+    """
+
+    def test_fnumber_t_positive_trailing_space(self, execute_mumps):
+        """$FN(42,"T") gives trailing space for positive numbers."""
+        result = execute_mumps('TEST W "|",$FN(42,"T"),"|" Q')
+        assert result.success is True
+        assert result.output == "|42 |"
+
+    def test_fnumber_t_negative_trailing_minus(self, execute_mumps):
+        """$FN(-42,"T") gives trailing minus for negative numbers."""
+        result = execute_mumps('TEST W $FN(-42,"T") Q')
+        assert result.success is True
+        assert result.output == "42-"
+
+    def test_fnumber_plus_t_positive_trailing_plus(self, execute_mumps):
+        """$FN(42,"+T") gives trailing + for positive numbers."""
+        result = execute_mumps('TEST W $FN(42,"+T") Q')
+        assert result.success is True
+        assert result.output == "42+"
+
+    def test_fnumber_plus_t_negative_trailing_minus(self, execute_mumps):
+        """$FN(-42,"+T") gives trailing minus for negative numbers."""
+        result = execute_mumps('TEST W $FN(-42,"+T") Q')
+        assert result.success is True
+        assert result.output == "42-"
+
+    def test_fnumber_t_plus_same_as_plus_t(self, execute_mumps):
+        """$FN(42,"T+") is same as $FN(42,"+T") - trailing +."""
+        result = execute_mumps('TEST W $FN(42,"T+") Q')
+        assert result.success is True
+        assert result.output == "42+"
+
+    def test_fnumber_plus_alone_leading_plus(self, execute_mumps):
+        """$FN(42,"+") gives leading + (not trailing)."""
+        result = execute_mumps('TEST W $FN(42,"+") Q')
+        assert result.success is True
+        assert result.output == "+42"
+
+    def test_fnumber_t_minus_trailing_suppressed(self, execute_mumps):
+        """Phase 24: $FN(-20,"T-") suppresses minus, trailing space."""
+        result = execute_mumps('TEST W "|",$FN(-20,"T-"),"|" Q')
+        assert result.success is True
+        assert result.output == "|20 |"
+
+    def test_fnumber_plus_minus_composed(self, execute_mumps):
+        """Phase 24: + and - compose: positive gets +, negative suppressed."""
+        result = execute_mumps('TEST W $FN(42,"+-") Q')
+        assert result.success is True
+        assert result.output == "+42"
+
+        result = execute_mumps('TEST W $FN(-42,"+-") Q')
+        assert result.success is True
+        assert result.output == "42"
+
+    def test_fnumber_three_arg_leading_zero(self, execute_mumps):
+        """Phase 24: 3-arg form preserves leading zero for fractions."""
+        result = execute_mumps('TEST W $FN(.5,",",2) Q')
+        assert result.success is True
+        assert result.output == "0.50"
+
+    def test_fnumber_three_arg_rounding(self, execute_mumps):
+        """Phase 24: 3-arg form rounds with ROUND_HALF_UP."""
+        result = execute_mumps('TEST W $FN(1.235,"+",2) Q')
+        assert result.success is True
+        assert result.output == "+1.24"
+
+    def test_fnumber_comma_p_combined(self, execute_mumps):
+        """Phase 24: P with comma: parentheses + thousands separators."""
+        result = execute_mumps('TEST W $FN(-12345,",P") Q')
+        assert result.success is True
+        assert result.output == "(12,345)"
+
+    def test_fnumber_zero_with_plus(self, execute_mumps):
+        """Phase 24: Zero gets no + sign with plus code."""
+        result = execute_mumps('TEST W $FN(0,"+") Q')
+        assert result.success is True
+        assert result.output == "0"
+
+
+@pytest.mark.codegen
+class TestOrderIndirectionCodegen:
+    """Tests for $ORDER with indirection ($O(@X)).
+
+    Fix: Added handling for MIndirection in _gen_order to use
+    _rt.get_order() for runtime name resolution.
+    """
+
+    def test_order_indirection_basic(self, execute_mumps):
+        """$O(@X) where X='A("")' returns first subscript."""
+        result = execute_mumps('''TEST
+ S A(1)="a",A(2)="b"
+ S X="A("""")"
+ W $O(@X)
+ Q
+''')
+        assert result.success is True
+        assert result.output == "1"
+
+    def test_order_indirection_with_start(self, execute_mumps):
+        """$O(@X) where X='A(1)' returns next subscript."""
+        result = execute_mumps("""TEST
+ S A(1)="a",A(2)="b",A(3)="c"
+ S X="A(1)"
+ W $O(@X)
+ Q
+""")
+        assert result.success is True
+        assert result.output == "2"
+
+    def test_order_indirection_reverse(self, execute_mumps):
+        """$O(@X,-1) returns previous subscript."""
+        result = execute_mumps("""TEST
+ S A(1)="a",A(2)="b",A(3)="c"
+ S X="A(3)"
+ W $O(@X,-1)
+ Q
+""")
+        assert result.success is True
+        assert result.output == "2"
+
+    def test_order_indirection_global(self, execute_mumps):
+        """$O(@X) where X='^G("")' works for globals."""
+        result = execute_mumps('''TEST
+ S ^G(1)="a",^G(2)="b"
+ S X="^G("""")"
+ W $O(@X)
+ Q
+''')
+        assert result.success is True
+        assert result.output == "1"

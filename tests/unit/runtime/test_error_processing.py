@@ -177,6 +177,225 @@ class TestNewScopeManagerSpecialVars:
         assert rt.etrap() == "ORIGINAL_ETRAP"
 
 
+class TestNewScopeManagerNewAll:
+    """Tests for NewScopeManager.new_all() (Phase 21)."""
+
+    def test_new_all_clears_scope(self):
+        """new_all() removes all variables from scope."""
+        scope = {"X": MArray(value=1), "Y": MArray(value=2)}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_all()
+            assert "X" not in scope
+            assert "Y" not in scope
+
+        # Restored on exit
+        assert scope["X"].value == 1
+        assert scope["Y"].value == 2
+
+    def test_new_all_then_selective_new(self):
+        """new_all() followed by selective new_var() restores correctly.
+
+        After N (argumentless), setting new values and then N X should
+        properly nest. On exit, both are unwound in LIFO order.
+        """
+        scope = {"X": MArray(value=10), "Y": MArray(value=20)}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_all()
+            # Scope is now empty
+            assert len(scope) == 0
+            # Set new values
+            scope["X"] = MArray(value=99)
+            scope["Z"] = MArray(value=77)
+            # Now selective NEW of X
+            mgr.new_var("X")
+            assert "X" not in scope
+            # Z should still be there
+            assert scope["Z"].value == 77
+
+        # After exit: new_all snapshot restores original X=10, Y=20
+        assert scope["X"].value == 10
+        assert scope["Y"].value == 20
+        # Z was set after new_all, not in original snapshot
+        assert "Z" not in scope
+
+    def test_new_all_on_empty_scope(self):
+        """new_all() on empty scope is a no-op that still restores correctly."""
+        scope = {}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_all()
+            scope["A"] = MArray(value=1)
+            assert scope["A"].value == 1
+
+        # After exit: scope should be empty again (snapshot was empty)
+        assert len(scope) == 0
+
+    def test_new_all_resets_individually_newed(self):
+        """new_all() resets _individually_newed so duplicate new_var works after it."""
+        scope = {"X": MArray(value=1)}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_var("X")
+            assert "X" not in scope
+            # Re-set X and then new_all
+            scope["X"] = MArray(value=99)
+            mgr.new_all()
+            assert len(scope) == 0
+            # After new_all, X can be NEWed again
+            scope["X"] = MArray(value=55)
+            mgr.new_var("X")
+            assert "X" not in scope
+
+        # LIFO: first restore inner selective X (was 55), then new_all (restore X=99),
+        # then outer selective X (restore original 1)
+        assert scope["X"].value == 1
+
+
+class TestNewScopeManagerNewExclusive:
+    """Tests for NewScopeManager.new_exclusive() (Phase 21)."""
+
+    def test_new_exclusive_keeps_specified(self):
+        """new_exclusive() keeps specified variables, removes others."""
+        scope = {"X": MArray(value=1), "Y": MArray(value=2), "Z": MArray(value=3)}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_exclusive({"X"})
+            assert scope["X"].value == 1
+            assert "Y" not in scope
+            assert "Z" not in scope
+
+        # All restored on exit
+        assert scope["X"].value == 1
+        assert scope["Y"].value == 2
+        assert scope["Z"].value == 3
+
+    def test_new_exclusive_keeps_multiple(self):
+        """new_exclusive() keeps multiple specified variables."""
+        scope = {"A": MArray(value=1), "B": MArray(value=2), "C": MArray(value=3)}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_exclusive({"A", "C"})
+            assert scope["A"].value == 1
+            assert "B" not in scope
+            assert scope["C"].value == 3
+
+        assert scope["A"].value == 1
+        assert scope["B"].value == 2
+        assert scope["C"].value == 3
+
+    def test_new_exclusive_then_selective(self):
+        """new_exclusive() followed by selective new_var()."""
+        scope = {"X": MArray(value=10), "Y": MArray(value=20)}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_exclusive({"X"})
+            # Y is removed, X remains
+            assert scope["X"].value == 10
+            assert "Y" not in scope
+            # Now selective NEW of X
+            mgr.new_var("X")
+            assert "X" not in scope
+
+        # All restored on exit (LIFO)
+        assert scope["X"].value == 10
+        assert scope["Y"].value == 20
+
+    def test_new_exclusive_empty_keep(self):
+        """new_exclusive({}) acts like new_all() - removes everything."""
+        scope = {"X": MArray(value=1), "Y": MArray(value=2)}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_exclusive(set())
+            assert len(scope) == 0
+
+        assert scope["X"].value == 1
+        assert scope["Y"].value == 2
+
+    def test_new_exclusive_on_exception(self):
+        """new_exclusive() restores properly even on exception."""
+        scope = {"X": MArray(value=1), "Y": MArray(value=2)}
+
+        try:
+            with NewScopeManager(scope) as mgr:
+                mgr.new_exclusive({"X"})
+                scope["Z"] = MArray(value=99)
+                raise ValueError("test")
+        except ValueError:
+            pass
+
+        assert scope["X"].value == 1
+        assert scope["Y"].value == 2
+        assert "Z" not in scope
+
+
+class TestNewScopeManagerNestedNew:
+    """Tests for nested NEW restore ordering (Phase 21 LIFO)."""
+
+    def test_selective_then_all_then_selective(self):
+        """N X then N (all) then N Y restores in reverse order."""
+        scope = {"X": MArray(value=1), "Y": MArray(value=2), "Z": MArray(value=3)}
+
+        with NewScopeManager(scope) as mgr:
+            # First: N X
+            mgr.new_var("X")
+            assert "X" not in scope
+
+            # Set X to something else
+            scope["X"] = MArray(value=100)
+
+            # Then: N (all)
+            mgr.new_all()
+            assert len(scope) == 0
+
+            # Set new values
+            scope["A"] = MArray(value=50)
+
+            # Then: N Y
+            mgr.new_var("Y")
+            # Y wasn't in scope after new_all, so this saves _UNDEFINED
+            # and Y is already not in scope
+            assert "Y" not in scope
+
+        # LIFO unwind:
+        # 1. Restore N Y → Y was _UNDEFINED after new_all, so pop (no-op)
+        # 2. Restore N (all) → restore snapshot {X=100, Y=2, Z=3}
+        # 3. Restore N X → restore original X=1
+        assert scope["X"].value == 1
+        assert scope["Y"].value == 2
+        assert scope["Z"].value == 3
+
+    def test_new_var_dedup_within_scope(self):
+        """Duplicate new_var() for same variable is no-op (first wins)."""
+        scope = {"X": MArray(value=1)}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_var("X")
+            assert "X" not in scope
+            scope["X"] = MArray(value=99)
+            # Second NEW of X should be ignored
+            mgr.new_var("X")
+            # X should remain 99 (not removed again)
+            assert scope["X"].value == 99
+
+        # Restores to original
+        assert scope["X"].value == 1
+
+    def test_new_var_undefined_variable(self):
+        """NEW of undefined variable records _UNDEFINED, removes on restore."""
+        scope = {"Y": MArray(value=2)}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_var("X")  # X was never defined
+            scope["X"] = MArray(value=42)
+            assert scope["X"].value == 42
+
+        # X should be removed on restore (was _UNDEFINED)
+        assert "X" not in scope
+        assert scope["Y"].value == 2
+
+
 class TestExceptionToEcode:
     """Tests for _exception_to_ecode() method (Spec 014 T055)."""
 

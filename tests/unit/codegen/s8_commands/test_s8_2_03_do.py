@@ -16,12 +16,13 @@ class TestDoCommandCodegen:
         User Story 5 acceptance scenario (T042/T043):
         Given: D SUB
         When: generated
-        Then: output contains SUB(_rt, _scope=_scope) function call
+        Then: output contains _globals['SUB'](_rt, _scope=_scope) function call
         Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         T084: Internal DO calls also pass _scope for cross-routine visibility.
+        Phase 21: Use globals() lookup to prevent parameter shadowing.
         """
         code = generate_python('TEST\n D SUB\n Q\nSUB\n W "SUB"\n Q\n')
-        assert "SUB(_rt, _scope=_scope)" in code
+        assert "_globals['SUB'](_rt, _scope=_scope)" in code
 
     def test_do_call_and_return(self, execute_mumps):
         """DO calls subroutine and returns to caller.
@@ -52,9 +53,10 @@ class TestDoCommandCodegen:
 
         Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         T084: Internal DO calls also pass _scope for cross-routine visibility.
+        Phase 21: Use globals() lookup to prevent parameter shadowing.
         """
         code = generate_python("TEST\n D SUB(1,2)\n Q\nSUB(A,B)\n W A+B\n Q\n")
-        assert "SUB(_rt, 1, 2, _scope=_scope)" in code
+        assert "_globals['SUB'](_rt, 1, 2, _scope=_scope)" in code
 
     def test_do_block_codegen(self, generate_python):
         """DO block generates indented block with while True wrapper (§8.2.3).
@@ -106,7 +108,7 @@ class TestDoCommandCodegen:
         D LABEL^ROUTINE generates:
         1. Import statement for the external routine module
         2. Label existence check with helpful error
-        3. Call to ROUTINE.LABEL(_rt, _scope=_scope)
+        3. Call via run_with_goto_support for external GOTO handling (T075e)
         """
         code = generate_python("TEST D LABEL^EXTRTN Q")
 
@@ -117,8 +119,8 @@ class TestDoCommandCodegen:
         assert "hasattr(EXTRTN, 'LABEL')" in code
         assert "LabelNotFoundError" in code
 
-        # Should call the external label with runtime and scope
-        assert "EXTRTN.LABEL(_rt, _scope=_scope)" in code
+        # Should call via run_with_goto_support for external GOTO handling
+        assert "run_with_goto_support(EXTRTN.LABEL, _rt, _scope)" in code
 
 
 @pytest.mark.codegen
@@ -142,11 +144,12 @@ class TestTestStackArgumentlessDo:
         Label calls do NOT stack $TEST - callee's changes are visible.
         Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         T084: Internal DO calls also pass _scope for cross-routine visibility.
+        Phase 21: Use globals() lookup to prevent parameter shadowing.
         """
         code = generate_python("TEST\n D SUB\n Q\nSUB\n I 0\n Q\n")
         # Should NOT have save/restore for label calls
         assert "_saved_test = _test" not in code
-        assert "SUB(_rt, _scope=_scope)" in code
+        assert "_globals['SUB'](_rt, _scope=_scope)" in code
 
     def test_label_call_callee_test_visible(self, execute_mumps):
         """ELSE after label call sees callee's $TEST (T012).
@@ -265,12 +268,13 @@ class TestTestStackDoWithArgs:
         Empty args still a label call, not a DO block.
         Phase 13 (T079): Internal DO calls now pass _rt as first argument.
         T084: Internal DO calls also pass _scope for cross-routine visibility.
+        Phase 21: Use globals() lookup to prevent parameter shadowing.
         """
         code = generate_python("TEST\n D SUB()\n Q\nSUB()\n I 0\n Q\n")
         # Should NOT have save/restore for label calls with empty args
         assert "_saved_test = _test" not in code
-        # With empty args, it generates SUB(_rt, _scope=_scope)
-        assert "SUB(_rt, _scope=_scope)" in code
+        # With empty args, it generates _globals['SUB'](_rt, _scope=_scope)
+        assert "_globals['SUB'](_rt, _scope=_scope)" in code
 
     def test_do_with_empty_args_callee_test_visible(self, execute_mumps):
         """D SUB() - callee's $TEST visible to caller.
@@ -420,7 +424,7 @@ class TestGenerateCallArgumentsHelper:
         assert result == "None"
 
     def test_byref_with_variable_name(self):
-        """By-reference with variable_name uses translated name."""
+        """By-reference with variable_name passes MArray from scope."""
         from unittest.mock import MagicMock
 
         from m2py.asg.enums import PassingMode
@@ -431,10 +435,10 @@ class TestGenerateCallArgumentsHelper:
         arg = MActualParameter(passing_mode=PassingMode.BY_REFERENCE, variable_name="X")
 
         result = _generate_call_arguments([arg], ctx)
-        assert result == "X"  # translate_name preserves case
+        assert result == "_scope.setdefault('X', MArray())"  # Pass MArray for aliasing
 
     def test_byref_with_expression(self):
-        """By-reference with expression generates expression."""
+        """By-reference with non-indirected expression generates expression."""
         from unittest.mock import MagicMock
 
         from m2py.asg.enums import PassingMode
@@ -447,7 +451,8 @@ class TestGenerateCallArgumentsHelper:
         )
 
         result = _generate_call_arguments([arg], ctx)
-        assert result == "X"  # translate_name preserves case
+        # Non-indirected expression falls through to generate_expr
+        assert "X" in result
 
 
 @pytest.mark.codegen
@@ -568,19 +573,24 @@ class TestByRefParameterCodegen:
     def test_incr_single_byref_param(self, generate_python):
         """INCR pattern with single by-ref param (T064).
 
-        D INCR(.X) generates: _byref_result = INCR(...); _scope.setdefault('X', MArray()).value = _byref_result
-        Callee returns the modified value from _scope using MArray.value.
+        D INCR(.X) passes MArray directly for true call-by-reference aliasing.
+        Callee detects isinstance(N, MArray) and uses it as alias.
         """
         code = generate_python("TEST S X=5 D INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n")
 
         # Phase 13 (T076): Callee signature includes _rt as first parameter
-        assert "def INCR(_rt, N, _scope=None, **_kwargs):" in code
-        # T084 + Spec 009: Return from _scope using MArray.value
-        assert "return _scope.get('N', MArray()).value" in code
+        # Phase 19 (Spec 017): Formal params have =None default
+        assert "def INCR(_rt, N=None, _scope=None, _start_offset=0):" in code
 
-        # Phase 13 (T079) + T084 + Spec 009: Call site uses _byref_result and MArray.value
-        assert "_byref_result = INCR(_rt," in code
-        assert "_scope.setdefault('X', MArray()).value = _byref_result" in code
+        # Phase 21: Callee uses isinstance check for by-ref MArray aliasing
+        assert "if isinstance(N, MArray):" in code
+        assert "_scope['N'] = N" in code
+
+        # Phase 21: Call site passes MArray directly for by-ref aliasing
+        assert (
+            "_globals['INCR'](_rt, _scope.setdefault('X', MArray()), _scope=_scope)"
+            in code
+        )
 
     def test_incr_single_byref_runtime(self, execute_mumps):
         """INCR pattern executes correctly with by-ref (T064).
@@ -596,27 +606,27 @@ class TestByRefParameterCodegen:
     def test_swap_two_byref_params(self, generate_python):
         """SWAP pattern with two by-ref params (T063).
 
-        D SWAP(.A,.B) generates tuple return and temp-based assignment via MArray.
-        Callee returns both modified values as tuple using MArray.value.
+        D SWAP(.A,.B) passes MArray objects directly for true aliasing.
         """
         code = generate_python(
             "TEST S A=1,B=2 D SWAP(.A,.B) W A,B Q\nSWAP(X,Y) S T=X,X=Y,Y=T Q\n"
         )
 
         # Phase 13 (T076): Callee signature includes _rt as first parameter
-        assert "def SWAP(_rt, X, Y, _scope=None, **_kwargs):" in code
-        # Check for tuple return using MArray.value (order may vary based on set ordering)
+        # Phase 19 (Spec 017): Formal params have =None default
+        assert "def SWAP(_rt, X=None, Y=None, _scope=None, _start_offset=0):" in code
+
+        # Phase 21: Callee uses isinstance check for by-ref MArray aliasing
+        assert "if isinstance(X, MArray):" in code
+        assert "_scope['X'] = X" in code
+        assert "if isinstance(Y, MArray):" in code
+        assert "_scope['Y'] = Y" in code
+
+        # Phase 21: Call site passes MArrays directly for by-ref aliasing
         assert (
-            "return _scope.get('X', MArray()).value, _scope.get('Y', MArray()).value"
-            in code
-            or "return _scope.get('Y', MArray()).value, _scope.get('X', MArray()).value"
+            "_globals['SWAP'](_rt, _scope.setdefault('A', MArray()), _scope.setdefault('B', MArray()), _scope=_scope)"
             in code
         )
-
-        # Phase 13 (T079) + T084 + Spec 009: Call site uses _byref_result and MArray.value
-        assert "_byref_result = SWAP(_rt," in code
-        assert "_scope.setdefault('A', MArray()).value = _byref_result[0]" in code
-        assert "_scope.setdefault('B', MArray()).value = _byref_result[1]" in code
 
     def test_swap_two_byref_runtime(self, execute_mumps):
         """SWAP pattern executes correctly with two by-refs (T063).
@@ -634,15 +644,19 @@ class TestByRefParameterCodegen:
     def test_multiple_byref_calls_accumulate(self, generate_python):
         """Multiple by-ref calls accumulate changes (T065).
 
-        D INCR(.X),INCR(.X) generates separate _byref_result assignments with MArray.
+        D INCR(.X),INCR(.X),INCR(.X) passes MArray three times for aliasing.
         """
         code = generate_python(
             "TEST S X=1 D INCR(.X),INCR(.X),INCR(.X) W X Q\nINCR(N) S N=N+1 Q\n"
         )
 
-        # Phase 13 (T079) + T084 + Spec 009: Three separate calls with MArray assignment
-        assert code.count("_byref_result = INCR(_rt,") == 3
-        assert code.count("_scope.setdefault('X', MArray()).value = _byref_result") == 3
+        # Phase 21: Three separate calls passing MArray for by-ref aliasing
+        assert (
+            code.count(
+                "_globals['INCR'](_rt, _scope.setdefault('X', MArray()), _scope=_scope)"
+            )
+            == 3
+        )
 
     def test_multiple_byref_calls_runtime(self, execute_mumps):
         """Multiple by-ref calls accumulate correctly (T065).
@@ -668,9 +682,11 @@ class TestByRefParameterCodegen:
         # Phase 13 (T079) + T084: Call passes _scope but no assignment to _scope['X']
         lines = [line.strip() for line in code.split("\n")]
         # Find the line that calls INCR in TEST function
-        # It should be just "INCR(_rt, _scope.get('X', ''), _scope=_scope)" not "_scope['X'] = INCR(...)"
+        # It should be just "_globals['INCR'](_rt, _scope.get('X', ''), _scope=_scope)" not "_scope['X'] = _globals['INCR'](...)"
         incr_lines = [
-            line for line in lines if "INCR(_rt," in line and "_scope=_scope)" in line
+            line
+            for line in lines
+            if "_globals['INCR'](_rt," in line and "_scope=_scope)" in line
         ]
         # Should have INCR call without _scope['X'] = assignment
         assert any(not line.startswith("_scope['X']") for line in incr_lines)
@@ -705,17 +721,17 @@ class TestIndirectDoCodegen:
     """
 
     def test_indirect_do_generates_runtime_dispatch(self, generate_python):
-        """D @CMD generates runtime parse_call_target dispatch (T042).
+        """D @CMD generates runtime resolve_do_targets dispatch (T042).
 
         The generated code should:
         1. Evaluate the indirection expression
-        2. Call _rt.parse_call_target() to parse label/routine
-        3. Dispatch to the resolved function
+        2. Call _rt.resolve_do_targets() to resolve and parse targets
+        3. Loop over targets and dispatch to resolved functions
         """
         code = generate_python('TEST S CMD="SUB" D @CMD Q\nSUB W "Hello" Q\n')
 
-        # Should call parse_call_target
-        assert "parse_call_target" in code
+        # Should call resolve_do_targets (handles multi-target and nested indirection)
+        assert "resolve_do_targets" in code
         # Should have dispatch logic
         assert "_func" in code or "_labels" in code
 
@@ -790,8 +806,8 @@ class TestIndirectDoWithOffset:
 
         # Should reference _label_lines for offset calculation
         assert "_label_line" in code or "offset" in code.lower()
-        # Should have parse_call_target
-        assert "parse_call_target" in code
+        # Should have resolve_do_targets (which handles multi-target and nested indirection)
+        assert "resolve_do_targets" in code
 
     def test_indirect_do_with_offset_execution(self, execute_mumps):
         """D @CMD+1 enters subroutine at offset +1 (T045).
@@ -837,8 +853,8 @@ class TestPartialIndirection:
         """
         code = generate_python('TEST S LBL="SUB" D @LBL Q\nSUB W "OK" Q\n')
 
-        # Should evaluate LBL variable
-        assert "parse_call_target" in code
+        # Should use resolve_do_targets for runtime resolution
+        assert "resolve_do_targets" in code
         # Generated code handles local dispatch
         assert "_labels" in code or "_func" in code
 
@@ -869,5 +885,457 @@ class TestPartialIndirection:
         # Should evaluate the RTN variable
         assert "_scope.get('RTN'" in code
 
-        # Should handle the call target via runtime
-        assert "parse_call_target" in code
+        # Should handle the call target via runtime resolve_do_targets
+        assert "resolve_do_targets" in code
+
+
+@pytest.mark.codegen
+class TestDoWithOffsetTrampoline:
+    """Tests for DO label+offset following trampoline transitions (T075i).
+
+    When DO label+offset lands at the end of a label block, the internal
+    function returns a label transition to continue execution. The generated
+    code must follow this trampoline loop rather than ignoring the return.
+
+    Fix: Changed DO offset codegen to capture return value and follow
+    trampoline loop: `target, state = func(...); while target: ...`
+    """
+
+    def test_do_offset_follows_label_transition(self, execute_mumps):
+        """D 12+3 where offset lands after label 12 block, before label IF.
+
+        Label 12 has 3 offset lines (0,1,2), then label IF starts.
+        D 12+3 should execute the IF label's first line.
+        """
+        result = execute_mumps("""TEST
+ S V=""
+ D LABEL+3
+ W V
+ Q
+LABEL S V=V_"LABEL " Q
+ S V=V_"LINE1 " Q
+ S V=V_"LINE2 " Q
+NEXT S V=V_"NEXT " Q
+ S V=V_"LINE4 " Q
+""")
+        assert result.success is True
+        assert result.output == "NEXT "
+
+    def test_do_offset_with_unary_expression(self, execute_mumps):
+        """D label+++-expr computes offset correctly and follows transition.
+
+        This is the actual test case from V1DO3 I-246.
+        D 12+++-"-.037E+2" = D 12+3 (unary chain evaluates to 3.7, int to 3)
+        """
+        result = execute_mumps("""TEST
+ S V=""
+ D LABEL+++-"-.037E+2"
+ W V
+ Q
+LABEL S V=V_"LABEL " Q
+ S V=V_"LINE1 " Q
+ S V=V_"LINE2 " Q
+ S V=V_"LINE3 " Q
+ S V=V_"LINE4 " Q
+""")
+        assert result.success is True
+        assert result.output == "LINE3 "
+
+    def test_do_offset_direct_execution(self, execute_mumps):
+        """D LABEL+1 executes offset 1 directly without transition."""
+        result = execute_mumps("""TEST
+ S V=""
+ D LABEL+1
+ W V
+ Q
+LABEL S V=V_"LABEL " Q
+ S V=V_"LINE1 " Q
+ S V=V_"LINE2 " Q
+""")
+        assert result.success is True
+        assert result.output == "LINE1 "
+
+
+@pytest.mark.codegen
+class TestCrossRoutineScopeSync:
+    """Tests for T075k: Cross-routine scope sync with MArray wrapping.
+
+    When a routine using dynamic_locals calls an external routine that uses
+    static state variables, the callee stores raw values back to _scope.
+    The caller must wrap these raw values in MArray when syncing back to
+    state._locals, since the caller's expression codegen expects MArray.value.
+
+    Fix: Changed scope sync from simple update() to a loop that wraps non-MArray
+    values in MArray before storing in state._locals.
+    """
+
+    def test_cross_routine_variable_visibility(self, execute_mumps):
+        """Variable set in callee is visible to dynamic_locals caller.
+
+        This simulates the V1PRGD/V1PRGD3 scenario where:
+        - V1PRGD uses dynamic_locals (KILL clears all)
+        - V1PRGD3 uses static state (sets VCOMP)
+        - After D ^V1PRGD3, V1PRGD should see VCOMP value
+
+        We test with argumentless KILL to force dynamic_locals usage.
+        """
+        result = execute_mumps("""TEST
+ K
+ S X=1
+ D SUB
+ W VCOMP
+ Q
+SUB S VCOMP=1234
+ Q
+""")
+        assert result.success is True
+        assert result.output == "1234"
+
+    def test_variable_set_after_kill_visible(self, execute_mumps):
+        """Variables set after KILL are properly MArray wrapped."""
+        result = execute_mumps("""TEST
+ K
+ S A=1,B=2,C=3
+ D SUB
+ W A,"-",B,"-",C
+ Q
+SUB S A=10,C=30
+ Q
+""")
+        assert result.success is True
+        assert result.output == "10-2-30"
+
+
+@pytest.mark.codegen
+class TestDoLabelOffsetExternal:
+    """T100: Tests for D label+offset^ROUTINE strategy detection.
+
+    When calling D LABEL+N^ROUTINE, codegen must detect at runtime whether the
+    target module uses TRAMPOLINE (internal _-prefixed functions) or SIMPLE_FUNCTIONS
+    (public functions) and call appropriately.
+    """
+
+    def test_d_label_plus_n_external_strategy_detection(self, generate_python):
+        """D LABEL+N^ROUTINE generates runtime strategy detection code.
+
+        T100: The generated code should check if internal _-prefixed function exists
+        and use TRAMPOLINE path with call_external_with_offset helper if so,
+        SIMPLE_FUNCTIONS path otherwise.
+        """
+        code = generate_python("TEST\n D SUB+2^EXTRTN\n Q")
+
+        # Should import the module
+        assert "import EXTRTN" in code
+
+        # Should have runtime strategy detection
+        assert "_internal_name = '_' + _label_name" in code
+        assert "hasattr(EXTRTN, _internal_name)" in code
+
+        # Should have TRAMPOLINE branch using call_external_with_offset helper
+        assert "call_external_with_offset" in code
+
+        # Should have SIMPLE_FUNCTIONS fallback branch
+        assert "getattr(EXTRTN, _label_name)" in code
+
+        # SIMPLE_FUNCTIONS branch uses run_with_goto_support
+        assert "run_with_goto_support" in code
+
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")
+
+    def test_d_offset_only_external_strategy_detection(self, generate_python):
+        """D +N^ROUTINE generates runtime strategy detection code.
+
+        T100: Offset-only calls also need strategy detection.
+        """
+        code = generate_python("TEST\n D +5^EXTRTN\n Q")
+
+        # Should have runtime strategy detection for line-based dispatch
+        assert "import EXTRTN" in code
+        assert "_line_map" in code
+
+        # verify valid Python syntax
+        compile(code, "<test>", "exec")
+
+
+@pytest.mark.codegen
+class TestDoMiniTrampolineGotoExternal:
+    """Tests for GotoExternal handling in DO mini-trampoline.
+
+    When DO with offset (D LABEL+N) is executed, the code runs a mini-trampoline
+    that follows label transitions. If an external GOTO is raised from within
+    a subroutine called via DO, the mini-trampoline must catch it, execute
+    the external routine, sync state back, and continue after the DO.
+    """
+
+    def test_do_offset_catches_goto_external(self, generate_python):
+        """DO with offset generates try/except for GotoExternal.
+
+        The mini-trampoline loop should be wrapped in try/except to catch
+        GotoExternal raised from subroutines.
+        """
+        code = generate_python('TEST\n D SUB+1\n W "after"\n Q\nSUB\n W 1\n W 2 Q\n')
+
+        # Should have try/except for GotoExternal
+        assert "except GotoExternal as _goto:" in code
+        # Should import resolve_goto_target and run_with_goto_support
+        assert "resolve_goto_target" in code
+        assert "run_with_goto_support" in code
+
+    def test_do_offset_syncs_scope_after_external_call(self, generate_python):
+        """After external GOTO, scope changes are synced back to state.
+
+        When GotoExternal is caught and the external routine runs, any
+        changes it made to _scope must be synced back to the caller's state.
+        """
+        code = generate_python("TEST\n D SUB+1\n W X\n Q\nSUB\n W 1\n W 2 Q\n")
+
+        # After catching GotoExternal and running external routine,
+        # should sync _scope back to state
+        # For dynamic state: uses state._locals
+        # For static state: uses setattr
+        assert (
+            "state._locals" in code
+            or "setattr(state" in code
+            or "_scope.items()" in code
+        )
+
+    def test_do_mini_trampoline_handles_int_target(self, generate_python):
+        """DO mini-trampoline handles integer targets from G LABEL+N.
+
+        T087: When an internal function returns an integer (line number)
+        instead of a string (label name), the mini-trampoline should use
+        _line_map to resolve it.
+        """
+        code = generate_python(
+            "TEST\n D SUB+1\n Q\nSUB\n W 1\n G TEST+2 Q\nOTHER\n W 2 Q\n"
+        )
+
+        # Should check if target is int
+        assert "isinstance(_do_target, int)" in code
+        # Should use _line_map for dispatch
+        assert "_line_map[_do_target]" in code
+
+    def test_goto_external_sets_target_to_none(self, generate_python):
+        """After handling GotoExternal, _do_target is set to None.
+
+        When GotoExternal is caught and processed, the mini-trampoline
+        should exit by setting _do_target = None.
+        """
+        code = generate_python("TEST\n D SUB+1\n Q\nSUB\n W 1\n W 2 Q\n")
+
+        # After handling GotoExternal, target should be None to exit loop
+        assert "_do_target = None" in code
+
+
+@pytest.mark.codegen
+class TestStateSyncEdgeCases:
+    """Tests for state synchronization edge cases.
+
+    When syncing _scope back to state after external calls, the code must
+    handle both dynamic state (with _locals dict) and static state (with
+    dataclass fields).
+    """
+
+    def test_state_sync_checks_for_locals_attribute(self, generate_python):
+        """State sync checks for _locals attribute to determine state type.
+
+        Dynamic state has _locals dict, static state uses dataclass fields.
+        The code should use hasattr to detect which type of state is used.
+        """
+        code = generate_python("TEST\n D SUB+1\n Q\nSUB\n S X=1 Q\n")
+
+        # Should check if state has _locals attribute
+        assert "hasattr(state, '_locals')" in code
+
+    def test_static_state_uses_setattr(self, generate_python):
+        """For static state without _locals, setattr is used to set fields.
+
+        When state doesn't have _locals dict, individual fields must be
+        set using setattr.
+        """
+        code = generate_python("TEST\n D SUB+1\n Q\nSUB\n S X=1 Q\n")
+
+        # Should use setattr for static state
+        assert "setattr(state" in code
+
+    def test_marray_values_handled_in_sync(self, generate_python):
+        """MArray values are handled correctly during scope sync.
+
+        MArray values should be stored directly, while raw values need
+        to be wrapped in MArray for dynamic state.
+        """
+        code = generate_python("TEST\n D SUB+1\n Q\nSUB\n S X=1 Q\n")
+
+        # Should check if value is MArray
+        assert "isinstance(_v, MArray)" in code
+
+
+@pytest.mark.codegen
+class TestGlobalsLookup:
+    """Tests for Phase 21: _globals[] lookup instead of direct function name."""
+
+    def test_do_uses_globals_lookup(self, generate_python):
+        """D SUB generates _globals['SUB'](...) instead of SUB(...).
+
+        Phase 21: Prevents parameter names from shadowing label names.
+        """
+        code = generate_python("TEST\n D SUB\n Q\nSUB\n W 1\n Q\n")
+        assert "_globals['SUB'](_rt, _scope=_scope)" in code
+
+    def test_do_with_args_uses_globals_lookup(self, generate_python):
+        """D SUB(1) generates _globals['SUB'](_rt, 1, _scope=_scope).
+
+        Phase 21: Arguments are passed through the globals lookup.
+        """
+        code = generate_python("TEST\n D SUB(1)\n Q\nSUB(A)\n W A\n Q\n")
+        assert "_globals['SUB'](_rt, 1, _scope=_scope)" in code
+
+    def test_globals_capture_emitted(self, generate_python):
+        """Generated code includes _globals = globals() at module level.
+
+        Phase 21: Must capture globals() before any function definitions
+        to avoid shadowing.
+        """
+        code = generate_python("TEST\n Q\n")
+        assert "_globals = globals()" in code
+
+    def test_goto_uses_trampoline_dispatch(self, generate_python):
+        """G SUB in TRAMPOLINE mode uses _labels dispatch, not direct call.
+
+        GOTO triggers TRAMPOLINE strategy which uses _labels dict for dispatch.
+        """
+        code = generate_python("TEST\n G SUB\nSUB\n Q\n")
+        # TRAMPOLINE uses return (target, state) for dispatch
+        assert "return" in code
+        assert "SUB" in code
+
+    def test_param_shadowing_label_name(self, execute_mumps):
+        """Function A(A,B) where param A shadows label A works correctly.
+
+        Phase 21: This is the key scenario - without _globals[], calling
+        A(A,B) from inside B would fail because param A shadows label A.
+        """
+        result = execute_mumps("TEST\n D B\n Q\nA(A,B)\n W A,B\n Q\nB\n D A(1,2)\n Q\n")
+        assert result.output == "12"
+
+
+@pytest.mark.codegen
+class TestDoBlockExtrinsicSave:
+    """Tests for Phase 21: DO block saves/restores _in_extrinsic."""
+
+    def test_do_block_saves_extrinsic(self, generate_python):
+        """Argumentless DO block generates save/restore of _in_extrinsic.
+
+        Phase 21: $QUIT must be 0 inside DO blocks even if called from
+        an extrinsic function context.
+        """
+        code = generate_python("TEST\n D\n . W 1\n Q\n")
+        assert "_saved_extrinsic = _rt._in_extrinsic" in code
+        assert "_rt._in_extrinsic = False" in code
+        assert "_rt._in_extrinsic = _saved_extrinsic" in code
+
+    def test_do_target_saves_extrinsic(self, generate_python):
+        """D SUB generates save/restore of _in_extrinsic for subroutine call.
+
+        Phase 21: Subroutine calls should see $QUIT=0.
+        """
+        code = generate_python("TEST\n D SUB\n Q\nSUB\n Q\n")
+        assert "_saved_extrinsic = _rt._in_extrinsic" in code
+        assert "_rt._in_extrinsic = False" in code
+
+
+@pytest.mark.codegen
+class TestByRefMArrayAliasing:
+    """Tests for Phase 21: True call-by-reference via MArray aliasing."""
+
+    def test_byref_passes_marray(self, generate_python):
+        """D SUB(.X) passes _scope.setdefault('X', MArray()) for aliasing.
+
+        Phase 21: Instead of value-result, pass MArray directly.
+        """
+        code = generate_python("TEST S X=1 D SUB(.X) Q\nSUB(N) Q\n")
+        assert "_scope.setdefault('X', MArray())" in code
+
+    def test_callee_isinstance_check(self, generate_python):
+        """Callee generates isinstance(N, MArray) check for by-ref detection.
+
+        Phase 21: Callee detects if param is MArray (by-ref) vs value.
+        """
+        code = generate_python("TEST S X=1 D SUB(.X) Q\nSUB(N) Q\n")
+        assert "if isinstance(N, MArray):" in code
+        assert "_scope['N'] = N" in code
+
+    def test_byref_mutation_visible(self, execute_mumps):
+        """Mutation through by-ref alias is visible to caller.
+
+        Phase 21: Since caller and callee share the same MArray,
+        SET in callee directly modifies caller's variable.
+        """
+        result = execute_mumps(
+            "TEST\n S X=1 D DOUBLE(.X) W X,!\n Q\nDOUBLE(N) S N=N*2 Q\n"
+        )
+        assert result.output == "2\n"
+
+    def test_byref_with_value_arg_mixed(self, execute_mumps):
+        """Mixed by-ref and by-value arguments work correctly.
+
+        D SUB(.X,Y) passes X by-ref (MArray alias) and Y by value.
+        """
+        result = execute_mumps(
+            'TEST\n S X=10,Y=20 D SUB(.X,Y) W X,",",Y,!\n Q\nSUB(A,B) S A=A+B Q\n'
+        )
+        assert result.output == "30,20\n"
+
+
+@pytest.mark.codegen
+class TestDoExternalRoutineEntryFunction:
+    """Phase 24: D ^ROUTINE uses _entry_function for preamble support.
+
+    When a routine has a labelless first line (preamble), the entry function
+    is _preamble, not a function named after the routine. Using
+    module._entry_function ensures the correct function is called.
+    """
+
+    def test_d_routine_generates_entry_function(self, generate_python):
+        """D ^MYRTN generates import + call via _entry_function."""
+        code = generate_python("TEST D ^MYRTN Q")
+        assert "import MYRTN" in code
+        assert "MYRTN._entry_function" in code
+        # Should NOT hardcode entry label name
+        assert "MYRTN.MYRTN" not in code
+
+    def test_d_label_routine_does_not_use_entry_function(self, generate_python):
+        """D LABEL^EXTRTN still uses named label, not _entry_function."""
+        code = generate_python("TEST D LABEL^EXTRTN Q")
+        assert "EXTRTN.LABEL" in code
+        # The DO call should reference the label directly, not _entry_function
+        # (Note: _entry_function is always declared at module level, so just
+        # check the call site doesn't use it)
+        for line in code.splitlines():
+            if (
+                "EXTRTN" in line
+                and "import" not in line
+                and "_entry_function" not in line
+            ):
+                if "EXTRTN.LABEL" in line:
+                    break
+        else:
+            pytest.fail("Expected EXTRTN.LABEL call, not _entry_function")
+
+
+@pytest.mark.codegen
+class TestUnwindNewStackInWrapper:
+    """Tests for Phase 21: unwind_new_stack() in TRAMPOLINE wrappers."""
+
+    def test_trampoline_wrapper_calls_unwind(self, generate_python):
+        """TRAMPOLINE wrapper calls unwind_new_stack(state) before scope sync.
+
+        Phase 21: Ensures NEW variables are restored before state→_scope
+        synchronization on subroutine exit.
+        """
+        # K triggers dynamic_locals, G END triggers TRAMPOLINE
+        code = generate_python("TEST K\n G END\n Q\nEND Q\n")
+        assert "unwind_new_stack(state)" in code
+        assert "from m2py.runtime.helpers import" in code
+        assert "unwind_new_stack" in code

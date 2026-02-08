@@ -68,15 +68,17 @@ class TestExtendedGlobalsCodegen:
         with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
             generate_python(code)
 
-    def test_extended_global_bracket_raises_not_implemented(self, generate_python):
-        """Extended global with bracket syntax raises NotImplementedError.
+    def test_extended_global_bracket_set_supported(self, generate_python):
+        """Extended global with bracket syntax is now supported.
 
-        The ^["env"]X syntax is an alternative way to select a global
-        from a specific environment. This is a YDB extension.
+        The ^["env"]X syntax selects a global from a specific environment.
+        For m2py, the environment is ignored and the global is accessed normally.
         """
         code = 'TEST\n S ^["env"]X=1\n Q\n'
-        with pytest.raises(NotImplementedError, match="ExtendedGlobalBracket"):
-            generate_python(code)
+        # Should not raise - environment is ignored, treated as regular global
+        result = generate_python(code)
+        # Uses m_str() to format values in MUMPS canonical form
+        assert "_rt.globals.set('X', (), m_str(1))" in result
 
     def test_extended_global_pipe_with_subscripts_raises_not_implemented(
         self, generate_python
@@ -86,13 +88,14 @@ class TestExtendedGlobalsCodegen:
         with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
             generate_python(code)
 
-    def test_extended_global_bracket_with_subscripts_raises_not_implemented(
-        self, generate_python
-    ):
-        """Extended global bracket with subscripts raises NotImplementedError."""
+    def test_extended_global_bracket_with_subscripts_supported(self, generate_python):
+        """Extended global bracket with subscripts is now supported.
+
+        For m2py, the environment is ignored and the global is accessed normally.
+        """
         code = 'TEST\n S ^["env"]X(1,2)=1\n Q\n'
-        with pytest.raises(NotImplementedError, match="ExtendedGlobalBracket"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.globals.set('X'," in result
 
     def test_extended_global_in_expression_raises_not_implemented(
         self, generate_python
@@ -267,3 +270,218 @@ class TestSubscriptedLocalsEdgeCases:
         """Set value at root and at deep subscript level."""
         result = execute_mumps('TEST S X="root" S X(1,2,3)="deep" W X,"-",X(1,2,3) Q')
         assert result.output == "root-deep"
+
+
+@pytest.mark.codegen
+class TestMGlobalAsExpression:
+    """Tests for MGlobal appearing directly as expression (not GlobalVariable).
+
+    Fix: Changed generate_expr to check MGlobal before GlobalVariable since
+    GlobalVariable inherits from MGlobal, and MGlobal can appear in contexts
+    like GOTO offsets.
+    """
+
+    def test_global_in_do_offset(self, execute_mumps):
+        """D L+^G uses global value as offset (MGlobal in expression)."""
+        # Set global to 1, then DO should jump to L1+1 which writes "LINE2"
+        result = execute_mumps("""TEST
+ S ^G=1
+ D L1+^G
+ Q
+L1 W "LINE1" Q
+ W "LINE2" Q
+""")
+        assert result.success is True
+        assert result.output == "LINE2"
+
+    def test_global_in_arithmetic(self, execute_mumps):
+        """Arithmetic with global variable in expression."""
+        result = execute_mumps("TEST\n S ^X=5 W ^X+10\n Q\n")
+        assert result.success is True
+        assert result.output == "15"
+
+    def test_extended_global_in_expression_raises(self, generate_python):
+        """Extended global ^|env| in expression raises NotImplementedError."""
+        # Extended globals are not yet supported
+        code = 'TEST\n W ^|"ENV"|X\n Q\n'
+        with pytest.raises(NotImplementedError, match="Extended global"):
+            generate_python(code)
+
+
+# =============================================================================
+# Global SET with MUMPS Canonical Number Formatting (Bug Fix)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestGlobalSetMumpsCanonicalFormat:
+    """Tests for global SET using MUMPS canonical number format.
+
+    Bug fix: Global SET was using str() which produces Python E-notation
+    for very small/large numbers. MUMPS always uses decimal notation.
+
+    Now uses m_str() to format numbers in MUMPS canonical form.
+    """
+
+    def test_small_enotation_stored_as_decimal(self, execute_mumps):
+        """Small E-notation numbers are stored in decimal form.
+
+        I-623.2 from MUGJ V1MAX: -999999999E-25 should be stored as
+        -.0000000000000000999999999 (not -9.99999999E-17).
+        """
+        result = execute_mumps("TEST S ^V=-999999999E-25 W ^V Q")
+        # MUMPS canonical form - no E-notation
+        assert result.output == "-.0000000000000000999999999"
+
+    def test_positive_small_enotation(self, execute_mumps):
+        """Positive small E-notation numbers stored in decimal form."""
+        result = execute_mumps("TEST S ^V=999999999E-25 W ^V Q")
+        assert result.output == ".0000000000000000999999999"
+
+    def test_large_enotation_stored_as_integer(self, execute_mumps):
+        """Large E-notation numbers are stored as expanded integers.
+
+        -.999999999E25 should be stored as -9999999990000000000000000
+        """
+        result = execute_mumps("TEST S ^V=-.999999999E25 W ^V Q")
+        assert result.output == "-9999999990000000000000000"
+
+    def test_global_with_multiple_enotation_values(self, execute_mumps):
+        """Multiple E-notation values in subscripted globals.
+
+        I-623.2: Full test from MUGJ V1MAX with multiple subscripts.
+        """
+        code = (
+            "TEST S ^V1=-.999999999E25,^V1(1)=-999999999E-25,"
+            '^V1(2)=999999999E-25,^V1(3)=+".999999999E25",'
+            '^V1(4)="-.999999999E25" '
+            'W ^V1," ",^V1(1)," ",^V1(2)," ",^V1(3)," ",+^V1(4) Q'
+        )
+        result = execute_mumps(code)
+        expected = (
+            "-9999999990000000000000000 "
+            "-.0000000000000000999999999 "
+            ".0000000000000000999999999 "
+            "9999999990000000000000000 "
+            "-9999999990000000000000000"
+        )
+        assert result.output == expected
+
+    def test_enotation_in_naked_global_set(self, execute_mumps):
+        """E-notation with naked global reference uses canonical format."""
+        result = execute_mumps('TEST S ^G(1)=1E-10 S ^(2)=2E-10 W ^G(1)," ",^G(2) Q')
+        assert result.output == ".0000000001 .0000000002"
+
+    def test_regular_numbers_unchanged(self, execute_mumps):
+        """Regular numbers are stored normally (regression test)."""
+        result = execute_mumps('TEST S ^A=123,^B=3.14,^C="hello" W ^A," ",^B," ",^C Q')
+        assert result.output == "123 3.14 hello"
+
+
+# =============================================================================
+# Tests for contains_naked_global helper function
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestContainsNakedGlobal:
+    """Tests for the contains_naked_global() helper function.
+
+    This helper is used to detect if an expression tree contains naked
+    global references, which affects evaluation order in SET statements.
+    """
+
+    def test_naked_global_detected(self):
+        """NakedGlobal is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+        assert contains_naked_global(naked) is True
+
+    def test_local_variable_not_detected(self):
+        """LocalVariable does not contain naked global."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.asg.expressions import MVariable
+
+        local = MVariable(name="X", subscripts=[])
+        assert contains_naked_global(local) is False
+
+    def test_global_variable_not_detected(self):
+        """GlobalVariable does not contain naked global."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.asg.expressions import MGlobal
+
+        glob = MGlobal(name="G", subscripts=[])
+        assert contains_naked_global(glob) is False
+
+    def test_nested_naked_in_subscript(self):
+        """Naked global nested in subscript is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+        from m2py.asg.expressions import MVariable
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+
+        local = MVariable(name="X", subscripts=[naked])
+        assert contains_naked_global(local) is True
+
+    def test_binary_expr_with_naked(self):
+        """Binary expression containing naked global is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+        from m2py.asg.expressions import MBinaryOp, MLiteral
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+
+        binary = MBinaryOp(
+            left=MLiteral(value=1),
+            operator="+",
+            right=naked,
+        )
+        assert contains_naked_global(binary) is True
+
+    def test_function_call_with_naked_arg(self):
+        """Function call with naked global argument is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+        from m2py.asg.expressions import MIntrinsicFunction
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+
+        func = MIntrinsicFunction(name="LENGTH", arguments=[naked])
+        assert contains_naked_global(func) is True
+
+    def test_deeply_nested_naked(self):
+        """Deeply nested naked global is detected."""
+        from m2py.codegen.expressions import contains_naked_global
+        from m2py.parser.textx_classes import NakedGlobal
+        from m2py.asg.expressions import MBinaryOp, MVariable, MLiteral
+
+        naked = NakedGlobal()
+        naked.subscripts = []
+
+        # Build: 1 + X(^(1)) where ^(1) is naked
+        local_with_naked = MVariable(name="X", subscripts=[naked])
+        binary = MBinaryOp(
+            left=MLiteral(value=1),
+            operator="+",
+            right=local_with_naked,
+        )
+        assert contains_naked_global(binary) is True
+
+    def test_none_input(self):
+        """None input returns False."""
+        from m2py.codegen.expressions import contains_naked_global
+
+        assert contains_naked_global(None) is False
+
+    def test_string_input(self):
+        """String input returns False."""
+        from m2py.codegen.expressions import contains_naked_global
+
+        assert contains_naked_global("some string") is False

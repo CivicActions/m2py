@@ -34,7 +34,9 @@ class TestExternalDORoutineCall:
         assert "import ext2" in code
         # T029: External DO calls pass _rt and _scope for cross-routine variable visibility
         # Phase 13 (T079): _rt is now passed as first parameter
-        assert "ext2.ext2(_rt, _scope=_scope)" in code
+        # T075e: External DO calls use run_with_goto_support to handle external GOTOs
+        # Phase 24: D ^ROUTINE now uses _entry_function attr for preamble support
+        assert "run_with_goto_support(ext2._entry_function, _rt, _scope)" in code
 
     def test_d_routine_entry_label(self, external_fixtures_path):
         """D ^ext2 should call ext2's entry label and return."""
@@ -140,7 +142,8 @@ class TestExternalDOLabelCall:
         assert "import ext2" in code
         # T029: External DO calls pass _rt and _scope for cross-routine variable visibility
         # Phase 13 (T079): _rt is now passed as first parameter
-        assert "ext2.HELPER(_rt, _scope=_scope)" in code
+        # T075e: External DO calls use run_with_goto_support to handle external GOTOs
+        assert "run_with_goto_support(ext2.HELPER, _rt, _scope)" in code
 
     def test_d_label_routine_calls_label(self, external_fixtures_path):
         """D HELPER^ext2 should call the HELPER label (not entry label)."""
@@ -351,9 +354,9 @@ class TestCrossRoutineVariableVisibility:
  Q
 """
         code = generate_python(source)
-        # Entry function should have _rt and _scope=None parameter (with **_kwargs for flexibility)
+        # Entry function should have _rt and _scope=None parameter (with _start_offset=0 for flexibility)
         # Phase 13 (T076): _rt is now first parameter
-        assert "def ext1(_rt, _scope=None, **_kwargs):" in code
+        assert "def ext1(_rt, _scope=None, _start_offset=0):" in code
         # Should initialize _scope if not provided
         assert "_scope = _scope if _scope is not None else {}" in code
 
@@ -364,9 +367,11 @@ class TestCrossRoutineVariableVisibility:
  Q
 """
         code = generate_python(source)
-        # External call should pass _rt and _scope as keyword argument
+        # External call should pass _rt and _scope
         # Phase 13 (T079): _rt is now passed as first parameter
-        assert "ext2.ext2(_rt, _scope=_scope)" in code
+        # T075e: External DO calls use run_with_goto_support to handle external GOTOs
+        # Phase 24: D ^ROUTINE now uses _entry_function attr for preamble support
+        assert "run_with_goto_support(ext2._entry_function, _rt, _scope)" in code
 
     def test_scope_infrastructure_works(self, external_fixtures_path):
         """T032: _scope passes through external calls (infrastructure test).
@@ -1242,6 +1247,82 @@ CHECKSCOPE()
                 sys.path.remove(tmpdir)
                 if "ext2" in sys.modules:
                     del sys.modules["ext2"]
+
+
+class TestFormalParameterScope:
+    """Test Spec 017: Formal parameters are implicitly NEWed per MUMPS spec.
+
+    MUMPS formal parameters must be implicitly NEWed, meaning:
+    1. The caller's value is saved before the function call
+    2. The callee gets a fresh local copy
+    3. When the callee returns, the caller's value is restored
+
+    This prevents callee modifications to formal parameters from
+    affecting the caller's variables with the same name.
+    """
+
+    def test_formal_param_does_not_affect_caller(self):
+        """Formal parameter with same name as caller variable doesn't affect caller.
+
+        Spec 017: When fn1(i) is called from a function where i=1, the caller's
+        i should remain 1 after fn1 returns, even though fn1 also uses 'i' as
+        a formal parameter.
+        """
+        source = """TEST
+ s result=$$test(1,6)
+ w "result=",result,!
+ q
+test(i,j)
+ s da=$$fn1(i),db=$$fn1(j)
+ q da_"_"_db_"_"_i_"_"_j
+fn1(i)
+ q i*10
+"""
+        code = generate_python(source)
+        namespace = {}
+        exec(code, namespace)
+
+        runtime = namespace["MUMPSRuntime"]()
+        namespace["TEST"](runtime)
+
+        # da=fn1(1)=10, db=fn1(6)=60, i should still be 1, j should still be 6
+        output = runtime.get_output()
+        assert "result=10_60_1_6" in output
+
+    def test_multiple_nested_calls_preserve_scope(self):
+        """Multiple levels of function calls preserve parameter scope.
+
+        Spec 017: Each level of function call should properly save/restore
+        the caller's formal parameter values.
+        """
+        source = """TEST
+ s x=$$outer(5)
+ w "result=",x,!
+ q
+outer(n)
+ w "outer n=",n,!
+ s y=$$inner(n*2)
+ w "outer n after inner=",n,!
+ q y
+inner(n)
+ w "inner n=",n,!
+ q n+1
+"""
+        code = generate_python(source)
+        namespace = {}
+        exec(code, namespace)
+
+        runtime = namespace["MUMPSRuntime"]()
+        namespace["TEST"](runtime)
+
+        output = runtime.get_output()
+        # outer(5): n=5, calls inner(10)
+        # inner(10): n=10, returns 11
+        # outer: n should still be 5, returns 11
+        assert "outer n=5" in output
+        assert "inner n=10" in output
+        assert "outer n after inner=5" in output
+        assert "result=11" in output
 
 
 class TestCircularRoutineCalls:

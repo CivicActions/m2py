@@ -3,10 +3,10 @@
 Tests for:
 - T007: MUMPSRuntime.get_var()
 - T008: MUMPSRuntime.set_var()
-- T009: MUMPSRuntime.resolve_indirection()
 - T010: MUMPSRuntime.parse_call_target()
 - T011: MUMPSRuntime.execute_mumps()
 - T012: _is_valid_varname() helper
+- T040: MUMPSRuntime.set_indirected() (unified API)
 
 These are foundational runtime methods that all indirection/XECUTE features depend on.
 """
@@ -83,66 +83,6 @@ class TestIsValidVarname:
         assert _is_valid_varname("VAR$") is False
         assert _is_valid_varname("VAR@") is False
         assert _is_valid_varname("VAR-1") is False
-
-
-# =============================================================================
-# T065: get_indirection_source() Tests - Edge Case Error Handling
-# =============================================================================
-
-
-class TestGetIndirectionSource:
-    """Tests for MUMPSRuntime.get_indirection_source() method.
-
-    T065: This method provides better error messages when the source
-    variable for indirection is undefined.
-    """
-
-    @pytest.fixture
-    def rt(self):
-        """Create fresh runtime instance for each test."""
-        return MUMPSRuntime()
-
-    def test_defined_variable_returns_value(self, rt):
-        """Get indirection source for defined variable returns its value."""
-        arr = MArray()
-        arr.value = "TARGET"
-        scope = {"X": arr}
-        result = rt.get_indirection_source("X", scope)
-        assert result == "TARGET"
-
-    def test_undefined_variable_raises_error(self, rt):
-        """Undefined source variable raises IndirectionError with clear message."""
-        scope = {}
-        with pytest.raises(IndirectionError) as exc_info:
-            rt.get_indirection_source("UNDEF", scope)
-        assert "Undefined local variable" in str(exc_info.value)
-        assert "UNDEF" in str(exc_info.value)
-
-    def test_undefined_variable_error_reason(self, rt):
-        """IndirectionError has the error message as reason field."""
-        scope = {}
-        with pytest.raises(IndirectionError) as exc_info:
-            rt.get_indirection_source("NOTSET", scope)
-        # The reason field contains the full error message
-        assert "Undefined local variable" in exc_info.value.reason
-        assert "NOTSET" in exc_info.value.reason
-
-    def test_empty_value_returns_empty_string(self, rt):
-        """Variable with empty value returns empty string."""
-        arr = MArray()
-        arr.value = ""
-        scope = {"X": arr}
-        result = rt.get_indirection_source("X", scope)
-        assert result == ""
-
-    def test_numeric_value_converted_to_string(self, rt):
-        """Numeric values are returned as strings for use in indirection."""
-        arr = MArray()
-        arr.value = 123
-        scope = {"X": arr}
-        result = rt.get_indirection_source("X", scope)
-        # Value is converted to string for use as variable name
-        assert result == "123"
 
 
 # =============================================================================
@@ -305,76 +245,6 @@ class TestSetVar:
 
 
 # =============================================================================
-# T009: resolve_indirection() Tests
-# =============================================================================
-
-
-class TestResolveIndirection:
-    """Tests for MUMPSRuntime.resolve_indirection() method."""
-
-    @pytest.fixture
-    def rt(self):
-        """Create fresh runtime instance for each test."""
-        return MUMPSRuntime()
-
-    def test_single_level_indirection(self, rt):
-        """Single level @X: If X="VAR", returns value of VAR.
-
-        In MUMPS, @X where X contains a variable name "VAR" evaluates
-        to the value of VAR. This is one level of indirection.
-        """
-        # A="B" means @A should look up "B", which is 42
-        scope = {"A": "B", "B": 42, "C": "hello"}
-
-        assert rt.resolve_indirection("A", 1, scope) == 42
-        # C="hello" means @C looks up "hello" - which doesn't exist
-        with pytest.raises(IndirectionError):
-            rt.resolve_indirection("C", 1, scope)
-
-    def test_double_level_indirection(self, rt):
-        """Double level @@X: If X="VAR" and VAR="OTHER", returns value of OTHER.
-
-        In MUMPS, @@X where X contains "VAR" and VAR contains "OTHER"
-        evaluates to the value of OTHER. Two levels of dereference.
-        """
-        # A="B", B="C", so @@A -> @B -> look up "C", which is "result"
-        scope = {"A": "B", "B": "C", "C": "result"}
-
-        assert rt.resolve_indirection("A", 2, scope) == "result"
-
-    def test_triple_level_indirection(self, rt):
-        """Triple level @@@X chains three dereferences.
-
-        If X="A", A="B", B="C", and C=100, then @@@X:
-        1. Gets value of X -> "A"
-        2. Gets value of A -> "B"
-        3. Gets value of B -> "C"
-        4. Gets value of C -> 100
-        """
-        # X="A", A="B", B="C", C=100
-        # @@@X -> A -> B -> C -> get value of C = 100
-        scope = {"X": "A", "A": "B", "B": "C", "C": 100}
-
-        assert rt.resolve_indirection("X", 3, scope) == 100
-
-    def test_indirection_undefined_chain(self, rt):
-        """Undefined variable in chain raises error."""
-        scope = {"A": "UNDEF"}
-
-        with pytest.raises(IndirectionError) as exc_info:
-            rt.resolve_indirection("A", 2, scope)
-        assert "undefined variable in indirection chain" in exc_info.value.reason
-
-    def test_indirection_levels_less_than_one_raises(self, rt):
-        """Levels < 1 raises error."""
-        scope = {"A": "B"}
-
-        with pytest.raises(IndirectionError) as exc_info:
-            rt.resolve_indirection("A", 0, scope)
-        assert "levels must be >= 1" in exc_info.value.reason
-
-
-# =============================================================================
 # T010: parse_call_target() Tests
 # =============================================================================
 
@@ -461,3 +331,219 @@ class TestExecuteMumps:
 
     # Note: Full XECUTE tests require codegen integration which is Phase 4
     # Placeholder tests here verify the method exists and basic signature
+
+
+# =============================================================================
+# T075j: get_var() with naked reference strings
+# =============================================================================
+
+
+class TestGetVarNakedReferences:
+    """Tests for get_var handling naked reference strings like '^(3)'.
+
+    Bug fix T075j: When get_var receives a name like "^(3)", it should
+    interpret this as a naked reference using the current naked indicator,
+    not as a literal variable name.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create fresh runtime instance for each test."""
+        return MUMPSRuntime()
+
+    def test_naked_reference_resolved(self, rt):
+        """get_var('^(3)') resolves using current naked indicator."""
+        # Set up: ^V(3) = 42
+        rt.globals.set("V", ("3",), "42")
+        # Set naked indicator to ("V", ())
+        rt.globals._naked_indicator = ("V", ())
+
+        scope = {}
+        result = rt.get_var("^(3)", scope)
+        assert result == "42"
+
+    def test_naked_reference_with_multiple_subscripts(self, rt):
+        """get_var('^(1,2)') appends subscripts to naked indicator."""
+        # Set up: ^V(3,1,2) = "deep"
+        rt.globals.set("V", ("3", "1", "2"), "deep")
+        # Set naked indicator to ("V", ("3",))
+        rt.globals._naked_indicator = ("V", ("3",))
+
+        scope = {}
+        result = rt.get_var("^(1,2)", scope)
+        assert result == "deep"
+
+    def test_naked_reference_undefined_returns_empty(self, rt):
+        """get_var for undefined naked reference returns empty string."""
+        # Set naked indicator to ("V", ())
+        rt.globals._naked_indicator = ("V", ())
+
+        scope = {}
+        result = rt.get_var("^(99)", scope)
+        assert result == ""
+
+    def test_naked_reference_without_subscripts_raises(self, rt):
+        """get_var('^') without subscripts raises error."""
+        scope = {}
+        with pytest.raises(IndirectionError) as exc_info:
+            rt.get_var("^", scope)
+        # The error message should indicate naked reference requires subscripts
+        # or invalid variable name
+        assert (
+            "naked reference" in exc_info.value.reason.lower()
+            or "invalid" in exc_info.value.reason.lower()
+        )
+
+
+# =============================================================================
+# T075j: set_var() with naked reference strings
+# =============================================================================
+
+
+class TestSetVarNakedReferences:
+    """Tests for set_var handling naked reference strings."""
+
+    @pytest.fixture
+    def rt(self):
+        """Create fresh runtime instance for each test."""
+        return MUMPSRuntime()
+
+    def test_set_naked_reference(self, rt):
+        """set_var('^(3)', value) sets via naked indicator."""
+        # Set naked indicator to ("V", ())
+        rt.globals._naked_indicator = ("V", ())
+
+        scope = {}
+        rt.set_var("^(3)", 42, scope)
+
+        # Verify ^V(3) was set (values are stored as-is, not converted to string)
+        assert rt.globals.get("V", ("3",)) == 42
+
+    def test_set_naked_reference_deep(self, rt):
+        """set_var with naked reference appending multiple subscripts."""
+        # Set naked indicator to ("V", ("1",))
+        rt.globals._naked_indicator = ("V", ("1",))
+
+        scope = {}
+        rt.set_var("^(2,3)", "deep", scope)
+
+        # Verify ^V(1,2,3) was set
+        assert rt.globals.get("V", ("1", "2", "3")) == "deep"
+
+
+# =============================================================================
+# T040: MUMPSRuntime.set_indirected() Tests (Variable System)
+# =============================================================================
+
+
+class TestSetIndirected:
+    """Tests for MUMPSRuntime.set_indirected() unified SET method.
+
+    Feature: 018-unified-variable-system
+    Task: T040 - Create unified SET operation using IndirectionResolver
+
+    Note: Values are stored in MArray objects for generated code compatibility.
+    Tests verify the .value attribute of the MArray.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Provide fresh MUMPSRuntime instance."""
+        return MUMPSRuntime()
+
+    def test_single_level_local(self, rt):
+        """@X=5 where X="Y" sets Y="5" (string per MUMPS semantics)."""
+        scope = {"X": "Y"}
+        rt.set_indirected("X", 5, scope, levels=1)
+        assert "Y" in scope
+        # MUMPS stores values as strings, wrapped in MArray
+        assert scope["Y"].value == "5"
+
+    def test_two_level_local(self, rt):
+        """@@X=5 where X="Y", Y="Z" sets Z="5" (string per MUMPS)."""
+        scope = {"X": "Y", "Y": "Z"}
+        rt.set_indirected("X", 5, scope, levels=2)
+        assert "Z" in scope
+        assert scope["Z"].value == "5"
+
+    def test_three_level_local(self, rt):
+        """@@@X=5 where X→Y→Z→W sets W="5" (string per MUMPS)."""
+        scope = {"X": "Y", "Y": "Z", "Z": "W"}
+        rt.set_indirected("X", 5, scope, levels=3)
+        assert "W" in scope
+        assert scope["W"].value == "5"
+
+    def test_single_level_with_subscripts(self, rt):
+        """@X@(1,2)=5 where X="A" sets A(1,2)="5" (string per MUMPS)."""
+        scope = {"X": "A"}
+        rt.set_indirected("X", 5, scope, levels=1, per_level_subscripts=[[1, 2]])
+        assert "A" in scope
+        assert scope["A"][1, 2].value == "5"
+
+    def test_two_level_with_subscripts(self, rt):
+        """@@X@(1)@(2)=5 where X="A", A(1)="B" sets B(2)="5" (string per MUMPS)."""
+        scope = {"X": "A", "A": MArray()}
+        scope["A"][1].value = "B"
+        rt.set_indirected("X", 5, scope, levels=2, per_level_subscripts=[[1], [2]])
+        assert "B" in scope
+        assert scope["B"][2].value == "5"
+
+    def test_invalid_name_raises_error(self, rt):
+        """Invalid resolved name raises VarExpectedError."""
+        from m2py.core.exceptions import VarExpectedError
+
+        scope = {"X": "1+1"}  # Invalid variable name
+        with pytest.raises(VarExpectedError):
+            rt.set_indirected("X", 5, scope, levels=1)
+
+    def test_empty_name_raises_error(self, rt):
+        """Empty resolved name raises VarExpectedError."""
+        from m2py.core.exceptions import VarExpectedError
+
+        scope = {"X": ""}
+        with pytest.raises(VarExpectedError):
+            rt.set_indirected("X", 5, scope, levels=1)
+
+    def test_global_target(self, rt):
+        """@X=5 where X="^GLO" sets global as string per MUMPS."""
+        scope = {"X": "^GLO"}
+        rt.set_indirected("X", 5, scope, levels=1)
+        # Value stored in globals as string per MUMPS semantics
+        assert rt.globals.get("GLO", ()) == "5"
+
+    def test_global_target_with_subscripts(self, rt):
+        """@X@(1)=5 where X="^GLO" sets ^GLO(1)="5" (string per MUMPS)."""
+        scope = {"X": "^GLO"}
+        rt.set_indirected("X", 5, scope, levels=1, per_level_subscripts=[[1]])
+        assert rt.globals.get("GLO", ("1",)) == "5"
+
+    def test_percent_name(self, rt):
+        """@X=5 where X="%Z" sets %Z="5" (string per MUMPS)."""
+        scope = {"X": "%Z"}
+        rt.set_indirected("X", 5, scope, levels=1)
+        # %Z stored as _pct_Z in scope
+        assert "_pct_Z" in scope
+        assert scope["_pct_Z"].value == "5"
+
+    def test_zero_value_stored_as_string(self, rt):
+        """@X=0 must store "0" not 0 to preserve truthiness in WRITE.
+
+        Bug fix: Integer 0 is falsy in Python, so (0 or '') evaluates to ''.
+        But string "0" is truthy, so ("0" or '') evaluates to "0".
+        This bug caused WRITE @Y to print empty instead of "0".
+        Feature: 018-unified-variable-system
+        """
+        scope = {"X": "Y"}
+        rt.set_indirected("X", 0, scope, levels=1)
+        # Must be string "0", not int 0, wrapped in MArray
+        assert scope["Y"].value == "0"
+        assert type(scope["Y"].value) is str
+        # This is the real test - ensures (value or '') works in WRITE
+        assert (scope["Y"].value or "") == "0"
+
+    def test_empty_string_preserved(self, rt):
+        """@X="" stores empty string correctly."""
+        scope = {"X": "Y"}
+        rt.set_indirected("X", "", scope, levels=1)
+        assert scope["Y"].value == ""
+        assert type(scope["Y"].value) is str

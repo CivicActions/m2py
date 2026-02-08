@@ -28,6 +28,7 @@ from m2py.asg.expressions import (
     MLiteral,
     MVariable,
     MGlobal,
+    MNakedGlobal,
     MIntrinsicFunction,
     MExtrinsicFunction,
     MExternalFunction,
@@ -228,6 +229,13 @@ class SemanticAnalyzer:
 
         elif isinstance(expr, MGlobal):
             self._track_global(expr.name, expr)
+            new_subscripts = []
+            for sub in expr.subscripts:
+                new_subscripts.append(self.analyze(sub, expr))
+            object.__setattr__(expr, "subscripts", new_subscripts)
+
+        elif isinstance(expr, MNakedGlobal):
+            # Naked globals have subscripts but no name - analyze subscripts
             new_subscripts = []
             for sub in expr.subscripts:
                 new_subscripts.append(self.analyze(sub, expr))
@@ -580,6 +588,10 @@ class SemanticAnalyzer:
     # OffsetUnaryExpr has the same structure as UnaryExpr
     _analyze_OffsetUnaryExpr = _analyze_UnaryExpr
 
+    # UnaryPrefixedExpr has the same structure as UnaryExpr (but requires at least one operator)
+    # Used in Indirection for patterns like @''10 (NOT NOT 10)
+    _analyze_UnaryPrefixedExpr = _analyze_UnaryExpr
+
     def _analyze_SubscriptedGlobal(self, model: Any, parent: Any) -> MGlobal:
         """Convert SubscriptedGlobal textX object to MGlobal ASG node.
 
@@ -765,7 +777,11 @@ class SemanticAnalyzer:
     # =========================================================================
 
     def _analyze_SetCommand(self, cmd: Any, parent: Any) -> MSetStatement:
-        """Analyze SET command into MSetStatement."""
+        """Analyze SET command into MSetStatement.
+
+        Spec 017: Maintains ordered_items list for correct left-to-right evaluation
+        of SET arguments including interleaved argument indirections.
+        """
         stmt = MSetStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -782,6 +798,8 @@ class SemanticAnalyzer:
 
                     indir.indirection_type = IndirectionType.ARGUMENT
                     stmt.argument_indirections.append(indir)
+                    # Track in ordered_items for left-to-right evaluation
+                    stmt.ordered_items.append(indir)
                 # Handle regular assignments with targets
                 elif hasattr(assign, "targets") and assign.targets:
                     targets = assign.targets
@@ -801,6 +819,8 @@ class SemanticAnalyzer:
                             if hasattr(t, "name"):
                                 self._track_variable(t.name, t, is_set=True)
                             stmt.assignments.append(asg_assign)
+                            # Track in ordered_items for left-to-right evaluation
+                            stmt.ordered_items.append(asg_assign)
                     else:
                         # Single target assignment
                         asg_assign = MAssignment()
@@ -812,11 +832,20 @@ class SemanticAnalyzer:
                             asg_assign.value = self.analyze(assign.value, asg_assign)
 
                         stmt.assignments.append(asg_assign)
+                        # Track in ordered_items for left-to-right evaluation
+                        stmt.ordered_items.append(asg_assign)
 
         return stmt
 
     def _analyze_WriteCommand(self, cmd: Any, parent: Any) -> MWriteStatement:
-        """Analyze WRITE command into MWriteStatement."""
+        """Analyze WRITE command into MWriteStatement.
+
+        WRITE uses ARGUMENT indirection semantics: the indirected value is
+        evaluated as a MUMPS expression, not looked up as a variable name.
+        Example: W @A where A="1+2" outputs "3", not the value of variable "1+2".
+        """
+        from m2py.asg.enums import IndirectionType
+
         stmt = MWriteStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -824,7 +853,11 @@ class SemanticAnalyzer:
         if hasattr(cmd, "args") and cmd.args:
             for arg in cmd.args:
                 if hasattr(arg, "arg") and arg.arg:
-                    stmt.arguments.append(self.analyze(arg.arg, stmt))
+                    analyzed = self.analyze(arg.arg, stmt)
+                    # WRITE uses ARGUMENT indirection - evaluated as expression
+                    if hasattr(analyzed, "indirection_type"):
+                        analyzed.indirection_type = IndirectionType.ARGUMENT
+                    stmt.arguments.append(analyzed)
 
         return stmt
 
@@ -922,15 +955,28 @@ class SemanticAnalyzer:
 
         MUMPS allows comma-separated conditions which act as AND:
         IF cond1,cond2 is equivalent to IF cond1 IF cond2
+
+        Indirections in IF conditions are argument-level indirection, meaning
+        the resolved value is evaluated as an expression (truth value), NOT
+        used as a variable name to look up.
         """
+        from m2py.asg.enums import IndirectionType
+        from m2py.asg.expressions import MIndirection
+
         stmt = MIfStatement()
         object.__setattr__(stmt, "parent", parent)
 
         # Grammar: conditions+=Expr[/,/] (comma-separated AND conditions)
         if hasattr(cmd, "conditions") and cmd.conditions:
-            analyzed_conditions = [
-                self.analyze(c, stmt) for c in cmd.conditions if c is not None
-            ]
+            analyzed_conditions = []
+            for c in cmd.conditions:
+                if c is not None:
+                    analyzed = self.analyze(c, stmt)
+                    # Mark top-level indirections as ARGUMENT type
+                    # This means @A evaluates A's value as expression, not var lookup
+                    if isinstance(analyzed, MIndirection):
+                        analyzed.indirection_type = IndirectionType.ARGUMENT
+                    analyzed_conditions.append(analyzed)
             # Filter out any None results
             stmt.conditions = [c for c in analyzed_conditions if c is not None]
             # Convenience: also set single condition if only one
@@ -1236,25 +1282,34 @@ class SemanticAnalyzer:
         """
         expr, levels = self._analyze_indirect_chain(chain, parent)
 
-        # Wrap the innermost expression in MIndirection
-        result = MIndirection(expression=expr, indirection_type=IndirectionType.NAME)
-        object.__setattr__(result, "parent", parent)
+        # expr is already fully wrapped by _analyze_indirect_chain
+        # Just set the parent and return
+        if expr is not None:
+            object.__setattr__(expr, "parent", parent)
 
-        return result
+        return expr
 
     def _analyze_indirect_chain(self, chain: Any, parent: Any) -> tuple:
         """Analyze an IndirectChain and return (expression, indirection_levels).
 
         IndirectChain can be nested: @@VAR means @(@VAR)
         Returns the innermost expression and count of @ levels.
+
+        Also preserves name_indirection_subscripts (the @(subs) syntax)
+        from each IndirectChain level. For @@B@(2), the inner chain has
+        name_subscripts=[@(2)] which must be transferred to the inner
+        MIndirection's name_indirection_subscripts field.
         """
-        levels = 1
+        # Collect all chain levels from outermost to innermost
+        chain_levels = [chain]
         current = chain
 
-        # Walk through nested indirection to count levels
+        # Walk through nested indirection to collect all levels
         while hasattr(current, "nested") and current.nested:
-            levels += 1
             current = current.nested
+            chain_levels.append(current)
+
+        levels = len(chain_levels)
 
         # Now 'current' is the innermost IndirectChain - get its expression
         # Note: 'global' is a Python keyword, so we use getattr
@@ -1262,8 +1317,16 @@ class SemanticAnalyzer:
             expr = self.analyze(current.var, parent)
         elif hasattr(current, "global") and getattr(current, "global", None):
             expr = self.analyze(getattr(current, "global"), parent)
+        elif hasattr(current, "nakedGlobal") and current.nakedGlobal:
+            # Naked global indirection: @^(subscripts)
+            # The naked global reference is evaluated then used as the variable name
+            expr = self.analyze(current.nakedGlobal, parent)
         elif hasattr(current, "expr") and current.expr:
             expr = self.analyze(current.expr, parent)
+        elif hasattr(current, "intrinsicFunc") and current.intrinsicFunc:
+            # Intrinsic function indirection: @$P(...), @$E(...), etc.
+            # The function result is evaluated then used as the variable name
+            expr = self.analyze(current.intrinsicFunc, parent)
         elif hasattr(current, "string") and current.string:
             # String literal: @"LABEL^ROUTINE"
             expr = MLiteral(
@@ -1273,10 +1336,31 @@ class SemanticAnalyzer:
         else:
             expr = None
 
-        # If there were nested levels, wrap in MIndirection objects
-        # to represent the structure: @@A becomes Indirection(Indirection(var=A))
-        for _ in range(levels - 1):
-            inner = MIndirection(expression=expr, indirection_type=IndirectionType.NAME)
+        # Wrap in MIndirection objects for each @ level (innermost first)
+        # chain_levels[-1] is innermost, [0] is outermost
+        # For @@B@(2): inner chain has name_subscripts → inner MIndirection gets them
+        for chain_level in reversed(chain_levels):
+            # Analyze name_indirection_subscripts from this chain level
+            name_ind_subs = None
+            if hasattr(chain_level, "name_subscripts") and chain_level.name_subscripts:
+                analyzed_subs = []
+                for ns in chain_level.name_subscripts:
+                    if hasattr(ns, "subscripts") and ns.subscripts:
+                        # NameIndirectionSubscripts.subscripts is a Subscripts
+                        # object with .args list of textX Expr objects
+                        subs_obj = ns.subscripts
+                        if hasattr(subs_obj, "args") and subs_obj.args:
+                            sub_list = [self.analyze(s, parent) for s in subs_obj.args]
+                            if sub_list:
+                                analyzed_subs.append(sub_list)
+                if analyzed_subs:
+                    name_ind_subs = analyzed_subs
+
+            inner = MIndirection(
+                expression=expr,
+                indirection_type=IndirectionType.NAME,
+                name_indirection_subscripts=name_ind_subs,
+            )
             expr = inner
 
         return expr, levels
@@ -1322,7 +1406,8 @@ class SemanticAnalyzer:
                     else:
                         names.append(str(v))
                 stmt.except_list = names
-        elif hasattr(cmd, "vars") and cmd.vars:
+        # Use 'if' not 'elif' — mixed NEW B,(C,B) has BOTH vars and exclusive
+        if hasattr(cmd, "vars") and cmd.vars:
             for v in cmd.vars:
                 if hasattr(v, "indirect") and v.indirect:
                     # Indirection: @A, @@B@(2), etc.
@@ -1523,7 +1608,13 @@ class SemanticAnalyzer:
         return stmt
 
     def _analyze_XecuteCommand(self, cmd: Any, parent: Any) -> MXecuteStatement:
-        """Analyze XECUTE command into MXecuteStatement."""
+        """Analyze XECUTE command into MXecuteStatement.
+
+        T075q: Capture per-argument postconditions for XECUTE.
+        X P,Q:X=10,R:X=10,S  -- Q and R only execute if X=10
+        """
+        from m2py.asg.statements import MXecuteArg
+
         stmt = MXecuteStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -1531,9 +1622,22 @@ class SemanticAnalyzer:
         if hasattr(cmd, "args") and cmd.args:
             for arg in cmd.args:
                 if hasattr(arg, "expr") and arg.expr:
-                    stmt.code_expressions.append(self.analyze(arg.expr, stmt))
+                    expr = self.analyze(arg.expr, stmt)
+                    # T075q: Capture argument postcondition
+                    postcond = None
+                    if hasattr(arg, "postcond") and arg.postcond:
+                        # Postcondition has a .condition field with the actual expression
+                        postcond = self.analyze(arg.postcond.condition, stmt)
+                    xecute_arg = MXecuteArg(expression=expr, postcondition=postcond)
+                    stmt.arguments.append(xecute_arg)
+                    # Also add to code_expressions for backwards compatibility
+                    stmt.code_expressions.append(expr)
                 else:
-                    stmt.code_expressions.append(self.analyze(arg, stmt))
+                    expr = self.analyze(arg, stmt)
+                    stmt.arguments.append(
+                        MXecuteArg(expression=expr, postcondition=None)
+                    )
+                    stmt.code_expressions.append(expr)
 
         # Check if all code expressions are constant string literals
         all_constant = True

@@ -34,6 +34,7 @@ markers = [
     "analysis: marks analysis module tests",
     "runtime: marks runtime module tests",
     "spec009: marks Spec 009 (LHS Functions & Global Variables) tests",
+    "spec017: marks Spec 017 (YDB Test Suite Failure Resolution) tests",
     "integration: marks integration tests requiring full transpilation pipeline",
     "mugj: marks mugj (MUMPS User Group Japan) test suite tests",
     "basic: marks basic test suite tests",

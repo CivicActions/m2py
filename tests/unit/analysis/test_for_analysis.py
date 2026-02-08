@@ -845,6 +845,116 @@ READER(A)
         assert for_stmt.loop_var_modified_in_body is True
 
 
+@pytest.mark.analysis
+class TestValueParamsReferenceLoopVar:
+    """Tests for value_params_reference_loop_var detection.
+
+    Feature: 017-ydb-test-failures (V1FORB/V1FORC fixes)
+
+    MUMPS FOR evaluates each VALUE parameter when it becomes current,
+    NOT upfront like Python's for...in[...]. This means:
+
+    1. Loop var reference: F I=1,I+1,3*I - I is evaluated with current value
+    2. Other var reference: F I=A,B,B,C - variables evaluated when current
+
+    If any VALUE parameter contains any variable reference, we must use
+    sequential evaluation because the variable may change during the loop.
+    """
+
+    def test_detects_simple_loop_var_reference(self):
+        """Detects when VALUE param is the loop variable itself."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # F I=1,I,3 - second param is just I
+        routine = parser.parse("TEST F I=1,I,3 W I Q\n")
+        analyze_for_loops(routine)  # Run analysis to set the flag
+
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        assert for_stmt.value_params_reference_loop_var is True
+
+    def test_detects_expression_with_loop_var(self):
+        """Detects when VALUE param expression contains loop variable."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # F I=1,I+1,3*I - second and third params reference I
+        routine = parser.parse("TEST F I=1,I+1,3*I W I Q\n")
+        analyze_for_loops(routine)  # Run analysis to set the flag
+
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        assert for_stmt.value_params_reference_loop_var is True
+
+    def test_string_literals_no_var_reference(self):
+        """VALUE params with string literals don't contain variables."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # F I="A","B","C" - string literals, no variable references
+        routine = parser.parse('TEST F I="A","B","C" W I Q\n')
+        analyze_for_loops(routine)  # Run analysis to set the flag
+
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        assert for_stmt.value_params_reference_loop_var is False
+
+    def test_numeric_values_no_var_reference(self):
+        """Numeric VALUE params don't contain variable references."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # F I=1,2,3 - numeric literals, no variable references
+        routine = parser.parse("TEST F I=1,2,3 W I Q\n")
+        analyze_for_loops(routine)  # Run analysis to set the flag
+
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        assert for_stmt.value_params_reference_loop_var is False
+
+    def test_mixed_params_with_loop_var(self):
+        """Mixed params where only some reference loop var."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # F I=1,I+1,5 - second param references I
+        routine = parser.parse("TEST F I=1,I+1,5 W I Q\n")
+        analyze_for_loops(routine)  # Run analysis to set the flag
+
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        assert for_stmt.value_params_reference_loop_var is True
+
+    def test_other_variable_requires_sequential(self):
+        """Any variable reference requires sequential evaluation."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # F I=1,X,Y - X and Y are variable refs (may change during loop)
+        routine = parser.parse("TEST F I=1,X,Y W I Q\n")
+        analyze_for_loops(routine)  # Run analysis to set the flag
+
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        # Any variable reference requires sequential evaluation
+        assert for_stmt.value_params_reference_loop_var is True
+
+    def test_range_params_not_checked(self):
+        """RANGE parameters are not checked for variable references."""
+        from m2py.parser import MUMPSParser
+
+        parser = MUMPSParser()
+        # F I=1:1:10 - RANGE param, not VALUE
+        routine = parser.parse("TEST F I=1:1:10 W I Q\n")
+        analyze_for_loops(routine)  # Run analysis to set the flag
+
+        for_stmt = routine.labels[0].body.statements[0]
+        assert isinstance(for_stmt, MForStatement)
+        # RANGE params aren't VALUE params, so this is False
+        assert for_stmt.value_params_reference_loop_var is False
+
+
 class TestDetectQuitAfterFor:
     """Test QUIT detection after FOR command."""
 
@@ -872,3 +982,51 @@ class TestDetectQuitAfterFor:
         """Postconditioned QUIT still detected."""
         result = detect_quit_after_for("F I=1:1:10 W I Q:I>5")
         assert result is True
+
+
+@pytest.mark.analysis
+class TestAnalyzeQuitContextForStatements:
+    """Tests for analyze_quit_context_for_statements().
+
+    This function analyzes QUIT context for a flat list of ASG statements
+    (used by inline XECUTE code). Without this, QUIT inside FOR inside
+    XECUTE would generate raise _XecuteExit() instead of break.
+
+    Fixed suite: V3FOR (test 30305)
+    """
+
+    def test_quit_inside_for_marked_as_loop_quit(self):
+        """QUIT inside a FOR loop should have exits_for set to the FOR statement."""
+        from m2py.analysis.for_analysis import analyze_quit_context_for_statements
+
+        # Build a FOR statement with a QUIT in its body
+        for_body = MScope()
+        quit_stmt = MQuitStatement(postcondition=None, return_value=None)
+        for_body.statements = [quit_stmt]
+
+        for_stmt = MForStatement(
+            loop_var=None,
+            body=for_body,
+        )
+        for_stmt.loop_type = ForLoopType.ARGUMENTLESS
+
+        analyze_quit_context_for_statements([for_stmt])
+
+        assert quit_stmt.exits_for is for_stmt
+
+    def test_standalone_quit_not_loop_quit(self):
+        """QUIT outside any FOR should NOT have exits_for set."""
+        from m2py.analysis.for_analysis import analyze_quit_context_for_statements
+
+        quit_stmt = MQuitStatement(postcondition=None, return_value=None)
+
+        analyze_quit_context_for_statements([quit_stmt])
+
+        # Should not be marked as exiting a FOR
+        assert quit_stmt.exits_for is None
+
+    def test_empty_statement_list(self):
+        """Empty statement list should not crash."""
+        from m2py.analysis.for_analysis import analyze_quit_context_for_statements
+
+        analyze_quit_context_for_statements([])  # Should not crash

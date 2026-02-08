@@ -28,6 +28,41 @@ if TYPE_CHECKING:
     from .variables import FunctionSignature
 
 
+def _check_value_params_contain_variables(stmt: MForStatement) -> bool:
+    """Check if any VALUE parameter expression contains variable references.
+
+    MUMPS FOR evaluates each parameter when it becomes the current iteration,
+    NOT upfront like Python's `for x in [...]`. This means:
+
+    1. Loop var reference: F I=1,I+1,3*I - I is evaluated with current value
+    2. Other var reference: F I=A,B,B,C - variables evaluated when current
+
+    If any VALUE parameter contains a variable reference, we cannot use
+    Python's `for...in[...]` pattern because:
+    - The list would evaluate all values upfront
+    - But MUMPS evaluates each value when it becomes current
+    - Variables may be modified during the loop body
+
+    Args:
+        stmt: The MForStatement to check
+
+    Returns:
+        True if any VALUE parameter contains any variable reference
+    """
+    from .variables import _extract_expression_variables
+
+    # Check each VALUE parameter for any variable reference
+    for param in stmt.parameters:
+        if param.param_type == ForParamType.VALUE and param.value is not None:
+            # Extract variables referenced in this expression
+            vars_in_expr = _extract_expression_variables(param.value)
+            if vars_in_expr:
+                # Any variable reference requires sequential evaluation
+                return True
+
+    return False
+
+
 def _classify_for_loop_type(stmt: MForStatement) -> ForLoopType:
     """Classify the loop type based on FOR parameters.
 
@@ -110,6 +145,13 @@ def _analyze_fors_in_scope(
         if isinstance(stmt, MForStatement):
             # T087: Always set loop_type during analysis
             stmt.loop_type = _classify_for_loop_type(stmt)
+
+            # Check if VALUE parameters contain variable references
+            # This is needed because F I=A,B,B,C must evaluate each param
+            # when it becomes current, not upfront like Python's for...in[...]
+            stmt.value_params_reference_loop_var = (
+                _check_value_params_contain_variables(stmt)
+            )
 
             # Analyze this FOR's body for loop var modification and internal QUIT
             if stmt.body:
@@ -395,6 +437,22 @@ def analyze_quit_context(routine: MRoutine) -> None:
         _analyze_quit_context_in_scope(
             label.body, enclosing_for=None, enclosing_do_block=None
         )
+
+
+def analyze_quit_context_for_statements(statements: list) -> None:
+    """Analyze QUIT context for a flat list of ASG statements.
+
+    Used for inline XECUTE code that is parsed at codegen time and
+    doesn't go through the routine-level analysis phase. Without this,
+    QUIT inside FOR inside XECUTE would generate raise _XecuteExit()
+    instead of break.
+
+    Args:
+        statements: List of MStatement objects (already structured)
+    """
+    scope = MScope()
+    scope.statements = statements
+    _analyze_quit_context_in_scope(scope, enclosing_for=None, enclosing_do_block=None)
 
 
 def _analyze_quit_context_in_scope(

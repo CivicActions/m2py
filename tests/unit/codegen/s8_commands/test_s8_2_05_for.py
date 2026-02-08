@@ -10,10 +10,14 @@ import pytest
 class TestForCommandCodegen:
     """Codegen-level tests for FOR command code generation (§8.2.5)."""
 
-    def test_for_counted_to_range(self, generate_python):
-        """FOR counted generates Python range loop (§8.2.5)."""
+    def test_for_counted_to_while(self, generate_python):
+        """FOR counted generates Python while loop (§8.2.5).
+
+        We use while loops instead of range() to support non-integer steps.
+        MUMPS allows F I=.001:.01:1 which would fail with Python's range().
+        """
         code = generate_python("TEST\n F I=1:1:3 W I\n Q\n")
-        assert "for I in range(" in code
+        assert "while (" in code
         assert "_for_step" in code
         assert "_for_end" in code
 
@@ -147,6 +151,68 @@ class TestForCommandCodegen:
         assert result.output == "11122122"
         assert result.success is True
 
+    def test_for_nested_different_ranges(self, execute_mumps):
+        """Nested FOR with different step directions iterates correctly (Spec 017).
+
+        Spec 017 Phase 11: Before fix, nested FOR loops were using shared
+        variable names (_for_start, _for_step, _for_end) causing the inner
+        loop to clobber the outer loop's iteration state.
+
+        Given: F K=-1:1:1 F J=1:-1:-1 (outer: -1,0,1; inner: 1,0,-1)
+        When: executed
+        Then: total iterations = 3 * 3 = 9
+        """
+        result = execute_mumps(
+            "TEST\n S C=0 F K=-1:1:1 F J=1:-1:-1 S C=C+1\n W C\n Q\n"
+        )
+        assert result.output == "9"
+        assert result.success is True
+
+    def test_for_nested_unique_var_names(self, generate_python):
+        """Nested FOR generates unique variable names for each loop (Spec 017).
+
+        Spec 017 Phase 11: Each FOR loop must use unique names for its
+        iteration variables (_for_start_N, _for_step_N, _for_end_N) to
+        prevent variable collision in nested loops.
+        """
+        code = generate_python("TEST\n F I=1:1:3 F J=1:1:2 W I,J\n Q\n")
+        # Should have two different sets of loop variables (0-indexed)
+        assert "_for_start_0" in code or "_for_step_0" in code
+        assert "_for_start_1" in code or "_for_step_1" in code
+
+    def test_for_list_lazy_evaluation(self, execute_mumps):
+        """FOR list evaluates values lazily at each iteration (Spec 017).
+
+        Spec 017 Phase 11: MUMPS FOR with comma-separated values evaluates
+        each value expression at the start of its iteration, not all at once.
+
+        Given: F K="a",K_"b",K_"c" S K=K_"*"
+        When: executed
+        Then: K is "a*b*c*" (each iteration uses current K value)
+
+        Before fix, all values were pre-computed giving K="0c*" because
+        K was undefined (empty) when K_"b" and K_"c" were evaluated.
+        """
+        result = execute_mumps('TEST\n F K="a",K_"b",K_"c" S K=K_"*"\n W K\n Q\n')
+        assert result.output == "a*b*c*"
+        assert result.success is True
+
+    def test_routine_named_for_executes(self, execute_mumps):
+        """Routine named 'for' (Python keyword) executes correctly (Spec 017).
+
+        Spec 017 Phase 11: When a MUMPS routine is named with a Python keyword
+        (like 'for', 'if', 'while'), it gets translated to '_m_for', '_m_if', etc.
+        The runtime's entry point finder must recognize these as valid user functions.
+
+        Given: A routine with first label 'for' (a Python keyword)
+        When: executed
+        Then: the routine runs correctly starting at the 'for' label
+        """
+        # Use 'for' as label name - translated to _m_for internally
+        result = execute_mumps('for\n W "PASS"\n Q\n')
+        assert result.output == "PASS"
+        assert result.success is True
+
     def test_for_zero_step(self, execute_mumps):
         """FOR with zero step iterates infinitely at same value (T081).
 
@@ -157,6 +223,34 @@ class TestForCommandCodegen:
         assert result.output == "6"
         assert result.success is True
 
+    def test_for_zero_step_with_end(self, execute_mumps):
+        """FOR with zero step and end value enters if start <= end (T075).
+
+        F I=4:0:5 - zero step with start=4, end=5
+        Loop enters because 4 <= 5, but never increments (step=0)
+        Must be terminated by QUIT.
+
+        This tests the fix where step=0 bounded FOR only enters if start <= end.
+        """
+        result = execute_mumps(
+            'TEST\n S C=0\n F I=4:0:5 S C=C+1 I C>3 Q\n W C,"-",I,!\n Q\n'
+        )
+        # Loop enters 4 times (C=1,2,3,4), exits when C>3 (C=4)
+        # I stays at 4 (never increments with step=0)
+        assert result.output == "4-4\n"
+        assert result.success is True
+
+    def test_for_zero_step_with_end_empty_range(self, execute_mumps):
+        """FOR with zero step and start > end never enters (T075).
+
+        F I=6:0:5 - zero step with start=6, end=5
+        Loop never enters because 6 > 5 (even though step=0 would infinite loop).
+        """
+        result = execute_mumps("TEST\n S C=0\n F I=6:0:5 S C=C+1\n W C,!\n Q\n")
+        # Loop never enters because start > end
+        assert result.output == "0\n"
+        assert result.success is True
+
     def test_for_empty_body(self, generate_python):
         """FOR with no body compiles correctly (T082).
 
@@ -165,7 +259,7 @@ class TestForCommandCodegen:
         """
         code = generate_python("TEST\n F I=1:1:3\n Q\n")
         # Should compile without error
-        assert "for I in range(" in code
+        assert "while (" in code
         # The loop should have pass or minimal body
         assert "pass" in code or "_for_step" in code
 
@@ -197,6 +291,35 @@ class TestForCommandCodegen:
         """
         result = execute_mumps("TEST\n F I=1:1:2,3:1:4 W I\n Q\n")
         assert result.output == "1234"
+        assert result.success is True
+
+    def test_for_empty_range_sets_loop_var(self, execute_mumps):
+        """FOR with empty range (start > end for positive step) still sets loop var (Spec 017).
+
+        Spec 017: MUMPS FOR always sets the loop variable to the start value,
+        even when the loop body doesn't execute (e.g., F I=2:-1:3 never executes
+        because 2 > 3 with step -1).
+
+        Given: S K=99 F K=2:-1:3 W "loop"
+        When: executed
+        Then: K is set to 2 even though loop doesn't execute (body never runs)
+        """
+        result = execute_mumps("TEST\n S K=99\n F K=2:-1:3 W K\n W !,K\n Q\n")
+        # The loop body (W K) never executes because range is empty
+        # But K should be 2 (the start value), not 99
+        assert result.output == "\n2"
+        assert result.success is True
+
+    def test_for_empty_range_positive_step_sets_loop_var(self, execute_mumps):
+        """FOR with empty range (start > end for positive step) sets loop var (Spec 017).
+
+        Given: S K=99 F K=10:1:5 W K
+        When: executed
+        Then: K is set to 10 even though loop doesn't execute
+        """
+        result = execute_mumps("TEST\n S K=99\n F K=10:1:5 W K\n W !,K\n Q\n")
+        # Loop never executes (10 > 5), but K should be 10
+        assert result.output == "\n10"
         assert result.success is True
 
 
@@ -336,12 +459,12 @@ class TestForIndirectionCodegen:
         assert result.success is True
 
     def test_for_indirect_loop_var_codegen(self, generate_python):
-        """FOR with indirect loop variable generates correct code (T068)."""
+        """FOR with indirect loop variable generates correct code (T068, T089)."""
         code = generate_python('TEST\n S V="X" F @V=1:1:3 W X\n Q\n')
         # Should resolve indirection before loop
         assert "_for_indirect_var" in code
-        # Should use the resolved variable name
-        assert "get_indirection_source" in code
+        # Should use resolve_for_target (unified) for FOR loop indirection
+        assert "resolve_for_target" in code
 
     def test_for_subscripted_loop_variable(self, execute_mumps):
         """FOR with subscripted loop variable (§8.2.5).
@@ -365,8 +488,11 @@ class TestForIndirectionCodegen:
     def test_for_subscripted_loop_variable_codegen(self, generate_python):
         """FOR with subscripted loop variable generates .set() call (§8.2.5).
 
-        T034: Subscripted loop var should use MArray.set() not .value.
+        T034: Subscripted loop var should use MArray.set() with cached subscript.
+        Per MUMPS spec: subscripts are evaluated once at FOR loop start.
         """
         code = generate_python("TEST\n F I(1)=1:1:3 W I(1)\n Q\n")
-        # Should use .set() with subscript and value= keyword
-        assert ".set(1, value=I)" in code
+        # Should cache subscript value at start
+        assert "_for_sub_0_0 = 1" in code
+        # Should use cached subscript for .set() calls
+        assert ".set(_for_sub_0_0, value=_for_val_0)" in code

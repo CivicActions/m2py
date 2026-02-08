@@ -493,3 +493,178 @@ class TestZosfPatternCodegen:
         )
         assert result.success is True
         assert result.output == "2"
+
+
+@pytest.mark.codegen
+class TestXecuteInlineControlFlow:
+    """Tests for control flow inside inline XECUTE (T075m, T075n, T075o, T075s).
+
+    When XECUTE contains constant strings that are inlined, control flow
+    statements like QUIT, FOR, and GOTO need special handling.
+    """
+
+    def test_xecute_quit_exits_xecute_only(self, execute_mumps):
+        """QUIT inside inline XECUTE exits just the XECUTE block (T075m).
+
+        X "S X=1 Q S X=2" W X → outputs "1" (QUIT exits XECUTE, not routine)
+
+        QUIT inside XECUTE should exit just that XECUTE argument,
+        not return from the enclosing routine.
+        """
+        result = execute_mumps('TEST S X=0 X "S X=1 Q S X=2" W X,! Q')
+        # QUIT exits XECUTE, but routine continues with W X
+        assert result.output == "1\n"
+        assert result.success is True
+
+    def test_xecute_for_loop_body_works(self, execute_mumps):
+        """FOR loop inside inline XECUTE correctly handles body (T075o).
+
+        X "F I=1:1:3 W I" → outputs "123"
+
+        FOR body must be properly structured even when inlined.
+        """
+        result = execute_mumps('TEST X "F I=1:1:3 W I" W ! Q')
+        assert result.output == "123\n"
+        assert result.success is True
+
+    def test_xecute_for_with_quit(self, execute_mumps):
+        """FOR with QUIT inside inline XECUTE works correctly (T075m, T075o).
+
+        X "F I=1:1:10 W I Q:I>3" → outputs "1234"
+
+        FOR loop with postconditioned QUIT should exit the FOR but
+        continue after the XECUTE.
+        """
+        result = execute_mumps('TEST S R="" X "F I=1:1:10 S R=R_I Q:I>3" W R,! Q')
+        # FOR iterates I=1,2,3,4 then QUIT exits the FOR loop
+        assert result.output == "1234\n"
+        assert result.success is True
+
+    def test_xecute_multiple_args_quit_doesnt_skip(self, execute_mumps):
+        """QUIT in one XECUTE arg doesn't skip subsequent args (T075s).
+
+        X "S X=1 Q","S Y=1" → both X and Y are set
+
+        Each XECUTE argument has its own control flow scope.
+        QUIT in first argument should not skip second.
+        """
+        result = execute_mumps('TEST S X=0,Y=0 X "S X=1 Q","S Y=1" W X,Y,! Q')
+        # First arg sets X=1 then QUITs, second arg still runs and sets Y=1
+        assert result.output == "11\n"
+        assert result.success is True
+
+    def test_xecute_if_else_body_works(self, execute_mumps):
+        """IF/ELSE inside inline XECUTE correctly handles body (T075o).
+
+        X "I 1=1 W 1 E  W 0" → outputs "1"
+
+        IF/ELSE body must be properly structured even when inlined.
+        """
+        result = execute_mumps('TEST X "I 1=1 W 1 E  W 0" W ! Q')
+        assert result.output == "1\n"
+        assert result.success is True
+
+    def test_xecute_nested_for_if(self, execute_mumps):
+        """Nested FOR and IF inside inline XECUTE works (T075o).
+
+        X "F I=1:1:3 I I#2 W I" → outputs "13" (odd numbers only)
+        """
+        result = execute_mumps('TEST X "F I=1:1:5 I I#2 W I" W ! Q')
+        # Writes odd numbers: 1, 3, 5
+        assert result.output == "135\n"
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestXecuteWithGoto:
+    """Tests for GOTO inside inline XECUTE (T091a, T091b).
+
+    When XECUTE contains GOTO to an internal label, the GOTO should call
+    the label directly (not return a tuple), then raise _XecuteExit to
+    continue execution after the XECUTE block.
+
+    Reference: V1SEQ test cases from MUGJ test suite.
+    """
+
+    def test_xecute_goto_internal_label_trampoline(self, generate_python):
+        """T091a: XECUTE'd GOTO to internal label in TRAMPOLINE mode.
+
+        In TRAMPOLINE mode (used for complex routines with cross-label jumps),
+        X "G LABEL" should call _LABEL(_rt, state, _scope) directly.
+
+        This test creates a routine complex enough to trigger TRAMPOLINE mode.
+        """
+        # Multi-label routine with cross-label jumps triggers TRAMPOLINE
+        code = generate_python("""TEST
+ G MID
+ Q
+MID
+ X "G END"
+ W "SKIP"
+ Q
+END
+ W "END"
+ Q
+""")
+
+        # Should have inline code block for XECUTE
+        assert "try:" in code
+        assert "_XecuteExit" in code
+
+        # In TRAMPOLINE mode, internal labels have underscore prefix
+        # The GOTO inside XECUTE should call the label function directly
+        assert "_END(_rt, state, _scope)" in code
+
+    def test_xecute_goto_exits_xecute_continues_routine(self, execute_mumps):
+        """XECUTE'd GOTO exits XECUTE block but routine continues.
+
+        Pattern from V1SEQ: FOR loop contains XECUTE with GOTO
+        XECUTE → GOTO LABEL → LABEL does something → QUIT
+        After XECUTE exits, FOR continues to next iteration.
+
+        X "G END" should go to END, run its code, then return to after XECUTE.
+        """
+        # Simple case: XECUTE with GOTO, then WRITE after XECUTE
+        result = execute_mumps('TEST X "G END" W "AFTER",! Q\nEND W "END" Q')
+        # END runs (writes "END"), then returns to WRITE "AFTER"
+        assert "END" in result.output
+        assert "AFTER" in result.output
+        assert result.success is True
+
+    def test_xecute_goto_in_for_loop(self, execute_mumps):
+        """FOR loop with XECUTE'd GOTO continues after each iteration.
+
+        Pattern: F I=1:1:3 X "G HELPER"
+        Each iteration XECUTEs a GOTO, which should call HELPER,
+        HELPER QUITs, and the FOR continues.
+        """
+        code = """TEST
+ S R=""
+ F I=1:1:3 X "G HELPER"
+ W R,!
+ Q
+HELPER
+ S R=R_I
+ Q
+"""
+        result = execute_mumps(code)
+        # HELPER is called 3 times with I=1,2,3
+        assert result.output == "123\n"
+        assert result.success is True
+
+    def test_xecute_multiple_args_independent_scope(self, execute_mumps):
+        """Multiple XECUTE args have independent control flow (T075s).
+
+        X "S A=1","S B=2" → Both args execute independently
+        Each argument has its own try/except for _XecuteExit.
+        """
+        code = """TEST
+ S A=0,B=0
+ X "S A=1","S B=2"
+ W A,B,!
+ Q
+"""
+        result = execute_mumps(code)
+        # Both args execute: A=1, B=2
+        assert result.output == "12\n"
+        assert result.success is True

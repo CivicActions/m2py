@@ -267,12 +267,13 @@ class TestTextWithOffsetsCodegen:
         assert result.output == "TEST W $T(+1) Q"
 
     def test_text_line_zero_returns_routine_name(self, execute_mumps):
-        """$TEXT(+0) returns the routine name.
+        """$TEXT(+0) returns the routine name preserving original case.
 
-        S A=$T(+0) returns the routine name (lowercase convention).
+        S A=$T(+0) returns the routine name as it appears in source.
+        Bug fix II-133: Previously returned lowercase, now preserves case.
         """
         result = execute_mumps("TEST W $T(+0) Q")
-        assert result.output == "test"
+        assert result.output == "TEST"
 
     def test_text_different_label(self, execute_mumps):
         """$TEXT(LABEL) retrieves source from another label in same routine.
@@ -285,16 +286,17 @@ class TestTextWithOffsetsCodegen:
     def test_text_external_routine(self, generate_python):
         """$TEXT(LABEL+N^ROUTINE) generates code for external routine access.
 
-        S A=$T(MAIN+3^OTHER) generates importlib.import_module('OTHER') for module access.
+        S A=$T(MAIN+3^OTHER) generates _get_module_safe('OTHER') for module access.
         This is a codegen test - runtime requires the module to exist.
         """
         mumps = "TEST S A=$T(MAIN+3^OTHER) Q"
         python = generate_python(mumps)
-        # Should generate get_text() with module parameter
+        # Should generate get_text() with module parameter and is_external flag
         assert "_rt.get_text(" in python
         assert 'label="MAIN"' in python
         assert "offset=3" in python
-        assert "import_module('OTHER')" in python
+        assert "_get_module_safe('OTHER')" in python
+        assert "is_external=True" in python
 
     def test_text_external_routine_label_only(self, generate_python):
         """$TEXT(LABEL^ROUTINE) without offset generates correct code."""
@@ -302,7 +304,8 @@ class TestTextWithOffsetsCodegen:
         python = generate_python(mumps)
         assert "_rt.get_text(" in python
         assert 'label="INIT"' in python
-        assert "import_module('OTHER')" in python
+        assert "_get_module_safe('OTHER')" in python
+        assert "is_external=True" in python
 
     def test_text_external_routine_offset_only(self, generate_python):
         """$TEXT(+N^ROUTINE) with offset only generates correct code."""
@@ -310,7 +313,8 @@ class TestTextWithOffsetsCodegen:
         python = generate_python(mumps)
         assert "_rt.get_text(" in python
         assert "offset=5" in python
-        assert "import_module('OTHER')" in python
+        assert "_get_module_safe('OTHER')" in python
+        assert "is_external=True" in python
 
     def test_text_with_variable_offset(self, execute_mumps):
         """$TEXT(+I) evaluates offset at runtime.
@@ -339,3 +343,32 @@ class TestTransactionSpecialVariablesCodegen:
         """
         with pytest.raises(NotImplementedError, match="TRESTART"):
             generate_python("TEST W $TRESTART Q")
+
+
+@pytest.mark.codegen
+class TestIOSpecialVariableAbbreviation:
+    """Tests for $I abbreviation of $IO special variable.
+
+    Fix: Added "I" to the list of names recognized as $IO.
+    """
+
+    def test_dollar_i_abbreviation(self, execute_mumps):
+        """$I is abbreviation for $IO (current device)."""
+        result = execute_mumps("TEST W $I Q")
+        assert result.success is True
+        # Should output something (the current device name)
+        assert result.output is not None
+
+    def test_dollar_io_full_form(self, execute_mumps):
+        """$IO returns current I/O device."""
+        result = execute_mumps("TEST W $IO Q")
+        assert result.success is True
+        assert result.output is not None
+
+    def test_dollar_i_equals_dollar_io(self, execute_mumps):
+        """$I and $IO should return the same value."""
+        result = execute_mumps('TEST W $I="0",$IO="0" Q')
+        # Default device is typically 0 or /dev/tty, both should match
+        assert result.success is True
+        # Both comparisons should be true (1) or both false (0)
+        # We just check they're equal - "11" means both true, "00" both false

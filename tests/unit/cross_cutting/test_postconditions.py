@@ -132,3 +132,52 @@ L1 Q"""
         source = 'TEST S C="1" S:C X=1 W $G(X,"none"),! Q'
         result = execute_mumps(source)
         assert result.output == "1\n"
+
+    def test_xecute_argument_postconditions(self, execute_mumps):
+        """XECUTE argument postconditions are evaluated independently (T075q).
+
+        X "code1","code2":0,"code3"  # Only code1 and code3 should execute
+
+        Per MUMPS spec 8.1.4, XECUTE supports argument-level postconditions.
+        Each argument's postcondition is evaluated independently.
+        """
+        source = 'TEST S X=0 X "S X=X+1","S X=X+10":0,"S X=X+100" W X,! Q'
+        result = execute_mumps(source)
+        # code1 runs (+1), code2 skipped (postcond=0), code3 runs (+100)
+        assert result.output == "101\n"  # X=0+1+100=101
+
+    def test_xecute_argument_postconditions_all_true(self, execute_mumps):
+        """XECUTE argument postconditions all true execute all (T075q).
+
+        X "code1":1,"code2":1  # Both should execute
+        """
+        source = 'TEST S X=0 X "S X=X+1":1,"S X=X+10":1 W X,! Q'
+        result = execute_mumps(source)
+        assert result.output == "11\n"  # X=0+1+10=11
+
+    def test_xecute_mixed_command_and_argument_postconditions(self, execute_mumps):
+        """XECUTE with both command and argument postconditions (T075r).
+
+        X:1 "code1":0,"code2":1  # Command true, code1 skipped, code2 runs
+
+        Command postcondition must be true for any execution to occur.
+        Then each argument's postcondition controls that argument.
+        """
+        source = 'TEST S X=0 X:1 "S X=X+1":0,"S X=X+10":1 W X,! Q'
+        result = execute_mumps(source)
+        # Command postcond=1 (true), so proceed
+        # code1 postcond=0 (false), skip
+        # code2 postcond=1 (true), run (+10)
+        assert result.output == "10\n"  # X=0+10=10
+
+    def test_xecute_command_postcondition_false_skips_all(self, execute_mumps):
+        """XECUTE command postcondition false skips all arguments (T075r).
+
+        X:0 "code1":1,"code2":1  # Command false, nothing executes
+
+        When command postcondition is false, entire command is skipped.
+        """
+        source = 'TEST S X=0 X:0 "S X=X+1":1,"S X=X+10":1 W X,! Q'
+        result = execute_mumps(source)
+        # Command postcond=0, nothing runs
+        assert result.output == "0\n"  # X stays 0

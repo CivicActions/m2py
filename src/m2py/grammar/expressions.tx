@@ -483,8 +483,29 @@ SpecialVariable:
 // @expr(subscripts) - indirection with direct subscripts (indirection of subscripted variable)
 // @expr@(subscripts) - name indirection: evaluate expr to get variable name, append subscripts
 // @expr@(subs1)@(subs2) - chained name indirection
+// 
+// The expr can be either:
+// - A PrimaryExpr directly (for @A, @@A, @X(1), @"string", etc.)
+// - Unary operators followed by PrimaryExpr (for @''10, @-5, @+X, etc.)
+//
+// Note: We use IndirectionExpr to handle both cases without adding an extra
+// UnaryExpr wrapper for the simple case (which would break existing code).
 Indirection:
-    '@' expr=PrimaryExpr subscripts=Subscripts? name_subscripts+=NameIndirectionSubscripts*
+    '@' expr=IndirectionExpr subscripts=Subscripts? name_subscripts+=NameIndirectionSubscripts*
+;
+
+// Expression inside indirection: supports both direct primary and unary-prefixed expressions
+// The grammar uses textX's leftmost-first matching:
+// - UnaryPrefixedExpr matches when there are unary operators
+// - PrimaryExpr matches otherwise (including nested Indirection)
+IndirectionExpr:
+    UnaryPrefixedExpr | PrimaryExpr
+;
+
+// Unary-prefixed expression (must have at least one unary operator)
+// This matches patterns like ''10, -5, +X
+UnaryPrefixedExpr:
+    operators+=UnaryOp operand=PrimaryExpr
 ;
 
 // Name indirection subscript suffix: @(subscripts)
@@ -577,10 +598,11 @@ SVARNAME:
 ;
 
 // Quoted string (handles "" or '' escaping for double and single quotes)
-// MUMPS supports both double-quoted "text" and single-quoted 'text' strings
-// Inside a string, the quote character is escaped by doubling: "" or ''
+// MUMPS only supports double-quoted "text" strings
+// Inside a string, double-quote is escaped by doubling: ""
+// Note: Single quote ' is the NOT operator, NOT a string delimiter
 STRING_VALUE:
-    /"([^"]|"")*"|'([^']|'')*'/
+    /"([^"]|"")*"/
 ;
 
 // Number (integer or decimal, allowing leading decimal like .5)

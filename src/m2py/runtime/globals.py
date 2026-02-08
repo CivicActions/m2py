@@ -15,10 +15,19 @@ until integration specs implement them.
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 # Spec 010: Import collation key and query helper for $ORDER/$QUERY
-from m2py.runtime.helpers import _mumps_collation_key, _find_next_valued_node
+from m2py.runtime.helpers import (
+    _mumps_collation_key,
+    _find_next_valued_node,
+    m_format_output,
+)
+
+# Spec 018: Use SubscriptCanonicalizer for proper subscript handling
+from m2py.core.subscripts import SubscriptCanonicalizer
 
 if TYPE_CHECKING:
     from m2py.runtime import MArray
@@ -42,12 +51,16 @@ class GlobalStorageBackend(Protocol):
         ^(1) resolves to ^G(1)
     """
 
-    def get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+    def get(
+        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
+    ) -> str | None:
         """Get value at ^NAME(subscripts).
 
         Args:
             name: Global name without caret (e.g., "PATIENT")
             subscripts: Tuple of string subscript values, may be empty
+            update_naked: If True, update the naked indicator (default).
+                If False, skip naked update (caller handled it).
 
         Returns:
             String value if defined, None if undefined
@@ -132,6 +145,19 @@ class GlobalStorageBackend(Protocol):
         """
         ...
 
+    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Pre-set naked indicator for $ORDER evaluation ordering.
+
+        Sets the naked indicator as if ^NAME(subscripts) had been accessed.
+        Used by $ORDER codegen to ensure correct naked state when the
+        direction argument contains global references that override naked.
+
+        Args:
+            name: Global name without caret
+            subscripts: Full subscript path (last element stripped per naked rules)
+        """
+        ...
+
     def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
         """Resolve naked reference ^(subscripts) to full global reference.
 
@@ -146,7 +172,13 @@ class GlobalStorageBackend(Protocol):
         """
         ...
 
-    def order(self, name: str, subscripts: tuple[str, ...], direction: int = 1) -> str:
+    def order(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        update_naked: bool = True,
+    ) -> str:
         """Return next/previous subscript at level.
 
         Spec 009 T062: Protocol stub for $ORDER function support.
@@ -155,6 +187,8 @@ class GlobalStorageBackend(Protocol):
             name: Global name without caret
             subscripts: Current subscript path (last element is starting point)
             direction: 1 for forward, -1 for backward
+            update_naked: If True, update the naked indicator (default).
+                If False, skip naked update (caller handled it).
 
         Returns:
             Next/previous subscript value at same level, or empty string if none.
@@ -173,6 +207,34 @@ class GlobalStorageBackend(Protocol):
         Returns:
             Full global reference (e.g., "^G(1,2,3)") of next node with
             a value, or empty string if none.
+        """
+        ...
+
+    def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
+        """Get subtree as MArray for MERGE source.
+
+        Spec 017 Phase 13: Protocol for MERGE global→local and global→global.
+
+        Args:
+            name: Global name without caret
+            subscripts: Path to the subtree root
+
+        Returns:
+            MArray containing the subtree, or None if undefined.
+        """
+        ...
+
+    def merge_tree(
+        self, name: str, subscripts: tuple[str, ...], source: "MArray"
+    ) -> None:
+        """Merge MArray tree into global at ^NAME(subscripts).
+
+        Spec 017 Phase 13: Protocol for MERGE local→global and global→global.
+
+        Args:
+            name: Global name without caret
+            subscripts: Path to the destination root
+            source: MArray containing the source tree to merge
         """
         ...
 
@@ -384,7 +446,11 @@ class InMemoryGlobalStorage:
     """In-memory global storage for testing and standalone execution.
 
     Spec 009 (T006-T007): Implements GlobalStorageBackend protocol using
-    MArray structures for hierarchical storage. Not thread-safe.
+    MArray structures for hierarchical storage.
+
+    Thread-safety: Lock table uses threading.Condition for concurrent JOB
+    support. Naked indicator is per-thread via threading.local(). Global
+    data operations use a threading.RLock for atomicity ($INCREMENT etc.).
 
     Spec 013: Extended with lock table, transaction support, and SSVNs.
 
@@ -398,22 +464,45 @@ class InMemoryGlobalStorage:
         """Initialize empty global storage."""
 
         self._globals: dict[str, MArray] = {}
-        self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
+        # Naked indicator is per-thread (MUMPS naked refs are per-process)
+        self._thread_local = threading.local()
 
-        # Spec 013: Lock table - maps (name, subscripts) to lock count
-        self._lock_table: dict[tuple[str, tuple[str, ...]], int] = {}
+        # RLock for protecting compound operations ($INCREMENT)
+        self._data_lock = threading.RLock()
+
+        # Spec 013: Lock table - maps (name, subscripts) to (owner_thread_id, count)
+        # Thread-safe: protected by _lock_condition for concurrent JOB support
+        self._lock_mutex = threading.Lock()
+        self._lock_condition = threading.Condition(self._lock_mutex)
+        self._lock_table: dict[tuple[str, tuple[str, ...]], tuple[int, int]] = {}
 
         # Spec 013: Transaction support
         self._tlevel: int = 0
         self._transaction_snapshots: list[dict[str, MArray]] = []
 
+    @property
+    def _naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
+        """Per-thread naked indicator."""
+        return getattr(self._thread_local, "naked_indicator", None)
+
+    @_naked_indicator.setter
+    def _naked_indicator(self, value: tuple[str, tuple[str, ...]] | None) -> None:
+        self._thread_local.naked_indicator = value
+
     def _canonicalize_subscript(self, subscript: str | int | float) -> str:
-        """Convert subscript to canonical string form.
+        """Convert subscript to MUMPS canonical string form.
 
         MUMPS subscripts are always strings internally. Numbers are
-        converted to their canonical string representation.
+        converted to their MUMPS canonical string representation
+        (e.g., 0.001 → ".001", 1.0 → "1").
+
+        Non-canonical numeric strings like "01" are PRESERVED because
+        they represent different nodes than their canonical equivalents.
+        e.g., ^A("01") is a different node than ^A(1).
+
+        Spec 018: Uses SubscriptCanonicalizer for proper MUMPS semantics.
         """
-        return str(subscript)
+        return SubscriptCanonicalizer.canonicalize(subscript)
 
     def _canonicalize_subscripts(
         self, subscripts: tuple[str | int | float, ...]
@@ -440,11 +529,14 @@ class InMemoryGlobalStorage:
             # After ^G (no subscripts): naked refs are illegal
             self._naked_indicator = None
 
-    def get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+    def get(
+        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
+    ) -> str | None:
         """Get value at ^NAME(subscripts)."""
 
         subscripts = self._canonicalize_subscripts(subscripts)
-        self._update_naked_indicator(name, subscripts)
+        if update_naked:
+            self._update_naked_indicator(name, subscripts)
 
         if name not in self._globals:
             return None
@@ -490,7 +582,13 @@ class InMemoryGlobalStorage:
         node._children[last_sub]._value = value
 
     def kill(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Kill node and all descendants at ^NAME(subscripts)."""
+        """Kill node and all descendants at ^NAME(subscripts).
+
+        After killing, cleans up empty ancestor nodes (nodes with no value
+        and no children). This is required by MUMPS semantics - after
+        KILL ^V1(2,1), if ^V1(2) has no value and no other children,
+        $DATA(^V1(2)) should return 0.
+        """
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -502,17 +600,36 @@ class InMemoryGlobalStorage:
             del self._globals[name]
             return
 
-        # Navigate to parent of target
+        # Collect path of nodes for cleanup
+        path: list[tuple["MArray", str]] = []  # (parent, child_key)
         node = self._globals[name]
+
+        # Navigate to parent of target, collecting path
         for sub in subscripts[:-1]:
             if sub not in node._children:
                 return  # Path doesn't exist
+            path.append((node, sub))
             node = node._children[sub]
 
         # Remove target and all its descendants
         last_sub = subscripts[-1]
         if last_sub in node._children:
             del node._children[last_sub]
+
+        # Clean up empty ancestor nodes (reverse order - leaf to root)
+        # Node is empty if it has no value AND no children
+        while path:
+            parent, child_key = path.pop()
+            child = parent._children[child_key]
+            if child._value is None and not child._children:
+                del parent._children[child_key]
+            else:
+                break  # Stop if we hit a non-empty node
+
+        # Finally, check if the global root itself is now empty
+        root = self._globals[name]
+        if root._value is None and not root._children:
+            del self._globals[name]
 
     def kill_all(self) -> None:
         """Kill all globals and reset naked indicator."""
@@ -554,6 +671,11 @@ class InMemoryGlobalStorage:
         """Set naked indicator explicitly."""
         self._naked_indicator = (name, self._canonicalize_subscripts(subscripts))
 
+    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Pre-set naked indicator for $ORDER evaluation ordering."""
+        subs = self._canonicalize_subscripts(subscripts)
+        self._update_naked_indicator(name, subs)
+
     def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
         """Resolve naked reference ^(subscripts) to full global reference.
 
@@ -574,7 +696,13 @@ class InMemoryGlobalStorage:
         full_subscripts = base_subscripts + subscripts
         return (name, full_subscripts)
 
-    def order(self, name: str, subscripts: tuple[str, ...], direction: int = 1) -> str:
+    def order(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        update_naked: bool = True,
+    ) -> str:
         """Return next/previous subscript in MUMPS collation order.
 
         Spec 010: Full implementation of $ORDER function.
@@ -583,6 +711,8 @@ class InMemoryGlobalStorage:
             name: Global name without caret
             subscripts: Tuple where last element is starting point. Use "" to get first/last.
             direction: 1 for forward (next), -1 for reverse (previous)
+            update_naked: If True, update the naked indicator (default).
+                If False, skip naked update (caller handled it).
 
         Returns:
             Next/previous subscript as string, or "" if no more.
@@ -594,7 +724,8 @@ class InMemoryGlobalStorage:
             4. Strings (ASCII order)
         """
         subscripts = self._canonicalize_subscripts(subscripts)
-        self._update_naked_indicator(name, subscripts)
+        if update_naked:
+            self._update_naked_indicator(name, subscripts)
 
         if name not in self._globals:
             return ""
@@ -620,7 +751,7 @@ class InMemoryGlobalStorage:
 
         if start_key == "":
             # Empty string means get first key in current direction
-            return keys[0] if keys else ""
+            return m_format_output(keys[0]) if keys else ""
 
         # Find next key after start_key in collation order
         start_sort_key = _mumps_collation_key(start_key)
@@ -630,11 +761,11 @@ class InMemoryGlobalStorage:
             if direction == 1:
                 # Forward: find first key greater than start_key
                 if key_sort > start_sort_key:
-                    return str(key)
+                    return m_format_output(key)
             else:
                 # Reverse: find first key less than start_key
                 if key_sort < start_sort_key:
-                    return str(key)
+                    return m_format_output(key)
 
         return ""
 
@@ -669,40 +800,44 @@ class InMemoryGlobalStorage:
         if result is None:
             return ""
 
-        # Format as global reference: "^G(1,2,3)"
+        # Format as global reference: "^G(1,2,3)" with proper quoting
+        from m2py.runtime.helpers import _format_subscript
+
         if len(result) == 0:
             return f"^{name}"
-        return f"^{name}({','.join(result)})"
+        formatted_subs = [_format_subscript(sub) for sub in result]
+        return f"^{name}({','.join(formatted_subs)})"
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts).
 
-        Spec 009 T066: Stub implementation for $INCREMENT.
-        Provides basic increment functionality.
+        Spec 009 T066: Thread-safe $INCREMENT implementation.
+        Uses _data_lock to ensure get+compute+set is atomic.
         """
         subscripts = self._canonicalize_subscripts(subscripts)
 
-        # Get current value (default to "0" if undefined)
-        current = self.get(name, subscripts)
-        if current is None:
-            current = "0"
+        with self._data_lock:
+            # Get current value (default to "0" if undefined)
+            current = self.get(name, subscripts)
+            if current is None:
+                current = "0"
 
-        # Attempt numeric increment
-        try:
-            current_num = float(current) if "." in current else int(current)
-            incr_num = float(increment) if "." in increment else int(increment)
-            result = current_num + incr_num
-            # Format result: integer if whole number, else float
-            if isinstance(result, float) and result == int(result):
-                result_str = str(int(result))
-            else:
-                result_str = str(result)
-        except ValueError:
-            # Non-numeric value - treat as 0 per MUMPS semantics
-            result_str = increment
+            # Attempt numeric increment
+            try:
+                current_num = float(current) if "." in current else int(current)
+                incr_num = float(increment) if "." in increment else int(increment)
+                result = current_num + incr_num
+                # Format result: integer if whole number, else float
+                if isinstance(result, float) and result == int(result):
+                    result_str = str(int(result))
+                else:
+                    result_str = str(result)
+            except ValueError:
+                # Non-numeric value - treat as 0 per MUMPS semantics
+                result_str = increment
 
-        self.set(name, subscripts, result_str)
-        return result_str
+            self.set(name, subscripts, result_str)
+            return result_str
 
     def kill_node(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Kill only the value at node, preserving descendants.
@@ -813,52 +948,91 @@ class InMemoryGlobalStorage:
     ) -> bool:
         """Acquire or release a lock on ^NAME(subscripts).
 
-        Spec 013 FR-019: In-memory implementation always succeeds immediately
-        since there's no concurrent access in single-process mode.
+        Spec 013 FR-019: Thread-safe lock implementation supporting
+        concurrent JOB'd processes. Locks are owned by the calling
+        thread and block if held by another thread.
 
         Args:
             name: Global/lock name without caret
             subscripts: Tuple of string subscript values
-            timeout: Ignored for in-memory backend (always immediate)
+            timeout: Seconds to wait for lock (None = wait forever)
             lock_type: "+" for increment (acquire), "-" for decrement (release)
 
         Returns:
-            True always (in-memory backend has no contention)
+            True if lock acquired/released, False on timeout
         """
         subscripts = self._canonicalize_subscripts(subscripts)
         key = (name, subscripts)
+        owner = threading.get_ident()
 
-        if lock_type == "+":
-            # Increment lock count (acquire)
-            self._lock_table[key] = self._lock_table.get(key, 0) + 1
-        else:
+        if lock_type == "-":
             # Decrement lock count (release)
-            if key in self._lock_table:
-                self._lock_table[key] -= 1
-                if self._lock_table[key] <= 0:
-                    del self._lock_table[key]
+            with self._lock_condition:
+                current = self._lock_table.get(key)
+                if current is not None and current[0] == owner:
+                    new_count = current[1] - 1
+                    if new_count <= 0:
+                        del self._lock_table[key]
+                    else:
+                        self._lock_table[key] = (owner, new_count)
+                    self._lock_condition.notify_all()
+            return True
 
-        return True
+        # Acquire (increment)
+        with self._lock_condition:
+            deadline = None
+            if timeout is not None:
+                deadline = time.monotonic() + timeout
+
+            while True:
+                current = self._lock_table.get(key)
+                if current is None or current[0] == owner:
+                    # Not locked or we own it - acquire/increment
+                    count = (current[1] if current else 0) + 1
+                    self._lock_table[key] = (owner, count)
+                    return True
+
+                # Locked by another thread - wait
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return False  # Timeout
+                    self._lock_condition.wait(remaining)
+                else:
+                    self._lock_condition.wait()
 
     def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Release a lock on ^NAME(subscripts).
 
-        Spec 013 FR-019: Explicit unlock (equivalent to LOCK - operation).
+        Spec 013 FR-019: Only releases locks owned by the calling thread.
         """
         subscripts = self._canonicalize_subscripts(subscripts)
         key = (name, subscripts)
+        owner = threading.get_ident()
 
-        if key in self._lock_table:
-            self._lock_table[key] -= 1
-            if self._lock_table[key] <= 0:
-                del self._lock_table[key]
+        with self._lock_condition:
+            current = self._lock_table.get(key)
+            if current is not None and current[0] == owner:
+                new_count = current[1] - 1
+                if new_count <= 0:
+                    del self._lock_table[key]
+                else:
+                    self._lock_table[key] = (owner, new_count)
+                self._lock_condition.notify_all()
 
     def unlock_all(self) -> None:
-        """Release all locks held by current process.
+        """Release all locks held by the calling thread.
 
-        Spec 013 FR-019: Argumentless LOCK releases all locks.
+        Spec 013 FR-019: Argumentless LOCK releases all locks owned
+        by the current thread/process. Other threads' locks are unaffected.
         """
-        self._lock_table.clear()
+        owner = threading.get_ident()
+        with self._lock_condition:
+            keys_to_remove = [k for k, v in self._lock_table.items() if v[0] == owner]
+            for k in keys_to_remove:
+                del self._lock_table[k]
+            if keys_to_remove:
+                self._lock_condition.notify_all()
 
     # =========================================================================
     # Transaction Operations Implementation (Spec 013)
@@ -957,7 +1131,9 @@ class InMemoryGlobalStorage:
         # Parse subscript as (name, subscripts) key
         # For simplicity, treat subscript as global name with no subscripts
         key = (subscript, ())
-        count = self._lock_table.get(key, 0)
+        with self._lock_condition:
+            entry = self._lock_table.get(key)
+            count = entry[1] if entry else 0
         return str(count) if count > 0 else ""
 
     def ssvn_routine(self, subscript: str) -> str:
@@ -971,9 +1147,6 @@ class InMemoryGlobalStorage:
     def _deep_copy_tree(self, source: "MArray") -> "MArray":
         """Deep copy an MArray tree.
 
-        Converts string subscript keys to numeric types when possible,
-        for consistency with local MArray operations.
-
         Args:
             source: Source MArray to copy
 
@@ -986,20 +1159,8 @@ class InMemoryGlobalStorage:
         result._value = source._value
 
         for key, child in source._children.items():
-            # Convert numeric string keys to int/float for local use
-            if isinstance(key, str):
-                try:
-                    # Try integer first
-                    if "." in key:
-                        canonical_key: int | float | str = float(key)
-                    else:
-                        canonical_key = int(key)
-                except ValueError:
-                    canonical_key = key
-            else:
-                canonical_key = key
-
-            result._children[canonical_key] = self._deep_copy_tree(child)
+            # Keys are already canonical strings, just copy them
+            result._children[str(key)] = self._deep_copy_tree(child)
 
         return result
 
@@ -1035,7 +1196,9 @@ class YottaDBGlobalStorage:
 
         self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
 
-    def get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+    def get(
+        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
+    ) -> str | None:
         """Get value at ^NAME(subscripts). Stub raises NotImplementedError."""
         raise NotImplementedError("YottaDB backend not yet implemented")
 
@@ -1063,6 +1226,10 @@ class YottaDBGlobalStorage:
         """Set naked indicator explicitly."""
         self._naked_indicator = (name, subscripts)
 
+    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Pre-set naked indicator for $ORDER/$GET evaluation ordering."""
+        self._naked_indicator = (name, subscripts[:-1]) if subscripts else (name, ())
+
     def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
         """Resolve naked reference."""
         if self._naked_indicator is None:
@@ -1070,12 +1237,28 @@ class YottaDBGlobalStorage:
         name, base_subscripts = self._naked_indicator
         return (name, base_subscripts + subscripts)
 
-    def order(self, name: str, subscripts: tuple[str, ...], direction: int = 1) -> str:
+    def order(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        update_naked: bool = True,
+    ) -> str:
         """Return next/previous subscript. Stub raises NotImplementedError."""
         raise NotImplementedError("YottaDB backend not yet implemented")
 
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return next node reference. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
+        """Get subtree as MArray. Stub raises NotImplementedError."""
+        raise NotImplementedError("YottaDB backend not yet implemented")
+
+    def merge_tree(
+        self, name: str, subscripts: tuple[str, ...], source: "MArray"
+    ) -> None:
+        """Merge MArray tree into global. Stub raises NotImplementedError."""
         raise NotImplementedError("YottaDB backend not yet implemented")
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
@@ -1185,7 +1368,9 @@ class IRISGlobalStorage:
         self._password = password
         self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
 
-    def get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+    def get(
+        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
+    ) -> str | None:
         """Get value at ^NAME(subscripts). Stub raises NotImplementedError."""
         raise NotImplementedError("IRIS backend not yet implemented")
 
@@ -1213,6 +1398,10 @@ class IRISGlobalStorage:
         """Set naked indicator explicitly."""
         self._naked_indicator = (name, subscripts)
 
+    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Pre-set naked indicator for $ORDER/$GET evaluation ordering."""
+        self._naked_indicator = (name, subscripts[:-1]) if subscripts else (name, ())
+
     def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
         """Resolve naked reference."""
         if self._naked_indicator is None:
@@ -1220,12 +1409,28 @@ class IRISGlobalStorage:
         name, base_subscripts = self._naked_indicator
         return (name, base_subscripts + subscripts)
 
-    def order(self, name: str, subscripts: tuple[str, ...], direction: int = 1) -> str:
+    def order(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        update_naked: bool = True,
+    ) -> str:
         """Return next/previous subscript. Stub raises NotImplementedError."""
         raise NotImplementedError("IRIS backend not yet implemented")
 
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return next node reference. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
+        """Get subtree as MArray. Stub raises NotImplementedError."""
+        raise NotImplementedError("IRIS backend not yet implemented")
+
+    def merge_tree(
+        self, name: str, subscripts: tuple[str, ...], source: "MArray"
+    ) -> None:
+        """Merge MArray tree into global. Stub raises NotImplementedError."""
         raise NotImplementedError("IRIS backend not yet implemented")
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:

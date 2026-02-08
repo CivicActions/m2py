@@ -21,12 +21,25 @@ from tests.functional.conftest import (
     FUNCTIONAL_BASE,
     ExecutionResult,
     compare_output,
-    get_routine_xfail_reason,
     load_routine_source,
     normalize_outref,
     run_mumps,
 )
 from tests.functional.suite_definitions import BASIC_ROUTINES, RoutineDefinition
+
+
+def _make_test_id(routine_def: RoutineDefinition) -> str:
+    """Create a test ID from a routine definition."""
+    return routine_def.routine
+
+
+def get_routine_params() -> list:
+    """Generate pytest parameters for basic routines, excluding skipped ones."""
+    return [
+        pytest.param(r, id=_make_test_id(r))
+        for r in BASIC_ROUTINES
+        if not r.skip_reason
+    ]
 
 
 # =============================================================================
@@ -35,6 +48,25 @@ from tests.functional.suite_definitions import BASIC_ROUTINES, RoutineDefinition
 
 SUITE_NAME = "basic"
 BASIC_DIR = FUNCTIONAL_BASE / "basic" / "inref"
+
+# Routine-specific helper dependencies
+# Maps routine name to list of helper routine names that must be loaded
+ROUTINE_HELPERS: dict[str, list[str]] = {
+    "extcall": ["extcall2"],
+    "text4": ["texttst", "text1", "text2", "text3"],
+    "per02457": ["per02457"],  # Self-reference via $TEXT(+1^per02457)
+    "putfail": [
+        "putfail1",
+        "putfail2",
+        "putfail3",
+        "putfail4",
+        "putfail5",
+        "putfail6",
+        "putfail7",
+        "putfail8",
+        "putfail9",
+    ],
+}
 
 
 # =============================================================================
@@ -130,15 +162,29 @@ def load_basic_expected_outputs() -> dict[str, str]:
 # Routine Execution
 # =============================================================================
 
+# Load common helpers once at module level
+_COMMON_HELPERS = None
+
+
+def _get_common_helpers() -> dict[str, str]:
+    """Get common helper routines, loading once on first access."""
+    global _COMMON_HELPERS
+    if _COMMON_HELPERS is None:
+        from tests.functional.conftest import load_common_helpers
+
+        _COMMON_HELPERS = load_common_helpers()
+    return _COMMON_HELPERS
+
 
 def execute_basic_routine(
-    routine_name: str, args: str | None = None
+    routine_name: str, args: str | None = None, use_helpers: bool = True
 ) -> ExecutionResult:
     """Execute a single basic routine via m2py.
 
     Args:
         routine_name: Name of the routine (e.g., "fact")
         args: Optional arguments to pass to the routine entry point
+        use_helpers: If True, make common helpers (examine, header) available
 
     Returns:
         ExecutionResult with output and status
@@ -148,7 +194,19 @@ def execute_basic_routine(
     except FileNotFoundError as e:
         return ExecutionResult(output="", success=False, error=str(e))
 
-    return run_mumps(source, args=args)
+    helpers = _get_common_helpers().copy() if use_helpers else {}
+
+    # Load routine-specific helpers (e.g., extcall needs extcall2)
+    if routine_name in ROUTINE_HELPERS:
+        for helper_name in ROUTINE_HELPERS[routine_name]:
+            try:
+                helpers[helper_name] = load_routine_source(BASIC_DIR, helper_name)
+            except FileNotFoundError as e:
+                return ExecutionResult(
+                    output="", success=False, error=f"Missing helper {helper_name}: {e}"
+                )
+
+    return run_mumps(source, args=args, helper_sources=helpers if helpers else None)
 
 
 # =============================================================================
@@ -173,34 +231,21 @@ class TestBasicSuite:
     the expected output from the YDB outref file.
     """
 
-    @pytest.mark.parametrize(
-        "routine_def",
-        BASIC_ROUTINES,
-        ids=lambda r: r.routine,
-    )
+    @pytest.mark.parametrize("routine_def", get_routine_params())
     def test_routine(self, routine_def: RoutineDefinition) -> None:
         """Test a single basic routine against expected output.
 
         Args:
             routine_def: RoutineDefinition with label, routine name, and args
         """
-        # Check for skip
-        if routine_def.skip_reason:
-            pytest.skip(routine_def.skip_reason)
-
         routine_name = routine_def.routine
         label = routine_def.label
-
-        # Check for known limitation (for xfail on failure)
-        xfail_reason = get_routine_xfail_reason(routine_name)
 
         # Execute via m2py (pass args if defined)
         result = execute_basic_routine(routine_name, routine_def.args)
 
         # Check for complete failure (no output at all)
         if not result.output and not result.success:
-            if xfail_reason:
-                pytest.xfail(f"{xfail_reason} - {result.error}")
             pytest.fail(f"Routine {routine_name} failed to execute: {result.error}")
 
         # Get expected output using the label format from outref
@@ -209,7 +254,9 @@ class TestBasicSuite:
             # Try lowercase version
             expected = _EXPECTED_OUTPUTS.get(label.lower())
         if expected is None:
-            pytest.skip(f"No expected output found for {label} in outref")
+            pytest.fail(
+                f"No expected output found for {label} in outref - check outref parsing"
+            )
 
         # Handle partial output due to external routine errors
         actual_output = result.output
@@ -221,7 +268,7 @@ class TestBasicSuite:
             # Check if this is a partial match (external routine error at end)
             if result.error and "No module named" in result.error:
                 if expected.startswith(actual_output.strip()):
-                    pytest.skip(
+                    pytest.fail(
                         f"Partial match - routine completed but external call failed: {result.error}"
                     )
 
@@ -236,9 +283,6 @@ class TestBasicSuite:
                 msg += f"Execution error: {result.error}\n"
             msg += f"\nDiff:\n{comparison.diff}"
 
-            # Mark as xfail if known limitation
-            if xfail_reason:
-                pytest.xfail(f"{xfail_reason} - Output mismatch")
             pytest.fail(msg)
 
 

@@ -63,6 +63,7 @@ from ..asg.expressions import (
 from ..asg.statements import (
     MDoStatement,
     MForStatement,
+    MGotoStatement,
     MIfStatement,
     MKillStatement,
     MNewStatement,
@@ -375,6 +376,16 @@ def analyze_variables(routine: MRoutine) -> Dict[str, ScopeVariables]:
         # Used by codegen to determine if NewScopeManager context is needed
         label.has_new_statements = _label_has_new_statements(label)
 
+    # Spec 017: Detect argumentless KILL/NEW for runtime scope management
+    # These require special handling in TRAMPOLINE mode (state._locals dict)
+    routine.has_argumentless_kill = _routine_has_argumentless_kill(routine)
+    routine.has_argumentless_new = _routine_has_argumentless_new(routine)
+
+    # Detect name indirection that references local variables
+    routine.has_name_indirection_on_locals = _routine_has_name_indirection_on_locals(
+        routine
+    )
+
     return result
 
 
@@ -402,6 +413,162 @@ def _label_has_new_statements(label: MLabel) -> bool:
     for stmt in label.body.walk_statements():
         if isinstance(stmt, MNewStatement):
             return True
+    return False
+
+
+def _routine_has_argumentless_kill(routine: MRoutine) -> bool:
+    """Check if a routine contains any argumentless KILL statements.
+
+    Argumentless KILL (K with no arguments) kills ALL local variables.
+    This requires special handling in TRAMPOLINE mode because we cannot
+    enumerate statically which variables will be killed.
+
+    In TRAMPOLINE mode, this triggers use of state._locals dict for
+    runtime variable tracking.
+
+    Args:
+        routine: MRoutine ASG node to check
+
+    Returns:
+        True if the routine contains any argumentless KILL statements
+    """
+    for label in routine.labels:
+        if not label.body:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MKillStatement):
+                if stmt.is_kill_all:
+                    return True
+    return False
+
+
+def _routine_has_argumentless_new(routine: MRoutine) -> bool:
+    """Check if a routine contains any argumentless NEW statements.
+
+    Argumentless NEW (N with no arguments) saves ALL local variables
+    and creates a fresh scope. This requires special handling in
+    TRAMPOLINE mode because we cannot enumerate statically which
+    variables are being stacked.
+
+    In TRAMPOLINE mode, this triggers use of state._new_stack for
+    runtime scope management.
+
+    Note: Exclusive NEW (N (X)) is NOT argumentless - it specifies
+    which variables to exclude from the NEW operation.
+
+    Args:
+        routine: MRoutine ASG node to check
+
+    Returns:
+        True if the routine contains any argumentless NEW statements
+    """
+    from m2py.asg.statements import MNewStatement
+
+    for label in routine.labels:
+        if not label.body:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MNewStatement):
+                # Argumentless NEW: no variables specified AND not exclusive
+                if not stmt.variables and not stmt.exclusive:
+                    return True
+    return False
+
+
+def _routine_has_name_indirection_on_locals(routine: MRoutine) -> bool:
+    """Check if a routine has name indirection that reads local variables.
+
+    When name indirection like @X reads another local variable (X="Y", and Y
+    is also a local), the runtime needs to be able to look up variables by
+    name at runtime. This is incompatible with Python locals in TRAMPOLINE
+    mode, so it triggers dynamic_locals mode.
+
+    Note: This is a conservative check - we flag any name indirection that
+    involves local variables, even if the target might be known at compile
+    time.
+
+    Args:
+        routine: MRoutine ASG node to check
+
+    Returns:
+        True if name indirection references local variables
+    """
+    from m2py.asg.statements import MDoStatement
+    from m2py.asg.elements import MCall
+
+    for label in routine.labels:
+        if not label.body:
+            continue
+        for stmt in label.body.walk_statements():
+            # Check DO statements with indirect offsets
+            if isinstance(stmt, MDoStatement):
+                for target in stmt.targets:
+                    if not isinstance(target, MCall):
+                        continue
+                    # Check if offset uses indirection on a local
+                    # D LABEL+@N where N is a local requires dynamic lookup
+                    if (
+                        target.offset is not None
+                        and _expr_has_name_indirection_on_local(target.offset)
+                    ):
+                        return True
+                    # Note: D @L where L is a local does NOT require dynamic locals
+                    # because L's value is a LABEL name, not a VARIABLE name.
+                    # The indirection resolves to a call target, not a variable lookup.
+    return False
+
+
+def _expr_has_name_indirection_on_local(
+    expr: Any, visited: Optional[Set[int]] = None
+) -> bool:
+    """Check if expression contains name indirection on a local variable.
+
+    Uses visited set to prevent infinite recursion on circular references.
+    """
+    from m2py.asg.expressions import MIndirection, MVariable
+    from m2py.asg.enums import IndirectionType
+
+    if visited is None:
+        visited = set()
+
+    # Prevent infinite recursion
+    expr_id = id(expr)
+    if expr_id in visited:
+        return False
+    visited.add(expr_id)
+
+    if isinstance(expr, MIndirection):
+        if expr.indirection_type == IndirectionType.NAME:
+            # Name indirection - expression attribute contains the inner expression
+            if isinstance(expr.expression, MVariable):
+                return True
+        # Check nested expression
+        if expr.expression and _expr_has_name_indirection_on_local(
+            expr.expression, visited
+        ):
+            return True
+    elif hasattr(expr, "__dict__"):
+        for key, value in vars(expr).items():
+            # Skip parent/source_file references that could cause cycles
+            if key in (
+                "parent",
+                "source_file",
+                "_tx_parser",
+                "_tx_attrs",
+                "_tx_position",
+                "_tx_position_end",
+            ):
+                continue
+            if isinstance(value, list):
+                for item in value:
+                    if hasattr(
+                        item, "__dict__"
+                    ) and _expr_has_name_indirection_on_local(item, visited):
+                        return True
+            elif hasattr(value, "__dict__") and _expr_has_name_indirection_on_local(
+                value, visited
+            ):
+                return True
     return False
 
 
@@ -555,9 +722,27 @@ def _extract_statement_variables(
 
     elif isinstance(stmt, MDoStatement):
         # DO label(args) - args are reads
+        # Also extract variables from indirection targets (D @VAR)
         for target in stmt.targets:
             for arg in target.arguments:
                 reads.update(_extract_expression_variables(arg))
+            # Extract variables from indirection expressions
+            if target.indirection:
+                reads.update(_extract_expression_variables(target.indirection))
+            if target.routine_indirection:
+                reads.update(_extract_expression_variables(target.routine_indirection))
+
+    elif isinstance(stmt, MGotoStatement):
+        # GOTO targets may contain indirection (G @VAR) or arguments with expressions
+        for target in stmt.targets:
+            # Extract variables from offset expressions (G LABEL+@N)
+            if target.offset:
+                reads.update(_extract_expression_variables(target.offset))
+            # Extract variables from indirection expressions
+            if target.indirection:
+                reads.update(_extract_expression_variables(target.indirection))
+            if target.routine_indirection:
+                reads.update(_extract_expression_variables(target.routine_indirection))
 
     elif isinstance(stmt, MWriteStatement):
         # WRITE reads variables in arguments
@@ -1164,6 +1349,13 @@ def compute_all_signatures(
     # Spec 006 (T039b): Compute array_vars - variables with subscripted access
     routine.array_vars = _compute_array_vars(routine)
 
+    # Compute routine_input_only_vars - variables read but never written in the routine.
+    # These are "external inputs" that must come from the caller's scope via GOTO.
+    # In TRAMPOLINE mode, these need to be read from _scope instead of bare Python vars.
+    routine.routine_input_only_vars = _compute_routine_input_only_vars(
+        routine, label_vars
+    )
+
     return signatures
 
 
@@ -1237,6 +1429,40 @@ def _compute_array_vars(routine: MRoutine) -> Set[str]:
             _collect_array_vars_from_stmt(stmt, array_vars)
 
     return array_vars
+
+
+def _compute_routine_input_only_vars(
+    routine: MRoutine, label_vars: Dict[str, ScopeVariables]
+) -> Set[str]:
+    """Compute variables that are read but never written anywhere in the routine.
+
+    These are "external input" variables that must come from the caller's scope,
+    typically via external GOTO. In TRAMPOLINE mode, these need to be read from
+    _scope instead of bare Python variables.
+
+    Formal parameters are excluded since they come through the call mechanism,
+    not through scope inheritance.
+
+    Args:
+        routine: The MRoutine being analyzed
+        label_vars: Variable information per label from analyze_variables
+
+    Returns:
+        Set of variable names that are read but never written (excluding formals)
+    """
+    # Collect all reads and writes across all labels
+    all_reads: Set[str] = set()
+    all_writes: Set[str] = set()
+    all_formal_params: Set[str] = set()
+
+    for label_name, scope_vars in label_vars.items():
+        all_reads.update(scope_vars.reads)
+        all_writes.update(scope_vars.writes)
+        all_formal_params.update(scope_vars.formal_params)
+
+    # Variables read but NEVER written in the entire routine
+    # Exclude formal params - they come through call mechanism, not scope
+    return all_reads - all_writes - all_formal_params
 
 
 def _collect_array_vars_from_stmt(stmt, array_vars: Set[str]) -> None:

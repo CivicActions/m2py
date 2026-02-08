@@ -135,13 +135,15 @@ def _resolve_call(
         return
 
     # External calls cannot be resolved without loading other routines
-    if call.routine is not None:
+    # BUT: if the routine name matches the current routine, treat it as a local call
+    # This handles cases like "G 691^V1OV2" inside V1OV2 - it's a self-routine reference
+    if call.routine is not None and call.routine != routine.name:
         # External call - mark as not locally resolvable
         call.call_type = CallType.ROUTINE_CALL
         call.is_resolved = False
         return
 
-    # Look up local label
+    # Look up local label (either no routine specified, or routine matches current routine)
     target_name = call.name
     if target_name in label_map:
         call.target = label_map[target_name]

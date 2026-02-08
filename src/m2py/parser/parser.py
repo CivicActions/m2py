@@ -254,7 +254,25 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
         if isinstance(stmt, MDoStatement) and not stmt.targets:
             # Find all following statements with dot_level > 0
             block_stmts = []
+            post_do_same_line = []  # Same-line statements after the DO
             j = i + 1
+
+            # When a MUMPS line has: DO  S V=V_$Q Q V
+            # followed by: .S V=V_$Q
+            # The parser produces same-line statements (S V=V_$Q, Q V) between
+            # the argumentless DO and its dot-body. Skip past them to find the
+            # dot-body, then re-insert them after the DO in the output.
+            do_line = getattr(stmt, "line_number", None)
+            if do_line is not None:
+                while j < len(statements):
+                    next_stmt = statements[j]
+                    dot_level = getattr(next_stmt, "_dot_level", 0)
+                    next_line = getattr(next_stmt, "line_number", None)
+                    if dot_level == 0 and next_line == do_line:
+                        post_do_same_line.append(next_stmt)
+                        j += 1
+                    else:
+                        break
 
             while j < len(statements):
                 next_stmt = statements[j]
@@ -283,6 +301,8 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
                 stmt.is_inline_block = True
 
             result.append(stmt)
+            # Re-insert same-line post-DO statements after the DO block
+            result.extend(post_do_same_line)
             i = j  # Skip past the block statements
 
         else:

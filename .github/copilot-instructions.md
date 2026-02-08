@@ -67,6 +67,8 @@ docker run --rm -v "$(pwd):/workspace" ydb routine.m
 echo -e 'TEST\n write 1+2,!' | docker run --rm -i ydb
 ```
 
+**⚠️ Never use `-t` for testing** — TTY mangles control characters (form feed `\x0c` → ANSI escapes), breaking output comparison.
+
 ## Core Principles
 
 1. **Semantic Correctness First** - Generated Python must match MUMPS behavior exactly

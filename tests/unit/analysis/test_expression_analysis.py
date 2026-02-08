@@ -10,6 +10,7 @@ from m2py.asg.expressions import (
     MLiteral,
     MVariable,
     MGlobal,
+    MNakedGlobal,
     MBinaryOp,
     MUnaryOp,
     MIntrinsicFunction,
@@ -105,6 +106,46 @@ class TestAnalyzeExpression:
         assert result.name == "LENGTH"
         assert len(result.arguments) == 1
         assert isinstance(result.arguments[0], MVariable)
+
+    def test_analyze_naked_global(self):
+        """Test analyzing naked global reference."""
+        expr = parse_expression("^(1,2)")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MNakedGlobal)
+        assert len(result.subscripts) == 2
+        assert all(isinstance(s, MLiteral) for s in result.subscripts)
+
+    def test_analyze_naked_global_with_negative_subscript(self):
+        """Test analyzing naked global with negative subscript - T076 fix.
+
+        This reproduces the bug found in V1NX test where ^(3,-1) caused
+        a NotImplementedError because the -1 subscript remained as a raw
+        textX UnaryExpr instead of being transformed to MUnaryOp.
+        """
+        expr = parse_expression("^(3,-1)")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MNakedGlobal)
+        assert len(result.subscripts) == 2
+        # First subscript is literal 3
+        assert isinstance(result.subscripts[0], MLiteral)
+        assert result.subscripts[0].value == 3
+        # Second subscript is unary minus (not raw UnaryExpr)
+        assert isinstance(result.subscripts[1], MUnaryOp)
+        assert result.subscripts[1].operator == "-"
+        assert isinstance(result.subscripts[1].operand, MLiteral)
+        assert result.subscripts[1].operand.value == 1
+
+    def test_analyze_naked_global_with_expression_subscript(self):
+        """Test analyzing naked global with expression in subscript."""
+        expr = parse_expression("^(X+1)")
+        result = analyze_expression(expr)
+
+        assert isinstance(result, MNakedGlobal)
+        assert len(result.subscripts) == 1
+        assert isinstance(result.subscripts[0], MBinaryOp)
+        assert result.subscripts[0].operator == "+"
 
 
 class TestUnwrapExpression:

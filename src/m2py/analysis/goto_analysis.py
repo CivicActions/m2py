@@ -94,6 +94,10 @@ def classify_gotos(routine: MRoutine) -> None:
     # This triggers TRAMPOLINE strategy even without cross-label GOTOs
     routine.has_offset_calls = _detect_offset_calls(routine)
 
+    # Set has_external_gotos if any GOTO targets another routine
+    # This requires dynamic locals for proper cross-routine variable visibility
+    routine.has_external_gotos = _detect_external_gotos(routine)
+
     # Spec 013: Set fall-through flags on labels
     # Labels without explicit exit (QUIT/GOTO/HALT) fall through to the next label
     _detect_fallthrough(routine)
@@ -330,6 +334,11 @@ def _classify_single_goto(
             if len(enclosing_fors) == 1:
                 stmt.goto_type = GotoType.LOOP_EXIT
                 stmt.exits_loops = list(enclosing_fors)
+                # V1FORC2/I-377 fix: Same-label LOOP_EXIT needs special handling
+                # When GOTO targets the same label from inside a FOR loop, we need to
+                # break the FOR loop AND continue the outer while True self-loop
+                if not stmt.is_cross_label and target_label.name == current_label.name:
+                    enclosing_fors[0].has_same_label_exit = True
             else:
                 stmt.goto_type = GotoType.MULTI_LOOP_EXIT
                 stmt.exits_loops = list(enclosing_fors)
@@ -352,10 +361,9 @@ def _classify_single_goto(
                 # Get target label name for exit_target (raw MUMPS name - codegen translates)
                 target_name = stmt.targets[0].name if stmt.targets else None
 
-                # Set needs_exception_wrapper on outermost FOR for MULTI_LOOP_EXIT
+                # Set exit_target for cross-label exits
                 if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
                     outermost_for = enclosing_fors[0]
-                    outermost_for.needs_exception_wrapper = True
                     # Set exit_target on outermost FOR (for calling after except)
                     if target_name:
                         outermost_for.exit_target = target_name
@@ -363,6 +371,16 @@ def _classify_single_goto(
                     # For single loop exit, set exit_target on that FOR
                     if target_name:
                         enclosing_fors[0].exit_target = target_name
+
+            # V1FORC2 fix: MULTI_LOOP_EXIT always needs exception wrapper, regardless of cross_label
+            # For cross-label: after catching, call target label
+            # For same-label: after catching, continue (restart the while True self-loop)
+            if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
+                outermost_for = enclosing_fors[0]
+                outermost_for.needs_exception_wrapper = True
+                # Mark same-label exit for codegen to generate 'continue' instead of call
+                if not stmt.is_cross_label:
+                    outermost_for.has_same_label_exit = True
 
             # Note: There is no "continue" pattern in MUMPS via GOTO.
             # Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
@@ -536,8 +554,9 @@ def _detect_cross_label_gotos(routine: MRoutine) -> bool:
     2. Handle cyclic patterns (A→B→A) without RecursionError
     3. Maintain variable visibility across label boundaries via RoutineState
 
-    Note: This is distinct from `has_unstructured_goto` which is a legacy flag.
-    `needs_trampoline` is the sole trigger for trampoline pattern in Spec 006.
+    Note: This is distinct from `has_unstructured_goto` which is set on MRoutine
+    for analysis purposes (used by tests). `needs_trampoline` is the sole trigger
+    for trampoline pattern selection in code generation.
 
     Args:
         routine: The routine to check
@@ -585,6 +604,47 @@ def _detect_offset_calls(routine: MRoutine) -> bool:
             elif isinstance(stmt, MDoStatement):
                 for target in stmt.targets:
                     if target.offset is not None:
+                        return True
+    return False
+
+
+def _detect_external_gotos(routine: MRoutine) -> bool:
+    """Check if the routine contains any external GOTOs (to other routines).
+
+    External GOTOs require all local variables to be synced to _scope so that
+    the target routine can access them. MUMPS has a single symbol table, so
+    variables set before a GOTO must be visible in the target routine.
+
+    This checks for MCall targets with non-None routine field (indicates external).
+    T091c-ext: Also checks XECUTE constant values for external GOTO patterns.
+
+    Args:
+        routine: The routine to check
+
+    Returns:
+        True if any GOTO targets an external routine
+    """
+    from m2py.asg.statements import MXecuteStatement
+
+    for label in routine.labels:
+        if label.body is None:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MGotoStatement):
+                for target in stmt.targets:
+                    if target.routine is not None:
+                        return True
+            # T091c-ext: Check XECUTE constant values for external GOTO patterns
+            # Look for "G ^" or "G LABEL^" patterns in the constant strings
+            elif isinstance(stmt, MXecuteStatement) and stmt.constant_values:
+                for const_val in stmt.constant_values:
+                    # Check for G(OTO) ^ROUTINE or G(OTO) LABEL^ROUTINE patterns
+                    # Using simple string check - look for " G ^" or " G LABEL^"
+                    import re
+
+                    if re.search(
+                        r"\bG(?:OTO)?\s+[A-Za-z0-9_%]*\^", const_val, re.IGNORECASE
+                    ):
                         return True
     return False
 

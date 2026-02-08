@@ -163,9 +163,9 @@ class TestStrategyIntegration:
         # Simple routine with no GOTOs
         code = generate_python('TEST\n W "hello"\n Q\n')
 
-        # Should generate standard function pattern (with _rt, _scope and **_kwargs)
+        # Should generate standard function pattern (with _rt, _scope and _start_offset=0)
         # Phase 13 (T076): _rt is now first parameter
-        assert "def TEST(_rt, _scope=None, **_kwargs):" in code
+        assert "def TEST(_rt, _scope=None, _start_offset=0):" in code
         assert "_rt.write" in code
 
     def test_intra_label_goto_uses_simple_functions(self, generate_python):
@@ -173,9 +173,11 @@ class TestStrategyIntegration:
         # Intra-label forward GOTO - restructured to if/else
         code = generate_python('TEST\n I 1 G TEST+3\n W "skip"\n W "done"\n Q\n')
 
-        # Should still be simple function pattern (with _rt, _scope and **_kwargs)
+        # Should still be simple function pattern (with _rt, _scope and _start_offset=0)
         # Phase 13 (T076): _rt is now first parameter
-        assert "def TEST(_rt, _scope=None, **_kwargs):" in code or "_labels" in code
+        assert (
+            "def TEST(_rt, _scope=None, _start_offset=0):" in code or "_labels" in code
+        )
         # Either simple functions or trampoline is acceptable
 
     def test_cross_label_goto_uses_trampoline(self, generate_python):

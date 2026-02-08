@@ -34,10 +34,9 @@ for traceability to test files.
 | LIM-012 | Unknown Z-Extensions | Parse Error | Unknown Z-commands/functions from other implementations |
 | LIM-013 | ASSIGN Command | Parse Error | Part of MWAPI event model |
 | LIM-014 | ANSI Standard Library Functions (Annex I) | Parses OK | ~60 library functions with zero VistA usage |
-| LIM-015 | Zero-VistA-Usage YDB Z-Commands | Parses OK | Z-commands parsed but codegen stubs only |
+| LIM-015 | YDB-Specific Features | Parses OK | YDB-specific commands, functions, and behaviors |
 | LIM-016 | Zero-VistA-Usage Deferred Features | Parses OK | Features with confirmed zero VistA usage |
-| LIM-017 | Generic Indirection Codegen | Redirect | Tests in s7_3_indirection |
-| LIM-018 | Z-Command Codegen | Redirect | Tests in extensions/ydb/ |
+| LIM-019 | Arithmetic Precision Edge Cases | Parses OK | Minor precision differences in 18-digit boundary cases |
 
 ---
 
@@ -294,12 +293,13 @@ ASG produces `MExtrinsicFunction`. Code generation behavior:
 VistA codebases work correctly as they use Kernel Library Functions (`^XLFMTH`, etc.)
 instead of ANSI standard library routines.
 
-## LIM-015: Zero-VistA-Usage YDB Z-Commands
+## LIM-015: YDB-Specific Features
 
 **Type**: Parses OK
 
-The following YDB Z-commands and Z-functions are parsed but have **zero usage**
-in the VA VistA codebase (33,951 routine files analyzed):
+The following YDB-specific features are out of scope for m2py:
+
+**Z-Commands and Z-Functions** (zero VistA usage):
 
 | Command/Function | Description | VistA Usage |
 |------------------|-------------|-------------|
@@ -318,12 +318,30 @@ in the VA VistA codebase (33,951 routine files analyzed):
 | $ZDATE | Date formatting | 0 files |
 | $ZMESSAGE | Error message lookup | 0 files |
 | $ZWIDTH | String width | 0 files |
+| ^%G | Global display utility | 0 files |
 
-These commands are recognized to support complete YDB compatibility but are
-not a priority for implementation due to zero real-world usage.
+**YDB Runtime Behaviors**:
 
-**M2PY Behavior**: Parser accepts these commands (valid YDB grammar). ASG produces appropriate nodes.
-Codegen raises `NotImplementedError("LIM-015: {command} command not supported")`.
+| Feature | Description |
+|---------|-------------|
+| Numeric overflow errors | YDB raises errors for numbers >1E47 |
+| Device parameters | YDB-specific OPEN/USE device parameters |
+| Test harness infrastructure | JOBLABOFF, pre-populated databases |
+| Interactive debugger | BREAK command requires YDB debugger |
+| $ZTRAP error trapping | YDB-specific error handling mechanism |
+| $ZVERSION, $ZPOSITION | YDB-specific special variables |
+
+These features are recognized to support complete YDB compatibility but are
+not a priority for implementation due to usage and/or YDB-specific runtime
+infrastructure that m2py does not provide.
+
+**^%G Utility**: This is a YottaDB system utility routine that displays global
+variables interactively. It is not part of the MUMPS standard and requires
+YDB-specific infrastructure (terminal I/O, menu system) that m2py does not provide.
+
+**M2PY Behavior**: Parser accepts Z-commands (valid YDB grammar). ASG produces appropriate nodes.
+Codegen raises `NotImplementedError("LIM-015: {feature} not supported")`.
+YDB-specific runtime behaviors are not implemented.
 
 ## LIM-016: Zero-VistA-Usage Deferred Features
 
@@ -346,6 +364,38 @@ implement. Since m2py targets YDB compatibility, these commands raise NotImpleme
 
 **M2PY Behavior**: Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
 `NotImplementedError("LIM-016: {feature} not supported")`.
+
+## LIM-019: Arithmetic Precision Edge Cases
+
+**Type**: Parses OK
+
+MUMPS specifies 18 significant digits for numeric precision. M2PY uses Python's
+Decimal library to implement this precision. However, there are minor differences
+in edge cases when results approach the 18-digit boundary:
+
+| Case | YDB | M2PY | Difference |
+|------|-----|------|------------|
+| -1 + .000000000000000001 | -1 | -.999999999999999999 | Rounding to integer |
+| -37 * 1.00000000111111111 | -37.000000041111111 | -37.0000000411111111 | Last digit |
+
+These differences affect the YDB arith.m test which implements its own bignum
+arithmetic and compares against the built-in operators. Both implementations
+are correct to 18 significant digits; the difference is in rounding behavior
+at the precision boundary.
+
+Real-world MUMPS code rarely depends on the exact 18th significant digit.
+
+**Test Coverage**: Comprehensive unit tests for arithmetic helper functions
+(m_add, m_sub, m_mul, m_div) are in tests/unit/codegen/test_helpers.py.
+All test cases are verified against YDB output and cover:
+- Basic operations, zero handling, negative numbers
+- Decimal precision (avoiding float errors like 0.1+0.2)
+- String coercion via m_num
+- 18-digit precision for repeating decimals
+- Result formatting via m_str (no scientific notation)
+
+**M2PY Behavior**: Arithmetic operations produce correct results to 18 significant digits.
+Edge case rounding may differ slightly from YDB in the last significant digit.
 
 ---
 

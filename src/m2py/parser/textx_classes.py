@@ -269,6 +269,10 @@ class NumericLiteral(MLiteral):
     """textX custom class for NumericLiteral grammar rule.
 
     Grammar: NumericLiteral: value=NUMBER;
+
+    For numbers with exponent notation, we store both the parsed value
+    and the original string representation to preserve precision for
+    large numbers that exceed float64 precision.
     """
 
     def __init__(self, parent=None, value: str = ""):
@@ -278,19 +282,28 @@ class NumericLiteral(MLiteral):
         # Parse the numeric value
         try:
             if "." in value or "E" in value.upper():
+                # Store as float for numeric operations, but flag that we have
+                # an exact decimal representation for string operations
                 parsed_value = float(value)
                 lit_type = LiteralType.DECIMAL
+                # Store exact string representation for precise formatting
+                # This is used by m_str() to avoid float precision loss
+                original_string = value
             else:
                 parsed_value = int(value)
                 lit_type = LiteralType.INTEGER
+                original_string = None
         except (ValueError, TypeError):
             parsed_value = value
             lit_type = LiteralType.STRING
+            original_string = None
 
         # Set dataclass fields directly
         object.__setattr__(self, "value", parsed_value)
         object.__setattr__(self, "literal_type", lit_type)
         object.__setattr__(self, "result_type", None)
+        # Store original string for precise formatting
+        object.__setattr__(self, "_original_string", original_string)
 
 
 class StringLiteral(MLiteral):
@@ -618,7 +631,7 @@ class TextFunction(MIntrinsicFunction):
     Grammar: TextFunction: '$' name=TEXTNAME '(' arg=TextFunctionArg ')';
 
     $TEXT uses special line-reference syntax. The argument contains:
-    - fullIndirect: Indirection for entire line reference
+    - labelIndirect: Indirection for label part (e.g., @X in $T(@X+1))
     - label: Label name
     - offset: Optional offset expression (via OffsetExpr)
     - routineIndirect: Indirection for routine name
@@ -635,21 +648,22 @@ class TextFunction(MIntrinsicFunction):
         # Values are unwrapped ASG nodes where applicable
         line_ref = {}
         if arg:
-            if hasattr(arg, "fullIndirect") and arg.fullIndirect:
-                line_ref["full_indirect"] = _unwrap_expr(arg.fullIndirect)
-            else:
-                if hasattr(arg, "label") and arg.label:
-                    line_ref["label"] = arg.label  # Plain string
-                if hasattr(arg, "offset") and arg.offset:
-                    line_ref["offset"] = _unwrap_expr(arg.offset)
-                # Capture offset sign (+ or -) for proper offset handling
-                # offsetSign is set when + or - precedes the offset expression
-                if hasattr(arg, "offsetSign") and arg.offsetSign:
-                    line_ref["offset_sign"] = arg.offsetSign
-                if hasattr(arg, "routineIndirect") and arg.routineIndirect:
-                    line_ref["routine_indirect"] = _unwrap_expr(arg.routineIndirect)
-                if hasattr(arg, "routine") and arg.routine:
-                    line_ref["routine"] = arg.routine  # Plain string
+            # Check for label indirection (e.g., $T(@X) or $T(@X+1))
+            if hasattr(arg, "labelIndirect") and arg.labelIndirect:
+                line_ref["label_indirect"] = _unwrap_expr(arg.labelIndirect)
+            elif hasattr(arg, "label") and arg.label:
+                line_ref["label"] = arg.label  # Plain string
+            # Offset is always captured regardless of whether label is static or indirect
+            if hasattr(arg, "offset") and arg.offset:
+                line_ref["offset"] = _unwrap_expr(arg.offset)
+            # Capture offset sign (+ or -) for proper offset handling
+            # offsetSign is set when + or - precedes the offset expression
+            if hasattr(arg, "offsetSign") and arg.offsetSign:
+                line_ref["offset_sign"] = arg.offsetSign
+            if hasattr(arg, "routineIndirect") and arg.routineIndirect:
+                line_ref["routine_indirect"] = _unwrap_expr(arg.routineIndirect)
+            if hasattr(arg, "routine") and arg.routine:
+                line_ref["routine"] = arg.routine  # Plain string
 
         # Don't put dict in arguments - that causes analyzer issues
         # The line_ref is stored separately

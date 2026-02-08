@@ -1,12 +1,15 @@
 """Extended tests for runtime helper functions.
 
-Covers additional edge cases in m_format_output, m_data, and m_order.
+Covers additional edge cases in m_format_output, m_data, m_order, and m_justify.
 """
+
+from decimal import Decimal
 
 from m2py.runtime import MArray
 from m2py.runtime.helpers import (
     m_data,
     m_format_output,
+    m_justify,
     m_order,
 )
 
@@ -181,3 +184,73 @@ class TestMOrderSubscriptCoercion:
         arr[1][2].value = "a"
         # Navigate to arr[99] which doesn't exist
         assert m_order(arr, ("99", ""), 1) == ""
+
+
+# =============================================================================
+# m_justify Tests - ROUND_HALF_UP Rounding
+# =============================================================================
+
+
+class TestMJustify:
+    """Tests for m_justify() function.
+
+    Bug fix: m_justify now uses ROUND_HALF_UP (traditional rounding)
+    instead of Python's default ROUND_HALF_EVEN (banker's rounding).
+    """
+
+    def test_basic_formatting(self):
+        """Basic number formatting with width and decimals."""
+        assert m_justify(3.14159, 10, 2) == "      3.14"
+        assert m_justify(42, 5, 0) == "   42"
+
+    def test_round_half_up_not_bankers(self):
+        """Values ending in .5 round UP, not to nearest even.
+
+        This is the key difference from Python's default Decimal rounding.
+        - 123.45 with 1 decimal → 123.5 (not 123.4)
+        - 2.35 with 1 decimal → 2.4 (not 2.4 - same, but 2.45 matters)
+        """
+        # 123.45 → 123.5 (ROUND_HALF_UP), not 123.4 (ROUND_HALF_EVEN)
+        assert m_justify(123.45, 7, 1) == "  123.5"
+
+        # 2.35 → 2.4 (both rounding modes agree here)
+        assert m_justify(2.35, 5, 1) == "  2.4"
+
+        # 2.25 → 2.3 (ROUND_HALF_UP), not 2.2 (ROUND_HALF_EVEN)
+        assert m_justify(2.25, 5, 1) == "  2.3"
+
+        # 1.5 → 2 (ROUND_HALF_UP), not 2 (ROUND_HALF_EVEN agrees for odd)
+        assert m_justify(1.5, 3, 0) == "  2"
+
+        # 2.5 → 3 (ROUND_HALF_UP), not 2 (ROUND_HALF_EVEN would round to even 2)
+        assert m_justify(2.5, 3, 0) == "  3"
+
+    def test_decimal_input_preserves_precision(self):
+        """Decimal inputs maintain precision for rounding."""
+        # Test with Decimal input
+        assert m_justify(Decimal("123.45"), 7, 1) == "  123.5"
+        assert m_justify(Decimal("2.25"), 5, 1) == "  2.3"
+
+    def test_negative_values(self):
+        """Negative values round correctly."""
+        # -123.45 → -123.5
+        assert m_justify(-123.45, 8, 1) == "  -123.5"
+
+        # -2.25 → -2.3 (rounds away from zero with ROUND_HALF_UP)
+        assert m_justify(-2.25, 6, 1) == "  -2.3"
+
+    def test_width_smaller_than_result(self):
+        """Width smaller than formatted result doesn't truncate."""
+        assert m_justify(12345.67, 5, 2) == "12345.67"
+        assert m_justify(999.9, 3, 1) == "999.9"
+
+    def test_zero_decimals(self):
+        """Zero decimal places rounds to integer."""
+        assert m_justify(3.7, 3, 0) == "  4"
+        assert m_justify(3.4, 3, 0) == "  3"
+        assert m_justify(3.5, 3, 0) == "  4"  # ROUND_HALF_UP
+
+    def test_many_decimals(self):
+        """Many decimal places pad with zeros."""
+        assert m_justify(3.14, 10, 5) == "   3.14000"
+        assert m_justify(1, 8, 3) == "   1.000"

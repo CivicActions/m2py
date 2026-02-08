@@ -17,6 +17,7 @@ from m2py.asg.expressions import (
     MExpr,
     MExternalFunction,
     MExtrinsicFunction,
+    MGlobal,
     MIndirection,
     MIntrinsicFunction,
     MLiteral,
@@ -116,7 +117,12 @@ def generate_intrinsic_function(
     raise NotImplementedError(f"Intrinsic function ${expr.name} not yet implemented")
 
 
-def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
+def generate_expr(
+    expr: MExpr,
+    ctx: "GeneratorContext",
+    if_condition: bool = False,
+    subscript_context: bool = False,
+) -> str:
     """Generate Python expression from ASG expression node.
 
     Dispatches based on expression type:
@@ -131,6 +137,11 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     Args:
         expr: ASG expression node
         ctx: Generator context (for name translation, etc.)
+        if_condition: If True, this expression is an IF condition, which
+                     affects how argument indirection handles empty strings (T052)
+        subscript_context: If True, this expression is in a subscript position.
+                     Affects indirection: @VAR returns VALUE (for use as subscript)
+                     instead of resolving to NAME (T087)
 
     Returns:
         Python expression string
@@ -142,7 +153,9 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         return _generate_literal(expr)
     elif isinstance(expr, MVariable):
         return _generate_variable(expr, ctx)
-    elif isinstance(expr, GlobalVariable):
+    # Check MGlobal before GlobalVariable since GlobalVariable inherits from MGlobal
+    # and MGlobal can appear directly in some contexts (e.g., GOTO offsets)
+    elif isinstance(expr, MGlobal):
         return _generate_global_variable(expr, ctx)
     elif isinstance(expr, NakedGlobal):
         return _generate_naked_global_variable(expr, ctx)
@@ -167,8 +180,11 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
     elif isinstance(expr, MPatternMatch):
         return _generate_pattern_match(expr, ctx)
     # Spec 012 Phase 3 (T016): Handle name indirection (@VAR)
+    # T087: Pass subscript_context to generate VALUE instead of NAME resolution
     elif isinstance(expr, MIndirection):
-        return _generate_indirection(expr, ctx)
+        return _generate_indirection(
+            expr, ctx, if_condition=if_condition, subscript_context=subscript_context
+        )
     # Spec 013 Phase 16 (FR-029): Handle structured system variables (^$GLOBAL etc)
     elif isinstance(expr, MStructuredSystemVariable):
         return _generate_ssvn(expr, ctx)
@@ -176,8 +192,98 @@ def generate_expr(expr: MExpr, ctx: "GeneratorContext") -> str:
         raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
 
 
+def contains_naked_global(expr: MExpr) -> bool:
+    """Check if expression contains any naked global references.
+
+    Recursively traverses the expression tree looking for NakedGlobal nodes.
+    Used to determine if subscript expressions need to be pre-evaluated
+    to ensure correct left-to-right evaluation order in assignments.
+
+    Args:
+        expr: Expression node to check
+
+    Returns:
+        True if expression contains a NakedGlobal, False otherwise
+    """
+    from m2py.asg.expressions import MNakedGlobal
+
+    # Check for naked global types
+    if isinstance(expr, (NakedGlobal, MNakedGlobal)):
+        return True
+
+    # Check MLiteral - no children
+    if isinstance(expr, MLiteral):
+        return False
+
+    # Check MVariable - check subscripts
+    if isinstance(expr, MVariable):
+        return any(contains_naked_global(sub) for sub in (expr.subscripts or []))
+
+    # Check MGlobal (including GlobalVariable) - check subscripts
+    if isinstance(expr, MGlobal):
+        return any(contains_naked_global(sub) for sub in (expr.subscripts or []))
+
+    # Check binary operations - check both operands
+    if isinstance(expr, MBinaryOp):
+        left_has = expr.left is not None and contains_naked_global(expr.left)
+        right_has = expr.right is not None and contains_naked_global(expr.right)
+        return left_has or right_has
+
+    # Check unary operations - check operand
+    if isinstance(expr, MUnaryOp):
+        return expr.operand is not None and contains_naked_global(expr.operand)
+
+    # Check function calls - check arguments
+    if isinstance(expr, MIntrinsicFunction):
+        return any(contains_naked_global(arg) for arg in (expr.arguments or []))
+
+    # Check extrinsic functions - check arguments
+    if isinstance(expr, MExtrinsicFunction):
+        return any(
+            param.expression is not None and contains_naked_global(param.expression)
+            for param in (expr.arguments or [])
+        )
+
+    # Check indirection - check expression and subscripts
+    if isinstance(expr, MIndirection):
+        # MIndirection uses 'expression' attribute
+        inner_expr = getattr(expr, "expression", None)
+        if inner_expr is not None and contains_naked_global(inner_expr):
+            return True
+        # Check direct subscripts
+        if any(contains_naked_global(sub) for sub in (expr.subscripts or [])):
+            return True
+        # Check name indirection subscripts
+        if expr.name_indirection_subscripts:
+            for sub_list in expr.name_indirection_subscripts:
+                if any(contains_naked_global(sub) for sub in (sub_list or [])):
+                    return True
+        return False
+
+    # Check pattern match - check subject expression
+    if isinstance(expr, MPatternMatch):
+        return expr.subject is not None and contains_naked_global(expr.subject)
+
+    # Check special variables - no naked globals
+    if isinstance(expr, MSpecialVariable):
+        return False
+
+    # Check structured system variables - check subscripts
+    if isinstance(expr, MStructuredSystemVariable):
+        return any(contains_naked_global(sub) for sub in (expr.subscripts or []))
+
+    # Default: no naked globals found
+    return False
+
+
 def _generate_literal(lit: MLiteral) -> str:
     """Generate Python literal from MLiteral.
+
+    For decimal numbers, we generate a Decimal representation to preserve
+    precision. This is critical for:
+    - Large numbers that exceed float64 precision
+    - High-precision decimal literals (e.g., 1.00000000111111111)
+    - String operations like concatenation and the follows operator
 
     Args:
         lit: MLiteral node
@@ -192,6 +298,13 @@ def _generate_literal(lit: MLiteral) -> str:
     elif lit.literal_type == LiteralType.INTEGER:
         return str(lit.value)
     elif lit.literal_type == LiteralType.DECIMAL:
+        # Check if literal has stored original string (for precise numbers)
+        original = getattr(lit, "_original_string", None)
+        if original:
+            # Use Decimal for exact precision - this avoids float precision loss
+            # for numbers like 1.00000000111111111 or 9999997799E14
+            return f'Decimal("{original}")'
+        # Fallback: use the already-parsed value (may have lost precision)
         return str(lit.value)
     else:
         # Default: treat as string
@@ -211,6 +324,9 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     Spec 008 (T085): For SIMPLE_FUNCTIONS strategy, read variables from _scope
     dictionary for cross-routine visibility: _scope.get('VAR', '')
 
+    Spec 017 (T014): For routines with argumentless KILL/NEW in TRAMPOLINE strategy,
+    use state._locals dict for dynamic variable access.
+
     Args:
         var: MVariable node
         ctx: Generator context
@@ -221,10 +337,34 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     # Translate name to valid Python identifier
     python_name = translate_name(var.name)
 
+    # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+    if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+        if var.subscripts:
+            # Generate subscript expressions
+            # T087: Pass subscript_context=True so indirection in subscripts
+            # returns VALUE instead of validating as NAME
+            subscript_exprs = [
+                generate_expr(sub, ctx, subscript_context=True)
+                for sub in var.subscripts
+            ]
+            # Access MArray from _locals dict, default to empty MArray
+            base = f"state._locals.get({python_name!r}, MArray())"
+            return f"{base}.get({', '.join(subscript_exprs)})"
+        else:
+            # T075h: Simple variable - get value from _locals dict
+            # state._locals may contain MArray objects (from SET) or plain values
+            # (from external TRAMPOLINE routine returns), so we use m_var_value
+            # to handle both cases uniformly
+            return f"m_var_value(state._locals.get({python_name!r}))"
+
     # Spec 006 (T075): Handle subscripted array access
     if var.subscripts:
         # Generate subscript expressions
-        subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+        # T087: Pass subscript_context=True so indirection in subscripts
+        # returns VALUE instead of validating as NAME
+        subscript_exprs = [
+            generate_expr(sub, ctx, subscript_context=True) for sub in var.subscripts
+        ]
 
         # Determine base variable access
         if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.array_vars:
@@ -233,6 +373,7 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
         elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Spec 009 (T022-T023): Access arrays from _scope using MArray
             # MArray.get(*subscripts) returns "" for undefined (MUMPS semantics)
+            # Use python_name (translated) to match SET statement key format
             base = f"_scope.get({python_name!r}, MArray())"
         else:
             # Plain Python local variable (TRAMPOLINE without state_vars)
@@ -248,20 +389,29 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     # Spec 008 (T085): Read variables from _scope for SIMPLE_FUNCTIONS strategy
     # Spec 009 (T022): Use MArray.value to read simple variables (consistency with subscripted)
     # Return empty string for undefined variables (MUMPS semantics via MArray.value)
+    # Spec 017 Phase 18: Use m_var_value to handle both MArray and plain values
+    # (External TRAMPOLINE routines may return plain strings in _scope)
+    # Use python_name (translated) to match SET statement key format
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-        return f"_scope.get({python_name!r}, MArray()).value"
+        return f"m_var_value(_scope.get({python_name!r}))"
+
+    # Cross-routine input-only variables: Variables that are read but never written
+    # in this routine must come from the caller's scope via external GOTO.
+    # Read from _scope in TRAMPOLINE mode for these variables.
+    if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.input_only_vars:
+        return f"m_var_value(_scope.get({python_name!r}))"
 
     # Fallback: plain Python variable (TRAMPOLINE without state_vars)
     return python_name
 
 
-def _generate_global_variable(var: GlobalVariable, ctx: "GeneratorContext") -> str:
+def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     """Generate Python expression for global variable READ.
 
     Spec 009 (T027): Generate _rt.globals.get() call for global variable reads.
 
     Args:
-        var: GlobalVariable node
+        var: MGlobal or GlobalVariable node (GlobalVariable inherits from MGlobal)
         ctx: Generator context
 
     Returns:
@@ -269,18 +419,36 @@ def _generate_global_variable(var: GlobalVariable, ctx: "GeneratorContext") -> s
 
     The generated code reads from the global storage backend and returns
     empty string for undefined globals (MUMPS implicit $GET semantics).
+
+    Raises:
+        NotImplementedError: For extended globals (^|env| or ^[gld]) which have
+        an environment field - these are not yet implemented.
     """
+    # Check for extended global references (not yet supported)
+    if hasattr(var, "environment") and var.environment is not None:
+        raise NotImplementedError(
+            f"Extended global references not implemented: {type(var).__name__}"
+        )
+
     # Get global name (without caret)
     global_name = var.name
 
     # Generate subscript expressions
+    # DO NOT wrap in str() - let the runtime's _canonicalize_subscript handle
+    # the type distinction. Numeric literals (Decimal, int, float) should
+    # canonicalize differently than string literals.
+    # Example: Decimal("1.0") → "1" (numeric), but "1.0" → "1.0" (string)
+    # T087: Pass subscript_context=True so indirection in subscripts
+    # returns VALUE instead of validating as NAME
     if var.subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+        subscript_exprs = [
+            generate_expr(sub, ctx, subscript_context=True) for sub in var.subscripts
+        ]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -306,13 +474,18 @@ def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -
     resolve_naked() returns (name, base_subscripts + new_subscripts).
     """
     # Generate subscript expressions
+    # DO NOT wrap in str() - let the runtime's _canonicalize_subscript handle it
+    # T087: Pass subscript_context=True so indirection in subscripts
+    # returns VALUE instead of validating as NAME
     if var.subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in var.subscripts]
+        subscript_exprs = [
+            generate_expr(sub, ctx, subscript_context=True) for sub in var.subscripts
+        ]
         # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -418,8 +591,8 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("JOB", "J"):
         return "_rt.job()"
 
-    # $IO - current I/O device
-    if name == "IO":
+    # $IO / $I - current I/O device
+    if name in ("IO", "I"):
         return "_rt.io()"
 
     # $X - current column position
@@ -468,31 +641,74 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("ZERROR", "ZE"):
         return "_rt.zerror()"
 
+    # $SYSTEM / $SY - system identification
+    # Spec 017 Phase 23: Returns "V,S" where V is MDC-assigned implementor number
+    if name in ("SYSTEM", "SY"):
+        return "_rt.system()"
+
+    # $PRINCIPAL / $P - principal I/O device
+    # Spec 017 Phase 23: Returns the principal device identifier
+    # Note: $P without arguments is $PRINCIPAL (not $PIECE which requires args)
+    if name in ("PRINCIPAL", "P", "PIOR", "PIOREFERENCE"):
+        return "_rt.principal()"
+
+    # $KEY / $K - terminal input key
+    # Spec 017 Phase 23: Returns terminator from last READ command
+    if name in ("KEY", "K"):
+        return "_rt.key()"
+
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 
 
-def _generate_indirection(ind: MIndirection, ctx: "GeneratorContext") -> str:
+def _generate_indirection(
+    ind: MIndirection,
+    ctx: "GeneratorContext",
+    if_condition: bool = False,
+    subscript_context: bool = False,
+) -> str:
     """Generate Python expression for name indirection (@VAR).
 
     Spec 012 Phase 3 (T016): Dispatches to codegen/indirection.py for
     runtime indirection handling.
 
-    Handles:
-    - Simple: @X → _rt.get_var(_scope.get("X", ""), _scope)
-    - Multi-level: @@X → _rt.resolve_indirection("X", 2, _scope)
-    - With subscripts: @NAME@(1,2) → _rt.get_var(f'{...}(1,2)', _scope)
+    Feature: 018-unified-variable-system - Now uses unified runtime methods:
+    - Simple NAME: @X → _rt.get_indirected("X", _scope, levels=1)
+    - Multi-level NAME: @@X → _rt.get_indirected("X", _scope, levels=2)
+    - With subscripts: @NAME@(1,2) → handled via per_level_subscripts
+    - ARGUMENT type: @A in IF → evaluates value of A as expression
+
+    T087: subscript_context changes indirection behavior:
+    - subscript_context=False (default): Resolves to NAME, validates result
+    - subscript_context=True: Evaluates indirection and returns VALUE for subscript use
+      Example: ^V1A(@^(4)) where ^(4)="^V1A(5)" and ^V1A(5)=55
+      Returns 55 (the value), not validates "55" as a name
 
     Args:
         ind: MIndirection ASG node
         ctx: Generator context
+        if_condition: If True, this is an IF condition - affects T052 empty handling
+        subscript_context: If True, return VALUE instead of resolving NAME (T087)
 
     Returns:
         Python expression string
     """
-    from m2py.codegen.indirection import generate_name_indirection
+    from m2py.asg.enums import IndirectionType
+    from m2py.codegen.indirection import (
+        generate_name_indirection,
+        generate_argument_indirection,
+        generate_subscript_indirection,
+    )
 
-    return generate_name_indirection(ind, ctx)
+    # Dispatch based on indirection type
+    if ind.indirection_type == IndirectionType.ARGUMENT:
+        return generate_argument_indirection(ind, ctx, if_condition=if_condition)
+    elif subscript_context:
+        # T087: Subscript context - get VALUE for use as subscript
+        return generate_subscript_indirection(ind, ctx)
+    else:
+        # NAME type (default) - look up variable by resolved name
+        return generate_name_indirection(ind, ctx)
 
 
 def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
@@ -513,18 +729,24 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
     left = generate_expr(op.left, ctx) if op.left else "0"
     right = generate_expr(op.right, ctx) if op.right else "0"
 
-    if op.operator in ("+", "-"):
-        # Arithmetic: coerce both operands to numeric
-        return f"(m_num({left}) {op.operator} m_num({right}))"
-    elif op.operator in ("*", "/"):
-        # Multiplication/Division: coerce both operands
-        return f"(m_num({left}) {op.operator} m_num({right}))"
+    if op.operator == "+":
+        # Addition: use m_add for Decimal precision
+        return f"m_add({left}, {right})"
+    elif op.operator == "-":
+        # Subtraction: use m_sub for Decimal precision
+        return f"m_sub({left}, {right})"
+    elif op.operator == "*":
+        # Multiplication: use m_mul for Decimal precision
+        return f"m_mul({left}, {right})"
+    elif op.operator == "/":
+        # Division: use m_div for 18-digit precision (MUMPS standard)
+        return f"m_div({left}, {right})"
     elif op.operator == "\\":
         # Integer division in MUMPS - uses truncation towards zero, not floor division
         return f"(int(m_num({left}) / m_num({right})))"
     elif op.operator == "#":
-        # Modulo in MUMPS
-        return f"(m_num({left}) % m_num({right}))"
+        # Modulo in MUMPS - uses floor division semantics (unlike Decimal %)
+        return f"m_mod({left}, {right})"
     elif op.operator == "**":
         # Exponentiation in MUMPS - base ** exponent
         return f"(m_num({left}) ** m_num({right}))"
@@ -532,8 +754,8 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         # Comparison: use m_compare helper
         return f'm_compare({left}, "{op.operator}", {right})'
     elif op.operator == "_":
-        # String concatenation
-        return f"(str({left}) + str({right}))"
+        # String concatenation - use m_str for MUMPS-style number formatting
+        return f"(m_str({left}) + m_str({right}))"
     elif op.operator == "&":
         # Logical AND - must return int (0/1), not Python bool
         return f"int(m_truth({left}) and m_truth({right}))"
@@ -551,16 +773,31 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         return f'int(not m_compare({left}, ">", {right}))'
     elif op.operator == "[":
         # Contains: A[B returns 1 if B is substring of A
-        # Inline Python - no runtime helper needed
-        return f"int(str({right}) in str({left}))"
+        # Use m_str for MUMPS-style number formatting
+        return f"int(m_str({right}) in m_str({left}))"
+    elif op.operator == "'[":
+        # Not contains: A'[B returns 1 if B is NOT substring of A
+        return f"int(m_str({right}) not in m_str({left}))"
     elif op.operator == "]":
         # Follows: A]B returns 1 if A sorts after B (ASCII string comparison)
-        # Inline Python - no runtime helper needed
-        return f"int(str({left}) > str({right}))"
+        # Use m_str for MUMPS-style number formatting (critical for large numbers)
+        return f"int(m_str({left}) > m_str({right}))"
+    elif op.operator == "']":
+        # Not follows: A']B returns 1 if A does NOT sort after B
+        return f"int(m_str({left}) <= m_str({right}))"
     elif op.operator == "]]":
         # Sorts after: A]]B returns 1 if A strictly sorts after B
         # Uses MUMPS collation (numerics before strings), empty string never sorts after
         return f"m_sorts_after({left}, {right})"
+    elif op.operator == "']]":
+        # Not sorts after: A']]B returns 1 if A does NOT strictly sort after B
+        return f"int(not m_sorts_after({left}, {right}))"
+    elif op.operator == "'&":
+        # NAND: returns 1 if NOT (A AND B)
+        return f"int(not (m_truth({left}) and m_truth({right})))"
+    elif op.operator == "'!":
+        # NOR: returns 1 if NOT (A OR B)
+        return f"int(not (m_truth({left}) or m_truth({right})))"
     elif op.operator == "?":
         # Pattern match: A?pattern returns 1 if A matches pattern
         return f"m_pattern_match({left}, {right})"
@@ -620,8 +857,9 @@ def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str
     elif expr.compiled_regex is not None:
         # Direct pattern with pre-compiled regex - inline the fullmatch call
         # Use re.DOTALL so E pattern code matches newlines per MUMPS spec
+        # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
         regex = repr(expr.compiled_regex)
-        result = f"(1 if re.fullmatch({regex}, str({subject}), re.DOTALL) else 0)"
+        result = f"(1 if re.fullmatch({regex}, m_str({subject}), re.DOTALL) else 0)"
     else:
         # Direct pattern without compiled regex (shouldn't happen normally)
         # Fall back to runtime helper
@@ -673,6 +911,9 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         raise NotImplementedError("Extrinsic function without target not supported")
 
     label_name = expr.target.name
+    # T100: $$^ROUTINE means call the routine's entry point (routine name as label)
+    if not label_name and expr.target.routine:
+        label_name = expr.target.routine
     if not label_name:
         raise NotImplementedError("Extrinsic function with empty label not supported")
 
@@ -825,17 +1066,29 @@ def _generate_extrinsic_arguments_with_byref(
             parts.append("None")
             byref_names.append(None)
         elif arg.passing_mode == PassingMode.BY_REFERENCE:
-            # By-reference: pass the variable value, record name for unpacking
+            # By-reference: pass the MArray object directly for aliasing
+            # Spec 017 Phase 23: The callee shares the same MArray, so
+            # $D(param) sees descendants and param(sub) accesses caller's tree
             has_byref = True
             if arg.variable_name:
-                # Spec 009 (T021): Use MArray.value for SIMPLE_FUNCTIONS
+                # Direct by-ref (.X): pass the MArray object from scope
                 var_name = arg.variable_name
-                parts.append(f"_scope.get({var_name!r}, MArray()).value")
+                parts.append(f"_scope.get({var_name!r}, MArray())")
                 byref_names.append(var_name)
+            elif arg.expression and isinstance(arg.expression, MIndirection):
+                # Indirected by-ref (.@IX): resolve indirection to MArray
+                # Spec 017 Phase 23: Uses runtime to resolve name then get MArray
+                ind_expr = generate_expr(arg.expression, ctx)
+                # Replace get_indirected with get_indirected_marray for by-ref
+                marray_expr = ind_expr.replace(
+                    "_rt.get_indirected(", "_rt.get_indirected_marray("
+                )
+                parts.append(marray_expr)
+                byref_names.append(None)  # Resolved at runtime
             elif arg.expression:
-                # Expression passed by-ref (unusual but possible)
+                # Other expression passed by-ref (unusual)
                 parts.append(generate_expr(arg.expression, ctx))
-                byref_names.append(None)  # Can't write back to expression
+                byref_names.append(None)
             else:
                 parts.append("None")
                 byref_names.append(None)
@@ -844,32 +1097,13 @@ def _generate_extrinsic_arguments_with_byref(
                 parts.append(generate_expr(arg.expression, ctx))
             elif arg.variable_name:
                 var_name = arg.variable_name
-                parts.append(f"_scope.get({var_name!r}, MArray()).value")
+                parts.append(f"m_var_value(_scope.get({var_name!r}))")
             else:
                 parts.append("None")
             byref_names.append(None)
 
     # Only return byref_names if there were actually by-ref arguments
     return ", ".join(parts), byref_names if has_byref else []
-
-
-def _generate_extrinsic_arguments(
-    arguments: List[MActualParameter], ctx: "GeneratorContext"
-) -> str:
-    """Generate Python arguments for extrinsic function call.
-
-    Note: This is the legacy version that doesn't handle by-ref.
-    Use _generate_extrinsic_arguments_with_byref for full by-ref support.
-
-    Args:
-        arguments: List of MActualParameter
-        ctx: Generator context
-
-    Returns:
-        Comma-separated argument string
-    """
-    args, _ = _generate_extrinsic_arguments_with_byref(arguments, ctx)
-    return args
 
 
 def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -897,6 +1131,7 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $D(^G) → m_data_global(_rt.globals, 'G', ())
         $D(^G(1)) → m_data_global(_rt.globals, 'G', (str(1),))
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get first argument (the variable to check)
@@ -907,14 +1142,23 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     var = args[0]
 
-    # Generate subscript tuple
+    # Handle MIndirection: $D(@A@(1)) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system (T143f)
+        # For indirection, use unified resolve_for_target API via helper
+        from m2py.codegen.indirection import generate_data_indirection_name
+
+        return generate_data_indirection_name(var, ctx)
+
+    # Generate subscript tuple for non-indirection cases
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -922,8 +1166,18 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable: m_data(_scope.get('VAR', MArray()), subscripts)
+        # Local variable - need to access from correct location based on strategy
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            return f"m_data(state._locals.get({python_name!r}, MArray()), {subscripts_tuple})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_data(state.{python_name}, {subscripts_tuple})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
     elif isinstance(var, GlobalVariable):
         # Global variable: m_data_global(_rt.globals, 'NAME', subscripts)
@@ -936,8 +1190,18 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
-        # Fallback for any other variable type - treat as local
+        # Fallback for MVariable or any other variable type - treat as local
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            return f"m_data(state._locals.get({python_name!r}, MArray()), {subscripts_tuple})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_data(state.{python_name}, {subscripts_tuple})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
 
 
@@ -965,7 +1229,9 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $G(X(1)) → m_get(_scope.get('X', None), (str(1),), "")
         $G(^G) → m_get_global(_rt.globals, 'G', (), "")
         $G(^G(1),"DEF") → m_get_global(_rt.globals, 'G', (str(1),), "DEF")
+        $G(@A) → get_indirected("A", _scope, levels=1)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get arguments
@@ -979,18 +1245,27 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # Get default value if provided
     if len(args) >= 2:
         default_expr = generate_expr(args[1], ctx)
-        default_code = f"str({default_expr})"
+        default_code = f"m_str({default_expr})"
     else:
         default_code = '""'
 
+    # Handle MIndirection: $G(@A) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system
+        # For indirection, use unified get_indirected API via helper
+        from m2py.codegen.indirection import generate_get_indirection_name
+
+        return generate_get_indirection_name(var, ctx, default_code)
+
     # Generate subscript tuple
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1002,14 +1277,22 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         python_name = translate_name(var_name)
         return f"m_get(_scope.get({python_name!r}), {subscripts_tuple}, {default_code})"
     elif isinstance(var, GlobalVariable):
-        # Global variable: m_get_global(_rt.globals, 'NAME', subscripts, default)
-        return f"m_get_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {default_code})"
+        # Global variable: use lambda to evaluate subscripts once and pre-set
+        # naked indicator before evaluating default, so global refs in default
+        # correctly override naked. Subscripts may contain naked refs or other
+        # globals with side effects, so they must be evaluated exactly once.
+        return (
+            f"(lambda _subs: (_rt.globals.set_order_naked({var_name!r}, _subs), "
+            f"m_get_global(_rt.globals, {var_name!r}, _subs, "
+            f"{default_code}, update_naked=False))[1])({subscripts_tuple})"
+        )
     elif isinstance(var, NakedGlobal):
-        # Naked global: resolve then call m_get_global
+        # Naked global: resolve, pre-set naked, then call m_get_global
         # Spec 014 (T061): Naked references in $GET
         return (
-            f"(lambda _n, _s: m_get_global(_rt.globals, _n, _s, {default_code}))"
-            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+            f"(lambda _n, _s: (_rt.globals.set_order_naked(_n, _s), "
+            f"m_get_global(_rt.globals, _n, _s, {default_code}, "
+            f"update_naked=False))[1])(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
         # Fallback for any other variable type - treat as local
@@ -1043,7 +1326,9 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $O(A(1)) → m_order(_scope.get('A', MArray()), (str(1),))
         $O(A(""),-1) → m_order(_scope.get('A', MArray()), ("",), -1)
         $O(^G("")) → m_order_global(_rt.globals, 'G', ("",))
+        $O(@X) → _rt.get_order(X_value, _scope, direction)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get arguments
@@ -1059,15 +1344,145 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     if len(args) >= 2:
         direction_code = generate_expr(args[1], ctx)
 
-    # Generate subscript tuple
+    # Handle MIndirection: $O(@X) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        from m2py.codegen.indirection import (
+            _count_indirection_levels_with_subscripts,
+        )
+
+        levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(
+            var
+        )
+
+        # Build subscript expressions for ALL levels (inner to outer)
+        # _count_indirection_levels_with_subscripts collects subscripts from
+        # every @ level, including inner ones that var.name_indirection_subscripts misses
+        per_level_sub_exprs: list[list[str]] = []
+        for sub_list in all_subscripts:
+            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+            per_level_sub_exprs.append(sub_exprs)
+
+        # Generate the variable name resolution
+        from m2py.asg.expressions import MVariable
+        from m2py.parser.textx_classes import LocalVariable as MLocalVariable
+
+        if isinstance(inner_expr, GlobalVariable):
+            # Global variable as indirection source: @^V or @^V(0)
+            global_name = inner_expr.name
+            # Include subscripts from the GlobalVariable itself (e.g., ^V(0))
+            inner_global_subs = getattr(inner_expr, "subscripts", [])
+            if inner_global_subs:
+                sub_exprs = [generate_expr(sub, ctx) for sub in inner_global_subs]
+                if len(sub_exprs) == 1:
+                    subs_tuple = f"({sub_exprs[0]},)"
+                else:
+                    subs_tuple = f"({', '.join(sub_exprs)},)"
+                name_expr = (
+                    f'str((_rt.globals.get({global_name!r}, {subs_tuple}) or ""))'
+                )
+            else:
+                name_expr = f'str((_rt.globals.get({global_name!r}, ()) or ""))'
+
+            # For levels > 1, use resolve_order_name to do multi-level resolution
+            if levels > 1:
+                # Build per_level_subscripts arg for runtime
+                if per_level_sub_exprs:
+                    pls_parts = []
+                    for sub_exprs_level in per_level_sub_exprs:
+                        pls_parts.append(f"[{', '.join(sub_exprs_level)}]")
+                    pls_arg = f", per_level_subscripts=[{', '.join(pls_parts)}]"
+                else:
+                    pls_arg = ""
+
+                return (
+                    f"_rt.get_order("
+                    f"_rt.resolve_order_name({name_expr}, _scope, "
+                    f"levels_remaining={levels - 1}{pls_arg}), "
+                    f"_scope, {direction_code})"
+                )
+            else:
+                # Single level: use get_order with additional_subscripts
+                if per_level_sub_exprs:
+                    # Flatten all subscripts for single-level
+                    all_subs_flat = []
+                    for sub_exprs_level in per_level_sub_exprs:
+                        all_subs_flat.extend(sub_exprs_level)
+                    if len(all_subs_flat) == 1:
+                        additional_subs_arg = (
+                            f", additional_subscripts=({all_subs_flat[0]},)"
+                        )
+                    else:
+                        subs_joined = ", ".join(all_subs_flat)
+                        additional_subs_arg = (
+                            f", additional_subscripts=({subs_joined},)"
+                        )
+                else:
+                    additional_subs_arg = ""
+
+                return (
+                    f"_rt.get_order({name_expr}, _scope, "
+                    f"{direction_code}{additional_subs_arg})"
+                )
+        elif isinstance(inner_expr, (MVariable, MLocalVariable)):
+            base_name = inner_expr.name
+            # Check if inner_expr has subscripts (e.g., @@@A(0) -> A(0), not A)
+            inner_subscripts = getattr(inner_expr, "subscripts", [])
+            if inner_subscripts:
+                # Build the subscripted variable name at runtime
+                # For @@@A(0): base_name="A", subscripts=[0] -> "A(0)"
+                sub_exprs = [generate_expr(sub, ctx) for sub in inner_subscripts]
+                if len(sub_exprs) == 1:
+                    full_name_expr = f'f"{base_name}({{{sub_exprs[0]}}})"'
+                else:
+                    subs_parts = ",".join(f"{{{s}}}" for s in sub_exprs)
+                    full_name_expr = f'f"{base_name}({subs_parts})"'
+            else:
+                full_name_expr = f'"{base_name}"'
+
+            # Feature: 018-unified-variable-system
+            # Use resolve_for_target (unified method) to get the variable NAME.
+            # $ORDER/$NEXT just need the name to find the next subscript.
+            name_expr = (
+                f"_rt.resolve_for_target({full_name_expr}, _scope, levels={levels})"
+            )
+        else:
+            name_expr_base = generate_expr(inner_expr, ctx)
+            name_expr = f"str({name_expr_base})"
+
+        # For non-GlobalVariable cases, use get_order with additional_subscripts
+        # (GlobalVariable cases were already handled above with early return)
+        additional_subs_arg = ""
+        if not isinstance(inner_expr, GlobalVariable):
+            if per_level_sub_exprs:
+                all_subs_flat = []
+                for sub_exprs_level in per_level_sub_exprs:
+                    all_subs_flat.extend(sub_exprs_level)
+                if len(all_subs_flat) == 1:
+                    additional_subs_arg = (
+                        f", additional_subscripts=({all_subs_flat[0]},)"
+                    )
+                else:
+                    subs_joined = ", ".join(all_subs_flat)
+                    additional_subs_arg = f", additional_subscripts=({subs_joined},)"
+            else:
+                additional_subs_arg = ""
+
+        # Use _rt.get_order which handles indirected variable names
+        # Pass additional_subscripts separately for proper merging
+        return (
+            f"_rt.get_order({name_expr}, _scope, {direction_code}{additional_subs_arg})"
+        )
+
+    # Generate subscript tuple for non-indirection cases
     # For $ORDER, subscripts include the starting point for iteration
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         # If no subscripts, use ("",) to get first key at root level
         subscripts_tuple = '("",)'
@@ -1076,22 +1491,53 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable: m_order(_scope.get('VAR', MArray()), subscripts, direction)
+        # Local variable - need to access from correct location based on strategy
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            base = f"state._locals.get({python_name!r}, MArray())"
+            return f"m_order({base}, {subscripts_tuple}, {direction_code})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_order(state.{python_name}, {subscripts_tuple}, {direction_code})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_order(_scope.get({python_name!r}, MArray()), {subscripts_tuple}, {direction_code})"
     elif isinstance(var, GlobalVariable):
-        # Global variable: m_order_global(_rt.globals, 'NAME', subscripts, direction)
-        return f"m_order_global(_rt.globals, {var_name!r}, {subscripts_tuple}, {direction_code})"
-    elif isinstance(var, NakedGlobal):
-        # Naked global: resolve then call m_order_global
-        # Spec 014 (T061): Naked references in $ORDER
+        # Global variable: use lambda to evaluate subscripts once and pre-set
+        # naked indicator before evaluating direction, so global refs in
+        # direction correctly override naked. Subscripts may contain naked refs
+        # or other globals with side effects, so they must be evaluated once.
         return (
-            f"(lambda _n, _s: m_order_global(_rt.globals, _n, _s, {direction_code}))"
-            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+            f"(lambda _subs: (_rt.globals.set_order_naked({var_name!r}, _subs), "
+            f"m_order_global(_rt.globals, {var_name!r}, _subs, "
+            f"{direction_code}, update_naked=False))[1])({subscripts_tuple})"
+        )
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve, pre-set naked, then call m_order_global
+        # Spec 014 (T061): Naked references in $ORDER
+        # Use tuple expression for naked indicator ordering like GlobalVariable
+        return (
+            f"(lambda _n, _s: (_rt.globals.set_order_naked(_n, _s), "
+            f"m_order_global(_rt.globals, _n, _s, {direction_code}, "
+            f"update_naked=False))[1])(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
-        # Fallback for any other variable type - treat as local
+        # Fallback for MVariable or any other variable type - treat as local
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            base = f"state._locals.get({python_name!r}, MArray())"
+            return f"m_order({base}, {subscripts_tuple}, {direction_code})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_order(state.{python_name}, {subscripts_tuple}, {direction_code})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_order(_scope.get({python_name!r}, MArray()), {subscripts_tuple}, {direction_code})"
 
 
@@ -1116,7 +1562,9 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $Q(A("")) → m_query(_scope.get('A', MArray()), 'A', ("",))
         $Q(A(1,1)) → m_query(_scope.get('A', MArray()), 'A', (str(1), str(1)))
         $Q(^G("")) → m_query_global(_rt.globals, 'G', ("",))
+        $Q(@A@("")) → _rt.get_query(resolved_name, ("",), _scope)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
     from m2py.parser.textx_classes import LocalVariable
 
     # Get arguments
@@ -1127,14 +1575,23 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     var = args[0]
 
+    # Handle MIndirection: $Q(@A@("")) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system
+        # For indirection, use unified API via helper
+        from m2py.codegen.indirection import generate_query_indirection_name
+
+        return generate_query_indirection_name(var, ctx)
+
     # Generate subscript tuple
+    # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         # If no subscripts, use ("",) to start from beginning
         subscripts_tuple = '("",)'
@@ -1143,8 +1600,18 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable: m_query(_scope.get('VAR', MArray()), 'VAR', subscripts)
+        # Local variable - need to access from correct location based on strategy
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            return f"m_query(state._locals.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_query(state.{python_name}, {var_name!r}, {subscripts_tuple})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_query(_scope.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
     elif isinstance(var, GlobalVariable):
         # Global variable: m_query_global(_rt.globals, 'NAME', subscripts)
@@ -1157,8 +1624,18 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
-        # Fallback for any other variable type - treat as local
+        # Fallback for MVariable or any other variable type - treat as local
         python_name = translate_name(var_name)
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            return f"m_query(state._locals.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"m_query(state.{python_name}, {var_name!r}, {subscripts_tuple})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
         return f"m_query(_scope.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
 
 
@@ -1173,47 +1650,119 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
     - $T(+N^ROUTINE) → Nth line of external routine
     - $T(LABEL^ROUTINE) → label line in external routine
     - $T(LABEL+N^ROUTINE) → label+offset in external routine
+    - $T(@X) → indirected label
+    - $T(@X+N) → indirected label with offset
 
     Args:
         expr: TextFunction ASG node with line_ref dictionary
         ctx: Generator context
 
     Returns:
-        Python code calling _rt.get_text()
+        Python code calling _rt.get_text() or _rt.get_text_indirect()
     """
     from m2py.asg.expressions import MLiteral
+    from m2py.asg.enums import LiteralType
 
     # TextFunction stores line reference info in line_ref dict, not arguments
     line_ref = getattr(expr, "line_ref", {})
 
-    # Check if this is an external routine reference
+    # Check for label indirection ($T(@X) or $T(@X+N))
+    label_indirect = line_ref.get("label_indirect")
+
+    # Resolve routine (static or indirected)
     routine = line_ref.get("routine")
+    routine_indirect = line_ref.get("routine_indirect")
     label = line_ref.get("label")
     offset = line_ref.get("offset")
-    offset_sign = line_ref.get("offset_sign", "+")  # Default to + if not specified
+    offset_sign = line_ref.get("offset_sign")
 
+    # Build module expression for external routines
+    module_expr = None
+    if routine is not None and routine_indirect is None:
+        # Static routine name
+        module_expr = f"_rt._get_module_safe('{routine}')"
+    elif routine_indirect is not None:
+        # Indirected routine name: ^@ROU or ^@^VAR
+        from m2py.asg.expressions import MIndirection
+
+        if isinstance(routine_indirect, MIndirection) and routine_indirect.expression:
+            inner_expr = generate_expr(routine_indirect.expression, ctx)
+            rout_val = f"m_str({inner_expr})"
+        else:
+            rout_val = f"m_str({generate_expr(routine_indirect, ctx)})"
+        module_expr = f"_rt._get_module_safe({rout_val})"
+
+    if label_indirect is not None:
+        # For $TEXT(@X), we need the VALUE of X (as a string), not variable indirection.
+        # The indirection just means "use the value of this expression as the label name."
+        # Extract the inner expression from the indirection and evaluate it directly.
+        from m2py.asg.expressions import MIndirection
+
+        if isinstance(label_indirect, MIndirection) and label_indirect.expression:
+            # Get the value of the inner expression (e.g., X in @X)
+            inner_expr = generate_expr(label_indirect.expression, ctx)
+            label_expr = f"m_str({inner_expr})"
+        else:
+            # Fallback - shouldn't normally happen
+            label_expr = f"m_str({generate_expr(label_indirect, ctx)})"
+
+        # Build params for get_text_indirect
+        params = [label_expr]
+
+        # Handle offset if present
+        if offset is not None:
+            if isinstance(offset, MLiteral) and offset.literal_type in (
+                LiteralType.INTEGER,
+                LiteralType.DECIMAL,
+            ):
+                offset_val = (
+                    int(offset.value) if offset_sign == "+" else -int(offset.value)
+                )
+                params.append(f"offset={offset_val}")
+            else:
+                offset_code = generate_expr(offset, ctx)
+                if offset_sign == "-":
+                    params.append(f"offset=-int(m_num({offset_code}))")
+                else:
+                    params.append(f"offset=int(m_num({offset_code}))")
+
+        # Pass module for external routine references
+        if module_expr is not None:
+            params.append(f"module={module_expr}")
+
+        return f"_rt.get_text_indirect({', '.join(params)})"
+
+    # Non-indirected label path
     # Build the get_text() call parameters
     params = []
 
     # Handle offset parameter
     if offset is not None:
-        if isinstance(offset, MLiteral):
-            # Apply sign to literal value
-            offset_val = offset.value if offset_sign == "+" else -offset.value
+        if isinstance(offset, MLiteral) and offset.literal_type in (
+            LiteralType.INTEGER,
+            LiteralType.DECIMAL,
+        ):
+            # Numeric literal - apply sign and truncate to integer for MUMPS semantics
+            offset_val = int(offset.value) if offset_sign == "+" else -int(offset.value)
             params.append(f"offset={offset_val}")
         else:
-            # Offset is an expression (variable, etc.)
+            # Offset is an expression (variable, string literal, etc.)
+            # Must convert to int via m_num() since MUMPS coerces non-numeric strings to 0
             offset_code = generate_expr(offset, ctx)
             if offset_sign == "-":
-                params.append(f"offset=-({offset_code})")
+                params.append(f"offset=-int(m_num({offset_code}))")
             else:
-                params.append(f"offset={offset_code}")
+                params.append(f"offset=int(m_num({offset_code}))")
     elif offset_sign is not None and label is None:
-        # Sign without offset value - $T(+) or $T(-) defaults to 0
+        # Explicit sign without offset value - $T(+) or $T(-) defaults to 0
         # This handles $T(+0) or $T(-0) which both equal 0
         params.append("offset=0")
+    elif label is None and module_expr is not None:
+        # $T(^ROUTINE) — no label, no offset, but has routine
+        # This means "first line of routine" = offset 1
+        params.append("offset=1")
     elif label is None:
-        # No label, no offset - must be $T() which defaults to +0
+        # No label, no offset, no routine - must be $T() which defaults to +0
         params.append("offset=0")
     else:
         # Label with no offset - defaults to 0
@@ -1224,10 +1773,9 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
         params.append(f'label="{label}"')
 
     # Handle external routine
-    if routine is not None:
-        # Use importlib.import_module() for reliable module loading in exec() contexts
-        # __import__() has issues with dynamically modified sys.path
-        params.append(f"module=__import__('importlib').import_module('{routine}')")
+    if module_expr is not None:
+        params.append(f"module={module_expr}")
+        params.append("is_external=True")
 
     return f"_rt.get_text({', '.join(params)})"
 
@@ -1325,6 +1873,7 @@ def _gen_length(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $L("HELLO") → len("HELLO")
         $L("A^B^C","^") → (str("A^B^C").count("^") + 1)
         $L("","^") → 1 (empty string has 1 piece)
+        $L("ABC","") → 0 (empty delimiter returns 0)
     """
     args = getattr(expr, "arguments", [])
 
@@ -1335,21 +1884,26 @@ def _gen_length(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # First argument is the string
     string_expr = generate_expr(args[0], ctx)
 
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) == 1:
         # Single argument - character count
-        return f"len(str({string_expr}))"
+        return f"len(m_str({string_expr}))"
     else:
         # Two arguments - piece count
-        # Piece count = delimiter occurrences + 1
+        # Per MUMPS spec: empty delimiter returns 0
+        # Otherwise: piece count = delimiter occurrences + 1
         delimiter_expr = generate_expr(args[1], ctx)
-        return f"(str({string_expr}).count(str({delimiter_expr})) + 1)"
+        return f"(0 if m_str({delimiter_expr}) == '' else m_str({string_expr}).count(m_str({delimiter_expr})) + 1)"
 
 
 def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $PIECE/$P function.
 
     Spec 010 Phase 5 (T027-T030): $PIECE extracts delimited pieces.
-    $P(string, delimiter, from [, to])
+    $P(string, delimiter [, from [, to]])
+
+    Per MUMPS spec, `from` defaults to 1 when omitted.
+    $P("A^B","^") is equivalent to $P("A^B","^",1) and returns "A".
 
     Args:
         expr: MIntrinsicFunction ASG node with 2-4 arguments
@@ -1359,24 +1913,31 @@ def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         Python expression calling m_piece() helper
 
     Examples:
+        $P("A^B^C","^") → m_piece("A^B^C", "^", 1)
         $P("A^B^C","^",2) → m_piece("A^B^C", "^", 2)
         $P("A^B^C","^",2,3) → m_piece("A^B^C", "^", 2, 3)
     """
     args = getattr(expr, "arguments", [])
 
-    if len(args) < 3:
+    if len(args) < 2:
         # Not enough arguments - return empty string
         return '""'
 
     string_expr = generate_expr(args[0], ctx)
     delimiter_expr = generate_expr(args[1], ctx)
-    from_expr = generate_expr(args[2], ctx)
 
+    # Default from=1 when only 2 arguments provided
+    if len(args) >= 3:
+        from_expr = generate_expr(args[2], ctx)
+    else:
+        from_expr = "1"
+
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) >= 4:
         to_expr = generate_expr(args[3], ctx)
-        return f"m_piece(str({string_expr}), str({delimiter_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
+        return f"m_piece(m_str({string_expr}), m_str({delimiter_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
     else:
-        return f"m_piece(str({string_expr}), str({delimiter_expr}), int(m_num({from_expr})))"
+        return f"m_piece(m_str({string_expr}), m_str({delimiter_expr}), int(m_num({from_expr})))"
 
 
 def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1409,16 +1970,17 @@ def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     if len(args) == 1:
         # $E(string) - default to first character
-        return f"m_extract(str({string_expr}), 1, 1)"
+        # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
+        return f"m_extract(m_str({string_expr}), 1, 1)"
     elif len(args) == 2:
         # $E(string, from) - single character at position from
         from_expr = generate_expr(args[1], ctx)
-        return f"m_extract(str({string_expr}), int(m_num({from_expr})), int(m_num({from_expr})))"
+        return f"m_extract(m_str({string_expr}), int(m_num({from_expr})), int(m_num({from_expr})))"
     else:
         # $E(string, from, to) - substring
         from_expr = generate_expr(args[1], ctx)
         to_expr = generate_expr(args[2], ctx)
-        return f"m_extract(str({string_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
+        return f"m_extract(m_str({string_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
 
 
 def _gen_find(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1449,13 +2011,12 @@ def _gen_find(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     string_expr = generate_expr(args[0], ctx)
     target_expr = generate_expr(args[1], ctx)
 
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) >= 3:
         start_expr = generate_expr(args[2], ctx)
-        return (
-            f"m_find(str({string_expr}), str({target_expr}), int(m_num({start_expr})))"
-        )
+        return f"m_find(m_str({string_expr}), m_str({target_expr}), int(m_num({start_expr})))"
     else:
-        return f"m_find(str({string_expr}), str({target_expr}), 1)"
+        return f"m_find(m_str({string_expr}), m_str({target_expr}), 1)"
 
 
 def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1466,6 +2027,7 @@ def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     Characters in 'from' are replaced by corresponding characters in 'to'.
     If 'to' is shorter than 'from', extra characters in 'from' are deleted.
+    If 'to' is longer than 'from', extra characters in 'to' are ignored.
     If 'to' is omitted, all characters in 'from' are deleted.
 
     Args:
@@ -1473,31 +2035,34 @@ def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         ctx: Generator context
 
     Returns:
-        Python expression using str.translate() with str.maketrans()
+        Python expression using m_translate() runtime helper
 
     Examples:
         $TR("HELLO","L") → "HEO" (delete all L's)
         $TR("HELLO","LO","XY") → "HEXXY" (L→X, O→Y)
         $TR("HELLO","HEL","ABC") → "ABCCO" (H→A, E→B, L→C)
+        $TR("ABCDEFGHIJ","ABC","abcdef") → "abcDEFGHIJ" (extra to_chars ignored)
     """
     args = getattr(expr, "arguments", [])
 
     if len(args) < 2:
         # Not enough arguments - return original string
         if args:
-            return f"str({generate_expr(args[0], ctx)})"
+            return f"m_str({generate_expr(args[0], ctx)})"
         return '""'
 
     string_expr = generate_expr(args[0], ctx)
     from_expr = generate_expr(args[1], ctx)
 
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) >= 3:
         to_expr = generate_expr(args[2], ctx)
-        # Build translation table with replacement
-        return f"str({string_expr}).translate(str.maketrans(str({from_expr}), str({to_expr}).ljust(len(str({from_expr})), chr(0)), ''.join(chr(0) if i < len(str({to_expr})) else c for i, c in enumerate(str({from_expr})))))"
+        return (
+            f"m_translate(m_str({string_expr}), m_str({from_expr}), m_str({to_expr}))"
+        )
     else:
         # No 'to' argument - delete all characters in 'from'
-        return f"str({string_expr}).translate(str.maketrans('', '', str({from_expr})))"
+        return f"m_translate(m_str({string_expr}), m_str({from_expr}))"
 
 
 def _gen_ascii(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1528,13 +2093,14 @@ def _gen_ascii(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     string_expr = generate_expr(args[0], ctx)
 
+    # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
     if len(args) >= 2:
         pos_expr = generate_expr(args[1], ctx)
         # 1-indexed position, -1 if out of range
-        return f"(ord(str({string_expr})[int(m_num({pos_expr}))-1]) if 0 < int(m_num({pos_expr})) <= len(str({string_expr})) else -1)"
+        return f"(ord(m_str({string_expr})[int(m_num({pos_expr}))-1]) if 0 < int(m_num({pos_expr})) <= len(m_str({string_expr})) else -1)"
     else:
         # Default position 1 (first character)
-        return f"(ord(str({string_expr})[0]) if str({string_expr}) else -1)"
+        return f"(ord(m_str({string_expr})[0]) if m_str({string_expr}) else -1)"
 
 
 def _gen_char(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1658,23 +2224,61 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $NA(A(1,2,3)) → m_name("A", ("1", "2", "3"))
         $NA(A(1,2,3),2) → m_name("A", ("1", "2", "3"), depth=2)
         $NA(^GLO(1,2)) → m_name("GLO", ("1", "2"), is_global=True)
+        $NA(@A) → _rt.get_name(resolved_name, (), _scope)
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
 
     args = getattr(expr, "arguments", [])
     if not args:
         return '""'
 
     var = args[0]
+
+    # Handle MIndirection: $NA(@A) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        # Feature: 018-unified-variable-system
+        from m2py.codegen.indirection import generate_name_function_indirection
+
+        # Get depth argument if present
+        depth_expr = None
+        if len(args) >= 2:
+            depth_expr = generate_expr(args[1], ctx)
+
+        return generate_name_function_indirection(var, ctx, depth_expr)
+
+    # Handle NakedGlobal: $NA(^(1)) needs runtime naked resolution first
+    if isinstance(var, NakedGlobal):
+        subscripts = getattr(var, "subscripts", [])
+        if subscripts:
+            subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+            if len(subscript_exprs) == 1:
+                subscripts_tuple = f"({subscript_exprs[0]},)"
+            else:
+                subscripts_tuple = f"({', '.join(subscript_exprs)},)"
+        else:
+            subscripts_tuple = "()"
+
+        # Get depth argument if present
+        depth_arg = ""
+        if len(args) >= 2:
+            depth_expr = generate_expr(args[1], ctx)
+            depth_arg = f", depth=int(m_num({depth_expr}))"
+
+        # Resolve naked reference first, then apply $NAME
+        # resolve_naked returns (name, full_subscripts)
+        return f"(lambda _n, _s: m_name(_n, _s{depth_arg}, is_global=True))(*_rt.globals.resolve_naked({subscripts_tuple}))"
+
     var_name = getattr(var, "name", "")
     subscripts = getattr(var, "subscripts", [])
 
     # Build subscripts tuple - evaluate at runtime
+    # DO NOT wrap in str() - let runtime handle canonicalization
     if subscripts:
         subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
         if len(subscript_exprs) == 1:
-            subscripts_tuple = f"(str({subscript_exprs[0]}),)"
+            subscripts_tuple = f"({subscript_exprs[0]},)"
         else:
-            subscripts_tuple = f"({', '.join(f'str({s})' for s in subscript_exprs)},)"
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
     else:
         subscripts_tuple = "()"
 
@@ -1783,8 +2387,9 @@ def _gen_justify(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         decimals_expr = generate_expr(args[2], ctx)
         return f"m_justify(m_num({value_expr}), int(m_num({width_expr})), int(m_num({decimals_expr})))"
     else:
-        # Simple right-justify
-        return f"str({value_expr}).rjust(int(m_num({width_expr})))"
+        # Simple right-justify - use m_str for MUMPS canonical formatting
+        # This ensures E-notation is expanded, trailing .0 removed, etc.
+        return f"m_str({value_expr}).rjust(int(m_num({width_expr})))"
 
 
 def _gen_reverse(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1808,7 +2413,7 @@ def _gen_reverse(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         return '""'
 
     string_expr = generate_expr(args[0], ctx)
-    return f"str({string_expr})[::-1]"
+    return f"m_str({string_expr})[::-1]"
 
 
 def _gen_fnumber(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1919,14 +2524,95 @@ INTRINSIC_GENERATORS["TEXT"] = _generate_text
 def _gen_next(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $NEXT function.
 
-    $NEXT is a pre-1995 deprecated function similar to $ORDER, but returns
-    -1 instead of empty string when there is no next subscript.
+    $NEXT is a pre-1995 deprecated function similar to $ORDER, but:
+    - Returns -1 instead of "" when there is no next subscript
+    - Uses -1 as special "start from beginning" marker (like $ORDER uses "")
 
-    Implementation: Generate $ORDER and wrap with a conditional to convert
-    empty string results to -1.
+    So $NEXT(A(-1)) is equivalent to $ORDER(A("")) - returns FIRST subscript.
+
+    Implementation: Generate runtime call that handles -1 ↔ "" conversion.
     """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.parser.textx_classes import GlobalVariable, LocalVariable
+
+    args = getattr(expr, "arguments", [])
+    if not args:
+        return "-1"
+
+    var = args[0]
+
+    # For locals and globals, generate the appropriate runtime call
+    # The runtime helper will handle -1 ↔ "" conversion
+    if isinstance(var, GlobalVariable):
+        global_name = var.name
+        subscripts = getattr(var, "subscripts", [])
+        if subscripts:
+            # Build subscript tuple, marking last subscript for -1 detection
+            sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+            subs_code = ", ".join(sub_exprs)
+            return f"_rt.m_next_global({global_name!r}, ({subs_code},))"
+        else:
+            return f"_rt.m_next_global({global_name!r}, ())"
+    elif isinstance(var, MIndirectionType):
+        # For indirection, fall back to $ORDER with -1 conversion
+        order_code = _gen_order(expr, ctx)
+        return f"(lambda _r: -1 if _r == '' else _r)({order_code})"
+    elif isinstance(var, LocalVariable):
+        # Local variable - need to access from correct location based on strategy
+        var_name = var.name
+        python_name = translate_name(var_name)
+        subscripts = getattr(var, "subscripts", [])
+
+        # Build subscript tuple
+        if subscripts:
+            sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+            subs_code = f"({', '.join(sub_exprs)},)"
+        else:
+            subs_code = "()"
+
+        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            base = f"state._locals.get({python_name!r}, MArray())"
+            return f"_rt.m_next_local({base}, {subs_code})"
+
+        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            return f"_rt.m_next_local(state.{python_name}, {subs_code})"
+
+        # SIMPLE_FUNCTIONS or fallback - use _scope
+        return f"_rt.m_next_local(_scope.get({python_name!r}, MArray()), {subs_code})"
+    else:
+        # Fallback for MVariable or any other variable type - treat as local
+        from m2py.asg.expressions import MVariable
+
+        if isinstance(var, MVariable):
+            var_name = var.name
+            python_name = translate_name(var_name)
+            subscripts = getattr(var, "subscripts", [])
+
+            # Build subscript tuple
+            if subscripts:
+                sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+                subs_code = f"({', '.join(sub_exprs)},)"
+            else:
+                subs_code = "()"
+
+            # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                base = f"state._locals.get({python_name!r}, MArray())"
+                return f"_rt.m_next_local({base}, {subs_code})"
+
+            # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+                return f"_rt.m_next_local(state.{python_name}, {subs_code})"
+
+            # SIMPLE_FUNCTIONS or fallback - use _scope
+            return (
+                f"_rt.m_next_local(_scope.get({python_name!r}, MArray()), {subs_code})"
+            )
+
+    # Fallback to $ORDER-based implementation
     order_code = _gen_order(expr, ctx)
-    # Wrap the $ORDER call: if result is "", return -1, else return result
     return f"(lambda _r: -1 if _r == '' else _r)({order_code})"
 
 

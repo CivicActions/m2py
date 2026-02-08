@@ -258,7 +258,7 @@ Conditional value selection. Evaluates conditions left-to-right and returns
 the value for the first true condition. Raises SELECTFALSE error if no
 condition is true.
 
-**Status**: ✅ Implemented (Spec 010 Phase 3)
+**Status**: ✅ Implemented
 
 **Implementation**: Generated as chained conditional expression with
 `m_truth()` for condition evaluation and `_raise_select_false()` fallback.

@@ -239,3 +239,289 @@ class TestRoutineStateIntegration:
         assert state.ARR.get(1) == 10
         assert state.ARR.get(1, 2) == 20
         assert state.ARR.defined(1) == 11  # Has value AND children
+
+
+@pytest.mark.codegen
+class TestDynamicLocalsGeneration:
+    """Tests for Spec 017: Dynamic locals for argumentless KILL/NEW support."""
+
+    def test_routine_uses_dynamic_locals_false_by_default(self):
+        """Routine without argumentless KILL/NEW uses static fields."""
+        from m2py.codegen.shared_state import routine_uses_dynamic_locals
+
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = False
+        routine.has_argumentless_new = False
+
+        assert routine_uses_dynamic_locals(routine) is False
+
+    def test_routine_uses_dynamic_locals_with_argumentless_kill(self):
+        """Routine with argumentless KILL needs dynamic locals."""
+        from m2py.codegen.shared_state import routine_uses_dynamic_locals
+
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = True
+        routine.has_argumentless_new = False
+
+        assert routine_uses_dynamic_locals(routine) is True
+
+    def test_routine_uses_dynamic_locals_with_argumentless_new(self):
+        """Routine with argumentless NEW needs dynamic locals."""
+        from m2py.codegen.shared_state import routine_uses_dynamic_locals
+
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = False
+        routine.has_argumentless_new = True
+
+        assert routine_uses_dynamic_locals(routine) is True
+
+    def test_routine_uses_dynamic_locals_with_both(self):
+        """Routine with both argumentless KILL and NEW needs dynamic locals."""
+        from m2py.codegen.shared_state import routine_uses_dynamic_locals
+
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = True
+        routine.has_argumentless_new = True
+
+        assert routine_uses_dynamic_locals(routine) is True
+
+    def test_dynamic_state_class_has_locals_dict(self):
+        """Dynamic RoutineState has _locals dict field."""
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = True
+        routine.has_argumentless_new = False
+        routine.routine_state_vars = {"X"}  # Should be ignored
+        routine.array_vars = set()
+
+        code = generate_routine_state_class(routine)
+
+        assert "@dataclass" in code
+        assert "class RoutineState:" in code
+        assert "_locals: dict = field(default_factory=dict)" in code
+
+    def test_dynamic_state_class_has_new_stack(self):
+        """Dynamic RoutineState has _new_stack list field for NEW."""
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = False
+        routine.has_argumentless_new = True
+        routine.routine_state_vars = set()
+        routine.array_vars = set()
+
+        code = generate_routine_state_class(routine)
+
+        assert "_new_stack: list = field(default_factory=list)" in code
+
+    def test_dynamic_state_class_ignores_static_vars(self):
+        """Dynamic RoutineState does not include static var fields."""
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = True
+        routine.has_argumentless_new = False
+        routine.routine_state_vars = {"X", "Y", "Z"}
+        routine.array_vars = {"A", "B"}
+
+        code = generate_routine_state_class(routine)
+
+        # Should NOT have static fields
+        assert "X: Any" not in code
+        assert "Y: Any" not in code
+        assert "A: MArray" not in code
+        # Should have dynamic fields only
+        assert "_locals: dict" in code
+        assert "_new_stack: list" in code
+
+    def test_dynamic_state_class_is_valid_python(self):
+        """Dynamic RoutineState class is syntactically valid Python."""
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = True
+        routine.has_argumentless_new = True
+        routine.routine_state_vars = {"X"}
+        routine.array_vars = {"A"}
+
+        imports = generate_state_imports()
+        class_code = generate_routine_state_class(routine)
+
+        # Combine imports and class definition
+        full_code = imports + "\n" + class_code
+
+        # Should parse without syntax error
+        import ast
+
+        ast.parse(full_code)
+
+    def test_dynamic_state_class_can_instantiate(self):
+        """Dynamic RoutineState class can be instantiated and used."""
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = True
+        routine.has_argumentless_new = True
+        routine.routine_state_vars = set()
+        routine.array_vars = set()
+
+        imports = generate_state_imports()
+        class_code = generate_routine_state_class(routine)
+        init_code = generate_state_initialization(routine)
+
+        # Combine all parts
+        full_code = imports + "\n" + class_code + "\n" + init_code
+
+        # Execute and verify
+        namespace = {}
+        exec(full_code, namespace)
+
+        state = namespace["state"]
+        assert hasattr(state, "_locals")
+        assert hasattr(state, "_new_stack")
+        assert state._locals == {}
+        assert state._new_stack == []
+
+    def test_dynamic_locals_can_store_and_retrieve(self):
+        """Dynamic _locals dict can store and retrieve variables."""
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = True
+        routine.has_argumentless_new = False
+        routine.routine_state_vars = set()
+        routine.array_vars = set()
+
+        imports = generate_state_imports()
+        class_code = generate_routine_state_class(routine)
+        init_code = generate_state_initialization(routine)
+
+        # Combine and execute
+        full_code = imports + "\n" + class_code + "\n" + init_code
+        namespace = {}
+        exec(full_code, namespace)
+
+        state = namespace["state"]
+
+        # Simulate SET X=1, SET Y=2
+        state._locals["X"] = "1"
+        state._locals["Y"] = "2"
+
+        assert state._locals.get("X", "") == "1"
+        assert state._locals.get("Y", "") == "2"
+        assert state._locals.get("Z", "") == ""  # Undefined
+
+    def test_dynamic_locals_clear_simulates_kill(self):
+        """_locals.clear() simulates argumentless KILL."""
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = True
+        routine.has_argumentless_new = False
+        routine.routine_state_vars = set()
+        routine.array_vars = set()
+
+        imports = generate_state_imports()
+        class_code = generate_routine_state_class(routine)
+        init_code = generate_state_initialization(routine)
+
+        # Combine and execute
+        full_code = imports + "\n" + class_code + "\n" + init_code
+        namespace = {}
+        exec(full_code, namespace)
+
+        state = namespace["state"]
+
+        # Set up some variables
+        state._locals["X"] = "1"
+        state._locals["Y"] = "2"
+        state._locals["Z"] = "3"
+
+        # Simulate argumentless KILL
+        state._locals.clear()
+
+        # All variables should be gone
+        assert state._locals.get("X", "") == ""
+        assert state._locals.get("Y", "") == ""
+        assert state._locals.get("Z", "") == ""
+        assert len(state._locals) == 0
+
+    def test_new_stack_push_pop_simulates_new(self):
+        """_new_stack push/pop simulates argumentless NEW."""
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = False
+        routine.has_argumentless_new = True
+        routine.routine_state_vars = set()
+        routine.array_vars = set()
+
+        imports = generate_state_imports()
+        class_code = generate_routine_state_class(routine)
+        init_code = generate_state_initialization(routine)
+
+        # Combine and execute
+        full_code = imports + "\n" + class_code + "\n" + init_code
+        namespace = {}
+        exec(full_code, namespace)
+
+        state = namespace["state"]
+
+        # Set initial values
+        state._locals["X"] = "original"
+        state._locals["Y"] = "also_original"
+
+        # Simulate argumentless NEW: push and clear
+        state._new_stack.append(dict(state._locals))
+        state._locals.clear()
+
+        # Variables should be cleared
+        assert state._locals.get("X", "") == ""
+        assert state._locals.get("Y", "") == ""
+
+        # Set new values in NEW scope
+        state._locals["X"] = "new_value"
+        state._locals["Z"] = "only_in_new_scope"
+
+        # Simulate QUIT: pop and restore
+        if state._new_stack:
+            state._locals.clear()
+            state._locals.update(state._new_stack.pop())
+
+        # Original values should be restored
+        assert state._locals.get("X", "") == "original"
+        assert state._locals.get("Y", "") == "also_original"
+        # Z should not exist (wasn't in original scope)
+        assert state._locals.get("Z", "") == ""
+
+    def test_nested_new_scopes(self):
+        """Multiple nested argumentless NEW operations work correctly."""
+        routine = MRoutine(name="TEST")
+        routine.has_argumentless_kill = False
+        routine.has_argumentless_new = True
+        routine.routine_state_vars = set()
+        routine.array_vars = set()
+
+        imports = generate_state_imports()
+        class_code = generate_routine_state_class(routine)
+        init_code = generate_state_initialization(routine)
+
+        # Combine and execute
+        full_code = imports + "\n" + class_code + "\n" + init_code
+        namespace = {}
+        exec(full_code, namespace)
+
+        state = namespace["state"]
+
+        # Set initial value
+        state._locals["X"] = "level0"
+
+        # First NEW (level 1)
+        state._new_stack.append(dict(state._locals))
+        state._locals.clear()
+        state._locals["X"] = "level1"
+
+        # Second NEW (level 2)
+        state._new_stack.append(dict(state._locals))
+        state._locals.clear()
+        state._locals["X"] = "level2"
+
+        assert state._locals.get("X", "") == "level2"
+        assert len(state._new_stack) == 2
+
+        # First QUIT (back to level 1)
+        state._locals.clear()
+        state._locals.update(state._new_stack.pop())
+        assert state._locals.get("X", "") == "level1"
+        assert len(state._new_stack) == 1
+
+        # Second QUIT (back to level 0)
+        state._locals.clear()
+        state._locals.update(state._new_stack.pop())
+        assert state._locals.get("X", "") == "level0"
+        assert len(state._new_stack) == 0

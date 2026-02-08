@@ -270,7 +270,7 @@ def _run_m2py_worker(
 
 
 def run_m2py(
-    source: str, debug: bool = False, timeout: int = 30
+    source: str, debug: bool = False, timeout: int = 5
 ) -> tuple[str, str | None, str | None]:
     """Run MUMPS source through m2py with hard timeout.
 
@@ -287,6 +287,17 @@ def run_m2py(
         target=_run_m2py_worker, args=(source, debug, result_queue)
     )
 
+    def _force_kill(proc: multiprocessing.Process) -> None:
+        """Force kill the process."""
+        if not proc.is_alive():
+            return
+        # Just use kill() directly - it's more reliable than terminate()
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        proc.join(timeout=1)
+
     try:
         process.start()
         try:
@@ -299,12 +310,7 @@ def run_m2py(
             pass
     finally:
         # Ensure the process is terminated
-        if process.is_alive():
-            process.terminate()
-            process.join(timeout=1)
-            if process.is_alive():
-                process.kill()
-                process.join(timeout=1)
+        _force_kill(process)
 
     return (
         f"ERROR: m2py execution timed out after {timeout}s (process killed)",
@@ -318,7 +324,7 @@ def run_m2py(
 # =============================================================================
 
 
-def run_ydb(source: str, timeout: int = 30) -> str:
+def run_ydb(source: str, timeout: int = 5) -> str:
     """Run MUMPS source through YottaDB via Docker with hard timeout.
 
     Args:
@@ -465,8 +471,8 @@ Examples:
         "--timeout",
         "-t",
         type=int,
-        default=30,
-        help="Execution timeout in seconds for both m2py and YottaDB (default: 30)",
+        default=5,
+        help="Execution timeout in seconds for both m2py and YottaDB (default: 5)",
     )
 
     args = parser.parse_args()

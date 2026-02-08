@@ -3,17 +3,71 @@
 Tests the helper functions used by generated code for intrinsic functions.
 """
 
+import pytest
+
 from m2py.runtime import MArray
 from m2py.runtime.helpers import (
     _mumps_collation_key,
+    m_data,
+    m_format_output,
     m_get,
     m_get_global,
     m_order,
     m_order_global,
     m_query,
     m_query_global,
+    m_var_value,
+    unwind_new_stack,
 )
 from m2py.runtime.globals import InMemoryGlobalStorage
+
+
+class TestMVarValue:
+    """Tests for m_var_value() helper (T100).
+
+    m_var_value extracts scalar values from either MArray objects or plain values.
+    This is needed for cross-routine variable passing where TRAMPOLINE routines
+    may return plain strings while callers expect MArray.value.
+    """
+
+    def test_marray_with_value(self):
+        """MArray with value returns the value."""
+        arr = MArray()
+        arr.value = "hello"
+        assert m_var_value(arr) == "hello"
+
+    def test_marray_with_numeric_value(self):
+        """MArray with numeric value returns the number."""
+        arr = MArray()
+        arr.value = 42
+        assert m_var_value(arr) == 42
+
+    def test_marray_undefined(self):
+        """MArray without value returns empty string."""
+        arr = MArray()
+        assert m_var_value(arr) == ""
+
+    def test_plain_string(self):
+        """Plain string passes through unchanged."""
+        assert m_var_value("world") == "world"
+
+    def test_plain_number(self):
+        """Plain number passes through unchanged."""
+        assert m_var_value(123) == 123
+
+    def test_none_returns_empty_string(self):
+        """None returns empty string (MUMPS undefined semantics)."""
+        assert m_var_value(None) == ""
+
+    def test_empty_string(self):
+        """Empty string passes through as empty string."""
+        assert m_var_value("") == ""
+
+    def test_marray_with_empty_string_value(self):
+        """MArray with empty string value returns empty string."""
+        arr = MArray()
+        arr.value = ""
+        assert m_var_value(arr) == ""
 
 
 class TestMumpsCollationKey:
@@ -32,16 +86,98 @@ class TestMumpsCollationKey:
         assert sorted_keys == [-1, 0, 1, "A", "B"]
 
     def test_numeric_strings_as_numbers(self):
-        """Numeric strings are treated as numbers for collation."""
+        """Canonical numeric strings are treated as numbers for collation."""
         keys = ["1", "-1", "A", "0"]
         sorted_keys = sorted(keys, key=_mumps_collation_key)
         assert sorted_keys == ["-1", "0", "1", "A"]
 
     def test_decimal_numbers(self):
-        """Decimal numbers sort correctly."""
+        """Decimal numbers sort correctly.
+
+        Note: Only CANONICAL numeric strings sort as numbers.
+        Non-canonical forms like '-0.5' (canonical: '-.5') sort as strings.
+        """
+        # Use canonical forms for numeric sorting
+        keys = ["-1.5", "-1", "-.5", "0", ".5", "1"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        assert sorted_keys == ["-1.5", "-1", "-.5", "0", ".5", "1"]
+
+    def test_non_canonical_decimal_strings(self):
+        """Non-canonical numeric strings sort as strings, not numbers.
+
+        Per YDB behavior: '-0.5' is not canonical (should be '-.5'),
+        so it sorts as a string after all numbers.
+        """
         keys = ["-1.5", "-1", "-0.5", "0", "0.5", "1"]
         sorted_keys = sorted(keys, key=_mumps_collation_key)
-        assert sorted_keys == ["-1.5", "-1", "-0.5", "0", "0.5", "1"]
+        # Numbers first: -1.5, -1, 0, 1
+        # Strings after: -0.5, 0.5 (sorted by ASCII)
+        assert sorted_keys == ["-1.5", "-1", "0", "1", "-0.5", "0.5"]
+
+    def test_trailing_dot_strings_as_strings(self):
+        """Strings with trailing decimal point sort as strings.
+
+        YDB verified: '-4.' is NOT canonical (canonical is '-4'),
+        so it sorts as a string.
+        """
+        keys = ["-4", "-4.", "0", "1"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        # Numbers first: -4, 0, 1
+        # Strings after: -4.
+        assert sorted_keys == ["-4", "0", "1", "-4."]
+
+    def test_trailing_zeros_strings_as_strings(self):
+        """Strings with trailing zeros sort as strings.
+
+        YDB verified: '-4.0' is NOT canonical (canonical is '-4'),
+        so it sorts as a string.
+        """
+        keys = ["-4", "-4.0", "0", "1"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        # Numbers first: -4, 0, 1
+        # Strings after: -4.0
+        assert sorted_keys == ["-4", "0", "1", "-4.0"]
+
+    def test_leading_zeros_strings_as_strings(self):
+        """Strings with leading zeros sort as strings.
+
+        YDB verified: '01' is NOT canonical (canonical is '1'),
+        so it sorts as a string.
+        """
+        keys = ["1", "01", "2", "02"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        # Numbers first: 1, 2
+        # Strings after: 01, 02 (sorted by ASCII)
+        assert sorted_keys == ["1", "2", "01", "02"]
+
+    def test_mixed_canonical_and_non_canonical(self):
+        """Mixed canonical and non-canonical numeric strings.
+
+        Complex case from VV2NO test suite.
+        """
+        keys = ["-5", "-4", "-4.", "-4.0", "0", "1", "ABC"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        # Canonical numbers: -5, -4, 0, 1 (numeric order)
+        # Non-canonical strings: -4., -4.0, ABC (ASCII order)
+        assert sorted_keys == ["-5", "-4", "0", "1", "-4.", "-4.0", "ABC"]
+
+    def test_very_small_decimal_precision(self):
+        """Very small canonical numbers sort correctly with Decimal precision.
+
+        The fix changed float() to Decimal() in _mumps_collation_key() to
+        avoid precision loss for values like -.0000000001.
+
+        Fixed suite: V4SORT (test 40079)
+        """
+        keys = ["-.0000000001", "0", ".0000000001", "1"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        assert sorted_keys == ["-.0000000001", "0", ".0000000001", "1"]
+
+    def test_small_decimals_collate_as_numbers(self):
+        """Small canonical decimals collate numerically, not as strings."""
+        keys = [".001", "-.001", ".01"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        assert sorted_keys == ["-.001", ".001", ".01"]
 
 
 class TestMOrder:
@@ -106,6 +242,53 @@ class TestMOrder:
         assert m_order(arr, ("1", ""), 1) == "1"
         assert m_order(arr, ("1", "1"), 1) == "2"
 
+    def test_decimal_subscript_canonicalization(self):
+        """Decimal subscripts are properly canonicalized for collation.
+
+        Regression test: When subscripts are kept as Decimal rather than
+        converted to string via str(), m_order can canonicalize them correctly.
+
+        Decimal("0.9999") should become ".9999" which sorts BEFORE "1".
+        """
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[1].value = "one"
+        arr[2].value = "two"
+
+        # Start from Decimal("0.9999"), which should canonicalize to ".9999"
+        # and find "1" as the next key
+        result = m_order(arr, (Decimal("0.9999"),), 1)
+        assert result == "1"
+
+    def test_decimal_subscript_with_leading_zero(self):
+        """Decimal with leading zero canonicalizes correctly.
+
+        Decimal("0.5") should become ".5" in canonical form.
+        """
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[Decimal(".5")].value = "half"  # Stored with canonical key
+        arr[1].value = "one"
+
+        # Find next after Decimal("0.5") which is the same as ".5"
+        result = m_order(arr, (Decimal("0.5"),), 1)
+        assert result == "1"
+
+    def test_decimal_subscript_between_integers(self):
+        """Decimal value between integers finds correct next."""
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[1].value = "one"
+        arr[2].value = "two"
+        arr[3].value = "three"
+
+        # 1.5 is between 1 and 2, so next should be 2
+        result = m_order(arr, (Decimal("1.5"),), 1)
+        assert result == "2"
+
 
 class TestMOrderGlobal:
     """Tests for m_order_global() helper function."""
@@ -148,6 +331,31 @@ class TestMQuery:
     def test_none_array(self):
         """None array returns empty string."""
         assert m_query(None, "A", ("",)) == ""
+
+    def test_subscript_with_embedded_quote(self):
+        """Query formats subscripts with embedded quotes correctly (Spec 017 Phase 12).
+
+        $QUERY must return canonical MUMPS name format where string subscripts
+        are quoted and internal quotes are doubled.
+        """
+        arr = MArray()
+        arr['a"b'].value = 1
+        # Subscript a"b should be formatted as "a""b" in output
+        assert m_query(arr, "x", ("",)) == 'x("a""b")'
+
+    def test_subscript_with_special_chars(self):
+        """Query formats subscripts with special characters correctly (Spec 017 Phase 12).
+
+        Complex subscripts like those with backslashes, quotes, and commas must
+        be properly quoted in canonical MUMPS name format.
+        """
+        arr = MArray()
+        arr["\\^AGCOM"].value = 1
+        arr["\\^AGCOM", ']"G"'].value = 2
+        # First subscript: \^AGCOM -> "\^AGCOM"
+        assert m_query(arr, "a", ("",)) == 'a("\\^AGCOM")'
+        # After first node, should get the nested one
+        assert m_query(arr, "a", ("\\^AGCOM",)) == 'a("\\^AGCOM","]""G""")'
 
 
 class TestMQueryGlobal:
@@ -251,3 +459,804 @@ class TestMGetGlobal:
         backend = InMemoryGlobalStorage()
         backend.set("G", ("1",), "VALUE")
         assert m_get_global(backend, "G", ("2",), "DEFAULT") == "DEFAULT"
+
+
+class TestMFormatOutput:
+    """Tests for m_format_output helper function.
+
+    Spec 017 Phase 7: Proper numeric output formatting matching YDB behavior.
+    """
+
+    def test_integer_output(self):
+        """Integers are output as-is."""
+        from m2py.runtime.helpers import m_format_output
+
+        assert m_format_output(123) == "123"
+        assert m_format_output(-456) == "-456"
+        assert m_format_output(0) == "0"
+
+    def test_string_output(self):
+        """Strings are output as-is."""
+        from m2py.runtime.helpers import m_format_output
+
+        assert m_format_output("hello") == "hello"
+        assert m_format_output("123") == "123"
+
+    def test_decimal_expansion(self):
+        """Decimals with exponents are expanded to full notation."""
+        from decimal import Decimal
+
+        from m2py.runtime.helpers import m_format_output
+
+        assert m_format_output(Decimal("1E+11")) == "100000000000"
+        assert m_format_output(Decimal("1E-2")) == ".01"
+        assert m_format_output(Decimal("5E+2")) == "500"
+
+    def test_decimal_leading_dot(self):
+        """Decimals less than 1 start with dot (no leading zero)."""
+        from decimal import Decimal
+
+        from m2py.runtime.helpers import m_format_output
+
+        assert m_format_output(Decimal("0.5")) == ".5"
+        assert m_format_output(Decimal("0.123")) == ".123"
+        assert m_format_output(Decimal("-0.5")) == "-.5"
+
+    def test_extreme_negative_exponent_returns_zero(self):
+        """Very small exponents (< -43) return "0" to match YDB behavior.
+
+        YDB outputs 0 for numbers smaller than ~1E-43 because they're
+        beyond the precision threshold. This also prevents MemoryError
+        from trying to create strings with trillions of digits.
+        """
+        from decimal import Decimal
+
+        from m2py.runtime.helpers import m_format_output
+
+        # 1E-44 and smaller should return "0"
+        assert m_format_output(Decimal("1E-44")) == "0"
+        assert m_format_output(Decimal("1E-100")) == "0"
+        assert m_format_output(Decimal("1E-11111111111111111")) == "0"
+
+    def test_borderline_exponents(self):
+        """Test exponents around the -43 boundary."""
+        from decimal import Decimal
+
+        from m2py.runtime.helpers import m_format_output
+
+        # 1E-43 should still work (not return 0)
+        result_43 = m_format_output(Decimal("1E-43"))
+        assert result_43 != "0"
+        assert len(result_43) > 40  # Should have 43+ digits
+
+        # 1E-44 should return 0
+        assert m_format_output(Decimal("1E-44")) == "0"
+
+
+class TestMPieceNegativePositions:
+    """Tests for m_piece with negative/zero positions in range extraction.
+
+    Fix: Range extraction clamps from_pos to 1 when <= 0, instead of
+    returning empty string like single-piece extraction does.
+    """
+
+    def test_single_piece_negative_returns_empty(self):
+        """Single piece with negative position returns empty string."""
+        from m2py.runtime.helpers import m_piece
+
+        assert m_piece("A^B^C", "^", -1) == ""
+        assert m_piece("A^B^C", "^", -5) == ""
+
+    def test_single_piece_zero_returns_empty(self):
+        """Single piece with zero position returns empty string."""
+        from m2py.runtime.helpers import m_piece
+
+        assert m_piece("A^B^C", "^", 0) == ""
+
+    def test_range_negative_from_clamps_to_one(self):
+        """Range with negative from_pos clamps to 1."""
+        from m2py.runtime.helpers import m_piece
+
+        # $P("A^B^C","^",-1,2) should give pieces 1-2 = "A^B"
+        assert m_piece("A^B^C", "^", -1, 2) == "A^B"
+        assert m_piece("A^B^C", "^", -5, 2) == "A^B"
+
+    def test_range_zero_from_clamps_to_one(self):
+        """Range with zero from_pos clamps to 1."""
+        from m2py.runtime.helpers import m_piece
+
+        # $P("A^B^C","^",0,2) should give pieces 1-2 = "A^B"
+        assert m_piece("A^B^C", "^", 0, 2) == "A^B"
+
+    def test_range_negative_to_returns_empty(self):
+        """Range with to_pos < from_pos (after clamping) returns empty."""
+        from m2py.runtime.helpers import m_piece
+
+        # $P("A^B^C","^",-1,-1) - from clamps to 1, to=-1, to < from
+        assert m_piece("A^B^C", "^", -1, -1) == ""
+
+    def test_range_both_negative_returns_empty(self):
+        """Range with both positions negative returns empty (to < from)."""
+        from m2py.runtime.helpers import m_piece
+
+        assert m_piece("A^B^C", "^", -2, -1) == ""
+
+
+class TestMFormatOutputEdgeCases:
+    """Extended edge case tests for m_format_output() function."""
+
+    # Basic types
+    def test_string_passthrough(self):
+        """String values pass through unchanged."""
+        assert m_format_output("hello") == "hello"
+        assert m_format_output("") == ""
+
+    def test_boolean_true(self):
+        """True converts to '1'."""
+        assert m_format_output(True) == "1"
+
+    def test_boolean_false(self):
+        """False converts to '0'."""
+        assert m_format_output(False) == "0"
+
+    # Integer handling
+    def test_integer(self):
+        """Integers convert directly to string."""
+        assert m_format_output(42) == "42"
+        assert m_format_output(0) == "0"
+        assert m_format_output(-100) == "-100"
+
+    def test_float_as_integer(self):
+        """Float with .0 converts to integer string."""
+        assert m_format_output(1.0) == "1"
+        assert m_format_output(100.0) == "100"
+        assert m_format_output(-42.0) == "-42"
+
+    # Leading zero removal (MUMPS canonical form)
+    def test_positive_decimal_removes_leading_zero(self):
+        """Values between 0 and 1 have leading zero removed."""
+        assert m_format_output(0.5) == ".5"
+        assert m_format_output(0.123) == ".123"
+
+    def test_negative_decimal_removes_leading_zero(self):
+        """Negative values between -1 and 0 have leading zero removed."""
+        assert m_format_output(-0.5) == "-.5"
+        assert m_format_output(-0.123) == "-.123"
+
+    # Regular floats (no leading zero removal)
+    def test_regular_float(self):
+        """Regular floats retain their form."""
+        assert m_format_output(3.14) == "3.14"
+        assert m_format_output(-2.5) == "-2.5"
+
+    # Scientific notation conversion
+    def test_large_number_scientific_notation(self):
+        """Very large numbers avoid scientific notation."""
+        # Python would normally output 1e+15 for this
+        result = m_format_output(1e15)
+        assert "e" not in result.lower()
+        assert result == "1000000000000000"
+
+    def test_small_number_scientific_notation(self):
+        """Very small numbers may still use scientific notation.
+
+        Note: The current implementation doesn't fully handle very small numbers.
+        This test documents the current behavior. MUMPS canonical form would
+        require ".000000001" but Python's formatting limits make this difficult.
+        """
+        # For now, just verify the function doesn't crash
+        result = m_format_output(0.000000001)
+        assert isinstance(result, str)
+        # The value is represented (even if in scientific notation)
+        assert result in ("1e-09", ".000000001", "1e-9")
+
+    def test_large_float_with_decimal_scientific_notation(self):
+        """Large floats with decimals handle scientific notation."""
+        # 1.5e10 has a fractional part
+        result = m_format_output(1.5e10)
+        assert "e" not in result.lower()
+        assert result == "15000000000"
+
+    # Edge cases
+    def test_other_types(self):
+        """Other types convert via str()."""
+        assert m_format_output(None) == "None"
+        assert m_format_output([1, 2]) == "[1, 2]"
+
+
+class TestMData:
+    """Tests for m_data() function."""
+
+    def test_none_returns_zero(self):
+        """None (undefined variable) returns 0."""
+        assert m_data(None) == 0
+
+    def test_none_with_subscripts(self):
+        """None with subscripts still returns 0."""
+        assert m_data(None, ("1", "2")) == 0
+
+    def test_defined_no_children(self):
+        """Defined with value but no children returns 1."""
+        arr = MArray()
+        arr.value = "test"
+        assert m_data(arr, ()) == 1
+
+    def test_undefined_has_children(self):
+        """No value but has children returns 10."""
+        arr = MArray()
+        arr[1].value = "child"  # No value on root, but has child
+        assert m_data(arr, ()) == 10
+
+    def test_defined_and_has_children(self):
+        """Both value and children returns 11."""
+        arr = MArray()
+        arr.value = "root"
+        arr[1].value = "child"
+        assert m_data(arr, ()) == 11
+
+    def test_subscript_navigation(self):
+        """Subscripts navigate into array."""
+        arr = MArray()
+        arr[1][2].value = "deep"
+        assert m_data(arr, ("1", "2")) == 1
+
+    def test_undefined_subscript_returns_zero(self):
+        """Non-existent subscript returns 0."""
+        arr = MArray()
+        arr[1].value = "exists"
+        assert m_data(arr, ("2",)) == 0
+
+    def test_string_to_int_key_conversion(self):
+        """String subscripts can match integer keys."""
+        arr = MArray()
+        arr[1].value = "value"  # Stored with integer key
+        assert m_data(arr, ("1",)) == 1  # String subscript
+
+    def test_deep_subscript_not_found(self):
+        """Missing intermediate subscript returns 0."""
+        arr = MArray()
+        arr[1][2].value = "deep"
+        assert m_data(arr, ("3", "4")) == 0
+
+
+class TestMOrderSubscriptCoercion:
+    """Tests for subscript type coercion in m_order."""
+
+    def test_string_key_matches_int_subscript(self):
+        """Integer-like strings as subscripts find integer keys."""
+        arr = MArray()
+        arr[1][1].value = "a"  # Integer keys
+        arr[1][2].value = "b"
+        # String subscripts should find integer keys
+        result = m_order(arr, ("1", ""), 1)
+        assert result == "1"
+
+    def test_int_key_via_float_coercion(self):
+        """Float-like subscripts can navigate to nodes."""
+        # Edge case: sometimes subscripts might come as floats
+        arr = MArray()
+        arr[1.0][2].value = "a"  # Float key
+        # This tests the float() fallback path
+        result = m_order(arr, (1.0, ""), 1)
+        assert result == "2"
+
+    def test_empty_subscripts_returns_empty(self):
+        """Empty subscript tuple returns empty string."""
+        arr = MArray()
+        arr[1].value = "a"
+        assert m_order(arr, (), 1) == ""
+
+    def test_nonexistent_parent_subscript(self):
+        """Parent subscript that doesn't exist returns empty."""
+        arr = MArray()
+        arr[1][2].value = "a"
+        # Navigate to arr[99] which doesn't exist
+        assert m_order(arr, ("99", ""), 1) == ""
+
+
+class TestMFormatOutputStringsPreserved:
+    """Tests for m_format_output with strings.
+
+    MUMPS strings are NOT canonicalized - they preserve their exact content.
+    Only numeric types (Decimal, int, float) are canonicalized on output.
+
+    YDB verified:
+    - S X="0.5" W X → outputs "0.5" (string preserved as-is)
+    - S X=0.5 W X → outputs ".5" (numeric canonicalized)
+    - S X="1212.000" W X → outputs "1212.000" (trailing zeros preserved in strings)
+    """
+
+    def test_numeric_string_preserved_as_is(self):
+        """Numeric-looking strings are NOT canonicalized."""
+        # Leading zeros preserved
+        assert m_format_output("0.5") == "0.5"
+        assert m_format_output("0.123") == "0.123"
+        # Trailing zeros preserved
+        assert m_format_output("1212.000") == "1212.000"
+        assert m_format_output("1.00") == "1.00"
+
+    def test_negative_numeric_string_preserved(self):
+        """Negative numeric-looking strings are NOT canonicalized."""
+        assert m_format_output("-0.5") == "-0.5"
+        assert m_format_output("-0.001") == "-0.001"
+
+    def test_integer_string_preserved(self):
+        """Integer strings remain unchanged."""
+        assert m_format_output("123") == "123"
+        assert m_format_output("-456") == "-456"
+        assert m_format_output("0") == "0"
+
+    def test_non_numeric_string_unchanged(self):
+        """Non-numeric strings are not modified."""
+        assert m_format_output("hello") == "hello"
+        assert m_format_output("ABC123") == "ABC123"
+        assert m_format_output("") == ""
+
+    def test_whitespace_string_unchanged(self):
+        """Strings with whitespace are preserved."""
+        assert m_format_output(" 123") == " 123"  # Leading space
+        assert m_format_output("123 ") == "123 "  # Trailing space
+        assert m_format_output("  0.5  ") == "  0.5  "
+
+    def test_scientific_notation_string_unchanged(self):
+        """Scientific notation strings are preserved."""
+        assert m_format_output("1E5") == "1E5"
+        assert m_format_output("1e-2") == "1e-2"
+
+    def test_plus_sign_string_unchanged(self):
+        """Strings with plus sign are preserved."""
+        assert m_format_output("+5") == "+5"
+        assert m_format_output("+0.5") == "+0.5"
+
+
+class TestMNextLocal:
+    """Tests for MUMPSRuntime.m_next_local() method.
+
+    $NEXT is like $ORDER but:
+    - Returns -1 instead of "" when no more subscripts
+    - Treats -1 as "start from beginning" (like $ORDER treats "")
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create runtime instance."""
+        from m2py.runtime import MUMPSRuntime
+
+        return MUMPSRuntime()
+
+    def test_next_from_minus_one_returns_first(self, rt):
+        """$NEXT(A(-1)) returns first subscript."""
+        arr = MArray()
+        arr[1].value = "a"
+        arr[3].value = "c"
+        arr[5].value = "e"
+        result = rt.m_next_local(arr, (-1,))
+        assert result == "1"
+
+    def test_next_returns_next_subscript(self, rt):
+        """$NEXT(A(1)) returns next subscript."""
+        arr = MArray()
+        arr[1].value = "a"
+        arr[3].value = "c"
+        arr[5].value = "e"
+        result = rt.m_next_local(arr, (1,))
+        assert result == "3"
+
+    def test_next_at_end_returns_minus_one(self, rt):
+        """$NEXT(A(lastkey)) returns -1."""
+        arr = MArray()
+        arr[1].value = "a"
+        arr[3].value = "c"
+        result = rt.m_next_local(arr, (3,))
+        assert result == -1
+
+    def test_next_none_array_returns_minus_one(self, rt):
+        """$NEXT on None array returns -1."""
+        result = rt.m_next_local(None, ("",))
+        assert result == -1
+
+    def test_next_empty_subscripts_returns_minus_one(self, rt):
+        """$NEXT with empty subscripts returns -1."""
+        arr = MArray()
+        arr[1].value = "a"
+        result = rt.m_next_local(arr, ())
+        assert result == -1
+
+    def test_next_nested_subscripts(self, rt):
+        """$NEXT works with nested subscripts."""
+        arr = MArray()
+        arr[1, 1].value = "a"
+        arr[1, 2].value = "b"
+        arr[1, 5].value = "c"
+        result = rt.m_next_local(arr, (1, -1))
+        assert result == "1"  # First subscript at level 2
+        result = rt.m_next_local(arr, (1, 2))
+        assert result == "5"  # Next after 2
+
+    def test_next_string_subscripts(self, rt):
+        """$NEXT works with string subscripts."""
+        arr = MArray()
+        arr["A"].value = "first"
+        arr["B"].value = "second"
+        arr["C"].value = "third"
+        result = rt.m_next_local(arr, ("-1",))
+        # -1 as string becomes "" for $ORDER semantics
+        assert result == "A"
+
+
+class TestMNextGlobal:
+    """Tests for MUMPSRuntime.m_next_global() method.
+
+    $NEXT for global variables behaves the same as for locals:
+    - Returns -1 instead of "" when no more subscripts
+    - Treats -1 as "start from beginning"
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create runtime instance."""
+        from m2py.runtime import MUMPSRuntime
+
+        return MUMPSRuntime()
+
+    def test_next_from_minus_one_returns_first(self, rt):
+        """$NEXT(^G(-1)) returns first subscript."""
+        rt.globals.set("G", ("1",), "a")
+        rt.globals.set("G", ("3",), "c")
+        rt.globals.set("G", ("5",), "e")
+        result = rt.m_next_global("G", (-1,))
+        assert result == "1"
+
+    def test_next_returns_next_subscript(self, rt):
+        """$NEXT(^G(1)) returns next subscript."""
+        rt.globals.set("G", ("1",), "a")
+        rt.globals.set("G", ("3",), "c")
+        rt.globals.set("G", ("5",), "e")
+        result = rt.m_next_global("G", (1,))
+        assert result == "3"
+
+    def test_next_at_end_returns_minus_one(self, rt):
+        """$NEXT(^G(lastkey)) returns -1."""
+        rt.globals.set("G", ("1",), "a")
+        rt.globals.set("G", ("3",), "c")
+        result = rt.m_next_global("G", (3,))
+        assert result == -1
+
+    def test_next_empty_subscripts_returns_minus_one(self, rt):
+        """$NEXT with empty subscripts returns -1."""
+        rt.globals.set("G", ("1",), "a")
+        result = rt.m_next_global("G", ())
+        assert result == -1
+
+    def test_next_nested_subscripts(self, rt):
+        """$NEXT works with nested global subscripts."""
+        rt.globals.set("G", ("1", "1"), "a")
+        rt.globals.set("G", ("1", "2"), "b")
+        rt.globals.set("G", ("1", "5"), "c")
+        result = rt.m_next_global("G", (1, -1))
+        assert result == "1"  # First subscript at level 2
+        result = rt.m_next_global("G", (1, 2))
+        assert result == "5"  # Next after 2
+
+
+class TestMNextLocalDecimalSubscripts:
+    """Tests for m_next_local with Decimal subscripts.
+
+    Regression tests for subscript canonicalization bug where Decimal
+    subscripts were converted to strings via str() BEFORE being passed
+    to m_order, which lost numeric canonicalization.
+
+    Example bug: Decimal("0.9999") -> str() -> "0.9999" (non-canonical)
+    Correct:     Decimal("0.9999") -> m_order -> canonicalizes to ".9999"
+
+    The fix ensures subscripts are kept in original form (Decimal, int, etc.)
+    so m_order can properly canonicalize them.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create runtime instance."""
+        from m2py.runtime import MUMPSRuntime
+
+        return MUMPSRuntime()
+
+    def test_decimal_subscript_finds_next(self, rt):
+        """Decimal subscript 0.9999 finds integer 1 as next.
+
+        This was the exact failure case: $NEXT(A(.9999)) should find 1
+        when A(1), A(2) exist. The bug was that 0.9999 was converted to
+        "0.9999" string which is NON-canonical and sorted as string.
+        """
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[1].value = "one"
+        arr[2].value = "two"
+        arr[Decimal("2.0005")].value = "decimal"
+
+        # Start from 0.9999 (before 1), should find 1
+        result = rt.m_next_local(arr, (Decimal("0.9999"),))
+        assert result == "1"
+
+    def test_decimal_subscript_between_integers(self, rt):
+        """Decimal subscript between integers finds correct next."""
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[1].value = "one"
+        arr[2].value = "two"
+        arr[3].value = "three"
+
+        # Start from 1.5, should find 2
+        result = rt.m_next_local(arr, (Decimal("1.5"),))
+        assert result == "2"
+
+    def test_decimal_with_leading_zero(self, rt):
+        """Decimal with leading zero still works correctly.
+
+        Decimal("0.5") should be canonicalized to ".5" and find values after it.
+        """
+        from decimal import Decimal
+
+        arr = MArray()
+        arr[Decimal(".5")].value = "half"  # Canonical form
+        arr[1].value = "one"
+
+        # Start from "" to find first
+        result = rt.m_next_local(arr, ("",))
+        assert result == ".5"
+
+        # Start from .5 to find 1
+        result = rt.m_next_local(arr, (Decimal("0.5"),))
+        assert result == "1"
+
+
+class TestMNextGlobalDecimalSubscripts:
+    """Tests for m_next_global with Decimal subscripts.
+
+    Parallel tests to TestMNextLocalDecimalSubscripts for globals.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        """Create runtime instance."""
+        from m2py.runtime import MUMPSRuntime
+
+        return MUMPSRuntime()
+
+    def test_decimal_subscript_finds_next(self, rt):
+        """Decimal subscript 0.9999 finds integer 1 as next in globals."""
+        from decimal import Decimal
+
+        rt.globals.set("G", ("1",), "one")
+        rt.globals.set("G", ("2",), "two")
+
+        # Start from 0.9999, should find 1
+        result = rt.m_next_global("G", (Decimal("0.9999"),))
+        assert result == "1"
+
+    def test_decimal_subscript_between_integers(self, rt):
+        """Decimal subscript between integers finds correct next in globals."""
+        from decimal import Decimal
+
+        rt.globals.set("G", ("1",), "one")
+        rt.globals.set("G", ("2",), "two")
+        rt.globals.set("G", ("3",), "three")
+
+        # Start from 1.5, should find 2
+        result = rt.m_next_global("G", (Decimal("1.5"),))
+        assert result == "2"
+
+
+# =============================================================================
+# Phase 21: unwind_new_stack() Tests
+# =============================================================================
+
+
+class _MockState:
+    """Minimal mock for TRAMPOLINE RoutineState used by unwind_new_stack."""
+
+    def __init__(self):
+        self._locals = {}
+        self._new_stack = []
+
+
+class TestUnwindNewStack:
+    """Tests for unwind_new_stack() helper function (Phase 21)."""
+
+    def test_empty_stack_is_noop(self):
+        """unwind_new_stack on empty _new_stack does nothing."""
+        state = _MockState()
+        state._locals = {"X": MArray(value=1)}
+        unwind_new_stack(state)
+        assert state._locals["X"].value == 1
+        assert len(state._new_stack) == 0
+
+    def test_selective_var_restore(self):
+        """('var', name, saved_value) restores a single variable."""
+        state = _MockState()
+        saved = MArray(value=42)
+        state._new_stack.append(("var", "X", saved))
+        state._locals = {"X": MArray(value=99)}
+        unwind_new_stack(state)
+        assert state._locals["X"] is saved
+        assert state._locals["X"].value == 42
+        assert len(state._new_stack) == 0
+
+    def test_selective_var_none_removes(self):
+        """('var', name, None) removes variable from _locals."""
+        state = _MockState()
+        state._new_stack.append(("var", "X", None))
+        state._locals = {"X": MArray(value=5)}
+        unwind_new_stack(state)
+        assert "X" not in state._locals
+
+    def test_all_entry_restores_snapshot(self):
+        """('all', snapshot) clears _locals and restores from snapshot."""
+        state = _MockState()
+        snapshot = {"A": MArray(value=1), "B": MArray(value=2)}
+        state._new_stack.append(("all", snapshot))
+        state._locals = {"C": MArray(value=99)}
+        unwind_new_stack(state)
+        assert "C" not in state._locals
+        assert state._locals["A"].value == 1
+        assert state._locals["B"].value == 2
+
+    def test_excl_entry_restores_nonkept(self):
+        """('excl', keep_vars, saved) restores non-kept vars, preserves kept."""
+        state = _MockState()
+        saved = {"Y": MArray(value=20), "Z": MArray(value=30)}
+        state._new_stack.append(("excl", {"X"}, saved))
+        state._locals = {"X": MArray(value=99)}
+        unwind_new_stack(state)
+        # X was kept, so current value preserved
+        assert state._locals["X"].value == 99
+        # Y and Z restored from saved
+        assert state._locals["Y"].value == 20
+        assert state._locals["Z"].value == 30
+
+    def test_legacy_dict_entry(self):
+        """Plain dict entry (legacy format) treated as argumentless NEW."""
+        state = _MockState()
+        snapshot = {"X": MArray(value=1)}
+        state._new_stack.append(snapshot)
+        state._locals = {"Y": MArray(value=2)}
+        unwind_new_stack(state)
+        assert state._locals == snapshot
+        assert "Y" not in state._locals
+
+    def test_multiple_entries_lifo_order(self):
+        """Multiple entries are processed in LIFO order."""
+        state = _MockState()
+        # Push: first a selective NEW of X, then an argumentless NEW
+        saved_x = MArray(value=10)
+        state._new_stack.append(("var", "X", saved_x))
+        state._new_stack.append(("all", {"X": MArray(value=50), "Y": MArray(value=60)}))
+        state._locals = {"Z": MArray(value=99)}
+
+        unwind_new_stack(state)
+
+        # LIFO: first 'all' restores {X=50, Y=60}, then 'var' restores X=10
+        assert state._locals["X"].value == 10
+        assert state._locals["Y"].value == 60
+
+    def test_excl_preserves_kept_values(self):
+        """Exclusive NEW preserves current kept values over saved values."""
+        state = _MockState()
+        saved = {"X": MArray(value=1), "Y": MArray(value=2)}
+        state._new_stack.append(("excl", {"X"}, saved))
+        # X was modified during subroutine
+        state._locals = {"X": MArray(value=999)}
+        unwind_new_stack(state)
+        # X was in keep_vars, so current value (999) is preserved
+        assert state._locals["X"].value == 999
+        # Y was not in keep_vars, so restored from saved
+        assert state._locals["Y"].value == 2
+
+    def test_stack_fully_drained(self):
+        """After unwind, _new_stack is empty."""
+        state = _MockState()
+        state._new_stack.append(("var", "A", None))
+        state._new_stack.append(("var", "B", MArray(value=1)))
+        state._new_stack.append(("all", {}))
+        unwind_new_stack(state)
+        assert len(state._new_stack) == 0
+
+
+# =============================================================================
+# Phase 22: m_translate tests
+# =============================================================================
+
+
+class TestMTranslate:
+    """Test m_translate() runtime helper for $TRANSLATE function."""
+
+    def test_basic_replacement(self):
+        """Replace characters with same-length to_chars."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "LO", "XY") == "HEXXY"
+
+    def test_shorter_to_deletes(self):
+        """When to_chars shorter than from_chars, excess from_chars are deleted."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "HEL", "A") == "AO"
+
+    def test_no_to_deletes_all(self):
+        """When to_chars omitted, all from_chars are deleted."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "L") == "HEO"
+
+    def test_to_longer_than_from(self):
+        """When to_chars longer than from_chars, extra to_chars are ignored."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("ABCDEFGHIJ", "ABC", "abcdef") == "abcDEFGHIJ"
+
+    def test_empty_string(self):
+        """Empty string input returns empty string."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("", "A", "B") == ""
+
+    def test_no_matches(self):
+        """When no characters match from_chars, string unchanged."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "XYZ", "abc") == "HELLO"
+
+    def test_all_chars_replaced(self):
+        """All characters in string are replaced."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("ABCBAABCBA", "ABC", "abc") == "abcbaabcba"
+
+    def test_duplicate_from_chars(self):
+        """First occurrence in from_chars wins for mapping."""
+        from m2py.runtime.helpers import m_translate
+
+        # 'A' found at index 0 → 'x', 'B' found at index 1 → 'y', 'C' not found → 'C'
+        assert m_translate("ABC", "ABA", "xyz") == "xyC"
+
+    def test_empty_from_chars(self):
+        """Empty from_chars means no characters to replace - string unchanged."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "") == "HELLO"
+        assert m_translate("HELLO", "", "xyz") == "HELLO"
+
+    def test_explicit_empty_to_chars(self):
+        """Empty to_chars explicitly passed deletes all from_chars matches."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "HEL", "") == "O"
+
+    def test_same_char_identity_mapping(self):
+        """Mapping a character to itself is a no-op for that character."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "L", "L") == "HELLO"
+
+    def test_special_characters(self):
+        """Translate works with spaces, punctuation, and control chars."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("A B C", " ", "-") == "A-B-C"
+        assert m_translate("hello\tworld", "\t", " ") == "hello world"
+        assert m_translate("a.b*c", ".*", "XY") == "aXbYc"
+
+    def test_single_char_string(self):
+        """Single character string with single char from/to."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("A", "A", "B") == "B"
+        assert m_translate("A", "A") == ""
+        assert m_translate("A", "B", "C") == "A"
+
+    def test_from_and_to_both_empty(self):
+        """Both from_chars and to_chars empty - string unchanged."""
+        from m2py.runtime.helpers import m_translate
+
+        assert m_translate("HELLO", "", "") == "HELLO"

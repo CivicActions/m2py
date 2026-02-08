@@ -24,9 +24,11 @@ class TestRoutineHeadCodegen:
 
         T050: Generate formal parameters in function definition.
         Phase 13 (T076): _rt is now first parameter.
+        Phase 19 (Spec 017): Formal params have =None default so they can be
+        omitted (MUMPS allows calling with fewer args than defined).
         """
         code = generate_python("ADD(A,B) Q A+B\n")
-        assert "def ADD(_rt, A, B, _scope=None, **_kwargs):" in code
+        assert "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0):" in code
 
     def test_routine_docstring(self, generate_python):
         """Routine generates docstring with source info (§6.1).
@@ -43,6 +45,53 @@ class TestRoutineHeadCodegen:
         # Test label without inline comment
         code2 = generate_python("TEST\n Q\n")
         assert '"""MUMPS label: TEST (line 1)"""' in code2
+
+    def test_docstring_escapes_backslashes(self, generate_python):
+        """Docstrings escape backslashes in MUMPS comments.
+
+        MUMPS comments can contain backslashes like '(+-*/#\\)' which
+        would be invalid escape sequences in Python docstrings.
+        """
+        # Backslash before ) - the original issue from V1BOA
+        code = generate_python("TEST ; BINARY OPERATORS (+-*/#\\)\n Q\n")
+        # Backslash should be doubled in the docstring
+        assert "(+-*/#\\\\)" in code
+        # Verify the code compiles without warnings
+        compile(code, "<test>", "exec")
+
+    def test_docstring_escapes_common_sequences(self, generate_python):
+        """Docstrings escape sequences that look like Python escapes.
+
+        Comments containing \\n, \\t, \\r etc. should be escaped.
+        """
+        # Test various escape-like sequences
+        code = generate_python("TEST ; path\\name\\tab\\return\n Q\n")
+        assert "path\\\\name\\\\tab\\\\return" in code
+        compile(code, "<test>", "exec")
+
+    def test_docstring_escapes_double_quotes(self, generate_python):
+        """Docstrings convert double quotes to single quotes.
+
+        Double quotes in comments could break docstring delimiters.
+        """
+        code = generate_python('TEST ; Say "Hello"\n Q\n')
+        # Double quotes become single quotes
+        assert "Say 'Hello'" in code
+        compile(code, "<test>", "exec")
+
+    def test_docstring_with_mixed_special_chars(self, generate_python):
+        """Docstrings handle multiple special characters together."""
+        # Mix of backslashes and quotes
+        code = generate_python('TEST ; path\\to\\"file"\n Q\n')
+        # Backslash escaped, quotes converted
+        assert "path\\\\to\\\\'file'" in code
+        compile(code, "<test>", "exec")
+
+    def test_docstring_preserves_valid_content(self, generate_python):
+        """Docstrings preserve normal comment content unchanged."""
+        code = generate_python("TEST ; Normal comment with spaces\n Q\n")
+        assert "Normal comment with spaces" in code
+        compile(code, "<test>", "exec")
 
 
 @pytest.mark.codegen
@@ -238,9 +287,10 @@ class TestScopeStrategyGeneration:
         A function with only formal params that returns a value
         should generate `return <expr>`.
         Phase 13 (T076): _rt is now first parameter.
+        Phase 19 (Spec 017): Formal params have =None default.
         """
         code = generate_python("ADD(A,B) Q A+B\n")
-        assert "def ADD(_rt, A, B, _scope=None, **_kwargs):" in code
+        assert "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0):" in code
         # Should have return with expression (m_num(A) + m_num(B))
         assert "return" in code
         assert "m_num(A)" in code or "A" in code
@@ -255,10 +305,11 @@ class TestScopeStrategyGeneration:
         modified params for by-ref call semantics (T059). This test
         uses a subroutine without byref outputs.
         Phase 13 (T076): _rt is now first parameter.
+        Phase 19 (Spec 017): Formal params have =None default.
         """
         # Use a subroutine that sets a local but doesn't modify formals
         code = generate_python("PRINT(MSG) W MSG Q\n")
-        assert "def PRINT(_rt, MSG, _scope=None, **_kwargs):" in code
+        assert "def PRINT(_rt, MSG=None, _scope=None, _start_offset=0):" in code
         # Should have plain return (not return <expr>)
         # Find lines that are just 'return' without a value
         lines = code.split("\n")
@@ -266,11 +317,12 @@ class TestScopeStrategyGeneration:
         assert len(return_lines) > 0, "Expected plain 'return' for subroutine"
 
     def test_requires_runtime_generates_code(self, generate_python):
-        """REQUIRES_RUNTIME labels now generate code (Spec 012).
+        """REQUIRES_RUNTIME labels now generate code (Spec 012, 018).
 
         Labels that use indirection require runtime scope.
         As of Spec 012, these are now supported and generate code with
         runtime scope management.
+        Spec 018 (T041): Uses unified set_indirected() for @VAR targets.
         """
         # Indirection requires runtime scope - now supported
         code = generate_python('TEST S X="VAR",@X=1 Q\n')
@@ -278,8 +330,8 @@ class TestScopeStrategyGeneration:
         assert "_scope" in code
         # Should have def with _rt parameter for runtime
         assert "def TEST(_rt" in code
-        # Should have runtime set_var call for @X=1
-        assert "_rt.set_var" in code
+        # Should have runtime set_indirected call for @X=1
+        assert "_rt.set_indirected" in code
 
     def test_function_with_outputs_basic(self, generate_python):
         """FUNCTION_WITH_OUTPUTS generates tuple return (T057).
@@ -287,6 +339,7 @@ class TestScopeStrategyGeneration:
         Note: Full by-ref handling is Phase 10. This tests that
         the basic scope strategy is detected correctly.
         Phase 13 (T076): _rt is now first parameter.
+        Phase 19 (Spec 017): Formal params have =None default.
         """
         # For now, SWAP is classified as SUBROUTINE not FUNCTION_WITH_OUTPUTS
         # because it has no return value. The return tuple pattern
@@ -294,7 +347,7 @@ class TestScopeStrategyGeneration:
         # Use a simple example without NEW statement (not yet implemented)
         code = generate_python("INCR(N) S N=N+1 Q\\n")
         # Verifies formal params are generated correctly
-        assert "def INCR(_rt, N, _scope=None, **_kwargs):" in code
+        assert "def INCR(_rt, N=None, _scope=None, _start_offset=0):" in code
 
 
 @pytest.mark.codegen

@@ -316,9 +316,30 @@ class MRoutine(ASGElement):
     # Populated by compute_all_signatures when subscripted local variable access detected
     array_vars: set = field(default_factory=set, repr=False)
 
+    # Variables that are read but never written in the routine (input-only from caller).
+    # These must be read from _scope in TRAMPOLINE mode since they come from external
+    # callers via GOTO. Populated by compute_all_signatures.
+    routine_input_only_vars: set = field(default_factory=set, repr=False)
+
     # Spec 007: True if any GOTO/DO has offset expression (populated by classify_gotos)
     # Triggers TRAMPOLINE strategy and _line_map generation for line-based dispatch
     has_offset_calls: bool = False
+
+    # Spec 017: True if any argumentless KILL (K with no args) exists in routine
+    # Requires runtime local variable tracking (state._locals dict) in TRAMPOLINE mode
+    has_argumentless_kill: bool = False
+
+    # Spec 017: True if any argumentless NEW (N with no args) exists in routine
+    # Requires runtime scope stack (state._new_stack) in TRAMPOLINE mode
+    has_argumentless_new: bool = False
+
+    # True if routine has name indirection that references local variables
+    # This requires dynamic_locals mode for runtime variable name resolution
+    has_name_indirection_on_locals: bool = False
+
+    # True if routine has external GOTOs (G ^ROUTINE, G LABEL^ROUTINE, etc.)
+    # External GOTOs need all local variables synced to _scope for MUMPS semantics
+    has_external_gotos: bool = False
 
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.

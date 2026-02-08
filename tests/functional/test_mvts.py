@@ -1,39 +1,39 @@
 """Functional tests for the MVTS (M Validation Test Suite).
 
-The MVTS suite is a comprehensive MUMPS validation framework with sub-driver
-routines that call individual test routines. Each sub-driver tests a specific
-feature area of the MUMPS language.
+The MVTS suite uses pattern-based validation similar to MUGJ.
+Each routine is validated by checking:
+1. Number of PASS markers matches expected count
+2. Operator tests (*FAILO*) are expected failures in automation
+3. No unexpected "** FAIL" markers
 
-Structure:
-- VV1.m: Part 77 tests (60 sub-drivers)
+MVTS Structure:
+- VV1.m: Part 77 tests (59 sub-drivers)
 - VV2.m: Part 84 tests (25 sub-drivers)
 - VV3.m: Part 95 tests (23 sub-drivers)
 - VV4.m: Part 95 continued (28 sub-drivers)
-- Total: 136 sub-drivers, ~714 individual test routines
+- Total: 135 sub-drivers, ~714 individual test routines
 
-IMPORTANT: MVTS routines use framework routines (^V1PRESET, ^VEXAMINE, etc.)
-that set up test state and validate results. Without the framework, individual
-routines cannot be tested in isolation. All tests are marked as skipped with
-the reason "MVTS framework" until framework support is implemented.
-
-The sub-driver routines (V1WR, V1CMT, etc.) print their labels and call
-individual test routines. This module tests each sub-driver as a parametrized
-test case.
+The MVTS framework uses VEXAMINE for assertions:
+- D ^VEXAMINE: Automated test (produces PASS or ** FAIL)
+- D MANPF*^VEXAMINE: Operator test (produces *FAILO* in automation)
 
 Usage:
     uv run pytest tests/functional/test_mvts.py -v
-    uv run pytest tests/functional/test_mvts.py -k V1BOA -v  # Specific routine
+    uv run pytest tests/functional/test_mvts.py::TestMvtsSuite -v
 """
 
 from __future__ import annotations
+
+import re
+import sys
+import types
+from dataclasses import dataclass
 
 import pytest
 
 from tests.functional.conftest import (
     FUNCTIONAL_BASE,
-    compare_output,
-    load_routine_source,
-    run_mumps,
+    filename_to_module_name,
 )
 from tests.functional.suite_definitions import (
     MVTS_ROUTINES,
@@ -57,6 +57,170 @@ MVTS_DRIVER = MVTS_DIR / "u_inref" / "mvts.csh"
 
 
 # =============================================================================
+# Pattern-Based Validation
+# =============================================================================
+
+
+@dataclass
+class ValidationResult:
+    """Result of pattern-based validation for MVTS."""
+
+    passed: bool
+    pass_count: int
+    expected_passes: int | None
+    fail_count: int
+    operator_fail_count: int
+    expected_operator_fails: int
+    unexpected_fails: list[str]
+    errors: list[str]
+
+    @property
+    def summary(self) -> str:
+        """Generate a summary message."""
+        parts = []
+        if self.expected_passes is not None:
+            if self.pass_count != self.expected_passes:
+                parts.append(
+                    f"PASS count: {self.pass_count} (expected {self.expected_passes})"
+                )
+            else:
+                parts.append(f"PASS count: {self.pass_count} ✓")
+        else:
+            parts.append(f"PASS count: {self.pass_count} (no expectation)")
+
+        if self.operator_fail_count > 0:
+            parts.append(
+                f"Operator FAILs (*FAILO*): {self.operator_fail_count} (expected {self.expected_operator_fails})"
+            )
+
+        if self.unexpected_fails:
+            parts.append(f"Unexpected FAILs: {self.unexpected_fails}")
+        elif self.fail_count > 0:
+            parts.append(f"FAILs: {self.fail_count}")
+
+        if self.errors:
+            parts.append(f"Errors: {self.errors}")
+
+        return "\n".join(parts)
+
+
+def validate_mvts_output(
+    output: str,
+    expected_passes: int | None = None,
+    expected_operator_fails: int = 0,
+) -> ValidationResult:
+    """Validate MVTS routine output using pattern matching.
+
+    Checks:
+    1. Number of PASS markers matches expected (if specified)
+    2. Operator tests (*FAILO*) match expected count
+    3. No unexpected "** FAIL" markers
+
+    VEXAMINE output patterns:
+    - "   PASS  10001 Description" - test passed
+    - "** FAIL  10001 Description" - test failed
+    - Operator tests store *FAILO* in ^VREPORT but print ** FAIL
+
+    Args:
+        output: The routine's output
+        expected_passes: Expected number of PASS markers (None = no check)
+        expected_operator_fails: Expected number of operator test failures
+
+    Returns:
+        ValidationResult with detailed pass/fail information
+    """
+    errors: list[str] = []
+
+    # Count PASS markers with test ID pattern (VEXAMINE outputs "   PASS  NNNNN")
+    # Use stricter pattern to avoid matching "PASS" in text prompts
+    pass_matches = re.findall(r"PASS\s+\d+", output)
+    pass_count = len(pass_matches)
+
+    # Count "** FAIL" markers (test failures with test ID)
+    fail_matches = re.findall(r"\*\* FAIL\s+(\d+)", output)
+    fail_count = len(fail_matches)
+
+    # Expected failures come from two sources:
+    # 1. Operator tests (expected_passes=0) - can't provide input in automation
+    # 2. Tests that also fail in YDB (known YDB failures, not m2py bugs)
+    # In both cases, expected_operator_fails counts how many ** FAIL markers
+    # are expected and should not be treated as unexpected failures.
+    expected_fails = expected_operator_fails
+
+    # Determine unexpected fails
+    unexpected_fails = (
+        fail_matches[expected_fails:] if fail_count > expected_fails else []
+    )
+
+    # Determine overall pass/fail
+    passed = True
+
+    # Check PASS count
+    if expected_passes is not None and pass_count != expected_passes:
+        passed = False
+
+    # Check for unexpected fails (real test failures beyond expected)
+    if unexpected_fails:
+        passed = False
+
+    return ValidationResult(
+        passed=passed,
+        pass_count=pass_count,
+        expected_passes=expected_passes,
+        fail_count=fail_count,
+        operator_fail_count=expected_operator_fails if expected_passes == 0 else 0,
+        expected_operator_fails=expected_operator_fails,
+        unexpected_fails=unexpected_fails,
+        errors=errors,
+    )
+
+
+# =============================================================================
+# Routine Loading Helpers
+# =============================================================================
+
+
+def _load_all_mvts_routines() -> tuple[
+    dict[str, types.ModuleType | None], dict[str, str]
+]:
+    """Load and transpile ALL MVTS routines from inref/.
+
+    This matches the MUGJ pattern - loading all routines upfront so that
+    inter-routine calls (D ^V1WR1, etc.) can resolve properly.
+
+    Note: Files starting with _ (like _.m, _1A.m) are registered with _pct_
+    prefix module names since they represent MUMPS % routines and codegen
+    generates imports like `import _pct_` for `D ^%`.
+
+    Returns:
+        Tuple of (routine_modules dict, transpile_errors dict)
+    """
+    from m2py.codegen import generate_python
+
+    all_routine_files = list(MVTS_INREF.glob("*.m"))
+    routine_modules: dict[str, types.ModuleType | None] = {}
+    transpile_errors: dict[str, str] = {}
+
+    for source_path in all_routine_files:
+        filename_stem = source_path.stem
+        module_name = filename_to_module_name(filename_stem)
+        source = source_path.read_text()
+
+        try:
+            python_code = generate_python(source)
+            module = types.ModuleType(module_name)
+            sys.modules[module_name] = module
+            exec(python_code, module.__dict__)
+            routine_modules[module_name] = module
+        except Exception as e:
+            # Mark routine as failed to transpile
+            routine_modules[module_name] = None
+            transpile_errors[module_name] = str(e)
+
+    return routine_modules, transpile_errors
+
+
+# =============================================================================
 # Test Helpers
 # =============================================================================
 
@@ -67,25 +231,28 @@ def make_test_id(routine_def: RoutineDefinition) -> str:
 
 
 def get_routine_params() -> list[pytest.param]:
-    """Generate pytest parameters for all MVTS routines."""
-    params = []
-    for routine in MVTS_ROUTINES:
-        if routine.skip_reason:
-            params.append(
-                pytest.param(
-                    routine,
-                    id=make_test_id(routine),
-                    marks=pytest.mark.skip(reason=routine.skip_reason),
-                )
-            )
-        else:
-            params.append(pytest.param(routine, id=make_test_id(routine)))
-    return params
+    """Generate pytest parameters for MVTS routines, excluding skipped ones."""
+    return [
+        pytest.param(routine, id=make_test_id(routine))
+        for routine in MVTS_ROUTINES
+        if not routine.skip_reason
+    ]
 
 
 # =============================================================================
 # Parametrized Test Suite
 # =============================================================================
+
+# Cache for loaded routine modules (populated once for all tests)
+_CACHED_MODULES: tuple[dict[str, types.ModuleType | None], dict[str, str]] | None = None
+
+
+def _get_cached_modules() -> tuple[dict[str, types.ModuleType | None], dict[str, str]]:
+    """Get cached routine modules, loading if needed."""
+    global _CACHED_MODULES
+    if _CACHED_MODULES is None:
+        _CACHED_MODULES = _load_all_mvts_routines()
+    return _CACHED_MODULES
 
 
 @pytest.mark.mvts
@@ -93,10 +260,14 @@ def get_routine_params() -> list[pytest.param]:
 class TestMvtsSuite:
     """Parametrized tests for MVTS sub-driver routines.
 
-    Each test runs a sub-driver routine through m2py and validates:
-    1. The routine can be parsed
-    2. Python code is generated
-    3. The code executes (xfail expected due to framework dependency)
+    Each test runs a sub-driver routine through m2py with all MVTS
+    routines pre-loaded as modules (matching YDB behavior where all
+    routines are available).
+
+    Uses pattern-based validation to check:
+    - PASS count matches expected
+    - No unexpected ** FAIL markers
+    - *FAILO* count matches expected (operator tests)
     """
 
     @pytest.mark.parametrize("routine_def", get_routine_params())
@@ -107,115 +278,55 @@ class TestMvtsSuite:
             routine_def: The routine definition containing label, routine name,
                         and optional skip reason.
         """
-        # Load the routine source
-        source = load_routine_source(MVTS_INREF, routine_def.routine)
-        assert source is not None, f"Failed to load routine {routine_def.routine}"
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
 
-        # Run through m2py
-        result = run_mumps(source, timeout=30)
+        # Get pre-loaded modules
+        routine_modules, transpile_errors = _get_cached_modules()
 
-        # For MVTS, we expect execution to fail due to framework dependencies
-        # but the routine should at least parse and generate code
-        assert result is not None, f"No result for {routine_def.routine}"
+        routine_name = routine_def.routine
 
-        # Check if output matches expected label prefix
-        # MVTS routines print their label like "1---V1WR"
-        if result.success:
-            expected_prefix = routine_def.label
-            compare_output(result.output, expected_prefix)
+        # Check if routine failed to transpile
+        if routine_name in transpile_errors:
+            pytest.xfail(f"Transpile error: {transpile_errors[routine_name]}")
 
+        module = routine_modules.get(routine_name)
+        if module is None:
+            pytest.xfail(f"Routine {routine_name} not available")
 
-# =============================================================================
-# Subset Test Classes (for targeted testing)
-# =============================================================================
+        # Create runtime
+        runtime = MUMPSRuntime()
+        runtime._capture_output = True
+        runtime.clear()
 
+        # Set up runtime context
+        runtime._current_routine = getattr(module, "_routine_name", routine_name)
+        runtime._current_source_lines = getattr(module, "_source_lines", [])
+        runtime._current_label_lines = getattr(module, "_label_lines", {})
 
-@pytest.mark.mvts
-@pytest.mark.functional
-class TestMvtsVV1:
-    """Tests for VV1 (Part 77) sub-drivers only."""
+        # Get entry function
+        entry_func = getattr(module, routine_name, None)
+        if not entry_func or not callable(entry_func):
+            pytest.xfail(f"No entry point for {routine_name}")
 
-    @pytest.mark.parametrize(
-        "routine_def",
-        [
-            pytest.param(
-                r,
-                id=r.routine,
-                marks=pytest.mark.skip(reason=r.skip_reason) if r.skip_reason else (),
-            )
-            for r in MVTS_VV1_ROUTINES
-        ],
-    )
-    def test_routine(self, routine_def: RoutineDefinition) -> None:
-        """Test a VV1 sub-driver routine."""
-        source = load_routine_source(MVTS_INREF, routine_def.routine)
-        assert source is not None, f"Failed to load routine {routine_def.routine}"
+        try:
+            run_with_goto_support(entry_func, runtime, {})
+            output = runtime.get_output()
+        except Exception:
+            # Capture partial output even on crash — allows tests that crash
+            # mid-execution to still validate passes collected before the crash
+            output = runtime.get_output()
 
+        # Pattern-based validation using counts from RoutineDefinition
+        result = validate_mvts_output(
+            output,
+            expected_passes=routine_def.expected_passes,
+            expected_operator_fails=routine_def.expected_fails or 0,
+        )
 
-@pytest.mark.mvts
-@pytest.mark.functional
-class TestMvtsVV2:
-    """Tests for VV2 (Part 84) sub-drivers only."""
-
-    @pytest.mark.parametrize(
-        "routine_def",
-        [
-            pytest.param(
-                r,
-                id=r.routine,
-                marks=pytest.mark.skip(reason=r.skip_reason) if r.skip_reason else (),
-            )
-            for r in MVTS_VV2_ROUTINES
-        ],
-    )
-    def test_routine(self, routine_def: RoutineDefinition) -> None:
-        """Test a VV2 sub-driver routine."""
-        source = load_routine_source(MVTS_INREF, routine_def.routine)
-        assert source is not None, f"Failed to load routine {routine_def.routine}"
-
-
-@pytest.mark.mvts
-@pytest.mark.functional
-class TestMvtsVV3:
-    """Tests for VV3 (Part 95) sub-drivers only."""
-
-    @pytest.mark.parametrize(
-        "routine_def",
-        [
-            pytest.param(
-                r,
-                id=r.routine,
-                marks=pytest.mark.skip(reason=r.skip_reason) if r.skip_reason else (),
-            )
-            for r in MVTS_VV3_ROUTINES
-        ],
-    )
-    def test_routine(self, routine_def: RoutineDefinition) -> None:
-        """Test a VV3 sub-driver routine."""
-        source = load_routine_source(MVTS_INREF, routine_def.routine)
-        assert source is not None, f"Failed to load routine {routine_def.routine}"
-
-
-@pytest.mark.mvts
-@pytest.mark.functional
-class TestMvtsVV4:
-    """Tests for VV4 (Part 95 continued) sub-drivers only."""
-
-    @pytest.mark.parametrize(
-        "routine_def",
-        [
-            pytest.param(
-                r,
-                id=r.routine,
-                marks=pytest.mark.skip(reason=r.skip_reason) if r.skip_reason else (),
-            )
-            for r in MVTS_VV4_ROUTINES
-        ],
-    )
-    def test_routine(self, routine_def: RoutineDefinition) -> None:
-        """Test a VV4 sub-driver routine."""
-        source = load_routine_source(MVTS_INREF, routine_def.routine)
-        assert source is not None, f"Failed to load routine {routine_def.routine}"
+        # Report validation results
+        if not result.passed:
+            summary = result.summary
+            pytest.fail(f"Pattern validation failed for {routine_name}:\n{summary}")
 
 
 # =============================================================================

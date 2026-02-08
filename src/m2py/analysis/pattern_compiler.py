@@ -142,11 +142,28 @@ def _parse_pattern_atom(pattern: str, pos: int) -> Tuple[str, int]:
     if char == '"':
         # String literal
         literal, pos = _parse_string_literal(pattern, pos)
-        base_regex = re.escape(literal)
+
+        # Special case: empty string literal
+        # Any number of empty strings is still empty string, so n"" only matches ""
+        # regardless of the quantifier. Return empty regex which fullmatch matches to "".
+        if literal == "":
+            return "", pos
+
+        # Wrap in non-capturing group if literal has multiple chars and quantifier needed
+        escaped = re.escape(literal)
+        if len(literal) > 1 and not (min_count == 1 and max_count == 1):
+            base_regex = f"(?:{escaped})"
+        else:
+            base_regex = escaped
     elif char == "(":
         # Alternation
         alt_regex, pos = _parse_alternation(pattern, pos)
-        base_regex = alt_regex
+        # Always wrap group content in non-capturing group when quantified,
+        # to avoid adjacent quantifiers like [0-9]{5}{2} (invalid regex)
+        if not (min_count == 1 and max_count == 1):
+            base_regex = f"(?:{alt_regex})"
+        else:
+            base_regex = alt_regex
     elif char.upper() in PATCODE_MAP:
         # Pattern code - can be multiple letters (e.g., AN = alphanumeric)
         # Each letter is a patcode and the combination means "any of these"

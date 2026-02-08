@@ -14,16 +14,72 @@ Spec 010: Extended with array traversal functions:
 - m_query: $QUERY function for local arrays
 - m_query_global: $QUERY function for global variables
 
+Spec 017 Phase 18: Added m_var_value for cross-routine variable access:
+- m_var_value: Extract scalar value from either MArray or plain value
+
 These helpers are imported in generated code and called at runtime.
 """
 
 from __future__ import annotations
 
+from decimal import Decimal, ROUND_HALF_UP, localcontext
 from typing import TYPE_CHECKING, Any, Callable, Tuple
+
+from m2py.core.subscripts import SubscriptCanonicalizer
 
 if TYPE_CHECKING:
     from m2py.runtime import MArray
     from m2py.runtime.globals import GlobalStorageBackend
+
+
+def m_var_value(val: Any) -> Any:
+    """Extract scalar value from either an MArray or plain value.
+
+    When variables are passed between routines, they may be:
+    1. MArray objects (from the calling routine's _scope with MArray default)
+    2. Plain values (from TRAMPOLINE routines that return state.VAR directly)
+
+    This function handles both cases uniformly.
+
+    Args:
+        val: Either an MArray object or a plain value (str, int, etc.)
+
+    Returns:
+        The scalar value (MArray.value if MArray, else the value itself)
+
+    Examples:
+        >>> m_var_value(MArray("hello"))
+        'hello'
+        >>> m_var_value("world")
+        'world'
+        >>> m_var_value(MArray())  # Undefined MArray
+        ''
+        >>> m_var_value(None)
+        ''
+    """
+    # Handle MArray by extracting .value
+    if hasattr(val, "value"):
+        return val.value
+    # Handle None as empty string (MUMPS undefined = empty string)
+    if val is None:
+        return ""
+    # Plain values pass through
+    return val
+
+
+def _canonicalize_subscript(sub: Any) -> str:
+    """Canonicalize a subscript value for consistent MArray lookup.
+
+    Uses SubscriptCanonicalizer for proper MUMPS subscript canonicalization
+    so that A(1), A(1.0), and A("1") all access the same node.
+
+    Args:
+        sub: Subscript value (int, float, Decimal, str, etc.)
+
+    Returns:
+        Canonical string representation
+    """
+    return SubscriptCanonicalizer.canonicalize(sub)
 
 
 def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
@@ -37,25 +93,33 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
     - type_order: 0 for numeric, 1 for string
     - sort_value: the value to compare within the type
 
+    CRITICAL: Only CANONICAL numeric strings collate as numbers.
+    Non-canonical numeric strings like "-4.", "-4.0", ".0", "01" collate as strings.
+
     Args:
-        value: A subscript value (string, int, or float)
+        value: A subscript value (string, int, float, or Decimal)
 
     Returns:
         Tuple for comparison in sorted()
     """
-    # Check if value is numeric (can be int, float, or numeric string)
-    if isinstance(value, (int, float)):
+    from m2py.core.subscripts import SubscriptCanonicalizer
+
+    # Check if value is numeric (can be int, float, Decimal, or numeric string)
+    if isinstance(value, (int, float, Decimal)):
         return (0, float(value))
 
-    # Try to parse string as a number
+    # For strings, only canonical numeric strings collate as numbers
     if isinstance(value, str):
-        try:
-            # MUMPS considers numeric strings as numbers for collation
-            num = float(value)
-            return (0, num)
-        except (ValueError, TypeError):
-            # Not a numeric string, sort as string
-            return (1, value)
+        # Check if string is a CANONICAL numeric form
+        if SubscriptCanonicalizer.is_canonical_numeric_string(value):
+            # It's canonical, collate as number
+            try:
+                num = Decimal(value)
+                return (0, float(num))
+            except (ValueError, TypeError, ArithmeticError):
+                pass
+        # Non-canonical or non-numeric strings collate as strings
+        return (1, value)
 
     # Fallback for any other type
     return (1, str(value))
@@ -69,6 +133,7 @@ def m_format_output(value: Any) -> str:
     - No unnecessary decimal point for integers
     - No leading zero before decimal for values < 1 (0.5 → ".5")
     - Negative numbers keep the minus sign (-0.5 → "-.5")
+    - No scientific notation (1E+2 → "100")
 
     Spec 011 Phase 9: Ensures numeric output matches MUMPS formatting.
 
@@ -83,14 +148,68 @@ def m_format_output(value: Any) -> str:
         m_format_output(0.5) → ".5"
         m_format_output(-0.5) → "-.5"
         m_format_output(3.14) → "3.14"
+        m_format_output(Decimal("1E2")) → "100"
+        m_format_output("0.5") → ".5"  # Numeric strings also formatted
     """
-    # If not numeric, just convert to string
+    from decimal import Decimal
+
+    # T075h: Handle MArray objects by extracting their value
+    # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
+    # and _rt.write(state._locals.get('V', '')) passes MArray objects
+    if hasattr(value, "value"):
+        return m_format_output(value.value)
+
+    # If the value is a Python string, return it as-is.
+    # In MUMPS, strings preserve their exact content - they are NOT canonicalized.
+    # Only numeric types (Decimal, int, float) are canonicalized on output.
+    # Example: S X="1212.000" W X → outputs "1212.000" (string preserved)
+    #          S X=1212.000 W X → outputs "1212" (numeric canonicalized)
     if isinstance(value, str):
         return value
 
     if isinstance(value, bool):
         # Convert boolean to MUMPS 1/0
         return "1" if value else "0"
+
+    # Handle Decimal type (used for large numbers and scientific notation)
+    if isinstance(value, Decimal):
+        # Check if it's effectively an integer
+        if value == int(value):
+            return str(int(value))
+        # Format without scientific notation
+        # Convert to tuple: (sign, digits, exponent)
+        sign, digits, exponent = value.as_tuple()
+        # Handle special Decimal values (NaN, Infinity) - exponent is a string code
+        if not isinstance(exponent, int):
+            return str(value)
+        # YDB has a limit of ~43 decimal places. Beyond that, output is "0"
+        # This prevents memory errors from trying to format 1E-111111111...
+        if exponent < -43:
+            return "0"
+        # Reconstruct the number
+        if exponent >= 0:
+            # Integer or large number
+            return str(int(value))
+        else:
+            # Decimal number
+            int_part = digits[:exponent] if exponent else ()
+            frac_part = digits[exponent:]
+            int_str = "".join(str(d) for d in int_part) if int_part else ""
+            frac_str = "".join(str(d) for d in frac_part)
+            # Pad with leading zeros if needed
+            if not int_str:
+                int_str = ""
+                frac_str = "0" * (-exponent - len(digits)) + frac_str
+            # Build result
+            result = int_str + "." + frac_str
+            # Remove trailing zeros
+            result = result.rstrip("0").rstrip(".")
+            # Remove leading zero before decimal
+            if result.startswith("0."):
+                result = result[1:]
+            if sign:
+                result = "-" + result
+            return result
 
     if isinstance(value, (int, float)):
         # Check if it's effectively an integer
@@ -155,25 +274,44 @@ def m_set_piece(
         m_set_piece(lambda: "", setter, "^", 3, None, "X")
 
     Note:
-        Per MUMPS spec, piece numbers <= 0 result in no modification.
+        Per MUMPS spec:
+        - If piece_from <= 0 and piece_to <= 0: no modification
+        - If piece_from <= 0 and piece_to >= 1: clamp piece_from to 1
+        - If piece_from > piece_to: no modification
     """
-    # Per MUMPS spec: piece numbers <= 0 result in no modification
-    if piece_from <= 0:
-        return
-
-    # Get current value (empty string if undefined/None)
-    current = var_getter() or ""
-
     # Normalize piece_to: if None, single piece replacement
     if piece_to is None:
         piece_to = piece_from
 
+    # Per MUMPS spec: if piece_from <= 0 and piece_to <= 0, no modification
+    # AND the glvn is NOT evaluated (naked indicator not updated)
+    if piece_from <= 0 and piece_to <= 0:
+        return
+
+    # Per MUMPS spec: if piece_from > piece_to, no modification occurs
+    # AND the glvn is NOT evaluated (naked indicator not updated)
+    if piece_from > piece_to:
+        return
+
+    # Clamp piece_from to 1 if it's <= 0 but piece_to >= 1
+    if piece_from <= 0:
+        piece_from = 1
+
+    # Get current value (empty string if undefined/None)
+    # This is where the glvn is evaluated and naked indicator is updated
+    current = var_getter() or ""
+
+    # Handle empty delimiter specially per YDB behavior
+    if not delimiter:
+        # Empty delimiter: intexpr2=1 replaces entire string, intexpr2>1 appends
+        if piece_from == 1:
+            var_setter(value)
+        else:
+            var_setter(current + value)
+        return
+
     # Split by delimiter (preserving all parts)
-    if delimiter:
-        parts = current.split(delimiter)
-    else:
-        # Empty delimiter edge case - treat each character as a delimiter
-        parts = list(current) if current else [""]
+    parts = current.split(delimiter)
 
     # Convert to 0-indexed
     from_idx = piece_from - 1
@@ -286,15 +424,8 @@ def m_data(array: MArray | None, subscripts: tuple[str, ...] = ()) -> int:
     # Navigate to target node via subscripts
     node = array
     for sub in subscripts:
-        # MArray may use string or numeric keys depending on how SET was generated
-        # Try the subscript as-is first, then try numeric conversion
-        key = sub
-        if key not in node._children:
-            # Try converting string to int for numeric subscripts
-            try:
-                key = int(sub)
-            except (ValueError, TypeError):
-                pass
+        # Canonicalize subscript for consistent lookup
+        key = _canonicalize_subscript(sub)
         if key not in node._children:
             return 0
         node = node._children[key]
@@ -365,6 +496,14 @@ def m_order(
     if array is None:
         return ""
 
+    # Coerce direction to int (may come from MUMPS expression as string/Decimal)
+    if not isinstance(direction, int):
+        direction = (
+            int(Decimal(str(direction)))
+            if str(direction).lstrip("-").replace(".", "", 1).isdigit()
+            else 1
+        )
+
     # Navigate to parent level (all but last subscript)
     # The last subscript is the starting point for the search
     if not subscripts:
@@ -376,18 +515,8 @@ def m_order(
     # Navigate to parent node
     node = array
     for sub in parent_subs:
-        # Try to find the subscript (handle string/int key mismatches)
-        key = sub
-        if key not in node._children:
-            try:
-                key = int(sub)
-            except (ValueError, TypeError):
-                pass
-        if key not in node._children:
-            try:
-                key = float(sub)
-            except (ValueError, TypeError):
-                pass
+        # Canonicalize subscript for consistent lookup
+        key = _canonicalize_subscript(sub)
         if key not in node._children:
             return ""
         node = node._children[key]
@@ -398,24 +527,27 @@ def m_order(
     if direction == -1:
         keys = list(reversed(keys))
 
-    if start_key == "":
+    # Canonicalize start_key for comparison
+    start_key_canonical = _canonicalize_subscript(start_key) if start_key != "" else ""
+
+    if start_key_canonical == "":
         # Empty string means get first key in the current direction
-        return str(keys[0]) if keys else ""
+        return m_format_output(keys[0]) if keys else ""
 
     # Find the next key after start_key
     # First, locate start_key in the sorted list
-    start_sort_key = _mumps_collation_key(start_key)
+    start_sort_key = _mumps_collation_key(start_key_canonical)
 
     for key in keys:
         key_sort = _mumps_collation_key(key)
         if direction == 1:
             # Forward: find first key greater than start_key
             if key_sort > start_sort_key:
-                return str(key)
+                return m_format_output(key)
         else:
             # Reverse: find first key less than start_key
             if key_sort < start_sort_key:
-                return str(key)
+                return m_format_output(key)
 
     return ""
 
@@ -425,6 +557,7 @@ def m_order_global(
     name: str,
     subscripts: tuple[str, ...],
     direction: int = 1,
+    update_naked: bool = True,
 ) -> str:
     """Return next subscript in MUMPS collation order for global variable.
 
@@ -432,15 +565,25 @@ def m_order_global(
         backend: GlobalStorageBackend instance
         name: Global name without caret (e.g., "PATIENT")
         subscripts: Tuple of subscript values. Last element is starting point.
-        direction: 1 for forward, -1 for reverse
+        direction: 1 for forward, -1 for reverse (coerced from string/Decimal)
+        update_naked: If True, update the naked indicator (default).
+            If False, skip naked update (caller pre-set it).
 
     Returns:
         Next/previous subscript as string, or "" if no more subscripts.
 
     Note:
-        Delegates to backend.order() which updates naked indicator.
+        Delegates to backend.order() which optionally updates naked indicator.
+        Direction is coerced to int via m_num() to handle string/Decimal values
+        from evaluated MUMPS expressions.
     """
-    return backend.order(name, subscripts, direction)
+    if not isinstance(direction, int):
+        direction = (
+            int(Decimal(str(direction)))
+            if str(direction).lstrip("-").replace(".", "", 1).isdigit()
+            else 1
+        )
+    return backend.order(name, subscripts, direction, update_naked=update_naked)
 
 
 def _find_next_valued_node(
@@ -509,7 +652,7 @@ def _find_next_valued_node(
 def m_query(
     array: MArray | None,
     var_name: str,
-    subscripts: tuple[str, ...],
+    subscripts: tuple,
 ) -> str:
     """Return full reference of next node in depth-first traversal ($QUERY).
 
@@ -530,28 +673,32 @@ def m_query(
     Examples:
         # arr(1,1)=1, arr(1,2)=2, arr(2,1)=3
         m_query(arr, "A", ("",)) → "A(1,1)"
-        m_query(arr, "A", ("1", "1")) → "A(1,2)"
-        m_query(arr, "A", ("1", "2")) → "A(2,1)"
-        m_query(arr, "A", ("2", "1")) → ""
+        m_query(arr, "A", (1, 1)) → "A(1,2)"
+        m_query(arr, "A", (1, 2)) → "A(2,1)"
+        m_query(arr, "A", (2, 1)) → ""
     """
     if array is None:
         return ""
 
+    # Canonicalize subscripts to strings for comparison
+    canon_subs = tuple(_canonicalize_subscript(s) for s in subscripts)
+
     # Check if we're starting from empty string (find first valued node)
-    if subscripts == ("",) or subscripts == ():
+    if canon_subs == ("",) or canon_subs == ():
         # Start from beginning - find first valued node in entire tree
         result = _find_next_valued_node(array, [], (), at_start=True)
     else:
         # Find next valued node after the given subscripts
-        result = _find_next_valued_node(array, [], subscripts, at_start=False)
+        result = _find_next_valued_node(array, [], canon_subs, at_start=False)
 
     if result is None:
         return ""
 
-    # Format as variable reference: "A(1,2,3)"
+    # Format as variable reference: "A(1,2,3)" with proper quoting
     if len(result) == 0:
         return var_name
-    return f"{var_name}({','.join(result)})"
+    formatted_subs = [_format_subscript(sub) for sub in result]
+    return f"{var_name}({','.join(formatted_subs)})"
 
 
 def m_query_global(
@@ -602,20 +749,26 @@ def m_piece(
         m_piece("A^B^C", "^", 2, 3) → "B^C"
         m_piece("A^B^C", "^", 4) → ""
         m_piece("A::B::C", "::", 2) → "B"
+        m_piece("A^B^C", "^", -1, 2) → "A^B" (negative from_pos clamps to 1)
+        m_piece("A^B^C", "^", 0, 2) → "A^B" (zero from_pos clamps to 1)
 
     Note:
-        - Piece numbers <= 0 return empty string
+        - Single-arg piece numbers <= 0 return empty string
+        - Range with from_pos <= 0 but valid to_pos clamps from_pos to 1
         - Multi-character delimiters are supported
         - Empty delimiter returns empty string (edge case)
     """
-    # Handle edge cases
-    if from_pos <= 0:
-        return ""
-
     if to_pos is None:
         to_pos = from_pos
+        # Single piece: positions <= 0 return empty string
+        if from_pos <= 0:
+            return ""
+    else:
+        # Range extraction: clamp from_pos to 1 if <= 0
+        if from_pos <= 0:
+            from_pos = 1
 
-    # Invalid range
+    # Invalid range (to_pos < from_pos after clamping)
     if to_pos < from_pos:
         return ""
 
@@ -782,15 +935,8 @@ def m_get(
     # Traverse subscripts
     node = array
     for sub in subscripts:
-        # MArray may use string or numeric keys depending on how SET was generated
-        # Try the subscript as-is first, then try numeric conversion
-        key = sub
-        if key not in node._children:
-            # Try converting string to int for numeric subscripts
-            try:
-                key = int(sub)
-            except (ValueError, TypeError):
-                pass
+        # Canonicalize subscript for consistent lookup
+        key = _canonicalize_subscript(sub)
         if key not in node._children:
             return default  # Subscript path doesn't exist
         node = node._children[key]
@@ -806,6 +952,7 @@ def m_get_global(
     name: str,
     subscripts: tuple[str, ...],
     default: str = "",
+    update_naked: bool = True,
 ) -> str:
     """Safe global variable retrieval with default value (RHS $GET).
 
@@ -816,6 +963,8 @@ def m_get_global(
         name: Global name without caret (e.g., "PATIENT")
         subscripts: Tuple of subscripts
         default: Value to return if undefined (default: "")
+        update_naked: If True, update the naked indicator (default).
+            If False, skip naked update (caller pre-set it).
 
     Returns:
         The variable's value if defined, otherwise the default value.
@@ -823,7 +972,7 @@ def m_get_global(
     Note:
         Delegates to backend.get() which returns None for undefined.
     """
-    value = backend.get(name, subscripts)
+    value = backend.get(name, subscripts, update_naked=update_naked)
     if value is None:
         return default
     return value
@@ -849,12 +998,18 @@ def _raise_select_false() -> None:
 
 
 def _is_canonical_numeric(value: str) -> bool:
-    """Check if a string is a canonical numeric representation.
+    """Check if a string is a canonical MUMPS numeric representation.
 
     In MUMPS, a canonical number is the shortest representation:
-    - No leading zeros (except "0" itself)
+    - No leading zeros (except "0" itself or "0.xxx")
     - No trailing zeros after decimal point
     - No unnecessary plus sign
+    - No decimal point without fractional part
+    - Fractions < 1 have no leading zero: ".5" not "0.5"
+    - Negative fractions: "-.5" not "-0.5"
+
+    Uses m_str() for canonical comparison to ensure consistency with
+    the transpiler's number formatting.
 
     Args:
         value: String to check
@@ -862,42 +1017,50 @@ def _is_canonical_numeric(value: str) -> bool:
     Returns:
         True if value is canonical numeric representation
     """
+    from m2py.codegen.helpers import m_str
+
     if not value:
         return False
     try:
-        num = float(value)
-        # Check if string representation matches canonical form
-        if num == int(num):
-            return value == str(int(num))
-        else:
-            # For floats, canonical means no trailing zeros
-            canonical = str(num)
-            return value == canonical
-    except (ValueError, TypeError):
+        # Use Decimal to avoid float precision loss
+        dec = Decimal(value)
+        # Reject non-finite values (Infinity, NaN, sNaN)
+        if not dec.is_finite():
+            return False
+        # Use sufficient precision for very long decimals
+        with localcontext() as ctx:
+            ctx.prec = max(ctx.prec, len(value) + 10)
+            dec = Decimal(value)
+            canonical = m_str(dec)
+        return value == canonical
+    except Exception:
         return False
 
 
-def _format_subscript(value: str) -> str:
+def _format_subscript(value) -> str:
     """Format a subscript value for canonical name representation.
 
     Args:
-        value: Subscript value (string)
+        value: Subscript value (any type - will be canonicalized)
 
     Returns:
         Canonically formatted subscript - unquoted for numbers, quoted for strings
     """
-    if _is_canonical_numeric(value):
+    # First canonicalize numeric types to string
+    canonical = _canonicalize_subscript(value)
+
+    if _is_canonical_numeric(canonical):
         # Numeric values are not quoted in canonical name
-        return value
+        return canonical
     else:
         # String values are quoted, with internal quotes doubled
-        escaped = value.replace('"', '""')
+        escaped = canonical.replace('"', '""')
         return f'"{escaped}"'
 
 
 def m_name(
     var_name: str,
-    subscripts: tuple[str, ...],
+    subscripts: tuple,
     depth: int | None = None,
     is_global: bool = False,
 ) -> str:
@@ -907,7 +1070,7 @@ def m_name(
 
     Args:
         var_name: Variable name (without caret for globals)
-        subscripts: Tuple of subscript values (as strings)
+        subscripts: Tuple of subscript values (any type - will be canonicalized)
         depth: Number of subscripts to include (None = all, 0 = name only)
         is_global: True if this is a global variable (prepend ^)
 
@@ -915,10 +1078,10 @@ def m_name(
         Canonical name string like "A(1,2,3)" or "^GLO(1,2)"
 
     Examples:
-        m_name("A", ("1", "2", "3")) → "A(1,2,3)"
-        m_name("A", ("1", "2", "3"), depth=2) → "A(1,2)"
-        m_name("A", ("1", "2", "3"), depth=0) → "A"
-        m_name("GLO", ("1", "2"), is_global=True) → "^GLO(1,2)"
+        m_name("A", (1, 2, 3)) → "A(1,2,3)"
+        m_name("A", (1, 2, 3), depth=2) → "A(1,2)"
+        m_name("A", (1, 2, 3), depth=0) → "A"
+        m_name("GLO", (1, 2), is_global=True) → "^GLO(1,2)"
         m_name("A", ("foo", "bar")) → 'A("foo","bar")'
     """
     # Apply depth limit if specified
@@ -1078,6 +1241,9 @@ def m_justify(value: float, width: int, decimals: int) -> str:
 
     Spec 010 Phase 10 (T067): Implements 3-argument $JUSTIFY.
 
+    Uses ROUND_HALF_UP (traditional rounding) per MUMPS spec, not
+    ROUND_HALF_EVEN (banker's rounding) which Python's Decimal default uses.
+
     Args:
         value: Numeric value to format
         width: Field width to right-justify within
@@ -1089,24 +1255,57 @@ def m_justify(value: float, width: int, decimals: int) -> str:
     Examples:
         m_justify(3.14159, 10, 2) → "      3.14"
         m_justify(42, 5, 0) → "   42"
+        m_justify(123.45, 7, 1) → "  123.5" (ROUND_HALF_UP, not 123.4)
     """
+    # Convert to Decimal for precise rounding
+    if isinstance(value, Decimal):
+        dec_value = value
+    else:
+        dec_value = Decimal(str(value))
+
+    # Create quantizer for specified decimal places (e.g., "0.1" for 1 decimal)
+    if decimals > 0:
+        quantizer = Decimal("1." + "0" * decimals)
+    else:
+        quantizer = Decimal("1")
+
+    # Round using ROUND_HALF_UP (traditional rounding)
+    rounded = dec_value.quantize(quantizer, rounding=ROUND_HALF_UP)
+
     # Format with specified decimal places
-    formatted = f"{value:.{decimals}f}"
+    if decimals > 0:
+        formatted = f"{rounded:.{decimals}f}"
+    else:
+        formatted = str(int(rounded))
+
     # Right-justify within width
     return formatted.rjust(width)
 
 
-def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
+def m_fnumber(
+    value: "int | float | Decimal", codes: str, decimals: int | None = None
+) -> str:
     """Format number with specified formatting codes ($FNUMBER).
 
     Spec 010 Phase 10 (T069): Implements $FNUMBER intrinsic function.
+    Updated Phase 24: Rewritten to compose format codes correctly per ANSI spec.
 
-    Formatting codes (can be combined):
+    Format codes (composable):
     - "," = add comma separators for thousands
-    - "+" = show + sign for positive numbers
-    - "-" = suppress the minus sign on negative values
+    - "+" = force + sign for positive (zero gets no sign)
+    - "-" = suppress minus sign on negative values
     - "P" = parentheses for negative, space padding for positive
-    - "T" = trailing sign (trailing space for positive, - for negative)
+    - "T" = trailing sign position
+
+    Composition rules:
+    - T and - compose: T moves sign to trailing position, - suppresses minus
+    - T and + compose: T moves sign to trailing, + forces sign for positive
+    - + and - compose: positive gets +, negative gets no sign
+    - P is exclusive (cannot combine with +, -, T)
+
+    Number formatting rules:
+    - 2-arg form: uses MUMPS canonical format (no leading zero for .xx)
+    - 3-arg form: always shows leading zero (0.xx)
 
     Args:
         value: Numeric value to format
@@ -1123,32 +1322,77 @@ def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
         m_fnumber(-42, "-") → "42"
         m_fnumber(42, "T") → "42 "
         m_fnumber(-42, "T") → "42-"
+        m_fnumber(-20, "T-") → "20 "
     """
+    from m2py.codegen.helpers import m_str
+
     codes_upper = codes.upper()
 
-    # Handle decimals first
-    if decimals is not None:
-        value = round(value, decimals)
-
-    # Determine if value is negative
-    is_negative = value < 0
-    abs_value = abs(value)
-
-    # Format the number (without sign initially)
-    if decimals is not None:
-        formatted = f"{abs_value:.{decimals}f}"
+    # Step 1: Convert to Decimal for precision
+    if isinstance(value, Decimal):
+        dec_value = value
+    elif isinstance(value, float):
+        # Use string representation to avoid float precision issues
+        dec_value = Decimal(str(value))
     else:
-        # MUMPS preserves decimal precision from input
-        if abs_value == int(abs_value):
+        dec_value = Decimal(value)
+
+    # Step 2: Handle rounding when decimals specified
+    if decimals is not None:
+        if decimals >= 0:
+            quantizer = Decimal(10) ** (-decimals)
+            # Use enough precision to hold all integer digits + requested decimal places
+            exp = dec_value.as_tuple().exponent
+            exp_int = exp if isinstance(exp, int) else 0
+            needed = len(dec_value.as_tuple().digits) + abs(exp_int) + decimals + 2
+            with localcontext() as ctx:
+                ctx.prec = max(ctx.prec, needed)
+                dec_value = dec_value.quantize(quantizer, rounding=ROUND_HALF_UP)
+        else:
+            # Negative decimals: round to left of decimal point
+            dec_value = dec_value  # MUMPS treats negative decimals as 0 places
+
+    # Step 3: Determine sign
+    is_negative = dec_value < 0
+    is_zero = dec_value == 0
+    abs_value = dec_value.copy_abs()  # copy_abs avoids context-dependent truncation
+
+    # Step 4: Format the absolute value string
+    if decimals is not None:
+        # 3-arg form: fixed decimal places with leading zero
+        if decimals <= 0:
             formatted = str(int(abs_value))
         else:
-            formatted = str(abs_value)
+            # Format via Decimal to avoid float precision loss on large numbers
+            # After quantize, abs_value already has correct decimal places
+            sign, digits, exponent = abs_value.as_tuple()
+            # Narrow exponent type (can be str for NaN/Inf, but those won't reach here)
+            exp = exponent if isinstance(exponent, int) else 0
+            # Build the full digit string
+            digit_str = "".join(str(d) for d in digits)
+            # exponent is negative (e.g. -4 means 4 decimal places)
+            if exp < 0:
+                dec_places = -exp
+                if len(digit_str) <= dec_places:
+                    # Need leading zeros: e.g. digits=(5,) exp=-4 → "0.0005"
+                    digit_str = digit_str.zfill(dec_places + 1)
+                int_part = digit_str[: len(digit_str) - dec_places] or "0"
+                frac_part = digit_str[len(digit_str) - dec_places :]
+                formatted = f"{int_part}.{frac_part}"
+            else:
+                # Integer value — append zeros and decimal places
+                int_part = digit_str + "0" * exp
+                formatted = f"{int_part}.{'0' * decimals}"
+            # Ensure leading zero for 3-arg form (0.xx not .xx)
+            if formatted.startswith("."):
+                formatted = "0" + formatted
+    else:
+        # 2-arg form: MUMPS canonical (strip leading/trailing zeros)
+        formatted = m_str(abs_value)
 
-    # Add comma separators if requested
+    # Step 5: Add comma separators if requested
     if "," in codes_upper:
-        # Split by decimal point
         parts = formatted.split(".")
-        # Add commas to integer part
         int_part = parts[0]
         int_with_commas = ""
         for i, digit in enumerate(reversed(int_part)):
@@ -1160,35 +1404,81 @@ def m_fnumber(value: float, codes: str, decimals: int | None = None) -> str:
         else:
             formatted = int_with_commas
 
-    # Handle sign formatting based on codes
-    # Priority: P > - > T > + > default
-    if "P" in codes_upper:
-        # Parentheses for negative, space padding for positive
+    # Step 6: Determine sign character based on composable code semantics
+    has_p = "P" in codes_upper
+    has_t = "T" in codes_upper
+    has_plus = "+" in codes_upper
+    has_minus = "-" in codes_upper
+
+    if has_p:
+        # P mode: parentheses for negative, leading+trailing space for non-negative
         if is_negative:
             return f"({formatted})"
         else:
             return f" {formatted} "
-    elif "-" in codes_upper:
-        # Suppress the minus sign on negative values (return absolute value)
-        return formatted
-    elif "T" in codes_upper:
-        # Trailing sign: space for positive, - for negative
-        if is_negative:
-            return f"{formatted}-"
+
+    # Determine what sign character to show
+    # - suppress: "-" code suppresses the minus sign
+    # - force: "+" code forces + for positive (but NOT zero)
+    sign_char = ""
+    if is_negative and not has_minus:
+        sign_char = "-"
+    elif not is_negative and not is_zero and has_plus:
+        sign_char = "+"
+
+    if has_t:
+        # Trailing sign: sign (or space placeholder) goes after number
+        if sign_char:
+            return f"{formatted}{sign_char}"
         else:
             return f"{formatted} "
-    elif "+" in codes_upper:
-        # Force + sign for positive
-        if is_negative:
-            return f"-{formatted}"
-        else:
-            return f"+{formatted}"
     else:
-        # Default: leading minus for negative
-        if is_negative:
-            return f"-{formatted}"
-        else:
-            return formatted
+        # Leading sign (default)
+        return f"{sign_char}{formatted}"
+
+
+# =============================================================================
+# Spec 010: $TRANSLATE function
+# =============================================================================
+
+
+def m_translate(string: str, from_chars: str, to_chars: str = "") -> str:
+    """Perform MUMPS $TRANSLATE character-by-character replacement.
+
+    Each character in `string` that appears in `from_chars` is replaced by
+    the corresponding character in `to_chars`. If `to_chars` is shorter than
+    `from_chars`, characters in `from_chars` without a corresponding character
+    in `to_chars` are deleted. If `to_chars` is longer than `from_chars`,
+    the extra characters in `to_chars` are ignored.
+
+    Args:
+        string: The source string to translate
+        from_chars: Characters to find in string
+        to_chars: Replacement characters (may be shorter, equal, or longer
+                  than from_chars)
+
+    Returns:
+        Translated string
+
+    Examples:
+        >>> m_translate("HELLO", "LO", "XY")
+        'HEXXY'
+        >>> m_translate("HELLO", "L", "")
+        'HEO'
+        >>> m_translate("ABCDEFGHIJ", "ABC", "abcdef")
+        'abcDEFGHIJ'
+    """
+    result = []
+    for ch in string:
+        idx = from_chars.find(ch)
+        if idx == -1:
+            # Character not in from_chars, keep as is
+            result.append(ch)
+        elif idx < len(to_chars):
+            # Has corresponding replacement character
+            result.append(to_chars[idx])
+        # else: no corresponding to_char, delete the character
+    return "".join(result)
 
 
 # =============================================================================
@@ -1351,6 +1641,11 @@ class NewScopeManager:
         """
         self._scope = scope
         self._saved: dict = {}
+        # Phase 21: Stack-based restore actions for proper NEW unwinding
+        # Each entry is ('var', name, value) or ('scope', snapshot_dict)
+        self._restore_actions: list = []
+        # Track individually NEWed variables for dedup (reset on new_all/new_exclusive)
+        self._individually_newed: set = set()
 
     def __enter__(self) -> "NewScopeManager":
         """Enter the context - nothing to do on entry."""
@@ -1361,39 +1656,88 @@ class NewScopeManager:
 
         This runs on both normal return and exceptions, ensuring
         MUMPS NEW semantics are preserved.
+
+        Phase 21: Process restore actions in reverse order to properly
+        unwind nested NEW scopes (argumentless/exclusive NEW within
+        functions that have formal param NEWs).
         """
+        # Phase 21: Process restore actions in reverse (LIFO) for correct unwinding
+        for action in reversed(self._restore_actions):
+            if action[0] == "scope":
+                # Argumentless or exclusive NEW: restore full scope snapshot
+                snapshot = action[1]
+                self._scope.clear()
+                self._scope.update(snapshot)
+            else:
+                # Individual variable restore
+                _, var_name, saved_value = action
+                if saved_value is _UNDEFINED:
+                    self._scope.pop(var_name, None)
+                else:
+                    self._scope[var_name] = saved_value
+
+        # Also restore special variables from legacy _saved dict
         for var_name, saved_value in self._saved.items():
-            # Check if this is a special variable (stored as tuple with setter)
             if var_name.startswith("__special__"):
-                # Special variable: saved_value is (value, setter)
                 value, setter = saved_value
                 setter(value)
-            elif saved_value is _UNDEFINED:
-                # Variable was undefined before NEW - remove it
-                self._scope.pop(var_name, None)
-            else:
-                # Variable had a value - restore it
-                self._scope[var_name] = saved_value
 
     def new_var(self, var_name: str) -> None:
         """NEW a single variable - save and remove from scope.
 
-        If the variable has already been NEWed in this scope level,
-        this is a no-op (first NEW wins).
+        If the variable has already been individually NEWed at the current
+        scope level, this is a no-op (first NEW wins per MUMPS spec).
+
+        Phase 21: Uses _individually_newed set for dedup tracking, and
+        appends to _restore_actions list for proper stack-based unwinding.
 
         Args:
-            var_name: The MUMPS variable name (not translated)
+            var_name: The translated Python variable name (as stored in _scope)
         """
-        if var_name in self._saved:
-            # Already NEWed - skip
+        if var_name in self._individually_newed:
+            # Already NEWed at this scope level - skip
             return
+        self._individually_newed.add(var_name)
 
         # Save current value (or mark as undefined)
         if var_name in self._scope:
-            self._saved[var_name] = self._scope[var_name]
+            saved_value = self._scope[var_name]
             del self._scope[var_name]
         else:
-            self._saved[var_name] = _UNDEFINED
+            saved_value = _UNDEFINED
+
+        self._restore_actions.append(("var", var_name, saved_value))
+
+    def new_all(self) -> None:
+        """NEW all local variables - save scope snapshot and clear.
+
+        Phase 21: Argumentless NEW saves the entire scope and clears it.
+        Resets the individually-NEWed tracking set so subsequent selective
+        NEWs can save variables relative to the new (empty) scope.
+
+        MUMPS semantics: N (without args) makes all local variables
+        undefined until restoration at function exit.
+        """
+        snapshot = dict(self._scope)
+        self._scope.clear()
+        self._individually_newed.clear()  # Reset for new scope level
+        self._restore_actions.append(("scope", snapshot))
+
+    def new_exclusive(self, keep_vars: set) -> None:
+        """Exclusive NEW - save all except specified variables.
+
+        Phase 21: N (X,Y) saves the entire scope snapshot and removes
+        all variables NOT in keep_vars. Resets individually-NEWed tracking.
+
+        Args:
+            keep_vars: Set of variable names to keep (not NEW'd)
+        """
+        snapshot = dict(self._scope)
+        for k in list(self._scope.keys()):
+            if k not in keep_vars:
+                del self._scope[k]
+        self._individually_newed.clear()  # Reset for new scope level
+        self._restore_actions.append(("scope", snapshot))
 
     def new_special_var(
         self, name: str, current_value: str, setter: "Callable[[str], None]"
@@ -1482,3 +1826,41 @@ def m_read_char() -> str:
 
     char = sys.stdin.read(1)
     return char
+
+
+def unwind_new_stack(state) -> None:
+    """Unwind all NEW frames in state._new_stack on subroutine exit.
+
+    Phase 21: When a subroutine (TRAMPOLINE wrapper) exits via QUIT,
+    all NEW frames pushed during that subroutine must be unwound.
+    Processes entries in LIFO order (most recent NEW first).
+
+    Entry formats:
+        ('all', saved_dict) - Argumentless NEW: restore full snapshot
+        ('excl', keep_vars_set, saved_dict) - Exclusive NEW: restore non-kept vars
+        ('var', name, saved_value) - Selective NEW: restore single variable
+        plain dict - Legacy: treat as argumentless NEW (full snapshot)
+    """
+    while state._new_stack:
+        entry = state._new_stack.pop()
+        if isinstance(entry, dict):
+            # Legacy format: argumentless NEW (full snapshot)
+            state._locals.clear()
+            state._locals.update(entry)
+        elif entry[0] == "all":
+            state._locals.clear()
+            state._locals.update(entry[1])
+        elif entry[0] == "excl":
+            keep_vars = entry[1]
+            saved = entry[2]
+            # Keep current values of kept variables
+            current_kept = {k: v for k, v in state._locals.items() if k in keep_vars}
+            state._locals.clear()
+            state._locals.update(saved)
+            state._locals.update(current_kept)
+        elif entry[0] == "var":
+            name, saved_value = entry[1], entry[2]
+            if saved_value is not None:
+                state._locals[name] = saved_value
+            else:
+                state._locals.pop(name, None)
