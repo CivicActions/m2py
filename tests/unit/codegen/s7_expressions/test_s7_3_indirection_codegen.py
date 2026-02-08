@@ -603,3 +603,55 @@ class TestGenerateNameIndirectionUnified:
         # Phase 19: Now uses _format_subscript helper for proper subscript formatting
         assert '"A(" + ",".join(_format_subscript(s) for s in ["1"]) + ")"' in result
         assert "levels=1" in result
+
+
+@pytest.mark.codegen
+class TestGenerateDataIndirectionName:
+    """Tests for generate_data_indirection_name() subscript quoting.
+
+    The fix uses _format_subscript() to properly quote string subscripts
+    in f-string construction. Without this, f'({"A"})' evaluates to '(A)'
+    instead of '("A")'.
+
+    Fixed suite: V4MERGE (17 fails → 0)
+    """
+
+    def test_data_indirection_uses_format_subscript(self, mock_ctx):
+        """$D(@X@(1)) generates code using _format_subscript."""
+        from m2py.codegen.indirection import generate_data_indirection_name
+
+        var = MVariable(name="X")
+        inner = MIndirection(
+            expression=var,
+            indirection_type=IndirectionType.NAME,
+            name_indirection_subscripts=[[MLiteral(value=1)]],
+        )
+
+        result = generate_data_indirection_name(inner, mock_ctx)
+        assert "_format_subscript" in result
+
+
+@pytest.mark.codegen
+class TestGenerateIndirectionMarrayExpr:
+    """Tests for generate_indirection_marray_expr() — by-ref indirection.
+
+    When a by-reference parameter is indirected (.@IX), we need to pass
+    the MArray object, not the value. This function generates the
+    get_indirected_marray() call.
+
+    Fixed suite: V3DWP (test 31083)
+    """
+
+    def test_simple_indirection_marray(self, mock_ctx):
+        """@IX generates get_indirected_marray call."""
+        from m2py.codegen.indirection import generate_indirection_marray_expr
+
+        var = MVariable(name="IX")
+        expr = MIndirection(
+            expression=var,
+            indirection_type=IndirectionType.NAME,
+        )
+
+        result = generate_indirection_marray_expr(expr, mock_ctx)
+        assert "get_indirected_marray" in result
+        assert '"IX"' in result

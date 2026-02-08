@@ -982,3 +982,51 @@ class TestDetectQuitAfterFor:
         """Postconditioned QUIT still detected."""
         result = detect_quit_after_for("F I=1:1:10 W I Q:I>5")
         assert result is True
+
+
+@pytest.mark.analysis
+class TestAnalyzeQuitContextForStatements:
+    """Tests for analyze_quit_context_for_statements().
+
+    This function analyzes QUIT context for a flat list of ASG statements
+    (used by inline XECUTE code). Without this, QUIT inside FOR inside
+    XECUTE would generate raise _XecuteExit() instead of break.
+
+    Fixed suite: V3FOR (test 30305)
+    """
+
+    def test_quit_inside_for_marked_as_loop_quit(self):
+        """QUIT inside a FOR loop should have exits_for set to the FOR statement."""
+        from m2py.analysis.for_analysis import analyze_quit_context_for_statements
+
+        # Build a FOR statement with a QUIT in its body
+        for_body = MScope()
+        quit_stmt = MQuitStatement(postcondition=None, return_value=None)
+        for_body.statements = [quit_stmt]
+
+        for_stmt = MForStatement(
+            loop_var=None,
+            body=for_body,
+        )
+        for_stmt.loop_type = ForLoopType.ARGUMENTLESS
+
+        analyze_quit_context_for_statements([for_stmt])
+
+        assert quit_stmt.exits_for is for_stmt
+
+    def test_standalone_quit_not_loop_quit(self):
+        """QUIT outside any FOR should NOT have exits_for set."""
+        from m2py.analysis.for_analysis import analyze_quit_context_for_statements
+
+        quit_stmt = MQuitStatement(postcondition=None, return_value=None)
+
+        analyze_quit_context_for_statements([quit_stmt])
+
+        # Should not be marked as exiting a FOR
+        assert quit_stmt.exits_for is None
+
+    def test_empty_statement_list(self):
+        """Empty statement list should not crash."""
+        from m2py.analysis.for_analysis import analyze_quit_context_for_statements
+
+        analyze_quit_context_for_statements([])  # Should not crash

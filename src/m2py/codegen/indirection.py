@@ -465,6 +465,104 @@ def generate_name_indirection(
     return f"_rt.get_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
 
 
+def generate_indirection_marray_expr(
+    expr: "MIndirection",
+    ctx: "GeneratorContext",
+) -> str:
+    """Generate Python code for indirected by-reference parameter using get_indirected_marray.
+
+    This is similar to generate_name_indirection but calls _rt.get_indirected_marray()
+    instead of _rt.get_indirected(). Used for .@VAR by-ref parameters in DO calls,
+    where we need the MArray object (not the value) so the callee can alias it.
+
+    Example:
+        .@IX where IX="X" → _rt.get_indirected_marray("IX", _scope, levels=1)
+        Returns the MArray for variable X, not its value.
+
+    Args:
+        expr: MIndirection ASG node
+        ctx: Generator context
+
+    Returns:
+        Python expression string for get_indirected_marray call
+    """
+    from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
+    from m2py.codegen.expressions import generate_expr
+
+    # Count indirection levels and collect subscripts
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
+
+    # Get the appropriate scope expression
+    scope_expr = _get_scope_expr(ctx)
+
+    # Handle NakedGlobal
+    if isinstance(inner_expr, NakedGlobal):
+        naked_expr = generate_expr(inner_expr, ctx)
+        if any(all_subscripts):
+            per_level_subs = []
+            for sub_list in all_subscripts:
+                if sub_list:
+                    sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                    per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+                else:
+                    per_level_subs.append("[]")
+            subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+        else:
+            subs_arg = ""
+        effective_levels = levels - 1
+        return f"_rt.get_indirected_marray({naked_expr}, {scope_expr}, levels={effective_levels}{subs_arg})"
+
+    # For complex inner expressions
+    if not isinstance(inner_expr, (MVariable, GlobalVariable)):
+        source_expr = f"str({generate_expr(inner_expr, ctx)})"
+        if any(all_subscripts):
+            per_level_subs = []
+            for sub_list in all_subscripts:
+                if sub_list:
+                    sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                    per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+                else:
+                    per_level_subs.append("[]")
+            subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+        else:
+            subs_arg = ""
+        return f"_rt.get_indirected_marray({source_expr}, {scope_expr}, levels={levels - 1}{subs_arg})"
+
+    # Get the source variable name
+    if isinstance(inner_expr, MVariable):
+        source_name = inner_expr.name
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            source_expr = f'"{source_name}"'
+    else:  # GlobalVariable
+        source_name = f"^{inner_expr.name}"
+        if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            source_expr = f'"{source_name}"'
+
+    # Build per_level_subscripts argument if needed
+    if any(all_subscripts):
+        per_level_subs = []
+        for sub_list in all_subscripts:
+            if sub_list:
+                sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+            else:
+                per_level_subs.append("[]")
+        subs_arg = f", per_level_subscripts=[{', '.join(per_level_subs)}]"
+    else:
+        subs_arg = ""
+
+    return f"_rt.get_indirected_marray({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
+
+
 def generate_subscript_indirection(
     expr: "MIndirection",
     ctx: "GeneratorContext",
@@ -961,15 +1059,18 @@ def generate_data_indirection_name(
     levels, inner_expr = _count_indirection_levels(var)
 
     # Build subscript string for name concatenation (applied AFTER resolution)
+    # Uses _format_subscript() to properly quote string subscripts in the
+    # constructed name string. Without this, f'({"A"})' evaluates to '(A)'
+    # instead of '("A")', causing get_data to misinterpret the subscript.
     if var.name_indirection_subscripts:
         all_subs = []
         for sub_list in var.name_indirection_subscripts:
             sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
             all_subs.extend(sub_exprs)
         if len(all_subs) == 1:
-            subs_fstr = f"f'({{{all_subs[0]}}})'"
+            subs_fstr = f"f'({{_format_subscript({all_subs[0]})}})'"
         else:
-            subs_parts = ", ".join(f"{{{s}}}" for s in all_subs)
+            subs_parts = ",".join(f"{{_format_subscript({s})}}" for s in all_subs)
             subs_fstr = f"f'({subs_parts})'"
     else:
         subs_fstr = "''"

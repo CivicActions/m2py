@@ -161,6 +161,24 @@ class TestMumpsCollationKey:
         # Non-canonical strings: -4., -4.0, ABC (ASCII order)
         assert sorted_keys == ["-5", "-4", "0", "1", "-4.", "-4.0", "ABC"]
 
+    def test_very_small_decimal_precision(self):
+        """Very small canonical numbers sort correctly with Decimal precision.
+
+        The fix changed float() to Decimal() in _mumps_collation_key() to
+        avoid precision loss for values like -.0000000001.
+
+        Fixed suite: V4SORT (test 40079)
+        """
+        keys = ["-.0000000001", "0", ".0000000001", "1"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        assert sorted_keys == ["-.0000000001", "0", ".0000000001", "1"]
+
+    def test_small_decimals_collate_as_numbers(self):
+        """Small canonical decimals collate numerically, not as strings."""
+        keys = [".001", "-.001", ".01"]
+        sorted_keys = sorted(keys, key=_mumps_collation_key)
+        assert sorted_keys == ["-.001", ".001", ".01"]
+
 
 class TestMOrder:
     """Tests for m_order() helper function."""

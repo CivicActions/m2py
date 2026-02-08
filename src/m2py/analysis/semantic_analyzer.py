@@ -1294,14 +1294,22 @@ class SemanticAnalyzer:
 
         IndirectChain can be nested: @@VAR means @(@VAR)
         Returns the innermost expression and count of @ levels.
+
+        Also preserves name_indirection_subscripts (the @(subs) syntax)
+        from each IndirectChain level. For @@B@(2), the inner chain has
+        name_subscripts=[@(2)] which must be transferred to the inner
+        MIndirection's name_indirection_subscripts field.
         """
-        levels = 1
+        # Collect all chain levels from outermost to innermost
+        chain_levels = [chain]
         current = chain
 
-        # Walk through nested indirection to count levels
+        # Walk through nested indirection to collect all levels
         while hasattr(current, "nested") and current.nested:
-            levels += 1
             current = current.nested
+            chain_levels.append(current)
+
+        levels = len(chain_levels)
 
         # Now 'current' is the innermost IndirectChain - get its expression
         # Note: 'global' is a Python keyword, so we use getattr
@@ -1328,11 +1336,31 @@ class SemanticAnalyzer:
         else:
             expr = None
 
-        # Wrap in MIndirection objects for each @ level
-        # @A (levels=1) becomes Indirection(var=A)
-        # @@A (levels=2) becomes Indirection(Indirection(var=A))
-        for _ in range(levels):
-            inner = MIndirection(expression=expr, indirection_type=IndirectionType.NAME)
+        # Wrap in MIndirection objects for each @ level (innermost first)
+        # chain_levels[-1] is innermost, [0] is outermost
+        # For @@B@(2): inner chain has name_subscripts → inner MIndirection gets them
+        for chain_level in reversed(chain_levels):
+            # Analyze name_indirection_subscripts from this chain level
+            name_ind_subs = None
+            if hasattr(chain_level, "name_subscripts") and chain_level.name_subscripts:
+                analyzed_subs = []
+                for ns in chain_level.name_subscripts:
+                    if hasattr(ns, "subscripts") and ns.subscripts:
+                        # NameIndirectionSubscripts.subscripts is a Subscripts
+                        # object with .args list of textX Expr objects
+                        subs_obj = ns.subscripts
+                        if hasattr(subs_obj, "args") and subs_obj.args:
+                            sub_list = [self.analyze(s, parent) for s in subs_obj.args]
+                            if sub_list:
+                                analyzed_subs.append(sub_list)
+                if analyzed_subs:
+                    name_ind_subs = analyzed_subs
+
+            inner = MIndirection(
+                expression=expr,
+                indirection_type=IndirectionType.NAME,
+                name_indirection_subscripts=name_ind_subs,
+            )
             expr = inner
 
         return expr, levels
@@ -1378,7 +1406,8 @@ class SemanticAnalyzer:
                     else:
                         names.append(str(v))
                 stmt.except_list = names
-        elif hasattr(cmd, "vars") and cmd.vars:
+        # Use 'if' not 'elif' — mixed NEW B,(C,B) has BOTH vars and exclusive
+        if hasattr(cmd, "vars") and cmd.vars:
             for v in cmd.vars:
                 if hasattr(v, "indirect") and v.indirect:
                     # Indirection: @A, @@B@(2), etc.

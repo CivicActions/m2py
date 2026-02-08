@@ -114,9 +114,9 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
         if SubscriptCanonicalizer.is_canonical_numeric_string(value):
             # It's canonical, collate as number
             try:
-                num = float(value)
-                return (0, num)
-            except (ValueError, TypeError):
+                num = Decimal(value)
+                return (0, float(num))
+            except (ValueError, TypeError, ArithmeticError):
                 pass
         # Non-canonical or non-numeric strings collate as strings
         return (1, value)

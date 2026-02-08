@@ -1579,3 +1579,117 @@ class TestResolveToRawValue:
 
         result = resolver.resolve_to_raw_value("A(1)", levels=1)
         assert result == "subscript_value"
+
+
+class TestExpandNakedReferenceString:
+    """Tests for IndirectionResolver._expand_naked_reference_string().
+
+    This method expands naked references like "^(5)" using the current
+    naked indicator. The fix changed naive string joining to use
+    _append_subscripts() for proper subscript quoting.
+
+    Fixed suite: V3INDNM (test 30381)
+    """
+
+    def _make_resolver_with_naked(self, naked_name, naked_subs):
+        """Create a resolver with a set naked indicator."""
+        from m2py.runtime.globals import InMemoryGlobalStorage
+
+        storage = InMemoryGlobalStorage()
+        # Set up the naked indicator by accessing a global
+        storage._naked_indicator = (naked_name, naked_subs)
+
+        state = MockMState()
+        state._globals = storage
+        scope = CurrentScope(scope_dict={})
+        return IndirectionResolver(state, scope)
+
+    def test_simple_naked_reference(self):
+        """^(5) with naked indicator V → ^V(5)."""
+        resolver = self._make_resolver_with_naked("V", ())
+        result = resolver._expand_naked_reference_string("^(5)")
+        assert result == "^V(5)"
+
+    def test_naked_with_parent_subscripts(self):
+        """^(5) with naked indicator (V, (3,)) → ^V(3,5)."""
+        resolver = self._make_resolver_with_naked("V", ("3",))
+        result = resolver._expand_naked_reference_string("^(5)")
+        assert result == "^V(3,5)"
+
+    def test_naked_with_empty_string_subscript(self):
+        """^(22,"") must properly quote the empty string subscript.
+
+        This was the root cause of V3INDNM test 30381 — the old code
+        used join() which produced ^V(22,) instead of ^V(22,"").
+        """
+        resolver = self._make_resolver_with_naked("V1A", ())
+        result = resolver._expand_naked_reference_string('^(22,"")')
+        # Must include quotes around empty string
+        assert result == '^V1A(22,"")'
+
+    def test_naked_with_string_subscript(self):
+        """^(1,"hello") must quote the string subscript."""
+        resolver = self._make_resolver_with_naked("V", ())
+        result = resolver._expand_naked_reference_string('^(1,"hello")')
+        assert result == '^V(1,"hello")'
+
+    def test_naked_with_parent_and_new_subscripts(self):
+        """^(44) with naked indicator (V1A, (22,)) → ^V1A(22,44)."""
+        resolver = self._make_resolver_with_naked("V1A", ("22",))
+        result = resolver._expand_naked_reference_string("^(44)")
+        assert result == "^V1A(22,44)"
+
+    def test_naked_multiple_subscripts(self):
+        """^(1,2,3) with no parent → ^V(1,2,3)."""
+        resolver = self._make_resolver_with_naked("V", ())
+        result = resolver._expand_naked_reference_string("^(1,2,3)")
+        assert result == "^V(1,2,3)"
+
+
+class TestAppendSubscripts:
+    """Tests for IndirectionResolver._append_subscripts() static method.
+
+    This method properly quotes string subscripts when building
+    MUMPS-style name strings. Used by _expand_naked_reference_string
+    and _merge_name_subscripts.
+
+    Fixed suites: V3INDNM, V4MERGE, V4NAME
+    """
+
+    def test_numeric_subscripts(self):
+        """Numeric subscripts are not quoted."""
+        result = IndirectionResolver._append_subscripts("^V", ["1", "2", "3"])
+        assert result == "^V(1,2,3)"
+
+    def test_string_subscripts_quoted(self):
+        """Non-numeric string subscripts are quoted."""
+        result = IndirectionResolver._append_subscripts("^V", ["A", "B"])
+        assert result == '^V("A","B")'
+
+    def test_empty_string_subscript_quoted(self):
+        """Empty string subscript is quoted.
+
+        This was the precise bug that caused V3INDNM test 30381 to fail.
+        """
+        result = IndirectionResolver._append_subscripts("^V", ["22", ""])
+        assert result == '^V(22,"")'
+
+    def test_mixed_numeric_and_string(self):
+        """Mixed numeric and string subscripts are handled correctly."""
+        result = IndirectionResolver._append_subscripts("^V", ["1", "A", "2"])
+        assert result == '^V(1,"A",2)'
+
+    def test_no_subscripts(self):
+        """Empty subscripts list returns name unchanged."""
+        result = IndirectionResolver._append_subscripts("^V", [])
+        assert result == "^V"
+
+    def test_appending_to_existing_subscripts(self):
+        """Appending to a name that already has subscripts."""
+        result = IndirectionResolver._append_subscripts("^V(1)", ["2"])
+        assert result == "^V(1,2)"
+
+    def test_string_with_internal_quotes(self):
+        """String subscripts with quotes get doubled."""
+        result = IndirectionResolver._append_subscripts("^V", ['he"llo'])
+        assert result == '^V("he""llo")'

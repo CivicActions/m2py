@@ -230,12 +230,25 @@ def _generate_call_arguments(
         if arg.passing_mode == PassingMode.OMITTED:
             parts.append("None")
         elif arg.passing_mode == PassingMode.BY_REFERENCE:
-            # For by-ref, pass the variable value
-            # Full tuple return pattern in Phase 10
-            if arg.expression:
-                parts.append(generate_expr(arg.expression, ctx))
-            elif arg.variable_name:
-                parts.append(translate_name(arg.variable_name))
+            # For by-ref, pass the MArray object for aliasing.
+            # The callee detects isinstance(param, MArray) and aliases it.
+            if arg.variable_name:
+                # Simple variable: .W → pass MArray from scope
+                python_name = translate_name(arg.variable_name)
+                parts.append(f"_scope.setdefault({python_name!r}, MArray())")
+            elif arg.expression:
+                # Indirected by-ref: .@IX → use get_indirected_marray
+                from m2py.asg.expressions import MIndirection as MIndirectionType
+
+                if isinstance(arg.expression, MIndirectionType):
+                    from m2py.codegen.indirection import (
+                        generate_indirection_marray_expr,
+                    )
+
+                    parts.append(generate_indirection_marray_expr(arg.expression, ctx))
+                else:
+                    # Fallback: generate as value expression
+                    parts.append(generate_expr(arg.expression, ctx))
             else:
                 parts.append("None")
         else:  # BY_VALUE
@@ -538,10 +551,12 @@ def _restructure_forward_goto(
     if if_stmt.condition is not None:
         cond_expr = generate_expr(if_stmt.condition, ctx)
         ctx.emitter.line(f"_test = m_truth({cond_expr})")
+        ctx.emitter.line("_rt._test = _test")
     elif if_stmt.conditions:
         cond_parts = [generate_expr(c, ctx) for c in if_stmt.conditions]
         cond_expr = " and ".join(f"m_truth({c})" for c in cond_parts)
         ctx.emitter.line(f"_test = {cond_expr}")
+        ctx.emitter.line("_rt._test = _test")
     else:
         # Argumentless IF - use existing _test (GOTO executes if _test is true)
         pass  # _test already set
@@ -2020,20 +2035,18 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
             and ctx.current_label.signature
             and ctx.current_label.signature.byref_outputs
         ):
-            byref_outputs = ctx.current_label.signature.byref_outputs
             formal_params = ctx.current_label.signature.formal_params
-            # Build tuple: (return_value, byref1, byref2, ...)
+            # Build tuple: (return_value, param1, param2, ...)
+            # Include ALL formal params so tuple positions align with
+            # the _byref list at the call site (which has entries for all
+            # actual params, with None for by-value positions).
             # Spec 009 (T021): Use MArray.value for consistency
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 byref_exprs = [
-                    f"_scope.get({p!r}, MArray()).value"
-                    for p in formal_params
-                    if p in byref_outputs
+                    f"_scope.get({p!r}, MArray()).value" for p in formal_params
                 ]
             else:
-                byref_exprs = [
-                    translate_name(p) for p in formal_params if p in byref_outputs
-                ]
+                byref_exprs = [translate_name(p) for p in formal_params]
             if byref_exprs:
                 all_exprs = [value_expr] + byref_exprs
                 ctx.emitter.line(f"return ({', '.join(all_exprs)})")
@@ -2067,21 +2080,16 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         and ctx.current_label.signature
         and ctx.current_label.signature.byref_outputs
     ):
-        byref_outputs = ctx.current_label.signature.byref_outputs
-        # Return byref params in formal_params order (for consistent tuple unpacking)
+        # Return ALL formal params in order (for consistent tuple unpacking)
+        # The _byref list at the call site has entries for all actual params,
+        # so the return tuple must include all formal params to align positions.
         formal_params = ctx.current_label.signature.formal_params
         # T084: For SIMPLE_FUNCTIONS, return from _scope; for TRAMPOLINE, use local vars
         # Spec 009 (T021): Use MArray.value for consistency
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            return_exprs = [
-                f"_scope.get({p!r}, MArray()).value"
-                for p in formal_params
-                if p in byref_outputs
-            ]
+            return_exprs = [f"_scope.get({p!r}, MArray()).value" for p in formal_params]
         else:
-            return_exprs = [
-                translate_name(p) for p in formal_params if p in byref_outputs
-            ]
+            return_exprs = [translate_name(p) for p in formal_params]
         if return_exprs:
             ctx.emitter.line(f"return {', '.join(return_exprs)}")
             return
@@ -2137,6 +2145,8 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
                     generate_statement(body_stmt, ctx)
             else:
                 ctx.emitter.line("pass")
+        # Sync $TEST to runtime after multi-condition IF
+        ctx.emitter.line("_rt._test = _test")
         return
     else:
         # Argumentless IF uses existing $TEST
@@ -2151,6 +2161,7 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
 
     # Single condition case - evaluate and set _test
     ctx.emitter.line(f"_test = m_truth({cond_expr})")
+    ctx.emitter.line("_rt._test = _test")
     ctx.emitter.line("if _test:")
 
     with ctx.emitter.indented():
@@ -4231,6 +4242,7 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
 
         # Restore $TEST and _in_extrinsic after block
         ctx.emitter.line("_test = _saved_test")
+        ctx.emitter.line("_rt._test = _test")
         ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
         return
 
@@ -4418,6 +4430,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         ctx.emitter.line("_rt._current_routine = _saved_routine")
         ctx.emitter.line("_rt._current_source_lines = _saved_source_lines")
         ctx.emitter.line("_rt._current_label_lines = _saved_label_lines")
+        # Sync $TEST from runtime after cross-module call
+        # DO calls don't stack $TEST - callee's changes must be visible to caller
+        ctx.emitter.line("_test = _rt._test")
         return
 
     # Get the label name and translate it
@@ -4904,6 +4919,12 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
         stmt: MNewStatement node
         ctx: Generator context
     """
+    # Process selective variables FIRST for left-to-right order
+    # (mixed NEW B,(C,B) does selective B first, then exclusive (C,B))
+    _has_selective = bool(stmt.variables)
+    if _has_selective:
+        _generate_new_selective_vars(stmt, ctx)
+
     # Handle exclusive NEW: N (X,Y) - NEW all except X,Y
     if stmt.exclusive:
         # Import MIndirection here to avoid circular imports at module level
@@ -4977,7 +4998,7 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     # N with no args creates a new scope for ALL local variables
     # This is equivalent to exclusive NEW with empty except list: N ()
     # (though N () is technically invalid MUMPS syntax - YDB rejects it)
-    if not stmt.variables:
+    if not stmt.variables and not stmt.exclusive:
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             if ctx.new_scope_manager_var:
                 # Phase 21: Use NewScopeManager.new_all() for proper scope
@@ -5000,7 +5021,17 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
             )
         return
 
+    # Selective vars already processed above (before exclusive check)
+    # Only reach here for argumentless NEW or if no vars/exclusive
+    if _has_selective:
+        return
+
     # Process each variable in the new list
+    _generate_new_selective_vars(stmt, ctx)
+
+
+def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
+    """Generate code for selective NEW variables (the for-loop over stmt.variables)."""
     for var in stmt.variables:
         # T070: Handle indirection in NEW (N @A where A contains variable name)
         if isinstance(var, MIndirection):
@@ -5011,29 +5042,26 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
 
             # Get the VALUE of the indirection expression directly.
             # Unlike FOR @A which expects a single variable name, NEW @A
-            # expects a comma-separated list of variable names.
-            # E.g., S A="X,Y" N @A should NEW both X and Y.
-            # We do NOT use resolve_for_target here because that validates
-            # the result as a single variable name, which would fail for "X,Y".
+            # expects a comma-separated list of variable names or exclusive
+            # groups. E.g., S A="X,Y" N @A should NEW both X and Y.
+            # S A="(B,C)" N @A should do exclusive NEW keeping B,C.
             value_expr = generate_expr(var.expression, ctx)
 
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                # NEW indirection can contain comma-separated variable lists
-                # For example: S A="X,Y" N @A should NEW both X and Y
-                # T088: Use _split_argument_list to handle subscripted vars
-                # E.g., A="X(1,2),Y" should split to ["X(1,2)", "Y"], not ["X(1", "2)", "Y"]
-                ctx.emitter.line(
-                    f"_ind_var_list = _rt._split_argument_list(str({value_expr}))"
-                )
-                ctx.emitter.line("for _ind_var in _ind_var_list:")
-                with ctx.emitter.indented():
-                    if ctx.new_scope_manager_var:
-                        # Use NewScopeManager for proper save/restore semantics
-                        ctx.emitter.line(
-                            f"{ctx.new_scope_manager_var}.new_var(_ind_var)"
-                        )
-                    else:
-                        # Fallback: simple pop by resolved name
+                if ctx.new_scope_manager_var:
+                    # Use execute_new_indirection for full MUMPS NEW argument
+                    # parsing at runtime — handles selective, exclusive, mixed,
+                    # and nested indirection patterns
+                    ctx.emitter.line(
+                        f"_rt.execute_new_indirection(str({value_expr}), {ctx.new_scope_manager_var}, _scope)"
+                    )
+                else:
+                    # Fallback: simple split and pop (no scope manager)
+                    ctx.emitter.line(
+                        f"_ind_var_list = _rt._split_argument_list(str({value_expr}))"
+                    )
+                    ctx.emitter.line("for _ind_var in _ind_var_list:")
+                    with ctx.emitter.indented():
                         ctx.emitter.line("_scope.pop(_ind_var, None)")
             else:
                 raise NotImplementedError(
@@ -5441,6 +5469,7 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
             # Timeout read with indirection: R @A:n
             timeout_expr = generate_expr(target.timeout, ctx)
             ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
+            ctx.emitter.line("_rt._test = _test")
             set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
             ctx.emitter.line(set_stmt)
         elif target.is_char_read:
@@ -5477,11 +5506,13 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Need to unpack properly for scope storage
             ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
+            ctx.emitter.line("_rt._test = _test")
             ctx.emitter.line(f"{storage_target} = _read_val")
         else:
             ctx.emitter.line(
                 f"{storage_target}, _test = m_read_timeout({timeout_expr})"
             )
+            ctx.emitter.line("_rt._test = _test")
     elif target.is_char_read:
         # Single character read: R *X
         ctx.emitter.line(f"{storage_target} = m_read_char()")
@@ -5706,12 +5737,14 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
                     f'_rt.globals.lock("{name}", {subs_str}, lock_type="-")'
                 )
                 ctx.emitter.line("_test = True")
+                ctx.emitter.line("_rt._test = _test")
             else:
                 # LOCK +name:timeout sets $TEST based on success/timeout
                 ctx.emitter.line(
                     f'_test = _rt.globals.lock("{name}", {subs_str}, '
                     f'timeout={timeout_val}, lock_type="{lock_type}")'
                 )
+                ctx.emitter.line("_rt._test = _test")
         else:
             # Untimed lock - does NOT modify $TEST
             ctx.emitter.line(
@@ -5821,6 +5854,7 @@ def _generate_open(stmt: MOpenStatement, ctx: "GeneratorContext") -> None:
             ctx.emitter.line(
                 f"_test = _rt.open_device({device_name}, {params_str}, {timeout_val})"
             )
+            ctx.emitter.line("_rt._test = _test")
         else:
             # Untimed OPEN - does NOT modify $TEST
             ctx.emitter.line(f"_rt.open_device({device_name}, {params_str})")
@@ -6008,6 +6042,13 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         # T075o: Structure flat list into proper FOR/IF/ELSE nesting
         structured_statements = _structure_commands_with_bodies(asg_statements)
 
+        # Analyze QUIT context so QUITs inside FOR loops generate break
+        # instead of raise _XecuteExit() (inline XECUTE code doesn't go
+        # through routine-level analysis)
+        from m2py.analysis.for_analysis import analyze_quit_context_for_statements
+
+        analyze_quit_context_for_statements(structured_statements)
+
         # Generate Python for each structured statement
         for asg_stmt in structured_statements:
             generate_statement(asg_stmt, ctx)
@@ -6110,10 +6151,17 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         4. Execute each code string
         """
         from m2py.asg.expressions import MIndirection
+        from m2py.codegen.enums import GotoStrategy
         from m2py.codegen.indirection import (
             _count_indirection_levels_with_subscripts,
             _get_scope_expr,
         )
+
+        # Sync state._locals → _scope in TRAMPOLINE mode so nested XECUTE
+        # calls can access variables from the calling scope. MArray objects
+        # are put directly since SIMPLE_FUNCTIONS code handles them natively.
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            ctx.emitter.line("_scope.update(state._locals)")
 
         # T075q: Use arguments structure (always populated by semantic analyzer)
         for xecute_arg in stmt.arguments:
@@ -6426,6 +6474,7 @@ def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
                 f"_test = _rt.start_job({label_name}, {routine_name}, {args_str}, "
                 f"{params_str}, {timeout_expr})"
             )
+            ctx.emitter.line("_rt._test = _test")
         else:
             # Without timeout: just call start_job, don't modify $TEST
             ctx.emitter.line(
@@ -6525,6 +6574,7 @@ def _generate_indirect_job(job_target: "MJobTarget", ctx: "GeneratorContext") ->
             f"_test = _rt.start_job(_call_target.label, _call_target.routine, "
             f"{args_str}, {params_str}, {timeout_expr})"
         )
+        ctx.emitter.line("_rt._test = _test")
     else:
         ctx.emitter.line(
             f"_rt.start_job(_call_target.label, _call_target.routine, "

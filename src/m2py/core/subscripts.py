@@ -202,14 +202,15 @@ class SubscriptCanonicalizer:
         if not s:
             return False
 
-        # Try to parse as number
+        # Try to parse as number using Decimal for precision
+        # (float loses precision for very small numbers like -.0000000001)
         try:
-            n = float(s)
-        except ValueError:
+            n = Decimal(s)
+        except Exception:
             return False
 
         # Check if NaN or inf
-        if not math.isfinite(n):
+        if not n.is_finite():
             return False
 
         # Get canonical form and compare

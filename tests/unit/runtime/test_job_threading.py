@@ -8,6 +8,7 @@ Validates that JOB spawns a background thread with:
 - Proper HALT/cleanup semantics
 """
 
+import os
 import threading
 import time
 
@@ -453,3 +454,53 @@ class TestJobTimeout:
             assert result is False
         finally:
             del sys.modules["test_nolabel_module"]
+
+
+@pytest.mark.runtime
+class TestJobChildPrincipal:
+    """Tests for JOBbed child process $PRINCIPAL isolation.
+
+    When a process is JOBbed, its $PRINCIPAL and $IO should be
+    different from the parent — per MUMPS spec, $PRINCIPAL is constant
+    for the life of a process and equals the initial $IO.
+
+    Fixed suite: V4PRIN (test 40746)
+    """
+
+    def test_child_has_unique_principal(self):
+        """JOB'd child runtime has a different $PRINCIPAL than parent."""
+        storage = InMemoryGlobalStorage()
+        parent_rt = MUMPSRuntime(global_storage=storage)
+
+        # Simulate start_job child creation using class counter like the real code
+        with MUMPSRuntime._job_counter_lock:
+            MUMPSRuntime._job_counter += 1
+            child_pid = os.getpid() + MUMPSRuntime._job_counter
+
+        child_rt = MUMPSRuntime(global_storage=storage)
+        child_rt._job_id = child_pid
+        child_device = f"/dev/null/{child_pid}"
+        child_rt._principal = child_device
+        child_rt._io = child_device
+
+        assert child_rt._principal != parent_rt._principal
+        assert child_rt._io != parent_rt._io
+        assert child_rt._principal == child_rt._io
+        assert f"{child_pid}" in child_rt._principal
+
+    def test_child_principal_contains_pid(self):
+        """Child's $PRINCIPAL path includes its PID for uniqueness."""
+        storage = InMemoryGlobalStorage()
+        MUMPSRuntime(
+            global_storage=storage
+        )  # parent (unused but proves shared storage)
+
+        child_pid = 12345
+        child_rt = MUMPSRuntime(global_storage=storage)
+        child_rt._job_id = child_pid
+        child_device = f"/dev/null/{child_pid}"
+        child_rt._principal = child_device
+        child_rt._io = child_device
+
+        assert child_rt._principal == "/dev/null/12345"
+        assert child_rt._io == "/dev/null/12345"

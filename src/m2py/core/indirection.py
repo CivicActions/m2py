@@ -330,12 +330,8 @@ class IndirectionResolver:
         # Use the globals storage to resolve the naked reference
         resolved_name, full_subs = self._state._globals.resolve_naked(subs_tuple)
 
-        # Build the full name string
-        if full_subs:
-            subs_str = ",".join(str(s) for s in full_subs)
-            return f"^{resolved_name}({subs_str})"
-        else:
-            return f"^{resolved_name}"
+        # Build the full name string using _append_subscripts for proper quoting
+        return self._append_subscripts(f"^{resolved_name}", list(full_subs))
 
     def resolve_to_name(
         self,

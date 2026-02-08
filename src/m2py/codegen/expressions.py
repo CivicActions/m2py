@@ -1668,6 +1668,30 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
 
     # Check for label indirection ($T(@X) or $T(@X+N))
     label_indirect = line_ref.get("label_indirect")
+
+    # Resolve routine (static or indirected)
+    routine = line_ref.get("routine")
+    routine_indirect = line_ref.get("routine_indirect")
+    label = line_ref.get("label")
+    offset = line_ref.get("offset")
+    offset_sign = line_ref.get("offset_sign")
+
+    # Build module expression for external routines
+    module_expr = None
+    if routine is not None and routine_indirect is None:
+        # Static routine name
+        module_expr = f"_rt._get_module_safe('{routine}')"
+    elif routine_indirect is not None:
+        # Indirected routine name: ^@ROU or ^@^VAR
+        from m2py.asg.expressions import MIndirection
+
+        if isinstance(routine_indirect, MIndirection) and routine_indirect.expression:
+            inner_expr = generate_expr(routine_indirect.expression, ctx)
+            rout_val = f"m_str({inner_expr})"
+        else:
+            rout_val = f"m_str({generate_expr(routine_indirect, ctx)})"
+        module_expr = f"_rt._get_module_safe({rout_val})"
+
     if label_indirect is not None:
         # For $TEXT(@X), we need the VALUE of X (as a string), not variable indirection.
         # The indirection just means "use the value of this expression as the label name."
@@ -1682,10 +1706,10 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
             # Fallback - shouldn't normally happen
             label_expr = f"m_str({generate_expr(label_indirect, ctx)})"
 
-        # Handle offset if present
-        offset = line_ref.get("offset")
-        offset_sign = line_ref.get("offset_sign", "+")
+        # Build params for get_text_indirect
+        params = [label_expr]
 
+        # Handle offset if present
         if offset is not None:
             if isinstance(offset, MLiteral) and offset.literal_type in (
                 LiteralType.INTEGER,
@@ -1694,22 +1718,21 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
                 offset_val = (
                     int(offset.value) if offset_sign == "+" else -int(offset.value)
                 )
-                return f"_rt.get_text_indirect({label_expr}, offset={offset_val})"
+                params.append(f"offset={offset_val}")
             else:
                 offset_code = generate_expr(offset, ctx)
                 if offset_sign == "-":
-                    return f"_rt.get_text_indirect({label_expr}, offset=-int(m_num({offset_code})))"
+                    params.append(f"offset=-int(m_num({offset_code}))")
                 else:
-                    return f"_rt.get_text_indirect({label_expr}, offset=int(m_num({offset_code})))"
-        else:
-            return f"_rt.get_text_indirect({label_expr})"
+                    params.append(f"offset=int(m_num({offset_code}))")
 
-    # Check if this is an external routine reference
-    routine = line_ref.get("routine")
-    label = line_ref.get("label")
-    offset = line_ref.get("offset")
-    offset_sign = line_ref.get("offset_sign", "+")  # Default to + if not specified
+        # Pass module for external routine references
+        if module_expr is not None:
+            params.append(f"module={module_expr}")
 
+        return f"_rt.get_text_indirect({', '.join(params)})"
+
+    # Non-indirected label path
     # Build the get_text() call parameters
     params = []
 
@@ -1731,11 +1754,15 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
             else:
                 params.append(f"offset=int(m_num({offset_code}))")
     elif offset_sign is not None and label is None:
-        # Sign without offset value - $T(+) or $T(-) defaults to 0
+        # Explicit sign without offset value - $T(+) or $T(-) defaults to 0
         # This handles $T(+0) or $T(-0) which both equal 0
         params.append("offset=0")
+    elif label is None and module_expr is not None:
+        # $T(^ROUTINE) — no label, no offset, but has routine
+        # This means "first line of routine" = offset 1
+        params.append("offset=1")
     elif label is None:
-        # No label, no offset - must be $T() which defaults to +0
+        # No label, no offset, no routine - must be $T() which defaults to +0
         params.append("offset=0")
     else:
         # Label with no offset - defaults to 0
@@ -1746,11 +1773,8 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
         params.append(f'label="{label}"')
 
     # Handle external routine
-    if routine is not None:
-        # T100: Per MUMPS spec, $TEXT returns empty string for non-existent routines.
-        # Use _get_module_safe() runtime helper that returns None on import failure.
-        # Also pass is_external=True so get_text knows to return "" if module is None.
-        params.append(f"module=_rt._get_module_safe('{routine}')")
+    if module_expr is not None:
+        params.append(f"module={module_expr}")
         params.append("is_external=True")
 
     return f"_rt.get_text({', '.join(params)})"

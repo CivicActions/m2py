@@ -424,7 +424,7 @@ class TestGenerateCallArgumentsHelper:
         assert result == "None"
 
     def test_byref_with_variable_name(self):
-        """By-reference with variable_name uses translated name."""
+        """By-reference with variable_name passes MArray from scope."""
         from unittest.mock import MagicMock
 
         from m2py.asg.enums import PassingMode
@@ -435,10 +435,10 @@ class TestGenerateCallArgumentsHelper:
         arg = MActualParameter(passing_mode=PassingMode.BY_REFERENCE, variable_name="X")
 
         result = _generate_call_arguments([arg], ctx)
-        assert result == "X"  # translate_name preserves case
+        assert result == "_scope.setdefault('X', MArray())"  # Pass MArray for aliasing
 
     def test_byref_with_expression(self):
-        """By-reference with expression generates expression."""
+        """By-reference with non-indirected expression generates expression."""
         from unittest.mock import MagicMock
 
         from m2py.asg.enums import PassingMode
@@ -451,7 +451,8 @@ class TestGenerateCallArgumentsHelper:
         )
 
         result = _generate_call_arguments([arg], ctx)
-        assert result == "X"  # translate_name preserves case
+        # Non-indirected expression falls through to generate_expr
+        assert "X" in result
 
 
 @pytest.mark.codegen

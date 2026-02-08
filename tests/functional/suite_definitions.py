@@ -141,7 +141,7 @@ MUGJ_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition("VV2PAT2", "VV2PAT2", expected_passes=11),
     RoutineDefinition("VV2PAT3", "VV2PAT3", expected_passes=15),
     RoutineDefinition("VV2NO", "VV2NO", expected_passes=8),
-    RoutineDefinition("VV2SS1", "VV2SS1", expected_passes=6, expected_fails=1),
+    RoutineDefinition("VV2SS1", "VV2SS1", expected_passes=6),
     RoutineDefinition("VV2SS2", "VV2SS2", expected_passes=5),
     # fmt: on
 ]
@@ -423,9 +423,8 @@ MVTS_VV1_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition(
         "152.1---V1IDARG",
         "V1IDARG",
-        expected_passes=37,
-        expected_fails=9,
-        skip_reason="LIM-ARG-INDIR: WRITE argument indirection requires runtime parsing",
+        expected_passes=18,
+        expected_fails=0,
     ),
     RoutineDefinition("158.1---V1XECA", "V1XECA", expected_passes=22),
     RoutineDefinition("161---V1XECB", "V1XECB", expected_passes=7),
@@ -464,7 +463,7 @@ MVTS_VV2_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition("6---V2LCF3", "V2LCF3", expected_passes=10),
     RoutineDefinition("7---V2LCF4", "V2LCF4", expected_passes=8),
     RoutineDefinition("8---V2FN1", "V2FN1", expected_passes=14),
-    RoutineDefinition("9---V2FN2", "V2FN2", expected_passes=13, expected_fails=2),
+    RoutineDefinition("9---V2FN2", "V2FN2", expected_passes=13),
     RoutineDefinition("10---V2LHP1", "V2LHP1", expected_passes=12),
     RoutineDefinition("11---V2LHP2", "V2LHP2", expected_passes=7),
     RoutineDefinition("12---V2LHP3", "V2LHP3", expected_passes=3),
@@ -489,8 +488,8 @@ MVTS_VV3_ROUTINES: list[RoutineDefinition] = [
     # fmt: off
     RoutineDefinition("0.1---V3GET", "V3GET", expected_passes=86),
     RoutineDefinition("6.1---V3TR", "V3TR", expected_passes=165),
-    RoutineDefinition("17.1---V3TEXT", "V3TEXT", expected_passes=37, expected_fails=9),
-    RoutineDefinition("20.1---V3FOR", "V3FOR", expected_passes=7, expected_fails=1),
+    RoutineDefinition("17.1---V3TEXT", "V3TEXT", expected_passes=46),
+    RoutineDefinition("20.1---V3FOR", "V3FOR", expected_passes=8),
     RoutineDefinition(
         "22.1---V3HANG",
         "V3HANG",
@@ -498,7 +497,7 @@ MVTS_VV3_ROUTINES: list[RoutineDefinition] = [
         skip_reason="HANG command causes test to sleep",
     ),
     RoutineDefinition("25.1---V3MAX", "V3MAX", expected_passes=7),
-    RoutineDefinition("28---V3NST1", "V3NST1", expected_passes=5, expected_fails=1),
+    RoutineDefinition("28---V3NST1", "V3NST1", expected_passes=6),
     RoutineDefinition("29---V3NST2", "V3NST2", expected_passes=3),
     RoutineDefinition("30---V3NST3", "V3NST3", expected_passes=3),
     RoutineDefinition("31---V3SVS", "V3SVS", expected_passes=1),
@@ -513,17 +512,18 @@ MVTS_VV3_ROUTINES: list[RoutineDefinition] = [
         "V3LOCK",
         expected_passes=16,
     ),
-    RoutineDefinition("37---V3INDNM", "V3INDNM", expected_passes=4, expected_fails=1),
+    RoutineDefinition("37---V3INDNM", "V3INDNM", expected_passes=5),
     RoutineDefinition(
         "37.1---V3QUERY",
         "V3QUERY",
-        skip_reason="LIM-SUB-CANON: Subscript canonicalization collapses numeric-looking strings",
+        expected_passes=44,
+        expected_fails=0,
     ),
     RoutineDefinition("43.1---V3FN2", "V3FN2", expected_passes=403),
     RoutineDefinition("65.1---V3FN3", "V3FN3", expected_passes=49),
-    RoutineDefinition("70.1---V3NEW", "V3NEW", expected_passes=121, expected_fails=35),
+    RoutineDefinition("70.1---V3NEW", "V3NEW", expected_passes=156),
     RoutineDefinition("136---V3FP", "V3FP", expected_passes=4),
-    RoutineDefinition("137---V3DWP", "V3DWP", expected_passes=4, expected_fails=2),
+    RoutineDefinition("137---V3DWP", "V3DWP", expected_passes=6, expected_fails=0),
     RoutineDefinition("138---V3ESV", "V3ESV", expected_passes=4),
     RoutineDefinition("139---V3EF", "V3EF", expected_passes=6),
     RoutineDefinition("139.1---V3CBR", "V3CBR", expected_passes=14),
@@ -533,16 +533,16 @@ MVTS_VV3_ROUTINES: list[RoutineDefinition] = [
 # VV4 sub-drivers (Part 95 continued)
 MVTS_VV4_ROUTINES: list[RoutineDefinition] = [
     # fmt: off
-    RoutineDefinition("0.1---V4SORT", "V4SORT", expected_passes=86, expected_fails=1),
+    RoutineDefinition("0.1---V4SORT", "V4SORT", expected_passes=87),
     RoutineDefinition("10.1---V4FNUM", "V4FNUM", expected_passes=54),
     RoutineDefinition("18.1---V4REV", "V4REV", expected_passes=25),
     RoutineDefinition("22.1---V4GET2", "V4GET2", expected_passes=64),
-    RoutineDefinition("31.1---V4NAME", "V4NAME", expected_passes=93, expected_fails=2),
+    RoutineDefinition("31.1---V4NAME", "V4NAME", expected_passes=95, expected_fails=0),
     RoutineDefinition("45.1---V4QLEN", "V4QLEN", expected_passes=51),
-    RoutineDefinition("53.1---V4QSUB", "V4QSUB", expected_passes=112, expected_fails=1),
-    RoutineDefinition("68.1---V4SVQ", "V4SVQ", expected_passes=28, expected_fails=2),
+    RoutineDefinition("53.1---V4QSUB", "V4QSUB", expected_passes=113, expected_fails=0),
+    RoutineDefinition("68.1---V4SVQ", "V4SVQ", expected_passes=28),
     RoutineDefinition(
-        "74.1---V4MERGE", "V4MERGE", expected_passes=51, expected_fails=17
+        "74.1---V4MERGE", "V4MERGE", expected_passes=68, expected_fails=0
     ),
     RoutineDefinition(
         "97---V4KEY",
@@ -555,15 +555,15 @@ MVTS_VV4_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition("107---V4RAND", "V4RAND", expected_passes=0),
     RoutineDefinition("107.1---V4ORDER", "V4ORDER", expected_passes=60),
     RoutineDefinition("118---V4QUERY", "V4QUERY", expected_passes=2),
-    RoutineDefinition("119---V4PRIN", "V4PRIN", expected_passes=2, expected_fails=2),
+    RoutineDefinition("119---V4PRIN", "V4PRIN", expected_passes=3, expected_fails=1),
     RoutineDefinition("120---V4QUIT", "V4QUIT", expected_passes=6),
     RoutineDefinition("120.1---V4MAX", "V4MAX", expected_passes=5),
     RoutineDefinition("122.1---V4SSUB", "V4SSUB", expected_passes=7),
     RoutineDefinition(
         "125---V4JOB",
         "V4JOB",
-        expected_passes=3,
-        skip_reason="JOB command requires process spawning",
+        expected_passes=0,
+        expected_fails=3,
     ),
     RoutineDefinition("125.1---V4PAT", "V4PAT", expected_passes=87),
     RoutineDefinition("135---V4NST1", "V4NST1", expected_passes=1),

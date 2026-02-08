@@ -439,6 +439,22 @@ def analyze_quit_context(routine: MRoutine) -> None:
         )
 
 
+def analyze_quit_context_for_statements(statements: list) -> None:
+    """Analyze QUIT context for a flat list of ASG statements.
+
+    Used for inline XECUTE code that is parsed at codegen time and
+    doesn't go through the routine-level analysis phase. Without this,
+    QUIT inside FOR inside XECUTE would generate raise _XecuteExit()
+    instead of break.
+
+    Args:
+        statements: List of MStatement objects (already structured)
+    """
+    scope = MScope()
+    scope.statements = statements
+    _analyze_quit_context_in_scope(scope, enclosing_for=None, enclosing_do_block=None)
+
+
 def _analyze_quit_context_in_scope(
     scope: MScope,
     enclosing_for: Optional[MForStatement],

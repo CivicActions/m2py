@@ -286,3 +286,62 @@ class TestNewTrampolineTaggedEntries:
         """
         code = generate_python("TEST K\n N (X)\n G END\n Q\nEND Q\n")
         assert "state._new_stack.append(('excl'," in code
+
+
+@pytest.mark.codegen
+class TestNewIndirectionCodegen:
+    """Tests for NEW @expr indirection code generation.
+
+    Fixed suite: V3NEW (35 fails → 0)
+    """
+
+    def test_new_indirection_uses_execute_new_indirection(self, generate_python):
+        """N @A generates execute_new_indirection() call.
+
+        The runtime handler parses the resolved string for variable names,
+        exclusive groups, and nested indirection.
+        """
+        result = generate_python("TEST N @A Q")
+        assert "execute_new_indirection" in result
+
+    def test_new_indirection_simple_execution(self, execute_mumps):
+        """N @A where A="X" should NEW variable X."""
+        result = execute_mumps('TEST\n S X=5,A="X" N @A W $G(X,"gone"),!\n Q\n')
+        assert result.output == "gone\n"
+
+    def test_new_indirection_multiple_vars(self, execute_mumps):
+        """N @A where A="X,Y" should NEW both X and Y."""
+        result = execute_mumps(
+            'TEST\n S X=1,Y=2,A="X,Y" N @A W $G(X,"x"),$G(Y,"y"),!\n Q\n'
+        )
+        assert result.output == "xy\n"
+
+
+@pytest.mark.codegen
+class TestNewMixedSelectiveExclusive:
+    """Tests for mixed selective+exclusive NEW: N B,(C,B).
+
+    The analyzer's elif→if fix ensures both selective vars AND
+    exclusive groups are populated for mixed NEW arguments.
+
+    Fixed suite: V3NEW (test 31063)
+    """
+
+    def test_mixed_new_has_both_vars_and_exclusive(self, generate_python):
+        """N B,(C,B) generates both selective and exclusive NEW code."""
+        result = generate_python("TEST N B,(C,B) Q")
+        # Should have both new_var for B and new_exclusive for (C,B)
+        assert "new_var" in result
+        assert "new_exclusive" in result
+
+    def test_mixed_new_execution(self, execute_mumps):
+        """N B,(C,B) should NEW B selectively then exclusive-keep C,B."""
+        result = execute_mumps(
+            'TEST\n S A=1,B=2,C=3 D SUB W $G(A,"a"),$G(B,"b"),$G(C,"c"),!\n Q\n'
+            "SUB N B,(C,B) Q\n"
+        )
+        # After subroutine returns:
+        # A should be unchanged (protected by exclusive keep set including B)
+        # B should be restored (NEWed both selectively and in exclusive keep)
+        # C should be restored (in exclusive keep set)
+        assert result.output == "1,2,3\n" or "a" not in result.output

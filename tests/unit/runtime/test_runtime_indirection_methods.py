@@ -910,3 +910,38 @@ class TestWriteIndirectionExpressionPatterns:
         rt.write_indirection("A", scope, levels=1)
         output = rt.get_output()
         assert "101" in output
+
+
+@pytest.mark.runtime
+class TestMergeNameSubscriptsQuoting:
+    """Tests for _merge_name_subscripts() proper string subscript quoting.
+
+    The fix changed naive join() to use IndirectionResolver._append_subscripts()
+    so string subscripts are properly quoted in the constructed name string.
+
+    Fixed suite: V4NAME (test 40326)
+    """
+
+    @pytest.fixture
+    def rt(self):
+        return MUMPSRuntime()
+
+    def test_numeric_subscripts_not_quoted(self, rt):
+        """Numeric subscripts in name are not quoted."""
+        result = rt._merge_name_subscripts("^V", [1, 2], {})
+        assert result == "^V(1,2)"
+
+    def test_string_subscripts_quoted(self, rt):
+        """String subscripts in name are properly quoted."""
+        result = rt._merge_name_subscripts('^V("A")', [1, 2], {})
+        assert result == '^V("A",1,2)'
+
+    def test_empty_name_returns_empty(self, rt):
+        """Empty name returns empty string."""
+        result = rt._merge_name_subscripts("", [1], {})
+        assert result == ""
+
+    def test_no_additional_subs_returns_name(self, rt):
+        """No additional subscripts returns name unchanged."""
+        result = rt._merge_name_subscripts("^V(1)", [], {})
+        assert result == "^V(1)"

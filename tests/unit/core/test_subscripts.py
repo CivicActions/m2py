@@ -295,3 +295,36 @@ class TestMugjPatterns:
         assert (
             SubscriptCanonicalizer.canonicalize("B(3,4)") == "B(3,4)"
         )  # Nested ref as string
+
+
+class TestDecimalPrecisionInCanonical:
+    """Tests for Decimal precision in is_canonical_numeric_string().
+
+    The fix changed float() to Decimal() in is_canonical_numeric_string()
+    because float loses precision for very small numbers, causing
+    -.0000000001 to be misidentified.
+
+    Fixed suite: V4SORT (test 40079)
+    """
+
+    def test_very_small_negative_decimal(self):
+        """Very small negative decimals must be recognized as canonical.
+
+        -.0000000001 is a canonical numeric string — float() would lose
+        precision and return a wrong canonical form, but Decimal() handles it.
+        """
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-.0000000001")
+
+    def test_very_small_positive_decimal(self):
+        """Very small positive decimals must be recognized as canonical."""
+        assert SubscriptCanonicalizer.is_canonical_numeric_string(".0000000001")
+
+    def test_precision_boundary(self):
+        """Numbers at float precision boundary are still canonical."""
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-.00000000000000001")
+        assert SubscriptCanonicalizer.is_canonical_numeric_string(".00000000000000001")
+
+    def test_non_canonical_small_decimal(self):
+        """Non-canonical forms with leading zero are still rejected."""
+        assert not SubscriptCanonicalizer.is_canonical_numeric_string("-0.0000000001")
+        assert not SubscriptCanonicalizer.is_canonical_numeric_string("0.0000000001")

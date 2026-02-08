@@ -466,7 +466,7 @@ class RoutineGenerator:
                                 ctx.emitter.line(
                                     "_scope.setdefault(_name, MArray()).value = _result[_byref_idx]"
                                 )
-                                ctx.emitter.line("_byref_idx += 1")
+                            ctx.emitter.line("_byref_idx += 1")
                     ctx.emitter.line(
                         "# Always return just the first element (return value)"
                     )
@@ -475,6 +475,8 @@ class RoutineGenerator:
             ctx.emitter.line("finally:")
             with ctx.emitter.indented():
                 ctx.emitter.line("_test = _saved")
+                # Sync $TEST to runtime after restore (extrinsic preserves caller's $TEST)
+                ctx.emitter.line("_rt._test = _test")
                 # Spec 011: Restore extrinsic flag for nested calls
                 ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
         ctx.emitter.blank()
@@ -599,6 +601,8 @@ class RoutineGenerator:
 
             # Declare global _test
             ctx.emitter.line("global _test")
+            # Sync $TEST from runtime on function entry (cross-module visibility)
+            ctx.emitter.line("_test = _rt._test")
             # T030: Initialize _scope if not provided (entry point behavior)
             ctx.emitter.line("_scope = _scope if _scope is not None else {}")
             # T075f: Update runtime context for $TEXT support in external routine calls
@@ -638,8 +642,10 @@ class RoutineGenerator:
                         # This ensures $D(param)=0 for undefined parameters
                         # Phase 21: If param is an MArray, it's a by-ref alias - use directly
                         for orig_name in original_formal_params:
-                            ctx.emitter.line(f"_new_mgr.new_var({orig_name!r})")
                             python_name = translate_name(orig_name)
+                            # Use python_name for scope key to match GET/SET in body
+                            # (e.g., %1 → _pct_1 so reads/writes use same key)
+                            ctx.emitter.line(f"_new_mgr.new_var({python_name!r})")
                             ctx.emitter.line(f"if {python_name} is not None:")
                             with ctx.emitter.indented():
                                 ctx.emitter.line(
@@ -647,12 +653,12 @@ class RoutineGenerator:
                                 )
                                 with ctx.emitter.indented():
                                     ctx.emitter.line(
-                                        f"_scope[{orig_name!r}] = {python_name}"
+                                        f"_scope[{python_name!r}] = {python_name}"
                                     )
                                 ctx.emitter.line("else:")
                                 with ctx.emitter.indented():
                                     ctx.emitter.line(
-                                        f"_scope[{orig_name!r}] = MArray(value={python_name})"
+                                        f"_scope[{python_name!r}] = MArray(value={python_name})"
                                     )
                         self._generate_label_body(label, ctx)
                     ctx.new_scope_manager_var = None
@@ -1005,7 +1011,14 @@ class RoutineGenerator:
                 # Phase 21: Unwind NEW stack before syncing state back to _scope
                 # This restores variables saved by NEW commands during the subroutine
                 if ctx.uses_dynamic_locals:
+                    # Track keys before/after unwind to detect what was removed
+                    ctx.emitter.line("_pre_unwind = set(state._locals.keys())")
                     ctx.emitter.line("unwind_new_stack(state)")
+                    # Remove from _scope only keys that unwind explicitly removed
+                    # (not ALL missing keys — _scope may have vars from called routines)
+                    ctx.emitter.line(
+                        "for _k in _pre_unwind - set(state._locals.keys()): _scope.pop(_k, None)"
+                    )
                 # T075b: Sync state back to _scope before returning for cross-routine visibility
                 if ctx.uses_dynamic_locals:
                     # For dynamic locals, copy state._locals back to _scope
@@ -1163,7 +1176,13 @@ class RoutineGenerator:
 
                 # Phase 21: Unwind NEW stack before syncing state back to _scope
                 if ctx.uses_dynamic_locals:
+                    # Track keys before/after unwind to detect what was removed
+                    ctx.emitter.line("_pre_unwind = set(state._locals.keys())")
                     ctx.emitter.line("unwind_new_stack(state)")
+                    # Remove from _scope only keys that unwind explicitly removed
+                    ctx.emitter.line(
+                        "for _k in _pre_unwind - set(state._locals.keys()): _scope.pop(_k, None)"
+                    )
                 # T075b: Sync state back to _scope before returning
                 if ctx.uses_dynamic_locals:
                     # For dynamic locals, copy state._locals back to _scope

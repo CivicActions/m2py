@@ -1833,7 +1833,7 @@ class MUMPSRuntime:
             return lines[line_idx].replace("\t", " ")
         return ""
 
-    def get_text_indirect(self, label: str, offset: int = 0) -> str:
+    def get_text_indirect(self, label: str, offset: int = 0, module: Any = None) -> str:
         """Get source text line with indirected label ($TEXT with @).
 
         Handles $TEXT(@X) and $TEXT(@X+N) where X contains a label name.
@@ -1842,13 +1842,19 @@ class MUMPSRuntime:
         Args:
             label: Label name (resolved from indirection)
             offset: Line offset from label (default 0)
+            module: Optional external routine module. If provided, use its
+                    _source_lines and _label_lines instead of the current routine's.
 
         Returns:
             Source line text, or empty string if label not found or offset
             is out of bounds.
         """
-        lines = self._current_source_lines or []
-        label_lines = self._current_label_lines or {}
+        if module is not None:
+            lines = getattr(module, "_source_lines", [])
+            label_lines = getattr(module, "_label_lines", {})
+        else:
+            lines = self._current_source_lines or []
+            label_lines = self._current_label_lines or {}
 
         # Look up the label
         base_idx = label_lines.get(label, -1)
@@ -2746,6 +2752,13 @@ class MUMPSRuntime:
         child_rt = MUMPSRuntime(global_storage=self._globals)
         child_rt._job_id = child_pid
 
+        # JOBbed processes have no terminal - their principal device
+        # is different from the parent's. Per MUMPS spec, $PRINCIPAL
+        # is constant for the life of a process and equals initial $IO.
+        child_device = f"/dev/null/{child_pid}"
+        child_rt._principal = child_device
+        child_rt._io = child_device
+
         # Set $ZJOB in parent to child's virtual PID
         self._zjob = str(child_pid)
 
@@ -2913,6 +2926,7 @@ class MUMPSRuntime:
 
         E.g., "V(1)" + [12, 456] → "V(1,12,456)"
              "^G" + [1, 2] → "^G(1,2)"
+             '^V("A")' + [1, 2] → '^V("A",1,2)'
 
         Args:
             name: Variable name possibly with subscripts
@@ -2925,12 +2939,14 @@ class MUMPSRuntime:
         if not name or not additional_subs:
             return name
 
+        from m2py.core.indirection import IndirectionResolver
+
         base, existing_subs = _parse_subscripted_name(name)
         evaluated_existing = _evaluate_subscripts(existing_subs, _scope, runtime=self)
         all_subs = list(evaluated_existing or ()) + [str(s) for s in additional_subs]
         if all_subs:
-            subs_str = ",".join(str(s) for s in all_subs)
-            return f"{base}({subs_str})"
+            # Use _append_subscripts which properly quotes string subscripts
+            return IndirectionResolver._append_subscripts(base, all_subs)
         return base
 
     def get_order(
@@ -3977,6 +3993,192 @@ class MUMPSRuntime:
         See module-level _split_argument_list for details.
         """
         return _split_argument_list(arg_str)
+
+    def execute_new_indirection(
+        self, resolved_str: str, new_mgr: Any, scope: Dict[str, Any]
+    ) -> None:
+        """Execute NEW with runtime-resolved argument string.
+
+        Handles the full MUMPS NEW argument syntax dynamically:
+        - Simple variable names: "A,B,C" → new_var("A"), new_var("B"), new_var("C")
+        - Exclusive groups: "(A,B)" → new_exclusive({"A","B"})
+        - Mixed: "A,(B,C)" → new_var("A"), then new_exclusive({"B","C"})
+        - Nested indirection: "@X" → resolve X value and recurse
+
+        Args:
+            resolved_str: The resolved string from the indirection expression
+            new_mgr: NewScopeManager instance for proper save/restore
+            scope: Current variable scope dict for resolving nested indirection
+        """
+        if not resolved_str or not resolved_str.strip():
+            return
+
+        parts = _split_argument_list(resolved_str.strip())
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+
+            if part.startswith("(") and part.endswith(")"):
+                # Exclusive NEW: (A,B,C) — keep these vars, NEW everything else
+                inner = part[1:-1]
+                keep_list = _split_argument_list(inner)
+                resolved_keep: set = set()
+                for k in keep_list:
+                    k = k.strip()
+                    if k.startswith("@"):
+                        # Resolve indirection in keep list, recursing for nested @
+                        val = str(self._resolve_new_indirection_value(k[1:], scope))
+                        while val.startswith("@"):
+                            val = str(
+                                self._resolve_new_indirection_value(val[1:], scope)
+                            )
+                        resolved_keep.add(val)
+                    else:
+                        resolved_keep.add(k)
+                new_mgr.new_exclusive(resolved_keep)
+            elif part.startswith("@"):
+                # Further indirection — resolve and recurse
+                inner_name = part[1:]
+                val = self._resolve_new_indirection_value(inner_name, scope)
+                self.execute_new_indirection(str(val), new_mgr, scope)
+            else:
+                # Simple variable name
+                new_mgr.new_var(part)
+
+    def _resolve_new_indirection_value(
+        self, expr_str: str, scope: Dict[str, Any]
+    ) -> str:
+        """Resolve a variable reference to its value for NEW indirection.
+
+        Args:
+            expr_str: Variable name like "X", "X(1,2)", "^VAR",
+                or intrinsic function like "$C(66)", "$P(...)" etc.
+            scope: Current variable scope
+
+        Returns:
+            The string value of the variable or expression result
+        """
+        from m2py.runtime.helpers import m_var_value
+
+        expr_str = expr_str.strip()
+
+        # Intrinsic function call: $C(66), $CHAR(66), $P(...), $E(...), etc.
+        # Delegate to the IndirectionResolver which handles all functions
+        if expr_str.startswith("$"):
+            try:
+                from m2py.core.scope import CurrentScope
+                from m2py.core.indirection import IndirectionResolver
+
+                cs = CurrentScope.from_generated_context(scope)
+                resolver = IndirectionResolver(self, cs)
+                return str(resolver.evaluate_expression(expr_str))
+            except Exception:
+                return ""
+
+        if expr_str.startswith("^"):
+            # Global variable reference
+            global_name = expr_str[1:]
+            # Check for subscripts
+            if "(" in global_name:
+                base = global_name[: global_name.index("(")]
+                subs_str = global_name[global_name.index("(") + 1 : -1]
+                subs = _split_argument_list(subs_str)
+                # Evaluate subscript values
+                eval_subs = tuple(
+                    self._eval_simple_expr(s.strip(), scope) for s in subs
+                )
+                return str(self.globals.get(base, eval_subs) or "")
+            else:
+                return str(self.globals.get(global_name, ()) or "")
+
+        # Local variable reference
+        if "(" in expr_str:
+            base = expr_str[: expr_str.index("(")]
+            subs_str = expr_str[expr_str.index("(") + 1 : -1]
+            subs = _split_argument_list(subs_str)
+            arr = scope.get(base)
+            if arr is None:
+                return ""
+            arr_obj = arr if hasattr(arr, "get") else None
+            if arr_obj is None:
+                return ""
+            eval_subs = tuple(
+                str(self._eval_simple_expr(s.strip(), scope)) for s in subs
+            )
+            return str(arr_obj.get(*eval_subs) or "")
+        else:
+            val = scope.get(expr_str)
+            return str(m_var_value(val) if val is not None else "")
+
+    def _eval_simple_expr(self, expr: str, scope: Dict[str, Any]) -> str:
+        """Evaluate a simple MUMPS expression for subscript resolution.
+
+        Handles: numeric literals, string literals, variable names,
+        $D(var)/DATA(var) intrinsic, and basic arithmetic (+, -, *, /, \\, #).
+        """
+        from m2py.runtime.helpers import m_var_value
+
+        expr = expr.strip()
+        # String literal
+        if expr.startswith('"') and expr.endswith('"'):
+            return expr[1:-1].replace('""', '"')
+
+        # $D(var) / $DATA(var) — evaluate data function
+        import re
+
+        m = re.match(r"^\$[Dd](?:[Aa][Tt][Aa])?\((.+)\)(.*)$", expr)
+        if m:
+            var_ref = m.group(1).strip()
+            remainder = m.group(2).strip()
+            # Evaluate $DATA on the variable
+            val = scope.get(var_ref)
+            if val is None:
+                data_val = 0
+            elif hasattr(val, "_children"):
+                has_value = val.value is not None
+                has_children = bool(val._children)
+                data_val = (1 if has_value else 0) + (10 if has_children else 0)
+            else:
+                data_val = 1
+            # Handle arithmetic remainder like +2, *3, etc.
+            if remainder:
+                arith_m = re.match(r"^([+\-*/#\\])\s*(.+)$", remainder)
+                if arith_m:
+                    op = arith_m.group(1)
+                    right = self._eval_simple_expr(arith_m.group(2), scope)
+                    try:
+                        right_num = int(right) if "." not in right else float(right)
+                    except (ValueError, TypeError):
+                        right_num = 0
+                    if op == "+":
+                        data_val = data_val + right_num
+                    elif op == "-":
+                        data_val = data_val - right_num
+                    elif op == "*":
+                        data_val = data_val * right_num
+                    elif op == "/":
+                        data_val = data_val / right_num if right_num else 0
+                    elif op == "\\":
+                        data_val = data_val // right_num if right_num else 0
+                    elif op == "#":
+                        data_val = data_val % right_num if right_num else 0
+            return str(int(data_val))
+
+        # Numeric literal
+        try:
+            n = int(expr)
+            return str(n)
+        except ValueError:
+            pass
+        try:
+            n = float(expr)
+            return str(n)
+        except ValueError:
+            pass
+        # Variable reference
+        val = scope.get(expr)
+        return str(m_var_value(val) if val is not None else "")
 
     def resolve_for_target(
         self,
@@ -5555,6 +5757,13 @@ class MUMPSRuntime:
         # Import here to avoid circular dependency
         from m2py.codegen import generate_python
         from m2py.codegen.helpers import m_compare, m_num, m_truth
+
+        # Handle MArray objects (from TRAMPOLINE scope sync)
+        if hasattr(mumps_code, "value"):
+            mumps_code = str(mumps_code.value or "")  # type: ignore[union-attr]
+
+        # Ensure mumps_code is a string
+        mumps_code = str(mumps_code)
 
         # Wrap the code in a routine format if it's just commands
         # MUMPS XECUTE executes commands without label context
