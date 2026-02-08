@@ -28,6 +28,20 @@ from tests.functional.conftest import (
 from tests.functional.suite_definitions import BASIC_ROUTINES, RoutineDefinition
 
 
+def _make_test_id(routine_def: RoutineDefinition) -> str:
+    """Create a test ID from a routine definition."""
+    return routine_def.routine
+
+
+def get_routine_params() -> list:
+    """Generate pytest parameters for basic routines, excluding skipped ones."""
+    return [
+        pytest.param(r, id=_make_test_id(r))
+        for r in BASIC_ROUTINES
+        if not r.skip_reason
+    ]
+
+
 # =============================================================================
 # Suite Configuration
 # =============================================================================
@@ -217,21 +231,13 @@ class TestBasicSuite:
     the expected output from the YDB outref file.
     """
 
-    @pytest.mark.parametrize(
-        "routine_def",
-        BASIC_ROUTINES,
-        ids=lambda r: r.routine,
-    )
+    @pytest.mark.parametrize("routine_def", get_routine_params())
     def test_routine(self, routine_def: RoutineDefinition) -> None:
         """Test a single basic routine against expected output.
 
         Args:
             routine_def: RoutineDefinition with label, routine name, and args
         """
-        # Check for skip (known limitations are now in RoutineDefinition)
-        if routine_def.skip_reason:
-            pytest.skip(routine_def.skip_reason)
-
         routine_name = routine_def.routine
         label = routine_def.label
 

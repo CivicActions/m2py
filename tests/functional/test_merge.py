@@ -105,37 +105,21 @@ def make_test_id(routine_def: RoutineDefinition) -> str:
 
 
 def get_subtest_params() -> list[pytest.param]:
-    """Generate pytest parameters for merge subtests."""
-    params = []
-    for subtest in MERGE_SUBTESTS:
-        if subtest.skip_reason:
-            params.append(
-                pytest.param(
-                    subtest,
-                    id=make_test_id(subtest),
-                    marks=pytest.mark.skip(reason=subtest.skip_reason),
-                )
-            )
-        else:
-            params.append(pytest.param(subtest, id=make_test_id(subtest)))
-    return params
+    """Generate pytest parameters for merge subtests, excluding skipped ones."""
+    return [
+        pytest.param(subtest, id=make_test_id(subtest))
+        for subtest in MERGE_SUBTESTS
+        if not subtest.skip_reason
+    ]
 
 
 def get_routine_params() -> list[pytest.param]:
-    """Generate pytest parameters for merge routines."""
-    params = []
-    for routine in MERGE_ROUTINES:
-        if routine.skip_reason:
-            params.append(
-                pytest.param(
-                    routine,
-                    id=routine.routine,
-                    marks=pytest.mark.skip(reason=routine.skip_reason),
-                )
-            )
-        else:
-            params.append(pytest.param(routine, id=routine.routine))
-    return params
+    """Generate pytest parameters for merge routines, excluding skipped ones."""
+    return [
+        pytest.param(routine, id=routine.routine)
+        for routine in MERGE_ROUTINES
+        if not routine.skip_reason
+    ]
 
 
 def load_subtest_outref(subtest_name: str) -> str | None:

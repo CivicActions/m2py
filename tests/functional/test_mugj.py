@@ -265,21 +265,12 @@ def make_test_id(routine_def: RoutineDefinition) -> str:
 
 
 def get_routine_params() -> list[pytest.param]:
-    """Generate pytest parameters for all MUGJ routines."""
-    params = []
-    for routine in MUGJ_ROUTINES:
-        if routine.skip_reason:
-            params.append(
-                pytest.param(
-                    routine,
-                    id=make_test_id(routine),
-                    marks=pytest.mark.skip(reason=routine.skip_reason),
-                )
-            )
-        else:
-            params.append(pytest.param(routine, id=make_test_id(routine)))
-
-    return params
+    """Generate pytest parameters for MUGJ routines, excluding skipped ones."""
+    return [
+        pytest.param(routine, id=make_test_id(routine))
+        for routine in MUGJ_ROUTINES
+        if not routine.skip_reason
+    ]
 
 
 # =============================================================================
