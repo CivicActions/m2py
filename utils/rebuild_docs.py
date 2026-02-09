@@ -163,19 +163,67 @@ EXTENSION_CODEGEN: dict[str, str] = {
     "zhelp": "ZHELP",
     "zkill": "ZKILL/ZWITHDRAW",
     "zlink": "ZLINK",
+    "zload": "ZLOAD",
     "zmessage": "ZMESSAGE",
     "zprint": "ZPRINT",
     "zshow": "ZSHOW",
     "zstep": "ZSTEP",
     "zsystem": "ZSYSTEM",
     "ztrigger": "ZTRIGGER",
+    "ztstart": "ZTSTART/ZTCOMMIT",
     "zwrite": "ZWRITE",
     "zallocate": "ZALLOCATE/ZDEALLOCATE",
 }
 
-# Combined for report generation (union of all)
+# Combined for report generation (union of all categories)
+_ALL_EXTENSIONS: dict[str, str] = {**EXTENSION_PARSER, **EXTENSION_CODEGEN}
 EXTENSION_SECTIONS: dict[str, dict[str, str]] = {
-    "extensions/ydb": EXTENSION_PARSER,  # Use parser as the full list for display
+    "extensions/ydb": _ALL_EXTENSIONS,
+}
+
+# =============================================================================
+# SUB_SECTION_PARENTS - Map sub-section test files to their parent SPEC_SECTIONS key
+#
+# Test files whose section_id (filename minus test_ prefix) doesn't directly
+# match a SPEC_SECTIONS key are "orphans" unless mapped here. Their test counts
+# are aggregated into the parent section's row in the coverage matrix.
+#
+# Files not listed here (e.g., test_emitter.py, test_helpers.py) are
+# infrastructure tests that don't map to a specific MUMPS spec section.
+# =============================================================================
+
+SUB_SECTION_PARENTS: dict[str, str] = {
+    # §7 Expression sub-sections
+    "s7_1_2_4_naked": "s7_1_2_variables",
+    "s7_1_5_intrinsic_data_indirection": "s7_1_5_intrinsic_functions",
+    "s7_1_5_intrinsic_increment": "s7_1_5_intrinsic_functions",
+    "s7_1_5_intrinsic_text_offset": "s7_1_5_intrinsic_functions",
+    "s7_1_6_5_library_functions_character": "s7_1_6_extrinsic_functions",
+    "s7_1_6_5_library_functions_math": "s7_1_6_extrinsic_functions",
+    "s7_1_6_5_library_functions_string": "s7_1_6_extrinsic_functions",
+    "s7_1_6_external_functions": "s7_1_6_extrinsic_functions",
+    "s7_2_logical_operators": "s7_2_operators",
+    "s7_3_indirection_codegen": "s7_3_indirection",
+    "s7_3_multi_level_indirection_subscripts": "s7_3_indirection",
+    "s7_svn_system_principal_key": "s7_1_7_special_variables",
+    # §8 Command sub-sections
+    "s8_2_edge_cases": "s8_1_general_rules",
+    "s8_2_format_controls": "s8_2_25_write",
+    "s8_2_xy_tracking": "s8_2_25_write",
+    "s8_byref_marray": "s8_2_03_do",
+    "s8_out_of_scope": "s8_1_general_rules",
+    "s8_test_sync": "s8_2_09_if",
+    "s8_z_commands": "s8_2_27_zcommand",
+    # §9 Character set
+    "s9_character_set": "s9_1_definitions",
+    # Cross-cutting tests that relate to spec sections
+    "cross_label_goto": "s8_2_06_goto",
+    "cross_routine_visibility": "s6_2_routine_body",
+    "for_subscripted_counter": "s8_2_05_for",
+    "indirection_helpers": "s7_3_indirection",
+    "reachable_labels": "s8_2_06_goto",
+    "routine": "s6_2_routine_body",
+    "routine_name_autodetect": "s6_1_routine_head",
 }
 
 
@@ -284,14 +332,14 @@ def scan_test_files(
                 parts = list(rel_path.parts)
                 if len(parts) >= 3:  # extensions/ydb/test_xxx.py
                     extension_type = f"{parts[0]}/{parts[1]}"  # extensions/ydb
-                    test_name = test_file.stem.replace("test_", "")
+                    test_name = test_file.stem.removeprefix("test_")
                     section_id = f"{extension_type}/{test_name}"
                 else:
                     continue
             else:
                 # Standard spec section
                 # s8_commands/test_s8_2_18_set.py -> s8_2_18_set
-                test_name = test_file.stem.replace("test_", "")
+                test_name = test_file.stem.removeprefix("test_")
                 section_id = test_name
 
             # Apply section filter if specified
@@ -303,6 +351,44 @@ def scan_test_files(
             results[category][section_id] = file_info  # type: ignore
 
     return results
+
+
+def _aggregate_subsections(
+    files: dict[TestCategory, dict[str, FileInfo]],
+) -> None:
+    """Merge sub-section test files into their parent SPEC_SECTIONS entries.
+
+    Test files whose section_id matches a key in SUB_SECTION_PARENTS are
+    aggregated into the parent section's FileInfo. This ensures the coverage
+    matrix accurately reflects all tests that relate to each spec section.
+
+    The sub-section entries are removed from the dict after merging so they
+    don't show up as uncounted orphans.
+
+    Args:
+        files: Dict mapping category -> section_id -> FileInfo (modified in place)
+    """
+    for category in ("parser", "asg", "codegen"):
+        to_merge: list[tuple[str, str]] = []  # (child_id, parent_id)
+
+        for section_id in list(files[category].keys()):
+            parent_id = SUB_SECTION_PARENTS.get(section_id)
+            if parent_id is not None:
+                to_merge.append((section_id, parent_id))
+
+        for child_id, parent_id in to_merge:
+            child_info = files[category][child_id]
+
+            if parent_id not in files[category]:
+                # Parent doesn't have its own test file — promote the child
+                files[category][parent_id] = child_info
+            else:
+                # Parent exists — merge child's tests into parent
+                parent_info = files[category][parent_id]
+                parent_info.tests.extend(child_info.tests)
+
+            # Remove the child entry
+            del files[category][child_id]
 
 
 # =============================================================================
@@ -614,13 +700,20 @@ def generate_report(
             asg_info = files["asg"].get(full_id)
             codegen_info = files["codegen"].get(full_id)
 
-            parser_cell = _format_cell(parser_info, full_id, "parser")
+            # Show N/A for categories that don't expect this extension
+            if cmd_id in EXTENSION_PARSER:
+                parser_cell = _format_cell(parser_info, full_id, "parser")
+            else:
+                parser_cell = "— N/A"
             # ASG only expects certain extensions - show N/A for others
             if cmd_id in EXTENSION_ASG:
                 asg_cell = _format_cell(asg_info, full_id, "asg")
             else:
                 asg_cell = "— N/A"
-            codegen_cell = _format_cell(codegen_info, full_id, "codegen")
+            if cmd_id in EXTENSION_CODEGEN:
+                codegen_cell = _format_cell(codegen_info, full_id, "codegen")
+            else:
+                codegen_cell = "— N/A"
             notes = _get_section_notes(cmd_id)
 
             lines.append(
@@ -765,6 +858,9 @@ def rebuild_coverage_matrix(
     # Scan test files
     files = scan_test_files(base_dir, section_filter)
 
+    # Aggregate sub-section tests into parent spec sections
+    _aggregate_subsections(files)
+
     # Parse markers and count test status
     count_test_status(files)
 
@@ -838,6 +934,7 @@ def main() -> int:
             return 1
 
         files = scan_test_files(base_dir, args.section)
+        _aggregate_subsections(files)
         count_test_status(files)
         all_covered, missing = check_coverage(files)
 
