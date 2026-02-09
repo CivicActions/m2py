@@ -11,11 +11,11 @@
 Phase 1 is the preparatory layer of M2PY's refactoring plan. It addresses foundational issues that block later phases: duplicated value-formatting logic that can diverge on edge cases, architecture violations where the runtime depends on the codegen layer, duplicated parsing utilities with incompatible return types, and analysis-layer code that is unnecessarily repeated or misplaced.
 
 The deliverables are:
-- New shared modules (`core/values.py`, `core/names.py`, `core/parsing.py`, `core/tokenizer.py`, `asg/traversal.py`, `codegen/exceptions.py`) that centralize previously scattered logic
-- Elimination of 15 backward imports from runtime/core into codegen
+- New shared modules (`core/values.py`, `core/names.py`, `core/parsing.py`, `core/tokenizer.py`) and extension of `MScope.walk_statements()` in `asg/elements.py` to centralize previously scattered logic
+- Elimination of 18 backward imports from runtime/core into codegen (17 value-model/name imports + 1 `generate_python` via callback)
 - Consolidation of 3 independent canonical-number formatters into 1
 - Consolidation of 3 independent subscript-name parsers into 1
-- Consolidation of 15+ parenthesis-depth state machines into 1 utility
+- Consolidation of 13+ parenthesis-depth state machines into 1 utility
 - Analysis-layer deduplication (kill analyzers, call-argument processing, variable-write detection, expression unwrapping, naked-global detection)
 - A reusable ASG statement-walking utility
 - Trivial fixes: exception hierarchy, dead code removal, docstring correction, forcing `uses_dynamic_locals` for exclusive KILL/NEW
@@ -99,7 +99,7 @@ A contributor writing a new analysis pass (e.g., detecting unreachable code) use
 **Acceptance Scenarios**:
 
 1. **Given** a routine with nested IF, FOR, and DO blocks, **When** `walk_statements()` is called with a counting visitor, **Then** it visits every statement exactly once.
-2. **Given** 4 reimplementations of scope walking, **When** Phase 1 is complete, **Then** at least 2 of the 4 delegate to `asg.traversal.walk_statements()` (the remaining may have specialized needs that require parameters but should still use the shared walker).
+2. **Given** 4 reimplementations of scope walking, **When** Phase 1 is complete, **Then** at least 2 of the 4 delegate to `MScope.walk_statements()` in `asg/elements.py` (the remaining may have specialized needs that require parameters but should still use the shared walker).
 
 ---
 
@@ -117,7 +117,7 @@ A contributor writing a new analysis pass (e.g., detecting unreachable code) use
 
 #### Track A — Quick Wins & Analysis Cleanup
 
-- **FR-001**: The system MUST define `CodegenError` and `UnsupportedFeatureError(CodegenError)` in a single `codegen/exceptions.py` module, with both `codegen/__init__.py` and `codegen/statements.py` importing from it. *(C-04)*
+- **FR-001**: The system MUST define `CodegenError` and `UnsupportedFeatureError(CodegenError)` in a single `codegen/exceptions.py` module, with both `codegen/__init__.py` and `codegen/statements.py` importing from it. *(C-04)* **[Already implemented — confirmed R-01. No task needed.]**
 - **FR-002**: The `m_format_output` docstring MUST accurately describe the function's behavior — string values are returned unchanged; only numeric types undergo canonical formatting. *(S-17)*
 - **FR-003**: The dead `generate_xecute_constant()` and `generate_xecute_dynamic()` stubs in `codegen/indirection.py` MUST be removed after verifying no callers exist. *(S-18)*
 - **FR-004**: Kill-like analyzer methods (`_analyze_KillCommand`, `_analyze_KSubscriptsCommand`, `_analyze_KValueCommand`, `_analyze_ZKillCommand`, `_analyze_ZWithdrawCommand`) MUST share a common helper, with `ZWithdraw` delegating to `ZKill`. *(S-08)*
@@ -128,8 +128,8 @@ A contributor writing a new analysis pass (e.g., detecting unreachable code) use
 #### Track B — Analysis & ASG Infrastructure
 
 - **FR-008**: `_check_var_modified_in_scope` in `for_analysis.py` MUST delegate to the existing write-detection infrastructure in `variables.py` rather than reimplementing it. *(S-20)*
-- **FR-009**: The `contains_naked_global()` function MUST be moved from `codegen/expressions.py` to `analysis/variables.py`, executed during semantic analysis, and its result stored as an ASG annotation (`_has_naked_global`) on the expression node. Codegen MUST read the pre-computed annotation. *(C-08)*
-- **FR-010**: A new `asg/traversal.py` module MUST provide a `walk_statements()` function that recursively visits all statements in a scope, descending into IF/FOR/DO bodies. Existing scope-walking reimplementations MUST delegate to this utility where feasible. *(S-10)*
+- **FR-009**: The `contains_naked_global()` function MUST be moved from `codegen/expressions.py` to `analysis/variables.py`, executed during semantic analysis, and its result stored as an ASG annotation (`_has_naked_global`) on `MExpr` expression nodes. The annotation MUST be set in the semantic analyzer's expression-processing methods (e.g., within `_analyze_expression` or equivalent). Codegen MUST read the pre-computed annotation instead of calling `contains_naked_global()` directly. *(C-08)*
+- **FR-010**: The existing `MScope.walk_statements()` method in `asg/elements.py` MUST be extended to recurse into `get_else_scope` in addition to `get_body_scope` and `get_then_scope`, ensuring complete statement coverage. Existing scope-walking reimplementations MUST delegate to this method where feasible. *(S-10)* *(Research R-05: `walk_statements()` already exists on `MScope` at L74; a new `asg/traversal.py` module is not needed.)*
 
 #### Track C — Core Value Abstractions
 
@@ -137,19 +137,19 @@ A contributor writing a new analysis pass (e.g., detecting unreachable code) use
 - **FR-012**: `m_str()` in `codegen/helpers.py` and `m_format_output()` in `runtime/helpers.py` MUST delegate canonical number formatting to `mumps_canonical_str()` from `core/values.py`. `m_format_output` retains its string-passthrough and MArray-unwrap responsibilities. *(C-01)*
 - **FR-013**: `SubscriptCanonicalizer.canonicalize_numeric()` in `core/subscripts.py` MUST delegate to `mumps_canonical_str()` from `core/values.py`. *(C-01)*
 - **FR-014**: `core/values.py` MUST also provide `m_num()`, `m_str()`, `m_truth()`, and `m_compare()` — the MUMPS value-model functions currently in `codegen/helpers.py`. *(C-02)*
-- **FR-015**: All 14 deferred imports of `m_num`, `m_str`, `m_truth`, `m_compare` from `m2py.codegen` in `runtime/` MUST be replaced with direct imports from `m2py.core.values`. The 1 deferred import in `core/` MUST also be replaced. *(C-02)*
+- **FR-015**: All 18 deferred imports from `m2py.codegen` in `runtime/` and `core/` MUST be eliminated: 10 value-model function imports replaced with direct imports from `m2py.core.values`, 7 `NameTranslator`/`translate_name` imports updated to `m2py.core.names`, and 1 `generate_python` import resolved via callback injection (FR-018). *(C-02)* *(Research R-03: actual count is 18, not 15.)*
 - **FR-016**: `codegen/helpers.py` MUST re-export the value-model functions from `core/values.py` for backward compatibility with generated code and existing imports. *(C-02)*
-- **FR-017**: `translate_name` and `NameTranslator` MUST be moved to `core/names.py`, with re-exports from `codegen/helpers.py` for backward compatibility. *(C-02)*
+- **FR-017**: `translate_name` and `NameTranslator` MUST be defined in `core/names.py`, with re-exports from `codegen/names.py` for backward compatibility. *(C-02)* **[Already implemented — confirmed R-02. No task needed.]**
 - **FR-018**: The `generate_python` dependency in the runtime (used for XECUTE) MUST be resolved by injecting it as a callback at `MUMPSRuntime` construction time, rather than importing from codegen. *(C-02)*
 - **FR-019**: The duplicate `_is_canonical_numeric` in `runtime/helpers.py` MUST be removed, with its callers using the unified `core/values.py` implementation. *(S-11)*
-- **FR-020**: `m_add`, `m_sub`, and `m_mul` MUST share a common `_decimal_binop(left, right, op)` helper, with each function becoming a thin wrapper. *(S-06)*
+- **FR-020**: `m_add`, `m_sub`, and `m_mul` MUST share a common `_decimal_binop(left, right, op)` helper, with each function becoming a thin wrapper. *(S-06)* **[Already implemented during T007. No separate task needed.]**
 
 #### Track D — Core Parsing Utilities
 
 - **FR-021**: A new `core/parsing.py` module MUST provide `parse_subscripted_name(name: str) -> tuple[str, list[str]]` that parses `'ARR(1,2)'` into `('ARR', ['1', '2'])` and returns an empty list for unsubscripted names. *(C-03)*
 - **FR-022**: All 3 existing `_parse_subscripted_name` implementations (in `runtime/__init__.py`, `core/scope.py`, and `core/indirection.py`) MUST delegate to `core/parsing.parse_subscripted_name()`. Numeric subscript conversion MUST be a separate `canonicalize_subscript()` step applied only where needed. *(C-03)*
 - **FR-023**: A new `core/tokenizer.py` module MUST provide `split_at_toplevel(s: str, delimiter: str = ",", respect_quotes: bool = True) -> list[str]` that splits a string respecting parenthesis nesting and quote state. *(S-07)*
-- **FR-024**: Hand-rolled parenthesis-depth + quote-tracking state machines across `runtime/` and `core/` MUST delegate to `core/tokenizer.split_at_toplevel()`. *(S-07)*
+- **FR-024**: Hand-rolled parenthesis-depth + quote-tracking state machines within `_parse_subscripted_name` and `_split_argument_list` implementations across `runtime/__init__.py`, `core/scope.py`, and `core/indirection.py` MUST delegate to `core/tokenizer.split_at_toplevel()`. *(S-07)*
 
 #### Test Suite Integrity
 
@@ -161,8 +161,8 @@ A contributor writing a new analysis pass (e.g., detecting unreachable code) use
 - **`core/names.py`**: New module — name translation utilities (`translate_name`, `NameTranslator`)
 - **`core/parsing.py`**: New module — string-level parsing utilities (`parse_subscripted_name`, `canonicalize_subscript`)
 - **`core/tokenizer.py`**: New module — delimiter-aware string splitting (`split_at_toplevel`)
-- **`asg/traversal.py`**: New module — recursive ASG statement walker (`walk_statements`)
-- **`codegen/exceptions.py`**: New module — codegen exception hierarchy (`CodegenError`, `UnsupportedFeatureError`)
+- **`asg/elements.py`**: Extended — `MScope.walk_statements()` recurses into else-scopes (no new module needed; R-05)
+- **`codegen/exceptions.py`**: Existing module — codegen exception hierarchy (`CodegenError`, `UnsupportedFeatureError`) (already implemented; R-01)
 
 ## Success Criteria *(mandatory)*
 
@@ -179,23 +179,24 @@ A contributor writing a new analysis pass (e.g., detecting unreachable code) use
 
 ## Assumptions
 
-- The refactoring plan's item descriptions and candidate designs are accurate and validated. The spec relies on the fact-checked counts (15 backward imports, 3 parse implementations, 69 strategy-dispatch sites, etc.).
+- The refactoring plan's item descriptions and candidate designs are accurate and validated. The spec relies on the fact-checked counts (18 backward imports per R-03, 3 parse implementations, 69 strategy-dispatch sites, etc.).
 - "Backward compatibility re-exports" means existing `from m2py.codegen.helpers import m_str` still works (for generated code that imports these symbols).
 - The `generate_python` XECUTE dependency is the only acceptable remaining runtime→codegen coupling, resolved via callback injection rather than direct import.
 - The exponent guard behavior (exponent < -43 → `"0"`) in `m_format_output` is the correct MUMPS behavior, and the unified formatter should apply it consistently.
-- Phase 2 depends on this phase being fully complete — particularly `core/values.py` (changes codegen import paths) and `asg/traversal.py` (used by S-16 in Phase 2).
+- Phase 2 depends on this phase being fully complete — particularly `core/values.py` (changes codegen import paths) and `MScope.walk_statements()` in `asg/elements.py` (used by S-16 in Phase 2).
 
 ## Dependencies
 
 - **Blocked by**: Nothing — Phase 1 has no external dependencies.
-- **Blocks**: Phase 2 (Codegen Refactoring) depends on Track C (`core/values.py`) and Track B (`asg/traversal.py`) completing.
+- **Blocks**: Phase 2 (Codegen Refactoring) depends on Track C (`core/values.py`) and Track B (`MScope.walk_statements()` extension in `asg/elements.py`) completing.
 
 ## Scope Boundaries
 
 ### In Scope
 
 - All items listed in the refactoring plan's Phase 1: C-01, C-02, C-03, C-04, C-06, C-08, S-06, S-07, S-08, S-09, S-10, S-11, S-15, S-17, S-18, S-20
-- Creating new core modules: `core/values.py`, `core/names.py`, `core/parsing.py`, `core/tokenizer.py`, `asg/traversal.py`, `codegen/exceptions.py`
+- Creating new core modules: `core/values.py`, `core/names.py`, `core/parsing.py`, `core/tokenizer.py`
+- Extending `MScope.walk_statements()` in `asg/elements.py` for complete scope traversal
 - Updating all import sites to use new module locations
 - Maintaining backward-compatible re-exports
 
