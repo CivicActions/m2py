@@ -34,6 +34,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - Python 3.10+ + textX (parser), pytest (testing), uv (package management) (018-unified-variable-system)
 - MArray (in-memory sparse tree), globals database (MState.globals) (018-unified-variable-system)
 - In-memory globals (MArray), filesystem for test routines (017-ydb-test-failures)
+- Python 3.10+ + textX ≥ 4.0 (parser), Decimal (stdlib, value model) (019-foundation-cleanup)
+- N/A (no persistence changes) (019-foundation-cleanup)
 
 - (001-textx-semantic-graph)
 
@@ -54,9 +56,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 019-foundation-cleanup: Added Python 3.10+ + textX ≥ 4.0 (parser), Decimal (stdlib, value model)
 - 017-ydb-test-failures: Added Python 3.10+ + textX (parser), pytest (testing), uv (package management)
 - 017-ydb-test-failures: Added Python 3.10+ + textX (parser), pytest (testing)
-- 018-unified-variable-system: Added Python 3.10+ + textX (parser), pytest (testing), uv (package management)
 
 
 <!-- MANUAL ADDITIONS START -->
