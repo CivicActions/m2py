@@ -1,6 +1,15 @@
 {
     "name": "Strict Python Sandbox",
-	"image": "mcr.microsoft.com/devcontainers/python:2-3.13-trixie",
+	// "image": "mcr.microsoft.com/devcontainers/python:2-3.13-trixie",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+        "ghcr.io/devcontainers/features/python:1": {},
+        "ghcr.io/devcontainers-extra/features/uv:1": {},
+        "ghcr.io/devcontainers-extra/features/ruff:1": {},
+        "ghcr.io/devcontainers-extra/features/pre-commit:2": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/copilot-cli:1": {}
+    },
     
     // Explicitly mount ONLY the local workspace folder to a specific path in the container
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=cached",
@@ -21,7 +30,7 @@
                 "terminal.integrated.inheritEnv": false
             }
         }
-    },
+    }, 
     "postCreateCommand": "chmod +x .devcontainer/setup.sh && ./.devcontainer/setup.sh",
     "remoteUser": "vscode"
 }
