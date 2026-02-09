@@ -18,3 +18,6 @@ sudo npm install -g @github/copilot
 
 # Install Spec-Kit tool
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git --force
+
+# Install pre-commit
+uv tool install pre-commit --with pre-commit-uv

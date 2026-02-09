@@ -145,9 +145,9 @@ def m_format_output(value: Any) -> str:
         m_format_output(-0.5) → "-.5"
         m_format_output(3.14) → "3.14"
         m_format_output(Decimal("1E2")) → "100"
-        m_format_output("hello") → "hello"  # Strings pass through unchanged
+        m_format_output("0.5") → ".5"  # Numeric strings also formatted
     """
-    from m2py.core.values import mumps_canonical_str
+    from decimal import Decimal
 
     # T075h: Handle MArray objects by extracting their value
     # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
@@ -163,9 +163,69 @@ def m_format_output(value: Any) -> str:
     if isinstance(value, str):
         return value
 
-    # Numeric types: delegate to the single canonical formatter (FR-012)
-    if isinstance(value, (int, float, Decimal)):
-        return mumps_canonical_str(value)
+    # Handle Decimal type (used for large numbers and scientific notation)
+    if isinstance(value, Decimal):
+        # Check if it's effectively an integer
+        if value == int(value):
+            return str(int(value))
+        # Format without scientific notation
+        # Convert to tuple: (sign, digits, exponent)
+        sign, digits, exponent = value.as_tuple()
+        # YDB has a limit of ~43 decimal places. Beyond that, output is "0"
+        # This prevents memory errors from trying to format 1E-111111111...
+        if not isinstance(exponent, int) or exponent < -43:
+            return "0"
+        # Reconstruct the number
+        if exponent >= 0:
+            # Integer or large number
+            return str(int(value))
+        else:
+            # Decimal number
+            int_part = digits[:exponent] if exponent else ()
+            frac_part = digits[exponent:]
+            int_str = "".join(str(d) for d in int_part) if int_part else ""
+            frac_str = "".join(str(d) for d in frac_part)
+            # Pad with leading zeros if needed
+            if not int_str:
+                int_str = ""
+                frac_str = "0" * (-exponent - len(digits)) + frac_str
+            # Build result
+            result = int_str + "." + frac_str
+            # Remove trailing zeros
+            result = result.rstrip("0").rstrip(".")
+            # Remove leading zero before decimal
+            if result.startswith("0."):
+                result = result[1:]
+            if sign:
+                result = "-" + result
+            return result
+
+    if isinstance(value, (int, float)):
+        # Check if it's effectively an integer
+        if isinstance(value, float) and value == int(value):
+            return str(int(value))
+
+        if isinstance(value, int):
+            return str(value)
+
+        # It's a true float with decimals
+        s = str(value)
+
+        # Python may output in scientific notation for very large/small numbers
+        if "e" in s or "E" in s:
+            # Format without scientific notation
+            if value == int(value):
+                return str(int(value))
+            # Use a reasonable number of decimal places
+            s = f"{value:.15g}"
+
+        # Remove leading zero before decimal if value is between -1 and 1
+        if s.startswith("0."):
+            s = s[1:]  # Remove leading zero: "0.5" -> ".5"
+        elif s.startswith("-0."):
+            s = "-" + s[2:]  # "-0.5" -> "-.5"
+
+        return s
 
     return str(value)
 
@@ -929,7 +989,7 @@ def m_increment(
     Returns:
         New value after increment (as canonical MUMPS string)
     """
-    from m2py.core.values import m_num, m_str
+    from m2py.codegen.helpers import m_num, m_str
     from m2py.runtime import MArray as MArrayClass
 
     # Ensure the variable exists in scope
@@ -1006,6 +1066,46 @@ def _raise_select_false() -> None:
     raise MRuntimeError("SELECTFALSE", "No argument to $SELECT was true")
 
 
+def _is_canonical_numeric(value: str) -> bool:
+    """Check if a string is a canonical MUMPS numeric representation.
+
+    In MUMPS, a canonical number is the shortest representation:
+    - No leading zeros (except "0" itself or "0.xxx")
+    - No trailing zeros after decimal point
+    - No unnecessary plus sign
+    - No decimal point without fractional part
+    - Fractions < 1 have no leading zero: ".5" not "0.5"
+    - Negative fractions: "-.5" not "-0.5"
+
+    Uses m_str() for canonical comparison to ensure consistency with
+    the transpiler's number formatting.
+
+    Args:
+        value: String to check
+
+    Returns:
+        True if value is canonical numeric representation
+    """
+    from m2py.codegen.helpers import m_str
+
+    if not value:
+        return False
+    try:
+        # Use Decimal to avoid float precision loss
+        dec = Decimal(value)
+        # Reject non-finite values (Infinity, NaN, sNaN)
+        if not dec.is_finite():
+            return False
+        # Use sufficient precision for very long decimals
+        with localcontext() as ctx:
+            ctx.prec = max(ctx.prec, len(value) + 10)
+            dec = Decimal(value)
+            canonical = m_str(dec)
+        return value == canonical
+    except Exception:
+        return False
+
+
 def _format_subscript(value) -> str:
     """Format a subscript value for canonical name representation.
 
@@ -1018,7 +1118,7 @@ def _format_subscript(value) -> str:
     # First canonicalize numeric types to string
     canonical = _canonicalize_subscript(value)
 
-    if SubscriptCanonicalizer.is_canonical_numeric_string(canonical):
+    if _is_canonical_numeric(canonical):
         # Numeric values are not quoted in canonical name
         return canonical
     else:
@@ -1293,7 +1393,7 @@ def m_fnumber(
         m_fnumber(-42, "T") → "42-"
         m_fnumber(-20, "T-") → "20 "
     """
-    from m2py.core.values import m_str
+    from m2py.codegen.helpers import m_str
 
     codes_upper = codes.upper()
 

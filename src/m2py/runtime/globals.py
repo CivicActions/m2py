@@ -917,7 +917,7 @@ class InMemoryGlobalStorage:
             Updates naked indicator
             Creates node with value "0" if undefined before incrementing
         """
-        from m2py.core.values import m_num, m_str
+        from m2py.codegen.helpers import m_num, m_str
 
         subscripts = self._canonicalize_subscripts(subscripts)
 
