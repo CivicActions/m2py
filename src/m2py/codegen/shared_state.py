@@ -169,18 +169,6 @@ def generate_state_initialization(routine: "MRoutine") -> str:
     return "state = RoutineState()\n"
 
 
-def generate_state_imports() -> str:
-    """Generate required imports for RoutineState.
-
-    Returns:
-        Python import statements needed for RoutineState definition
-    """
-    return """from dataclasses import dataclass, field
-from typing import Any
-from m2py.runtime import MArray
-"""
-
-
 def _translate_var_name(name: str) -> str:
     """Translate MUMPS variable name to valid Python identifier.
 
@@ -202,6 +190,5 @@ def _translate_var_name(name: str) -> str:
 __all__ = [
     "generate_routine_state_class",
     "generate_state_initialization",
-    "generate_state_imports",
     "routine_uses_dynamic_locals",
 ]

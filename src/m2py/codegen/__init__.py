@@ -11,27 +11,10 @@ from typing import TYPE_CHECKING
 from m2py.parser import MUMPSParser
 from m2py.codegen.routine import RoutineGenerator
 from m2py.codegen.enums import GotoStrategy
+from m2py.codegen.exceptions import CodegenError, UnsupportedFeatureError
 
 if TYPE_CHECKING:
     from m2py.asg.elements import MRoutine
-
-
-class CodegenError(Exception):
-    """Base exception for code generation errors."""
-
-    pass
-
-
-class UnsupportedFeatureError(CodegenError):
-    """Raised when attempting to generate code for unsupported feature."""
-
-    pass
-
-
-class NameTranslationError(CodegenError):
-    """Raised when name translation fails."""
-
-    pass
 
 
 def _select_goto_strategy(routine: "MRoutine") -> GotoStrategy:
@@ -186,15 +169,12 @@ def generate_python(
     parser = MUMPSParser()
     routine = parser.parse(source, filename=routine_name)
 
-    # Set routine name if provided, or auto-detect from first non-empty label
+    # Set routine name if provided
     if routine_name:
         routine.name = routine_name
     elif routine.labels:
-        # Find first non-empty label name (skipping labelless preamble)
-        for label in routine.labels:
-            if label.name:
-                routine.name = label.name
-                break
+        # Fall back to first label name (e.g. "TEST" from "TEST W 1 Q")
+        routine.name = routine.labels[0].name
 
     # Run analysis passes required for code generation
     # Order matters: references first, then GOTO, FOR, quit context, variables
@@ -231,5 +211,4 @@ __all__ = [
     "generate_python",
     "CodegenError",
     "UnsupportedFeatureError",
-    "NameTranslationError",
 ]

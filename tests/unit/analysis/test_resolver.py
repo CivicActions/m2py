@@ -13,7 +13,7 @@ import pytest
 
 from m2py.asg.elements import MRoutine, MLabel, MCall, MScope
 from m2py.asg.statements import MGotoStatement, MDoStatement
-from m2py.analysis import resolve_references, get_unresolved_calls, get_external_calls
+from m2py.analysis import resolve_references
 
 
 @pytest.mark.analysis
@@ -51,7 +51,7 @@ class TestResolveReferences:
         goto_stmt = MGotoStatement()
         call = MCall(name="TARGET")
         goto_stmt.targets.append(call)
-        routine.labels[0].body.add_statement(goto_stmt)
+        routine.labels[0].body.statements.append(goto_stmt)
 
         # Resolve
         resolve_references(routine)
@@ -69,7 +69,7 @@ class TestResolveReferences:
         goto_stmt = MGotoStatement()
         call = MCall(name="TARGET")
         goto_stmt.targets.append(call)
-        routine.labels[0].body.add_statement(goto_stmt)
+        routine.labels[0].body.statements.append(goto_stmt)
 
         # Resolve
         resolve_references(routine)
@@ -87,7 +87,7 @@ class TestResolveReferences:
         do_stmt = MDoStatement()
         call = MCall(name="SUBROUTINE")
         do_stmt.targets.append(call)
-        routine.labels[0].body.add_statement(do_stmt)
+        routine.labels[0].body.statements.append(do_stmt)
 
         # Resolve
         resolve_references(routine)
@@ -105,7 +105,7 @@ class TestResolveReferences:
         goto_stmt = MGotoStatement()
         call = MCall(name="NONEXISTENT")
         goto_stmt.targets.append(call)
-        routine.labels[0].body.add_statement(goto_stmt)
+        routine.labels[0].body.statements.append(goto_stmt)
 
         # Resolve
         resolve_references(routine)
@@ -122,7 +122,7 @@ class TestResolveReferences:
         goto_stmt = MGotoStatement()
         call = MCall(name="LABEL", routine="OTHER")
         goto_stmt.targets.append(call)
-        routine.labels[0].body.add_statement(goto_stmt)
+        routine.labels[0].body.statements.append(goto_stmt)
 
         # Resolve
         resolve_references(routine)
@@ -145,7 +145,7 @@ class TestResolveReferences:
         goto_stmt = MGotoStatement()
         call = MCall(name="TARGET", routine="TEST")
         goto_stmt.targets.append(call)
-        routine.labels[0].body.add_statement(goto_stmt)
+        routine.labels[0].body.statements.append(goto_stmt)
 
         # Resolve
         resolve_references(routine)
@@ -163,12 +163,12 @@ class TestResolveReferences:
         goto1 = MGotoStatement()
         call1 = MCall(name="TARGET")
         goto1.targets.append(call1)
-        routine.labels[0].body.add_statement(goto1)
+        routine.labels[0].body.statements.append(goto1)
 
         goto2 = MGotoStatement()
         call2 = MCall(name="TARGET")
         goto2.targets.append(call2)
-        routine.labels[0].body.add_statement(goto2)
+        routine.labels[0].body.statements.append(goto2)
 
         # Resolve
         resolve_references(routine)
@@ -176,77 +176,6 @@ class TestResolveReferences:
         # Both should be in back-references
         target_label = routine.get_label("TARGET")
         assert len(target_label.goto_sources) == 2
-
-
-@pytest.mark.analysis
-class TestGetUnresolvedCalls:
-    """Test get_unresolved_calls function."""
-
-    def test_returns_unresolved_calls(self):
-        """Should return list of unresolved MCall objects."""
-        routine = MRoutine(name="TEST")
-        label = MLabel(name="MAIN")
-        label.body = MScope()
-        routine.add_label(label)
-
-        # Add GOTO to missing label
-        goto_stmt = MGotoStatement()
-        call = MCall(name="MISSING")
-        goto_stmt.targets.append(call)
-        label.body.add_statement(goto_stmt)
-
-        resolve_references(routine)
-
-        unresolved = get_unresolved_calls(routine)
-        assert len(unresolved) == 1
-        assert unresolved[0].name == "MISSING"
-
-    def test_returns_empty_when_all_resolved(self):
-        """Should return empty list when all calls resolved."""
-        routine = MRoutine(name="TEST")
-
-        main = MLabel(name="MAIN")
-        main.body = MScope()
-        routine.add_label(main)
-
-        target = MLabel(name="TARGET")
-        target.body = MScope()
-        routine.add_label(target)
-
-        # Add GOTO to existing label
-        goto_stmt = MGotoStatement()
-        call = MCall(name="TARGET")
-        goto_stmt.targets.append(call)
-        main.body.add_statement(goto_stmt)
-
-        resolve_references(routine)
-
-        unresolved = get_unresolved_calls(routine)
-        assert len(unresolved) == 0
-
-
-@pytest.mark.analysis
-class TestGetExternalCalls:
-    """Test get_external_calls function."""
-
-    def test_returns_external_calls(self):
-        """Should return list of external MCall objects."""
-        routine = MRoutine(name="TEST")
-        label = MLabel(name="MAIN")
-        label.body = MScope()
-        routine.add_label(label)
-
-        # Add GOTO to external routine
-        goto_stmt = MGotoStatement()
-        call = MCall(name="LABEL", routine="OTHER")
-        goto_stmt.targets.append(call)
-        label.body.add_statement(goto_stmt)
-
-        resolve_references(routine)
-
-        external = get_external_calls(routine)
-        assert len(external) == 1
-        assert external[0].routine == "OTHER"
 
 
 @pytest.mark.analysis
@@ -301,118 +230,6 @@ class TestCallTypePopulation:
         assert call.call_type == CallType.ROUTINE_CALL
 
 
-@pytest.mark.analysis
-class TestGlobalRefsCollection:
-    """Tests for MRoutine.global_refs population (T6841)."""
-
-    def test_routine_with_no_globals(self):
-        """T6841a: Routine with no globals has empty global_refs."""
-        from m2py.asg.statements import MSetStatement, MAssignment
-        from m2py.asg.expressions import MVariable, MLiteral
-
-        routine = MRoutine(name="TEST")
-
-        # Simple SET X=1 - no globals
-        var_x = MVariable(name="X", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
-        )
-        scope = MScope(statements=[set_stmt])
-        label = MLabel(name="MAIN", body=scope)
-        routine.add_label(label)
-
-        resolve_references(routine)
-
-        assert routine.global_refs == []
-
-    def test_routine_with_single_global(self):
-        """T6841b: Routine with ^GLOBAL has it in global_refs."""
-        from m2py.asg.statements import MSetStatement, MAssignment
-        from m2py.asg.expressions import MGlobal, MLiteral
-
-        routine = MRoutine(name="TEST")
-
-        # SET ^GLOBAL=1
-        global_var = MGlobal(name="GLOBAL", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=global_var, value=MLiteral(value="1"))]
-        )
-        scope = MScope(statements=[set_stmt])
-        label = MLabel(name="MAIN", body=scope)
-        routine.add_label(label)
-
-        resolve_references(routine)
-
-        assert "GLOBAL" in routine.global_refs
-        assert len(routine.global_refs) == 1
-
-    def test_routine_with_multiple_globals(self):
-        """T6841c: Routine with ^A, ^B has both in global_refs."""
-        from m2py.asg.statements import MSetStatement, MAssignment
-        from m2py.asg.expressions import MGlobal, MLiteral
-
-        routine = MRoutine(name="TEST")
-
-        # SET ^A=1, ^B=2
-        global_a = MGlobal(name="A", subscripts=[])
-        global_b = MGlobal(name="B", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[
-                MAssignment(target=global_a, value=MLiteral(value="1")),
-                MAssignment(target=global_b, value=MLiteral(value="2")),
-            ]
-        )
-        scope = MScope(statements=[set_stmt])
-        label = MLabel(name="MAIN", body=scope)
-        routine.add_label(label)
-
-        resolve_references(routine)
-
-        assert "A" in routine.global_refs
-        assert "B" in routine.global_refs
-        assert len(routine.global_refs) == 2
-
-    def test_global_refs_deduplication(self):
-        """Global refs should not contain duplicates."""
-        from m2py.asg.statements import MSetStatement, MWriteStatement, MAssignment
-        from m2py.asg.expressions import MGlobal, MLiteral
-
-        routine = MRoutine(name="TEST")
-
-        # SET ^DATA=1 then W ^DATA - same global referenced twice
-        global1 = MGlobal(name="DATA", subscripts=[])
-        global2 = MGlobal(name="DATA", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=global1, value=MLiteral(value="1"))]
-        )
-        write_stmt = MWriteStatement(arguments=[global2])
-        scope = MScope(statements=[set_stmt, write_stmt])
-        label = MLabel(name="MAIN", body=scope)
-        routine.add_label(label)
-
-        resolve_references(routine)
-
-        # Should only appear once (using set internally)
-        assert routine.global_refs.count("DATA") == 1
-
-    def test_global_refs_in_nested_scopes(self):
-        """Global refs in nested scopes (FOR, IF) should be collected."""
-        from m2py.asg.statements import MSetStatement, MForStatement, MAssignment
-        from m2py.asg.expressions import MGlobal, MLiteral
-
-        routine = MRoutine(name="TEST")
-
-        # FOR block with SET ^NESTED=1
-        global_var = MGlobal(name="NESTED", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=global_var, value=MLiteral(value="1"))]
-        )
-        for_body = MScope(statements=[set_stmt])
-        for_stmt = MForStatement(loop_var="I", body=for_body)
-        scope = MScope(statements=[for_stmt])
-        label = MLabel(name="MAIN", body=scope)
-        routine.add_label(label)
-
-        resolve_references(routine)
-
-        assert "NESTED" in routine.global_refs
+# =============================================================================
+# Variables LIVE Paths
+# =============================================================================

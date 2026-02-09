@@ -78,56 +78,6 @@ class TestSubscriptIndirection:
         # to string during subscript canonicalization when used
         assert result == 5
 
-    def test_resolve_subscript_list_single_indirection(self):
-        """Resolve subscript list with single @-indirection."""
-        # S B=2
-        scope_dict = {"B": 2}
-        scope = CurrentScope(scope_dict=scope_dict)
-        state = MockMState()
-        resolver = IndirectionResolver(state, scope)
-
-        # A(1,@B,3) → A(1,2,3)
-        subscripts = ["1", "@B", "3"]
-        result = resolver.resolve_subscript_list(subscripts)
-        assert result == ["1", 2, "3"]
-
-    def test_resolve_subscript_list_multiple_indirections(self):
-        """Resolve subscript list with multiple @-indirections."""
-        # S X="a", Y=5
-        scope_dict = {"X": "a", "Y": 5}
-        scope = CurrentScope(scope_dict=scope_dict)
-        state = MockMState()
-        resolver = IndirectionResolver(state, scope)
-
-        # A(@X,@Y) → A("a",5)
-        subscripts = ["@X", "@Y"]
-        result = resolver.resolve_subscript_list(subscripts)
-        assert result == ["a", 5]
-
-    def test_resolve_subscript_list_no_indirection(self):
-        """Resolve subscript list without any indirection."""
-        scope_dict = {}
-        scope = CurrentScope(scope_dict=scope_dict)
-        state = MockMState()
-        resolver = IndirectionResolver(state, scope)
-
-        # A(1,2,3) stays A(1,2,3)
-        subscripts = ["1", "2", "3"]
-        result = resolver.resolve_subscript_list(subscripts)
-        assert result == ["1", "2", "3"]
-
-    def test_resolve_subscript_list_mixed(self):
-        """Resolve subscript list with mix of literals and indirection."""
-        scope_dict = {"B": "middle", "END": 99}
-        scope = CurrentScope(scope_dict=scope_dict)
-        state = MockMState()
-        resolver = IndirectionResolver(state, scope)
-
-        # A("start",@B,@END) → A("start","middle",99)
-        subscripts = ['"start"', "@B", "@END"]
-        result = resolver.resolve_subscript_list(subscripts)
-        assert result == ['"start"', "middle", 99]
-
 
 class TestSubscriptIndirectionContext:
     """Tests for SUBSCRIPT context in resolve() method.
@@ -135,7 +85,7 @@ class TestSubscriptIndirectionContext:
     Feature: 018-unified-variable-system
 
     Note: For typical subscript indirection A(1,@B,3), use resolve_subscript_indirection()
-    or resolve_subscript_list() instead of resolve() with SUBSCRIPT context.
+    instead of resolve() with SUBSCRIPT context.
 
     The resolve() with SUBSCRIPT context follows the standard multi-level resolution.
     If the final resolved value is a valid MUMPS variable name, it looks up that
@@ -234,9 +184,8 @@ class TestV1IDNM2SubscriptPatterns:
         state = MockMState()
         resolver = IndirectionResolver(state, scope)
 
-        # Resolve the subscript list
-        subscripts = ["1", "@B", "3"]
-        resolved_subs = resolver.resolve_subscript_list(subscripts)
+        # Resolve the subscript indirections individually
+        resolved_subs = ["1", resolver.resolve_subscript_indirection("B"), "3"]
 
         # Access A with resolved subscripts
         assert resolved_subs == ["1", 2, "3"]
@@ -263,8 +212,7 @@ class TestV1IDNM2SubscriptPatterns:
         resolver = IndirectionResolver(state, scope)
 
         # Resolve @KEY to "alpha"
-        subscripts = ["@KEY"]
-        resolved_subs = resolver.resolve_subscript_list(subscripts)
+        resolved_subs = [resolver.resolve_subscript_indirection("KEY")]
         assert resolved_subs == ["alpha"]
 
         # Access DATA("alpha")
@@ -289,7 +237,10 @@ class TestV1IDNM2SubscriptPatterns:
         resolver = IndirectionResolver(state, scope)
 
         subscripts = ["@X", "@Y", "@Z"]
-        resolved_subs = resolver.resolve_subscript_list(subscripts)
+        resolved_subs = [
+            resolver.resolve_subscript_indirection(s[1:]) if s.startswith("@") else s
+            for s in subscripts
+        ]
         assert resolved_subs == [1, 2, 3]
 
         result = scope.get_subscripted("A", resolved_subs)

@@ -336,3 +336,18 @@ class TestPatternMatchWithMStr:
         assert result.success is True
         # "1" matches 1N - should be true (1)
         assert result.output == "1"
+
+
+@pytest.mark.codegen
+class TestPatternIndirection:
+    """Tests for pattern match with indirection."""
+
+    def test_pattern_match_indirection(self, execute_mumps):
+        """X?@PAT — pattern match with indirected pattern."""
+        result = execute_mumps('TEST\n\tS PAT="3N"\n\tW "123"?@PAT\n\tQ\n')
+        assert result.output == "1"
+
+    def test_pattern_match_indirection_no_match(self, execute_mumps):
+        """X?@PAT — pattern doesn't match."""
+        result = execute_mumps('TEST\n\tS PAT="3N"\n\tW "ABC"?@PAT\n\tQ\n')
+        assert result.output == "0"

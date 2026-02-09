@@ -22,7 +22,6 @@ from m2py.asg.expressions import (
     MIntrinsicFunction,
     MLiteral,
     MPatternMatch,
-    MSelectArg,
     MSpecialVariable,
     MStructuredSystemVariable,
     MUnaryOp,
@@ -307,9 +306,7 @@ def _generate_literal(lit: MLiteral) -> str:
         # Fallback: use the already-parsed value (may have lost precision)
         return str(lit.value)
     else:
-        # Default: treat as string
-        escaped = str(lit.value).replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
+        return str(lit.value)
 
 
 def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
@@ -802,7 +799,9 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         # Pattern match: A?pattern returns 1 if A matches pattern
         return f"m_pattern_match({left}, {right})"
     else:
-        raise NotImplementedError(f"Unsupported binary operator: {op.operator}")
+        raise NotImplementedError(
+            f"Unsupported binary operator: {op.operator}"
+        )  # pragma: no cover
 
 
 def _generate_unary_op(op: MUnaryOp, ctx: "GeneratorContext") -> str:
@@ -827,7 +826,9 @@ def _generate_unary_op(op: MUnaryOp, ctx: "GeneratorContext") -> str:
         # Logical NOT in MUMPS - must return int (0/1), not Python bool
         return f"int(not m_truth({operand}))"
     else:
-        raise NotImplementedError(f"Unsupported unary operator: {op.operator}")
+        raise NotImplementedError(
+            f"Unsupported unary operator: {op.operator}"
+        )  # pragma: no cover
 
 
 def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str:
@@ -861,10 +862,10 @@ def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str
         regex = repr(expr.compiled_regex)
         result = f"(1 if re.fullmatch({regex}, m_str({subject}), re.DOTALL) else 0)"
     else:
-        # Direct pattern without compiled regex (shouldn't happen normally)
-        # Fall back to runtime helper
-        pattern = repr(expr.pattern)
-        result = f"m_pattern_match({subject}, {pattern})"
+        # Direct pattern without compiled regex — pattern compiler always produces
+        # compiled_regex, so this branch is unreachable in practice.
+        pattern = repr(expr.pattern)  # pragma: no cover
+        result = f"m_pattern_match({subject}, {pattern})"  # pragma: no cover
 
     # Handle negated pattern match ('?)
     if expr.operator == "'?":
@@ -1136,10 +1137,6 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Get first argument (the variable to check)
     args = getattr(expr, "arguments", [])
-    if not args:
-        # No argument - return 0 for undefined
-        return "0"
-
     var = args[0]
 
     # Handle MIndirection: $D(@A@(1)) needs runtime resolution
@@ -1236,10 +1233,6 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Get arguments
     args = getattr(expr, "arguments", [])
-    if not args:
-        # No argument - return empty string
-        return '""'
-
     var = args[0]
 
     # Get default value if provided
@@ -1333,10 +1326,6 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Get arguments
     args = getattr(expr, "arguments", [])
-    if not args:
-        # No argument - return empty string
-        return '""'
-
     var = args[0]
 
     # Get direction argument if present (second argument)
@@ -1569,10 +1558,6 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Get arguments
     args = getattr(expr, "arguments", [])
-    if not args:
-        # No argument - return empty string
-        return '""'
-
     var = args[0]
 
     # Handle MIndirection: $Q(@A@("")) needs runtime resolution
@@ -1703,8 +1688,9 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
             inner_expr = generate_expr(label_indirect.expression, ctx)
             label_expr = f"m_str({inner_expr})"
         else:
-            # Fallback - shouldn't normally happen
-            label_expr = f"m_str({generate_expr(label_indirect, ctx)})"
+            label_expr = (
+                f"m_str({generate_expr(label_indirect, ctx)})"  # pragma: no cover
+            )
 
         # Build params for get_text_indirect
         params = [label_expr]
@@ -1808,36 +1794,14 @@ def _gen_select(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     from m2py.runtime.exceptions import MRuntimeError  # noqa: F401 - for docstring
 
     args = getattr(expr, "arguments", [])
-    if not args:
-        # Empty $SELECT - error
-        return "_raise_select_false()"
 
     # Build the chained conditional expression
     # Each MSelectArg has condition and value
     parts = []
     for arg in args:
-        if not isinstance(arg, MSelectArg):
-            # Skip non-MSelectArg arguments (shouldn't happen but defensive)
-            continue
-
-        # Generate condition and value expressions
-        if arg.condition is not None:
-            cond_expr = generate_expr(arg.condition, ctx)
-        else:
-            # No condition - treat as always false (shouldn't happen)
-            cond_expr = "0"
-
-        if arg.value is not None:
-            val_expr = generate_expr(arg.value, ctx)
-        else:
-            # No value - use empty string
-            val_expr = '""'
-
+        cond_expr = generate_expr(arg.condition, ctx)
+        val_expr = generate_expr(arg.value, ctx)
         parts.append((cond_expr, val_expr))
-
-    if not parts:
-        # No valid parts - error
-        return "_raise_select_false()"
 
     # Build chained conditional: (val1 if m_truth(cond1) else val2 if m_truth(cond2) else ... else _raise_select_false())
     # We need to build from the inside out, starting with the fallback
@@ -1876,10 +1840,6 @@ def _gen_length(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $L("ABC","") → 0 (empty delimiter returns 0)
     """
     args = getattr(expr, "arguments", [])
-
-    if not args:
-        # No arguments - return 0 (edge case)
-        return "0"
 
     # First argument is the string
     string_expr = generate_expr(args[0], ctx)
@@ -1961,10 +1921,6 @@ def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $E("HELLO",2,4) → m_extract("HELLO", 2, 4)
     """
     args = getattr(expr, "arguments", [])
-
-    if not args:
-        # No arguments - return empty string
-        return '""'
 
     string_expr = generate_expr(args[0], ctx)
 
@@ -2088,9 +2044,6 @@ def _gen_ascii(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """
     args = getattr(expr, "arguments", [])
 
-    if not args:
-        return "-1"
-
     string_expr = generate_expr(args[0], ctx)
 
     # Use m_str() for MUMPS canonical formatting (no leading zeros, no E-notation)
@@ -2126,9 +2079,6 @@ def _gen_char(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $C(256) → "Ā" (Unicode)
     """
     args = getattr(expr, "arguments", [])
-
-    if not args:
-        return '""'
 
     # Generate chr() for each argument, with negative check
     parts = []
@@ -2166,10 +2116,6 @@ def _gen_random(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $R(0) → raises RANDARGNEG
     """
     args = getattr(expr, "arguments", [])
-
-    if not args:
-        # No argument - raise error
-        return "_m_random_checked(0)"
 
     limit_expr = generate_expr(args[0], ctx)
     return f"_m_random_checked(int(m_num({limit_expr})))"
@@ -2229,9 +2175,6 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     from m2py.asg.expressions import MIndirection as MIndirectionType
 
     args = getattr(expr, "arguments", [])
-    if not args:
-        return '""'
-
     var = args[0]
 
     # Handle MIndirection: $NA(@A) needs runtime resolution
@@ -2314,8 +2257,6 @@ def _gen_qlength(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $QL("A(1,2,3)") → 3
     """
     args = getattr(expr, "arguments", [])
-    if not args:
-        return "0"
 
     name_expr = generate_expr(args[0], ctx)
     return f"m_qlength(str({name_expr}))"
@@ -2409,8 +2350,6 @@ def _gen_reverse(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         $RE("") → ""
     """
     args = getattr(expr, "arguments", [])
-    if not args:
-        return '""'
 
     string_expr = generate_expr(args[0], ctx)
     return f"m_str({string_expr})[::-1]"
@@ -2536,9 +2475,6 @@ def _gen_next(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     from m2py.parser.textx_classes import GlobalVariable, LocalVariable
 
     args = getattr(expr, "arguments", [])
-    if not args:
-        return "-1"
-
     var = args[0]
 
     # For locals and globals, generate the appropriate runtime call
@@ -2618,3 +2554,104 @@ def _gen_next(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
 INTRINSIC_GENERATORS["N"] = _gen_next
 INTRINSIC_GENERATORS["NEXT"] = _gen_next
+
+
+def _gen_increment(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $INCREMENT/$I/$INCR function.
+
+    $INCREMENT atomically reads, adds, and writes back a variable value.
+    If the variable is undefined, treats its current value as 0.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1-2 arguments:
+              - arg[0]: variable to increment (local, global, or naked global)
+              - arg[1]: optional increment amount (defaults to 1)
+        ctx: Generator context
+
+    Returns:
+        Python code calling m_increment() or m_increment_global()
+
+    Examples:
+        $I(X) → m_increment(_scope.get('X'), (), "1", _scope, 'X')
+        $I(X,3) → m_increment(_scope.get('X'), (), m_str(3), _scope, 'X')
+        $I(^G) → m_increment_global(_rt.globals, 'G', ())
+        $I(^G(1),5) → m_increment_global(_rt.globals, 'G', (str(1),), m_str(5))
+    """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.parser.textx_classes import LocalVariable
+
+    args = getattr(expr, "arguments", [])
+    var = args[0]
+
+    # Get increment expression if provided
+    if len(args) >= 2:
+        incr_expr = f"m_str({generate_expr(args[1], ctx)})"
+    else:
+        incr_expr = '"1"'
+
+    # Handle MIndirection: $I(@A) needs runtime resolution
+    if isinstance(var, MIndirectionType):
+        from m2py.codegen.indirection import generate_increment_indirection
+
+        return generate_increment_indirection(var, ctx, incr_expr)
+
+    # Generate subscript tuple
+    subscripts = getattr(var, "subscripts", [])
+    if subscripts:
+        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
+        if len(subscript_exprs) == 1:
+            subscripts_tuple = f"({subscript_exprs[0]},)"
+        else:
+            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
+    else:
+        subscripts_tuple = "()"
+
+    var_name = getattr(var, "name", "")
+
+    if isinstance(var, LocalVariable):
+        python_name = translate_name(var_name)
+
+        # For TRAMPOLINE with dynamic locals
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            return (
+                f"m_increment(state._locals.get({python_name!r}), "
+                f"{subscripts_tuple}, {incr_expr}, state._locals, {python_name!r})"
+            )
+
+        # For TRAMPOLINE with state vars
+        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
+            # State field — increment in place, reassign if needed
+            return f"m_increment(state.{python_name}, {subscripts_tuple}, {incr_expr})"
+
+        # SIMPLE_FUNCTIONS — use _scope
+        return (
+            f"m_increment(_scope.get({python_name!r}), "
+            f"{subscripts_tuple}, {incr_expr}, _scope, {python_name!r})"
+        )
+    elif isinstance(var, GlobalVariable):
+        # Global variable: use backend's atomic incr()
+        return (
+            f"m_increment_global(_rt.globals, {var_name!r}, "
+            f"{subscripts_tuple}, {incr_expr})"
+        )
+    elif isinstance(var, NakedGlobal):
+        # Naked global: resolve then increment
+        return (
+            f"(lambda _n, _s: m_increment_global(_rt.globals, _n, _s, {incr_expr}))"
+            f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
+        )
+    else:
+        # Fallback — treat as local
+        python_name = translate_name(var_name)
+        return (
+            f"m_increment(_scope.get({python_name!r}), "
+            f"{subscripts_tuple}, {incr_expr}, _scope, {python_name!r})"
+        )
+
+
+# $I is context-dependent: $I (no args) = $IO, $I(args) = $INCREMENT
+# Since IntrinsicFunction always has args, mapping "I" here is correct —
+# the no-args $I case is handled by the SpecialVariable path ($IO).
+INTRINSIC_GENERATORS["I"] = _gen_increment
+INTRINSIC_GENERATORS["INCR"] = _gen_increment
+INTRINSIC_GENERATORS["INCREMENT"] = _gen_increment

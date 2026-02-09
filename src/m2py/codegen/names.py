@@ -11,6 +11,6 @@ Spec: 018-unified-variable-system, Phase 2 (T011)
 """
 
 # Re-export from the unified core module for backward compatibility
-from m2py.core.names import NameTranslator, translate_name, reverse_name
+from m2py.core.names import NameTranslator, translate_name
 
-__all__ = ["NameTranslator", "translate_name", "reverse_name"]
+__all__ = ["NameTranslator", "translate_name"]

@@ -1339,3 +1339,23 @@ class TestUnwindNewStackInWrapper:
         assert "unwind_new_stack(state)" in code
         assert "from m2py.runtime.helpers import" in code
         assert "unwind_new_stack" in code
+
+
+@pytest.mark.codegen
+class TestTrampolineByRefPass2:
+    """TRAMPOLINE by-reference parameter handling.
+
+    Covers codegen/statements.py L4520-4543.
+    """
+
+    def test_do_call_with_byref(self, execute_mumps):
+        """D SUB(.X) — by-ref value-result pattern."""
+        result = execute_mumps("TEST\n S X=1 D SUB(.X) W X Q\nSUB(A)\n S A=A+10 Q\n")
+        assert result.output == "11"
+
+    def test_do_call_multiple_byref(self, execute_mumps):
+        """D SUB(.X,.Y) — multiple by-ref parameters."""
+        result = execute_mumps(
+            'TEST\n S X=1,Y=2 D SUB(.X,.Y) W X,",",Y Q\nSUB(A,B)\n S A=A+10,B=B+20 Q\n'
+        )
+        assert result.output == "11,22"

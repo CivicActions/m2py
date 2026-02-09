@@ -74,9 +74,9 @@ def m_str(value: Any) -> str:
     # Convert Decimal to MUMPS-style fixed-point string (no scientific notation)
     sign, digits, exponent = d.as_tuple()
 
-    # Handle special Decimal values (NaN, Infinity) - exponent is a string code
     if not isinstance(exponent, int):
-        return str(d)
+        # Special Decimal values (Infinity, NaN) → "0"
+        return "0"
 
     if exponent >= 0:
         # Integer or large number
@@ -203,9 +203,7 @@ def m_num(value: Any) -> Union[int, float, Decimal]:
     # MUMPS SPEC: Only uppercase E is recognized for scientific notation!
     # "123e2" → 123, "123E2" → 12300
     match = re.match(r"(\d*\.?\d*)(E[+-]?\d+)?", s)
-    if not match:
-        return 0
-
+    assert match is not None  # re.match with this pattern always matches
     num_str = match.group(1)
     exp_str = match.group(2) or ""
 
@@ -217,20 +215,17 @@ def m_num(value: Any) -> Union[int, float, Decimal]:
     full_num_str = num_str + exp_str
 
     # Parse and apply sign
-    try:
-        if "." in num_str or exp_str:
-            # Use Decimal for precise handling - preserves exact precision
-            # and avoids scientific notation on output (m_format_output handles Decimal)
-            result = Decimal(full_num_str) * sign
-            # Normalize: if it's an integer value, return int
-            if result == int(result):
-                return int(result)
-            # Keep as Decimal to preserve precision and formatting
-            return result
-        else:
-            return int(num_str) * sign
-    except ValueError:
-        return 0
+    if "." in num_str or exp_str:
+        # Use Decimal for precise handling - preserves exact precision
+        # and avoids scientific notation on output (m_format_output handles Decimal)
+        result = Decimal(full_num_str) * sign
+        # Normalize: if it's an integer value, return int
+        if result == int(result):
+            return int(result)
+        # Keep as Decimal to preserve precision and formatting
+        return result
+    else:
+        return int(num_str) * sign
 
 
 def m_truth(value: Any) -> bool:
@@ -536,7 +531,7 @@ def m_compare(left: Any, op: str, right: Any) -> int:
     elif op == ">":
         return int(m_num(left) > m_num(right))
     else:
-        raise ValueError(f"Unsupported comparison operator: {op}")
+        raise ValueError(f"Unknown MUMPS comparison operator: {op}")
 
 
 def m_range(start: Any, end: Any, step: Any):

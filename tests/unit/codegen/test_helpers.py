@@ -254,15 +254,6 @@ class TestMCompare:
         assert m_compare(-5, ">", -1) == 0
         assert m_compare(0, ">", -1) == 1
 
-    # Edge cases and error handling
-
-    def test_unsupported_operator_raises_error(self):
-        """Unsupported operators raise ValueError."""
-        with pytest.raises(ValueError, match="Unsupported comparison operator"):
-            m_compare(1, "!=", 2)
-        with pytest.raises(ValueError, match="Unsupported comparison operator"):
-            m_compare(1, "<=", 2)
-
 
 @pytest.mark.codegen
 class TestMStr:
@@ -1077,3 +1068,74 @@ class TestMArrayContains:
         # At deep level
         assert "c" in arr["a"]["b"]
         assert "z" not in arr["a"]["b"]
+
+
+@pytest.mark.codegen
+class TestMRangeEdgeCases:
+    """Tests for m_range negative step, fractional step, zero step."""
+
+    def test_negative_step(self):
+        """m_range(3, 1, -1) yields 3, 2, 1."""
+        from m2py.codegen.helpers import m_range
+
+        result = list(m_range(3, 1, -1))
+        assert result == [3, 2, 1]
+
+    def test_fractional_step(self):
+        """m_range with fractional step works correctly."""
+        from m2py.codegen.helpers import m_range
+
+        result = list(m_range(0, "0.03", "0.01"))
+        assert len(result) == 4  # 0, 0.01, 0.02, 0.03
+
+    def test_zero_step_yields_nothing(self):
+        """m_range with step=0 yields nothing (avoids infinite loop)."""
+        from m2py.codegen.helpers import m_range
+
+        result = list(m_range(1, 5, 0))
+        assert result == []
+
+    def test_single_value(self):
+        """m_range where start==end yields single value."""
+        from m2py.codegen.helpers import m_range
+
+        result = list(m_range(5, 5, 1))
+        assert result == [5]
+
+    def test_negative_step_single_value(self):
+        """m_range where start==end with negative step yields single value."""
+        from m2py.codegen.helpers import m_range
+
+        result = list(m_range(3, 3, -1))
+        assert result == [3]
+
+
+# =============================================================================
+# helpers.py: m_str / m_num with MArray-like objects
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestMStrMNumMArray:
+    """Tests for m_str/m_num extracting .value from MArray."""
+
+    def test_m_str_with_marray(self):
+        """m_str extracts .value from MArray-like object."""
+        from m2py.codegen.helpers import m_str
+        from m2py.runtime import MArray
+
+        arr = MArray("42")
+        assert m_str(arr) == "42"
+
+    def test_m_num_with_marray(self):
+        """m_num extracts .value from MArray-like object."""
+        from m2py.codegen.helpers import m_num
+        from m2py.runtime import MArray
+
+        arr = MArray("42")
+        assert m_num(arr) == 42
+
+
+# =============================================================================
+# Z-commands codegen
+# =============================================================================

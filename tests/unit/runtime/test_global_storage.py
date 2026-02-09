@@ -15,6 +15,8 @@ Acceptance Scenarios from spec.md:
 
 import pytest
 
+from m2py.runtime.globals import InMemoryGlobalStorage
+
 
 @pytest.mark.runtime
 class TestBackendEnvVar:
@@ -140,24 +142,6 @@ class TestInMemoryGlobalStorageProtocol:
         result = backend.query("G", ("1",))
         assert result == ""
 
-    def test_incr_increments_undefined_value(self):
-        """incr() treats undefined value as 0."""
-        from m2py.runtime import InMemoryGlobalStorage
-
-        backend = InMemoryGlobalStorage()
-        result = backend.incr("G", ("1",))
-        assert result == "1"
-        assert backend.get("G", ("1",)) == "1"
-
-    def test_incr_increments_existing_value(self):
-        """incr() adds to existing numeric value."""
-        from m2py.runtime import InMemoryGlobalStorage
-
-        backend = InMemoryGlobalStorage()
-        backend.set("G", ("1",), "5")
-        result = backend.incr("G", ("1",), "3")
-        assert result == "8"
-
     def test_kill_node_preserves_descendants(self):
         """kill_node() removes value but keeps children."""
         from m2py.runtime import InMemoryGlobalStorage
@@ -177,49 +161,8 @@ class TestInMemoryGlobalStorageProtocol:
 
 
 @pytest.mark.runtime
-class TestBackendStubClasses:
-    """Test YottaDBGlobalStorage and IRISGlobalStorage stub classes (T067-T068)."""
-
-    def test_yottadb_stub_raises_import_error(self):
-        """YottaDBGlobalStorage raises ImportError when yottadb package missing."""
-        from m2py.runtime.globals import YottaDBGlobalStorage
-
-        with pytest.raises(ImportError) as exc_info:
-            YottaDBGlobalStorage()
-        assert "yottadb" in str(exc_info.value).lower()
-
-    def test_iris_stub_raises_import_error(self):
-        """IRISGlobalStorage raises ImportError when iris package missing."""
-        from m2py.runtime.globals import IRISGlobalStorage
-
-        with pytest.raises(ImportError) as exc_info:
-            IRISGlobalStorage()
-        assert "iris" in str(exc_info.value).lower()
-
-
-@pytest.mark.runtime
 class TestInMemoryGlobalStorageEdgeCases:
     """Additional tests for InMemoryGlobalStorage edge cases."""
-
-    def test_incr_with_float_values(self):
-        """incr() handles float values correctly."""
-        from m2py.runtime import InMemoryGlobalStorage
-
-        backend = InMemoryGlobalStorage()
-        backend.set("G", ("1",), "1.5")
-        result = backend.incr("G", ("1",), "2.5")
-        # 1.5 + 2.5 = 4.0, but whole numbers are converted to int
-        assert result == "4"
-
-    def test_incr_with_non_numeric_value(self):
-        """incr() treats non-numeric as 0."""
-        from m2py.runtime import InMemoryGlobalStorage
-
-        backend = InMemoryGlobalStorage()
-        backend.set("G", ("1",), "ABC")
-        result = backend.incr("G", ("1",), "5")
-        # Non-numeric treated as 0, so result is just the increment
-        assert result == "5"
 
     def test_kill_node_nonexistent_global(self):
         """kill_node() on nonexistent global does nothing."""
@@ -653,3 +596,287 @@ class TestRuntimeTlevel:
         assert rt.tlevel() == 1
         rt._globals.transaction_commit()
         assert rt.tlevel() == 0
+
+
+class TestGlobalDataLive:
+    """LIVE data() return value edge cases."""
+
+    def test_data_returns_11(self):
+        """$DATA returns 11 when global has both value and children."""
+        g = InMemoryGlobalStorage()
+        g.set("X", (), "root_val")
+        g.set("X", ("1",), "child_val")
+        assert g.data("X", ()) == 11
+
+    def test_data_returns_10(self):
+        """$DATA returns 10 for children but no value."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("1",), "child_val")
+        assert g.data("X", ()) == 10
+
+    def test_data_returns_1(self):
+        """$DATA returns 1 for value but no children."""
+        g = InMemoryGlobalStorage()
+        g.set("X", (), "root_val")
+        assert g.data("X", ()) == 1
+
+    def test_data_returns_0(self):
+        """$DATA returns 0 for undefined global."""
+        g = InMemoryGlobalStorage()
+        assert g.data("X", ()) == 0
+
+    def test_data_subscripted_11(self):
+        """$DATA returns 11 on subscripted node with value and children."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A",), "parent_val")
+        g.set("X", ("A", "1"), "child_val")
+        assert g.data("X", ("A",)) == 11
+
+
+# =============================================================================
+# InMemoryGlobalStorage.kill — ancestor cleanup
+# =============================================================================
+
+
+class TestGlobalKillLive:
+    """LIVE kill() edges: empty ancestor cleanup."""
+
+    def test_kill_cleans_empty_ancestors(self):
+        """kill removes node and prunes empty ancestor chains."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A", "B", "C"), "deep_val")
+        g.kill("X", ("A", "B", "C"))
+        # The whole subtree should be gone
+        assert g.data("X", ("A", "B", "C")) == 0
+        # And empty ancestors should be cleaned up
+        assert g.data("X", ("A", "B")) == 0
+        assert g.data("X", ("A",)) == 0
+
+    def test_kill_preserves_siblings(self):
+        """kill removes target but leaves siblings intact."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A", "1"), "val1")
+        g.set("X", ("A", "2"), "val2")
+        g.kill("X", ("A", "1"))
+        assert g.data("X", ("A", "1")) == 0
+        assert g.get("X", ("A", "2")) == "val2"
+
+    def test_kill_entire_global(self):
+        """kill with no subscripts removes entire global."""
+        g = InMemoryGlobalStorage()
+        g.set("X", (), "root")
+        g.set("X", ("1",), "child")
+        g.kill("X", ())
+        assert g.data("X", ()) == 0
+        assert g.data("X", ("1",)) == 0
+
+
+# =============================================================================
+# InMemoryGlobalStorage.kill_node
+# =============================================================================
+
+
+class TestGlobalKillNodeLive:
+    """LIVE kill_node(): value removal preserving descendants."""
+
+    def test_kill_node_preserves_children(self):
+        """$ZKILL (kill_node) removes value but keeps children."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A",), "parent_val")
+        g.set("X", ("A", "1"), "child_val")
+        g.kill_node("X", ("A",))
+        # Value gone but children remain
+        assert g.data("X", ("A",)) == 10
+        assert g.get("X", ("A", "1")) == "child_val"
+
+    def test_kill_node_no_children(self):
+        """$ZKILL on leaf node removes it entirely."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A",), "leaf_val")
+        g.kill_node("X", ("A",))
+        assert g.data("X", ("A",)) == 0
+
+
+# =============================================================================
+# InMemoryGlobalStorage.order — reverse direction
+# =============================================================================
+
+
+class TestGlobalOrderLive:
+    """LIVE order() edge cases: reverse, empty."""
+
+    def test_order_reverse(self):
+        """$ORDER with direction -1."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A",), "1")
+        g.set("X", ("B",), "2")
+        g.set("X", ("C",), "3")
+        # Reverse from "" should give last subscript
+        result = g.order("X", ("",), direction=-1)
+        assert result == "C"
+
+    def test_order_reverse_from_key(self):
+        """$ORDER reverse from specific key."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A",), "1")
+        g.set("X", ("B",), "2")
+        g.set("X", ("C",), "3")
+        result = g.order("X", ("C",), direction=-1)
+        assert result == "B"
+
+    def test_order_forward_empty(self):
+        """$ORDER forward when no more keys returns ""."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A",), "1")
+        result = g.order("X", ("A",), direction=1)
+        assert result == ""
+
+
+# =============================================================================
+# Naked indicator
+# =============================================================================
+
+
+class TestNakedIndicatorLive:
+    """LIVE naked indicator management."""
+
+    def test_naked_set_after_global_set(self):
+        """Setting a global updates naked indicator."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A", "B"), "val")
+        nk = g.get_naked_indicator()
+        assert nk is not None
+        assert nk[0] == "X"
+
+    def test_resolve_naked(self):
+        """resolve_naked expands naked reference using last indicator."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A", "B"), "val")
+        # Now ^(C) should resolve to ^X(A,C) — replace last subscript
+        name, subs = g.resolve_naked(("C",))
+        assert name == "X"
+        # The subscripts should reference the same global with new last subscript
+
+    def test_naked_after_order(self):
+        """$ORDER sets naked indicator via set_order_naked."""
+        g = InMemoryGlobalStorage()
+        g.set("X", ("A",), "1")
+        g.set("X", ("B",), "2")
+        g.order("X", ("",), direction=1, update_naked=True)
+        nk = g.get_naked_indicator()
+        assert nk is not None
+
+
+# =============================================================================
+# Transactions
+# =============================================================================
+
+
+class TestGlobalTransactionsLive:
+    """LIVE transaction edge cases."""
+
+    def test_nested_transaction_rollback(self):
+        """Nested TROLLBACK restores to outermost snapshot."""
+        g = InMemoryGlobalStorage()
+        g.set("X", (), "before")
+        g.transaction_start()
+        g.set("X", (), "during1")
+        g.transaction_start()
+        g.set("X", (), "during2")
+        assert g.get_tlevel() == 2
+        g.transaction_rollback()
+        # Should restore to state before first TSTART
+        assert g.get_tlevel() == 0
+        assert g.get("X", ()) == "before"
+
+    def test_transaction_commit(self):
+        """TCOMMIT after TSTART makes changes permanent."""
+        g = InMemoryGlobalStorage()
+        g.set("X", (), "before")
+        g.transaction_start()
+        g.set("X", (), "during")
+        g.transaction_commit()
+        assert g.get("X", ()) == "during"
+        assert g.get_tlevel() == 0
+
+    def test_get_tlevel(self):
+        """$TLEVEL tracks nesting depth."""
+        g = InMemoryGlobalStorage()
+        assert g.get_tlevel() == 0
+        g.transaction_start()
+        assert g.get_tlevel() == 1
+        g.transaction_start()
+        assert g.get_tlevel() == 2
+
+
+# =============================================================================
+# SSVNs
+# =============================================================================
+
+
+class TestGlobalSSVNsLive:
+    """LIVE SSVN query implementations."""
+
+    def test_ssvn_global(self):
+        """$ZPIECE(^$GLOBAL(name),...) — returns global info."""
+        g = InMemoryGlobalStorage()
+        g.set("TESTGLO", (), "value")
+        result = g.ssvn_global("TESTGLO")
+        # Should return something non-error
+        assert isinstance(result, str)
+
+    def test_ssvn_job(self):
+        """$ZPIECE(^$JOB(pid),...) — returns job info."""
+        g = InMemoryGlobalStorage()
+        result = g.ssvn_job("0")
+        assert isinstance(result, str)
+
+    def test_ssvn_lock(self):
+        """$ZPIECE(^$LOCK(name),...) — returns lock info."""
+        g = InMemoryGlobalStorage()
+        result = g.ssvn_lock("X")
+        assert isinstance(result, str)
+
+    def test_ssvn_routine(self):
+        """$ZPIECE(^$ROUTINE(name),...) — returns routine info."""
+        g = InMemoryGlobalStorage()
+        result = g.ssvn_routine("TEST")
+        assert isinstance(result, str)
+
+
+# =============================================================================
+# Pass 2: ssvn_job current PID detection
+# =============================================================================
+
+
+class TestSsvnJobCurrentPidPass2:
+    """ssvn_job returns "1" for current PID, "" for others.
+
+    Covers globals.py L1082-1088.
+    """
+
+    def test_ssvn_job_current_pid(self):
+        """^$JOB(current_pid) returns "1"."""
+        import os
+
+        g = InMemoryGlobalStorage()
+        result = g.ssvn_job(str(os.getpid()))
+        assert result == "1"
+
+    def test_ssvn_job_other_pid(self):
+        """^$JOB(99999999) returns "" for non-existent process."""
+        g = InMemoryGlobalStorage()
+        result = g.ssvn_job("99999999")
+        assert result == ""
+
+    def test_ssvn_job_invalid_pid(self):
+        """^$JOB("abc") returns "" for non-numeric."""
+        g = InMemoryGlobalStorage()
+        result = g.ssvn_job("abc")
+        assert result == ""
+
+    def test_ssvn_job_zero(self):
+        """^$JOB(0) returns "" (PID 0 is not the current process)."""
+        g = InMemoryGlobalStorage()
+        result = g.ssvn_job("0")
+        assert result == ""

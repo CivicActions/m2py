@@ -78,5 +78,3 @@ SUB\tW "Hello"
         label_names = [label.name for label in routine.labels]
         assert "TEST" in label_names
         assert "SUB" in label_names
-        # Global references are tracked
-        assert hasattr(routine, "global_refs")

@@ -18,6 +18,14 @@ from m2py.runtime import MUMPSRuntime
 from m2py.runtime.globals import InMemoryGlobalStorage
 
 
+def _join_active_jobs(rt, timeout=5.0):
+    """Join all active JOB'd daemon threads."""
+    main = threading.main_thread()
+    for t in threading.enumerate():
+        if t is not main and t.daemon:
+            t.join(timeout=timeout)
+
+
 @pytest.mark.runtime
 class TestJobThreadIsolation:
     """Tests for JOB'd child thread isolation from parent."""
@@ -132,7 +140,7 @@ class TestJobZjob:
             assert int(rt.zjob()) > 0
 
             # Wait for child to finish
-            rt.wait_for_jobs(timeout=5.0)
+            _join_active_jobs(rt)
         finally:
             del sys.modules["test_job_module"]
 
@@ -161,7 +169,7 @@ class TestJobHaltSafety:
         try:
             rt = MUMPSRuntime()
             rt.start_job("entry", "test_halt_module", [], None, None)
-            rt.wait_for_jobs(timeout=5.0)
+            _join_active_jobs(rt)
 
             # Parent should still be alive, and child's global write should be visible
             assert rt.globals.get("HALTED", ()) == "yes"
@@ -188,7 +196,7 @@ class TestJobHaltSafety:
         try:
             rt = MUMPSRuntime()
             rt.start_job("entry", "test_exc_module", [], None, None)
-            rt.wait_for_jobs(timeout=5.0)
+            _join_active_jobs(rt)
 
             assert rt.globals.get("BEFORE_ERROR", ()) == "yes"
         finally:
@@ -297,7 +305,7 @@ class TestJobLockThreadSafety:
         try:
             rt = MUMPSRuntime(global_storage=storage)
             rt.start_job("entry", "test_lock_halt_module", [], None, None)
-            rt.wait_for_jobs(timeout=5.0)
+            _join_active_jobs(rt)
 
             # Child's global write should be visible
             assert storage.get("LOCKED", ()) == "yes"
@@ -353,31 +361,6 @@ class TestNakedIndicatorPerThread:
 
 
 @pytest.mark.runtime
-class TestIncrementAtomicity:
-    """Tests for $INCREMENT thread safety."""
-
-    def test_concurrent_increment(self):
-        """Concurrent $INCREMENT should produce correct total."""
-        storage = InMemoryGlobalStorage()
-        num_threads = 4
-        increments_per_thread = 100
-
-        def incr_fn():
-            for _ in range(increments_per_thread):
-                storage.incr("COUNTER", (), "1")
-
-        threads = [threading.Thread(target=incr_fn) for _ in range(num_threads)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=10.0)
-
-        expected = num_threads * increments_per_thread
-        actual = int(storage.get("COUNTER", ()) or "0")
-        assert actual == expected, f"Expected {expected}, got {actual}"
-
-
-@pytest.mark.runtime
 class TestJobTimeout:
     """Tests for JOB timeout semantics."""
 
@@ -401,7 +384,7 @@ class TestJobTimeout:
             rt = MUMPSRuntime()
             result = rt.start_job("entry", "test_timeout_module", [], None, 5.0)
             assert result is True
-            rt.wait_for_jobs(timeout=5.0)
+            _join_active_jobs(rt)
         finally:
             del sys.modules["test_timeout_module"]
 
@@ -425,7 +408,7 @@ class TestJobTimeout:
             rt = MUMPSRuntime()
             result = rt.start_job("entry", "test_no_timeout_module", [], None, None)
             assert result is True
-            rt.wait_for_jobs(timeout=5.0)
+            _join_active_jobs(rt)
         finally:
             del sys.modules["test_no_timeout_module"]
 

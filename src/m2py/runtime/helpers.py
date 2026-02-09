@@ -113,15 +113,11 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
         # Check if string is a CANONICAL numeric form
         if SubscriptCanonicalizer.is_canonical_numeric_string(value):
             # It's canonical, collate as number
-            try:
-                num = Decimal(value)
-                return (0, float(num))
-            except (ValueError, TypeError, ArithmeticError):
-                pass
+            num = Decimal(value)
+            return (0, float(num))
         # Non-canonical or non-numeric strings collate as strings
         return (1, value)
 
-    # Fallback for any other type
     return (1, str(value))
 
 
@@ -167,10 +163,6 @@ def m_format_output(value: Any) -> str:
     if isinstance(value, str):
         return value
 
-    if isinstance(value, bool):
-        # Convert boolean to MUMPS 1/0
-        return "1" if value else "0"
-
     # Handle Decimal type (used for large numbers and scientific notation)
     if isinstance(value, Decimal):
         # Check if it's effectively an integer
@@ -179,12 +171,9 @@ def m_format_output(value: Any) -> str:
         # Format without scientific notation
         # Convert to tuple: (sign, digits, exponent)
         sign, digits, exponent = value.as_tuple()
-        # Handle special Decimal values (NaN, Infinity) - exponent is a string code
-        if not isinstance(exponent, int):
-            return str(value)
         # YDB has a limit of ~43 decimal places. Beyond that, output is "0"
         # This prevents memory errors from trying to format 1E-111111111...
-        if exponent < -43:
+        if not isinstance(exponent, int) or exponent < -43:
             return "0"
         # Reconstruct the number
         if exponent >= 0:
@@ -976,6 +965,86 @@ def m_get_global(
     if value is None:
         return default
     return value
+
+
+def m_increment(
+    array: "MArray | None",
+    subscripts: tuple[str, ...],
+    increment: str = "1",
+    scope: dict | None = None,
+    var_name: str = "",
+) -> str:
+    """$INCREMENT for local variables.
+
+    Atomically reads, increments, and writes back a local variable.
+    If undefined, treats as 0 before incrementing.
+
+    Args:
+        array: MArray instance or None (undefined variable)
+        subscripts: Tuple of subscript values to navigate
+        increment: Amount to increment by (default "1")
+        scope: The _scope dict to create the variable in if needed
+        var_name: Python-translated variable name (for creating in scope)
+
+    Returns:
+        New value after increment (as canonical MUMPS string)
+    """
+    from m2py.codegen.helpers import m_num, m_str
+    from m2py.runtime import MArray as MArrayClass
+
+    # Ensure the variable exists in scope
+    if array is None and scope is not None and var_name:
+        array = MArrayClass()
+        scope[var_name] = array
+
+    if array is None:
+        # Can't write back without scope — just compute
+        result = m_num(increment)
+        return m_str(result)
+
+    # Navigate to target node, creating path if needed
+    node = array
+    for sub in subscripts:
+        key = _canonicalize_subscript(sub)
+        if key not in node._children:
+            node._children[key] = MArrayClass()
+        node = node._children[key]
+
+    # Get current value (None → 0)
+    current = node._value if node._value is not None else "0"
+
+    # MUMPS numeric addition
+    result = m_num(current) + m_num(increment)  # type: ignore[operator]
+
+    # Normalize: integer if whole number
+    if isinstance(result, float) and result == int(result):
+        result = int(result)
+
+    result_str = m_str(result)
+    node._value = result_str
+    return result_str
+
+
+def m_increment_global(
+    backend: "GlobalStorageBackend",
+    name: str,
+    subscripts: tuple[str, ...],
+    increment: str = "1",
+) -> str:
+    """$INCREMENT for global variables.
+
+    Delegates to the backend's atomic incr() method.
+
+    Args:
+        backend: GlobalStorageBackend instance
+        name: Global name without caret
+        subscripts: Tuple of subscript values
+        increment: Amount to increment by (default "1")
+
+    Returns:
+        New value after increment (as canonical MUMPS string)
+    """
+    return backend.incr(name, subscripts, increment)
 
 
 def _raise_select_false() -> None:

@@ -45,7 +45,7 @@ function signatures.
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
-from ..asg.elements import MCall, MLabel, MRoutine
+from ..asg.elements import MLabel, MRoutine
 from ..asg.expressions import (
     MActualParameter,
     MBinaryOp,
@@ -73,7 +73,7 @@ from ..asg.statements import (
     MWriteStatement,
     MXecuteStatement,
 )
-from ..asg.enums import PassingMode, ScopeStrategy
+from ..asg.enums import ScopeStrategy
 
 
 # =============================================================================
@@ -107,31 +107,6 @@ class ScopeVariables:
     # Computed after analysis
     input_variables: Set[str] = field(default_factory=set)
     output_variables: Set[str] = field(default_factory=set)
-
-
-@dataclass
-class ParameterBinding:
-    """Links an actual parameter at a call site to a formal parameter.
-
-    Created during reference resolution to track how arguments flow
-    from caller to callee.
-
-    Per MUMPS spec (MDC 8.1.7):
-    - Call-by-value: expr evaluated, new DATA-CELL created
-    - Call-by-reference: .actualname creates alias to caller's variable
-    - Omitted: empty DATA-CELL created
-
-    Attributes:
-        formal_name: Name in the callee's formal_list
-        actual_expr: The expression passed by caller (may be None for OMITTED)
-        passing_mode: How the parameter was passed
-        caller_var_name: For BY_REFERENCE, the caller's variable name
-    """
-
-    formal_name: str
-    actual_expr: Optional[Any] = None  # MExpr
-    passing_mode: PassingMode = PassingMode.BY_VALUE
-    caller_var_name: Optional[str] = None  # For BY_REFERENCE only
 
 
 @dataclass
@@ -170,174 +145,6 @@ class FunctionSignature:
     has_void_quit: bool = False
     transitive_inputs: Set[str] = field(default_factory=set)
     transitive_outputs: Set[str] = field(default_factory=set)
-
-
-class RoutineAnalysisCache:
-    """Cached analysis results for a routine with incremental update support.
-
-    For IDE scenarios where single labels change, this cache avoids
-    recomputing the entire routine analysis.
-
-    The cache is invalidated when:
-    - A label is added or removed
-    - A label's body changes (detected via source hash)
-
-    When a single label changes, only that label and labels that call it
-    need recomputation.
-
-    Usage:
-        cache = RoutineAnalysisCache(routine)
-        cache.ensure_analyzed()  # Full analysis on first call
-
-        # After editing label "FOO":
-        cache.invalidate_label("FOO")
-        cache.ensure_analyzed()  # Only recomputes FOO and callers
-    """
-
-    def __init__(self, routine: MRoutine):
-        self.routine = routine
-        self._label_vars: Dict[str, ScopeVariables] = {}
-        self._signatures: Dict[str, FunctionSignature] = {}
-        self._transitive_inputs: Dict[str, Set[str]] = {}
-        self._transitive_outputs: Dict[str, Set[str]] = {}
-        self._call_graph: Dict[str, Set[str]] = {}  # label -> labels it calls
-        self._reverse_call_graph: Dict[str, Set[str]] = {}  # label -> callers
-        self._label_hashes: Dict[str, int] = {}  # For change detection
-        self._valid_labels: Set[str] = set()
-        self._fully_analyzed: bool = False
-
-    def ensure_analyzed(self, compute_transitive: bool = True) -> None:
-        """Ensure all analysis is complete, doing minimal work if cached."""
-        if self._fully_analyzed:
-            return
-
-        # Check which labels need (re)analysis
-        current_labels = {label.name for label in self.routine.labels}
-        stale_labels = current_labels - self._valid_labels
-
-        # If too many labels changed, just recompute everything
-        if len(stale_labels) > len(current_labels) // 2:
-            self._full_analysis(compute_transitive)
-            return
-
-        # Incremental: analyze only stale labels
-        for label_name in stale_labels:
-            label = self.routine.get_label(label_name)
-            if label:
-                scope_vars = _analyze_label(label)
-                self._label_vars[label_name] = scope_vars
-                label.variables_read = scope_vars.reads
-                label.variables_written = scope_vars.writes
-                label.variables_newed = scope_vars.newed
-                label.input_variables = scope_vars.input_variables
-                label.output_variables = scope_vars.output_variables
-                self._valid_labels.add(label_name)
-
-        # Rebuild call graph
-        self._build_call_graph()
-
-        # Recompute signatures for stale labels and their callers
-        affected = self._get_affected_labels(stale_labels)
-        for label_name in affected:
-            label = self.routine.get_label(label_name)
-            if label and label_name in self._label_vars:
-                sig = compute_function_signature(label, self._label_vars[label_name])
-                self._signatures[label_name] = sig
-
-        # Recompute transitive closures (full, since they're cheap)
-        if compute_transitive:
-            self._transitive_inputs = compute_transitive_inputs(
-                self.routine, self._label_vars
-            )
-            self._transitive_outputs = compute_transitive_outputs(
-                self.routine, self._label_vars, self._signatures
-            )
-
-            # Update signatures with transitive info
-            for name, sig in self._signatures.items():
-                sig.transitive_inputs = self._transitive_inputs.get(name, set())
-                sig.transitive_outputs = self._transitive_outputs.get(name, set())
-
-        self._fully_analyzed = True
-
-    def _full_analysis(self, compute_transitive: bool = True) -> None:
-        """Perform complete analysis from scratch."""
-        self._label_vars = analyze_variables(self.routine)
-        self._signatures = compute_all_signatures(self.routine)
-        self._build_call_graph()
-
-        if compute_transitive:
-            self._transitive_inputs = compute_transitive_inputs(
-                self.routine, self._label_vars
-            )
-            self._transitive_outputs = compute_transitive_outputs(
-                self.routine, self._label_vars, self._signatures
-            )
-
-            # Update signatures with transitive info
-            for name, sig in self._signatures.items():
-                sig.transitive_inputs = self._transitive_inputs.get(name, set())
-                sig.transitive_outputs = self._transitive_outputs.get(name, set())
-
-        self._valid_labels = {label.name for label in self.routine.labels}
-        self._fully_analyzed = True
-
-    def _build_call_graph(self) -> None:
-        """Build forward and reverse call graphs."""
-        self._call_graph = {}
-        self._reverse_call_graph = {}
-
-        for label in self.routine.labels:
-            callees = set()
-            for stmt in label.body.walk_statements():
-                if isinstance(stmt, MDoStatement):
-                    for target in stmt.targets:
-                        if target.name and not target.routine:
-                            callees.add(target.name)
-            self._call_graph[label.name] = callees
-
-            # Build reverse graph
-            for callee in callees:
-                if callee not in self._reverse_call_graph:
-                    self._reverse_call_graph[callee] = set()
-                self._reverse_call_graph[callee].add(label.name)
-
-    def _get_affected_labels(self, changed: Set[str]) -> Set[str]:
-        """Get labels affected by changes (changed + transitive callers)."""
-        affected = set(changed)
-        worklist = list(changed)
-
-        while worklist:
-            label = worklist.pop()
-            callers = self._reverse_call_graph.get(label, set())
-            for caller in callers:
-                if caller not in affected:
-                    affected.add(caller)
-                    worklist.append(caller)
-
-        return affected
-
-    def invalidate_label(self, label_name: str) -> None:
-        """Mark a label as needing reanalysis."""
-        self._valid_labels.discard(label_name)
-        self._fully_analyzed = False
-
-    def invalidate_all(self) -> None:
-        """Mark all labels as needing reanalysis."""
-        self._valid_labels.clear()
-        self._fully_analyzed = False
-
-    @property
-    def label_vars(self) -> Dict[str, ScopeVariables]:
-        """Get label variable analysis (ensures analysis is done)."""
-        self.ensure_analyzed()
-        return self._label_vars
-
-    @property
-    def signatures(self) -> Dict[str, FunctionSignature]:
-        """Get computed signatures (ensures analysis is done)."""
-        self.ensure_analyzed()
-        return self._signatures
 
 
 def analyze_variables(routine: MRoutine) -> Dict[str, ScopeVariables]:
@@ -909,37 +716,6 @@ def _extract_expression_variables(expr) -> Set[str]:
     return vars_found
 
 
-def get_def_use_chains(label: MLabel) -> Dict[str, List[Tuple[int, str]]]:
-    """Build def-use chains for variables in a label.
-
-    A def-use chain tracks where variables are defined (written)
-    and where they are used (read).
-
-    Args:
-        label: The MLabel to analyze
-
-    Returns:
-        Dictionary mapping variable names to list of (line_number, 'def'|'use') tuples
-    """
-    chains = {}
-
-    for stmt in label.body.walk_statements():
-        line = stmt.line_number or 0
-        reads, writes, _ = _extract_statement_variables(stmt)
-
-        for var in writes:
-            if var not in chains:
-                chains[var] = []
-            chains[var].append((line, "def"))
-
-        for var in reads:
-            if var not in chains:
-                chains[var] = []
-            chains[var].append((line, "use"))
-
-    return chains
-
-
 def compute_transitive_inputs(
     routine: MRoutine, label_vars: Dict[str, ScopeVariables]
 ) -> Dict[str, Set[str]]:
@@ -1308,7 +1084,6 @@ def compute_all_signatures(
     1. Runs variable analysis if not already done
     2. Computes signatures for each label
     3. Populates MLabel.signature fields
-    4. Sets MRoutine.requires_runtime_eval if any label requires runtime scope
 
     Args:
         routine: The MRoutine to analyze
@@ -1335,12 +1110,6 @@ def compute_all_signatures(
             object.__setattr__(label, "signature", sig)
         else:
             label.signature = sig
-
-    # Roll up requires_runtime_scope from labels to routine
-    # If ANY label requires runtime scope, the routine does too
-    routine.requires_runtime_eval = any(
-        sig.requires_runtime_scope for sig in signatures.values()
-    )
 
     # Spec 006 (T039a): Compute routine_state_vars - variables needing RoutineState fields
     # These are variables that flow between labels (output from one, input to another)
@@ -1554,144 +1323,3 @@ def _collect_array_vars_from_expr(expr, array_vars: Set[str]) -> None:
     elif isinstance(expr, MActualParameter):
         if expr.expression:
             _collect_array_vars_from_expr(expr.expression, array_vars)
-
-
-def bind_parameters(call: MCall, target_label: MLabel) -> List[ParameterBinding]:
-    """Link actual parameters at a call site to formal parameters.
-
-    Creates ParameterBinding objects that track:
-    - Which formal gets which actual
-    - Whether passed by value or reference
-    - For by-ref, the caller's variable name
-
-    Per MDC 8.1.14 (Parameter Passing):
-    - Step 1: Evaluate actual parameters left to right
-    - Step 2a: For .actualname (by-ref), establish alias
-    - Step 2b: For expr (by-value), NEW formal and SET formal=expr
-    - Step 2c: For omitted, NEW formal (empty DATA-CELL)
-    - The number of actuals must be <= number of formals
-
-    Args:
-        call: The MCall representing the call site
-        target_label: The target MLabel being called
-
-    Returns:
-        List of ParameterBinding objects
-    """
-    from ..asg.expressions import MVariable, MActualParameter
-
-    bindings = []
-    formal_list = target_label.formal_list if target_label.formal_list else []
-    arguments = call.arguments if call.arguments else []
-
-    for i, formal_name in enumerate(formal_list):
-        binding = ParameterBinding(formal_name=formal_name)
-
-        if i < len(arguments):
-            arg = arguments[i]
-
-            # Check if it's an MActualParameter with passing mode
-            if isinstance(arg, MActualParameter):
-                binding.actual_expr = arg.expression
-                binding.passing_mode = arg.passing_mode
-                binding.caller_var_name = arg.variable_name
-            # Check if it's a plain variable (could be by-ref if detected earlier)
-            elif isinstance(arg, MVariable):
-                binding.actual_expr = arg
-                binding.passing_mode = PassingMode.BY_VALUE
-                binding.caller_var_name = arg.name
-            elif arg is None:
-                # Omitted parameter
-                binding.passing_mode = PassingMode.OMITTED
-            else:
-                # Expression - by value
-                binding.actual_expr = arg
-                binding.passing_mode = PassingMode.BY_VALUE
-        else:
-            # Fewer actuals than formals - treat as omitted
-            binding.passing_mode = PassingMode.OMITTED
-
-        bindings.append(binding)
-
-    return bindings
-
-
-def compute_transitive_outputs(
-    routine: MRoutine,
-    label_vars: Dict[str, ScopeVariables],
-    signatures: Dict[str, FunctionSignature],
-) -> Dict[str, Set[str]]:
-    """Compute transitive closure of output variables through call chains.
-
-    When label A calls label B with by-ref parameter .X bound to formal Y,
-    and B modifies Y, then X is in A's transitive outputs.
-
-    Args:
-        routine: The MRoutine being analyzed
-        label_vars: Result of analyze_variables()
-        signatures: Result of compute_all_signatures()
-
-    Returns:
-        Dictionary mapping label names to transitive output variable sets
-    """
-    # Build call graph with parameter info
-    call_info = {}  # label_name -> [(callee_name, call_obj)]
-    for label in routine.labels:
-        calls = []
-        for stmt in label.body.walk_statements():
-            if isinstance(stmt, MDoStatement):
-                for target in stmt.targets:
-                    if target.name and not target.routine:  # Local call
-                        calls.append((target.name, target))
-        call_info[label.name] = calls
-
-    # Initialize with direct outputs
-    transitive_outputs = {
-        name: set(vars.output_variables) for name, vars in label_vars.items()
-    }
-
-    # Fixed-point iteration for by-ref propagation
-    changed = True
-    iterations = 0
-    max_iterations = 100  # Prevent infinite loops
-
-    while changed and iterations < max_iterations:
-        changed = False
-        iterations += 1
-
-        for label_name, calls in call_info.items():
-            current = transitive_outputs.get(label_name, set())
-
-            for callee_name, call_obj in calls:
-                callee_label = routine.get_label(callee_name)
-                if not callee_label:
-                    continue
-
-                # Get parameter bindings
-                bindings = bind_parameters(call_obj, callee_label)
-
-                # For each by-ref parameter, if callee modifies formal,
-                # add caller's actual to outputs
-                callee_vars = label_vars.get(callee_name, ScopeVariables())
-                callee_trans = transitive_outputs.get(callee_name, set())
-
-                for binding in bindings:
-                    if binding.passing_mode == PassingMode.BY_REFERENCE:
-                        # If callee writes to this formal (directly or transitively),
-                        # caller's var is affected. Check both direct writes and
-                        # transitive outputs (for nested call chains).
-                        formal_is_modified = (
-                            binding.formal_name in callee_vars.writes
-                            or binding.formal_name in callee_trans
-                        )
-                        if formal_is_modified:
-                            if (
-                                binding.caller_var_name
-                                and binding.caller_var_name not in current
-                            ):
-                                current.add(binding.caller_var_name)
-                                changed = True
-
-            transitive_outputs[label_name] = current
-
-    return transitive_outputs

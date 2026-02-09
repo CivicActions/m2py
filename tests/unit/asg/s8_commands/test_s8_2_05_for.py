@@ -6,7 +6,7 @@ Reference: MUMPS 1995 ANSI Standard, Section 8.2.5
 import pytest
 
 from m2py.parser import MUMPSParser
-from m2py.parser.line_parser import parse_commands_from_line, extract_for_commands
+from m2py.parser.line_parser import parse_commands_from_line
 from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.asg.statements import MForStatement, MSetStatement, MWriteStatement
 from m2py.asg.enums import ForLoopType, ForParamType
@@ -115,9 +115,7 @@ class TestForCommandAnalysis:
 
     def test_for_string_list_values(self):
         """FOR string list creates VALUE params (§8.2.5)."""
-        fors = extract_for_commands('F I="A","B","C"')
-        assert len(fors) == 1
-        stmt = analyze_command(fors[0])
+        stmt = analyze_first_command('F I="A","B","C"')
 
         assert len(stmt.parameters) == 3
         for p in stmt.parameters:

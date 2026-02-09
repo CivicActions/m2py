@@ -76,3 +76,23 @@ TEST
             NotImplementedError, match="restart variables not implemented"
         ):
             generate_python(code)
+
+
+@pytest.mark.codegen
+class TestTransactionCodegen:
+    """Tests for TSTART/TCOMMIT/TROLLBACK codegen."""
+
+    def test_tstart_tcommit(self, execute_mumps):
+        """Basic TS ... TC transaction."""
+        result = execute_mumps("TEST\n\tTS\n\tS ^X=1\n\tTC\n\tW ^X\n\tQ\n")
+        assert result.output == "1"
+
+    def test_trollback(self, execute_mumps):
+        """TROLLBACK undoes transaction changes."""
+        result = execute_mumps("TEST\n\tS ^X=0\n\tTS\n\tS ^X=1\n\tTRO\n\tW ^X\n\tQ\n")
+        assert result.output == "0"
+
+
+# =============================================================================
+# READ codegen (generate_python only to verify structure)
+# =============================================================================

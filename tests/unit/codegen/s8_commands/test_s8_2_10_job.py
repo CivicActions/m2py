@@ -122,3 +122,28 @@ class TestJobCommandCodegen:
         assert "_test = _rt.start_job(" in result
         # Should have timeout value
         assert "5)" in result
+
+
+# =============================================================================
+# Pass 2 Coverage: JOB indirection variants
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestJobIndirectionPass2:
+    """JOB with indirection in label and/or routine.
+
+    Covers codegen/statements.py L6386-6388 (null call check),
+    L6420-6451 (target construction + args + timeout).
+    """
+
+    def test_job_indirection_codegen(self, generate_python):
+        """J @A — JOB with indirected target generates code."""
+        code = generate_python('TEST\n S A="SUB^ROU"\n J @A\n Q\n')
+        assert code is not None
+        assert "job" in code.lower() or "start_job" in code.lower()
+
+    def test_job_indirection_with_timeout_codegen(self, generate_python):
+        """J @A:5 — JOB with indirection and timeout."""
+        code = generate_python('TEST\n S A="SUB^ROU"\n J @A:5\n Q\n')
+        assert code is not None

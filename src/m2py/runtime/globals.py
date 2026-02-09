@@ -631,11 +631,6 @@ class InMemoryGlobalStorage:
         if root._value is None and not root._children:
             del self._globals[name]
 
-    def kill_all(self) -> None:
-        """Kill all globals and reset naked indicator."""
-        self._globals.clear()
-        self._naked_indicator = None
-
     def data(self, name: str, subscripts: tuple[str, ...]) -> int:
         """Return $DATA value for ^NAME(subscripts)."""
         subscripts = self._canonicalize_subscripts(subscripts)
@@ -808,37 +803,6 @@ class InMemoryGlobalStorage:
         formatted_subs = [_format_subscript(sub) for sub in result]
         return f"^{name}({','.join(formatted_subs)})"
 
-    def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
-        """Atomically increment value at ^NAME(subscripts).
-
-        Spec 009 T066: Thread-safe $INCREMENT implementation.
-        Uses _data_lock to ensure get+compute+set is atomic.
-        """
-        subscripts = self._canonicalize_subscripts(subscripts)
-
-        with self._data_lock:
-            # Get current value (default to "0" if undefined)
-            current = self.get(name, subscripts)
-            if current is None:
-                current = "0"
-
-            # Attempt numeric increment
-            try:
-                current_num = float(current) if "." in current else int(current)
-                incr_num = float(increment) if "." in increment else int(increment)
-                result = current_num + incr_num
-                # Format result: integer if whole number, else float
-                if isinstance(result, float) and result == int(result):
-                    result_str = str(int(result))
-                else:
-                    result_str = str(result)
-            except ValueError:
-                # Non-numeric value - treat as 0 per MUMPS semantics
-                result_str = increment
-
-            self.set(name, subscripts, result_str)
-            return result_str
-
     def kill_node(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Kill only the value at node, preserving descendants.
 
@@ -934,6 +898,57 @@ class InMemoryGlobalStorage:
             # Convert key to string for global subscript
             child_sub = str(key)
             self._merge_tree_recursive(name, subscripts + (child_sub,), child)
+
+    def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
+        """Atomically increment value at ^NAME(subscripts).
+
+        Spec 009 T064: Thread-safe $INCREMENT implementation.
+        Uses _data_lock to ensure get+compute+set is atomic.
+
+        Args:
+            name: Global name without caret
+            subscripts: Tuple of string subscript values
+            increment: Amount to increment by (default "1")
+
+        Returns:
+            New value after increment (as string, MUMPS canonical form)
+
+        Side Effects:
+            Updates naked indicator
+            Creates node with value "0" if undefined before incrementing
+        """
+        from m2py.codegen.helpers import m_num, m_str
+
+        subscripts = self._canonicalize_subscripts(subscripts)
+
+        with self._data_lock:
+            # Get current value (default to "0" if undefined)
+            current = self.get(name, subscripts)
+            if current is None:
+                current = "0"
+
+            # MUMPS numeric coercion + addition
+            current_num = m_num(current)
+            incr_num = m_num(increment)
+            result = current_num + incr_num  # type: ignore[operator]
+
+            # Normalize: integer if whole number
+            if isinstance(result, float) and result == int(result):
+                result = int(result)
+
+            result_str = m_str(result)
+            self.set(name, subscripts, result_str)
+            return result_str
+
+    def kill_all(self) -> None:
+        """Kill all globals. Used for testing/reset.
+
+        Side Effects:
+            Clears all global data
+            Clears naked indicator
+        """
+        self._globals.clear()
+        self._update_naked_indicator("", ())
 
     # =========================================================================
     # Lock Operations Implementation (Spec 013)
@@ -1163,333 +1178,3 @@ class InMemoryGlobalStorage:
             result._children[str(key)] = self._deep_copy_tree(child)
 
         return result
-
-
-# =============================================================================
-# Backend Stub Classes
-# =============================================================================
-
-
-class YottaDBGlobalStorage:
-    """YottaDB global storage backend stub.
-
-    Spec 009 T067: Stub class for YottaDB integration.
-    Full implementation will be provided in a future spec.
-
-    Requires the 'yottadb' Python package which provides bindings
-    to the YottaDB database engine.
-    """
-
-    def __init__(self) -> None:
-        """Initialize YottaDB connection.
-
-        Raises:
-            ImportError: yottadb package not available
-        """
-        try:
-            import yottadb  # noqa: F401
-        except ImportError as e:
-            raise ImportError(
-                "YottaDB backend requires the 'yottadb' package. "
-                "Install with: pip install yottadb"
-            ) from e
-
-        self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
-
-    def get(
-        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
-    ) -> str | None:
-        """Get value at ^NAME(subscripts). Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def set(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
-        """Set value at ^NAME(subscripts). Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def kill(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Kill node and descendants. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def kill_all(self) -> None:
-        """Kill all globals. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def data(self, name: str, subscripts: tuple[str, ...]) -> int:
-        """Return $DATA value. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def get_naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
-        """Get current naked indicator."""
-        return self._naked_indicator
-
-    def set_naked_indicator(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Set naked indicator explicitly."""
-        self._naked_indicator = (name, subscripts)
-
-    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Pre-set naked indicator for $ORDER/$GET evaluation ordering."""
-        self._naked_indicator = (name, subscripts[:-1]) if subscripts else (name, ())
-
-    def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
-        """Resolve naked reference."""
-        if self._naked_indicator is None:
-            raise RuntimeError("NAKEDERR: Naked reference without prior global access")
-        name, base_subscripts = self._naked_indicator
-        return (name, base_subscripts + subscripts)
-
-    def order(
-        self,
-        name: str,
-        subscripts: tuple[str, ...],
-        direction: int = 1,
-        update_naked: bool = True,
-    ) -> str:
-        """Return next/previous subscript. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def query(self, name: str, subscripts: tuple[str, ...]) -> str:
-        """Return next node reference. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
-        """Get subtree as MArray. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def merge_tree(
-        self, name: str, subscripts: tuple[str, ...], source: "MArray"
-    ) -> None:
-        """Merge MArray tree into global. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
-        """Atomically increment value. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def kill_node(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Kill only node value. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    # Spec 013: Lock operation stubs
-    def lock(
-        self,
-        name: str,
-        subscripts: tuple[str, ...],
-        timeout: float | None = None,
-        lock_type: str = "+",
-    ) -> bool:
-        """Lock operation. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Unlock operation. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def unlock_all(self) -> None:
-        """Unlock all. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    # Spec 013: Transaction operation stubs
-    def transaction_start(self) -> None:
-        """Begin transaction. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def transaction_commit(self) -> None:
-        """Commit transaction. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def transaction_rollback(self) -> None:
-        """Rollback transaction. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def get_tlevel(self) -> int:
-        """Get transaction level. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    # Spec 013: SSVN query stubs
-    def ssvn_global(self, subscript: str) -> str:
-        """Query ^$GLOBAL. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def ssvn_job(self, subscript: str) -> str:
-        """Query ^$JOB. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def ssvn_lock(self, subscript: str) -> str:
-        """Query ^$LOCK. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-    def ssvn_routine(self, subscript: str) -> str:
-        """Query ^$ROUTINE. Stub raises NotImplementedError."""
-        raise NotImplementedError("YottaDB backend not yet implemented")
-
-
-class IRISGlobalStorage:
-    """InterSystems IRIS global storage backend stub.
-
-    Spec 009 T068: Stub class for IRIS integration.
-    Full implementation will be provided in a future spec.
-
-    Requires the 'intersystems-iris' Python package for connection
-    to InterSystems IRIS database.
-    """
-
-    def __init__(
-        self,
-        hostname: str = "localhost",
-        port: int = 1972,
-        namespace: str = "USER",
-        username: str = "_SYSTEM",
-        password: str = "",
-    ) -> None:
-        """Initialize IRIS connection.
-
-        Args:
-            hostname: IRIS server hostname
-            port: IRIS SuperServer port (default 1972)
-            namespace: IRIS namespace to use
-            username: IRIS username
-            password: IRIS password
-
-        Raises:
-            ImportError: intersystems-iris package not available
-        """
-        try:
-            import iris  # noqa: F401
-        except ImportError as e:
-            raise ImportError(
-                "IRIS backend requires the 'intersystems-iris' package. "
-                "Install with: pip install intersystems-iris"
-            ) from e
-
-        self._hostname = hostname
-        self._port = port
-        self._namespace = namespace
-        self._username = username
-        self._password = password
-        self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
-
-    def get(
-        self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
-    ) -> str | None:
-        """Get value at ^NAME(subscripts). Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def set(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
-        """Set value at ^NAME(subscripts). Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def kill(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Kill node and descendants. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def kill_all(self) -> None:
-        """Kill all globals. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def data(self, name: str, subscripts: tuple[str, ...]) -> int:
-        """Return $DATA value. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def get_naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
-        """Get current naked indicator."""
-        return self._naked_indicator
-
-    def set_naked_indicator(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Set naked indicator explicitly."""
-        self._naked_indicator = (name, subscripts)
-
-    def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Pre-set naked indicator for $ORDER/$GET evaluation ordering."""
-        self._naked_indicator = (name, subscripts[:-1]) if subscripts else (name, ())
-
-    def resolve_naked(self, subscripts: tuple[str, ...]) -> tuple[str, tuple[str, ...]]:
-        """Resolve naked reference."""
-        if self._naked_indicator is None:
-            raise RuntimeError("NAKEDERR: Naked reference without prior global access")
-        name, base_subscripts = self._naked_indicator
-        return (name, base_subscripts + subscripts)
-
-    def order(
-        self,
-        name: str,
-        subscripts: tuple[str, ...],
-        direction: int = 1,
-        update_naked: bool = True,
-    ) -> str:
-        """Return next/previous subscript. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def query(self, name: str, subscripts: tuple[str, ...]) -> str:
-        """Return next node reference. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
-        """Get subtree as MArray. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def merge_tree(
-        self, name: str, subscripts: tuple[str, ...], source: "MArray"
-    ) -> None:
-        """Merge MArray tree into global. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
-        """Atomically increment value. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def kill_node(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Kill only node value. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    # Spec 013: Lock operation stubs
-    def lock(
-        self,
-        name: str,
-        subscripts: tuple[str, ...],
-        timeout: float | None = None,
-        lock_type: str = "+",
-    ) -> bool:
-        """Lock operation. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Unlock operation. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def unlock_all(self) -> None:
-        """Unlock all. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    # Spec 013: Transaction operation stubs
-    def transaction_start(self) -> None:
-        """Begin transaction. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def transaction_commit(self) -> None:
-        """Commit transaction. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def transaction_rollback(self) -> None:
-        """Rollback transaction. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def get_tlevel(self) -> int:
-        """Get transaction level. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    # Spec 013: SSVN query stubs
-    def ssvn_global(self, subscript: str) -> str:
-        """Query ^$GLOBAL. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def ssvn_job(self, subscript: str) -> str:
-        """Query ^$JOB. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def ssvn_lock(self, subscript: str) -> str:
-        """Query ^$LOCK. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")
-
-    def ssvn_routine(self, subscript: str) -> str:
-        """Query ^$ROUTINE. Stub raises NotImplementedError."""
-        raise NotImplementedError("IRIS backend not yet implemented")

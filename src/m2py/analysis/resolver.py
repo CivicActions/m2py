@@ -11,11 +11,9 @@ External calls (label^routine) are marked as external but not resolved
 since they reference other routines not currently loaded.
 """
 
-from typing import List, Set
 from ..asg.elements import MRoutine, MLabel, MCall, MScope
 from ..asg.statements import MGotoStatement, MDoStatement
 from ..asg.enums import CallType
-from ..asg.expressions import MGlobal, MNakedGlobal
 
 
 def resolve_references(routine: MRoutine) -> None:
@@ -44,9 +42,6 @@ def resolve_references(routine: MRoutine) -> None:
     # Scan all labels for statements with MCall objects
     for label in routine.labels:
         _resolve_scope_references(label.body, label_map, routine)
-
-    # Collect all global variable references
-    routine.global_refs = list(_collect_global_refs(routine))
 
 
 def _build_label_map(routine: MRoutine) -> dict[str, MLabel]:
@@ -162,123 +157,3 @@ def _resolve_call(
         # or a reference to an undefined label
         call.call_type = CallType.UNRESOLVED
         call.is_resolved = False
-
-
-def get_unresolved_calls(routine: MRoutine) -> List[MCall]:
-    """Get all MCall objects that could not be resolved.
-
-    Useful for identifying missing labels or external references.
-
-    Args:
-        routine: The MRoutine to check
-
-    Returns:
-        List of MCall objects with is_resolved=False
-    """
-    unresolved = []
-
-    for label in routine.labels:
-        for stmt in label.body.walk_statements():
-            if isinstance(stmt, MGotoStatement):
-                for call in stmt.targets:
-                    if not call.is_resolved:
-                        unresolved.append(call)
-            elif isinstance(stmt, MDoStatement):
-                for call in stmt.targets:
-                    if not call.is_resolved:
-                        unresolved.append(call)
-
-    return unresolved
-
-
-def get_external_calls(routine: MRoutine) -> List[MCall]:
-    """Get all MCall objects that reference external routines.
-
-    Args:
-        routine: The MRoutine to check
-
-    Returns:
-        List of MCall objects with routine != None
-    """
-    external = []
-
-    for label in routine.labels:
-        for stmt in label.body.walk_statements():
-            if isinstance(stmt, MGotoStatement):
-                for call in stmt.targets:
-                    if call.routine is not None:
-                        external.append(call)
-            elif isinstance(stmt, MDoStatement):
-                for call in stmt.targets:
-                    if call.routine is not None:
-                        external.append(call)
-
-    return external
-
-
-def _collect_global_refs(routine: MRoutine) -> Set[str]:
-    """Collect all global variable names referenced in the routine.
-
-    Walks all expressions in the routine looking for MGlobal nodes
-    and collects their names. MNakedGlobal nodes are tracked separately
-    since they don't have explicit names (they use the last global context).
-
-    Args:
-        routine: The MRoutine to scan
-
-    Returns:
-        Set of global variable names (without ^ prefix)
-    """
-    global_names: Set[str] = set()
-    visited: Set[int] = set()
-
-    for label in routine.labels:
-        for stmt in label.body.walk_statements():
-            _collect_globals_from_node(stmt, global_names, visited)
-
-    return global_names
-
-
-def _collect_globals_from_node(node, global_names: Set[str], visited: Set[int]) -> None:
-    """Recursively collect global names from an ASG node.
-
-    Walks through all fields of a node looking for MGlobal instances.
-    Uses visited set to avoid infinite recursion from circular references.
-
-    Args:
-        node: Any ASG node to scan
-        global_names: Set to add found global names to
-        visited: Set of already-visited node ids to prevent cycles
-    """
-    if node is None:
-        return
-
-    # Skip already-visited nodes to prevent cycles
-    node_id = id(node)
-    if node_id in visited:
-        return
-    visited.add(node_id)
-
-    # Check if this node is a global
-    if isinstance(node, MGlobal):
-        if node.name:
-            global_names.add(node.name)
-        return
-
-    # MNakedGlobal doesn't have an explicit name - tracked separately
-    if isinstance(node, MNakedGlobal):
-        return
-
-    # Recursively check all attributes that might contain expressions
-    if hasattr(node, "__dataclass_fields__"):
-        for field_name in node.__dataclass_fields__:
-            if field_name.startswith("_") or field_name == "parent":
-                continue
-            value = getattr(node, field_name, None)
-            if value is None:
-                continue
-            if isinstance(value, list):
-                for item in value:
-                    _collect_globals_from_node(item, global_names, visited)
-            elif hasattr(value, "__dataclass_fields__"):
-                _collect_globals_from_node(value, global_names, visited)

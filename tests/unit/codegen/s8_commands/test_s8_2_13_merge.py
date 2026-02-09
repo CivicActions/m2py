@@ -241,3 +241,42 @@ class TestMergeExtendedGlobal:
         )
         assert result.success
         assert result.output.rstrip() == "12"
+
+
+# =============================================================================
+# Pass 2 Coverage: MERGE indirection and global variants
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestMergeIndirectionPass2:
+    """MERGE with name indirection on source or destination.
+
+    Covers codegen/statements.py L5058-5062 (NakedGlobal source),
+    L5100-5104 (GlobalVariable source subscripts),
+    L5236-5247 (GlobalVariable dest merge).
+    """
+
+    def test_merge_indirection_source(self, execute_mumps):
+        """M A=@B — merge from indirected source."""
+        result = execute_mumps('TEST\n S B="C",C(1)=10,C(2)=20 M A=@B W A(1),A(2) Q\n')
+        assert result.output == "1020"
+
+    def test_merge_indirection_dest(self, execute_mumps):
+        """M @A=B — merge into indirected destination."""
+        result = execute_mumps('TEST\n S A="C",B(1)=10,B(2)=20 M @A=B W C(1),C(2) Q\n')
+        assert result.output == "1020"
+
+    def test_merge_global_subscripted_source(self, execute_mumps):
+        """M A=^G(1) — merge from subscripted global."""
+        result = execute_mumps(
+            'TEST\n K ^G S ^G(1,"a")=1,^G(1,"b")=2 M A=^G(1) W A("a"),A("b") Q\n'
+        )
+        assert result.output == "12"
+
+    def test_merge_global_subscripted_dest(self, execute_mumps):
+        """M ^G(1)=A — merge from local to subscripted global dest."""
+        result = execute_mumps(
+            'TEST\n K ^G S A("a")=1,A("b")=2 M ^G(1)=A W ^G(1,"a"),^G(1,"b") Q\n'
+        )
+        assert result.output == "12"

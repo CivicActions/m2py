@@ -259,24 +259,6 @@ class TestArgumentIndirectionMultiLevel:
         assert result == 1
 
 
-class TestArgumentIndirectionConvenienceMethod:
-    """Tests for resolve_argument_indirection() convenience method."""
-
-    def test_convenience_method_equals_resolve(self, resolver, scope):
-        """resolve_argument_indirection() is equivalent to resolve() with ARGUMENT."""
-        scope.set("A", "1=0")
-        result1 = resolver.resolve_argument_indirection("A")
-        result2 = resolver.resolve("A", 1, IndirectionContext.ARGUMENT)
-        assert result1 == result2
-
-    def test_convenience_method_simple(self, resolver, scope):
-        """resolve_argument_indirection() works for simple case."""
-        scope.set("A", "1+1")
-        result = resolver.resolve_argument_indirection("A")
-        # 1+1 = 2, which is truthy
-        assert result == 2
-
-
 class TestArgumentVsNameIndirection:
     """Tests contrasting argument vs name indirection behavior."""
 

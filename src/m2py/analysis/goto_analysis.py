@@ -50,8 +50,8 @@ def classify_gotos(routine: MRoutine) -> None:
     This function analyzes each MGotoStatement in the routine and:
     1. Sets the goto_type based on target and context
     2. Populates exits_loops with enclosing FOR loops exited
-    3. Sets routine.has_unstructured_goto if any GOTO requires non-structured translation
-    4. Sets routine.needs_trampoline if any cross-label GOTO exists (Spec 006)
+    3. Sets routine.needs_trampoline if any cross-label GOTO exists (Spec 006)
+    4. Sets routine.needs_loop_exit_exception if MULTI_LOOP_EXIT GOTOs exist
 
     Must be called AFTER resolve_references() so MCall.target is populated.
 
@@ -61,7 +61,6 @@ def classify_gotos(routine: MRoutine) -> None:
     Side Effects:
         - Sets MGotoStatement.goto_type for each GOTO
         - Sets MGotoStatement.exits_loops for loop exits
-        - Sets MRoutine.has_unstructured_goto if complex control flow detected
         - Sets MRoutine.needs_trampoline if cross-label GOTOs exist
         - Sets MRoutine.needs_loop_exit_exception if MULTI_LOOP_EXIT GOTOs exist
     """
@@ -75,13 +74,6 @@ def classify_gotos(routine: MRoutine) -> None:
         _classify_gotos_in_scope(
             label.body, label_idx, label, label_positions, routine, enclosing_fors=[]
         )
-
-    # Set has_unstructured_goto based on GOTO classifications
-    # Unstructured patterns that can't easily translate to structured Python:
-    # - BACKWARD_JUMP to different label (creates implicit loop across labels)
-    # - UNRESOLVED (target unknown at compile time)
-    # - Cross-label jumps not inside FOR loops (can't use break, need restructuring)
-    routine.has_unstructured_goto = _has_unstructured_gotos(routine)
 
     # T103: Set needs_loop_exit_exception if any MULTI_LOOP_EXIT GOTO exists
     routine.needs_loop_exit_exception = _needs_loop_exit_exception(routine)
@@ -436,90 +428,6 @@ def _compute_codegen_fields(
     else:
         # Cross-label forward jump or other cases - function call
         stmt.codegen_pattern = GotoCodegenPattern.FUNCTION_CALL
-
-
-def get_loop_exiting_gotos(
-    routine: MRoutine,
-) -> List[MGotoStatement]:
-    """Get all GOTOs that exit FOR loops.
-
-    Args:
-        routine: The MRoutine to scan
-
-    Returns:
-        List of MGotoStatement objects that have exits_loops populated
-    """
-    result = []
-    for label in routine.labels:
-        for stmt in label.body.walk_statements():
-            if isinstance(stmt, MGotoStatement):
-                if stmt.exits_loops:
-                    result.append(stmt)
-    return result
-
-
-def get_gotos_by_type(routine: MRoutine, goto_type: GotoType) -> List[MGotoStatement]:
-    """Get all GOTOs of a specific type.
-
-    Args:
-        routine: The MRoutine to scan
-        goto_type: The GotoType to filter by
-
-    Returns:
-        List of MGotoStatement objects with matching goto_type
-    """
-    result = []
-    for label in routine.labels:
-        for stmt in label.body.walk_statements():
-            if isinstance(stmt, MGotoStatement):
-                if stmt.goto_type == goto_type:
-                    result.append(stmt)
-    return result
-
-
-def _has_unstructured_gotos(routine: MRoutine) -> bool:
-    """Determine if routine has GOTOs that require unstructured translation.
-
-    Returns True if any GOTO pattern cannot be easily mapped to structured
-    Python constructs (if/else, break, function calls). These patterns
-    typically require a state machine or exception-based control flow.
-
-    Unstructured patterns:
-    - BACKWARD_JUMP: Creates implicit loops (especially cross-label)
-    - UNRESOLVED: Target unknown at compile time, needs runtime dispatch
-    - FORWARD_JUMP with is_cross_label=True (not exiting a loop): Can't use
-      simple if/else within a single function without restructuring
-
-    Structured patterns (return False):
-    - LOOP_EXIT / MULTI_LOOP_EXIT: Translates to break (or exception for multi)
-    - FORWARD_JUMP within same label (is_cross_label=False): Translates to if/else
-    - EXTERNAL: Translates to function call to another module
-
-    Args:
-        routine: The MRoutine to analyze
-
-    Returns:
-        True if unstructured control flow detected
-    """
-    for label in routine.labels:
-        for stmt in label.body.walk_statements():
-            if not isinstance(stmt, MGotoStatement):
-                continue
-
-            # UNRESOLVED always requires runtime dispatch
-            if stmt.goto_type == GotoType.UNRESOLVED:
-                return True
-
-            # BACKWARD_JUMP typically creates loops that need state machine
-            if stmt.goto_type == GotoType.BACKWARD_JUMP:
-                return True
-
-            # Cross-label forward jumps (not loop exits) require restructuring
-            # These jump to a different label and can't use simple if/else
-            if stmt.is_cross_label and not stmt.exits_loops:
-                return True
-
-    return False
 
 
 def _needs_loop_exit_exception(routine: MRoutine) -> bool:

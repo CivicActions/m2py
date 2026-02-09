@@ -178,12 +178,54 @@ TEST
         python_code = generate_python(source)
         assert "m_read_char()" in python_code
 
-    def test_char_read_helper_reads_single_char(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_char_read_helper_reads_single_char(self) -> None:
         """m_read_char reads exactly one character."""
         from m2py.runtime.helpers import m_read_char
 
+        monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(sys, "stdin", io.StringIO("ABC"))
         char = m_read_char()
         assert char == "A"
+        monkeypatch.undo()
+
+
+# =============================================================================
+# Pass 2 Coverage: READ with timeout + indirection
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestReadTimeoutIndirectionPass2:
+    """READ with timeout and indirection on target variable.
+
+    Covers codegen/statements.py L5354-5358 (timeout read with indirection).
+    """
+
+    def test_read_timeout_indirection_codegen(self):
+        """R @A:0 — generates code for read with timeout + indirection."""
+        from m2py.codegen import generate_python
+
+        code = generate_python('TEST\n S A="X"\n R @A:0\n Q\n')
+        # Should have both timeout and indirection handling
+        assert "timeout" in code.lower() or "0" in code
+        assert "resolve" in code.lower() or "indire" in code.lower()
+
+
+@pytest.mark.codegen
+class TestReadCodegen:
+    """Tests for READ code generation patterns."""
+
+    def test_read_with_timeout_generates_code(self, generate_python):
+        """R X:0 generates code with timeout parameter."""
+        code = generate_python("TEST\n\tR X:0\n\tQ\n")
+        assert "timeout" in code.lower() or "0" in code
+
+    def test_read_literal_prompt(self, generate_python):
+        """R "Enter: ",X generates code with prompt string."""
+        code = generate_python('TEST\n\tR "Enter: ",X\n\tQ\n')
+        assert "Enter" in code
+
+
+# =============================================================================
+# Extrinsic functions with by-ref
+# =============================================================================

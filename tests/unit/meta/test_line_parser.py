@@ -171,20 +171,6 @@ class TestParseExpression:
 class TestExtractFunctionErrorPaths:
     """Test error paths in extraction helper functions."""
 
-    def test_extract_for_no_for_command(self):
-        """get_for_info returns None when no FOR present."""
-        from tests.helpers.extraction_helpers import get_for_info
-
-        result = get_for_info("S X=1")
-        assert result is None
-
-    def test_extract_for_empty_string(self):
-        """get_for_info handles empty string."""
-        from tests.helpers.extraction_helpers import get_for_info
-
-        result = get_for_info("")
-        assert result is None
-
     def test_extract_goto_no_goto_command(self):
         """get_goto_info returns None when no GOTO present."""
         from tests.helpers.extraction_helpers import get_goto_info
@@ -198,14 +184,6 @@ class TestExtractFunctionErrorPaths:
 
         result = get_goto_info("")
         assert result is None
-
-    def test_extract_for_with_incomplete_syntax(self):
-        """get_for_info handles incomplete FOR gracefully."""
-        from tests.helpers.extraction_helpers import get_for_info
-
-        # Incomplete FOR syntax - should not crash
-        _result = get_for_info("F")  # Result intentionally unused
-        # May return None or a valid result - key is no exception
 
     def test_extract_goto_with_valid_syntax(self):
         """get_goto_info extracts correct info."""

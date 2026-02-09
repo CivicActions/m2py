@@ -75,7 +75,7 @@ class TestIndirectionAnalysis:
         """Indirection impact on static analysis is tracked (§6.3.1).
 
         Indirection nodes have properties that indicate static analysis
-        characteristics: can_resolve_statically, requires_runtime_eval.
+        characteristics: can_resolve_statically.
         """
         routine = analyze_routine("TEST\n S @VAR=1\n Q")
 
@@ -83,8 +83,6 @@ class TestIndirectionAnalysis:
         target = stmt.assignments[0].target
 
         assert isinstance(target, Indirection)
-        # Indirection requires runtime evaluation by default
-        assert target.requires_runtime_eval is True
         # Cannot resolve statically without constant propagation
         assert target.can_resolve_statically is False
 
@@ -96,7 +94,7 @@ class TestIndirectionAnalysis:
         and indirection set to MIndirection wrapping the variable.
 
         After signature analysis via compute_all_signatures, the label's
-        requires_runtime_scope and routine's requires_runtime_eval will be True.
+        requires_runtime_scope will be True.
         """
         from m2py.analysis.variables import compute_all_signatures
         from m2py.parser import MUMPSParser
@@ -110,7 +108,6 @@ class TestIndirectionAnalysis:
         call = stmt.targets[0]
         assert call.label_is_indirect is True
         assert call.indirection is not None
-        assert call.indirection_levels == 1
         # Indirection expression is MIndirection wrapping the variable
         assert isinstance(call.indirection, MIndirection)
         assert isinstance(call.indirection.expression, LocalVariable)
@@ -119,13 +116,11 @@ class TestIndirectionAnalysis:
         # After signature analysis, routine-level flag is set
         signatures = compute_all_signatures(result)
         assert signatures["TEST"].requires_runtime_scope is True
-        assert result.requires_runtime_eval is True
 
     def test_xecute_indirection_detection(self, analyze_routine):
         """XECUTE @VAR has indirection and requires runtime eval (§6.3.1).
 
-        XECUTE always requires runtime evaluation. The statement itself
-        has requires_runtime_eval=True. With indirection, even the code
+        XECUTE always requires runtime evaluation. With indirection, even the code
         string is not known until runtime.
         """
         from m2py.asg.statements import MXecuteStatement
@@ -136,8 +131,6 @@ class TestIndirectionAnalysis:
         stmt = result.labels[0].body.statements[0]
 
         assert isinstance(stmt, MXecuteStatement)
-        # XECUTE statement requires runtime evaluation
-        assert stmt.requires_runtime_eval is True
         # The code_expressions should contain the indirection
         assert len(stmt.code_expressions) >= 1
         expr = stmt.code_expressions[0]

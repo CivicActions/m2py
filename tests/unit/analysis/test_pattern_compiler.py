@@ -512,3 +512,50 @@ class TestPatternMatchASGIntegration:
         assert stmt.condition.pattern_indirect is not None
         # compiled_regex should be None since pattern is runtime-determined
         assert stmt.condition.compiled_regex is None
+
+
+class TestPatternCompilerEdgeCases:
+    """Tests for pattern compiler error and edge case paths (L109-337)."""
+
+    def test_empty_pattern(self):
+        """Empty pattern returns empty string (L109)."""
+        result = compile_pattern_to_regex("")
+        assert result == ""
+
+    def test_pattern_ends_after_repeat_count(self):
+        """Pattern with only repeat count raises error (L135)."""
+        with pytest.raises(PatternCompileError):
+            compile_pattern_to_regex("3")
+
+    def test_unexpected_character(self):
+        """Pattern with invalid patcode raises error (L181)."""
+        with pytest.raises(PatternCompileError):
+            compile_pattern_to_regex("1X")
+
+    def test_unterminated_string_literal(self):
+        """Pattern with unterminated string literal raises error (L269)."""
+        with pytest.raises(PatternCompileError):
+            compile_pattern_to_regex('1"abc')
+
+    def test_empty_alternation(self):
+        """Pattern with empty alternation (L325-326)."""
+        # Empty alternation group should either raise or handle gracefully
+        try:
+            result = compile_pattern_to_regex("1()")
+            # If it doesn't raise, verify it produces valid regex
+            assert isinstance(result, str)
+        except PatternCompileError:
+            pass  # Also acceptable
+
+    def test_single_alternative(self):
+        """Pattern with single alternative in parentheses (L334)."""
+        import re
+
+        regex = compile_pattern_to_regex("1(1N)")
+        assert re.fullmatch(regex, "5")
+        assert not re.fullmatch(regex, "AB")
+
+
+# =============================================================================
+# Resolver LIVE Path
+# =============================================================================

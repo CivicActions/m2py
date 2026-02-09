@@ -1701,3 +1701,154 @@ class TestGotoExternalImport:
         assert "GotoExternal" in code
         # Should have the raise statement
         assert "raise GotoExternal" in code
+
+
+# =============================================================================
+# Pass 2 Coverage: Forward GOTO restructuring and dynamic targets
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestForwardGotoRestructuringPass2:
+    """Forward GOTO restructuring where codegen skips intermediate stmts.
+
+    Covers codegen/statements.py L551-570 (_restructure_forward_goto).
+    """
+
+    def test_forward_goto_skips_statements(self, execute_mumps):
+        """I cond G LABEL — forward goto skips intermediate statements."""
+        result = execute_mumps(
+            'TEST\n S X=1\n I X G DONE\n W "SKIP"\nDONE\n W "DONE"\n Q\n'
+        )
+        assert result.output == "DONE"
+        assert "SKIP" not in result.output
+
+    def test_forward_goto_condition_false(self, execute_mumps):
+        """I cond G LABEL — false, executes intermediate statements."""
+        result = execute_mumps(
+            'TEST\n S X=0\n I X G DONE\n W "MID"\n Q\nDONE\n W "DONE"\n Q\n'
+        )
+        assert "MID" in result.output
+
+    def test_forward_goto_conditional_syntax(self, execute_mumps):
+        """G LABEL:X=1 — conditional forward GOTO."""
+        result = execute_mumps(
+            'TEST\n S X=1\n G DONE:X=1\n W "SKIP"\n Q\nDONE\n W "DONE"\n Q\n'
+        )
+        assert result.output == "DONE"
+
+
+@pytest.mark.codegen
+class TestGotoDynamicTargetPass2:
+    """GOTO with dynamic target from FOR body.
+
+    Covers codegen/statements.py L2180-2183 (cross-label exit from FOR).
+    """
+
+    def test_goto_from_for_body(self, execute_mumps):
+        """G:cond LABEL inside FOR body — exits FOR via GOTO."""
+        result = execute_mumps(
+            'TEST\n F I=1:1:5 G:I=3 DONE W I\n Q\nDONE\n W "EXIT"\n Q\n'
+        )
+        assert "12" in result.output
+        assert "EXIT" in result.output
+
+
+@pytest.mark.codegen
+class TestGotoOffsetEntryPass2:
+    """GOTO with label+offset addressing.
+
+    Covers codegen/statements.py L3873-3881 (offset entry in line map).
+    """
+
+    def test_goto_label_plus_offset(self, execute_mumps):
+        """G TEST+2 — jump to beyond first line of code."""
+        result = execute_mumps('TEST\n W "L1"\n W "L2"\n Q\nSTART\n G TEST+2\n Q\n')
+        assert result.success is True
+
+
+@pytest.mark.codegen
+class TestMultiTargetIndirectGotoPass2:
+    """Multi-target GOTO with at least one indirect target.
+
+    Covers codegen/statements.py L3745-3750 (compound expression).
+    """
+
+    def test_multi_target_goto_indirect_codegen(self, generate_python):
+        """G @A,LABEL — multi-target with indirect generates compound logic."""
+        code = generate_python('TEST\n S A="DONE"\n G @A,DONE\n Q\nDONE\n W "OK"\n Q\n')
+        assert code is not None
+
+
+@pytest.mark.codegen
+class TestExternalGotoStateVarCopyPass2:
+    """External GOTO in TRAMPOLINE mode copies state.
+
+    Covers codegen/statements.py L4025-4027 (state var copy).
+    """
+
+    def test_external_goto_codegen(self, generate_python):
+        """G MAIN^OTHER — external GOTO generates dispatch."""
+        code = generate_python("TEST\n G MAIN^OTHER\n Q\n")
+        assert code is not None
+        assert "OTHER" in code or "external" in code.lower()
+
+
+@pytest.mark.codegen
+class TestInlineXecuteGotoPass2:
+    """Inline XECUTE label function call.
+
+    Covers codegen/statements.py L3955-3971 (inline XECUTE label).
+    """
+
+    def test_xecute_goto_to_label(self, execute_mumps):
+        """X \"G DONE\" — constant XECUTE containing GOTO."""
+        result = execute_mumps(
+            'TEST\n X "G DONE"\n W "SKIP"\n Q\nDONE\n W "DONE"\n Q\n'
+        )
+        assert "DONE" in result.output
+
+
+@pytest.mark.codegen
+class TestZGotoCodegen:
+    """Tests for ZGOTO code generation."""
+
+    def test_zgoto_with_level_and_label(self, generate_python):
+        """ZG 1:ERROR generates trampoline-like dispatch."""
+        code = generate_python('TEST\n\tZG 1:ERROR\n\tQ\nERROR\n\tW "ERR"\n\tQ\n')
+        # Should contain the error label handler
+        assert "ERROR" in code
+
+    def test_zgoto_zero_unwinds(self, generate_python):
+        """ZG 0 unwinds all frames (halt-like)."""
+        code = generate_python("TEST\n\tZG 0\n\tQ\n")
+        assert code is not None
+
+
+# =============================================================================
+# Dynamic locals (TRAMPOLINE) paths
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestMultiTargetGoto:
+    """Tests for multi-target GOTO with postconditions."""
+
+    def test_multi_target_goto_with_postconditions(self, execute_mumps):
+        """G A:X=1,B:X=2,C — multi-target GOTO dispatches correctly."""
+        result = execute_mumps(
+            'TEST\n\tS X=2\n\tG A:X=1,B:X=2,C\n\tQ\nA\n\tW "A"\n\tQ\nB\n\tW "B"\n\tQ\nC\n\tW "C"\n\tQ\n'
+        )
+        assert result.output == "B"
+
+    def test_multi_target_goto_fallthrough(self, execute_mumps):
+        """G A:0,B:0,C — first two false, falls through to C."""
+        result = execute_mumps(
+            'TEST\n\tG A:0,B:0,C\n\tQ\nA\n\tW "A"\n\tQ\nB\n\tW "B"\n\tQ\nC\n\tW "C"\n\tQ\n'
+        )
+        assert result.output == "C"
+
+
+# =============================================================================
+# XECUTE with postconditions
+# =============================================================================

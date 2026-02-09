@@ -152,42 +152,6 @@ class NameTranslator:
         return python_name
 
     @staticmethod
-    def is_valid_mumps_name(name: str) -> bool:
-        """Check if string is a valid MUMPS variable name.
-
-        A valid MUMPS variable name:
-        - Starts with letter or % (for system variables)
-        - Followed by zero or more alphanumerics
-        - Does NOT include subscripts (no parentheses)
-
-        Args:
-            name: String to validate
-
-        Returns:
-            True if valid MUMPS identifier
-
-        Used by: IndirectionResolver to validate NAME indirection results.
-        If this returns False for a resolved value, VAREXPECTED error is raised.
-
-        Examples:
-            >>> NameTranslator.is_valid_mumps_name("X")
-            True
-            >>> NameTranslator.is_valid_mumps_name("%FOO")
-            True
-            >>> NameTranslator.is_valid_mumps_name("A123")
-            True
-            >>> NameTranslator.is_valid_mumps_name("1+1")
-            False
-            >>> NameTranslator.is_valid_mumps_name("")
-            False
-            >>> NameTranslator.is_valid_mumps_name("X(1)")
-            False
-        """
-        if not name:
-            return False
-        return bool(NameTranslator._MUMPS_NAME_PATTERN.match(name))
-
-    @staticmethod
     def is_valid_varname(name: str, allow_subscripts: bool = False) -> bool:
         """Check if string is a valid MUMPS variable name (local or global).
 
@@ -245,15 +209,6 @@ class NameTranslator:
         # Local variable: name (no subscripts allowed in pattern)
         return bool(NameTranslator._MUMPS_NAME_PATTERN.match(base))
 
-    # Instance methods for backward compatibility with old NameTranslator usage
-    def translate(self, mumps_name: str) -> str:
-        """Instance method wrapper for to_python (backward compatibility)."""
-        return self.to_python(mumps_name)
-
-    def reverse(self, python_name: str) -> str:
-        """Instance method wrapper for from_python (backward compatibility)."""
-        return self.from_python(python_name)
-
 
 # Module-level convenience functions for backward compatibility
 def translate_name(mumps_name: str) -> str:
@@ -262,14 +217,6 @@ def translate_name(mumps_name: str) -> str:
     Deprecated: Use NameTranslator.to_python() directly.
     """
     return NameTranslator.to_python(mumps_name)
-
-
-def reverse_name(python_name: str) -> str:
-    """Convenience function to recover MUMPS name from Python.
-
-    Deprecated: Use NameTranslator.from_python() directly.
-    """
-    return NameTranslator.from_python(python_name)
 
 
 def is_valid_varname(name: str, allow_subscripts: bool = False) -> bool:
@@ -290,4 +237,4 @@ def is_valid_varname(name: str, allow_subscripts: bool = False) -> bool:
     return NameTranslator.is_valid_varname(name, allow_subscripts)
 
 
-__all__ = ["NameTranslator", "translate_name", "reverse_name", "is_valid_varname"]
+__all__ = ["NameTranslator", "translate_name", "is_valid_varname"]

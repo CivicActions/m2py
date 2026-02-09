@@ -98,44 +98,15 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# Exceptions (imported locally to avoid circular import)
+# Exceptions
 # =============================================================================
 
-
-class UnsupportedFeatureError(Exception):
-    """Raised when attempting to generate code for unsupported feature.
-
-    Note: This is a local definition to avoid circular import.
-    The canonical definition is in m2py.codegen.__init__.py.
-    """
-
-    pass
+from m2py.codegen.exceptions import UnsupportedFeatureError  # noqa: E402
 
 
 # =============================================================================
 # Limitation Constants (Spec 014)
 # =============================================================================
-
-# YDB Z-commands with zero VistA usage (LIM-015)
-# These are implementation-defined per FR-017 and parsed but not implemented.
-# Codegen raises NotImplementedError for these commands.
-# Note: ZWRITE, ZKILL, ZLINK, ZSHOW, ZGOTO, ZHALT are implemented.
-Z_COMMANDS_UNIMPLEMENTED: frozenset[str] = frozenset(
-    {
-        "ZALLOCATE",
-        "ZDEALLOCATE",
-        "ZBREAK",
-        "ZCOMPILE",
-        "ZCONTINUE",
-        "ZEDIT",
-        "ZHELP",
-        "ZMESSAGE",
-        "ZPRINT",
-        "ZSTEP",
-        "ZSYSTEM",
-        "ZTRIGGER",
-    }
-)
 
 
 # =============================================================================
@@ -947,160 +918,6 @@ def _generate_tuple_set(assignments: list, ctx: "GeneratorContext") -> None:
         )
 
 
-def _subscript_needs_pre_eval(sub, prior_assignments: list) -> bool:
-    """Check if a subscript expression needs pre-evaluation.
-
-    A subscript needs pre-evaluation if it references a variable that
-    is being set by a prior assignment in the tuple.
-
-    Args:
-        sub: Subscript expression
-        prior_assignments: Assignments that will execute before this subscript is used
-
-    Returns:
-        True if subscript contains a variable that will be modified
-    """
-    from m2py.asg.expressions import MVariable
-    from m2py.parser.textx_classes import LocalVariable
-
-    # Get set of variable names being modified by prior assignments
-    modified_vars = set()
-    for assign in prior_assignments:
-        target = assign.target
-        if isinstance(target, (MVariable, LocalVariable)):
-            var_name = getattr(target, "name", None)
-            if var_name:
-                modified_vars.add(var_name)
-
-    if not modified_vars:
-        return False
-
-    # Check if subscript references any modified variable
-    return _expr_references_vars(sub, modified_vars)
-
-
-def _expr_references_vars(expr, var_names: set) -> bool:
-    """Check if expression references any of the given variable names.
-
-    Args:
-        expr: Expression to check
-        var_names: Set of variable names to look for
-
-    Returns:
-        True if expression contains a reference to any of the variables
-    """
-    from m2py.asg.expressions import MVariable, MBinaryOp, MUnaryOp, MIntrinsicFunction
-    from m2py.parser.textx_classes import LocalVariable
-
-    if isinstance(expr, (MVariable, LocalVariable)):
-        name = getattr(expr, "name", None)
-        if name in var_names:
-            return True
-        # Also check subscripts
-        subscripts = getattr(expr, "subscripts", None) or []
-        for sub in subscripts:
-            if _expr_references_vars(sub, var_names):
-                return True
-        return False
-
-    if isinstance(expr, MBinaryOp):
-        return _expr_references_vars(expr.left, var_names) or _expr_references_vars(
-            expr.right, var_names
-        )
-
-    if isinstance(expr, MUnaryOp):
-        return _expr_references_vars(expr.operand, var_names)
-
-    if isinstance(expr, MIntrinsicFunction):
-        for arg in expr.arguments or []:
-            if _expr_references_vars(arg, var_names):
-                return True
-        return False
-
-    return False
-
-
-def _generate_single_assignment_with_preeval(
-    assignment, idx: int, pre_eval_map: dict, ctx: "GeneratorContext"
-) -> None:
-    """Generate a single assignment, using pre-evaluated subscripts from the map."""
-    from m2py.asg.expressions import MIndirection as MIndirectionType, MVariable
-    from m2py.codegen.indirection import generate_name_indirection_write
-    from m2py.parser.textx_classes import LocalVariable, GlobalVariable
-
-    if assignment.target is None or assignment.value is None:
-        return
-
-    # Handle indirection targets
-    if isinstance(assignment.target, MIndirectionType):
-        value_expr = generate_expr(assignment.value, ctx)
-        set_stmt = generate_name_indirection_write(assignment.target, value_expr, ctx)
-        ctx.emitter.line(set_stmt)
-        return
-
-    target = assignment.target
-    subscripts = getattr(target, "subscripts", None) or []
-
-    # Build subscript expressions, using pre-evaluated values where available
-    subscript_exprs = []
-    for sub_idx, sub in enumerate(subscripts):
-        if (idx, sub_idx) in pre_eval_map:
-            subscript_exprs.append(pre_eval_map[(idx, sub_idx)])
-        else:
-            subscript_exprs.append(generate_expr(sub, ctx))
-
-    # Generate value expression
-    value_expr = generate_expr(assignment.value, ctx)
-
-    # Generate the assignment based on target type
-    if isinstance(target, (MVariable, LocalVariable)):
-        var_name = target.name
-        python_name = translate_name(var_name)
-
-        if subscript_exprs:
-            # Subscripted assignment
-            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                ctx.emitter.line(
-                    f"state._locals.setdefault({python_name!r}, MArray())[{', '.join(subscript_exprs)}] = {value_expr}"
-                )
-            elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-                ctx.emitter.line(
-                    f"state.{python_name}[{', '.join(subscript_exprs)}] = {value_expr}"
-                )
-            else:
-                ctx.emitter.line(
-                    f"_scope.setdefault({python_name!r}, MArray())[{', '.join(subscript_exprs)}] = {value_expr}"
-                )
-        else:
-            # Simple assignment
-            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                ctx.emitter.line(
-                    f"state._locals.setdefault({python_name!r}, MArray()).value = {value_expr}"
-                )
-            elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-                ctx.emitter.line(f"state.{python_name} = {value_expr}")
-            else:
-                ctx.emitter.line(
-                    f"_scope.setdefault({python_name!r}, MArray()).value = {value_expr}"
-                )
-    elif isinstance(target, GlobalVariable):
-        global_name = target.name
-        if subscript_exprs:
-            subscripts_tuple = (
-                f"({', '.join(subscript_exprs)},)"
-                if len(subscript_exprs) == 1
-                else f"({', '.join(subscript_exprs)})"
-            )
-            ctx.emitter.line(
-                f'_rt.globals.set("{global_name}", {subscripts_tuple}, {value_expr})'
-            )
-        else:
-            ctx.emitter.line(f'_rt.globals.set("{global_name}", (), {value_expr})')
-    else:
-        # Fallback to regular single assignment
-        _generate_single_assignment(assignment, ctx)
-
-
 def _generate_single_assignment_with_preeval_subs(
     assignment, idx: int, pre_eval_map: dict, value_var: str, ctx: "GeneratorContext"
 ) -> None:
@@ -1618,6 +1435,44 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
             subscripts_tuple = "()"
         getter = f'lambda: _rt.globals.get("{global_name}", {subscripts_tuple}) or ""'
         setter = f'lambda v: _rt.globals.set("{global_name}", {subscripts_tuple}, v)'
+    elif isinstance(first_arg, MIndirection):
+        # Indirection: use resolve_for_target to get NAME, then get_var/set_var for VALUE
+        # Mirrors the pattern from _generate_lhs_piece for MIndirection
+        from m2py.codegen.indirection import _count_indirection_levels
+
+        levels, inner_expr = _count_indirection_levels(first_arg)
+
+        # Handle name+subscript syntax: @NAME@(1,2)
+        if first_arg.name_indirection_subscripts:
+            per_level_subs_code = []
+            for sub_list in first_arg.name_indirection_subscripts:
+                sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+                per_level_subs_code.append(f"[{', '.join(sub_exprs)}]")
+            per_level_subscripts_str = f"[{', '.join(per_level_subs_code)}]"
+
+            if isinstance(inner_expr, MVariable):
+                base_name = inner_expr.name
+                name_expr = f'_rt.resolve_for_target("{base_name}", _scope, levels={levels}, per_level_subscripts={per_level_subscripts_str})'
+            else:
+                name_expr_base = generate_expr(inner_expr, ctx)
+                name_expr = f"_rt.resolve_for_target(str({name_expr_base}), _scope, levels={levels}, per_level_subscripts={per_level_subscripts_str})"
+        else:
+            # Simple indirection without subscripts
+            if isinstance(inner_expr, MVariable):
+                base_name = inner_expr.name
+                name_expr = (
+                    f'_rt.resolve_for_target("{base_name}", _scope, levels={levels})'
+                )
+            else:
+                name_expr_base = generate_expr(inner_expr, ctx)
+                if levels > 1:
+                    name_expr = f"_rt.resolve_for_target(str({name_expr_base}), _scope, levels={levels - 1})"
+                else:
+                    name_expr = f"str({name_expr_base})"
+
+        # Use _rt.get_var/_rt.set_var for indirected access
+        getter = f'lambda: _rt.get_var({name_expr}, _scope) or ""'
+        setter = f"lambda v: _rt.set_var({name_expr}, v, _scope)"
     elif isinstance(first_arg, MVariable):
         var = first_arg
         var_name = var.name

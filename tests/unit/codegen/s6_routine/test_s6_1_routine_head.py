@@ -126,8 +126,8 @@ class TestNameTranslationCodegen:
         from m2py.codegen.names import NameTranslator
 
         nt = NameTranslator()
-        assert nt.translate("0") == "_n_0"
-        assert nt.translate("01") == "_n_01"
+        assert nt.to_python("0") == "_n_0"
+        assert nt.to_python("01") == "_n_01"
 
     def test_reserved_word_translation(self):
         """Python reserved words get prefixed.
@@ -140,11 +140,11 @@ class TestNameTranslationCodegen:
 
         nt = NameTranslator()
         # Python keywords are lowercase
-        assert nt.translate("if") == "_m_if"
-        assert nt.translate("for") == "_m_for"
+        assert nt.to_python("if") == "_m_if"
+        assert nt.to_python("for") == "_m_for"
         # MUMPS uppercase commands are NOT Python keywords
-        assert nt.translate("IF") == "IF"
-        assert nt.translate("FOR") == "FOR"
+        assert nt.to_python("IF") == "IF"
+        assert nt.to_python("FOR") == "FOR"
 
     def test_empty_label_translation(self, generate_python):
         """Labelless preamble gets special _preamble function name.
@@ -173,9 +173,9 @@ TEST
         from m2py.codegen.names import NameTranslator
 
         nt = NameTranslator()
-        foo_upper = nt.translate("FOO")
-        foo_mixed = nt.translate("Foo")
-        foo_lower = nt.translate("foo")
+        foo_upper = nt.to_python("FOO")
+        foo_mixed = nt.to_python("Foo")
+        foo_lower = nt.to_python("foo")
 
         # All must be different
         assert foo_upper != foo_mixed
@@ -198,17 +198,17 @@ TEST
         nt = NameTranslator()
 
         # % prefix round-trip
-        assert nt.reverse(nt.translate("%START")) == "%START"
+        assert nt.from_python(nt.to_python("%START")) == "%START"
 
         # Numeric name round-trip
-        assert nt.reverse(nt.translate("0")) == "0"
-        assert nt.reverse(nt.translate("01")) == "01"
+        assert nt.from_python(nt.to_python("0")) == "0"
+        assert nt.from_python(nt.to_python("01")) == "01"
 
         # Reserved word round-trip
-        assert nt.reverse(nt.translate("if")) == "if"
+        assert nt.from_python(nt.to_python("if")) == "if"
 
         # Normal name round-trip
-        assert nt.reverse(nt.translate("FOO")) == "FOO"
+        assert nt.from_python(nt.to_python("FOO")) == "FOO"
 
     def test_variable_name_translation(self, execute_mumps):
         """Variable names with % prefix work correctly (§6.1).
@@ -245,36 +245,6 @@ class TestGeneratorContextCodegen:
         ctx = GeneratorContext(routine=routine, emitter=CodeEmitter())
         assert hasattr(ctx, "in_extrinsic_call")
         assert ctx.in_extrinsic_call is False
-
-
-@pytest.mark.codegen
-class TestScopeStrategyCodegen:
-    """Tests for scope strategy dispatcher (Spec 005)."""
-
-    def test_scope_strategy_pattern_pure_function(self):
-        """PURE_FUNCTION strategy returns function pattern description."""
-        from m2py.codegen.routine import get_scope_strategy_pattern
-        from m2py.asg.enums import ScopeStrategy
-
-        pattern = get_scope_strategy_pattern(ScopeStrategy.PURE_FUNCTION)
-        assert "return" in pattern
-        assert "def" in pattern
-
-    def test_scope_strategy_pattern_subroutine(self):
-        """SUBROUTINE strategy returns subroutine pattern description."""
-        from m2py.codegen.routine import get_scope_strategy_pattern
-        from m2py.asg.enums import ScopeStrategy
-
-        pattern = get_scope_strategy_pattern(ScopeStrategy.SUBROUTINE)
-        assert "None" in pattern or "pass" in pattern
-
-    def test_scope_strategy_pattern_requires_runtime(self):
-        """REQUIRES_RUNTIME strategy indicates unsupported."""
-        from m2py.codegen.routine import get_scope_strategy_pattern
-        from m2py.asg.enums import ScopeStrategy
-
-        pattern = get_scope_strategy_pattern(ScopeStrategy.REQUIRES_RUNTIME)
-        assert "runtime" in pattern.lower() or "not supported" in pattern.lower()
 
 
 @pytest.mark.codegen

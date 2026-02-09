@@ -8,8 +8,14 @@ import pytest
 from m2py.asg.elements import MRoutine
 from m2py.codegen.shared_state import (
     generate_routine_state_class,
-    generate_state_imports,
     generate_state_initialization,
+)
+
+# Inline imports string (generate_state_imports was removed as dead code)
+_STATE_IMPORTS = (
+    "from dataclasses import dataclass, field\n"
+    "from typing import Any\n"
+    "from m2py.runtime import MArray\n"
 )
 
 
@@ -120,29 +126,6 @@ class TestGenerateStateInitialization:
 
 
 @pytest.mark.codegen
-class TestGenerateStateImports:
-    """Tests for generate_state_imports() function (T050)."""
-
-    def test_includes_dataclass_imports(self):
-        """Import statement includes dataclass and field."""
-        code = generate_state_imports()
-
-        assert "from dataclasses import dataclass, field" in code
-
-    def test_includes_any_import(self):
-        """Import statement includes Any type."""
-        code = generate_state_imports()
-
-        assert "from typing import Any" in code
-
-    def test_includes_marray_import(self):
-        """Import statement includes MArray from runtime."""
-        code = generate_state_imports()
-
-        assert "from m2py.runtime import MArray" in code
-
-
-@pytest.mark.codegen
 class TestVariableNameTranslation:
     """Tests for variable name translation in RoutineState (T050)."""
 
@@ -179,7 +162,7 @@ class TestRoutineStateIntegration:
         routine.routine_state_vars = {"X", "Y"}
         routine.array_vars = {"A"}
 
-        imports = generate_state_imports()
+        imports = _STATE_IMPORTS
         class_code = generate_routine_state_class(routine)
 
         # Combine imports and class definition
@@ -196,7 +179,7 @@ class TestRoutineStateIntegration:
         routine.routine_state_vars = {"X"}
         routine.array_vars = {"A"}
 
-        imports = generate_state_imports()
+        imports = _STATE_IMPORTS
         class_code = generate_routine_state_class(routine)
         init_code = generate_state_initialization(routine)
 
@@ -219,7 +202,7 @@ class TestRoutineStateIntegration:
         routine.routine_state_vars = set()
         routine.array_vars = {"ARR"}
 
-        imports = generate_state_imports()
+        imports = _STATE_IMPORTS
         class_code = generate_routine_state_class(routine)
         init_code = generate_state_initialization(routine)
 
@@ -337,7 +320,7 @@ class TestDynamicLocalsGeneration:
         routine.routine_state_vars = {"X"}
         routine.array_vars = {"A"}
 
-        imports = generate_state_imports()
+        imports = _STATE_IMPORTS
         class_code = generate_routine_state_class(routine)
 
         # Combine imports and class definition
@@ -356,7 +339,7 @@ class TestDynamicLocalsGeneration:
         routine.routine_state_vars = set()
         routine.array_vars = set()
 
-        imports = generate_state_imports()
+        imports = _STATE_IMPORTS
         class_code = generate_routine_state_class(routine)
         init_code = generate_state_initialization(routine)
 
@@ -381,7 +364,7 @@ class TestDynamicLocalsGeneration:
         routine.routine_state_vars = set()
         routine.array_vars = set()
 
-        imports = generate_state_imports()
+        imports = _STATE_IMPORTS
         class_code = generate_routine_state_class(routine)
         init_code = generate_state_initialization(routine)
 
@@ -408,7 +391,7 @@ class TestDynamicLocalsGeneration:
         routine.routine_state_vars = set()
         routine.array_vars = set()
 
-        imports = generate_state_imports()
+        imports = _STATE_IMPORTS
         class_code = generate_routine_state_class(routine)
         init_code = generate_state_initialization(routine)
 
@@ -441,7 +424,7 @@ class TestDynamicLocalsGeneration:
         routine.routine_state_vars = set()
         routine.array_vars = set()
 
-        imports = generate_state_imports()
+        imports = _STATE_IMPORTS
         class_code = generate_routine_state_class(routine)
         init_code = generate_state_initialization(routine)
 
@@ -487,7 +470,7 @@ class TestDynamicLocalsGeneration:
         routine.routine_state_vars = set()
         routine.array_vars = set()
 
-        imports = generate_state_imports()
+        imports = _STATE_IMPORTS
         class_code = generate_routine_state_class(routine)
         init_code = generate_state_initialization(routine)
 
@@ -525,3 +508,54 @@ class TestDynamicLocalsGeneration:
         state._locals.update(state._new_stack.pop())
         assert state._locals.get("X", "") == "level0"
         assert len(state._new_stack) == 0
+
+
+@pytest.mark.codegen
+class TestDynamicLocalsPaths:
+    """Tests for code with argumentless KILL triggering dynamic_locals."""
+
+    def test_set_with_argumentless_kill(self, execute_mumps):
+        """SET in routine with argumentless KILL uses dynamic_locals."""
+        result = execute_mumps("TEST\n\tK\n\tS X=1\n\tW X\n\tQ\n")
+        assert result.output == "1"
+
+    def test_kill_selective_in_dynamic_routine(self, execute_mumps):
+        """Selective KILL in routine with argumentless KILL."""
+        result = execute_mumps("TEST\n\tK\n\tS X=1,Y=2\n\tK X\n\tW $D(X),$D(Y)\n\tQ\n")
+        assert "0" in result.output  # X killed
+        assert "1" in result.output  # Y alive
+
+
+@pytest.mark.codegen
+class TestNewInDynamicRoutine:
+    """Tests for NEW in routines with argumentless KILL/NEW."""
+
+    def test_argumentless_new(self, execute_mumps):
+        """Argumentless NEW in routine with argumentless KILL."""
+        result = execute_mumps("TEST\n\tK\n\tS X=1\n\tN\n\tW $D(X)\n\tQ\n")
+        assert result.output == "0"
+
+
+# =============================================================================
+# Indirect FOR loop variants
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestIntrinsicsDynamicLocals:
+    """Tests for intrinsic functions in routines with dynamic_locals."""
+
+    def test_data_in_dynamic_routine(self, execute_mumps):
+        """$D(X) in routine with argumentless KILL."""
+        result = execute_mumps("TEST\n\tK\n\tS X=1\n\tW $D(X)\n\tQ\n")
+        assert result.output == "1"
+
+    def test_order_in_dynamic_routine(self, execute_mumps):
+        """$O(X("")) in routine with argumentless KILL."""
+        result = execute_mumps('TEST\n\tK\n\tS X(1)=1,X(3)=3\n\tW $O(X(""))\n\tQ\n')
+        assert result.output == "1"
+
+
+# =============================================================================
+# SET argument indirection
+# =============================================================================

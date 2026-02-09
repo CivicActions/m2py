@@ -345,3 +345,43 @@ class TestNewMixedSelectiveExclusive:
         # B should be restored (NEWed both selectively and in exclusive keep)
         # C should be restored (in exclusive keep set)
         assert result.output == "1,2,3\n" or "a" not in result.output
+
+
+# =============================================================================
+# Pass 2 Coverage: NEW indirection and special vars
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestNewIndirectionPass2:
+    """NEW with indirection and special variable arguments.
+
+    Covers codegen/statements.py L4858-4862 (argumentless NEW exclusive),
+    L4947-4949 (NEW indirection), L4958-4976 (NEW special vars).
+    """
+
+    def test_new_indirection(self, execute_mumps):
+        """N @A — NEW with indirected variable list."""
+        result = execute_mumps('TEST\n S X=1,Y=2,A="X,Y"\n N @A\n W $D(X),$D(Y)\n Q\n')
+        # After N @A (which NEWs X and Y), both should be undefined
+        assert result.output == "00"
+
+    def test_new_exclusive(self, execute_mumps):
+        """N (X) — exclusive NEW keeping only X."""
+        result = execute_mumps(
+            "TEST\n S X=1,Y=2,Z=3 D SUB W X,Y,Z Q\nSUB\n N (X) S X=10 W $D(Y) Q\n"
+        )
+        assert "0" in result.output
+
+    def test_new_special_var_etrap(self, execute_mumps):
+        """N $ETRAP — NEW special variable $ETRAP."""
+        result = execute_mumps(
+            'TEST\n S $ET="" D SUB W $ET Q\nSUB\n N $ET S $ET="TRAP" Q\n'
+        )
+        # After returning from SUB, $ETRAP should be restored
+        assert result.output == ""
+
+    def test_new_special_var_ecode(self, execute_mumps):
+        """N $EC — NEW special variable $ECODE."""
+        result = execute_mumps('TEST\n S $EC="" D SUB Q\nSUB\n N $EC Q\n')
+        assert result.success is True

@@ -167,8 +167,6 @@ class SubscriptCanonicalizer:
 
             return s
 
-        return str(n)
-
     @staticmethod
     def is_canonical_numeric_string(s: str) -> bool:
         """Check if string represents a canonical numeric value.
@@ -216,31 +214,6 @@ class SubscriptCanonicalizer:
         # Get canonical form and compare
         canonical = SubscriptCanonicalizer.canonicalize_numeric(n)
         return s == canonical
-
-    @staticmethod
-    def subscripts_equal(a: Any, b: Any) -> bool:
-        """Check if two subscript values refer to the same node.
-
-        Compares canonical forms.
-
-        Args:
-            a: First subscript value
-            b: Second subscript value
-
-        Returns:
-            True if both refer to the same node
-
-        Examples:
-            >>> SubscriptCanonicalizer.subscripts_equal(1, "1")
-            True
-            >>> SubscriptCanonicalizer.subscripts_equal(1, "01")
-            False
-            >>> SubscriptCanonicalizer.subscripts_equal(01, 1)  # numeric literal
-            True
-        """
-        return SubscriptCanonicalizer.canonicalize(
-            a
-        ) == SubscriptCanonicalizer.canonicalize(b)
 
 
 __all__ = ["SubscriptCanonicalizer"]

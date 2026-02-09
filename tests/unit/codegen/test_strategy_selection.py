@@ -69,7 +69,7 @@ class TestCheckUnsupportedGotos:
         call = MCall(name="TARGET")
         goto_stmt.targets.append(call)
         goto_stmt.goto_type = goto_type
-        label.body.add_statement(goto_stmt)
+        label.body.statements.append(goto_stmt)
 
         routine.add_label(label)
         return routine

@@ -1628,11 +1628,6 @@ def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
     """
     import os
 
-    from m2py.runtime.globals import (
-        IRISGlobalStorage,
-        YottaDBGlobalStorage,
-    )
-
     if backend is None:
         backend = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
 
@@ -1641,9 +1636,15 @@ def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
     if backend == "inmemory":
         return InMemoryGlobalStorage()
     elif backend == "yottadb":
-        return YottaDBGlobalStorage()
+        raise ImportError(
+            "YottaDB backend requires the 'yottadb' package. "
+            "Install with: pip install yottadb"
+        )
     elif backend == "iris":
-        return IRISGlobalStorage()
+        raise ImportError(
+            "IRIS backend requires the 'intersystems-iris' package. "
+            "Install with: pip install intersystems-iris"
+        )
     else:
         raise ValueError(
             f"Unknown global storage backend: {backend!r}. "
@@ -1721,9 +1722,6 @@ class MUMPSRuntime:
         # JOB command support: virtual process ID for child threads
         # None = use os.getpid() (main process). Set to a unique ID for child threads.
         self._job_id: int | None = None
-        # Track active job threads for cleanup
-        self._active_jobs: list[threading.Thread] = []
-        self._active_jobs_lock = threading.Lock()
 
     # Class-level counter for assigning unique virtual PIDs to JOB'd threads
     _job_counter = 0
@@ -2816,9 +2814,6 @@ class MUMPSRuntime:
             daemon=True,
         )
 
-        with self._active_jobs_lock:
-            self._active_jobs.append(thread)
-
         thread.start()
 
         if timeout is not None:
@@ -2846,19 +2841,6 @@ class MUMPSRuntime:
         finally:
             # Release all locks held by this thread (MUMPS process cleanup)
             child_rt._globals.unlock_all()
-
-    def wait_for_jobs(self, timeout: float | None = None) -> None:
-        """Wait for all active JOB'd threads to complete.
-
-        Args:
-            timeout: Maximum seconds to wait per thread (None = wait forever)
-        """
-        with self._active_jobs_lock:
-            threads = list(self._active_jobs)
-        for thread in threads:
-            thread.join(timeout=timeout)
-        with self._active_jobs_lock:
-            self._active_jobs = [t for t in self._active_jobs if t.is_alive()]
 
     def get_data(self, name: str, _scope: Dict[str, Any]) -> int:
         """Get $DATA value for variable by name (indirection support).
@@ -3733,6 +3715,57 @@ class MUMPSRuntime:
 
         # Now get the value from the target
         return self.get_var(target_name, _scope)
+
+    def increment_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        increment: str = "1",
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> str:
+        """$INCREMENT via indirection using unified components.
+
+        Resolves the indirection target, then atomically increments it.
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X)
+            _scope: Current scope dictionary
+            increment: Amount to increment by (default "1")
+            levels: Number of indirection levels
+            per_level_subscripts: Subscripts per level for @X@(s1) form
+
+        Returns:
+            New value after increment (as canonical MUMPS string)
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+        from m2py.runtime.helpers import m_increment, m_increment_global
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve to get target variable NAME
+        target = resolver.resolve_to_name(
+            source, levels=levels, per_level_subscripts=per_level_subscripts
+        )
+
+        # Handle global variables
+        if target.startswith("^"):
+            base_name, subscripts = _parse_subscripted_name(target)
+            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            key = base_name[1:]  # Remove ^ prefix
+            return m_increment_global(self.globals, key, subs, increment)
+
+        # Local variable — parse name and any subscripts
+        base_name, subscripts = _parse_subscripted_name(target)
+        subs = tuple(str(s) for s in subscripts) if subscripts else ()
+        from m2py.codegen.names import NameTranslator
+
+        python_name = NameTranslator.to_python(base_name)
+        array = _scope.get(python_name)
+        return m_increment(array, subs, increment, _scope, python_name)
 
     def get_indirected_marray(
         self,
@@ -4787,50 +4820,6 @@ class MUMPSRuntime:
             True if valid MUMPS variable name
         """
         return _core_is_valid_varname(name, allow_subscripts=True)
-
-    def compile_pattern_indirect(self, pattern_str: str) -> str:
-        """Compile MUMPS pattern string to regex at runtime.
-
-        Spec 012 Phase 10 (T061): Implements pattern indirection by compiling
-        pattern strings to regex at runtime.
-
-        Uses the existing pattern compiler from analysis/pattern_compiler.py.
-
-        Args:
-            pattern_str: MUMPS pattern string like "1N.N", "1A.A"
-
-        Returns:
-            str: Regex pattern string for use with re.fullmatch()
-
-        Raises:
-            IndirectionError: If pattern is invalid or empty
-
-        Examples:
-            >>> rt.compile_pattern_indirect("1N.N")
-            "^[0-9][0-9]*$"  # Matches one digit followed by any digits
-
-            >>> rt.compile_pattern_indirect("1A.A")
-            "^[A-Za-z][A-Za-z]*$"  # Matches one letter followed by any letters
-        """
-        # Import here to avoid circular dependency
-        from m2py.analysis.pattern_compiler import (
-            PatternCompileError,
-            compile_pattern_to_regex,
-        )
-
-        if not pattern_str:
-            raise IndirectionError(
-                "",
-                "empty pattern string in pattern indirection",
-            )
-
-        try:
-            return compile_pattern_to_regex(pattern_str)
-        except PatternCompileError as e:
-            raise IndirectionError(
-                pattern_str,
-                f"invalid pattern: {e}",
-            ) from e
 
     def resolve_nested_indirection(
         self,

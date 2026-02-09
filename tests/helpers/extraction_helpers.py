@@ -5,7 +5,6 @@ test interfaces for extracting command information from line content.
 
 For production code, use:
 - parse_commands_from_line() + filter by class name
-- extract_for_commands() + classify_for_command()
 - analyze_command() for full ASG nodes
 """
 
@@ -13,49 +12,7 @@ from typing import Optional
 
 from m2py.parser.line_parser import (
     parse_commands_from_line,
-    extract_for_commands,
-    classify_for_command,
 )
-
-
-def has_for_command(line_content: str) -> bool:
-    """Check if line contains a FOR command.
-
-    Args:
-        line_content: The line content string
-
-    Returns:
-        True if FOR command found, False otherwise
-    """
-    for_cmds = extract_for_commands(line_content)
-    return len(for_cmds) > 0
-
-
-def get_for_info(line_content: str) -> Optional[tuple]:
-    """Get FOR command info from a line (for testing).
-
-    Args:
-        line_content: The line content string
-
-    Returns:
-        Tuple of (ForLoopType, loop_var_name) or None if no FOR found
-    """
-    for_cmds = extract_for_commands(line_content)
-    if not for_cmds:
-        return None
-
-    for_cmd = for_cmds[0]
-    loop_type, loop_var = classify_for_command(for_cmd)
-
-    # Get variable name as string
-    var_name = ""
-    if loop_var:
-        if hasattr(loop_var, "name"):
-            var_name = loop_var.name
-        else:
-            var_name = str(loop_var)
-
-    return (loop_type, var_name)
 
 
 def has_goto_command(line_content: str) -> bool:

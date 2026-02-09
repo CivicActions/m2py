@@ -262,3 +262,35 @@ class TestEdgeCases:
         # They are different nodes
         assert arr.get("1E2") == "scientific"
         assert arr.get(100) == "hundred"
+
+
+class TestSubscriptCanonicalizationEdges:
+    """Tests for subscript canonicalization LIVE edge cases."""
+
+    def test_numeric_string(self):
+        """Numeric string canonicalizes to canonical string."""
+        assert SubscriptCanonicalizer.canonicalize("42") == "42"
+        assert SubscriptCanonicalizer.canonicalize("3.14") == "3.14"
+
+    def test_non_numeric_string(self):
+        """Non-numeric string stays as string."""
+        assert SubscriptCanonicalizer.canonicalize("hello") == "hello"
+
+    def test_leading_zero_string(self):
+        """Leading zero makes it non-canonical number."""
+        result = SubscriptCanonicalizer.canonicalize("007")
+        # "007" is not canonical numeric form, but m_num("007") = 7
+        assert result is not None
+
+    def test_empty_string(self):
+        """Empty string canonicalizes to empty string."""
+        assert SubscriptCanonicalizer.canonicalize("") == ""
+
+    def test_integer_passthrough(self):
+        """Integer value becomes canonical string."""
+        assert SubscriptCanonicalizer.canonicalize(42) == "42"
+
+
+# =============================================================================
+# indirection.py: LIVE edge cases
+# =============================================================================
