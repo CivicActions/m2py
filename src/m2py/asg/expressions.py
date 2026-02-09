@@ -16,7 +16,7 @@ Defines all expression types for the MUMPS ASG:
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, List, Optional, Union
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from m2py.asg.elements import ASGElement
 from m2py.asg.enums import LiteralType, FormatControlType, IndirectionType, PassingMode
@@ -29,10 +29,6 @@ if TYPE_CHECKING:  # pragma: no cover
 # Type Aliases
 # =============================================================================
 
-# Valid targets for SET command assignments
-# Note: Forward references as strings because classes defined below
-AssignmentTarget = Union["MVariable", "MGlobal", "MNakedGlobal", "MIndirection"]
-
 
 @dataclass
 class MExpr(ASGElement):
@@ -42,9 +38,6 @@ class MExpr(ASGElement):
     in MUMPS. They can be literals, variable references, operations,
     function calls, or special forms like pattern matching.
     """
-
-    # Type annotation (may be computed during analysis)
-    result_type: Optional[str] = None  # "string", "number", "unknown"
 
 
 # =============================================================================
@@ -284,10 +277,6 @@ class MIndirection(MExpr):
     can_resolve_statically: bool = False
     resolved_value: Optional[str] = None
 
-    # Runtime evaluation flags (set by textX custom class)
-    requires_runtime_eval: bool = True  # Indirection always requires runtime
-    result_type: Optional[str] = None  # Type is unknown until runtime
-
 
 @dataclass
 class MFormatControl(MExpr):
@@ -378,13 +367,3 @@ class MActualParameter(ASGElement):
         None  # The expression (for BY_VALUE) or variable (for BY_REFERENCE)
     )
     variable_name: Optional[str] = None  # For BY_REFERENCE: the actual variable name
-
-    @property
-    def is_byref(self) -> bool:
-        """Check if this parameter is passed by reference."""
-        return self.passing_mode == PassingMode.BY_REFERENCE
-
-    @property
-    def is_omitted(self) -> bool:
-        """Check if this parameter position is omitted."""
-        return self.passing_mode == PassingMode.OMITTED

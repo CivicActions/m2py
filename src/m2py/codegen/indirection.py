@@ -5,15 +5,14 @@ Spec 012: This module provides code generation support for:
 - Subscript indirection (@VAR@(subs)): Dynamic variable with subscripts
 - Multi-level indirection (@@VAR, @@@VAR): Chained indirection
 - Argument indirection (D @CMD): Dynamic DO/GOTO targets
-- Pattern indirection (X?@PAT): Dynamic pattern matching
-- XECUTE command: Runtime code execution
+- Pattern matching: Handled inline via m_pattern_match() in expressions.py
+- XECUTE command: Runtime code execution via execute_mumps()
 
 Code generation strategy:
-- Constant XECUTE strings: Inline the generated Python code
-- Dynamic XECUTE: Call _rt.execute() at runtime
+- XECUTE: Call _rt.execute_mumps() at runtime
 - Name indirection: Call unified runtime methods (set_indirected, get_indirected,
   kill_indirected, resolve_for_target) which use IndirectionResolver internally
-- Pattern indirection: Call _rt.compile_pattern_indirect() at runtime
+- Pattern matching: Handled inline in expressions.py via m_pattern_match()
 
 Spec 018-unified-variable-system: All indirection handling now uses the unified
 variable system. Legacy functions have been removed or migrated.
@@ -74,7 +73,7 @@ def _generate_do_goto_indirection_string(ind: "MExpr", ctx: "GeneratorContext") 
     # but type system allows MExpr)
     if not isinstance(ind, MIndirectionType):
         # Fall back to direct expression evaluation
-        return f"str({generate_expr(ind, ctx)})"
+        return f"str({generate_expr(ind, ctx)})"  # pragma: no cover
 
     # Count indirection levels and get inner expression
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(ind)
@@ -112,16 +111,11 @@ def _count_indirection_levels(expr: "MIndirection") -> Tuple[int, "MExpr"]:
     from m2py.asg.expressions import MIndirection as MIndirectionType
 
     levels = 1
-    inner = expr.expression
-
-    if inner is None:
-        raise ValueError("Indirection has no inner expression")
+    inner: MExpr = expr.expression  # type: ignore[assignment]
 
     while isinstance(inner, MIndirectionType):
         levels += 1
-        if inner.expression is None:
-            raise ValueError("Nested indirection has no inner expression")
-        inner = inner.expression
+        inner = inner.expression  # type: ignore[assignment]
 
     return levels, inner
 
@@ -155,16 +149,13 @@ def _count_indirection_levels_with_subscripts(
     from m2py.asg.expressions import MIndirection as MIndirectionType
 
     levels = 1
-    inner = expr.expression
+    inner: MExpr = expr.expression  # type: ignore[assignment]
     all_subscripts: List[List["MExpr"]] = []
 
     # Collect outer level subscripts first
     if expr.name_indirection_subscripts:
         for sub_list in expr.name_indirection_subscripts:
             all_subscripts.append(sub_list)
-
-    if inner is None:
-        raise ValueError("Indirection has no inner expression")
 
     while isinstance(inner, MIndirectionType):
         levels += 1
@@ -173,9 +164,7 @@ def _count_indirection_levels_with_subscripts(
             # Inner subscripts go at the beginning (they are applied first)
             for sub_list in reversed(inner.name_indirection_subscripts):
                 all_subscripts.insert(0, sub_list)
-        if inner.expression is None:
-            raise ValueError("Nested indirection has no inner expression")
-        inner = inner.expression
+        inner = inner.expression  # type: ignore[assignment]
 
     return levels, inner, all_subscripts
 
@@ -2062,50 +2051,76 @@ def generate_set_argument_indirection(
     ctx.emitter.line(f'_rt.execute_mumps("S " + str({target_expr}), {scope_expr})')
 
 
-def generate_pattern_indirection(
-    subject_expr: str,
-    pattern_expr: str,
+def generate_increment_indirection(
+    var: "MIndirection",
     ctx: "GeneratorContext",
-    negated: bool = False,
+    incr_expr: str = '"1"',
 ) -> str:
-    """Generate Python code for pattern indirection (X?@PAT).
+    """Generate Python expression for $INCREMENT with indirection.
 
-    Spec 012 Phase 10 (T060): Generate runtime call to compile the pattern
-    from a variable and match against the subject.
-
-    The generated code:
-    1. Retrieves the pattern string from the variable
-    2. Calls _rt.compile_pattern_indirect() to convert to regex
-    3. Uses re.fullmatch() to test the subject
+    Delegates to _rt.increment_indirected() which resolves the
+    indirection target and atomically increments it.
 
     Args:
-        subject_expr: Python expression for the subject string
-        pattern_expr: Python expression for the pattern variable/expression
+        var: MIndirection ASG node representing $INCREMENT argument
         ctx: Generator context
-        negated: True if this is negated match ('?), False for regular match (?)
+        incr_expr: Python expression for the increment amount
 
     Returns:
-        Python expression string for pattern match result (1 or 0)
-
-    Example:
-        For `I "123"?@PAT` where PAT="1N.N":
-        - subject_expr: '"123"'
-        - pattern_expr: '_scope.get("PAT", "")'
-        - Returns: '(1 if re.fullmatch(_rt.compile_pattern_indirect(...), ...) else 0)'
+        Python expression string for the $INCREMENT result
     """
-    # The pattern match operator sets $TEST and returns 1 or 0
-    # For indirect patterns, we compile at runtime
-    match_expr = (
-        f"re.fullmatch(_rt.compile_pattern_indirect(str({pattern_expr})), "
-        f"str({subject_expr}), re.DOTALL)"
-    )
+    from m2py.asg.expressions import MVariable
+    from m2py.parser.textx_classes import LocalVariable as MLocalVariable
+    from m2py.parser.textx_classes import GlobalVariable
+    from m2py.codegen.expressions import generate_expr
 
-    if negated:
-        # '? operator: true if pattern does NOT match
-        return f"(1 if {match_expr} is None else 0)"
+    # Count indirection levels and collect subscripts
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(var)
+
+    # Get scope expression
+    scope_expr = _get_scope_expr(ctx)
+
+    # Build source expression
+    if isinstance(inner_expr, GlobalVariable):
+        global_name = inner_expr.name
+        if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"^{global_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            source_expr = f'"^{global_name}"'
+    elif isinstance(inner_expr, (MVariable, MLocalVariable)):
+        source_name = inner_expr.name
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = f'"{source_name}(" + ",".join(_format_subscript(s) for s in [{subs_str}]) + ")"'
+        else:
+            source_expr = f'"{source_name}"'
     else:
-        # ? operator: true if pattern matches
-        return f"(1 if {match_expr} is not None else 0)"
+        inner_expr_code = generate_expr(inner_expr, ctx)
+        source_expr = f"m_str({inner_expr_code})"
+        levels = max(0, levels - 1)
+
+    # Build per_level_subscripts
+    per_level_parts = []
+    for level_subs in all_subscripts:
+        if level_subs:
+            sub_exprs = [generate_expr(s, ctx) for s in level_subs]
+            per_level_parts.append(f"[{', '.join(sub_exprs)}]")
+        else:
+            per_level_parts.append("[]")
+
+    if any(s for s in all_subscripts):
+        per_level_code = f"[{', '.join(per_level_parts)}]"
+    else:
+        per_level_code = "None"
+
+    return (
+        f"_rt.increment_indirected("
+        f"{source_expr}, {scope_expr}, {incr_expr}, "
+        f"levels={levels}, per_level_subscripts={per_level_code})"
+    )
 
 
 __all__ = [
@@ -2117,11 +2132,9 @@ __all__ = [
     "generate_merge_indirection_name",
     "generate_data_indirection_name",
     "generate_get_indirection_name",
+    "generate_increment_indirection",
     "generate_query_indirection_name",
-    "generate_xecute_constant",
-    "generate_xecute_dynamic",
     "generate_indirect_do",
     "generate_indirect_goto",
     "generate_set_argument_indirection",
-    "generate_pattern_indirection",
 ]

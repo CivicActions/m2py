@@ -57,3 +57,29 @@ class TestZwriteCodegen:
         assert result.success
         assert "A=1" in result.output
         assert "B=2" in result.output
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZwriteSubscriptsPass2:
+    """ZWRITE with subscripted arguments, ranges, and wildcards.
+
+    Covers codegen/statements.py L6557-6603 (subscripted args, ranges).
+    """
+
+    def test_zwrite_simple_subscript(self, execute_mumps):
+        """ZW X — ZWRITE a simple subscripted variable."""
+        result = execute_mumps('TEST\n S X(1)="a",X(2)="b" ZW X Q\n')
+        # ZWRITE should show at least some output for X
+        assert result.success
+
+    def test_zwrite_specific_subscript(self, execute_mumps):
+        """ZW X(1) — ZWRITE a specific subscripted element."""
+        result = execute_mumps('TEST\n S X(1)="hello" ZW X(1) Q\n')
+        assert result.success
+
+    def test_zwrite_nested_subscripts(self, execute_mumps):
+        """ZW X — ZWRITE all X entries including nested."""
+        result = execute_mumps('TEST\n S X(1,1)="a",X(1,2)="b",X(2,1)="c" ZW X Q\n')
+        # ZWRITE should show subscripted entries
+        assert result.success

@@ -93,19 +93,3 @@ class TestMPatternMatchCompiledRegex:
         # compiled_regex is populated after pattern compilation
         if pattern_match.compiled_regex is not None:
             assert isinstance(pattern_match.compiled_regex, str)
-
-
-class TestMRoutineGlobalRefs:
-    """Verify MRoutine.global_refs contains strings, not MGlobal objects."""
-
-    def test_global_refs_is_list_of_strings(self):
-        """global_refs should be List[str], not List[MGlobal]."""
-        from m2py.asg.elements import MRoutine
-
-        hints = get_type_hints(MRoutine)
-        refs_hint = hints.get("global_refs")
-        assert refs_hint is not None
-        # Should be List[str]
-        assert hasattr(refs_hint, "__origin__")
-        assert refs_hint.__origin__ is list
-        assert refs_hint.__args__[0] is str

@@ -1,6 +1,6 @@
 """Unit tests for ASG type helpers (type_helpers.py).
 
-Tests for TypeGuard functions and scope helpers used in codegen.
+Tests for scope helpers used in codegen and recursive walking.
 """
 
 import pytest
@@ -8,14 +8,11 @@ import pytest
 from m2py.asg.elements import MScope
 from m2py.asg.statements import (
     MForStatement,
-    MDoStatement,
     MElseStatement,
     MIfStatement,
     MWriteStatement,
 )
 from m2py.asg.type_helpers import (
-    has_body,
-    has_then_scope,
     get_body_scope,
     get_then_scope,
     get_else_scope,
@@ -31,75 +28,6 @@ from m2py.asg.type_helpers import (
 def empty_scope():
     """Create an empty MScope for testing."""
     return MScope(statements=[])
-
-
-# =============================================================================
-# Tests for has_body()
-# =============================================================================
-
-
-@pytest.mark.asg
-class TestHasBody:
-    """Tests for has_body() TypeGuard function."""
-
-    def test_for_statement_with_body_returns_true(self, empty_scope):
-        """MForStatement with body returns True."""
-        stmt = MForStatement(
-            loop_var=None,
-            parameters=[],
-            body=empty_scope,
-        )
-        assert has_body(stmt) is True
-
-    def test_do_statement_with_body_returns_true(self, empty_scope):
-        """MDoStatement with body returns True."""
-        stmt = MDoStatement(
-            targets=[],
-            body=empty_scope,
-        )
-        assert has_body(stmt) is True
-
-    def test_else_statement_with_body_returns_true(self, empty_scope):
-        """MElseStatement with body returns True."""
-        stmt = MElseStatement(body=empty_scope)
-        assert has_body(stmt) is True
-
-    def test_statement_without_body_returns_false(self):
-        """Statement without body attribute returns False."""
-        stmt = MWriteStatement(arguments=[])
-        assert has_body(stmt) is False
-
-
-# =============================================================================
-# Tests for has_then_scope()
-# =============================================================================
-
-
-@pytest.mark.asg
-class TestHasThenScope:
-    """Tests for has_then_scope() TypeGuard function."""
-
-    def test_if_statement_returns_true(self, empty_scope):
-        """MIfStatement always has then_scope attribute."""
-        stmt = MIfStatement(
-            condition=None,
-            then_scope=empty_scope,
-        )
-        assert has_then_scope(stmt) is True
-
-    def test_non_if_statement_returns_false(self):
-        """Non-IF statement returns False."""
-        stmt = MWriteStatement(arguments=[])
-        assert has_then_scope(stmt) is False
-
-    def test_for_statement_returns_false(self, empty_scope):
-        """MForStatement does not have then_scope."""
-        stmt = MForStatement(
-            loop_var=None,
-            parameters=[],
-            body=empty_scope,
-        )
-        assert has_then_scope(stmt) is False
 
 
 # =============================================================================
@@ -186,28 +114,8 @@ class TestGetElseScope:
 class TestEdgeCases:
     """Tests for edge cases and branch coverage."""
 
-    def test_get_body_scope_with_non_scope_body(self):
-        """get_body_scope returns None when body is not an MScope."""
-
-        # Create a mock-like object with body that's not an MScope
-        class FakeStatement:
-            body = "not a scope"
-
-        stmt = FakeStatement()
-        assert get_body_scope(stmt) is None
-
-    def test_get_then_scope_with_non_scope_then_scope(self):
-        """get_then_scope returns None when then_scope is not an MScope."""
-
-        # Create a mock-like object with then_scope that's not an MScope
-        class FakeStatement:
-            then_scope = "not a scope"
-
-        stmt = FakeStatement()
-        assert get_then_scope(stmt) is None
-
     def test_get_else_scope_with_non_scope_else_scope(self):
-        """get_else_scope returns None when else_scope is not an MScope."""
+        """get_else_scope returns None regardless of statement attributes."""
 
         # Create a mock-like object with else_scope that's not an MScope
         class FakeStatement:
@@ -215,21 +123,3 @@ class TestEdgeCases:
 
         stmt = FakeStatement()
         assert get_else_scope(stmt) is None
-
-    def test_has_body_with_none_body(self, empty_scope):
-        """has_body returns False when body attribute is None."""
-        stmt = MForStatement(
-            loop_var=None,
-            parameters=[],
-            body=None,
-        )
-        assert has_body(stmt) is False
-
-    def test_has_body_with_non_scope_body(self):
-        """has_body returns False when body is not an MScope instance."""
-
-        class FakeStatement:
-            body = "not a scope"
-
-        stmt = FakeStatement()
-        assert has_body(stmt) is False

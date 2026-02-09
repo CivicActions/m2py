@@ -50,3 +50,26 @@ class TestZkillCodegen:
         result = execute_mumps("TEST S ^A=1,^A(1)=2 ZK ^A W $D(^A) K ^A Q")
         assert result.success
         assert result.output.strip() == "10"
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZkillGlobalLocalPass2:
+    """ZKILL for global and local variable targets.
+
+    Covers codegen/statements.py L6636-6650 (global + local paths).
+    """
+
+    def test_zkill_global_keeps_descendants(self, execute_mumps):
+        """ZK ^V — removes global value but keeps descendants."""
+        result = execute_mumps(
+            'TEST\n K ^V S ^V=1,^V(1)=2 ZK ^V W $D(^V),",",$D(^V(1)) Q\n'
+        )
+        assert "10" in result.output
+        assert "1" in result.output
+
+    def test_zkill_local_keeps_descendants(self, execute_mumps):
+        """ZK X — removes local value but keeps descendants."""
+        result = execute_mumps('TEST\n S X=1,X(1)=2 ZK X W $D(X),",",$D(X(1)) Q\n')
+        assert "10" in result.output
+        assert "1" in result.output

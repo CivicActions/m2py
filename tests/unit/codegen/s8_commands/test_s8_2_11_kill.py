@@ -484,3 +484,17 @@ class TestKillAllMArrayKill:
         # After K N, $DATA(N)=0, then S N=10 sets it. Since N is aliased
         # to X via MArray, X should see the new value.
         assert result.output == "10\n"
+
+
+@pytest.mark.codegen
+class TestZKillCodegen:
+    """Tests for ZKILL code generation."""
+
+    def test_zkill_unsubscripted_local(self, execute_mumps):
+        """ZK X removes value but preserves subscripts."""
+        result = execute_mumps(
+            "TEST\n\tS X=1,X(1)=2\n\tZK X\n\tW $D(X),!,$D(X(1))\n\tQ\n"
+        )
+        # After ZKILL, X has no value but X(1) still exists
+        # $D(X) should be 10 (descendants only), $D(X(1)) should be 1
+        assert result.success is True

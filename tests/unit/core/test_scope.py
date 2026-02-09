@@ -8,6 +8,7 @@ Requirements: FR-036, FR-037, FR-038
 """
 
 from m2py.core.scope import CurrentScope
+from m2py.runtime import MArray
 
 
 class TestBasicGetSet:
@@ -87,7 +88,6 @@ class TestMumpsNameVsPythonNameLookup:
         are stored as _scope["%2"] = MArray(value=x), but generated code
         tries to look them up via get("%2").
         """
-        from m2py.runtime import MArray
 
         # Simulate generated code that stores with MUMPS name directly
         scope_dict = {"%2": MArray(value="hello")}
@@ -112,7 +112,6 @@ class TestMumpsNameVsPythonNameLookup:
         Real-world generated code may have some variables stored with
         MUMPS names and others with Python names.
         """
-        from m2py.runtime import MArray
 
         scope_dict = {
             "%1": MArray(value="first"),  # MUMPS name
@@ -132,7 +131,6 @@ class TestMumpsNameVsPythonNameLookup:
         This ensures consistency - if code stores with MUMPS name, that
         value is returned even if a Python-named entry also exists.
         """
-        from m2py.runtime import MArray
 
         scope_dict = {
             "%X": MArray(value="mumps_value"),
@@ -145,23 +143,12 @@ class TestMumpsNameVsPythonNameLookup:
 
     def test_exists_with_mumps_name(self):
         """exists() works with MUMPS names stored directly."""
-        from m2py.runtime import MArray
 
         scope_dict = {"%VAR": MArray(value=42)}
         scope = CurrentScope(scope_dict=scope_dict)
 
         assert scope.exists("%VAR") is True
         assert scope.exists("%UNDEF") is False
-
-    def test_data_with_mumps_name(self):
-        """data() works with MUMPS names stored directly."""
-        from m2py.runtime import MArray
-
-        scope_dict = {"%VAR": MArray(value=42)}
-        scope = CurrentScope(scope_dict=scope_dict)
-
-        assert scope.data("%VAR") == 1  # Has value, no descendants
-        assert scope.data("%UNDEF") == 0  # Undefined
 
 
 class TestSubscriptedAccess:
@@ -299,7 +286,6 @@ class TestIsDefined:
 
     def test_is_defined_marray_with_value(self):
         """is_defined returns True for MArray with .value set."""
-        from m2py.runtime import MArray
 
         arr = MArray()
         arr.value = "test"
@@ -308,7 +294,6 @@ class TestIsDefined:
 
     def test_is_defined_marray_without_value(self):
         """is_defined returns False for MArray with no .value (children only)."""
-        from m2py.runtime import MArray
 
         arr = MArray()
         arr["child"] = "value"  # Only children, no top-level value
@@ -366,7 +351,6 @@ class TestFactoryMethod:
 
     def test_creates_from_scope(self):
         """Factory creates scope from _scope dict."""
-        from m2py.runtime import MArray
 
         _scope = {"X": 5}
         cs = CurrentScope.from_generated_context(_scope)
@@ -376,50 +360,6 @@ class TestFactoryMethod:
         # Value is wrapped in MArray for generated code compatibility
         assert isinstance(_scope["Y"], MArray)
         assert _scope["Y"].value == 10
-
-    def test_creates_with_locals(self):
-        """Factory accepts locals dict."""
-        _scope = {}
-        _locals = {"Z": 99}
-        cs = CurrentScope.from_generated_context(_scope, _locals)
-
-        # Scope is checked first, then locals
-        assert cs.get("Z") == 99
-
-
-class TestStoragePriority:
-    """Tests for storage mechanism priority."""
-
-    def test_scope_dict_priority(self):
-        """scope_dict is checked before locals_dict."""
-        scope_dict = {"X": "from_scope"}
-        locals_dict = {"X": "from_locals"}
-
-        cs = CurrentScope(scope_dict=scope_dict, locals_dict=locals_dict)
-        assert cs.get("X") == "from_scope"
-
-    def test_locals_dict_fallback(self):
-        """locals_dict is checked when not in scope_dict."""
-        scope_dict = {}
-        locals_dict = {"Y": "from_locals"}
-
-        cs = CurrentScope(scope_dict=scope_dict, locals_dict=locals_dict)
-        assert cs.get("Y") == "from_locals"
-
-    def test_set_uses_primary(self):
-        """Set stores in primary (first non-None) storage."""
-        from m2py.runtime import MArray
-
-        scope_dict = {}
-        locals_dict = {}
-
-        cs = CurrentScope(scope_dict=scope_dict, locals_dict=locals_dict)
-        cs.set("X", 42)
-
-        # Value is wrapped in MArray for generated code compatibility
-        assert isinstance(scope_dict["X"], MArray)
-        assert scope_dict["X"].value == 42
-        assert "X" not in locals_dict
 
 
 class TestSubscriptParsing:
@@ -489,3 +429,146 @@ class TestSubscriptParsing:
         base, subs = cs._parse_subscripted_name('^GLO("a","b")')
         assert base == "^GLO"
         assert subs == ["a", "b"]
+
+
+class TestScopeSetSubscripted:
+    """Tests for CurrentScope.set with subscripted string form."""
+
+    def test_set_string_form_creates_marray(self):
+        """set('A(1,2)', val) parses subscripts and creates MArray chain."""
+        scope = CurrentScope(scope_dict={})
+        scope.set("A(1,2)", "value")
+        assert scope.get("A(1,2)") == "value"
+
+    def test_set_subscripted_creates_intermediate(self):
+        """set_subscripted creates intermediate MArray nodes."""
+        scope = CurrentScope(scope_dict={})
+        scope.set_subscripted("A", [1, 2], "deep")
+        assert scope.get_subscripted("A", [1, 2]) == "deep"
+
+    def test_set_subscripted_multiple_levels(self):
+        """set_subscripted with multiple subscript levels."""
+        scope = CurrentScope(scope_dict={})
+        scope.set_subscripted("X", [1], "a")
+        scope.set_subscripted("X", [2], "b")
+        scope.set_subscripted("X", [1, 1], "aa")
+        assert scope.get_subscripted("X", [1]) == "a"
+        assert scope.get_subscripted("X", [2]) == "b"
+        assert scope.get_subscripted("X", [1, 1]) == "aa"
+
+
+class TestScopeExistsSubscripted:
+    """Tests for CurrentScope.exists with subscripted form."""
+
+    def test_exists_string_subscripted_form(self):
+        """exists('A(1,2)') returns True after setting it."""
+        scope = CurrentScope(scope_dict={})
+        scope.set("A(1,2)", "val")
+        assert scope.exists("A(1,2)") is True
+
+    def test_exists_undefined_subscripted(self):
+        """exists('A(1,2)') returns False when not set."""
+        scope = CurrentScope(scope_dict={})
+        assert scope.exists("A(1,2)") is False
+
+    def test_exists_base_only(self):
+        """exists('X') returns True for simple variable."""
+        scope = CurrentScope(scope_dict={})
+        scope.set("X", 42)
+        assert scope.exists("X") is True
+
+    def test_exists_undefined_returns_false(self):
+        """exists('UNDEF') returns False."""
+        scope = CurrentScope(scope_dict={})
+        assert scope.exists("UNDEF") is False
+
+
+class TestScopeKillSubscripted:
+    """Tests for CurrentScope.kill with subscripted targets."""
+
+    def test_kill_simple(self):
+        """kill('X') removes variable."""
+        scope = CurrentScope(scope_dict={})
+        scope.set("X", 42)
+        scope.kill("X")
+        assert scope.exists("X") is False
+
+    def test_kill_subscripted(self):
+        """kill('A(1)') removes subscripted node."""
+        scope = CurrentScope(scope_dict={})
+        scope.set_subscripted("A", [1], "val1")
+        scope.set_subscripted("A", [2], "val2")
+        scope.kill("A(1)")
+        assert scope.get_subscripted("A", [1]) == ""  # Gone
+        assert scope.get_subscripted("A", [2]) == "val2"  # Still there
+
+
+class TestScopeIsDefined:
+    """Tests for CurrentScope.is_defined method."""
+
+    def test_is_defined_simple(self):
+        """is_defined for simple variable."""
+        scope = CurrentScope(scope_dict={})
+        scope.set("X", 42)
+        assert scope.is_defined("X") is True
+
+    def test_is_defined_undefined(self):
+        """is_defined for undefined variable."""
+        scope = CurrentScope(scope_dict={})
+        assert scope.is_defined("UNDEF") is False
+
+    def test_is_defined_subscripted(self):
+        """is_defined with subscript list."""
+        scope = CurrentScope(scope_dict={})
+        scope.set_subscripted("A", [1], "val")
+        assert scope.is_defined("A", [1]) is True
+        assert scope.is_defined("A", [2]) is False
+
+
+class TestScopeNoStorage:
+    """Tests for CurrentScope with no storage (edge case)."""
+
+    def test_get_with_no_storage(self):
+        """Get from scope with no storage returns default."""
+        scope = CurrentScope()
+        assert scope.get("X") == ""
+
+    def test_exists_with_no_storage(self):
+        """Exists with no storage returns False."""
+        scope = CurrentScope()
+        assert scope.exists("X") is False
+
+
+# =============================================================================
+# names.py: LIVE paths for keyword escaping
+# =============================================================================
+
+
+class TestSetSubscriptedMArrayPass2:
+    """set_subscripted creates intermediate MArray nodes for deep subscripts.
+
+    Covers scope.py L274-276.
+    """
+
+    def test_set_deep_subscript_creates_intermediate(self):
+        """Setting A(1,2,3) creates intermediate MArray at A(1) and A(1,2)."""
+        scope = CurrentScope()
+        scope.set_subscripted("A", [1, 2, 3], 1)
+        # Retrieve nested value
+        result = scope.get("A(1,2,3)")
+        assert result == 1
+
+    def test_set_multiple_deep_subscripts(self):
+        """Setting A(1,1)=1 and A(1,2)=2 — both share intermediate."""
+        scope = CurrentScope()
+        scope.set_subscripted("A", [1, 1], 1)
+        scope.set_subscripted("A", [1, 2], 2)
+        assert scope.get("A(1,1)") == 1
+        assert scope.get("A(1,2)") == 2
+
+    def test_set_then_overwrite_leaf(self):
+        """Setting A(1,2)=1 then A(1,2)=99 — overwrites leaf."""
+        scope = CurrentScope()
+        scope.set_subscripted("A", [1, 2], 1)
+        scope.set_subscripted("A", [1, 2], 99)
+        assert scope.get("A(1,2)") == 99

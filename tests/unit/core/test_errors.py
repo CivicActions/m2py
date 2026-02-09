@@ -147,33 +147,6 @@ class TestLVUNDEFEdgeCases:
             scope.get("UNDEFINED", default=42)
 
 
-class TestLVUNDEFMultipleStorage:
-    """LVUNDEF with multiple storage mechanisms."""
-
-    def test_variable_in_locals_not_scope_dict(self):
-        """Variable in locals but not scope_dict works in strict mode."""
-        locals_dict = {"Y": 55}
-        scope = CurrentScope(scope_dict={}, locals_dict=locals_dict, strict_mode=True)
-
-        # Should find Y in locals_dict
-        result = scope.get("Y")
-        assert result == 55
-
-    def test_variable_not_in_any_storage_raises(self):
-        """Variable not in any storage raises LVUNDEF."""
-        locals_dict = {"A": 1}
-        scope_dict = {"B": 2}
-        scope = CurrentScope(
-            scope_dict=scope_dict, locals_dict=locals_dict, strict_mode=True
-        )
-
-        # X is not in either storage
-        with pytest.raises(LVUNDEFError) as exc_info:
-            scope.get("X")
-
-        assert "X" in str(exc_info.value)
-
-
 class TestLVUNDEFMArrayIntegration:
     """LVUNDEF tests with MArray objects."""
 

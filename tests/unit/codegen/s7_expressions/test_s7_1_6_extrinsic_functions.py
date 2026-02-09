@@ -394,3 +394,44 @@ class TestExtrinsicEntryPoint:
         assert "_call_extrinsic(_rt, _pct_UTIL._pct_UTIL" in code
         # verify valid Python syntax
         compile(code, "<test>", "exec")
+
+
+@pytest.mark.codegen
+class TestExtrinsicByRef:
+    """Tests for extrinsic function calls with pass-by-reference."""
+
+    def test_extrinsic_with_byref(self, execute_mumps):
+        """$$FN(.X) — extrinsic modifies caller's variable."""
+        result = execute_mumps(
+            'TEST\n\tS X=1\n\tS R=$$FN(.X)\n\tW X," ",R\n\tQ\nFN(A)\n\tS A=A+10\n\tQ A\n'
+        )
+        assert "11" in result.output  # X modified to 11
+        assert "11" in result.output  # Return value is also 11
+
+    def test_extrinsic_with_omitted_arg(self, execute_mumps):
+        """$$FN(1,,3) — extrinsic with omitted middle argument."""
+        result = execute_mumps("TEST\n\tW $$FN(1,,3)\n\tQ\nFN(A,B,C)\n\tQ A+$G(B)+C\n")
+        assert result.output == "4"  # 1 + 0 + 3
+
+
+# =============================================================================
+# $DATA / $ORDER in dynamic_locals routines
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestActualParamByVariableNamePass2:
+    """Passing parameters by variable_name attr rather than expression.
+
+    Covers codegen/expressions.py L1094-1096.
+    """
+
+    def test_do_with_variable_params(self, execute_mumps):
+        """D SUB(X) — pass variable by value."""
+        result = execute_mumps("TEST\n S X=42 D SUB(X) Q\nSUB(A)\n W A Q\n")
+        assert result.output == "42"
+
+    def test_extrinsic_with_variable_params(self, execute_mumps):
+        """$$FN(X) — pass variable by value to extrinsic."""
+        result = execute_mumps("TEST\n S X=5 W $$FN(X) Q\nFN(A)\n Q A*2\n")
+        assert result.output == "10"

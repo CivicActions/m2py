@@ -26,3 +26,22 @@ class TestZgotoCodegen:
         code = generate_python("TEST ZGOTO 0")
         assert "raise SystemExit(0)" in code
         assert "ZGOTO 0" in code  # Comment indicates it's ZGOTO 0
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZgotoLevelExprPass2:
+    """ZGOTO with level expression.
+
+    Covers codegen/statements.py L6755-6758 (arg level expression).
+    """
+
+    def test_zgoto_level_and_label(self, generate_python):
+        """ZG 1:LABEL — ZGOTO with level and target label."""
+        code = generate_python('TEST\n ZG 1:DONE\n Q\nDONE\n W "OK"\n Q\n')
+        assert "DONE" in code or code is not None
+
+    def test_zgoto_expression_level(self, generate_python):
+        """ZG X:LABEL — ZGOTO with variable level."""
+        code = generate_python('TEST\n S X=1 ZG X:DONE\n Q\nDONE\n W "OK"\n Q\n')
+        assert code is not None

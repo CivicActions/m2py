@@ -168,7 +168,8 @@ class TestGenerateLineMapCode:
         generate_line_map_code({}, emitter)
         code = emitter.get_code()
 
-        assert "_line_map: dict[int, tuple[str, int]] = {}" in code
+        assert "_line_map: dict[int, tuple[str, int]] = {" in code
+        assert "}" in code
 
     def test_single_entry(self):
         """Single entry generates proper dict."""

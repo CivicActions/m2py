@@ -126,10 +126,6 @@ def _get_function_arg_list(args):
                     result.append(None)  # Empty position
         return result
 
-    # Old format: args.args
-    if hasattr(args, "args"):
-        return args.args
-
     return []
 
 
@@ -229,15 +225,6 @@ def _unwrap_function_args_with_passing_mode(args):
                         variable_name=var.name,
                     )
                 )
-            else:
-                # Shouldn't happen but handle gracefully
-                result.append(
-                    MActualParameter(
-                        passing_mode=PassingMode.OMITTED,
-                        expression=None,
-                        variable_name=None,
-                    )
-                )
         # Check for by-value argument: expression
         elif hasattr(arg, "expr") and arg.expr:
             result.append(
@@ -280,28 +267,22 @@ class NumericLiteral(MLiteral):
         # textX will set parent automatically via the _tx_* attributes
 
         # Parse the numeric value
-        try:
-            if "." in value or "E" in value.upper():
-                # Store as float for numeric operations, but flag that we have
-                # an exact decimal representation for string operations
-                parsed_value = float(value)
-                lit_type = LiteralType.DECIMAL
-                # Store exact string representation for precise formatting
-                # This is used by m_str() to avoid float precision loss
-                original_string = value
-            else:
-                parsed_value = int(value)
-                lit_type = LiteralType.INTEGER
-                original_string = None
-        except (ValueError, TypeError):
-            parsed_value = value
-            lit_type = LiteralType.STRING
+        if "." in value or "E" in value.upper():
+            # Store as float for numeric operations, but flag that we have
+            # an exact decimal representation for string operations
+            parsed_value = float(value)
+            lit_type = LiteralType.DECIMAL
+            # Store exact string representation for precise formatting
+            # This is used by m_str() to avoid float precision loss
+            original_string = value
+        else:
+            parsed_value = int(value)
+            lit_type = LiteralType.INTEGER
             original_string = None
 
         # Set dataclass fields directly
         object.__setattr__(self, "value", parsed_value)
         object.__setattr__(self, "literal_type", lit_type)
-        object.__setattr__(self, "result_type", None)
         # Store original string for precise formatting
         object.__setattr__(self, "_original_string", original_string)
 
@@ -313,17 +294,13 @@ class StringLiteral(MLiteral):
     """
 
     def __init__(self, parent=None, value: str = ""):
-        # Remove surrounding quotes
-        if value.startswith('"') and value.endswith('"'):
-            parsed_value = value[1:-1]
-            # Handle escaped quotes ("" -> ")
-            parsed_value = parsed_value.replace('""', '"')
-        else:
-            parsed_value = value
+        # Remove surrounding quotes (grammar always provides them)
+        parsed_value = value[1:-1]
+        # Handle escaped quotes ("" -> ")
+        parsed_value = parsed_value.replace('""', '"')
 
         object.__setattr__(self, "value", parsed_value)
         object.__setattr__(self, "literal_type", LiteralType.STRING)
-        object.__setattr__(self, "result_type", None)
 
 
 class LocalVariable(MVariable):
@@ -335,7 +312,6 @@ class LocalVariable(MVariable):
     def __init__(self, parent=None, name: str = "", subscripts=None):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
-        object.__setattr__(self, "result_type", None)
 
 
 class GlobalVariable(MGlobal):
@@ -347,7 +323,6 @@ class GlobalVariable(MGlobal):
     def __init__(self, parent=None, name: str = "", subscripts=None):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
-        object.__setattr__(self, "result_type", None)
 
 
 class ExtendedGlobalPipe(MGlobal):
@@ -362,7 +337,6 @@ class ExtendedGlobalPipe(MGlobal):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
         object.__setattr__(self, "environment", environment)
-        object.__setattr__(self, "result_type", None)
 
 
 class ExtendedGlobalBracket(MGlobal):
@@ -377,7 +351,6 @@ class ExtendedGlobalBracket(MGlobal):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
         object.__setattr__(self, "environment", environment)
-        object.__setattr__(self, "result_type", None)
 
 
 class NakedGlobal(MNakedGlobal):
@@ -388,7 +361,6 @@ class NakedGlobal(MNakedGlobal):
 
     def __init__(self, parent=None, subscripts=None):
         object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
-        object.__setattr__(self, "result_type", None)
 
 
 # =============================================================================
@@ -443,14 +415,6 @@ def _unwrap_zwrite_subscripts(subscripts):
         # Regular expression via expr attribute
         elif hasattr(arg, "expr") and arg.expr is not None:
             result.append(_unwrap_expr(arg.expr))
-        # Check if it's already an ASG type
-        elif isinstance(arg, (MZWriteSubscriptAll, MZWriteSubscriptRange)):
-            result.append(arg)
-        # Fallback: unwrap as normal expression (shouldn't happen normally)
-        else:
-            unwrapped = _unwrap_expr(arg)
-            if unwrapped is not None:
-                result.append(unwrapped)
 
     return result
 
@@ -467,7 +431,6 @@ class ZWriteGlobalPattern:
     def __init__(self, parent=None, name_pattern=None, subscripts=None):
         object.__setattr__(self, "name_pattern", name_pattern)
         object.__setattr__(self, "subscripts", _unwrap_zwrite_subscripts(subscripts))
-        object.__setattr__(self, "result_type", None)
 
 
 class ZWriteGlobal(MGlobal):
@@ -481,7 +444,6 @@ class ZWriteGlobal(MGlobal):
     def __init__(self, parent=None, name: str = "", subscripts=None):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "subscripts", _unwrap_zwrite_subscripts(subscripts))
-        object.__setattr__(self, "result_type", None)
 
 
 class ZWriteNakedGlobal(MNakedGlobal):
@@ -494,7 +456,6 @@ class ZWriteNakedGlobal(MNakedGlobal):
 
     def __init__(self, parent=None, subscripts=None):
         object.__setattr__(self, "subscripts", _unwrap_zwrite_subscripts(subscripts))
-        object.__setattr__(self, "result_type", None)
 
 
 class ZWriteLocal(MVariable):
@@ -508,7 +469,6 @@ class ZWriteLocal(MVariable):
     def __init__(self, parent=None, name: str = "", subscripts=None):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "subscripts", _unwrap_zwrite_subscripts(subscripts))
-        object.__setattr__(self, "result_type", None)
 
 
 class SpecialVariable(MSpecialVariable):
@@ -519,7 +479,6 @@ class SpecialVariable(MSpecialVariable):
 
     def __init__(self, parent=None, name: str = ""):
         object.__setattr__(self, "name", name)
-        object.__setattr__(self, "result_type", None)
 
 
 class AnySpecialVariable(MSpecialVariable):
@@ -533,7 +492,6 @@ class AnySpecialVariable(MSpecialVariable):
 
     def __init__(self, parent=None, name: str = ""):
         object.__setattr__(self, "name", name)
-        object.__setattr__(self, "result_type", None)
 
 
 class DeviceControl(MDeviceControl):
@@ -547,7 +505,6 @@ class DeviceControl(MDeviceControl):
     def __init__(self, parent=None, keyword: str = "", params=None):
         object.__setattr__(self, "keyword", keyword)
         object.__setattr__(self, "params", params if params else [])
-        object.__setattr__(self, "result_type", None)
 
 
 class StructuredSystemVariable(MStructuredSystemVariable):
@@ -562,7 +519,6 @@ class StructuredSystemVariable(MStructuredSystemVariable):
     def __init__(self, parent=None, name: str = "", subscripts=None):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "subscripts", _unwrap_subscripts(subscripts))
-        object.__setattr__(self, "result_type", None)
 
 
 class IntrinsicFunction(MIntrinsicFunction):
@@ -577,7 +533,6 @@ class IntrinsicFunction(MIntrinsicFunction):
     def __init__(self, parent=None, name: str = "", args=None):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "arguments", _unwrap_function_args(args))
-        object.__setattr__(self, "result_type", None)
 
 
 class IntrinsicFunctionNoArgs(MIntrinsicFunction):
@@ -592,7 +547,6 @@ class IntrinsicFunctionNoArgs(MIntrinsicFunction):
     def __init__(self, parent=None, name: str = ""):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "arguments", [])
-        object.__setattr__(self, "result_type", None)
 
 
 class SelectFunction(MIntrinsicFunction):
@@ -614,15 +568,16 @@ class SelectFunction(MIntrinsicFunction):
         # Each SelectArg has .condition and .value attributes (raw textX objects)
         # Convert to proper MSelectArg ASG nodes with unwrapped expressions
         arguments = []
-        if args and hasattr(args, "args"):
-            for select_arg in args.args:
-                # Create MSelectArg with properly unwrapped expressions
-                m_select_arg = MSelectArg()
-                m_select_arg.condition = _unwrap_expr(select_arg.condition)
-                m_select_arg.value = _unwrap_expr(select_arg.value)
-                arguments.append(m_select_arg)
+        if args is None or args.args is None:
+            object.__setattr__(self, "select_args", arguments)
+            return
+        for select_arg in args.args:
+            # Create MSelectArg with properly unwrapped expressions
+            m_select_arg = MSelectArg()
+            m_select_arg.condition = _unwrap_expr(select_arg.condition)
+            m_select_arg.value = _unwrap_expr(select_arg.value)
+            arguments.append(m_select_arg)
         object.__setattr__(self, "arguments", arguments)
-        object.__setattr__(self, "result_type", None)
 
 
 class TextFunction(MIntrinsicFunction):
@@ -669,7 +624,6 @@ class TextFunction(MIntrinsicFunction):
         # The line_ref is stored separately
         object.__setattr__(self, "arguments", [])
         object.__setattr__(self, "line_ref", line_ref)
-        object.__setattr__(self, "result_type", None)
 
 
 class ExtrinsicFunction(MExtrinsicFunction):
@@ -708,8 +662,6 @@ class ExtrinsicFunction(MExtrinsicFunction):
             self, "arguments", _unwrap_function_args_with_passing_mode(args)
         )
 
-        object.__setattr__(self, "result_type", None)
-
 
 class ExternalFunction(MExternalFunction):
     """textX custom class for ExternalFunction grammar rule.
@@ -729,7 +681,6 @@ class ExternalFunction(MExternalFunction):
         object.__setattr__(
             self, "arguments", _unwrap_function_args_with_passing_mode(args)
         )
-        object.__setattr__(self, "result_type", None)
 
 
 class Indirection(MIndirection):
@@ -765,8 +716,6 @@ class Indirection(MIndirection):
             )
         else:
             object.__setattr__(self, "name_indirection_subscripts", None)
-        object.__setattr__(self, "requires_runtime_eval", True)
-        object.__setattr__(self, "result_type", None)
 
 
 # =============================================================================
@@ -842,8 +791,6 @@ class FunctionArgs:
         for rest_item in self._rest:
             if hasattr(rest_item, "arg"):
                 result.append(rest_item.arg)
-            else:
-                result.append(None)
         return result
 
 
@@ -896,11 +843,6 @@ def get_expression_classes() -> List[Type]:
     return EXPRESSION_CLASSES.copy()
 
 
-def get_command_classes() -> List[Type]:
-    """Get list of custom command classes for textX registration."""
-    return COMMAND_CLASSES.copy()
-
-
 def get_all_classes() -> List[Type]:
     """Get all custom classes (expressions + commands) for textX registration.
 
@@ -908,13 +850,3 @@ def get_all_classes() -> List[Type]:
     Use this when loading the full command grammar.
     """
     return EXPRESSION_CLASSES + COMMAND_EXPRESSION_CLASSES + COMMAND_CLASSES
-
-
-def get_class_for_rule(rule_name: str) -> Optional[Type]:
-    """Get custom class for a grammar rule name.
-
-    This can be passed as a callable to metamodel_from_file(classes=...).
-    """
-    all_classes = EXPRESSION_CLASSES + COMMAND_EXPRESSION_CLASSES + COMMAND_CLASSES
-    class_map = {cls.__name__: cls for cls in all_classes}
-    return class_map.get(rule_name)

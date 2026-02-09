@@ -74,8 +74,6 @@ class TestIndirectionAnalysis:
         value = stmt.assignments[0].value
 
         assert isinstance(value, Indirection)
-        # Indirection requires runtime evaluation by default
-        assert value.requires_runtime_eval is True
         # Cannot resolve statically without constant propagation
         assert value.can_resolve_statically is False
         assert value.resolved_value is None
@@ -138,8 +136,6 @@ class TestIndirectionAnalysis:
         # First assignment uses indirection
         first = stmt.assignments[0]
         assert isinstance(first.target, Indirection)
-        # Indirection target requires runtime eval
-        assert first.target.requires_runtime_eval is True
 
         # Second assignment is a direct variable
         second = stmt.assignments[1]

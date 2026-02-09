@@ -298,14 +298,6 @@ class TestCodegenRuntimeNameTranslatorIdentity:
         # They should be the same function
         assert codegen_translate is core_translate
 
-    def test_codegen_reverse_name_from_core(self):
-        """codegen/names.py reverse_name should be from core/names.py."""
-        from m2py.codegen.names import reverse_name as codegen_reverse
-        from m2py.core.names import reverse_name as core_reverse
-
-        # They should be the same function
-        assert codegen_reverse is core_reverse
-
     def test_translation_consistency_across_imports(self):
         """Test cases produce same result whether imported from codegen or core."""
         from m2py.codegen.names import NameTranslator as CG

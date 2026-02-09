@@ -2,94 +2,21 @@
 
 This module provides the CurrentScope class for unified variable access
 across different storage mechanisms (Python locals, _scope dict, state._locals),
-and the VarRef dataclass for structured variable references.
-
 Constitution VII: All variable access (static or indirected) uses the same path,
 preventing "variable not found" bugs that occur when codegen uses Python locals
 but runtime uses _scope dict.
 
 Feature: 018-unified-variable-system
-Requirements: FR-001 (VarRef), FR-025 (LVUNDEF), FR-036, FR-037, FR-038 (CurrentScope)
+Requirements: FR-025 (LVUNDEF), FR-036, FR-037, FR-038 (CurrentScope)
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from m2py.core.exceptions import LVUNDEFError
 from m2py.core.names import NameTranslator
 from m2py.core.subscripts import SubscriptCanonicalizer
-
-
-@dataclass
-class VarRef:
-    """Unified variable reference representation.
-
-    Captures all forms of MUMPS variable references:
-    - Local: X, X(1,2)
-    - Global: ^GLO, ^GLO(1,2), ^(subs) (naked)
-
-    This structure is used by:
-    1. Codegen: To determine generation strategy (inline vs runtime call)
-    2. Runtime: To resolve variable access at execution time
-    """
-
-    # Base identification
-    name: Optional[str] = None  # Variable name (None if purely indirected)
-    is_global: bool = False  # True for ^NAME
-    is_naked: bool = False  # True for ^(subs) naked reference
-
-    # Subscripts
-    subscripts: List[Any] = field(default_factory=list)
-
-    # Pre-computed Python identifier (set during construction or analysis)
-    python_name: Optional[str] = None
-
-    def __post_init__(self) -> None:
-        """Compute python_name if not provided."""
-        if self.python_name is None and self.name:
-            self.python_name = NameTranslator.to_python(self.name)
-
-    def to_access_string(self) -> str:
-        """Convert to MUMPS-style access string for runtime.
-
-        Examples:
-            VarRef(name="X") → "X"
-            VarRef(name="X", subscripts=[1,2]) → "X(1,2)"
-            VarRef(is_global=True, name="GLO") → "^GLO"
-            VarRef(is_global=True, is_naked=True, subscripts=[1]) → "^(1)"
-        """
-        parts = []
-
-        # Global prefix
-        if self.is_global:
-            parts.append("^")
-
-        # Name (unless naked reference)
-        if self.is_naked:
-            pass  # No name for naked references
-        elif self.name:
-            parts.append(self.name)
-
-        # Subscripts
-        if self.subscripts:
-            subs_str = ",".join(
-                SubscriptCanonicalizer.canonicalize(s) for s in self.subscripts
-            )
-            parts.append(f"({subs_str})")
-
-        return "".join(parts)
-
-    def with_subscripts(self, additional_subscripts: List[Any]) -> "VarRef":
-        """Return a new VarRef with additional subscripts appended."""
-        return VarRef(
-            name=self.name,
-            is_global=self.is_global,
-            is_naked=self.is_naked,
-            subscripts=self.subscripts + additional_subscripts,
-            python_name=self.python_name,
-        )
 
 
 class CurrentScope:
@@ -108,8 +35,6 @@ class CurrentScope:
     def __init__(
         self,
         scope_dict: Optional[Dict[str, Any]] = None,
-        locals_dict: Optional[Dict[str, Any]] = None,
-        state_locals: Optional[Any] = None,  # MArray type
         name_translator: Optional[NameTranslator] = None,
         strict_mode: bool = False,
     ):
@@ -117,26 +42,14 @@ class CurrentScope:
 
         Args:
             scope_dict: The _scope dict passed through generated code
-            locals_dict: Python locals() for PURE_FUNCTION access
-            state_locals: state._locals MArray for REQUIRES_RUNTIME
             name_translator: Optional custom translator (defaults to standard)
             strict_mode: If True, raises LVUNDEFError on undefined variable access
 
         At least one storage mechanism should be provided for useful operation.
-        Lookup order: scope_dict > locals_dict > state_locals
         """
         self._scope_dict = scope_dict
-        self._locals_dict = locals_dict
-        self._state_locals = state_locals
         self._name_translator = name_translator or NameTranslator()
         self._strict_mode = strict_mode
-
-        # Primary storage is first non-None mechanism
-        self._primary = (
-            scope_dict
-            if scope_dict is not None
-            else (locals_dict if locals_dict is not None else state_locals)
-        )
 
     def get(self, name: str, default: Any = "") -> Any:
         """Get variable value by MUMPS name.
@@ -223,33 +136,6 @@ class CurrentScope:
             for sub in canonical_subs:
                 current = current[sub]
             return self._extract_value(current)
-
-        # Fallback for non-MArray types: Navigate through subscripts
-        current = base
-        for i, sub in enumerate(subscripts):
-            canonical_sub = SubscriptCanonicalizer.canonicalize(sub)
-            if hasattr(current, "__getitem__"):
-                try:
-                    current = current[canonical_sub]
-                except (KeyError, IndexError, TypeError):
-                    if self._strict_mode:
-                        partial_subs = ",".join(str(s) for s in subscripts[: i + 1])
-                        raise LVUNDEFError(f"{name}({partial_subs})")
-                    return default
-            elif hasattr(current, "get"):
-                current = current.get(canonical_sub, _SENTINEL)
-                if current is _SENTINEL:
-                    if self._strict_mode:
-                        partial_subs = ",".join(str(s) for s in subscripts[: i + 1])
-                        raise LVUNDEFError(f"{name}({partial_subs})")
-                    return default
-            else:
-                if self._strict_mode:
-                    partial_subs = ",".join(str(s) for s in subscripts[: i + 1])
-                    raise LVUNDEFError(f"{name}({partial_subs})")
-                return default
-
-        return self._extract_value(current)
 
     def is_defined(self, name: str, subscripts: Optional[List[Any]] = None) -> bool:
         """Check if a variable is defined (has a value).
@@ -388,9 +274,6 @@ class CurrentScope:
                     next_node = MArray()
                     current[canonical_sub] = next_node
                     current = next_node
-            else:
-                # Can't navigate further
-                raise ValueError(f"Cannot set subscript on non-array value at {name}")
 
         # Set final value
         final_sub = SubscriptCanonicalizer.canonicalize(subscripts[-1])
@@ -433,123 +316,7 @@ class CurrentScope:
             data_code = base.defined(*canonical_subs)
             return data_code in (1, 11)
 
-        # Fallback for regular dicts/other structures
-        current = base
-        for sub in subscripts:
-            canonical_sub = SubscriptCanonicalizer.canonicalize(sub)
-            if hasattr(current, "__contains__"):
-                if canonical_sub not in current:
-                    return False
-                current = current[canonical_sub]
-            elif hasattr(current, "get"):
-                current = current.get(canonical_sub, _SENTINEL)
-                if current is _SENTINEL:
-                    return False
-            else:
-                return False
-
-        # For MArray nodes, check if it has a value (not just children)
-        if hasattr(current, "_value"):
-            return current._value is not None
-
-        return True
-
-    def data(self, name: str) -> int:
-        """Get $DATA value for a variable.
-
-        Args:
-            name: MUMPS variable name (may include subscripts)
-
-        Returns:
-            0: Variable doesn't exist (no value, no descendants)
-            1: Variable has a value but no descendants
-            10: Variable has descendants but no value
-            11: Variable has both value and descendants
-
-        This provides full $DATA function semantics per FR-027.
-        """
-        # Handle subscripted names
-        if "(" in name:
-            base_name, subscripts = self._parse_subscripted_name(name)
-            return self._data_subscripted(base_name, subscripts)
-
-        py_name = NameTranslator.to_python(name)
-        value = self._lookup(py_name, _SENTINEL, mumps_name=name)
-
-        if value is _SENTINEL:
-            return 0
-
-        # Check if it's an MArray with $DATA support
-        if hasattr(value, "defined"):
-            # For unsubscripted variables, we need to check the root
-            return value.defined()
-
-        # For regular Python values, they always have a value
-        # and typically don't have descendants
-        if isinstance(value, dict) and value:
-            # Has descendants (dictionary keys)
-            return 11 if hasattr(value, "value") else 10
-        return 1
-
-    def _data_subscripted(self, name: str, subscripts: List[Any]) -> int:
-        """Get $DATA value for a subscripted variable."""
-        py_name = NameTranslator.to_python(name)
-        base = self._lookup(py_name, None, mumps_name=name)
-
-        if base is None:
-            return 0
-
-        # Use MArray's defined() if available - returns 0, 1, 10, or 11
-        if hasattr(base, "defined"):
-            canonical_subs = [
-                SubscriptCanonicalizer.canonicalize(s) for s in subscripts
-            ]
-            return base.defined(*canonical_subs)
-
-        # Fallback for regular dicts/other structures
-        current = base
-        for sub in subscripts:
-            canonical_sub = SubscriptCanonicalizer.canonicalize(sub)
-            if hasattr(current, "__contains__"):
-                if canonical_sub not in current:
-                    return 0
-                current = current[canonical_sub]
-            elif hasattr(current, "get"):
-                current = current.get(canonical_sub, _SENTINEL)
-                if current is _SENTINEL:
-                    return 0
-            else:
-                return 0
-
-        # Determine $DATA code based on value and descendants
-        has_value = False
-        has_descendants = False
-
-        if hasattr(current, "_value"):
-            has_value = current._value is not None
-        else:
-            has_value = True  # Regular Python values count as having a value
-
-        if hasattr(current, "__len__"):
-            try:
-                # Check if it has any children/descendants
-                if isinstance(current, dict):
-                    # Exclude the _value key if present
-                    has_descendants = len(current) > (
-                        1 if hasattr(current, "_value") else 0
-                    )
-                else:
-                    has_descendants = len(current) > 0
-            except TypeError:
-                has_descendants = False
-
-        if has_value and has_descendants:
-            return 11
-        elif has_value:
-            return 1
-        elif has_descendants:
-            return 10
-        return 0
+        return False
 
     def kill(self, name: str) -> None:
         """Remove variable and all descendants.
@@ -583,28 +350,6 @@ class CurrentScope:
                 SubscriptCanonicalizer.canonicalize(s) for s in subscripts
             ]
             base.kill(*canonical_subs)
-            return
-
-        # Fallback for regular dicts/other structures
-        # Navigate to parent
-        current = base
-        for sub in subscripts[:-1]:
-            canonical_sub = SubscriptCanonicalizer.canonicalize(sub)
-            if hasattr(current, "__getitem__"):
-                try:
-                    current = current[canonical_sub]
-                except (KeyError, IndexError):
-                    return  # Path doesn't exist
-            else:
-                return
-
-        # Delete final node
-        final_sub = SubscriptCanonicalizer.canonicalize(subscripts[-1])
-        if hasattr(current, "__delitem__"):
-            try:
-                del current[final_sub]
-            except (KeyError, IndexError):
-                pass  # Already doesn't exist
 
     @staticmethod
     def from_generated_context(
@@ -616,12 +361,12 @@ class CurrentScope:
 
         Args:
             _scope: The _scope parameter passed to generated functions
-            _locals: Result of locals() call, if available
+            _locals: Unused, kept for backward compatibility
 
         Returns:
             CurrentScope configured for the execution context
         """
-        return CurrentScope(scope_dict=_scope, locals_dict=_locals)
+        return CurrentScope(scope_dict=_scope)
 
     # Private helper methods
 
@@ -639,33 +384,13 @@ class CurrentScope:
         Note: Some code paths store using MUMPS names, others use Python names.
         We try both to handle mixed conventions.
         """
-        # Try MUMPS name first (for code that stores using MUMPS names)
-        if mumps_name is not None:
-            if self._scope_dict is not None and mumps_name in self._scope_dict:
-                return self._scope_dict[mumps_name]
-            if self._locals_dict is not None and mumps_name in self._locals_dict:
-                return self._locals_dict[mumps_name]
-            if self._state_locals is not None:
-                if hasattr(self._state_locals, "__contains__"):
-                    if mumps_name in self._state_locals:
-                        return self._state_locals[mumps_name]
-
-        # Then try Python name (for code that stores using Python names)
-        # Check scope_dict first
         if self._scope_dict is not None:
+            # Try MUMPS name first (for code that stores using MUMPS names)
+            if mumps_name is not None and mumps_name in self._scope_dict:
+                return self._scope_dict[mumps_name]
+            # Then try Python name
             if py_name in self._scope_dict:
                 return self._scope_dict[py_name]
-
-        # Check locals_dict second
-        if self._locals_dict is not None:
-            if py_name in self._locals_dict:
-                return self._locals_dict[py_name]
-
-        # Check state_locals last
-        if self._state_locals is not None:
-            if hasattr(self._state_locals, "__contains__"):
-                if py_name in self._state_locals:
-                    return self._state_locals[py_name]
 
         return default
 
@@ -673,10 +398,6 @@ class CurrentScope:
         """Store a value in the primary storage mechanism."""
         if self._scope_dict is not None:
             self._scope_dict[py_name] = value
-        elif self._locals_dict is not None:
-            self._locals_dict[py_name] = value
-        elif self._state_locals is not None:
-            self._state_locals[py_name] = value
         else:
             # No storage available - create scope_dict
             self._scope_dict = {}
@@ -686,14 +407,6 @@ class CurrentScope:
         """Delete a value from storage mechanisms."""
         if self._scope_dict is not None and py_name in self._scope_dict:
             del self._scope_dict[py_name]
-        if self._locals_dict is not None and py_name in self._locals_dict:
-            del self._locals_dict[py_name]
-        if self._state_locals is not None:
-            if hasattr(self._state_locals, "__delitem__"):
-                try:
-                    del self._state_locals[py_name]
-                except (KeyError, AttributeError):
-                    pass
 
     def _extract_value(self, obj: Any) -> Any:
         """Extract value from MArray if needed (FR-038)."""
@@ -803,4 +516,4 @@ class CurrentScope:
 _SENTINEL = object()
 
 
-__all__ = ["CurrentScope", "VarRef"]
+__all__ = ["CurrentScope"]

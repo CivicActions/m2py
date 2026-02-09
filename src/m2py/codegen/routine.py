@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, Optional
 
 from m2py.asg.elements import MLabel, MRoutine
-from m2py.asg.enums import ScopeStrategy
 from m2py.analysis.variables import FunctionSignature
 from m2py.codegen.emitter import CodeEmitter
 from m2py.codegen.enums import GotoStrategy
@@ -176,28 +175,6 @@ def validate_analysis_complete(routine: MRoutine) -> None:
             # The codegen correctly handles None by generating 'return' statements.
 
 
-def get_scope_strategy_pattern(strategy: ScopeStrategy) -> str:
-    """Get the code generation pattern for a scope strategy.
-
-    Args:
-        strategy: The ScopeStrategy enum value
-
-    Returns:
-        String describing the pattern for documentation/debugging
-
-    Note:
-        Actual code generation is handled in _generate_label based on
-        the strategy and FunctionSignature details.
-    """
-    patterns = {
-        ScopeStrategy.PURE_FUNCTION: "def label(args) -> return_type: return expr",
-        ScopeStrategy.FUNCTION_WITH_OUTPUTS: "def label(args) -> Tuple: return (value, *byref_outputs)",
-        ScopeStrategy.SUBROUTINE: "def label(args) -> None: pass",
-        ScopeStrategy.REQUIRES_RUNTIME: "# Requires runtime scope - not supported in Spec 005",
-    }
-    return patterns.get(strategy, "# Unknown strategy")
-
-
 # T104: Removed _routine_needs_loop_exit_exception() - now using
 # MRoutine.needs_loop_exit_exception field populated by classify_gotos()
 
@@ -333,7 +310,7 @@ class RoutineGenerator:
         # Spec 017 Phase 19: Import _format_subscript for building var name strings with proper quoting
         # Note: Contains ([) and follows (]) are inlined as Python expressions
         ctx.emitter.line(
-            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, m_translate, NewScopeManager, m_read_timeout, m_read_char, m_var_value, _format_subscript, unwind_new_stack, unwind_new_stack"
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_increment, m_increment_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, m_translate, NewScopeManager, m_read_timeout, m_read_char, m_var_value, _format_subscript, unwind_new_stack, unwind_new_stack"
         )
         # Spec 010: Import $RANDOM helper (Phase 8)
         ctx.emitter.line("from m2py.codegen.expressions import _m_random_checked")
@@ -376,14 +353,6 @@ class RoutineGenerator:
         # Falls back to first non-empty label name if routine.name is not set
         # Preserves original case for $TEXT(+0) which returns source-accurate routine name
         routine_name = self._routine.name
-        if not routine_name:
-            # Find first non-empty label name (skipping labelless preamble)
-            for label in self._routine.labels:
-                if label.name:
-                    routine_name = label.name
-                    break
-            else:
-                routine_name = ""
         ctx.emitter.line(f'_routine_name = "{routine_name}"')
         ctx.emitter.blank()
 
@@ -702,12 +671,9 @@ class RoutineGenerator:
             # Wrap body in while True: for self-loop pattern
             ctx.emitter.line("while True:")
             with ctx.emitter.indented():
-                if label.body and label.body.statements:
-                    generate_scope_statements(
-                        label.body.statements, ctx, label_line=label_line
-                    )
-                else:
-                    ctx.emitter.line("pass")
+                generate_scope_statements(
+                    label.body.statements, ctx, label_line=label_line
+                )
                 # If no explicit exit, add break to prevent infinite loop
                 # This handles fall-through at end of label
                 if not label.has_explicit_exit:
@@ -1300,16 +1266,13 @@ class RoutineGenerator:
                 ctx.emitter.line("while True:")
                 with ctx.emitter.indented():
                     # Generate body statements
-                    if label.body and label.body.statements:
-                        # Spec 007: Use offset guards when routine has offset calls
-                        if has_offsets and label_line is not None:
-                            generate_offset_guarded_statements(
-                                label.body.statements, label_line, ctx
-                            )
-                        else:
-                            generate_scope_statements(label.body.statements, ctx)
+                    # Spec 007: Use offset guards when routine has offset calls
+                    if has_offsets and label_line is not None:
+                        generate_offset_guarded_statements(
+                            label.body.statements, label_line, ctx
+                        )
                     else:
-                        ctx.emitter.line("pass")
+                        generate_scope_statements(label.body.statements, ctx)
                     # Implicit break at end if no explicit exit (to prevent infinite loop)
                     if not label.has_explicit_exit:
                         ctx.emitter.line("break")
@@ -1343,6 +1306,5 @@ __all__ = [
     "RoutineGenerator",
     "GeneratorContext",
     "validate_analysis_complete",
-    "get_scope_strategy_pattern",
     "AnalysisNotCompleteError",
 ]

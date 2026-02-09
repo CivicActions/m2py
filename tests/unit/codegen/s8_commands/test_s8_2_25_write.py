@@ -304,3 +304,20 @@ class TestFormFeedBehavior:
         result = execute_mumps('TEST\n W "A",#,#,"B"\n Q\n')
         assert result.success is True
         assert result.output == "A\n\x0c\x0cB"
+
+
+@pytest.mark.codegen
+class TestZWriteCodegen:
+    """Tests for ZWRITE code generation."""
+
+    def test_zwrite_subscripted_local(self, execute_mumps):
+        """ZWRITE X with subscripted local writes all nodes."""
+        result = execute_mumps('TEST\n\tS X(1)="A",X(2)="B"\n\tZWRITE X\n\tQ\n')
+        assert "X(1)" in result.output
+        assert "X(2)" in result.output
+
+    def test_zwrite_simple_local(self, execute_mumps):
+        """ZWRITE X with simple local writes value."""
+        result = execute_mumps('TEST\n\tS X="hello"\n\tZWRITE X\n\tQ\n')
+        assert "X=" in result.output
+        assert "hello" in result.output

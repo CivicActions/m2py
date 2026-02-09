@@ -69,10 +69,9 @@ def generate_line_map(routine: "MRoutine") -> Dict[int, Tuple[str, int]]:
         python_label_name = translate_name(label.name)
         label_line = label.line_number
 
+        # Label line itself is offset 0
         if label_line is None:
             continue
-
-        # Label line itself is offset 0
         line_map[label_line] = (python_label_name, 0)
 
         # Add statements with their offsets (based on line difference)
@@ -99,10 +98,6 @@ def generate_line_map_code(
         line_map: The line map dictionary to emit
         emitter: CodeEmitter to write code to
     """
-    if not line_map:
-        emitter.line("_line_map: dict[int, tuple[str, int]] = {}")
-        return
-
     emitter.line("_line_map: dict[int, tuple[str, int]] = {")
     with emitter.indented():
         for line_num in sorted(line_map.keys()):

@@ -227,17 +227,6 @@ class TestComparisonCodegen:
         assert m_compare("3", "=", "03") == 0  # String comparison
         assert m_compare(3, "=", 3) == 1
 
-    def test_invalid_operator_raises(self):
-        """Invalid comparison operator raises ValueError.
-
-        Phase 10 validation: Cover error path.
-        """
-        import pytest
-        from m2py.codegen.helpers import m_compare
-
-        with pytest.raises(ValueError, match="Unsupported comparison operator"):
-            m_compare(1, "!=", 2)
-
 
 @pytest.mark.codegen
 class TestExtrinsicFunctionCodegen:

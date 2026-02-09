@@ -215,37 +215,6 @@ class TestIsCanonicalNumericString:
         assert not SubscriptCanonicalizer.is_canonical_numeric_string(" 1")
 
 
-class TestSubscriptsEqual:
-    """Tests for SubscriptCanonicalizer.subscripts_equal()"""
-
-    def test_int_and_canonical_string(self):
-        """Integer and its string representation are equal."""
-        assert SubscriptCanonicalizer.subscripts_equal(1, "1")
-        assert SubscriptCanonicalizer.subscripts_equal(0, "0")
-        assert SubscriptCanonicalizer.subscripts_equal(123, "123")
-
-    def test_int_and_non_canonical_string(self):
-        """Integer and non-canonical string are NOT equal."""
-        assert not SubscriptCanonicalizer.subscripts_equal(1, "01")
-        assert not SubscriptCanonicalizer.subscripts_equal(1, "001")
-        assert not SubscriptCanonicalizer.subscripts_equal(1, "1.0")
-
-    def test_float_and_int(self):
-        """Float equal to int and int are equal."""
-        assert SubscriptCanonicalizer.subscripts_equal(1.0, 1)
-        assert SubscriptCanonicalizer.subscripts_equal(5.0, 5)
-
-    def test_same_strings(self):
-        """Identical strings are equal."""
-        assert SubscriptCanonicalizer.subscripts_equal("ABC", "ABC")
-        assert SubscriptCanonicalizer.subscripts_equal("01", "01")
-
-    def test_different_strings(self):
-        """Different strings are not equal."""
-        assert not SubscriptCanonicalizer.subscripts_equal("ABC", "DEF")
-        assert not SubscriptCanonicalizer.subscripts_equal("1", "01")
-
-
 class TestYDBVerifiedBehavior:
     """Tests based on YDB verification from research.md."""
 
@@ -254,13 +223,17 @@ class TestYDBVerifiedBehavior:
         # Both canonicalize to "1"
         assert SubscriptCanonicalizer.canonicalize(1) == "1"
         assert SubscriptCanonicalizer.canonicalize("1") == "1"
-        assert SubscriptCanonicalizer.subscripts_equal(1, "1")
+        assert SubscriptCanonicalizer.canonicalize(
+            1
+        ) == SubscriptCanonicalizer.canonicalize("1")
 
     def test_one_and_string_01_different_nodes(self):
         """A(1) and A("01") access DIFFERENT nodes (YDB verified)."""
         assert SubscriptCanonicalizer.canonicalize(1) == "1"
         assert SubscriptCanonicalizer.canonicalize("01") == "01"
-        assert not SubscriptCanonicalizer.subscripts_equal(1, "01")
+        assert SubscriptCanonicalizer.canonicalize(
+            1
+        ) != SubscriptCanonicalizer.canonicalize("01")
 
     def test_numeric_literal_01_same_as_1(self):
         """A(01) numeric literal is same as A(1) (YDB verified).

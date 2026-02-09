@@ -343,47 +343,71 @@ instead of ANSI standard library routines.""",
             "extensions_ydb_zfunctions",
         ),
         details="""\
-The following YDB-specific features are out of scope for m2py:
+YDB-specific features that are parsed but not implemented in codegen. Some of
+these have non-trivial VistA usage and may warrant future implementation.
 
-**Z-Commands and Z-Functions** (zero VistA usage):
+**Z-Commands with VistA usage:**
 
-| Command/Function | Description | VistA Usage |
+| Command/Function | Description | VistA Files |
 |------------------|-------------|-------------|
-| ZALLOCATE | Resource allocation | 0 files |
-| ZDEALLOCATE | Resource deallocation | 0 files |
-| ZBREAK | Set breakpoints | 0 files |
-| ZCOMPILE | Compile routines | 0 files |
-| ZCONTINUE | Continue from break | 0 files |
-| ZEDIT | Edit routine | 0 files |
-| ZHELP | Display help | 0 files |
-| ZMESSAGE | Signal error | 0 files |
-| ZPRINT | Print routine source | 0 files |
-| ZSTEP | Single-step debug | 0 files |
-| ZSYSTEM | Execute OS command | 0 files |
-| ZTRIGGER | Trigger management | 0 files |
-| $ZDATE | Date formatting | 0 files |
-| $ZMESSAGE | Error message lookup | 0 files |
-| $ZWIDTH | String width | 0 files |
-| ^%G | Global display utility | 0 files |
+| ZLINK | Compile and link routines | 16 |
+| ZSYSTEM | Execute OS command | ~6 |
+| ZBREAK | Set breakpoints | 4 |
+| ZSHOW | Display environment info | 5 |
+| ZPRINT | Print routine source | 4 |
+| ZGOTO | Non-local goto with level | 2 |
+| ZMESSAGE | Signal error condition | 1 |
+| ZSTEP | Single-step debug | 1 |
+| ZWRITE | Write local variables | 12 (mostly in comments; ~2 real) |
 
-**YDB Runtime Behaviors**:
+**Z-Functions / Z-Special Variables with VistA usage:**
 
-| Feature | Description |
-|---------|-------------|
-| Numeric overflow errors | YDB raises errors for numbers >1E47 |
-| Device parameters | YDB-specific OPEN/USE device parameters |
-| Test harness infrastructure | JOBLABOFF, pre-populated databases |
-| Interactive debugger | BREAK command requires YDB debugger |
-| $ZTRAP error trapping | YDB-specific error handling mechanism |
-| $ZVERSION, $ZPOSITION | YDB-specific special variables |
+| Function/Variable | Description | VistA Files |
+|-------------------|-------------|-------------|
+| $ZVERSION | YDB version string | 51 |
+| $ZTRAP | Error trapping mechanism | 45 |
+| $ZSTATUS | Last error status | 42 |
+| $ZDATE | Date formatting | 26 |
+| $ZPOSITION | Error location | 17 |
+| $ZEOF | End-of-file flag | 13 |
+| $ZJOB | Job/process info | 12 |
+| $ZSEARCH | File search | 11 |
+| $ZRO | Routine search path | 10 |
+| $ZMESSAGE | Error message lookup | 7 |
+| $ZWIDTH | String width | 1 |
+| $ZLEVEL | Stack level | 1 |
 
-These features are recognized to support complete YDB compatibility but are
-not a priority for implementation due to usage and/or YDB-specific runtime
-infrastructure that m2py does not provide.
+**Z-Commands / Z-Functions with zero VistA usage:**
 
-**^%G Utility**: This is a YottaDB system utility routine that displays global
-variables interactively. It is not part of the MUMPS standard and requires
-YDB-specific infrastructure (terminal I/O, menu system) that m2py does not provide.""",
+| Command/Function | Description | VistA Files |
+|------------------|-------------|-------------|
+| ZALLOCATE | Resource allocation | 0 |
+| ZDEALLOCATE | Resource deallocation | 0 |
+| ZCOMPILE | Compile routines | 0 |
+| ZCONTINUE | Continue from break | 0 |
+| ZEDIT | Edit routine | 0 |
+| ZHELP | Display help | 0 |
+| ZTRIGGER | Trigger management | 0 |
+
+**YDB Utilities:**
+
+| Utility | Description | VistA Files |
+|---------|-------------|-------------|
+| ^%G | Global display utility | 6 |
+
+**YDB Runtime Behaviors** (not implementable without YDB infrastructure):
+
+| Feature | Description | VistA Files |
+|---------|-------------|-------------|
+| BREAK command | Requires YDB interactive debugger | 662 |
+| Numeric overflow errors | YDB raises errors for numbers >1E47 | N/A |
+| Device parameters | YDB-specific OPEN/USE device parameters | N/A |
+| Test harness infrastructure | JOBLABOFF, pre-populated databases | N/A |
+
+These features are recognized to support complete YDB compatibility. Features
+with significant VistA usage ($ZVERSION, $ZTRAP, $ZSTATUS, $ZDATE, $ZPOSITION,
+ZLINK) may warrant implementation in future waves; features with zero usage
+are deferred indefinitely.""",
         behavior="""\
 Parser accepts Z-commands (valid YDB grammar). ASG produces appropriate nodes.
 Codegen raises `NotImplementedError("LIM-015: {feature} not supported")`.

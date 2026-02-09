@@ -10,7 +10,7 @@ Requirements: FR-005 through FR-009
 import keyword
 
 
-from m2py.core.names import NameTranslator, translate_name, reverse_name
+from m2py.core.names import NameTranslator, translate_name
 
 
 class TestToPython:
@@ -138,69 +138,6 @@ class TestRoundTrip:
         assert NameTranslator.from_python(NameTranslator.to_python("")) == ""
 
 
-class TestIsValidMumpsName:
-    """Tests for NameTranslator.is_valid_mumps_name()"""
-
-    def test_valid_simple(self):
-        """Simple valid names."""
-        assert NameTranslator.is_valid_mumps_name("X")
-        assert NameTranslator.is_valid_mumps_name("ABC")
-        assert NameTranslator.is_valid_mumps_name("VCOMP")
-        assert NameTranslator.is_valid_mumps_name("i")  # lowercase valid
-
-    def test_valid_percent(self):
-        """Percent-prefixed system variable names."""
-        assert NameTranslator.is_valid_mumps_name("%FOO")
-        assert NameTranslator.is_valid_mumps_name("%ABC")
-        assert NameTranslator.is_valid_mumps_name("%A")
-
-    def test_valid_alphanumeric(self):
-        """Names with numbers (after first char)."""
-        assert NameTranslator.is_valid_mumps_name("A123")
-        assert NameTranslator.is_valid_mumps_name("VAR1")
-        assert NameTranslator.is_valid_mumps_name("X99")
-
-    def test_invalid_empty(self):
-        """Empty string is invalid."""
-        assert not NameTranslator.is_valid_mumps_name("")
-
-    def test_invalid_subscripted(self):
-        """Subscripted references are not variable names."""
-        assert not NameTranslator.is_valid_mumps_name("X(1)")
-        assert not NameTranslator.is_valid_mumps_name("A(1,2)")
-        assert not NameTranslator.is_valid_mumps_name("ARR()")
-
-    def test_invalid_expression(self):
-        """Expressions are not variable names."""
-        assert not NameTranslator.is_valid_mumps_name("1+1")
-        assert not NameTranslator.is_valid_mumps_name("X>5")
-        assert not NameTranslator.is_valid_mumps_name("1=0")
-
-    def test_invalid_number_start(self):
-        """Names starting with digit are labels, not variable names."""
-        # Note: Pure numeric strings are valid MUMPS LABELS but not variable NAMES
-        # The is_valid_mumps_name function validates variable names
-        assert not NameTranslator.is_valid_mumps_name("1")
-        assert not NameTranslator.is_valid_mumps_name("01")
-        assert not NameTranslator.is_valid_mumps_name("123ABC")
-
-    def test_invalid_special_chars(self):
-        """Special characters are invalid."""
-        assert not NameTranslator.is_valid_mumps_name("X-1")
-        assert not NameTranslator.is_valid_mumps_name("A.B")
-        assert not NameTranslator.is_valid_mumps_name(
-            "FOO_BAR"
-        )  # underscore invalid in MUMPS
-        assert not NameTranslator.is_valid_mumps_name("A B")  # space
-
-    def test_invalid_global_prefix(self):
-        """Global prefix (^) should return False (not a simple name)."""
-        # Note: This tests simple variable names, not global references
-        # Globals like ^FOO are handled separately
-        assert not NameTranslator.is_valid_mumps_name("^FOO")
-        assert not NameTranslator.is_valid_mumps_name("^")
-
-
 class TestConvenienceFunctions:
     """Tests for module-level convenience functions."""
 
@@ -209,12 +146,6 @@ class TestConvenienceFunctions:
         assert translate_name("TEST") == "TEST"
         assert translate_name("%ABC") == "_pct_ABC"
         assert translate_name("01") == "_n_01"
-
-    def test_reverse_name(self):
-        """reverse_name delegates to from_python."""
-        assert reverse_name("TEST") == "TEST"
-        assert reverse_name("_pct_ABC") == "%ABC"
-        assert reverse_name("_n_01") == "01"
 
 
 class TestPythonKeywordsClassVar:
@@ -251,5 +182,44 @@ class TestMugjPatterns:
         # It indicates global storage, handled separately
         names = ["GLO", "GVN", "V", "VV"]
         for name in names:
-            assert NameTranslator.is_valid_mumps_name(name)
+            assert NameTranslator.is_valid_varname(name)
             assert NameTranslator.to_python(name) == name
+
+
+class TestNameTranslatorLive:
+    """Tests for NameTranslator LIVE coverage gaps."""
+
+    def test_to_python_keyword(self):
+        """Python keyword is escaped with _m_ prefix."""
+        assert NameTranslator.to_python("if") == "_m_if"
+        assert NameTranslator.to_python("for") == "_m_for"
+        assert NameTranslator.to_python("while") == "_m_while"
+
+    def test_to_python_percent(self):
+        """Percent variable gets _pct_ prefix."""
+        assert NameTranslator.to_python("%X") == "_pct_X"
+
+    def test_from_python_keyword(self):
+        """from_python reverses keyword escaping."""
+        assert NameTranslator.from_python("_m_if") == "if"
+        assert NameTranslator.from_python("_m_for") == "for"
+
+    def test_from_python_percent(self):
+        """from_python reverses percent prefix."""
+        assert NameTranslator.from_python("_pct_X") == "%X"
+
+    def test_from_python_regular(self):
+        """from_python passes through regular names."""
+        assert NameTranslator.from_python("X") == "X"
+        assert NameTranslator.from_python("MYVAR") == "MYVAR"
+
+    def test_roundtrip(self):
+        """to_python → from_python roundtrip preserves name."""
+        for name in ["X", "%FOO", "if", "for", "class", "NORMAL"]:
+            py = NameTranslator.to_python(name)
+            assert NameTranslator.from_python(py) == name
+
+
+# =============================================================================
+# subscripts.py: Canonicalization edge cases
+# =============================================================================

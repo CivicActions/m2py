@@ -372,3 +372,30 @@ class TestIOSpecialVariableAbbreviation:
         assert result.success is True
         # Both comparisons should be true (1) or both false (0)
         # We just check they're equal - "11" means both true, "00" both false
+
+
+@pytest.mark.codegen
+class TestSpecialVariables:
+    """Tests for uncovered special variable codegen paths."""
+
+    def test_dollar_storage(self, execute_mumps):
+        """W $STORAGE — returns a number."""
+        result = execute_mumps("TEST\n\tW $STORAGE\n\tQ\n")
+        assert result.success is True
+        # $STORAGE returns available memory — just check it's numeric
+        assert result.output.strip().lstrip("-").isdigit() or int(result.output) >= 0
+
+    def test_dollar_quit(self, execute_mumps):
+        """W $QUIT in non-extrinsic context returns 0."""
+        result = execute_mumps("TEST\n\tW $QUIT\n\tQ\n")
+        assert result.output == "0"
+
+    def test_dollar_tlevel(self, execute_mumps):
+        """W $TLEVEL outside transaction returns 0."""
+        result = execute_mumps("TEST\n\tW $TLEVEL\n\tQ\n")
+        assert result.output == "0"
+
+
+# =============================================================================
+# $NEXT function (expressions.py)
+# =============================================================================

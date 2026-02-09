@@ -1247,3 +1247,76 @@ class TestOrderIndirectionCodegen:
 ''')
         assert result.success is True
         assert result.output == "1"
+
+
+# =============================================================================
+# Pass 2 Coverage: $TRANSLATE/$JUSTIFY 1-arg and $DATA/$ORDER/$NEXT indirection
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestTranslateJustifyFallbacksPass2:
+    """$TRANSLATE and $JUSTIFY with fewer arguments than typical.
+
+    Covers codegen/expressions.py L1999-2001 ($TR 1-arg fallback)
+    and L2312-2314 ($J 1-arg fallback).
+    """
+
+    def test_translate_one_arg(self, execute_mumps):
+        """$TR("HELLO") — $TRANSLATE with only 1 argument returns input."""
+        result = execute_mumps('TEST\n W $TR("HELLO") Q\n')
+        assert result.output == "HELLO"
+
+    def test_justify_one_arg(self, execute_mumps):
+        """$J(42) — $JUSTIFY with only 1 argument returns string of value."""
+        result = execute_mumps("TEST\n W $J(42) Q\n")
+        assert result.output == "42"
+
+    def test_justify_one_arg_string(self, execute_mumps):
+        """$J("ABC") — $JUSTIFY with 1 arg on a string."""
+        result = execute_mumps('TEST\n W $J("ABC") Q\n')
+        assert result.output == "ABC"
+
+
+@pytest.mark.codegen
+class TestOrderNextTrampolineDynamicPass2:
+    """$ORDER and $NEXT in routines with dynamic locals (argumentless KILL).
+
+    Covers codegen/expressions.py L1516-1518 ($ORDER TRAMPOLINE),
+    L2518-2532 ($NEXT TRAMPOLINE dynamic locals).
+    """
+
+    def test_order_dynamic_locals(self, execute_mumps):
+        """$O(X("")) in routine with argumentless KILL."""
+        result = execute_mumps('TEST\n K\n S X(1)=1,X(3)=3 W $O(X("")) Q\n')
+        assert result.output == "1"
+
+    def test_next_dynamic_locals(self, execute_mumps):
+        """$N(X(0)) in routine with argumentless KILL."""
+        result = execute_mumps("TEST\n K\n S X(1)=1,X(3)=3 W $N(X(0)) Q\n")
+        assert result.output == "1"
+
+    def test_order_reverse_dynamic_locals(self, execute_mumps):
+        """$O(X(""),-1) in routine with dynamic locals."""
+        result = execute_mumps('TEST\n K\n S X(1)=1,X(3)=3 W $O(X(""),-1) Q\n')
+        assert result.output == "3"
+
+
+@pytest.mark.codegen
+class TestNextFunction:
+    """Tests for $NEXT/$N function codegen."""
+
+    def test_next_local_var(self, execute_mumps):
+        """$NEXT on local variable returns next subscript."""
+        result = execute_mumps("TEST\n\tS X(1)=1,X(3)=3\n\tW $N(X(0))\n\tQ\n")
+        assert result.output == "1"
+
+    def test_next_returns_neg1_at_end(self, execute_mumps):
+        """$NEXT returns -1 when no more subscripts."""
+        result = execute_mumps("TEST\n\tS X(1)=1\n\tW $N(X(1))\n\tQ\n")
+        assert result.output == "-1"
+
+
+# =============================================================================
+# Indirection: pattern match, name kill, name write
+# =============================================================================

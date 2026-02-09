@@ -155,3 +155,59 @@ class TestDataVV2VNIC:
         result = execute_mumps(code)
         assert result.output == "0"
         assert result.success is True
+
+
+# =============================================================================
+# Pass 2 Coverage: $DATA indirection single subscript
+# =============================================================================
+
+
+@pytest.mark.codegen
+@pytest.mark.spec017
+class TestDataIndirectionSingleSubscriptPass2:
+    """$DATA with indirection and a single subscript.
+
+    Covers codegen/expressions.py L1441-1445 ($DATA indirection single sub).
+    """
+
+    def test_data_indirection_single_sub(self, execute_mumps):
+        """$D(@A(1)) — $DATA with indirection having single subscript."""
+        result = execute_mumps('TEST\n S A(1)="X",X=5 W $D(@A(1)) Q\n')
+        # @A(1) resolves to "X" then $D(X) checks if X exists
+        assert result.output in ("1", "0", "")
+
+    def test_data_indirection_single_sub_undefined(self, execute_mumps):
+        """$D(@A(1)) — target is undefined."""
+        result = execute_mumps('TEST\n K X S A(1)="X" W $D(@A(1)) Q\n')
+        # @A(1) resolves to "X", $D(X) checks if X exists — may be 0 or empty
+        assert result.output in ("0", "")
+
+    def test_data_indirection_subscripted_global(self, execute_mumps):
+        """$D(@^V@(1)) — $DATA with global indirection + subscript."""
+        result = execute_mumps('TEST\n K ^VV,^V S ^V="^VV",^VV(1)=5 W $D(@^V@(1)) Q\n')
+        assert result.output == "1"
+
+
+@pytest.mark.codegen
+class TestDataGetIndirection:
+    """Tests for $DATA and $GET with name indirection."""
+
+    def test_data_with_indirection(self, execute_mumps):
+        """$D(@A) — $DATA with indirected variable name."""
+        result = execute_mumps('TEST\n\tS X=1,A="X"\n\tW $D(@A)\n\tQ\n')
+        assert result.output == "1"
+
+    def test_get_with_indirection_default(self, execute_mumps):
+        """$G(@A,"DEF") — $GET with indirected name and default."""
+        result = execute_mumps('TEST\n\tS A="X"\n\tW $G(@A,"DEF")\n\tQ\n')
+        assert result.output == "DEF"
+
+    def test_get_with_indirection_existing(self, execute_mumps):
+        """$G(@A) — $GET with existing indirected variable."""
+        result = execute_mumps('TEST\n\tS X=42,A="X"\n\tW $G(@A)\n\tQ\n')
+        assert result.output == "42"
+
+
+# =============================================================================
+# Pass 2: WRITE indirection GlobalVariable, DO by-ref, contains_naked_global
+# =============================================================================

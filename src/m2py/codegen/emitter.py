@@ -90,12 +90,7 @@ class CodeEmitter:
         Raises:
             IndexError: If no lines have been emitted yet
         """
-        if not self._lines:
-            # No lines yet - start a new line with proper indent
-            prefix = self._indent * self._level
-            self._lines.append(f"{prefix}{text}")
-        else:
-            self._lines[-1] += text
+        self._lines[-1] += text
 
     def get_code(self) -> str:
         """Get the complete generated code.
@@ -103,26 +98,7 @@ class CodeEmitter:
         Returns:
             All emitted lines joined with newlines, trailing newline included
         """
-        if not self._lines:
-            return ""
         return "\n".join(self._lines) + "\n"
-
-    def get_lines(self) -> list[str]:
-        """Get list of all emitted lines.
-
-        Returns:
-            List of code lines (without newlines)
-        """
-        return list(self._lines)
-
-    @property
-    def current_indent(self) -> int:
-        """Current indentation level (0-based).
-
-        Returns:
-            Number of indent levels currently active
-        """
-        return self._level
 
 
 __all__ = ["CodeEmitter"]

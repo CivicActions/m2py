@@ -27,3 +27,24 @@ class TestZhaltCodegen:
         assert "SystemExit" in code
         # Should generate expression evaluation
         assert "int(" in code
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZhaltExpressionPass2:
+    """ZHALT with exit code expression.
+
+    Covers codegen/statements.py L6791-6793.
+    """
+
+    def test_zhalt_numeric_literal(self, generate_python):
+        """ZHALT 2 — halt with specific exit code."""
+        code = generate_python("TEST\n ZHALT 2\n Q\n")
+        assert "SystemExit" in code
+        assert "2" in code
+
+    def test_zhalt_complex_expression(self, generate_python):
+        """ZHALT 1+2*3 — halt with computed exit code."""
+        code = generate_python("TEST\n ZHALT 1+2*3\n Q\n")
+        assert "SystemExit" in code
+        assert "int(" in code

@@ -203,43 +203,6 @@ class IndirectionResolver:
         # Fallback - return as-is
         return current
 
-    def resolve_name_indirection(
-        self, name: str, subscripts: Optional[List[Any]] = None
-    ) -> Any:
-        """Convenience method for simple NAME indirection.
-
-        Equivalent to resolve(name, 1, NAME, direct_subscripts=subscripts)
-
-        Args:
-            name: Variable name to resolve (source of @name)
-            subscripts: Optional direct subscripts for @name(subs)
-
-        Returns:
-            Value at the indirected variable
-        """
-        return self.resolve(
-            name,
-            levels=1,
-            context=IndirectionContext.NAME,
-            direct_subscripts=subscripts,
-        )
-
-    def resolve_argument_indirection(self, name: str) -> Any:
-        """Convenience method for ARGUMENT indirection.
-
-        Equivalent to resolve(name, 1, ARGUMENT)
-
-        This is the FIX for Challenge 6 bug. When A="1=0",
-        @A in IF context evaluates "1=0" as expression → FALSE.
-
-        Args:
-            name: Variable name containing expression to evaluate
-
-        Returns:
-            Evaluated result of the expression
-        """
-        return self.resolve(name, levels=1, context=IndirectionContext.ARGUMENT)
-
     def _is_naked_reference_string(self, s: str) -> bool:
         """Check if string is a naked reference like "^(5)" or "^(1,2)".
 
@@ -542,96 +505,6 @@ class IndirectionResolver:
 
         return current
 
-    def resolve_to_argument_list(
-        self,
-        source: str,
-        levels: int = 1,
-        per_level_subscripts: Optional[List[List[Any]]] = None,
-    ) -> List[str]:
-        """Resolve indirection to get a list of TARGET VARIABLE NAMES.
-
-        Feature: 017 T088 - Argument Indirection Command Lists
-        Used for KILL @X, NEW @X where the resolved value may be a
-        comma-separated list of variable names.
-
-        For KILL @X where X="E,F": returns ["E", "F"]
-        For KILL @X where X="A(1,2),B": returns ["A(1,2)", "B"]
-
-        Each individual variable name is validated; if any is invalid,
-        raises VarExpectedError.
-
-        Args:
-            source: Initial variable name (source of @source)
-            levels: Number of @ levels (1 for @X, 2 for @@X, etc.)
-            per_level_subscripts: Subscripts per resolution level for @X@(s1)@(s2)
-
-        Returns:
-            List of target variable names (may be single-element list)
-
-        Raises:
-            VarExpectedError: If any resolved name is not a valid variable name
-            ValueError: If levels < 1
-
-        Examples:
-            # @X where X="E,F" → ["E", "F"]
-            resolve_to_argument_list("X", 1) → ["E", "F"]
-
-            # @X where X="A(1,2),B" → ["A(1,2)", "B"]
-            resolve_to_argument_list("X", 1) → ["A(1,2)", "B"]
-
-            # @X where X="Y" → ["Y"] (single element)
-            resolve_to_argument_list("X", 1) → ["Y"]
-        """
-        if levels < 1:
-            raise ValueError(f"Indirection levels must be >= 1, got {levels}")
-
-        current = source
-
-        # Resolve each level to get the target variable name(s)
-        # MUMPS semantics: get value first, then apply subscripts
-        for i in range(levels):
-            # Check if current is a naked reference string that needs expansion
-            if self._is_naked_reference_string(current):
-                value = self._expand_naked_reference_string(current)
-            else:
-                value = self._get_value(current)
-
-            # Convert to string for processing
-            if not isinstance(value, str):
-                value = str(value)
-
-            # Handle recursive @-expression (value contains @)
-            # Keep resolving while value starts with @ and changes
-            while value.startswith("@"):
-                resolved = self._resolve_recursive_at(value)
-                if resolved == value:
-                    # No progress made - expression can't be resolved further
-                    break
-                value = resolved
-
-            # Apply per-level subscripts AFTER value lookup
-            if per_level_subscripts and i < len(per_level_subscripts):
-                value = self._append_subscripts(value, per_level_subscripts[i])
-
-            current = value
-
-        # If final result is a naked reference string, expand it
-        if self._is_naked_reference_string(current):
-            current = self._expand_naked_reference_string(current)
-
-        # Split by commas respecting parentheses (for subscripted variables)
-        # Use existing _split_argument_list method (already handles quotes/parens)
-        args = self._split_argument_list(current)
-
-        # Validate each argument is a valid variable name
-        for arg in args:
-            arg = arg.strip()
-            if arg and not self._is_valid_var_name(arg):
-                raise VarExpectedError(arg)
-
-        # Filter out empty args and strip whitespace
-        return [arg.strip() for arg in args if arg.strip()]
-
     def resolve_subscript_indirection(self, name: str) -> Any:
         """Resolve indirection within a subscript position.
 
@@ -654,33 +527,6 @@ class IndirectionResolver:
         # For subscript indirection, we simply get the value directly
         # No multi-level resolution, no variable name validation
         return self._get_value(name)
-
-    def resolve_subscript_list(self, subscripts: List[Any]) -> List[Any]:
-        """Resolve indirection within a list of subscripts.
-
-        Processes subscripts that may contain @ indirection and returns
-        a list with all indirections resolved to their values.
-
-        Args:
-            subscripts: List of subscript values, some may be "@VAR" strings
-
-        Returns:
-            List with indirections resolved to values
-
-        Examples:
-            ["1", "@B", "3"] where B=2 → ["1", 2, "3"]
-            ["@X", "@Y"] where X="a", Y=5 → ["a", 5]
-        """
-        result = []
-        for sub in subscripts:
-            if isinstance(sub, str) and sub.startswith("@"):
-                # Subscript indirection - resolve the variable
-                var_name = sub[1:]  # Remove @
-                resolved = self.resolve_subscript_indirection(var_name)
-                result.append(resolved)
-            else:
-                result.append(sub)
-        return result
 
     def evaluate_expression(
         self, expr_string: str, treat_empty_as_truthy: bool = False

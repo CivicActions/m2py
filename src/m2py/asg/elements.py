@@ -36,13 +36,6 @@ class MParseError:
     message: str = ""
     line_content: str = ""  # The original line text that failed to parse
 
-    def __str__(self) -> str:
-        """Human-readable error message."""
-        loc = f"line {self.line_number}"
-        if self.column > 0:
-            loc += f", column {self.column}"
-        return f"Parse error at {loc}: {self.message}"
-
 
 @dataclass
 class ASGElement(ABC):
@@ -66,89 +59,6 @@ class ASGElement(ABC):
     # Tree structure
     parent: Optional["ASGElement"] = field(default=None, repr=False)
 
-    def to_dict(
-        self, include_position: bool = False, max_depth: int = 10
-    ) -> dict[str, Any]:
-        """Serialize this ASG element to a dictionary.
-
-        Args:
-            include_position: Include source position information. When True,
-                includes only start position (line_number, column), not end
-                position (end_line, end_column). This keeps output concise
-                for debugging purposes.
-            max_depth: Maximum recursion depth to prevent infinite loops
-
-        Returns:
-            Dictionary representation of this element
-        """
-        if max_depth <= 0:
-            return {"_type": self.__class__.__name__, "_truncated": True}
-
-        result: dict[str, Any] = {"_type": self.__class__.__name__}
-
-        if include_position:
-            if self.source_file:
-                result["source_file"] = self.source_file
-            if self.line_number is not None:
-                result["line"] = self.line_number
-            if self.column is not None:
-                result["column"] = self.column
-
-        # Serialize dataclass fields (excluding private/internal ones)
-        for field_name in self.__dataclass_fields__:
-            if field_name.startswith("_") or field_name == "parent":
-                continue
-            if field_name in (
-                "source_file",
-                "line_number",
-                "column",
-                "end_line",
-                "end_column",
-            ):
-                continue  # Handled above
-            if field_name == "source_lines":
-                continue  # Exclude bulky source_lines from serialization
-
-            value = getattr(self, field_name)
-            result[field_name] = self._serialize_value(
-                value, include_position, max_depth - 1
-            )
-
-        return result
-
-    def _serialize_value(
-        self, value: Any, include_position: bool, max_depth: int
-    ) -> Any:
-        """Recursively serialize a value for to_dict()."""
-        if value is None:
-            return None
-        elif isinstance(value, ASGElement):
-            return value.to_dict(include_position, max_depth)
-        elif isinstance(value, set):
-            return [
-                self._serialize_value(v, include_position, max_depth)
-                for v in sorted(value, key=str)
-            ]
-        elif isinstance(value, list):
-            return [
-                self._serialize_value(v, include_position, max_depth) for v in value
-            ]
-        elif isinstance(value, dict):
-            return {
-                k: self._serialize_value(v, include_position, max_depth)
-                for k, v in value.items()
-            }
-        elif hasattr(value, "name") and hasattr(value, "value"):  # Enum
-            return value.name
-        elif hasattr(value, "__dataclass_fields__"):  # Non-ASG dataclass
-            return {
-                f: self._serialize_value(getattr(value, f), include_position, max_depth)
-                for f in value.__dataclass_fields__
-                if not f.startswith("_")
-            }
-        else:
-            return value
-
 
 @dataclass
 class MScope(ASGElement):
@@ -161,19 +71,13 @@ class MScope(ASGElement):
 
     statements: List["MStatement"] = field(default_factory=list)
 
-    def add_statement(self, stmt: "MStatement") -> None:
-        """Add a statement to this scope, setting its parent references."""
-        stmt.parent = self
-        stmt.scope = self
-        self.statements.append(stmt)
-
     def walk_statements(self) -> Iterator["MStatement"]:
         """Yield all statements recursively, including nested scopes.
 
         Walks through all statements in this scope and recurses into
         any nested scopes (IF bodies, FOR bodies, etc.).
         """
-        from m2py.asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
+        from m2py.asg.type_helpers import get_body_scope, get_then_scope
 
         for stmt in self.statements:
             yield stmt
@@ -184,9 +88,6 @@ class MScope(ASGElement):
             then_scope = get_then_scope(stmt)
             if then_scope is not None:
                 yield from then_scope.walk_statements()
-            else_scope = get_else_scope(stmt)
-            if else_scope is not None:
-                yield from else_scope.walk_statements()
 
 
 @dataclass
@@ -296,11 +197,6 @@ class MRoutine(ASGElement):
     # Parse errors encountered during parsing (for error-tolerant mode)
     parse_errors: List["MParseError"] = field(default_factory=list, repr=False)
 
-    # Analysis annotations
-    has_unstructured_goto: bool = False
-    requires_runtime_eval: bool = False  # Has unresolvable indirection
-    global_refs: List[str] = field(default_factory=list)  # Names of ^GLOBAL references
-
     # T102: Pre-computed codegen hint (populated by classify_gotos)
     needs_loop_exit_exception: bool = False  # True if any MULTI_LOOP_EXIT GOTO exists
 
@@ -360,38 +256,6 @@ class MRoutine(ASGElement):
         label.parent = self
         self.labels.append(label)
 
-    def get_text_line(self, line_number: int) -> str:
-        """Get a source line by 1-indexed line number.
-
-        Used to support $TEXT(+n) function which returns the nth line.
-
-        Args:
-            line_number: 1-indexed line number
-
-        Returns:
-            The source line text, or empty string if out of range.
-        """
-        if line_number < 1 or line_number > len(self.source_lines):
-            return ""
-        return self.source_lines[line_number - 1]
-
-    def get_text_at_label(self, label_name: str, offset: int = 0) -> str:
-        """Get source line by label+offset reference.
-
-        Used to support $TEXT(label+offset) function.
-
-        Args:
-            label_name: The label name to find
-            offset: Line offset from the label (0 = label line itself)
-
-        Returns:
-            The source line text, or empty string if not found.
-        """
-        label = self.get_label(label_name)
-        if label is None or label.line_number is None:
-            return ""
-        return self.get_text_line(label.line_number + offset)
-
 
 @dataclass
 class MCall(ASGElement):
@@ -415,7 +279,6 @@ class MCall(ASGElement):
     # Indirection analysis flags
     label_is_indirect: bool = False  # True if label comes from indirection
     routine_is_indirect: bool = False  # True if routine comes from indirection
-    indirection_levels: int = 0  # Number of @ levels (1 for @A, 2 for @@A, etc.)
 
     # Resolution (populated in resolution pass)
     target: Optional[MLabel] = field(default=None, repr=False)

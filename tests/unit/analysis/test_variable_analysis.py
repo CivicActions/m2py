@@ -3,7 +3,7 @@
 Tests for:
 - ScopeVariables, VariableInfo dataclasses
 - Variable extraction from expressions and statements
-- analyze_variables, get_def_use_chains, compute_transitive_inputs
+- analyze_variables, compute_transitive_inputs
 - Formal parameters, function signatures, scope strategies
 - Parameter binding and passing modes
 - Edge cases and integration tests
@@ -17,7 +17,6 @@ import pytest
 
 from m2py.analysis.variables import (
     analyze_variables,
-    get_def_use_chains,
     compute_transitive_inputs,
     ScopeVariables,
     VariableInfo,
@@ -45,6 +44,8 @@ from m2py.asg.expressions import (
     MLiteral,
     MBinaryOp,
 )
+from m2py.parser import MUMPSParser
+from m2py.analysis import resolve_references
 
 
 @pytest.mark.analysis
@@ -489,50 +490,6 @@ class TestAnalyzeVariables:
         assert "X" not in scope_vars.input_variables
 
 
-class TestGetDefUseChains:
-    """Tests for get_def_use_chains function."""
-
-    def test_def_use_simple(self):
-        """Test simple def-use chain."""
-        # S X=1 W X
-        target = MVariable(name="X", subscripts=[])
-        value = MLiteral(value=1)
-        assignment = MAssignment(target=target, value=value)
-        set_stmt = MSetStatement(assignments=[assignment])
-        set_stmt.line_number = 1
-
-        write_var = MVariable(name="X", subscripts=[])
-        write_stmt = MWriteStatement(arguments=[write_var])
-        write_stmt.line_number = 2
-
-        scope = MScope(statements=[set_stmt, write_stmt])
-        label = MLabel(name="TEST", body=scope)
-
-        chains = get_def_use_chains(label)
-        assert "X" in chains
-
-    def test_def_use_multiple_defs(self):
-        """Test variable with multiple definitions."""
-        # S X=1 S X=2
-        target1 = MVariable(name="X", subscripts=[])
-        value1 = MLiteral(value=1)
-        assign1 = MAssignment(target=target1, value=value1)
-        stmt1 = MSetStatement(assignments=[assign1])
-        stmt1.line_number = 1
-
-        target2 = MVariable(name="X", subscripts=[])
-        value2 = MLiteral(value=2)
-        assign2 = MAssignment(target=target2, value=value2)
-        stmt2 = MSetStatement(assignments=[assign2])
-        stmt2.line_number = 2
-
-        scope = MScope(statements=[stmt1, stmt2])
-        label = MLabel(name="TEST", body=scope)
-
-        chains = get_def_use_chains(label)
-        assert "X" in chains
-
-
 class TestComputeTransitiveInputs:
     """Tests for compute_transitive_inputs function."""
 
@@ -971,42 +928,6 @@ class TestQuitAnalysis:
         assert has_void is True
 
 
-class TestParameterBinding:
-    """Tests for parameter binding (Phase 58c)."""
-
-    def test_parameter_binding_dataclass(self):
-        """Test ParameterBinding has correct fields."""
-        from m2py.analysis.variables import ParameterBinding
-        from m2py.asg.enums import PassingMode
-
-        binding = ParameterBinding(
-            formal_name="X",
-            actual_expr=MLiteral(value=42),
-            passing_mode=PassingMode.BY_VALUE,
-        )
-
-        assert binding.formal_name == "X"
-        assert binding.passing_mode == PassingMode.BY_VALUE
-        assert binding.caller_var_name is None
-
-    def test_byref_binding(self):
-        """Test call-by-reference binding tracks caller variable."""
-        from m2py.analysis.variables import ParameterBinding
-        from m2py.asg.enums import PassingMode
-
-        var_a = MVariable(name="A", subscripts=[])
-        binding = ParameterBinding(
-            formal_name="X",
-            actual_expr=var_a,
-            passing_mode=PassingMode.BY_REFERENCE,
-            caller_var_name="A",
-        )
-
-        assert binding.formal_name == "X"
-        assert binding.passing_mode == PassingMode.BY_REFERENCE
-        assert binding.caller_var_name == "A"
-
-
 class TestEdgeCases:
     """Tests for edge cases (Phase 58j)."""
 
@@ -1209,8 +1130,6 @@ class TestPassingModeAnalysis:
         )
 
         assert param.passing_mode == PassingMode.BY_VALUE
-        assert not param.is_byref
-        assert not param.is_omitted
 
     def test_byref_argument(self):
         """T601: BY_REFERENCE for .variable arguments."""
@@ -1224,10 +1143,8 @@ class TestPassingModeAnalysis:
         )
 
         assert param.passing_mode == PassingMode.BY_REFERENCE
-        assert param.is_byref
         # variable_name holds the caller's variable name for BY_REFERENCE
         assert param.variable_name == "X"
-        assert not param.is_omitted
 
     def test_omitted_argument(self):
         """T603: OMITTED for empty argument position."""
@@ -1240,126 +1157,6 @@ class TestPassingModeAnalysis:
         )
 
         assert param.passing_mode == PassingMode.OMITTED
-        assert param.is_omitted
-        assert not param.is_byref
-
-
-class TestParameterBindingAdvanced:
-    """Advanced tests for parameter binding (Phase 58c-d)."""
-
-    def test_bind_parameters_value(self):
-        """T610: D CALC(A,B) calling CALC(X,Y) - bindings X←A, Y←B."""
-        from m2py.analysis.variables import bind_parameters
-        from m2py.asg.enums import PassingMode
-
-        # Create the target label CALC(X,Y)
-        target_label = MLabel(name="CALC", formal_list=["X", "Y"], body=MScope())
-
-        # Create call with two arguments A, B
-        var_a = MVariable(name="A", subscripts=[])
-        var_b = MVariable(name="B", subscripts=[])
-        call = MCall(name="CALC", routine=None, arguments=[var_a, var_b])
-
-        bindings = bind_parameters(call, target_label)
-
-        assert len(bindings) == 2
-        assert bindings[0].formal_name == "X"
-        assert bindings[0].passing_mode == PassingMode.BY_VALUE
-        assert bindings[1].formal_name == "Y"
-        assert bindings[1].passing_mode == PassingMode.BY_VALUE
-
-    def test_bind_parameters_partial(self):
-        """T611: D CALC(A) calling CALC(X,Y) - X←A, Y←omitted."""
-        from m2py.analysis.variables import bind_parameters
-        from m2py.asg.enums import PassingMode
-
-        # Create the target label CALC(X,Y)
-        target_label = MLabel(name="CALC", formal_list=["X", "Y"], body=MScope())
-
-        # Create call with one argument A
-        var_a = MVariable(name="A", subscripts=[])
-        call = MCall(name="CALC", routine=None, arguments=[var_a])
-
-        bindings = bind_parameters(call, target_label)
-
-        assert len(bindings) == 2
-        assert bindings[0].formal_name == "X"
-        assert bindings[0].passing_mode == PassingMode.BY_VALUE
-        assert bindings[1].formal_name == "Y"
-        assert bindings[1].passing_mode == PassingMode.OMITTED
-
-    def test_byref_creates_alias(self):
-        """T617: .X passed to formal A - X aliased."""
-        from m2py.analysis.variables import bind_parameters
-        from m2py.asg.expressions import MActualParameter
-        from m2py.asg.enums import PassingMode
-
-        # Create target label SUB(A)
-        target_label = MLabel(name="SUB", formal_list=["A"], body=MScope())
-
-        # Create call with .X (by reference)
-        var_x = MVariable(name="X", subscripts=[])
-        byref_param = MActualParameter(
-            passing_mode=PassingMode.BY_REFERENCE, expression=var_x, variable_name="X"
-        )
-        call = MCall(name="SUB", routine=None, arguments=[byref_param])
-
-        bindings = bind_parameters(call, target_label)
-
-        assert len(bindings) == 1
-        assert bindings[0].formal_name == "A"
-        assert bindings[0].passing_mode == PassingMode.BY_REFERENCE
-        assert bindings[0].caller_var_name == "X"
-
-    def test_bind_parameters_explicit_none_omitted(self):
-        """D CALC(,B) - explicit None in arguments for omitted param.
-
-        MUMPS allows omitting params in middle: D SUB(,B)
-        This should bind the first formal to OMITTED mode.
-        Coverage target: Lines 1172-1173 in variables.py
-        """
-        from m2py.analysis.variables import bind_parameters
-        from m2py.asg.enums import PassingMode
-
-        # Create target label CALC(X,Y)
-        target_label = MLabel(name="CALC", formal_list=["X", "Y"], body=MScope())
-
-        # Create call D CALC(,B) - first arg is None (omitted), second is B
-        var_b = MVariable(name="B", subscripts=[])
-        call = MCall(name="CALC", routine=None, arguments=[None, var_b])
-
-        bindings = bind_parameters(call, target_label)
-
-        assert len(bindings) == 2
-        assert bindings[0].formal_name == "X"
-        assert bindings[0].passing_mode == PassingMode.OMITTED
-        assert bindings[1].formal_name == "Y"
-        assert bindings[1].passing_mode == PassingMode.BY_VALUE
-
-    def test_bind_parameters_expression_arg(self):
-        """D CALC(A+B) - expression argument passed by value.
-
-        MUMPS: Expressions (not simple variables) are passed by value.
-        Coverage target: Lines 1175-1178 in variables.py
-        """
-        from m2py.analysis.variables import bind_parameters
-        from m2py.asg.enums import PassingMode
-
-        # Create target label CALC(X)
-        target_label = MLabel(name="CALC", formal_list=["X"], body=MScope())
-
-        # Create call D CALC(A+B) - expression argument
-        var_a = MVariable(name="A", subscripts=[])
-        var_b = MVariable(name="B", subscripts=[])
-        expr = MBinaryOp(operator="+", left=var_a, right=var_b)
-        call = MCall(name="CALC", routine=None, arguments=[expr])
-
-        bindings = bind_parameters(call, target_label)
-
-        assert len(bindings) == 1
-        assert bindings[0].formal_name == "X"
-        assert bindings[0].passing_mode == PassingMode.BY_VALUE
-        assert bindings[0].actual_expr is expr
 
 
 class TestSignatureComputation:
@@ -1470,183 +1267,6 @@ class TestTransitivePropagation:
         assert "VAR" in transitive["B"]
         assert "VAR" in transitive["A"]
 
-    def test_byref_propagates_output(self):
-        """T641: A calls B with by-ref, B modifies - A's outputs include it."""
-        from m2py.analysis.variables import (
-            compute_transitive_outputs,
-            compute_all_signatures,
-        )
-        from m2py.asg.expressions import MActualParameter
-        from m2py.asg.enums import PassingMode
-
-        # B(X) sets X=1
-        formal_x = MVariable(name="X", subscripts=[])
-        assign = MAssignment(target=formal_x, value=MLiteral(value=1))
-        set_stmt = MSetStatement(assignments=[assign])
-        scope_b = MScope(statements=[set_stmt])
-        label_b = MLabel(name="B", formal_list=["X"], body=scope_b)
-
-        # A calls B(.VAR) - VAR passed by reference
-        byref_param = MActualParameter(
-            passing_mode=PassingMode.BY_REFERENCE,
-            expression=MVariable(name="VAR", subscripts=[]),
-            variable_name="VAR",
-        )
-        call_b = MCall(name="B", routine=None, arguments=[byref_param])
-        call_b.target = label_b  # Link call to target
-        do_b = MDoStatement(targets=[call_b])
-        scope_a = MScope(statements=[do_b])
-        label_a = MLabel(name="A", body=scope_a)
-
-        routine = MRoutine(name="TEST", labels=[label_a, label_b])
-        routine._labels_by_name = {"A": label_a, "B": label_b}
-
-        label_vars = analyze_variables(routine)
-        signatures = compute_all_signatures(routine)
-
-        transitive_outputs = compute_transitive_outputs(routine, label_vars, signatures)
-
-        # B writes to formal X, which is aliased to A's VAR
-        # So VAR should be in A's transitive outputs
-        assert "VAR" in transitive_outputs["A"]
-
-    def test_nested_byref_chain_propagates(self):
-        """T6711: Nested call chain A → B → C with by-ref propagates outputs.
-
-        OUTER calls MIDDLE(.X)
-        MIDDLE(A) calls INNER(.A)
-        INNER(B) sets B=B*2
-
-        OUTER's transitive_outputs should include X via MIDDLE→INNER chain.
-
-        Note: byref_outputs only captures direct writes within a label.
-        MIDDLE doesn't write to A directly (only passes it by-ref to INNER),
-        so A won't be in MIDDLE's byref_outputs. However, compute_transitive_outputs
-        propagates the modification through the call chain.
-        """
-        from m2py.analysis.variables import (
-            compute_transitive_outputs,
-            compute_all_signatures,
-        )
-        from m2py.asg.expressions import MActualParameter
-        from m2py.asg.enums import PassingMode, LiteralType
-
-        # INNER(B) S B=B*2 Q
-        formal_b = MVariable(name="B", subscripts=[])
-        lit_2 = MLiteral(value=2, literal_type=LiteralType.INTEGER)
-        multiply = MBinaryOp(left=formal_b, operator="*", right=lit_2)
-        assign_b = MAssignment(target=formal_b, value=multiply)
-        set_inner = MSetStatement(assignments=[assign_b])
-        quit_inner = MQuitStatement()
-        scope_inner = MScope(statements=[set_inner, quit_inner])
-        label_inner = MLabel(name="INNER", formal_list=["B"], body=scope_inner)
-
-        # MIDDLE(A) D INNER(.A) Q
-        formal_a = MVariable(name="A", subscripts=[])
-        byref_a = MActualParameter(
-            passing_mode=PassingMode.BY_REFERENCE,
-            expression=formal_a,
-            variable_name="A",
-        )
-        call_inner = MCall(name="INNER", routine=None, arguments=[byref_a])
-        call_inner.target = label_inner
-        do_inner = MDoStatement(targets=[call_inner])
-        quit_middle = MQuitStatement()
-        scope_middle = MScope(statements=[do_inner, quit_middle])
-        label_middle = MLabel(name="MIDDLE", formal_list=["A"], body=scope_middle)
-
-        # OUTER D MIDDLE(.X) Q
-        var_x = MVariable(name="X", subscripts=[])
-        byref_x = MActualParameter(
-            passing_mode=PassingMode.BY_REFERENCE,
-            expression=var_x,
-            variable_name="X",
-        )
-        call_middle = MCall(name="MIDDLE", routine=None, arguments=[byref_x])
-        call_middle.target = label_middle
-        do_middle = MDoStatement(targets=[call_middle])
-        quit_outer = MQuitStatement()
-        scope_outer = MScope(statements=[do_middle, quit_outer])
-        label_outer = MLabel(name="OUTER", body=scope_outer)
-
-        routine = MRoutine(name="TEST", labels=[label_outer, label_middle, label_inner])
-        routine._labels_by_name = {
-            "OUTER": label_outer,
-            "MIDDLE": label_middle,
-            "INNER": label_inner,
-        }
-
-        label_vars = analyze_variables(routine)
-        signatures = compute_all_signatures(routine)
-
-        # Verify byref_outputs are populated correctly for direct writes
-        # INNER writes to B, so B is in byref_outputs
-        assert "B" in signatures["INNER"].byref_outputs
-        # MIDDLE does NOT write to A directly - it only passes A by-ref
-        # So A is NOT in MIDDLE's byref_outputs (this is correct!)
-        assert "A" not in signatures["MIDDLE"].byref_outputs
-
-        transitive_outputs = compute_transitive_outputs(routine, label_vars, signatures)
-
-        # INNER writes B, which is aliased to MIDDLE's A
-        # So A should be in MIDDLE's transitive outputs
-        assert "A" in transitive_outputs["MIDDLE"]
-        # MIDDLE modifies A (transitively), which is aliased to OUTER's X
-        # So X should be in OUTER's transitive outputs
-        assert "X" in transitive_outputs["OUTER"]
-
-    def test_byref_param_not_modified_not_in_outputs(self):
-        """T6712: By-ref param NOT modified → NOT in transitive outputs.
-
-        CALLER calls READER(.X)
-        READER(A) W A Q  ; Only reads A, doesn't write
-
-        CALLER's transitive_outputs should NOT include X.
-        """
-        from m2py.analysis.variables import (
-            compute_transitive_outputs,
-            compute_all_signatures,
-        )
-        from m2py.asg.expressions import MActualParameter
-        from m2py.asg.enums import PassingMode
-
-        # READER(A) W A Q - only reads A
-        formal_a = MVariable(name="A", subscripts=[])
-        write_stmt = MWriteStatement(arguments=[formal_a])
-        quit_reader = MQuitStatement()
-        scope_reader = MScope(statements=[write_stmt, quit_reader])
-        label_reader = MLabel(name="READER", formal_list=["A"], body=scope_reader)
-
-        # CALLER D READER(.X) Q
-        var_x = MVariable(name="X", subscripts=[])
-        byref_x = MActualParameter(
-            passing_mode=PassingMode.BY_REFERENCE,
-            expression=var_x,
-            variable_name="X",
-        )
-        call_reader = MCall(name="READER", routine=None, arguments=[byref_x])
-        call_reader.target = label_reader
-        do_reader = MDoStatement(targets=[call_reader])
-        quit_caller = MQuitStatement()
-        scope_caller = MScope(statements=[do_reader, quit_caller])
-        label_caller = MLabel(name="CALLER", body=scope_caller)
-
-        routine = MRoutine(name="TEST", labels=[label_caller, label_reader])
-        routine._labels_by_name = {"CALLER": label_caller, "READER": label_reader}
-
-        label_vars = analyze_variables(routine)
-        signatures = compute_all_signatures(routine)
-
-        # Verify READER doesn't have A in byref_outputs (only reads, no writes)
-        assert "A" not in signatures["READER"].byref_outputs
-        assert "A" in label_vars["READER"].reads
-        assert "A" not in label_vars["READER"].writes
-
-        transitive_outputs = compute_transitive_outputs(routine, label_vars, signatures)
-
-        # READER doesn't modify A, so X should NOT be in CALLER's outputs
-        assert "X" not in transitive_outputs["CALLER"]
-
 
 class TestFormalParamsShadowing:
     """Tests for formal parameter shadowing (Phase 58a)."""
@@ -1678,57 +1298,6 @@ class TestFormalParamsShadowing:
         assert "X" in result["CALC"].reads
         # X is treated as implicitly NEWed
         assert "X" in result["CALC"].formal_params
-
-
-class TestRoutineAnalysisCache:
-    """Tests for RoutineAnalysisCache (Phase 59 - T683)."""
-
-    def test_cache_basic_usage(self):
-        """Test basic cache usage pattern."""
-        from m2py.analysis.variables import RoutineAnalysisCache
-
-        # Create a routine with two labels
-        var_x = MVariable(name="X", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
-        )
-        scope_a = MScope(statements=[set_stmt])
-        label_a = MLabel(name="A", body=scope_a)
-
-        scope_b = MScope(statements=[])
-        label_b = MLabel(name="B", body=scope_b)
-
-        routine = MRoutine(name="TEST", labels=[label_a, label_b])
-
-        cache = RoutineAnalysisCache(routine)
-        cache.ensure_analyzed(compute_transitive=False)
-
-        # Check that results are accessible
-        assert "A" in cache.label_vars
-        assert "B" in cache.label_vars
-        assert "X" in cache.label_vars["A"].writes
-
-    def test_cache_invalidate_label(self):
-        """Test invalidating a specific label."""
-        from m2py.analysis.variables import RoutineAnalysisCache
-
-        var_x = MVariable(name="X", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
-        )
-        scope = MScope(statements=[set_stmt])
-        label = MLabel(name="A", body=scope)
-        routine = MRoutine(name="TEST", labels=[label])
-
-        cache = RoutineAnalysisCache(routine)
-        cache.ensure_analyzed(compute_transitive=False)
-
-        # Invalidate and re-analyze
-        cache.invalidate_label("A")
-        assert not cache._fully_analyzed
-
-        cache.ensure_analyzed(compute_transitive=False)
-        assert cache._fully_analyzed
 
 
 class TestPerformance:
@@ -1791,284 +1360,6 @@ class TestPerformance:
 
         # Informational: print timing
         print(f"\n  Performance: {len(lines)} lines analyzed in {elapsed * 1000:.1f}ms")
-
-
-# =============================================================================
-# RoutineAnalysisCache Incremental Analysis Tests
-# =============================================================================
-
-
-class TestRoutineAnalysisCacheIncremental:
-    """Test RoutineAnalysisCache incremental analysis paths.
-
-    These tests cover the incremental reanalysis paths in ensure_analyzed()
-    that were added for performance optimization.
-    """
-
-    def test_cache_incremental_reanalysis(self):
-        """Test incremental reanalysis when label is invalidated.
-
-        This tests the incremental path in ensure_analyzed() where only
-        stale labels are reanalyzed.
-        """
-        from m2py.analysis.variables import RoutineAnalysisCache
-
-        # Create routine with multiple labels
-        var_x = MVariable(name="X", subscripts=[])
-        var_y = MVariable(name="Y", subscripts=[])
-
-        set_x = MSetStatement(
-            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
-        )
-        set_y = MSetStatement(
-            assignments=[MAssignment(target=var_y, value=MLiteral(value="2"))]
-        )
-
-        scope_a = MScope(statements=[set_x])
-        scope_b = MScope(statements=[set_y])
-        scope_c = MScope(statements=[])
-
-        label_a = MLabel(name="A", body=scope_a)
-        label_b = MLabel(name="B", body=scope_b)
-        label_c = MLabel(name="C", body=scope_c)
-
-        routine = MRoutine(name="TEST", labels=[label_a, label_b, label_c])
-
-        cache = RoutineAnalysisCache(routine)
-        cache.ensure_analyzed(compute_transitive=True)
-
-        assert cache._fully_analyzed
-        initial_a_writes = cache.label_vars["A"].writes.copy()
-
-        # Invalidate only one label
-        cache.invalidate_label("A")
-        assert not cache._fully_analyzed
-        assert "A" not in cache._valid_labels
-        assert "B" in cache._valid_labels
-        assert "C" in cache._valid_labels
-
-        # Re-analyze - should only recompute label A
-        cache.ensure_analyzed(compute_transitive=True)
-        assert cache._fully_analyzed
-        assert cache.label_vars["A"].writes == initial_a_writes
-
-    def test_cache_invalidate_all_triggers_full_reanalysis(self):
-        """Test that invalidate_all clears everything."""
-        from m2py.analysis.variables import RoutineAnalysisCache
-
-        var_x = MVariable(name="X", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
-        )
-        scope = MScope(statements=[set_stmt])
-
-        label_a = MLabel(name="A", body=scope)
-        label_b = MLabel(name="B", body=MScope(statements=[]))
-
-        routine = MRoutine(name="TEST", labels=[label_a, label_b])
-
-        cache = RoutineAnalysisCache(routine)
-        cache.ensure_analyzed(compute_transitive=False)
-
-        assert len(cache._valid_labels) == 2
-
-        cache.invalidate_all()
-        assert len(cache._valid_labels) == 0
-        assert not cache._fully_analyzed
-
-        # Re-analyze
-        cache.ensure_analyzed(compute_transitive=False)
-        assert cache._fully_analyzed
-        assert len(cache._valid_labels) == 2
-
-    def test_cache_full_reanalysis_when_many_labels_stale(self):
-        """Test that full reanalysis triggers when >50% labels are stale.
-
-        This tests the optimization path in ensure_analyzed() that does
-        full reanalysis instead of incremental when too many labels changed.
-        """
-        from m2py.analysis.variables import RoutineAnalysisCache
-
-        # Create routine with 4 labels
-        labels = []
-        for name in ["A", "B", "C", "D"]:
-            scope = MScope(statements=[])
-            labels.append(MLabel(name=name, body=scope))
-
-        routine = MRoutine(name="TEST", labels=labels)
-
-        cache = RoutineAnalysisCache(routine)
-        cache.ensure_analyzed(compute_transitive=False)
-
-        # Invalidate 3 out of 4 labels (>50%)
-        cache.invalidate_label("A")
-        cache.invalidate_label("B")
-        cache.invalidate_label("C")
-
-        assert len(cache._valid_labels) == 1  # Only D is valid
-
-        # Re-analyze - should trigger full reanalysis path
-        cache.ensure_analyzed(compute_transitive=False)
-        assert cache._fully_analyzed
-        assert len(cache._valid_labels) == 4
-
-    def test_cache_call_graph_building(self):
-        """Test that call graph is built correctly for affected label tracking."""
-        from m2py.analysis.variables import RoutineAnalysisCache
-
-        # Create routine where A calls B
-        call_b = MCall(name="B")
-        do_stmt = MDoStatement(targets=[call_b])
-        scope_a = MScope(statements=[do_stmt])
-
-        scope_b = MScope(statements=[])
-
-        label_a = MLabel(name="A", body=scope_a)
-        label_b = MLabel(name="B", body=scope_b)
-
-        routine = MRoutine(name="TEST", labels=[label_a, label_b])
-
-        cache = RoutineAnalysisCache(routine)
-        cache.ensure_analyzed(compute_transitive=True)
-
-        # Verify call graph was built
-        assert "A" in cache._call_graph
-        assert "B" in cache._call_graph["A"]
-
-        # Verify reverse call graph
-        assert "B" in cache._reverse_call_graph
-        assert "A" in cache._reverse_call_graph["B"]
-
-    def test_cache_affected_labels_transitive(self):
-        """Test that affected labels includes transitive callers."""
-        from m2py.analysis.variables import RoutineAnalysisCache
-
-        # Create call chain: A -> B -> C
-        call_b = MCall(name="B")
-        call_c = MCall(name="C")
-
-        do_b = MDoStatement(targets=[call_b])
-        do_c = MDoStatement(targets=[call_c])
-
-        scope_a = MScope(statements=[do_b])
-        scope_b = MScope(statements=[do_c])
-        scope_c = MScope(statements=[])
-
-        label_a = MLabel(name="A", body=scope_a)
-        label_b = MLabel(name="B", body=scope_b)
-        label_c = MLabel(name="C", body=scope_c)
-
-        routine = MRoutine(name="TEST", labels=[label_a, label_b, label_c])
-
-        cache = RoutineAnalysisCache(routine)
-        cache.ensure_analyzed(compute_transitive=True)
-
-        # Get affected labels if C changes
-        affected = cache._get_affected_labels({"C"})
-
-        # Should include C and all transitive callers (B, A)
-        assert "C" in affected
-        assert "B" in affected
-        assert "A" in affected
-
-    def test_cache_signatures_property(self):
-        """Test the signatures property accessor."""
-        from m2py.analysis.variables import RoutineAnalysisCache
-
-        var_x = MVariable(name="X", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
-        )
-        scope = MScope(statements=[set_stmt])
-        label = MLabel(name="A", body=scope)
-
-        routine = MRoutine(name="TEST", labels=[label])
-
-        cache = RoutineAnalysisCache(routine)
-
-        # Accessing signatures should trigger analysis
-        sigs = cache.signatures
-        assert "A" in sigs
-        assert cache._fully_analyzed
-
-
-class TestRoutineRequiresRuntimeEval:
-    """Tests for MRoutine.requires_runtime_eval rollup from label signatures."""
-
-    def test_routine_without_indirection_does_not_require_runtime(self):
-        """T6831a: Routine with no indirection has requires_runtime_eval=False."""
-        from m2py.analysis.variables import compute_all_signatures
-
-        # Simple SET X=1 - no indirection
-        var_x = MVariable(name="X", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
-        )
-        scope = MScope(statements=[set_stmt])
-        label = MLabel(name="MAIN", body=scope)
-        routine = MRoutine(name="TEST", labels=[label])
-
-        compute_all_signatures(routine)
-
-        assert routine.requires_runtime_eval is False
-
-    def test_routine_with_xecute_requires_runtime(self):
-        """T6831b: Routine with XECUTE has requires_runtime_eval=True."""
-        from m2py.analysis.variables import compute_all_signatures
-        from m2py.asg.statements import MXecuteStatement
-
-        # Label with XECUTE defeats static analysis
-        xecute_stmt = MXecuteStatement(code_expressions=[MLiteral(value="S X=1")])
-        scope = MScope(statements=[xecute_stmt])
-        label = MLabel(name="DYN", body=scope)
-        routine = MRoutine(name="TEST", labels=[label])
-
-        compute_all_signatures(routine)
-
-        assert routine.requires_runtime_eval is True
-
-    def test_routine_with_one_runtime_label_requires_runtime(self):
-        """T6831c: Routine requires runtime if ANY label requires it."""
-        from m2py.analysis.variables import compute_all_signatures
-        from m2py.asg.statements import MXecuteStatement
-
-        # Label 1: Simple, no indirection
-        var_x = MVariable(name="X", subscripts=[])
-        set_stmt = MSetStatement(
-            assignments=[MAssignment(target=var_x, value=MLiteral(value="1"))]
-        )
-        scope1 = MScope(statements=[set_stmt])
-        label1 = MLabel(name="SIMPLE", body=scope1)
-
-        # Label 2: Has XECUTE
-        xecute_stmt = MXecuteStatement(code_expressions=[MLiteral(value="S Y=2")])
-        scope2 = MScope(statements=[xecute_stmt])
-        label2 = MLabel(name="DYNAMIC", body=scope2)
-
-        routine = MRoutine(name="TEST", labels=[label1, label2])
-
-        compute_all_signatures(routine)
-
-        # Routine should require runtime because one label does
-        assert routine.requires_runtime_eval is True
-        # Verify individual labels
-        assert label1.signature.requires_runtime_scope is False
-        assert label2.signature.requires_runtime_scope is True
-
-    def test_routine_with_indirect_do_requires_runtime(self):
-        """T6831d: Routine with D @VAR has requires_runtime_eval=True."""
-        from m2py.analysis.variables import compute_all_signatures
-
-        # DO @VAR - indirected call
-        call = MCall(name="", label_is_indirect=True, indirection=MVariable(name="CMD"))
-        do_stmt = MDoStatement(targets=[call])
-        scope = MScope(statements=[do_stmt])
-        label = MLabel(name="INDIRECT", body=scope)
-        routine = MRoutine(name="TEST", labels=[label])
-
-        compute_all_signatures(routine)
-
-        assert routine.requires_runtime_eval is True
 
 
 class TestCrossLabelVariableFlow:
@@ -2721,3 +2012,86 @@ class TestRoutineInputOnlyVars:
         # B is read but never written or passed in, so it's input-only
         assert "A" not in routine.routine_input_only_vars
         assert "B" in routine.routine_input_only_vars
+
+
+# =============================================================================
+# Pass 2: walk_expressions MIndirection
+# =============================================================================
+
+
+class TestWalkExpressionsMIndirectionPass2:
+    """walk_expressions traverses MIndirection including name_indirection_subscripts.
+
+    Covers variables.py L1029-1036.
+    """
+
+    def test_walk_indirection_basic(self):
+        """walk_expressions yields from MIndirection.expression."""
+        from m2py.analysis.variables import walk_expressions
+        from m2py.asg.expressions import MIndirection, MVariable
+
+        var = MVariable(name="X")
+        indir = MIndirection(expression=var)
+        results = list(walk_expressions(indir))
+        assert var in results
+
+    def test_walk_indirection_with_subscripts(self):
+        """walk_expressions yields from MIndirection.subscripts."""
+        from m2py.analysis.variables import walk_expressions
+        from m2py.asg.expressions import MIndirection, MVariable, MLiteral
+
+        var = MVariable(name="X")
+        sub1 = MLiteral(value=1, literal_type=None)
+        sub2 = MLiteral(value=2, literal_type=None)
+        indir = MIndirection(expression=var, subscripts=[sub1, sub2])
+        results = list(walk_expressions(indir))
+        assert var in results
+        assert sub1 in results
+        assert sub2 in results
+
+    def test_walk_indirection_with_name_indirection_subscripts(self):
+        """walk_expressions yields from MIndirection.name_indirection_subscripts."""
+        from m2py.analysis.variables import walk_expressions
+        from m2py.asg.expressions import MIndirection, MVariable, MLiteral
+
+        var = MVariable(name="X")
+        sub = MLiteral(value=1, literal_type=None)
+        indir = MIndirection(expression=var, name_indirection_subscripts=[[sub]])
+        results = list(walk_expressions(indir))
+        assert var in results
+        assert sub in results
+
+
+class TestVariablesNameIndirection:
+    """Tests for _routine_has_name_indirection_on_locals."""
+
+    def test_routine_with_name_indirection(self):
+        """Routine with @VAR in variable positions."""
+        parser = MUMPSParser()
+        source = "TEST\n\tS @A=1\n\tQ\n"
+        routine = parser.parse(source)
+        resolve_references(routine)
+        from m2py.analysis.variables import analyze_variables
+
+        label_vars = analyze_variables(routine)
+        assert label_vars is not None
+
+
+class TestVariablesTransitiveInputs:
+    """Tests for compute_transitive_inputs deep chains."""
+
+    def test_transitive_three_levels(self):
+        """A calls B calls C; C reads X → X in A's transitive inputs."""
+        parser = MUMPSParser()
+        source = "A\n\tD B\n\tQ\nB\n\tD C\n\tQ\nC\n\tW X\n\tQ\n"
+        routine = parser.parse(source)
+        resolve_references(routine)
+        from m2py.analysis.variables import analyze_variables
+
+        label_vars = analyze_variables(routine)
+        assert label_vars is not None
+
+
+# =============================================================================
+# Pass 2: Semantic Analyzer LIVE paths
+# =============================================================================

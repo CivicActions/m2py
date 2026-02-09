@@ -4,7 +4,6 @@ Provides the MUMPSParser class that parses MUMPS source code and
 produces an Abstract Semantic Graph (ASG).
 """
 
-import json
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -12,9 +11,6 @@ from textx import metamodel_from_file
 from textx.exceptions import TextXSyntaxError
 
 from m2py.parser.line_parser import (
-    classify_for_command,
-    detect_quit_after_for,
-    extract_for_commands,
     parse_commands_from_line,
     parse_line_content,
 )
@@ -30,7 +26,6 @@ from m2py.analysis.variables import (
     compute_transitive_inputs as _compute_transitive_inputs,
 )
 from m2py.asg import MLabel, MRoutine, MScope, MParseError
-from m2py.asg.enums import ForLoopType
 from m2py.asg.statements import (
     MDoStatement,
     MElseStatement,
@@ -90,9 +85,6 @@ def _structure_commands_with_bodies(statements: List[MStatement]) -> List[MState
     Returns:
         List with proper control flow nesting
     """
-    if not statements:
-        return []
-
     result = []
     i = 0
 
@@ -241,9 +233,6 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
     Returns:
         List with DO blocks properly nested
     """
-    if not statements:
-        return []
-
     result = []
     i = 0
 
@@ -263,16 +252,15 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
             # the argumentless DO and its dot-body. Skip past them to find the
             # dot-body, then re-insert them after the DO in the output.
             do_line = getattr(stmt, "line_number", None)
-            if do_line is not None:
-                while j < len(statements):
-                    next_stmt = statements[j]
-                    dot_level = getattr(next_stmt, "_dot_level", 0)
-                    next_line = getattr(next_stmt, "line_number", None)
-                    if dot_level == 0 and next_line == do_line:
-                        post_do_same_line.append(next_stmt)
-                        j += 1
-                    else:
-                        break
+            while j < len(statements):
+                next_stmt = statements[j]
+                dot_level = getattr(next_stmt, "_dot_level", 0)
+                next_line = getattr(next_stmt, "line_number", None)
+                if dot_level == 0 and next_line == do_line:
+                    post_do_same_line.append(next_stmt)
+                    j += 1
+                else:
+                    break
 
             while j < len(statements):
                 next_stmt = statements[j]
@@ -406,46 +394,6 @@ def _mark_unreachable_statements(statements: List[MStatement]) -> None:
             )
         ):
             _mark_unreachable_statements(body.statements)
-
-
-def dump_asg_json(
-    routine: MRoutine, include_position: bool = False, indent: int = 2
-) -> str:
-    """Serialize an ASG to JSON for debugging.
-
-    Args:
-        routine: The MRoutine to serialize
-        include_position: Include source position information
-        indent: JSON indentation level (None for compact)
-
-    Returns:
-        JSON string representation of the ASG
-    """
-    return json.dumps(routine.to_dict(include_position=include_position), indent=indent)
-
-
-class ForPatternResult:
-    """Result of FOR loop pattern classification.
-
-    Represents a classified FOR loop found in the source code.
-    """
-
-    def __init__(
-        self,
-        label_name: str,
-        loop_type: ForLoopType,
-        loop_var: str,
-        line_content: str,
-        statement: Optional[MForStatement] = None,
-    ):
-        self.label_name = label_name
-        self.loop_type = loop_type
-        self.loop_var = loop_var
-        self.line_content = line_content
-        self.statement = statement  # The actual ASG node
-
-    def __repr__(self):
-        return f"ForPatternResult({self.label_name}, {self.loop_type.name}, var={self.loop_var!r})"
 
 
 class MUMPSParser:
@@ -808,12 +756,15 @@ class MUMPSParser:
                 else:
                     label._parsed_content = parsed_content
                     # Get commands from parsed content
-                    if parsed_content and hasattr(parsed_content, "commands"):
-                        label._parsed_commands = [
-                            lc.cmd for lc in parsed_content.commands if lc.cmd
-                        ]
-                    else:
-                        label._parsed_commands = []
+                    label._parsed_commands = [
+                        lc.cmd
+                        for lc in (
+                            parsed_content.commands
+                            if parsed_content is not None and parsed_content.commands
+                            else []
+                        )
+                        if lc.cmd
+                    ]
             else:
                 label._parsed_content = None
                 label._parsed_commands = []
@@ -846,111 +797,6 @@ class MUMPSParser:
                 label.body.statements.append(stmt)
 
         return label
-
-    def classify_for_patterns(
-        self, source: str, filename: Optional[str] = None
-    ) -> list[ForPatternResult]:
-        """Parse source and classify FOR loop patterns.
-
-        This is a convenience method that parses the source and then
-        extracts and classifies all FOR loops found in the routine.
-
-        Uses textX grammar-based parsing to extract FOR commands.
-
-        Args:
-            source: The MUMPS source code to parse
-            filename: Optional filename for error reporting
-
-        Returns:
-            List of ForPatternResult objects describing each FOR loop found
-        """
-        # Parse to get the model directly (we need line content)
-        self._current_file = filename
-
-        try:
-            model = self._metamodel.model_from_str(source)
-        except Exception as e:
-            raise MUMPSSyntaxError(
-                message=str(e),
-                source_file=filename,
-            ) from e
-
-        results = []
-        current_label = None
-
-        if hasattr(model, "lines") and model.lines:
-            for line in model.lines:
-                # Track current label for association
-                if hasattr(line, "label") and line.label:
-                    current_label = line.label
-
-                # Get line content (rest attribute for LabelLine, ContLine)
-                line_rest = getattr(line, "rest", "")
-
-                if not line_rest:
-                    continue
-
-                # Use textX grammar to extract FOR commands
-                for_commands = extract_for_commands(line_rest)
-
-                # Detect if QUIT appears after FOR on this line
-                has_quit = detect_quit_after_for(line_rest)
-
-                for for_cmd in for_commands:
-                    # Classify the FOR command
-                    loop_type, loop_var = classify_for_command(for_cmd)
-
-                    # Build MForStatement from textX ForCommand using full-fidelity analyzer
-                    # Import here to avoid circular imports at module level
-                    from m2py.asg.statements import MForStatement
-
-                    statement = analyze_command(for_cmd)
-
-                    # Type narrow to MForStatement for proper attribute access
-                    for_statement: MForStatement | None = None
-                    if isinstance(statement, MForStatement):
-                        statement.has_internal_quit = has_quit
-                        for_statement = statement
-
-                    results.append(
-                        ForPatternResult(
-                            label_name=current_label or "",
-                            loop_type=loop_type,
-                            loop_var=loop_var,
-                            line_content=line_rest,
-                            statement=for_statement,
-                        )
-                    )
-
-        return results
-
-    def classify_for_patterns_from_file(
-        self, filepath: Union[str, Path]
-    ) -> list[ForPatternResult]:
-        """Parse a file and classify FOR loop patterns.
-
-        Args:
-            filepath: Path to the .m file to parse
-
-        Returns:
-            List of ForPatternResult objects describing each FOR loop found
-
-        Raises:
-            FileNotFoundError: If the file does not exist
-            MUMPSSyntaxError: If the file contains syntax errors
-        """
-        filepath = Path(filepath)
-
-        if not filepath.exists():
-            raise FileNotFoundError(f"MUMPS source file not found: {filepath}")
-
-        # Try UTF-8 first, then fall back to Latin-1 for legacy VistA files
-        # (matches the encoding fallback pattern in parse_file)
-        try:
-            source = filepath.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            source = filepath.read_text(encoding="latin-1")
-        return self.classify_for_patterns(source, filename=str(filepath))
 
     def resolve_references(self, routine: MRoutine) -> None:
         """Resolve all MCall references in a routine to their targets.

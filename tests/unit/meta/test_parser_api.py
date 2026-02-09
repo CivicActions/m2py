@@ -10,7 +10,6 @@ import pytest
 
 from m2py.parser import MUMPSParser, MUMPSSyntaxError
 from m2py.asg import MRoutine
-from m2py.asg.enums import ForLoopType
 
 
 class TestMUMPSParserInit:
@@ -193,43 +192,6 @@ class TestMUMPSParserParseFile:
 
         assert routine.source_lines == ["LABEL\tS X=1", "\tW X", "\tQ"]
 
-    def test_get_text_line_returns_source(self, tmp_path):
-        """get_text_line should return 1-indexed source line."""
-        test_file = tmp_path / "TEXTTEST.m"
-        source = "LABEL\tS X=1\n\tW X\n\tQ\n"
-        test_file.write_text(source)
-
-        parser = MUMPSParser()
-        routine = parser.parse_file(test_file)
-
-        # 1-indexed access
-        assert routine.get_text_line(1) == "LABEL\tS X=1"
-        assert routine.get_text_line(2) == "\tW X"
-        assert routine.get_text_line(3) == "\tQ"
-        # Out of bounds returns empty
-        assert routine.get_text_line(0) == ""
-        assert routine.get_text_line(4) == ""
-        assert routine.get_text_line(-1) == ""
-
-    def test_get_text_at_label_returns_line(self, tmp_path):
-        """get_text_at_label should return source at label+offset."""
-        test_file = tmp_path / "LABELTEXT.m"
-        source = "MAIN\tS X=1\n\tW X\n\tQ\nSUB\tS Y=2\n\tQ\n"
-        test_file.write_text(source)
-
-        parser = MUMPSParser()
-        routine = parser.parse_file(test_file)
-
-        # MAIN is at line 1
-        assert routine.get_text_at_label("MAIN", 0) == "MAIN\tS X=1"
-        assert routine.get_text_at_label("MAIN", 1) == "\tW X"
-        assert routine.get_text_at_label("MAIN", 2) == "\tQ"
-        # SUB is at line 4
-        assert routine.get_text_at_label("SUB", 0) == "SUB\tS Y=2"
-        assert routine.get_text_at_label("SUB", 1) == "\tQ"
-        # Unknown label returns empty
-        assert routine.get_text_at_label("UNKNOWN", 0) == ""
-
     def test_parse_file_utf8_encoding(self, tmp_path):
         """parse_file should handle UTF-8 encoded files correctly."""
         test_file = tmp_path / "UTF8TEST.m"
@@ -273,24 +235,6 @@ class TestMUMPSParserParseFile:
         # Verify source_lines preserves the content correctly
         assert len(routine.source_lines) == 3
         assert "§" in routine.source_lines[1] or "÷" in routine.source_lines[1]
-
-    def test_classify_for_patterns_from_file_latin1_fallback(self, tmp_path):
-        """classify_for_patterns_from_file should fall back to Latin-1 for non-UTF-8 files."""
-        test_file = tmp_path / "LATIN1FOR.m"
-        # Latin-1 content with FOR loop and characters that are invalid in UTF-8
-        # 0xba = º (masculine ordinal) - appears in VistA files
-        source_bytes = b'LABEL\tF I=1:1:10 W "Test\xba",I\n\tQ\n'
-        test_file.write_bytes(source_bytes)
-
-        parser = MUMPSParser()
-        # Should not raise UnicodeDecodeError
-        results = parser.classify_for_patterns_from_file(test_file)
-
-        # Should find the bounded FOR loop
-        assert len(results) == 1
-        assert results[0].loop_type == ForLoopType.BOUNDED
-        assert results[0].loop_var == "I"
-        assert results[0].label_name == "LABEL"
 
 
 class TestMUMPSParserMUGJ:

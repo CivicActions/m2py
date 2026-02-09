@@ -87,19 +87,3 @@ def resolve_refs():
     from m2py.analysis import resolve_references
 
     return resolve_references
-
-
-@pytest.fixture
-def get_unresolved():
-    """Fixture to get unresolved calls from a routine."""
-    from m2py.analysis import get_unresolved_calls
-
-    return get_unresolved_calls
-
-
-@pytest.fixture
-def get_external():
-    """Fixture to get external calls from a routine."""
-    from m2py.analysis import get_external_calls
-
-    return get_external_calls

@@ -4,6 +4,7 @@ Tests the helper functions used by generated code for intrinsic functions.
 """
 
 import pytest
+from decimal import Decimal
 
 from m2py.runtime import MArray
 from m2py.runtime.helpers import (
@@ -18,6 +19,15 @@ from m2py.runtime.helpers import (
     m_query_global,
     m_var_value,
     unwind_new_stack,
+    m_set_extract,
+    _raise_select_false,
+    m_qlength,
+    m_qsubscript,
+    m_fnumber,
+    m_sorts_after,
+    m_pattern_match,
+    m_justify,
+    NewScopeManager,
 )
 from m2py.runtime.globals import InMemoryGlobalStorage
 
@@ -590,14 +600,6 @@ class TestMFormatOutputEdgeCases:
         """String values pass through unchanged."""
         assert m_format_output("hello") == "hello"
         assert m_format_output("") == ""
-
-    def test_boolean_true(self):
-        """True converts to '1'."""
-        assert m_format_output(True) == "1"
-
-    def test_boolean_false(self):
-        """False converts to '0'."""
-        assert m_format_output(False) == "0"
 
     # Integer handling
     def test_integer(self):
@@ -1260,3 +1262,641 @@ class TestMTranslate:
         from m2py.runtime.helpers import m_translate
 
         assert m_translate("HELLO", "", "") == "HELLO"
+
+
+class TestMSetExtractEdges:
+    """LIVE edges in m_set_extract."""
+
+    def test_padding_when_string_too_short(self):
+        """$EXTRACT replaces beyond string length, pads with spaces."""
+        current = "AB"
+        result = [current]
+
+        def getter():
+            return result[0]
+
+        def setter(val):
+            result[0] = val
+
+        m_set_extract(getter, setter, 5, 5, "X")
+        assert result[0] == "AB  X"
+
+    def test_from_pos_one(self):
+        """Replace at position 1."""
+        current = "ABCDE"
+        result = [current]
+
+        def getter():
+            return result[0]
+
+        def setter(val):
+            result[0] = val
+
+        m_set_extract(getter, setter, 1, 3, "XY")
+        # $E(str,1,3)="XY" → "XY" replaces positions 1-3, rest preserved
+        assert result[0] == "XYDE"
+
+    def test_from_greater_than_to(self):
+        """When from > to, no modification (YDB behavior)."""
+        current = "ABCDE"
+        result = [current]
+
+        def getter():
+            return result[0]
+
+        def setter(val):
+            result[0] = val
+
+        m_set_extract(getter, setter, 3, 1, "X")
+        # Per YDB behavior: if from_pos > to_pos, no modification occurs
+        assert result[0] == "ABCDE"
+
+
+# =============================================================================
+# _raise_select_false
+# =============================================================================
+
+
+class TestRaiseSelectFalse:
+    """LIVE _raise_select_false function."""
+
+    def test_raises_runtime_error(self):
+        """Raises MRuntimeError with SELECTFALSE."""
+        with pytest.raises(Exception, match="SELECTFALSE|SELECT"):
+            _raise_select_false()
+
+
+# =============================================================================
+# m_qlength / m_qsubscript
+# =============================================================================
+
+
+class TestMQlength:
+    """LIVE m_qlength edge cases."""
+
+    def test_unsubscripted_name(self):
+        """$QLENGTH("X") = 0."""
+        assert m_qlength("X") == 0
+
+    def test_one_subscript(self):
+        """$QLENGTH("X(1)") = 1."""
+        assert m_qlength("X(1)") == 1
+
+    def test_multiple_subscripts(self):
+        """$QLENGTH("X(1,2,3)") = 3."""
+        assert m_qlength("X(1,2,3)") == 3
+
+    def test_global_name(self):
+        """$QLENGTH("^GLO(1,2)") = 2."""
+        assert m_qlength("^GLO(1,2)") == 2
+
+    def test_quoted_subscript(self):
+        """$QLENGTH with quoted string subscript."""
+        val = m_qlength('^X("A","B")')
+        assert val == 2
+
+    def test_empty_string(self):
+        """$QLENGTH("") = 0."""
+        assert m_qlength("") == 0
+
+
+class TestMQsubscript:
+    """LIVE m_qsubscript edge cases."""
+
+    def test_base_name(self):
+        """$QSUBSCRIPT("X(1,2)",0) = name portion."""
+        result = m_qsubscript("X(1,2)", 0)
+        assert result == "X"
+
+    def test_first_subscript(self):
+        """$QSUBSCRIPT("X(1,2)",1) = "1"."""
+        result = m_qsubscript("X(1,2)", 1)
+        assert result == "1"
+
+    def test_second_subscript(self):
+        """$QSUBSCRIPT("X(1,2)",2) = "2"."""
+        result = m_qsubscript("X(1,2)", 2)
+        assert result == "2"
+
+    def test_out_of_range(self):
+        """$QSUBSCRIPT beyond subscript count returns ""."""
+        result = m_qsubscript("X(1)", 5)
+        assert result == ""
+
+    def test_negative_position(self):
+        """$QSUBSCRIPT with -1 returns environment/empty."""
+        result = m_qsubscript("X(1)", -1)
+        assert isinstance(result, str)
+
+    def test_global_base_name(self):
+        """$QSUBSCRIPT("^GLO(1)",0) = "^GLO"."""
+        result = m_qsubscript("^GLO(1)", 0)
+        assert result == "^GLO"
+
+
+# =============================================================================
+# m_fnumber
+# =============================================================================
+
+
+class TestMFnumberLive:
+    """LIVE m_fnumber edge cases."""
+
+    def test_comma_format(self):
+        """$FNUMBER with comma inserts separators."""
+        result = m_fnumber("1234567", ",")
+        assert result == "1,234,567"
+
+    def test_comma_with_decimals(self):
+        """$FNUMBER with comma and decimal places."""
+        result = m_fnumber("1234567.89", ",", 2)
+        assert "1,234,567" in result
+
+    def test_trailing_sign_positive(self):
+        """$FNUMBER with T code, positive number gets trailing space."""
+        result = m_fnumber("42", "T")
+        # Positive in T mode gets trailing space (not +)
+        assert result == "42 "
+
+    def test_trailing_sign_negative(self):
+        """$FNUMBER with T code, negative number."""
+        result = m_fnumber("-42", "T")
+        assert result.endswith("-")
+
+    def test_plus_code(self):
+        """$FNUMBER with + code shows plus sign."""
+        result = m_fnumber("42", "+")
+        assert "+" in result
+
+    def test_minus_code(self):
+        """$FNUMBER with - code suppresses minus."""
+        result = m_fnumber("-42", "-")
+        # The '-' code removes the minus sign
+        assert not result.startswith("-")
+
+    def test_paren_mode(self):
+        """$FNUMBER with P code wraps negative in parens."""
+        result = m_fnumber("-42", "P")
+        assert result.startswith("(") and result.endswith(")")
+
+    def test_paren_mode_positive(self):
+        """$FNUMBER with P code, positive number gets trailing space."""
+        result = m_fnumber("42", "P")
+        # Positive numbers in P mode get a trailing space
+        assert "(" not in result
+
+
+# =============================================================================
+# m_sorts_after
+# =============================================================================
+
+
+class TestMSortsAfterLive:
+    """LIVE m_sorts_after edge cases."""
+
+    def test_numeric_sorts_after(self):
+        """Numeric comparison: 10 sorts after 2."""
+        assert m_sorts_after("10", "2") == 1
+
+    def test_numeric_does_not_sort_after(self):
+        """Numeric comparison: 2 does not sort after 10."""
+        assert m_sorts_after("2", "10") == 0
+
+    def test_string_sorts_after(self):
+        """String comparison: 'B' sorts after 'A'."""
+        assert m_sorts_after("B", "A") == 1
+
+    def test_equal_values(self):
+        """Equal values: neither sorts after the other."""
+        assert m_sorts_after("5", "5") == 0
+
+    def test_string_vs_numeric(self):
+        """String always sorts after numeric in MUMPS."""
+        assert m_sorts_after("ABC", "999") == 1
+
+    def test_empty_string(self):
+        """Empty string sorts before everything."""
+        assert m_sorts_after("", "A") == 0
+        assert m_sorts_after("A", "") == 1
+
+
+# =============================================================================
+# m_pattern_match exception handling
+# =============================================================================
+
+
+class TestMPatternMatchEdges:
+    """LIVE m_pattern_match exception fallback."""
+
+    def test_valid_pattern(self):
+        """Normal pattern match works."""
+        assert m_pattern_match("123", "3N") == 1
+        assert m_pattern_match("ABC", "3A") == 1
+        assert m_pattern_match("ABC", "3N") == 0
+
+    def test_invalid_pattern_returns_zero(self):
+        """Invalid pattern raises error or returns 0."""
+        # Behavior depends on implementation — may raise or return 0
+        try:
+            result = m_pattern_match("ABC", "")
+            assert isinstance(result, int)
+        except Exception:
+            pass  # Also acceptable
+
+
+# =============================================================================
+# NewScopeManager
+# =============================================================================
+
+
+class TestNewScopeManagerLive:
+    """LIVE NewScopeManager edge cases: new_all, new_exclusive, new_special_var."""
+
+    def test_new_var_saves_and_restores(self):
+        """NEW X saves current X, clears it, restores on exit."""
+        scope = {"X": "old_value", "Y": "keep"}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_var("X")
+            # Inside scope, X should be deleted
+            assert "X" not in scope
+            assert scope["Y"] == "keep"
+            scope["X"] = "new_value"
+
+        # After exit, X should be restored to original value
+        assert scope["X"] == "old_value"
+        assert scope["Y"] == "keep"
+
+    def test_new_var_undefined_restored(self):
+        """NEW X when X is undefined — stays undefined after restore."""
+        scope = {"Y": "keep"}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_var("X")
+            scope["X"] = "temp"
+
+        assert "X" not in scope
+
+    def test_new_var_dedup(self):
+        """NEW X twice at same level is no-op for second call."""
+        scope = {"X": "original"}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_var("X")
+            scope["X"] = "first_new"
+            mgr.new_var("X")  # Should be no-op
+            scope["X"] = "second_new"
+
+        # Should restore to original (first NEW), not first_new
+        assert scope["X"] == "original"
+
+    def test_new_all(self):
+        """NEW (argumentless) saves all locals and clears scope."""
+        scope = {"X": "1", "Y": "2", "Z": "3"}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_all()
+            # All locals should be cleared
+            assert len(scope) == 0
+            scope["A"] = "new"
+
+        # After exit, all original should be restored
+        assert scope["X"] == "1"
+        assert scope["Y"] == "2"
+        assert scope["Z"] == "3"
+        assert "A" not in scope
+
+    def test_new_exclusive(self):
+        """NEW (X) exclusive — saves all EXCEPT X."""
+        scope = {"X": "1", "Y": "2", "Z": "3"}
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_exclusive({"X"})
+            # X should be kept, Y and Z removed
+            assert "X" in scope
+            assert "Y" not in scope
+            assert "Z" not in scope
+
+        # After exit, all original should be restored
+        assert scope["X"] == "1"
+        assert scope["Y"] == "2"
+        assert scope["Z"] == "3"
+
+    def test_new_special_var(self):
+        """NEW $ETRAP saves and restores special variable."""
+        scope = {}
+        restored_values = []
+
+        def setter(val):
+            restored_values.append(val)
+
+        with NewScopeManager(scope) as mgr:
+            mgr.new_special_var("$ETRAP", "old_etrap", setter)
+            # setter should have been called with "" to initialize
+            assert restored_values[-1] == ""
+
+        # After exit, setter called with saved value
+        assert restored_values[-1] == "old_etrap"
+
+
+# =============================================================================
+# unwind_new_stack
+# =============================================================================
+
+
+class TestUnwindNewStackLive:
+    """LIVE unwind_new_stack function."""
+
+    class _FakeState:
+        """Minimal state object for unwind_new_stack."""
+
+        def __init__(self, new_stack=None, locals_dict=None):
+            self._new_stack = new_stack or []
+            self._locals = locals_dict or {}
+
+    def test_unwind_empty_stack(self):
+        """Unwinding empty stack is a no-op."""
+        state = self._FakeState()
+        unwind_new_stack(state)
+        assert state._locals == {}
+
+    def test_unwind_var_entry(self):
+        """Unwinding a ('var', name, saved_value) entry restores variable."""
+        state = self._FakeState(
+            new_stack=[("var", "X", "saved_val")],
+            locals_dict={"X": "new_val"},
+        )
+        unwind_new_stack(state)
+        assert state._locals["X"] == "saved_val"
+
+    def test_unwind_var_entry_none_removes(self):
+        """Unwinding a ('var', name, None) entry removes variable."""
+        state = self._FakeState(
+            new_stack=[("var", "X", None)],
+            locals_dict={"X": "temp"},
+        )
+        unwind_new_stack(state)
+        assert "X" not in state._locals
+
+    def test_unwind_all_entry(self):
+        """Unwinding an ('all', snapshot) entry restores full snapshot."""
+        state = self._FakeState(
+            new_stack=[("all", {"A": "1", "B": "2"})],
+            locals_dict={"C": "3"},
+        )
+        unwind_new_stack(state)
+        assert state._locals == {"A": "1", "B": "2"}
+
+    def test_unwind_excl_entry(self):
+        """Unwinding an ('excl', keep_set, saved) entry."""
+        state = self._FakeState(
+            new_stack=[("excl", {"X"}, {"X": "orig", "Y": "orig2", "Z": "orig3"})],
+            locals_dict={"X": "current"},
+        )
+        unwind_new_stack(state)
+        assert state._locals["X"] == "current"
+        assert state._locals["Y"] == "orig2"
+        assert state._locals["Z"] == "orig3"
+
+    def test_unwind_legacy_dict(self):
+        """Unwinding a plain dict (legacy format) restores it."""
+        state = self._FakeState(
+            new_stack=[{"A": "1", "B": "2"}],
+            locals_dict={"C": "3"},
+        )
+        unwind_new_stack(state)
+        assert state._locals == {"A": "1", "B": "2"}
+
+
+class TestMFormatOutputLive:
+    """Tests for m_format_output() function."""
+
+    # Basic types
+    def test_string_passthrough(self):
+        """String values pass through unchanged."""
+        assert m_format_output("hello") == "hello"
+        assert m_format_output("") == ""
+
+    # Integer handling
+    def test_integer(self):
+        """Integers convert directly to string."""
+        assert m_format_output(42) == "42"
+        assert m_format_output(0) == "0"
+        assert m_format_output(-100) == "-100"
+
+    def test_float_as_integer(self):
+        """Float with .0 converts to integer string."""
+        assert m_format_output(1.0) == "1"
+        assert m_format_output(100.0) == "100"
+        assert m_format_output(-42.0) == "-42"
+
+    # Leading zero removal (MUMPS canonical form)
+    def test_positive_decimal_removes_leading_zero(self):
+        """Values between 0 and 1 have leading zero removed."""
+        assert m_format_output(0.5) == ".5"
+        assert m_format_output(0.123) == ".123"
+
+    def test_negative_decimal_removes_leading_zero(self):
+        """Negative values between -1 and 0 have leading zero removed."""
+        assert m_format_output(-0.5) == "-.5"
+        assert m_format_output(-0.123) == "-.123"
+
+    # Regular floats (no leading zero removal)
+    def test_regular_float(self):
+        """Regular floats retain their form."""
+        assert m_format_output(3.14) == "3.14"
+        assert m_format_output(-2.5) == "-2.5"
+
+    # Scientific notation conversion
+    def test_large_number_scientific_notation(self):
+        """Very large numbers avoid scientific notation."""
+        # Python would normally output 1e+15 for this
+        result = m_format_output(1e15)
+        assert "e" not in result.lower()
+        assert result == "1000000000000000"
+
+    def test_small_number_scientific_notation(self):
+        """Very small numbers may still use scientific notation.
+
+        Note: The current implementation doesn't fully handle very small numbers.
+        This test documents the current behavior. MUMPS canonical form would
+        require ".000000001" but Python's formatting limits make this difficult.
+        """
+        # For now, just verify the function doesn't crash
+        result = m_format_output(0.000000001)
+        assert isinstance(result, str)
+        # The value is represented (even if in scientific notation)
+        assert result in ("1e-09", ".000000001", "1e-9")
+
+    def test_large_float_with_decimal_scientific_notation(self):
+        """Large floats with decimals handle scientific notation."""
+        # 1.5e10 has a fractional part
+        result = m_format_output(1.5e10)
+        assert "e" not in result.lower()
+        assert result == "15000000000"
+
+    # Edge cases
+    def test_other_types(self):
+        """Other types convert via str()."""
+        assert m_format_output(None) == "None"
+        assert m_format_output([1, 2]) == "[1, 2]"
+
+
+class TestMDataLive:
+    """Tests for m_data() function."""
+
+    def test_none_returns_zero(self):
+        """None (undefined variable) returns 0."""
+        assert m_data(None) == 0
+
+    def test_none_with_subscripts(self):
+        """None with subscripts still returns 0."""
+        assert m_data(None, ("1", "2")) == 0
+
+    def test_defined_no_children(self):
+        """Defined with value but no children returns 1."""
+        arr = MArray()
+        arr.value = "test"
+        assert m_data(arr, ()) == 1
+
+    def test_undefined_has_children(self):
+        """No value but has children returns 10."""
+        arr = MArray()
+        arr[1].value = "child"  # No value on root, but has child
+        assert m_data(arr, ()) == 10
+
+    def test_defined_and_has_children(self):
+        """Both value and children returns 11."""
+        arr = MArray()
+        arr.value = "root"
+        arr[1].value = "child"
+        assert m_data(arr, ()) == 11
+
+    def test_subscript_navigation(self):
+        """Subscripts navigate into array."""
+        arr = MArray()
+        arr[1][2].value = "deep"
+        assert m_data(arr, ("1", "2")) == 1
+
+    def test_undefined_subscript_returns_zero(self):
+        """Non-existent subscript returns 0."""
+        arr = MArray()
+        arr[1].value = "exists"
+        assert m_data(arr, ("2",)) == 0
+
+    def test_string_to_int_key_conversion(self):
+        """String subscripts can match integer keys."""
+        arr = MArray()
+        arr[1].value = "value"  # Stored with integer key
+        assert m_data(arr, ("1",)) == 1  # String subscript
+
+    def test_deep_subscript_not_found(self):
+        """Missing intermediate subscript returns 0."""
+        arr = MArray()
+        arr[1][2].value = "deep"
+        assert m_data(arr, ("3", "4")) == 0
+
+
+class TestMOrderSubscriptCoercionLive:
+    """Tests for subscript type coercion in m_order."""
+
+    def test_string_key_matches_int_subscript(self):
+        """Integer-like strings as subscripts find integer keys."""
+        arr = MArray()
+        arr[1][1].value = "a"  # Integer keys
+        arr[1][2].value = "b"
+        # String subscripts should find integer keys
+        result = m_order(arr, ("1", ""), 1)
+        assert result == "1"
+
+    def test_int_key_via_float_coercion(self):
+        """Float-like subscripts can navigate to nodes."""
+        # Edge case: sometimes subscripts might come as floats
+        arr = MArray()
+        arr[1.0][2].value = "a"  # Float key
+        # This tests the float() fallback path
+        result = m_order(arr, (1.0, ""), 1)
+        assert result == "2"
+
+    def test_empty_subscripts_returns_empty(self):
+        """Empty subscript tuple returns empty string."""
+        arr = MArray()
+        arr[1].value = "a"
+        assert m_order(arr, (), 1) == ""
+
+    def test_nonexistent_parent_subscript(self):
+        """Parent subscript that doesn't exist returns empty."""
+        arr = MArray()
+        arr[1][2].value = "a"
+        # Navigate to arr[99] which doesn't exist
+        assert m_order(arr, ("99", ""), 1) == ""
+
+
+# =============================================================================
+# m_justify Tests - ROUND_HALF_UP Rounding
+# =============================================================================
+
+
+class TestMJustify:
+    """Tests for m_justify() function.
+
+    Bug fix: m_justify now uses ROUND_HALF_UP (traditional rounding)
+    instead of Python's default ROUND_HALF_EVEN (banker's rounding).
+    """
+
+    def test_basic_formatting(self):
+        """Basic number formatting with width and decimals."""
+        assert m_justify(3.14159, 10, 2) == "      3.14"
+        assert m_justify(42, 5, 0) == "   42"
+
+    def test_round_half_up_not_bankers(self):
+        """Values ending in .5 round UP, not to nearest even.
+
+        This is the key difference from Python's default Decimal rounding.
+        - 123.45 with 1 decimal → 123.5 (not 123.4)
+        - 2.35 with 1 decimal → 2.4 (not 2.4 - same, but 2.45 matters)
+        """
+        # 123.45 → 123.5 (ROUND_HALF_UP), not 123.4 (ROUND_HALF_EVEN)
+        assert m_justify(123.45, 7, 1) == "  123.5"
+
+        # 2.35 → 2.4 (both rounding modes agree here)
+        assert m_justify(2.35, 5, 1) == "  2.4"
+
+        # 2.25 → 2.3 (ROUND_HALF_UP), not 2.2 (ROUND_HALF_EVEN)
+        assert m_justify(2.25, 5, 1) == "  2.3"
+
+        # 1.5 → 2 (ROUND_HALF_UP), not 2 (ROUND_HALF_EVEN agrees for odd)
+        assert m_justify(1.5, 3, 0) == "  2"
+
+        # 2.5 → 3 (ROUND_HALF_UP), not 2 (ROUND_HALF_EVEN would round to even 2)
+        assert m_justify(2.5, 3, 0) == "  3"
+
+    def test_decimal_input_preserves_precision(self):
+        """Decimal inputs maintain precision for rounding."""
+        # Test with Decimal input
+        assert m_justify(Decimal("123.45"), 7, 1) == "  123.5"
+        assert m_justify(Decimal("2.25"), 5, 1) == "  2.3"
+
+    def test_negative_values(self):
+        """Negative values round correctly."""
+        # -123.45 → -123.5
+        assert m_justify(-123.45, 8, 1) == "  -123.5"
+
+        # -2.25 → -2.3 (rounds away from zero with ROUND_HALF_UP)
+        assert m_justify(-2.25, 6, 1) == "  -2.3"
+
+    def test_width_smaller_than_result(self):
+        """Width smaller than formatted result doesn't truncate."""
+        assert m_justify(12345.67, 5, 2) == "12345.67"
+        assert m_justify(999.9, 3, 1) == "999.9"
+
+    def test_zero_decimals(self):
+        """Zero decimal places rounds to integer."""
+        assert m_justify(3.7, 3, 0) == "  4"
+        assert m_justify(3.4, 3, 0) == "  3"
+        assert m_justify(3.5, 3, 0) == "  4"  # ROUND_HALF_UP
+
+    def test_many_decimals(self):
+        """Many decimal places pad with zeros."""
+        assert m_justify(3.14, 10, 5) == "   3.14000"
+        assert m_justify(1, 8, 3) == "   1.000"

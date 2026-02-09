@@ -496,3 +496,59 @@ class TestForIndirectionCodegen:
         assert "_for_sub_0_0 = 1" in code
         # Should use cached subscript for .set() calls
         assert ".set(_for_sub_0_0, value=_for_val_0)" in code
+
+
+# =============================================================================
+# Pass 2 Coverage: FOR with indirect loop variable variants
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestForIndirectLoopVarPass2:
+    """FOR with indirected loop variable in various patterns.
+
+    Covers codegen/statements.py indirect loop var branches:
+    L2517-2519 (string list), L2703-2705 (open-ended),
+    L2806-2808 (chain), L2951-2953 / L3203-3205 / L3239-3260
+    (while variants).
+    """
+
+    def test_for_string_list_indirect(self, execute_mumps):
+        """F @A="X","Y","Z" — string list with indirect loop var."""
+        result = execute_mumps('TEST\n S A="I" F @A="X","Y","Z" W @A\n Q\n')
+        assert result.output == "XYZ"
+
+    def test_for_open_ended_indirect(self, execute_mumps):
+        """F @A=1:1 Q:@A>3 — open-ended FOR with indirect loop var."""
+        result = execute_mumps('TEST\n S A="I" F @A=1:1 Q:I>3  W I\n Q\n')
+        assert result.output == "123"
+
+    def test_for_chain_indirect(self, execute_mumps):
+        """F @A=1:1:3,"X" — mixed chain with indirect loop var."""
+        result = execute_mumps('TEST\n S A="I" F @A=1:1:3,"X" W @A\n Q\n')
+        assert "123X" in result.output
+
+    def test_for_while_open_range_indirect(self, execute_mumps):
+        """F @A=1:1 Q:@A>2 — FOR open-range with indirect var."""
+        result = execute_mumps('TEST\n S A="I"\n F @A=1:1 W @A Q:I>2\n Q\n')
+        assert "123" in result.output
+
+
+@pytest.mark.codegen
+class TestIndirectForCodegen:
+    """Tests for FOR with indirection on loop variable."""
+
+    def test_for_indirect_range(self, execute_mumps):
+        """F @A=1:1:3 W @A — indirect loop var with range."""
+        result = execute_mumps('TEST\n\tS A="I"\n\tF @A=1:1:3 W @A\n\tQ\n')
+        assert result.output == "123"
+
+    def test_for_indirect_string_list(self, execute_mumps):
+        """F @A="X","Y","Z" W @A — indirect loop var with string list."""
+        result = execute_mumps('TEST\n\tS A="I"\n\tF @A="X","Y","Z" W @A\n\tQ\n')
+        assert result.output == "XYZ"
+
+
+# =============================================================================
+# Multi-target GOTO
+# =============================================================================

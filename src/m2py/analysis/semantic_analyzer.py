@@ -20,8 +20,7 @@ inherit from ASG classes. The analyzer walks this tree and:
 - Identifies control flow patterns
 """
 
-from typing import Any, Dict, List, Optional, Set
-from dataclasses import dataclass, field
+from typing import Any, List, Optional
 
 from m2py.asg.expressions import (
     MExpr,
@@ -126,45 +125,6 @@ from m2py.analysis.pattern_compiler import compile_pattern_to_regex, PatternComp
 
 
 # =============================================================================
-# Semantic Context
-# =============================================================================
-
-
-@dataclass
-class SemanticScope:
-    """Represents a semantic scope during analysis.
-
-    Tracks variables, their classifications, and nesting context.
-    """
-
-    parent_scope: Optional["SemanticScope"] = None
-    variables: Dict[str, "ScopeVariableInfo"] = field(default_factory=dict)
-    globals_accessed: Set[str] = field(default_factory=set)
-    labels_called: Set[str] = field(default_factory=set)
-
-    # Scope metadata
-    label_name: Optional[str] = None
-    routine_name: Optional[str] = None
-    is_for_body: bool = False
-    nesting_level: int = 0
-
-
-@dataclass
-class ScopeVariableInfo:
-    """Information about a variable encountered during semantic analysis."""
-
-    name: str
-    first_reference: Any = None  # The ASG node where first seen
-    is_newed: bool = False
-    is_set: bool = False
-    is_read: bool = False
-    is_passed_by_ref: bool = False
-    subscript_patterns: List[int] = field(
-        default_factory=list
-    )  # Number of subscripts seen
-
-
-# =============================================================================
 # Semantic Analyzer
 # =============================================================================
 
@@ -184,7 +144,6 @@ class SemanticAnalyzer:
     """
 
     def __init__(self):
-        self.current_scope: Optional[SemanticScope] = None
         self.errors: List[str] = []
         self.warnings: List[str] = []
 
@@ -220,7 +179,6 @@ class SemanticAnalyzer:
 
         # Handle specific expression types
         if isinstance(expr, MVariable):
-            self._track_variable(expr.name, expr, is_read=True)
             # Analyze subscripts
             new_subscripts = []
             for sub in expr.subscripts:
@@ -228,7 +186,6 @@ class SemanticAnalyzer:
             object.__setattr__(expr, "subscripts", new_subscripts)
 
         elif isinstance(expr, MGlobal):
-            self._track_global(expr.name, expr)
             new_subscripts = []
             for sub in expr.subscripts:
                 new_subscripts.append(self.analyze(sub, expr))
@@ -252,8 +209,6 @@ class SemanticAnalyzer:
             for arg in expr.arguments:
                 new_args.append(self.analyze(arg, expr))
             object.__setattr__(expr, "arguments", new_args)
-            if expr.target:
-                self._track_label_call(expr.target.name, expr.target.routine)
 
         elif isinstance(expr, MExternalFunction):
             new_args = []
@@ -613,7 +568,6 @@ class SemanticAnalyzer:
                     subscripts.append(self.analyze(sub, result))
         object.__setattr__(result, "subscripts", subscripts)
 
-        self._track_global(model.name, result)
         return result
 
     def _analyze_ParenExpr(self, model: Any, parent: Any) -> Any:
@@ -665,7 +619,6 @@ class SemanticAnalyzer:
         """
         var = MVariable(name=model, subscripts=[])
         object.__setattr__(var, "parent", parent)
-        self._track_variable(model, var, is_read=True)
         return var
 
     def _analyze_MSelectArg(self, arg: MSelectArg, parent: Any) -> MSelectArg:
@@ -815,9 +768,6 @@ class SemanticAnalyzer:
                             asg_assign = MAssignment()
                             asg_assign.target = self.analyze(t, asg_assign)
                             asg_assign.value = analyzed_value
-                            # Track variables being set
-                            if hasattr(t, "name"):
-                                self._track_variable(t.name, t, is_set=True)
                             stmt.assignments.append(asg_assign)
                             # Track in ordered_items for left-to-right evaluation
                             stmt.ordered_items.append(asg_assign)
@@ -825,8 +775,6 @@ class SemanticAnalyzer:
                         # Single target assignment
                         asg_assign = MAssignment()
                         asg_assign.target = self.analyze(targets, asg_assign)
-                        if hasattr(targets, "name"):
-                            self._track_variable(targets.name, targets, is_set=True)
 
                         if hasattr(assign, "value") and assign.value:
                             asg_assign.value = self.analyze(assign.value, asg_assign)
@@ -900,16 +848,8 @@ class SemanticAnalyzer:
                     # Get the actual variable (unwrap CharRead if needed)
                     if is_char_read:
                         actual_var = self.analyze(target_node.var, stmt)
-                        var_name = (
-                            target_node.var.name
-                            if hasattr(target_node.var, "name")
-                            else None
-                        )
                     else:
                         actual_var = self.analyze(target_node, stmt)
-                        var_name = (
-                            target_node.name if hasattr(target_node, "name") else None
-                        )
 
                     # Get timeout if present
                     timeout_expr = None
@@ -929,10 +869,6 @@ class SemanticAnalyzer:
                         fixed_length=fixed_length_expr,
                     )
                     stmt.arguments.append(read_target)
-
-                    # Track variable being set
-                    if var_name:
-                        self._track_variable(var_name, target_node, is_set=True)
 
                 # Handle format controls (Newline, FormFeed, Tab, CharCode)
                 elif arg_cls in ("Newline", "FormFeed", "Tab", "CharCode"):
@@ -1009,7 +945,6 @@ class SemanticAnalyzer:
             else:
                 # Simple variable - convert to ASG node (MVariable or MGlobal)
                 stmt.loop_var = self._simple_var_to_asg(cmd.var)
-            self._track_variable(cmd.var, cmd, is_set=True)
 
         if hasattr(cmd, "params") and cmd.params:
             for param in cmd.params:
@@ -1150,7 +1085,6 @@ class SemanticAnalyzer:
                             indirect.labelIndirect, call
                         )
                         call.indirection = indirection_expr
-                        call.indirection_levels = levels
 
                     # Process offset if present: @VAR+offset
                     if hasattr(indirect, "offset") and indirect.offset:
@@ -1189,8 +1123,6 @@ class SemanticAnalyzer:
                     if hasattr(label_ref, "offset") and label_ref.offset:
                         call.offset = self.analyze(label_ref.offset, call)
 
-                    self._track_label_call(call.name, call.routine)
-
                 stmt.targets.append(call)
 
         return stmt
@@ -1220,7 +1152,6 @@ class SemanticAnalyzer:
                             indirect.labelIndirect, call
                         )
                         call.indirection = indirection_expr
-                        call.indirection_levels = levels
 
                     # Process offset if present: @VAR+offset
                     if hasattr(indirect, "offset") and indirect.offset:
@@ -1264,8 +1195,6 @@ class SemanticAnalyzer:
 
                     if hasattr(label_ref, "offset") and label_ref.offset:
                         call.offset = self.analyze(label_ref.offset, call)
-
-                    self._track_label_call(call.name, call.routine)
 
                 if hasattr(target, "args") and target.args:
                     call.arguments = self._analyze_function_args(target.args, call)
@@ -1420,7 +1349,6 @@ class SemanticAnalyzer:
                 elif hasattr(v, "name") and v.name:
                     var_name = v.name
                     stmt.variables.append(var_name)
-                    self._track_variable(var_name, v, is_newed=True)
                 else:
                     stmt.variables.append(str(v))
 
@@ -1583,11 +1511,6 @@ class SemanticAnalyzer:
             # For backward compatibility, set duration to first arg
             if stmt.durations:
                 stmt.duration = stmt.durations[0]
-        # Legacy support for old 'seconds' attribute
-        elif hasattr(cmd, "seconds") and cmd.seconds:
-            stmt.duration = self.analyze(cmd.seconds, stmt)
-            if stmt.duration is not None:
-                stmt.durations.append(stmt.duration)
 
         return stmt
 
@@ -1967,7 +1890,6 @@ class SemanticAnalyzer:
                             indirect.labelIndirect, call
                         )
                         call.indirection = indirection_expr
-                        call.indirection_levels = levels
 
                     # Process offset if present: @VAR+offset
                     if hasattr(indirect, "offset") and indirect.offset:
@@ -2011,8 +1933,6 @@ class SemanticAnalyzer:
 
                     if hasattr(label_ref, "offset") and label_ref.offset:
                         call.offset = self.analyze(label_ref.offset, call)
-
-                    self._track_label_call(call.name, call.routine)
 
                 if hasattr(target, "args") and target.args:
                     call.arguments = self._analyze_function_args(target.args, call)
@@ -2792,11 +2712,6 @@ class SemanticAnalyzer:
             )
             call.routine_indirection = routine_expr
             call.routine_is_indirect = True
-            call.indirection_levels = levels
-
-        # Track the label call for reference resolution
-        if call.name:
-            self._track_label_call(call.name, call.routine)
 
         return call
 
@@ -2816,72 +2731,6 @@ class SemanticAnalyzer:
         if hasattr(arg, "end_offset") and arg.end_offset:
             result.end_offset = self.analyze(arg.end_offset, parent)
         return result
-
-    # =========================================================================
-    # Scope and Variable Tracking
-    # =========================================================================
-
-    def _push_scope(
-        self,
-        label_name: Optional[str] = None,
-        routine_name: Optional[str] = None,
-        is_for_body: bool = False,
-    ) -> SemanticScope:
-        """Create and enter a new scope."""
-        new_scope = SemanticScope(
-            parent_scope=self.current_scope,
-            label_name=label_name,
-            routine_name=routine_name,
-            is_for_body=is_for_body,
-            nesting_level=(self.current_scope.nesting_level + 1)
-            if self.current_scope
-            else 0,
-        )
-        self.current_scope = new_scope
-        return new_scope
-
-    def _pop_scope(self) -> Optional[SemanticScope]:
-        """Exit current scope and return it."""
-        old_scope = self.current_scope
-        if old_scope:
-            self.current_scope = old_scope.parent_scope
-        return old_scope
-
-    def _track_variable(
-        self,
-        name: str,
-        node: Any,
-        is_read: bool = False,
-        is_set: bool = False,
-        is_newed: bool = False,
-    ):
-        """Track variable usage in current scope."""
-        if not self.current_scope:
-            return
-
-        if name not in self.current_scope.variables:
-            self.current_scope.variables[name] = ScopeVariableInfo(
-                name=name, first_reference=node
-            )
-
-        info = self.current_scope.variables[name]
-        if is_read:
-            info.is_read = True
-        if is_set:
-            info.is_set = True
-        if is_newed:
-            info.is_newed = True
-
-    def _track_global(self, name: str, node: Any):
-        """Track global variable access."""
-        if self.current_scope:
-            self.current_scope.globals_accessed.add(name)
-
-    def _track_label_call(self, label: str, routine: Optional[str]):
-        """Track label/routine calls."""
-        if self.current_scope:
-            call_target = f"{label}^{routine}" if routine else label
-            self.current_scope.labels_called.add(call_target)
 
     def _analyze_postcondition(self, cmd: Any, stmt: Any) -> None:
         """Analyze postcondition from command and set on statement if present.

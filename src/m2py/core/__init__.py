@@ -11,7 +11,6 @@ Components:
     NameTranslator: Bidirectional MUMPS ↔ Python name translation
     SubscriptCanonicalizer: Subscript value canonicalization per MUMPS rules
     CurrentScope: Unified variable access abstraction
-    VarRef: Variable reference dataclass
     IndirectionResolver: Runtime @-expression resolution
     IndirectionContext: Enum for indirection context types
     VarExpectedError: Error for invalid variable name in NAME context
@@ -26,7 +25,7 @@ Feature: 018-unified-variable-system
 from m2py.core.exceptions import LVUNDEFError, VarExpectedError
 from m2py.core.names import NameTranslator
 from m2py.core.subscripts import SubscriptCanonicalizer
-from m2py.core.scope import CurrentScope, VarRef
+from m2py.core.scope import CurrentScope
 from m2py.core.indirection import (
     IndirectionResolver,
     IndirectionContext,
@@ -36,7 +35,6 @@ __all__ = [
     "NameTranslator",
     "SubscriptCanonicalizer",
     "CurrentScope",
-    "VarRef",
     "IndirectionResolver",
     "IndirectionContext",
     "VarExpectedError",
