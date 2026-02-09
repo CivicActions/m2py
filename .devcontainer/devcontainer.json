@@ -1,0 +1,27 @@
+{
+    "name": "Strict Python Sandbox",
+	"image": "mcr.microsoft.com/devcontainers/python:2-3.13-trixie",
+    
+    // Explicitly mount ONLY the local workspace folder to a specific path in the container
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=cached",
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+    // Disable the automatic mounting of the VS Code home folder/settings
+    "mounts": [],
+
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "github.copilot",
+                "github.copilot-chat",
+                "charliermarsh.ruff"
+            ],
+            "settings": {
+                // Prevents VS Code from trying to sync local history into the container
+                "terminal.integrated.inheritEnv": false
+            }
+        }
+    },
+    "postCreateCommand": "chmod +x .devcontainer/setup.sh && ./.devcontainer/setup.sh",
+    "remoteUser": "vscode"
+}
