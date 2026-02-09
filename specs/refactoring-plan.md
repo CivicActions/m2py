@@ -1,28 +1,16 @@
 # M2PY Consolidated Refactoring Analysis
 
-Synthesized from three independent analyses (Opus, Codex, Gemini). Every
-factual claim has been validated against the current codebase. Items are grouped
-by theme and ordered within each priority tier by impact.
-
-**Priority 1 — Correctness**: Items that could cause generated Python to
-diverge from MUMPS specification behavior.
-
-**Priority 2 — Simplicity / Organization**: Items that reduce maintenance
-burden, eliminate duplication, or fix architectural layering.
-
----
-
 ## Table of Contents
 
-1. [Priority 1: Correctness Improvements](#priority-1-correctness-improvements)
-2. [Priority 2: Simplicity & Organization](#priority-2-simplicity--organization)
-3. [Priority 3: Functionality Gaps (VistA-Used)](#priority-3-functionality-gaps-vista-used)
+1. [Correctness Improvements](#correctness-improvements)
+2. [Simplicity & Organization](#simplicity--organization)
+3. [Functionality Gaps (VistA-Used)](#functionality-gaps-vista-used)
 4. [Deferred: Feature-Completeness Gaps](#deferred-feature-completeness-gaps)
 5. [Rejected / Already Resolved Claims](#rejected--already-resolved-claims)
 
 ---
 
-## Priority 1: Correctness Improvements
+## Correctness Improvements
 
 ### C-01: Dual Canonical Number Formatters Diverge on Edge Cases
 
@@ -143,7 +131,7 @@ import from there. No circular dependency since exceptions have no dependencies.
 
 ---
 
-### C-05: LOCK Indirection Silently Skipped
+### C-05: LOCK Indirection Silently Skipped — Implement Fully
 
 **Sources:** Opus SI-001, Codex Codegen section
 **Validated:** ✅ Confirmed at [statements.py L5571](src/m2py/codegen/statements.py#L5571)
@@ -153,15 +141,20 @@ import from there. No circular dependency since exceptions have no dependencies.
 - No error at compile time or runtime. The lock is simply not acquired.
 - MUMPS allows indirect lock names and VistA uses them for dynamic lock
   management (**222 VistA files** use LOCK with indirection).
+- This is not a known limitation — it's a real VistA-used feature that
+  must be implemented, not just made to error loudly.
 
 **Candidate Design:**
-Short term: change the comment to `raise NotImplementedError("LOCK indirection
-not yet supported")` so that programs depending on it fail loudly.
-Long term: implement `_rt.lock_indirected()` following the same pattern as
-`_rt.set_indirected()` and other indirection entry points.
+Implement `_rt.lock_indirected()` following the same pattern as
+`_rt.set_indirected()` and other indirection entry points:
+1. Add `generate_lock_indirection()` to `codegen/indirection.py` following
+   the template of the 11 existing indirection functions.
+2. Add `lock_indirected()` to `runtime/__init__.py` that resolves the
+   indirected name, then delegates to the existing `lock()`/`unlock()`.
+3. Wire the codegen in `_generate_lock_target()` where the `is_indirect`
+   branch currently emits a comment.
 
-**Effort:** Trivial for `NotImplementedError` (< 1 hour). Medium for full
-implementation (1–2 days) following existing indirection patterns.
+**Effort:** Medium (1–2 days) following existing indirection patterns.
 
 ---
 
@@ -267,7 +260,7 @@ filtering logic requires care around MUMPS collation.
 
 ---
 
-## Priority 2: Simplicity & Organization
+## Simplicity & Organization
 
 ### S-01: Strategy-Dispatch Pattern — 69 Occurrences
 
@@ -708,7 +701,7 @@ infrastructure instead of reimplementing write detection.
 
 ---
 
-## Priority 3: Functionality Gaps (VistA-Used)
+## Functionality Gaps (VistA-Used)
 
 These are simplified or incomplete implementations of features that have
 significant usage in the VA VistA codebase (33,951 .m files analyzed).
@@ -1121,225 +1114,174 @@ indefinitely unless a specific routine requires them.
 
 ## Recommended Implementation Order
 
-The plan is structured into phases with explicit parallel tracks (A, B, C…).
-Items in the same track are sequential; items across tracks can be worked on
-simultaneously with minimal merge-conflict risk because they touch different
-areas of the codebase.
+The plan is structured into 4 phases. Items within each phase are grouped
+into parallel tracks (A, B, C…) — items across tracks can be worked on
+simultaneously with minimal merge-conflict risk. Items within a single
+track are sequential. **Phases must be completed in order.**
 
 **Bottleneck:** `codegen/statements.py` is touched by 14 items. All
-statements.py work is serialized into a single track per phase to avoid
-conflicts.
+statements.py work is serialized within each phase to avoid conflicts.
 
-**Estimated total:** ~45–55 days of work across all items (less with
-parallelism).
+**Estimated total:** ~45–60 days of work across all items.
 
 ---
 
-### Phase 1: Zero-Risk Quick Wins (0.5–1 day)
+### Phase 1: Foundation & Cleanup (~6–8 days)
 
-All independent, touching different files. Do them all in parallel.
+All preparatory work: trivial fixes, analysis-layer cleanup, core
+abstractions, and the one trivial correctness fix (C-06). Creates the
+foundational modules (`core/values.py`, `core/parsing.py`,
+`core/tokenizer.py`, `asg/traversal.py`) that Phase 2 depends on.
 
 | Track | Items | Files Touched | Time |
 |-------|-------|--------------|------|
-| A | **C-04** (codegen/exceptions.py), **C-05** (LOCK → NotImplementedError) | `codegen/__init__.py`, `codegen/statements.py`, `codegen/exceptions.py` (new) | < 1 hr |
-| B | **S-17** (docstring fix), **S-18** (delete dead stubs) | `runtime/helpers.py`, `codegen/indirection.py` | minutes |
+| A (quick wins → analysis) | **C-04** (exceptions.py) + **S-17** (docstring) + **S-18** (dead stubs) → **S-08** (kill analyzers) → **S-09** (DO/GOTO/JOB args) → **S-15** (unwrap_expression) → **C-06** (force dynamic_locals for exclusive KILL/NEW) | `codegen/exceptions.py` (new), `codegen/__init__.py`, `runtime/helpers.py`, `codegen/indirection.py`, `analysis/semantic_analyzer.py`, `parser/textx_classes.py` | 3 days |
+| B (analysis → ASG) | **S-20** (variable write detection) → **C-08** (move contains_naked_global) → **S-10** (statement walker) | `analysis/for_analysis.py`, `analysis/variables.py`, `codegen/expressions.py`, `asg/traversal.py` (new) | 2–3 days |
+| C (core abstractions) | **C-01** + **C-02** + **S-11** + **S-06** (unify formatters, resolve backward imports, _decimal_binop) | `core/values.py` (new), `codegen/helpers.py`, `runtime/helpers.py`, `core/subscripts.py`, 15 import sites | 3–4 days |
+| D (core parsing) | **C-03** + **S-07** (parse_subscripted_name + split_at_toplevel) | `core/parsing.py` (new), `core/tokenizer.py` (new), `runtime/__init__.py`, `core/scope.py`, `core/indirection.py` | 2–3 days |
+
+**Parallelism:** All 4 tracks touch different files and can run fully in
+parallel. Tracks C and D create new `core/` modules; Tracks A and B clean
+up analysis + ASG layers. The only conflict is C-04 (Track A) creates
+`codegen/exceptions.py` — do it first within Track A (trivial, < 1 hr).
+
+**Gate:** Phase 2 depends on Track C completing (`core/values.py` changes
+codegen import paths) and Track B completing (S-10 creates `asg/traversal.py`
+used by S-16 in Phase 2).
+
+**With parallelism:** ~4 days. **Sequential:** ~8 days.
 
 ---
 
-### Phase 2: Analysis & Parser Layer (1.5–2 days)
+### Phase 2: Codegen Refactoring (~14–20 days)
 
-Clean up the analysis tier before touching codegen. None of these conflict
-with Phase 3's core-layer work, so Phase 2 and 3 can overlap if two people
-are available.
+The most complex and extensive work. Heavy restructuring of
+`codegen/statements.py` (69–99 site extractions), `codegen/indirection.py`
+(11 functions), and `codegen/expressions.py`. Also includes C-07 (by-ref
+call unification) at the end — the highest-risk correctness change, which
+benefits from a cleaner codebase.
 
 | Track | Items | Files Touched | Time |
 |-------|-------|--------------|------|
-| A | **S-08** (kill-like analyzers) → **S-09** (DO/GOTO/JOB args) → **S-15** (unwrap_expression) | `analysis/semantic_analyzer.py`, `parser/textx_classes.py` | 1.5 days |
-| B | **S-20** (reuse variable write detection) → **C-08** (move contains_naked_global) | `analysis/for_analysis.py`, `analysis/variables.py`, `codegen/expressions.py` | 1 day |
+| A (statements.py — sequential) | **S-02** (subscript tuple, 99 sites) → **S-05** (LHS piece/extract) → **S-04** (scope↔state sync, 22 copies) → **S-14** (GotoExternal handler) → **C-09** (ZWRITE range) → **S-01** (var_base_expr, 69 sites) → **S-13** (XECUTE extract) → **S-19** (comment extraction via ASG) → **C-07** (unify by-ref call handling) | `codegen/statements.py`, `codegen/expressions.py`, `codegen/var_access.py` (new), `parser/line_parser.py`, `asg/statements.py` | 14–20 days |
+| B (indirection) | **S-03** (template extraction, 11 near-identical fns) | `codegen/indirection.py` | 2–3 days |
+| C (runtime + ASG) | **S-12** (offset_wrapper consolidation) → **S-16** (ASG field cleanup) | `runtime/__init__.py`, `asg/statements.py`, analysis consumers | 2–3 days |
 
-**Why this order:** S-08 and S-09 both consolidate methods in `semantic_analyzer.py`;
-doing them together avoids editing the same file twice. S-15 also touches that
-file but is small. Track B touches completely separate analysis files.
+**Parallelism:** Tracks B and C are fully independent of Track A and of each
+other. Track A is the critical path — all items must be sequential because
+they all modify `codegen/statements.py`. Within Track A, the order is
+deliberate: S-02 and S-04 are mechanical bulk extractions that reduce file
+noise, making S-01 (the largest single item) easier. C-07 is last because
+it's the highest-risk change and benefits from all prior cleanup.
 
----
+**Why S-01 comes after S-02+S-04:** S-02 extracts subscript tuples (99
+sites) and S-04 extracts scope↔state sync blocks (22 copies). Both reduce
+the code volume in `statements.py` substantially, making the 69-site
+`var_base_expr` extraction simpler and less error-prone.
 
-### Phase 3: Core Architecture (3–5 days)
-
-Creates the foundational abstractions that later phases depend on. Two
-parallel tracks creating new files in `core/`.
-
-| Track | Items | Files Touched | Time |
-|-------|-------|--------------|------|
-| A | **C-01** + **C-02** + **S-11** (core/values.py — unify formatters, resolve backward imports) | `core/values.py` (new), `codegen/helpers.py`, `runtime/helpers.py`, `core/subscripts.py`, 15 import sites | 3 days |
-| B | **C-03** + **S-07** (core/parsing.py + core/tokenizer.py) | `core/parsing.py` (new), `core/tokenizer.py` (new), `runtime/__init__.py` (parse fns), `core/scope.py`, `core/indirection.py` | 2–3 days |
-| C | **S-06** (_decimal_binop extraction) | `codegen/helpers.py` | 0.5 day |
-
-**Conflicts:** Track A and C both touch `codegen/helpers.py` — do S-06 either
-before or after C-01, or fold it into Track A since it's small. Track B is
-fully independent.
-
-**Gate:** Phase 4+ should not start until Track A completes, as it establishes
-`core/values.py` which affects codegen import paths.
+**With parallelism:** ~14–20 days (Track A dominates). **Sequential:** ~18–26 days.
 
 ---
 
-### Phase 4: Codegen Deduplication (6–9 days)
+### Phase 3: Correctness Fixes & New Features (~12–16 days)
 
-The largest phase — heavy refactoring of `codegen/statements.py`,
-`codegen/expressions.py`, and `codegen/indirection.py`. The statements.py
-items must be carefully sequenced.
-
-| Track | Items | Files Touched | Time |
-|-------|-------|--------------|------|
-| A (statements.py — sequential) | **S-02** (subscript tuple, 99 sites) → **S-05** (LHS piece/extract) → **S-04** (scope↔state sync) → **S-14** (GotoExternal handler) → **C-09** (ZWRITE range) | `codegen/statements.py`, `codegen/expressions.py` | 5–7 days |
-| B | **S-03** (indirection template extraction, 11 fns) | `codegen/indirection.py` | 2–3 days |
-| C | **S-12** (offset_wrapper consolidation) | `runtime/__init__.py` | 1 day |
-| D | **S-10** (generic statement walker) → **S-16** (ASG field cleanup) | `asg/traversal.py` (new), `asg/statements.py`, analysis consumers | 2–3 days |
-
-**Why S-02 first in Track A:** It's the most mechanical (99 identical extractions),
-low risk, and reduces code volume in statements.py before the harder S-05/S-04
-work. S-01 (var_base_expr, 69 sites) is deliberately deferred — it's the
-single largest item and benefits from S-02+S-04 being done first so there's
-less noise in the file.
-
-**Why S-16 after S-10:** The statement walker (S-10) creates `asg/traversal.py`
-infrastructure that S-16's consumer updates may want to use.
-
-Track B (indirection.py) and Track C (runtime/__init__.py) are completely
-independent of Track A.
-
----
-
-### Phase 5: Remaining Structural Work (5–8 days)
-
-With the major deduplication done, tackle the remaining items including the
-largest single refactor (S-01).
-
-| Track | Items | Files Touched | Time |
-|-------|-------|--------------|------|
-| A | **S-01** (var_base_expr, 69 sites — largest single item) | `codegen/statements.py`, `codegen/expressions.py`, `codegen/indirection.py`, `codegen/var_access.py` (new) | 3–5 days |
-| B | **S-13** (extract compile_mumps_line for XECUTE) → **S-19** (comment extraction via ASG) | `codegen/statements.py` (XECUTE handler), `parser/line_parser.py`, `asg/statements.py` | 2–3 days |
-
-**Conflict note:** Track A and B both touch `codegen/statements.py` but in
-very different sections (A: variable access patterns throughout; B: XECUTE
-handler at L5843 and comment extraction at L146). If this is a concern,
-serialize them — do S-01 first since it's the largest change.
-
----
-
-### Phase 6: Correctness Fixes (3–6 days)
-
-Items that change behavior rather than just structure. These should be done
-after the structural refactoring to avoid re-doing work.
-
-| Track | Items | Files Touched | Time |
-|-------|-------|--------------|------|
-| A | **C-06** (force dynamic_locals for exclusive KILL/NEW) | `analysis/semantic_analyzer.py` | 0.5 day |
-| B | **C-07** (unify by-ref call handling — high risk) | `codegen/statements.py` (call handling sections) | 3–5 days |
-
-**Why C-07 is last in the structural phases:** It's the highest-risk change,
-modifying how function call arguments are generated for both strategies. All
-other statements.py refactoring should be complete first so the code is
-cleaner and the change is easier to reason about. C-06 is independent
-(analysis layer).
-
----
-
-### Phase 7: Functionality — Independent Features (8–12 days)
-
-These add new capabilities. Most touch `runtime/` (adding new functions) plus
-`codegen/statements.py` (generating calls to them). However, the runtime
-additions are in distinct subsystems and can be parallelized.
+All new functionality: feature implementations, LOCK indirection, and
+remaining correctness work. These are mostly **new code** (new runtime
+methods, new codegen handlers) rather than refactoring existing code. Items
+touch distinct subsystems and are highly parallelizable.
 
 | Track | Items | Files Touched | Time |
 |-------|-------|--------------|------|
 | A (error handling) | **F-03** + **F-09** (ETRAP/ECODE + ZTRAP/ZSTATUS/ZPOSITION) → **F-08** ($STACK introspection) | `runtime/__init__.py` (error handling), `codegen/statements.py` (SET $ETRAP etc.) | 5–7 days |
-| B (transactions) | **F-05** (TSTART restart variables) | `runtime/__init__.py` (transaction mgr), `codegen/statements.py` (TSTART handler) | 2–3 days |
-| C (standalone fns) | **F-10** ($ZDATE) → **F-11** (ZLINK/ZSYSTEM) | `runtime/helpers.py` or new `runtime/zfunctions.py`, `codegen/statements.py` (Z-cmd handlers) | 2–3 days |
-| D (SVNs & SSVNs) | **F-07** (^$JOB, ^$ROUTINE etc.) → **F-12** ($ZSEARCH, $ZRO, $ZJOB, $ZMESSAGE — excluding $ZEOF) | `runtime/globals.py` (SSVNs), new `runtime/zfunctions.py` | 3–4 days |
-| E (READ) | **F-06** (READ #maxlen + $KEY) | `runtime/__init__.py` (read handler), `codegen/statements.py` (READ codegen) | 2–3 days |
-| F (globals) | **F-13** (extended global refs) | `parser/textx_classes.py`, `analysis/semantic_analyzer.py`, `codegen/expressions.py`, `runtime/__init__.py` | 2–3 days |
-| G (config) | **F-14** (strict_mode LVUNDEF) | `main.py`, `runtime/__init__.py`, `core/scope.py` | < 1 hr |
+| B (LOCK + transactions) | **C-05** (LOCK indirection) → **F-05** (TSTART restart variables) | `codegen/indirection.py`, `codegen/statements.py` (LOCK ~L5477, TSTART ~L5413), `runtime/__init__.py` | 3–5 days |
+| C (standalone fns + config) | **F-10** ($ZDATE) → **F-11** (ZLINK/ZSYSTEM) → **F-14** (strict LVUNDEF) | `runtime/zfunctions.py` (new), `codegen/statements.py` (Z-cmd ~L6400+), `main.py`, `core/scope.py` | 2–4 days |
+| D (SVNs, SSVNs, globals) | **F-07** (^$JOB, ^$ROUTINE etc.) → **F-12** ($ZSEARCH, $ZRO, $ZJOB, $ZMESSAGE — excl. $ZEOF) → **F-13** (extended global refs) | `runtime/globals.py` (SSVNs), `runtime/zfunctions.py`, `codegen/expressions.py`, `parser/textx_classes.py`, `analysis/semantic_analyzer.py` | 5–7 days |
+| E (READ) | **F-06** (READ #maxlen + $KEY) | `runtime/__init__.py` (read handler), `codegen/statements.py` (READ ~L5100) | 2–3 days |
 
-**Conflict mitigation:** Tracks B, C, and E all touch `codegen/statements.py`
-but in different command handlers (TSTART ~L5413, Z-commands ~L6400+, READ ~L5100).
-If only one person is working, prioritize Track A first (highest VistA impact),
-then C and D (small, independent), then B and E.
+**Parallelism:** All 5 tracks touch different subsystems. Tracks A, B, C,
+and E all touch `codegen/statements.py` but in different command handlers
+(error handling, LOCK ~L5477, TSTART ~L5413, Z-commands ~L6400+, READ ~L5100)
+— minimal conflict risk if interleaved, but should be serialized if working
+solo on statements.py. Track D doesn't touch statements.py at all.
+
+**Suggested solo order:** Track D first (fully independent of statements.py),
+then A → B → C → E (each touches different statements.py handlers).
+
+**With parallelism:** ~6–8 days. **Sequential:** ~16 days.
 
 ---
 
-### Phase 8: Functionality — Large Architecture (15–20 days, sequential)
+### Phase 4: Large Architecture (~20–30 days, sequential)
 
-These are the three largest items with deep architectural dependencies.
-They should be done in this order.
+The three largest items with deep architectural dependencies. These are
+sequential — each unblocks the next.
 
 | Order | Item | Files Touched | Time |
 |-------|------|--------------|------|
-| 1 | **F-02** (I/O device management) | `runtime/__init__.py` (new device layer), `codegen/statements.py` (OPEN/USE/CLOSE/READ/WRITE), new `runtime/devices.py` | 10+ days |
+| 1 | **F-02** (I/O device management) | `runtime/__init__.py` (new device layer), `codegen/statements.py` (OPEN/USE/CLOSE/READ/WRITE), `runtime/devices.py` (new) | 10+ days |
 | 2 | **F-04** (JOB as real processes) | `runtime/__init__.py` (JOB handler), global storage sharing | 5–8 days |
 | 3 | **F-01** (LOCK inter-process) + **F-12** ($ZEOF — blocked on F-02) | `runtime/__init__.py` (lock manager), `runtime/devices.py` ($ZEOF) | 5+ days |
 
-**Why this order:** F-02 (I/O) unblocks F-12's $ZEOF and improves F-06.
+**Why this order:** F-02 (I/O) unblocks F-12's `$ZEOF` and improves F-06.
 F-04 (JOB) must precede F-01 (inter-process LOCK only matters with
 separate processes). F-01 is last because in-process locking already works.
+
+**No parallelism** — each item builds on the previous.
 
 ---
 
 ### Summary: Critical Path
 
-The longest dependency chain determines minimum calendar time:
-
 ```
-Phase 1 (0.5d) → Phase 3A (3d) → Phase 4A (5-7d) → Phase 5A (3-5d) → Phase 6B (3-5d)
-→ Phase 7A (5-7d) → Phase 8 (20+d)
-= ~40-48 days minimum on the critical path
+Phase 1 (~4d) → Phase 2 (~14-20d) → Phase 3 (~6-8d) → Phase 4 (~20-30d)
+= ~44-62 days minimum
 ```
 
-With two parallel workers, Phases 2–5 can overlap significantly, reducing
-the wall-clock time for the structural work from ~18 days to ~12 days.
-Phase 7 features are highly parallelizable (4-5 independent tracks).
+Phase 2 (codegen refactoring) dominates the critical path. With a solo
+worker, the total is closer to ~55–70 days. Phase 3 benefits most from
+parallelism (5 independent tracks).
 
 ### Quick Reference: Item → Phase Mapping
 
 | Item | Phase | Track | Effort |
 |------|-------|-------|--------|
-| C-01+C-02+S-11 | 3 | A | 3 days |
-| C-03 | 3 | B | 1–2 days |
+| C-01+C-02+S-11+S-06 | 1 | C | 3–4 days |
+| C-03+S-07 | 1 | D | 2–3 days |
 | C-04 | 1 | A | < 1 hr |
-| C-05 | 1 | A | < 1 hr |
-| C-06 | 6 | A | 0.5 day |
-| C-07 | 6 | B | 3–5 days |
-| C-08 | 2 | B | 0.5 day |
-| C-09 | 4 | A | 1–2 days |
-| S-01 | 5 | A | 3–5 days |
-| S-02 | 4 | A | 1–2 days |
-| S-03 | 4 | B | 2–3 days |
-| S-04 | 4 | A | 1–2 days |
-| S-05 | 4 | A | 1 day |
-| S-06 | 3 | C | 0.5 day |
-| S-07 | 3 | B | 1–2 days |
-| S-08 | 2 | A | 0.5 day |
-| S-09 | 2 | A | 0.5 day |
-| S-10 | 4 | D | 1–2 days |
-| S-12 | 4 | C | 1 day |
-| S-13 | 5 | B | 1–2 days |
-| S-14 | 4 | A | 0.5 day |
-| S-15 | 2 | A | 0.5 day |
-| S-16 | 4 | D | 1–2 days |
-| S-17 | 1 | B | minutes |
-| S-18 | 1 | B | minutes |
-| S-19 | 5 | B | 1 day |
-| S-20 | 2 | B | 0.5 day |
-| F-01 | 8 | — | 5+ days |
-| F-02 | 8 | — | 10+ days |
-| F-03+F-09 | 7 | A | 4–6 days |
-| F-04 | 8 | — | 5–8 days |
-| F-05 | 7 | B | 2–3 days |
-| F-06 | 7 | E | 2–3 days |
-| F-07 | 7 | D | 2–3 days |
-| F-08 | 7 | A | 1–2 days |
-| F-10 | 7 | C | 1–2 days |
-| F-11 | 7 | C | 1–2 days |
-| F-12 | 7+8 | D | 2–3 days |
-| F-13 | 7 | F | 2–3 days |
-| F-14 | 7 | G | < 1 hr |
+| C-05 | 3 | B | 1–2 days |
+| C-06 | 1 | A | 0.5 day |
+| C-07 | 2 | A | 3–5 days |
+| C-08 | 1 | B | 0.5 day |
+| C-09 | 2 | A | 1–2 days |
+| S-01 | 2 | A | 3–5 days |
+| S-02 | 2 | A | 1–2 days |
+| S-03 | 2 | B | 2–3 days |
+| S-04 | 2 | A | 1–2 days |
+| S-05 | 2 | A | 1 day |
+| S-06 | 1 | C | 0.5 day |
+| S-07 | 1 | D | 1–2 days |
+| S-08 | 1 | A | 0.5 day |
+| S-09 | 1 | A | 0.5 day |
+| S-10 | 1 | B | 1–2 days |
+| S-12 | 2 | C | 1 day |
+| S-13 | 2 | A | 1–2 days |
+| S-14 | 2 | A | 0.5 day |
+| S-15 | 1 | A | 0.5 day |
+| S-16 | 2 | C | 1–2 days |
+| S-17 | 1 | A | minutes |
+| S-18 | 1 | A | minutes |
+| S-19 | 2 | A | 1 day |
+| S-20 | 1 | B | 0.5 day |
+| F-01 | 4 | — | 5+ days |
+| F-02 | 4 | — | 10+ days |
+| F-03+F-09 | 3 | A | 4–6 days |
+| F-04 | 4 | — | 5–8 days |
+| F-05 | 3 | B | 2–3 days |
+| F-06 | 3 | E | 2–3 days |
+| F-07 | 3 | D | 2–3 days |
+| F-08 | 3 | A | 1–2 days |
+| F-10 | 3 | C | 1–2 days |
+| F-11 | 3 | C | 1–2 days |
+| F-12 | 3+4 | D | 2–3 days |
+| F-13 | 3 | D | 2–3 days |
+| F-14 | 3 | C | < 1 hr |
