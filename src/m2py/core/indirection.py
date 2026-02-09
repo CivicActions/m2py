@@ -1526,6 +1526,6 @@ class IndirectionResolver:
         Returns:
             0 or 1
         """
-        from m2py.codegen.helpers import m_truth
+        from m2py.core.values import m_truth
 
         return 1 if m_truth(value) else 0

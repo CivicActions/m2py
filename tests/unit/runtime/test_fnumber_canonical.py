@@ -1,14 +1,15 @@
-"""Unit tests for m_fnumber and _is_canonical_numeric runtime helpers.
+"""Unit tests for m_fnumber and is_canonical_numeric_string runtime helpers.
 
 Phase 24: Tests for the rewritten m_fnumber function with composable sign codes,
-Decimal precision, and 3-arg formatting. Also tests _is_canonical_numeric which
-was rewritten to use m_str(Decimal(value)) comparison.
+Decimal precision, and 3-arg formatting. Also tests is_canonical_numeric_string
+from SubscriptCanonicalizer.
 """
 
 from decimal import Decimal
 
 
-from m2py.runtime.helpers import _is_canonical_numeric, m_fnumber
+from m2py.core.subscripts import SubscriptCanonicalizer
+from m2py.runtime.helpers import m_fnumber
 
 
 # =============================================================================
@@ -291,135 +292,153 @@ class TestMFnumberEdgeCases:
 
 
 # =============================================================================
-# _is_canonical_numeric tests
+# SubscriptCanonicalizer.is_canonical_numeric_string tests
 # =============================================================================
 
 
 class TestIsCanonicalNumeric:
-    """Tests for _is_canonical_numeric using m_str(Decimal) comparison."""
+    """Tests for SubscriptCanonicalizer.is_canonical_numeric_string using m_str(Decimal) comparison."""
 
     def test_zero(self):
-        assert _is_canonical_numeric("0") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("0") is True
 
     def test_positive_integer(self):
-        assert _is_canonical_numeric("42") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("42") is True
 
     def test_negative_integer(self):
-        assert _is_canonical_numeric("-42") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-42") is True
 
     def test_positive_decimal(self):
-        assert _is_canonical_numeric("3.14") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("3.14") is True
 
     def test_negative_decimal(self):
-        assert _is_canonical_numeric("-3.14") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-3.14") is True
 
     def test_fraction_without_leading_zero(self):
         """MUMPS canonical: .5 not 0.5."""
-        assert _is_canonical_numeric(".5") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string(".5") is True
 
     def test_negative_fraction_without_leading_zero(self):
         """MUMPS canonical: -.5 not -0.5."""
-        assert _is_canonical_numeric("-.5") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-.5") is True
 
     def test_small_fraction(self):
         """Small fractions like .04596 are canonical."""
-        assert _is_canonical_numeric(".04596") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string(".04596") is True
 
     def test_negative_small_fraction(self):
-        assert _is_canonical_numeric("-.04596") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-.04596") is True
 
     # --- Non-canonical forms ---
 
     def test_leading_zero_not_canonical(self):
         """0.5 is NOT canonical (should be .5)."""
-        assert _is_canonical_numeric("0.5") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("0.5") is False
 
     def test_negative_leading_zero_not_canonical(self):
-        assert _is_canonical_numeric("-0.5") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-0.5") is False
 
     def test_trailing_zeros_not_canonical(self):
         """Trailing zeros are not canonical."""
-        assert _is_canonical_numeric("1.50") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("1.50") is False
 
     def test_leading_zeros_not_canonical(self):
-        assert _is_canonical_numeric("042") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("042") is False
 
     def test_plus_sign_not_canonical(self):
         """Explicit plus sign is not canonical."""
-        assert _is_canonical_numeric("+42") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("+42") is False
 
     def test_negative_zero_not_canonical(self):
-        assert _is_canonical_numeric("-0") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-0") is False
 
     def test_trailing_dot_not_canonical(self):
-        assert _is_canonical_numeric("42.") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("42.") is False
 
     # --- Non-numeric strings ---
 
     def test_empty_string(self):
-        assert _is_canonical_numeric("") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("") is False
 
     def test_alphabetic(self):
-        assert _is_canonical_numeric("abc") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("abc") is False
 
     def test_mixed_alphanumeric(self):
-        assert _is_canonical_numeric("12abc") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("12abc") is False
 
     def test_spaces(self):
-        assert _is_canonical_numeric(" 42 ") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string(" 42 ") is False
 
     # --- Boundary cases ---
 
     def test_single_digit(self):
-        assert _is_canonical_numeric("1") is True
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("1") is True
 
     def test_large_integer(self):
-        assert _is_canonical_numeric("12345678901234567890") is True
+        assert (
+            SubscriptCanonicalizer.is_canonical_numeric_string("12345678901234567890")
+            is True
+        )
 
     def test_scientific_notation_string(self):
         """Scientific notation like '1E2' is not canonical MUMPS form.
         Canonical would be '100'."""
-        assert _is_canonical_numeric("1E2") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("1E2") is False
 
     def test_scientific_notation_negative_exponent(self):
         """'1E-2' is not canonical (should be '.01')."""
-        assert _is_canonical_numeric("1E-2") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("1E-2") is False
 
     def test_lone_decimal_point(self):
         """A lone decimal point is not a valid number."""
-        assert _is_canonical_numeric(".") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string(".") is False
 
     def test_double_zeros(self):
         """'00' is not canonical (should be '0')."""
-        assert _is_canonical_numeric("00") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("00") is False
 
     def test_just_minus_sign(self):
         """Just a minus sign is not a number."""
-        assert _is_canonical_numeric("-") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-") is False
 
     def test_just_plus_sign(self):
         """Just a plus sign is not a number."""
-        assert _is_canonical_numeric("+") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("+") is False
 
     def test_negative_zero_decimal(self):
         """'-.0' is not canonical."""
-        assert _is_canonical_numeric("-.0") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("-.0") is False
 
     def test_infinity_string(self):
         """'Infinity' is not a canonical MUMPS number."""
-        assert _is_canonical_numeric("Infinity") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("Infinity") is False
 
     def test_nan_string(self):
         """'NaN' is not a canonical MUMPS number."""
-        assert _is_canonical_numeric("NaN") is False
+        assert SubscriptCanonicalizer.is_canonical_numeric_string("NaN") is False
 
     def test_very_long_decimal(self):
         """Long decimals are canonical if properly formatted (no trailing zero)."""
-        assert _is_canonical_numeric(".12345678901234567890123456789") is True
+        assert (
+            SubscriptCanonicalizer.is_canonical_numeric_string(
+                ".12345678901234567890123456789"
+            )
+            is True
+        )
 
     def test_very_long_decimal_trailing_zero_not_canonical(self):
         """Long decimal with trailing zero is not canonical."""
-        assert _is_canonical_numeric(".123456789012345678901234567890") is False
+        assert (
+            SubscriptCanonicalizer.is_canonical_numeric_string(
+                ".123456789012345678901234567890"
+            )
+            is False
+        )
 
     def test_negative_very_long_decimal(self):
-        assert _is_canonical_numeric("-.12345678901234567890123456789") is True
+        assert (
+            SubscriptCanonicalizer.is_canonical_numeric_string(
+                "-.12345678901234567890123456789"
+            )
+            is True
+        )

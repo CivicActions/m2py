@@ -1,24 +1,24 @@
 # Tasks: Foundation & Cleanup
 
 ## Phase 1: Setup
-- [ ] T001 Create feature directory structure in /specs/019-foundation-cleanup
-- [ ] T002 [P] Create new core module files: src/m2py/core/values.py, src/m2py/core/parsing.py, src/m2py/core/tokenizer.py
-- [ ] T003 [P] Create new test files: tests/unit/core/test_values.py, tests/unit/core/test_parsing.py, tests/unit/core/test_tokenizer.py
+- [x] T001 Create feature directory structure in /specs/019-foundation-cleanup
+- [ ] T002 [P] Create new core module files: src/m2py/core/values.py, src/m2py/core/parsing.py, src/m2py/core/tokenizer.py (values.py done; parsing.py, tokenizer.py are US3)
+- [ ] T003 [P] Create new test files: tests/unit/core/test_values.py, tests/unit/core/test_parsing.py, tests/unit/core/test_tokenizer.py (test_values.py done; test_parsing.py, test_tokenizer.py are US3)
 
 ## Phase 2: Foundational
-- [ ] T004 Update pyproject.toml and uv dependencies if needed for Decimal, textX
-- [ ] T005 [P] Add initial contracts to contracts/module-contracts.md for new modules
-- [ ] T006 [P] Add initial data model to data-model.md for new entities
+- [x] T004 Update pyproject.toml and uv dependencies if needed for Decimal, textX (no changes needed — Decimal is stdlib, textX already a dep)
+- [x] T005 [P] Add initial contracts to contracts/module-contracts.md for new modules
+- [x] T006 [P] Add initial data model to data-model.md for new entities
 
 ## Phase 3: User Story 1 — Transpiler Produces Identical Output After Refactoring (P1)
-- [ ] T007 [US1] Move mumps_canonical_str, m_num, m_str, m_truth, m_compare, m_add, m_sub, m_mul to src/m2py/core/values.py
-- [ ] T008 [P] [US1] Update codegen/helpers.py to re-export from core/values.py
-- [ ] T009 [US1] Update runtime/helpers.py to delegate m_format_output to core/values.py
-- [ ] T010 [US1] Update SubscriptCanonicalizer in core/subscripts.py to delegate to core/values.py
-- [ ] T011 [US1] Update all deferred imports in runtime/__init__.py, runtime/helpers.py, runtime/globals.py, core/indirection.py to use core/values.py
-- [ ] T012 [US1] Remove duplicate _is_canonical_numeric from runtime/helpers.py
-- [ ] T013 [US1] Add/Update tests for value-model functions in tests/unit/core/test_values.py
-- [ ] T014 [US1] Run uv run pytest and verify zero failures, xfails, skips
+- [x] T007 [US1] Move mumps_canonical_str, m_num, m_str, m_truth, m_compare, m_add, m_sub, m_mul to src/m2py/core/values.py
+- [x] T008 [P] [US1] Update codegen/helpers.py to re-export from core/values.py
+- [x] T009 [US1] Update runtime/helpers.py to delegate m_format_output to core/values.py
+- [x] T010 [US1] Update SubscriptCanonicalizer in core/subscripts.py to delegate to core/values.py
+- [x] T011 [US1] Update all deferred imports in runtime/__init__.py, runtime/helpers.py, runtime/globals.py, core/indirection.py to use core/values.py (17 value-model imports done; 1 generate_python remains — that's US2/T016)
+- [x] T012 [US1] Remove duplicate _is_canonical_numeric from runtime/helpers.py
+- [x] T013 [US1] Add/Update tests for value-model functions in tests/unit/core/test_values.py
+- [x] T014 [US1] Run uv run pytest and verify zero failures, xfails, skips (5776 passed, 0 failed)
 
 ## Phase 4: User Story 2 — Runtime Can Be Used Without Codegen Layer (P2)
 - [ ] T015 [US2] Move NameTranslator and translate_name to core/names.py (skip if already done)

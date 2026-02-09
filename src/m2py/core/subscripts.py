@@ -12,7 +12,6 @@ Requirements: FR-003, FR-004
 
 from __future__ import annotations
 
-import math
 import re
 from decimal import Decimal
 from typing import Any, Union
@@ -84,6 +83,8 @@ class SubscriptCanonicalizer:
     def canonicalize_numeric(n: Union[int, float, Decimal]) -> str:
         """Canonicalize a numeric value.
 
+        Delegates to mumps_canonical_str from core.values (FR-013).
+
         Rules per MUMPS specification:
         - Integer: str(n)
         - Float equal to int: str(int(n))
@@ -109,63 +110,9 @@ class SubscriptCanonicalizer:
             >>> SubscriptCanonicalizer.canonicalize_numeric(-.5)
             '-.5'
         """
-        # Handle Decimal type
-        if isinstance(n, Decimal):
-            # Check if it's effectively an integer
-            if n == int(n):
-                return str(int(n))
-            # Format Decimal without scientific notation, preserving precision
-            sign, digits, exponent = n.as_tuple()
-            if not isinstance(exponent, int):
-                return str(n)  # NaN/Infinity
-            if exponent >= 0:
-                return str(int(n))
-            # Decimal number: reconstruct without scientific notation
-            int_part = digits[:exponent] if exponent else ()
-            frac_part = digits[exponent:]
-            int_str = "".join(str(d) for d in int_part) if int_part else ""
-            frac_str = "".join(str(d) for d in frac_part)
-            if not int_str:
-                int_str = ""
-                frac_str = "0" * (-exponent - len(digits)) + frac_str
-            result = int_str + "." + frac_str
-            result = result.rstrip("0").rstrip(".")
-            if result.startswith("0."):
-                result = result[1:]
-            if sign:
-                result = "-" + result
-            return result
+        from m2py.core.values import mumps_canonical_str
 
-        # Handle integer or float that equals integer
-        if isinstance(n, int) or (
-            isinstance(n, float) and n == int(n) and math.isfinite(n)
-        ):
-            return str(int(n))
-
-        # Float with fractional part
-        if isinstance(n, float):
-            if not math.isfinite(n):
-                # inf/nan - just convert to string
-                return str(n)
-
-            # Format and remove trailing zeros
-            s = f"{n:.15g}"  # Use general format with high precision
-
-            # Handle the case where we need to ensure decimal format
-            if "." in s:
-                # Remove trailing zeros after decimal point
-                s = s.rstrip("0").rstrip(".")
-                # If we stripped everything after decimal, result is integer
-                if "." not in s:
-                    return s
-
-            # Remove leading zero before decimal for values like 0.5
-            if s.startswith("0."):
-                s = s[1:]  # "0.5" → ".5"
-            elif s.startswith("-0."):
-                s = "-" + s[2:]  # "-0.5" → "-.5"
-
-            return s
+        return mumps_canonical_str(n)
 
     @staticmethod
     def is_canonical_numeric_string(s: str) -> bool:

@@ -1063,7 +1063,7 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
         LabelNotFoundError: If the target label doesn't exist
         ValueError: If the target offset is invalid
     """
-    from m2py.codegen.names import translate_name
+    from m2py.core.names import translate_name
 
     module = goto.module
     label = goto.label
@@ -1454,7 +1454,7 @@ def run_with_goto_support(
                 # Get the function from line map
                 label_name, line_offset = module._line_map[target_line]
                 # Translate label name to Python function name
-                from m2py.codegen.names import translate_name
+                from m2py.core.names import translate_name
 
                 func_name = translate_name(label_name)
                 target_func = getattr(module, func_name)
@@ -1561,7 +1561,7 @@ def run_with_goto_support(
             elif label is not None:
                 # G LABEL^ROUTINE - call specific label
                 # Translate label name to Python function name (handles digits, %, etc.)
-                from m2py.codegen.names import translate_name
+                from m2py.core.names import translate_name
 
                 label_func_name = translate_name(label)
                 if not hasattr(module, label_func_name):
@@ -1573,7 +1573,7 @@ def run_with_goto_support(
                 current_func = getattr(module, label_func_name)
             else:
                 # G ^ROUTINE - call entry label (same name as routine)
-                from m2py.codegen.names import translate_name
+                from m2py.core.names import translate_name
 
                 entry_name = translate_name(module._routine_name)
                 if not hasattr(module, entry_name):
@@ -2999,7 +2999,7 @@ class MUMPSRuntime:
         Returns:
             Next subscript in collation order, or "" if no more
         """
-        from m2py.codegen.helpers import m_num as _m_num
+        from m2py.core.values import m_num as _m_num
         from m2py.runtime.helpers import m_order, m_order_global
 
         # Coerce direction to int - MUMPS $ORDER direction is always numeric
@@ -3702,7 +3702,7 @@ class MUMPSRuntime:
         # Skip validation if allow_undefined=True (for $GET)
         if not allow_undefined and not target_name.startswith("^"):
             # Parse subscripted names properly
-            from m2py.codegen.names import NameTranslator
+            from m2py.core.names import NameTranslator
 
             base_name = target_name.split("(")[0] if "(" in target_name else target_name
             scope_key = NameTranslator.to_python(base_name)
@@ -3761,7 +3761,7 @@ class MUMPSRuntime:
         # Local variable — parse name and any subscripts
         base_name, subscripts = _parse_subscripted_name(target)
         subs = tuple(str(s) for s in subscripts) if subscripts else ()
-        from m2py.codegen.names import NameTranslator
+        from m2py.core.names import NameTranslator
 
         python_name = NameTranslator.to_python(base_name)
         array = _scope.get(python_name)
@@ -3816,7 +3816,7 @@ class MUMPSRuntime:
             )
 
         # Get the MArray object from scope (not the value)
-        from m2py.codegen.names import NameTranslator
+        from m2py.core.names import NameTranslator
 
         base_name = target_name.split("(")[0] if "(" in target_name else target_name
         scope_key = NameTranslator.to_python(base_name)
@@ -5619,7 +5619,7 @@ class MUMPSRuntime:
                     if needs_evaluation:
                         # Evaluate the offset expression
                         try:
-                            from m2py.codegen.helpers import m_num
+                            from m2py.core.values import m_num
 
                             temp_var = "ZOFFSET"
                             temp_scope: Dict[str, Any] = dict(scope)
@@ -5792,7 +5792,7 @@ class MUMPSRuntime:
         """
         # Import here to avoid circular dependency
         from m2py.codegen import generate_python
-        from m2py.codegen.helpers import m_compare, m_num, m_truth
+        from m2py.core.values import m_compare, m_num, m_truth
 
         # Handle MArray objects (from TRAMPOLINE scope sync)
         if hasattr(mumps_code, "value"):
@@ -5955,7 +5955,7 @@ class MUMPSRuntime:
                 # Evaluate the postcondition as a MUMPS expression
                 postcond_result = resolver.evaluate_expression(postcond)
                 # MUMPS truth: non-zero or non-empty string starting with digit is true
-                from m2py.codegen.helpers import m_truth
+                from m2py.core.values import m_truth
 
                 if not m_truth(postcond_result):
                     # Postcondition false, skip this argument
@@ -6022,7 +6022,7 @@ class MUMPSRuntime:
         namespace: dict[str, Any] = {"_rt": self}
 
         # Inject helpers
-        from m2py.codegen.helpers import m_str, m_compare, m_num, m_truth
+        from m2py.core.values import m_str, m_compare, m_num, m_truth
 
         namespace["m_str"] = m_str
         namespace["m_num"] = m_num
