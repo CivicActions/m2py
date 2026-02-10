@@ -28,21 +28,7 @@ if TYPE_CHECKING:
     from m2py.codegen.routine import GeneratorContext
 
 from m2py.codegen.enums import GotoStrategy
-
-
-def _get_scope_expr(ctx: "GeneratorContext") -> str:
-    """Get the appropriate scope expression for the current context.
-
-    In TRAMPOLINE mode with dynamic_locals, local variables are stored in
-    state._locals dict. Otherwise they're in _scope (cross-routine visibility).
-
-    Returns:
-        "state._locals" in TRAMPOLINE+dynamic_locals mode, "_scope" otherwise
-    """
-    is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
-    if is_trampoline and ctx.uses_dynamic_locals:
-        return "state._locals"
-    return "_scope"
+from m2py.codegen.var_access import scope_dict_expr
 
 
 def _generate_do_goto_indirection_string(ind: "MExpr", ctx: "GeneratorContext") -> str:
@@ -191,7 +177,7 @@ def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> s
     from m2py.asg.expressions import MVariable
     from m2py.codegen.expressions import generate_expr
 
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     if isinstance(inner_expr, MVariable):
         var_name = inner_expr.name
@@ -251,7 +237,7 @@ def generate_argument_indirection(
     from m2py.codegen.expressions import generate_expr
 
     # Get the appropriate scope expression for this context
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Count indirection levels and collect per-level subscripts
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
@@ -366,7 +352,7 @@ def generate_name_indirection(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
     # Get the appropriate scope expression
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Handle NakedGlobal: @^(1) or @@^(1) or @@^(1)@(subs)
     # The inner expression is a NakedGlobal, which when evaluated gives a VALUE
@@ -482,7 +468,7 @@ def generate_indirection_marray_expr(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
     # Get the appropriate scope expression
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Handle NakedGlobal
     if isinstance(inner_expr, NakedGlobal):
@@ -585,7 +571,7 @@ def generate_subscript_indirection(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
     # Get the appropriate scope expression
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Handle NakedGlobal: @^(1) in subscript context
     # The naked global evaluates to a string like "^V1A(5)"
@@ -693,7 +679,7 @@ def generate_name_indirection_write(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
     # Get the appropriate scope expression
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Handle NakedGlobal: @^(1)=val or @@^(1)=val or @@^(1)@(subs)=val
     # The inner expression is a NakedGlobal, which when evaluated gives a value
@@ -820,7 +806,7 @@ def generate_name_indirection_kill(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
     # Get the appropriate scope expression
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Get the source variable name
     if isinstance(inner_expr, MVariable):
@@ -896,7 +882,7 @@ def generate_name_indirection_for(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
     # Get the appropriate scope expression
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Get the source variable name
     if isinstance(inner_expr, MVariable):
@@ -970,7 +956,7 @@ def generate_merge_indirection_name(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(expr)
 
     # Get the appropriate scope expression
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Get the source variable name
     if isinstance(inner_expr, MVariable):
@@ -1040,7 +1026,6 @@ def generate_data_indirection_name(
     from m2py.parser.textx_classes import LocalVariable as MLocalVariable
     from m2py.parser.textx_classes import GlobalVariable
     from m2py.codegen.expressions import generate_expr
-    from m2py.codegen.enums import GotoStrategy
 
     # Count indirection levels - we DON'T use per_level_subscripts for $DATA
     # because name_indirection_subscripts are appended AFTER resolution
@@ -1064,10 +1049,7 @@ def generate_data_indirection_name(
         subs_fstr = "''"
 
     # Get the appropriate scope expression based on strategy
-    if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-        scope_expr = "state._locals"
-    else:
-        scope_expr = "_scope"
+    scope_expr = scope_dict_expr(ctx)
 
     # Get the source expression
     if isinstance(inner_expr, GlobalVariable):
@@ -1139,7 +1121,7 @@ def generate_get_indirection_name(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(var)
 
     # Get the appropriate scope expression based on strategy
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Get the source expression - include subscripts from inner variable
     if isinstance(inner_expr, GlobalVariable):
@@ -1262,7 +1244,7 @@ def generate_name_function_indirection(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(var)
 
     # Get the appropriate scope expression based on strategy
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Build per_level_subscripts from all collected subscripts
     per_level_subs_code = None
@@ -1358,27 +1340,21 @@ def generate_query_indirection_name(
     from m2py.parser.textx_classes import LocalVariable as MLocalVariable
     from m2py.parser.textx_classes import GlobalVariable
     from m2py.codegen.expressions import generate_expr
+    from m2py.codegen.statements import gen_subscripts_tuple
 
     # Count indirection levels
     levels, inner_expr = _count_indirection_levels(var)
 
     # Build subscript tuple for the starting point
     # Only include subscripts if explicitly provided via @var@(subs) syntax
-    if var.name_indirection_subscripts:
-        all_subs = []
-        for sub_list in var.name_indirection_subscripts:
-            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-            all_subs.extend(sub_exprs)
-        if len(all_subs) == 1:
-            subscripts_tuple = f"({all_subs[0]},)"
-        else:
-            subscripts_tuple = f"({', '.join(all_subs)},)"
-    else:
-        # No additional subscripts - just use subscripts from resolved name
-        subscripts_tuple = "()"
+    all_subs = []
+    for sub_list in var.name_indirection_subscripts or []:
+        sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
+        all_subs.extend(sub_exprs)
+    subscripts_tuple = gen_subscripts_tuple(all_subs, ctx)
 
     # Get the appropriate scope expression based on strategy
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Get the source expression
     if isinstance(inner_expr, GlobalVariable):
@@ -1483,22 +1459,16 @@ def generate_indirect_do(
 
     # Resolve and parse all targets (handles comma-separated multiple targets)
     # This also handles nested indirection like @L where L="@L(1),^@R"
-    is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
-    if is_trampoline and ctx.uses_dynamic_locals:
-        ctx.emitter.line(
-            f"_call_targets = _rt.resolve_do_targets({target_str_expr}, state._locals)"
-        )
-    else:
-        ctx.emitter.line(
-            f"_call_targets = _rt.resolve_do_targets({target_str_expr}, _scope)"
-        )
+    ctx.emitter.line(
+        f"_call_targets = _rt.resolve_do_targets({target_str_expr}, {scope_dict_expr(ctx)})"
+    )
 
     # Loop over all targets (usually just one, but argument indirection can produce multiple)
     ctx.emitter.line("for _call_target in _call_targets:")
     with ctx.emitter.indented():
         # Lazy postcondition evaluation - check just before executing each target
         # This is required because the postcondition may depend on state set by previous targets
-        scope_ref = "state._locals" if ctx.uses_dynamic_locals else "_scope"
+        scope_ref = scope_dict_expr(ctx)
         ctx.emitter.line("if _call_target.postcondition:")
         with ctx.emitter.indented():
             ctx.emitter.line("_pc_temp_var = 'ZPOSTCOND'")
@@ -1855,15 +1825,9 @@ def generate_indirect_goto(
     # Resolve and parse all targets (handles comma-separated multiple targets)
     # This also handles nested indirection like @L where L="@L(1),^@R"
     # GOTO takes only the first matching target (unlike DO which loops over all)
-    is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
-    if is_trampoline and ctx.uses_dynamic_locals:
-        ctx.emitter.line(
-            f"_call_targets = _rt.resolve_do_targets({target_str_expr}, state._locals)"
-        )
-    else:
-        ctx.emitter.line(
-            f"_call_targets = _rt.resolve_do_targets({target_str_expr}, _scope)"
-        )
+    ctx.emitter.line(
+        f"_call_targets = _rt.resolve_do_targets({target_str_expr}, {scope_dict_expr(ctx)})"
+    )
 
     # GOTO takes only the first matching target (postconditions already evaluated)
     ctx.emitter.line("if not _call_targets:")
@@ -1999,7 +1963,7 @@ def generate_set_argument_indirection(
     # Generate the SET command string and execute it
     # Use execute_mumps which handles parsing and execution
     # Use appropriate scope based on context (state._locals in TRAMPOLINE mode)
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
     ctx.emitter.line(f'_rt.execute_mumps("S " + str({target_expr}), {scope_expr})')
 
 
@@ -2030,7 +1994,7 @@ def generate_increment_indirection(
     levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(var)
 
     # Get scope expression
-    scope_expr = _get_scope_expr(ctx)
+    scope_expr = scope_dict_expr(ctx)
 
     # Build source expression
     if isinstance(inner_expr, GlobalVariable):

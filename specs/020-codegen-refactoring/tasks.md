@@ -19,10 +19,10 @@
 
 **Purpose**: Establish baselines and verify Phase 1 deliverables are available
 
-- [ ] T001 Verify Phase 1 deliverables exist and are importable: `src/m2py/core/values.py`, `src/m2py/core/parsing.py`, `src/m2py/core/tokenizer.py`, `src/m2py/asg/elements.py` (`MScope.walk_statements`), `src/m2py/codegen/exceptions.py`
-- [ ] T002 Record baseline metrics: line counts for `src/m2py/codegen/statements.py` (expect ~6,775), `src/m2py/codegen/indirection.py` (expect ~2,092), xfail/skip counts in test suite
-- [ ] T003 Run full test suite (`uv run pytest`) to establish green baseline (5,883+ tests passing)
-- [ ] T004 [P] Create snapshot of generated Python output for representative MUMPS routines (regression baseline for US1). Transpile all `.m` files in `YDBTest/` and `tests/functional/` via `uv run python main.py`, capture generated Python to `tmp/baseline-snapshots/` (one `.py` per routine). Include routines exercising subscripts, indirection, LOCK, ZWRITE, by-ref, scope sync, XECUTE, and SET $PIECE/$EXTRACT.
+- [x] T001 Verify Phase 1 deliverables exist and are importable: `src/m2py/core/values.py`, `src/m2py/core/parsing.py`, `src/m2py/core/tokenizer.py`, `src/m2py/asg/elements.py` (`MScope.walk_statements`), `src/m2py/codegen/exceptions.py`
+- [x] T002 Record baseline metrics: line counts for `src/m2py/codegen/statements.py` (expect ~6,775), `src/m2py/codegen/indirection.py` (expect ~2,092), xfail/skip counts in test suite
+- [x] T003 Run full test suite (`uv run pytest`) to establish green baseline (5,883+ tests passing)
+- [x] T004 [P] Create snapshot of generated Python output for representative MUMPS routines (regression baseline for US1). Transpile all `.m` files in `YDBTest/` and `tests/functional/` via `uv run python main.py`, capture generated Python to `tmp/baseline-snapshots/` (one `.py` per routine). Include routines exercising subscripts, indirection, LOCK, ZWRITE, by-ref, scope sync, XECUTE, and SET $PIECE/$EXTRACT.
 
 **Checkpoint**: Baselines recorded, Phase 1 confirmed available, all tests green
 
@@ -46,12 +46,12 @@
 
 ### Implementation for User Story 2
 
-- [ ] T005 [US2] Create `gen_subscripts_tuple(subscripts, ctx) -> str` helper function near top of `src/m2py/codegen/statements.py` per contract in `contracts/internal-apis.md`. Handle 4 variations: standard subscript list, naked global with prefix, empty subscripts → `"()"`, pre-evaluated expr list. Include docstring.
-- [ ] T006 [US2] Write unit tests for `gen_subscripts_tuple()` in `tests/unit/codegen/test_gen_subscripts.py` covering 0, 1, 2, N subscripts and edge cases (empty list, single-element trailing comma)
-- [ ] T007 [US2] Replace all ~36 inline subscript-tuple patterns in `src/m2py/codegen/statements.py` with calls to `gen_subscripts_tuple()`. Run `uv run pytest` after each batch of replacements.
-- [ ] T008 [US2] Replace all ~57 inline subscript-tuple patterns in `src/m2py/codegen/expressions.py` with calls to `gen_subscripts_tuple()`. Import the function from `codegen/statements.py`. Run `uv run pytest`.
-- [ ] T009 [US2] Replace all ~6 inline subscript-tuple patterns in `src/m2py/codegen/indirection.py` with calls to `gen_subscripts_tuple()`. Import the function from `codegen/statements.py`. Run `uv run pytest`.
-- [ ] T010 [US2] Verify zero remaining inline pattern copies via `rg` search for `sub_exprs.*=.*\[generate_expr` and the trailing-comma check pattern. Remove any dead code. Run full test suite.
+- [x] T005 [US2] Create `gen_subscripts_tuple(subscripts, ctx) -> str` helper function near top of `src/m2py/codegen/statements.py` per contract in `contracts/internal-apis.md`. Handle 4 variations: standard subscript list, naked global with prefix, empty subscripts → `"()"`, pre-evaluated expr list. Include docstring.
+- [x] T006 [US2] Write unit tests for `gen_subscripts_tuple()` in `tests/unit/codegen/test_gen_subscripts.py` covering 0, 1, 2, N subscripts and edge cases (empty list, single-element trailing comma)
+- [x] T007 [US2] Replace all ~36 inline subscript-tuple patterns in `src/m2py/codegen/statements.py` with calls to `gen_subscripts_tuple()`. Run `uv run pytest` after each batch of replacements.
+- [x] T008 [US2] Replace all ~57 inline subscript-tuple patterns in `src/m2py/codegen/expressions.py` with calls to `gen_subscripts_tuple()`. Import the function from `codegen/statements.py`. Run `uv run pytest`.
+- [x] T009 [US2] Replace all ~6 inline subscript-tuple patterns in `src/m2py/codegen/indirection.py` with calls to `gen_subscripts_tuple()`. Import the function from `codegen/statements.py`. Run `uv run pytest`.
+- [x] T010 [US2] Verify zero remaining inline pattern copies via `rg` search for `sub_exprs.*=.*\[generate_expr` and the trailing-comma check pattern. Remove any dead code. Run full test suite.
 
 **Checkpoint**: US2 complete. gen_subscripts_tuple() is the single source of truth for subscript tuples. All tests pass.
 
@@ -65,11 +65,11 @@
 
 ### Implementation for User Story 3
 
-- [ ] T011 [US3] Create `_build_lhs_getter_setter(target, ctx) -> tuple[str, str]` in `src/m2py/codegen/statements.py` handling all 4 variable types (GlobalVariable, NakedGlobal, MIndirection, MVariable) per contract in `contracts/internal-apis.md`. Include docstring.
-- [ ] T012 [US3] Write unit tests for `_build_lhs_getter_setter()` in `tests/unit/codegen/test_lhs_helpers.py` covering each variable type and strategy combination
-- [ ] T013 [US3] Refactor `_generate_lhs_piece` in `src/m2py/codegen/statements.py` (~L1200) to use `_build_lhs_getter_setter()`, keeping only position-arg logic and `m_set_piece` call. Run `uv run pytest`.
-- [ ] T014 [US3] Refactor `_generate_lhs_extract` in `src/m2py/codegen/statements.py` (~L1392) to use `_build_lhs_getter_setter()`, keeping only position-arg logic and `m_set_extract` call. Run `uv run pytest`.
-- [ ] T015 [US3] Verify MIndirection handling block exists in exactly one location. Remove dead code. Run full test suite.
+- [x] T011 [US3] Create `_build_lhs_getter_setter(target, ctx) -> tuple[str, str]` in `src/m2py/codegen/statements.py` handling all 4 variable types (GlobalVariable, NakedGlobal, MIndirection, MVariable) per contract in `contracts/internal-apis.md`. Include docstring.
+- [x] T012 [US3] Write unit tests for `_build_lhs_getter_setter()` in `tests/unit/codegen/test_lhs_helpers.py` covering each variable type and strategy combination
+- [x] T013 [US3] Refactor `_generate_lhs_piece` in `src/m2py/codegen/statements.py` (~L1200) to use `_build_lhs_getter_setter()`, keeping only position-arg logic and `m_set_piece` call. Run `uv run pytest`.
+- [x] T014 [US3] Refactor `_generate_lhs_extract` in `src/m2py/codegen/statements.py` (~L1392) to use `_build_lhs_getter_setter()`, keeping only position-arg logic and `m_set_extract` call. Run `uv run pytest`.
+- [x] T015 [US3] Verify MIndirection handling block exists in exactly one location. Remove dead code. Run full test suite.
 
 **Checkpoint**: US3 complete. ~300 lines of duplication reduced to ~100 lines. All tests pass.
 
@@ -83,13 +83,13 @@
 
 ### Implementation for User Story 4
 
-- [ ] T016 [US4] Create `emit_state_to_scope_sync(ctx)` and `emit_scope_to_state_sync(ctx)` helpers in `src/m2py/codegen/statements.py` per contract. Both must check `ctx.uses_dynamic_locals` internally (no-op if False). Include docstrings.
-- [ ] T017 [US4] Write unit tests for both sync helpers in `tests/unit/codegen/test_sync_helpers.py` covering dynamic_locals=True and False. Include test case where both sync directions apply within the same block (a variable appears in both scope→state and state→scope sync).
+- [x] T016 [US4] Create `emit_state_to_scope_sync(ctx)` and `emit_scope_to_state_sync(ctx)` helpers in `src/m2py/codegen/statements.py` per contract. Both must check `ctx.uses_dynamic_locals` internally (no-op if False). Include docstrings.
+- [x] T017 [US4] Write unit tests for both sync helpers in `tests/unit/codegen/test_sync_helpers.py` covering dynamic_locals=True and False. Include test case where both sync directions apply within the same block (a variable appears in both scope→state and state→scope sync).
 
-- [ ] T018 [US4] Replace all ~9 state→scope sync blocks in `src/m2py/codegen/statements.py` with calls to `emit_state_to_scope_sync()`. Run `uv run pytest`.
-- [ ] T019 [US4] Replace all ~7 scope→state sync blocks in `src/m2py/codegen/statements.py` with calls to `emit_scope_to_state_sync()`. Run `uv run pytest`.
-- [ ] T020 [US4] Replace all ~6 sync blocks in `src/m2py/codegen/routine.py` with calls to the shared helpers. Import from `codegen/statements.py`. Run `uv run pytest`.
-- [ ] T021 [US4] Verify zero remaining inline sync patterns via `rg` search. Remove dead code. Run full test suite.
+- [x] T018 [US4] Replace all ~9 state→scope sync blocks in `src/m2py/codegen/statements.py` with calls to `emit_state_to_scope_sync()`. Run `uv run pytest`.
+- [x] T019 [US4] Replace all ~7 scope→state sync blocks in `src/m2py/codegen/statements.py` with calls to `emit_scope_to_state_sync()`. Run `uv run pytest`.
+- [x] T020 [US4] Replace all ~6 sync blocks in `src/m2py/codegen/routine.py` with calls to the shared helpers. Import from `codegen/statements.py`. Run `uv run pytest`.
+- [x] T021 [US4] Verify zero remaining inline sync patterns via `rg` search. Remove dead code. Run full test suite.
 
 **Checkpoint**: US4 complete. 22 inline sync blocks consolidated to 2 helpers. All tests pass.
 
@@ -103,10 +103,10 @@
 
 ### Implementation for User Story 5
 
-- [ ] T022 [US5] Create `_emit_goto_external_handler(ctx)` in `src/m2py/codegen/statements.py` per contract. Include docstring.
-- [ ] T023 [US5] Replace all 4 inline `except GotoExternal` handler blocks in `src/m2py/codegen/statements.py` with calls to `_emit_goto_external_handler()`. Run `uv run pytest`.
-- [ ] T024 [US5] Replace all 2 inline `except GotoExternal` handler blocks in `src/m2py/codegen/routine.py` with calls to `_emit_goto_external_handler()`. Import from `codegen/statements.py`. Run `uv run pytest`.
-- [ ] T025 [US5] Verify zero remaining inline `except GotoExternal` blocks with scope sync code via `rg` search. Run full test suite.
+- [x] T022 [US5] Create `_emit_goto_external_handler(ctx)` in `src/m2py/codegen/statements.py` per contract. Include docstring.
+- [x] T023 [US5] Replace all 4 inline `except GotoExternal` handler blocks in `src/m2py/codegen/statements.py` with calls to `_emit_goto_external_handler()`. Run `uv run pytest`.
+- [x] T024 [US5] Replace all 2 inline `except GotoExternal` handler blocks in `src/m2py/codegen/routine.py` with calls to `_emit_goto_external_handler()`. Import from `codegen/statements.py`. Run `uv run pytest`.
+- [x] T025 [US5] Verify zero remaining inline `except GotoExternal` blocks with scope sync code via `rg` search. Run full test suite. (Note: 4 handlers in indirection.py use a different sync pattern—_scope.update()—and are not candidates for this helper.)
 
 **Checkpoint**: US5 complete. 6 identical handler blocks consolidated to 1 function. All tests pass.
 
@@ -120,11 +120,11 @@
 
 ### Implementation for User Story 6
 
-- [ ] T026 [US6] Extend `zwrite_local()` and `zwrite_global()` in `src/m2py/runtime/__init__.py` to accept optional `range_start` / `range_end` params per contract. Implement filtering using `_mumps_collation_key` from `runtime/helpers.py`.
-- [ ] T027 [US6] Write regression tests for ZWRITE range filtering in `tests/integration/test_zwrite_ranges.py` covering: numeric ranges `A(2:4)`, string ranges `A("A":"B")`, open-end `A(2:)`, open-start `A(:2)`, mixed type subscripts
-- [ ] T028 [US6] Fix `_generate_zwrite()` in `src/m2py/codegen/statements.py` (~L6580): replace `break` in `MZWriteSubscriptRange` branch with evaluation of start/end expressions via `generate_expr()`, pass as keyword args to runtime. Apply to both globals and locals paths.
-- [ ] T029 [US6] Unify the globals and locals ZWRITE codegen paths in `src/m2py/codegen/statements.py` to eliminate code duplication. Run `uv run pytest`.
-- [ ] T030 [US6] Validate ZWRITE range output against YDB using `uv run python utils/validate.py` for each edge case scenario. Run full test suite.
+- [x] T026 [US6] Extend `zwrite_local()` and `zwrite_global()` in `src/m2py/runtime/__init__.py` to accept optional `range_start` / `range_end` params per contract. Implement filtering using `_mumps_collation_key` from `runtime/helpers.py`.
+- [x] T027 [US6] Write regression tests for ZWRITE range filtering in `tests/integration/test_zwrite_ranges.py` covering: numeric ranges `A(2:4)`, string ranges `A("A":"B")`, open-end `A(2:)`, open-start `A(:2)`, mixed type subscripts
+- [x] T028 [US6] Fix `_generate_zwrite()` in `src/m2py/codegen/statements.py` (~L6580): replace `break` in `MZWriteSubscriptRange` branch with evaluation of start/end expressions via `generate_expr()`, pass as keyword args to runtime. Apply to both globals and locals paths.
+- [x] T029 [US6] Unify the globals and locals ZWRITE codegen paths in `src/m2py/codegen/statements.py` to eliminate code duplication. Run `uv run pytest`.
+- [x] T030 [US6] Validate ZWRITE range output against YDB using `uv run python utils/validate.py` for each edge case scenario. Run full test suite.
 
 **Checkpoint**: US6 complete. ZWRITE ranges filter correctly using MUMPS collation. All tests pass.
 
@@ -138,12 +138,12 @@
 
 ### Implementation for User Story 7
 
-- [ ] T031 [US7] Create `src/m2py/codegen/var_access.py` with `var_read_expr()`, `var_write_stmt()`, and `var_base_expr()` per contract in `contracts/internal-apis.md`. Handle all 3 strategies and all variations (setdefault vs get, MArray default, array_vars vs state_vars). Include docstrings.
-- [ ] T032 [US7] Write unit tests for all 3 functions in `tests/unit/codegen/test_var_access.py` covering each strategy (SIMPLE_FUNCTIONS, TRAMPOLINE+static, TRAMPOLINE+dynamic) and each access mode (read, write, base)
-- [ ] T033 [US7] Replace all ~42 inline dispatch patterns in `src/m2py/codegen/statements.py` with calls to var_access helpers. Run `uv run pytest` after every ~10 replacements.
-- [ ] T034 [US7] Replace all ~20 inline dispatch patterns in `src/m2py/codegen/expressions.py` with calls to var_access helpers. Run `uv run pytest`.
-- [ ] T035 [US7] Replace all ~7 inline dispatch patterns in `src/m2py/codegen/indirection.py` with calls to var_access helpers. Run `uv run pytest`.
-- [ ] T036 [US7] Verify zero remaining inline 3-way dispatch patterns via `rg` search. Remove dead code. Run full test suite.
+- [x] T031 [US7] Create `src/m2py/codegen/var_access.py` with `var_read_expr()`, `var_write_stmt()`, and `var_base_expr()` per contract in `contracts/internal-apis.md`. Handle all 3 strategies and all variations (setdefault vs get, MArray default, array_vars vs state_vars). Include docstrings.
+- [x] T032 [US7] Write unit tests for all 3 functions in `tests/unit/codegen/test_var_access.py` covering each strategy (SIMPLE_FUNCTIONS, TRAMPOLINE+static, TRAMPOLINE+dynamic) and each access mode (read, write, base)
+- [x] T033 [US7] Replace all ~42 inline dispatch patterns in `src/m2py/codegen/statements.py` with calls to var_access helpers. Run `uv run pytest` after every ~10 replacements.
+- [x] T034 [US7] Replace all ~20 inline dispatch patterns in `src/m2py/codegen/expressions.py` with calls to var_access helpers. Run `uv run pytest`.
+- [x] T035 [US7] Replace all ~7 inline dispatch patterns in `src/m2py/codegen/indirection.py` with calls to var_access helpers. Run `uv run pytest`.
+- [x] T036 [US7] Verify zero remaining inline 3-way dispatch patterns via `rg` search. Remove dead code. Run full test suite.
 
 **Checkpoint**: US7 complete. 69 inline dispatch patterns consolidated to 3 helpers. All tests pass.
 
@@ -157,10 +157,10 @@
 
 ### Implementation for User Story 8
 
-- [ ] T037 [US8] Create `compile_mumps_line(code_str, context)` in `src/m2py/parser/compiler.py` per contract. The function runs full parse→analyze→structure pipeline. Include docstring.
-- [ ] T038 [US8] Write unit tests for `compile_mumps_line()` in `tests/unit/parser/test_compile_mumps_line.py` covering representative XECUTE strings: `"WRITE 1,! QUIT"`, multi-command lines, edge cases
-- [ ] T039 [US8] Refactor `_generate_xecute()` in `src/m2py/codegen/statements.py` to call `compile_mumps_line()` instead of directly importing `parse_commands_from_line`, `_structure_commands_with_bodies`, and `analyze_command`. Run `uv run pytest`.
-- [ ] T040 [US8] Verify `src/m2py/codegen/statements.py` has zero imports from `m2py.parser.line_parser`, `m2py.parser.parser`, or `m2py.analysis.semantic_analyzer` inside `_generate_xecute`. Run full test suite.
+- [x] T037 [US8] Create `compile_mumps_line(code_str, context)` in `src/m2py/parser/compiler.py` per contract. The function runs full parse→analyze→structure pipeline. Include docstring.
+- [x] T038 [US8] Write unit tests for `compile_mumps_line()` in `tests/unit/parser/test_compile_mumps_line.py` covering representative XECUTE strings: `"WRITE 1,! QUIT"`, multi-command lines, edge cases
+- [x] T039 [US8] Refactor `_generate_xecute()` in `src/m2py/codegen/statements.py` to call `compile_mumps_line()` instead of directly importing `parse_commands_from_line`, `_structure_commands_with_bodies`, and `analyze_command`. Run `uv run pytest`.
+- [x] T040 [US8] Verify `src/m2py/codegen/statements.py` has zero imports from `m2py.parser.line_parser`, `m2py.parser.parser`, or `m2py.analysis.semantic_analyzer` inside `_generate_xecute`. Run full test suite.
 
 **Checkpoint**: US8 complete. XECUTE uses shared pipeline. Backward imports eliminated. All tests pass.
 

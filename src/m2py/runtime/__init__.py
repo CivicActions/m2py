@@ -2122,7 +2122,13 @@ class MUMPSRuntime:
         return self._zwr_encode_string(str(sub))
 
     def zwrite_local(
-        self, name: str, subscripts: tuple[str, ...], scope: dict[str, Any]
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        scope: dict[str, Any],
+        *,
+        range_start: Any = None,
+        range_end: Any = None,
     ) -> None:
         """ZWRITE - display a local variable and its descendants.
 
@@ -2130,6 +2136,8 @@ class MUMPSRuntime:
             name: Variable name (Python scope key, e.g., "_pct_FOO" for %FOO)
             subscripts: Subscript path (empty for unsubscripted)
             scope: Variable scope dictionary
+            range_start: Optional lower bound for subscript range (inclusive)
+            range_end: Optional upper bound for subscript range (inclusive)
         """
         if name not in scope:
             return  # Variable not defined
@@ -2153,11 +2161,23 @@ class MUMPSRuntime:
                 return  # Subscript doesn't exist
             node = node._children[sub]
 
-        # Output this node and descendants
-        self._zwrite_marray(mumps_name, subs_list, node)
+        # Output this node and descendants (with optional range filtering)
+        self._zwrite_marray(
+            mumps_name,
+            subs_list,
+            node,
+            range_start=range_start,
+            range_end=range_end,
+        )
 
     def _zwrite_marray(
-        self, base_name: str, subscripts: list[Any], node: "MArray"
+        self,
+        base_name: str,
+        subscripts: list[Any],
+        node: "MArray",
+        *,
+        range_start: Any = None,
+        range_end: Any = None,
     ) -> None:
         """Output an MArray node and its descendants in ZWRITE format.
 
@@ -2165,6 +2185,8 @@ class MUMPSRuntime:
             base_name: Variable name (e.g., "X")
             subscripts: List of subscripts to this node (may be empty)
             node: The MArray node to output
+            range_start: If set, only output children >= this value (MUMPS collation)
+            range_end: If set, only output children <= this value (MUMPS collation)
         """
         # Build the path string with comma-separated subscripts
         if subscripts:
@@ -2174,46 +2196,81 @@ class MUMPSRuntime:
             path = base_name
 
         # Output value at this node if it exists
-        if node._value is not None:
+        # (only when no range filter is active — ranges apply to children)
+        if node._value is not None and range_start is None and range_end is None:
             self.write(f"{path}={self._quote_value(node._value)}\n")
 
+        # Compute collation keys for range bounds (if applicable)
+        start_key = (
+            _mumps_collation_key(range_start) if range_start is not None else None
+        )
+        end_key = _mumps_collation_key(range_end) if range_end is not None else None
+
         # Output children recursively in MUMPS collation order
-        # (numerics before strings, numerics sorted numerically)
         for sub in sorted(node._children.keys(), key=_mumps_collation_key):
+            # Apply range filtering at this level
+            if start_key is not None:
+                if _mumps_collation_key(sub) < start_key:
+                    continue
+            if end_key is not None:
+                if _mumps_collation_key(sub) > end_key:
+                    break  # Sorted order — no more matches possible
+
             child = node._children[sub]
+            # Children of range-filtered nodes are NOT range-filtered
             self._zwrite_marray(base_name, subscripts + [sub], child)
 
-    def zwrite_global(self, name: str, subscripts: tuple[str, ...]) -> None:
+    def zwrite_global(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        *,
+        range_start: Any = None,
+        range_end: Any = None,
+    ) -> None:
         """ZWRITE - display a global variable and its descendants.
 
         Args:
             name: Global name (without ^)
             subscripts: Subscript path (empty for unsubscripted)
+            range_start: Optional lower bound for subscript range (inclusive)
+            range_end: Optional upper bound for subscript range (inclusive)
         """
-        # Get value at this node
-        value = self.globals.get(name, subscripts)
-        if value is not None:
-            if subscripts:
-                sub_str = ",".join(self._format_subscript(s) for s in subscripts)
-                self.write(f"^{name}({sub_str})={self._quote_value(value)}\n")
-            else:
-                self.write(f"^{name}={self._quote_value(value)}\n")
+        # If no range filtering, output value at this node
+        if range_start is None and range_end is None:
+            value = self.globals.get(name, subscripts)
+            if value is not None:
+                if subscripts:
+                    sub_str = ",".join(self._format_subscript(s) for s in subscripts)
+                    self.write(f"^{name}({sub_str})={self._quote_value(value)}\n")
+                else:
+                    self.write(f"^{name}={self._quote_value(value)}\n")
 
         # Get descendants using $ORDER
-        # To get first subscript at this level, use ("",) as the "starting from" marker
-        # For subsequent subscripts, use the last found subscript
-        current_sub = ""  # Empty string = get first
+        current_sub: Any = ""  # Empty string = get first
+        if range_start is not None:
+            # Start from just before range_start by using ORDER from ""
+            # and skipping until >= range_start
+            pass  # We'll filter below
+
         while True:
-            # Find next subscript at this level
-            # ORDER expects (parent_subscripts..., starting_point)
             next_sub = self.globals.order(
                 name, subscripts + (current_sub,), direction=1
             )
             if not next_sub:
                 break
-            # Recursively output this subtree
+
+            # Apply range filtering
+            if range_start is not None:
+                if _mumps_collation_key(next_sub) < _mumps_collation_key(range_start):
+                    current_sub = next_sub
+                    continue
+            if range_end is not None:
+                if _mumps_collation_key(next_sub) > _mumps_collation_key(range_end):
+                    break  # Sorted — no more matches
+
+            # Recursively output this subtree (no range filter for children)
             self.zwrite_global(name, subscripts + (next_sub,))
-            # Move to next sibling at this level
             current_sub = next_sub
 
     def _zwrite_var(self, name: str, value: Any) -> None:

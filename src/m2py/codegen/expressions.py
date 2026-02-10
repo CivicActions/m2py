@@ -29,7 +29,34 @@ from m2py.asg.expressions import (
 )
 from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.names import translate_name
+from m2py.codegen.var_access import var_base_expr, scope_dict_expr
 from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
+
+
+def gen_subscripts_tuple(
+    subscripts: list,
+    ctx: "GeneratorContext",
+    *,
+    subscript_context: bool = False,
+    str_wrap: bool = False,
+    empty: str = "()",
+) -> str:
+    """Thin wrapper that defers to m2py.codegen.statements.gen_subscripts_tuple.
+
+    Avoids circular import (statements imports expressions at module level).
+    """
+    from m2py.codegen.statements import (
+        gen_subscripts_tuple as _gen_subscripts_tuple,
+    )
+
+    return _gen_subscripts_tuple(
+        subscripts,
+        ctx,
+        subscript_context=subscript_context,
+        str_wrap=str_wrap,
+        empty=empty,
+    )
+
 
 if TYPE_CHECKING:
     from m2py.codegen.routine import GeneratorContext
@@ -366,17 +393,9 @@ def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     # Example: Decimal("1.0") → "1" (numeric), but "1.0" → "1.0" (string)
     # T087: Pass subscript_context=True so indirection in subscripts
     # returns VALUE instead of validating as NAME
-    if var.subscripts:
-        subscript_exprs = [
-            generate_expr(sub, ctx, subscript_context=True) for sub in var.subscripts
-        ]
-        # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
-        if len(subscript_exprs) == 1:
-            subscripts_tuple = f"({subscript_exprs[0]},)"
-        else:
-            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
-    else:
-        subscripts_tuple = "()"
+    subscripts_tuple = gen_subscripts_tuple(
+        var.subscripts or [], ctx, subscript_context=True
+    )
 
     # Spec 009 (T028): Return empty string for undefined globals
     # _rt.globals.get() returns None for undefined, convert to ""
@@ -403,17 +422,9 @@ def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -
     # DO NOT wrap in str() - let the runtime's _canonicalize_subscript handle it
     # T087: Pass subscript_context=True so indirection in subscripts
     # returns VALUE instead of validating as NAME
-    if var.subscripts:
-        subscript_exprs = [
-            generate_expr(sub, ctx, subscript_context=True) for sub in var.subscripts
-        ]
-        # Format as tuple: (sub1, sub2, ...) or (sub1,) for single element
-        if len(subscript_exprs) == 1:
-            subscripts_tuple = f"({subscript_exprs[0]},)"
-        else:
-            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
-    else:
-        subscripts_tuple = "()"
+    subscripts_tuple = gen_subscripts_tuple(
+        var.subscripts or [], ctx, subscript_context=True
+    )
 
     # Spec 009 (T028): Return empty string for undefined globals
     # resolve_naked returns (name, subscripts), use * to unpack into get()
@@ -1079,32 +1090,13 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # Generate subscript tuple for non-indirection cases
     # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
-    if subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-        if len(subscript_exprs) == 1:
-            subscripts_tuple = f"({subscript_exprs[0]},)"
-        else:
-            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
-    else:
-        subscripts_tuple = "()"
+    subscripts_tuple = gen_subscripts_tuple(subscripts, ctx)
 
     var_name = getattr(var, "name", "")
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable - need to access from correct location based on strategy
-        python_name = translate_name(var_name)
-
-        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            return f"m_data(state._locals.get({python_name!r}, MArray()), {subscripts_tuple})"
-
-        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            return f"m_data(state.{python_name}, {subscripts_tuple})"
-
-        # SIMPLE_FUNCTIONS or fallback - use _scope
-        return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
+        return f"m_data({var_base_expr(var_name, ctx)}, {subscripts_tuple})"
     elif isinstance(var, GlobalVariable):
         # Global variable: m_data_global(_rt.globals, 'NAME', subscripts)
         return f"m_data_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
@@ -1116,19 +1108,7 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
-        # Fallback for MVariable or any other variable type - treat as local
-        python_name = translate_name(var_name)
-
-        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            return f"m_data(state._locals.get({python_name!r}, MArray()), {subscripts_tuple})"
-
-        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            return f"m_data(state.{python_name}, {subscripts_tuple})"
-
-        # SIMPLE_FUNCTIONS or fallback - use _scope
-        return f"m_data(_scope.get({python_name!r}, MArray()), {subscripts_tuple})"
+        return f"m_data({var_base_expr(var_name, ctx)}, {subscripts_tuple})"
 
 
 def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1182,14 +1162,7 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # Generate subscript tuple
     # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
-    if subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-        if len(subscript_exprs) == 1:
-            subscripts_tuple = f"({subscript_exprs[0]},)"
-        else:
-            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
-    else:
-        subscripts_tuple = "()"
+    subscripts_tuple = gen_subscripts_tuple(subscripts, ctx)
 
     var_name = getattr(var, "name", "")
 
@@ -1290,11 +1263,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             # Include subscripts from the GlobalVariable itself (e.g., ^V(0))
             inner_global_subs = getattr(inner_expr, "subscripts", [])
             if inner_global_subs:
-                sub_exprs = [generate_expr(sub, ctx) for sub in inner_global_subs]
-                if len(sub_exprs) == 1:
-                    subs_tuple = f"({sub_exprs[0]},)"
-                else:
-                    subs_tuple = f"({', '.join(sub_exprs)},)"
+                subs_tuple = gen_subscripts_tuple(inner_global_subs, ctx)
                 name_expr = (
                     f'str((_rt.globals.get({global_name!r}, {subs_tuple}) or ""))'
                 )
@@ -1325,15 +1294,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
                     all_subs_flat = []
                     for sub_exprs_level in per_level_sub_exprs:
                         all_subs_flat.extend(sub_exprs_level)
-                    if len(all_subs_flat) == 1:
-                        additional_subs_arg = (
-                            f", additional_subscripts=({all_subs_flat[0]},)"
-                        )
-                    else:
-                        subs_joined = ", ".join(all_subs_flat)
-                        additional_subs_arg = (
-                            f", additional_subscripts=({subs_joined},)"
-                        )
+                    additional_subs_arg = f", additional_subscripts={gen_subscripts_tuple(all_subs_flat, ctx)}"
                 else:
                     additional_subs_arg = ""
 
@@ -1375,13 +1336,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
                 all_subs_flat = []
                 for sub_exprs_level in per_level_sub_exprs:
                     all_subs_flat.extend(sub_exprs_level)
-                if len(all_subs_flat) == 1:
-                    additional_subs_arg = (
-                        f", additional_subscripts=({all_subs_flat[0]},)"
-                    )
-                else:
-                    subs_joined = ", ".join(all_subs_flat)
-                    additional_subs_arg = f", additional_subscripts=({subs_joined},)"
+                additional_subs_arg = f", additional_subscripts={gen_subscripts_tuple(all_subs_flat, ctx)}"
             else:
                 additional_subs_arg = ""
 
@@ -1395,34 +1350,13 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # For $ORDER, subscripts include the starting point for iteration
     # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
-    if subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-        if len(subscript_exprs) == 1:
-            subscripts_tuple = f"({subscript_exprs[0]},)"
-        else:
-            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
-    else:
-        # If no subscripts, use ("",) to get first key at root level
-        subscripts_tuple = '("",)'
+    subscripts_tuple = gen_subscripts_tuple(subscripts, ctx, empty='("",)')
 
     var_name = getattr(var, "name", "")
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable - need to access from correct location based on strategy
-        python_name = translate_name(var_name)
-
-        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            base = f"state._locals.get({python_name!r}, MArray())"
-            return f"m_order({base}, {subscripts_tuple}, {direction_code})"
-
-        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            return f"m_order(state.{python_name}, {subscripts_tuple}, {direction_code})"
-
-        # SIMPLE_FUNCTIONS or fallback - use _scope
-        return f"m_order(_scope.get({python_name!r}, MArray()), {subscripts_tuple}, {direction_code})"
+        return f"m_order({var_base_expr(var_name, ctx)}, {subscripts_tuple}, {direction_code})"
     elif isinstance(var, GlobalVariable):
         # Global variable: use lambda to evaluate subscripts once and pre-set
         # naked indicator before evaluating direction, so global refs in
@@ -1443,20 +1377,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"update_naked=False))[1])(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
-        # Fallback for MVariable or any other variable type - treat as local
-        python_name = translate_name(var_name)
-
-        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            base = f"state._locals.get({python_name!r}, MArray())"
-            return f"m_order({base}, {subscripts_tuple}, {direction_code})"
-
-        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            return f"m_order(state.{python_name}, {subscripts_tuple}, {direction_code})"
-
-        # SIMPLE_FUNCTIONS or fallback - use _scope
-        return f"m_order(_scope.get({python_name!r}, MArray()), {subscripts_tuple}, {direction_code})"
+        return f"m_order({var_base_expr(var_name, ctx)}, {subscripts_tuple}, {direction_code})"
 
 
 def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1500,33 +1421,15 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # Generate subscript tuple
     # DO NOT wrap in str() - let runtime handle canonicalization
     subscripts = getattr(var, "subscripts", [])
-    if subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-        if len(subscript_exprs) == 1:
-            subscripts_tuple = f"({subscript_exprs[0]},)"
-        else:
-            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
-    else:
-        # If no subscripts, use ("",) to start from beginning
-        subscripts_tuple = '("",)'
+    subscripts_tuple = gen_subscripts_tuple(subscripts, ctx, empty='("",)')
 
     var_name = getattr(var, "name", "")
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable - need to access from correct location based on strategy
-        python_name = translate_name(var_name)
-
-        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            return f"m_query(state._locals.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
-
-        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            return f"m_query(state.{python_name}, {var_name!r}, {subscripts_tuple})"
-
-        # SIMPLE_FUNCTIONS or fallback - use _scope
-        return f"m_query(_scope.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
+        return (
+            f"m_query({var_base_expr(var_name, ctx)}, {var_name!r}, {subscripts_tuple})"
+        )
     elif isinstance(var, GlobalVariable):
         # Global variable: m_query_global(_rt.globals, 'NAME', subscripts)
         return f"m_query_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
@@ -1538,19 +1441,9 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
         )
     else:
-        # Fallback for MVariable or any other variable type - treat as local
-        python_name = translate_name(var_name)
-
-        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            return f"m_query(state._locals.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
-
-        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            return f"m_query(state.{python_name}, {var_name!r}, {subscripts_tuple})"
-
-        # SIMPLE_FUNCTIONS or fallback - use _scope
-        return f"m_query(_scope.get({python_name!r}, MArray()), {var_name!r}, {subscripts_tuple})"
+        return (
+            f"m_query({var_base_expr(var_name, ctx)}, {var_name!r}, {subscripts_tuple})"
+        )
 
 
 def _generate_text(expr, ctx: "GeneratorContext") -> str:
@@ -2121,14 +2014,7 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     # Handle NakedGlobal: $NA(^(1)) needs runtime naked resolution first
     if isinstance(var, NakedGlobal):
         subscripts = getattr(var, "subscripts", [])
-        if subscripts:
-            subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-            if len(subscript_exprs) == 1:
-                subscripts_tuple = f"({subscript_exprs[0]},)"
-            else:
-                subscripts_tuple = f"({', '.join(subscript_exprs)},)"
-        else:
-            subscripts_tuple = "()"
+        subscripts_tuple = gen_subscripts_tuple(subscripts, ctx)
 
         # Get depth argument if present
         depth_arg = ""
@@ -2145,14 +2031,7 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Build subscripts tuple - evaluate at runtime
     # DO NOT wrap in str() - let runtime handle canonicalization
-    if subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-        if len(subscript_exprs) == 1:
-            subscripts_tuple = f"({subscript_exprs[0]},)"
-        else:
-            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
-    else:
-        subscripts_tuple = "()"
+    subscripts_tuple = gen_subscripts_tuple(subscripts, ctx)
 
     # Get depth argument if present
     depth_arg = ""
@@ -2411,70 +2290,26 @@ def _gen_next(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     if isinstance(var, GlobalVariable):
         global_name = var.name
         subscripts = getattr(var, "subscripts", [])
-        if subscripts:
-            # Build subscript tuple, marking last subscript for -1 detection
-            sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-            subs_code = ", ".join(sub_exprs)
-            return f"_rt.m_next_global({global_name!r}, ({subs_code},))"
-        else:
-            return f"_rt.m_next_global({global_name!r}, ())"
+        subs_code = gen_subscripts_tuple(subscripts, ctx)
+        return f"_rt.m_next_global({global_name!r}, {subs_code})"
     elif isinstance(var, MIndirectionType):
         # For indirection, fall back to $ORDER with -1 conversion
         order_code = _gen_order(expr, ctx)
         return f"(lambda _r: -1 if _r == '' else _r)({order_code})"
     elif isinstance(var, LocalVariable):
-        # Local variable - need to access from correct location based on strategy
         var_name = var.name
-        python_name = translate_name(var_name)
         subscripts = getattr(var, "subscripts", [])
-
-        # Build subscript tuple
-        if subscripts:
-            sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-            subs_code = f"({', '.join(sub_exprs)},)"
-        else:
-            subs_code = "()"
-
-        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            base = f"state._locals.get({python_name!r}, MArray())"
-            return f"_rt.m_next_local({base}, {subs_code})"
-
-        # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            return f"_rt.m_next_local(state.{python_name}, {subs_code})"
-
-        # SIMPLE_FUNCTIONS or fallback - use _scope
-        return f"_rt.m_next_local(_scope.get({python_name!r}, MArray()), {subs_code})"
+        subs_code = gen_subscripts_tuple(subscripts, ctx)
+        return f"_rt.m_next_local({var_base_expr(var_name, ctx)}, {subs_code})"
     else:
         # Fallback for MVariable or any other variable type - treat as local
         from m2py.asg.expressions import MVariable
 
         if isinstance(var, MVariable):
             var_name = var.name
-            python_name = translate_name(var_name)
             subscripts = getattr(var, "subscripts", [])
-
-            # Build subscript tuple
-            if subscripts:
-                sub_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-                subs_code = f"({', '.join(sub_exprs)},)"
-            else:
-                subs_code = "()"
-
-            # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
-            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                base = f"state._locals.get({python_name!r}, MArray())"
-                return f"_rt.m_next_local({base}, {subs_code})"
-
-            # Spec 006 (T075): TRAMPOLINE strategy - use state.VAR
-            if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-                return f"_rt.m_next_local(state.{python_name}, {subs_code})"
-
-            # SIMPLE_FUNCTIONS or fallback - use _scope
-            return (
-                f"_rt.m_next_local(_scope.get({python_name!r}, MArray()), {subs_code})"
-            )
+            subs_code = gen_subscripts_tuple(subscripts, ctx)
+            return f"_rt.m_next_local({var_base_expr(var_name, ctx)}, {subs_code})"
 
     # Fallback to $ORDER-based implementation
     order_code = _gen_order(expr, ctx)
@@ -2526,36 +2361,22 @@ def _gen_increment(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Generate subscript tuple
     subscripts = getattr(var, "subscripts", [])
-    if subscripts:
-        subscript_exprs = [generate_expr(sub, ctx) for sub in subscripts]
-        if len(subscript_exprs) == 1:
-            subscripts_tuple = f"({subscript_exprs[0]},)"
-        else:
-            subscripts_tuple = f"({', '.join(subscript_exprs)},)"
-    else:
-        subscripts_tuple = "()"
+    subscripts_tuple = gen_subscripts_tuple(subscripts, ctx)
 
     var_name = getattr(var, "name", "")
 
     if isinstance(var, LocalVariable):
         python_name = translate_name(var_name)
 
-        # For TRAMPOLINE with dynamic locals
-        if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            return (
-                f"m_increment(state._locals.get({python_name!r}), "
-                f"{subscripts_tuple}, {incr_expr}, state._locals, {python_name!r})"
-            )
-
-        # For TRAMPOLINE with state vars
+        # For TRAMPOLINE with state vars — static field, no scope dict needed
         if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            # State field — increment in place, reassign if needed
             return f"m_increment(state.{python_name}, {subscripts_tuple}, {incr_expr})"
 
-        # SIMPLE_FUNCTIONS — use _scope
+        # Dynamic locals or SIMPLE_FUNCTIONS — use scope dict
+        scope = scope_dict_expr(ctx)
         return (
-            f"m_increment(_scope.get({python_name!r}), "
-            f"{subscripts_tuple}, {incr_expr}, _scope, {python_name!r})"
+            f"m_increment({scope}.get({python_name!r}), "
+            f"{subscripts_tuple}, {incr_expr}, {scope}, {python_name!r})"
         )
     elif isinstance(var, GlobalVariable):
         # Global variable: use backend's atomic incr()
@@ -2572,9 +2393,10 @@ def _gen_increment(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     else:
         # Fallback — treat as local
         python_name = translate_name(var_name)
+        scope = scope_dict_expr(ctx)
         return (
-            f"m_increment(_scope.get({python_name!r}), "
-            f"{subscripts_tuple}, {incr_expr}, _scope, {python_name!r})"
+            f"m_increment({scope}.get({python_name!r}), "
+            f"{subscripts_tuple}, {incr_expr}, {scope}, {python_name!r})"
         )
 
 
