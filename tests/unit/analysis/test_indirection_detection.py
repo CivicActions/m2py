@@ -284,8 +284,10 @@ class TestCheckRequiresRuntimeScope:
 
     def test_xecute_requires_runtime(self):
         """XECUTE always requires runtime."""
+        from m2py.asg.statements import MXecuteArg
+
         code = MLiteral(value="S X=1", literal_type=LiteralType.STRING)
-        stmt = MXecuteStatement(code_expressions=[code])
+        stmt = MXecuteStatement(arguments=[MXecuteArg(expression=code)])
         label = self._make_label([stmt])
         assert check_requires_runtime_scope(label) is True
 

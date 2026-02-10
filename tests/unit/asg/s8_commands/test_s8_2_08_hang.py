@@ -23,7 +23,7 @@ class TestHangCommandAnalysis:
         """HANG duration expression is analyzed (§8.2.8)."""
         stmt = analyze_first_command("H 5")
         assert isinstance(stmt, MHangStatement)
-        assert stmt.duration is not None
+        assert len(stmt.durations) == 1
 
     def test_hang_vs_halt_disambiguation(self, analyze_routine):
         """H with argument is HANG, H alone is HALT."""
@@ -32,7 +32,7 @@ class TestHangCommandAnalysis:
 
         assert isinstance(halt_stmt, MHaltStatement)
         assert isinstance(hang_stmt, MHangStatement)
-        assert hang_stmt.duration is not None
+        assert len(hang_stmt.durations) == 1
 
 
 def analyze_first_command(line: str):

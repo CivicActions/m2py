@@ -1437,10 +1437,10 @@ def _collect_array_vars_from_stmt(stmt, array_vars: Set[str]) -> None:
         for arg in stmt.arguments:
             _collect_array_vars_from_expr(arg, array_vars)
 
-    # Check IF condition
+    # Check IF conditions
     elif isinstance(stmt, MIfStatement):
-        if stmt.condition:
-            _collect_array_vars_from_expr(stmt.condition, array_vars)
+        for condition in stmt.conditions:
+            _collect_array_vars_from_expr(condition, array_vars)
 
     # Check FOR variable (can be subscripted)
     elif isinstance(stmt, MForStatement):

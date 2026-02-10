@@ -131,9 +131,9 @@ class TestIndirectionAnalysis:
         stmt = result.labels[0].body.statements[0]
 
         assert isinstance(stmt, MXecuteStatement)
-        # The code_expressions should contain the indirection
-        assert len(stmt.code_expressions) >= 1
-        expr = stmt.code_expressions[0]
+        # The arguments should contain the indirection
+        assert len(stmt.arguments) >= 1
+        expr = stmt.arguments[0].expression
         assert isinstance(expr, Indirection)
         assert isinstance(expr.expression, LocalVariable)
         assert expr.expression.name == "X"

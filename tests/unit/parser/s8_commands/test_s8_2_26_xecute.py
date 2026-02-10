@@ -42,7 +42,7 @@ class TestXecuteCommandParsing:
         assert result is not None
         stmt = result.labels[0].body.statements[0]
         assert isinstance(stmt, MXecuteStatement)
-        assert len(stmt.code_expressions) == 1
+        assert len(stmt.arguments) == 1
         assert stmt.is_constant is False
 
     def test_xecute_with_postcondition(self, parse_mumps):
@@ -69,7 +69,7 @@ class TestXecuteCommandParsing:
         assert result is not None
         stmt = result.labels[0].body.statements[0]
         assert isinstance(stmt, MXecuteStatement)
-        assert len(stmt.code_expressions) == 2
+        assert len(stmt.arguments) == 2
 
     def test_xecute_abbreviated(self, parse_mumps):
         """X abbreviation parses correctly (§8.2.26).

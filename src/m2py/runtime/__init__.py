@@ -1442,95 +1442,10 @@ def run_with_goto_support(
                     internal_func_name = "_" + func_name
                     if hasattr(module, internal_func_name):
                         internal_func = getattr(module, internal_func_name)
-
-                        # Create a wrapper that simulates entry point with offset
-                        def offset_wrapper(
-                            _rt,
-                            _scope=None,
-                            _internal=internal_func,
-                            _offset=line_offset,
-                            _module=module,
-                        ):
-                            """Wrapper for external GOTO with offset."""
-                            from m2py.runtime import MArray
-
-                            _scope = _scope if _scope is not None else {}
-                            _rt._current_routine = _module._routine_name
-                            _rt._current_source_lines = _module._source_lines
-                            _rt._current_label_lines = _module._label_lines
-                            # Create state from scope
-                            state_class = getattr(_module, "RoutineState", None)
-                            if state_class:
-                                state = state_class()
-                                # Check if state uses dynamic locals or static fields
-                                uses_dynamic = hasattr(state, "_locals")
-                                for k, v in _scope.items():
-                                    if isinstance(v, MArray):
-                                        if uses_dynamic:
-                                            state._locals[k] = v
-                                        else:
-                                            setattr(state, k, v)
-                                    else:
-                                        _m = MArray()
-                                        _m.value = v
-                                        if uses_dynamic:
-                                            state._locals[k] = _m
-                                        else:
-                                            setattr(state, k, _m)
-                                # Call internal function with offset
-                                target, state = _internal(
-                                    _rt, state, _scope, _start_offset=_offset
-                                )
-                                # Run trampoline
-                                while target is not None:
-                                    try:
-                                        if hasattr(_module, "_line_map") and isinstance(
-                                            target, int
-                                        ):
-                                            lbl, off = _module._line_map[target]
-                                            func = getattr(_module, "_" + lbl)
-                                            target, state = func(
-                                                _rt, state, _scope, _start_offset=off
-                                            )
-                                        else:
-                                            func = _module._labels[target]
-                                            target, state = func(_rt, state, _scope)
-                                    except GotoExternal as _goto:
-                                        # Sync state back to scope BEFORE transferring control
-                                        # This ensures variables set in this routine are visible
-                                        # in the target routine (MUMPS has a single symbol table)
-                                        if uses_dynamic:
-                                            _scope.update(
-                                                {k: v for k, v in state._locals.items()}
-                                            )
-                                        else:
-                                            for attr in dir(state):
-                                                if not attr.startswith("_"):
-                                                    val = getattr(state, attr)
-                                                    if isinstance(val, MArray):
-                                                        _scope[attr] = val
-                                        # Handle nested external GOTO
-                                        run_with_goto_support(
-                                            resolve_goto_target(_goto), _rt, _scope
-                                        )
-                                        target = None
-                                # Sync state back to scope based on state type
-                                if uses_dynamic:
-                                    _scope.update(
-                                        {k: v for k, v in state._locals.items()}
-                                    )
-                                else:
-                                    # For static state, copy fields that are MArrays
-                                    for attr in dir(state):
-                                        if not attr.startswith("_"):
-                                            val = getattr(state, attr)
-                                            if isinstance(val, MArray):
-                                                _scope[attr] = val
-                                return state
-                            else:
-                                return target_func(_rt, _scope=_scope)
-
-                        current_func = offset_wrapper
+                        # Use factory to create offset wrapper with dir()-based sync
+                        current_func = _create_offset_entry_wrapper(
+                            internal_func, line_offset, module, use_dataclass_sync=False
+                        )
                     else:
                         current_func = target_func
                 else:

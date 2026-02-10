@@ -66,7 +66,7 @@ class TestGetThenScope:
     def test_returns_then_scope_when_present(self, empty_scope):
         """Returns then_scope when present on MIfStatement."""
         stmt = MIfStatement(
-            condition=None,
+            conditions=[],
             then_scope=empty_scope,
         )
         assert get_then_scope(stmt) is empty_scope
@@ -94,7 +94,7 @@ class TestGetElseScope:
     def test_returns_none_for_if_statement(self, empty_scope):
         """Returns None for MIfStatement (no else_scope attribute)."""
         stmt = MIfStatement(
-            condition=None,
+            conditions=[],
             then_scope=empty_scope,
         )
         assert get_else_scope(stmt) is None

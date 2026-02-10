@@ -169,16 +169,12 @@ class MIfStatement(MStatement):
     MUMPS allows comma-separated conditions which act as AND:
     IF cond1,cond2,cond3 is equivalent to IF cond1 IF cond2 IF cond3
 
-    When there's a single condition, use `condition`.
-    When there are multiple conditions, use `conditions` list.
+    Always use the `conditions` list for condition expressions.
     """
 
-    condition: Optional["MExpr"] = (
-        None  # Convenience: first condition (set when len(conditions) == 1)
-    )
     conditions: List["MExpr"] = field(
         default_factory=list
-    )  # Multiple conditions (comma-separated)
+    )  # Condition expressions (comma-separated act as AND)
     then_scope: MScope = field(default_factory=MScope)
 
     # Analysis: Pre-computed reference to restructurable GOTO in then_scope
@@ -490,9 +486,10 @@ class MHangStatement(MStatement):
 
     Pauses for specified seconds (can have multiple durations):
     H 5, HANG seconds, H 0,1,2,3
+
+    Always use the `durations` list for duration expressions.
     """
 
-    duration: Optional["MExpr"] = None  # Deprecated: use durations
     durations: List["MExpr"] = field(default_factory=list)
 
 
@@ -582,17 +579,46 @@ class MXecuteStatement(MStatement):
 
     T075q: Arguments can have individual postconditions:
     X P,Q:X=10,R:X=10,S  -- Q and R only execute if X=10
+
+    Always use the `arguments` list for code expressions.
     """
 
-    # T075q: Changed from code_expressions to arguments with postconditions
     arguments: List[MXecuteArg] = field(default_factory=list)
-
-    # Legacy field for backwards compatibility - populated from arguments
-    code_expressions: List["MExpr"] = field(default_factory=list)
 
     # Static analysis flags for optimization
     is_constant: bool = False  # True if all expressions are string literals
     constant_values: List[str] = field(default_factory=list)  # Values if constant
+
+
+@dataclass
+class MLockTarget(ASGElement):
+    """A single lock target in a LOCK statement.
+
+    Replaces untyped dict objects in MLockStatement.targets.
+
+    Fields:
+        name: Variable name (e.g., "A", "^G") - None for indirect
+        subscripts: Subscript expressions for array/global
+        is_global: True for ^NAME (global), False for local
+        lockop: Lock operation ("", "+", "-")
+        timeout: Per-target timeout expression
+        postcondition: Per-target postcondition expression
+        is_indirect: True for @NAME (indirection)
+        indirection: Indirection expression (when is_indirect=True)
+        indirection_levels: Indirection nesting depth (e.g., 2 for @@NAME)
+
+    Validation: If is_indirect is True, name may be None (resolved at runtime).
+    """
+
+    name: Optional[str] = None
+    subscripts: List["MExpr"] = field(default_factory=list)
+    is_global: bool = False
+    lockop: str = ""  # "", "+", "-"
+    timeout: Optional["MExpr"] = None
+    postcondition: Optional["MExpr"] = None
+    is_indirect: bool = False
+    indirection: Optional["MExpr"] = None
+    indirection_levels: int = 0
 
 
 @dataclass
@@ -603,9 +629,7 @@ class MLockStatement(MStatement):
     L +^GLOBAL, L -^GLOBAL, L ^GLOBAL:timeout
     """
 
-    targets: List[Any] = field(
-        default_factory=list
-    )  # Lock target dicts with: target/indirection, timeout, postcondition, indirection_levels
+    targets: List[MLockTarget] = field(default_factory=list)
     lock_type: str = ""  # "", "+", "-"
     timeout: Optional["MExpr"] = None
 

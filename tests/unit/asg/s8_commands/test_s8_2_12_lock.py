@@ -53,8 +53,12 @@ class TestLockCommandAnalysis:
         assert isinstance(stmt, MLockStatement)
         assert len(stmt.targets) >= 1
         target = stmt.targets[0]
-        assert target.get("timeout") is not None
-        assert target["timeout"].value == 5
+        # MLockTarget uses attribute access, not dict
+        from m2py.asg import MLockTarget
+
+        assert isinstance(target, MLockTarget)
+        assert target.timeout is not None
+        assert target.timeout.value == 5
 
     def test_lock_parenthesized_with_timeout(self):
         """LOCK (^A,^B):5 parses list lock with timeout (§8.2.12)."""
@@ -83,10 +87,11 @@ class TestLockCommandAnalysis:
     def test_lock_naked_global(self):
         """LOCK ^(sub) uses naked global reference (§7.1.2.4).
 
-        Lock targets can use naked references. Lock targets are returned
-        as dicts with 'lockop' and 'target' keys.
+        Lock targets can use naked references. Lock targets are MLockTarget
+        dataclass instances with is_indirect flag for naked globals stored
+        in the name field as a special MNakedGlobal expression.
         """
-        from m2py.asg.expressions import MNakedGlobal
+        from m2py.asg import MLockTarget
         from m2py.parser.line_parser import parse_commands_from_line
         from m2py.analysis.semantic_analyzer import analyze_command
 
@@ -95,12 +100,14 @@ class TestLockCommandAnalysis:
 
         assert isinstance(stmt, MLockStatement)
         assert len(stmt.targets) >= 1
-        # Lock targets are dicts with 'lockop' and 'target' keys
-        target_dict = stmt.targets[0]
-        assert isinstance(target_dict, dict)
-        assert "target" in target_dict
-        assert isinstance(target_dict["target"], MNakedGlobal)
-        assert len(target_dict["target"].subscripts) == 1
+        # Lock targets are MLockTarget dataclass instances
+        target = stmt.targets[0]
+        assert isinstance(target, MLockTarget)
+        # For naked globals, the subscripts are stored in the target
+        # and is_global is True
+        assert target.is_global is True
+        # Name may be None for naked reference, subscripts are set
+        assert len(target.subscripts) == 1
 
     def test_lock_indirection(self):
         """L @VAR uses indirection for lock target (§8.2.12 + §7.3).
@@ -110,6 +117,7 @@ class TestLockCommandAnalysis:
 
         GAP-003g: Coverage gap for lines 1613-1618 in semantic_analyzer.py.
         """
+        from m2py.asg import MLockTarget
         from m2py.parser.line_parser import parse_commands_from_line
         from m2py.analysis.semantic_analyzer import analyze_command
 
@@ -118,17 +126,18 @@ class TestLockCommandAnalysis:
 
         assert isinstance(stmt, MLockStatement)
         assert len(stmt.targets) >= 1
-        target_dict = stmt.targets[0]
-        assert isinstance(target_dict, dict)
+        target = stmt.targets[0]
+        assert isinstance(target, MLockTarget)
         # Check indirection flag is set
-        assert target_dict.get("is_indirect") is True
-        assert "indirection" in target_dict
+        assert target.is_indirect is True
+        assert target.indirection is not None
 
     def test_lock_double_indirection(self):
         """L @@VAR uses double indirection for lock target (§8.2.12 + §7.3).
 
         Double indirection dereferences the variable twice at runtime.
         """
+        from m2py.asg import MLockTarget
         from m2py.parser.line_parser import parse_commands_from_line
         from m2py.analysis.semantic_analyzer import analyze_command
 
@@ -137,17 +146,18 @@ class TestLockCommandAnalysis:
 
         assert isinstance(stmt, MLockStatement)
         assert len(stmt.targets) >= 1
-        target_dict = stmt.targets[0]
-        assert isinstance(target_dict, dict)
-        assert target_dict.get("is_indirect") is True
+        target = stmt.targets[0]
+        assert isinstance(target, MLockTarget)
+        assert target.is_indirect is True
         # Double indirection has 2 levels
-        assert target_dict.get("indirection_levels") == 2
+        assert target.indirection_levels == 2
 
     def test_lock_parenthesized_with_indirection(self):
         """L (@A,^B) uses indirection in parenthesized list (§8.2.12 + §7.3).
 
         Parenthesized lock lists can contain indirect items.
         """
+        from m2py.asg import MLockTarget
         from m2py.parser.line_parser import parse_commands_from_line
         from m2py.analysis.semantic_analyzer import analyze_command
 
@@ -158,9 +168,10 @@ class TestLockCommandAnalysis:
         assert len(stmt.targets) >= 2
         # First target should be indirect
         target1 = stmt.targets[0]
-        assert isinstance(target1, dict)
-        assert target1.get("is_indirect") is True
+        assert isinstance(target1, MLockTarget)
+        assert target1.is_indirect is True
         # Second target should be direct global
         target2 = stmt.targets[1]
-        assert isinstance(target2, dict)
-        assert "target" in target2 or target2.get("is_indirect") is False
+        assert isinstance(target2, MLockTarget)
+        assert target2.name == "B"
+        assert target2.is_global is True

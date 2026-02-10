@@ -636,8 +636,8 @@ def _restructure_forward_goto(
 
     # Generate condition check and set _test
     # Handle single vs multiple conditions
-    if if_stmt.condition is not None:
-        cond_expr = generate_expr(if_stmt.condition, ctx)
+    if len(if_stmt.conditions) == 1:
+        cond_expr = generate_expr(if_stmt.conditions[0], ctx)
         ctx.emitter.line(f"_test = m_truth({cond_expr})")
         ctx.emitter.line("_rt._test = _test")
     elif if_stmt.conditions:
@@ -1970,10 +1970,10 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
         stmt: MIfStatement node
         ctx: Generator context
     """
-    # Get condition(s) - single condition uses .condition, multiple uses .conditions
-    # T052: Pass if_condition=True for indirection T052 empty string handling
-    if stmt.condition is not None:
-        cond_expr = generate_expr(stmt.condition, ctx, if_condition=True)
+    # Get condition(s) - always use conditions list
+    # T052: Pass if_condition=True for indirection empty string handling
+    if len(stmt.conditions) == 1:
+        cond_expr = generate_expr(stmt.conditions[0], ctx, if_condition=True)
     elif stmt.conditions:
         # Multiple comma-separated conditions act as AND
         # Each condition is evaluated in sequence, with $TEST updated after EACH
@@ -5370,13 +5370,10 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
     if stmt_lock_type == "":
         ctx.emitter.line("_rt.globals.unlock_all()")
 
-    # Process each target
-    for target_dict in stmt.targets:
-        # Extract target info from dict
-        # target_dict keys: lockop, target, timeout, is_indirect, indirection, indirection_levels
-
+    # Process each target (now MLockTarget instances instead of dicts)
+    for lock_target in stmt.targets:
         # Get lock operation from target (overrides stmt-level if present)
-        target_lockop = target_dict.get("lockop", "")
+        target_lockop = lock_target.lockop
         # Use target lockop if present, otherwise use stmt-level
         lock_type = target_lockop if target_lockop else stmt_lock_type
         # For exclusive lock, use "+" since we already released all above
@@ -5384,41 +5381,30 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
             lock_type = "+"
 
         # Handle indirection
-        if target_dict.get("is_indirect"):
+        if lock_target.is_indirect:
             # Indirection - need runtime resolution
             # For now, emit a comment about unsupported feature
             ctx.emitter.line("# LOCK indirection not yet supported")
             continue
 
-        # Get the target (global or local variable)
-        target = target_dict.get("target")
-        if target is None:
+        # Get the name from the MLockTarget
+        name = lock_target.name
+        if name is None:
+            # Check if this is a naked global reference (name is None, is_global is True)
+            if lock_target.is_global:
+                raise NotImplementedError(
+                    "Naked reference not supported in LOCK (YDB restriction)"
+                )
             continue
 
-        # Extract name and subscripts from target
-        # target can be GlobalVariable, NakedGlobal, or MVariable
-        from m2py.parser.textx_classes import GlobalVariable as GV
-        from m2py.parser.textx_classes import NakedGlobal as NG
-
-        if isinstance(target, GV):
-            name = target.name
-            subscripts = target.subscripts
-        elif isinstance(target, NG):
-            # Naked global - YDB does not support naked reference in LOCK
-            # Error: %YDB-E-LKNAMEXPECTED, An identifier is expected after a ^
-            raise NotImplementedError(
-                "Naked reference not supported in LOCK (YDB restriction: LKNAMEXPECTED)"
-            )
-        else:
-            # Local variable as lock name
-            name = getattr(target, "name", str(target))
-            subscripts = getattr(target, "subscripts", [])
+        # Get subscripts from MLockTarget
+        subscripts = lock_target.subscripts
 
         # Generate subscript expressions
         subs_str = gen_subscripts_tuple(subscripts, ctx)
 
-        # Get timeout from target dict
-        timeout_expr = target_dict.get("timeout")
+        # Get timeout from target
+        timeout_expr = lock_target.timeout
 
         # For parenthesized lists, timeout may be on the statement
         if timeout_expr is None and stmt.timeout is not None:

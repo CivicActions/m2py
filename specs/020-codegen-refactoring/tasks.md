@@ -197,11 +197,11 @@
 
 ### Implementation for User Story 12
 
-- [ ] T047 [P] [US12] Create `_create_offset_entry_wrapper(base_fn, offset, strategy, ...)` factory function in `src/m2py/runtime/__init__.py` parameterizing the differences: GotoExternal handling and state sync mechanism (`__dataclass_fields__` vs `dir(state)`). Include docstring.
-- [ ] T048 [P] [US12] Write unit tests for the factory function in `tests/unit/runtime/test_offset_wrapper.py` covering both closure variants and error handling
-- [ ] T049 [US12] Replace closure at ~L1056-1167 in `src/m2py/runtime/__init__.py` with call to `_create_offset_entry_wrapper()`. Run `uv run pytest`.
-- [ ] T050 [US12] Replace closure at ~L1413-1499 in `src/m2py/runtime/__init__.py` with call to `_create_offset_entry_wrapper()`. Run `uv run pytest`.
-- [ ] T051 [US12] Remove dead closure code. Verify scope init, state creation, trampoline loop, and state sync logic exist in exactly one location. Run full test suite.
+- [x] T047 [P] [US12] Create `_create_offset_entry_wrapper(base_fn, offset, strategy, ...)` factory function in `src/m2py/runtime/__init__.py` parameterizing the differences: GotoExternal handling and state sync mechanism (`__dataclass_fields__` vs `dir(state)`). Include docstring.
+- [x] T048 [P] [US12] Write unit tests for the factory function in `tests/unit/runtime/test_offset_wrapper.py` covering both closure variants and error handling
+- [x] T049 [US12] Replace closure at ~L1056-1167 in `src/m2py/runtime/__init__.py` with call to `_create_offset_entry_wrapper()`. Run `uv run pytest`.
+- [x] T050 [US12] Replace closure at ~L1413-1499 in `src/m2py/runtime/__init__.py` with call to `_create_offset_entry_wrapper()`. Run `uv run pytest`.
+- [x] T051 [US12] Remove dead closure code. Verify scope init, state creation, trampoline loop, and state sync logic exist in exactly one location. Run full test suite.
 
 **Checkpoint**: US12 complete. Two closures consolidated to one factory. All tests pass.
 
@@ -217,14 +217,14 @@
 
 ### Implementation for User Story 13
 
-- [ ] T052 [P] [US13] Remove `MIfStatement.condition` field from `src/m2py/asg/statements.py`. Update all consumers (search with `rg '\.condition[^s]'` in codegen/ and analysis/) to use `conditions` list. Run `uv run pytest`.
-- [ ] T053 [P] [US13] Remove `MHangStatement.duration` field from `src/m2py/asg/statements.py`. Update all consumers (search with `rg '\.duration[^s]'`) to use `durations` list. Run `uv run pytest`.
-- [ ] T054 [P] [US13] Remove `MXecuteStatement.code_expressions` field from `src/m2py/asg/statements.py`. Update all consumers (search with `rg 'code_expressions'`) to use `arguments`. Run `uv run pytest`.
-- [ ] T055 [US13] Create `MLockTarget` dataclass in `src/m2py/asg/statements.py` per `data-model.md` (9 fields: name, subscripts, is_global, lockop, timeout, postcondition, is_indirect, indirection, indirection_levels). Write unit tests in `tests/unit/asg/test_lock_target.py`.
-- [ ] T056 [US13] Update `_analyze_LockCommand` in `src/m2py/analysis/semantic_analyzer.py` to build `MLockTarget` instances instead of dicts. Update `MLockStatement.targets` type annotation from `List[Any]` to `List[MLockTarget]`. Run `uv run pytest`.
-- [ ] T057 [US13] Update lock target consumers in `src/m2py/codegen/statements.py` to use `MLockTarget` attribute access instead of dict key access. Run `uv run pytest`.
-- [ ] T058 [US13] Make `_analyze_ZWithdrawCommand` in `src/m2py/analysis/semantic_analyzer.py` delegate to `_analyze_ZKillCommand`. Run `uv run pytest`.
-- [ ] T059 [US13] Verify all deprecated fields are removed, no stale attribute access remains. Run full test suite.
+- [x] T052 [P] [US13] Remove `MIfStatement.condition` field from `src/m2py/asg/statements.py`. Update all consumers (search with `rg '\.condition[^s]'` in codegen/ and analysis/) to use `conditions` list. Run `uv run pytest`.
+- [x] T053 [P] [US13] Remove `MHangStatement.duration` field from `src/m2py/asg/statements.py`. Update all consumers (search with `rg '\.duration[^s]'`) to use `durations` list. Run `uv run pytest`.
+- [x] T054 [P] [US13] Remove `MXecuteStatement.code_expressions` field from `src/m2py/asg/statements.py`. Update all consumers (search with `rg 'code_expressions'`) to use `arguments`. Run `uv run pytest`.
+- [x] T055 [US13] Create `MLockTarget` dataclass in `src/m2py/asg/statements.py` per `data-model.md` (9 fields: name, subscripts, is_global, lockop, timeout, postcondition, is_indirect, indirection, indirection_levels). Write unit tests in `tests/unit/asg/test_lock_target.py`.
+- [x] T056 [US13] Update `_analyze_LockCommand` in `src/m2py/analysis/semantic_analyzer.py` to build `MLockTarget` instances instead of dicts. Update `MLockStatement.targets` type annotation from `List[Any]` to `List[MLockTarget]`. Run `uv run pytest`.
+- [x] T057 [US13] Update lock target consumers in `src/m2py/codegen/statements.py` to use `MLockTarget` attribute access instead of dict key access. Run `uv run pytest`.
+- [x] T058 [US13] Make `_analyze_ZWithdrawCommand` in `src/m2py/analysis/semantic_analyzer.py` delegate to `_analyze_ZKillCommand`. Run `uv run pytest`.
+- [x] T059 [US13] Verify all deprecated fields are removed, no stale attribute access remains. Run full test suite.
 
 **Checkpoint**: US13 complete. ASG is clean — typed fields, no duplicates, alias delegation. All tests pass.
 
