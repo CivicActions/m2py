@@ -57,14 +57,17 @@ uv run python utils/validate.py --no-ydb --code 'TEST W 1+2 Q'
 
 ## Generating YDB Reference Output
 
-DON'T use the yottadb or yottadb-base image directly - use this ydb image or validate.py instead.
+Use `utils/ydb.py` or `utils/validate.py` to run MUMPS through YottaDB. Do NOT use docker commands directly.
 
 ```bash
 # Run MUMPS file through YDB
-docker run --rm -v "$(pwd):/workspace" ydb routine.m
+uv run python utils/ydb.py routine.m
 
 # Run inline MUMPS
-echo -e 'TEST\n write 1+2,!' | docker run --rm -i ydb
+uv run python utils/ydb.py --code 'TEST W 1+2 Q'
+
+# Run from stdin
+echo -e 'TEST\n write 1+2,!' | uv run python utils/ydb.py -
 ```
 
 **⚠️ Never use `-t` for testing** — TTY mangles control characters (form feed `\x0c` → ANSI escapes), breaking output comparison.

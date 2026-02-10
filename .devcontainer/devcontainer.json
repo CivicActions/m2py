@@ -1,11 +1,11 @@
 {
     "name": "Strict Python Sandbox",
-	// "image": "mcr.microsoft.com/devcontainers/python:2-3.13-trixie",
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
     "features": {
         "ghcr.io/devcontainers/features/python:1": {},
         "ghcr.io/devcontainers-extra/features/uv:1": {},
         "ghcr.io/devcontainers-extra/features/ruff:1": {},
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
         "ghcr.io/devcontainers-extra/features/pre-commit:2": {},
         "ghcr.io/devcontainers/features/github-cli:1": {},
         "ghcr.io/devcontainers/features/copilot-cli:1": {}
@@ -16,7 +16,10 @@
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 
     // Disable the automatic mounting of the VS Code home folder/settings
-    "mounts": [],
+    "mounts": [
+        // Mount the Copilot CLI config to persist session login
+        "source=${localEnv:HOME}/.copilot,target=/home/vscode/.copilot,type=bind,consistency=cached"
+    ],
 
     "customizations": {
         "vscode": {
