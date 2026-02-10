@@ -176,12 +176,12 @@
 
 ### Implementation for User Story 11
 
-- [ ] T041 [P] [US11] Analyze all 16 indirection functions in `src/m2py/codegen/indirection.py` and categorize: 14 templatizable vs 2 complex (indirect_do, indirect_goto). Document per-function parameter differences.
-- [ ] T042 [P] [US11] Create `_build_indirection_call(ind, ctx, runtime_method, **kwargs)` shared template in `src/m2py/codegen/indirection.py`. Implement the 5-step template: count levels, build scope expr, type-switch inner expr, build per_level_subscripts, format runtime call.
-- [ ] T043 [US11] Refactor the first batch of templatizable functions (e.g., set_indirected, write_indirected, kill_indirected, merge_indirected) to thin wrappers calling `_build_indirection_call()`. Run `uv run pytest` after each function.
-- [ ] T044 [US11] Refactor remaining templatizable functions (e.g., order_indirected, data_indirected, get_indirected, query_indirected, increment_indirected, piece_indirected, and others) to thin wrappers. Run `uv run pytest` after each function.
-- [ ] T045 [US11] Simplify `generate_indirect_do` and `generate_indirect_goto` (non-templatizable) by extracting any shared sub-patterns without forcing them into the template. Run `uv run pytest`.
-- [ ] T046 [US11] Verify line count of `src/m2py/codegen/indirection.py` is ≤1,255 (40% reduction from ~2,092). Diff generated Python for indirection-heavy routines (SET @X, WRITE @Y, KILL @Z, IF @X, MERGE @X, $ORDER/@, $DATA/@, $GET/@, $QUERY/@, $INCREMENT/@, $PIECE/@) against T004 baseline to confirm byte-identical output per FR-021. Remove dead code. Run full test suite.
+- [X] T041 [P] [US11] Analyze all 16 indirection functions in `src/m2py/codegen/indirection.py` and categorize: 14 templatizable vs 2 complex (indirect_do, indirect_goto). Document per-function parameter differences.
+- [X] T042 [P] [US11] Create `_build_indirection_call(ind, ctx, runtime_method, **kwargs)` shared template in `src/m2py/codegen/indirection.py`. Implement the 5-step template: count levels, build scope expr, type-switch inner expr, build per_level_subscripts, format runtime call.
+- [X] T043 [US11] Refactor the first batch of templatizable functions (e.g., set_indirected, write_indirected, kill_indirected, merge_indirected) to thin wrappers calling `_build_indirection_call()`. Run `uv run pytest` after each function.
+- [X] T044 [US11] Refactor remaining templatizable functions (e.g., order_indirected, data_indirected, get_indirected, query_indirected, increment_indirected, piece_indirected, and others) to thin wrappers. Run `uv run pytest` after each function.
+- [X] T045 [US11] Simplify `generate_indirect_do` and `generate_indirect_goto` (non-templatizable) by extracting any shared sub-patterns without forcing them into the template. Run `uv run pytest`.
+- [X] T046 [US11] Verify line count of `src/m2py/codegen/indirection.py` is ≤1,255 (40% reduction from ~2,092). Diff generated Python for indirection-heavy routines (SET @X, WRITE @Y, KILL @Z, IF @X, MERGE @X, $ORDER/@, $DATA/@, $GET/@, $QUERY/@, $INCREMENT/@, $PIECE/@) against T004 baseline to confirm byte-identical output per FR-021. Remove dead code. Run full test suite.
 
 **Checkpoint**: US11 complete. 14 indirection functions are thin wrappers. ≥40% line reduction achieved. All tests pass.
 
