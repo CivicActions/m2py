@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING, List, Tuple
 if TYPE_CHECKING:
     from m2py.asg.elements import MCall
     from m2py.asg.expressions import MExpr, MIndirection
-    from m2py.asg.statements import MXecuteStatement
     from m2py.codegen.routine import GeneratorContext
 
 from m2py.codegen.enums import GotoStrategy
@@ -1398,53 +1397,6 @@ def generate_query_indirection_name(
         inner_expr_code = generate_expr(inner_expr, ctx)
         name_expr = f"str({inner_expr_code})"
         return f"_rt.get_query({name_expr}, {subscripts_tuple}, {scope_expr})"
-
-
-def generate_xecute_constant(
-    stmt: "MXecuteStatement",
-    ctx: "GeneratorContext",
-) -> List[str]:
-    """Generate Python code for XECUTE with constant string.
-
-    Spec 012 Phase 4 (T024): For constant string XECUTE (X "S X=1"),
-    inline the generated Python code for better performance and
-    debuggability.
-
-    Args:
-        stmt: MXecuteStatement ASG node with is_constant=True
-        ctx: Generator context
-
-    Returns:
-        List of Python statement strings (inlined code)
-
-    Note:
-        This is a Phase 4 placeholder - implementation pending.
-    """
-    raise NotImplementedError("Constant XECUTE codegen not yet implemented")
-
-
-def generate_xecute_dynamic(
-    stmt: "MXecuteStatement",
-    code_expr: str,
-    ctx: "GeneratorContext",
-) -> str:
-    """Generate Python code for XECUTE with dynamic code string.
-
-    Spec 012 Phase 5 (T032): For dynamic XECUTE (X CODE where CODE is
-    a variable), generate a runtime call to parse and execute the code.
-
-    Args:
-        stmt: MXecuteStatement ASG node with is_constant=False
-        code_expr: Python expression that evaluates to the MUMPS code string
-        ctx: Generator context
-
-    Returns:
-        Python statement string like: _rt.execute(_scope.get("CODE", ""), _scope)
-
-    Note:
-        This is a Phase 5 placeholder - implementation pending.
-    """
-    raise NotImplementedError("Dynamic XECUTE codegen not yet implemented")
 
 
 def generate_indirect_do(

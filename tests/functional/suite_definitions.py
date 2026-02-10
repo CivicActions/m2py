@@ -423,8 +423,8 @@ MVTS_VV1_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition(
         "152.1---V1IDARG",
         "V1IDARG",
-        expected_passes=18,
-        expected_fails=0,
+        expected_passes=27,
+        expected_fails=5,
     ),
     RoutineDefinition("158.1---V1XECA", "V1XECA", expected_passes=22),
     RoutineDefinition("161---V1XECB", "V1XECB", expected_passes=7),

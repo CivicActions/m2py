@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 from m2py.core.names import NameTranslator
+from m2py.core.tokenizer import split_at_toplevel
 
 if TYPE_CHECKING:
     pass  # Reserved for future type imports
@@ -154,11 +155,8 @@ def _parse_subscripted_name(name: str) -> Tuple[str, Optional[Tuple[Any, ...]]]:
 def _parse_subscript_list(subscript_str: str, original_name: str) -> List[Any]:
     """Parse comma-separated subscript list.
 
-    Handles:
-    - Numeric subscripts: 1, 2, 3
-    - String subscripts: "foo", 'bar'
-    - Variable references: X, VAR (returned as strings)
-    - Nested parentheses in expressions
+    Delegates splitting to core.tokenizer.split_at_toplevel, then
+    applies _convert_subscript to each raw subscript.
 
     Args:
         subscript_str: The content between parentheses
@@ -170,38 +168,12 @@ def _parse_subscript_list(subscript_str: str, original_name: str) -> List[Any]:
     Raises:
         IndirectionError: If subscript parsing fails
     """
-    subscripts: List[Any] = []
-    current = ""
-    paren_depth = 0
-    in_string = False
-    string_char = ""
-
-    for char in subscript_str:
-        if in_string:
-            current += char
-            if char == string_char:
-                in_string = False
-        elif char in ('"', "'"):
-            in_string = True
-            string_char = char
-            current += char
-        elif char == "(":
-            paren_depth += 1
-            current += char
-        elif char == ")":
-            paren_depth -= 1
-            current += char
-        elif char == "," and paren_depth == 0:
-            subscripts.append(_convert_subscript(current.strip(), original_name))
-            current = ""
-        else:
-            current += char
-
-    # Don't forget the last subscript
-    if current.strip():
-        subscripts.append(_convert_subscript(current.strip(), original_name))
-
-    return subscripts
+    parts = split_at_toplevel(subscript_str, delimiter=",", respect_quotes=True)
+    return [
+        _convert_subscript(part.strip(), original_name)
+        for part in parts
+        if part.strip()
+    ]
 
 
 def _split_argument_list(arg_str: str) -> List[str]:
@@ -210,6 +182,8 @@ def _split_argument_list(arg_str: str) -> List[str]:
     Feature: 017 T088 - Argument Indirection Command Lists
     Used for KILL @X, NEW @X where X may contain comma-separated
     variable names that include subscripts.
+
+    Delegates to core.tokenizer.split_at_toplevel.
 
     Unlike naive str.split(','), this correctly handles:
     - Simple variables: "A,B,C" → ["A", "B", "C"]
@@ -234,39 +208,8 @@ def _split_argument_list(arg_str: str) -> List[str]:
     if not arg_str:
         return []
 
-    args: List[str] = []
-    current = ""
-    paren_depth = 0
-    in_string = False
-    string_char = ""
-
-    for char in arg_str:
-        if in_string:
-            current += char
-            if char == string_char:
-                in_string = False
-        elif char in ('"', "'"):
-            in_string = True
-            string_char = char
-            current += char
-        elif char == "(":
-            paren_depth += 1
-            current += char
-        elif char == ")":
-            paren_depth -= 1
-            current += char
-        elif char == "," and paren_depth == 0:
-            if current.strip():
-                args.append(current.strip())
-            current = ""
-        else:
-            current += char
-
-    # Don't forget the last argument
-    if current.strip():
-        args.append(current.strip())
-
-    return args
+    parts = split_at_toplevel(arg_str, delimiter=",", respect_quotes=True)
+    return [p.strip() for p in parts if p.strip()]
 
 
 def _find_toplevel_colon(s: str) -> int:
@@ -1063,7 +1006,7 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
         LabelNotFoundError: If the target label doesn't exist
         ValueError: If the target offset is invalid
     """
-    from m2py.codegen.names import translate_name
+    from m2py.core.names import translate_name
 
     module = goto.module
     label = goto.label
@@ -1454,7 +1397,7 @@ def run_with_goto_support(
                 # Get the function from line map
                 label_name, line_offset = module._line_map[target_line]
                 # Translate label name to Python function name
-                from m2py.codegen.names import translate_name
+                from m2py.core.names import translate_name
 
                 func_name = translate_name(label_name)
                 target_func = getattr(module, func_name)
@@ -1561,7 +1504,7 @@ def run_with_goto_support(
             elif label is not None:
                 # G LABEL^ROUTINE - call specific label
                 # Translate label name to Python function name (handles digits, %, etc.)
-                from m2py.codegen.names import translate_name
+                from m2py.core.names import translate_name
 
                 label_func_name = translate_name(label)
                 if not hasattr(module, label_func_name):
@@ -1573,7 +1516,7 @@ def run_with_goto_support(
                 current_func = getattr(module, label_func_name)
             else:
                 # G ^ROUTINE - call entry label (same name as routine)
-                from m2py.codegen.names import translate_name
+                from m2py.core.names import translate_name
 
                 entry_name = translate_name(module._routine_name)
                 if not hasattr(module, entry_name):
@@ -1669,13 +1612,21 @@ class MUMPSRuntime:
     - M2PY_GLOBAL_BACKEND env var support via get_global_storage()
     """
 
-    def __init__(self, global_storage: GlobalStorageBackend | None = None) -> None:
+    def __init__(
+        self,
+        global_storage: GlobalStorageBackend | None = None,
+        codegen_callback: Any = None,
+    ) -> None:
         """Initialize runtime with empty state.
 
         Args:
             global_storage: Optional global storage backend. If None,
                 uses get_global_storage() which respects M2PY_GLOBAL_BACKEND
                 environment variable (default: 'inmemory').
+            codegen_callback: Optional callable with signature
+                (code: str, routine_name: str) -> str
+                Used for XECUTE to compile MUMPS code to Python at runtime.
+                If None, auto-discovers m2py.codegen.generate_python when needed.
         """
         self._output: list[str] = []
         # Spec 008: External call context tracking
@@ -1722,6 +1673,26 @@ class MUMPSRuntime:
         # JOB command support: virtual process ID for child threads
         # None = use os.getpid() (main process). Set to a unique ID for child threads.
         self._job_id: int | None = None
+        # Codegen callback for XECUTE: (code, routine_name) -> python_source
+        # If None, auto-discovered from m2py.codegen when first needed.
+        self._codegen_callback = codegen_callback
+
+    def _get_codegen_callback(self) -> Any:
+        """Get the codegen callback, using auto-discovery if not explicitly set."""
+        if self._codegen_callback is not None:
+            return self._codegen_callback
+        # Lazy auto-discovery via importlib (avoids `from m2py.codegen` import)
+        import importlib
+
+        try:
+            codegen_mod = importlib.import_module("m2py.codegen")
+            self._codegen_callback = codegen_mod.generate_python
+            return self._codegen_callback
+        except ImportError:
+            raise RuntimeError(
+                "XECUTE requires codegen support. "
+                "Pass codegen_callback to MUMPSRuntime(), or ensure m2py.codegen is available."
+            ) from None
 
     # Class-level counter for assigning unique virtual PIDs to JOB'd threads
     _job_counter = 0
@@ -2794,7 +2765,9 @@ class MUMPSRuntime:
             child_pid = os.getpid() + MUMPSRuntime._job_counter
 
         # Create child runtime sharing globals but with own state
-        child_rt = MUMPSRuntime(global_storage=self._globals)
+        child_rt = MUMPSRuntime(
+            global_storage=self._globals, codegen_callback=self._codegen_callback
+        )
         child_rt._job_id = child_pid
 
         # JOBbed processes have no terminal - their principal device
@@ -2999,7 +2972,7 @@ class MUMPSRuntime:
         Returns:
             Next subscript in collation order, or "" if no more
         """
-        from m2py.codegen.helpers import m_num as _m_num
+        from m2py.core.values import m_num as _m_num
         from m2py.runtime.helpers import m_order, m_order_global
 
         # Coerce direction to int - MUMPS $ORDER direction is always numeric
@@ -3702,7 +3675,7 @@ class MUMPSRuntime:
         # Skip validation if allow_undefined=True (for $GET)
         if not allow_undefined and not target_name.startswith("^"):
             # Parse subscripted names properly
-            from m2py.codegen.names import NameTranslator
+            from m2py.core.names import NameTranslator
 
             base_name = target_name.split("(")[0] if "(" in target_name else target_name
             scope_key = NameTranslator.to_python(base_name)
@@ -3761,7 +3734,7 @@ class MUMPSRuntime:
         # Local variable — parse name and any subscripts
         base_name, subscripts = _parse_subscripted_name(target)
         subs = tuple(str(s) for s in subscripts) if subscripts else ()
-        from m2py.codegen.names import NameTranslator
+        from m2py.core.names import NameTranslator
 
         python_name = NameTranslator.to_python(base_name)
         array = _scope.get(python_name)
@@ -3816,7 +3789,7 @@ class MUMPSRuntime:
             )
 
         # Get the MArray object from scope (not the value)
-        from m2py.codegen.names import NameTranslator
+        from m2py.core.names import NameTranslator
 
         base_name = target_name.split("(")[0] if "(" in target_name else target_name
         scope_key = NameTranslator.to_python(base_name)
@@ -5619,7 +5592,7 @@ class MUMPSRuntime:
                     if needs_evaluation:
                         # Evaluate the offset expression
                         try:
-                            from m2py.codegen.helpers import m_num
+                            from m2py.core.values import m_num
 
                             temp_var = "ZOFFSET"
                             temp_scope: Dict[str, Any] = dict(scope)
@@ -5790,9 +5763,9 @@ class MUMPSRuntime:
             >>> scope["X"]
             6
         """
-        # Import here to avoid circular dependency
-        from m2py.codegen import generate_python
-        from m2py.codegen.helpers import m_compare, m_num, m_truth
+        # Use codegen callback to compile MUMPS → Python
+        generate_python = self._get_codegen_callback()
+        from m2py.core.values import m_compare, m_num, m_truth
 
         # Handle MArray objects (from TRAMPOLINE scope sync)
         if hasattr(mumps_code, "value"):
@@ -5955,7 +5928,7 @@ class MUMPSRuntime:
                 # Evaluate the postcondition as a MUMPS expression
                 postcond_result = resolver.evaluate_expression(postcond)
                 # MUMPS truth: non-zero or non-empty string starting with digit is true
-                from m2py.codegen.helpers import m_truth
+                from m2py.core.values import m_truth
 
                 if not m_truth(postcond_result):
                     # Postcondition false, skip this argument
@@ -6022,7 +5995,7 @@ class MUMPSRuntime:
         namespace: dict[str, Any] = {"_rt": self}
 
         # Inject helpers
-        from m2py.codegen.helpers import m_str, m_compare, m_num, m_truth
+        from m2py.core.values import m_str, m_compare, m_num, m_truth
 
         namespace["m_str"] = m_str
         namespace["m_num"] = m_num

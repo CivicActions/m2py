@@ -145,7 +145,7 @@ def m_format_output(value: Any) -> str:
         m_format_output(-0.5) → "-.5"
         m_format_output(3.14) → "3.14"
         m_format_output(Decimal("1E2")) → "100"
-        m_format_output("0.5") → ".5"  # Numeric strings also formatted
+        m_format_output("0.5") → "0.5"  # Strings pass through unchanged
     """
     from decimal import Decimal
 
@@ -989,7 +989,7 @@ def m_increment(
     Returns:
         New value after increment (as canonical MUMPS string)
     """
-    from m2py.codegen.helpers import m_num, m_str
+    from m2py.core.values import m_num, m_str
     from m2py.runtime import MArray as MArrayClass
 
     # Ensure the variable exists in scope
@@ -1086,7 +1086,7 @@ def _is_canonical_numeric(value: str) -> bool:
     Returns:
         True if value is canonical numeric representation
     """
-    from m2py.codegen.helpers import m_str
+    from m2py.core.values import m_str
 
     if not value:
         return False
@@ -1393,7 +1393,7 @@ def m_fnumber(
         m_fnumber(-42, "T") → "42-"
         m_fnumber(-20, "T-") → "20 "
     """
-    from m2py.codegen.helpers import m_str
+    from m2py.core.values import m_str
 
     codes_upper = codes.upper()
 

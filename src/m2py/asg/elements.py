@@ -75,9 +75,15 @@ class MScope(ASGElement):
         """Yield all statements recursively, including nested scopes.
 
         Walks through all statements in this scope and recurses into
-        any nested scopes (IF bodies, FOR bodies, etc.).
+        any nested scopes (IF then/else bodies, FOR bodies, DO blocks, etc.).
+        Covers ``get_body_scope``, ``get_then_scope``, and ``get_else_scope``
+        to ensure complete statement coverage (S-10, FR-010).
         """
-        from m2py.asg.type_helpers import get_body_scope, get_then_scope
+        from m2py.asg.type_helpers import (
+            get_body_scope,
+            get_else_scope,
+            get_then_scope,
+        )
 
         for stmt in self.statements:
             yield stmt
@@ -88,6 +94,9 @@ class MScope(ASGElement):
             then_scope = get_then_scope(stmt)
             if then_scope is not None:
                 yield from then_scope.walk_statements()
+            else_scope = get_else_scope(stmt)
+            if else_scope is not None:
+                yield from else_scope.walk_statements()
 
 
 @dataclass
@@ -228,6 +237,14 @@ class MRoutine(ASGElement):
     # Spec 017: True if any argumentless NEW (N with no args) exists in routine
     # Requires runtime scope stack (state._new_stack) in TRAMPOLINE mode
     has_argumentless_new: bool = False
+
+    # Spec 019: True if any exclusive KILL (K (X)) exists in routine
+    # Requires dynamic_locals since we must enumerate all vars to kill the complement
+    has_exclusive_kill: bool = False
+
+    # Spec 019: True if any exclusive NEW (N (X)) exists in routine
+    # Requires dynamic_locals since we must enumerate all vars to NEW the complement
+    has_exclusive_new: bool = False
 
     # True if routine has name indirection that references local variables
     # This requires dynamic_locals mode for runtime variable name resolution
