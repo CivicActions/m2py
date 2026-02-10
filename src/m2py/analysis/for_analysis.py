@@ -202,9 +202,9 @@ def _check_var_modified_in_scope(
 ) -> bool:
     """Check if a loop variable is modified in a scope.
 
-    Delegates write-detection to variables.py infrastructure via
-    statement_modifies_variable(), which handles SET, READ, KILL
-    (including kill-all and exclusive kill).
+    Delegates to ``scope.walk_statements()`` for recursive traversal and
+    ``statement_modifies_variable()`` for per-statement write detection
+    (SET, READ, KILL including kill-all and exclusive kill).
 
     Args:
         loop_var: The loop variable (string name or MVariable)
@@ -222,27 +222,9 @@ def _check_var_modified_in_scope(
         # Complex case (indirection) - assume modified to be safe
         return True
 
-    for stmt in scope.statements:
-        if statement_modifies_variable(stmt, var_name):
-            return True
-
-        # Recurse into nested scopes using type-safe helpers
-        then_scope = get_then_scope(stmt)
-        if then_scope is not None:
-            if _check_var_modified_in_scope(loop_var, then_scope):
-                return True
-        else_scope = get_else_scope(stmt)
-        if else_scope is not None:
-            if _check_var_modified_in_scope(loop_var, else_scope):
-                return True
-        body = get_body_scope(stmt)
-        if body is not None:
-            # Note: For nested FOR loops, we still check - the outer loop var
-            # might be modified in an inner loop's body
-            if _check_var_modified_in_scope(loop_var, body):
-                return True
-
-    return False
+    return any(
+        statement_modifies_variable(stmt, var_name) for stmt in scope.walk_statements()
+    )
 
 
 def _get_callee_signature(
@@ -283,6 +265,8 @@ def _check_var_passed_byref_in_scope(
 ) -> bool:
     """Check if a variable is passed by reference in a DO call within a scope.
 
+    Delegates to ``scope.walk_statements()`` for recursive traversal.
+
     When signatures are available, this function uses precise detection:
     only returns True if the callee actually modifies the formal parameter
     (i.e., the formal param is in callee's byref_outputs).
@@ -299,51 +283,34 @@ def _check_var_passed_byref_in_scope(
     Returns:
         True if the variable is passed by reference AND potentially modified
     """
-    for stmt in scope.statements:
+    for stmt in scope.walk_statements():
         # Check DO statements for by-ref parameters
-        if isinstance(stmt, MDoStatement):
-            for call in stmt.targets:
-                for i, arg in enumerate(call.arguments):
-                    if isinstance(arg, MActualParameter):
-                        if arg.passing_mode == PassingMode.BY_REFERENCE:
-                            if arg.variable_name == var_name:
-                                # Found by-ref parameter - check if callee modifies it
-                                callee_sig = _get_callee_signature(
-                                    call, routine, signatures
-                                )
-                                if callee_sig is None:
-                                    # No signature (external call or not computed)
-                                    # Fall back to conservative: assume modified
-                                    return True
+        if not isinstance(stmt, MDoStatement):
+            continue
+        for call in stmt.targets:
+            for i, arg in enumerate(call.arguments):
+                if isinstance(arg, MActualParameter):
+                    if arg.passing_mode == PassingMode.BY_REFERENCE:
+                        if arg.variable_name == var_name:
+                            # Found by-ref parameter - check if callee modifies it
+                            callee_sig = _get_callee_signature(
+                                call, routine, signatures
+                            )
+                            if callee_sig is None:
+                                # No signature (external call or not computed)
+                                # Fall back to conservative: assume modified
+                                return True
 
-                                # Get the formal parameter name for this position
-                                if i < len(callee_sig.formal_params):
-                                    formal_name = callee_sig.formal_params[i]
-                                    # Check if callee modifies this formal param
-                                    if formal_name in callee_sig.byref_outputs:
-                                        return True
-                                    # Callee doesn't modify it - don't flag as modified
-                                else:
-                                    # More args than formals - conservative
+                            # Get the formal parameter name for this position
+                            if i < len(callee_sig.formal_params):
+                                formal_name = callee_sig.formal_params[i]
+                                # Check if callee modifies this formal param
+                                if formal_name in callee_sig.byref_outputs:
                                     return True
-
-        # Recurse into nested scopes
-        then_scope = get_then_scope(stmt)
-        if then_scope is not None:
-            if _check_var_passed_byref_in_scope(
-                var_name, then_scope, routine, signatures
-            ):
-                return True
-        else_scope = get_else_scope(stmt)
-        if else_scope is not None:
-            if _check_var_passed_byref_in_scope(
-                var_name, else_scope, routine, signatures
-            ):
-                return True
-        body = get_body_scope(stmt)
-        if body is not None:
-            if _check_var_passed_byref_in_scope(var_name, body, routine, signatures):
-                return True
+                                # Callee doesn't modify it - don't flag as modified
+                            else:
+                                # More args than formals - conservative
+                                return True
 
     return False
 

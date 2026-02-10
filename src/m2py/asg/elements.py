@@ -75,9 +75,15 @@ class MScope(ASGElement):
         """Yield all statements recursively, including nested scopes.
 
         Walks through all statements in this scope and recurses into
-        any nested scopes (IF bodies, FOR bodies, etc.).
+        any nested scopes (IF then/else bodies, FOR bodies, DO blocks, etc.).
+        Covers ``get_body_scope``, ``get_then_scope``, and ``get_else_scope``
+        to ensure complete statement coverage (S-10, FR-010).
         """
-        from m2py.asg.type_helpers import get_body_scope, get_then_scope
+        from m2py.asg.type_helpers import (
+            get_body_scope,
+            get_else_scope,
+            get_then_scope,
+        )
 
         for stmt in self.statements:
             yield stmt
@@ -88,6 +94,9 @@ class MScope(ASGElement):
             then_scope = get_then_scope(stmt)
             if then_scope is not None:
                 yield from then_scope.walk_statements()
+            else_scope = get_else_scope(stmt)
+            if else_scope is not None:
+                yield from else_scope.walk_statements()
 
 
 @dataclass

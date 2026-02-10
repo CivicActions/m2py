@@ -104,10 +104,10 @@
 
 **Requires**: Phase 5 (US4) complete — both phases modify asg/elements.py and analysis/ files.
 
-- [ ] T037 [US5] Audit and extend MScope.walk_statements (L74) in src/m2py/asg/elements.py to recurse into get_else_scope in addition to get_body_scope and get_then_scope (S-10)
-- [ ] T038 [US5] Migrate direct scope.statements iteration sites (8 remaining per R-05) to walk_statements in analysis/ files where appropriate (S-10)
-- [ ] T039 [P] [US5] Add/Update tests for walk_statements in tests/unit/asg/test_walker.py
-- [ ] T040 [US5] Run uv run pytest and verify zero failures
+- [x] T037 [US5] Audit and extend MScope.walk_statements (L74) in src/m2py/asg/elements.py to recurse into get_else_scope in addition to get_body_scope and get_then_scope (S-10)
+- [x] T038 [US5] Migrate direct scope.statements iteration sites (8 remaining per R-05) to walk_statements in analysis/ files where appropriate (S-10)
+- [x] T039 [P] [US5] Add/Update tests for walk_statements in tests/unit/asg/test_walker.py
+- [x] T040 [US5] Run uv run pytest and verify zero failures
 
 **Checkpoint**: `walk_statements()` covers then/else/body scopes. Direct `scope.statements` iteration is reduced.
 
