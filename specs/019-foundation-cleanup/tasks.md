@@ -117,9 +117,9 @@
 
 **Requires**: All desired user story phases complete.
 
-- [ ] T041 [P] Update documentation in quickstart.md, data-model.md, contracts/module-contracts.md to reflect final module structure
-- [ ] T042 [P] Final constitution check: verify all 8 principles in plan.md
-- [ ] T043 Run uv run pytest — final verification of zero failures/xfails/skips
+- [x] T041 [P] Update documentation in quickstart.md, data-model.md, contracts/module-contracts.md to reflect final module structure
+- [x] T042 [P] Final constitution check: verify all 8 principles in plan.md
+- [x] T043 Run uv run pytest — final verification of zero failures/xfails/skips (5883 passed, 0 failed)
 
 ---
 

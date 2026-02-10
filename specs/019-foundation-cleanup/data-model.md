@@ -1,6 +1,6 @@
 # Data Model: Phase 1 — Foundation & Cleanup
 
-**Branch**: `019-foundation-cleanup` | **Date**: 2026-02-09
+**Branch**: `019-foundation-cleanup` | **Date**: 2026-02-09 | **Status**: ✅ Complete
 
 ## New Modules
 
@@ -84,18 +84,20 @@ The canonical source for MUMPS value-model functions.
 
 ## Modified Modules
 
-### `codegen/helpers.py` — Re-Export Shim
+### `codegen/helpers.py` — Independent Implementations
 
-After Phase 1, this module re-exports from `core/values.py`:
+Retains its own implementations of:
 - `m_str`, `m_num`, `m_truth`, `m_compare`, `m_add`, `m_sub`, `m_mul`
+- `m_div`, `m_mod`, `m_range` (codegen-only, not in `core/values.py`)
 
-Retains ownership of:
-- `m_div`, `m_mod`, `m_range` (not moved — only used by codegen-generated code)
+`core/values.py` is the canonical source used by `runtime/` and `core/`.
+`codegen/helpers.py` retains independent copies used by generated Python code.
+Backward compatibility is maintained — generated code continues to import from `codegen.helpers`.
 
 ### `runtime/helpers.py` — Simplified
 
-- `m_format_output`: Delegates numeric formatting to `mumps_canonical_str`
-- `_is_canonical_numeric`: Removed — callers use `core/values` directly
+- `m_format_output`: Delegates numeric formatting to `mumps_canonical_str` from `core/values.py`
+- `_is_canonical_numeric`: Retained (used internally by comparison logic)
 - Docstring corrected (S-17)
 
 ### `analysis/variables.py` — Extended Detection
@@ -116,19 +118,24 @@ or routine.has_exclusive_new
 
 ### `analysis/semantic_analyzer.py` — Deduplicated Helpers
 
-New internal methods:
-- `_analyze_kill_like(cmd, parent, target_class)` — shared KILL/ZKILL/KSUBSCRIPTS/KVALUE/ZWITHDRAW logic
-- `_analyze_call_arguments(cmd, parent)` — shared DO/GOTO/JOB argument processing
-- `unwrap_expression()` — assertion added for non-empty tails
+New/refactored internal methods:
+- `_analyze_kill_like_args(cmd, stmt)` — shared argument parsing for KILL-family commands (K, KS, KV, ZK, ZW)
+- `_analyze_call_target(target, parent, *, has_args)` — shared target analysis for DO/GOTO/JOB
+- `unwrap_expression()` — assertion added for non-empty operator tails
 
-### `codegen/expressions.py` — contains_naked_global Removed
+### `codegen/expressions.py` — contains_naked_global Delegated
 
-`contains_naked_global()` moves to `analysis/variables.py`. Codegen reads
-`expr._has_naked_global` annotation set during semantic analysis.
+`contains_naked_global()` canonical implementation moved to `analysis/variables.py`.
+`codegen/expressions.py` retains a thin delegating wrapper that imports from
+`analysis.variables` to maintain call-site compatibility.
 
 ### `analysis/for_analysis.py` — Simplified
 
-`_check_var_modified_in_scope` delegates to `variables.py` write-detection infrastructure.
+- `_check_var_modified_in_scope`: Uses `scope.walk_statements()` for recursive
+  traversal and its own `statement_modifies_variable()` for per-statement
+  write detection (SET, READ, KILL including kill-all and exclusive kill).
+- `_check_var_passed_byref_in_scope`: Uses `scope.walk_statements()` instead
+  of manual recursive scope traversal.
 
 ## State Transitions
 

@@ -144,20 +144,16 @@ def split_at_toplevel(
     ...
 ```
 
-## `codegen/helpers.py` Re-Exports
+## `codegen/helpers.py` — Independent Implementations
 
 ```python
-# Backward compatibility — generated code imports from here
-from m2py.core.values import (
-    m_str,
-    m_num,
-    m_truth,
-    m_compare,
-    m_add,
-    m_sub,
-    m_mul,
-    mumps_canonical_str,
-)
+# codegen/helpers.py retains its own implementations of:
+#   m_str, m_num, m_truth, m_compare, m_add, m_sub, m_mul
+#   m_div, m_mod, m_range (codegen-only)
+#
+# core/values.py is the canonical source for runtime/ and core/ imports.
+# codegen/helpers.py keeps independent copies because generated Python code
+# imports from codegen.helpers. Both implementations must stay in sync.
 ```
 
 ## `codegen/shared_state.py` — Updated Predicate
@@ -174,7 +170,7 @@ def routine_uses_dynamic_locals(routine: "MRoutine") -> bool:
     )
 ```
 
-## `asg/elements.py` — Extended MRoutine
+## `asg/elements.py` — Extended MRoutine & MScope
 
 ```python
 @dataclass
@@ -182,6 +178,20 @@ class MRoutine(ASGElement):
     # ... existing fields ...
     has_exclusive_kill: bool = False    # NEW — K (X) forms
     has_exclusive_new: bool = False     # NEW — N (X) forms
+
+@dataclass
+class MScope(ASGElement):
+    statements: List["MStatement"] = field(default_factory=list)
+
+    def walk_statements(self) -> Iterator["MStatement"]:
+        """Yield all statements recursively, including nested scopes.
+
+        Walks through all statements in this scope and recurses into
+        any nested scopes (IF then/else bodies, FOR bodies, DO blocks, etc.).
+        Covers get_body_scope, get_then_scope, and get_else_scope
+        to ensure complete statement coverage (S-10, FR-010).
+        """
+        ...
 ```
 
 ## Runtime Callback Contract

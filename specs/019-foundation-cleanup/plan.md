@@ -41,6 +41,13 @@ with zero failures, xfails, or skips.
 
 **Post-design re-check**: All gates still pass. No violations introduced.
 
+**Post-implementation re-check (Phase 8)**: All 8 principles verified against final codebase.
+Zero backward imports from runtime/core → codegen (only comments remain). All 5883 tests
+pass with zero failures, xfails, or skips. Layer separation enforced: `core/values.py` is
+canonical for runtime/core, `codegen/helpers.py` retains independent copies for generated code.
+`walk_statements()` extended for complete scope coverage. Exclusive KILL/NEW detection resolves
+C-06. Analysis deduplication complete (`_analyze_kill_like_args`, `_analyze_call_target`).
+
 ## Project Structure
 
 ### Documentation (this feature)
