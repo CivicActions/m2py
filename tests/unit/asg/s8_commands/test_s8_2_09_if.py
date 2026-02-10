@@ -35,18 +35,17 @@ class TestIfCommandAnalysis:
         # IF with condition sets $TEST to truth value of condition
         stmt = analyze_first_command("I X=1")
         assert isinstance(stmt, MIfStatement)
-        assert stmt.condition is not None
-        assert isinstance(stmt.condition, MBinaryOp)
+        assert len(stmt.conditions) == 1
+        assert isinstance(stmt.conditions[0], MBinaryOp)
 
         # The IF statement structure supports $TEST modification tracking
         # The condition is evaluated and sets $TEST
-        assert hasattr(stmt, "condition")
         assert hasattr(stmt, "conditions")
 
         # Argumentless IF uses current $TEST value (doesn't modify it)
         stmt2 = analyze_first_command("I")
         assert isinstance(stmt2, MIfStatement)
-        assert stmt2.condition is None
+        assert len(stmt2.conditions) == 0
         # Argumentless IF reads $TEST, doesn't set it
 
     def test_if_condition_analysis(self):
@@ -54,7 +53,6 @@ class TestIfCommandAnalysis:
         stmt = analyze_first_command("I X=1")
 
         assert isinstance(stmt, MIfStatement)
-        assert stmt.condition is not None
         assert len(stmt.conditions) == 1
 
     def test_if_control_flow(self):
@@ -90,7 +88,6 @@ class TestIfCommandAnalysis:
         stmt = analyze_first_command("I")
 
         assert isinstance(stmt, MIfStatement)
-        assert stmt.condition is None
         assert len(stmt.conditions) == 0
 
     def test_if_multiple_conditions(self):

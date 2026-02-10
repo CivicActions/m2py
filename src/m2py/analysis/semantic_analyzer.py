@@ -95,7 +95,6 @@ from m2py.asg.statements import (
     MZGotoStatement,
     MZGotoArg,
     MZKillStatement,
-    MZWithdrawStatement,
     MZAllocateStatement,
     MZDeallocateStatement,
     MZHaltStatement,
@@ -111,6 +110,7 @@ from m2py.asg.statements import (
     MZEditStatement,
     MZContinueStatement,
     MZLoadStatement,
+    MLockTarget,
 )
 from m2py.asg.elements import MCall
 from m2py.asg.enums import (
@@ -915,9 +915,6 @@ class SemanticAnalyzer:
                     analyzed_conditions.append(analyzed)
             # Filter out any None results
             stmt.conditions = [c for c in analyzed_conditions if c is not None]
-            # Convenience: also set single condition if only one
-            if len(stmt.conditions) == 1:
-                stmt.condition = stmt.conditions[0]
 
         return stmt
 
@@ -1410,9 +1407,6 @@ class SemanticAnalyzer:
                 analyzed_arg = self.analyze(arg, stmt)
                 if analyzed_arg is not None:
                     stmt.durations.append(analyzed_arg)
-            # For backward compatibility, set duration to first arg
-            if stmt.durations:
-                stmt.duration = stmt.durations[0]
 
         return stmt
 
@@ -1455,19 +1449,17 @@ class SemanticAnalyzer:
                         postcond = self.analyze(arg.postcond.condition, stmt)
                     xecute_arg = MXecuteArg(expression=expr, postcondition=postcond)
                     stmt.arguments.append(xecute_arg)
-                    # Also add to code_expressions for backwards compatibility
-                    stmt.code_expressions.append(expr)
                 else:
                     expr = self.analyze(arg, stmt)
                     stmt.arguments.append(
                         MXecuteArg(expression=expr, postcondition=None)
                     )
-                    stmt.code_expressions.append(expr)
 
         # Check if all code expressions are constant string literals
         all_constant = True
         constant_values = []
-        for expr in stmt.code_expressions:
+        for xarg in stmt.arguments:
+            expr = xarg.expression
             if isinstance(expr, MLiteral) and expr.literal_type == LiteralType.STRING:
                 constant_values.append(expr.value)
             else:
@@ -1494,6 +1486,7 @@ class SemanticAnalyzer:
         - L @A:1 - indirection with timeout
         - L +^A,-^B - per-target incremental/decremental lock
         """
+
         stmt = MLockStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -1507,27 +1500,29 @@ class SemanticAnalyzer:
                 list_lockop = str(locklist.lockop)
             if hasattr(locklist, "targets") and locklist.targets:
                 for item in locklist.targets:
-                    lock_info = self._analyze_lock_item(item, stmt, list_lockop)
-                    stmt.targets.append(lock_info)
+                    lock_target = self._analyze_lock_item(item, stmt, list_lockop)
+                    stmt.targets.append(lock_target)
             if hasattr(locklist, "timeout") and locklist.timeout:
                 stmt.timeout = self.analyze(locklist.timeout, stmt)
 
         # Handle regular target list: L +^A:1,-^B:2 or L @A:1,^B:2
         if hasattr(cmd, "targets") and cmd.targets:
             for target in cmd.targets:
-                lock_info = self._analyze_lock_target(target, stmt)
-                stmt.targets.append(lock_info)
+                lock_target = self._analyze_lock_target(target, stmt)
+                stmt.targets.append(lock_target)
 
         # Derive statement-level lock_type from targets (for simple cases)
         # If all targets have same lockop, use it; otherwise leave empty
         if stmt.targets:
-            lockops = [t.get("lockop", "") for t in stmt.targets]
+            lockops = [t.lockop for t in stmt.targets]
             if lockops and all(op == lockops[0] for op in lockops):
                 stmt.lock_type = lockops[0]
 
         return stmt
 
-    def _analyze_lock_item(self, item: Any, parent: Any, list_lockop: str = "") -> dict:
+    def _analyze_lock_item(
+        self, item: Any, parent: Any, list_lockop: str = ""
+    ) -> "MLockTarget":
         """Analyze a single item in a parenthesized lock list.
 
         LockListItem grammar produces lockop, indirect, and target attributes:
@@ -1538,29 +1533,52 @@ class SemanticAnalyzer:
         The list_lockop is inherited from the parent LockList (for L +(^A,^B) syntax).
         Item-level lockop takes precedence over list-level lockop.
         """
-        lock_info = {}
+        from m2py.parser.textx_classes import GlobalVariable
 
         # Handle lockop (+/-): item-level takes precedence over list-level
+        lockop = ""
         if hasattr(item, "lockop") and item.lockop:
-            lock_info["lockop"] = str(item.lockop)
+            lockop = str(item.lockop)
         else:
-            lock_info["lockop"] = list_lockop
+            lockop = list_lockop
 
         # Handle indirection: @A, @@A, @(expr)
         if item.indirect:
             indirection_expr, levels = self._analyze_indirect_chain(
                 item.indirect, parent
             )
-            lock_info["indirection"] = indirection_expr
-            lock_info["indirection_levels"] = levels
-            lock_info["is_indirect"] = True
+            return MLockTarget(
+                is_indirect=True,
+                indirection=indirection_expr,
+                indirection_levels=levels,
+                lockop=lockop,
+            )
         # Handle direct variable reference
         elif item.target:
-            lock_info["target"] = self.analyze(item.target, parent)
+            analyzed_target = self.analyze(item.target, parent)
+            # Extract name, subscripts, and is_global from the analyzed target
+            name = None
+            subscripts = []
+            is_global = False
+            if hasattr(analyzed_target, "name"):
+                name = analyzed_target.name
+            if hasattr(analyzed_target, "subscripts"):
+                subscripts = analyzed_target.subscripts or []
+            if isinstance(analyzed_target, GlobalVariable) or isinstance(
+                item.target, GlobalVariable
+            ):
+                is_global = True
+            return MLockTarget(
+                name=name,
+                subscripts=subscripts,
+                is_global=is_global,
+                lockop=lockop,
+            )
 
-        return lock_info
+        # Empty lock target (shouldn't happen in valid MUMPS)
+        return MLockTarget(lockop=lockop)
 
-    def _analyze_lock_target(self, target: Any, parent: Any) -> dict:
+    def _analyze_lock_target(self, target: Any, parent: Any) -> "MLockTarget":
         """Analyze a LockTarget: lockop? postcond? (indirect | target) (':' timeout)?
 
         Handles:
@@ -1569,35 +1587,67 @@ class SemanticAnalyzer:
         - L @A:1 - indirection with timeout
         - L:cond ^A - postconditioned lock target
         """
-        lock_info = {}
+        from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
 
         # Handle lockop (+/-)
+        lockop = ""
         if hasattr(target, "lockop") and target.lockop:
-            lock_info["lockop"] = str(target.lockop)
-        else:
-            lock_info["lockop"] = ""
+            lockop = str(target.lockop)
 
         # Handle postcondition on target
+        postcondition = None
         if hasattr(target, "postcond") and target.postcond:
-            lock_info["postcondition"] = self.analyze(target.postcond.condition, parent)
+            postcondition = self.analyze(target.postcond.condition, parent)
+
+        # Handle timeout
+        timeout = None
+        if hasattr(target, "timeout") and target.timeout:
+            timeout = self.analyze(target.timeout, parent)
 
         # Handle indirection: L @A, L @@A, L @(expr)
         if hasattr(target, "indirect") and target.indirect:
             indirection_expr, levels = self._analyze_indirect_chain(
                 target.indirect, parent
             )
-            lock_info["indirection"] = indirection_expr
-            lock_info["indirection_levels"] = levels
-            lock_info["is_indirect"] = True
+            return MLockTarget(
+                is_indirect=True,
+                indirection=indirection_expr,
+                indirection_levels=levels,
+                lockop=lockop,
+                postcondition=postcondition,
+                timeout=timeout,
+            )
         # Handle direct variable reference
         elif hasattr(target, "target") and target.target:
-            lock_info["target"] = self.analyze(target.target, parent)
+            analyzed_target = self.analyze(target.target, parent)
+            # Extract name, subscripts, and is_global from the analyzed target
+            name = None
+            subscripts = []
+            is_global = False
+            if hasattr(analyzed_target, "name"):
+                name = analyzed_target.name
+            if hasattr(analyzed_target, "subscripts"):
+                subscripts = analyzed_target.subscripts or []
+            if isinstance(analyzed_target, GlobalVariable) or isinstance(
+                target.target, GlobalVariable
+            ):
+                is_global = True
+            # Handle naked globals (^(sub)) - they are globals with no name
+            if isinstance(analyzed_target, MNakedGlobal) or isinstance(
+                target.target, NakedGlobal
+            ):
+                is_global = True
+            return MLockTarget(
+                name=name,
+                subscripts=subscripts,
+                is_global=is_global,
+                lockop=lockop,
+                postcondition=postcondition,
+                timeout=timeout,
+            )
 
-        # Handle timeout
-        if hasattr(target, "timeout") and target.timeout:
-            lock_info["timeout"] = self.analyze(target.timeout, parent)
-
-        return lock_info
+        # Empty lock target (shouldn't happen in valid MUMPS)
+        return MLockTarget(lockop=lockop)
 
     def _analyze_MergeCommand(self, cmd: Any, parent: Any) -> MMergeStatement:
         """Analyze MERGE command into MMergeStatement.
@@ -2175,17 +2225,16 @@ class SemanticAnalyzer:
         self._analyze_simple_targets(cmd, stmt)
         return stmt
 
-    def _analyze_ZWithdrawCommand(self, cmd: Any, parent: Any) -> MZWithdrawStatement:
-        """Analyze ZWITHDRAW command into MZWithdrawStatement.
+    def _analyze_ZWithdrawCommand(self, cmd: Any, parent: Any) -> MZKillStatement:
+        """Analyze ZWITHDRAW command into MZKillStatement.
 
         ZWITHDRAW [:pc] targets
         Alias for ZKILL - kills variable but preserves descendants.
+
+        Delegates to _analyze_ZKillCommand since ZWITHDRAW and ZKILL have
+        identical semantics.
         """
-        stmt = MZWithdrawStatement()
-        object.__setattr__(stmt, "parent", parent)
-        self._analyze_postcondition(cmd, stmt)
-        self._analyze_simple_targets(cmd, stmt)
-        return stmt
+        return self._analyze_ZKillCommand(cmd, parent)
 
     def _analyze_ZHaltCommand(self, cmd: Any, parent: Any) -> MZHaltStatement:
         """Analyze ZHALT command into MZHaltStatement.
@@ -2234,6 +2283,8 @@ class SemanticAnalyzer:
         Incremental lock (always uses +).
         Uses same target structure as LOCK command.
         """
+        from dataclasses import replace
+
         stmt = MZAllocateStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -2254,8 +2305,8 @@ class SemanticAnalyzer:
         if hasattr(cmd, "targets") and cmd.targets:
             for target in cmd.targets:
                 lock_info = self._analyze_lock_target(target, stmt)
-                # Force incremental lock for ZALLOCATE
-                lock_info["lockop"] = "+"
+                # Force incremental lock for ZALLOCATE using dataclass replace
+                lock_info = replace(lock_info, lockop="+")
                 stmt.targets.append(lock_info)
 
         return stmt
@@ -2269,6 +2320,8 @@ class SemanticAnalyzer:
         Decremental unlock (always uses -).
         Opposite of ZALLOCATE - releases incremental locks.
         """
+        from dataclasses import replace
+
         stmt = MZDeallocateStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
@@ -2287,8 +2340,8 @@ class SemanticAnalyzer:
         if hasattr(cmd, "targets") and cmd.targets:
             for target in cmd.targets:
                 lock_info = self._analyze_lock_target(target, stmt)
-                # Force decremental unlock for ZDEALLOCATE
-                lock_info["lockop"] = "-"
+                # Force decremental unlock for ZDEALLOCATE using dataclass replace
+                lock_info = replace(lock_info, lockop="-")
                 stmt.targets.append(lock_info)
 
         return stmt

@@ -17,24 +17,30 @@ class TestZallocateAsg:
 
     def test_zallocate_asg_node(self):
         """ZALLOCATE creates proper ASG node with targets and lockop."""
+        from m2py.asg import MLockTarget
+
         stmt = analyze_first_command("za X")
 
         assert isinstance(stmt, MZAllocateStatement)
         assert len(stmt.targets) == 1
-        assert stmt.targets[0]["lockop"] == "+"
+        target = stmt.targets[0]
+        assert isinstance(target, MLockTarget)
+        assert target.lockop == "+"
         # Verify target is a variable
-        target = stmt.targets[0]["target"]
         assert target.name == "X"
 
     def test_zdeallocate_asg_node(self):
         """ZDEALLOCATE creates proper ASG node with targets and lockop."""
+        from m2py.asg import MLockTarget
+
         stmt = analyze_first_command("zd X")
 
         assert isinstance(stmt, MZDeallocateStatement)
         assert len(stmt.targets) == 1
-        assert stmt.targets[0]["lockop"] == "-"
+        target = stmt.targets[0]
+        assert isinstance(target, MLockTarget)
+        assert target.lockop == "-"
         # Verify target is a variable
-        target = stmt.targets[0]["target"]
         assert target.name == "X"
 
 

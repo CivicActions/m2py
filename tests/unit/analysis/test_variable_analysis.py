@@ -376,7 +376,7 @@ class TestExtractStatementVariables:
     def test_extract_from_if_statement(self):
         """Test extracting variables from IF statement condition."""
         cond = MVariable(name="X", subscripts=[])
-        stmt = MIfStatement(conditions=[cond], condition=cond, then_scope=None)
+        stmt = MIfStatement(conditions=[cond], then_scope=None)
 
         reads, writes, newed = _extract_statement_variables(stmt)
         assert reads == {"X"}
@@ -1188,11 +1188,12 @@ class TestSignatureComputation:
             compute_function_signature,
             check_requires_runtime_scope,
         )
-        from m2py.asg.statements import MXecuteStatement
+        from m2py.asg.statements import MXecuteStatement, MXecuteArg
 
         # XECUTE defeats static analysis
-        # MXecuteStatement uses code_expressions, not arguments
-        xecute_stmt = MXecuteStatement(code_expressions=[MLiteral(value="S X=1")])
+        xecute_stmt = MXecuteStatement(
+            arguments=[MXecuteArg(expression=MLiteral(value="S X=1"))]
+        )
         scope = MScope(statements=[xecute_stmt])
         label = MLabel(name="DYN", body=scope)
         routine = MRoutine(name="TEST", labels=[label])
@@ -1674,7 +1675,7 @@ class TestHasNewStatements:
         # I 1 N X - NEW inside IF body
         new_stmt = MNewStatement(variables=["X"])
         then_scope = MScope(statements=[new_stmt])
-        if_stmt = MIfStatement(condition=MLiteral(value="1"), then_scope=then_scope)
+        if_stmt = MIfStatement(conditions=[MLiteral(value="1")], then_scope=then_scope)
         scope = MScope(statements=[if_stmt])
         label = MLabel(name="TEST", body=scope)
         scope.parent = label
@@ -1830,7 +1831,7 @@ class TestArgumentlessKillNewDetection:
         # I 1 N
         new_stmt = MNewStatement(variables=[], exclusive=False)
         then_scope = MScope(statements=[new_stmt])
-        if_stmt = MIfStatement(condition=MLiteral(value="1"), then_scope=then_scope)
+        if_stmt = MIfStatement(conditions=[MLiteral(value="1")], then_scope=then_scope)
         scope = MScope(statements=[if_stmt])
         label = MLabel(name="TEST", body=scope)
         scope.parent = label

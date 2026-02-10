@@ -484,9 +484,10 @@ class TestPatternMatchASGIntegration:
         # The condition should be an MPatternMatch
         from m2py.asg.expressions import MPatternMatch
 
-        assert isinstance(stmt.condition, MPatternMatch)
-        assert stmt.condition.pattern == "1N"
-        assert stmt.condition.compiled_regex == "[0-9]"
+        assert len(stmt.conditions) == 1
+        assert isinstance(stmt.conditions[0], MPatternMatch)
+        assert stmt.conditions[0].pattern == "1N"
+        assert stmt.conditions[0].compiled_regex == "[0-9]"
 
     def test_compiled_regex_none_for_indirect_pattern(self):
         """Indirect pattern (?@VAR) should have compiled_regex=None.
@@ -507,11 +508,12 @@ class TestPatternMatchASGIntegration:
         # The condition should be an MPatternMatch with indirect pattern
         from m2py.asg.expressions import MPatternMatch
 
-        assert isinstance(stmt.condition, MPatternMatch)
+        assert len(stmt.conditions) == 1
+        assert isinstance(stmt.conditions[0], MPatternMatch)
         # Indirect patterns have pattern_indirect set
-        assert stmt.condition.pattern_indirect is not None
+        assert stmt.conditions[0].pattern_indirect is not None
         # compiled_regex should be None since pattern is runtime-determined
-        assert stmt.condition.compiled_regex is None
+        assert stmt.conditions[0].compiled_regex is None
 
 
 class TestPatternCompilerEdgeCases:

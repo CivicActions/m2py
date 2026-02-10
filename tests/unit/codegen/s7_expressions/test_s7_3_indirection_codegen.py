@@ -333,8 +333,8 @@ class TestIndirectDoGotoSmoke:
         source = inspect.getsource(generate_indirect_do)
         # Should NOT raise NotImplementedError anymore
         assert "raise NotImplementedError" not in source
-        # Should have actual implementation logic
-        assert "parse_call_target" in source
+        # Should have actual implementation logic (delegates to helpers)
+        assert "resolve_do_targets" in source
         assert "_call_target" in source
 
     def test_generate_indirect_goto_implemented(self):

@@ -20,6 +20,9 @@ from m2py.codegen.line_dispatch import (
 )
 from m2py.codegen.names import NameTranslator, translate_name
 from m2py.codegen.statements import (
+    _emit_goto_external_handler,
+    emit_scope_to_state_sync,
+    emit_state_to_scope_sync,
     generate_offset_guarded_statements,
     generate_scope_statements,
 )
@@ -851,21 +854,8 @@ class RoutineGenerator:
                 ctx.emitter.line("state = RoutineState()")
                 # T075b: Initialize state from _scope for cross-routine visibility
                 # When called from another routine, variables may already exist in _scope
-                if ctx.uses_dynamic_locals:
-                    # T075j: For dynamic locals, copy _scope into state._locals
-                    # Values must be wrapped in MArray if they aren't already,
-                    # since the expression codegen expects MArray.value access
-                    ctx.emitter.line("for k, v in _scope.items():")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line("if isinstance(v, MArray):")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line("state._locals[k] = v")
-                        ctx.emitter.line("else:")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line("_m = MArray()")
-                            ctx.emitter.line("_m.value = v")
-                            ctx.emitter.line("state._locals[k] = _m")
-                else:
+                emit_scope_to_state_sync(ctx)
+                if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
                         # Check if variable exists in _scope and initialize from it
@@ -922,40 +912,17 @@ class RoutineGenerator:
                     ctx.emitter.line("except GotoExternal as _goto:")
                     with ctx.emitter.indented():
                         # Sync state back to _scope BEFORE transferring control
-                        # This ensures variables set in this routine are visible
-                        # in the target routine (MUMPS has a single symbol table)
-                        if ctx.uses_dynamic_locals:
-                            ctx.emitter.line(
-                                "_scope.update({k: v for k, v in state._locals.items()})"
-                            )
-                        else:
+                        # Static vars need explicit sync when not using dynamic locals
+                        if not ctx.uses_dynamic_locals:
                             for var_name in sorted(ctx.state_vars):
                                 py_name = translate_name(var_name)
                                 ctx.emitter.line(
                                     f"_scope[{var_name!r}] = state.{py_name}"
                                 )
-                        # Run the external GOTO chain to completion
-                        ctx.emitter.line("run_with_goto_support(")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line("resolve_goto_target(_goto), _rt, _scope")
-                        ctx.emitter.line(")")
-                        # After external GOTO runs, sync _scope back into state
-                        # so state reflects any changes made by the external routine
-                        # This is critical: without this, the state-to-scope sync
-                        # after the while loop would overwrite changes from the
-                        # external routine with stale values
-                        if ctx.uses_dynamic_locals:
-                            ctx.emitter.line("for _k, _v in _scope.items():")
-                            with ctx.emitter.indented():
-                                ctx.emitter.line("if isinstance(_v, MArray):")
-                                with ctx.emitter.indented():
-                                    ctx.emitter.line("state._locals[_k] = _v")
-                                ctx.emitter.line("else:")
-                                with ctx.emitter.indented():
-                                    ctx.emitter.line("_m = MArray()")
-                                    ctx.emitter.line("_m.value = _v")
-                                    ctx.emitter.line("state._locals[_k] = _m")
-                        else:
+                        # Run the external GOTO chain to completion and sync back
+                        _emit_goto_external_handler(ctx)
+                        # Static scope→state sync after external call
+                        if not ctx.uses_dynamic_locals:
                             for var_name in sorted(ctx.state_vars):
                                 py_name = translate_name(var_name)
                                 ctx.emitter.line(
@@ -986,12 +953,8 @@ class RoutineGenerator:
                         "for _k in _pre_unwind - set(state._locals.keys()): _scope.pop(_k, None)"
                     )
                 # T075b: Sync state back to _scope before returning for cross-routine visibility
-                if ctx.uses_dynamic_locals:
-                    # For dynamic locals, copy state._locals back to _scope
-                    ctx.emitter.line(
-                        "_scope.update({k: v for k, v in state._locals.items()})"
-                    )
-                else:
+                emit_state_to_scope_sync(ctx)
+                if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
                         ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
@@ -1029,21 +992,8 @@ class RoutineGenerator:
                 ctx.emitter.line("state = RoutineState()")
 
                 # T075b: Initialize state from _scope for cross-routine visibility
-                if ctx.uses_dynamic_locals:
-                    # T075j: For dynamic locals, copy _scope into state._locals
-                    # Values must be wrapped in MArray if they aren't already,
-                    # since the expression codegen expects MArray.value access
-                    ctx.emitter.line("for k, v in _scope.items():")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line("if isinstance(v, MArray):")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line("state._locals[k] = v")
-                        ctx.emitter.line("else:")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line("_m = MArray()")
-                            ctx.emitter.line("_m.value = v")
-                            ctx.emitter.line("state._locals[k] = _m")
-                else:
+                emit_scope_to_state_sync(ctx)
+                if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
                         ctx.emitter.line(
@@ -1105,35 +1055,15 @@ class RoutineGenerator:
                 # returns to the caller of this DO
                 ctx.emitter.line("except GotoExternal as _goto:")
                 with ctx.emitter.indented():
-                    # Sync state back to _scope BEFORE transferring control
-                    # This ensures variables set in this routine are visible
-                    # in the target routine (MUMPS has a single symbol table)
-                    if ctx.uses_dynamic_locals:
-                        ctx.emitter.line(
-                            "_scope.update({k: v for k, v in state._locals.items()})"
-                        )
-                    else:
+                    # Static state→scope sync before external call
+                    if not ctx.uses_dynamic_locals:
                         for var_name in sorted(ctx.state_vars):
                             py_name = translate_name(var_name)
                             ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
-                    ctx.emitter.line("run_with_goto_support(")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line("resolve_goto_target(_goto), _rt, _scope")
-                    ctx.emitter.line(")")
-                    # After external GOTO runs, sync _scope back into state
-                    # so state reflects any changes made by the external routine
-                    if ctx.uses_dynamic_locals:
-                        ctx.emitter.line("for _k, _v in _scope.items():")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line("if isinstance(_v, MArray):")
-                            with ctx.emitter.indented():
-                                ctx.emitter.line("state._locals[_k] = _v")
-                            ctx.emitter.line("else:")
-                            with ctx.emitter.indented():
-                                ctx.emitter.line("_m = MArray()")
-                                ctx.emitter.line("_m.value = _v")
-                                ctx.emitter.line("state._locals[_k] = _m")
-                    else:
+                    # Run the external GOTO chain to completion and sync back
+                    _emit_goto_external_handler(ctx)
+                    # Static scope→state sync after external call
+                    if not ctx.uses_dynamic_locals:
                         for var_name in sorted(ctx.state_vars):
                             py_name = translate_name(var_name)
                             ctx.emitter.line(
@@ -1150,12 +1080,8 @@ class RoutineGenerator:
                         "for _k in _pre_unwind - set(state._locals.keys()): _scope.pop(_k, None)"
                     )
                 # T075b: Sync state back to _scope before returning
-                if ctx.uses_dynamic_locals:
-                    # For dynamic locals, copy state._locals back to _scope
-                    ctx.emitter.line(
-                        "_scope.update({k: v for k, v in state._locals.items()})"
-                    )
-                else:
+                emit_state_to_scope_sync(ctx)
+                if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
                         ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
@@ -1251,11 +1177,18 @@ class RoutineGenerator:
             # The wrapper passes formal params as positional args to the internal
             # function, but the body reads variables from state._locals dict.
             # Without this, the initial parameter value is lost.
+            # If param is an MArray (by-ref), alias it directly for
+            # DATA-CELL semantics. Otherwise wrap the value in a new MArray.
             if ctx.uses_dynamic_locals and formal_params:
                 for param in formal_params:
-                    ctx.emitter.line(
-                        f"state._locals.setdefault({param!r}, MArray()).value = {param}"
-                    )
+                    ctx.emitter.line(f"if isinstance({param}, MArray):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(f"state._locals[{param!r}] = {param}")
+                    ctx.emitter.line("else:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            f"state._locals.setdefault({param!r}, MArray()).value = {param}"
+                        )
 
             # Get label line number for offset calculation
             label_line = label.line_number

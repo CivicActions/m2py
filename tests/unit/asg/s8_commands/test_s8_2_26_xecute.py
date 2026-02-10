@@ -77,8 +77,8 @@ class TestXecuteCommandAnalysis:
 
         assert isinstance(stmt, MXecuteStatement)
         assert stmt.postcondition is None  # No command postcondition
-        # XECUTE has code_expressions with postconditions
-        assert len(stmt.code_expressions) == 2
+        # XECUTE has arguments with postconditions
+        assert len(stmt.arguments) == 2
 
 
 @pytest.mark.asg

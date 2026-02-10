@@ -6,7 +6,7 @@ Reference: YottaDB Z-Commands
 import pytest
 
 from m2py import MUMPSParser
-from m2py.asg.statements import MZKillStatement, MZWithdrawStatement
+from m2py.asg.statements import MZKillStatement
 from m2py.parser.textx_classes import LocalVariable
 
 
@@ -33,7 +33,11 @@ class TestZkillAsg:
         assert len(target.subscripts) == 1
 
     def test_zwithdraw_asg_node(self):
-        """ZWITHDRAW creates proper ASG node with targets (alias for ZKILL)."""
+        """ZWITHDRAW creates proper ASG node with targets (alias for ZKILL).
+
+        Note: ZWITHDRAW delegates to ZKILL analysis and returns MZKillStatement
+        since both commands have identical semantics.
+        """
         parser = MUMPSParser()
         source = """TEST
  ZWITHDRAW A(1)
@@ -41,7 +45,8 @@ class TestZkillAsg:
         routine = parser.parse(source)
         stmt = routine.labels[0].body.statements[0]
 
-        assert isinstance(stmt, MZWithdrawStatement)
+        # ZWITHDRAW delegates to ZKILL and returns MZKillStatement
+        assert isinstance(stmt, MZKillStatement)
         assert len(stmt.targets) == 1
         # ZWITHDRAW is functionally identical to ZKILL
         target = stmt.targets[0]

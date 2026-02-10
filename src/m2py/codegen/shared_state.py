@@ -40,6 +40,10 @@ def routine_uses_dynamic_locals(routine: "MRoutine") -> bool:
     in the target routine. Dynamic locals ensure all variables are tracked
     and synced to _scope before the external GOTO.
 
+    Also required when routine has by-reference formal parameters or
+    by-reference calls. MArray aliasing for by-ref semantics requires
+    dict-based access (state._locals) instead of static dataclass fields.
+
     Args:
         routine: MRoutine to check
 
@@ -53,6 +57,8 @@ def routine_uses_dynamic_locals(routine: "MRoutine") -> bool:
         or routine.has_exclusive_new
         or routine.has_name_indirection_on_locals
         or routine.has_external_gotos
+        or routine.has_byref_params
+        or routine.has_byref_calls
     )
 
 

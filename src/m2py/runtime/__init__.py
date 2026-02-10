@@ -988,6 +988,150 @@ class LabelNotFoundError(Exception):
         super().__init__(f"Label '{label}' not found in routine '{routine}'")
 
 
+def _create_offset_entry_wrapper(
+    internal_func: Callable[..., Any],
+    offset: int,
+    module: types.ModuleType,
+    use_dataclass_sync: bool = True,
+) -> Callable[..., Any]:
+    """Create a wrapper function for entry points with line offset.
+
+    This factory function creates a wrapper that handles entry points at a specific
+    line offset within a label. It consolidates the two previously duplicated
+    ~100-line offset_wrapper closures into a single parameterized implementation.
+
+    The wrapper handles:
+    1. Scope initialization from the shared _scope dict
+    2. State creation from the module's RoutineState class
+    3. Trampoline loop for internal GOTO handling
+    4. GotoExternal handling for external routine transfers
+    5. State-to-scope sync on exit
+
+    Args:
+        internal_func: The internal function (prefixed with _) to call with offset
+        offset: The line offset within the label
+        module: The target module containing the routine
+        use_dataclass_sync: If True, use __dataclass_fields__ for state sync.
+            If False, use dir(state) to find MArray attributes. The first variant
+            (True) is more efficient but requires the state class to be a dataclass.
+            The second variant (False) is more flexible but slower.
+
+    Returns:
+        A wrapper function with signature (rt, _scope=None) -> state
+
+    Example:
+        >>> wrapper = _create_offset_entry_wrapper(internal_fn, 5, module, True)
+        >>> result = wrapper(runtime, _scope={'X': MArray()})
+    """
+    from m2py.runtime import MArray
+
+    def offset_wrapper(
+        _rt,
+        _scope=None,
+        _internal=internal_func,
+        _offset=offset,
+        _module=module,
+    ):
+        """Wrapper for external GOTO with offset."""
+        _scope = _scope if _scope is not None else {}
+        _rt._current_routine = _module._routine_name
+        _rt._current_source_lines = _module._source_lines
+        _rt._current_label_lines = _module._label_lines
+
+        # Create state from scope
+        state_class = getattr(_module, "RoutineState", None)
+        if state_class:
+            state = state_class()
+            # Check if this routine uses dynamic locals (_locals dict)
+            uses_dynamic = hasattr(state, "_locals")
+
+            # Initialize state from scope
+            if uses_dynamic:
+                for k, v in _scope.items():
+                    if isinstance(v, MArray):
+                        state._locals[k] = v
+                    else:
+                        _m = MArray()
+                        _m.value = v
+                        state._locals[k] = _m
+            else:
+                # Static fields - copy from scope
+                for k, v in _scope.items():
+                    if hasattr(state, k):
+                        if isinstance(v, MArray):
+                            setattr(state, k, v)
+                        else:
+                            # For static state, check what the field expects
+                            current_val = getattr(state, k)
+                            if isinstance(current_val, MArray):
+                                _m = MArray()
+                                _m.value = v
+                                setattr(state, k, _m)
+                            else:
+                                setattr(state, k, v)
+
+            # Helper to sync state back to scope
+            def sync_state_to_scope(state, uses_dynamic, use_dataclass):
+                if uses_dynamic:
+                    _scope.update({k: v for k, v in state._locals.items()})
+                elif use_dataclass:
+                    # Use __dataclass_fields__ for efficient access
+                    for fld in state.__dataclass_fields__:
+                        val = getattr(state, fld)
+                        if val is not None:
+                            _scope[fld] = val
+                else:
+                    # Use dir() to find MArray attributes
+                    for attr in dir(state):
+                        if not attr.startswith("_"):
+                            val = getattr(state, attr)
+                            if isinstance(val, MArray):
+                                _scope[attr] = val
+
+            # Helper function to handle GotoExternal
+            def handle_goto_external(_goto, state, uses_dynamic, use_dataclass):
+                # Sync state back to scope BEFORE transferring control
+                sync_state_to_scope(state, uses_dynamic, use_dataclass)
+                # Handle nested external GOTO
+                run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)
+
+            # Call internal function with offset - wrap in try to catch GotoExternal
+            try:
+                target, state = _internal(_rt, state, _scope, _start_offset=_offset)
+            except GotoExternal as _goto:
+                handle_goto_external(_goto, state, uses_dynamic, use_dataclass_sync)
+                # Sync final state back to scope
+                sync_state_to_scope(state, uses_dynamic, use_dataclass_sync)
+                return state
+
+            # Run trampoline
+            while target is not None:
+                try:
+                    if hasattr(_module, "_line_map") and isinstance(target, int):
+                        lbl, off = _module._line_map[target]
+                        func = getattr(_module, "_" + lbl)
+                        target, state = func(_rt, state, _scope, _start_offset=off)
+                    else:
+                        func = _module._labels[target]
+                        target, state = func(_rt, state, _scope)
+                except GotoExternal as _goto:
+                    handle_goto_external(_goto, state, uses_dynamic, use_dataclass_sync)
+                    target = None
+
+            # Sync state back to scope
+            sync_state_to_scope(state, uses_dynamic, use_dataclass_sync)
+            return state
+        else:
+            # No state class - call target function directly
+            from m2py.core.names import translate_name
+
+            func_name = translate_name(_module._routine_name)
+            target_func = getattr(_module, func_name)
+            return target_func(_rt, _scope=_scope)
+
+    return offset_wrapper
+
+
 def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
     """Resolve a GotoExternal exception to the target entry function.
 
@@ -1051,120 +1195,10 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
             internal_func_name = "_" + func_name
             if hasattr(module, internal_func_name):
                 internal_func = getattr(module, internal_func_name)
-
-                # Return a wrapper that simulates the entry point behavior with offset
-                def offset_wrapper(
-                    _rt,
-                    _scope=None,
-                    _internal=internal_func,
-                    _offset=line_offset,
-                    _module=module,
-                ):
-                    """Wrapper for external GOTO with offset."""
-                    from m2py.runtime import MArray
-
-                    _scope = _scope if _scope is not None else {}
-                    _rt._current_routine = _module._routine_name
-                    _rt._current_source_lines = _module._source_lines
-                    _rt._current_label_lines = _module._label_lines
-                    # Create state from scope
-                    state_class = getattr(_module, "RoutineState", None)
-                    if state_class:
-                        state = state_class()
-                        # Check if this routine uses dynamic locals (_locals dict)
-                        uses_dynamic = hasattr(state, "_locals")
-                        if uses_dynamic:
-                            for k, v in _scope.items():
-                                if isinstance(v, MArray):
-                                    state._locals[k] = v
-                                else:
-                                    _m = MArray()
-                                    _m.value = v
-                                    state._locals[k] = _m
-                        else:
-                            # Static fields - copy from scope
-                            # Need to check if the field expects MArray or value
-                            for k, v in _scope.items():
-                                if hasattr(state, k):
-                                    # Get the current field value to check its type
-                                    current_val = getattr(state, k)
-                                    if isinstance(current_val, MArray):
-                                        # Field expects MArray - copy the MArray
-                                        if isinstance(v, MArray):
-                                            setattr(state, k, v)
-                                        else:
-                                            _m = MArray()
-                                            _m.value = v
-                                            setattr(state, k, _m)
-                                    else:
-                                        # Field expects raw value - extract from MArray
-                                        val = v.value if isinstance(v, MArray) else v
-                                        setattr(state, k, val)
-
-                        # Helper function to handle GotoExternal
-                        def handle_goto_external(_goto, state, uses_dynamic):
-                            # Sync state back to scope BEFORE transferring control
-                            # This ensures variables set in this routine are visible
-                            # in the target routine (MUMPS has a single symbol table)
-                            if uses_dynamic:
-                                _scope.update({k: v for k, v in state._locals.items()})
-                            else:
-                                for field in state.__dataclass_fields__:
-                                    val = getattr(state, field)
-                                    if val is not None:
-                                        _scope[field] = val
-                            # Handle nested external GOTO
-                            run_with_goto_support(
-                                resolve_goto_target(_goto), _rt, _scope
-                            )
-
-                        # Call internal function with offset - wrap in try to catch GotoExternal
-                        try:
-                            target, state = _internal(
-                                _rt, state, _scope, _start_offset=_offset
-                            )
-                        except GotoExternal as _goto:
-                            handle_goto_external(_goto, state, uses_dynamic)
-                            # Sync final state back to scope
-                            if uses_dynamic:
-                                _scope.update({k: v for k, v in state._locals.items()})
-                            else:
-                                for field in state.__dataclass_fields__:
-                                    val = getattr(state, field)
-                                    if val is not None:
-                                        _scope[field] = val
-                            return state
-                        # Run trampoline
-                        while target is not None:
-                            try:
-                                if hasattr(_module, "_line_map") and isinstance(
-                                    target, int
-                                ):
-                                    lbl, off = _module._line_map[target]
-                                    func = getattr(_module, "_" + lbl)
-                                    target, state = func(
-                                        _rt, state, _scope, _start_offset=off
-                                    )
-                                else:
-                                    func = _module._labels[target]
-                                    target, state = func(_rt, state, _scope)
-                            except GotoExternal as _goto:
-                                handle_goto_external(_goto, state, uses_dynamic)
-                                target = None
-                        # Sync state back to scope
-                        if uses_dynamic:
-                            _scope.update({k: v for k, v in state._locals.items()})
-                        else:
-                            # Static fields - sync back from state
-                            for field in state.__dataclass_fields__:
-                                val = getattr(state, field)
-                                if val is not None:
-                                    _scope[field] = val
-                        return state
-                    else:
-                        return target_func(_rt, _scope=_scope)
-
-                return offset_wrapper
+                # Use factory to create offset wrapper with dataclass-based sync
+                return _create_offset_entry_wrapper(
+                    internal_func, line_offset, module, use_dataclass_sync=True
+                )
 
         return target_func
     elif label is not None:
@@ -1408,95 +1442,10 @@ def run_with_goto_support(
                     internal_func_name = "_" + func_name
                     if hasattr(module, internal_func_name):
                         internal_func = getattr(module, internal_func_name)
-
-                        # Create a wrapper that simulates entry point with offset
-                        def offset_wrapper(
-                            _rt,
-                            _scope=None,
-                            _internal=internal_func,
-                            _offset=line_offset,
-                            _module=module,
-                        ):
-                            """Wrapper for external GOTO with offset."""
-                            from m2py.runtime import MArray
-
-                            _scope = _scope if _scope is not None else {}
-                            _rt._current_routine = _module._routine_name
-                            _rt._current_source_lines = _module._source_lines
-                            _rt._current_label_lines = _module._label_lines
-                            # Create state from scope
-                            state_class = getattr(_module, "RoutineState", None)
-                            if state_class:
-                                state = state_class()
-                                # Check if state uses dynamic locals or static fields
-                                uses_dynamic = hasattr(state, "_locals")
-                                for k, v in _scope.items():
-                                    if isinstance(v, MArray):
-                                        if uses_dynamic:
-                                            state._locals[k] = v
-                                        else:
-                                            setattr(state, k, v)
-                                    else:
-                                        _m = MArray()
-                                        _m.value = v
-                                        if uses_dynamic:
-                                            state._locals[k] = _m
-                                        else:
-                                            setattr(state, k, _m)
-                                # Call internal function with offset
-                                target, state = _internal(
-                                    _rt, state, _scope, _start_offset=_offset
-                                )
-                                # Run trampoline
-                                while target is not None:
-                                    try:
-                                        if hasattr(_module, "_line_map") and isinstance(
-                                            target, int
-                                        ):
-                                            lbl, off = _module._line_map[target]
-                                            func = getattr(_module, "_" + lbl)
-                                            target, state = func(
-                                                _rt, state, _scope, _start_offset=off
-                                            )
-                                        else:
-                                            func = _module._labels[target]
-                                            target, state = func(_rt, state, _scope)
-                                    except GotoExternal as _goto:
-                                        # Sync state back to scope BEFORE transferring control
-                                        # This ensures variables set in this routine are visible
-                                        # in the target routine (MUMPS has a single symbol table)
-                                        if uses_dynamic:
-                                            _scope.update(
-                                                {k: v for k, v in state._locals.items()}
-                                            )
-                                        else:
-                                            for attr in dir(state):
-                                                if not attr.startswith("_"):
-                                                    val = getattr(state, attr)
-                                                    if isinstance(val, MArray):
-                                                        _scope[attr] = val
-                                        # Handle nested external GOTO
-                                        run_with_goto_support(
-                                            resolve_goto_target(_goto), _rt, _scope
-                                        )
-                                        target = None
-                                # Sync state back to scope based on state type
-                                if uses_dynamic:
-                                    _scope.update(
-                                        {k: v for k, v in state._locals.items()}
-                                    )
-                                else:
-                                    # For static state, copy fields that are MArrays
-                                    for attr in dir(state):
-                                        if not attr.startswith("_"):
-                                            val = getattr(state, attr)
-                                            if isinstance(val, MArray):
-                                                _scope[attr] = val
-                                return state
-                            else:
-                                return target_func(_rt, _scope=_scope)
-
-                        current_func = offset_wrapper
+                        # Use factory to create offset wrapper with dir()-based sync
+                        current_func = _create_offset_entry_wrapper(
+                            internal_func, line_offset, module, use_dataclass_sync=False
+                        )
                     else:
                         current_func = target_func
                 else:
@@ -2122,7 +2071,13 @@ class MUMPSRuntime:
         return self._zwr_encode_string(str(sub))
 
     def zwrite_local(
-        self, name: str, subscripts: tuple[str, ...], scope: dict[str, Any]
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        scope: dict[str, Any],
+        *,
+        range_start: Any = None,
+        range_end: Any = None,
     ) -> None:
         """ZWRITE - display a local variable and its descendants.
 
@@ -2130,6 +2085,8 @@ class MUMPSRuntime:
             name: Variable name (Python scope key, e.g., "_pct_FOO" for %FOO)
             subscripts: Subscript path (empty for unsubscripted)
             scope: Variable scope dictionary
+            range_start: Optional lower bound for subscript range (inclusive)
+            range_end: Optional upper bound for subscript range (inclusive)
         """
         if name not in scope:
             return  # Variable not defined
@@ -2153,11 +2110,23 @@ class MUMPSRuntime:
                 return  # Subscript doesn't exist
             node = node._children[sub]
 
-        # Output this node and descendants
-        self._zwrite_marray(mumps_name, subs_list, node)
+        # Output this node and descendants (with optional range filtering)
+        self._zwrite_marray(
+            mumps_name,
+            subs_list,
+            node,
+            range_start=range_start,
+            range_end=range_end,
+        )
 
     def _zwrite_marray(
-        self, base_name: str, subscripts: list[Any], node: "MArray"
+        self,
+        base_name: str,
+        subscripts: list[Any],
+        node: "MArray",
+        *,
+        range_start: Any = None,
+        range_end: Any = None,
     ) -> None:
         """Output an MArray node and its descendants in ZWRITE format.
 
@@ -2165,6 +2134,8 @@ class MUMPSRuntime:
             base_name: Variable name (e.g., "X")
             subscripts: List of subscripts to this node (may be empty)
             node: The MArray node to output
+            range_start: If set, only output children >= this value (MUMPS collation)
+            range_end: If set, only output children <= this value (MUMPS collation)
         """
         # Build the path string with comma-separated subscripts
         if subscripts:
@@ -2174,46 +2145,81 @@ class MUMPSRuntime:
             path = base_name
 
         # Output value at this node if it exists
-        if node._value is not None:
+        # (only when no range filter is active — ranges apply to children)
+        if node._value is not None and range_start is None and range_end is None:
             self.write(f"{path}={self._quote_value(node._value)}\n")
 
+        # Compute collation keys for range bounds (if applicable)
+        start_key = (
+            _mumps_collation_key(range_start) if range_start is not None else None
+        )
+        end_key = _mumps_collation_key(range_end) if range_end is not None else None
+
         # Output children recursively in MUMPS collation order
-        # (numerics before strings, numerics sorted numerically)
         for sub in sorted(node._children.keys(), key=_mumps_collation_key):
+            # Apply range filtering at this level
+            if start_key is not None:
+                if _mumps_collation_key(sub) < start_key:
+                    continue
+            if end_key is not None:
+                if _mumps_collation_key(sub) > end_key:
+                    break  # Sorted order — no more matches possible
+
             child = node._children[sub]
+            # Children of range-filtered nodes are NOT range-filtered
             self._zwrite_marray(base_name, subscripts + [sub], child)
 
-    def zwrite_global(self, name: str, subscripts: tuple[str, ...]) -> None:
+    def zwrite_global(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        *,
+        range_start: Any = None,
+        range_end: Any = None,
+    ) -> None:
         """ZWRITE - display a global variable and its descendants.
 
         Args:
             name: Global name (without ^)
             subscripts: Subscript path (empty for unsubscripted)
+            range_start: Optional lower bound for subscript range (inclusive)
+            range_end: Optional upper bound for subscript range (inclusive)
         """
-        # Get value at this node
-        value = self.globals.get(name, subscripts)
-        if value is not None:
-            if subscripts:
-                sub_str = ",".join(self._format_subscript(s) for s in subscripts)
-                self.write(f"^{name}({sub_str})={self._quote_value(value)}\n")
-            else:
-                self.write(f"^{name}={self._quote_value(value)}\n")
+        # If no range filtering, output value at this node
+        if range_start is None and range_end is None:
+            value = self.globals.get(name, subscripts)
+            if value is not None:
+                if subscripts:
+                    sub_str = ",".join(self._format_subscript(s) for s in subscripts)
+                    self.write(f"^{name}({sub_str})={self._quote_value(value)}\n")
+                else:
+                    self.write(f"^{name}={self._quote_value(value)}\n")
 
         # Get descendants using $ORDER
-        # To get first subscript at this level, use ("",) as the "starting from" marker
-        # For subsequent subscripts, use the last found subscript
-        current_sub = ""  # Empty string = get first
+        current_sub: Any = ""  # Empty string = get first
+        if range_start is not None:
+            # Start from just before range_start by using ORDER from ""
+            # and skipping until >= range_start
+            pass  # We'll filter below
+
         while True:
-            # Find next subscript at this level
-            # ORDER expects (parent_subscripts..., starting_point)
             next_sub = self.globals.order(
                 name, subscripts + (current_sub,), direction=1
             )
             if not next_sub:
                 break
-            # Recursively output this subtree
+
+            # Apply range filtering
+            if range_start is not None:
+                if _mumps_collation_key(next_sub) < _mumps_collation_key(range_start):
+                    current_sub = next_sub
+                    continue
+            if range_end is not None:
+                if _mumps_collation_key(next_sub) > _mumps_collation_key(range_end):
+                    break  # Sorted — no more matches
+
+            # Recursively output this subtree (no range filter for children)
             self.zwrite_global(name, subscripts + (next_sub,))
-            # Move to next sibling at this level
             current_sub = next_sub
 
     def _zwrite_var(self, name: str, value: Any) -> None:
