@@ -30,11 +30,11 @@
 
 **Files touched**: runtime/__init__.py, runtime/helpers.py, core/values.py, core/names.py — NO overlap with Phase 5.
 
-- [ ] T015 [US2] Verify all runtime imports of NameTranslator/translate_name use m2py.core.names (not m2py.codegen.names); update any remaining backward import paths in src/m2py/runtime/ (R-02 confirmed definitions are in core/names.py)
-- [ ] T016 [US2] Replace generate_python deferred import with callback injection in src/m2py/runtime/__init__.py — add codegen_callback parameter to MUMPSRuntime.__init__, update execute_mumps() at L5794
-- [ ] T017 [P] [US2] Verify m_format_output docstring accuracy in src/m2py/runtime/helpers.py (S-17 — fix if last example line is incorrect per research.md)
-- [ ] T018 [P] [US2] Add integration test: import MUMPSRuntime and core/values without codegen in tests/integration/test_runtime_independence.py
-- [ ] T019 [US2] Run uv run pytest and verify zero failures
+- [x] T015 [US2] Verify all runtime imports of NameTranslator/translate_name use m2py.core.names (not m2py.codegen.names); update any remaining backward import paths in src/m2py/runtime/ (R-02 confirmed definitions are in core/names.py)
+- [x] T016 [US2] Replace generate_python deferred import with callback injection in src/m2py/runtime/__init__.py — add codegen_callback parameter to MUMPSRuntime.__init__, update execute_mumps() at L5794
+- [x] T017 [P] [US2] Verify m_format_output docstring accuracy in src/m2py/runtime/helpers.py (S-17 — fix if last example line is incorrect per research.md)
+- [x] T018 [P] [US2] Add integration test: import MUMPSRuntime and core/values without codegen in tests/integration/test_runtime_independence.py
+- [x] T019 [US2] Run uv run pytest and verify zero failures
 
 **Checkpoint**: `rg "from m2py\.codegen" src/m2py/runtime/ src/m2py/core/` returns zero results (except callback usage comments)
 
