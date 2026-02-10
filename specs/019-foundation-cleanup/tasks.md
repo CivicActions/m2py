@@ -83,12 +83,12 @@
 
 **Requires**: Phase 4 (US2) complete — both phases modify runtime/__init__.py.
 
-- [ ] T031 [US3] Create src/m2py/core/parsing.py with parse_subscripted_name and canonicalize_subscript per contracts/module-contracts.md (C-03)
-- [ ] T032 [P] [US3] Create src/m2py/core/tokenizer.py with split_at_toplevel per contracts/module-contracts.md (S-07)
-- [ ] T033 [US3] Update src/m2py/runtime/__init__.py: replace _parse_subscripted_name (L106) with delegation to core/parsing.py; apply canonicalize_subscript where numeric conversion is needed (~20 call sites)
-- [ ] T034 [US3] Update src/m2py/core/scope.py (_parse_subscripted_name at L429) and src/m2py/core/indirection.py (_parse_subscripted_name at L1352, _split_argument_list at L600) to delegate to core/parsing.py and core/tokenizer.py
-- [ ] T035 [P] [US3] Add/Update tests in tests/unit/core/test_parsing.py and tests/unit/core/test_tokenizer.py
-- [ ] T036 [US3] Run uv run pytest and verify zero failures
+- [x] T031 [US3] Create src/m2py/core/parsing.py with parse_subscripted_name and canonicalize_subscript per contracts/module-contracts.md (C-03)
+- [x] T032 [P] [US3] Create src/m2py/core/tokenizer.py with split_at_toplevel per contracts/module-contracts.md (S-07)
+- [x] T033 [US3] Update src/m2py/runtime/__init__.py: replace _parse_subscripted_name (L106) with delegation to core/parsing.py; apply canonicalize_subscript where numeric conversion is needed (~20 call sites)
+- [x] T034 [US3] Update src/m2py/core/scope.py (_parse_subscripted_name at L429) and src/m2py/core/indirection.py (_parse_subscripted_name at L1352, _split_argument_list at L600) to delegate to core/parsing.py and core/tokenizer.py
+- [x] T035 [P] [US3] Add/Update tests in tests/unit/core/test_parsing.py and tests/unit/core/test_tokenizer.py
+- [x] T036 [US3] Run uv run pytest and verify zero failures
 
 **Checkpoint**: `rg "_parse_subscripted_name" src/m2py/` shows only core/parsing.py definition and thin delegation wrappers (if any).
 

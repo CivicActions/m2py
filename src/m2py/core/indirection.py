@@ -17,7 +17,9 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from m2py.core.exceptions import VarExpectedError, LVUNDEFError
 from m2py.core.names import is_valid_varname as _core_is_valid_varname
+from m2py.core.parsing import parse_subscripted_name
 from m2py.core.subscripts import SubscriptCanonicalizer
+from m2py.core.tokenizer import split_at_toplevel
 
 if TYPE_CHECKING:
     from m2py.core.scope import CurrentScope
@@ -604,39 +606,17 @@ class IndirectionResolver:
         But "$P(X,Y)" should NOT split (comma inside parens).
         And '"A,B"' should NOT split (comma inside quotes).
 
+        Delegates to core.tokenizer.split_at_toplevel.
+
         Args:
             expr_string: Expression string potentially containing comma-separated args
 
         Returns:
             List of argument strings (1 element if no splitting needed)
         """
-        result = []
-        current = ""
-        depth = 0  # Parenthesis depth
-        in_quotes = False
-
-        for char in expr_string:
-            if char == '"' and (not current or current[-1] != "\\"):
-                in_quotes = not in_quotes
-                current += char
-            elif char == "(" and not in_quotes:
-                depth += 1
-                current += char
-            elif char == ")" and not in_quotes:
-                depth -= 1
-                current += char
-            elif char == "," and not in_quotes and depth == 0:
-                # This is a top-level comma - split here
-                if current.strip():
-                    result.append(current)
-                current = ""
-            else:
-                current += char
-
-        # Don't forget the last segment
-        if current.strip():
-            result.append(current)
-
+        parts = split_at_toplevel(expr_string, delimiter=",", respect_quotes=True)
+        # Filter empty parts and strip whitespace
+        result = [p for p in parts if p.strip()]
         return result if result else [expr_string]
 
     def _evaluate_single_expression(self, expr_string: str) -> Any:
@@ -1352,6 +1332,8 @@ class IndirectionResolver:
     def _parse_subscripted_name(self, name: str) -> tuple[str, List[str]]:
         """Parse a subscripted variable name into base and subscripts.
 
+        Delegates to core.parsing.parse_subscripted_name.
+
         Args:
             name: Variable name like "A(1,2)" or "^GLO(x,y)"
 
@@ -1363,37 +1345,7 @@ class IndirectionResolver:
             This method preserves quotes to distinguish literals from variables.
             Quote stripping is handled in _evaluate_subscripts().
         """
-        if "(" not in name:
-            return name, []
-
-        paren_pos = name.index("(")
-        base = name[:paren_pos]
-        subs_str = name[paren_pos + 1 : -1]  # Remove ( and )
-
-        # Parse subscripts (simple split for now - doesn't handle nested parens)
-        subscripts = []
-        if subs_str:
-            # Handle nested expressions with parentheses
-            depth = 0
-            current = ""
-            for char in subs_str:
-                if char == "(" or char == "[":
-                    depth += 1
-                    current += char
-                elif char == ")" or char == "]":
-                    depth -= 1
-                    current += char
-                elif char == "," and depth == 0:
-                    # Don't strip quotes here - let _evaluate_subscripts handle it
-                    subscripts.append(current.strip())
-                    current = ""
-                else:
-                    current += char
-            if current:
-                # Don't strip quotes here - let _evaluate_subscripts handle it
-                subscripts.append(current.strip())
-
-        return base, subscripts
+        return parse_subscripted_name(name)
 
     def _strip_mumps_quotes(self, s: str) -> str:
         """Strip MUMPS-style quotes from a string subscript.

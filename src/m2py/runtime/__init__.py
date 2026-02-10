@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 from m2py.core.names import NameTranslator
+from m2py.core.tokenizer import split_at_toplevel
 
 if TYPE_CHECKING:
     pass  # Reserved for future type imports
@@ -154,11 +155,8 @@ def _parse_subscripted_name(name: str) -> Tuple[str, Optional[Tuple[Any, ...]]]:
 def _parse_subscript_list(subscript_str: str, original_name: str) -> List[Any]:
     """Parse comma-separated subscript list.
 
-    Handles:
-    - Numeric subscripts: 1, 2, 3
-    - String subscripts: "foo", 'bar'
-    - Variable references: X, VAR (returned as strings)
-    - Nested parentheses in expressions
+    Delegates splitting to core.tokenizer.split_at_toplevel, then
+    applies _convert_subscript to each raw subscript.
 
     Args:
         subscript_str: The content between parentheses
@@ -170,38 +168,12 @@ def _parse_subscript_list(subscript_str: str, original_name: str) -> List[Any]:
     Raises:
         IndirectionError: If subscript parsing fails
     """
-    subscripts: List[Any] = []
-    current = ""
-    paren_depth = 0
-    in_string = False
-    string_char = ""
-
-    for char in subscript_str:
-        if in_string:
-            current += char
-            if char == string_char:
-                in_string = False
-        elif char in ('"', "'"):
-            in_string = True
-            string_char = char
-            current += char
-        elif char == "(":
-            paren_depth += 1
-            current += char
-        elif char == ")":
-            paren_depth -= 1
-            current += char
-        elif char == "," and paren_depth == 0:
-            subscripts.append(_convert_subscript(current.strip(), original_name))
-            current = ""
-        else:
-            current += char
-
-    # Don't forget the last subscript
-    if current.strip():
-        subscripts.append(_convert_subscript(current.strip(), original_name))
-
-    return subscripts
+    parts = split_at_toplevel(subscript_str, delimiter=",", respect_quotes=True)
+    return [
+        _convert_subscript(part.strip(), original_name)
+        for part in parts
+        if part.strip()
+    ]
 
 
 def _split_argument_list(arg_str: str) -> List[str]:
@@ -210,6 +182,8 @@ def _split_argument_list(arg_str: str) -> List[str]:
     Feature: 017 T088 - Argument Indirection Command Lists
     Used for KILL @X, NEW @X where X may contain comma-separated
     variable names that include subscripts.
+
+    Delegates to core.tokenizer.split_at_toplevel.
 
     Unlike naive str.split(','), this correctly handles:
     - Simple variables: "A,B,C" → ["A", "B", "C"]
@@ -234,39 +208,8 @@ def _split_argument_list(arg_str: str) -> List[str]:
     if not arg_str:
         return []
 
-    args: List[str] = []
-    current = ""
-    paren_depth = 0
-    in_string = False
-    string_char = ""
-
-    for char in arg_str:
-        if in_string:
-            current += char
-            if char == string_char:
-                in_string = False
-        elif char in ('"', "'"):
-            in_string = True
-            string_char = char
-            current += char
-        elif char == "(":
-            paren_depth += 1
-            current += char
-        elif char == ")":
-            paren_depth -= 1
-            current += char
-        elif char == "," and paren_depth == 0:
-            if current.strip():
-                args.append(current.strip())
-            current = ""
-        else:
-            current += char
-
-    # Don't forget the last argument
-    if current.strip():
-        args.append(current.strip())
-
-    return args
+    parts = split_at_toplevel(arg_str, delimiter=",", respect_quotes=True)
+    return [p.strip() for p in parts if p.strip()]
 
 
 def _find_toplevel_colon(s: str) -> int:

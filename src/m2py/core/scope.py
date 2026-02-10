@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from m2py.core.exceptions import LVUNDEFError
 from m2py.core.names import NameTranslator
+from m2py.core.parsing import parse_subscripted_name
 from m2py.core.subscripts import SubscriptCanonicalizer
 
 
@@ -429,87 +430,29 @@ class CurrentScope:
     def _parse_subscripted_name(self, name: str) -> Tuple[str, List[str]]:
         """Parse 'A(1,2)' into ('A', ['1', '2']).
 
-        Handles quoted string subscripts by removing surrounding quotes.
-        MUMPS name syntax uses "..." for string subscripts.
+        Delegates to core.parsing.parse_subscripted_name for the parsing,
+        then strips MUMPS-style quotes from string subscripts.
 
         Examples:
             'A(1,2)' -> ('A', ['1', '2'])
             'B("key")' -> ('B', ['key'])
             'B("key","sub")' -> ('B', ['key', 'sub'])
         """
-        paren_idx = name.find("(")
-        if paren_idx == -1:
-            return (name, [])
+        base_name, raw_subs = parse_subscripted_name(name)
+        # Strip MUMPS-style quotes from string subscripts
+        return (base_name, [self._strip_subscript_quotes(s) for s in raw_subs])
 
-        base_name = name[:paren_idx]
+    @staticmethod
+    def _strip_subscript_quotes(s: str) -> str:
+        """Strip surrounding double quotes and unescape doubled quotes.
 
-        # Extract content between outer parentheses
-        if not name.endswith(")"):
-            # Malformed - return as-is
-            return (name, [])
-
-        subs_str = name[paren_idx + 1 : -1]
-
-        if not subs_str:
-            return (base_name, [])
-
-        # Parse subscripts, handling quoted strings and nested parens
-        subscripts = self._parse_subscript_list(subs_str)
-        return (base_name, subscripts)
-
-    def _parse_subscript_list(self, subs_str: str) -> List[str]:
-        """Parse a comma-separated list of subscripts.
-
-        Handles:
-        - Quoted strings: "hello" -> hello
-        - Unquoted values: 123 -> 123
-        - Nested parentheses: (a,b) stays intact within a subscript
-
-        Args:
-            subs_str: String like '1,"key",3' or '"hello"'
-
-        Returns:
-            List of subscript values with quotes removed from strings
+        MUMPS subscript strings are quoted: '"key"' → 'key'.
+        Escaped quotes ('""') are unescaped to single quotes.
+        Non-quoted values are returned as-is.
         """
-        subscripts = []
-        current = ""
-        depth = 0
-        in_quotes = False
-        i = 0
-
-        while i < len(subs_str):
-            ch = subs_str[i]
-
-            if ch == '"' and depth == 0:
-                if in_quotes:
-                    # Check for escaped quote ""
-                    if i + 1 < len(subs_str) and subs_str[i + 1] == '"':
-                        current += '"'  # Add single quote for escaped ""
-                        i += 2
-                        continue
-                    else:
-                        in_quotes = False
-                else:
-                    in_quotes = True
-                i += 1
-                continue
-            elif ch == "(" and not in_quotes:
-                depth += 1
-                current += ch
-            elif ch == ")" and not in_quotes:
-                depth -= 1
-                current += ch
-            elif ch == "," and depth == 0 and not in_quotes:
-                subscripts.append(current.strip())
-                current = ""
-            else:
-                current += ch
-            i += 1
-
-        if current or subscripts:  # Handle last subscript
-            subscripts.append(current.strip())
-
-        return subscripts
+        if len(s) >= 2 and s.startswith('"') and s.endswith('"'):
+            return s[1:-1].replace('""', '"')
+        return s
 
 
 # Sentinel for distinguishing "not found" from None
