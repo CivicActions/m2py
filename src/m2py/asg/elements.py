@@ -229,6 +229,14 @@ class MRoutine(ASGElement):
     # Requires runtime scope stack (state._new_stack) in TRAMPOLINE mode
     has_argumentless_new: bool = False
 
+    # Spec 019: True if any exclusive KILL (K (X)) exists in routine
+    # Requires dynamic_locals since we must enumerate all vars to kill the complement
+    has_exclusive_kill: bool = False
+
+    # Spec 019: True if any exclusive NEW (N (X)) exists in routine
+    # Requires dynamic_locals since we must enumerate all vars to NEW the complement
+    has_exclusive_new: bool = False
+
     # True if routine has name indirection that references local variables
     # This requires dynamic_locals mode for runtime variable name resolution
     has_name_indirection_on_locals: bool = False

@@ -49,6 +49,8 @@ def routine_uses_dynamic_locals(routine: "MRoutine") -> bool:
     return (
         routine.has_argumentless_kill
         or routine.has_argumentless_new
+        or routine.has_exclusive_kill
+        or routine.has_exclusive_new
         or routine.has_name_indirection_on_locals
         or routine.has_external_gotos
     )

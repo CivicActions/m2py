@@ -54,9 +54,12 @@ from ..asg.expressions import (
     MGlobal,
     MIndirection,
     MIntrinsicFunction,
+    MLiteral,
     MNakedGlobal,
     MPatternMatch,
     MSelectArg,
+    MSpecialVariable,
+    MStructuredSystemVariable,
     MUnaryOp,
     MVariable,
 )
@@ -68,6 +71,8 @@ from ..asg.statements import (
     MKillStatement,
     MNewStatement,
     MQuitStatement,
+    MReadStatement,
+    MReadTarget,
     MSetStatement,
     MStatement,
     MWriteStatement,
@@ -188,6 +193,11 @@ def analyze_variables(routine: MRoutine) -> Dict[str, ScopeVariables]:
     routine.has_argumentless_kill = _routine_has_argumentless_kill(routine)
     routine.has_argumentless_new = _routine_has_argumentless_new(routine)
 
+    # Spec 019 C-06: Detect exclusive KILL/NEW for dynamic locals
+    # Exclusive forms (K (X), N (X)) enumerate all vars at runtime
+    routine.has_exclusive_kill = _routine_has_exclusive_kill(routine)
+    routine.has_exclusive_new = _routine_has_exclusive_new(routine)
+
     # Detect name indirection that references local variables
     routine.has_name_indirection_on_locals = _routine_has_name_indirection_on_locals(
         routine
@@ -279,6 +289,40 @@ def _routine_has_argumentless_new(routine: MRoutine) -> bool:
                 # Argumentless NEW: no variables specified AND not exclusive
                 if not stmt.variables and not stmt.exclusive:
                     return True
+    return False
+
+
+def _routine_has_exclusive_kill(routine: MRoutine) -> bool:
+    """Check if a routine contains any exclusive KILL statements.
+
+    Exclusive KILL (K (X,Y)) kills all local variables EXCEPT those listed.
+    This requires dynamic_locals because the runtime must enumerate all
+    current variables to determine which to kill.
+    """
+    for label in routine.labels:
+        if not label.body:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MKillStatement) and stmt.exclusive:
+                return True
+    return False
+
+
+def _routine_has_exclusive_new(routine: MRoutine) -> bool:
+    """Check if a routine contains any exclusive NEW statements.
+
+    Exclusive NEW (N (X,Y)) creates a new scope for all variables
+    EXCEPT those listed. This requires dynamic_locals because the
+    runtime must enumerate all current variables to determine which to stack.
+    """
+    from m2py.asg.statements import MNewStatement
+
+    for label in routine.labels:
+        if not label.body:
+            continue
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MNewStatement) and stmt.exclusive:
+                return True
     return False
 
 
@@ -561,7 +605,137 @@ def _extract_statement_variables(
         if stmt.return_value:
             reads.update(_extract_expression_variables(stmt.return_value))
 
+    elif isinstance(stmt, MReadStatement):
+        # READ target modifies (writes to) the target variable
+        for arg in stmt.arguments:
+            if isinstance(arg, MReadTarget):
+                target_var = arg.variable
+                if isinstance(target_var, MVariable):
+                    name = target_var.name
+                    if name and not name.startswith("^"):
+                        writes.add(name)
+                # Also read timeout/fixed_length expressions
+                if arg.timeout:
+                    reads.update(_extract_expression_variables(arg.timeout))
+                if arg.fixed_length:
+                    reads.update(_extract_expression_variables(arg.fixed_length))
+
     return reads, writes, news
+
+
+def statement_modifies_variable(stmt: MStatement, var_name: str) -> bool:
+    """Check if a statement modifies (writes/kills) a variable by name.
+
+    Handles SET, READ, KILL (including kill-all and exclusive kill) and
+    any other statement type that produces writes via _extract_statement_variables.
+
+    Args:
+        stmt: The ASG statement to check.
+        var_name: The local variable name to look for.
+
+    Returns:
+        True if the statement writes, reads-into, or kills the variable.
+    """
+    # Special KILL cases not captured by _extract_statement_variables
+    if isinstance(stmt, MKillStatement):
+        if stmt.is_kill_all:
+            return True
+        if stmt.exclusive:
+            # Exclusive kill kills everything except the except_list
+            return var_name not in (stmt.except_list or [])
+
+    _, writes, _ = _extract_statement_variables(stmt)
+    return var_name in writes
+
+
+def contains_naked_global(expr: MExpr) -> bool:
+    """Check if expression contains any naked global references.
+
+    Recursively traverses the expression tree looking for MNakedGlobal nodes.
+    Used to determine if subscript expressions need to be pre-evaluated
+    to ensure correct left-to-right evaluation order in assignments.
+
+    Results are cached on the expression node as ``_has_naked_global`` so
+    repeated calls (e.g., during codegen) are O(1).
+
+    Args:
+        expr: Expression node to check
+
+    Returns:
+        True if expression contains a MNakedGlobal, False otherwise
+    """
+    # Check cache first
+    cached = getattr(expr, "_has_naked_global", None)
+    if cached is not None:
+        return cached
+
+    result = _contains_naked_global_impl(expr)
+
+    # Cache result on the ASG node
+    try:
+        object.__setattr__(expr, "_has_naked_global", result)
+    except (TypeError, AttributeError):
+        pass
+
+    return result
+
+
+def _contains_naked_global_impl(expr: MExpr) -> bool:
+    """Implementation of contains_naked_global without caching."""
+    # Import textX parse-time NakedGlobal for backward compatibility
+    from ..parser.textx_classes import NakedGlobal
+
+    if isinstance(expr, (NakedGlobal, MNakedGlobal)):
+        return True
+
+    if isinstance(expr, MLiteral):
+        return False
+
+    if isinstance(expr, MVariable):
+        return any(contains_naked_global(sub) for sub in (expr.subscripts or []))
+
+    if isinstance(expr, MGlobal):
+        return any(contains_naked_global(sub) for sub in (expr.subscripts or []))
+
+    if isinstance(expr, MBinaryOp):
+        left_has = expr.left is not None and contains_naked_global(expr.left)
+        right_has = expr.right is not None and contains_naked_global(expr.right)
+        return left_has or right_has
+
+    if isinstance(expr, MUnaryOp):
+        return expr.operand is not None and contains_naked_global(expr.operand)
+
+    if isinstance(expr, MIntrinsicFunction):
+        return any(contains_naked_global(arg) for arg in (expr.arguments or []))
+
+    if isinstance(expr, MExtrinsicFunction):
+        return any(
+            param.expression is not None and contains_naked_global(param.expression)
+            for param in (expr.arguments or [])
+        )
+
+    if isinstance(expr, MIndirection):
+        inner_expr = getattr(expr, "expression", None)
+        if inner_expr is not None and contains_naked_global(inner_expr):
+            return True
+        if any(contains_naked_global(sub) for sub in (expr.subscripts or [])):
+            return True
+        if expr.name_indirection_subscripts:
+            for sub_list in expr.name_indirection_subscripts:
+                if any(contains_naked_global(sub) for sub in (sub_list or [])):
+                    return True
+        return False
+
+    if isinstance(expr, MPatternMatch):
+        return expr.subject is not None and contains_naked_global(expr.subject)
+
+    if isinstance(expr, MSpecialVariable):
+        return False
+
+    if isinstance(expr, MStructuredSystemVariable):
+        return any(contains_naked_global(sub) for sub in (expr.subscripts or []))
+
+    return False
 
 
 def _extract_expression_variables(expr) -> Set[str]:

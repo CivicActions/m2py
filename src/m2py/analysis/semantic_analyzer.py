@@ -1060,6 +1060,75 @@ class SemanticAnalyzer:
         else:
             return ForLoopType.STRING_LIST
 
+    def _analyze_call_target(
+        self, target: Any, parent: Any, *, has_args: bool = False
+    ) -> MCall:
+        """Shared target analysis for call-family commands (DO, GOTO, JOB).
+
+        Handles indirection (@VAR, @@VAR, @VAR+offset, @VAR^@routine) and
+        direct label references (label^routine+offset).
+
+        Args:
+            target: Grammar target node (DoTarget, GotoTarget, JobTarget).
+            parent: Parent ASG statement.
+            has_args: If True, process function arguments on both
+                indirect and label targets (DO and JOB support args; GOTO does not).
+
+        Returns:
+            Populated MCall node.
+        """
+        call = MCall()
+
+        if hasattr(target, "postcond") and target.postcond:
+            call.postcondition = self.analyze(target.postcond.condition, call)
+
+        if hasattr(target, "indirect") and target.indirect:
+            indirect = target.indirect
+            call.name = ""
+            call.label_is_indirect = True
+
+            if hasattr(indirect, "labelIndirect") and indirect.labelIndirect:
+                indirection_expr, levels = self._analyze_indirect_chain(
+                    indirect.labelIndirect, call
+                )
+                call.indirection = indirection_expr
+
+            if hasattr(indirect, "offset") and indirect.offset:
+                call.offset = self.analyze(indirect.offset, call)
+
+            if hasattr(indirect, "routine") and indirect.routine:
+                call.routine = indirect.routine
+            elif hasattr(indirect, "routineIndirect") and indirect.routineIndirect:
+                routine_expr, _ = self._analyze_indirect_chain(
+                    indirect.routineIndirect, call
+                )
+                call.routine_indirection = routine_expr
+                call.routine_is_indirect = True
+
+            if has_args and hasattr(indirect, "args") and indirect.args:
+                call.arguments = self._analyze_function_args(indirect.args, call)
+
+        elif hasattr(target, "label") and target.label:
+            label_ref = target.label
+            call.name = label_ref.label or ""
+
+            if hasattr(label_ref, "routine") and label_ref.routine:
+                call.routine = label_ref.routine
+            elif hasattr(label_ref, "routineIndirect") and label_ref.routineIndirect:
+                routine_expr, _ = self._analyze_indirect_chain(
+                    label_ref.routineIndirect, call
+                )
+                call.routine_indirection = routine_expr
+                call.routine_is_indirect = True
+
+            if hasattr(label_ref, "offset") and label_ref.offset:
+                call.offset = self.analyze(label_ref.offset, call)
+
+        if has_args and hasattr(target, "args") and target.args:
+            call.arguments = self._analyze_function_args(target.args, call)
+
+        return call
+
     def _analyze_GotoCommand(self, cmd: Any, parent: Any) -> MGotoStatement:
         """Analyze GOTO command into MGotoStatement."""
         stmt = MGotoStatement()
@@ -1068,61 +1137,7 @@ class SemanticAnalyzer:
 
         if hasattr(cmd, "targets") and cmd.targets:
             for target in cmd.targets:
-                call = MCall()
-
-                if hasattr(target, "postcond") and target.postcond:
-                    call.postcondition = self.analyze(target.postcond.condition, call)
-
-                # Handle indirection: G @VAR, G @@VAR, G @VAR+offset, G @VAR^@routine
-                if hasattr(target, "indirect") and target.indirect:
-                    indirect = target.indirect
-                    call.name = ""  # Indirection target - no static name
-                    call.label_is_indirect = True
-
-                    # Process the IndirectChain for the label part
-                    if hasattr(indirect, "labelIndirect") and indirect.labelIndirect:
-                        indirection_expr, levels = self._analyze_indirect_chain(
-                            indirect.labelIndirect, call
-                        )
-                        call.indirection = indirection_expr
-
-                    # Process offset if present: @VAR+offset
-                    if hasattr(indirect, "offset") and indirect.offset:
-                        call.offset = self.analyze(indirect.offset, call)
-
-                    # Process routine part: ^routine or ^@routine
-                    if hasattr(indirect, "routine") and indirect.routine:
-                        call.routine = indirect.routine
-                    elif (
-                        hasattr(indirect, "routineIndirect")
-                        and indirect.routineIndirect
-                    ):
-                        routine_expr, _ = self._analyze_indirect_chain(
-                            indirect.routineIndirect, call
-                        )
-                        call.routine_indirection = routine_expr
-                        call.routine_is_indirect = True
-
-                elif hasattr(target, "label") and target.label:
-                    label_ref = target.label
-                    call.name = label_ref.label or ""
-
-                    # Handle routine: either literal name or indirect (@VAR, @@VAR)
-                    if hasattr(label_ref, "routine") and label_ref.routine:
-                        call.routine = label_ref.routine
-                    elif (
-                        hasattr(label_ref, "routineIndirect")
-                        and label_ref.routineIndirect
-                    ):
-                        routine_expr, _ = self._analyze_indirect_chain(
-                            label_ref.routineIndirect, call
-                        )
-                        call.routine_indirection = routine_expr
-                        call.routine_is_indirect = True
-
-                    if hasattr(label_ref, "offset") and label_ref.offset:
-                        call.offset = self.analyze(label_ref.offset, call)
-
+                call = self._analyze_call_target(target, stmt, has_args=False)
                 stmt.targets.append(call)
 
         return stmt
@@ -1135,70 +1150,7 @@ class SemanticAnalyzer:
 
         if hasattr(cmd, "targets") and cmd.targets:
             for target in cmd.targets:
-                call = MCall()
-
-                if hasattr(target, "postcond") and target.postcond:
-                    call.postcondition = self.analyze(target.postcond.condition, call)
-
-                # Handle indirection: D @VAR, D @@VAR, D @VAR+offset, D @VAR^@routine
-                if hasattr(target, "indirect") and target.indirect:
-                    indirect = target.indirect
-                    call.name = ""  # Indirection target - no static name
-                    call.label_is_indirect = True
-
-                    # Process the IndirectChain for the label part
-                    if hasattr(indirect, "labelIndirect") and indirect.labelIndirect:
-                        indirection_expr, levels = self._analyze_indirect_chain(
-                            indirect.labelIndirect, call
-                        )
-                        call.indirection = indirection_expr
-
-                    # Process offset if present: @VAR+offset
-                    if hasattr(indirect, "offset") and indirect.offset:
-                        call.offset = self.analyze(indirect.offset, call)
-
-                    # Process routine part: ^routine or ^@routine
-                    if hasattr(indirect, "routine") and indirect.routine:
-                        call.routine = indirect.routine
-                    elif (
-                        hasattr(indirect, "routineIndirect")
-                        and indirect.routineIndirect
-                    ):
-                        routine_expr, _ = self._analyze_indirect_chain(
-                            indirect.routineIndirect, call
-                        )
-                        call.routine_indirection = routine_expr
-                        call.routine_is_indirect = True
-
-                    # Process arguments if present
-                    if hasattr(indirect, "args") and indirect.args:
-                        call.arguments = self._analyze_function_args(
-                            indirect.args, call
-                        )
-
-                elif hasattr(target, "label") and target.label:
-                    label_ref = target.label
-                    call.name = label_ref.label or ""
-
-                    # Handle routine: either literal name or indirect (@VAR, @@VAR)
-                    if hasattr(label_ref, "routine") and label_ref.routine:
-                        call.routine = label_ref.routine
-                    elif (
-                        hasattr(label_ref, "routineIndirect")
-                        and label_ref.routineIndirect
-                    ):
-                        routine_expr, _ = self._analyze_indirect_chain(
-                            label_ref.routineIndirect, call
-                        )
-                        call.routine_indirection = routine_expr
-                        call.routine_is_indirect = True
-
-                    if hasattr(label_ref, "offset") and label_ref.offset:
-                        call.offset = self.analyze(label_ref.offset, call)
-
-                if hasattr(target, "args") and target.args:
-                    call.arguments = self._analyze_function_args(target.args, call)
-
+                call = self._analyze_call_target(target, stmt, has_args=True)
                 stmt.targets.append(call)
 
         return stmt
@@ -1354,6 +1306,46 @@ class SemanticAnalyzer:
 
         return stmt
 
+    def _analyze_kill_like_args(self, cmd: Any, stmt: Any) -> None:
+        """Shared argument parsing for KILL-family commands (K, KS, KV).
+
+        Parses exclusive groups and selective targets from grammar args.
+        Handles:
+        - No args — kill all (stmt left with defaults)
+        - Selective targets: K X,Y
+        - Exclusive groups: K (X,Y)
+        - Mixed: K (X,W),Z
+        - Multiple exclusive groups: K (X,Y,Z),(X,W) → intersection
+        """
+        if not (hasattr(cmd, "args") and cmd.args):
+            return
+
+        exclusive_groups: list = []
+        selective_targets: list = []
+
+        for arg in cmd.args:
+            if hasattr(arg, "exclusive") and arg.exclusive:
+                except_list = getattr(arg, "except", None) or getattr(
+                    arg, "except_", None
+                )
+                if except_list:
+                    exclusive_groups.append(list(except_list))
+            elif hasattr(arg, "target") and arg.target:
+                selective_targets.append(self.analyze(arg.target, stmt))
+
+        if exclusive_groups:
+            stmt.exclusive = True
+            stmt.except_groups = exclusive_groups
+            if len(exclusive_groups) == 1:
+                stmt.except_list = exclusive_groups[0]
+            else:
+                result = set(exclusive_groups[0])
+                for group in exclusive_groups[1:]:
+                    result &= set(group)
+                stmt.except_list = sorted(list(result))
+
+        stmt.targets = selective_targets
+
     def _analyze_KillCommand(self, cmd: Any, parent: Any) -> MKillStatement:
         """Analyze KILL command into MKillStatement.
 
@@ -1367,43 +1359,7 @@ class SemanticAnalyzer:
         stmt = MKillStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
-
-        # Grammar: args is a list of KillArgument
-        if hasattr(cmd, "args") and cmd.args:
-            exclusive_groups = []
-            selective_targets = []
-
-            for arg in cmd.args:
-                # Check if this is an exclusive group (has 'exclusive' flag and 'except' list)
-                if hasattr(arg, "exclusive") and arg.exclusive:
-                    # This is an exclusive group: (X,Y,Z)
-                    except_list = getattr(arg, "except", None) or getattr(
-                        arg, "except_", None
-                    )
-                    if except_list:
-                        exclusive_groups.append(list(except_list))
-                elif hasattr(arg, "target") and arg.target:
-                    # This is a selective target
-                    selective_targets.append(self.analyze(arg.target, stmt))
-
-            # Process exclusive groups
-            if exclusive_groups:
-                stmt.exclusive = True
-                stmt.except_groups = exclusive_groups
-
-                # Compute intersection of all exclusive groups
-                if len(exclusive_groups) == 1:
-                    stmt.except_list = exclusive_groups[0]
-                else:
-                    # Intersection: keep only vars that appear in ALL groups
-                    result = set(exclusive_groups[0])
-                    for group in exclusive_groups[1:]:
-                        result &= set(group)
-                    stmt.except_list = sorted(list(result))
-
-            # Add selective targets (these are killed AFTER exclusive processing)
-            stmt.targets = selective_targets
-
+        self._analyze_kill_like_args(cmd, stmt)
         return stmt
 
     def _analyze_KSubscriptsCommand(
@@ -1422,34 +1378,7 @@ class SemanticAnalyzer:
         stmt = MKSubscriptsStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
-
-        if hasattr(cmd, "args") and cmd.args:
-            exclusive_groups = []
-            selective_targets = []
-
-            for arg in cmd.args:
-                if hasattr(arg, "exclusive") and arg.exclusive:
-                    except_list = getattr(arg, "except", None) or getattr(
-                        arg, "except_", None
-                    )
-                    if except_list:
-                        exclusive_groups.append(list(except_list))
-                elif hasattr(arg, "target") and arg.target:
-                    selective_targets.append(self.analyze(arg.target, stmt))
-
-            if exclusive_groups:
-                stmt.exclusive = True
-                stmt.except_groups = exclusive_groups
-                if len(exclusive_groups) == 1:
-                    stmt.except_list = exclusive_groups[0]
-                else:
-                    result = set(exclusive_groups[0])
-                    for group in exclusive_groups[1:]:
-                        result &= set(group)
-                    stmt.except_list = sorted(list(result))
-
-            stmt.targets = selective_targets
-
+        self._analyze_kill_like_args(cmd, stmt)
         return stmt
 
     def _analyze_KValueCommand(self, cmd: Any, parent: Any) -> MKValueStatement:
@@ -1466,34 +1395,7 @@ class SemanticAnalyzer:
         stmt = MKValueStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
-
-        if hasattr(cmd, "args") and cmd.args:
-            exclusive_groups = []
-            selective_targets = []
-
-            for arg in cmd.args:
-                if hasattr(arg, "exclusive") and arg.exclusive:
-                    except_list = getattr(arg, "except", None) or getattr(
-                        arg, "except_", None
-                    )
-                    if except_list:
-                        exclusive_groups.append(list(except_list))
-                elif hasattr(arg, "target") and arg.target:
-                    selective_targets.append(self.analyze(arg.target, stmt))
-
-            if exclusive_groups:
-                stmt.exclusive = True
-                stmt.except_groups = exclusive_groups
-                if len(exclusive_groups) == 1:
-                    stmt.except_list = exclusive_groups[0]
-                else:
-                    result = set(exclusive_groups[0])
-                    for group in exclusive_groups[1:]:
-                        result &= set(group)
-                    stmt.except_list = sorted(list(result))
-
-            stmt.targets = selective_targets
-
+        self._analyze_kill_like_args(cmd, stmt)
         return stmt
 
     def _analyze_HangCommand(self, cmd: Any, parent: Any) -> MHangStatement:
@@ -1870,83 +1772,18 @@ class SemanticAnalyzer:
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
 
-        # JOB uses targets like DO command (label^routine) but with extra params
         if hasattr(cmd, "targets") and cmd.targets:
             for target in cmd.targets:
-                call = MCall()
-
-                if hasattr(target, "postcond") and target.postcond:
-                    call.postcondition = self.analyze(target.postcond.condition, call)
-
-                # Handle indirection: J @VAR, J @@VAR, J @VAR^@routine
-                if hasattr(target, "indirect") and target.indirect:
-                    indirect = target.indirect
-                    call.name = ""  # Indirection target - no static name
-                    call.label_is_indirect = True
-
-                    # Process the IndirectChain for the label part
-                    if hasattr(indirect, "labelIndirect") and indirect.labelIndirect:
-                        indirection_expr, levels = self._analyze_indirect_chain(
-                            indirect.labelIndirect, call
-                        )
-                        call.indirection = indirection_expr
-
-                    # Process offset if present: @VAR+offset
-                    if hasattr(indirect, "offset") and indirect.offset:
-                        call.offset = self.analyze(indirect.offset, call)
-
-                    # Process routine part: ^routine or ^@routine
-                    if hasattr(indirect, "routine") and indirect.routine:
-                        call.routine = indirect.routine
-                    elif (
-                        hasattr(indirect, "routineIndirect")
-                        and indirect.routineIndirect
-                    ):
-                        routine_expr, _ = self._analyze_indirect_chain(
-                            indirect.routineIndirect, call
-                        )
-                        call.routine_indirection = routine_expr
-                        call.routine_is_indirect = True
-
-                    # Process arguments if present
-                    if hasattr(indirect, "args") and indirect.args:
-                        call.arguments = self._analyze_function_args(
-                            indirect.args, call
-                        )
-
-                elif hasattr(target, "label") and target.label:
-                    label_ref = target.label
-                    call.name = label_ref.label or ""
-
-                    # Handle routine: either literal name or indirect (@VAR, @@VAR)
-                    if hasattr(label_ref, "routine") and label_ref.routine:
-                        call.routine = label_ref.routine
-                    elif (
-                        hasattr(label_ref, "routineIndirect")
-                        and label_ref.routineIndirect
-                    ):
-                        routine_expr, _ = self._analyze_indirect_chain(
-                            label_ref.routineIndirect, call
-                        )
-                        call.routine_indirection = routine_expr
-                        call.routine_is_indirect = True
-
-                    if hasattr(label_ref, "offset") and label_ref.offset:
-                        call.offset = self.analyze(label_ref.offset, call)
-
-                if hasattr(target, "args") and target.args:
-                    call.arguments = self._analyze_function_args(target.args, call)
+                call = self._analyze_call_target(target, stmt, has_args=True)
 
                 # Create MJobTarget with per-target processparameters and timeout
                 job_target = MJobTarget(call=call)
 
-                # Populate processparameters for this target (JOB-specific)
                 if hasattr(target, "processparams") and target.processparams:
                     job_target.processparameters = [
                         self.analyze(p, stmt) for p in target.processparams
                     ]
 
-                # Populate timeout for this target (JOB-specific)
                 if hasattr(target, "timeout") and target.timeout:
                     job_target.timeout = self.analyze(target.timeout, stmt)
 
@@ -2318,6 +2155,14 @@ class SemanticAnalyzer:
 
         return stmt
 
+    def _analyze_simple_targets(self, cmd: Any, stmt: Any) -> None:
+        """Shared target parsing for commands with simple target lists (ZKILL, ZWITHDRAW)."""
+        if hasattr(cmd, "targets") and cmd.targets:
+            for target in cmd.targets:
+                analyzed = self.analyze(target, stmt)
+                if analyzed:
+                    stmt.targets.append(analyzed)
+
     def _analyze_ZKillCommand(self, cmd: Any, parent: Any) -> MZKillStatement:
         """Analyze ZKILL command into MZKillStatement.
 
@@ -2327,13 +2172,7 @@ class SemanticAnalyzer:
         stmt = MZKillStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
-
-        if hasattr(cmd, "targets") and cmd.targets:
-            for target in cmd.targets:
-                analyzed = self.analyze(target, stmt)
-                if analyzed:
-                    stmt.targets.append(analyzed)
-
+        self._analyze_simple_targets(cmd, stmt)
         return stmt
 
     def _analyze_ZWithdrawCommand(self, cmd: Any, parent: Any) -> MZWithdrawStatement:
@@ -2345,13 +2184,7 @@ class SemanticAnalyzer:
         stmt = MZWithdrawStatement()
         object.__setattr__(stmt, "parent", parent)
         self._analyze_postcondition(cmd, stmt)
-
-        if hasattr(cmd, "targets") and cmd.targets:
-            for target in cmd.targets:
-                analyzed = self.analyze(target, stmt)
-                if analyzed:
-                    stmt.targets.append(analyzed)
-
+        self._analyze_simple_targets(cmd, stmt)
         return stmt
 
     def _analyze_ZHaltCommand(self, cmd: Any, parent: Any) -> MZHaltStatement:
@@ -2835,7 +2668,11 @@ def unwrap_expression(textx_expr: Any) -> Any:
         has_ops = hasattr(textx_expr, "ops") and textx_expr.ops
         if not has_tail and not has_ops:
             return unwrap_expression(textx_expr.left)
-        # Has binary ops or pattern match - needs full analysis
+        # Has binary ops or pattern match — must NOT unwrap further.
+        # Safety assertion: verify we're returning the compound expression intact.
+        assert has_tail or has_ops, (
+            "unwrap_expression: expected non-empty operator tail"
+        )
         return textx_expr
 
     # UnaryExpr without operator

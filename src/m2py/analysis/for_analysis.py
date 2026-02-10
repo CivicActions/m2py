@@ -17,12 +17,10 @@ from ..asg.expressions import MActualParameter, MVariable
 from ..asg.statements import (
     MDoStatement,
     MForStatement,
-    MKillStatement,
     MQuitStatement,
-    MReadStatement,
-    MSetStatement,
 )
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
+from .variables import statement_modifies_variable
 
 if TYPE_CHECKING:
     from .variables import FunctionSignature
@@ -204,10 +202,9 @@ def _check_var_modified_in_scope(
 ) -> bool:
     """Check if a loop variable is modified in a scope.
 
-    Detects modification via:
-    - SET command: S I=value
-    - READ command: R I (reads into variable)
-    - KILL command: K I (removes variable, effectively modifying it)
+    Delegates write-detection to variables.py infrastructure via
+    statement_modifies_variable(), which handles SET, READ, KILL
+    (including kill-all and exclusive kill).
 
     Args:
         loop_var: The loop variable (string name or MVariable)
@@ -226,41 +223,8 @@ def _check_var_modified_in_scope(
         return True
 
     for stmt in scope.statements:
-        # Check SET statements
-        if isinstance(stmt, MSetStatement):
-            for assignment in stmt.assignments:
-                target = assignment.target
-                if isinstance(target, MVariable):
-                    if target.name == var_name:
-                        return True
-                elif isinstance(target, str):
-                    if target == var_name:
-                        return True
-
-        # Check READ statements - reading INTO a variable modifies it
-        elif isinstance(stmt, MReadStatement):
-            from ..asg.statements import MReadTarget
-
-            for arg in stmt.arguments:
-                if isinstance(arg, MReadTarget):
-                    target_var = arg.variable
-                    if isinstance(target_var, MVariable):
-                        if target_var.name == var_name:
-                            return True
-
-        # Check KILL statements - killing a variable modifies it
-        elif isinstance(stmt, MKillStatement):
-            # K (no targets, is_kill_all) - kills ALL local variables
-            if stmt.is_kill_all:
-                return True
-            # Selective kill: check if loop var is in targets
-            for target in stmt.targets:
-                if isinstance(target, MVariable):
-                    if target.name == var_name:
-                        return True
-                elif isinstance(target, str):
-                    if target == var_name:
-                        return True
+        if statement_modifies_variable(stmt, var_name):
+            return True
 
         # Recurse into nested scopes using type-safe helpers
         then_scope = get_then_scope(stmt)

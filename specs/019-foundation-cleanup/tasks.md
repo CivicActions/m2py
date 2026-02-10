@@ -51,23 +51,23 @@
 **Files touched**: asg/elements.py, analysis/variables.py, analysis/semantic_analyzer.py, analysis/for_analysis.py, codegen/shared_state.py, codegen/expressions.py, codegen/indirection.py — NO overlap with Phase 4.
 
 ### C-06: Exclusive KILL/NEW Detection
-- [ ] T020 [US4] Add has_exclusive_kill and has_exclusive_new fields (default False) to MRoutine in src/m2py/asg/elements.py
-- [ ] T021 [US4] Add _routine_has_exclusive_kill and _routine_has_exclusive_new detection functions in src/m2py/analysis/variables.py; set flags alongside existing flag-setting code (~L188)
-- [ ] T022 [US4] Update routine_uses_dynamic_locals predicate in src/m2py/codegen/shared_state.py to include has_exclusive_kill and has_exclusive_new
+- [x] T020 [US4] Add has_exclusive_kill and has_exclusive_new fields (default False) to MRoutine in src/m2py/asg/elements.py
+- [x] T021 [US4] Add _routine_has_exclusive_kill and _routine_has_exclusive_new detection functions in src/m2py/analysis/variables.py; set flags alongside existing flag-setting code (~L188)
+- [x] T022 [US4] Update routine_uses_dynamic_locals predicate in src/m2py/codegen/shared_state.py to include has_exclusive_kill and has_exclusive_new
 
 ### Quick Wins
-- [ ] T023 [P] [US4] Remove dead generate_xecute_constant (L1403) and generate_xecute_dynamic (L1426) stubs from src/m2py/codegen/indirection.py (S-18)
+- [x] T023 [P] [US4] Remove dead generate_xecute_constant (L1403) and generate_xecute_dynamic (L1426) stubs from src/m2py/codegen/indirection.py (S-18)
 
 ### Analysis Deduplication
-- [ ] T024 [US4] Deduplicate _analyze_KillCommand, _analyze_KSubscriptsCommand, _analyze_KValueCommand, _analyze_ZKillCommand, _analyze_ZWithdrawCommand via shared _analyze_kill_like helper in src/m2py/analysis/semantic_analyzer.py (S-08)
-- [ ] T025 [US4] Deduplicate DO/GOTO/JOB argument iteration via shared _analyze_call_arguments helper in src/m2py/analysis/semantic_analyzer.py (S-09)
-- [ ] T026 [US4] Add assertion to unwrap_expression for non-empty operator tails in src/m2py/analysis/semantic_analyzer.py (S-15)
+- [x] T024 [US4] Deduplicate _analyze_KillCommand, _analyze_KSubscriptsCommand, _analyze_KValueCommand, _analyze_ZKillCommand, _analyze_ZWithdrawCommand via shared _analyze_kill_like helper in src/m2py/analysis/semantic_analyzer.py (S-08)
+- [x] T025 [US4] Deduplicate DO/GOTO/JOB argument iteration via shared _analyze_call_arguments helper in src/m2py/analysis/semantic_analyzer.py (S-09)
+- [x] T026 [US4] Add assertion to unwrap_expression for non-empty operator tails in src/m2py/analysis/semantic_analyzer.py (S-15)
 
 ### Analysis Infrastructure
-- [ ] T027 [US4] Delegate _check_var_modified_in_scope to variables.py write-detection infrastructure in src/m2py/analysis/for_analysis.py (S-20)
-- [ ] T028 [US4] Move contains_naked_global from src/m2py/codegen/expressions.py to src/m2py/analysis/variables.py; compute during semantic analysis and store as _has_naked_global ASG annotation; update codegen to read annotation (C-08)
-- [ ] T029 [P] [US4] Add/Update tests for exclusive KILL/NEW detection and analysis helpers in tests/unit/analysis/
-- [ ] T030 [US4] Run uv run pytest and verify zero failures
+- [x] T027 [US4] Delegate _check_var_modified_in_scope to variables.py write-detection infrastructure in src/m2py/analysis/for_analysis.py (S-20)
+- [x] T028 [US4] Move contains_naked_global from src/m2py/codegen/expressions.py to src/m2py/analysis/variables.py; compute during semantic analysis and store as _has_naked_global ASG annotation; update codegen to read annotation (C-08)
+- [x] T029 [P] [US4] Add/Update tests for exclusive KILL/NEW detection and analysis helpers in tests/unit/analysis/
+- [x] T030 [US4] Run uv run pytest and verify zero failures
 
 **Checkpoint**: Exclusive KILL/NEW routines compile under TRAMPOLINE. `contains_naked_global` no longer in codegen/expressions.py.
 
