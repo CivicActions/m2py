@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from m2py.runtime import MArray, _create_offset_entry_wrapper, GotoExternal
 
