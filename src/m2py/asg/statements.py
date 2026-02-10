@@ -39,6 +39,9 @@ class MStatement(ASGElement):
     scope: Optional[MScope] = field(default=None, repr=False)
     postcondition: Optional["MExpr"] = None
 
+    # Inline comment extracted during parsing (text after unquoted `;`)
+    comment: Optional[str] = None
+
     # Analysis flags
     is_unreachable: bool = False
 

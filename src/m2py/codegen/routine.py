@@ -1177,11 +1177,18 @@ class RoutineGenerator:
             # The wrapper passes formal params as positional args to the internal
             # function, but the body reads variables from state._locals dict.
             # Without this, the initial parameter value is lost.
+            # If param is an MArray (by-ref), alias it directly for
+            # DATA-CELL semantics. Otherwise wrap the value in a new MArray.
             if ctx.uses_dynamic_locals and formal_params:
                 for param in formal_params:
-                    ctx.emitter.line(
-                        f"state._locals.setdefault({param!r}, MArray()).value = {param}"
-                    )
+                    ctx.emitter.line(f"if isinstance({param}, MArray):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(f"state._locals[{param!r}] = {param}")
+                    ctx.emitter.line("else:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            f"state._locals.setdefault({param!r}, MArray()).value = {param}"
+                        )
 
             # Get label line number for offset calculation
             label_line = label.line_number

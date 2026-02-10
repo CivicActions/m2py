@@ -163,7 +163,7 @@ tests/
 │   └── asg/
 │       └── test_lock_target.py       # NEW: S-16 MLockTarget tests
 ├── integration/
-│   ├── test_byref_unification.py     # NEW: C-07 regression tests
+│   ├── test_byref.py                 # NEW: by-ref MArray aliasing tests
 │   └── test_zwrite_ranges.py         # NEW: C-09 regression tests
 └── functional/                       # Existing: 5,883 tests unchanged
 ```

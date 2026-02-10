@@ -254,6 +254,14 @@ class MRoutine(ASGElement):
     # External GOTOs need all local variables synced to _scope for MUMPS semantics
     has_external_gotos: bool = False
 
+    # True if any label in the routine has by-ref formal parameters (byref_outputs)
+    # Requires dynamic_locals in TRAMPOLINE mode so MArray aliasing works correctly
+    has_byref_params: bool = False
+
+    # True if any DO call in the routine passes arguments by-reference (.X)
+    # The calling routine needs dynamic_locals so its state._locals holds MArrays
+    has_byref_calls: bool = False
+
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.
 

@@ -1274,16 +1274,26 @@ def compute_all_signatures(
 
     # Compute signatures
     signatures = {}
+    has_any_byref = False
     for label in routine.labels:
         scope_vars = label_vars.get(label.name, ScopeVariables())
         sig = compute_function_signature(label, scope_vars)
         signatures[label.name] = sig
+        if sig.byref_outputs:
+            has_any_byref = True
 
         # Store on label for easy access
         if not hasattr(label, "signature"):
             object.__setattr__(label, "signature", sig)
         else:
             label.signature = sig
+
+    # Set has_byref_params flag on routine for dynamic_locals forcing
+    routine.has_byref_params = has_any_byref
+
+    # Detect by-ref calls: if any DO passes arguments by-reference (.X),
+    # the calling routine needs dynamic_locals so state._locals holds MArrays.
+    routine.has_byref_calls = _routine_has_byref_calls(routine)
 
     # Spec 006 (T039a): Compute routine_state_vars - variables needing RoutineState fields
     # These are variables that flow between labels (output from one, input to another)
@@ -1348,6 +1358,25 @@ def _compute_routine_state_vars(
     # Include: (regular outputs + newed_and_written + formal_params) intersected with inputs
     all_potential_outputs = all_outputs | newed_and_written | formal_params
     return all_potential_outputs & all_inputs
+
+
+def _routine_has_byref_calls(routine: MRoutine) -> bool:
+    """Check if any DO call in the routine passes arguments by-reference (.X).
+
+    When a routine has by-ref calls, its TRAMPOLINE mode needs dynamic_locals
+    so state._locals exists for passing MArray objects to callees.
+    """
+    from m2py.asg.statements import MDoStatement
+    from m2py.asg.enums import PassingMode
+
+    for label in routine.labels:
+        for stmt in label.body.walk_statements():
+            if isinstance(stmt, MDoStatement):
+                for call in stmt.targets:
+                    for arg in call.arguments:
+                        if arg.passing_mode == PassingMode.BY_REFERENCE:
+                            return True
+    return False
 
 
 def _compute_array_vars(routine: MRoutine) -> Set[str]:

@@ -132,3 +132,28 @@ def parse_commands_from_line(
     if hasattr(result, "commands") and result.commands:
         return [lc.cmd for lc in result.commands]
     return []
+
+
+def extract_comment(source_line: str) -> str:
+    """Extract comment text from a MUMPS source line.
+
+    Finds the first semicolon not inside a string literal and returns
+    the text after it (stripped of leading/trailing whitespace).
+
+    MUMPS comments start with an unquoted semicolon (;). Semicolons
+    inside quoted strings ("hello;world") are NOT comment delimiters.
+
+    Args:
+        source_line: Original MUMPS source line
+
+    Returns:
+        Comment text without the leading semicolon, or empty string if no comment
+    """
+    in_string = False
+    for i, char in enumerate(source_line):
+        if char == '"':
+            in_string = not in_string
+        elif char == ";" and not in_string:
+            # Found unquoted semicolon - rest is comment
+            return source_line[i + 1 :].strip()
+    return ""

@@ -238,29 +238,29 @@
 
 ### Implementation for User Story 9
 
-- [ ] T060 [US9] Add `comment: Optional[str] = None` field to `MStatement` in `src/m2py/asg/statements.py` per `data-model.md`
-- [ ] T061 [US9] Implement comment extraction in `src/m2py/parser/textx_classes.py` (or `src/m2py/parser/line_parser.py`): after converting a textX command to an MStatement, scan for unquoted `;` in the source line and populate `stmt.comment`. Handle edge case: semicolons inside quoted strings must NOT be treated as comments.
-- [ ] T062 [US9] Write tests for comment extraction covering: `SET X=1 ; comment` → comment="comment", `WRITE "hello;world"` → comment=None, line with no comment → comment=None
-- [ ] T063 [US9] Simplify `_emit_source_comment` in `src/m2py/codegen/statements.py` to read from `stmt.comment` instead of re-scanning source lines. Run `uv run pytest`.
-- [ ] T064 [US9] Verify identical comment output for a representative set of MUMPS routines. Run full test suite.
+- [x] T060 [US9] Add `comment: Optional[str] = None` field to `MStatement` in `src/m2py/asg/statements.py` per `data-model.md`
+- [x] T061 [US9] Implement comment extraction in `src/m2py/parser/textx_classes.py` (or `src/m2py/parser/line_parser.py`): after converting a textX command to an MStatement, scan for unquoted `;` in the source line and populate `stmt.comment`. Handle edge case: semicolons inside quoted strings must NOT be treated as comments.
+- [x] T062 [US9] Write tests for comment extraction covering: `SET X=1 ; comment` → comment="comment", `WRITE "hello;world"` → comment=None, line with no comment → comment=None
+- [x] T063 [US9] Simplify `_emit_source_comment` in `src/m2py/codegen/statements.py` to read from `stmt.comment` instead of re-scanning source lines. Run `uv run pytest`.
+- [x] T064 [US9] Verify identical comment output for a representative set of MUMPS routines. Run full test suite.
 
 **Checkpoint**: US9 complete. Comments flow through ASG, codegen reads them. All tests pass.
 
 ---
 
-## Phase 14: User Story 10 — By-Reference Call Unification (Priority: P3) — Track A Step 9
+## Phase 14: User Story 10 — By-Reference MArray Aliasing (Priority: P3) — Track A Step 9
 
-**Goal**: Unify TRAMPOLINE and SIMPLE_FUNCTIONS by-ref handling to use MArray aliasing (DATA-CELL semantics) ([spec.md US10](spec.md), [plan.md A9](plan.md))
+**Goal**: Both TRAMPOLINE and SIMPLE_FUNCTIONS use MArray aliasing for by-ref (DATA-CELL semantics) ([spec.md US10](spec.md), [plan.md A9](plan.md))
 
 **Independent Test**: By-ref parameter mutations visible to callers under both strategies, including error scenarios and descendant modifications. Compare against YDB.
 
 ### Implementation for User Story 10
 
-- [ ] T065 [US10] Modify `src/m2py/analysis/semantic_analyzer.py`: when a routine declares by-reference formal parameters, force `uses_dynamic_locals=True`. This ensures dict-based access for MArray aliasing.
-- [ ] T066 [US10] Write regression tests in `tests/integration/test_byref_unification.py` covering: basic by-ref modification, multiple by-ref params, by-ref with descendants (SET/KILL visibility), $DATA reflection, error-case mutation preservation, unmodified by-ref parameter (callee receives `.X` but never modifies it — verify no behavioral change or overhead)
-- [ ] T067 [US10] Rewrite TRAMPOLINE by-ref code path in `src/m2py/codegen/statements.py` (~L4490-4530) to use MArray aliasing: pass `state._locals.setdefault(var, MArray())` directly instead of destructuring return tuples. Run `uv run pytest`.
-- [ ] T068 [US10] Validate by-ref scenarios against YDB using `uv run python utils/validate.py` for: basic mutation, descendant visibility, $DATA, error-case preservation. Run full test suite.
-- [ ] T069 [US10] Verify both strategies produce identical by-ref semantics. Clean up any dead value-result code. Run full test suite.
+- [x] T065 [US10] Modify `src/m2py/analysis/semantic_analyzer.py`: when a routine declares by-reference formal parameters, force `uses_dynamic_locals=True`. This ensures dict-based access for MArray aliasing.
+- [x] T066 [US10] Write regression tests in `tests/integration/test_byref.py` covering: basic by-ref modification, multiple by-ref params, by-ref with descendants (SET/KILL visibility), $DATA reflection, error-case mutation preservation, unmodified by-ref parameter (callee receives `.X` but never modifies it — verify no behavioral change or overhead)
+- [x] T067 [US10] Rewrite TRAMPOLINE by-ref code path in `src/m2py/codegen/statements.py` (~L4490-4530) to use MArray aliasing: pass `state._locals.setdefault(var, MArray())` directly instead of destructuring return tuples. Run `uv run pytest`.
+- [x] T068 [US10] Validate by-ref scenarios against YDB using `uv run python utils/validate.py` for: basic mutation, descendant visibility, $DATA, error-case preservation. Run full test suite.
+- [x] T069 [US10] Verify both strategies produce identical by-ref semantics. Clean up any dead value-result code. Run full test suite.
 
 **Checkpoint**: US10 complete. Both strategies use MArray aliasing. DATA-CELL semantics match YDB. All tests pass.
 

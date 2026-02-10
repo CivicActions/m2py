@@ -11,6 +11,7 @@ from textx import metamodel_from_file
 from textx.exceptions import TextXSyntaxError
 
 from m2py.parser.line_parser import (
+    extract_comment,
     parse_commands_from_line,
     parse_line_content,
 )
@@ -699,6 +700,11 @@ class MUMPSParser:
             ]
             # Structure with proper control flow nesting
             structured_statements = _structure_commands_with_bodies(flat_statements)
+            # Extract inline comment from source and attach to first statement
+            if structured_statements:
+                comment = extract_comment(rest)
+                if comment:
+                    structured_statements[0].comment = comment
             for stmt in structured_statements:
                 stmt.scope = label.body
                 # Track source line number for GOTO analysis and error reporting
@@ -786,6 +792,11 @@ class MUMPSParser:
             ]
             # Structure with proper control flow nesting
             structured_statements = _structure_commands_with_bodies(flat_statements)
+            # Extract inline comment from source and attach to first statement
+            if structured_statements and label._line_rest:
+                comment = extract_comment(label._line_rest)
+                if comment:
+                    structured_statements[0].comment = comment
             for stmt in structured_statements:
                 stmt.scope = label.body
                 # Track source line number for GOTO analysis and error reporting

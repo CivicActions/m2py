@@ -234,55 +234,15 @@ def _emit_goto_external_handler(ctx: "GeneratorContext") -> None:
 def _emit_source_comment(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     """Emit MUMPS inline comment as Python comment if present.
 
-    Spec 014 (T067): Preserves MUMPS comments in generated Python code.
-    Looks up the source line for the statement and extracts any inline
-    comment (text after `;`).
+    Reads the pre-extracted comment from stmt.comment (populated during
+    parsing by the parser module).
 
     Args:
-        stmt: ASG statement node with line_number
-        ctx: Generator context with routine.source_lines
+        stmt: ASG statement node with optional comment field
+        ctx: Generator context with emitter
     """
-    # Skip if no line number or no source lines
-    if stmt.line_number is None:
-        return
-    source_lines = ctx.routine.source_lines
-    if not source_lines:
-        return
-
-    # Get the source line (1-indexed)
-    line_idx = stmt.line_number - 1
-    if line_idx < 0 or line_idx >= len(source_lines):
-        return
-
-    source_line = source_lines[line_idx]
-
-    # Extract comment if present (everything after unquoted semicolon)
-    comment = _extract_comment(source_line)
-    if comment:
-        ctx.emitter.line(f"# {comment}")
-
-
-def _extract_comment(source_line: str) -> str:
-    """Extract comment text from a MUMPS source line.
-
-    Finds the first semicolon not inside a string literal and returns
-    the text after it (stripped of leading/trailing whitespace).
-
-    Args:
-        source_line: Original MUMPS source line
-
-    Returns:
-        Comment text without the leading semicolon, or empty string if no comment
-    """
-    in_string = False
-    for i, char in enumerate(source_line):
-        if char == '"':
-            in_string = not in_string
-        elif char == ";" and not in_string:
-            # Found unquoted semicolon - rest is comment
-            comment_text = source_line[i + 1 :].strip()
-            return comment_text
-    return ""
+    if stmt.comment:
+        ctx.emitter.line(f"# {stmt.comment}")
 
 
 # =============================================================================
@@ -1925,19 +1885,16 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         and ctx.current_label.signature
         and ctx.current_label.signature.byref_outputs
     ):
-        # Return ALL formal params in order (for consistent tuple unpacking)
-        # The _byref list at the call site has entries for all actual params,
-        # so the return tuple must include all formal params to align positions.
-        formal_params = ctx.current_label.signature.formal_params
-        # T084: For SIMPLE_FUNCTIONS, return from _scope; for TRAMPOLINE, use local vars
-        # Spec 009 (T021): Use MArray.value for consistency
+        # For TRAMPOLINE, by-ref uses MArray aliasing — mutations are
+        # already visible through the shared MArray reference, so we just
+        # fall through to the normal return (None, state) below.
+        # For SIMPLE_FUNCTIONS, return values from _scope.
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            formal_params = ctx.current_label.signature.formal_params
             return_exprs = [f"_scope.get({p!r}, MArray()).value" for p in formal_params]
-        else:
-            return_exprs = [translate_name(p) for p in formal_params]
-        if return_exprs:
-            ctx.emitter.line(f"return {', '.join(return_exprs)}")
-            return
+            if return_exprs:
+                ctx.emitter.line(f"return {', '.join(return_exprs)}")
+                return
 
     # Spec 006: Trampoline pattern - return (None, state) to signal exit
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
@@ -4393,44 +4350,29 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         ctx.emitter.line(call_expr)
 
     elif has_byref_args:
-        # TRAMPOLINE by-ref: fall back to value-result approach
-        # Check callee signature for return tuple handling
-        callee_signature = None
-        if hasattr(target, "target") and target.target:
-            callee_label = target.target
-            if hasattr(callee_label, "signature") and callee_label.signature:
-                callee_signature = callee_label.signature
-        if callee_signature and callee_signature.byref_outputs:
-            formal_params = callee_signature.formal_params
-            byref_outputs = callee_signature.byref_outputs
-            return_vars = []
-            for i, formal_name in enumerate(formal_params):
-                if formal_name in byref_outputs and i < len(actual_args):
-                    actual = actual_args[i]
-                    if (
-                        actual.passing_mode == PassingMode.BY_REFERENCE
-                        and actual.variable_name
-                    ):
-                        return_vars.append(translate_name(actual.variable_name))
-            if return_vars:
-                if args:
-                    call_expr = f"{label_name}(_rt, {args}, _scope=_scope)"
-                else:
-                    call_expr = f"{label_name}(_rt, _scope=_scope)"
-                lhs = ", ".join(return_vars)
-                ctx.emitter.line(f"{lhs} = {call_expr}")
-            else:
-                # No matchable byref outputs, just call normally
-                if args:
-                    ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
-                else:
-                    ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+        # TRAMPOLINE by-ref: pass MArray from state._locals for aliasing.
+        # In TRAMPOLINE, variables live in state._locals, NOT _scope.
+        # We pass the MArray from state._locals so the callee aliases
+        # the same object the caller reads/writes from.
+        new_arg_parts = []
+        for arg_node in actual_args:
+            if (
+                arg_node.passing_mode == PassingMode.BY_REFERENCE
+                and arg_node.variable_name
+            ):
+                actual_var = arg_node.variable_name
+                new_arg_parts.append(
+                    f"state._locals.setdefault({actual_var!r}, MArray())"
+                )
+            elif arg_node.expression is not None:
+                new_arg_parts.append(generate_expr(arg_node.expression, ctx))
+        byref_args = ", ".join(new_arg_parts)
+
+        if byref_args:
+            call_expr = f"{label_name}(_rt, {byref_args}, _scope=_scope)"
         else:
-            # No callee signature, just call normally
-            if args:
-                ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
-            else:
-                ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+            call_expr = f"{label_name}(_rt, _scope=_scope)"
+        ctx.emitter.line(call_expr)
     else:
         # T079: No by-ref params at call site - just call with _rt
         # T084: Pass _scope for cross-routine variable visibility
