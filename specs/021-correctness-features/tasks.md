@@ -117,16 +117,16 @@
 
 ### Tests for User Story 5
 
-- [ ] T036 [P] [US5] Write unit tests for lock_indirected() runtime method in tests/unit/runtime/test_lock_indirection.py — basic resolve, multi-level, timeout+$TEST, +/- forms
-- [ ] T037 [P] [US5] Write codegen tests for generate_lock_indirection() in tests/unit/codegen/test_lock_indirection.py — verify emitted Python code
-- [ ] T113 [P] [US5] Write integration test transpiling LOCK indirection routines and comparing against YDB in tests/integration/test_lock_indirection.py
+- [X] T036 [P] [US5] Write unit tests for lock_indirected() runtime method in tests/unit/runtime/test_lock_indirection.py — basic resolve, multi-level, timeout+$TEST, +/- forms
+- [X] T037 [P] [US5] Write codegen tests for generate_lock_indirection() in tests/unit/codegen/test_lock_indirection.py — verify emitted Python code
+- [X] T113 [P] [US5] Write integration test transpiling LOCK indirection routines and comparing against YDB in tests/integration/test_lock_indirection.py
 
 ### Implementation for User Story 5
 
-- [ ] T038 [US5] Implement generate_lock_indirection() in src/m2py/codegen/indirection.py following existing indirection generator pattern
-- [ ] T039 [US5] Implement lock_indirected() runtime method in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — parse name, resolve indirection, delegate to lock()/unlock()
-- [ ] T040 [US5] Wire _generate_lock_target() in src/m2py/codegen/statements.py to emit _rt.lock_indirected() call when lock_target.is_indirect is True, replacing the silent comment at L5327-5330
-- [ ] T041 [US5] Support multi-level indirection, timeout with $TEST update, and +/- lock forms in lock_indirected()
+- [X] T038 [US5] Implement generate_lock_indirection() in src/m2py/codegen/indirection.py following existing indirection generator pattern
+- [X] T039 [US5] Implement lock_indirected() runtime method in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — parse name, resolve indirection, delegate to lock()/unlock()
+- [X] T040 [US5] Wire _generate_lock_target() in src/m2py/codegen/statements.py to emit _rt.lock_indirected() call when lock_target.is_indirect is True, replacing the silent comment at L5327-5330
+- [X] T041 [US5] Support multi-level indirection, timeout with $TEST update, and +/- lock forms in lock_indirected()
 
 **Checkpoint**: LOCK indirection works end-to-end. `L +@X:0` sets $TEST correctly.
 

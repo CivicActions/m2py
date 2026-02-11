@@ -1114,6 +1114,49 @@ def generate_increment_indirection(
     )
 
 
+def generate_lock_indirection(
+    lock_expr: str,
+    lockop: str,
+    timeout_expr: "str | None",
+    subscripts_expr: "str | None",
+    levels: int = 1,
+) -> str:
+    """Generate Python code for an indirected LOCK target.
+
+    Spec 021-correctness-features Phase 6 (T038):
+    Follows the same pattern as other indirection generators.
+
+    Args:
+        lock_expr: Python expression for the indirection source variable name
+        lockop: Lock operation: "", "+", "-"
+        timeout_expr: Optional Python expression for timeout value
+        subscripts_expr: Optional Python expression for per-level subscripts
+        levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+
+    Returns:
+        Python code string that calls _rt.lock_indirected()
+    """
+    parts = [f"_rt.lock_indirected({lock_expr}, _scope"]
+
+    # Add lockop
+    parts.append(f', lockop="{lockop}"')
+
+    # Add optional timeout
+    if timeout_expr is not None:
+        parts.append(f", timeout={timeout_expr}")
+
+    # Add levels if > 1
+    if levels > 1:
+        parts.append(f", levels={levels}")
+
+    # Add subscripts if present
+    if subscripts_expr is not None:
+        parts.append(f", per_level_subscripts={subscripts_expr}")
+
+    parts.append(")")
+    return "".join(parts)
+
+
 __all__ = [
     "generate_name_indirection",
     "generate_argument_indirection",
@@ -1128,4 +1171,5 @@ __all__ = [
     "generate_indirect_do",
     "generate_indirect_goto",
     "generate_set_argument_indirection",
+    "generate_lock_indirection",
 ]

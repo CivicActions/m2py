@@ -49,6 +49,7 @@ from m2py.asg.statements import (
     MKSubscriptsStatement,
     MKValueStatement,
     MLockStatement,
+    MLockTarget,
     MMergeStatement,
     MNewStatement,
     MOpenStatement,
@@ -5332,13 +5333,15 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
         lock_type = target_lockop if target_lockop else stmt_lock_type
         # For exclusive lock, use "+" since we already released all above
         if lock_type == "":
-            lock_type = "+"
+            effective_lockop = "+"
+        else:
+            effective_lockop = lock_type
 
         # Handle indirection
         if lock_target.is_indirect:
-            # Indirection - need runtime resolution
-            # For now, emit a comment about unsupported feature
-            ctx.emitter.line("# LOCK indirection not yet supported")
+            # Spec 021-correctness-features Phase 6 (T040):
+            # Generate code for LOCK indirection using lock_indirected()
+            _generate_lock_indirection_call(lock_target, stmt, effective_lockop, ctx)
             continue
 
         # Get the name from the MLockTarget
@@ -5368,7 +5371,7 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
         if timeout_expr is not None:
             # Timed lock - sets $TEST
             timeout_val = generate_expr(timeout_expr, ctx)
-            if lock_type == "-":
+            if effective_lockop == "-":
                 # LOCK -name:timeout always sets $TEST to 1
                 ctx.emitter.line(
                     f'_rt.globals.lock("{name}", {subs_str}, lock_type="-")'
@@ -5379,14 +5382,112 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
                 # LOCK +name:timeout sets $TEST based on success/timeout
                 ctx.emitter.line(
                     f'_test = _rt.globals.lock("{name}", {subs_str}, '
-                    f'timeout={timeout_val}, lock_type="{lock_type}")'
+                    f'timeout={timeout_val}, lock_type="{effective_lockop}")'
                 )
                 ctx.emitter.line("_rt._test = _test")
         else:
             # Untimed lock - does NOT modify $TEST
             ctx.emitter.line(
-                f'_rt.globals.lock("{name}", {subs_str}, lock_type="{lock_type}")'
+                f'_rt.globals.lock("{name}", {subs_str}, lock_type="{effective_lockop}")'
             )
+
+
+def _generate_lock_indirection_call(
+    lock_target: "MLockTarget",
+    stmt: "MLockStatement",
+    lockop: str,
+    ctx: "GeneratorContext",
+) -> None:
+    """Generate code for LOCK indirection target.
+
+    Spec 021-correctness-features Phase 6 (T040):
+    Emits _rt.lock_indirected() call for @NAME lock targets.
+
+    Args:
+        lock_target: MLockTarget with is_indirect=True
+        stmt: Parent MLockStatement (for statement-level timeout)
+        lockop: Effective lock operation ("", "+", "-")
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.asg.expressions import MVariable
+    from m2py.codegen.indirection import (
+        _count_indirection_levels_with_subscripts,
+        generate_lock_indirection,
+    )
+    from m2py.parser.textx_classes import GlobalVariable
+
+    ind = lock_target.indirection
+    if ind is None:
+        ctx.emitter.line("# LOCK indirection: missing indirection expression")
+        return
+
+    # Ensure we have an indirection expression
+    if not isinstance(ind, MIndirectionType):
+        ctx.emitter.line(
+            f"# LOCK indirection: expected MIndirection, got {type(ind).__name__}"
+        )
+        return
+
+    # Count indirection levels and get inner expression
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(ind)
+
+    # Build source expression
+    if isinstance(inner_expr, MVariable):
+        source_name = inner_expr.name
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f'"{source_name}(" + ",".join(_format_subscript(s) for s in '
+                f'[{subs_str}]) + ")"'
+            )
+        else:
+            source_expr = f'"{source_name}"'
+    elif isinstance(inner_expr, GlobalVariable):
+        source_name = f"^{inner_expr.name}"
+        if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f'"{source_name}(" + ",".join(_format_subscript(s) for s in '
+                f'[{subs_str}]) + ")"'
+            )
+        else:
+            source_expr = f'"{source_name}"'
+    else:
+        # Complex expression - evaluate to get source string
+        source_expr = f"str({generate_expr(inner_expr, ctx)})"
+
+    # Build per-level subscripts if present
+    if all_subscripts and any(all_subscripts):
+        per_level_subs = []
+        for sub_list in all_subscripts:
+            if sub_list:
+                sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+            else:
+                per_level_subs.append("[]")
+        subscripts_expr = f"[{', '.join(per_level_subs)}]"
+    else:
+        subscripts_expr = None
+
+    # Get timeout from target or statement
+    timeout_expr = lock_target.timeout
+    if timeout_expr is None and stmt.timeout is not None:
+        timeout_expr = stmt.timeout
+
+    timeout_val = generate_expr(timeout_expr, ctx) if timeout_expr else None
+
+    # Generate the lock_indirected call
+    code = generate_lock_indirection(
+        lock_expr=source_expr,
+        lockop=lockop,
+        timeout_expr=timeout_val,
+        subscripts_expr=subscripts_expr,
+        levels=levels,
+    )
+    ctx.emitter.line(code)
 
 
 # =============================================================================

@@ -3936,6 +3936,92 @@ class MUMPSRuntime:
         array = _scope.get(python_name)
         return m_increment(array, subs, increment, _scope, python_name)
 
+    def lock_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        lockop: str = "+",
+        timeout: Optional[float] = None,
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> None:
+        """Resolve an indirected lock name and acquire/release the lock.
+
+        Spec 021-correctness-features Phase 6 (T039, T041):
+        Parses the name expression (may contain subscripts), resolves
+        through multiple indirection levels if needed, and delegates to
+        the existing lock()/unlock() methods in globals.
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X)
+            _scope: Current scope dictionary
+            lockop: Lock operation - "" (exclusive), "+" (incremental), "-" (release)
+            timeout: Optional timeout in seconds. Sets $TEST on timeout.
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Behavior:
+            - lockop="": Exclusive lock - releases all existing locks first,
+              then acquires the new lock
+            - lockop="+": Incremental lock - adds to existing locks
+            - lockop="-": Release - decrements lock count
+
+            Timeout handling:
+            - If timeout is specified, $TEST is set to 1 on success, 0 on timeout
+            - If no timeout, $TEST is not modified
+            - LOCK - with timeout always sets $TEST=1 (unlock never fails)
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        # Create unified scope and resolver
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        # Resolve to get target variable NAME (the lock target)
+        target = resolver.resolve_to_name(
+            source, levels=levels, per_level_subscripts=per_level_subscripts
+        )
+
+        # Parse the target to get name and subscripts
+        # Target can be: "GLO", "^GLO", "^GLO(1,2)", "A(1,2)"
+        if target.startswith("^"):
+            # Global name - strip the caret for lock table
+            name_part = target[1:]
+        else:
+            name_part = target
+
+        # Parse subscripts from name_part
+        base_name, subscripts = _parse_subscripted_name(name_part)
+        subs = tuple(str(s) for s in subscripts) if subscripts else ()
+
+        # For exclusive lock (no + or -), release all locks first
+        if lockop == "":
+            self.globals.unlock_all()
+            # After releasing all, we acquire with "+"
+            effective_lockop = "+"
+        else:
+            effective_lockop = lockop
+
+        # Perform the lock operation
+        if effective_lockop == "-":
+            # Release lock
+            self.globals.lock(base_name, subs, lock_type="-")
+            # LOCK - with timeout always succeeds
+            if timeout is not None:
+                self._test = True
+        else:
+            # Acquire lock
+            if timeout is not None:
+                # Timed lock - sets $TEST
+                result = self.globals.lock(
+                    base_name, subs, timeout=timeout, lock_type=effective_lockop
+                )
+                self._test = result
+            else:
+                # Untimed lock - does NOT modify $TEST
+                self.globals.lock(base_name, subs, lock_type=effective_lockop)
+
     def get_indirected_marray(
         self,
         source: str,
