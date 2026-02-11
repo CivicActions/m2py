@@ -94,7 +94,8 @@ MATH_FUNCTIONS_IMPLEMENTED: frozenset[str] = frozenset(
 # YDB Z-functions with zero VistA usage (LIM-015)
 # These are implementation-defined per FR-017 and parsed but not implemented.
 # Codegen raises NotImplementedError for these functions.
-Z_FUNCTIONS_UNIMPLEMENTED: frozenset[str] = frozenset({"ZDATE", "ZMESSAGE", "ZWIDTH"})
+# Note: ZDATE was removed from this set in Spec 021 Phase 10 (now implemented)
+Z_FUNCTIONS_UNIMPLEMENTED: frozenset[str] = frozenset({"ZMESSAGE", "ZWIDTH"})
 
 
 # =============================================================================
@@ -2261,6 +2262,68 @@ INTRINSIC_GENERATORS["FN"] = _gen_fnumber
 INTRINSIC_GENERATORS["FNUMBER"] = _gen_fnumber
 INTRINSIC_GENERATORS["RE"] = _gen_reverse
 INTRINSIC_GENERATORS["REVERSE"] = _gen_reverse
+
+
+# =============================================================================
+# Spec 021 Phase 10: $ZDATE function (User Story 8)
+# =============================================================================
+
+
+def _gen_zdate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZDATE/$ZD function.
+
+    Spec 021 Phase 10 (User Story 8): $ZDATE formats $HOROLOG values into
+    human-readable date/time strings.
+
+    $ZDATE(horolog[,format[,months[,days]]]):
+    - horolog: $HOROLOG value (days or days,seconds)
+    - format: Format string (default "MM/DD/YY")
+    - months: Comma-separated custom month names
+    - days: Comma-separated custom day names
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1-4 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling _rt_helpers.m_zdate()
+
+    Examples:
+        $ZD(66337) → "08/16/22"
+        $ZD(66337,"YYYY-MM-DD") → "2022-08-16"
+        $ZD("66337,45296","24:60:SS") → "12:34:56"
+    """
+    args = getattr(expr, "arguments", [])
+    if not args:
+        # No arguments - return empty string
+        return '""'
+
+    horolog_expr = generate_expr(args[0], ctx)
+
+    if len(args) == 1:
+        # $ZD(horolog) - default format
+        return f"m_zdate(m_str({horolog_expr}))"
+    elif len(args) == 2:
+        # $ZD(horolog, format)
+        fmt_expr = generate_expr(args[1], ctx)
+        return f"m_zdate(m_str({horolog_expr}), m_str({fmt_expr}))"
+    elif len(args) == 3:
+        # $ZD(horolog, format, months)
+        fmt_expr = generate_expr(args[1], ctx)
+        months_expr = generate_expr(args[2], ctx)
+        return (
+            f"m_zdate(m_str({horolog_expr}), m_str({fmt_expr}), m_str({months_expr}))"
+        )
+    else:
+        # $ZD(horolog, format, months, days)
+        fmt_expr = generate_expr(args[1], ctx)
+        months_expr = generate_expr(args[2], ctx)
+        days_expr = generate_expr(args[3], ctx)
+        return f"m_zdate(m_str({horolog_expr}), m_str({fmt_expr}), m_str({months_expr}), m_str({days_expr}))"
+
+
+INTRINSIC_GENERATORS["ZD"] = _gen_zdate
+INTRINSIC_GENERATORS["ZDATE"] = _gen_zdate
 
 # $TEXT (Spec 008, migrated to dispatch table for consistency)
 INTRINSIC_GENERATORS["T"] = _generate_text

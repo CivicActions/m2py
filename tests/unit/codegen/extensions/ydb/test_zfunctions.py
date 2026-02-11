@@ -3,6 +3,7 @@
 Reference: YottaDB implementation-defined $Z... functions
 These are implementation-defined per FR-017.
 Spec 014: Verify LIM-015 errors for unimplemented Z-functions.
+Spec 021 Phase 10: $ZDATE is now implemented.
 """
 
 import pytest
@@ -15,14 +16,14 @@ class TestZfunctionsCodegen:
     """Codegen-level tests for Z-functions (YDB implementation-defined).
 
     All Z-functions are implementation-defined per FR-017.
-    These tests verify that NotImplementedError is raised with LIM-015.
+    Some are implemented (like $ZDATE), others raise NotImplementedError with LIM-015.
     """
 
-    def test_zdate_raises_not_implemented(self):
-        """$ZDATE raises NotImplementedError with LIM-015."""
+    def test_zdate_generates_code(self):
+        """$ZDATE generates m_zdate() call (Spec 021 Phase 10)."""
         code = "TEST\n S X=$ZDATE(12345)\n Q"
-        with pytest.raises(NotImplementedError, match="LIM-015"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "m_zdate" in result
 
     def test_zmessage_function_raises_not_implemented(self):
         """$ZMESSAGE raises NotImplementedError with LIM-015."""

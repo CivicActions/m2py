@@ -1933,3 +1933,148 @@ def unwind_new_stack(state) -> None:
                 state._locals[name] = saved_value
             else:
                 state._locals.pop(name, None)
+
+
+# =============================================================================
+# $ZDATE Function Helper (Spec 021 Phase 10 - User Story 8)
+# =============================================================================
+
+# Default month names (uppercase, 3 chars) used when months arg is empty
+_ZDATE_DEFAULT_MONTHS = [
+    "JAN",
+    "FEB",
+    "MAR",
+    "APR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC",
+]
+
+# Default day names (uppercase, 3 chars) used when days arg is empty
+_ZDATE_DEFAULT_DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+
+
+def m_zdate(
+    horolog: str | int, fmt: str = "MM/DD/YY", months: str = "", days: str = ""
+) -> str:
+    """Format a $HOROLOG value into a human-readable date/time string.
+
+    Implements YDB's $ZDATE format codes (not IRIS numeric codes).
+
+    Args:
+        horolog: $HOROLOG string — either "days" or "days,seconds"
+        fmt: Format string using YDB codes (MM, DD, YY, YYYY, YEAR, MON, DAY,
+             24, 12, 60, SS, AM). Max 64 characters.
+        months: Optional comma-separated list of 12 month names
+        days: Optional comma-separated list of 7 day-of-week names
+
+    Returns:
+        Formatted date/time string
+
+    Examples:
+        m_zdate("66337") → "08/16/22"
+        m_zdate("66337", "YYYY-MM-DD") → "2022-08-16"
+        m_zdate("66337", "DD MON YEAR") → "16 AUG 2022"
+        m_zdate("66337,45296", "YYYY-MM-DD 24:60:SS") → "2022-08-16 12:34:56"
+    """
+    import datetime
+    import re
+
+    # Parse $HOROLOG string into days and optional seconds
+    horolog_str = str(horolog)
+    if "," in horolog_str:
+        parts = horolog_str.split(",", 1)
+        try:
+            day_num = int(parts[0])
+        except ValueError:
+            day_num = 0
+        try:
+            seconds = int(parts[1])
+        except ValueError:
+            seconds = 0
+    else:
+        try:
+            day_num = int(horolog_str)
+        except ValueError:
+            day_num = 0
+        seconds = 0
+
+    # $HOROLOG epoch is December 31, 1840
+    epoch = datetime.date(1840, 12, 31)
+    try:
+        dt = epoch + datetime.timedelta(days=day_num)
+    except (OverflowError, ValueError):
+        dt = epoch
+
+    # Parse custom month names if provided
+    if months:
+        month_list = months.split(",")
+    else:
+        month_list = _ZDATE_DEFAULT_MONTHS
+
+    # Parse custom day names if provided
+    if days:
+        day_list = days.split(",")
+    else:
+        day_list = _ZDATE_DEFAULT_DAYS
+
+    # Calculate time components from seconds
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+
+    # 12-hour format calculations
+    hour_12 = hours % 12
+    if hour_12 == 0:
+        hour_12 = 12
+    am_pm = "AM" if hours < 12 else "PM"
+
+    # Get month name
+    month_idx = dt.month - 1
+    if 0 <= month_idx < len(month_list):
+        month_name = month_list[month_idx]
+    else:
+        month_name = _ZDATE_DEFAULT_MONTHS[month_idx]
+
+    # Get day of week name
+    # Python weekday: Monday=0..Sunday=6; $H weekday: Sunday=0..Saturday=6
+    weekday_python = dt.weekday()  # Monday=0
+    weekday_mumps = (weekday_python + 1) % 7  # Convert to Sunday=0
+    if 0 <= weekday_mumps < len(day_list):
+        day_name = day_list[weekday_mumps]
+    else:
+        day_name = _ZDATE_DEFAULT_DAYS[weekday_mumps]
+
+    # Build format code to value mapping
+    # Order matters for regex - longer patterns must come first
+    codes = {
+        "YEAR": str(dt.year),
+        "YYYY": str(dt.year),
+        "MON": month_name,
+        "DAY": day_name,
+        "YY": f"{dt.year % 100:02d}",
+        "MM": f"{dt.month:02d}",
+        "DD": f"{dt.day:02d}",
+        "SS": f"{secs:02d}",
+        "AM": am_pm,
+        "60": f"{minutes:02d}",
+        "24": f"{hours:02d}",
+        "12": f"{hour_12:02d}",
+    }
+
+    # Build regex pattern matching all format codes
+    # Order: longest first to avoid partial matches (e.g., YYYY before YY)
+    pattern = "|".join(re.escape(code) for code in codes.keys())
+
+    # Replace all format codes in one pass using regex
+    def replace_code(match: re.Match) -> str:
+        return codes[match.group(0)]
+
+    result = re.sub(pattern, replace_code, fmt)
+
+    return result
