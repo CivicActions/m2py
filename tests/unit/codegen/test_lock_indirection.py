@@ -8,9 +8,6 @@ with the appropriate arguments for lock operations, timeouts, and
 multi-level indirection.
 """
 
-import pytest
-import re
-
 from m2py.codegen import generate_python
 
 
@@ -169,11 +166,9 @@ class TestLockIndirectionStmtLevelPattern:
         # Should have lock_indirected but NOT unlock_all (incremental add)
         lines = code.split("\n")
         # Find lines with lock operations
-        lock_lines = [l for l in lines if "lock_indirected" in l]
-        unlock_lines = [l for l in lines if "unlock_all" in l]
+        lock_lines = [line for line in lines if "lock_indirected" in line]
 
         # There should be lock but no unlock (for incremental)
         assert len(lock_lines) > 0
         # Incremental lock doesn't release all
         # (unlock_all may appear but only if exclusive lock at statement level)
-

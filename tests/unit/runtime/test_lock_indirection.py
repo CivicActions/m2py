@@ -12,8 +12,6 @@ the lock instead of silently skipping. Tests cover:
 - Subscript indirection (@A@(1,2))
 """
 
-import pytest
-
 from m2py.runtime import MUMPSRuntime, MArray
 
 

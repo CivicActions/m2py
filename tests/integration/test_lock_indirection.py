@@ -12,8 +12,6 @@ These tests verify that:
 5. Subscript indirection works (@A@(subs))
 """
 
-import pytest
-
 from m2py.codegen import generate_python
 from m2py.runtime import MUMPSRuntime
 
@@ -30,11 +28,11 @@ class TestLockIndirectionIntegration:
 
     def test_lock_indirection_basic(self):
         """L +@X where X="^GLO" acquires lock on ^GLO."""
-        mumps = '''TEST
+        mumps = """TEST
  S X="^GLO"
  L +@X
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         # Verify lock was acquired
@@ -42,12 +40,12 @@ class TestLockIndirectionIntegration:
 
     def test_lock_indirection_release(self):
         """L -@X releases the lock."""
-        mumps = '''TEST
+        mumps = """TEST
  S X="^GLO"
  L +@X
  L -@X
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         # Lock should be released
@@ -55,22 +53,22 @@ class TestLockIndirectionIntegration:
 
     def test_lock_indirection_with_subscripts_in_value(self):
         """L +@X where X="^GLO(1,2)" locks ^GLO(1,2)."""
-        mumps = '''TEST
+        mumps = """TEST
  S X="^GLO(1,2)"
  L +@X
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         assert ("GLO", ("1", "2")) in rt.globals._lock_table
 
     def test_lock_indirection_timeout_success(self):
         """L +@X:0 sets $TEST=1 on success."""
-        mumps = '''TEST
+        mumps = """TEST
  S X="^AVAIL"
  L +@X:0
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         # Lock acquired, $TEST should be 1
@@ -79,24 +77,24 @@ class TestLockIndirectionIntegration:
 
     def test_lock_multi_level_indirection(self):
         """L +@@A where A="B", B="^DEEP" locks ^DEEP."""
-        mumps = '''TEST
+        mumps = """TEST
  S A="B"
  S B="^DEEP"
  L +@@A
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         assert ("DEEP", ()) in rt.globals._lock_table
 
     def test_lock_indirection_exclusive_releases_all(self):
         """L @X (exclusive) releases existing locks first."""
-        mumps = '''TEST
+        mumps = """TEST
  L +^OLD
  S X="^NEW"
  L @X
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         # OLD should be released, NEW should be acquired
@@ -105,22 +103,22 @@ class TestLockIndirectionIntegration:
 
     def test_lock_indirection_local_name(self):
         """L +@X where X="LOCALVAR" locks local variable name."""
-        mumps = '''TEST
+        mumps = """TEST
  S X="LOCALVAR"
  L +@X
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         assert ("LOCALVAR", ()) in rt.globals._lock_table
 
     def test_lock_indirection_from_global_source(self):
         """L +@^CFG("LOCK") where ^CFG("LOCK")="^DATA" locks ^DATA."""
-        mumps = '''TEST
+        mumps = """TEST
  S ^CFG("LOCK")="^DATA"
  L +@^CFG("LOCK")
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         assert ("DATA", ()) in rt.globals._lock_table
@@ -138,22 +136,22 @@ class TestLockIndirectionSubscriptMerging:
 
     def test_subscript_indirection_appends(self):
         """L +@A@(1) where A="^GLO" locks ^GLO(1)."""
-        mumps = '''TEST
+        mumps = """TEST
  S A="^GLO"
  L +@A@(1)
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         assert ("GLO", ("1",)) in rt.globals._lock_table
 
     def test_subscript_indirection_merges(self):
         """L +@A@(3) where A="^GLO(1,2)" locks ^GLO(1,2,3)."""
-        mumps = '''TEST
+        mumps = """TEST
  S A="^GLO(1,2)"
  L +@A@(3)
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         assert ("GLO", ("1", "2", "3")) in rt.globals._lock_table
@@ -172,12 +170,12 @@ class TestLockIndirectionTestVariable:
     def test_untimed_lock_preserves_test(self):
         """L +@X (no timeout) does NOT change $TEST from a prior timed lock."""
         # First set up $TEST to false via a failing IF, then untimed lock shouldn't change it
-        mumps = '''TEST
+        mumps = """TEST
  I 0 ; sets $TEST=0
  S X="^GLO"
  L +@X
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         # $TEST should still be 0 (unchanged by untimed lock)
@@ -185,12 +183,12 @@ class TestLockIndirectionTestVariable:
 
     def test_timed_lock_success_sets_test_true(self):
         """L +@X:0 sets $TEST=1 on immediate success."""
-        mumps = '''TEST
+        mumps = """TEST
  I 0 ; sets $TEST=0
  S X="^GLO"
  L +@X:0
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         # $TEST should be 1 (success)
@@ -198,13 +196,13 @@ class TestLockIndirectionTestVariable:
 
     def test_timed_unlock_sets_test_true(self):
         """L -@X:0 always sets $TEST=1 (unlock never fails)."""
-        mumps = '''TEST
+        mumps = """TEST
  I 0 ; sets $TEST=0
  S X="^GLO"
  L +@X
  L -@X:0
  Q
-'''
+"""
         rt, output = self._run_routine(mumps)
 
         # $TEST should be 1 (unlock always succeeds)
