@@ -36,6 +36,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - In-memory globals (MArray), filesystem for test routines (017-ydb-test-failures)
 - Python 3.10+ + textX ≥4.0 (parser), pytest ≥7.0 (testing) (020-codegen-refactoring)
 - N/A (transpiler — no persistent storage) (020-codegen-refactoring)
+- Python 3.10+ + textX ≥ 4.0 (parser), `copy` (stdlib, deepcopy for transactions), `subprocess` (stdlib, ZSYSTEM), `glob`/`pathlib` (stdlib, $ZSEARCH), `importlib` (stdlib, ZLINK — already used), `datetime` (stdlib, $ZDATE) (021-correctness-features)
+- N/A (in-memory global storage, no persistence changes) (021-correctness-features)
 
 - (001-textx-semantic-graph)
 
@@ -56,9 +58,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 021-correctness-features: Added Python 3.10+ + textX ≥ 4.0 (parser), `copy` (stdlib, deepcopy for transactions), `subprocess` (stdlib, ZSYSTEM), `glob`/`pathlib` (stdlib, $ZSEARCH), `importlib` (stdlib, ZLINK — already used), `datetime` (stdlib, $ZDATE)
 - 020-codegen-refactoring: Added Python 3.10+ + textX ≥4.0 (parser), pytest ≥7.0 (testing)
 - 017-ydb-test-failures: Added Python 3.10+ + textX (parser), pytest (testing), uv (package management)
-- 017-ydb-test-failures: Added Python 3.10+ + textX (parser), pytest (testing)
 
 
 <!-- MANUAL ADDITIONS START -->
