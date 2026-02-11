@@ -63,19 +63,19 @@
 
 ### Tests for User Story 2
 
-- [ ] T014 [P] [US2] Write unit tests for $ECODE accumulation format in tests/unit/runtime/test_etrap_ecode.py — test `,M6,`, `,M9,M6,`, SET $ECODE="" clearing
-- [ ] T015 [P] [US2] Write unit tests for _handle_etrap() level-aware unwinding in tests/unit/runtime/test_etrap_ecode.py — test QUIT unwinds to _etrap_set_level
-- [ ] T016 [P] [US2] Write unit tests for NEW $ETRAP scoping and NEW $ESTACK in tests/unit/runtime/test_etrap_ecode.py
-- [ ] T017 [P] [US2] Write unit tests for nested error detection in tests/unit/runtime/test_etrap_ecode.py — error during error processing triggers TROLLBACK:$TLEVEL + QUIT
-- [ ] T018 [P] [US2] Write integration test that transpiles MUMPS routine using $ETRAP and compares output against YDB in tests/integration/test_error_handling.py
+- [X] T014 [P] [US2] Write unit tests for $ECODE accumulation format in tests/unit/runtime/test_etrap_ecode.py — test `,M6,`, `,M9,M6,`, SET $ECODE="" clearing
+- [X] T015 [P] [US2] Write unit tests for _handle_etrap() level-aware unwinding in tests/unit/runtime/test_etrap_ecode.py — test QUIT unwinds to _etrap_set_level
+- [X] T016 [P] [US2] Write unit tests for NEW $ETRAP scoping and NEW $ESTACK in tests/unit/runtime/test_etrap_ecode.py
+- [X] T017 [P] [US2] Write unit tests for nested error detection in tests/unit/runtime/test_etrap_ecode.py — error during error processing triggers TROLLBACK:$TLEVEL + QUIT
+- [X] T018 [P] [US2] Write integration test that transpiles MUMPS routine using $ETRAP and compares output against YDB in tests/integration/test_error_handling.py
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Enhance _handle_etrap() in src/m2py/runtime/__init__.py: populate $ZSTATUS/$ZPOSITION via _format_zstatus(), freeze stack snapshot, execute $ETRAP code. This task owns the main error dispatch flow.
-- [ ] T020 [US2] Implement $ETRAP level tracking in src/m2py/runtime/__init__.py: store _etrap_set_level on SET $ETRAP, implement QUIT-from-trap unwinding to that level. This task owns the _etrap_set_level field and unwind logic.
-- [ ] T021 [US2] Implement nested error detection in src/m2py/runtime/__init__.py: set/check _in_error_handler flag in _handle_etrap(), execute TROLLBACK:$TLEVEL QUIT:$QUIT "" QUIT on nested error. This task owns the _in_error_handler guard.
-- [ ] T022 [US2] Wire NEW $ESTACK support in src/m2py/codegen/statements.py for the NEW command handler
-- [ ] T023 [US2] Add configurable max nesting depth (default 20) for infinite error loop detection in src/m2py/runtime/__init__.py
+- [X] T019 [US2] Enhance _handle_etrap() in src/m2py/runtime/__init__.py: populate $ZSTATUS/$ZPOSITION via _format_zstatus(), freeze stack snapshot, execute $ETRAP code. This task owns the main error dispatch flow.
+- [X] T020 [US2] Implement $ETRAP level tracking in src/m2py/runtime/__init__.py: store _etrap_set_level on SET $ETRAP, implement QUIT-from-trap unwinding to that level. This task owns the _etrap_set_level field and unwind logic.
+- [X] T021 [US2] Implement nested error detection in src/m2py/runtime/__init__.py: set/check _in_error_handler flag in _handle_etrap(), execute TROLLBACK:$TLEVEL QUIT:$QUIT "" QUIT on nested error. This task owns the _in_error_handler guard.
+- [X] T022 [US2] Wire NEW $ESTACK support in src/m2py/codegen/statements.py for the NEW command handler
+- [X] T023 [US2] Add configurable max nesting depth (default 20) for infinite error loop detection in src/m2py/runtime/__init__.py
 
 **Checkpoint**: $ETRAP/$ECODE error handling works end-to-end with level-aware unwinding
 
@@ -89,21 +89,21 @@
 
 ### Tests for User Story 3
 
-- [ ] T024 [P] [US3] Write unit tests for $ZTRAP ISV storage, SET/read in tests/unit/runtime/test_ztrap.py
-- [ ] T025 [P] [US3] Write unit tests for $ZTRAP dispatch (XECUTE vs GOTO label reference) in tests/unit/runtime/test_ztrap.py
-- [ ] T026 [P] [US3] Write unit tests for $ETRAP↔$ZTRAP mutual exclusion in tests/unit/runtime/test_ztrap.py — SET $ZTRAP implicitly NEWs $ETRAP, and vice versa
-- [ ] T027 [P] [US3] Write unit tests for $ZSTATUS format and $ZPOSITION format in tests/unit/runtime/test_ztrap.py
-- [ ] T028 [P] [US3] Write integration test transpiling $ZTRAP routine and comparing against YDB in tests/integration/test_error_handling.py
+- [X] T024 [P] [US3] Write unit tests for $ZTRAP ISV storage, SET/read in tests/unit/runtime/test_ztrap.py
+- [X] T025 [P] [US3] Write unit tests for $ZTRAP dispatch (XECUTE vs GOTO label reference) in tests/unit/runtime/test_ztrap.py
+- [X] T026 [P] [US3] Write unit tests for $ETRAP↔$ZTRAP mutual exclusion in tests/unit/runtime/test_ztrap.py — SET $ZTRAP implicitly NEWs $ETRAP, and vice versa
+- [X] T027 [P] [US3] Write unit tests for $ZSTATUS format and $ZPOSITION format in tests/unit/runtime/test_ztrap.py
+- [X] T028 [P] [US3] Write integration test transpiling $ZTRAP routine and comparing against YDB in tests/integration/test_error_handling.py
 
 ### Implementation for User Story 3
 
-- [ ] T029 [US3] Implement ztrap()/set_ztrap() ISV accessors in src/m2py/runtime/__init__.py per contracts/runtime-apis.md
-- [ ] T030 [US3] Implement zstatus()/set_zstatus() and zposition()/set_zposition() ISV accessors in src/m2py/runtime/__init__.py
-- [ ] T031 [US3] Implement _dispatch_ztrap() in src/m2py/runtime/__init__.py — regex match for label reference pattern triggers GOTO, otherwise XECUTE
-- [ ] T032 [US3] Implement $ETRAP↔$ZTRAP mutual exclusion in src/m2py/runtime/__init__.py: SET one implicitly NEWs the other at current stack level
-- [ ] T033 [US3] Wire $ZTRAP/$ZSTATUS/$ZPOSITION SET codegen in src/m2py/codegen/statements.py — replace NotImplementedError with _rt.set_ztrap()/_rt.set_zstatus()/_rt.set_zposition() calls
-- [ ] T034 [US3] Wire $ZTRAP/$ZSTATUS/$ZPOSITION read codegen in src/m2py/codegen/expressions.py — replace NotImplementedError with _rt.ztrap()/_rt.zstatus()/_rt.zposition() calls
-- [ ] T035 [US3] Add $ZTRAP fallback to _handle_etrap() in src/m2py/runtime/__init__.py: when $ETRAP is empty and $ZTRAP is set, dispatch via _dispatch_ztrap()
+- [X] T029 [US3] Implement ztrap()/set_ztrap() ISV accessors in src/m2py/runtime/__init__.py per contracts/runtime-apis.md
+- [X] T030 [US3] Implement zstatus()/set_zstatus() and zposition()/set_zposition() ISV accessors in src/m2py/runtime/__init__.py
+- [X] T031 [US3] Implement _dispatch_ztrap() in src/m2py/runtime/__init__.py — regex match for label reference pattern triggers GOTO, otherwise XECUTE
+- [X] T032 [US3] Implement $ETRAP↔$ZTRAP mutual exclusion in src/m2py/runtime/__init__.py: SET one implicitly NEWs the other at current stack level
+- [X] T033 [US3] Wire $ZTRAP/$ZSTATUS/$ZPOSITION SET codegen in src/m2py/codegen/statements.py — replace NotImplementedError with _rt.set_ztrap()/_rt.set_zstatus()/_rt.set_zposition() calls
+- [X] T034 [US3] Wire $ZTRAP/$ZSTATUS/$ZPOSITION read codegen in src/m2py/codegen/expressions.py — replace NotImplementedError with _rt.ztrap()/_rt.zstatus()/_rt.zposition() calls
+- [X] T035 [US3] Add $ZTRAP fallback to _handle_etrap() in src/m2py/runtime/__init__.py: when $ETRAP is empty and $ZTRAP is set, dispatch via _dispatch_ztrap()
 
 **Checkpoint**: Both $ETRAP and $ZTRAP error handling subsystems work. US2 + US3 tests pass together.
 
@@ -140,15 +140,15 @@
 
 ### Tests for User Story 4
 
-- [ ] T042 [P] [US4] Write unit tests for stack_function() in tests/unit/runtime/test_stack_function.py — $STACK no args, $STACK(n), $STACK(n,"PLACE"), $STACK(n,"MCODE"), $STACK(n,"ECODE"), $STACK(-1), n > depth returns ""
-- [ ] T043 [P] [US4] Write unit tests for $STACK snapshot behavior in tests/unit/runtime/test_stack_function.py — during error ($ECODE non-empty) returns frozen snapshot, reset on SET $ECODE=""
-- [ ] T044 [P] [US4] Write integration test transpiling nested DO routine with $STACK queries in tests/integration/test_stack_introspection.py
+- [X] T042 [P] [US4] Write unit tests for stack_function() in tests/unit/runtime/test_stack_function.py — $STACK no args, $STACK(n), $STACK(n,"PLACE"), $STACK(n,"MCODE"), $STACK(n,"ECODE"), $STACK(-1), n > depth returns ""
+- [X] T043 [P] [US4] Write unit tests for $STACK snapshot behavior in tests/unit/runtime/test_stack_function.py — during error ($ECODE non-empty) returns frozen snapshot, reset on SET $ECODE=""
+- [X] T044 [P] [US4] Write integration test transpiling nested DO routine with $STACK queries in tests/integration/test_stack_introspection.py
 
 ### Implementation for User Story 4
 
-- [ ] T045 [US4] Implement stack_function() method in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — level/info dispatch, snapshot vs live stack
-- [ ] T046 [US4] Wire $STACK(n,info) codegen in src/m2py/codegen/expressions.py — emit _rt.stack_function() call with level and optional info arguments
-- [ ] T047 [US4] Implement $STACK snapshot reset on SET $ECODE="" in src/m2py/runtime/__init__.py — clear _stack_snapshot and _stack_snapshot_depth
+- [X] T045 [US4] Implement stack_function() method in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — level/info dispatch, snapshot vs live stack
+- [X] T046 [US4] Wire $STACK(n,info) codegen in src/m2py/codegen/expressions.py — emit _rt.stack_function() call with level and optional info arguments
+- [X] T047 [US4] Implement $STACK snapshot reset on SET $ECODE="" in src/m2py/runtime/__init__.py — clear _stack_snapshot and _stack_snapshot_depth
 
 **Checkpoint**: $STACK introspection works. Error handling subsystem (US2+US3+US4) is complete.
 
@@ -259,15 +259,15 @@
 
 ### Tests for User Story 10
 
-- [ ] T077 [P] [US10] Write unit tests for unconditional LVUNDEF in tests/unit/core/test_lvundef.py — undefined raises M6, defined returns value, NEW scope exit raises M6
-- [ ] T078 [P] [US10] Write test verifying no strict_mode parameter exists in CurrentScope in tests/unit/core/test_lvundef.py
-- [ ] T118 [P] [US10] Write integration test transpiling LVUNDEF scenarios and comparing against YDB in tests/integration/test_lvundef.py
+- [X] T077 [P] [US10] Write unit tests for unconditional LVUNDEF in tests/unit/core/test_lvundef.py — undefined raises M6, defined returns value, NEW scope exit raises M6
+- [X] T078 [P] [US10] Write test verifying no strict_mode parameter exists in CurrentScope in tests/unit/core/test_lvundef.py
+- [X] T118 [P] [US10] Write integration test transpiling LVUNDEF scenarios and comparing against YDB in tests/integration/test_lvundef.py
 
 ### Implementation for User Story 10
 
-- [ ] T079 [US10] Remove strict_mode parameter from CurrentScope.__init__() in src/m2py/core/scope.py — make LVUNDEF check unconditional (always raise LVUNDEFError for undefined locals)
-- [ ] T080 [US10] Update all callers of CurrentScope() that pass strict_mode argument across src/m2py/
-- [ ] T081 [US10] Fix existing tests that relied on undefined locals returning empty string — update to either define variables first or expect M6 error
+- [X] T079 [US10] Remove strict_mode parameter from CurrentScope.__init__() in src/m2py/core/scope.py — make LVUNDEF check unconditional (always raise LVUNDEFError for undefined locals)
+- [X] T080 [US10] Update all callers of CurrentScope() that pass strict_mode argument across src/m2py/
+- [X] T081 [US10] Fix existing tests that relied on undefined locals returning empty string — update to either define variables first or expect M6 error
 - [x] T082 [US10] Update constitution §IV in .specify/memory/constitution.md: change "Undefined variables return empty string (not exception)" to reflect unconditional M6 error behavior per FR-037 — DONE (v1.2.0 → v1.3.0)
 
 **Checkpoint**: LVUNDEF is unconditional. All tests pass. Constitution updated.

@@ -68,11 +68,11 @@ class TestYdbSpecialVariablesCodegen:
         with pytest.raises(NotImplementedError, match="ZMODE"):
             generate_python(code)
 
-    def test_zstatus_raises_not_implemented(self):
-        """$ZSTATUS raises NotImplementedError (YDB-specific variable)."""
+    def test_zstatus_generates_code(self):
+        """$ZSTATUS generates runtime call (Spec 021 Phase 5)."""
         code = "TEST\n W $ZSTATUS\n Q"
-        with pytest.raises(NotImplementedError, match="ZSTATUS"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.zstatus()" in result
 
     def test_zsystem_variable_raises_not_implemented(self):
         """$ZSYSTEM raises NotImplementedError (YDB-specific variable)."""

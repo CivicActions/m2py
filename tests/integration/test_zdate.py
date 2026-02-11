@@ -9,8 +9,6 @@ These tests verify the full pipeline:
 3. Execute and verify output matches expected YDB behavior
 """
 
-import pytest
-
 from m2py.codegen import generate_python
 from m2py.runtime import MUMPSRuntime
 

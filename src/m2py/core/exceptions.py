@@ -6,12 +6,12 @@ Requirements: FR-025 (LVUNDEF), FR-010 (VarExpectedError)
 
 
 class LVUNDEFError(Exception):
-    """Raised when accessing undefined local variable in strict mode.
+    """Raised when accessing an undefined local variable (M6 error).
 
     MUMPS error: %YDB-E-LVUNDEF, Undefined local variable: <name>
 
-    This error is raised when strict_mode=True and an undefined
-    local variable is accessed during GET operations.
+    This error is unconditionally raised when an undefined local
+    variable is accessed during GET operations.
     """
 
     def __init__(self, name: str, message: str = ""):

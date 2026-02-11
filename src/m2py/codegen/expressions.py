@@ -579,6 +579,21 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("ZERROR", "ZE"):
         return "_rt.zerror()"
 
+    # $ZTRAP / $ZT - error trap code (alternate form)
+    # Spec 021 Phase 5 (T034): M code to execute on error when $ETRAP is empty
+    if name in ("ZTRAP", "ZT"):
+        return "_rt.ztrap()"
+
+    # $ZSTATUS / $ZS - last error status
+    # Spec 021 Phase 5 (T034): Error status in YDB format
+    if name in ("ZSTATUS", "ZS"):
+        return "_rt.zstatus()"
+
+    # $ZPOSITION / $ZP - current code position
+    # Spec 021 Phase 5 (T034): Current position as "label+offset^routine"
+    if name in ("ZPOSITION", "ZP"):
+        return "_rt.zposition()"
+
     # $SYSTEM / $SY - system identification
     # Spec 017 Phase 23: Returns "V,S" where V is MDC-assigned implementor number
     if name in ("SYSTEM", "SY"):
@@ -2469,3 +2484,39 @@ def _gen_increment(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 INTRINSIC_GENERATORS["I"] = _gen_increment
 INTRINSIC_GENERATORS["INCR"] = _gen_increment
 INTRINSIC_GENERATORS["INCREMENT"] = _gen_increment
+
+
+def _gen_stack(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $STACK/$ST function.
+
+    Spec 021 (T046): $STACK returns information about the call stack.
+    - $STACK(-1): returns current stack depth
+    - $STACK(n): returns frame type at level n ("DO", "$$", "XECUTE", etc.)
+    - $STACK(n,"PLACE"): returns "LABEL+offset^ROUTINE"
+    - $STACK(n,"MCODE"): returns MUMPS source line
+    - $STACK(n,"ECODE"): returns error codes at that level
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1-2 arguments:
+              - arg[0]: stack level (-1 for depth, 0-n for specific level)
+              - arg[1]: optional info code ("PLACE", "MCODE", "ECODE")
+        ctx: Generator context
+
+    Returns:
+        Python expression that evaluates to stack information
+    """
+    if not expr.arguments:
+        # $STACK with no args - return depth (same as $STACK(-1))
+        return "_rt.stack_function(-1)"
+
+    level_expr = generate_expr(expr.arguments[0], ctx)
+
+    if len(expr.arguments) >= 2:
+        info_expr = generate_expr(expr.arguments[1], ctx)
+        return f"_rt.stack_function(int(m_num({level_expr})), m_str({info_expr}))"
+    else:
+        return f"_rt.stack_function(int(m_num({level_expr})))"
+
+
+INTRINSIC_GENERATORS["STACK"] = _gen_stack
+INTRINSIC_GENERATORS["ST"] = _gen_stack

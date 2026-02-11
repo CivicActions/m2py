@@ -1103,6 +1103,7 @@ def _generate_single_assignment(
         return
 
     # Spec 013 Phase 12: Handle special variable assignments ($ETRAP, $ECODE, $ZERROR)
+    # Spec 021 Phase 5: Add $ZTRAP, $ZSTATUS, $ZPOSITION
     if isinstance(assignment.target, MSpecialVariable):
         value_expr = generate_expr(assignment.value, ctx)
         svar_name = assignment.target.name.upper()
@@ -1112,6 +1113,12 @@ def _generate_single_assignment(
             ctx.emitter.line(f"_rt.set_ecode({value_expr})")
         elif svar_name in ("ZERROR", "ZE"):
             ctx.emitter.line(f"_rt.set_zerror({value_expr})")
+        elif svar_name in ("ZTRAP", "ZT"):
+            ctx.emitter.line(f"_rt.set_ztrap({value_expr})")
+        elif svar_name in ("ZSTATUS", "ZS"):
+            ctx.emitter.line(f"_rt.set_zstatus({value_expr})")
+        elif svar_name in ("ZPOSITION", "ZP"):
+            ctx.emitter.line(f"_rt.set_zposition({value_expr})")
         else:
             raise NotImplementedError(f"SET ${assignment.target.name} not supported")
         return
@@ -4795,9 +4802,27 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                 else:
                     ctx.emitter.line("_rt.set_zerror('')")
             elif svar_name in ("ESTACK", "ES"):
-                # $ESTACK is typically NEW'd together with $ETRAP
-                # For now, treat as no-op since we don't have full stack tracking
-                pass
+                # Spec 021 (T022): NEW $ESTACK resets the error stack tracking
+                # Sets a marker so that QUIT from this level ignores $ECODE errors
+                # This allows routines to establish a "clean" error handling frame
+                if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                    if ctx.new_scope_manager_var:
+                        # Save current estack level and reset to current depth
+                        ctx.emitter.line(
+                            f"{ctx.new_scope_manager_var}.new_special_var('estack', "
+                            f"_rt._etrap_set_level, lambda v: setattr(_rt, '_etrap_set_level', v))"
+                        )
+                        # Reset to current stack depth
+                        ctx.emitter.line(
+                            "_rt._etrap_set_level = len(_rt._stack_frames)"
+                        )
+                    else:
+                        # Fallback: just reset level
+                        ctx.emitter.line(
+                            "_rt._etrap_set_level = len(_rt._stack_frames)"
+                        )
+                else:
+                    ctx.emitter.line("_rt._etrap_set_level = len(_rt._stack_frames)")
             else:
                 raise NotImplementedError(f"NEW ${var.name} not supported")
         else:

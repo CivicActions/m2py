@@ -6,8 +6,6 @@ T066: Unit tests for m_zdate() basic formats
 T067: Unit tests for m_zdate() edge cases
 """
 
-import pytest
-
 from m2py.runtime.helpers import m_zdate
 
 

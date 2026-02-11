@@ -742,7 +742,10 @@ class IndirectionResolver:
             name: Variable name (may include subscripts)
 
         Returns:
-            Variable value or empty string if undefined
+            Variable value
+
+        Raises:
+            LVUNDEFError: If variable is undefined (unconditional per Spec 021)
         """
         # Handle subscripted names
         if "(" in name:
@@ -1242,11 +1245,18 @@ class IndirectionResolver:
             while at_count < len(value) and value[at_count] == "@":
                 at_count += 1
 
-            var_name = value[at_count:]
+            rest = value[at_count:]
+
+            # Check if this is a complex expression like @A(1)-1 or @X+1
+            # We need to find where the variable reference ends and the
+            # expression operators begin
+            # For @A(1)-1: var_part="A(1)", expr_tail="-1"
+            # For @X+1: var_part="X", expr_tail="+1"
+            var_part, expr_tail = self._split_var_and_expression(rest)
 
             # Resolve through @ levels: @@Y means @(@Y)
             # So we need to dereference at_count times
-            current_value = self._get_value(var_name)
+            current_value = self._get_value(var_part)
 
             for _ in range(at_count - 1):
                 # Each additional @ means another dereference
@@ -1258,8 +1268,16 @@ class IndirectionResolver:
             # Now evaluate the final value as an expression
             # If it's a variable name, look it up
             if isinstance(current_value, str) and current_value:
-                return self.evaluate_expression(current_value)
-            return current_value
+                resolved = self.evaluate_expression(current_value)
+            else:
+                resolved = current_value
+
+            # If there's a trailing expression part, build the full expression
+            # and evaluate it
+            if expr_tail:
+                full_expr = str(resolved) + expr_tail
+                return self.evaluate_expression(full_expr)
+            return resolved
 
         # Check if it's a quoted string - remove quotes
         if value.startswith('"') and value.endswith('"'):
@@ -1288,6 +1306,46 @@ class IndirectionResolver:
 
         # Return as-is for anything else
         return value
+
+    def _split_var_and_expression(self, s: str) -> tuple:
+        """Split a string into variable reference and trailing expression.
+
+        For @A(1)-1, we have:
+        - Variable reference: A(1)
+        - Expression tail: -1
+
+        For @X+1*2, we have:
+        - Variable reference: X
+        - Expression tail: +1*2
+
+        Args:
+            s: String that may contain a variable followed by operators
+
+        Returns:
+            Tuple of (var_part, expr_tail)
+            If no expression tail, expr_tail is empty string
+        """
+        if not s:
+            return ("", "")
+
+        # Track parenthesis depth to handle subscripted variables
+        depth = 0
+        i = 0
+        while i < len(s):
+            char = s[i]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif depth == 0 and char in "+-*/#\\_'":
+                # Found an operator at depth 0 - this starts the expression tail
+                # But make sure we're not at the start (unary minus on variable name)
+                if i > 0:
+                    return (s[:i], s[i:])
+            i += 1
+
+        # No operators found - entire string is the variable reference
+        return (s, "")
 
     @staticmethod
     def _append_subscripts(name: str, subscripts: List[Any]) -> str:

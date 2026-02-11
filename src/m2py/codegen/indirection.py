@@ -525,10 +525,11 @@ def generate_name_indirection_kill(
 ) -> str:
     """Generate Python code for name indirection KILL using _rt.kill_indirected().
 
-    No NakedGlobal handling. Complex expressions use full levels.
+    No NakedGlobal handling. Complex expressions reduce levels by 1 because the
+    expression result IS the kill list (not a variable to look up).
     """
     return _build_indirection_call(
-        expr, ctx, "kill_indirected", handle_naked=False, complex_adjust=0
+        expr, ctx, "kill_indirected", handle_naked=False, complex_adjust=-1
     )
 
 

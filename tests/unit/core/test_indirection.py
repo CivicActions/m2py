@@ -1093,45 +1093,34 @@ class TestResolveToNameStrictUndef:
 
     Feature: 017-ydb-test-failures (T052 - WRITE indirection error handling)
 
-    When strict_undef=True, undefined source variables raise LVUNDEFError
-    instead of returning empty string. Used by WRITE indirection where
-    accessing an undefined variable should error, not output nothing.
+    Per Spec 021 Phase 12, LVUNDEF is now unconditional. The strict_undef
+    parameter is deprecated - undefined source variables always raise
+    LVUNDEFError, matching YDB behavior.
     """
 
-    def test_strict_undef_false_returns_empty(self):
-        """With strict_undef=False (default), undefined returns empty string."""
-        state = MockMState()
-        scope = CurrentScope(scope_dict={})  # Empty scope
-        resolver = IndirectionResolver(state, scope)
-
-        # UNDEF doesn't exist - should return empty string
-        result = resolver.resolve_to_name(
-            "UNDEF", levels=1, validate=False, strict_undef=False
-        )
-        assert result == ""
-
-    def test_strict_undef_true_raises_lvundef(self):
-        """With strict_undef=True, undefined source raises LVUNDEFError."""
+    def test_undefined_source_raises_lvundef(self):
+        """Undefined source variable raises LVUNDEFError (unconditional)."""
         from m2py.core.exceptions import LVUNDEFError
 
         state = MockMState()
         scope = CurrentScope(scope_dict={})  # Empty scope
         resolver = IndirectionResolver(state, scope)
 
+        # UNDEF doesn't exist - should raise LVUNDEFError
         with pytest.raises(LVUNDEFError):
-            resolver.resolve_to_name("UNDEF", levels=1, strict_undef=True)
+            resolver.resolve_to_name("UNDEF", levels=1, validate=False)
 
-    def test_strict_undef_with_defined_variable(self):
-        """With strict_undef=True, defined variables work normally."""
+    def test_defined_source_returns_value(self):
+        """Defined source variable returns its value."""
         state = MockMState()
         scope = CurrentScope(scope_dict={"X": "TARGET"})
         resolver = IndirectionResolver(state, scope)
 
-        result = resolver.resolve_to_name("X", levels=1, strict_undef=True)
+        result = resolver.resolve_to_name("X", levels=1)
         assert result == "TARGET"
 
-    def test_strict_undef_subscripted_missing(self):
-        """With strict_undef=True, undefined subscripted location raises error."""
+    def test_subscripted_missing_raises_lvundef(self):
+        """Undefined subscripted location raises LVUNDEFError."""
         from m2py.core.exceptions import LVUNDEFError
         from m2py.runtime import MArray
 
@@ -1143,10 +1132,10 @@ class TestResolveToNameStrictUndef:
         resolver = IndirectionResolver(state, scope)
 
         with pytest.raises(LVUNDEFError):
-            resolver.resolve_to_name("A(1)", levels=1, strict_undef=True)
+            resolver.resolve_to_name("A(1)", levels=1)
 
-    def test_strict_undef_multi_level(self):
-        """With strict_undef=True, multi-level indirection checks each level."""
+    def test_multi_level_checks_each_level(self):
+        """Multi-level indirection raises LVUNDEF when any level undefined."""
         from m2py.core.exceptions import LVUNDEFError
 
         state = MockMState()
@@ -1156,7 +1145,7 @@ class TestResolveToNameStrictUndef:
 
         # @@X: resolve X→"MISSING", then resolve MISSING→error
         with pytest.raises(LVUNDEFError):
-            resolver.resolve_to_name("X", levels=2, strict_undef=True)
+            resolver.resolve_to_name("X", levels=2)
 
 
 class TestEvaluateSubscriptsInName:
@@ -1242,15 +1231,17 @@ class TestEvaluateSubscriptsInName:
         result = resolver._evaluate_subscripts_in_name("A(%Z)")
         assert result == "A(3)"
 
-    def test_undefined_variable_as_subscript(self):
-        """Undefined variable in subscript is empty string."""
+    def test_undefined_variable_as_subscript_raises_lvundef(self):
+        """Undefined variable in subscript raises LVUNDEFError (Spec 021)."""
+        from m2py.core.exceptions import LVUNDEFError
+
         state = MockMState()
         scope = CurrentScope(scope_dict={})  # UNDEF not in scope
         resolver = IndirectionResolver(state, scope)
 
-        # MUMPS undefined = empty string
-        result = resolver._evaluate_subscripts_in_name("A(UNDEF)")
-        assert result == 'A("")'
+        # Per Spec 021, undefined variables unconditionally raise LVUNDEF
+        with pytest.raises(LVUNDEFError):
+            resolver._evaluate_subscripts_in_name("A(UNDEF)")
 
 
 # =============================================================================

@@ -1663,6 +1663,10 @@ class MUMPSRuntime:
         self._in_error_handler: bool = False
         # Stack level where $ETRAP was SET (for unwind target)
         self._etrap_set_level: int = 0
+        # T023: Maximum error handler nesting depth (prevents infinite loops)
+        self._max_error_nesting: int = 20
+        # Current error handler nesting depth
+        self._error_nesting_depth: int = 0
         # ZSYSTEM exit code
         self._zsystem_exit: int = 0
         # $ZSEARCH iterator state
@@ -2526,13 +2530,21 @@ class MUMPSRuntime:
     def set_ecode(self, value: str) -> None:
         """Set error code list ($ECODE).
 
-        Spec 013 Phase 12 (FR-026): Setting $ECODE is how applications
-        clear errors (SET $ECODE="") or trigger error handlers.
+        Spec 013 Phase 12 (FR-026) + Spec 021 (T047): Setting $ECODE is how
+        applications clear errors (SET $ECODE="") or trigger error handlers.
+
+        When $ECODE is cleared (set to ""), the stack snapshot is also reset
+        so the next error will capture a fresh snapshot.
 
         Args:
             value: Error code list (empty string to clear)
         """
         self._ecode = value
+        # T047: Clear stack snapshot when $ECODE is cleared
+        # Reset to None so _freeze_stack_snapshot() can re-freeze on next error
+        if value == "":
+            self._stack_snapshot = None
+            self._stack_snapshot_depth = 0
 
     def _append_ecode(self, code: str) -> None:
         """Append an error code to $ECODE accumulator.
@@ -2571,15 +2583,26 @@ class MUMPSRuntime:
     def set_etrap(self, value: str) -> None:
         """Set error trap code ($ETRAP).
 
-        Spec 013 Phase 12 (FR-026): Sets the M code to execute on error.
+        Spec 013 Phase 12 (FR-026) + Spec 021 (T020): Sets the M code to
+        execute on error. Also tracks the stack level where $ETRAP was set
+        for QUIT-from-trap unwinding.
+
         Common patterns:
         - SET $ETRAP="D ^%ZTER Q"  ; Log error and quit
         - SET $ETRAP="G ERROR^ROUTINE"  ; Goto error handler
+
+        T032 (Phase 5): SET $ETRAP implicitly NEWs $ZTRAP at this level.
+        This provides mutual exclusion - only one trap can be active per level.
 
         Args:
             value: M code string to execute on error
         """
         self._etrap = value
+        # T020: Track level where $ETRAP was SET for unwinding
+        self._etrap_set_level = len(self._stack_frames)
+        # T032: Mutual exclusion — setting $ETRAP clears $ZTRAP
+        if value:
+            self._ztrap = ""
 
     def zerror(self) -> str:
         """Return application error message ($ZERROR).
@@ -2602,6 +2625,83 @@ class MUMPSRuntime:
             value: Error message text
         """
         self._zerror = value
+
+    def ztrap(self) -> str:
+        """Return error trap code ($ZTRAP).
+
+        Spec 021 (T029): Returns M code to execute on error when $ETRAP
+        is empty. $ZTRAP provides GOTO-based error handling semantics.
+
+        Returns:
+            Error trap code string, or empty string if not set
+        """
+        return self._ztrap
+
+    def set_ztrap(self, value: str) -> None:
+        """Set error trap code ($ZTRAP).
+
+        Spec 021 (T029): Sets M code to execute on error. Unlike $ETRAP,
+        $ZTRAP supports GOTO semantics for error transfer:
+        - "G label" or "G ^routine" - GOTO to label/routine
+        - Other code - executed via XECUTE
+
+        T032: SET $ZTRAP implicitly clears $ETRAP at this level.
+        $ETRAP and $ZTRAP are mutually exclusive — setting one clears the other.
+
+        Args:
+            value: M code string to execute on error
+        """
+        self._ztrap = value
+        # T032: Mutual exclusion — setting $ZTRAP clears $ETRAP
+        if value:
+            self._etrap = ""
+
+    def zstatus(self) -> str:
+        """Return error status text ($ZSTATUS).
+
+        Spec 021 (T030): Returns last error information in YDB format:
+        "errorcode,label+offset^routine,%YDB-E-ERRNAME, message"
+
+        Returns:
+            Error status string, or empty string if no error
+        """
+        return self._zstatus
+
+    def set_zstatus(self, value: str) -> None:
+        """Set error status text ($ZSTATUS).
+
+        Spec 021 (T030): Sets error status string. Normally set by
+        the runtime on error, but can be set by application code.
+
+        Args:
+            value: Error status text
+        """
+        self._zstatus = value
+
+    def zposition(self) -> str:
+        """Return current code position ($ZPOSITION).
+
+        Spec 021 (T030): Returns current position in format:
+        "label+offset^routine"
+
+        Note: After error transfer, this shows where the error handler
+        is, not where the error occurred. Use $STACK to get error site.
+
+        Returns:
+            Current position string, or empty string
+        """
+        return self._zposition
+
+    def set_zposition(self, value: str) -> None:
+        """Set current code position ($ZPOSITION).
+
+        Spec 021 (T030): Sets position string. Normally set by
+        the runtime during execution.
+
+        Args:
+            value: Position string in format "label+offset^routine"
+        """
+        self._zposition = value
 
     def _exception_to_ecode(self, exc: Exception) -> str:
         """Map Python exception to MUMPS $ECODE format.
@@ -2631,9 +2731,11 @@ class MUMPSRuntime:
         # Import MRuntimeError locally to avoid circular imports
         from m2py.runtime.exceptions import MRuntimeError
 
+        from m2py.core.exceptions import LVUNDEFError
+
         if isinstance(exc, ZeroDivisionError):
             return ",M9,"  # Divide by zero
-        elif isinstance(exc, KeyError):
+        elif isinstance(exc, (KeyError, LVUNDEFError)):
             return ",M6,"  # Undefined local variable
         elif isinstance(exc, MRuntimeError):
             # Map MRuntimeError codes to MUMPS standard codes
@@ -2658,15 +2760,28 @@ class MUMPSRuntime:
         else:
             return ",Z150373210,"  # Generic system error (YDB code)
 
-    def _handle_etrap(self, exc: Exception, _scope: dict) -> bool:
-        """Handle an exception using $ETRAP if set.
+    def _handle_etrap(
+        self,
+        exc: Exception,
+        _scope: dict,
+        *,
+        routine: str = "",
+        label: str = "",
+        offset: int = 0,
+    ) -> bool:
+        """Handle an exception using $ETRAP or $ZTRAP.
 
-        Spec 014 (T055): Implements MUMPS error handling semantics:
-        1. If $ETRAP is empty, return False (exception should propagate)
-        2. Set $ECODE based on exception type
-        3. Set $ZERROR to exception message
-        4. Execute $ETRAP code via execute_mumps()
-        5. Return True if $ECODE was cleared (error handled), False otherwise
+        Spec 014 (T055) + Spec 021 (T019-T021): Implements enhanced MUMPS
+        error handling semantics:
+        1. Check for nested error (error during error processing)
+        2. If nested: TROLLBACK:$TLEVEL QUIT:$QUIT "" QUIT (unwind)
+        3. Populate $ZSTATUS/$ZPOSITION with error info
+        4. Freeze stack snapshot (first error only)
+        5. Set $ECODE based on exception type
+        6. Set $ZERROR to exception message
+        7. If $ETRAP is set, execute it
+        8. If $ETRAP is empty but $ZTRAP is set, dispatch via _dispatch_ztrap()
+        9. Return True if $ECODE was cleared, False otherwise
 
         When True is returned, the calling code should perform an implicit QUIT.
         When False is returned, the exception should propagate to the caller.
@@ -2674,31 +2789,183 @@ class MUMPSRuntime:
         Args:
             exc: The Python exception that occurred
             _scope: Current variable scope for execute_mumps()
+            routine: Routine name where error occurred
+            label: Label name where error occurred
+            offset: Line offset from label where error occurred
 
         Returns:
             True if error was handled ($ECODE cleared), False otherwise
 
         Side Effects:
-            - Sets $ECODE based on exception type
-            - Sets $ZERROR to exception message
-            - Executes $ETRAP code which may modify $ECODE and variables
+            - Sets $ECODE, $ZERROR, $ZSTATUS, $ZPOSITION
+            - Freezes stack snapshot on first error
+            - Executes $ETRAP or $ZTRAP code
         """
-        if not self._etrap:
-            return False  # No handler, propagate exception
+        # T021/T023: Nested error detection with depth counting
+        self._error_nesting_depth += 1
+        if self._error_nesting_depth > self._max_error_nesting:
+            # Too many nested errors - prevent infinite loop
+            self._error_nesting_depth = 0
+            raise RuntimeError(
+                f"Maximum error handler nesting depth ({self._max_error_nesting}) exceeded"
+            )
 
-        # Map Python exception to MUMPS $ECODE
-        self._ecode = self._exception_to_ecode(exc)
-        self._zerror = str(exc)
-
-        # Execute $ETRAP code
-        try:
-            self.execute_mumps(self._etrap, _scope)
-        except Exception:
-            # Error in $ETRAP itself - propagate original error
+        if self._in_error_handler:
+            # Error during error processing - unwind
+            # TROLLBACK:$TLEVEL QUIT:$QUIT "" QUIT
+            if self.tlevel() > 0:
+                try:
+                    self._globals.transaction_rollback()
+                except Exception:
+                    pass  # Best effort rollback
+            # Propagate to unwind the stack
+            self._error_nesting_depth -= 1
             return False
 
-        # Check if handler cleared $ECODE
-        return self._ecode == ""
+        # Set nested error guard
+        self._in_error_handler = True
+        try:
+            # Check if there's any handler to process the error
+            if not self._etrap and not self._ztrap:
+                # No handler set - propagate exception without setting $ECODE
+                return False
+
+            # T019: Populate $ZSTATUS and $ZPOSITION
+            ecode = self._exception_to_ecode(exc)
+            # Extract just the error code (e.g., "M6" from ",M6,")
+            mcode = ecode.strip(",").split(",")[0] if ecode else ""
+            error_code = self._extract_error_code(ecode)
+            ydb_code = self._get_ydb_error_name(exc)
+            message = str(exc)
+
+            self._zstatus = self._format_zstatus(
+                error_code=error_code,
+                label=label,
+                offset=offset,
+                routine=routine,
+                ydb_code=ydb_code,
+                message=message,
+            )
+            # $ZPOSITION shows current position (where handler starts, not error site)
+            if label and routine:
+                self._zposition = f"{label}+{offset}^{routine}"
+            elif routine:
+                self._zposition = f"+{offset}^{routine}"
+            else:
+                self._zposition = ""
+
+            # T019: Freeze stack snapshot on first error (empty→non-empty $ECODE)
+            was_empty = self._ecode == ""
+
+            # Map Python exception to MUMPS $ECODE (use M-code format)
+            self._append_ecode(mcode)
+            self._zerror = message
+
+            if was_empty:
+                self._freeze_stack_snapshot()
+
+            # T019/T035: Try $ETRAP first, then $ZTRAP fallback
+            if self._etrap:
+                try:
+                    self.execute_mumps(self._etrap, _scope)
+                except Exception:
+                    # Error in $ETRAP itself - propagate original error
+                    return False
+            elif self._ztrap:
+                # T035: $ZTRAP fallback
+                try:
+                    self._dispatch_ztrap(_scope)
+                except Exception:
+                    return False
+
+            # Check if handler cleared $ECODE
+            return self._ecode == ""
+        finally:
+            # Clear nested error guard
+            self._in_error_handler = False
+            self._error_nesting_depth -= 1
+
+    def _dispatch_ztrap(self, _scope: dict) -> None:
+        """Dispatch $ZTRAP error handler (Phase 5 T031).
+
+        Handles $ZTRAP with GOTO vs XECUTE semantics:
+        - If $ZTRAP starts with 'G ' or 'G(', use GOTO semantics
+        - Otherwise, use XECUTE semantics
+
+        Args:
+            _scope: Current variable scope
+
+        Raises:
+            Exception: If $ZTRAP execution fails
+        """
+        if not self._ztrap:
+            return
+
+        ztrap = self._ztrap.strip()
+        # Check for GOTO syntax: "G label" or "G ^routine"
+        if ztrap.startswith("G ") or ztrap.startswith("G("):
+            # GOTO semantics - extract target and execute as GOTO command
+            self.execute_mumps(ztrap, _scope)
+        else:
+            # XECUTE semantics
+            self.execute_mumps(ztrap, _scope)
+
+    def _extract_error_code(self, ecode: str) -> str:
+        """Extract the primary error code from $ECODE format.
+
+        Args:
+            ecode: $ECODE format string like ",M6," or ",M6,Z150373850,"
+
+        Returns:
+            Primary error code (e.g., "M6", "150373850")
+        """
+        if not ecode:
+            return "150373210"  # Generic error
+        # Remove surrounding commas and split
+        parts = ecode.strip(",").split(",")
+        if parts:
+            code = parts[0]
+            # If it's an M code, convert to numeric for $ZSTATUS
+            if code.startswith("M"):
+                # Map common M codes to YDB numeric codes
+                m_code_map = {
+                    "M1": "150373218",  # NAKEDERR
+                    "M4": "150373274",  # SELECTFALSE
+                    "M6": "150373850",  # LVUNDEF
+                    "M9": "150373210",  # DIVZERO
+                    "M13": "150373834",  # LABELUNKNOWN
+                    "M26": "150373266",  # INVSVN
+                    "M28": "150373258",  # RANDARGNEG
+                    "M44": "150373250",  # TCOMMITWITHOUTTSTART
+                }
+                return m_code_map.get(code, "150373210")
+            elif code.startswith("Z"):
+                return code[1:]  # Strip the Z prefix
+            return code
+        return "150373210"
+
+    def _get_ydb_error_name(self, exc: Exception) -> str:
+        """Get YDB error name for an exception.
+
+        Args:
+            exc: Python exception
+
+        Returns:
+            YDB error name like "LVUNDEF", "DIVZERO", etc.
+        """
+        from m2py.core.exceptions import LVUNDEFError
+
+        if isinstance(exc, ZeroDivisionError):
+            return "DIVZERO"
+        elif isinstance(exc, (KeyError, LVUNDEFError)):
+            return "LVUNDEF"
+        elif isinstance(exc, RuntimeError):
+            msg = str(exc)
+            if "NAKEDERR" in msg or "naked" in msg.lower():
+                return "NAKEDERR"
+            elif "M44" in msg or "TCOMMIT" in msg:
+                return "TCOMMIT"
+        return "ERRNAME"
 
     def push_frame(self) -> None:
         """Push a new stack frame (for DO/extrinsic calls).
@@ -2751,6 +3018,70 @@ class MUMPSRuntime:
         """
         if self._stack_frames:
             self._stack_frames.pop()
+
+    def stack_function(
+        self, level: int, info: str = "", *, use_snapshot: bool = False
+    ) -> str:
+        """Implement $STACK(level[,info]) intrinsic function.
+
+        Spec 021 (T045): Returns information about the call stack.
+        During error handling ($ECODE non-empty), automatically returns
+        data from the frozen snapshot. Otherwise returns live stack.
+
+        Args:
+            level: Stack level to query. -1 for current depth.
+            info: Optional info code: "PLACE", "MCODE", "ECODE", or ""
+            use_snapshot: If True, force snapshot use even if $ECODE is empty
+
+        Returns:
+            For level=-1: current stack depth as string
+            For level=0 with no info: implementation start info (empty)
+            For level=n with no info: frame type string ("DO", "$$", etc.)
+            For level=n with "PLACE": "LABEL+offset^ROUTINE"
+            For level=n with "MCODE": MUMPS source line
+            For level=n with "ECODE": error codes at that level
+            For level > stack depth: ""
+        """
+        # Determine which stack to use
+        # Auto-use snapshot when $ECODE is non-empty (error state)
+        stack = self._stack_frames
+        if (use_snapshot or self._ecode != "") and self._stack_snapshot:
+            stack = self._stack_snapshot
+
+        depth = len(stack)
+
+        # $STACK(-1) returns current depth
+        if level == -1:
+            return str(depth)
+
+        # $STACK(0) returns implementation info (typically empty for us)
+        if level == 0:
+            return ""
+
+        # Level must be 1-based and within range
+        if level < 1 or level > depth:
+            return ""
+
+        # Get the frame (level is 1-based, so level 1 = index 0)
+        frame = stack[level - 1]
+
+        # Normalize info code to uppercase
+        info_upper = info.upper() if info else ""
+
+        # No info code: return frame type
+        if not info_upper:
+            return frame.frame_type
+
+        # Handle info codes
+        if info_upper == "PLACE":
+            return f"{frame.label}+{frame.offset}^{frame.routine}"
+        elif info_upper == "MCODE":
+            return frame.mcode
+        elif info_upper == "ECODE":
+            return frame.ecode
+        else:
+            # Unknown info code returns empty
+            return ""
 
     def _freeze_stack_snapshot(self) -> None:
         """Freeze a deep copy of the call stack for $STACK intrinsic function.
@@ -4150,9 +4481,11 @@ class MUMPSRuntime:
         - Then also kill D and E explicitly
 
         Args:
-            source: Source variable name for indirection (e.g., "X" for @X)
+            source: Source variable name for indirection (e.g., "X" for @X),
+                OR the literal kill list for complex expressions (levels=0)
             _scope: Current scope dictionary
             levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+                levels=0 means source is already the kill list (complex expression result)
             per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
 
         Examples:
@@ -4179,6 +4512,10 @@ class MUMPSRuntime:
             # K @X where X="(B),D,E" (exclusive + explicit kills)
             kill_indirected("X", scope, levels=1)
             # Kills all except B, then also kills D and E
+
+            # K @(A_","_B) where result is "D,E,F" (complex expression)
+            kill_indirected("D,E,F", scope, levels=0)
+            # Source IS the kill list, no resolution needed
         """
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
@@ -4187,14 +4524,19 @@ class MUMPSRuntime:
         cs = CurrentScope.from_generated_context(_scope)
         resolver = IndirectionResolver(self, cs)
 
-        # First resolve to get the raw string value (not validated as var names)
-        # validate=False because KILL may have exclusive patterns like "(B),D,E"
-        raw_value = resolver.resolve_to_name(
-            source,
-            levels=levels,
-            per_level_subscripts=per_level_subscripts,
-            validate=False,
-        )
+        # levels=0 means source is already the kill list (from complex expression)
+        # No resolution needed - source IS the target
+        if levels == 0:
+            raw_value = source
+        else:
+            # First resolve to get the raw string value (not validated as var names)
+            # validate=False because KILL may have exclusive patterns like "(B),D,E"
+            raw_value = resolver.resolve_to_name(
+                source,
+                levels=levels,
+                per_level_subscripts=per_level_subscripts,
+                validate=False,
+            )
 
         # Split by commas respecting parentheses
         args = _split_argument_list(raw_value)
