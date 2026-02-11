@@ -55,6 +55,7 @@ MANIFEST
 .venv*/
 .conda*/
 .python-version
+.worktrees
 
 # Reference directories
 mumps-reference

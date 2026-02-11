@@ -8,7 +8,6 @@
         "ghcr.io/devcontainers/features/docker-in-docker:2": {},
         "ghcr.io/devcontainers-extra/features/pre-commit:2": {},
         "ghcr.io/devcontainers/features/github-cli:1": {},
-        "ghcr.io/devcontainers/features/copilot-cli:1": {}
     },
     
     // Explicitly mount ONLY the local workspace folder to a specific path in the container
@@ -17,8 +16,8 @@
 
     // Disable the automatic mounting of the VS Code home folder/settings
     "mounts": [
-        // Mount the Copilot CLI config to persist session login
-        "source=${localEnv:HOME}/.copilot,target=/home/vscode/.copilot,type=bind,consistency=cached"
+        // Mount the worktrees folder to persist any git worktrees created during development
+        "source=${localEnv:HOME}/workspace/m2py.worktrees,target=/workspaces/m2py.worktrees,type=bind,consistency=cached"
     ],
 
     "customizations": {
