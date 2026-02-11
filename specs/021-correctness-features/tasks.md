@@ -17,9 +17,9 @@
 
 **Purpose**: New runtime data structures and ISV storage needed by all tracks
 
-- [ ] T001 Add StackFrame dataclass to src/m2py/runtime/__init__.py per data-model.md
-- [ ] T002 Add TransactionLocalSnapshot dataclass to src/m2py/runtime/__init__.py per data-model.md
-- [ ] T003 Add new ISV fields to MUMPSRuntime.__init__() in src/m2py/runtime/__init__.py: _ztrap, _zstatus, _zposition, _in_error_handler, _etrap_set_level, _zsystem_exit, _zsearch_results, _zsearch_index, _transaction_snapshots, _stack_snapshot
+- [X] T001 Add StackFrame dataclass to src/m2py/runtime/__init__.py per data-model.md
+- [X] T002 Add TransactionLocalSnapshot dataclass to src/m2py/runtime/__init__.py per data-model.md
+- [X] T003 Add new ISV fields to MUMPSRuntime.__init__() in src/m2py/runtime/__init__.py: _ztrap, _zstatus, _zposition, _in_error_handler, _etrap_set_level, _zsystem_exit, _zsearch_results, _zsearch_index, _transaction_snapshots, _stack_snapshot
 
 ---
 
@@ -29,14 +29,14 @@
 
 **⚠️ CRITICAL**: US2, US3, US4 cannot begin until this phase is complete
 
-- [ ] T004 Replace _stack_level integer counter with _stack_frames list[StackFrame] in src/m2py/runtime/__init__.py — update push_frame()/pop_frame() to push/pop StackFrame objects instead of incrementing/decrementing
-- [ ] T005 Update all references to _stack_level throughout src/m2py/runtime/__init__.py to use len(_stack_frames) instead
-- [ ] T006 Update codegen DO block _stack_level increment/decrement in src/m2py/codegen/statements.py to emit push_stack_frame()/pop_stack_frame() calls with frame_type, routine, label, offset, mcode arguments
-- [ ] T007 Update codegen routine entry/exit in src/m2py/codegen/routine.py to emit push_stack_frame()/pop_stack_frame() calls for DO, $$, and XECUTE frames
-- [ ] T008 Implement _append_ecode() method in src/m2py/runtime/__init__.py that accumulates error codes with surrounding commas (`,M6,` format)
-- [ ] T009 Implement _freeze_stack_snapshot() method in src/m2py/runtime/__init__.py that deep-copies _stack_frames to _stack_snapshot when $ECODE transitions from empty to non-empty
-- [ ] T010 Implement _format_zstatus() helper in src/m2py/runtime/__init__.py that formats error info as "errorcode,label+offset^routine,%YDB-E-ERRNAME, message"
-- [ ] T011 [P] Write unit tests for StackFrame, _append_ecode(), _freeze_stack_snapshot(), _format_zstatus() in tests/unit/runtime/test_stack_frame.py
+- [X] T004 Replace _stack_level integer counter with _stack_frames list[StackFrame] in src/m2py/runtime/__init__.py — update push_frame()/pop_frame() to push/pop StackFrame objects instead of incrementing/decrementing
+- [X] T005 Update all references to _stack_level throughout src/m2py/runtime/__init__.py to use len(_stack_frames) instead
+- [X] T006 Update codegen DO block _stack_level increment/decrement in src/m2py/codegen/statements.py to emit push_stack_frame()/pop_stack_frame() calls with frame_type, routine, label, offset, mcode arguments
+- [X] T007 Update codegen routine entry/exit in src/m2py/codegen/routine.py to emit push_stack_frame()/pop_stack_frame() calls for DO, $$, and XECUTE frames
+- [X] T008 Implement _append_ecode() method in src/m2py/runtime/__init__.py that accumulates error codes with surrounding commas (`,M6,` format)
+- [X] T009 Implement _freeze_stack_snapshot() method in src/m2py/runtime/__init__.py that deep-copies _stack_frames to _stack_snapshot when $ECODE transitions from empty to non-empty
+- [X] T010 Implement _format_zstatus() helper in src/m2py/runtime/__init__.py that formats error info as "errorcode,label+offset^routine,%YDB-E-ERRNAME, message"
+- [X] T011 [P] Write unit tests for StackFrame, _append_ecode(), _freeze_stack_snapshot(), _format_zstatus() in tests/unit/runtime/test_stack_frame.py
 
 **Checkpoint**: Stack tracking and error code accumulation infrastructure ready
 

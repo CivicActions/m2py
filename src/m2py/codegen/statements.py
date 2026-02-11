@@ -4006,7 +4006,7 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("_rt._in_extrinsic = False")
 
         # Increment execution level (spec §6.3) - $STACK increases inside DO blocks
-        ctx.emitter.line("_rt.push_frame()")
+        ctx.emitter.line('_rt.push_stack_frame("DO")')
 
         # Wrap in try/finally to ensure stack cleanup even on exceptions
         ctx.emitter.line("try:")
@@ -4025,7 +4025,7 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("finally:")
         with ctx.emitter.indented():
             # Decrement execution level (spec §6.3)
-            ctx.emitter.line("_rt.pop_frame()")
+            ctx.emitter.line("_rt.pop_stack_frame()")
 
         # Restore $TEST and _in_extrinsic after block
         ctx.emitter.line("_test = _saved_test")
@@ -4094,6 +4094,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # T075b: For TRAMPOLINE with dynamic locals, sync state._locals to _scope
         # before calling external routine so callee can see caller's variables
         emit_state_to_scope_sync(ctx)
+
+        # T007: Push DO stack frame for external subroutine call
+        ctx.emitter.line('_rt.push_stack_frame("DO")')
 
         # Handle different external DO patterns
         if target.offset is not None:
@@ -4206,6 +4209,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         ctx.emitter.line("_rt._current_routine = _saved_routine")
         ctx.emitter.line("_rt._current_source_lines = _saved_source_lines")
         ctx.emitter.line("_rt._current_label_lines = _saved_label_lines")
+        # T007: Pop DO stack frame after external subroutine returns
+        ctx.emitter.line("_rt.pop_stack_frame()")
         # Sync $TEST from runtime after cross-module call
         # DO calls don't stack $TEST - callee's changes must be visible to caller
         ctx.emitter.line("_test = _rt._test")
@@ -4221,6 +4226,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
     # Internal DO calls are subroutine invocations, so $QUIT=0 inside them
     ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
     ctx.emitter.line("_rt._in_extrinsic = False")
+
+    # T007: Push DO stack frame for internal subroutine call
+    ctx.emitter.line('_rt.push_stack_frame("DO")')
 
     # Spec 007 (T025-T028c): Handle DO with offset
     # In TRAMPOLINE strategy, call the internal function with _start_offset
@@ -4311,6 +4319,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             with ctx.emitter.indented():
                 _emit_goto_external_handler(ctx)
                 ctx.emitter.line("_do_target = None")
+        # T007: Pop DO stack frame
+        ctx.emitter.line("_rt.pop_stack_frame()")
         # Phase 21: Restore _in_extrinsic for $QUIT tracking
         ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
         return
@@ -4424,6 +4434,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # T075k: Wrap plain values in MArray when syncing back (callee may use static state)
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             emit_scope_to_state_sync(ctx)
+    # T007: Pop DO stack frame
+    ctx.emitter.line("_rt.pop_stack_frame()")
     # Phase 21: Restore _in_extrinsic for $QUIT tracking
     ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
 

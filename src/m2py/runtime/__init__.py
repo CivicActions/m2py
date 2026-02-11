@@ -99,6 +99,43 @@ def _is_valid_label(name: str) -> bool:
     return bool(_LABEL_PATTERN.match(name))
 
 
+# =============================================================================
+# Spec 021: Phase 3 — Data Structures for Error Handling & Transaction Support
+# =============================================================================
+
+
+@dataclass
+class StackFrame:
+    """A single entry in the MUMPS call stack.
+
+    Used for $STACK(n,"info") introspection per ANSI §107.108.
+    Each DO, $$, XECUTE, ZINTR, or TRIGGER entry pushes a frame.
+    """
+
+    frame_type: str  # "DO", "$$", "XECUTE", "ZINTR", "TRIGGER"
+    routine: str = ""  # Routine name (e.g., "MYROUTINE")
+    label: str = ""  # Label name (e.g., "MAIN")
+    offset: int = 0  # Line offset from label (0-based)
+    mcode: str = ""  # Original MUMPS source line
+    ecode: str = ""  # Error code(s) at this level (if any)
+
+
+@dataclass
+class TransactionLocalSnapshot:
+    """Snapshot of local variables at TSTART time.
+
+    Used for TRESTART support (F-05). Stores deep copies of specified
+    local variables. Discarded (not restored) on TROLLBACK/TCOMMIT per YDB.
+    """
+
+    restart_vars: Optional[list[str]] = None  # Named vars, or None = not restartable
+    restart_all: bool = False  # True for TSTART *
+    snapshot: dict[str, Any] = field(
+        default_factory=dict
+    )  # var_name → deepcopy(MArray)
+    saved_test: Optional[bool] = None  # $TEST value at TSTART
+
+
 # T074a: Now uses NameTranslator.to_python() from core.names module.
 # The deprecated _translate_label_to_func() function has been removed.
 # All name translation now goes through the single source of truth.
@@ -1590,8 +1627,9 @@ class MUMPSRuntime:
         # Spec 011: Column/line position tracking for $X, $Y
         self._x: int = 0  # Current column position (0-based)
         self._y: int = 0  # Current line position
-        # Spec 011: Stack level tracking for $STACK
-        self._stack_level: int = 0
+        # Spec 021: Stack frame tracking for $STACK introspection
+        # Replaces the simple _stack_level counter with metadata-rich frames
+        self._stack_frames: list[StackFrame] = []
         # Spec 011: I/O device tracking for $IO
         self._io: str = "0"  # Default I/O device
         # Spec 013: Device table for OPEN/CLOSE/USE
@@ -1614,6 +1652,27 @@ class MUMPSRuntime:
         self._etrap: str = ""
         # $ZERROR - application-supplied error message text
         self._zerror: str = ""
+        # Spec 021 Phase 3: Enhanced error handling ISVs
+        # $ZTRAP - YDB error trap (label ref or XECUTE code)
+        self._ztrap: str = ""
+        # $ZSTATUS - full error message from last error
+        self._zstatus: str = ""
+        # $ZPOSITION - routine+offset of last error
+        self._zposition: str = ""
+        # Nested error detection flag
+        self._in_error_handler: bool = False
+        # Stack level where $ETRAP was SET (for unwind target)
+        self._etrap_set_level: int = 0
+        # ZSYSTEM exit code
+        self._zsystem_exit: int = 0
+        # $ZSEARCH iterator state
+        self._zsearch_results: list[str] = []
+        self._zsearch_index: int = 0
+        # Transaction restart variable snapshots (one per $TLEVEL)
+        self._transaction_snapshots: list[TransactionLocalSnapshot] = []
+        # $STACK snapshot (frozen on error)
+        self._stack_snapshot: Optional[list[StackFrame]] = None
+        self._stack_snapshot_depth: int = 0
         # Spec 013 Phase 19: Routine registry for ZLINK
         self._routines: Dict[str, Any] = {}
         # Spec 012: $TEST value for tracking IF/ELSE condition results
@@ -2427,7 +2486,7 @@ class MUMPSRuntime:
         Returns:
             Current call stack depth
         """
-        return self._stack_level
+        return len(self._stack_frames)
 
     def quit_flag(self) -> int:
         """Return extrinsic function context flag ($QUIT).
@@ -2474,6 +2533,29 @@ class MUMPSRuntime:
             value: Error code list (empty string to clear)
         """
         self._ecode = value
+
+    def _append_ecode(self, code: str) -> None:
+        """Append an error code to $ECODE accumulator.
+
+        T008: MUMPS $ECODE accumulates error codes with surrounding commas.
+        Each code is appended in ",CODE," format. If $ECODE is already non-empty,
+        the leading comma of the new code merges with the trailing comma of the
+        existing value.
+
+        Examples:
+            - Empty $ECODE + "M6" → ",M6,"
+            - ",M6," + "M9" → ",M6,M9,"
+            - ",M6,M9," + "Z150373850" → ",M6,M9,Z150373850,"
+
+        Args:
+            code: Error code without commas (e.g., "M6", "Z150373850")
+        """
+        if not self._ecode:
+            # First error: wrap with commas
+            self._ecode = f",{code},"
+        else:
+            # Append: existing ends with comma, add code + comma
+            self._ecode = f"{self._ecode}{code},"
 
     def etrap(self) -> str:
         """Return current error trap code ($ETRAP).
@@ -2619,13 +2701,121 @@ class MUMPSRuntime:
         return self._ecode == ""
 
     def push_frame(self) -> None:
-        """Push a new stack frame (for DO/extrinsic calls)."""
-        self._stack_level += 1
+        """Push a new stack frame (for DO/extrinsic calls).
+
+        Legacy compatibility wrapper — pushes a minimal DO frame.
+        New code should use push_stack_frame() for full metadata.
+        """
+        self._stack_frames.append(StackFrame(frame_type="DO"))
 
     def pop_frame(self) -> None:
         """Pop a stack frame (for QUIT)."""
-        if self._stack_level > 0:
-            self._stack_level -= 1
+        if self._stack_frames:
+            self._stack_frames.pop()
+
+    def push_stack_frame(
+        self,
+        frame_type: str,
+        routine: str = "",
+        label: str = "",
+        offset: int = 0,
+        mcode: str = "",
+    ) -> None:
+        """Push a new frame onto the call stack with full metadata.
+
+        Called at DO, XECUTE, and extrinsic function ($$) entry points.
+        Replaces the simple _stack_level increment.
+
+        Args:
+            frame_type: One of "DO", "$$", "XECUTE", "ZINTR", "TRIGGER"
+            routine: Routine name
+            label: Entry label
+            offset: Line offset
+            mcode: Original MUMPS source line
+        """
+        self._stack_frames.append(
+            StackFrame(
+                frame_type=frame_type,
+                routine=routine,
+                label=label,
+                offset=offset,
+                mcode=mcode,
+            )
+        )
+
+    def pop_stack_frame(self) -> None:
+        """Pop the top frame from the call stack.
+
+        Called at QUIT/return from DO, XECUTE, or extrinsic function.
+        Replaces the simple _stack_level decrement.
+        """
+        if self._stack_frames:
+            self._stack_frames.pop()
+
+    def _freeze_stack_snapshot(self) -> None:
+        """Freeze a deep copy of the call stack for $STACK intrinsic function.
+
+        T009: When $ECODE transitions from empty to non-empty (first error),
+        freeze the current call stack so $STACK(n) queries return the state
+        at the time of the error, not the current (possibly unwound) state.
+
+        The snapshot is only taken once — subsequent errors that accumulate
+        into $ECODE do NOT update the snapshot. The snapshot is cleared when
+        $ECODE is reset to "" via SET $ECODE="".
+
+        The snapshot includes:
+        - Deep copy of all StackFrame objects
+        - The depth (len) at time of freeze
+        """
+        import copy
+
+        if self._stack_snapshot is None:
+            self._stack_snapshot = copy.deepcopy(self._stack_frames)
+            self._stack_snapshot_depth = len(self._stack_frames)
+
+    def _format_zstatus(
+        self,
+        error_code: str,
+        label: str = "",
+        offset: int = 0,
+        routine: str = "",
+        ydb_code: str = "",
+        message: str = "",
+    ) -> str:
+        """Format error information as $ZSTATUS string.
+
+        T010: $ZSTATUS format matches YDB convention:
+        "errorcode,label+offset^routine,%YDB-E-ERRNAME, message"
+
+        Examples:
+            "150373850,TEST+3^test,%YDB-E-LVUNDEF, Undefined local variable: X"
+            "150373210,FOO+1^bar,%YDB-E-DIVZERO, Attempt to divide by zero"
+
+        When label and routine are empty, the location part is still included
+        but with empty values: "150373850,+0^,%YDB-E-LVUNDEF, message"
+
+        Args:
+            error_code: Numeric error code (e.g., "150373850")
+            label: Label name at error site
+            offset: Line offset from label
+            routine: Routine name
+            ydb_code: YDB error mnemonic (e.g., "LVUNDEF", "DIVZERO")
+            message: Human-readable error description
+
+        Returns:
+            Formatted $ZSTATUS string
+        """
+        # Build location part: "label+offset^routine"
+        location = f"{label}+{offset}^{routine}"
+
+        # Build YDB error tag: "%YDB-E-ERRNAME"
+        ydb_tag = f"%YDB-E-{ydb_code}" if ydb_code else ""
+
+        # Assemble: "errorcode,location,%YDB-E-ERRNAME, message"
+        if ydb_tag:
+            return f"{error_code},{location},{ydb_tag}, {message}"
+        else:
+            return f"{error_code},{location}, {message}"
 
     # =========================================================================
     # Spec 013: Device I/O Methods (Phase 10 - OPEN/CLOSE/USE)
@@ -5842,7 +6032,13 @@ class MUMPSRuntime:
 
             # The generated code defines a function, we need to call it
             if "XECUTE" in namespace and callable(namespace["XECUTE"]):
-                result = namespace["XECUTE"](self, _scope=_scope)
+                # T007: Push XECUTE stack frame
+                self.push_stack_frame("XECUTE")
+                try:
+                    result = namespace["XECUTE"](self, _scope=_scope)
+                finally:
+                    # T007: Pop XECUTE stack frame
+                    self.pop_stack_frame()
             else:
                 result = None
 
@@ -6127,6 +6323,9 @@ __all__ = [
     "run_with_goto_support",
     "resolve_goto_target",
     "call_external_with_offset",
+    # Spec 021: Phase 3 data structures
+    "StackFrame",
+    "TransactionLocalSnapshot",
     # Spec 009: Global storage and helpers
     "GlobalStorageBackend",
     "InMemoryGlobalStorage",

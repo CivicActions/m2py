@@ -408,6 +408,8 @@ class RoutineGenerator:
             ctx.emitter.line("_saved = _test")
             # Spec 011: Save/restore _in_extrinsic for $QUIT tracking
             ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
+            # T007: Push $$ stack frame for extrinsic function call
+            ctx.emitter.line('_rt.push_stack_frame("$$")')
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
                 # Spec 011: Mark that we're in an extrinsic for $QUIT
@@ -446,6 +448,8 @@ class RoutineGenerator:
                 ctx.emitter.line("return _result")
             ctx.emitter.line("finally:")
             with ctx.emitter.indented():
+                # T007: Pop $$ stack frame
+                ctx.emitter.line("_rt.pop_stack_frame()")
                 ctx.emitter.line("_test = _saved")
                 # Sync $TEST to runtime after restore (extrinsic preserves caller's $TEST)
                 ctx.emitter.line("_rt._test = _test")
